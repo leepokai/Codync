@@ -4,7 +4,7 @@ use super::{Inner, check_name, locked, remember};
 use crate::guard::digest;
 use crate::reach::Reach;
 use crate::roster::Change;
-use crate::rules;
+use crate::rules::{self, Access};
 use crate::types::Message;
 use crate::wire::{self, Envelope, Request, Response};
 use anyhow::{Result, anyhow, bail};
@@ -12,8 +12,8 @@ use iroh::EndpointId;
 use iroh::endpoint::{Connection, RecvStream, SendStream};
 use iroh::protocol::{AcceptError, ProtocolHandler};
 use std::fmt;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Weak};
 use std::time::Instant;
 
 /// Letters remembered as taken, for spotting a sender's retry.
@@ -30,16 +30,24 @@ impl fmt::Debug for Inner {
 
 impl ProtocolHandler for Handler {
     async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
-        let peer = conn.remote_id();
-        while let Ok((send, recv)) = conn.accept_bi().await {
-            let inner = self.0.clone();
-            tokio::spawn(async move {
-                if let Err(e) = serve(&inner, peer, send, recv).await {
-                    tracing::debug!(peer = %peer.fmt_short(), error = format!("{e:#}"), "request failed");
-                }
-            });
-        }
+        self.0.accepted(&conn);
+        take_requests(Arc::downgrade(&self.0), conn).await;
         Ok(())
+    }
+}
+
+/// Answers every request that comes on `conn`, whichever side opened it, until it closes.
+pub(super) async fn take_requests(inner: Weak<Inner>, conn: Connection) {
+    let peer = conn.remote_id();
+    while let Ok((send, recv)) = conn.accept_bi().await {
+        // A node dropped without a shutdown answers nothing more.
+        let Some(inner) = inner.upgrade() else { return };
+        inner.adopt(&conn);
+        tokio::spawn(async move {
+            if let Err(e) = serve(&inner, peer, send, recv).await {
+                tracing::debug!(peer = %peer.fmt_short(), error = format!("{e:#}"), "request failed");
+            }
+        });
     }
 }
 
@@ -99,12 +107,20 @@ impl Inner {
         let name = |id: &EndpointId| roster.as_ref().map_or_else(|| "local".into(), |r| r.name(id));
         // This computer's rules, for letters from the others that don't answer one of its own.
         let answers = self.answers(peer, &envelope);
-        if peer != self.me()
-            && !answers
-            && !rules::allows(&locked(&self.rules), &name(&peer), &envelope.from, &envelope.to)
-        {
-            return refuse(format!("{} doesn't take messages from {}@{}", envelope.to, envelope.from, name(&peer)));
-        }
+        let access = if peer == self.me() {
+            Access::Allow
+        } else {
+            let default = *locked(&self.default_access);
+            rules::access(&locked(&self.rules), default, &name(&peer), &envelope.from, &envelope.to)
+        };
+        let access = match access {
+            Access::Deny if !answers => {
+                return refuse(format!("{} doesn't take messages from {}@{}", envelope.to, envelope.from, name(&peer)));
+            }
+            // An answer this computer asked for comes in whatever the rules say now, never freer than `ask`.
+            Access::Deny => Access::Ask,
+            access => access,
+        };
         let reach = locked(&self.agents).iter().find(|(a, _)| a.id == envelope.to).map(|(_, r)| r.clone());
         let reach = match reach {
             Some(reach) => reach,
@@ -114,6 +130,16 @@ impl Inner {
             None if envelope.reply_to.is_some() && answers => Reach::App,
             None => return refuse(format!("{} has no agent called {}", name(&self.me()), envelope.to)),
         };
+        // Only the app can hold an agent to a ceiling: a session the network knocks on acts as it likes.
+        // An answer too: it is text from that computer like a request.
+        if access.is_ceiling() && reach != Reach::App {
+            return refuse(format!(
+                "{} can't be held to asking its user, so it doesn't take messages from {}@{}",
+                envelope.to,
+                envelope.from,
+                name(&peer)
+            ));
+        }
         let pair = format!("{peer}/{}>{}", envelope.from, envelope.to);
         let meta = envelope.meta.as_ref().map(ToString::to_string).unwrap_or_default();
         // Two answers to two different letters may well say the same thing ("Done.").
@@ -126,7 +152,7 @@ impl Inner {
         // A recipient can reply as soon as delivery wakes it, before the handoff returns.
         // Keep this bounded metadata even on failure: a harness may already have seen the letter.
         self.heard(&envelope.id, envelope.hops);
-        let handed_over = self.hand_over(&reach, envelope.open(name(&peer))).await;
+        let handed_over = self.hand_over(&reach, envelope.open(name(&peer), access)).await;
         match handed_over {
             Ok(()) => {
                 remember(&mut locked(&self.taken), key, TAKEN_MAX);
@@ -191,10 +217,10 @@ impl Inner {
 
 #[cfg(test)]
 mod tests {
+    use super::super::testing::agent;
     use super::*;
     use crate::node::Node;
     use crate::types::{Connector, Letter, Sent};
-    use crate::wire::{Agent, AgentKind};
     use std::sync::Mutex;
     use std::task::{Context, Wake, Waker};
 
@@ -215,9 +241,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("codync-network-hops-{}", wire::random_hex(8)));
         let started = Node::start(&dir, &Connector::Private).await;
         let (node, mut inbox) = started.expect("start an isolated node");
-        node.set_agents(["sender", "recipient"].map(|id| {
-            (Agent { id: id.into(), name: id.into(), about: String::new(), kind: AgentKind::Codync }, Reach::App)
-        }));
+        node.set_agents(["sender", "recipient"].map(agent));
         let recipient = node.resolve("recipient").expect("local recipient");
         let letter = Letter::new("sender", recipient, "reply immediately").hops(3);
         let observer =

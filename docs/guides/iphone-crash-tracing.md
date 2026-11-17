@@ -17,7 +17,8 @@ Why it is built this way: [error tracking detail](../plans/error-tracking-detail
    macOS) runs `tools/upload-dsyms.py v<version>`: it finds the Xcode Cloud "Release" run on the
    tag's commit, downloads the run's archive and uploads every `.dSYM` in it with
    `posthog-cli dsym upload`. Each dSYM is stored under its binary's UUID. This happens while
-   the version waits for App Review, before the App Store releases it.
+   the version waits for App Review, before the App Store releases it. Then it
+   [checks the app](#a-crash-at-address-0-after-a-back-deployment-thunk) for weak imports from Foundation.
 3. **In PostHog.** Ingestion matches each frame's `image_addr` to a `$debug_images` entry, loads
    the dSYM with that `debug_id` and looks up `instruction_addr − image_addr`: the frame gets its
    function, file and line.
@@ -44,6 +45,38 @@ Versions before 2.19.2 sent `Codync + <offset>` frames without addresses; read t
   WHERE timestamp >= now() - INTERVAL 7 DAY AND properties.$session_id = '<session id>'
   ORDER BY timestamp
   ```
+
+## A crash at address 0 after a back deployment thunk
+
+A stack ending `back deployment thunk for …` → `??? + 0` (`pc: 0`, `EXC_BAD_ACCESS`; the device's own
+report may say CODESIGNING) means an SDK's `@backDeployed` API ran on an OS that reports the new version
+but lacks the symbol, such as an early beta seed. The thunk checks only the OS version, then calls the weak
+import, which is address 0. No code of ours has to change for this to start: the Xcode Cloud workflow builds
+with "Latest Release", so the next SDK arrives by itself. MetricKit may never report it, since a crash at
+launch can kill the app before anything is sent.
+
+[#350](https://github.com/leepokai/Codync/issues/350) was Xcode 27.2's `Date.<=` and `>=`, called from Clerk
+and from `CodyncUI`. `CodyncKit/DateComparisons.swift` defines both under Foundation's symbol names, so every
+call in the binary, a package's included, binds there and nothing is imported weakly.
+
+**Every release's archive is checked.** After uploading the dSYMs, `tools/upload-dsyms.py` runs
+`tools/check-ios-weak-imports.py` on the app and its extensions, and any weak import from Foundation turns the
+`iOS dSYMs` run red. It doesn't gate the release (`Submit iOS` runs on Linux, which has no `dyld_info`) and the
+version is already in App Review by then, so pull it back while it still waits. Weak imports from other
+frameworks aren't checked: most are ordinary `if #available` calls. Run by hand on a version built with Xcode 27.2
+before this fix, the workflow goes red after its upload.
+
+For any other archive, `python3 tools/check-ios-weak-imports.py <Codync.app>`. A local build on an older SDK
+always passes, so only an Xcode Cloud archive counts.
+
+**Reproduce it without the beta** on a Mac: `cp -cR` the SDK, then in the copy add the back-deployed
+declaration to `Foundation.swiftmodule/*.swiftinterface` (`@backDeployed(before:)` at or below the running OS,
+body as in the thunk's fallback) and its symbol to `Foundation.tbd`. Anything built against that copy
+(`swiftc -sdk`, or `xcodebuild … SDKROOT=<copy>`) gets the same thunk and, run on that OS, the same crash. On a
+simulator of that version, a Codync Dev signed in with `npm run phone-account` then crashes as #350 did, at
+sign-in, at every launch and after a reinstall. Keep the copy under `<name>.platform/Developer/SDKs/` with
+`Developer/usr` linked to Xcode's, or macro plugins aren't found (a simulator SDK looks in the sibling
+`iPhoneOS.platform`).
 
 ## Versions before 2.19.2, by hand
 

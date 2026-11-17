@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { devServerAddress, devServerClick, devServerMenuRows, devServerValue, type DevServer, type DevServerMenuRow, type DevServerSummary } from '@shared/dev-servers'
+import { devServerAddress, devServerAddressTitle, devServerClick, devServerMenuRows, devServerValue, type DevServer, type DevServerMenuRow, type DevServerSummary } from '@shared/dev-servers'
 import type { Bot } from '@shared/models'
 import { Button, IconButton, Spinner } from '../../components/Controls'
-import { AnchoredMenu, ModalHeader, Sheet, SheetPage, type MenuItem } from '../../components/Overlay'
+import { ModalHeader, Sheet, SheetPage } from '../../components/Overlay'
+import { AnchoredMenu, type MenuItem } from '../../components/Menu'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
@@ -55,15 +56,12 @@ function Row({ bot, server, showLogs }: { bot: Bot; server: DevServer; showLogs:
   const clicked = () => {
     const click = devServerClick(server, onThisComputer)
     switch (click.kind) {
-      case 'open':
-        analytics.track({ event: 'dev_server_action', action: 'open' })
-        window.codync.app.openExternal(click.address)
-        return
+      case 'open': return openAddress(click.address)
       case 'logs': return showLogs()
       case 'menu': return setMenu(true)
     }
   }
-  const items = () => menuItems(bot, server, devServerAddress(server, onThisComputer), store, showLogs)
+  const items = () => menuItems(bot, server, onThisComputer, store, showLogs)
   return (
     <HStack className="dev-server-row">
       <button className="dev-server-open" title={tooltip(server, tr)} onClick={clicked}>
@@ -90,12 +88,19 @@ function tooltip(server: DevServer, tr: (text: string) => string): string {
   return `${server.command}${code}`
 }
 
-function menuItems(bot: Bot, server: DevServer, address: string | null, store: BotStore, showLogs: () => void): MenuItem[] {
+function openAddress(address: string) {
+  analytics.track({ event: 'dev_server_action', action: 'open' })
+  window.codync.app.openExternal(address)
+}
+
+function menuItems(bot: Bot, server: DevServer, onThisComputer: boolean, store: BotStore, showLogs: () => void): MenuItem[] {
+  const address = devServerAddress(server, onThisComputer)
   const copyAddress = (local: string) => {
     analytics.track({ event: 'dev_server_action', action: 'copy' })
     window.codync.app.copy(address ?? local)
   }
   const item = (row: DevServerMenuRow, divider: boolean): MenuItem => {
+    if (typeof row === 'object') return { title: devServerAddressTitle(row.open), icon: 'arrow.up.right', verbatim: true, action: () => openAddress(row.open) }
     switch (row) {
       case 'copyAddress':
         // Elsewhere, a server that listens on its computer only can't be opened from here.
@@ -119,7 +124,7 @@ function menuItems(bot: Bot, server: DevServer, address: string | null, store: B
         return { title: 'Remove', icon: 'trash', destructive: true, divider, action: () => store.devServers.act('devServerRemove', bot.id, server.id) }
     }
   }
-  return devServerMenuRows(server).map((row, index) => item(row, index > 0))
+  return devServerMenuRows(server, onThisComputer).map((row, index) => item(row, index > 0))
 }
 
 function Logs({ bot, server }: { bot: Bot; server: DevServer }) {

@@ -6,7 +6,7 @@ Ask the bot, in its chat:
 
 > Run this site so I can look at it.
 
-The bot starts it with Codync's built-in dev server tool. You get an approval card with the command and folder first, unless the bot's **Permissions** are set to **Approve automatically**. The bot's reply has the address.
+The bot starts it with Codync's built-in dev server tool. You get an approval card with the command and folder first, unless the bot's **Permissions** are set to **Approve automatically**. While it works on a message from another computer that your network rules hold to Auto or Ask, it can't start one at all, and no card appears: [choose who reaches your bots](/docs/teamwork#choose-who-reaches-your-bots). The bot's reply has the address.
 
 A dev server runs on your computer, as you, with your files and network. It isn't isolated from anything else on your computer.
 
@@ -20,8 +20,8 @@ A running server's port shows at the top of the bot's chat: `:5173`, or `:5173 +
 
 For the list, open the bot's details:
 
-- **iPhone and Android:** tap the bot's name at the top of the chat. **Dev servers** is first on the page.
-- **Desktop:** click the bot's name at the top of the chat. **Dev servers** is first on the **Details** tab.
+- **iPhone and Android:** tap the bot's name at the top of the chat. **Dev servers** is on the **Details** tab, after the routines.
+- **Desktop:** click the bot's name at the top of the chat. **Dev servers** is on the **Details** tab, after the routines.
 - **Terminal UI:** click the port, or type `/servers`.
 
 ## Open, stop and restart
@@ -39,6 +39,8 @@ A server's command and logs show in your apps, on all your devices. Keep secrets
 ## Open one from your phone
 
 Most dev servers listen only on the computer they run on, so a phone can't reach them, and the menu says **Only reachable on the computer**. To open one from your phone, ask the bot to run it on all interfaces (for Vite, `npm run dev -- --host`). Your phone must be able to reach your computer directly, on the same Wi-Fi or over Tailscale.
+
+A tap opens the first address your computer has. If that one doesn't load (it's a Tailscale address and this device isn't on Tailscale), the **⋯** menu lists every address to try. The desktop app does the same for a computer attached over SSH, and the terminal UI shows them all.
 
 On all interfaces, anyone who can reach your computer on that network can open the server, and most dev servers have no sign-in. On shared Wi-Fi or a machine with a public address, that means strangers. Stay on Tailscale there, with a firewall that keeps the port closed elsewhere, or keep the default and open the server on the computer.
 

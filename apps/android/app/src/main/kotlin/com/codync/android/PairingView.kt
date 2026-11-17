@@ -139,7 +139,7 @@ private enum class ComputerOS { Mac, Linux }
                     }
                 }
                 // The same account is what lets this phone find the computer afterwards.
-                if (email != null) Text(tr("Sign in there with {email} and it shows up here.").replace("{email}", email),
+                if (email != null) Text(tr("Sign in there with {email} and add it to your account, and it shows up here.").replace("{email}", email),
                     style = Type.subheadline, color = Palette.secondary)
             }
             SegmentedChoice(os, listOf(ComputerOS.Mac to "Mac", ComputerOS.Linux to "Linux"), choose)
@@ -267,15 +267,18 @@ private enum class ComputerOS { Mac, Linux }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(tr(error.orEmpty()), style = Type.footnote, color = Palette.danger)
                 // The usual cause: the phone has no road to the computer yet.
-                if (state.pairingUnreachable) IconLabel("Check that this phone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer.",
+                if (state.pairingUnreachable) IconLabel(if (state.account.userId != null) "Check that this phone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer."
+                    else "Check that this phone and the computer are on the same Wi-Fi or both on Tailscale.",
                     "wifi.exclamationmark", Palette.secondary)
+                if (state.pairingUnreachable) IconLabel("Also check that the Wi-Fi isn't a guest network, and that no firewall on the computer blocks Codync.",
+                    "lock.shield", Palette.secondary)
             }
         }
         // Signed in, account computers show up in Computers, where a tap asks one for access.
         if (state.account.configured && state.account.userId == null) SignInButtons(state, store)
         // How it connects is never a choice here: every paired computer gets every route.
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            IconLabel(pairingLine(pasted, BuildConfig.URL_SCHEME), "lock.fill")
+            IconLabel(pairingLine(pasted, BuildConfig.URL_SCHEME, state.account.userId != null), "lock.fill")
             if (tailscale) IconLabel("Tailscale is on: Codync connects over it directly.", "checkmark.circle.fill")
             else IconLabel("Use Tailscale? Direct and faster away from home.", "arrow.up.right",
                 modifier = Modifier.plainButton { uri.open("https://tailscale.com/download", OutboundLink.Tailscale) })

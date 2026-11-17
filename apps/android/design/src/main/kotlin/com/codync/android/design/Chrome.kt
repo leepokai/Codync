@@ -176,3 +176,7 @@ private val TAB_WIDTH = 90.dp
     val (source, pressed) = rememberPress()
     return clickable(source, null, enabled = enabled, role = role, onClick = action).graphicsLayer { alpha = if (pressed) 0.6f else 1f }
 }
+
+/** A quiet "Beta" pill beside a feature still in beta (Network, Codync Cloud; iOS `BetaTag`). */
+@Composable fun BetaTag() = Text(tr("Beta"), style = Type.caption.semibold, color = Palette.secondary,
+    modifier = Modifier.clip(Capsule()).background(Palette.bubbleAgent).padding(horizontal = 7.dp, vertical = 2.dp))

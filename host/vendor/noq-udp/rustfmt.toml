@@ -1,0 +1,2 @@
+# Upstream formatting, not the host workspace rules.
+edition = "2024"

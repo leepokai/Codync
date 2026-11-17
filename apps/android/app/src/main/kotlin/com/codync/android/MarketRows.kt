@@ -106,6 +106,15 @@ private val AGENT_TINTS = mapOf("claude-acp" to 0xFFD97857, "gemini" to 0xFF9178
     "mistral-vibe" to 0xFFFA520F, "qwen-code" to 0xFF615CED, "amp-acp" to 0xFFF24F40, "kiro" to 0xFF8F45FF,
     "cortex-code" to 0xFF29B5E8, "omp" to 0xFF9C4DFF, "dsh" to 0xFF4D6BFE)
 
+/** A cloud provider's logo by the cloud's id for it (`boat`), Boat in its brand blue (in dark mode too, like the agents'
+ * tints); the cloud symbol for a provider this app doesn't know. */
+@Composable internal fun ProviderIcon(provider: String, size: Dp) {
+    val tint = if (provider == "boat") Color(0xFF263FA9) else Palette.text
+    val res = providerIconRes(provider)
+    if (res != null) Image(painterResource(res), null, Modifier.size(size).clearAndSetSemantics {}, colorFilter = ColorFilter.tint(tint))
+    else Symbol("cloud", size = size, tint = tint)
+}
+
 /** Placeholder rows while a list loads, shaped like the real ones. */
 @Composable internal fun SkeletonRows() {
     val dim by rememberInfiniteTransition(label = "Skeleton").animateFloat(1f, 0.5f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "Dim")
@@ -168,12 +177,21 @@ internal fun serviceDomain(website: String?, name: String, registryName: String?
 @Composable internal fun SkillGlyph() = TileIcon("book.pages")
 
 /** Text that opens a web page (iOS `WebLink`). */
-@Composable internal fun WebLink(title: String, url: String, style: androidx.compose.ui.text.TextStyle = Type.body) {
+@Composable internal fun WebLink(
+    title: String,
+    url: String,
+    style: androidx.compose.ui.text.TextStyle = Type.body,
+    /** Runs once the page opened (an analytics event). */
+    opened: () -> Unit = {},
+) {
     val uri = LocalUriHandler.current
     var failed by remember { mutableStateOf(false) }
     val label = tr(title)
     Text(if (failed) "$label (couldn't open the browser)" else label,
-        Modifier.plainButton { failed = runCatching { uri.openUri(url) }.isFailure }, style = style.copy(textDecoration = TextDecoration.Underline),
+        Modifier.plainButton {
+            failed = runCatching { uri.openUri(url) }.isFailure
+            if (!failed) opened()
+        }, style = style.copy(textDecoration = TextDecoration.Underline),
         color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
 }
 

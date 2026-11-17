@@ -126,15 +126,18 @@ private enum class AccessPhase { Renew, Asking, Code, Approved, Failed, Ended }
     }
 }
 
-/** The pending access request over the tabs: approve on that computer, or cancel. */
-@Composable internal fun AccessBanner(ticket: AccessTicket, name: String, cancel: () -> Unit) {
+/** The pending access request over the tabs: approve on that computer, or cancel. A cloud computer approves by itself. */
+@Composable internal fun AccessBanner(ticket: AccessTicket, name: String, cloud: Boolean = false, cancel: () -> Unit) {
     Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedRectangle(16.dp)).background(Palette.bubbleAgent)
         .padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Spinner(16.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(tr("Approve on $name"), style = Type.subheadline.medium, color = Palette.text)
-            Text("${tr("Code")} ${ticket.code.take(3)} ${ticket.code.takeLast(3)}", style = Type.footnote.monospacedDigit, color = Palette.secondary)
+            if (cloud) Text(tr("Connecting to {name}…").replace("{name}", name), style = Type.subheadline.medium, color = Palette.text)
+            else {
+                Text(tr("Approve on $name"), style = Type.subheadline.medium, color = Palette.text)
+                Text("${tr("Code")} ${ticket.code.take(3)} ${ticket.code.takeLast(3)}", style = Type.footnote.monospacedDigit, color = Palette.secondary)
+            }
         }
         IconButton("Cancel request", "xmark", action = cancel)
     }

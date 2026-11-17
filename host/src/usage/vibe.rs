@@ -123,7 +123,7 @@ fn token_count(value: &Value) -> Option<f64> {
 fn message_time(value: &Value) -> Option<i64> {
     let stamp = ["created_at", "timestamp"].iter().find_map(|key| value.get(*key).filter(|v| !v.is_null()))?;
     if let Some(text) = stamp.as_str() {
-        return chrono::DateTime::parse_from_rfc3339(text).ok().map(|t| t.timestamp_millis());
+        return super::iso_ms(text);
     }
     let n = stamp.as_i64().or_else(|| stamp.as_f64().and_then(super::finite_i64))?;
     Some(if n > 100_000_000_000 { n } else { n.saturating_mul(1000) })

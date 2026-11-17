@@ -5,7 +5,9 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
-use super::super::app::{App, Bot, Click, Focus, Mark, RosterLine, Status, cursor_line, roster_lines, stops};
+use super::super::app::{
+    App, Bot, Click, Focus, Mark, RosterLine, Status, WorkStatus, counts, cursor_line, roster_lines, stops,
+};
 use super::super::l10n::tr;
 use super::super::md::{self, truncate, width as w};
 use super::buffer::{fill, hline, put, put_line, restyle, rput, u};
@@ -76,8 +78,9 @@ pub(super) fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
             RosterLine::Label(l) => {
                 put(buf, x0 + 1, yy, wd, l, t.dim.add_modifier(Modifier::BOLD));
             }
-            RosterLine::Section { name, bots: count, unread, folded, .. } => {
-                section_row(buf, Rect::new(x0, yy, wd, 1), cursor_bar, name, *count, *unread, *folded);
+            RosterLine::Section { name, bots: count, unread, waiting, folded, .. } => {
+                let badge = (*folded && *unread > 0).then(|| (*unread, badge_style(*waiting)));
+                section_row(buf, Rect::new(x0, yy, wd, 1), cursor_bar, name, *count, badge, *folded);
             }
             RosterLine::Bot(b) => bot_row(buf, Rect::new(x0, yy, wd, 2), app, b, cursor_bar),
         }
@@ -100,20 +103,34 @@ fn extent(line: &RosterLine<'_>) -> (u16, u16) {
 
 /// A section's label row, `▾ name (bots)`: the name is cut so `(bots)` and a gap before the unread
 /// badge (shown while folded) always fit.
-fn section_row(buf: &mut Buffer, row: Rect, bar: Option<Style>, name: &str, bots: usize, unread: i64, folded: bool) {
+fn section_row(
+    buf: &mut Buffer,
+    row: Rect,
+    bar: Option<Style>,
+    name: &str,
+    bots: usize,
+    unread: Option<(i64, Style)>,
+    folded: bool,
+) {
     let t = theme();
     if let Some(bar) = bar {
         mark_cursor(buf, row, bar);
     }
-    let badge = if folded && unread > 0 { format!(" {unread} ") } else { String::new() };
+    let badge = unread.map_or_else(String::new, |(n, _)| format!(" {n} "));
     let room = usize::from(row.width.saturating_sub(2)).saturating_sub(w(&badge) + usize::from(!badge.is_empty()));
     let tail = format!(" ({bots})");
     let name = truncate(name, room.saturating_sub(2 + w(&tail)));
     let label = format!("{} {name}{tail}", if folded { "▸" } else { "▾" });
     put(buf, row.x + 1, row.y, u(room), &label, t.dim.add_modifier(Modifier::BOLD));
-    if !badge.is_empty() {
-        rput(buf, row.right() - 1, row.y, &badge, t.btn_primary);
+    if let Some((_, style)) = unread {
+        rput(buf, row.right() - 1, row.y, &badge, style);
     }
+}
+
+/// An unread badge's colours: amber while it counts a card waiting on the user (the needs-you mark's colour).
+fn badge_style(waiting: bool) -> Style {
+    let t = theme();
+    if waiting { t.amber.add_modifier(Modifier::REVERSED | Modifier::BOLD) } else { t.btn_primary }
 }
 
 /// A bot's two rows: avatar, name, status glyph and time, then its preview and unread badge; the
@@ -125,7 +142,7 @@ fn bot_row(buf: &mut Buffer, row: Rect, app: &mut App, b: &Bot, bar: Option<Styl
         mark_cursor(buf, row, bar);
     }
     put_line(buf, x0 + 2, y, 2, &avatar(app, b));
-    let (g, gs) = glyph(app, b.mark());
+    let (g, gs) = glyph(app, b.roster_mark());
     let time = if b.status == Status::Working { elapsed(b.started_at) } else { when(b.last_at) };
     let tx = rput(buf, row.right() - 1, y, &time, if b.unread > 0 { t.bold } else { t.dim });
     let gx = tx.saturating_sub(2);
@@ -142,7 +159,7 @@ fn bot_row(buf: &mut Buffer, row: Rect, app: &mut App, b: &Bot, bar: Option<Styl
     let room = usize::from(row.width.saturating_sub(7)).saturating_sub(w(&badge) + usize::from(!badge.is_empty()));
     put(buf, x0 + 5, y + 1, u(room), &truncate(&pv, room), ps);
     if !badge.is_empty() {
-        rput(buf, row.right() - 1, y + 1, &badge, t.btn_primary);
+        rput(buf, row.right() - 1, y + 1, &badge, badge_style(b.waiting > 0));
     }
 }
 
@@ -159,21 +176,26 @@ pub(super) fn preview(b: &Bot) -> (String, Style) {
 
 fn preview_raw(b: &Bot) -> (String, Style) {
     let t = theme();
+    // The most pressing first: it needs the user (its chat, then an item of its box), what its chat does, how many
+    // items work and wait; else the row reads as usual.
+    let background = counts(&b.work);
     match b.mark() {
         Mark::Need => (
-            if b.activity.is_empty() { tr("Needs your approval").into_owned() } else { tr(&b.activity).into_owned() },
+            if b.activity.is_empty() { tr("Needs approval").into_owned() } else { tr(&b.activity).into_owned() },
             t.amber,
         ),
+        _ if b.work.iter().any(|i| i.status == WorkStatus::NeedsYou) => (tr("Needs you").into_owned(), t.amber),
         Mark::Work => (
             if b.activity.is_empty() { tr("Working…").into_owned() } else { tr(&b.activity).into_owned() },
             t.secondary,
         ),
+        _ if !background.is_empty() => (background, t.secondary),
         Mark::Error => (
             if b.last_message.is_empty() { tr("Something went wrong").into_owned() } else { b.last_message.clone() },
             t.red,
         ),
         Mark::Unread => (b.last_message.clone(), t.text),
-        Mark::Idle if b.last_message.is_empty() => (tr("No messages yet").into_owned(), t.dim),
+        Mark::Idle if b.last_message.is_empty() => (tr("No messages yet.").into_owned(), t.dim),
         Mark::Idle => (b.last_message.clone(), t.secondary),
     }
 }
@@ -204,12 +226,13 @@ pub(super) fn compact_roster(buf: &mut Buffer, r: Rect, app: &mut App) {
             mark_cursor(buf, row, if app.focus == Focus::Roster { t.bold } else { t.secondary });
         }
         match &lines[i] {
-            RosterLine::Section { bots: count, unread, .. } => {
-                compact_section(buf, row, *count, (*unread > 0).then(|| glyph(app, Mark::Unread)));
+            RosterLine::Section { bots: count, unread, waiting, .. } => {
+                let mark = if *waiting { Some(Mark::Need) } else { (*unread > 0).then_some(Mark::Unread) };
+                compact_section(buf, row, *count, mark.map(|m| glyph(app, m)));
             }
             RosterLine::Bot(b) => {
                 put_line(buf, r.x + 1, y, 2, &avatar(app, b));
-                let (g, gs) = glyph(app, b.mark());
+                let (g, gs) = glyph(app, b.roster_mark());
                 put(buf, r.x + 3, y, 1, g, gs);
                 if b.lead && y + 1 < r.bottom() {
                     put(buf, r.x + 2, y + 1, 1, "★", t.amber);
@@ -221,7 +244,8 @@ pub(super) fn compact_roster(buf: &mut Buffer, r: Rect, app: &mut App) {
     }
 }
 
-/// A folded section in the compact strip: `▸`, its bot count and the unread glyph if it has unread.
+/// A folded section in the compact strip: `▸`, its bot count and the needs-you glyph if its unread count a card
+/// waiting on the user, else the unread glyph if it has unread.
 fn compact_section(buf: &mut Buffer, row: Rect, bots: usize, unread: Option<(&str, Style)>) {
     let t = theme();
     let x = put(buf, row.x + 1, row.y, 1, "▸", t.dim);
@@ -247,9 +271,48 @@ mod tests {
     fn a_long_section_name_gives_way_to_the_count_and_leaves_a_gap_before_the_badge() {
         let row = Rect::new(0, 0, 24, 1);
         let mut buf = Buffer::empty(row);
-        section_row(&mut buf, row, None, &"n".repeat(40), 12, 7, true);
+        section_row(&mut buf, row, None, &"n".repeat(40), 12, Some((7, badge_style(true))), true);
         let text = (0..row.width).map(|x| buf[(x, 0)].symbol()).collect::<String>();
         assert_eq!(text, " ▸ nnnnnnnnnn… (12)  7  ");
+        // It counts a card waiting on the user (#366): the needs-you colour, not the plain badge's.
+        assert_eq!(buf[(row.width - 2, 0)].fg, badge_style(true).fg.expect("amber"));
+        assert_ne!(badge_style(true), badge_style(false));
+    }
+
+    #[test]
+    fn a_row_is_marked_by_how_the_bot_stands_outside_its_chat() {
+        let bot = |more: serde_json::Value| {
+            let mut bot = serde_json::json!({"id": "a", "status": "idle", "unread": 2});
+            bot.as_object_mut().expect("an object").extend(more.as_object().cloned().unwrap_or_default());
+            Bot::parse(&bot).expect("a bot with an id parses")
+        };
+        let background = bot(serde_json::json!({"outside": {"status": "working", "startedAt": 5}}));
+        assert_eq!((background.roster_mark(), background.mark()), (Mark::Work, Mark::Unread), "only its box works");
+        let asked = bot(serde_json::json!({"status": "working", "outside": {"status": "needsInput"}}));
+        assert_eq!((asked.roster_mark(), asked.mark()), (Mark::Need, Mark::Work), "an item waits on a card");
+        assert_eq!(bot(serde_json::json!({"outside": {"status": "idle"}})).roster_mark(), Mark::Unread);
+        let older = bot(serde_json::json!({"status": "needsInput"}));
+        assert_eq!(older.roster_mark(), Mark::Need, "a host before `outside`: the chat's own status");
+        assert_eq!(bot(serde_json::json!({"outside": {"status": "napping"}})).roster_mark(), Mark::Unread, "unknown");
+    }
+
+    #[test]
+    fn a_row_previews_the_most_pressing_thing_first() {
+        let line = |status: &str, items: &[&str]| {
+            let work: Vec<_> =
+                items.iter().map(|s| serde_json::json!({"id": s, "title": "Fix login", "status": s})).collect();
+            let bot = serde_json::json!({"id": "a", "status": status, "lastMessage": "On it.", "work": work});
+            preview(&Bot::parse(&bot).expect("a bot with an id parses")).0
+        };
+        assert_eq!(line("idle", &["working", "working", "waiting", "waiting", "waiting"]), "2 working · 3 waiting");
+        assert_eq!(line("idle", &["working", "done"]), "1 working", "either part alone when the other is zero");
+        assert_eq!(line("idle", &["waiting", "waiting", "failed"]), "2 waiting");
+        assert_eq!(line("needsInput", &["needsYou", "working"]), "Needs approval", "the chat's own card first");
+        assert_eq!(line("idle", &["working", "needsYou", "waiting"]), "Needs you", "then an item that needs you");
+        assert_eq!(line("working", &["working", "needsYou"]), "Needs you");
+        assert_eq!(line("working", &["working", "waiting"]), "Working…", "then the chat's own activity");
+        assert_eq!(line("idle", &["done", "stopped", "later"]), "On it.", "nothing live or waiting: the last message");
+        assert_eq!(line("idle", &[]), "On it.", "a host from before the box");
     }
 
     #[test]

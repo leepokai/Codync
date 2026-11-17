@@ -2,6 +2,7 @@ package com.codync.android
 
 import com.codync.android.core.*
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
@@ -25,6 +26,14 @@ data class AccountContext(
     val approvedAccess: Map<String, String> = emptyMap(),
     /** Account computers an access request is being sent to. */
     val asking: Set<String> = emptySet(),
+    /** The account's Codync Cloud computers and whether it may have them (Computers → Codync Cloud); null until asked. */
+    val cloudOffer: CloudOffer? = null,
+    /** Codync Cloud sheets open (New cloud computer, a provider's key over it), each showing the account's error itself. */
+    val cloudSheets: Int = 0,
+    /** Computers → Codync Cloud's card is on screen, showing its cloud computers' errors itself. */
+    val cloudCardShown: Boolean = false,
+    /** The Codync cloud asked this app version to update (`426 appUpdateRequired`), with its reason. */
+    val appFloor: String? = null,
     val tasks: Boolean = true,
     val setupComplete: Boolean = false,
     val loading: Boolean = true,
@@ -33,12 +42,18 @@ data class AccountContext(
     val pairingCheck: String? = null,
     /** The last pairing failed because the phone couldn't reach the computer (not a refusal): the network hint helps. */
     val pairingUnreachable: Boolean = false,
+    /** Chose to go on without signing in; signing in or starting over ends it (iOS `withoutAccount`). */
+    val withoutAccount: Boolean = false,
+    /** Computers asked from here to join this account, with the code they show meanwhile. */
+    val addingToAccount: Map<String, String> = emptyMap(),
     /** This phone's computers, in the order it shows them. */
     val computers: List<Computer> = emptyList(),
     /** The computer whose lead "Talk to Codync" calls; null is Automatic (iOS `shortcutLeadComputer`). */
     val shortcutLeadComputer: String? = null,
-    /** Text another app shared, waiting for a bot to go to. */
-    val sharing: String? = null,
+    /** What another app shared, waiting for a bot to go to. */
+    val sharing: SharedContent? = null,
+    /** The chats shares went to, most recent first: the share sheet's Recent (iOS `shareRecipients`). */
+    val shareRecipients: List<ShareRecipient> = emptyList(),
     /** The open chat's computer was removed: the chat's place shows that until Back (iOS `ChatScreen`). */
     val removedChat: Boolean = false,
     /** The computer the Usage sheet and widget show: the last one a chat was opened or sent on. */
@@ -47,9 +62,14 @@ data class AccountContext(
     val navigationPage: LinkPage = LinkPage.Bots,
     val busy: Set<String> = emptySet(),
     val error: String? = null,
+    /** The [AccountStore.action] key [error] came from, when it came from one. */
+    val failedAction: String? = null,
 ) {
     /** The computer Usage acts on: the last active one, else the first. */
     val currentComputerId: String? get() = computers.currentId(lastComputerId)
+
+    /** Codync Cloud runs this account computer: its provider, region and whether it's asleep. */
+    internal fun cloudOf(computerId: String?): CloudPlacement? = cloudComputers.firstOrNull { it.computerId == computerId }?.cloud
 }
 
 /** One computer as the UI renders it (iOS `BotStore`); its `AppStore` owns the only writer. */
@@ -76,14 +96,23 @@ data class AppState(
     val selectedBot: String? = null,
     /** A call to start in this bot's chat once it shows ("Talk to Codync"). */
     val callRequest: String? = null,
+    /** A bot whose details open over its chat once it shows, at the thread of the item named (null: its Details page): a heading or a row of the view of all bots' work. */
+    val detailsRequest: Pair<String, String?>? = null,
+    /** A bot and the item of its whose card its chat brings into view once it holds it (a needs-you row of the view of all bots' work). */
+    val cardRequest: Pair<String, WorkItem>? = null,
     val trace: Boolean = false,
     val busy: Set<String> = emptySet(),
-    val historyComplete: Set<String> = emptySet(),
+    /** Chats that page back no further, and why: their earlier row is dropped. */
+    val historyEnd: Map<String, HistoryEnd> = emptyMap(),
     val routines: Map<String, RoutineListing> = emptyMap(),
     /** The computer's artifacts this phone has seen, with the HTML of the ones shown. */
     val artifacts: ArtifactCache = ArtifactCache(),
     /** Each chat's Library as last fetched, by chat ID (its artifacts as `artifacts` has them). */
     val library: Map<String, List<LibraryItem>> = emptyMap(),
+    /** The transcripts of the background tasks whose details are open, by task id; never part of [entries]. */
+    val taskEntries: Map<String, List<Entry>> = emptyMap(),
+    /** The user's messages to a thread on their way or refused, by item id, until the thread's transcript has them; in memory only, like the transcript. */
+    val threadSends: Map<String, List<PendingSend>> = emptyMap(),
     val plugins: PluginListing? = null,
     val voice: VoiceCallViewState? = null,
     /** The computer's remote screen (`null`: the host predates it). */
@@ -98,11 +127,21 @@ data class AppState(
     val signInCode: String? = null,
     /** The update this phone asked of a computer that's behind (`requestHostUpdate`). */
     val hostUpdate: HostUpdate? = null,
+    /** Codync Cloud runs this computer (the account's list says, `AccountStore.refreshCloud`): asleep isn't offline. */
+    val cloudHosting: CloudPlacement? = null,
+    /** The Codync cloud's emergency floor for this app version (`426 appUpdateRequired`), as the account last heard it. */
+    val appFloor: String? = null,
     val error: String? = null,
 ) {
+    /** The computer's home folder, which a folder on it shows as `~`; empty before its hello. */
+    internal val home: String get() = hello?.get("home")?.jsonPrimitive?.contentOrNull.orEmpty()
+
     /** Connection alone cannot make a cached roster current before event catch-up. */
     internal val widgetBotsCurrent: Boolean get() {
         val head = hello?.get("rev")?.jsonPrimitive?.longOrNull ?: return false
         return !loading && rosterLoaded && actualConnection is LinkState.Ready && mirrorRevision >= head
     }
 }
+
+/** Why a chat pages back no further: the computer has no older rows, or paging back no longer grows what the phone shows (its memory budget is spent). */
+enum class HistoryEnd { Complete, MemoryFull }

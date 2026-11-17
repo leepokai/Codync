@@ -8,6 +8,27 @@
   container: details / size;
 }
 
+/* The panel's two pages: what the tabs hold, and the thread a row opened. The thread slides in from the right while
+   the tabs' page leaves to the left; Back reverses it. The page under the thread stays as it was scrolled. */
+.details-page {
+  position: absolute;
+  inset: 0;
+  transition: transform var(--layout), opacity var(--layout);
+}
+.details-page.away {
+  transform: translateX(-28px);
+  opacity: 0;
+}
+.details-page.thread {
+  background: var(--background);
+  transform: translateX(28px);
+  opacity: 0;
+}
+.details-page.thread.shown {
+  transform: none;
+  opacity: 1;
+}
+
 /* The top band moves the window, like the chat's top chrome; the corner buttons stay clickable. */
 .details-drag {
   position: absolute;
@@ -92,6 +113,7 @@
 /* Every group in the inspector is an outlined card, like the routines; inputs take the fill. */
 .details-tab .card-section-rows {
   background: none;
+  --edge-fill: var(--background);
   border: 1px solid var(--border);
   border-radius: var(--radius-l);
 }

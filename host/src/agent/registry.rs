@@ -302,14 +302,34 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     })
 }
 
-/// Downloads + extracts a binary distribution into `~/.codync/agents/<id>/<version>`.
-async fn install_binary(agent: &Value, target: &Value, cmd: &Path, progress: &impl Fn(&str)) -> Result<PathBuf> {
+/// `~/.codync/agents/<id>/<version>`, where a binary distribution is unpacked.
+fn binary_dir(agent: &Value) -> Result<PathBuf> {
     let id = agent["id"].as_str().and_then(safe_component).ok_or_else(|| anyhow!("registry entry has a bad id"))?;
     let version = agent["version"].as_str().and_then(safe_component).unwrap_or("latest");
-    let dir = crate::service::data_dir().join("agents").join(id).join(version);
-    if tokio::fs::try_exists(dir.join(".installed")).await.unwrap_or(false) {
+    Ok(crate::service::data_dir().join("agents").join(id).join(version))
+}
+
+/// Starting this agent would first install its current build, and with it remove the one before.
+pub fn update_pending(agent: &Value) -> bool {
+    launch_kind(agent) == Some(Launch::Download) && binary_dir(agent).is_ok_and(|dir| !dir.join(".installed").exists())
+}
+
+/// Downloads + extracts a binary distribution into [`binary_dir`].
+async fn install_binary(agent: &Value, target: &Value, cmd: &Path, progress: &impl Fn(&str)) -> Result<PathBuf> {
+    // A sign-in check and a usage reading can start the same agent at once: installing side by side,
+    // each would delete the other's files.
+    // ponytail: one lock for every agent's install, as npx has. Per agent if one big download holding up another hurts.
+    static INSTALLING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let dir = binary_dir(agent)?;
+    let installed = async || tokio::fs::try_exists(dir.join(".installed")).await.unwrap_or(false);
+    if installed().await {
         return Ok(dir);
     }
+    let _one_at_a_time = INSTALLING.lock().await;
+    if installed().await {
+        return Ok(dir);
+    }
+    let id = agent["id"].as_str().unwrap_or("agent");
     let url = target["archive"].as_str().ok_or_else(|| anyhow!("registry entry has no archive"))?;
     if !url.starts_with("https://") {
         bail!("refusing a non-HTTPS download for {id}");

@@ -12,17 +12,35 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-/// Starts `backend` and completes `initialize`, trying each way to launch it.
-/// The agent's inbox must stay open: the reader stops when nobody listens.
-pub(super) type Started = (Arc<Acp>, mpsc::UnboundedReceiver<Incoming>, Value, Cmd);
+/// An agent past `initialize`.
+pub(crate) struct Started {
+    pub(crate) acp: Arc<Acp>,
+    /// Must stay open: the reader stops when nobody listens, and the agent then never answers.
+    pub(crate) inbox: mpsc::UnboundedReceiver<Incoming>,
+    /// Its answer to `initialize`.
+    pub(crate) init: Value,
+    pub(crate) cmd: Cmd,
+}
 
+/// Starts `backend` and completes `initialize`, trying each way to launch it.
 pub(super) async fn start(store: &Store, backend: &str) -> Result<Started> {
+    start_with(store, backend, None, &[]).await
+}
+
+/// [`start`] on `login_profile` (none: the computer's own login), with `extra` added to the agent's environment.
+pub(crate) async fn start_with(
+    store: &Store,
+    backend: &str,
+    login_profile: Option<&str>,
+    extra: &[(&str, &str)],
+) -> Result<Started> {
     let mut candidates = backends::launch_candidates(backend)?;
     // The installed CLI alone when there is one: resolving the registry build can mean a long download.
     if matches!(candidates.first(), Some(Candidate::Ready(_))) {
         candidates.truncate(1);
     }
-    let env = launch_env(store, backend)?;
+    let (mut env, mut grants) = launch_env(store, backend, login_profile)?;
+    env.extend(extra.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())));
     let dir = probe_dir();
     tokio::fs::create_dir_all(&dir).await?;
     let mut last = None;
@@ -60,34 +78,16 @@ pub(super) async fn start(store: &Store, backend: &str) -> Result<Started> {
             }),
         );
         match tokio::time::timeout(budget, init).await {
-            Ok(Ok(init)) => return Ok((acp, rx, init, cmd)),
-            Ok(Err(e)) => {
-                let why = std::iter::from_fn(|| rx.try_recv().ok()).find_map(|inc| match inc {
-                    Incoming::Closed { stderr_tail } => stderr_reason(&stderr_tail),
-                    _ => None,
-                });
-                last = Some(match why {
-                    Some(why) => e.context(why),
-                    None => e,
-                });
+            Ok(Ok(init)) => {
+                acp.hold(std::mem::take(&mut grants));
+                return Ok(Started { acp, inbox: rx, init, cmd });
             }
+            Ok(Err(e)) => last = Some(backends::explain_exit(backend, e, &mut rx).await),
             Err(_) => last = Some(anyhow!("the agent didn't start within {}s", budget.as_secs())),
         }
         acp.kill().await;
     }
     Err(last.unwrap_or_else(|| anyhow!("couldn't start the agent")))
-}
-
-/// The stderr line that says why the agent quit: an error line, else the last one that isn't a pretty-printed Node
-/// error's closing brace.
-fn stderr_reason(stderr_tail: &str) -> Option<String> {
-    let lines: Vec<&str> = stderr_tail.lines().map(str::trim).filter(|line| !line.is_empty()).collect();
-    lines
-        .iter()
-        .rev()
-        .find(|line| line.contains("Error"))
-        .or_else(|| lines.iter().rev().find(|line| !matches!(**line, "}" | "{" | "}," | "]" | "[")))
-        .map(|line| (*line).to_owned())
 }
 
 /// Lets the agent sign itself in (it usually opens a browser on this computer).
@@ -98,20 +98,35 @@ pub async fn authenticate(store: &Store, backend: &str, method: &str) -> Result<
             .await
             .context("couldn't prepare WorkBuddy sign-in")?;
     }
-    let (acp, mut inbox, _, _) = start(store, backend).await?;
-    let res = tokio::time::timeout(Duration::from_mins(10), sign_in(&acp, &mut inbox, method)).await;
-    acp.kill().await;
-    match res {
-        Ok(r) => {
-            r.context("signing in")?;
-        }
-        Err(_) => bail!("Sign-in didn't finish within 10 minutes."),
-    }
+    let Started { acp, inbox, .. } = start(store, backend).await?;
+    finish_sign_in(acp, inbox, method).await?;
     // The browser flow finished. Ask the account again; a prompt refusal no longer overrides it.
     // Completing `authenticate` is not itself proof: WorkBuddy still answers the next prompt
     // with "Authentication required" when the account isn't usable.
     backends::clear_prompt_refused(backend);
     check(store, backend).await
+}
+
+/// Signs account login profile `id` in the way its agent does itself: the first sign-in it offers that it runs on its
+/// own (a browser on this computer). The caller checks what came of it.
+pub(crate) async fn authenticate_account(store: &Store, backend: &str, id: &str) -> Result<()> {
+    let Started { acp, inbox, init, cmd } = start_with(store, backend, Some(id), &[]).await?;
+    let own = |m: &super::Method| matches!(m.kind, super::MethodKind::Agent);
+    let Some(method) = super::methods(backend, &init, &cmd).into_iter().find(own) else {
+        acp.kill().await;
+        bail!("the agent offers no sign-in of its own");
+    };
+    finish_sign_in(acp, inbox, &method.id).await
+}
+
+/// Waits for the agent to finish sign-in `method`, then stops it.
+async fn finish_sign_in(acp: Arc<Acp>, mut inbox: mpsc::UnboundedReceiver<Incoming>, method: &str) -> Result<()> {
+    let res = tokio::time::timeout(Duration::from_mins(10), sign_in(&acp, &mut inbox, method)).await;
+    acp.kill().await;
+    match res {
+        Ok(r) => r.map(drop).context("signing in"),
+        Err(_) => bail!("Sign-in didn't finish within 10 minutes."),
+    }
 }
 
 /// The agent's answer to `authenticate`. A headless CLI that only posts its sign-in page (`WorkBuddy`'s) gets it
@@ -136,17 +151,5 @@ async fn sign_in(acp: &Acp, inbox: &mut mpsc::UnboundedReceiver<Incoming>, metho
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn stderr_reason_skips_a_closing_brace() {
-        let tail = "Error: Cannot find module '../dist/codebuddy'\nRequire stack:\n- /cli/bin/codebuddy\n  code: 'MODULE_NOT_FOUND'\n}\n";
-        assert_eq!(stderr_reason(tail).as_deref(), Some("Error: Cannot find module '../dist/codebuddy'"));
-        assert_eq!(stderr_reason("agent said no\n").as_deref(), Some("agent said no"));
     }
 }

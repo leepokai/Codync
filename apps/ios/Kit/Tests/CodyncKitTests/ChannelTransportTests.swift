@@ -138,6 +138,21 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     return nil
 }
 
+@Test(.timeLimit(.minutes(1))) func withNoRelayAnAddressFoundOnTheNetworkIsDialed() async throws {
+    let (dial, sockets) = fakeDialer()
+    var computer = v.computer
+    computer.cloud = nil
+    computer.urls = []
+    let t = ChannelTransport(computer: computer, identity: v.identity, pairingCode: nil, dial: dial, watchesNetwork: false,
+                             discovered: { _ in ["http://192.168.1.9:19222"] })
+    await t.start()
+    var socketIterator = sockets.makeAsyncIterator()
+    let socket = try #require(await socketIterator.next())
+    guard case let .direct(url) = socket.endpoint else { Issue.record("not direct"); return }
+    #expect(url.absoluteString == "ws://192.168.1.9:19222/channel?v=1")
+    await t.shutdown()
+}
+
 @Test(.timeLimit(.minutes(1))) func directChannelMultiplexesCallsAndStreams() async throws {
     let (dial, sockets) = fakeDialer()
     var computer = v.computer

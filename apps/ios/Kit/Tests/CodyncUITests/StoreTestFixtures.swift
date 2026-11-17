@@ -18,6 +18,8 @@ actor FakeRemote: RemoteTransport {
     private(set) var sent: [String] = []
     /// Each `send`'s quoted message, in order.
     private(set) var replyTos: [String?] = []
+    /// Each `send`'s selected part of the quoted message, in order.
+    private(set) var replyParts: [String?] = []
     private(set) var readReceipts: [Data] = []
     private var failReadReceipts = false
     private(set) var readAttempts = 0
@@ -46,10 +48,36 @@ actor FakeRemote: RemoteTransport {
 
     func setReadFailure(_ fail: Bool) { failReadReceipts = fail }
     private(set) var calls: [String] = []
+    /// What the newest call of each method carried, where it was all text.
+    private(set) var bodies: [String: [String: String]] = [:]
+    /// A method the computer refuses, with its sentence.
+    private var refusals: [String: String] = [:]
+    func refuse(_ method: String, _ sentence: String?) { refusals[method] = sentence }
     private var failures: [String: Int] = [:]
     /// The next `count` calls of `method` fail as if the link dropped under them.
     func fail(_ method: String, times count: Int) { failures[method] = count }
     private(set) var enqueued: [String] = []
+    /// Each `setUsageOrder`'s ids, in order.
+    private(set) var usageOrders: [[String]] = []
+    private var holdsUsageOrders = false
+    private var heldUsageOrders: [CheckedContinuation<Void, Never>] = []
+
+    /// While on, each `setUsageOrder` waits for `answerUsageOrder`; turning it off answers the ones waiting.
+    func holdUsageOrders(_ hold: Bool) {
+        holdsUsageOrders = hold
+        if !hold { while !heldUsageOrders.isEmpty { answerUsageOrder() } }
+    }
+
+    func answerUsageOrder() {
+        if !heldUsageOrders.isEmpty { heldUsageOrders.removeFirst().resume() }
+    }
+
+    private func receiveUsageOrder(_ body: Data) async {
+        let ids = (try? JSONSerialization.jsonObject(with: body) as? [String: [String]])?["ids"]
+        usageOrders.append(ids ?? [])
+        if holdsUsageOrders { await withCheckedContinuation { heldUsageOrders.append($0) } }
+    }
+
     var cancelResult = MailboxCancel.cancelled
 
     private var hello = #"{"hostId":"h1","name":"Mac","version":"3.0.0","os":"macos","backends":[],"rev":0}"#
@@ -78,6 +106,8 @@ actor FakeRemote: RemoteTransport {
         guard !isShutdown else { throw HostError.unreachable }
         calls.append(method)
         record(.called(method))
+        bodies[method] = (try? JSONSerialization.jsonObject(with: body)) as? [String: String]
+        if let sentence = refusals[method] { throw HostError.http(400, sentence) }
         if let left = failures[method], left > 0 {
             failures[method] = left - 1
             throw HostError.unreachable
@@ -94,12 +124,15 @@ actor FakeRemote: RemoteTransport {
             let b = (try JSONSerialization.jsonObject(with: body) as? [String: String]) ?? [:]
             sent.append(b["text"] ?? "")
             replyTos.append(b["replyTo"])
+            replyParts.append(b["replyPart"])
             let entry = #"{"id":"e\#(sent.count)","seq":\#(sent.count),"botId":"\#(b["botId"] ?? "")","rev":\#(sent.count),"kind":"user","turn":1,"data":{"text":"\#(b["text"] ?? "")","clientNonce":"\#(b["clientNonce"] ?? "")"},"createdAt":1,"updatedAt":1}"#
             return Data(#"{"entry":\#(entry)}"#.utf8)
         case "startCall":
             // A fresh credential per provider session, so a test can tell a replaced session from the first.
             let n = calls.filter { $0 == "startCall" }.count
             return Data(#"{"instructions":"Be the relay.","tools":[],"credential":"token-\#(n)"}"#.utf8)
+        case "setUsageOrder":
+            return Data(#"{"providers":[]}"#.utf8)
         case "createBot", "updateBot":
             // The host's reply bot, which never carries a custom icon (icons sync on their own).
             let id = (try JSONSerialization.jsonObject(with: body) as? [String: Any])?["id"] as? String ?? "new"
@@ -110,7 +143,8 @@ actor FakeRemote: RemoteTransport {
     }
 
     nonisolated func call(_ method: String, body: Data, timeout: TimeInterval) async throws -> Data {
-        try await respond(method, body)
+        if method == "setUsageOrder" { await receiveUsageOrder(body) }
+        return try await respond(method, body)
     }
 
     private func addEvents(_ c: AsyncThrowingStream<Data, Error>.Continuation) {
@@ -132,13 +166,22 @@ actor FakeRemote: RemoteTransport {
         AsyncStream { c in Task { await self.addState(c) } }
     }
 
-    nonisolated func computerUpdates() -> AsyncStream<Computer> { AsyncStream { _ in } }
+    private var computerSinks: [AsyncStream<Computer>.Continuation] = []
+    private func addComputer(_ c: AsyncStream<Computer>.Continuation) { computerSinks.append(c) }
+    /// What the host's `hello` says about the computer, once the link is up.
+    func emit(_ computer: Computer) {
+        for s in computerSinks { s.yield(computer) }
+    }
+
+    nonisolated func computerUpdates() -> AsyncStream<Computer> {
+        AsyncStream { c in Task { await self.addComputer(c) } }
+    }
 
     private var enqueueError: (any Error)?
     /// Every later `enqueue` throws `error`.
     func failEnqueue(_ error: any Error) { enqueueError = error }
 
-    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?) async throws {
+    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?, replyPart: String?, pasted: [String]?) async throws {
         if let enqueueError { throw enqueueError }
         enqueued.append(clientNonce)
     }

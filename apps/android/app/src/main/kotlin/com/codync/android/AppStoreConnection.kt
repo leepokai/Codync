@@ -74,7 +74,10 @@ fun AppStore.connect() {
                 showConnection(LinkState.Connecting)
                 val identity = withContext(Dispatchers.IO) { local.identity() }
                 val target = state.value.computer
-                val active = HostConnector.connect(target, identity)
+                // With no relay, a changed address can only be found on the network.
+                val found = if (target.cloud == null) LocalDiscovery.urls(application, target.id).filter { it !in target.urls } else emptyList()
+                val active = HostConnector.connect(target, identity, BuildConfig.VERSION_NAME, found)
+                if (found.isNotEmpty()) Analytics.capture(AnalyticsEvent.ComputerFoundOnNetwork)
                 connected = active
                 channel = active
                 coroutineScope {
@@ -100,29 +103,7 @@ fun AppStore.connect() {
                                 val hello = active.call("hello").jsonObject
                                 // This phone's picks (color, route, push) may have changed during those calls.
                                 changeComputer { current -> if (current.id == fromHost.id) fromHost.keepingDevicePicks(current) else current }
-                                val dropped = withContext(Dispatchers.IO) {
-                                    val mirror = requireNotNull(database)
-                                    val changed = mirror.setStamp(requireNotNull(hello["hostId"]?.jsonPrimitive?.content),
-                                        BuildConfig.VERSION_NAME + "/" + hello["version"]?.jsonPrimitive?.content)
-                                    mirror.applyIconReply(MirrorEvent.Icons(hello["icons"]?.let(::decodeCustomIcons).orEmpty(),
-                                        hello["iconsRevision"]?.jsonPrimitive?.longOrNull ?: 0), requireNotNull(iconEpoch))
-                                    changed
-                                }
-                                // Dropped chats page their earlier messages again.
-                                mutableState.update { it.copy(historyComplete = if (dropped) emptySet() else it.historyComplete) }
-                                noteHello(hello)
-                                if (asksToJoinAccount(hello)) joinAccount { claim ->
-                                    active.call("joinAccount", claim.json).jsonObject
-                                }
-                                // The event catch-up is ordered by revision; bot revisions can
-                                // follow hundreds of historical entries. Load the current roster
-                                // without moving the event cursor before consuming that stream.
-                                if (state.value.bots.isEmpty()) {
-                                    val roster = HostClient.bots(active)
-                                    if (BuildConfig.DEBUG) android.util.Log.d("CodyncSync", "Initial roster: ${roster.size} bots")
-                                    withContext(Dispatchers.IO) { requireNotNull(database).receive(roster) }
-                                }
-                                mutableState.update { it.copy(rosterLoaded = true) }
+                                adoptHello(active, hello, requireNotNull(iconEpoch))
                                 refresh()
                                 backoff = 1_000
                                 reconcileMailbox(active)
@@ -158,6 +139,34 @@ fun AppStore.connect() {
     }
 }
 
+/** What the conversation held was synced under: the host's store schema, or its version before it sent one. */
+internal fun conversationStamp(hello: JsonObject): String = hello.text("schema")?.let { "schema $it" } ?: hello.text("version").orEmpty()
+
+/** A new link's hello: the mirror lets go of what another host database or store schema left, and holds the current bots. */
+private suspend fun AppStore.adoptHello(active: EncryptedChannel, hello: JsonObject, iconEpoch: Long) {
+    val mirror = requireNotNull(database)
+    val hostVersion = hello.text("version")
+    val versions = BuildConfig.VERSION_NAME + "/" + hostVersion.orEmpty()
+    val dropped = withContext(Dispatchers.IO) {
+        val changed = mirror.setStamp(requireNotNull(hello.text("hostId")), conversationStamp(hello), hostVersion)
+        mirror.applyIconReply(MirrorEvent.Icons(hello["icons"]?.let(::decodeCustomIcons).orEmpty(),
+            hello["iconsRevision"]?.jsonPrimitive?.longOrNull ?: 0), iconEpoch)
+        changed
+    }
+    // Dropped chats page their earlier messages again.
+    mutableState.update { it.copy(historyEnd = if (dropped) emptyMap() else it.historyEnd) }
+    noteHello(hello)
+    // The event catch-up is ordered by revision; bot revisions can follow hundreds of historical entries. Load the
+    // current roster without moving the event cursor before consuming that stream. After an app or host update
+    // the bots held are read again; the conversation stays.
+    if (state.value.bots.isEmpty() || withContext(Dispatchers.IO) { mirror.rosterStale(versions) }) {
+        val roster = HostClient.bots(active)
+        if (BuildConfig.DEBUG) android.util.Log.d("CodyncSync", "Roster: ${roster.size} bots")
+        withContext(Dispatchers.IO) { mirror.receiveRoster(roster, versions) }
+    }
+    mutableState.update { it.copy(rosterLoaded = true) }
+}
+
 /** Drain available catch-up in bounded transactions, without delaying a lone live event. */
 private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Long): Unit = coroutineScope {
     val source = active.events(cursor).produceIn(this)
@@ -178,6 +187,9 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             refresh()
             receiveArtifacts(batch)
             receiveNetwork(batch)
+            receiveTasks(batch)
+            batch.filterIsInstance<MirrorEvent.Name>().lastOrNull()?.let { setHostName(it.name) }
+            batch.filterIsInstance<MirrorEvent.AutoOrder>().lastOrNull()?.let { showAutoOrder(it.enabled) }
             hearCalls(batch)
             acknowledgeVisible(readAfter(batch, state.value.readingChats))
             readChats(batch).forEach { NotificationDisplay.cancelAlert(application, local.referenceId, id, it) }
@@ -230,8 +242,12 @@ private fun AppStore.noteHello(hello: JsonObject) = mutableState.update {
     it.copy(hello = hello, unreadable = it.unreadable && same, hostUpdate = it.hostUpdate.takeIf { same })
 }
 
-/** The computer's [hello] asks this phone to finish bringing it into the account (iOS `BotStore.refreshHello`). */
-internal fun asksToJoinAccount(hello: JsonObject): Boolean = hello["joinAccount"]?.jsonPrimitive?.booleanOrNull == true
+/** The computer could join an account, so a signed-in phone may offer to add it (iOS `Hello.canJoinAccount`). */
+internal fun canJoinAccount(hello: JsonObject?): Boolean = hello?.get("canJoinAccount")?.jsonPrimitive?.booleanOrNull == true
+
+/** Whether this phone can offer to add a computer it reaches to its account (iOS `AccountStore.canAddToAccount`). */
+internal fun canAddToAccount(signedIn: Boolean, state: AppState): Boolean =
+    signedIn && state.connection is LinkState.Ready && canJoinAccount(state.hello)
 
 private fun AppStore.showConnection(link: LinkState) {
     mutableState.update { it.copy(actualConnection = link) }
@@ -248,13 +264,33 @@ private fun AppStore.showConnection(link: LinkState) {
     }
 }
 
+/**
+ * What waited on this phone, ready to go with the same nonces, oldest first. With no relay now ([cloud] is null), what a
+ * relay held can't be asked about, so it goes too.
+ */
+internal fun readyToSend(pending: List<PendingSend>, cloud: String?): List<PendingSend> =
+    pending.filter { it.status == SendStatus.Held || (it.status == SendStatus.Waiting && cloud == null) }
+        .sortedBy { it.createdAt }.map { it.copy(status = SendStatus.Sending) }
+
+/** Delivers [ready] one at a time, leaving out what was taken back while an earlier one was on its way ([stillPending]). */
+internal suspend fun deliverInTurn(ready: List<PendingSend>, stillPending: suspend (PendingSend) -> Boolean, deliver: suspend (PendingSend) -> Unit) {
+    for (send in ready) if (stillPending(send)) deliver(send)
+}
+
 private suspend fun AppStore.reconcileMailbox(active: EncryptedChannel) {
+    // What waited on this phone goes now, with the same nonces, also when the computer has joined an account since.
+    val cloud = state.value.computer.cloud
+    deliverInTurn(readyToSend(state.value.pending, cloud), { send ->
+        refresh() // A take-back may have reached the database and not yet the state.
+        state.value.pending.any { it.nonce == send.nonce }
+    }) { deliver(it) }
+    if (cloud == null) return
     if (active.route != HostRoute.Relay || state.value.pending.none { it.status in listOf(SendStatus.Waiting, SendStatus.Delivering) }) return
     try {
         val response = active.queued()
-        val held = response.getValue("items").jsonArray.associate { it.jsonObject.getValue("nonce").jsonPrimitive.content to it.jsonObject.getValue("state").jsonPrimitive.content }
+        val inRelay = response.getValue("items").jsonArray.associate { it.jsonObject.getValue("nonce").jsonPrimitive.content to it.jsonObject.getValue("state").jsonPrimitive.content }
         for (send in state.value.pending.filter { it.status in listOf(SendStatus.Waiting, SendStatus.Delivering) }) {
-            savePending(send.copy(status = when (held[send.nonce]) {
+            savePending(send.copy(status = when (inRelay[send.nonce]) {
                 "queued" -> SendStatus.Waiting
                 "delivering" -> SendStatus.Delivering
                 else -> SendStatus.Failed

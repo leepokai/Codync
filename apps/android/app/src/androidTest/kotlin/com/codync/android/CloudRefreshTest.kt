@@ -20,7 +20,7 @@ class CloudRefreshTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     private fun client(failure: IOException) =
-        CloudClient("https://cloud.invalid", DeviceIdentity(ByteArray(32) { 1 }, ByteArray(32) { 2 })) { throw failure }
+        CloudClient("https://cloud.invalid", DeviceIdentity(ByteArray(32) { 1 }, ByteArray(32) { 2 }), "2.24.0") { throw failure }
 
     private fun refresh(accounts: AccountStore, client: CloudClient?) = runBlocking(Dispatchers.Main) {
         withTimeout(10_000) { accounts.state.first { "cloud" !in it.busy } }

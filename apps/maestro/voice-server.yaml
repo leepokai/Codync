@@ -1,0 +1,62 @@
+# Voice chat settings show the OpenAI-compatible server the computer keeps for the OpenAI engine, read-only (it is
+# typed on the computer itself), and with one saved Speech is that engine's only mode (docs/features/voice-call.md).
+# The settings open from the composer: dictation with OpenAI and no key on the computer asks for one there.
+# The phone must already be signed in or paired with the host (a worktree's sandbox,
+# docs/guides/dev-app.md#worktree-sandboxes), and the computer must hold no OpenAI key; run it apart from `welcome`,
+# whose clearState undoes the pairing.
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags call \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - call
+onFlowComplete:
+  - runScript:
+      file: voice-server.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: voice-server.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      # Android asks for the microphone before it looks for the key.
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+          permissions:
+            microphone: allow
+# A phone can take longer to reconnect after its launch than a tap waits.
+- extendedWaitUntil:
+    visible: ${output.bot.name}
+    timeout: 60000
+- tapOn: ${output.bot.name}
+- tapOn: "Dictation engine"
+- tapOn: "OpenAI"
+- runScript:
+    file: voice-server.js
+    env:
+      STEP: server
+- tapOn: "Dictate"
+# Dictation's own section: the server beside the key, for speech to text.
+- assertVisible: "Server"
+- assertVisible: "https://.*\\.speech\\.example\\.com"
+# The call engine's picker; the composer's menu is closed.
+- tapOn: "On device"
+- tapOn: "OpenAI"
+- assertVisible: "Your own server works in Speech mode only\\."
+- assertNotVisible: "Realtime"
+- takeScreenshot: voice-server
+# Back to the phone's own speech for calls and dictation. The engine's picker comes before its section's title.
+- tapOn:
+    text: "OpenAI"
+    index: 0
+- tapOn: "On device"
+- tapOn: "Close"
+- tapOn: "Dictation engine"
+- tapOn: "On device"

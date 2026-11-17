@@ -130,7 +130,7 @@ object PushDelivery {
             try {
                 withTimeout(45_000) {
                     val identity = withContext(Dispatchers.IO) { local.identity() }
-                    val connected = HostConnector.connect(computer, identity)
+                    val connected = HostConnector.connect(computer, identity, BuildConfig.VERSION_NAME)
                     active = connected
                     connected.state.firstReady()
                     syncLocked(context, local, computer, connected)
@@ -254,7 +254,7 @@ internal object NotificationDisplay {
      */
     fun task(context: Context, scope: String, computer: String, watch: TaskWatch) {
         channels(context)
-        val text = when (watch.status) { "working" -> watch.activity.ifEmpty { "Working…" }; "needsInput" -> "Needs your approval"
+        val text = when (watch.status) { "working" -> watch.activity.ifEmpty { "Working…" }; "needsInput" -> watch.activity.ifEmpty { "Needs approval" }
             "error" -> "Could not finish"; else -> "Done" }
         val tag = "$scope/$computer/${watch.botId}"
         val manager = context.getSystemService(NotificationManager::class.java)

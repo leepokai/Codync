@@ -1,14 +1,19 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { chainedMoves, foldsAfterRename, hostHasSections, limitSectionName, placedBots, restoredBots, rosterLines, sameRosterGroup, sectionMembers, sectionName, sectionNames, sectionRename, shownRows, type RosterLine } from './roster-sections.ts'
+import { chainedMoves, foldsAfterRename, hostHasSections, limitSectionName, placedBots, restoredBots, rosterGroups, rosterLines, rosterRows, sameRosterGroup, sectionMembers, sectionName, sectionNames, sectionRename, shownRows, type RosterLine } from './roster-sections.ts'
 
-const item = (id: string, section?: string, { pinned = false, unread = 0 } = {}) => ({ id, bot: { pinned, section, unread } })
+const item = (id: string, section?: string, { pinned = false, unread = 0, waiting = 0 } = {}) => ({ id, bot: { pinned, section, unread, waiting } })
 type Item = ReturnType<typeof item>
 
 /** Each line as text: a row's id, the "Bots" label, or a header's name, count, unread and fold. */
 const outline = (lines: RosterLine<Item>[]) =>
   lines.map((line) => (line.kind === 'row' ? line.item.id : line.kind === 'label' ? 'BOTS'
     : `${line.name} ${line.count} ${line.unread}${line.folded ? ' folded' : ''}: ${line.items.map((i) => i.id).join(' ')}`))
+
+test('a section waits on the user while one of its bots does (#366)', () => {
+  const waiting = (roster: Item[]) => rosterGroups(roster, []).map((group) => `${group.name} ${group.waiting}`)
+  assert.deepEqual(waiting([item('a', 'Work', { unread: 2, waiting: 1 }), item('b', 'Work'), item('c', 'Home')]), ['Home false', 'Work true'])
+})
 
 test('pinned rows first, then sections by name, then rows without a section under the label', () => {
   const roster = [
@@ -27,6 +32,16 @@ test('pinned rows first, then sections by name, then rows without a section unde
     'BOTS',
     'loose',
   ])
+})
+
+test('every bot in on-screen order: pinned first, then section by section in the user\'s order, folded or not', () => {
+  // Roster order as the store gives it: by position, sections mixed.
+  const items = [item('a', 'Work'), item('b'), item('p', 'Home', { pinned: true }), item('c', 'Home'), item('d', 'Work'), item('e')]
+  const ids = (order?: string[]) => rosterRows(items, order).map((i) => i.id)
+  assert.deepEqual(ids(), ['p', 'c', 'a', 'd', 'b', 'e'], 'sections by name, then the bots in none')
+  assert.deepEqual(ids(['Work', 'Home']), ['p', 'a', 'd', 'c', 'b', 'e'], 'the order the user gave the sections')
+  assert.deepEqual(rosterRows(items, ['Work', 'Home']).length, shownRows(rosterLines(items, ['Work', 'Home'], ['Work', 'Home'])).length + 3, 'folded sections are listed too')
+  assert.deepEqual(rosterRows([]), [])
 })
 
 test('a folded section keeps its rows for the fold, but only its header is on screen', () => {

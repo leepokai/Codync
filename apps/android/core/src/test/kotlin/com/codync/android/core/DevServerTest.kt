@@ -9,7 +9,9 @@ class DevServerTest {
     private fun server(status: DevServerStatus = DevServerStatus.Running, name: String = "web", ports: List<DevServerPort> = emptyList(), managed: Boolean = true) =
         DevServer("a", name, "npm run dev", "/site", status, ports, startedAt = 1, managed = managed)
     private fun port(number: Int, remote: List<String> = emptyList()) = DevServerPort(number, "http://localhost:$number", remote)
-    private val reachable = port(5173, listOf("http://192.168.1.20:5173"))
+    private val tailscale = "http://100.64.0.1:5173"
+    private val lan = "http://192.168.1.20:5173"
+    private val reachable = port(5173, listOf(lan))
 
     @Test fun `the title shows nothing without a live server`() {
         assertEquals(DevServerSummary.None, devServerSummary(emptyList()))
@@ -62,6 +64,22 @@ class DevServerTest {
         assertEquals(listOf(Logs, Stop), server(DevServerStatus.Starting).menuRows)
         assertEquals(listOf(Logs, Start, Remove), server(DevServerStatus.Stopped).menuRows)
         assertEquals(listOf(Logs, Start, Remove), server(DevServerStatus.Failed).menuRows)
+    }
+
+    @Test fun `a tap opens the first address and several are each a row of the menu`() {
+        val two = server(ports = listOf(port(5173, listOf(tailscale, lan))))
+        assertEquals(DevServerTap.Open(tailscale), two.tap)
+        assertEquals(listOf(tailscale, lan), two.remoteAddresses)
+        assertEquals(listOf(OpenAddress(tailscale), OpenAddress(lan), CopyAddress, Logs, Restart, Stop), two.menuRows)
+        // The first port listens only on the computer; the second doesn't.
+        assertEquals(listOf(OpenAddress(tailscale), OpenAddress(lan)), server(ports = listOf(port(1), port(5173, listOf(tailscale, lan)))).menuRows.take(2))
+        // Copy address copies the first.
+        assertEquals(tailscale, two.remoteAddress)
+        assertEquals(listOf(Logs, Start, Remove), server(DevServerStatus.Stopped, ports = listOf(port(5173, listOf(tailscale, lan)))).menuRows)
+    }
+
+    @Test fun `a row names an address without its scheme`() {
+        assertEquals("192.168.1.20:5173", OpenAddress(lan).title)
     }
 
     @Test fun `a server left in the bot's shell can only be opened or stopped`() {

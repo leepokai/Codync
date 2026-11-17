@@ -6,8 +6,9 @@ use rusqlite::{Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::Mutex;
 
-/// Current schema version (kv `schema`).
-const SCHEMA: i64 = 7;
+/// Current schema version (kv `schema`). `hello` carries it: a migration may rewrite or delete rows in place, so
+/// a client whose copy was synced under another schema fetches the conversation again.
+pub const SCHEMA: i64 = 8;
 
 /// 3: authorized devices (keys, not push tickets) with their push and Live Activity
 /// tickets. The old ticket-only `devices` table is dropped; phones re-register on connect.
@@ -17,6 +18,7 @@ const SCHEMA: i64 = 7;
 /// 6: the dividers that announced a fresh agent session go; the chat no longer shows session resets.
 /// 7: each device records the account it was let in for (`devices.account`), so a computer that changes
 /// accounts drops the old account's devices.
+/// 8: a phone that paired with no account is told apart from a device paired before 2.36.0 (`devices.no_account`).
 fn migrate(c: &Connection) -> Result<()> {
     let version: i64 =
         c.query_row("SELECT CAST(v AS INTEGER) FROM kv WHERE k = 'schema'", [], |r| r.get(0)).optional()?.unwrap_or(0);
@@ -35,7 +37,10 @@ fn migrate(c: &Connection) -> Result<()> {
     if version < 6 {
         migrate_6(c)?;
     }
-    migrate_7(c)
+    if version < 7 {
+        migrate_7(c)?;
+    }
+    migrate_8(c)
 }
 
 fn migrate_3(c: &Connection) -> Result<()> {
@@ -146,6 +151,18 @@ fn migrate_7(c: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn migrate_8(c: &Connection) -> Result<()> {
+    let has: bool =
+        c.query_row("SELECT count(*) > 0 FROM pragma_table_info('devices') WHERE name = 'no_account'", [], |r| {
+            r.get(0)
+        })?;
+    if !has {
+        c.execute_batch("ALTER TABLE devices ADD COLUMN no_account INTEGER NOT NULL DEFAULT 0;")?;
+    }
+    c.execute_batch("INSERT INTO kv(k, v) VALUES('schema', '8') ON CONFLICT(k) DO UPDATE SET v = '8';")?;
+    Ok(())
+}
+
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
         let c = Connection::open(path)?;
@@ -207,7 +224,7 @@ mod tests {
         }
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty());
-        assert_eq!(s.kv_get("schema").as_deref(), Some("7"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("8"));
         drop(s);
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty(), "reopening keeps the new table");
@@ -230,7 +247,7 @@ mod tests {
         let s = Store::open(&db).unwrap();
         let chat: Vec<String> = s.history("b", i64::MAX, 10).unwrap().into_iter().map(|e| e.id).collect();
         assert_eq!(chat, ["info"]);
-        assert_eq!(s.kv_get("schema").as_deref(), Some("7"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("8"));
     }
 
     #[test]
@@ -272,7 +289,7 @@ mod tests {
         assert_eq!(s.entry("see").unwrap().data["replyTo"]["text"], "a.png", "a files-only message quotes its files");
         assert!(s.entry("q").unwrap().rev > 10, "synced clients get the changes");
         assert_eq!(s.entry("tool").unwrap().rev, 7, "thread trace isn't sent again");
-        assert_eq!(s.unread("b", 10), 0, "a read chat stays read");
+        assert_eq!(s.badge("b", 10).unread, 0, "a read chat stays read");
         assert_eq!(s.kv_get("read.root"), None);
         assert_eq!(s.kv_get("lane.session.b@b/root"), None);
         assert_eq!(s.kv_get("lane.session.b@b/routine-r1").as_deref(), Some("s2"), "a run's session stays");

@@ -23,6 +23,8 @@ pub(super) fn pair(buf: &mut Buffer, area: Rect, app: &App, code: &PairCode) {
         PairCode::Ready { url, short_code } => {
             return qr(buf, area, url, short_code.as_deref(), app.outside_account());
         }
+        // Only for a moment: the sheet closes with the last question.
+        PairCode::QuestionOnly => return,
         PairCode::Loading => ("Getting the pairing code…", t.secondary),
         PairCode::Failed(e) => (e.as_str(), t.red),
     };
@@ -34,7 +36,7 @@ pub(super) fn pair(buf: &mut Buffer, area: Rect, app: &App, code: &PairCode) {
     }
 }
 
-/// A phone that scanned the code waits for this computer: `y` lets it in and the computer joins its account.
+/// A phone waits for this computer: `y` lets it in and joins its account when it can, `w` keeps the computer out of one.
 fn ask(buf: &mut Buffer, area: Rect, request: &Value) {
     let t = theme();
     let name = request["deviceName"].as_str().unwrap_or("A phone");
@@ -46,17 +48,35 @@ fn ask(buf: &mut Buffer, area: Rect, request: &Value) {
         Some((a, b)) if code.len() == 6 => format!("{a}\u{a0}{b}"),
         _ => code.to_owned(),
     };
-    let text = fill(
-        &tr("{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}."),
-        &[("email", &email), ("code", &code), ("name", name)],
-    );
-    let lines = note(text, 52, t.text.patch(t.panel));
+    let (can_join, phone_only) = (request["canJoin"] == true, request["phoneOnly"] == true);
+    let (question, keys) = match (can_join, phone_only) {
+        (true, true) => (
+            "{name} wants to use this computer. Add it to {email}'s account? Without it, this phone can connect only over Wi-Fi or Tailscale. Check the phone shows {code}.",
+            "y add · w Wi-Fi/Tailscale only · n don't allow",
+        ),
+        (true, false) => (
+            "{name} wants to add this computer to {email}'s account. Check the phone shows {code}.",
+            "y add to account · n don't allow",
+        ),
+        (false, _) => (
+            "{name} wants to use this computer. It can connect only over Wi-Fi or Tailscale. Check the phone shows {code}.",
+            "y let in · n don't allow",
+        ),
+    };
+    let text = fill(&tr(question), &[("email", &email), ("code", &code), ("name", name)]);
+    let mut lines = note(text, 52, t.text.patch(t.panel));
+    let removes: Vec<&str> = request["removes"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+    if !removes.is_empty() {
+        let text =
+            fill(&tr("These phones lose access and must pair again: {names}."), &[("names", &removes.join(", "))]);
+        lines.extend(note(text, 52, t.amber.patch(t.panel)));
+    }
     let r = centered(area, 56, u(lines.len() + 5));
     let inner = frame_box(buf, r, t.text, t.panel, Some(("Pair a phone", t.text)));
     for (y, line) in (inner.y + 1..).zip(&lines) {
         put_line(buf, inner.x, y, inner.width, line);
     }
-    put(buf, inner.x, inner.bottom() - 1, inner.width, "y let in · n don't allow", t.dim.patch(t.panel));
+    put(buf, inner.x, inner.bottom() - 1, inner.width, keys, t.dim.patch(t.panel));
 }
 
 fn note(text: String, width: usize, style: Style) -> Vec<Line<'static>> {
@@ -84,8 +104,9 @@ fn qr(buf: &mut Buffer, area: Rect, url: &str, short_code: Option<&str>, outside
             below.extend(note(text, width, t.text.patch(t.panel)));
         }
         if outside_account {
-            let text =
-                tr("Not in an account: a signed-in phone that scans this asks to bring the computer into its account.");
+            let text = tr(
+                "Not in an account: phones connect only over Wi-Fi or Tailscale until a signed-in phone adds it to its account.",
+            );
             below.extend(note(text.into_owned(), width, t.amber.patch(t.panel)));
         }
         below
@@ -130,19 +151,33 @@ mod tests {
     #[test]
     fn a_waiting_phone_shows_its_account_the_code_and_the_keys() {
         let mut buf = Buffer::empty(Rect::new(0, 0, 80, 20));
-        let request = json!({"requestId": "a", "deviceName": "Pixel", "email": "k@example.com", "code": "123456"});
+        let request = json!({"requestId": "a", "deviceName": "Pixel", "email": "k@example.com", "code": "123456",
+                             "canJoin": true, "phoneOnly": true, "removes": ["Oldphone"]});
         let area = buf.area;
         ask(&mut buf, area, &request);
         let text = shown(&buf);
-        for part in ["Pixel", "k@example.com", "123\u{a0}456", "y let in · n don't allow"] {
+        for part in ["Pixel", "k@example.com", "123\u{a0}456", "Oldphone", "w Wi-Fi/Tailscale only"] {
             assert!(text.contains(part), "{part} in\n{text}");
         }
     }
 
     #[test]
+    fn a_signed_out_phone_is_only_let_in_or_turned_away() {
+        let mut buf = Buffer::empty(Rect::new(0, 0, 80, 20));
+        let request =
+            json!({"requestId": "a", "deviceName": "Pixel", "code": "123456", "canJoin": false, "phoneOnly": true});
+        let area = buf.area;
+        ask(&mut buf, area, &request);
+        let text = shown(&buf);
+        assert!(text.contains("y let in · n don't allow"), "{text}");
+        assert!(!text.contains("account"), "{text}");
+    }
+
+    #[test]
     fn a_computer_in_no_account_says_so_under_the_code() {
-        let note =
-            tr("Not in an account: a signed-in phone that scans this asks to bring the computer into its account.");
+        let note = tr(
+            "Not in an account: phones connect only over Wi-Fi or Tailscale until a signed-in phone adds it to its account.",
+        );
         // Its start, which fits on the first line in any language.
         let first: String = note.chars().take(6).collect();
         for (outside, says) in [(true, true), (false, false)] {

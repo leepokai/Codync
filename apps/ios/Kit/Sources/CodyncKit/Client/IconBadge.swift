@@ -14,18 +14,23 @@ public enum IconBadge {
     public static func alerted(_ unread: Int, from computerId: ComputerID, in store: SharedStore.Context) -> Int? {
         let paired = Set(store.computers.map(\.id))
         guard paired.contains(computerId) else { return nil }
-        var pushed = store.pushedUnread.filter { paired.contains($0.key) }
-        pushed[computerId] = unread
-        store.pushedUnread = pushed
+        store.setPushedUnread(unread, for: computerId)
+        var pushed = store.pushedUnread
+        for gone in pushed.keys where !paired.contains(gone) {
+            store.setPushedUnread(nil, for: gone)
+            pushed[gone] = nil
+        }
         return count(pushed: pushed, snapshot: store.bots)
     }
 
     /// The app, when the roster changed: alerts' totals stay only for `behind`, the paired computers whose
     /// roster may still trail the host. Gives the badge.
     public static func settled(behind: Set<ComputerID>, in store: SharedStore.Context) -> Int {
-        let saved = store.pushedUnread
-        let pushed = saved.filter { behind.contains($0.key) }
-        if pushed != saved { store.pushedUnread = pushed }
+        var pushed = store.pushedUnread
+        for current in pushed.keys where !behind.contains(current) {
+            store.setPushedUnread(nil, for: current)
+            pushed[current] = nil
+        }
         return count(pushed: pushed, snapshot: store.bots)
     }
 

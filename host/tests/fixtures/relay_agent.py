@@ -1,10 +1,15 @@
 """ACP agent for the fallback chain test, run as `relay_agent.py <name>`. While `<name>.limit` exists in its folder,
-every prompt edits a file and then fails the way Claude's adapter reports a usage limit; otherwise it answers
-"<name> answered". While `<name>.signedout` exists, every prompt fails asking to sign in (ACP's -32000); while
-`<name>.revoked` exists, only a process started before it does (it holds the sign-in that file replaced). While
-`<name>.refusal` exists, every prompt answers `refusal` with the file's text as `_meta["codebuddy.ai/errorMessage"]`, the
-way CodeBuddy's CLI reports an error (an empty file: a plain refusal). Sessions load (`<name>-s<n>`) unless
-`<name>.noload` exists; every request goes to `<name>.jsonl` in its folder."""
+every prompt edits a file, runs a command that fails, and then fails the way Claude's adapter reports a usage limit;
+otherwise it answers "<name> answered", after editing `<name>.txt` while `<name>.work` exists and reporting a
+100k-token window while `<name>.window` does. While `<name>.signedout` exists, every prompt fails asking to sign in
+(ACP's -32000); while `<name>.revoked` exists, only a process started before it does (it holds the sign-in that file
+replaced). While `<name>.refusal` exists, every prompt answers `refusal` with the file's text as
+`_meta["codebuddy.ai/errorMessage"]`, the way CodeBuddy's CLI reports an error (an empty file: a plain refusal).
+While `<name>.errored` exists, every prompt ends the way pi-acp (0.0.33, 0.0.34) ends a turn whose model request
+failed: `end_turn` with no reply, with pi's error only in the notification Codync's pi extension sends.
+Sessions load (`<name>-s<n>`) unless `<name>.noload` exists; while `<name>.commands` exists, a new session lists the
+agent's `/review` command. Every request goes to `<name>.jsonl` in its folder. While `<name>.nostart` exists, it quits
+as it starts, saying it needs signing in."""
 
 import json
 import os
@@ -13,6 +18,8 @@ import time
 
 STARTED = time.time()
 NAME = sys.argv[1]
+if os.path.exists(f"{NAME}.nostart"):
+    sys.exit("Error: Authentication required")
 LIMIT = {
     "code": -32603,
     "message": "Internal error: You've hit your limit · resets 3pm (Asia/Taipei)",
@@ -44,6 +51,9 @@ for line in sys.stdin:
     elif method == "session/new":
         sessions += 1
         send({"id": message["id"], "result": {"sessionId": f"{NAME}-s{sessions}"}})
+        if os.path.exists(f"{NAME}.commands"):
+            commands = [{"name": "review", "description": "Review the changes"}]
+            update(f"{NAME}-s{sessions}", {"sessionUpdate": "available_commands_update", "availableCommands": commands})
     elif method == "session/load" and os.path.exists(f"{NAME}.noload"):
         send({"id": message["id"], "error": {"code": -32603, "message": "Internal error: session not found"}})
     elif method == "session/load":
@@ -58,12 +68,29 @@ for line in sys.stdin:
                 error = f.read()
             meta = {"_meta": {"codebuddy.ai/errorMessage": error}} if error else {}
             send({"id": message["id"], "result": {"stopReason": "refusal", **meta}})
+        elif os.path.exists(f"{NAME}.errored"):
+            update(sid, {"sessionUpdate": "session_info_update", "_meta": {"piAcp": {"queueDepth": 0, "running": True}}})
+            error = '[codync: turn failed] 503: {"message":"queued: upstream busy, try again in 60s"}'
+            notify = {"_meta": {"piAcp": {"notify": {"level": "error"}}}}
+            update(sid, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": error}, **notify})
+            update(sid, {"sessionUpdate": "usage_update", "used": 7611, "size": 128000})
+            update(sid, {"sessionUpdate": "session_info_update", "_meta": {"piAcp": {"queueDepth": 0, "running": False}}})
+            send({"id": message["id"], "result": {"stopReason": "end_turn"}})
         elif os.path.exists(f"{NAME}.limit"):
-            tool = {"toolCallId": "t1", "title": "Edit a.txt", "kind": "edit", "status": "completed"}
+            diff = {"type": "diff", "path": "a.txt", "oldText": "", "newText": "the edit's own text\n"}
+            tool = {"toolCallId": "t1", "title": "Edit a.txt", "kind": "edit", "status": "completed", "content": [diff]}
             update(sid, {"sessionUpdate": "tool_call", **tool})
+            test = {"toolCallId": "t2", "title": "npm test", "kind": "execute", "status": "failed"}
+            update(sid, {"sessionUpdate": "tool_call", **test})
             update(sid, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Edited a.txt"}})
             send({"id": message["id"], "error": LIMIT})
         else:
+            if os.path.exists(f"{NAME}.work"):
+                diff = {"type": "diff", "path": f"{NAME}.txt", "oldText": "old\n", "newText": "new\n"}
+                tool = {"toolCallId": "w1", "title": f"Edit {NAME}.txt", "kind": "edit", "status": "completed"}
+                update(sid, {"sessionUpdate": "tool_call", **tool, "content": [diff]})
+            if os.path.exists(f"{NAME}.window"):
+                update(sid, {"sessionUpdate": "usage_update", "used": 1000, "size": 100000})
             update(sid, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": f"{NAME} answered"}})
             send({"id": message["id"], "result": {"stopReason": "end_turn"}})
     else:

@@ -67,7 +67,7 @@ mod tests {
     }
 
     fn render_with(app: &App, entries: &[Entry], details: bool) -> (String, usize) {
-        let mut out = Built { lines: vec![], buttons: vec![], messages: vec![] };
+        let mut out = Built::default();
         activity(&mut out, app, &app.bots["bot"], &entries.iter().collect::<Vec<_>>(), 80, details);
         (out.lines.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n"), out.buttons.len())
     }

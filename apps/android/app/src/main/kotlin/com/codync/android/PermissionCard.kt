@@ -35,10 +35,28 @@ import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+
+/**
+ * Under what a task put in the chat (its approval or choice card, a file, a voice note, an artifact): that it comes
+ * from the background, and which item. Nothing for the chat's own.
+ */
+@Composable internal fun TaskLine(entry: Entry, modifier: Modifier = Modifier) {
+    val title = (entry.data["task"] as? JsonObject)?.let { (it["title"] as? JsonPrimitive)?.contentOrNull }?.takeIf(String::isNotEmpty) ?: return
+    // A clock leads it, as the computer leads "Runs on" (iOS `Label(…, systemImage: "clock")`).
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Symbol("clock", size = 14.dp, tint = Palette.tertiary)
+        Text(tr("In the background") + " · " + title, style = Type.caption, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** One of the bot's tasks put [this] in the chat. */
+internal val Entry.fromTask: Boolean get() = data["task"] is JsonObject
 
 /** Approval card in Grok Bot's choice-card style: what the agent wants, where it runs, and the answers as rows. */
 @Composable internal fun PermissionCard(entry: Entry, hostName: String, answering: Boolean, respond: (String?) -> Unit) {
@@ -58,17 +76,19 @@ import kotlinx.serialization.json.jsonPrimitive
     Column(Modifier.padding(end = 40.dp).widthIn(max = 420.dp).clip(RoundedRectangle(22.dp)).background(Palette.bubbleAgent).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(headline, style = Type.headline, color = Palette.text)
+            Text(tr(headline), style = Type.headline, color = Palette.text)
             if (pending) Box(Modifier.size(7.dp).clip(Capsule()).background(Palette.warning))
         }
         Text(d.text("title").orEmpty(), style = Type.subheadline.monospaced, color = Palette.secondary, maxLines = if (expanded) Int.MAX_VALUE else 3)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Symbol("desktopcomputer", size = 14.dp, tint = Palette.tertiary)
-            Text("Runs on $hostName" + (d.text("cwd")?.let { " · " + it.trimEnd('/').substringAfterLast('/') } ?: ""),
+            val path = d.text("cwd")?.let { " · " + it.trimEnd('/').substringAfterLast('/') } ?: ""
+            Text(tr("Runs on {name}{path}").replace("{name}", hostName).replace("{path}", path),
                 style = Type.caption, color = Palette.tertiary)
         }
+        TaskLine(entry)
         if (hasDetail) Disclosure(expanded, { expanded = !expanded }, label = {
-            Text("Details", style = Type.caption.medium, color = Palette.secondary)
+            Text(tr("Details"), style = Type.caption.medium, color = Palette.secondary)
         }) {
             Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 d.text("command")?.takeIf(String::isNotEmpty)?.let { CodeBox(it) }
@@ -91,7 +111,7 @@ import kotlinx.serialization.json.jsonPrimitive
                         .graphicsLayer { alpha = if (!waiting || chosen == id) 1f else 0.4f }
                         .padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(when (kind) {
-                            "allow_once" -> "Allow once"; "allow_always" -> "Always allow"; "reject_once" -> "Deny"; "reject_always" -> "Never"
+                            "allow_once" -> tr("Allow once"); "allow_always" -> tr("Always allow"); "reject_once" -> tr("Deny"); "reject_always" -> tr("Never")
                             else -> option.text("name").orEmpty()
                         }, Modifier.weight(1f), style = if (kind == "allow_once") Type.body.semibold else Type.body,
                             color = if (kind.startsWith("allow")) Palette.text else Palette.danger)
@@ -103,16 +123,17 @@ import kotlinx.serialization.json.jsonPrimitive
     }
 }
 
-private fun outcome(d: JsonObject): String = when (d.text("status")) {
+/** The answer given, in Codync's words for the usual kinds; an agent's own option keeps its name. */
+@Composable private fun outcome(d: JsonObject): String = when (d.text("status")) {
     "answered" -> {
         val chosen = (d["options"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.firstOrNull { it.text("optionId") == d.text("selected") }
         when (chosen?.text("kind")) {
-            "allow_once" -> "Allowed once"; "allow_always" -> "Always allowed"; "reject_once" -> "Denied"; "reject_always" -> "Never allowed"
-            else -> chosen?.text("name") ?: "Answered"
+            "allow_once" -> tr("Allowed once"); "allow_always" -> tr("Always allowed"); "reject_once" -> tr("Denied"); "reject_always" -> tr("Never allowed")
+            else -> chosen?.text("name") ?: tr("Answered")
         }
     }
-    "cancelled" -> "Cancelled"
-    else -> "Expired — the agent moved on"
+    "cancelled" -> tr("Cancelled")
+    else -> tr("Expired — the agent moved on")
 }
 
 /** One file's change: its name and line counts over the colored patch. */

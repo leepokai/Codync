@@ -40,11 +40,12 @@ pub fn definitions() -> [Value; 2] {
     ]
 }
 
-pub async fn call(hub: &Arc<Hub>, cfg: &BotConfig, name: &str, args: &Value) -> Result<Value> {
-    let (hub, cfg, name, args) = (hub.clone(), cfg.clone(), name.to_owned(), args.clone());
+/// `actor`: whose turn makes the call, `cfg` itself or one of its tasks.
+pub async fn call(hub: &Arc<Hub>, cfg: &BotConfig, actor: &str, name: &str, args: &Value) -> Result<Value> {
+    let (hub, cfg, actor, name, args) = (hub.clone(), cfg.clone(), actor.to_owned(), name.to_owned(), args.clone());
     tokio::task::spawn_blocking(move || match name.as_str() {
         "read_memory" => read(&hub, &cfg, &args),
-        "edit_memory" => edit(&hub, &cfg, &args),
+        "edit_memory" => edit(&hub, &cfg, &actor, &args),
         _ => bail!("unknown memory tool: {name}"),
     })
     .await?
@@ -82,7 +83,7 @@ fn read(hub: &Hub, cfg: &BotConfig, args: &Value) -> Result<Value> {
     Ok(json!({"file": name, "content": content}))
 }
 
-fn edit(hub: &Hub, cfg: &BotConfig, args: &Value) -> Result<Value> {
+fn edit(hub: &Hub, cfg: &BotConfig, actor: &str, args: &Value) -> Result<Value> {
     let name = args["file"].as_str().ok_or_else(|| anyhow!("file required"))?;
     let layer = layer(cfg, args)?;
     files::scan(hub, cfg);
@@ -118,8 +119,17 @@ fn edit(hub: &Hub, cfg: &BotConfig, args: &Value) -> Result<Value> {
     };
     let expected = before.as_deref().map(mf::hash);
     let cause = if after.is_some() { Cause::Edit } else { Cause::Delete };
-    let message = hub.runtime(&cfg.id).message;
-    let writer = Writer { author: Author::Bot, bot: Some(cfg), cause, message: message.as_deref() };
+    // The write is its turn's: a task's is made in the task's session, and no user's message started it, so it
+    // only adds. With no turn running (a call from outside one), the actor's runtime says the same.
+    let (session, message) = super::turns::running(actor).map_or_else(
+        || {
+            let runtime = hub.runtime(actor);
+            (runtime.session, runtime.message)
+        },
+        |(session, message)| (Some(session), message),
+    );
+    let writer =
+        Writer { author: Author::Bot, bot: Some(cfg), cause, message: message.as_deref(), session: session.as_deref() };
     files::write(hub, layer.as_deref(), name, after.as_deref(), expected.as_deref(), writer)?;
     Ok(json!({"status": "saved", "file": name}))
 }

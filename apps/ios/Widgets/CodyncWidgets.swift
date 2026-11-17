@@ -233,7 +233,7 @@ extension BotsEntry {
     /// Needs you first, then working, then most recent.
     var mostUrgent: Bot? {
         bots.filter { !$0.hidden }.min {
-            let rank = { (b: Bot) in b.needsInput ? 0 : b.isWorking ? 1 : 2 }
+            let rank = { (b: Bot) in b.needsYouOutside ? 0 : b.isBusyOutside ? 1 : 2 }
             return rank($0) != rank($1) ? rank($0) < rank($1) : $0.lastAt > $1.lastAt
         }
     }
@@ -268,9 +268,9 @@ struct UrgentBot: Sendable {
 
     init(_ entry: BotsEntry) {
         guard entry.paired else { self.init(text: "Connect a computer", symbol: "desktopcomputer"); return }
-        guard let bot = entry.mostUrgent, bot.isWorking else { self.init(text: "All quiet", symbol: "moon.zzz.fill"); return }
+        guard let bot = entry.mostUrgent, bot.isBusyOutside else { self.init(text: "All quiet", symbol: "moon.zzz.fill"); return }
         self.init(text: "\(bot.name): \(bot.widgetState.label)",
-                  symbol: bot.needsInput ? "hand.raised.fill" : "ellipsis.bubble.fill",
+                  symbol: bot.needsYouOutside ? "hand.raised.fill" : "ellipsis.bubble.fill",
                   url: entry.links[bot.id] ?? UrgentBot.home)
     }
 }
@@ -328,7 +328,7 @@ struct UsageTimeline: AppIntentTimelineProvider {
             return Timeline(entries: [UsageEntry(date: .now, usage: Usage())], policy: .after(.now + 5))
         }
         let usage = fetched ?? cached ?? Usage()
-        let nextReset = usage.providers.flatMap(\.windows).compactMap(\.resetDate).filter { $0 > .now }.min()
+        let nextReset = usage.providers.flatMap(\.logins).flatMap(\.windows).compactMap(\.resetDate).filter { $0 > .now }.min()
         var next = Date.now + (fetched == nil ? 5 * 60 : 30 * 60)
         if let nextReset, nextReset + 1 < next { next = max(nextReset + 1, .now + 5 * 60) }
         return Timeline(entries: [UsageEntry(date: .now, usage: usage)], policy: .after(next))

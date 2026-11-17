@@ -1,22 +1,27 @@
-import { FileDownloadCard } from './FileDownloadCard'
+import { FileDownloadCard, VoiceNotePlayer } from './FileDownloadCard'
 import { ArtifactCard } from '../library/ArtifactCard'
 import { memo, useRef, useState } from 'react'
-import { groupBotReactions, isGroup, isReplyable, type Bot, type Entry, type ReplyQuote } from '@shared/models'
+import { groupBotReactions, isGroup, isReplyable, quoteOf, voiceNoteOf, type Bot, type Entry, type ReplyQuote, type SharedFile } from '@shared/models'
 import { BotAvatar } from '../../components/Avatar'
 import { Button, IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { AnchoredMenu, useContextMenu, type MenuItem, type ReactionPick } from '../../components/Overlay'
+import { AnchoredMenu, useContextMenu, type MenuItem, type ReactionPick } from '../../components/Menu'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { messagePreview } from '../../lib/message-preview'
 import { useTr } from '../../lib/use-language'
+import { analytics } from '../../store/analytics'
 import { avatarColor } from '../../lib/theme'
 import { useStore as useLiveStore, useStoreRef as useStore } from '../../store/context'
 import { QUICK_REACTIONS, type BotStore } from '../../store/bot-store'
 import { AttachmentList } from './Attachments'
+import { copyMessageText, messageCopyItems, type MessageMenu } from './use-image-actions'
 import { callLength, relativeTime } from './chat-items'
+import { downloadItem } from './file-card'
 import { MarkdownText } from './Markdown'
-import { PermissionCard } from './PermissionCard'
+import { canReplyToPart, useSelectedPart } from './selected-part'
+import { DecisionCard } from './DecisionCard'
+import { PermissionCard, TaskLine } from './PermissionCard'
 import { ConnectionRequestCard } from '../marketplace/ConnectionRequestCard'
 import { AgentSwitchNotice, HandoffNotice } from './HandoffNotice'
 
@@ -29,26 +34,29 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
   entry: Entry
   groupStart: boolean
   chat: Bot | null
-  openTrace: () => void
-  /** Quotes this message in the composer; absent where the computer can't take replies. */
-  onReply?: (e: Entry) => void
+  /** Opens what the bot did for a message; absent where a card is shown outside the chat. */
+  openTrace?: () => void
+  /** Quotes this message in the composer, or the part of it that is selected; absent where the computer can't take replies. */
+  onReply?: (quote: ReplyQuote) => void
   /** Opens a bot's Agent settings (a failure notice's "Add a fallback"). */
   openAgent?: (botId: string) => void
   /** Opens an artifact card's artifact over the chat. */
   openArtifact?: (artifactId: string) => void
 }) {
-  const reply = onReply && isReplyable(entry) ? () => onReply(entry) : undefined
+  const store = useStore()
+  const selected = useSelectedPart()
+  const reply = onReply && isReplyable(entry) ? () => onReply(quoteOf(entry, canReplyToPart(store.hostVersion?.version) ? selected.part() : '')) : undefined
   switch (entry.kind) {
     case 'user':
       return (
-        <VStack align="flex-end" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'}>
+        <VStack align="flex-end" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'} onPointerDownCapture={selected.keep} onFocus={selected.keepFocused}>
           <UserBubble entry={entry} reply={reply} />
           <ReactionsRow entry={entry} />
         </VStack>
       )
     case 'agent':
       return (
-        <VStack align="flex-start" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'}>
+        <VStack align="flex-start" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'} onPointerDownCapture={selected.keep} onFocus={selected.keepFocused}>
           {chat && isGroup(chat) && groupStart ? <AuthorLabel botId={entry.data.author} /> : null}
           <AgentBubble entry={entry} openTrace={openTrace} reply={reply} openArtifact={openArtifact} />
           <VStack gap={4} className={chat && isGroup(chat) ? 'chat-row-indent' : undefined}>
@@ -64,6 +72,7 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
         </VStack>
       )
     default:
+      if (entry.kind === 'notice' && entry.data.decision) return <div className="chat-row group-start"><LiveDecision entry={entry} /></div>
       if (entry.data.connectionRequest) return <div className="chat-row group-start"><ConnectionRequestCard entry={entry} /></div>
       if (entry.data.handoff) return <div className="chat-row notice"><HandoffNotice entry={entry} card={entry.data.handoff} /></div>
       if (entry.data.agentSwitch) return <div className="chat-row notice"><AgentSwitchNotice entry={entry} carried={entry.data.agentSwitch.carried} /></div>
@@ -75,6 +84,19 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
 function LivePermission({ entry }: { entry: Entry }) {
   const store = useLiveStore()
   return <PermissionCard entry={entry} hostName={store.hostName} answering={store.answering.get(entry.id) ?? null} respond={(o) => store.respond(entry, o)} />
+}
+
+/** The user's press on a choice card, or their own words, on its way to the computer. */
+function LiveDecision({ entry }: { entry: Entry }) {
+  const store = useLiveStore()
+  return (
+    <DecisionCard
+      entry={entry}
+      answering={store.answering.get(entry.id) ?? null}
+      respond={(option) => store.decide(entry, option)}
+      reply={(text) => store.send(text, entry.botId)}
+    />
+  )
 }
 
 /** Who wrote a message: their avatar and name in their color, or `name` for a bot on another computer. */
@@ -89,14 +111,44 @@ export function AuthorLabel({ botId, name }: { botId?: string | null; name?: str
   )
 }
 
-/** The message a reply quotes, as its first line without Markdown markers: at the top of its bubble, and in the composer while replying. */
-export function QuoteRow({ quote, className }: { quote: ReplyQuote; className?: string }) {
+/**
+ * The message a reply quotes, as its first line without Markdown markers: at the top of its bubble, and in the composer while replying.
+ * In a bubble (`jumps`) a click brings the quoted message into view.
+ */
+export function QuoteRow({ quote, className, jumps = false }: { quote: ReplyQuote; className?: string; jumps?: boolean }) {
+  const tr = useTr()
+  const jump = (from: HTMLElement) => analytics.track({ event: 'quote_opened', found: showMessage(from, quote.id) })
+  const press = jumps
+    ? {
+        role: 'button',
+        tabIndex: 0,
+        title: tr('Show the quoted message'),
+        onClick: (e: React.MouseEvent<HTMLDivElement>) => jump(e.currentTarget),
+        onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return
+          e.preventDefault()
+          jump(e.currentTarget)
+        },
+      }
+    : {}
   return (
-    <HStack gap={6} className={className ?? 'bubble-quote'}>
+    <HStack gap={6} className={className ?? 'bubble-quote'} {...press}>
       <Icon name="text.bubble" size={12} color="var(--secondary)" />
       <Text size="footnote" tone="secondary" truncate grow>{`“${messagePreview(quote.text)}”`}</Text>
     </HStack>
   )
+}
+
+/**
+ * Scrolls the message `id` of the transcript around `from` to the middle; false when it isn't there.
+ * At once, like a find match: a smooth scroll stops short when it reaches the top, where earlier messages load.
+ * ponytail: only among the loaded messages, like a needs-you card; load older pages until it is found if
+ * quotes of long-gone messages turn out common (`quote_opened` with `found: false`).
+ */
+function showMessage(from: HTMLElement, id: string): boolean {
+  const row = from.closest('[data-find-root]')?.querySelector(`[data-entry-id="${CSS.escape(id)}"]`)
+  row?.scrollIntoView({ block: 'center' })
+  return !!row
 }
 
 /** A message's text with a right-click menu (with quick reactions on top). */
@@ -124,27 +176,28 @@ export function UserBubble({ entry, reply }: { entry: Entry; reply?: () => void 
   const store = useStore()
   const [hovering, setHovering] = useState(false)
   const status = entry.data.status
-  const copy = () => entry.data.text && window.codync.app.copy(entry.data.text)
+  // A picture here has the same menu as the bubble: reactions and Reply, its own copy items in place of Copy.
+  const menu: MessageMenu = { items: () => (reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []), reactions: reactionPick(store, entry) }
   return (
     <div className="message user" title={fullDate.format(entry.createdAt)} onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}>
       <div className="message-body">
-        {entry.data.attachments?.length ? <AttachmentList attachments={entry.data.attachments} botId={entry.botId} /> : null}
+        {entry.data.attachments?.length ? <AttachmentList attachments={entry.data.attachments} botId={entry.botId} menu={menu} /> : null}
         {entry.data.text || entry.data.replyTo ? (
           <Bubble
             className="bubble user selectable"
             reactions={reactionPick(store, entry)}
             items={() => [
-              { title: 'Copy', icon: 'square.on.square', action: copy },
+              { title: 'Copy', icon: 'square.on.square', action: () => copyMessageText(entry) },
               ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
             ]}
           >
-            {entry.data.replyTo ? <QuoteRow quote={entry.data.replyTo} /> : null}
-            {entry.data.text}
+            {entry.data.replyTo ? <QuoteRow quote={entry.data.replyTo} jumps /> : null}
+            <span data-find-text>{entry.data.text}</span>
           </Bubble>
         ) : null}
         {status && status !== 'sent' ? <UserStatus entry={entry} hovering={hovering} /> : null}
         {/* Beside the bubble, inside its hover region: showing them never changes the height. */}
-        <MessageActions className="leading" visible={hovering} reactions={reactionPick(store, entry)} reply={reply} copy={copy} />
+        <MessageActions className="leading" visible={hovering} reactions={reactionPick(store, entry)} reply={reply} copy={messageCopyItems(store, entry)} />
       </div>
     </div>
   )
@@ -171,32 +224,46 @@ function UserStatus({ entry, hovering }: { entry: Entry; hovering: boolean }) {
   }
 }
 
-export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: Entry; openTrace: () => void; reply?: () => void; openArtifact?: (artifactId: string) => void }) {
+/** `plain` is a message read outside its chat (a task's reply in its thread): only Copy and a file's own actions, no
+ * reactions, Reply or what it did. */
+export function AgentBubble({ entry, openTrace, reply, openArtifact, plain = false }: { entry: Entry; openTrace?: () => void; reply?: () => void; openArtifact?: (artifactId: string) => void; plain?: boolean }) {
   const store = useStore()
   const [hovering, setHovering] = useState(false)
-  const copy = () => entry.data.text && window.codync.app.copy(entry.data.text)
+  const voiceNote = voiceNoteOf(entry.data)
+  const reactions = plain ? undefined : reactionPick(store, entry)
+  const rest = (): MenuItem[] => [
+    ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
+    ...(openTrace ? [{ title: 'Show what it did', icon: 'list.bullet', action: openTrace }] : []),
+  ]
+  // A shared picture or voice note has the same menu as the bubble: reactions, Reply and what it did, its own items in place of Copy.
+  const menu: MessageMenu = { items: rest, reactions }
+  const download = (file: SharedFile) => downloadItem(store.fileDownloads.states.get(file.id), () => store.fileDownloads.toggle(store.client, entry.id, file))
   return (
     <div className="message agent" title={fullDate.format(entry.createdAt)} onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}>
+      {/* The message the bot answers (`reply_to`), above its bubble. */}
+      {entry.data.replyTo ? <QuoteRow quote={entry.data.replyTo} className="bubble-quote agent-quote" jumps /> : null}
       <div className="message-body">
         <Bubble
-          className={entry.data.files?.length || entry.data.artifact ? 'file-message' : 'bubble agent'}
-          reactions={reactionPick(store, entry)}
-          items={() => [
-            { title: 'Copy', icon: 'square.on.square', action: copy },
-            ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
-            { title: 'Show what it did', icon: 'list.bullet', action: openTrace },
-          ]}
+          className={!voiceNote && (entry.data.files?.length || entry.data.artifact) ? 'file-message' : 'bubble agent'}
+          reactions={reactions}
+          items={() => [...messageCopyItems(store, entry), ...(voiceNote ? [download(voiceNote)] : []), ...rest()]}
         >
           {entry.data.artifact ? (
             <ArtifactCard botId={entry.botId} card={entry.data.artifact} open={() => openArtifact?.(entry.data.artifact!.id)} />
+          ) : voiceNote ? (
+            <>
+              <VoiceNotePlayer entry={entry} file={voiceNote} menu={menu} />
+              <MarkdownText text={entry.data.text ?? ''} findable />
+            </>
           ) : entry.data.files?.length ? (
-            <div className="file-message-cards">{entry.data.files.map((file) => <FileDownloadCard key={file.id} entry={entry} file={file} />)}</div>
+            <div className="file-message-cards">{entry.data.files.map((file) => <FileDownloadCard key={file.id} entry={entry} file={file} menu={menu} />)}</div>
           ) : (
-            <MarkdownText text={entry.data.text ?? ''} />
+            <MarkdownText text={entry.data.text ?? ''} findable />
           )}
         </Bubble>
-        <MessageActions className="trailing" visible={hovering} reactions={reactionPick(store, entry)} reply={reply} trace={openTrace} copy={copy} />
+        {reactions ? <MessageActions className="trailing" visible={hovering} reactions={reactions} reply={reply} trace={openTrace} copy={messageCopyItems(store, entry)} /> : null}
       </div>
+      <TaskLine entry={entry} />
     </div>
   )
 }
@@ -219,6 +286,7 @@ export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: 
           <Icon name="exclamationmark.triangle.fill" size={10} color="var(--danger)" />
           <VStack gap={10} align="flex-start">
             <Text size="footnote" tone="text" className="selectable">{text}</Text>
+            <TaskLine entry={entry} />
             {addFallback ? <Button kind="secondary" onClick={addFallback}>{tr('Add a fallback')}</Button> : null}
           </VStack>
         </HStack>
@@ -270,7 +338,8 @@ function MessageActions({ visible, className, reactions, reply, trace, copy }: {
   reactions: ReactionPick
   reply?: () => void
   trace?: () => void
-  copy: () => void
+  /** What its Copy is (`copyItems`). */
+  copy: MenuItem[]
 }) {
   const [menu, setMenu] = useState<'reactions' | 'more' | null>(null)
   const smile = useRef<HTMLButtonElement>(null)
@@ -290,7 +359,7 @@ function MessageActions({ visible, className, reactions, reply, trace, copy }: {
         open={menu === 'more'}
         onClose={() => setMenu(null)}
         anchor={more}
-        items={() => [{ title: 'Copy', icon: 'square.on.square', action: copy }, ...(trace ? [{ title: 'Show what it did', icon: 'list.bullet', action: trace }] : [])]}
+        items={() => [...copy, ...(trace ? [{ title: 'Show what it did', icon: 'list.bullet', action: trace }] : [])]}
       />
     </div>
   )

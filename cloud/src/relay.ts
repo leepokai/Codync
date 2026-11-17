@@ -1,119 +1,44 @@
 // ComputerRelay: one Durable Object per computer (spec §7, §8.5).
 //
-// Presence, ciphertext forwarding between the host socket and device sockets, ACL admission, and the
-// offline mailbox (device → host), the queue of public routine webhook deliveries (§7.8), and the cloud
-// assistant's tool calls to the host (§7.9). It never parses channel frames and never stores chat. Reached only through requests the Worker builds itself
+// Presence, ciphertext forwarding between the host socket and device sockets, ACL admission, the
+// offline mailbox (`relay-mailbox.ts`), the queue of public routine webhook deliveries (`relay-hooks.ts`), the
+// cloud assistant's tool calls to the host (§7.9), and waking a sleeping Codync Cloud computer. It never parses
+// channel frames and never stores chat. Reached only through requests the Worker builds itself
 // (`X-Codync-Internal: 1`), never a client's own request.
 
 import { DurableObject } from "cloudflare:workers";
-import { b64url, fromB64url, NONCE_TTL_MS, randomId, utf8, verifyEd25519 } from "./auth";
-import { authorized, deliveryId, forwarded, HOOK_ID, HOOK_MAX_BODY, parseHooks } from "./hooks";
+import { fromB64url, NONCE_TTL_MS, randomId, utf8, verifyEd25519 } from "./auth";
+import { wake, type Wake, type WakeCause } from "./cloud-machines";
 import { HostCalls } from "./host-calls";
 import type { Env } from "./index";
-
-const MAX_DEVICE_SOCKETS = 16;
-const MAX_PAIRING_SOCKETS = 2;
-const PAIRING_TTL_MS = 120_000;
-const PAIRING_MAX_MESSAGES = 16;
-const RATE_WINDOW_MS = 10_000;
-const RATE_MAX_MESSAGES = 200;
-const RATE_MAX_BYTES = 8 * 1024 * 1024;
-const MBOX_MAX_BLOB = 64 * 1024;
-const MBOX_PER_DEVICE = 50;
-const MBOX_PER_COMPUTER = 500;
-const MBOX_MAX_BYTES = 8 * 1024 * 1024;
-const MBOX_TTL_MS = 24 * 3600_000;
-const MAX_HOOKS = 1000;
-const HOOK_TTL_MS = 72 * 3600_000;
-const HOOK_PER_HOOK = 100;
-const HOOK_PER_COMPUTER = 1000;
-const HOOK_MAX_BYTES = 16 * 1024 * 1024;
-const HOOK_RETRY_MIN_MS = 30_000;
-const HOOK_RETRY_MAX_MS = 15 * 60_000;
-/** The host answers a cloud assistant's call at once; past this it's too old to know them, or stuck. */
-const ASSISTANT_TIMEOUT_MS = 10_000;
-/** No ping for this long (both sides ping every 30 s): the socket is dead and gets closed. */
-const SILENT_TIMEOUT_MS = 90_000;
-const ALARM_MS = 60_000;
-/** epk(32) ‖ sig(64) ‖ ciphertext with at least its 16-byte tag (§6.4). */
-const MBOX_MIN_BLOB = 32 + 64 + 16;
-const FAIL_CODES = new Set(["unauthorized", "unknownBot", "invalid"]);
-
-export const PING = '{"t":"ping"}';
-export const PONG = '{"t":"pong"}';
-
-interface HostAttachment {
-  role: "host";
-  kid: string;
-  ready: boolean;
-  at: number;
-  retired?: Retired;
-}
-interface DeviceAttachment {
-  role: "device";
-  dk: string;
-  link: string;
-  pair: boolean;
-  offer?: string;
-  at: number;
-  msgs: number;
-  retired?: Retired;
-}
-type Attachment = HostAttachment | DeviceAttachment;
-/** A socket the DO let go of: nothing is sent to it, and it's closed with `code` once that's free (§7.6). */
-interface Retired {
-  at: number;
-  code: number;
-  reason: string;
-}
-
-export interface Acl {
-  v: 1;
-  computerId: string;
-  ver: number;
-  devices: { dk: string; grant: string | null }[];
-  offers: { id: string; exp: number }[];
-}
-
-type Msg = Record<string, unknown> & { t: string };
-
-const errorResponse = (status: number, code: string) => Response.json({ error: { code } }, { status });
-
-/** Parses and shape-checks a signed ACL's JSON; `null` when malformed. */
-export function parseAcl(bytes: Uint8Array): Acl | null {
-  let acl: unknown;
-  try {
-    acl = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes));
-  } catch {
-    return null;
-  }
-  const a = acl as Partial<Acl> | null;
-  const ok =
-    !!a &&
-    a.v === 1 &&
-    typeof a.computerId === "string" &&
-    Number.isSafeInteger(a.ver) &&
-    (a.ver ?? 0) >= 1 &&
-    Array.isArray(a.devices) &&
-    a.devices.every(
-      (d) => d && fromB64url(d.dk, 32) !== null && (d.grant === null || (typeof d.grant === "string" && d.grant.length <= 64)),
-    ) &&
-    Array.isArray(a.offers) &&
-    a.offers.every((o) => o && fromB64url(o.id, 16) !== null && Number.isSafeInteger(o.exp));
-  return ok ? (a as Acl) : null;
-}
-
-/** Sends unless the socket is gone; a socket can be closing while it's still listed. */
-function send(ws: WebSocket | undefined, text: string): void {
-  try {
-    ws?.send(text);
-  } catch {
-    // Closed underneath us; its close handler does the bookkeeping.
-  }
-}
-
-const validCloseCode = (c: unknown): c is number =>
-  typeof c === "number" && Number.isInteger(c) && (c === 1000 || (c >= 3000 && c <= 4999));
+import { HookBox } from "./relay-hooks";
+import { Mailbox } from "./relay-mailbox";
+import { type Meta, reportWoken, WakeEpisode, WakeSchedule } from "./relay-wake";
+import {
+  ALARM_MS,
+  ASSISTANT_TIMEOUT_MS,
+  errorResponse,
+  MAX_DEVICE_SOCKETS,
+  MAX_PAIRING_SOCKETS,
+  PAIRING_MAX_MESSAGES,
+  PAIRING_TTL_MS,
+  PING,
+  PONG,
+  parseAcl,
+  RATE_MAX_BYTES,
+  RATE_MAX_MESSAGES,
+  RATE_WINDOW_MS,
+  send,
+  SILENT_TIMEOUT_MS,
+  validCloseCode,
+  WAKE_DEBOUNCE_MS,
+  WAKE_RETRY_MS,
+  type Acl,
+  type Attachment,
+  type DeviceAttachment,
+  type HostAttachment,
+  type Msg,
+} from "./relay-wire";
 
 export class ComputerRelay extends DurableObject<Env> {
   private readonly sql: SqlStorage;
@@ -121,24 +46,25 @@ export class ComputerRelay extends DurableObject<Env> {
   private readonly rates = new Map<string, { start: number; msgs: number; bytes: number }>();
   /** Sockets this instance retired. Hibernation drops it, so a socket still in it later means the DO never slept. */
   private readonly retiredHere = new WeakSet<WebSocket>();
+  private readonly mailbox: Mailbox;
+  private readonly hooks: HookBox;
   /** Cloud assistant calls waiting on the host. */
   private readonly calls = new HostCalls();
+  private readonly wakeMeta: Meta = { get: (k) => this.meta(k), set: (k, v) => this.setMeta(k, v) };
+  /** A sleeping cloud computer's next wake from the alarm, and each wake until its host is ready (`relay-wake.ts`). */
+  private readonly schedule = new WakeSchedule(this.wakeMeta);
+  private readonly episode = new WakeEpisode(this.wakeMeta);
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);
-      CREATE TABLE IF NOT EXISTS mailbox(seq INTEGER PRIMARY KEY AUTOINCREMENT, dk TEXT, nonce TEXT, blob BLOB,
-        size INTEGER, exp INTEGER, state TEXT, UNIQUE(dk, nonce));
       CREATE TABLE IF NOT EXISTS nonces(kid TEXT, nonce TEXT, exp INTEGER, PRIMARY KEY(kid, nonce));
       CREATE TABLE IF NOT EXISTS blocked(dk TEXT PRIMARY KEY, grant_id TEXT, blocked_at INTEGER);
-      CREATE TABLE IF NOT EXISTS hooks(id TEXT PRIMARY KEY, key TEXT NOT NULL, enabled INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS hookbox(seq INTEGER PRIMARY KEY AUTOINCREMENT, hook TEXT NOT NULL,
-        delivery TEXT NOT NULL, headers TEXT NOT NULL, body BLOB NOT NULL, size INTEGER NOT NULL, at INTEGER NOT NULL,
-        exp INTEGER NOT NULL, state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
-        not_before INTEGER NOT NULL DEFAULT 0, UNIQUE(hook, delivery));
     `);
+    this.mailbox = new Mailbox(this.sql);
+    this.hooks = new HookBox(ctx.storage);
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
   }
 
@@ -151,8 +77,16 @@ export class ComputerRelay extends DurableObject<Env> {
     if (pathname === "/internal/block" && req.method === "POST") return this.block(req);
     if (pathname === "/internal/hook" && req.method === "POST") return this.hook(req);
     if (pathname === "/internal/assistant" && req.method === "POST") return this.assistant(req);
+    if (pathname === "/internal/sleep" && req.method === "POST") return this.sleep(req);
+    if (pathname === "/internal/awake" && req.method === "POST") {
+      await this.takeBackHost(Date.now());
+      return Response.json({});
+    }
     if (pathname === "/internal/changed" && req.method === "POST") {
       this.toHosts({ t: "cloud.changed" });
+      // An access request: a sleeping cloud computer has to wake to answer it.
+      const body = (await req.json().catch(() => null)) as { wake?: unknown } | null;
+      if (body?.wake === true) await this.wakeHost(Date.now(), "access");
       return Response.json({});
     }
     return errorResponse(404, "notFound");
@@ -217,7 +151,9 @@ export class ComputerRelay extends DurableObject<Env> {
     if (offer) a.offer = offer;
     server.serializeAttachment(a);
     send(server, JSON.stringify(this.presence()));
-    send(this.readyHost(), JSON.stringify({ t: "open", link: a.link, dk, pair: a.pair }));
+    const host = this.readyHost();
+    if (host) send(host, JSON.stringify({ t: "open", link: a.link, dk, pair: a.pair }));
+    else this.ctx.waitUntil(this.wakeHost(now, "device"));
     await this.ensureAlarm(deadline);
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -239,7 +175,7 @@ export class ComputerRelay extends DurableObject<Env> {
         now,
       );
       // Nothing it queued should reach the host any more.
-      this.sql.exec("DELETE FROM mailbox WHERE dk = ? AND state = 'queued'", d.dk);
+      this.mailbox.drop(d.dk);
       dks.add(d.dk);
     }
     for (const [ws, a] of this.devices()) if (dks.has(a.dk)) this.safeClose(ws, 4003, "revoked");
@@ -249,104 +185,73 @@ export class ComputerRelay extends DurableObject<Env> {
 
   // ---- routine webhooks (§7.8) ----
 
-  /**
-   * `POST /internal/hook` with the sender's body and forwarded headers, `X-Codync-Hook: <id>`.
-   * 401 for an unknown hook or a wrong key alike, so hook ids can't be probed.
-   */
   private async hook(req: Request): Promise<Response> {
-    const id = req.headers.get("X-Codync-Hook") ?? "";
-    const body = new Uint8Array(await req.arrayBuffer());
-    if (!HOOK_ID.test(id)) return errorResponse(400, "badRequest");
-    if (body.length > HOOK_MAX_BODY) return errorResponse(413, "tooLarge");
-    const hook = this.sql.exec<{ key: string; enabled: number }>("SELECT key, enabled FROM hooks WHERE id = ?", id).toArray()[0];
-    if (!hook || !(await authorized(hook.key, req.headers, body))) return errorResponse(401, "unauthorized");
-    if (!hook.enabled) return errorResponse(409, "paused");
-    const delivery = deliveryId(req.headers);
-    if (delivery === null) return errorResponse(400, "badDeliveryId");
     const now = Date.now();
-    const dup = this.sql.exec("SELECT 1 FROM hookbox WHERE hook = ? AND delivery = ?", id, delivery).toArray().length > 0;
-    if (dup) return Response.json({ delivery, queued: true, duplicate: true }, { status: 202 });
-    const mine = this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM hookbox WHERE hook = ?", id).one().n;
-    const all = this.sql.exec<{ n: number; b: number }>("SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS b FROM hookbox").one();
-    if (mine >= HOOK_PER_HOOK || all.n >= HOOK_PER_COMPUTER || all.b + body.length > HOOK_MAX_BYTES) {
-      return Response.json({ error: { code: "full" } }, { status: 429, headers: { "Retry-After": "60" } });
+    const { res, queued } = await this.hooks.accept(req, now);
+    if (queued) {
+      const host = this.readyHost();
+      if (host) this.hooks.deliver(host, now);
+      else this.ctx.waitUntil(this.wakeHost(now, "message"));
+      await this.ensureAlarm(now + ALARM_MS);
     }
-    this.sql.exec(
-      "INSERT INTO hookbox(hook, delivery, headers, body, size, at, exp, state) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued')",
-      id,
-      delivery,
-      JSON.stringify(forwarded(req.headers)),
-      body.slice().buffer,
-      body.length,
-      now,
-      now + HOOK_TTL_MS,
-    );
-    const host = this.readyHost();
-    if (host) this.deliverHook(host, now);
-    await this.ensureAlarm(now + ALARM_MS);
-    return Response.json({ delivery, queued: true }, { status: 202 });
+    return res;
   }
 
-  /** `{"t":"hooks","hooks":[{id,key,enabled}]}`: the host's whole current set replaces the stored one. */
-  private onHooks(ws: WebSocket, msg: Msg): void {
-    const hooks = parseHooks(msg.hooks, MAX_HOOKS);
-    if (!hooks) return send(ws, JSON.stringify({ t: "error", code: "badHooks" }));
-    this.ctx.storage.transactionSync(() => {
-      this.sql.exec("DELETE FROM hooks");
-      for (const h of hooks) this.sql.exec("INSERT INTO hooks(id, key, enabled) VALUES (?, ?, ?)", h.id, h.key, h.enabled ? 1 : 0);
-      // Deliveries for a removed hook can't run any more; in-flight ones finish with their ack.
-      this.sql.exec("DELETE FROM hookbox WHERE state = 'queued' AND hook NOT IN (SELECT id FROM hooks)");
+  // ---- Codync Cloud sleep and wake ----
+
+  /** `POST /internal/sleep {wakeAt}`: the cloud computer is about to stop; refused while a device is here. */
+  private async sleep(req: Request): Promise<Response> {
+    if (this.devices().some(([, d]) => !d.pair)) return errorResponse(409, "conflict");
+    const b = (await req.json().catch(() => null)) as { wakeAt?: unknown } | null;
+    const wakeAt = typeof b?.wakeAt === "number" && Number.isSafeInteger(b.wakeAt) ? b.wakeAt : null;
+    this.schedule.set(wakeAt, "routine");
+    this.setMeta("sleepId", crypto.randomUUID());
+    if (wakeAt !== null) await this.ensureAlarm(wakeAt);
+    // Offline from now on: the machine stops within a minute, and its socket may never close cleanly. The host
+    // stays connected until then; a wake that finds the machine still running once its stop had time to take
+    // effect takes it back (`wakeHost`; before that, `wake` retries).
+    for (const [ws, a] of this.hosts()) if (a.ready) ws.serializeAttachment({ ...a, ready: false });
+    await this.hostOffline(Date.now());
+    return Response.json({});
+  }
+
+  /** Starts this computer when it is a sleeping cloud computer, at most once a minute; retried while it can't.
+   * Asked again within that minute, it tries once the minute is up: the computer may have gone back to sleep. */
+  private async wakeHost(now: number, cause: WakeCause): Promise<void> {
+    const id = this.meta("computerId");
+    if (!id || this.readyHost()) return;
+    const woke = Number(this.meta("wokeAt") ?? 0);
+    if (now - woke < WAKE_DEBOUNCE_MS) return this.wakeLater(woke + WAKE_DEBOUNCE_MS, cause);
+    this.setMeta("wokeAt", String(now));
+    const sleepId = this.meta("sleepId");
+    const w = await wake(this.env, id, now).catch((e): Wake => {
+      console.error("cloud computer wake failed", { computerId: id, error: String(e) });
+      return { result: "retry" };
     });
-    send(ws, JSON.stringify({ t: "hooks.ok", n: hooks.length }));
-  }
-
-  /** `{"t":"hook.ack","seq","ok","retry"?}`: done, refused for good, or try again later. */
-  private async onHookAck(ws: WebSocket, msg: Msg, now: number): Promise<void> {
-    const row = this.sql
-      .exec<{ attempts: number }>("SELECT attempts FROM hookbox WHERE seq = ? AND state = 'delivering'", Number(msg.seq))
-      .toArray()[0];
-    if (row) {
-      if (msg.ok !== true && msg.retry === true) {
-        const wait = Math.min(HOOK_RETRY_MIN_MS * 2 ** row.attempts, HOOK_RETRY_MAX_MS);
-        this.sql.exec(
-          "UPDATE hookbox SET state = 'queued', attempts = attempts + 1, not_before = ? WHERE seq = ?",
-          now + wait,
-          Number(msg.seq),
-        );
-        await this.ensureAlarm(now + wait);
-      } else {
-        this.sql.exec("DELETE FROM hookbox WHERE seq = ?", Number(msg.seq));
-      }
+    if (w.woken) this.ctx.waitUntil(reportWoken(this.env, w.woken, cause, now));
+    // Its host may be back already (its machine was starting by the time `wake` returned): nothing left to time.
+    if (!this.readyHost()) this.episode.tried(w, now);
+    const { result } = w;
+    // A host that asked to sleep while `wake` read its machine runs only until its stop takes effect: retried, as
+    // a wake that found it `stopping` is.
+    if (result === "running" && this.meta("sleepId") === sleepId) {
+      await this.takeBackHost(now);
+    } else if (result === "running" || result === "retry") {
+      this.setMeta("wokeAt", "0");
+      await this.wakeLater(now + WAKE_RETRY_MS, "retry");
     }
-    this.deliverHook(ws, now);
   }
 
-  /** One delivery in flight at a time, oldest first, skipping ones waiting out a retry. */
-  private deliverHook(host: WebSocket, now: number): void {
-    const a = host.deserializeAttachment() as HostAttachment;
-    if (!a.ready) return;
-    if (this.sql.exec("SELECT 1 FROM hookbox WHERE state = 'delivering'").toArray().length) return;
-    const row = this.sql
-      .exec<{ seq: number; hook: string; delivery: string; headers: string; body: ArrayBuffer; at: number }>(
-        "SELECT seq, hook, delivery, headers, body, at FROM hookbox WHERE state = 'queued' AND exp > ? AND not_before <= ? ORDER BY seq LIMIT 1",
-        now,
-        now,
-      )
-      .toArray()[0];
-    if (!row) return;
-    this.sql.exec("UPDATE hookbox SET state = 'delivering' WHERE seq = ?", row.seq);
-    send(
-      host,
-      JSON.stringify({
-        t: "hook.item",
-        seq: row.seq,
-        hook: row.hook,
-        delivery: row.delivery,
-        headers: JSON.parse(row.headers),
-        body: b64url(new Uint8Array(row.body)),
-        at: row.at,
-      }),
-    );
+  /** It never stopped (the stop failed): the host that asked to sleep is still connected and fine
+   * (`POST /internal/awake`, or a wake that finds it running). */
+  private async takeBackHost(now: number): Promise<void> {
+    const [ws, a] = this.hosts().find(([, h]) => !h.ready) ?? [];
+    if (ws && a) await this.markReady(ws, a, now);
+  }
+
+  /** Wakes it from the alarm at `at` for `cause`, unless a wake is already due by then. */
+  private async wakeLater(at: number, cause: WakeCause): Promise<void> {
+    if (this.schedule.sooner(at, cause)) await this.ensureAlarm(at);
   }
 
   // ---- the cloud assistant (§7.9) ----
@@ -387,17 +292,7 @@ export class ComputerRelay extends DurableObject<Env> {
       case "ready": {
         if (a.ready) return;
         if (!this.acl()) return send(ws, JSON.stringify({ t: "error", code: "badAcl", ver: 0 }));
-        ws.serializeAttachment({ ...a, ready: true });
-        this.setMeta("lastSeenAt", String(now));
-        await this.recordPresence(true, now);
-        const presence = JSON.stringify(this.presence());
-        for (const [dws, d] of this.devices()) {
-          send(dws, presence);
-          send(ws, JSON.stringify({ t: "open", link: d.link, dk: d.dk, pair: d.pair }));
-        }
-        this.deliverNext(ws, now);
-        this.deliverHook(ws, now);
-        return;
+        return this.markReady(ws, a, now);
       }
       case "data": {
         if (!a.ready || !msg.m || typeof msg.m !== "object") return;
@@ -411,11 +306,15 @@ export class ComputerRelay extends DurableObject<Env> {
         return;
       }
       case "mbox.ack":
-        return this.onAck(ws, msg, now);
+        this.mailbox.ack(msg, (dk, note) => this.toDevice(dk, note));
+        return this.mailbox.deliver(ws, now);
       case "hooks":
-        return this.onHooks(ws, msg);
-      case "hook.ack":
-        return this.onHookAck(ws, msg, now);
+        return this.hooks.replace(ws, msg);
+      case "hook.ack": {
+        const retry = this.hooks.ack(msg, now);
+        if (retry !== null) await this.ensureAlarm(retry);
+        return this.hooks.deliver(ws, now);
+      }
       case "assistant.result":
         return this.calls.answered(msg);
       case "ping":
@@ -423,6 +322,23 @@ export class ComputerRelay extends DurableObject<Env> {
       default:
         return;
     }
+  }
+
+  /** The host is online: devices hear it and get their links, and queued mail and webhooks start flowing. */
+  private async markReady(ws: WebSocket, a: HostAttachment, now: number): Promise<void> {
+    ws.serializeAttachment({ ...a, ready: true });
+    this.setMeta("lastSeenAt", String(now));
+    this.schedule.clear();
+    await this.recordPresence(true, now);
+    const presence = JSON.stringify(this.presence());
+    for (const [dws, d] of this.devices()) {
+      send(dws, presence);
+      send(ws, JSON.stringify({ t: "open", link: d.link, dk: d.dk, pair: d.pair }));
+    }
+    this.mailbox.deliver(ws, now);
+    this.hooks.deliver(ws, now);
+    const id = this.meta("computerId");
+    if (id) this.ctx.waitUntil(this.episode.ready(this.env, id, now));
   }
 
   private async onAcl(ws: WebSocket, a: HostAttachment, msg: Msg, now: number): Promise<void> {
@@ -457,21 +373,6 @@ export class ComputerRelay extends DurableObject<Env> {
     send(ws, JSON.stringify({ t: "acl.ok", ver: acl.ver }));
   }
 
-  private onAck(ws: WebSocket, msg: Msg, now: number): void {
-    const row = this.sql
-      .exec<{ dk: string; nonce: string }>("SELECT dk, nonce FROM mailbox WHERE seq = ? AND state = 'delivering'", Number(msg.seq))
-      .toArray()[0];
-    if (row) {
-      this.sql.exec("DELETE FROM mailbox WHERE seq = ?", Number(msg.seq));
-      const note =
-        msg.ok === true
-          ? { t: "mbox.delivered", nonce: row.nonce }
-          : { t: "mbox.failed", nonce: row.nonce, code: FAIL_CODES.has(msg.code as string) ? msg.code : "invalid" };
-      this.toDevice(row.dk, note);
-    }
-    this.deliverNext(ws, now);
-  }
-
   private async onDevice(ws: WebSocket, a: DeviceAttachment, msg: Msg, raw: string): Promise<void> {
     const now = Date.now();
     if (!this.charge(a.link, utf8(raw).length, now)) return this.safeClose(ws, 4008, "rateLimited");
@@ -495,8 +396,8 @@ export class ComputerRelay extends DurableObject<Env> {
       case "mbox.list":
         if (a.pair) return send(ws, JSON.stringify({ t: "mbox.err", nonce: msg.nonce ?? null, code: "pairing" }));
         if (msg.t === "mbox.put") return this.mboxPut(ws, a, msg, now);
-        if (msg.t === "mbox.cancel") return this.mboxCancel(ws, a, msg);
-        return this.mboxList(ws, a);
+        if (msg.t === "mbox.cancel") return this.mailbox.cancel(ws, a.dk, msg);
+        return this.mailbox.list(ws, a.dk);
       default:
         return this.safeClose(ws, 4002, "protocolError");
     }
@@ -517,70 +418,9 @@ export class ComputerRelay extends DurableObject<Env> {
   // ---- mailbox (§7.7) ----
 
   private async mboxPut(ws: WebSocket, a: DeviceAttachment, msg: Msg, now: number): Promise<void> {
-    const nonce = msg.nonce;
-    const err = (code: string) => send(ws, JSON.stringify({ t: "mbox.err", nonce: nonce ?? null, code }));
-    if (typeof nonce !== "string" || !nonce || nonce.length > 128) return err("invalid");
-    const existing = this.sql
-      .exec<{ state: string }>("SELECT state FROM mailbox WHERE dk = ? AND nonce = ?", a.dk, nonce)
-      .toArray()[0];
-    if (existing) return send(ws, JSON.stringify({ t: "mbox.ok", nonce, state: existing.state }));
-    if (this.readyHost()) return err("hostOnline");
-    if (typeof msg.d === "string" && msg.d.length > Math.ceil((MBOX_MAX_BLOB * 4) / 3)) return err("tooLarge");
-    const blob = fromB64url(msg.d);
-    if (!blob || blob.length < MBOX_MIN_BLOB) return err("invalid");
-    if (blob.length > MBOX_MAX_BLOB) return err("tooLarge");
-    const exp = msg.exp === undefined ? now + MBOX_TTL_MS : msg.exp;
-    if (typeof exp !== "number" || !Number.isSafeInteger(exp) || exp <= now || exp > now + MBOX_TTL_MS) return err("invalid");
-    const mine = this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM mailbox WHERE dk = ?", a.dk).one().n;
-    const all = this.sql.exec<{ n: number; b: number }>("SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS b FROM mailbox").one();
-    if (mine >= MBOX_PER_DEVICE || all.n >= MBOX_PER_COMPUTER || all.b + blob.length > MBOX_MAX_BYTES) return err("full");
-    this.sql.exec(
-      "INSERT INTO mailbox(dk, nonce, blob, size, exp, state) VALUES (?, ?, ?, ?, ?, 'queued')",
-      a.dk,
-      nonce,
-      blob.slice().buffer,
-      blob.length,
-      exp,
-    );
-    send(ws, JSON.stringify({ t: "mbox.ok", nonce, state: "queued" }));
+    if (!this.mailbox.put(ws, a.dk, msg, now, !!this.readyHost())) return;
+    this.ctx.waitUntil(this.wakeHost(now, "message"));
     await this.ensureAlarm(now + ALARM_MS);
-  }
-
-  private mboxCancel(ws: WebSocket, a: DeviceAttachment, msg: Msg): void {
-    const nonce = typeof msg.nonce === "string" ? msg.nonce : "";
-    const row = this.sql
-      .exec<{ state: string }>("SELECT state FROM mailbox WHERE dk = ? AND nonce = ?", a.dk, nonce)
-      .toArray()[0];
-    if (row?.state === "queued") {
-      this.sql.exec("DELETE FROM mailbox WHERE dk = ? AND nonce = ?", a.dk, nonce);
-      return send(ws, JSON.stringify({ t: "mbox.cancelled", nonce }));
-    }
-    send(ws, JSON.stringify({ t: "mbox.gone", nonce, state: row ? "delivering" : "unknown" }));
-  }
-
-  private mboxList(ws: WebSocket, a: DeviceAttachment): void {
-    const items = this.sql
-      .exec<{ nonce: string; exp: number; state: string }>("SELECT nonce, exp, state FROM mailbox WHERE dk = ? ORDER BY seq", a.dk)
-      .toArray();
-    send(ws, JSON.stringify({ t: "mbox.items", items }));
-  }
-
-  /** One item in flight at a time, in `seq` order; the next goes out after the host's ack. */
-  private deliverNext(host: WebSocket, now: number): void {
-    const a = host.deserializeAttachment() as HostAttachment;
-    if (!a.ready) return;
-    if (this.sql.exec("SELECT 1 FROM mailbox WHERE state = 'delivering'").toArray().length) return;
-    const row = this.sql
-      .exec<{ seq: number; dk: string; nonce: string; blob: ArrayBuffer; exp: number }>(
-        "SELECT seq, dk, nonce, blob, exp FROM mailbox WHERE state = 'queued' AND exp > ? ORDER BY seq LIMIT 1",
-        now,
-      )
-      .toArray()[0];
-    if (!row) return;
-    this.sql.exec("UPDATE mailbox SET state = 'delivering' WHERE seq = ?", row.seq);
-    send(host, 
-      JSON.stringify({ t: "mbox.item", seq: row.seq, from: row.dk, nonce: row.nonce, d: b64url(new Uint8Array(row.blob)), exp: row.exp }),
-    );
   }
 
   // ---- lifecycle ----
@@ -634,16 +474,13 @@ export class ComputerRelay extends DurableObject<Env> {
         await this.retire(ws, a, now, 1011, "timeout");
       }
     }
-    for (const row of this.sql
-      .exec<{ dk: string; nonce: string }>("SELECT dk, nonce FROM mailbox WHERE exp <= ?", now)
-      .toArray()) {
-      this.toDevice(row.dk, { t: "mbox.expired", nonce: row.nonce });
-    }
-    this.sql.exec("DELETE FROM mailbox WHERE exp <= ?", now);
-    this.sql.exec("DELETE FROM hookbox WHERE exp <= ? AND state = 'queued'", now);
+    this.mailbox.expire(now, (dk, note) => this.toDevice(dk, note));
+    this.hooks.expire(now);
     this.sql.exec("DELETE FROM nonces WHERE exp <= ?", now);
     const host = this.readyHost();
-    if (host) this.deliverHook(host, now);
+    if (host) this.hooks.deliver(host, now);
+    const cause = this.schedule.due(now);
+    if (cause) await this.wakeHost(now, cause);
 
     const acl = this.acl();
     let next = now + ALARM_MS;
@@ -654,22 +491,20 @@ export class ComputerRelay extends DurableObject<Env> {
       else next = Math.min(next, exp);
     }
     // A delivery waiting out its retry wakes the DO when it's due.
-    const due = this.sql
-      .exec<{ t: number | null }>("SELECT MIN(not_before) AS t FROM hookbox WHERE state = 'queued' AND not_before > ?", now)
-      .one().t;
+    const due = this.hooks.nextRetry(now);
     if (due !== null) next = Math.min(next, due);
-    const busy =
-      this.ctx.getWebSockets().length > 0 ||
-      this.sql.exec("SELECT 1 FROM mailbox LIMIT 1").toArray().length > 0 ||
-      this.sql.exec("SELECT 1 FROM hookbox LIMIT 1").toArray().length > 0;
+    // A sleeping cloud computer's next routine, or a wake that has to be retried.
+    const pendingWake = this.schedule.pending();
+    if (pendingWake) next = Math.min(next, pendingWake);
+    const busy = this.ctx.getWebSockets().length > 0 || this.mailbox.any() || this.hooks.any() || pendingWake > 0;
     if (busy) await this.ctx.storage.setAlarm(next);
   }
 
   /** The host went away: devices see it offline, in-flight mail goes back to the queue. */
   private async hostOffline(now: number, exclude?: WebSocket): Promise<void> {
     this.setMeta("lastSeenAt", String(now));
-    this.sql.exec("UPDATE mailbox SET state = 'queued' WHERE state = 'delivering'");
-    this.sql.exec("UPDATE hookbox SET state = 'queued' WHERE state = 'delivering'");
+    this.mailbox.requeue();
+    this.hooks.requeue();
     this.calls.offline();
     if (!this.readyHost(exclude)) {
       const presence = JSON.stringify(this.presence(exclude));
@@ -705,6 +540,13 @@ export class ComputerRelay extends DurableObject<Env> {
   private presence(exclude?: WebSocket) {
     const last = this.meta("lastSeenAt");
     return { t: "presence", online: !!this.readyHost(exclude), lastSeenAt: last === null ? null : Number(last) };
+  }
+
+  private hosts(): [WebSocket, HostAttachment][] {
+    return this.ctx
+      .getWebSockets("host")
+      .map((ws): [WebSocket, HostAttachment] => [ws, ws.deserializeAttachment() as HostAttachment])
+      .filter(([, a]) => !a.retired);
   }
 
   private devices(): [WebSocket, DeviceAttachment][] {

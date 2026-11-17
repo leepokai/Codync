@@ -1,10 +1,11 @@
-use super::detected::{Detected, agent_programs, changes, servers_in};
-use super::logs::last_lines;
+use super::detected::{Detected, agent_programs, changes, servers_in, still_in_tree};
+use super::logs::{last_lines, read_end};
 use super::platform::same_boot;
 use super::ports::{Listening, Port, sockets_of, urls_with};
 use super::scan::SETTLE_MS;
 use super::tools::tidied;
-use super::{Live, Saved, Status};
+use super::{DevServers, Live, Saved, Status};
+use crate::LockExt;
 use crate::agent::process::{JobProcess, descendants, parse_ps};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -238,6 +239,22 @@ fn a_server_settles_on_its_first_socket_or_after_a_while() {
 }
 
 #[test]
+fn only_the_hosts_own_running_servers_outlive_an_agent() {
+    let servers = DevServers::default();
+    let mut web = live();
+    web.begin(0);
+    web.ports = vec![Port { port: 5173, local: String::new(), remote: Vec::new() }];
+    let mut done = live();
+    done.saved.id = "done".into();
+    servers.live.locked().extend([("a".to_owned(), web), ("done".to_owned(), done)]);
+    // What the agent started through its shell shows in the apps, and ends with the agent.
+    servers.detected.locked().insert("b".into(), vec![found(vec![7])]);
+    assert_eq!(servers.wire("b").as_array().map(Vec::len), Some(3));
+    assert_eq!(servers.active("b"), [("web".to_owned(), vec![5173])]);
+    assert_eq!(servers.active("other"), []);
+}
+
+#[test]
 fn clients_hear_of_addresses_only_when_they_differ() {
     let at =
         |remote: &str| vec![Port { port: 3000, local: "http://localhost:3000".into(), remote: vec![remote.into()] }];
@@ -254,4 +271,20 @@ fn clients_hear_of_addresses_only_when_they_differ() {
 fn a_clients_status_from_a_newer_host_reads_as_stopped() {
     assert_eq!(serde_json::from_str::<Status>(r#""sleeping""#).expect("any text decodes"), Status::Stopped);
     assert_eq!(serde_json::from_str::<Status>(r#""failed""#).expect("a known one decodes"), Status::Failed);
+}
+
+#[test]
+fn stopping_a_detected_server_reaches_only_what_the_agent_still_holds() {
+    let tree = [process(30, 1, "python3"), process(40, 1, "node")];
+    assert_eq!(still_in_tree(&[30, 31], &tree), [30], "31 is gone, and its pid may be someone else's by now");
+    assert_eq!(still_in_tree(&[31], &[]), Vec::<u32>::new());
+}
+
+#[test]
+fn a_log_that_cant_be_read_says_so_and_a_missing_one_is_empty() {
+    let folder = std::env::temp_dir().join(format!("codync-log-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&folder).expect("a folder in a test");
+    assert_eq!(read_end(&folder.join("none.log")).expect("no file yet"), "");
+    assert!(read_end(&folder).is_err(), "a folder isn't a log");
+    std::fs::remove_dir_all(&folder).expect("cleaning up a test's folder");
 }

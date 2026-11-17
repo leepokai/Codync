@@ -19,16 +19,16 @@ pub use tools::{BRIEF, START, TOOLS, call, tools};
 
 use crate::LockExt;
 use crate::agent::acp::Acp;
-use crate::agent::process::Process;
+use crate::agent::process::{Process, UNWIND};
 use crate::analytics::{self, Event};
 use crate::hub::Hub;
-use crate::store::Store;
-use anyhow::{Result, anyhow, bail};
+use crate::store::{BotConfig, Store};
+use anyhow::{Result, anyhow};
 use detected::Detected;
 use ports::Port;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
@@ -37,10 +37,11 @@ use tokio::sync::{Notify, watch};
 const KV_PREFIX: &str = "dev-server:";
 /// Running at once per bot: a loop of retries can't fill the computer.
 const MAX_RUNNING: usize = 5;
-/// What a server gets to stop by itself before the rest of its tree is killed.
+/// What a server gets to stop by itself before the rest of its tree is ended.
 const STOP_GRACE: Duration = Duration::from_secs(3);
-/// How long a stop waits: the grace, then a moment for what's left to be killed.
-const STOP_WAIT: Duration = Duration::from_secs(STOP_GRACE.as_secs() + 2);
+/// How long a stop waits: the grace, the rest of the tree ending from its leaves up, then a moment for what's left to be
+/// killed.
+const STOP_WAIT: Duration = Duration::from_secs(STOP_GRACE.as_secs() + UNWIND.as_secs() + 2);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -196,6 +197,8 @@ impl Live {
 
 /// An agent that was started, and the programs it runs under.
 struct Agent {
+    /// Whose list what it leaves running shows in: a task's agent, its bot's.
+    bot: String,
     acp: Weak<Acp>,
     programs: Vec<String>,
 }
@@ -204,7 +207,8 @@ struct Agent {
 pub struct DevServers {
     live: Mutex<HashMap<String, Live>>,
     detected: Mutex<HashMap<String, Vec<Detected>>>,
-    agents: Mutex<HashMap<String, Agent>>,
+    /// By the bot or task whose agent it is; in one order from scan to scan, so a list several agents share is too.
+    agents: Mutex<BTreeMap<String, Agent>>,
     /// Wakes the port scan for a server that just started.
     wake: Notify,
 }
@@ -227,10 +231,25 @@ impl DevServers {
         json!(servers)
     }
 
-    /// `command`: the line it was started with, on `backend`'s harness.
-    pub fn agent_started(&self, bot: &str, acp: &Arc<Acp>, backend: &str, command: &str) {
-        let agent = Agent { acp: Arc::downgrade(acp), programs: detected::agent_programs(backend, command) };
-        self.agents.locked().insert(bot.to_owned(), agent);
+    /// The servers the host runs for `bot` that run or are starting, oldest first: each one's name and ports. What its
+    /// agent left running through its own shell isn't among them: that ends with the agent.
+    pub fn active(&self, bot: &str) -> Vec<(String, Vec<u16>)> {
+        let mut own: Vec<(i64, String, Vec<u16>)> = self
+            .live
+            .locked()
+            .values()
+            .filter(|live| live.saved.bot == bot && live.status.active())
+            .map(|live| (live.saved.created_at, live.saved.name.clone(), live.ports.iter().map(|p| p.port).collect()))
+            .collect();
+        own.sort_by_key(|(created_at, ..)| *created_at);
+        own.into_iter().map(|(_, name, ports)| (name, ports)).collect()
+    }
+
+    /// `cfg`'s agent started. `command`: the line it was started with.
+    pub fn agent_started(&self, cfg: &BotConfig, acp: &Arc<Acp>, command: &str) {
+        let programs = detected::agent_programs(&cfg.backend, command);
+        let agent = Agent { bot: cfg.owner().to_owned(), acp: Arc::downgrade(acp), programs };
+        self.agents.locked().insert(cfg.id.clone(), agent);
     }
 
     /// A deleted bot's servers end with it: dropping a server's run makes it stop.
@@ -259,13 +278,8 @@ impl DevServers {
         }
     }
 
-    /// A bot's server by what it runs and where: starting the same thing twice isn't two servers.
     fn same(&self, bot: &str, folder: &str, command: &str) -> Option<String> {
-        self.live
-            .locked()
-            .values()
-            .find(|live| live.saved.bot == bot && live.saved.folder == folder && live.saved.command == command)
-            .map(|live| live.saved.id.clone())
+        same_server(&self.live.locked(), bot, folder, command)
     }
 
     fn view(&self, bot: &str, id: &str) -> Result<View> {
@@ -313,15 +327,28 @@ fn report(hub: &Hub, event: Event, key: &str, value: &str) {
     analytics::capture(hub, event, properties);
 }
 
-/// Refuses another running server past the limit, saying which ones run.
+/// A bot's server by what it runs and where: starting the same thing twice isn't two servers.
+fn same_server(live: &HashMap<String, Live>, bot: &str, folder: &str, command: &str) -> Option<String> {
+    live.values()
+        .find(|live| live.saved.bot == bot && live.saved.folder == folder && live.saved.command == command)
+        .map(|live| live.saved.id.clone())
+}
+
+/// Whether `bot` may run one more.
+fn has_room(live: &HashMap<String, Live>, bot: &str) -> bool {
+    live.values().filter(|live| live.saved.bot == bot && live.status.active()).count() < MAX_RUNNING
+}
+
+/// The refusal past the limit, saying which ones run. Call it with the servers unlocked.
+fn no_room(hub: &Hub, bot: &str) -> anyhow::Error {
+    report(hub, Event::DevServerStarted, "outcome", "limit");
+    anyhow!("at most {MAX_RUNNING} dev servers run at once; stop one first. Running: {}", hub.dev_servers.wire(bot))
+}
+
+/// Refuses another running server past the limit, before asking anyone about it. Only what starts one decides, under
+/// the lock that adds it: parallel starts can all pass here, and an approval card can take minutes.
 fn check_room(hub: &Hub, bot: &str) -> Result<()> {
-    let running =
-        hub.dev_servers.live.locked().values().filter(|live| live.saved.bot == bot && live.status.active()).count();
-    if running >= MAX_RUNNING {
-        report(hub, Event::DevServerStarted, "outcome", "limit");
-        bail!("at most {MAX_RUNNING} dev servers run at once; stop one first. Running: {}", hub.dev_servers.wire(bot));
-    }
-    Ok(())
+    if has_room(&hub.dev_servers.live.locked(), bot) { Ok(()) } else { Err(no_room(hub, bot)) }
 }
 
 /// A server's recent output, for the apps.

@@ -31,7 +31,7 @@ export default function MacWindow() {
       {width ? (
         <iframe
           src="/demo/desktop"
-          title="Codync for Mac, live demo: Ship room, where Pacer, Reviewer and Scout discuss an isoWeek fix"
+          title="Codync for Mac, live demo: bots on a MacBook Pro and a Mac mini, with Ship room open, where Pacer, Reviewer and Scout discuss an isoWeek fix"
           loading="lazy"
           className="absolute top-0 left-0 origin-top-left border-0"
           style={{ width: layout, height: layout * RATIO, transform: `scale(${scale})` }}

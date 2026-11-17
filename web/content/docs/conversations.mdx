@@ -2,7 +2,13 @@ Each bot has one chat that keeps going. You send it work, it replies, and everyt
 
 ## What the chat shows
 
-The chat shows your messages, the bot's messages, approval cards and short notices. A bot's message arrives complete; nothing streams in word by word. A bot can send several messages in one turn.
+The chat shows your messages, the bot's messages, approval cards, choice cards and short notices. A bot's message arrives complete; nothing streams in word by word. A bot can send several messages in one turn.
+
+## Choice cards
+
+When your bot needs you to pick a way forward, it can show a question with two to twelve numbered options. On **iPhone**, **Android** and **Desktop**, tap the option you want, or type your own answer in the last row, **Something else**. **Suggested** marks its recommendation; nothing is selected for you. In the **Terminal UI**, use F1–F12, or 1–9 for the first nine options, or type your own answer in the message box. Your choice appears as your message and the bot continues its current work.
+
+You can also answer in the message box: the full option, its number, or anything else in your own words. If an option itself is a number, the exact option text takes priority. A message with files, a quote or a `/` command doesn't answer the card; it moves the bot on from the question. On an older app, the question and numbered options appear as text, answered the same way. A card waits up to four and a half minutes; stopping the bot or restarting its computer also expires it. An answered or expired card cannot be answered again.
 
 While the bot works, a line under the last message shows what it's doing and for how long. It reads **Typing…** while the bot writes you a message.
 
@@ -31,13 +37,13 @@ Each chat keeps its own draft on each device, and the draft comes back when you 
 
 In the terminal, the waiting messages show above the input; press `esc`, then `S` to send the oldest one now or `D` to take back the newest.
 
-**When the computer is offline**, the iPhone can still take a text message: it shows **Waiting for the computer to come online** and goes out when the computer is back. It waits in the Codync relay, encrypted for your computer, for up to 24 hours; after that it shows **Failed to send**. Tap the cancel button beside it to take it back. A message with files can't wait; its send button stays off until the computer is online.
+**When the computer is offline**, the iPhone can still take a text message: it shows **Waiting for the computer to come online** and goes out when the computer is back. It waits in the Codync relay, encrypted for your computer, for up to 24 hours; after that it shows **Failed to send**. With no relay (a computer in no account), it waits on the phone instead and goes when the phone reaches the computer again. Tap the cancel button beside it to take it back. A message with files can't wait; its send button stays off until the computer is online.
 
-If a message fails to send, it shows **Failed to send** with buttons to resend or delete it.
+If a message fails to send, it shows **Failed to send** with buttons to resend or delete it. On **iPhone** and **Desktop**, a message's files stay on the device only until the app closes. After that, resending it shows an error instead of sending the text without its files: delete it and attach them again.
 
 On iPhone, sending clears the message box so you can type your next message. You can add text with dictation or switch to another chat's saved draft.
 
-**From another app (Android):** share text to Codync, pick a bot, and its chat opens with the text in the message box, after anything you had typed there. Nothing is sent until you send it.
+**From another app (iPhone and Android):** in any app's share sheet, choose **Codync** to send text, a link, pictures or files (up to 10, each up to 100 MB) to a bot. The **Send to a bot** sheet shows what you're sharing, a message box with the shared text or link already in it, and your bots. Pick one and tap send. **Recent** lists the last three bots you shared to, and the one you shared to last is already picked. On the iPhone the sheet uploads the files, sends, and closes, back in the app you shared from. On Android, Codync opens that chat, where the message shows like one you typed. Text alone can go while the computer is offline and waits for it like any message (from the iPhone's sheet, only through the Codync relay). Files need the computer online. What you had typed in that chat's message box stays as it was.
 
 **From Shortcuts (iPhone):** Codync's **Send Text to Bot** action sends a message without typing it in the chat. Pick a **Bot** and fill in **Text**. **Open Chat** is off by default, so the message goes out in the background; turn it on to open the chat. The action finishes when the computer accepts the message, or reports it queued when the computer is offline. The iPhone has to be unlocked, also from Siri ("Send text with Codync"). Only the current account's visible bots are listed.
 
@@ -51,13 +57,27 @@ Use the **+** button left of the message box.
 
 A message can be files only. Each file can be up to 100 MB. The files are saved on the computer, in an `uploads` folder in the bot's personal workspace, or in Codync's data folder for a bot that works in a project folder. The agent gets your message with the path of each file and reads them with its own tools.
 
-Bots can send files back when you ask, such as a report or a build. Each one shows as a card with its name and size and a download action. An image up to 20 MB also shows the picture itself in the iPhone, Android and desktop apps; tap or click it to see it full size. On desktop, image previews fit the whole picture inside a larger panel that adjusts to your window. This also applies to images you send. To save a file:
+Bots can send files back when you ask, such as a report or a build. Each one shows as a card with its name and size and a download action. An image up to 20 MB also shows the picture itself in the iPhone, Android and desktop apps; tap or click it to see it full size. On desktop, image previews fit the whole picture inside a larger panel that adjusts to your window. This also applies to images you send. In the full-size picture, the copy button puts the picture itself on the clipboard, and for a file a bot sent, the download button next to the close button saves it. You can zoom up to 8x:
+
+- **Desktop:** pinch on the trackpad (or hold Ctrl and scroll) to zoom, drag to move the picture, and double-click to zoom in or back out. **+** and **-** zoom too, and **0** fits the picture again. Right-click a picture, in the chat or full size, for the message's usual menu, where **Copy** becomes **Copy image** and **Copy name**.
+- **iPhone:** pinch to zoom, drag to move the picture, and double-tap to zoom in or back out. Touch and hold a picture, in the chat or full size, for the message's usual menu, where **Copy** becomes **Copy image** and **Copy name**.
+
+A voice note or other sound file (MP3, M4A, WAV or AAC) up to 20 MB has a play button in place of its icon in the same apps. It spins while the sound loads; then the card shows the time played and its length over a progress bar. If the sound can't be played, the card says **Couldn't play** and the next tap tries again. With VoiceOver or TalkBack, each card is one item, with play and download among its actions.
+
+To save a file:
 
 - **Desktop:** saves through the system Save dialog.
 - **iPhone:** opens the share sheet, including Save to Files.
 - **Terminal UI:** pick the message (`v`), then `f` saves it to Downloads.
 
 Codync keeps its own copy of each shared file, so it stays downloadable even if the bot later changes or deletes the original. Bots share files only in their own chat, not in group chats or routine runs.
+
+A bot can also speak a message: its voice note then plays at the top of that message's bubble, with the text under it, instead of coming as a card of its own. The player works like a voice note's card: tap play, then the progress bar and the time played sit beside the button on one row; tap or drag the bar to jump to another point (on desktop, a click anywhere else on the player plays or pauses), and tap again if it says **Couldn't play**. To save the sound, pick Download in the message's menu (press and hold on the phones, right-click on desktop). The terminal UI shows the file's line with the text under it.
+
+Playback errors use your app's language, with a tap-to-retry hint on phones and a
+click-to-retry hint on desktop. On iPhone, playing a note after a call or dictation
+uses normal playback audio rather than retaining the recording settings.
+On Android, leaving the chat while a note is loading prevents it from starting afterward.
 
 A report or a tracker you'll come back to can come as an [artifact](/docs/artifacts) instead: a page that opens from its card. Everything made or shared in a chat is also in its [Library](/docs/artifacts#the-library).
 
@@ -76,19 +96,61 @@ The answers come from the agent, usually:
 
 In the terminal UI, press `y` to allow once, `a` to always allow, `n` to reject, `N` to reject and say why, or `1`…`9` to pick an option.
 
+While a card waits, the bot's row in the bot list reads **Needs approval** and its unread badge counts the card in amber, even after you've opened the chat, until you answer it. A folded section with a waiting bot shows its badge in amber too.
+
 The agent waits for your answer. If the turn ends before you answer, for example because you stopped it, the card reads **Expired — the agent moved on**.
 
-With **Approve automatically**, no cards appear: Codync allows each request for you. Your agent's own permission rules still apply under any setting. To change the setting, see [Bots](/docs/bots#permissions).
+With **Approve automatically**, no cards appear: Codync allows each request for you. A message from another computer that your network rules hold to **Auto** or **Ask** is the exception: what the bot does for it shows a card whatever this setting ([choose who reaches your bots](/docs/teamwork#choose-who-reaches-your-bots)). Your agent's own permission rules still apply under any setting. To change the setting, see [Bots](/docs/bots#permissions).
 
-Some agents keep working after their reply, for example a background helper that finishes a long job. With **Approve automatically**, what that work asks is allowed too, unless you stopped the bot's latest reply; under any other setting it's declined, since no card can wait for you. Once the bot is idle there's no **Stop**: to stop approving that work, switch the bot to **Ask me**. When that work is done, the bot can still send you its result as a message in its chat, unless you stopped its latest reply.
+Some agents keep working after their reply, for example a background helper that finishes a long job. With **Approve automatically**, what that work asks is allowed too, unless you stopped the bot's latest reply; under any other setting, or after a message your network rules hold to Auto or Ask, it's declined, since no card can wait for you. Once the bot is idle there's no **Stop**: to stop approving that work, switch the bot to **Ask me**. When that work is done, the bot can still send you its result as a message in its chat, unless you stopped its latest reply.
+
+A [background task](#background-tasks) asks in the same chat. Its card has the line **In the background ·** and the item's title, and you answer it like any other card. A task keeps the **Permissions** setting its bot had when it started. When a task needs you to choose between ways forward, its choice card is in the chat too: pick an option on the card. It has no **Something else** row: a message you type goes to the bot in the chat and doesn't answer a task's card, and **Stop** in the chat leaves it waiting; the card ends when you stop its item, or after four and a half minutes without an answer. The **Sign in** card of an agent a task needs you to sign in to is in the chat too ([below](#background-tasks)).
+
+## Background tasks
+
+For long work (changing code, running builds or tests, research, writing a document), a bot puts the work in its **event box** as an item. A task takes it: another session of the same bot that works away from the chat. The chat stays free, so you can keep writing to the bot and it keeps answering. You can give a bot several things: a set number of them are worked on at once, and the rest wait their turn in the box.
+
+- **The capsule.** While anything is being worked on or waits, a capsule above the message box reads **In the background ·** and what goes on. With one item being worked on and nothing waiting, that is what its task is doing and for how long. Otherwise it counts, such as **2 working · 3 waiting**, with **Needs you** first while an item waits on you: an approval or choice card, or an agent's **Sign in** card. The bot's row in the bot list shows the same counts while the chat itself is idle. Tap or click the capsule to open the bot's **Details**.
+- **Details** lists the work, and leaves out a section that has nothing:
+  - **Threads:** the items being worked on now. The heading reads, for example, **2 / 3**: how many run, of the most the bot may run at once. A place not in use reads **Free**.
+  - **Event box:** what waits, numbered in the order it will be taken, each with why it waits: **Next up**, how many are ahead, **Follows what it works on** or **Near the usage limit: one at a time**.
+  - **Recent:** what ended in the last day.
+- **To see what an item did,** tap or click its row under **Threads** or **Recent**. Its thread opens in place of the list, not in a window of its own:
+  - **Desktop:** the details panel slides to the thread. The back button, **Back to details**, or Esc while you're in the panel, returns to the list.
+  - **iPhone and Android:** the thread is a page inside the details sheet. **Back to details** at the top left, or swiping back from the left edge (on Android, the system back), returns to the list.
+  - **Terminal UI:** Enter on the row opens the item's steps over **Details**; Esc closes them.
+
+  The top of the thread has the item's title, how it stands and for how long, **Stop** while it's being worked on, and where it works: the folder, or the branch when it has a worktree. Tap or click that line to copy the full path. Below it, **What it was told** unfolds to what the task started with; then come the task's steps, your messages to it, and its replies, which you can copy. What the task puts in the chat (an approval or a choice it asks of you, its agent's **Sign in** card, a file, a voice note, an artifact) stays in the chat, and the thread shows one line for it where it happened, such as **Waiting for your approval: …**, **Answered: …**, **Needs Claude Code sign-in**, **Sent a file: …** or **Made an artifact: …**. Tap or click the line to see it in the chat: on the desktop the chat beside the panel scrolls to it; on iPhone and Android the details close and the chat shows it. You answer a card, download a file and open an artifact there. A row that needs you opens the chat at its card. Terminal UI: Tab picks the newest of those lines and goes up, Shift-Tab down; Enter on the picked line goes to the chat at it.
+- **To write to an item,** type in the box under its thread, **Message this thread**, as in a chat. This works for the bot's own items. While the item is being worked on, your message waits its turn, and **Send now** and **Remove** work as in the chat: on the desktop they are under the waiting message, which reads **Queued**; on iPhone and Android the message waits in the list just above the box. Sending it now stops what the task is doing for your message when its agent can't take a message mid-turn. An item that already ended takes a message too: it goes back under **Threads** and is worked on again, in the same session where the agent can pick it up, even when every place is taken. When it ends, the bot tells you in the chat again, and knows what you wrote to the item. A message never answers a card the item waits on; **Stop** drops the messages still waiting. A routine's run and another bot's request can be read and stopped, not written to: one line shows instead of the message box, **Read only: a routine's run** or **Read only: another bot's request**. A thread takes text only: no files, voice or commands. Terminal UI: in an item's steps, press `i` or Enter to type, Enter to send and Esc to stop typing; then `S` sends the next waiting message now and `D` removes the last.
+- **Work** shows every bot's background work in one place. While any bot has work going or waiting, a **Work** button (a tray) appears at the top of the bot list on iPhone and Android and at the top of the sidebar on the desktop, with the number of items being worked on. It lists each of those bots, in your bot list's order, with the same **Threads** and **Event box** rows and buttons as its **Details**. Tap or click a bot's name to open its **Details**; a row that needs you opens the chat at its card, and any other row of an item a task has or had opens that bot's chat with the item's thread in its **Details**. It closes by itself when nothing is left. Terminal UI: press `E` in the bot list; Enter on a bot's name opens its **Details**, on a row that needs you the chat, and on another item's row its steps.
+- **First** moves a waiting item to the front of the box.
+- **Cut in** is on the first waiting item when every place is taken, unless that item follows work that isn't finished or waits for usage. It asks which item gives way: that one's session closes and it starts again later, and the item that cut in starts in its place.
+- **Drop** removes a waiting item, or an ended one from **Recent**.
+- **Stop** is on an item under **Threads**, in its steps, and on the capsule while one item is being worked on. Codync asks **Stop the background work?** first. What the task already changed stays.
+- **Try again** puts a stopped or failed item back in the box, last.
+- **Routine runs and other bots' requests** are items too: a [routine](/docs/routines#how-a-run-works) that comes due and a request [another bot](/docs/teamwork) sends wait in the box and are worked on away from the chat, like the bot's own work. The result doesn't come back as the bot's report: a routine's reply is posted in the chat as before, and a request's answer goes to the bot that asked. **Stop** cancels the run or the request, **Try again** on a routine's item runs the routine again, and a request can't be tried again (the other bot asks again). They never give way to an item that cuts in, so **Cut in** shows only when one of the bot's own items is being worked on. Before its title, a routine's row has the routine symbol and a request's row the avatar of the bot that asked (Terminal UI: `↻`, or that bot's name and `›`). A bot with [computer use](/docs/computer-use) or **Manage the team** on does these in its chat instead, one at a time.
+- **Where the buttons are.** Desktop: move the pointer over a row. iPhone and Android: a row shows one button; touch and hold the row for the rest. Terminal UI: the work shows as a line over the message box. Press Esc to leave typing, then `B` to open Details. On a row, Enter opens its steps, `X` stops it (it asks first), `F` moves it first, `C` cuts in, `D` drops it and `A` tries again.
+- **When an item finishes,** the bot tells you what it found in an ordinary message, with the usual notification. If an item couldn't finish, the bot tells you why. An item you stopped sends nothing.
+
+You can also tell the bot in the chat: to do one thing first, to do it now, to change what an item should do, or to stop it.
+
+**Agents at once**, under **Workspace** in the bot's **Settings**, is the most items the bot works on at the same time: 1 to 6, and 3 unless you change it. Each bot has its own number; there is no limit for the computer as a whole. While the agent a new item would start on is near its usage limit, a bot starts one item at a time.
+
+Background work uses the bot's [fallbacks](/docs/agent-fallbacks) too: when a task's agent runs out of usage or is signed out, the next agent in the list carries the item on. Whatever you need to do about it shows in the chat with the item's line: the agent's **Sign in** card, or **Add a fallback** when the item failed without one. When no agent can go on until you sign in, the item waits: its row reads, for example, **Needs Claude Code sign-in**, and tapping or clicking it opens the chat at the card. Once you've signed in, the item goes on where it was. The bot can add work while up to 20 items wait. A task can ask you to choose, share a file and publish an [artifact](/docs/artifacts): each shows in the chat with the line **In the background ·** and the item's title.
+
+**Worktree per agent**, also under **Workspace**, shows when the bot's folder is in a Git repository, and is on unless you turn it off. The first task works in the bot's folder. A task that starts while another one is still working gets a Git worktree of its own, so the two don't change the same files: a separate checkout in the Codync folder on your computer (`worktrees`), on a new branch named `codync/` and the item's title, started from the commit the bot's folder is on. Changes in the bot's folder that aren't committed aren't in it, and neither is what Git ignores there, such as installed packages. When the item finishes, a worktree with no changes and no commits is removed with its branch. Otherwise both stay, and the bot tells you the branch and where it is; ask the bot to merge it when you want it. While an item works in a worktree, its branch shows under its row and at the top of its thread. Codync never merges, rebases or deletes a branch that has work on it. Routine runs and other bots' requests always work in the bot's folder. How to bring a kept branch in yourself, and what happens in a folder that isn't a Git repository, is in [Working folders and git](/docs/working-folders#without-git).
+
+A task can add to the bot's [memory](/docs/memory) but can't change or remove what's there; ask the bot in the chat for that.
+
+Tasks run on your computer and pick up again after the host restarts. An item's steps are kept for 7 days after it ended.
 
 ## Stopping a turn
 
 - **Desktop and iPhone:** while the bot works and the box is empty, the send button turns into **Stop**.
-- **Desktop menu bar or tray menu:** the bot's submenu has **Stop task**.
+- **Desktop menu bar or tray menu:** the bot's submenu has **Stop task**. It also stops the bot's [background work](#background-tasks), the waiting items included.
 - **Terminal UI:** press Esc to leave typing, then `s`.
 
-Stop ends the running turn and drops the messages still queued for it, which then read **Not sent — stopped**. The chat shows "Stopped." and no notification is sent.
+Stop ends the running turn and drops the messages still queued for it, which then read **Not sent — stopped**. The chat shows "Stopped." and no notification is sent. [Background work](#background-tasks) keeps going: it has its own **Stop**, in the bot's **Details**. Only **Stop task** in the desktop menu and stopping the bot from a [voice call](/docs/voice) stop it too. An item the bot added in the turn you stopped is dropped.
 
 ## Replying to a message
 
@@ -98,7 +160,18 @@ You can reply to any of your messages or any message from the bot. The reply goe
 - **Desktop:** hover the message and click **Reply**, or right-click it.
 - **Terminal UI:** press `r`, move to the message with `j` and `k`, then Enter or `r`. Esc cancels.
 
+To reply to one part of a message, select that part first:
+
+- **iPhone and Android:** touch and hold the message, choose **Select Text**, select the words, then **Reply** in the selection menu.
+- **Desktop:** select the words in the message, then click **Reply** on that message.
+
+The quote is then only what you selected, and the bot is told your reply is about that part.
+
 While you reply, the box shows the quote above it and reads "Reply…". The bot gets the quoted text with your reply, so it knows what you mean even when that message is from an earlier session.
+
+A bot can quote a message too, usually when its answer comes later, after other messages. The quote shows above its message, so you can tell which question it answers.
+
+Tap or click a quote to scroll to the message it quotes. In the terminal, pick the message with `v` and press `q`. The message has to be loaded in the chat: scroll up first to load older ones.
 
 ## Reactions
 
@@ -108,6 +181,18 @@ While you reply, the box shows the quote above it and reads "Reply…". The bot 
 
 The quick reactions are 👍 ❤️ 😂 🎉 👀 ✅. Tap your reaction again to take it back. In a bot's own chat, the bot isn't told about your reactions. Bots react now and then too, and their reactions show with their avatars.
 
+## Finding text in a chat
+
+On the desktop, press ⌘F (Ctrl+F on Windows and Linux) to search the open chat. Matches are highlighted as you type and the bar shows which one you're on. Enter or ⌘G goes to the next match, Shift+Enter or ⇧⌘G to the previous one, and Esc closes the bar.
+
+On the iPhone and Android, tap the magnifying glass at the top right of a chat. The bar shows how many matches there are and which one you're on; the arrows (or the keyboard's search key) move between them, and the message holding the current match is highlighted. Close the bar with ✕.
+
+In the terminal UI, press `/` or Ctrl+F in a chat. Type to search, Enter or ↓ goes to the next match, ↑ to the previous one, and Esc closes the bar.
+
+Find searches the messages the chat has loaded, so scroll up (or use **Load earlier messages** on the desktop) to reach older ones.
+
+Searching your bots moved to ⌘K (Ctrl+K). ⌘F still opens it when no chat is open.
+
 ## Commands
 
 Type `/` at the start of a message to see the bot's commands:
@@ -115,8 +200,26 @@ Type `/` at the start of a message to see the bot's commands:
 - `/fast`: turns [Fast mode](/docs/agents#models-and-options) on or off, when the bot's agent offers it.
 - `/servers` (terminal UI): opens the bot's [dev servers](/docs/dev-servers), while it has some.
 - `/` followed by a skill's ID: tells the bot to read that skill first and follow it for this message. The bot's skills are listed after the built-in commands.
+- The agent's own commands (Claude Code's, Codex's, OpenCode's and so on), under the agent's name and marked with its logo, come last, apart from Codync's own commands and skills (under **Codync**), with the agent's description of each. In the terminal UI each of them names the agent. Picking one fills in `/<command>`; add anything it needs and send it. The list follows the agent the bot runs on now, and shows up once that agent has started for the bot. A group chat doesn't list them.
 
-Any other `/command` goes to the agent unchanged, so the agent's own commands keep working. In the terminal UI that includes `/servers` while the bot has no dev servers. There's no command to start a new session: Codync starts one on its own when a conversation needs it. See [Bots](/docs/bots#sessions).
+A message that starts with one of the agent's commands goes to the agent exactly as you typed it, so the agent runs it. Any other `/command` goes to the agent unchanged too, so the agent's own commands keep working. In the terminal UI that includes `/servers` while the bot has no dev servers. New session isn't a command; it's in the bot's menu in the list. See [Bots](/docs/bots#sessions).
+
+## Follow-ups
+
+When something needs another look later (a build that's still running, a reply that hasn't arrived), a bot can set itself a follow-up instead of only saying it will check back. Ask in plain words:
+
+> Check the deploy again in 20 minutes and tell me if it failed.
+
+- A line in the chat confirms it, such as "Follow-up in 20 minutes: Check the deploy". If there's no such line, no follow-up was set.
+- When it's due, a "Follow-up · Check the deploy" line appears and the bot takes one turn in the same chat, with everything said before. Its reply notifies you like any other. If there's nothing worth telling you yet, it stays silent, and it can set another follow-up to keep watching.
+- A follow-up happens once. For something that repeats, ask for a [routine](/docs/routines).
+- Follow-ups work in a bot's own chat. In a [group](/docs/groups), or while it answers [another bot](/docs/teamwork), the bot can't set one: it tells you it can't check back from there. Ask it in its own chat.
+- Waiting follow-ups are listed under **Later** on the bot's **Details** tab, above its [routines](/docs/routines#find-a-bots-routines), each on a card with a dashed outline, a clock and the time it happens. The ✕ on a card cancels it (terminal UI: pick it and press `x`), and a "Follow-up cancelled" line appears in the chat. You can also ask the bot what's waiting or to cancel one.
+- Stopping the bot also drops a follow-up that was due and waiting for its turn; ones set for later stay.
+
+A follow-up can wait from 1 minute to 30 days, and a bot can have 10 waiting at once. A bot that sets a new follow-up each time one comes due stops after 25 in a row and asks you whether to keep watching.
+
+Follow-ups run on your computer, so the host has to be running and the computer awake. While one is waiting, Codync keeps the computer from going to sleep when idle. One that came due while the computer was off or asleep happens as soon as it's back.
 
 ## Fresh conversations
 
@@ -131,6 +234,8 @@ Before your next message, you can:
 - **Terminal UI:** pick the card (`v`), then `o` to show what it carries, `e` to edit it, or `K` to keep the conversation.
 
 Afterwards the card folds into one line that unfolds to what was carried.
+
+Fresh conversations come only from a Claude Code or Codex bot whose [Summarize long chats](/docs/bots#summarize-long-chats) setting is something other than Auto, the default. Changing it takes back a card the new setting no longer calls for, and the conversation carries on.
 
 ## Notifications
 
@@ -158,15 +263,15 @@ To turn notifications off on the iPhone, tap the connection status at the top of
 
 ### Live Activities
 
-When you send a message from the iPhone, a Live Activity for that bot appears on the Lock Screen and in the Dynamic Island. It shows whether the bot is working, needs you, is done or failed, without the message text. On the Lock Screen, a progress line of four segments in the state's color fills as the task moves: one while your message is sent or queued, two while the bot works, three when it needs you, four once it ends. A [voice call](/docs/voice#start-a-call) with the bot shows on its Live Activity too, with what the bot is doing while you talk. Turn it off in the **State** tab under **Live Activity**; that also keeps calls off it. The **Live Activity** and **Dynamic Island** settings control the same switch: the Lock Screen and Dynamic Island turn on and off together.
+When you send a message from the iPhone, a Live Activity for that bot appears on the Lock Screen and in the Dynamic Island. It shows whether the bot is working, needs you, is done or failed, without the message text. On the Lock Screen, a progress line of four segments in the state's color fills as the task moves: one while your message is sent or queued, two while the bot works, three when it needs you, four once it ends. While the bot has [background work](#background-tasks) going or waiting, the Live Activity stays on working after the bot's reply, shows that it needs you when a task waits on a card, and ends when that work is finished and reported. A [voice call](/docs/voice#start-a-call) with the bot shows on its Live Activity too, with what the bot is doing while you talk. Turn it off in the **State** tab under **Live Activity**; that also keeps calls off it. The **Live Activity** and **Dynamic Island** settings control the same switch: the Lock Screen and Dynamic Island turn on and off together.
 
 ## Usage limits
 
-Codync reads plan limits from the agents installed on your computer. Claude Code uses its usage report and status line. The signed-in Codex CLI reports current account limits without starting a conversation or model turn. oh-my-pi, Amp, Kiro, Kimi, Antigravity, OpenCode, Mistral Vibe and Junie are read the same way, from a command, a local database or an IDE file. Cursor has no usage command: Codync uses the sign-in saved by the Cursor app or CLI on this computer and asks Cursor's dashboard service for unified-plan usage, or cursor.com for a legacy-plan summary. Nothing else is sent with an agent's login. To see them:
+Codync reads plan limits on your computer, without starting a conversation or model turn. It shows the agents your bots run. The button beside the computer's name opens every agent that can report, each with a switch and a handle, so you can turn on one no bot uses, hide one, or change their order: [which agents, and how](/docs/agents#usage-limits). To see them:
 
-- **iPhone:** the **State** tab, then **Usage limits**. There's also a Usage widget.
+- **iPhone and Android:** the **State** tab, then **Usage limits**. There's also a Usage widget.
 - **Desktop:** the menu bar or tray menu, or **Usage** in the account menu at the bottom of the sidebar.
-- **Terminal UI:** press `U`.
+- **Terminal UI:** press `U`, then `s` to choose and arrange.
 
 Each limit reads as the share already used, such as **62% used**. Widgets and the small meters in the island and the terminal UI's status bar show just the number, which is also the share used.
 

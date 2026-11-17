@@ -23,8 +23,10 @@ jobs:
   gate:
     if: >-
       github.repository == 'leepokai/Codync' &&
-      (github.event_name != 'workflow_run' || github.event.workflow_run.event == 'push')
-    # In the job, so a run skipped by `if` (a pull request's release build) never queues here.
+      (github.event_name != 'workflow_run' ||
+        (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch != 'dev'))
+    # In the job, so a run skipped by `if` (a pull request's build, or codync-host's dev channel build) never
+    # queues here.
     concurrency:
       group: release-gate
     runs-on: ubuntu-latest

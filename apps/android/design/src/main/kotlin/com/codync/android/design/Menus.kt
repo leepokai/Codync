@@ -11,14 +11,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventTimeoutCancellationException
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -52,7 +53,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.onClick
-import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
@@ -141,14 +141,15 @@ class ContextDrag(val start: () -> Unit, val move: (Float) -> Unit, val end: () 
         awaitEachGesture {
             // A message's hold counts on its links and buttons too, as the iPhone's context menu: even a press a child took.
             val down = awaitFirstDown(requireUnconsumed = reorder != null)
-            val held = awaitLongPressOrCancellation(down.id)
-            if (held == null) {
-                // Not an unconsumed up: a child (a link, a button) took the tap, or the press became a scroll.
-                val up = currentEvent.changes.firstOrNull { it.id == down.id }
-                if (up != null && up.changedToUp() && !up.isConsumed) { up.consume(); tap?.invoke() }
+            // An up before the hold's time is a tap, taken on its way out: what's around the row (a sheet's own
+            // clickable) would have consumed it by the end of the event. Null: a child (a link, a button) took the
+            // tap, or the press became a scroll.
+            try {
+                withTimeout(viewConfiguration.longPressTimeoutMillis) { waitForUpOrCancellation() }?.let { it.consume(); tap?.invoke() }
                 return@awaitEachGesture
+            } catch (_: PointerEventTimeoutCancellationException) {
+                hold()
             }
-            hold()
             if (reorder == null) {
                 // The rest of the press is kept from the child, so a held link opens the menu, not the page.
                 do { awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() } } while (currentEvent.changes.any { it.pressed })
@@ -159,7 +160,7 @@ class ContextDrag(val start: () -> Unit, val move: (Float) -> Unit, val end: () 
             // finally: a cancelled gesture (the row left the list, the handler restarted) still ends the drag.
             var completed = false
             try {
-                completed = drag(held.id) { change ->
+                completed = drag(down.id) { change ->
                     val step = change.positionChange().y
                     moved += step
                     if (!started && abs(moved) > viewConfiguration.touchSlop) { started = true; open = false; reorder.start() }

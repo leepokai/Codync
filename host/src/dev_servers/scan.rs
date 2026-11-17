@@ -83,14 +83,14 @@ impl DevServers {
         })
     }
 
-    fn agents_running(&self) -> Vec<detected::RunningAgent> {
+    pub(super) fn agents_running(&self) -> Vec<detected::RunningAgent> {
         let mut agents = self.agents.locked();
         agents.retain(|_, agent| agent.acp.strong_count() > 0);
         agents
-            .iter()
-            .filter_map(|(bot, agent)| {
+            .values()
+            .filter_map(|agent| {
                 Some(detected::RunningAgent {
-                    bot: bot.clone(),
+                    bot: agent.bot.clone(),
                     acp: agent.acp.upgrade()?,
                     programs: agent.programs.clone(),
                 })

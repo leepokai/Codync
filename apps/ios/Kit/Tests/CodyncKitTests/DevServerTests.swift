@@ -12,7 +12,9 @@ private func port(_ number: Int, remote: [String] = []) -> DevServer.Port {
     DevServer.Port(port: number, local: "http://localhost:\(number)", remote: remote)
 }
 
-private let reachable = port(5173, remote: ["http://192.168.1.20:5173"])
+private let tailscale = "http://100.64.0.1:5173"
+private let lan = "http://192.168.1.20:5173"
+private let reachable = port(5173, remote: [lan])
 
 @Suite struct DevServerTests {
     @Test func theTitleShowsNothingWithoutALiveServer() {
@@ -67,6 +69,23 @@ private let reachable = port(5173, remote: ["http://192.168.1.20:5173"])
         #expect(server(.failed).menuRows == [.logs, .start, .remove])
     }
 
+    @Test func aTapOpensTheFirstAddressAndSeveralAreEachARowOfTheMenu() {
+        let two = server(ports: [port(5173, remote: [tailscale, lan])])
+        #expect(two.tap == .open(tailscale))
+        #expect(two.remoteAddresses == [tailscale, lan])
+        #expect(two.menuRows == [.openAddress(tailscale), .openAddress(lan), .copyAddress, .logs, .restart, .stop])
+        // The first port listens only on the computer; the second doesn't.
+        let second = server(ports: [port(1), port(5173, remote: [tailscale, lan])])
+        #expect(Array(second.menuRows.prefix(2)) == [.openAddress(tailscale), .openAddress(lan)])
+        // Copy address copies the first.
+        #expect(two.remoteAddress == tailscale)
+        #expect(server(.stopped, ports: [port(5173, remote: [tailscale, lan])]).menuRows == [.logs, .start, .remove])
+    }
+
+    @Test func aRowNamesAnAddressWithoutItsScheme() {
+        #expect(DevServer.addressTitle(lan) == "192.168.1.20:5173")
+    }
+
     @Test func aServerLeftInTheBotsShellCanOnlyBeOpenedOrStopped() {
         #expect(server(ports: [reachable], managed: false).menuRows == [.open, .copyAddress, .startedByShell, .stop])
         #expect(server(ports: [port(5173)], managed: false).menuRows == [.onlyOnComputer, .startedByShell, .stop])
@@ -88,5 +107,8 @@ private let reachable = port(5173, remote: ["http://192.168.1.20:5173"])
     @Test func theEventNamesWhatWasDoneAndNothingElse() {
         #expect(AnalyticsEvent.devServerAction(.open).name == "dev_server_action")
         #expect(AnalyticsEvent.devServerAction(.copy).properties == ["action": .string("copy")])
+        #expect(AnalyticsEvent.voiceNotePlayed(.load).name == "voice_note_played")
+        #expect(AnalyticsEvent.voiceNotePlayed(nil).properties == ["outcome": .string("played")])
+        #expect(AnalyticsEvent.voiceNotePlayed(.playback).properties == ["outcome": .string("failed"), "error": .string("playback")])
     }
 }

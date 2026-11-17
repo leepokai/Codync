@@ -15,6 +15,7 @@ import {
 import { AppLogo, Field, FormSheet, ServiceLogo } from './pieces'
 import { pluginsFor } from './plugins'
 import { useTr } from '../../lib/use-language'
+import { TaskLine } from '../thread/PermissionCard'
 
 
 /** Credentials go through the setup API; only the request's state is a chat entry. */
@@ -69,6 +70,7 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
 
   const pending = request.status === 'pending'
   return (
+    // A task's sign-in card: the item's row on the bot's Details finds it by this.
     <VStack gap={12} className="request-card">
       <HStack gap={14}>
         <RequestLogo request={request} />
@@ -80,7 +82,7 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
           <HStack gap={6} className="request-card-trailing">
             {busy ? <Spinner /> : null}
             <Button disabled={busy || ((isSecret || isLogin) && !value)} onClick={() => void connect()}>
-              {isAgent ? 'Sign in' : isLogin ? 'Save' : 'Connect'}
+              {tr(isAgent ? 'Sign in' : isLogin ? 'Save' : 'Connect')}
             </Button>
           </HStack>
         ) : (
@@ -90,6 +92,7 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
           </HStack>
         )}
       </HStack>
+      <TaskLine entry={entry} />
       {pending && isLogin ? (
         <>
           <Field value={username} onChange={setUsername} placeholder="Username or email" />
@@ -111,7 +114,7 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
         {app ? <ComposioConnectSheet app={app} requestId={entry.id} done={() => setApp(null)} /> : null}
       </FormSheet>
       <FormSheet open={agent !== null} onClose={() => setAgent(null)} width={560} height={560} fixed>
-        {agent ? <AgentSheet key={agent.id} initial={agent} recheck /> : null}
+        {agent ? <AgentSheet key={agent.id} initial={agent} recheck={!request.loginProfile} signInProfile={request.loginProfile} /> : null}
       </FormSheet>
     </VStack>
   )

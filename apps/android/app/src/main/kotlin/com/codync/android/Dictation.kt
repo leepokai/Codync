@@ -84,6 +84,8 @@ internal class Dictation(private val context: Context, private val scope: Corout
     /** The box when dictation started. */
     private var before = ""
     private var transcription: Job? = null
+    /** Runs once the transcript is in the box (a send while dictating); dropped on a failure or a stop. */
+    private var done: (() -> Unit)? = null
     /** Bumped per start and stop, so a start still waiting (the key check) or a late result of an earlier one is dropped. */
     private var generation = 0
 
@@ -91,7 +93,7 @@ internal class Dictation(private val context: Context, private val scope: Corout
 
     /** Starts with the engine picked beside the mic, after [draft]; a provider goes through [service]'s computer. */
     fun start(draft: String, service: DictationService, edit: ((String) -> String) -> Unit) {
-        if (listening || transcribing) return
+        if (busy) return
         failure = null; needsKey = false
         val asked = ++generation
         before = draft
@@ -99,29 +101,46 @@ internal class Dictation(private val context: Context, private val scope: Corout
         scope.launch { if (provider != null) record(provider, service, asked, edit) else recognize(asked, edit) }
     }
 
-    /** The pill's stop: on-device speech has already typed its words; a recording gets transcribed. */
-    fun finish() {
-        val recorded = recording ?: return stop()
+    /** Listening, or waiting for a recording's transcript. */
+    val busy get() = listening || transcribing
+
+    /**
+     * The pill's stop, or a send while dictating: on-device speech has already typed its words; a recording gets
+     * transcribed. [then] runs once the words are in the box, not after a failure.
+     */
+    fun finish(then: (() -> Unit)? = null) {
+        // Still transcribing: [then] waits for it too, so a second send doesn't go before the words.
+        if (transcribing) { if (then != null) done = then; return }
+        val recorded = recording ?: run { stop(); then?.invoke(); return }
         val apply = edit
         stop()
         val pcm = recorded.pcm.toByteArray()
-        if (pcm.size < DictationText.MIN_BYTES) return
+        if (pcm.size < DictationText.MIN_BYTES) { then?.invoke(); return }
         val asked = generation
         transcribing = true
+        done = then
         transcription = scope.launch {
             try {
                 val said = recorded.service.transcribe(pcm, recorded.provider)
                 if (asked == generation) apply?.invoke { DictationText.join(it, said) }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { if (asked == generation) failure = error.message ?: "Couldn't transcribe." }
-            finally { if (asked == generation) transcribing = false }
+            catch (error: Exception) { if (asked == generation) { failure = error.message ?: "Couldn't transcribe."; done = null } }
+            finally {
+                if (asked == generation) {
+                    transcribing = false
+                    val next = done
+                    done = null
+                    next?.invoke()
+                }
+            }
         }
     }
 
-    /** Stops now (another chat, a call, a send) and drops anything still on its way. */
+    /** Stops now (another chat, a call, a send before it listens) and drops anything still on its way. */
     fun stop() {
         generation++
         transcription?.cancel(); transcription = null
+        done = null
         recognizer?.cancel(); recognizer?.destroy(); recognizer = null
         // Started at once: the box's scope may already be cancelled with it, and the microphone mustn't outlive the box.
         mic?.let { old -> scope.launch(start = CoroutineStart.UNDISPATCHED) { old.stop() } }; mic = null

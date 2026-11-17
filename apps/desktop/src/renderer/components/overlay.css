@@ -85,7 +85,7 @@
 .anchored-panel::after,
 .account-panel::after,
 .action-menu::after,
-.command-menu::after {
+.composer-menu::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -192,9 +192,12 @@
   background: var(--danger-fill);
   color: var(--on-danger);
 }
-.dialog-button:active {
+.dialog-button:active:not(:disabled) {
   transform: scale(0.98);
   opacity: 0.85;
+}
+.dialog-button:disabled {
+  opacity: 0.4;
 }
 
 /* Floating layers cover the title bar's drag regions (sidebar header, thread chrome), which
@@ -261,8 +264,19 @@
 .menu-row.destructive {
   color: var(--danger);
 }
+.menu-row:disabled {
+  color: var(--secondary);
+  cursor: default;
+}
+.menu-row:disabled.highlight {
+  background: none;
+}
 .menu-row.highlight {
   background: rgba(var(--text-rgb), 0.07);
+}
+.menu-row:disabled {
+  opacity: 0.4;
+  background: none;
 }
 .menu-icon {
   width: 18px;

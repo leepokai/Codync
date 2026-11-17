@@ -2,7 +2,7 @@
 //! of their binaries; a host the desktop app bundles hands an update request to
 //! the app. A signed manifest is required before executing new code.
 mod install;
-mod release;
+pub(crate) mod release;
 #[cfg(test)]
 mod tests;
 
@@ -150,7 +150,7 @@ pub fn request_install(port: u16, force: bool) -> Result<()> {
             APP_REQUESTED.store(crate::store::now_ms(), Ordering::Release);
             Ok(())
         }
-        Route::Worker => spawn_worker(port, force),
+        Route::Worker => spawn_worker(port, force, None),
     }
 }
 
@@ -250,7 +250,8 @@ pub async fn check() -> Result<Value> {
     status()
 }
 
-pub async fn apply(port: u16, force: bool, worker: bool) -> Result<Value> {
+/// Installs the latest release, or release `wanted` when given (never one older than the running host).
+pub async fn apply(port: u16, force: bool, worker: bool, wanted: Option<&str>) -> Result<Value> {
     crate::environment::Environment::current().require_release_updates()?;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     let _lock = loop {
@@ -267,7 +268,10 @@ pub async fn apply(port: u16, force: bool, worker: bool) -> Result<Value> {
     let mut state = State { phase: "checking".into(), checked_at: Some(crate::store::now_ms()), ..State::default() };
     write("update-state.json", &state)?;
     let result = async {
-        let release = release::latest().await?;
+        let release = match wanted {
+            Some(version) => release::tagged(&semver::Version::parse(version)?).await?,
+            None => release::latest().await?,
+        };
         if semver::Version::parse(&release.version)? <= semver::Version::parse(env!("CARGO_PKG_VERSION"))? {
             state.phase = "upToDate".into();
             return Ok(());
@@ -297,7 +301,7 @@ pub async fn apply(port: u16, force: bool, worker: bool) -> Result<Value> {
 
 /// The updater must live outside the daemon's job/cgroup. Otherwise stopping
 /// the host would also kill the process responsible for starting its replacement.
-pub fn spawn_worker(port: u16, force: bool) -> Result<()> {
+pub fn spawn_worker(port: u16, force: bool, target: Option<&str>) -> Result<()> {
     crate::environment::Environment::current().require_release_updates()?;
     let _lock = lock()?;
     let previous: State = read("update-state.json")?;
@@ -307,6 +311,9 @@ pub fn spawn_worker(port: u16, force: bool) -> Result<()> {
     let mut args = vec!["update".to_owned(), "--worker".to_owned(), "--port".to_owned(), port.to_string()];
     if force {
         args.push("--force".to_owned());
+    }
+    if let Some(version) = target {
+        args.extend(["--target".to_owned(), version.to_owned()]);
     }
     let mut state = State { phase: "scheduled".into(), checked_at: Some(crate::store::now_ms()), ..previous };
     state.error = None;
@@ -325,19 +332,33 @@ fn awaiting_worker(state: &State) -> bool {
 }
 
 fn spawn_job(executable: &Path, args: &[String]) -> Result<()> {
+    if !cfg!(target_os = "linux") {
+        // submit jobs do not restart on exit. Remove only a completed old job;
+        // an active worker holds update.lock, acquired by our caller above.
+        let _ = std::process::Command::new("launchctl").args(["remove", "com.pokai.codync.update"]).output();
+    }
+    let output = job_command(executable, args).output().context("launching the independent host updater")?;
+    ensure!(output.status.success(), "could not launch updater: {}", String::from_utf8_lossy(&output.stderr).trim());
+    Ok(())
+}
+
+/// The worker runs under the user manager or launchd, not the host's service, so it gets the service's data folder and
+/// release channel from here.
+fn job_command(executable: &Path, args: &[String]) -> std::process::Command {
+    let env = [
+        format!("CODYNC_HOME={}", service::data_dir().display()),
+        format!("CODYNC_RELEASES_URL={}", release::releases()),
+    ];
     let mut command;
     if cfg!(target_os = "linux") {
         command = std::process::Command::new("systemd-run");
         command
             .args(["--user", "--collect", "--unit=codync-host-update", "--property=Type=exec"])
-            .arg(format!("--setenv=CODYNC_HOME={}", service::data_dir().display()))
+            .args(env.iter().map(|e| format!("--setenv={e}")))
             .arg("--")
             .arg(executable)
             .args(args);
     } else {
-        // submit jobs do not restart on exit. Remove only a completed old job;
-        // an active worker holds update.lock, acquired by our caller above.
-        let _ = std::process::Command::new("launchctl").args(["remove", "com.pokai.codync.update"]).output();
         command = std::process::Command::new("launchctl");
         command
             .args(["submit", "-l", "com.pokai.codync.update", "-o"])
@@ -345,13 +366,32 @@ fn spawn_job(executable: &Path, args: &[String]) -> Result<()> {
             .arg("-e")
             .arg(service::data_dir().join("update.log"))
             .args(["--", "/usr/bin/env"])
-            .arg(format!("CODYNC_HOME={}", service::data_dir().display()))
+            .args(env)
             .arg(executable)
             .args(args);
     }
-    let output = command.output().context("launching the independent host updater")?;
-    ensure!(output.status.success(), "could not launch updater: {}", String::from_utf8_lossy(&output.stderr).trim());
-    Ok(())
+    command
+}
+
+/// Checks for a release now and installs it in the background (the cloud refused this version).
+pub fn update_soon(port: u16) {
+    if crate::environment::Environment::current() == crate::environment::Environment::Main {
+        tokio::spawn(install_available(port));
+    }
+}
+
+/// Installs a newer release, if there is one, through the independent updater.
+async fn install_available(port: u16) {
+    match check().await {
+        Ok(status) if status["state"]["availableVersion"].is_string() => {
+            match tokio::task::spawn_blocking(move || spawn_worker(port, false, None)).await {
+                Ok(Ok(())) => {}
+                result => tracing::warn!(?result, "could not start the host update"),
+            }
+        }
+        Ok(_) => {}
+        Err(error) => tracing::warn!(%error, "host update check failed"),
+    }
 }
 
 pub async fn automatic_loop(hub: Arc<Hub>) {
@@ -362,7 +402,8 @@ pub async fn automatic_loop(hub: Arc<Hub>) {
     loop {
         tokio::time::sleep(Duration::from_mins(1)).await;
         let enabled = read::<Config>("update-config.json").is_ok_and(|c| c.automatic);
-        if !enabled || hub.busy() {
+        // A cloud computer's updates come from the cloud (`remote::managed`).
+        if !enabled || hub.busy() || crate::remote::managed::is_managed(&hub.store) {
             continue;
         }
         if last_check.is_some_and(|at: tokio::time::Instant| at.elapsed() < Duration::from_hours(24)) {
@@ -372,16 +413,6 @@ pub async fn automatic_loop(hub: Arc<Hub>) {
         if !service::current_exe().is_ok_and(|exe| require_self_updating(&exe).is_ok()) {
             continue;
         }
-        match check().await {
-            Ok(status) if status["state"]["availableVersion"].is_string() => {
-                let port = hub.port;
-                match tokio::task::spawn_blocking(move || spawn_worker(port, false)).await {
-                    Ok(Ok(())) => {}
-                    result => tracing::warn!(?result, "could not start automatic host update"),
-                }
-            }
-            Ok(_) => {}
-            Err(error) => tracing::warn!(%error, "host update check failed"),
-        }
+        install_available(hub.port).await;
     }
 }

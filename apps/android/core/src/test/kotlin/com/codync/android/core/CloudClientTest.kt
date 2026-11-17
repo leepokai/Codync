@@ -142,6 +142,188 @@ class CloudClientTest {
         } finally { server.shutdown() }
     }
 
+    @Test fun `every request names this app and its oldest host, with a bare version`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"computers":[]}"""))
+            server.enqueue(MockResponse().setBody("""{"cloudComputers":[]}"""))
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit, appVersion = "2.24.0-dev")
+            client.computers()
+            client.cloudComputers()
+            repeat(2) { assertEquals("android/2.24.0; minHost=${VersionMismatch.MIN_HOST}", server.takeRequest().getHeader("Codync-App")) }
+        } finally { server.shutdown() }
+    }
+
+    @Test fun `account computers say which one Codync Cloud runs, and older clouds say nothing`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"computers":[
+                {"computerId":"a","name":"Cloud","signKey":"k","cloud":{"provider":"boat","providerName":"Boat","region":"EU","state":"stopped"}},
+                {"computerId":"b","name":"Studio","signKey":"k","cloud":null},{"computerId":"c","name":"Old","signKey":"k"}]}"""))
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
+            val (cloud, plain, old) = client.computers()
+            assertEquals(CloudPlacement("boat", "Boat", "EU", "stopped"), cloud.cloud)
+            assertTrue(requireNotNull(cloud.cloud).asleep)
+            assertNull(plain.cloud)
+            assertNull(old.cloud)
+        } finally { server.shutdown() }
+    }
+
+    @Test fun `the account's cloud computers, created, renamed, preparing and deleted`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"cloudComputers":[]}"""))
+            server.enqueue(MockResponse().setBody("""{"cloudComputers":[{"cloudComputerId":"cm_0","name":"Cloud computer","provider":"boat",
+                "providerName":"Boat","region":"EU","state":"stopped","computerId":"c0"}],"available":true,"limit":3}"""))
+            server.enqueue(MockResponse().setBody("""{"cloudComputer":{"cloudComputerId":"cm_1","name":"Builds","provider":"instabox",
+                "providerName":"InstaBox","region":"US","state":"starting","computerId":null,"backupAt":null,"snapshots":false,"createdAt":5}}"""))
+            server.enqueue(MockResponse().setBody("""{"cloudComputer":{"cloudComputerId":"cm_1","name":"Nightly","provider":"instabox",
+                "providerName":"InstaBox","region":"US","state":"running","computerId":"c1"}}"""))
+            server.enqueue(MockResponse().setBody("{}"))
+            server.enqueue(MockResponse().setBody("{}"))
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
+            assertEquals(CloudOffer(emptyList(), available = false), client.cloudComputers())
+            val offer = client.cloudComputers()
+            assertTrue(offer.available)
+            assertEquals(3, offer.limit)
+            assertEquals(listOf("Cloud computer"), offer.machines.map { it.name })
+            assertFalse(offer.machines.single().preparing)
+            val created = client.createCloudComputer("instabox", "Builds")
+            assertEquals("cm_1", created.cloudComputerId)
+            assertEquals("Builds", created.name)
+            assertTrue(created.preparing)
+            assertEquals(5L, created.createdAt)
+            assertFalse(created.snapshots)
+            assertTrue(CloudMachine("cm_2", "Cloud computer", "boat", "Boat", "EU", "running").snapshots)
+            assertFalse(CloudMachine("cm_2", "Cloud computer", "boat", "Boat", "EU", "failed").preparing)
+            assertEquals("Nightly", client.renameCloudComputer("cm_1", "Nightly").name)
+            client.deleteCloudSnapshots("cm_1")
+            client.deleteCloudComputer("cm_1")
+            repeat(2) { assertEquals("GET /v1/cloud-computers", server.takeRequest().requestLine.substringBeforeLast(' ')) }
+            val create = server.takeRequest()
+            assertEquals("POST /v1/cloud-computers", create.requestLine.substringBeforeLast(' '))
+            assertEquals("""{"provider":"instabox","name":"Builds"}""", create.body.readUtf8())
+            assertEquals("Bearer session", create.getHeader("Authorization"))
+            val rename = server.takeRequest()
+            assertEquals("PATCH /v1/cloud-computers/cm_1", rename.requestLine.substringBeforeLast(' '))
+            assertEquals("""{"name":"Nightly"}""", rename.body.readUtf8())
+            assertEquals("DELETE /v1/cloud-computers/cm_1/snapshots", server.takeRequest().requestLine.substringBeforeLast(' '))
+            assertEquals("DELETE /v1/cloud-computers/cm_1", server.takeRequest().requestLine.substringBeforeLast(' '))
+        } finally { server.shutdown() }
+    }
+
+    @Test fun `a new cloud computer is named after the first free number`() {
+        fun named(vararg names: String) = CloudOffer(names.map { CloudMachine("cm_$it", it, "boat", "Boat", "EU", "running") }, true)
+        assertEquals("Cloud computer", named().suggestedName())
+        assertEquals("Cloud computer", named("Builds").suggestedName())
+        assertEquals("Cloud computer 2", named("Cloud computer").suggestedName())
+        assertEquals("Cloud computer 3", named("Cloud computer", "Cloud computer 2").suggestedName())
+        assertEquals("Cloud computer 2", named("Cloud computer", "Cloud computer 3").suggestedName())
+        // Translated, it counts its own words.
+        assertEquals("雲端電腦 2", named("雲端電腦", "Cloud computer 2").suggestedName("雲端電腦", "雲端電腦 {n}"))
+    }
+
+    @Test fun `a new cloud computer goes where a key works, or where one was picked once it does`() {
+        val setup = CloudKeySetup("https://boat.dev/dashboard", "boat env new codync")
+        val boat = CloudProvider("boat", "Boat", "EU", "boat_…", setup, CloudCredential("boat_…9abc"))
+        val refused = CloudProvider("instabox", "InstaBox", "US", "ibk_…", setup, CloudCredential("ibk_…0001", "This key has expired. Make a new one.", blocking = true))
+        val none = CloudProvider("nimbus", "Nimbus", "Asia", "nim_…", setup)
+        // Turned down for the plan, not the key: Create tries again.
+        val unpaid = boat.copy(credential = CloudCredential("boat_…9abc", "This account needs an active plan."))
+        assertEquals(listOf(true, false, false, true), listOf(boat, refused, none, unpaid).map { it.usable })
+        val offer = CloudOffer(available = true, providers = listOf(refused, none, boat))
+        assertEquals("boat", offer.chosenProvider(null))
+        // A key turned down can't be picked; one picked before its key was added is, once it is.
+        assertEquals("boat", offer.chosenProvider("instabox"))
+        assertEquals("boat", offer.chosenProvider("nimbus"))
+        assertEquals("nimbus", offer.withCredential("nimbus", CloudCredential("nim_…0002")).chosenProvider("nimbus"))
+        assertNull(offer.copy(providers = listOf(refused, none)).chosenProvider(null))
+    }
+
+    @Test fun `a key stays while any cloud computer runs on its provider`() {
+        val offer = CloudOffer(listOf("running", "starting").map { CloudMachine("cm_$it", it, "boat", "Boat", "EU", it) }, true)
+        assertFalse(offer.canRemoveKey("boat"))
+        assertTrue(offer.canRemoveKey("instabox"))
+        assertTrue(offer.copy(machines = emptyList()).canRemoveKey("boat"))
+    }
+
+    @Test fun `each provider's key is given trimmed, shown by its hint, refused with what to fix and removed`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            val setup = """"setup":{"page":"https://boat.dev/dashboard","commands":"boat env new codync"}"""
+            server.enqueue(MockResponse().setBody("""{"cloudComputers":[],"available":true,"providers":[
+                {"provider":"boat","name":"Boat","region":"EU","keyPrompt":"boat_…",$setup,
+                 "credential":{"hint":"boat_…9abc","problem":"This key has expired. Make a new one.","blocking":true,"updatedAt":5}},
+                {"provider":"nimbus","name":"Nimbus","region":"Asia","keyPrompt":"nim_…",$setup,"credential":null,
+                 "offer":{"label":"Get a free sandbox","detail":"A free plan.","url":"https://nimbus.example/pricing"}}]}"""))
+            server.enqueue(MockResponse().setResponseCode(422).setBody("""{"error":{"code":"keyRefused","message":"That doesn't look like an API key from this provider."}}"""))
+            server.enqueue(MockResponse().setBody("""{"credential":{"hint":"boat_…0001","problem":null,"updatedAt":6}}"""))
+            server.enqueue(MockResponse().setBody("{}"))
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
+            val offer = client.cloudComputers()
+            assertEquals(listOf("Boat", "Nimbus"), offer.providers.map { it.name })
+            assertEquals(CloudCredential("boat_…9abc", "This key has expired. Make a new one.", blocking = true), offer.providers[0].credential)
+            assertEquals(CloudKeySetup("https://boat.dev/dashboard", "boat env new codync"), offer.providers[0].setup)
+            // A free plan only where the cloud names one.
+            assertNull(offer.providers[0].offer)
+            assertEquals(CloudProviderOffer("Get a free sandbox", "A free plan.", "https://nimbus.example/pricing"), offer.providers[1].offer)
+            assertTrue(offer.canRemoveKey("boat"))
+            val refused = try { client.saveCloudKey("boat", "sk-1"); error("Expected a refusal") } catch (error: CloudError) { error }
+            assertEquals("keyRefused", refused.code)
+            assertEquals("That doesn't look like an API key from this provider.", refused.message)
+            val saved = client.saveCloudKey("boat", " boat_live_key0001 ")
+            assertEquals("boat_…0001", saved.hint)
+            assertNull(saved.problem)
+            client.deleteCloudKey("boat")
+            server.takeRequest()
+            server.takeRequest()
+            val put = server.takeRequest()
+            assertEquals("PUT /v1/cloud-credentials/boat", put.requestLine.substringBeforeLast(' '))
+            assertEquals("""{"key":"boat_live_key0001"}""", put.body.readUtf8())
+            assertEquals("DELETE /v1/cloud-credentials/boat", server.takeRequest().requestLine.substringBeforeLast(' '))
+        } finally { server.shutdown() }
+    }
+
+    @Test fun `refusals carry the cloud's own words, and an app floor asks for an update`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setResponseCode(403).setBody("""{"error":{"code":"forbidden","message":"Codync Cloud isn't available for this account yet."}}"""))
+            server.enqueue(MockResponse().setResponseCode(409).setBody("""{"error":{"code":"conflict","message":"Your cloud computer is asleep."}}"""))
+            server.enqueue(MockResponse().setResponseCode(426).setBody("""{"error":{"code":"appUpdateRequired","message":"Update Codync: security fix."}}"""))
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
+            suspend fun refusal(call: suspend () -> Unit) = try { call(); error("Expected a refusal") } catch (error: CloudError) { error }
+            assertEquals("Codync Cloud isn't available for this account yet.", refusal { client.createCloudComputer("boat", "Cloud computer") }.message)
+            assertEquals("Your cloud computer is asleep.", refusal { client.deleteCloudSnapshots("cm_1") }.message)
+            val floor = refusal { client.computers() }
+            assertEquals("appUpdateRequired", floor.code)
+            assertEquals("Update Codync: security fix.", floor.message)
+            assertFalse(floor.isTransient)
+        } finally { server.shutdown() }
+    }
+
+    @Test fun `the relay upgrade names this app and reads an app floor's reason`() = runBlocking {
+        val computer = Computer(id, "Cloud", hostKey.base64Url(), cloud = "https://cloud.example")
+        val request = HostConnector.relayRequest(computer, identity, null, "2.24.0")
+        assertEquals("/v1/relay/device/$id", request.url.encodedPath)
+        assertEquals("android/2.24.0; minHost=${VersionMismatch.MIN_HOST}", request.header("Codync-App"))
+        assertNotNull(request.header("Codync-Sig"))
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setResponseCode(426).setBody("""{"error":{"code":"appUpdateRequired","message":"Update Codync: security fix."}}"""))
+            server.enqueue(MockResponse().setResponseCode(426).setBody("""{"error":{"code":"upgradeRequired","message":"Expected a WebSocket upgrade"}}"""))
+            suspend fun refusal() = try { OkHttpChannelSocket.dial(okhttp3.Request.Builder().url(server.url("/v1/relay/device/$id")).build())
+                error("Expected a refusal") } catch (error: SocketRefused) { error }
+            assertEquals(426 to "Update Codync: security fix.", refusal().let { it.status to it.appFloor })
+            assertNull(refusal().appFloor)
+        } finally { server.shutdown() }
+    }
+
     @Test fun `an unknown device has no grants to revoke`() = runBlocking {
         val server = MockWebServer()
         server.start()

@@ -101,6 +101,10 @@ function hit(key: string, primary: Record<string, string>, fallback: Record<stri
 }
 
 const localizableSlots = new Set(['{hint}', '{error}', '{setup}', '{kind}', '{when}', '{status}', '{reason}', '{shortcut}', '{changes}'])
+/** Slots that only ever hold a number, so free text ("…the host service isn't installed") never fills "{count} installed". */
+const numericSlots = new Set(['{count}', '{unread}', '{cap}'])
+/** A version slot holds only a version ("2.47.0", "2.47.0-dev"), so "You have reached your limit." never fills "You have {version}.". */
+const versionShape = /^\d+(\.\d+)*(-[\w.]+)?$/
 
 function fill(text: string, pieces: Piece[], phrase: string, primary: Record<string, string>, fallback: Record<string, string>, depth: number): string | undefined {
   let pos = 0
@@ -116,7 +120,10 @@ function fill(text: string, pieces: Piece[], phrase: string, primary: Record<str
     const next = pieces[i + 1]?.literal
     const end = next === undefined ? text.length : text.indexOf(next, pos)
     if (end < 0 || end === pos) return undefined
-    caps.set(token, text.slice(pos, end))
+    const value = text.slice(pos, end)
+    if (numericSlots.has(token) && !/^[\d,.]+$/.test(value)) return undefined
+    if (token === '{version}' && !versionShape.test(value)) return undefined
+    caps.set(token, value)
     pos = end
   }
   if (pos !== text.length) return undefined
@@ -165,9 +172,20 @@ function savedLanguage(): AppLanguage {
   }
 }
 
+/** The computer's language tag (`en-GB`); `en` outside a window. */
+export const systemLanguage = () => (typeof navigator === 'undefined' ? 'en' : navigator.language)
+
+/** The `Intl` locale for dates and units: the system's own (with its region) when the app shows that language, else the chosen one. */
+export function intlLocale(preference: AppLanguage, system: string): string {
+  const language = resolvedLanguage(preference, system)
+  // Keep the system region only when the system really speaks the chosen language (a Dutch device that picked English gets 'en').
+  if (language === resolvedLanguage('system', system) && system.toLowerCase().split(/[-_]/)[0] === language.split('-')[0]) return system
+  return language === 'zh' ? 'zh-Hans' : language
+}
+
 /** Translates for the language saved in Settings, outside a component (stores, engines, helpers). */
 export function trNow(text: string): string {
-  return translate(text, savedLanguage(), typeof navigator === 'undefined' ? 'en' : navigator.language)
+  return translate(text, savedLanguage(), systemLanguage())
 }
 
 /** "resets 3h 20m" / "resets in 2d 6h". Compact times become "3小时20分后重置". */

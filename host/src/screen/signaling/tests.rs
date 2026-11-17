@@ -157,7 +157,7 @@ async fn connected_media_survives_candidate_subscription_loss() {
     ready.unwrap();
     answer(&screen, &mut requests, &session).await;
     screen.session_connected(&session);
-    screen.takeover(true);
+    screen.takeover("phone", true);
     drop(stream);
     // Candidates already in flight after the channel disconnects must not fail healthy media.
     screen.helper_candidate(&session, candidate(2));

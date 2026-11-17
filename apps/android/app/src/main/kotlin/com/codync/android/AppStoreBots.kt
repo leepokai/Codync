@@ -2,6 +2,7 @@ package com.codync.android
 
 import com.codync.android.core.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 
@@ -105,11 +106,14 @@ private fun AppStore.setFastMode(bot: Bot, on: Boolean) {
 /** The bot's own agent again while it runs on a fallback: now if idle, else from its next turn. The host posts the chat line. */
 fun AppStore.switchBack(bot: Bot) = command("switchBack", body("botId" to bot.id), "switchBack:" + bot.id)
 
+/** The bot's agent starts over with a fresh context; the chat stays. */
+fun AppStore.newSession(bot: Bot) = command("newSession", body("botId" to bot.id), "newSession:" + bot.id)
+
 fun AppStore.deleteBot(bot: Bot, onDeleted: () -> Unit) = action("delete:" + bot.id) {
     val active = ready()
     active.call("deleteBot", body("botId" to bot.id))
     mutableState.update { it.copy(selectedBot = it.selectedBot.takeUnless { id -> id == bot.id },
-        // Its chat's draft and its artifacts' (`artifactDraftKey`).
+        // Its chat's draft, its artifacts' (`artifactDraftKey`) and its threads' (`threadDraftKey`).
         drafts = it.drafts.filterKeys { key -> key != bot.id && !key.startsWith("${bot.id}/") }) }
     persistDrafts()
     onDeleted()
@@ -146,6 +150,11 @@ fun AppStore.routineAction(botId: String, id: String, method: String, enabled: B
     receiveRoutines(botId)
     done()
 }
+/** Drops a follow-up of the bot's that hasn't happened yet. */
+fun AppStore.cancelFollowUp(botId: String, id: String) = action("routines:$botId") {
+    ready().call("cancelFollowUp", body("botId" to botId, "id" to id))
+    receiveRoutines(botId)
+}
 /** Runs a failed routine run's work again, from its notice; the notice's update drops the button. */
 fun AppStore.retryRoutineRun(entry: Entry) = action("retry:" + entry.id) {
     val runId = requireNotNull(entry.data.text("runId")) { "This run can't be retried." }
@@ -170,9 +179,29 @@ suspend fun AppStore.agentModels(backend: String): AgentModels {
 suspend fun AppStore.reloadUsage() { refreshUsage(true); actions["usage"]?.join() }
 fun AppStore.refreshUsage(force: Boolean = true) = action("usage") {
     val active = ready()
-    // The existing host can spend up to a minute reading an installed provider.
-    val result = active.call("usage", buildJsonObject { put("refresh", force) }, timeoutMillis = 75_000)
-    val response = result.jsonObject
+    // The host answers within a minute: an agent that reads slower lands through its events.
+    landUsage(active.call("usage", buildJsonObject { put("refresh", force) }, timeoutMillis = 75_000).jsonObject)
+}
+/** Whether this computer lists one agent's limits. */
+fun AppStore.setUsageShown(id: String, shown: Boolean) = action("usageShown.$id") {
+    landUsage(ready().call("setUsageShown", buildJsonObject { put("id", id); put("shown", shown) }).jsonObject)
+}
+/**
+ * The order this computer lists its agents in, back once the host has answered. A host older than this refuses the call:
+ * the error shows and the order stays. Drops while one is on its way replace each other, so only the last goes out next.
+ */
+suspend fun AppStore.setUsageOrder(ids: List<String>) {
+    usageOrders.trySend(ids)
+    action("usageOrder") {
+        usageOrders.sendEach { order -> landUsage(ready().call("setUsageOrder", buildJsonObject { putJsonArray("ids") { order.forEach(::add) } }).jsonObject) }
+    }
+    actions["usageOrder"]?.join()
+}
+/** Hands over what waits in this conflated channel, one at a time, until nothing does. */
+internal suspend fun <T : Any> Channel<T>.sendEach(deliver: suspend (T) -> Unit) {
+    while (true) deliver(tryReceive().getOrNull() ?: return)
+}
+private suspend fun AppStore.landUsage(response: JsonObject) {
     UsageReport.decode(response)
     withContext(Dispatchers.IO) { requireNotNull(database).apply(MirrorEvent.Usage(response)) }
     refresh()
@@ -203,6 +232,19 @@ suspend fun AppStore.routineWebhook(botId: String, id: String, rotate: Boolean =
 /** Saves a dragged roster order (the host syncs it to every device). */
 internal fun AppStore.reorder(ids: List<String>) =
     command("reorderBots", buildJsonObject { putJsonArray("ids") { ids.forEach { add(JsonPrimitive(it)) } } }, "reorder")
+
+/** Whether a bot with a new message moves to the top of this computer's roster (iOS `autoOrder`); missing from older hosts. */
+internal fun autoOrder(hello: JsonObject?): Boolean? = hello?.get("autoOrder")?.jsonPrimitive?.booleanOrNull
+
+/** Turns automatic roster order on or off, shown at once and put back if the computer refuses (iOS `setAutoOrder`). */
+internal fun AppStore.setAutoOrder(on: Boolean) {
+    showAutoOrder(on)
+    command("setAutoOrder", buildJsonObject { put("enabled", on) }, "autoOrder", onFailure = { showAutoOrder(!on) })
+}
+
+/** The automatic order switch as the computer has it: switched here, or its `autoOrder` event (switched from another device). */
+internal fun AppStore.showAutoOrder(on: Boolean) =
+    mutableState.update { state -> state.hello?.let { state.copy(hello = JsonObject(it + ("autoOrder" to JsonPrimitive(on)))) } ?: state }
 
 /** Whether the bot's harness keeps its own memory on beside Codync's (iOS `setHarnessMemory`). */
 internal fun AppStore.setHarnessMemory(bot: Bot, on: Boolean) =

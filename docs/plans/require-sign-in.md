@@ -1,6 +1,6 @@
 # Require sign-in
 
-Plan agreed 2026-11-02 for [connections and accounts](../architecture/connections.md): every app is signed in, every phone-to-computer link lives in one account, and QR stays as the in-person way to pair. All three phases are built (2.36.0). Phase 2 needs the cloud's certificate key before it works against a cloud: see [Release steps](#release-steps).
+Plan agreed 2026-11-02 for [connections and accounts](../architecture/connections.md): every app is signed in, every phone-to-computer link lives in one account, and QR stays as the in-person way to pair. All three phases are built (2.36.0). Phase 2 needs the cloud's certificate key before it works against a cloud: see [Release steps](#release-steps). [Optional sign-in](optional-sign-in.md) has since made signing in optional; where the two differ, that one holds.
 
 ## Decisions
 
@@ -116,11 +116,11 @@ After either case the signed-out context is erased (on iOS except a mirror cache
 
 ### 5. Desktop: computer in another account
 
-- **Logic:** a pure function next to `mayOfferMove` in `lib/auto-claim.ts`, `accountMismatch(host, userId, keptOut, seen)`. It returns one of three values:
+- **Logic:** a pure function next to `mayOfferMove` in `lib/join-offer.ts`, `accountMismatch(host, userId, keptOut, seen)`. It returns one of three values:
   - `other {email}`;
   - `none {reason: cloudOff | privateRelay | keptOut}`;
   - `null` when the accounts match.
-  Tested in `auto-claim.test.ts`.
+  Tested in `join-offer.test.ts`.
 - **A notice** above the sidebar footer's buttons (`SidebarFooter.tsx`): an amber card with an icon that shows its text in full, wrapping as needed, and takes no space when there's no mismatch. The narrow rail shows it as an amber icon with the text as its tooltip.
   - `other`: "This computer is in {email}'s account", with the full address as Settings and the move dialog show it. Clicking it reopens the move choice (`MoveComputerPrompt`), even after *Keep it there*.
   - `none`: "This computer isn't in an account: its cloud is off" / "…: it uses a private relay", or "This computer isn't in your account" (taken out). Clicking it opens Settings → Computers.

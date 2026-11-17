@@ -149,24 +149,6 @@ app the release serves
 one matching the installed app; it is published only after both Windows builds succeed, so a
 failed ARM64 build holds the whole release until it is re-run.
 macOS build versions follow the marketing version; the iOS build counter is independent.
-Installs of the SwiftUI Mac app that preceded the desktop app still read the Sparkle
-appcast; the release workflow generates one for the desktop zip, so those installs move
-to the desktop app.
-
-### Deprecated: the Sparkle migration appcast (remove after 2026-11-06)
-
-The appcast exists only so installs of the SwiftUI Mac app (2.6.x and earlier) can
-move to the desktop app; 2.7.1 is the first release they accept. Support ends
-2026-11-06, one month after 2.7.1. Releases after that date drop it, and those installs
-need a manual download of the desktop app. Remove together:
-
-- the Sparkle part of **Update feeds** in `.github/workflows/release-desktop.yml`
-  (`generate_appcast`, `verify-appcast.py`) and `build/appcast.xml` in the macOS artifact
-  upload and in **Publish**
-- `SUPublicEDKey` in `apps/desktop/electron-builder.yml`
-- `packaging/updates/verify-appcast.py`, `macos-public-key.txt`
-- the `SPARKLE_PRIVATE_KEY` secret (row below) and the appcast mentions in
-  `docs/architecture/desktop-app.md` and `docs/reference/compatibility.md`
 
 ## Standalone hosts on Linux and macOS
 
@@ -232,27 +214,21 @@ with the commands above, independently of the app.
 ## Release configuration
 
 Both workflows (`host.yml`, `release-desktop.yml`) run for a `vMAJOR.MINOR.PATCH` tag and publish
-without the *latest* mark; `release-gate.yml` sets it and updates the Homebrew tap (secret
+without the *latest* mark (`host.yml` also publishes `dev` to the
+[dev release channel](development.md#dev-release-channel)); `release-gate.yml` sets it and updates the Homebrew tap (secret
 `TAP_TOKEN`). Keep the host Cargo version, `apps/desktop/package.json` and the marketing
 version aligned before tagging; the desktop workflow fails when the app and host versions
 differ. The host workflow refuses a tag/version mismatch. Existing clients without this
 updater need one manual upgrade to adopt it.
 
-Public keys are committed in `packaging/updates/`. Keep their corresponding
-private keys backed up securely; replacing a public key breaks updates for
-already distributed clients. Repository Actions secrets:
+The host manifest public key is committed as `packaging/updates/host-public-key.txt`;
+replacing it breaks updates for installed hosts. The Actions secrets the release workflows
+read: [secrets](../reference/secrets.md#github-actions-leepokaicodync).
 
-| Secret | Contents |
-| --- | --- |
-| `SPARKLE_PRIVATE_KEY` | Sparkle's base64 Ed25519 private key export (the migration appcast; deprecated, see above) |
-| `HOST_UPDATE_SIGNING_KEY` | Separate base64 32-byte Ed25519 seed for host manifests |
-| `TAP_TOKEN` | Token that pushes `leepokai/homebrew-codync` (release gate) and the version tags (Auto Tag) |
-
-The desktop workflow signs and notarizes the Mac app, builds its DMG and zip and
-generates `appcast.xml` for the zip; it builds the Linux AppImage, deb and tar.gz
-on x86_64 and arm64. The host
-workflow emits `codync-host-<platform>.update.json` and `.update.json.sig` alongside
-each archive. Signing fails if a private key does not match the committed public
+The desktop workflow signs and notarizes the Mac app and builds its DMG and zip; it builds
+the Linux AppImage, deb and tar.gz on x86_64 and arm64. The host workflow builds each
+platform's archive without secrets; once all are built, its `release` job signs them
+(`codync-host-<platform>.update.json` and `.update.json.sig`) and uploads them together. Signing fails if a private key does not match the committed public
 key. Never commit private keys or put them in command-line arguments.
 
 A published release must include these assets before clients can update. Feeds and
@@ -264,7 +240,6 @@ used. Building locally or configuring secrets does not publish a release.
 ## References
 
 - [electron-updater](https://www.electron.build/auto-update)
-- [Sparkle publishing documentation](https://sparkle-project.org/documentation/publishing/)
 - [Grok Bot's safe relaunch gate](https://github.com/b-nnett/grok-bot-0.18-reconstructed/blob/main/source/electron-main/update/safe-relaunch-gate.ts)
 
 Grok Bot supplied the reference for opt-in, staged updates and idle-gated restart.

@@ -141,15 +141,12 @@ private final class Rig {
     #expect(!rig.store.rosterIsCurrent)
 }
 
-@MainActor @Test func aHostBeforeTheCountEndsTheCatchUpAtItsRev() async {
+@MainActor @Test func aHostBeforeTheCountIsCurrentAtHello() async {
+    // It sends no alert totals either, so there is nothing for its roster to replace.
     let rig = Rig()
     defer { rig.store.retire() }
     await rig.start()
     await rig.hello(rev: 2, catchUp: nil)
-    #expect(!rig.store.rosterIsCurrent)
-    await rig.bot(rev: 1)
-    #expect(!rig.store.rosterIsCurrent)
-    await rig.bot(rev: 2)
     #expect(await until { rig.store.rosterIsCurrent })
 }
 

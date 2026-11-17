@@ -7,7 +7,6 @@ use crate::LockExt as _;
 use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::Result;
-use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -15,19 +14,30 @@ use std::time::{Duration, SystemTime};
 use tokio::sync::{mpsc, oneshot};
 
 pub mod errors;
+mod event;
 mod lifecycle;
 mod observe;
 pub mod reported;
 mod session;
 mod turns;
 
-pub use lifecycle::{KV_STARTED, Via, device_paired, host_started, phone_connected};
+pub use event::Event;
+pub use lifecycle::{
+    DiscoveryStage, KV_STARTED, KeeperState, PairedAccount, SleepOutcome, Via, cloud_keeper_checked, cloud_sleep_asked,
+    device_paired, discovery_failed, host_started, join_from_phone_answered, phone_connected, remote_screen_finished,
+};
 pub use observe::{answered, failed, observe_call};
 pub use reported::track;
-pub use turns::{Steer, TurnOutcome, TurnSource, agent_fell_back, message_steered, turn_finished};
+pub use turns::{
+    Carried, Retired, Steer, TurnOutcome, TurnSource, agent_command_sent, agent_fell_back, agent_retired,
+    context_compacted, handoff_carried, message_steered, turn_finished,
+};
 
 const KV_ENABLED: &str = "analytics_enabled";
-/// The account the install id was last merged into (one `$identify` per account).
+/// Set to `dev` on test machines (`CODYNC_ANALYTICS_ENV=dev`): their events say `env: dev`, outside every chart.
+const KV_ENV: &str = "analytics_env";
+/// The account the install id was merged into. An id merges into one account and a second is
+/// refused, so a later account on this computer starts its own profile.
 const KV_IDENTIFIED: &str = "analytics_identified";
 /// Write-only project token: safe to ship in public builds.
 const TOKEN: &str = "phc_rQHvxdSFKnMquPfMjmiMhXhM4tqJ5qCYsWuVEoFxCCWX";
@@ -35,167 +45,6 @@ const BATCH_URL: &str = "https://us.i.posthog.com/batch/";
 const FLUSH_EVERY: Duration = Duration::from_secs(30);
 /// Unsent events kept while offline; the oldest go first.
 const MAX_PENDING: usize = 500;
-
-/// Everything the host reports. Names follow the `object_verb` convention; each event's
-/// sender and properties: docs/reference/analytics-events.md.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Event {
-    AppOpened,
-    WindowOpened,
-    HostStarted,
-    OnboardingCompleted,
-    ComputerAccessFinished,
-    SignInStarted,
-    SignInFailed,
-    SignedIn,
-    SignedOut,
-    PairingCodeCreated,
-    DevicePaired,
-    AccessRequestDenied,
-    DeviceRevoked,
-    PhoneConnected,
-    StarPromptAnswered,
-    LinkOpened,
-    ScreenViewed,
-    BotCreated,
-    BotUpdated,
-    BotsReordered,
-    SectionRenamed,
-    BotDeleted,
-    MessageSent,
-    /// The user had a queued message handled now (`agent::bot::steer`).
-    MessageSteered,
-    QueuedMessageRemoved,
-    TurnStopped,
-    TurnFinished,
-    /// A turn moved on to the bot's next agent (`agent::fallback`).
-    AgentFellBack,
-    SessionReset,
-    PermissionAnswered,
-    ReactionAdded,
-    HandoffAnswered,
-    RoutineSaved,
-    RoutineToggled,
-    RoutineDeleted,
-    RoutineRun,
-    RoutineRetried,
-    /// A bot's `start_dev_server` ended (`outcome`).
-    DevServerStarted,
-    /// A dev server ended (`by`).
-    DevServerStopped,
-    /// A person acted on a dev server (`action`).
-    DevServerAction,
-    /// A bot left a server running through its own shell, not `start_dev_server`.
-    DevServerDetected,
-    VoiceCallStarted,
-    VoiceCallFinished,
-    /// How one engine of a call fared (time to ready, reconnects, a phase stuck, failure).
-    VoiceCallQuality,
-    /// A desktop window's crashed page loaded again, or crashed too often and stays down.
-    WindowRecovery,
-    RemoteScreenOpened,
-    ScreenTakenOver,
-    ConnectorInstalled,
-    ConnectorsImported,
-    BotsImported,
-    ConnectorRemoved,
-    ConnectorUpdated,
-    ConnectorSigninStarted,
-    SkillInstalled,
-    SkillRemoved,
-    SkillWritten,
-    /// A bot's `publish_artifact`.
-    ArtifactPublished,
-    CredentialSaved,
-    AgentSetupStarted,
-    AgentSignedIn,
-    SettingChanged,
-    /// The desktop app's ask before Reach from anywhere turns on for a computer in no account.
-    ReachAccountAnswered,
-    HostUpdateInstalled,
-    /// `networkCreate` or `networkJoin`: this computer is in a network of the user's computers.
-    NetworkJoined,
-    NetworkChanged,
-    /// A network step failed (`NetworkStage`): starting a node, a letter, or a `network*` call.
-    NetworkFailed,
-    /// Error tracking (`errors`): a panic or an uncaught error.
-    Exception,
-}
-
-impl Event {
-    fn name(self) -> &'static str {
-        match self {
-            Self::AppOpened => "app_opened",
-            Self::WindowOpened => "window_opened",
-            Self::HostStarted => "host_started",
-            Self::OnboardingCompleted => "onboarding_completed",
-            Self::ComputerAccessFinished => "computer_access_finished",
-            Self::SignInStarted => "sign_in_started",
-            Self::SignInFailed => "sign_in_failed",
-            Self::SignedIn => "signed_in",
-            Self::SignedOut => "signed_out",
-            Self::PairingCodeCreated => "pairing_code_created",
-            Self::DevicePaired => "device_paired",
-            Self::AccessRequestDenied => "access_request_denied",
-            Self::DeviceRevoked => "device_revoked",
-            Self::PhoneConnected => "phone_connected",
-            Self::StarPromptAnswered => "star_prompt_answered",
-            Self::LinkOpened => "link_opened",
-            Self::ScreenViewed => "screen_viewed",
-            Self::BotCreated => "bot_created",
-            Self::BotUpdated => "bot_updated",
-            Self::BotsReordered => "bots_reordered",
-            Self::SectionRenamed => "section_renamed",
-            Self::BotDeleted => "bot_deleted",
-            Self::MessageSent => "message_sent",
-            Self::MessageSteered => "message_steered",
-            Self::QueuedMessageRemoved => "queued_message_removed",
-            Self::TurnStopped => "turn_stopped",
-            Self::TurnFinished => "turn_finished",
-            Self::AgentFellBack => "agent_fell_back",
-            Self::SessionReset => "session_reset",
-            Self::PermissionAnswered => "permission_answered",
-            Self::ReactionAdded => "reaction_added",
-            Self::HandoffAnswered => "handoff_answered",
-            Self::RoutineSaved => "routine_saved",
-            Self::RoutineToggled => "routine_toggled",
-            Self::RoutineDeleted => "routine_deleted",
-            Self::RoutineRun => "routine_run",
-            Self::RoutineRetried => "routine_retried",
-            Self::DevServerStarted => "dev_server_started",
-            Self::DevServerStopped => "dev_server_stopped",
-            Self::DevServerAction => "dev_server_action",
-            Self::DevServerDetected => "dev_server_detected",
-            Self::VoiceCallStarted => "voice_call_started",
-            Self::VoiceCallFinished => "voice_call_finished",
-            Self::VoiceCallQuality => "voice_call_quality",
-            Self::WindowRecovery => "window_recovery",
-            Self::RemoteScreenOpened => "remote_screen_opened",
-            Self::ScreenTakenOver => "screen_taken_over",
-            Self::ConnectorInstalled => "connector_installed",
-            Self::ConnectorsImported => "connectors_imported",
-            Self::BotsImported => "bots_imported",
-            Self::ConnectorRemoved => "connector_removed",
-            Self::ConnectorUpdated => "connector_updated",
-            Self::ConnectorSigninStarted => "connector_signin_started",
-            Self::SkillInstalled => "skill_installed",
-            Self::SkillRemoved => "skill_removed",
-            Self::SkillWritten => "skill_written",
-            Self::ArtifactPublished => "artifact_published",
-            Self::CredentialSaved => "credential_saved",
-            Self::AgentSetupStarted => "agent_setup_started",
-            Self::AgentSignedIn => "agent_signed_in",
-            Self::SettingChanged => "setting_changed",
-            Self::ReachAccountAnswered => "reach_account_answered",
-            Self::HostUpdateInstalled => "host_update_installed",
-            Self::NetworkJoined => "network_joined",
-            Self::NetworkChanged => "network_changed",
-            Self::NetworkFailed => "network_failed",
-            Self::Exception => "$exception",
-        }
-    }
-}
 
 /// Where a network of the user's computers failed (`network_failed`'s `stage`); a failed
 /// `network*` call is `action` (`observe::failed`).
@@ -209,6 +58,10 @@ pub enum NetworkStage {
     Reply,
     /// A letter from another computer couldn't be taken in.
     Receive,
+    /// A turn under a rule's ceiling (`auto`, `ask`) didn't start: the bot's agent has no mode careful enough.
+    Ceiling,
+    /// A network saved before the `auto` default couldn't keep the computers already in it at `allow`.
+    Migrate,
 }
 
 /// Reports a network step that failed; never the error's text, a name or an address.
@@ -218,12 +71,16 @@ pub fn network_failed(hub: &Hub, stage: NetworkStage) {
         NetworkStage::Send => "send",
         NetworkStage::Reply => "reply",
         NetworkStage::Receive => "receive",
+        NetworkStage::Ceiling => "ceiling",
+        NetworkStage::Migrate => "migrate",
     };
     capture(hub, Event::NetworkFailed, Map::from_iter([("stage".into(), stage.into())]));
 }
 
 pub struct Analytics {
     enabled: Mutex<bool>,
+    /// Every event's `env`: the build's, or `dev` on a test machine.
+    env: &'static str,
     tx: mpsc::UnboundedSender<Msg>,
     rx: Mutex<Option<mpsc::UnboundedReceiver<Msg>>>,
     session: Mutex<session::Session>,
@@ -241,10 +98,20 @@ enum Msg {
 
 impl Analytics {
     pub fn load(store: &Store) -> Self {
+        // Test machines (Dev and end-to-end cloud computers) mark their events instead of guessing them from
+        // location or version. Stored, so a release the machine updates to keeps the mark.
+        if std::env::var("CODYNC_ANALYTICS_ENV").as_deref() == Ok("dev")
+            && let Err(e) = store.kv_set(KV_ENV, "dev")
+        {
+            tracing::warn!(error = format!("{e:#}"), "couldn't mark this machine's analytics as dev");
+        }
+        let built = if option_env!("CODYNC_ENV") == Some("main") { "main" } else { "dev" };
+        let env = if store.kv_get(KV_ENV).as_deref() == Some("dev") { "dev" } else { built };
         let enabled = store.kv_get(KV_ENABLED).as_deref() != Some("0");
         let (tx, rx) = mpsc::unbounded_channel();
         Self {
             enabled: Mutex::new(enabled),
+            env,
             tx,
             rx: Mutex::new(Some(rx)),
             session: Mutex::default(),
@@ -292,7 +159,7 @@ pub fn capture(hub: &Hub, event: Event, mut properties: Map<String, Value>) {
     }
     let account = hub.cloud.status().owner.map(|o| o.user_id);
     if let Some(user) = &account
-        && hub.store.kv_get(KV_IDENTIFIED).as_deref() != Some(user.as_str())
+        && hub.store.kv_get(KV_IDENTIFIED).is_none()
     {
         // Merges this install's earlier, anonymous events into the account.
         let identify = json!({"$anon_distinct_id": hub.host_id, "$process_person_profile": true});
@@ -309,7 +176,7 @@ fn queue(hub: &Hub, event: &str, distinct_id: &str, mut properties: Map<String, 
     properties.extend([
         ("$lib".into(), "codync-host".into()),
         ("app_version".into(), env!("CARGO_PKG_VERSION").into()),
-        ("env".into(), (if option_env!("CODYNC_ENV") == Some("main") { "main" } else { "dev" }).into()),
+        ("env".into(), hub.analytics.env.into()),
         ("$os".into(), std::env::consts::OS.into()),
         ("arch".into(), std::env::consts::ARCH.into()),
         // Joins this computer's events across accounts and with its phones' `computer_paired`.
@@ -374,8 +241,9 @@ async fn flush(hub: &Hub, pending: &mut Vec<Value>) {
     }
 }
 
-/// Sends what's queued before the host exits, so a restart or update loses nothing.
-pub async fn flush_before_exit(hub: &Hub) {
+/// Sends what's queued now: before the host exits, so a restart or update loses nothing, and before a cloud computer's
+/// machine stops (`remote::managed`).
+pub async fn flush_now(hub: &Hub) {
     let (tx, rx) = oneshot::channel();
     if hub.analytics.tx.send(Msg::Flush(tx)).is_ok() {
         let _ = tokio::time::timeout(Duration::from_secs(3), rx).await;
@@ -418,8 +286,45 @@ mod tests {
     }
 
     #[test]
+    fn a_test_machine_stays_marked_dev() {
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let built = if option_env!("CODYNC_ENV") == Some("main") { "main" } else { "dev" };
+        assert_eq!(Analytics::load(&store).env, built);
+        store.kv_set(KV_ENV, "dev").unwrap();
+        assert_eq!(Analytics::load(&store).env, "dev", "the stored mark wins over the build's environment");
+    }
+
+    #[test]
     fn computer_tag_matches_the_iphone() {
         // Same vector as the iPhone's AnalyticsTests.
         assert_eq!(computer_tag("AAECAwQFBgcICQoLDA0ODw"), "2d6878bee20aba04");
+    }
+
+    #[test]
+    fn the_install_id_merges_into_the_first_account_only() {
+        use crate::remote::cloud::{Owner, update_status};
+        let dir = std::env::temp_dir().join(format!("codync-analytics-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let identity = crate::remote::identity::Identity::load_or_create(&dir).unwrap();
+        let hub = Hub::new(store, "h".into(), identity, "t".into(), 0);
+
+        for user in ["user_1", "user_2"] {
+            update_status(&hub, |s| s.owner = Some(Owner { user_id: user.into(), email: None }));
+            capture(&hub, Event::AppOpened, Map::new());
+        }
+
+        let mut rx = hub.analytics.rx.locked().take().unwrap();
+        let mut sent = Vec::new();
+        while let Ok(Msg::Event(event)) = rx.try_recv() {
+            sent.push(event);
+        }
+        assert_eq!(
+            sent.iter().map(|e| (e["event"].as_str().unwrap(), e["distinct_id"].as_str().unwrap())).collect::<Vec<_>>(),
+            [("$identify", "user_1"), ("app_opened", "user_1"), ("app_opened", "user_2")]
+        );
+        assert_eq!(sent[0]["properties"]["$anon_distinct_id"], "h");
+        assert_eq!(hub.store.kv_get(KV_IDENTIFIED).as_deref(), Some("user_1"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

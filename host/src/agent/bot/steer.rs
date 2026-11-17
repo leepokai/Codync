@@ -61,6 +61,7 @@ impl Actor {
         self.move_first(at);
         let how = if own {
             self.cancel_turn().await;
+            self.stopped_for_message = true;
             Steer::Interrupted
         } else {
             Steer::MovedUp
@@ -75,6 +76,9 @@ impl Actor {
             return false;
         };
         let (acp, hub, bot) = (conn.acp.clone(), self.hub.clone(), self.cfg.id.clone());
+        // What the user wrote to a task's thread says so, as when it starts a turn of its own.
+        let threaded = self.cfg.is_task() && self.hub.store.entry(&entry_id).is_some_and(|e| e.data["from"] != "host");
+        let text = if threaded { crate::chat::tasks::in_thread(text, None) } else { text.to_owned() };
         let params = json!({
             "sessionId": sid,
             "prompt": [{"type": "text", "text": text}],
@@ -170,14 +174,24 @@ impl Actor {
         if let Some(mut e) = self.hub.store.entry(entry_id) {
             e.data["status"] = json!(RequestStatus::Sent);
             self.hub.set_entry_turn(entry_id, self.turn, &e.data);
+            // What the user wrote to a task's thread is in its item's next report, as when it starts a turn.
+            if self.cfg.is_task() {
+                let words = e.data["text"].as_str().unwrap_or_default().to_owned();
+                crate::chat::tasks::heard(&self.hub, &self.cfg, &[words]);
+            }
         }
+        self.record_joined_input(entry_id, &text);
+    }
+
+    /// A user input delivered inside this turn belongs in its reply, memory and fallback context.
+    pub(super) fn record_joined_input(&mut self, entry_id: &str, text: &str) {
         self.joined = true;
         self.turn_entries.push(entry_id.to_owned());
         if let Some(turn_text) = &mut self.turn_text {
             turn_text.push_str("\n\n");
-            turn_text.push_str(&text);
+            turn_text.push_str(text);
         }
-        self.relay_joined(entry_id, &text);
+        self.relay_joined(entry_id, text);
         // `send --wait` learns a started message's turn from the bot's next event, and a status and activity that stay
         // the same send none.
         self.hub.emit_bot(&self.cfg.id);

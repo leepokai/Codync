@@ -1,7 +1,7 @@
 import { onDeviceUnavailableReason, voiceSettingsClosed } from '../call/voice'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { LoopbackTransport, type HostClient } from '../../client/host-client'
-import { Button, CardForm, CardSection, ChoicePicker, IconButton, Reveal, Spinner, ValueRow } from '../../components/Controls'
+import { Button, CardForm, CardSection, ChoicePicker, IconButton, Reveal, Spinner, Switch, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, SheetPage } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
@@ -9,11 +9,12 @@ import { Text } from '../../components/Text'
 import { usePref } from '../../lib/prefs'
 import { useStore } from '../../store/context'
 import { useScreenViewed } from '../../store/analytics'
+import { SavedField } from './CommitField'
 import { errorText, liveClient } from './parts'
 import * as voice from './voice-settings'
 import type { VoiceModels, VoiceProvider } from './voice-settings'
 import { useTr } from '../../lib/use-language'
-import { fill } from '../../lib/fill.ts'
+import { fill } from '@shared/fill'
 
 
 /**
@@ -33,6 +34,8 @@ export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: bo
   /** Dictation on another provider than calls still needs that provider's key and speech-to-text model. */
   const dictationProvider = voice.isVoiceProvider(dictationEngine) && dictationEngine !== provider ? dictationEngine : null
   const [mode, setMode] = usePref(voice.mode(provider ?? 'openai'))
+  const [server] = usePref(voice.server(provider ?? 'openai'))
+  const speechOnly = provider !== null && voice.speechOnly(server)
   // Closing hands a running call to a different engine picked here.
   useEffect(() => () => voiceSettingsClosed.ring(), [])
   const footer = provider
@@ -56,10 +59,12 @@ export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: bo
               </ValueRow>,
               ...(provider
                 ? [
-                    <ValueRow key="mode" label="Mode" detail={mode === 'speech' ? 'Sent when you pause, replies read aloud.' : 'A live conversation. Talk over replies.'}>
-                      <ChoicePicker selection={mode} options={[{ id: 'realtime', label: 'Realtime' }, { id: 'speech', label: 'Speech' }]} onChange={setMode} />
-                    </ValueRow>,
-                    ...(mode === 'speech' ? [<PauseRow key="pause" />] : []),
+                    speechOnly
+                      ? <ValueRow key="mode" label="Mode" detail="Your own server works in Speech mode only.">{tr('Speech')}</ValueRow>
+                      : <ValueRow key="mode" label="Mode" detail={mode === 'speech' ? 'Sent when you pause, replies read aloud.' : 'A live conversation. Talk over replies.'}>
+                          <ChoicePicker selection={mode} options={[{ id: 'realtime', label: 'Realtime' }, { id: 'speech', label: 'Speech' }]} onChange={setMode} />
+                        </ValueRow>,
+                    ...(speechOnly || mode === 'speech' ? [<PauseRow key="pause" />] : []),
                   ]
                 : [
                     <ValueRow key="language" label="Language" detail="The language you speak in calls.">
@@ -96,15 +101,35 @@ function PauseRow() {
   )
 }
 
-/** One provider: the key the computer keeps, models, voice and this month's minutes. `dictationOnly` keeps the key and speech-to-text model. */
+/** The server the engine's Speech mode goes to: typed on the computer itself (`save`), read anywhere else. */
+function ServerRow({ server, disabled, save }: { server: string; disabled: boolean; save?: (typed: string) => Promise<boolean> }) {
+  const tr = useTr()
+  if (!save) return <ValueRow label="Server">{voice.serverLabel(server)}</ValueRow>
+  return (
+    <VStack gap={4}>
+      <SavedField label="Server" placeholder={voice.serverLabel('')} saved={server} disabled={disabled} save={save} />
+      <Text size="footnote" tone="secondary" className="settings-row">{tr('An OpenAI-compatible server for Speech mode: https, or http on this computer. Empty uses OpenAI and removes the saved key.')}</Text>
+    </VStack>
+  )
+}
+
+const NO_MODELS: VoiceModels = { models: [], transcribe: [], speech: [] }
+
+/**
+ * One provider: the key the computer keeps, the server its Speech mode goes to, models, voice and this month's
+ * minutes. `dictationOnly` keeps the key, the server and the speech-to-text model.
+ */
 function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: VoiceProvider; dictationOnly?: boolean }) {
   const tr = useTr()
   const store = useStore()
   const info = voice.voiceInfo[provider]
+  const [googleSearch, setGoogleSearch] = usePref(voice.googleSearch)
+  const [supportsSearch, setSupportsSearch] = useState(false)
   const [mode] = usePref(voice.mode(provider))
   const [dictationEngine] = usePref(voice.dictationEngine)
   /** null while the computer hasn't answered yet. */
   const [saved, setSaved] = useState<boolean | null>(null)
+  const [server] = usePref(voice.server(provider))
   const [replacing, setReplacing] = useState(false)
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
@@ -113,14 +138,22 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
   const [model, setModel] = useState(() => voice.chosenModel(provider, 'realtime'))
   const [transcribeModel, setTranscribeModel] = useState(() => voice.chosenModel(provider, 'transcribe'))
   const [speechModel, setSpeechModel] = useState(() => voice.chosenModel(provider, 'speech'))
-  const [models, setModels] = useState<VoiceModels>(() => voice.modelsCache(provider).get() ?? { models: [], transcribe: [], speech: [] })
+  const [models, setModels] = useState<VoiceModels>(() => voice.modelsCache(provider).get() ?? NO_MODELS)
   const busyRef = useRef(false)
-  const speechMode = mode === 'speech'
+  const speechMode = voice.speechOnly(server) || mode === 'speech'
   /** Speech mode and dictation with this provider both use its speech-to-text model. */
   const transcribes = dictationOnly || speechMode || dictationEngine === provider
   const hasKey = saved === true
   const canEditKey = store.client?.transport instanceof LoopbackTransport
   const notConnected = { ok: false, text: tr('Not connected to {name}.').replaceAll('{name}', () => store.hostName) }
+
+  /** `list` in the pickers, each with this device's choice. */
+  const showModels = (list: VoiceModels) => {
+    setModels(list)
+    setModel(voice.chosenModel(provider, 'realtime'))
+    setTranscribeModel(voice.chosenModel(provider, 'transcribe'))
+    setSpeechModel(voice.chosenModel(provider, 'speech'))
+  }
 
   const loadModels = async (client: HostClient) => {
     let list: VoiceModels
@@ -129,12 +162,9 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
     } catch {
       return
     }
-    setModels(list)
     // A newer default moves every choice the user hasn't made themselves.
     voice.rememberDefaults(provider, list.defaults)
-    setModel(voice.chosenModel(provider, 'realtime'))
-    setTranscribeModel(voice.chosenModel(provider, 'transcribe'))
-    setSpeechModel(voice.chosenModel(provider, 'speech'))
+    showModels(list)
     voice.modelsCache(provider).set(list)
   }
 
@@ -148,7 +178,9 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
       }
       let configured: boolean
       try {
-        configured = voice.configured(await voice.voiceStatus(client), provider)
+        const status = await voice.voiceStatus(client)
+        configured = voice.configured(status, provider)
+        if (!cancelled) setSupportsSearch(status.googleSearch === true)
       } catch (e) {
         if (cancelled) return
         setSaved(false)
@@ -166,19 +198,27 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
     voice.saveModel(provider, kind, m)
   }
 
-  const run = (work: (client: HostClient) => Promise<void>) => {
-    if (busyRef.current) return
+  /** Whether `work` finished; a failure shows under the key. */
+  const run = async (work: (client: HostClient) => Promise<void>): Promise<boolean> => {
+    if (busyRef.current) return false
     const client = liveClient(store)
-    if (!client) return setResult(notConnected)
+    if (!client) {
+      setResult(notConnected)
+      return false
+    }
     busyRef.current = true
     setBusy(true)
     setResult(null)
-    void work(client)
-      .catch((e: unknown) => setResult({ ok: false, text: errorText(e) }))
-      .finally(() => {
-        busyRef.current = false
-        setBusy(false)
-      })
+    try {
+      await work(client)
+      return true
+    } catch (e) {
+      setResult({ ok: false, text: errorText(e) })
+      return false
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
   }
 
   /**
@@ -188,7 +228,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
   const test = () => {
     const typed = key.trim()
     if (!typed && !hasKey) return
-    run(async (client) => {
+    void run(async (client) => {
       if (!typed || (!replacing && hasKey)) {
         if (dictationOnly) await voice.voiceModels(client, provider)
         else if (speechMode) await voice.voiceSpeak(client, provider, speechModel, chosenVoice, 'OK')
@@ -206,10 +246,24 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
   }
 
   const remove = () =>
-    run(async (client) => {
+    void run(async (client) => {
       if (!(client.transport instanceof LoopbackTransport)) return
       setSaved(voice.configured(await voice.setVoiceKey(client, provider, ''), provider))
       setResult(null)
+    })
+
+  /**
+   * The computer checks a saved key with the new server before keeping the address; a refused one leaves the old.
+   * Clearing it also removes the key. Another server has other models: the picks made for the old one are gone.
+   */
+  const saveServer = (typed: string) =>
+    run(async (client) => {
+      if (!(client.transport instanceof LoopbackTransport)) return
+      const configured = voice.configured(await voice.setVoiceServer(client, provider, typed), provider)
+      setSaved(configured)
+      showModels(voice.modelsCache(provider).get() ?? NO_MODELS)
+      setResult({ ok: true, text: tr('Saved') })
+      if (configured) await loadModels(client)
     })
 
   const picker = (selection: string, list: string[], onChange: (m: string) => void) => {
@@ -220,7 +274,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
 
   const dimmed = hasKey ? 'settings-dimmable' : 'settings-dimmable dimmed'
   let footer: string | null = null
-  if (!hasKey) footer = `Add a key to choose from ${info.name}'s models.`
+  if (!hasKey) footer = fill(tr("Add a key to choose from {name}'s models."), { name: info.name })
   else if (dictationOnly) footer = tr('For dictation in the message box.')
   const keyArea = (
     <VStack key="key" gap={8}>
@@ -300,6 +354,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
     <CardSection title={info.name} footer={footer}>
       {[
         keyArea,
+        ...(server === null ? [] : [<ServerRow key="server" server={server} disabled={busy} save={canEditKey ? saveServer : undefined} />]),
         ...(transcribes
           ? [<div key="stt" className={dimmed}><ValueRow label={tr('Speech to text')}>{picker(transcribeModel, models.transcribe, pick('transcribe', setTranscribeModel))}</ValueRow></div>]
           : []),
@@ -321,6 +376,11 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
                   />
                 </ValueRow>
               </div>,
+              ...(provider === 'gemini' && !speechMode && supportsSearch ? [
+                <ValueRow key="google-search" label="Google Search" detail="Let Gemini search the web during calls. Requires Google Search quota; charges may apply.">
+                  <Switch label="Google Search" on={googleSearch} onChange={setGoogleSearch} />
+                </ValueRow>,
+              ] : []),
               <div key="minutes" className={dimmed}>
                 <ValueRow label={tr('This month')}>{tr('≈ {minutes} min').replaceAll('{minutes}', () => String(voice.voiceMinutes(provider)))}</ValueRow>
               </div>,

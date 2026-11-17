@@ -22,12 +22,7 @@ public struct NetworkSheet: View {
                     Image.codyncNetwork.resizable().scaledToFit().frame(width: 26, height: 26).accessibilityHidden(true)
                     Text(L10n.tr("Network"))
                     // The network is a beta feature.
-                    Text(L10n.tr("Beta"))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Palette.secondary)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(Palette.bubbleAgent, in: Capsule())
+                    BetaTag()
                 }
             }
             CardForm {
@@ -38,7 +33,7 @@ public struct NetworkSheet: View {
                         ForEach(network.computers ?? []) { NetworkComputerRow(computer: $0) }
                     }
                     if let rules = network.rules, !rules.isEmpty {
-                        CardSection("Who may message bots here", footer: "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in.") {
+                        CardSection("Who may message bots here", footer: network.rulesFooter) {
                             ForEach(Array(rules.enumerated()), id: \.offset) { _, rule in
                                 Text(network.text(of: rule)).font(.subheadline).foregroundStyle(Palette.text)
                                     .frame(maxWidth: .infinity, alignment: .leading)

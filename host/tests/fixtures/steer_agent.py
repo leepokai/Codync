@@ -1,9 +1,10 @@
 """ACP agent whose turn waits: a steered message joins it, a cancel stops it, or it ends after `seconds`.
 
-Args: `steer|sends|late|sends-late|limit|next|refuse|lingers|plain seconds [answer_delay]`. With `steer` it advertises
-`_session/steering` (top-level `_meta`, as Claude's and Codex's adapters do) and takes a steered message into its
-running turn; with `sends` it also calls `send_message` before it takes the message and again after, before its last
-text; with `late` it ends that turn before answering; `sends-late` does both, calling `send_message` once; with `limit`
+Args: `steer|sends|voice|voice-wav|late|sends-late|limit|next|refuse|lingers|plain seconds [answer_delay]`. With `steer` it
+advertises `_session/steering` (top-level `_meta`, as Claude's and Codex's adapters do) and takes a steered message into
+its running turn; with `sends` it also calls `send_message` before it takes the message and again after, before its
+last text; with `voice` it sends a voice note (`send_file` with text) before it takes the message and ends with no more
+text (`voice-wav`: the same with four seconds of real, silent WAV a player can load); with `late` it ends that turn before answering; `sends-late` does both, calling `send_message` once; with `limit`
 that turn then fails the way Claude's adapter reports a usage limit; with `next` it advertises steering too but always
 answers that the message needs a turn of its own; with `refuse` it answers a steer with an error; with `lingers` it
 takes two seconds to wind down after a cancel. It answers a steer after `answer_delay` seconds, so a turn shorter than
@@ -12,6 +13,7 @@ that ends first. Every request is logged to requests.jsonl in its folder.
 
 import json
 import subprocess
+import wave
 import sys
 import threading
 import time
@@ -41,11 +43,11 @@ def say(text):
     send({"method": "session/update", "params": {"sessionId": SID, "update": update}})
 
 
-def send_message(text):
+def chat_tool(name, arguments):
     server = next(s for s in servers if s["name"] == "chat")
     calls = [
         ("initialize", {"protocolVersion": "2025-06-18"}),
-        ("tools/call", {"name": "send_message", "arguments": {"text": text}}),
+        ("tools/call", {"name": name, "arguments": arguments}),
     ]
     with subprocess.Popen([server["command"], *server["args"]], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as mcp:
         for identifier, (method, params) in enumerate(calls):
@@ -54,12 +56,27 @@ def send_message(text):
             mcp.stdout.readline()
 
 
+def send_message(text):
+    chat_tool("send_message", {"text": text})
+
+
 def run(rid):
     wake = threading.Event()
     turn.update(wake=wake, steered=None, cancelled=False)
     say("Working")
     if MODE in ("sends", "sends-late"):
         send_message("Before it joined")
+    if MODE == "voice":
+        with open("note.m4a", "wb") as note:
+            note.write(b"\0\0\0\x18ftypM4A voice")
+        chat_tool("send_file", {"path": "note.m4a", "text": "Listen before it joined"})
+    if MODE == "voice-wav":
+        with wave.open("note.wav", "wb") as note:
+            note.setnchannels(1)
+            note.setsampwidth(2)
+            note.setframerate(8000)
+            note.writeframes(b"\0\0" * 8000 * 4)
+        chat_tool("send_file", {"path": "note.wav", "text": "Listen before it joined"})
     wake.wait(SECONDS)
     turn["wake"] = None
     if MODE == "sends" and turn["steered"]:
@@ -73,7 +90,8 @@ def run(rid):
     if MODE == "limit":
         send({"id": rid, "error": LIMIT})
         return
-    say("Got: " + turn["steered"] if turn["steered"] else "Done")
+    if MODE not in ("voice", "voice-wav"):
+        say("Got: " + turn["steered"] if turn["steered"] else "Done")
     send({"id": rid, "result": {"stopReason": "end_turn"}})
 
 

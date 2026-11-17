@@ -1,7 +1,8 @@
 //! Starting and stopping: a server is the host's own child in a tree of its own.
 
 use super::{
-    Leader, Live, Run, STOP_GRACE, STOP_WAIT, Saved, Status, check_room, detected, forget, logs, platform, report, save,
+    Leader, Live, Run, STOP_GRACE, STOP_WAIT, Saved, Status, detected, forget, has_room, logs, no_room, platform,
+    report, same_server, save,
 };
 use crate::LockExt;
 use crate::agent::process::{self, Process};
@@ -16,7 +17,8 @@ use tokio::sync::watch;
 
 const EXIT_POLL: Duration = Duration::from_millis(200);
 
-/// Adds a new server and starts it. `approved`: someone allowed it on a card.
+/// Adds a new server and starts it, or returns the same one a parallel start already added, saying so with true.
+/// `approved`: someone allowed it on a card.
 pub(super) async fn create(
     hub: &Arc<Hub>,
     bot: &str,
@@ -24,7 +26,7 @@ pub(super) async fn create(
     command: String,
     folder: String,
     approved: bool,
-) -> Result<String> {
+) -> Result<(String, bool)> {
     let id = uuid::Uuid::now_v7().to_string();
     let saved = Saved {
         id: id.clone(),
@@ -38,10 +40,23 @@ pub(super) async fn create(
         leader: None,
         boot_ms: None,
     };
-    save(&hub.store, &saved);
-    hub.dev_servers.live.locked().insert(id.clone(), Live::stopped(saved));
-    launch(hub, &id).await?;
-    Ok(id)
+    {
+        let mut live = hub.dev_servers.live.locked();
+        // A parallel start of the same thing got here first, while this one waited on its card.
+        if let Some(same) = same_server(&live, bot, &saved.folder, &saved.command) {
+            return Ok((same, true));
+        }
+        if !has_room(&live, bot) {
+            drop(live);
+            return Err(no_room(hub, bot));
+        }
+        save(&hub.store, &saved);
+        let mut server = Live::stopped(saved.clone());
+        server.begin(now_ms());
+        live.insert(id.clone(), server);
+    }
+    run_begun(hub, saved).await.inspect_err(|_| report(hub, Event::DevServerStarted, "outcome", "failed"))?;
+    Ok((id, false))
 }
 
 /// Starts a stopped server: the host's own child in a tree of its own, its output going to its log.
@@ -54,9 +69,20 @@ pub(super) async fn launch(hub: &Arc<Hub>, id: &str) -> Result<()> {
             entry.stop_asked = false;
             return Ok(());
         }
+        let bot = entry.saved.bot.clone();
+        if !has_room(&live, &bot) {
+            drop(live);
+            return Err(no_room(hub, &bot));
+        }
+        let entry = live.get_mut(id).expect("found above, under this same lock");
         entry.begin(now_ms());
         entry.saved.clone()
     };
+    run_begun(hub, saved).await
+}
+
+/// Runs a server just marked as starting.
+async fn run_begun(hub: &Arc<Hub>, saved: Saved) -> Result<()> {
     hub.emit_bot(&saved.bot);
     // A task of its own: a request that goes away (a closed connection, a cancelled tool call) can't abandon it halfway.
     tokio::spawn(start(hub.clone(), saved)).await?
@@ -177,7 +203,7 @@ fn finished(hub: &Hub, id: &str, asked: bool, code: Option<i32>) {
 
 /// Stops a server and waits until it ended; for what a bot left running through its shell, ends that.
 pub async fn stop(hub: &Hub, bot: &str, id: &str, by: &str) -> Result<()> {
-    if detected::stop(hub, bot, id)? {
+    if detected::stop(hub, bot, id).await? {
         report(hub, Event::DevServerStopped, "by", by);
         return Ok(());
     }
@@ -198,12 +224,10 @@ pub async fn stop(hub: &Hub, bot: &str, id: &str, by: &str) -> Result<()> {
     Ok(())
 }
 
-/// Starts it again, stopping it first if it runs. A stopped one would be one more, so the limit holds here too.
+/// Starts it again, stopping it first if it runs.
 pub async fn restart(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
     if hub.dev_servers.view(bot, id)?.status.active() {
         stop(hub, bot, id, "restart").await?;
-    } else {
-        check_room(hub, bot)?;
     }
     launch(hub, id).await
 }

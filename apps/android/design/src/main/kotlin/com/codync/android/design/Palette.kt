@@ -34,6 +34,7 @@ object Palette {
     val accentDim: Color @Composable @ReadOnlyComposable get() = pair(0xD9D9D9, 0x333333)
     val danger: Color @Composable @ReadOnlyComposable get() = pair(0xC23A2B, 0xF0A7A7)
     val warning: Color get() = hex(0xF0A030)
+    val onWarning: Color get() = hex(0x000000)
     /** A bot that needs you, in widgets and task cards: readable amber in both modes. */
     val attention: Color @Composable @ReadOnlyComposable get() = pair(0x936000, 0xECAF52)
     val codeBackground: Color @Composable @ReadOnlyComposable get() = pair(0xF4F4F4, 0x111111)

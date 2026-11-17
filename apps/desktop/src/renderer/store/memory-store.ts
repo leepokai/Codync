@@ -112,8 +112,8 @@ export class MemoryStore extends Observable {
 export function authorLabel(entry: MemoryEntry, botName: (id: string | null) => string) {
   switch (entry.author) {
     case 'user': return trNow('You wrote it')
-    case 'bot': return `${botName(entry.authorBot)} remembered it`
-    case 'dream': return 'Dreaming'
+    case 'bot': return trNow('{name} remembered it').replaceAll('{name}', () => botName(entry.authorBot))
+    case 'dream': return trNow('Dreaming')
     default: return trNow('Moved from the old memory')
   }
 }

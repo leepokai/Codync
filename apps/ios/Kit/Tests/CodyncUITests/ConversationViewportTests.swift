@@ -44,6 +44,37 @@ import UIKit
     #expect(!list.followingAfterInteraction())
 }
 
+/// The keyboard hands over the new size and insets in one animated update and resizes the container afterwards,
+/// unanimated: that second step must leave the list where the first one put it.
+@MainActor @Test func keyboardResizeOfTheContainerLeavesTheListInPlace() {
+    let list = ViewportConversationView(frame: .zero, collectionViewLayout: ViewportConversationLayout())
+    let container = ConversationContainer(list: list)
+    container.frame = CGRect(x: 0, y: 100, width: 390, height: 600)
+    container.size = CGSize(width: 390, height: 300)
+    container.outsets = UIEdgeInsets(top: 100, left: 0, bottom: 444, right: 0)
+    container.layoutIfNeeded()
+    let placed = list.frame
+    #expect(placed == CGRect(x: 0, y: -100, width: 390, height: 844))
+    #expect(list.contentInset.bottom == 444)
+
+    container.frame.size.height = 300
+    container.layoutIfNeeded()
+
+    #expect(list.frame == placed)
+}
+
+@MainActor @Test func aRowByTheEndCannotBeBroughtToTheMiddle() {
+    let list = ViewportConversationView(frame: CGRect(x: 0, y: 0, width: 390, height: 700),
+                                        collectionViewLayout: ViewportConversationLayout())
+    list.layoutIfNeeded()
+    list.contentSize = CGSize(width: 390, height: 2_000)
+    list.pinToEnd()
+    // The last row: the list is already where bringing it into view would leave it.
+    #expect(list.centeredOffset(of: CGRect(x: 0, y: 1_800, width: 390, height: 200)) == list.contentOffset.y)
+    #expect(list.centeredOffset(of: CGRect(x: 0, y: 900, width: 390, height: 200)) == 650)
+    #expect(list.centeredOffset(of: CGRect(x: 0, y: 0, width: 390, height: 200)) == 0)
+}
+
 @MainActor @Test func stationaryTouchResumesViewportFollowingWithoutADragCallback() async throws {
     let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
     let controller = UIViewController()

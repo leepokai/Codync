@@ -11,8 +11,8 @@ code is in `host/src/dev_servers/`.
 ## Why the host runs them
 
 A program started through an agent's shell tool is a descendant of the agent. On Windows the agent's job ends
-everything in it. On macOS and Linux the host kills the agent's process group, so a program in that group goes too, and
-one that detached into its own session survives with nobody tracking it. Taking the tree down with the agent is
+everything in it. On macOS and Linux the agent leads a session of its own and the host kills every process group in it, so a program
+in that session goes too, and one that detached into a session of its own survives with nobody tracking it. Taking the tree down with the agent is
 deliberate, and stays right for what an agent starts itself. So that such a server isn't lost, `background_work` keeps
 the agent running while it sees one, with its helpers and memory.
 
@@ -22,7 +22,7 @@ owner agents use), so the agent can be stopped when idle while it runs.
 | Event | The server |
 |---|---|
 | Agent stopped when idle, crashed or changed; new session; routine run ended | Keeps running |
-| User or bot stops it | Its whole tree stops: SIGTERM, then SIGKILL after 3 s on Unix; the job ends at once on Windows |
+| User or bot stops it | Its whole tree stops: SIGTERM, then what is left after 3 s on Unix; all of it at once on Windows. It ends from its leaves up: a process whose children have ended gets 3 s to finish by itself, and what is left after 15 s is killed (`agent/process.rs`) |
 | It ends by itself | Stopped (exit 0) or failed; it doesn't start again |
 | Bot deleted | Stopped and removed |
 | Host updated or restarted | Stopped, then started again |
@@ -44,6 +44,7 @@ On the existing `chat` helper (`dev_servers/tools.rs`): a new MCP server would a
 | `dev_server_logs {id, lines?}` | The end of its log (200 lines by default, at most 1000) |
 
 - At most 5 run per bot, however they start (a bot or a person); past that the error lists them.
+- A [background task](background-tasks.md)'s servers are its bot's (`tools::call` keys them to the task's owner): they show on the bot, count toward its 5, and outlive the task. Its approval card is the task's own, in the bot's chat.
 - A start finishes in a task of its own, so a request that goes away (a closed connection, a cancelled tool call) can't leave it half started. A stop that comes meanwhile ends it as soon as it's up.
 - The command ends when its first process ends, so bots give it as they'd run it in the foreground.
 - Bots hear about them in the tool's description and one line of their instructions (`BRIEF`). Nothing forces it: see
@@ -54,7 +55,9 @@ On the existing `chat` helper (`dev_servers/tools.rs`): a new MCP server would a
 ## Approval and safety
 
 - **Under Ask, a start waits on an approval card** with the command and folder (`chat::manage::approve`, as `update_bot`).
-  Under Auto it runs, like the agent's own commands. A server first started under Auto had no card, so it gets one when
+  Under Auto it runs, like the agent's own commands, unless a network rule holds the bot to a
+  [ceiling](codync-network.md#ceilings-auto-and-ask): a turn under one can't start a server at all, and what the
+  agent goes on with after that turn asks like Ask. A server first started under Auto had no card, so it gets one when
   the bot, now under Ask, starts it again (`Saved::approved`).
 - **The command runs outside any sandbox the agent has** (Codex has one). A sandboxed agent under Auto therefore has a
   way out of it through this tool. The card under Ask is the control; decided 2026-11-05 to match the agent's own
@@ -71,7 +74,7 @@ No guessing what counts as a dev server: **one that listens gets its port shown*
 only its status.
 
 - `dev_servers/ports.rs` reads TCP listeners with the [`listeners`](https://crates.io/crates/listeners) crate and keeps
-  those in the server's tree (`Process::members`: its process group on Unix, its job on Windows).
+  those in the server's tree (`Process::members`: its session on Unix, its job on Windows).
 - `dev_servers/scan.rs` reads them every second for a server's first 30 s, then every 10 s, and tells clients only of
   changes. A server with no port after 5 s counts as running.
 - The host works out the addresses, so clients don't: `local` works on the computer, `remote` from other devices. A
@@ -102,17 +105,18 @@ white, and color comes from the bots.
 - **Title:** the desktop's title pill shows `Builder :5173` in quiet text; the phones' subtitle shows `Connected · :5173`;
   the terminal's header shows it on the right. With more running it's `:5173 +2`; with no port, the server's name; none
   running, `Starting` or `Failed to start`; stopped, nothing. Opening the bot's details is what the title already does.
-- **Details:** a **Dev servers** section first on the Details tab, shown only when the bot has servers. A row is one line:
+- **Details:** a **Dev servers** section on the Details tab, after Routines, shown only when the bot has servers. A row is one line:
   name and port (or `Running`, `Starting`, `Stopped`, `Failed to start`). A click opens it in the browser, or with no port
   to open (a watch build, or one that ended) its logs; the rest (copy address, logs, restart, stop, remove) is behind
   `⋯`, which on the desktop shows only when the row is hovered.
 - **Other devices:** a server listening only on its computer can't be opened from a phone, or from a desktop over SSH
   (`store === app.local`, not `isLoopback`: an SSH store is loopback through its tunnel). Its menu says so. A server on all
-  interfaces opens at its first `remote` address.
+  interfaces opens at its first `remote` address, which this device may not reach (a Tailscale address, without Tailscale
+  here), so with several the menu lists each one to open, in place of `Open`.
 - **Logs:** a sheet with the last 200 lines and a refresh button; for a failed server, its exit code.
 - **Terminal:** `/servers` or a click on the port opens a sheet instead of a section; keys in `tui/manage/dev_servers.rs`,
   the footer listing those that apply to the selected server. `codync-host tui --url` may be a tunnel, which looks local,
-  so it shows the address instead of opening a browser.
+  so its sheet lists the selected server's addresses, one line each, instead of opening a browser.
 
 Each client: desktop `views/thread/DevServersSection.tsx` and `src/shared/dev-servers.ts`; iPhone
 `CodyncUI/Bots/DevServersSection.swift`; Android `DevServersSection.kt`; terminal `tui/manage/dev_servers.rs` and
@@ -124,16 +128,18 @@ Instructions aren't a guarantee, and some agents have their own background-shell
 what an agent started outside Codync's helpers and listens below port 32768 (above is where systems hand out ports: an
 agent's own callback or inspector). The agent's own processes, by program name (its harness's `bins` and its command's
 first word, unless that's a runtime like `node`), don't count: `opencode acp` listens on 4096. Processes that share a
-socket are one server (a pre-fork server), whose Stop ends them all. These show with `managed: false`, marked as stopping
-with the bot, and offer only open, copy and stop: they can't leave the agent's tree. `background_work` still keeps their
-agent running. The `dev_server_detected` event measures how often this happens.
+socket are one server (a pre-fork server), whose Stop ends them all. A Stop reads the agent's tree again and ends only what
+is still in it, since a pid from the last scan can be reused; when the tree can't be read it fails and the row stays. These
+show with `managed: false`, marked as stopping with the bot, and offer only open, copy and stop: they can't leave the
+agent's tree. `background_work` still keeps their agent running. The `dev_server_detected` event measures how often this
+happens.
 
 ## Tests
 
 `host/tests/dev_server_e2e.rs` runs on every system host CI does, and walks the table above: its Unix-only parts are a
-crashed host's leftover process and an agent stopped after a routine's run (Windows can't tell that fixture from one with
-a server, see `background_work`). `apps/desktop/e2e/dev-servers.spec.ts` and `apps/maestro/dev-servers.yaml` walk the
-clients.
+crashed host's leftover process, an agent stopped after a routine's run (Windows can't tell that fixture from one with
+a server, see `background_work`) and a process list that can't be read. `apps/desktop/e2e/dev-servers.spec.ts` and
+`apps/maestro/dev-servers.yaml` walk the clients.
 
 ## Later
 

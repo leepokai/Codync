@@ -4,7 +4,7 @@ use super::run::{create, launch, stop};
 use super::{View, check_room, logs, report};
 use crate::analytics::Event;
 use crate::hub::Hub;
-use crate::store::{BotConfig, Permission};
+use crate::store::BotConfig;
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -72,9 +72,12 @@ pub fn tools() -> Vec<Value> {
     ]
 }
 
-pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value> {
+/// `caller`: the bot whose agent calls. A task's servers are its bot's: the user sees and stops them there, and
+/// they count toward its limit.
+pub async fn call(hub: &Arc<Hub>, caller: &str, name: &str, args: &Value) -> Result<Value> {
+    let bot = &crate::chat::tasks::owner(&hub.store, caller);
     match name {
-        START => start(hub, bot, args).await,
+        START => start(hub, caller, bot, args).await,
         "list_dev_servers" => Ok(json!({"servers": hub.dev_servers.wire(bot)})),
         "stop_dev_server" => {
             stop(hub, bot, arg(args, "id")?, "bot").await?;
@@ -94,17 +97,18 @@ fn arg<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
     args[key].as_str().map(str::trim).filter(|v| !v.is_empty()).ok_or_else(|| anyhow!("{key} is required"))
 }
 
-async fn start(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
+/// `caller` asks (its turn waits on the card, in its folder); the server is `bot`'s.
+async fn start(hub: &Arc<Hub>, caller: &str, bot: &str, args: &Value) -> Result<Value> {
     let command = arg(args, "command")?.to_owned();
-    let cfg = hub.store.bot(bot)?.filter(|row| !row.deleted).map(|row| row.config).context("unknown bot")?;
+    let cfg = hub.store.bot(caller)?.filter(|row| !row.deleted).map(|row| row.config).context("unknown bot")?;
     let folder = folder_for(&cfg, args["folder"].as_str()).await?;
-    let on_a_card = cfg.permission != Permission::Auto;
+    let on_a_card = !hub.ceilings.approves_by_itself(&cfg);
     let servers = &hub.dev_servers;
     if let Some(id) = servers.same(bot, &folder, &command) {
         // A stopped one comes back, with no second card if someone allowed it; under Auto nobody did.
         if !servers.view(bot, &id)?.status.active() {
-            check_room(hub, bot)?;
             if !servers.approved(&id) {
+                check_room(hub, bot)?;
                 ask(hub, &cfg, &command, &folder).await?;
                 if on_a_card {
                     servers.note_approved(&hub.store, &id);
@@ -123,14 +127,15 @@ async fn start(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
         .map(str::to_owned)
         .or_else(|| Path::new(&folder).file_name().map(|name| name.to_string_lossy().into_owned()))
         .unwrap_or_else(|| "dev server".to_owned());
-    let id = match create(hub, bot, name, command, folder, on_a_card).await {
-        Ok(id) => id,
-        Err(error) => {
-            report(hub, Event::DevServerStarted, "outcome", "failed");
-            return Err(error);
+    let (id, reused) = create(hub, bot, name, command, folder, on_a_card).await?;
+    if reused {
+        // A parallel start added it while this one waited on its card, and it may have ended since.
+        if on_a_card {
+            servers.note_approved(&hub.store, &id);
         }
-    };
-    answer(hub, bot, &id, false).await
+        launch(hub, &id).await?;
+    }
+    answer(hub, bot, &id, reused).await
 }
 
 /// Under Ask, waits on the approval card with the command and folder.
@@ -176,6 +181,8 @@ async fn answer(hub: &Arc<Hub>, bot: &str, id: &str, reused: bool) -> Result<Val
     report(hub, Event::DevServerStarted, "outcome", outcome);
     let mut answer = json!(view);
     answer["reused"] = reused.into();
-    answer["log"] = logs::tail(id, ANSWER_LINES).await?.into();
+    // How the start went is settled by now: a log that can't be shown mustn't turn that into a failed start.
+    let log = logs::tail(id, ANSWER_LINES).await;
+    answer["log"] = log.unwrap_or_else(|error| format!("couldn't read its log: {error:#}")).into();
     Ok(answer)
 }

@@ -129,3 +129,17 @@ import Testing
     #expect(height(3) > height(1) && height(3) < 190)
     #expect(height(25) == 190)
 }
+
+/// Find searches what messages say: not time separators, notices or the bot's work along the way.
+@MainActor @Test func findSearchesOnlyMessageText() {
+    func entry(_ seq: Int64, _ kind: String, _ text: String, final: Bool? = nil) -> Entry {
+        var data = EntryData(text: text)
+        data.final = final
+        return Entry(id: "e\(seq)", seq: seq, botId: "b", rev: seq, kind: kind, turn: 1, data: data, createdAt: 0, updatedAt: 0)
+    }
+    let items = ChatItem.build([entry(1, "user", "find the plan"), entry(2, "agent", "planning", final: false),
+                                entry(3, "agent", "The plan, and the Plan", final: true), entry(4, "notice", "plan saved")])
+    let found = ThreadView.findable(items)
+    #expect(found.map(\.text) == ["find the plan", "The plan, and the Plan"])
+    #expect(ConversationFind.matches(in: found, query: "plan").count == 3)
+}

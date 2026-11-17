@@ -36,7 +36,7 @@ class ChatLayoutTest {
         val answer = "The caller cancelled while audio was connecting."
         val state = AppState(previewComputer, loading = false, selectedBot = dex.id, bots = listOf(dex, miles),
             connection = LinkState.Ready(HostRoute.Direct), actualConnection = LinkState.Ready(HostRoute.Direct),
-            historyComplete = setOf(dex.id), entries = listOf(exchange("bot-message", 1, dex.id, miles.id, dex.id, request, answer)))
+            historyEnd = mapOf(dex.id to HistoryEnd.Complete), entries = listOf(exchange("bot-message", 1, dex.id, miles.id, dex.id, request, answer)))
         compose.runOnUiThread { compose.activity.setContent { Hosted { ChatScreen(state, store, {}) } } }
         // The chat keeps one line (iOS `BotMessageRow`), not the messages themselves.
         compose.onNodeWithContentDescription("Message from Miles").assertIsDisplayed()
@@ -61,7 +61,7 @@ class ChatLayoutTest {
         val dex = Bot("exchange-run-preview", "Dex"); val miles = Bot("miles-run-preview", "Miles")
         val state = AppState(previewComputer, loading = false, selectedBot = dex.id, bots = listOf(dex, miles),
             connection = LinkState.Ready(HostRoute.Direct), actualConnection = LinkState.Ready(HostRoute.Direct),
-            historyComplete = setOf(dex.id), entries = listOf(
+            historyEnd = mapOf(dex.id to HistoryEnd.Complete), entries = listOf(
                 exchange("asked", 1, dex.id, dex.id, miles.id, "Review the fix.", "Looks good."),
                 exchange("failed", 2, dex.id, dex.id, miles.id, "Ship it.", status = "failed", detail = "Recipient stopped.")))
         compose.runOnUiThread { compose.activity.setContent { Hosted { ChatScreen(state, store, {}) } } }
@@ -79,7 +79,7 @@ class ChatLayoutTest {
         val now = System.currentTimeMillis()
         val state = AppState(previewComputer, loading = false, selectedBot = bot.id, bots = listOf(bot),
             connection = LinkState.Ready(HostRoute.Direct), actualConnection = LinkState.Ready(HostRoute.Direct),
-            historyComplete = setOf(bot.id), entries = listOf(
+            historyEnd = mapOf(bot.id to HistoryEnd.Complete), entries = listOf(
                 Entry("user-layout", 1, bot.id, rev = 1, kind = "user", data = buildJsonObject { put("text", sent) }, createdAt = now),
                 Entry("agent-layout", 2, bot.id, rev = 1, kind = "agent", data = buildJsonObject { put("text", reply); put("author", bot.id); put("final", true) }, createdAt = now)))
         compose.runOnUiThread { compose.activity.setContent { Hosted { ChatScreen(state, store, {}) } } }
@@ -124,7 +124,7 @@ class ChatLayoutTest {
         val second = "And run the linter before you finish."
         val state = AppState(previewComputer, loading = false, selectedBot = bot.id, bots = listOf(bot),
             connection = LinkState.Ready(HostRoute.Direct), actualConnection = LinkState.Ready(HostRoute.Direct),
-            historyComplete = setOf(bot.id), hello = buildJsonObject { put("version", "2.39.0") }, entries = listOf(
+            historyEnd = mapOf(bot.id to HistoryEnd.Complete), hello = buildJsonObject { put("version", "2.39.0") }, entries = listOf(
                 user("asked", 1, "Add a weekly totals helper.", "sent"), user("queued-1", 2, first, "queued"), user("queued-2", 3, second, "queued")))
         compose.runOnUiThread { compose.activity.setContent { Hosted { ChatScreen(state, store, {}) } } }
         // Each waits once, on the composer, oldest first; the chat shows only what went out.
@@ -151,7 +151,7 @@ class ChatLayoutTest {
         assumeTrue(Build.PRODUCT.startsWith("sdk"))
         val store = previewStore()
         val bot = Bot("details-preview", "Scout")
-        val state = AppState(previewComputer, loading = false, selectedBot = bot.id, bots = listOf(bot), historyComplete = setOf(bot.id),
+        val state = AppState(previewComputer, loading = false, selectedBot = bot.id, bots = listOf(bot), historyEnd = mapOf(bot.id to HistoryEnd.Complete),
             hello = buildJsonObject { put("version", ARTIFACTS_HOST) })
         compose.runOnUiThread { compose.activity.setContent { Hosted { ChatScreen(state, store, {}) } } }
         compose.onNode(chatTitle).performClick()

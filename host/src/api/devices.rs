@@ -39,8 +39,11 @@ const LOCAL_ONLY: &[&str] = &[
     "setAnalytics",
     "track",
     "reportError",
-    // Voice keys are entered on the computer itself; phones only use them.
+    // Voice keys, and the server a key is sent to, are entered on the computer itself; phones only use them.
     "setVoiceKey",
+    "setVoiceServer",
+    // Deletes every saved credential: the computer's owner does it on the computer.
+    "resetCredentials",
     // An export file is a path on this computer.
     "previewImport",
     "importBots",
@@ -69,6 +72,8 @@ const LOCAL_ONLY: &[&str] = &[
     "pairingRequests",
     "decidePairing",
     "pairingCodeOpen",
+    // Names the other phones of this computer, which a phone has no business reading.
+    "joinWouldRemove",
     "cloudStatus",
     "setCloud",
     "setCloudUrl",
@@ -276,6 +281,8 @@ mod tests {
             assert!(permit(&both, m).is_err(), "{m} is loopback only");
         }
         assert!(permit(&both, "send").is_ok());
+        assert!(permit(&control, "joinWouldRemove").is_err(), "a phone doesn't learn the other phones' names");
+        assert!(permit(&control, "joinAccount").is_ok(), "a paired phone can ask to add the computer");
         assert!(permit(&both, "networkView").is_ok(), "phones read the network");
         assert!(permit(&both, "screenOffer").is_ok());
         assert!(permit(&both, "screenPrepare").is_ok());

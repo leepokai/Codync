@@ -1,23 +1,17 @@
 "use client";
 
 import { motion, MotionConfig } from "framer-motion";
-import { DeviceMobile, LinuxLogo, Terminal, WindowsLogo } from "@phosphor-icons/react";
-import { agentName, type Agent } from "./agent-mark";
+import { ArrowRight, DeviceMobile, LinuxLogo, Terminal, WindowsLogo } from "@phosphor-icons/react";
+import { agentName, agents } from "./agent-mark";
 import AgentRotator from "./agent-rotator";
 import { AppleLogo } from "./apple-logo";
 import DownloadButton from "./download-button";
 import Halftone from "./halftone";
-import MacWindow from "./mac-window";
-import MediaLabel from "./media-label";
-import LivePhones from "./live-phone/live-phones";
 import { CharacterAvatar } from "./live-phone/avatar";
 import { AppStoreButton, PlayStoreButton } from "./store-buttons";
 import GitHubStarButton from "./github-star-button";
 import { ease } from "./motion";
-import { GITHUB, PRODUCT_HUNT } from "../links";
-
-// Agents the headline cycles through.
-const agents: Agent[] = ["claude", "codex", "gemini", "cursor", "copilot", "opencode"];
+import { CLOUD_SECTION, GITHUB, PRODUCT_HUNT } from "../links";
 
 const list = new Intl.ListFormat("en", { type: "disjunction" });
 
@@ -31,15 +25,78 @@ export default function Hero() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <section className="relative overflow-hidden px-4 pt-14 pb-20 sm:px-6 md:pt-20 md:pb-28">
-        <Halftone corner="top-right" className="w-[44rem] max-w-[90vw] text-neutral-50 opacity-[0.12]" />
-        <Halftone corner="top-left" className="w-[30rem] max-w-[70vw] text-neutral-50 opacity-[0.08]" />
-        <motion.div {...rise(0)} className="relative mb-10 flex justify-center md:mb-14">
-          <a
+      <section className="relative overflow-x-clip px-4 pt-12 pb-16 sm:px-6 md:pt-16 md:pb-20">
+        <Halftone corner="top-right" className="w-[44rem] max-w-[90vw] text-neutral-50 opacity-[0.07]" />
+        <Halftone corner="top-left" className="w-[44rem] max-w-[90vw] text-neutral-50 opacity-[0.07]" />
+
+        <div className="relative mx-auto flex max-w-4xl flex-col items-center text-center">
+          {/* The newest feature, linked to its card further down. */}
+          <motion.a
+            {...rise(0)}
+            href={CLOUD_SECTION}
+            className="group inline-flex items-center gap-2 rounded-full bg-neutral-900 py-1.5 pr-3.5 pl-1.5 text-sm text-neutral-200 transition hover:bg-neutral-800"
+          >
+            <span className="rounded-full bg-neutral-50 px-2.5 py-0.5 text-xs font-semibold text-neutral-950">New</span>
+            Run your bots on a free cloud computer
+            <ArrowRight size={14} weight="bold" className="text-neutral-400 transition group-hover:translate-x-0.5" />
+          </motion.a>
+
+          <motion.p
+            {...rise(0.02)}
+            className="mt-3 inline-flex flex-wrap items-center justify-center gap-2 rounded-full bg-neutral-900 py-1.5 pr-4 pl-1.5 text-sm"
+          >
+            <span className="rounded-full bg-neutral-50 px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap text-neutral-950">100% free</span>
+            <span className="rounded-full bg-neutral-50 px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap text-neutral-950">Private</span>
+            <span className="text-neutral-300">End-to-end encrypted, no paid tier</span>
+          </motion.p>
+
+          <motion.h1
+            {...rise(0.04)}
+            className="mt-8 text-[2.75rem] leading-[1.06] font-semibold tracking-tighter text-neutral-50 sm:text-6xl lg:text-7xl"
+          >
+            <span className="sr-only">Bring your {list.format(agents.map((agent) => agentName[agent]))} into Codync</span>
+            <span aria-hidden className="flex flex-col items-center">
+              <span>Bring your</span>
+              <AgentRotator agents={agents} />
+              <span className="inline-flex items-center gap-x-[0.22em]">
+                into
+                <span className="inline-flex size-[0.95em] items-center justify-center rounded-[0.24em] bg-neutral-50 [&_svg]:size-[78%]">
+                  <CharacterAvatar shape="squircle" color="blue" size={88} mood="working" />
+                </span>
+                Codync
+              </span>
+            </span>
+          </motion.h1>
+
+          <motion.p {...rise(0.1)} className="mt-8 max-w-[38rem] text-lg leading-relaxed text-neutral-400">
+            The open-source Grok Bot alternative, 100% free. Persistent AI teammates on your own computer, for code and
+            everyday life. Bring any of 40+ agents and the subscription you already pay for.
+          </motion.p>
+
+          <motion.div {...rise(0.16)} className="mt-10 flex flex-wrap items-center justify-center gap-3">
+            <DownloadButton />
+            <GitHubStarButton />
+          </motion.div>
+          <motion.div {...rise(0.18)} className="mt-3 flex flex-wrap justify-center gap-3">
+            <AppStoreButton />
+            <PlayStoreButton />
+          </motion.div>
+
+          <motion.p {...rise(0.2)} className="mt-8 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm text-neutral-500">
+            <span className="inline-flex items-center gap-1.5"><AppleLogo size={15} weight="fill" /> macOS</span>
+            <span className="inline-flex items-center gap-1.5"><WindowsLogo size={15} weight="fill" /> Windows</span>
+            <span className="inline-flex items-center gap-1.5"><LinuxLogo size={15} weight="fill" /> Linux</span>
+            <span className="inline-flex items-center gap-1.5"><DeviceMobile size={15} weight="fill" /> iPhone</span>
+            <span className="inline-flex items-center gap-1.5"><Terminal size={15} weight="bold" /> Terminal</span>
+            <a href={GITHUB} className="underline underline-offset-4 hover:text-neutral-300">Apache 2.0 licensed</a>
+          </motion.p>
+
+          <motion.a
+            {...rise(0.22)}
             href={PRODUCT_HUNT}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-3 transition hover:opacity-80"
+            className="mt-8 flex items-center gap-3 transition hover:opacity-80"
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- live badge served by Product Hunt */}
             <img
@@ -50,79 +107,8 @@ export default function Hero() {
               className="h-10 w-auto"
             />
             <span className="text-sm font-medium text-neutral-300">#16 Product of the Day</span>
-          </a>
-        </motion.div>
-        <div className="relative mx-auto grid max-w-6xl grid-cols-1 items-center gap-14 md:grid-cols-[1.15fr_1fr] md:gap-8">
-          <div className="flex flex-col items-start text-left">
-            <motion.div {...rise(0)} className="flex flex-col items-start gap-4">
-              <span className="inline-flex items-center gap-2 rounded-full bg-neutral-900 py-1.5 pr-4 pl-1.5 text-sm">
-                <span className="rounded-full bg-neutral-50 px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap text-neutral-950">100% free</span>
-                <span className="rounded-full bg-neutral-50 px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap text-neutral-950">Private</span>
-                <span className="text-neutral-300">End-to-end encrypted, no paid tier</span>
-              </span>
-            </motion.div>
-
-            <motion.h1
-              {...rise(0.04)}
-              className="mt-8 text-[2.75rem] leading-[1.06] font-semibold tracking-tighter text-neutral-50 sm:text-6xl md:text-5xl lg:text-6xl xl:text-7xl"
-            >
-              <span className="sr-only">Bring your {list.format(agents.map((agent) => agentName[agent]))} into Codync</span>
-              <span aria-hidden className="flex flex-col items-start">
-                <span>Bring your</span>
-                <AgentRotator agents={agents} />
-                <span className="inline-flex items-center gap-x-[0.22em]">
-                  into
-                  <span className="inline-flex size-[0.95em] items-center justify-center rounded-[0.24em] bg-neutral-50 [&_svg]:size-[78%]">
-                    <CharacterAvatar shape="squircle" color="blue" size={88} mood="working" />
-                  </span>
-                  Codync
-                </span>
-              </span>
-            </motion.h1>
-
-            <motion.p {...rise(0.1)} className="mt-8 max-w-[36rem] text-lg leading-relaxed text-neutral-400">
-              The open-source Grok Bot alternative, 100% free. Persistent AI teammates on your own computer, for code
-              and everyday life. Bring any of 40+ agents and the subscription you already pay for.
-            </motion.p>
-
-            <motion.div {...rise(0.16)} className="mt-10 flex flex-wrap items-center gap-3">
-              <DownloadButton />
-              <GitHubStarButton />
-              {/* The two phone stores stay side by side on their own row. */}
-              <div className="flex flex-wrap gap-3">
-                <AppStoreButton />
-                <PlayStoreButton />
-              </div>
-            </motion.div>
-
-            <motion.p {...rise(0.2)} className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-500">
-              <span className="inline-flex items-center gap-1.5"><AppleLogo size={15} weight="fill" /> macOS</span>
-              <span className="inline-flex items-center gap-1.5"><WindowsLogo size={15} weight="fill" /> Windows</span>
-              <span className="inline-flex items-center gap-1.5"><LinuxLogo size={15} weight="fill" /> Linux</span>
-              <span className="inline-flex items-center gap-1.5"><DeviceMobile size={15} weight="fill" /> iPhone</span>
-              <span className="inline-flex items-center gap-1.5"><Terminal size={15} weight="bold" /> Terminal</span>
-              <a href={GITHUB} className="underline underline-offset-4 hover:text-neutral-300">Apache 2.0 licensed</a>
-            </motion.p>
-          </div>
-
-          {/* The live iPhones; the front one hangs below the back one, so reserve room for it. */}
-          <div className="relative mx-auto mb-16 w-full max-w-[26rem] md:mb-20 md:max-w-none">
-            <LivePhones />
-          </div>
+          </motion.a>
         </div>
-
-        <motion.div
-          id="product"
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.9, delay: 0.25, ease }}
-          className="relative mx-auto mt-16 max-w-6xl scroll-mt-24 md:mt-20"
-        >
-          <MediaLabel label="Live demo">
-            The real Codync desktop app, running in your browser. Click a bot, open a room, send a message.
-          </MediaLabel>
-          <MacWindow />
-        </motion.div>
       </section>
     </MotionConfig>
   );

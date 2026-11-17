@@ -1,5 +1,5 @@
 import { isGroup, type Bot } from '../../shared/models.ts'
-import type { MenuItem } from '../components/Overlay'
+import type { MenuItem } from '../components/Menu'
 import type { BotStore } from '../store/bot-store'
 
 /** A bot row's "Make lead agent"; none for the lead, a group, or while its computer runs a host where the lead can't change. */

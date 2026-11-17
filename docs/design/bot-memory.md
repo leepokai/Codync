@@ -359,7 +359,8 @@ it offers (`Instructions` in `agent/bot`):
 3. **Every other agent: the first message.** A `<bot-profile>` block precedes the first prompt of a new session, and each retry until a prompt carrying it succeeds (the snapshot's `unprompted`, kept across a host restart).
    After a compaction the next prompt carries a fresh one that says it replaces any earlier profile, so the agent
    never holds two versions that disagree. The compaction is the agent's `compaction_update`, or, for an agent
-   that never sent one, its `usage_update.used` falling below half of a previous value of at least 20k.
+   that never sent one, its `usage_update.used` falling below half of a previous value of at least 20k. A stream's
+   start reports zero use before the model has answered, which is not a reading (issue #496).
 
 Measured 2026-10-18 at `initialize`:
 

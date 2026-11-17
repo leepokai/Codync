@@ -562,3 +562,151 @@ async fn failed_goal_persistence_does_not_acknowledge_stop_or_accept_a_new_messa
     host.until(&bot, |h| !notice(h, "stopReason").is_empty()).await;
     assert_eq!(host.goal_prompts("ada").len(), 1);
 }
+
+#[tokio::test]
+async fn stopping_clearing_or_replacing_during_versions_before_prevents_old_prompt() {
+    if common::python_missing() {
+        return;
+    }
+    for action in ["stop", "clear", "replace"] {
+        let base = std::env::temp_dir().join(format!("codync-goal-versions-{}", uuid::Uuid::new_v4()));
+        let bin = base.join("bin");
+        let gate = base.join("gate");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::create_dir_all(&gate).unwrap();
+
+        let fake_git = bin.join("fake_git.py");
+        std::fs::write(
+            &fake_git,
+            r#"import os, pathlib, shutil, subprocess, sys, time
+
+bin_dir = str(pathlib.Path(__file__).resolve().parent)
+paths = [p for p in os.environ.get("PATH", "").split(os.pathsep) if os.path.normcase(os.path.abspath(p)) != os.path.normcase(bin_dir)]
+real_git = shutil.which("git", path=os.pathsep.join(paths))
+assert real_git, "real git must be on PATH"
+
+gate = pathlib.Path(os.environ["CODYNC_TEST_GIT_GATE"])
+args = sys.argv[1:]
+joined = " ".join(args)
+if "Before:" in joined and (gate / "arm").exists():
+    (gate / "arm").unlink(missing_ok=True)
+    (gate / "entered").write_text("1", encoding="utf-8")
+    deadline = time.monotonic() + 9.0
+    while not (gate / "release").exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+
+rc = subprocess.call([real_git, *args])
+if "Codync keeps versions of this folder" in joined and rc == 0:
+    (gate / "ready").write_text("1", encoding="utf-8")
+sys.exit(rc)
+"#,
+        )
+        .unwrap();
+
+        let py = common::python();
+        #[cfg(windows)]
+        {
+            std::fs::write(bin.join("git.cmd"), format!("@echo off\r\n{py} -X utf8 -u \"%~dp0fake_git.py\" %*\r\n"))
+                .unwrap();
+        }
+        #[cfg(not(windows))]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let shim = bin.join("git");
+            std::fs::write(
+                &shim,
+                format!("#!/bin/sh\nexec {py} -X utf8 -u \"$(dirname \"$0\")/fake_git.py\" \"$@\"\n"),
+            )
+            .unwrap();
+            let mut perms = std::fs::metadata(&shim).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&shim, perms).unwrap();
+        }
+
+        let current_path = std::env::var_os("PATH").unwrap_or_default();
+        let mut entries: Vec<PathBuf> = vec![bin.clone()];
+        entries.extend(std::env::split_paths(&current_path));
+        let path_env = std::env::join_paths(entries).unwrap();
+        let gate_os = gate.as_os_str().to_os_string();
+
+        let host =
+            Host::start_with(&[("PATH", path_env.as_os_str()), ("CODYNC_TEST_GIT_GATE", gate_os.as_os_str())]).await;
+        let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
+        let bot = host
+            .call(
+                "createBot",
+                json!({
+                    "name": "Ada", "backend": "custom", "permission": "ask", "notify": false,
+                    "command": common::python_agent(&agent),
+                }),
+            )
+            .await["bot"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        common::eventually("versions::ready initializes workspace git repo", Duration::from_secs(15), async || {
+            gate.join("ready").exists()
+        })
+        .await;
+
+        std::fs::write(host.workspace(&bot).join("dirty.txt"), "before turn").unwrap();
+        std::fs::write(gate.join("arm"), "1").unwrap();
+
+        host.call("setGoal", json!({"botId": bot, "goal": "GOAL_DONE old work", "maxTurns": 4})).await;
+        common::eventually("start_turn enters versions::before", Duration::from_secs(15), async || {
+            gate.join("entered").exists()
+        })
+        .await;
+
+        match action {
+            "stop" => {
+                host.call("stopGoal", json!({"botId": bot})).await;
+            }
+            "clear" => {
+                host.call("setGoal", json!({"botId": bot, "goal": ""})).await;
+            }
+            "replace" => {
+                host.call("setGoal", json!({"botId": bot, "goal": "GOAL_DONE replacement", "maxTurns": 4})).await;
+            }
+            _ => unreachable!(),
+        }
+        std::fs::write(gate.join("release"), "1").unwrap();
+
+        let prompts = || -> Vec<String> {
+            std::fs::read_to_string(host.workspace(&bot).join("prompts.jsonl"))
+                .unwrap_or_default()
+                .lines()
+                .map(|l| serde_json::from_str(l).unwrap())
+                .collect()
+        };
+
+        if action == "replace" {
+            host.until(&bot, |h| notice(h, "goalEnded").iter().any(|e| e["data"]["goalEnded"] == "done")).await;
+            let got = prompts();
+            assert_eq!(got.len(), 2, "only the replacement goal steps run: {got:?}");
+            assert!(got.iter().all(|p| !p.contains("GOAL_DONE old work")), "old goal must not prompt: {got:?}");
+            assert!(got[0].contains("[Codync: goal step 1/4]") && got[0].contains("GOAL_DONE replacement"));
+            assert!(got[1].contains("[Codync: goal step 2/4]") && got[1].contains("GOAL_DONE replacement"));
+            let snapshot = host.snapshot().await;
+            let current = common::bot(&snapshot, &bot);
+            assert_eq!(current["goal"]["stopped"], "done");
+        } else {
+            common::eventually("cancelled goal step finishes without prompting", Duration::from_secs(15), async || {
+                common::bot(&host.snapshot().await, &bot)["status"] == "idle"
+            })
+            .await;
+            assert_eq!(prompts(), Vec::<String>::new(), "old goal must send zero prompts on {action}");
+            let snapshot = host.snapshot().await;
+            let current = common::bot(&snapshot, &bot);
+            if action == "stop" {
+                assert_eq!(current["goal"]["stopped"], "stopped");
+            } else {
+                assert!(current["goal"].is_null());
+            }
+        }
+
+        drop(host);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+}

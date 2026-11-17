@@ -93,7 +93,8 @@ internal class SharedAudio(
     private var released = false
     /** The length the preload read off the bytes (0 until then): shown before the first play and after a failure. */
     private var known = 0.0
-    /** The one fetch of the sound's bytes preload and a play tap share; a failed one is forgotten. */
+    /** The one fetch of the sound's bytes preload and a play tap share while it runs; once it answers it is forgotten,
+     *  so the next ask reads the file from the store's cache (or fetches again when that file went). */
     private var fetching: Deferred<Result<File>>? = null
 
     suspend fun toggle() {
@@ -149,13 +150,15 @@ internal class SharedAudio(
         if (!released && duration <= 0.0) { known = seconds; duration = seconds }
     }
 
-    /** The sound's bytes from the computer, one fetch for everyone asking: it runs in the card's [scope], so a caller
-     *  cancelled while waiting (a preload restarting) doesn't fail it for the others, and it holds a [Result] so a
-     *  failed fetch doesn't cancel the card's scope; one after it landed reuses it, and a failed one is dropped so the
-     *  next ask fetches again. */
+    /** The sound's bytes from the computer, one fetch for everyone asking while it runs: it runs in the card's [scope],
+     *  so a caller cancelled while waiting (a preload restarting) doesn't fail it for the others, and it holds a
+     *  [Result] so a failed fetch doesn't cancel the card's scope. Once it answers it is forgotten, so the next ask
+     *  reads the file from the store's cache, which fetches again when the attachment cache has let it go. */
     private suspend fun bytes(): File {
         val running = fetching ?: scope.async { runCatching { load() } }.also { fetching = it }
-        return running.await().onFailure { if (fetching === running) fetching = null }.getOrThrow()
+        val result = running.await()
+        if (fetching === running) fetching = null
+        return result.getOrThrow()
     }
 
     /** Moves the playhead, held to the sound's length; playing or paused, it stays so. Before the first play, the

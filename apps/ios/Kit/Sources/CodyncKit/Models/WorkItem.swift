@@ -355,7 +355,7 @@ public extension Bot {
     /// an item waits on the user.
     var needsYouLine: String {
         guard needsInput else { return "Needs you" }
-        return activity.isEmpty ? "Needs your approval" : activity
+        return activity.isEmpty ? "Needs approval" : activity
     }
 
     /// How a bot stands outside its chat (the Live Activity, the widgets): it needs the user while the chat or one

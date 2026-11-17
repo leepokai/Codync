@@ -2204,5 +2204,9 @@
   "Your bots will appear once connected. Manage computers to see connection progress.": "接続されるとボットが表示されます。接続の進行状況は「コンピュータの管理」で確認できます。",
   "Your cloud computer is updating…": "クラウドのコンピューターを更新中…",
   "Your remote computers": "リモートのコンピューター",
-  "ssh-agent / SSH config": "ssh-agent / SSH 設定"
+  "ssh-agent / SSH config": "ssh-agent / SSH 設定",
+  "{name} remembered it": "{name} が記憶しました",
+  "Codync {version} is available": "Codync {version} が利用可能です",
+  "You have {version}.": "現在のバージョンは {version} です。",
+  "Couldn't restore sign-in. Check your connection and retry.": "サインインを復元できませんでした。接続を確認して、もう一度お試しください。"
 }

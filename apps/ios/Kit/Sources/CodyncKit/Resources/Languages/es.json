@@ -2204,5 +2204,9 @@
   "Your bots will appear once connected. Manage computers to see connection progress.": "Tus bots aparecerán cuando se conecten. Abre Administrar computadoras para ver el progreso de la conexión.",
   "Your cloud computer is updating…": "Tu computadora en la nube se está actualizando…",
   "Your remote computers": "Tus computadoras remotas",
-  "ssh-agent / SSH config": "ssh-agent / configuración SSH"
+  "ssh-agent / SSH config": "ssh-agent / configuración SSH",
+  "{name} remembered it": "Lo recordó {name}",
+  "Codync {version} is available": "Codync {version} está disponible",
+  "You have {version}.": "Tienes la versión {version}.",
+  "Couldn't restore sign-in. Check your connection and retry.": "No se pudo restaurar el inicio de sesión. Comprueba tu conexión y vuelve a intentarlo."
 }

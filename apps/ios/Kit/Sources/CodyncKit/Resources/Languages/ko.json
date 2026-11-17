@@ -2204,5 +2204,9 @@
   "Your bots will appear once connected. Manage computers to see connection progress.": "연결되면 봇이 표시됩니다. 연결 진행 상황은 컴퓨터 관리에서 확인하세요.",
   "Your cloud computer is updating…": "클라우드 컴퓨터를 업데이트하는 중…",
   "Your remote computers": "원격 컴퓨터",
-  "ssh-agent / SSH config": "ssh-agent / SSH 구성"
+  "ssh-agent / SSH config": "ssh-agent / SSH 구성",
+  "{name} remembered it": "{name}이(가) 기억함",
+  "Codync {version} is available": "Codync {version}을(를) 사용할 수 있습니다",
+  "You have {version}.": "현재 버전은 {version}입니다.",
+  "Couldn't restore sign-in. Check your connection and retry.": "로그인을 복원하지 못했습니다. 연결을 확인하고 다시 시도하세요."
 }

@@ -48,3 +48,27 @@ test('every literal tr() / trNow() phrase in the desktop source has a catalog en
     assert.deepEqual([...keys].filter((key) => !Object.hasOwn(catalog, key)).sort(), [], locale)
   }
 })
+
+test('every literal phrase the iPhone, Android and terminal apps translate has a catalog entry (#488)', () => {
+  const repo = new URL('../../../../../', import.meta.url)
+  const sources: [string, RegExp, RegExp][] = [
+    ['apps/ios', /\.swift$/, /\bL10n\.tr\("((?:\\.|[^"\\\n])+)"/g],
+    ['apps/android/app/src/main', /\.kt$/, /\btr\("((?:\\.|[^"\\\n])+)"\)/g],
+    ['host/src/tui', /\.rs$/, /\btr\("((?:\\.|[^"\\\n])+)"\)/g],
+  ]
+  const catalog = read('zh-Hans')
+  const missing: string[] = []
+  for (const [folder, file, call] of sources) {
+    const root = new URL(`${folder}/`, repo)
+    for (const path of readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((path) => file.test(path) && !/Tests?\b|_tests\.rs$/.test(path))) {
+      for (const [, literal] of readFileSync(new URL(path, root), 'utf8').matchAll(call)) {
+        // Interpolated at run time, or no words to translate (a bullet, a cron line, the product name).
+        if (/\\\(|\$/.test(literal) || !/[a-z]/.test(literal) || literal === 'Codync') continue
+        const key = literal.replace(/\\(.)/g, (_, char: string) => (char === 'n' ? '\n' : char))
+        // Each client retries a miss trimmed.
+        if (!Object.hasOwn(catalog, key) && !Object.hasOwn(catalog, key.trim())) missing.push(`${folder}/${path}: ${key}`)
+      }
+    }
+  }
+  assert.deepEqual(missing.sort(), [])
+})

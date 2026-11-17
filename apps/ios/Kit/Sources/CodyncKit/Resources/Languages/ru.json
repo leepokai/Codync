@@ -2204,5 +2204,9 @@
   "Your bots will appear once connected. Manage computers to see connection progress.": "Ваши боты появятся после подключения. Ход подключения можно посмотреть в разделе «Управление компьютерами».",
   "Your cloud computer is updating…": "Ваш облачный компьютер обновляется…",
   "Your remote computers": "Ваши удалённые компьютеры",
-  "ssh-agent / SSH config": "ssh-agent / конфигурация SSH"
+  "ssh-agent / SSH config": "ssh-agent / конфигурация SSH",
+  "{name} remembered it": "Запомнил(а) {name}",
+  "Codync {version} is available": "Доступен Codync {version}",
+  "You have {version}.": "У вас версия {version}.",
+  "Couldn't restore sign-in. Check your connection and retry.": "Не удалось восстановить вход. Проверьте подключение и попробуйте снова."
 }

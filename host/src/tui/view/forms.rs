@@ -84,11 +84,11 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
             tr("Agents that work at once in this repository each get their own branch.").into_owned()
         }
         Field::Team => {
-            "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.".to_owned()
+            tr("Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.").into_owned()
         }
         Field::Network => tr("Offered to the network: bots on your other computers can see and message this bot.").into_owned(),
         Field::Assistants => {
-            tr("Reachable by cloud assistants: ChatGPT or Claude in your Codync login profile can see and message this bot.")
+            tr("Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.")
                 .into_owned()
         }
         _ => return None,

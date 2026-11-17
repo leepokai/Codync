@@ -2204,5 +2204,9 @@
   "Your bots will appear once connected. Manage computers to see connection progress.": "连上之后，你的 Bot 会显示在这里。打开“管理电脑”可以查看连接进度。",
   "Your cloud computer is updating…": "你的云端电脑正在升级…",
   "Your remote computers": "你的远程电脑",
-  "ssh-agent / SSH config": "ssh-agent / SSH 配置"
+  "ssh-agent / SSH config": "ssh-agent / SSH 配置",
+  "{name} remembered it": "{name} 记下的",
+  "Codync {version} is available": "Codync {version} 已推出",
+  "You have {version}.": "你目前是 {version}。",
+  "Couldn't restore sign-in. Check your connection and retry.": "无法恢复登录。检查网络后重试。"
 }

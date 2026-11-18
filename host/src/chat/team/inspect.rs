@@ -8,7 +8,7 @@ use crate::chat::insight::{self, RECENT_ENTRIES};
 use crate::hub::Hub;
 use crate::network::Recipient;
 use crate::store::{BotConfig, Permission};
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration;
@@ -96,7 +96,7 @@ pub fn declarations() -> Value {
 pub async fn call(hub: &Arc<Hub>, source: &BotConfig, actor: &str, name: &str, args: &Value) -> Result<Value> {
     let target = resolve_target(hub, source, name, args)?;
     match name {
-        "bot_status" => Ok(status(hub, &target, args["messages"].as_i64().unwrap_or(0))),
+        "bot_status" => status(hub, &target, args["messages"].as_i64().unwrap_or(0)),
         "recent_messages" => Ok(insight::recent(hub, &target, args["count"].as_i64().unwrap_or(6))),
         "answer_approval" => answer(hub, source, actor, &target, args["option"].as_str().unwrap_or_default()).await,
         "stop_bot" => stop(hub, source, actor, &target).await,
@@ -133,25 +133,28 @@ fn target(hub: &Hub, args: &Value) -> Result<BotConfig> {
     }
 }
 
-fn recent(hub: &Hub, cfg: &BotConfig) -> Vec<crate::store::Entry> {
-    hub.store.history(&cfg.id, i64::MAX, RECENT_ENTRIES).unwrap_or_default()
+/// The target's latest entries, so an unreadable history says so instead of reading as "nothing waiting".
+fn recent(hub: &Hub, cfg: &BotConfig) -> Result<Vec<crate::store::Entry>> {
+    hub.store
+        .history(&cfg.id, i64::MAX, RECENT_ENTRIES)
+        .with_context(|| format!("couldn't read {}'s history", cfg.name))
 }
 
 /// `bot_status`: its runtime, the approval it waits for, and the latest messages it and the user wrote.
-fn status(hub: &Hub, cfg: &BotConfig, messages: i64) -> Value {
-    let mut out = insight::status(hub, cfg, &recent(hub, cfg));
+fn status(hub: &Hub, cfg: &BotConfig, messages: i64) -> Result<Value> {
+    let mut out = insight::status(hub, cfg, &recent(hub, cfg)?);
     out["id"] = cfg.id.clone().into();
     out["name"] = cfg.name.clone().into();
     if messages > 0 {
         out["recentMessages"] = insight::recent(hub, cfg, messages.min(MESSAGES))["messages"].clone();
     }
-    out
+    Ok(out)
 }
 
 /// `answer_approval`: one option of the approval the target waits for, once the user says so.
 async fn answer(hub: &Arc<Hub>, source: &BotConfig, actor: &str, target: &BotConfig, option: &str) -> Result<Value> {
     let tool = "answer_approval";
-    let recent = recent(hub, target);
+    let recent = recent(hub, target)?;
     let Some(waiting) = insight::waiting(&recent) else {
         record_outcome(hub, tool, "invalid", None, Some("not_waiting"));
         return Ok(json!({"error": format!("{} isn't waiting for an approval.", target.name)}));

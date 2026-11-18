@@ -7,6 +7,7 @@ use super::items::{self, Item, Source, Status};
 use super::{Failure, MAX_TITLE, NOT_STARTED, dispatch, end, ended};
 use crate::LockExt;
 use crate::agent::bot::Cmd;
+use crate::analytics::errors::host_error;
 use crate::analytics::{self, Event};
 use crate::chat::team::{BotRequest, no_reply};
 use crate::hub::Hub;
@@ -86,7 +87,7 @@ pub fn add_request(hub: &Arc<Hub>, bot: &str, request: BotRequest) {
     let (id, source) = (item.id.clone(), item.source.clone());
     hub.tasks.requests.locked().insert(id.clone(), request);
     if let Err(error) = put(hub, bot, item) {
-        tracing::error!(bot, error = format!("{error:#}"), "couldn't put a bot's request in the box");
+        host_error!(hub, "couldn't put a bot's request in the box", bot, error = format!("{error:#}"));
         hub.tasks.requests.locked().remove(&id);
         return;
     }
@@ -165,7 +166,7 @@ pub(super) fn watch(hub: &Arc<Hub>, bot: &str, task: &str, item: &Item) {
             }
             // It ended in time.
             Ok(None) => {}
-            Err(error) => tracing::error!(task, error = format!("{error:#}"), "couldn't end a run past its limit"),
+            Err(error) => host_error!(&hub, "couldn't end a run past its limit", task, error = format!("{error:#}")),
         }
     });
 }
@@ -191,7 +192,7 @@ pub(super) fn deliver(hub: &Hub, bot: &str, item: &Item) -> bool {
     match &item.source {
         Source::Bot => true,
         Source::Routine { run, .. } => routine_result(hub, bot, item, run)
-            .inspect_err(|error| tracing::error!(run, error = format!("{error:#}"), "couldn't save a run's result"))
+            .inspect_err(|error| host_error!(hub, "couldn't save a run's result", run, error = format!("{error:#}")))
             .is_ok(),
         Source::Request { .. } => {
             let request = hub.tasks.requests.locked().remove(&item.id);
@@ -293,7 +294,7 @@ pub(super) fn settle_runs(hub: &Arc<Hub>) {
             hub.routines.complete(hub, &run, routines::Status::Interrupted, Some(super::CUT_OFF.into()), None, &ran)
         };
         if let Err(error) = settled {
-            tracing::error!(run, error = format!("{error:#}"), "couldn't settle a routine run the box lost");
+            host_error!(hub, "couldn't settle a routine run the box lost", run, error = format!("{error:#}"));
         }
     }
 }

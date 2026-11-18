@@ -3,7 +3,7 @@
 use super::sign_in::Held;
 use super::{Actor, Conn, Done, HostTurn, Instructions, NoticeStyle, Queued, Reacted, Seg};
 use crate::agent::acp::{self, Incoming};
-use crate::analytics::{self, TurnOutcome, TurnSource};
+use crate::analytics::{self, TurnEnd, TurnOutcome, TurnSource};
 use crate::chat::context::{self, Snapshot};
 use crate::chat::memory;
 use crate::chat::tasks::{self, Failure, Outcome, Source};
@@ -588,7 +588,8 @@ impl Actor {
         };
         let started = self.hub.runtime(&self.id()).started_at.unwrap_or_else(now_ms);
         let ms = now_ms() - started;
-        analytics::turn_finished(&self.hub, &self.cfg, outcome, stop_reason, failure, self.source(), ms);
+        let (source, work) = (self.source(), self.task_source.kind());
+        analytics::turn_finished(&self.hub, &self.cfg, TurnEnd { outcome, stop_reason, failure, source, work, ms });
     }
 
     /// The turn is a routine's run: in the chat, or a task's whose item is one.

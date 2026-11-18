@@ -11,7 +11,8 @@ public enum SharedStore {
     /// The APNs push relay (relay/ in this repo).
     public static let relayURL = "https://codync-relay.kevin2005ha.workers.dev"
 
-    private static var defaults: UserDefaults { UserDefaults(suiteName: appGroup) ?? .standard }
+    /// The App Group's shared defaults, read by the app, its widgets and its notification extension alike.
+    public static var defaults: UserDefaults { UserDefaults(suiteName: appGroup) ?? .standard }
 
     /// Widgets read only the account selected by the app. Stores capture a fixed
     /// context so late responses from a previous account cannot write into it.

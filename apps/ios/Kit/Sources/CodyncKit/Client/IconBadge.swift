@@ -1,8 +1,17 @@
+import Foundation
 import UserNotifications
 import os
 
 /// The app icon's badge: unread messages across every computer's roster, as the chats' badges add up.
+/// Off until the user turns it on in Settings; while off, the icon shows no number.
 public enum IconBadge {
+    /// The Settings switch, in the App Group so the notification extension reads it too.
+    public static let enabledKey = "iconBadgeEnabled"
+    public static var isEnabled: Bool { SharedStore.defaults.bool(forKey: enabledKey) }
+
+    /// What the icon shows for `count` unread: nothing while the switch is off.
+    public static func shown(_ count: Int, enabled: Bool = isEnabled) -> Int { enabled ? count : 0 }
+
     /// More than any chat holds. A paired computer's alert is trusted no further than this: past it a count
     /// would only overflow the sum.
     private static let mostUnread = 99_999
@@ -39,6 +48,7 @@ public enum IconBadge {
 
     /// iOS keeps the count but shows it only once the app may notify (the push switch asks for that).
     @MainActor public static func show(_ count: Int) {
+        let count = shown(count)
         Task {
             do {
                 try await UNUserNotificationCenter.current().setBadgeCount(count)

@@ -130,7 +130,14 @@ pub(super) async fn message(
     check_request(hub, turn, message)?;
     let node = hub.network.slot(Some(&to.network))?.node;
     let from = hub.network.handle_of(&source.id).ok_or_else(|| anyhow!("this bot isn't on the network"))?;
-    let hops = hub.team.reserve_message_in(&source.id, turn)?;
+    let hops = match hub.team.reserve_message_in(&source.id, turn) {
+        Ok(hops) => hops,
+        Err(error) if super::hop_limit_error(&error) => {
+            let peer = peer_name(hub, &to.network, &to.address);
+            return super::on_hop_limit(hub, source, turn, &peer, message, error);
+        }
+        Err(error) => return Err(error),
+    };
     // ponytail: the slot covers sending only; the other computer bounds the work it takes on.
     let letter = Letter::new(from, to.address.clone(), message).hops(hops);
     let result = send(hub, &node, source, to, letter).await;

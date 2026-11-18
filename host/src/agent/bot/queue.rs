@@ -198,6 +198,14 @@ impl Actor {
                         self.hub.set_entry(&entry_id, &e.data);
                     }
                 }
+                // The approval wake will not run. Take its grant so a later refusal can open, and remember hop 0
+                // for the next reply. A clarification wake has no grant.
+                Queued::HopLift { refusal_id, control: false, .. } => {
+                    let generation = self.hub.team.generation(&self.cfg.id);
+                    if self.hub.team.take_grant_for_chat_start(&self.cfg.id, generation, Some(refusal_id)) {
+                        self.hub.team.note_dropped_wake(&self.cfg.id);
+                    }
+                }
                 _ => {}
             }
         }
@@ -306,13 +314,18 @@ impl Actor {
                     let access = replies.first().map_or(Access::Allow, crate::chat::team::BotReply::access);
                     self.hub.ceilings.set(&self.cfg.id, access);
                     self.reply_hops = replies.iter().map(crate::chat::team::BotReply::hops).max();
-                    let generation = self.hub.team.generation(&self.cfg.id);
-                    if self.hub.team.take_grant_for_chat_start(&self.cfg.id, generation, None) {
+                    // A pending approval waits for its own hop-limit wake: a reply must not spend that grant.
+                    // A wake that already failed to start is remembered, and this reply is what begins at 0.
+                    let carried_reset = self.hub.team.dropped_wake(&self.cfg.id);
+                    if carried_reset {
                         self.reply_hops = Some(0);
                     }
                     let prompt = crate::chat::team::reply_prompt(&replies, access);
                     if let Err(e) = self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
                         self.start_error(e, done_tx).await;
+                    }
+                    if carried_reset && self.turn.is_some() {
+                        self.hub.team.take_dropped_wake(&self.cfg.id);
                     }
                     continue;
                 }
@@ -351,6 +364,11 @@ impl Actor {
                         unreachable!("front is a hop-limit lift")
                     };
                     if control {
+                        // A clarification that ended (denied, replaced or closed by a user message) starts no turn.
+                        if !self.hub.team.refusal_open(refusal_id) {
+                            tracing::info!(bot = %self.cfg.id, refusal_id, "hop-limit clarification wake dropped");
+                            continue;
+                        }
                         self.hub.team.control(&self.cfg.id, true);
                     } else {
                         let generation = self.hub.team.generation(&self.cfg.id);
@@ -364,6 +382,12 @@ impl Actor {
                     tracing::info!(bot = %self.cfg.id, refusal_id, control, "hop-limit lift turn");
                     if let Err(e) = self.start_turn(main.clone(), &[], &text, false, done_tx).await {
                         self.start_error(e, done_tx).await;
+                    }
+                    // The grant is already taken. If this turn never started, the next reply still begins at 0.
+                    if !control && self.turn.is_none() {
+                        self.hub.team.note_dropped_wake(&self.cfg.id);
+                    } else if !control {
+                        self.hub.team.take_dropped_wake(&self.cfg.id);
                     }
                     continue;
                 }
@@ -435,7 +459,8 @@ impl Actor {
             if lane == main {
                 self.handoff = self.take_handoff().or_else(|| self.handoff.take());
             }
-            // The user's own message closes an open hop-limit lift and any unused grant for this actor.
+            // The user's own message closes an open hop-limit lift, any unused grant, and a reset whose wake
+            // never started.
             self.hub.team.user_message_started(&self.cfg.id);
             if let Err(e) = self.start_turn(lane, &ids, &text, false, done_tx).await {
                 self.start_error(e, done_tx).await;

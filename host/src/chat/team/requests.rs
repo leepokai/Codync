@@ -1,10 +1,12 @@
 //! Admission, capacity and the hop limit for bot messages.
 //!
-//! Past the limit, one open lift per actor asks the lead for a reset. The grant is either applied to
-//! that actor's running chat or kept for the next one. A user message drops both. Message text is never
-//! stored here.
+//! Past the limit, one open lift per actor asks the lead for a reset. The grant waits for the approval
+//! wake, which is the only caller that takes it while that wake can still run. A wake that never starts
+//! is remembered so the next reply begins at hop 0, and a user message drops the lift, the grant and that
+//! memory. The refused message is never stored here: a lift keeps only what the blocked bot tells the lead.
 
 use crate::LockExt;
+use crate::agent::acp::truncate;
 use anyhow::{Result, bail};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -12,10 +14,15 @@ use std::sync::Mutex;
 use super::MAX_PENDING_MESSAGES;
 
 const MAX_REQUEST_HOPS: u8 = 8;
+// No production caller sets the limit yet. Tests cover the bounds; the running host stays at 8.
+#[cfg_attr(not(test), allow(dead_code))]
 const MIN_HOP_LIMIT: u8 = MAX_REQUEST_HOPS;
+#[cfg_attr(not(test), allow(dead_code))]
 const MAX_HOP_LIMIT: u8 = 32;
 /// Successful `approve` calls for one actor since that actor's last user message.
 const MAX_RESETS: u8 = 3;
+/// What a lift keeps of the blocked bot's explanation or answer, as the lead receives it.
+const MAX_LIFT_TEXT: usize = 400;
 pub(super) const MAX_PENDING_MESSAGES_PER_SENDER: usize = 16;
 
 /// Nothing waits on a message, so there is no wait graph: capacity and the chain's hop count
@@ -72,6 +79,9 @@ struct ActorState {
     denied: bool,
     lift: Option<Lift>,
     grant: Option<Grant>,
+    /// A granted reset whose wake did not start a turn. The next reply begins at hop 0. This is not a pending
+    /// grant: a reply must not take a grant that still has its wake.
+    carry_reset: bool,
 }
 
 /// The one open notice for an actor.
@@ -80,9 +90,13 @@ struct Lift {
     /// `message_bot`'s sender. The actor (map key) can be a different bot.
     sender: String,
     generation: u64,
-    explained: bool,
+    /// The lead's clarification question went out; the answer waits for it.
     asked: bool,
-    answered: bool,
+    /// The blocked bot's explanation, kept as the lead receives it (never the refused message). `Some` means it
+    /// was given: an explanation happens once.
+    explanation: Option<String>,
+    /// The blocked bot's answer, kept the same way, once and only after the question.
+    answer: Option<String>,
 }
 
 /// A reset the running chat did not absorb. Applied once, at a later chat start of the same generation.
@@ -158,6 +172,8 @@ impl Requests {
     }
 
     /// `limit` is the handoffs one chain may use, from 8 through 32. Anything else leaves the current limit.
+    /// Nothing outside tests calls this yet, so a running host stays at [`MAX_REQUEST_HOPS`].
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn set_hop_limit(&self, limit: u8) -> Result<()> {
         if !(MIN_HOP_LIMIT..=MAX_HOP_LIMIT).contains(&limit) {
             bail!("hop limit must be from {MIN_HOP_LIMIT} through {MAX_HOP_LIMIT}");
@@ -176,17 +192,18 @@ impl Requests {
     /// actor's current one. The caller delivers a notice only for `Some`.
     pub fn open_lift(&self, sender: &str, actor: &str, generation: u64) -> Option<u64> {
         let mut state = self.0.locked();
-        let (current, open, denied) = match state.actors.get(actor) {
-            Some(entry) => (entry.generation, entry.lift.is_some(), entry.denied),
-            None => (0, false, false),
+        let (current, open, denied, granted) = match state.actors.get(actor) {
+            Some(entry) => (entry.generation, entry.lift.is_some(), entry.denied, entry.grant.is_some()),
+            None => (0, false, false, false),
         };
-        if current != generation || open || denied {
+        // A pending grant still owns the last refusal. A new one must not overwrite it.
+        if current != generation || open || denied || granted {
             return None;
         }
         let id = state.next_refusal;
         state.next_refusal = state.next_refusal.saturating_add(1);
         state.actors.entry(actor.to_owned()).or_default().lift =
-            Some(Lift { id, sender: sender.to_owned(), generation, explained: false, asked: false, answered: false });
+            Some(Lift { id, sender: sender.to_owned(), generation, asked: false, explanation: None, answer: None });
         state.record(AuditKind::Notice, id, actor);
         Some(id)
     }
@@ -206,26 +223,35 @@ impl Requests {
         entry.denied = false;
         entry.lift = None;
         entry.grant = None;
+        entry.carry_reset = false;
     }
 
-    /// The blocked actor's explanation, once, for its own open lift.
-    pub fn explain(&self, actor: &str, refusal: u64) -> Result<()> {
+    /// The blocked actor's explanation, once, for its own open lift. Returns the stored text, which is what the
+    /// lead receives.
+    pub fn explain(&self, actor: &str, refusal: u64, text: &str) -> Result<String> {
         let mut state = self.0.locked();
         let owner = state.actor_of(refusal)?;
         if owner != actor {
             bail!("this hop-limit block belongs to another bot");
         }
-        {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            bail!("text must be nonempty");
+        }
+        let stored = {
             let Some(lift) = state.actors.get_mut(actor).and_then(|entry| entry.lift.as_mut()) else {
                 bail!("no open hop-limit block for this refusal");
             };
-            if lift.explained {
+            if lift.explanation.is_some() {
                 bail!("this hop-limit block was already explained");
             }
-            lift.explained = true;
-        }
+            // `truncate` keeps a nonempty prefix: the cap is 400 bytes, then one ellipsis when it cuts.
+            let stored = truncate(trimmed, MAX_LIFT_TEXT);
+            lift.explanation = Some(stored.clone());
+            stored
+        };
         state.record(AuditKind::Explain, refusal, actor);
-        Ok(())
+        Ok(stored)
     }
 
     /// The lead's clarification question, once. The caller checks that the caller is the lead.
@@ -245,34 +271,41 @@ impl Requests {
         Ok(())
     }
 
-    /// The blocked actor's answer, once, and only after [`Requests::ask`].
-    pub fn answer(&self, actor: &str, refusal: u64) -> Result<()> {
+    /// The blocked actor's answer, once, and only after [`Requests::ask`]. Returns the stored text, which is what
+    /// the lead receives.
+    pub fn answer(&self, actor: &str, refusal: u64, text: &str) -> Result<String> {
         let mut state = self.0.locked();
         let owner = state.actor_of(refusal)?;
         if owner != actor {
             bail!("this hop-limit block belongs to another bot");
         }
-        {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            bail!("text must be nonempty");
+        }
+        let stored = {
             let Some(lift) = state.actors.get_mut(actor).and_then(|entry| entry.lift.as_mut()) else {
                 bail!("no open hop-limit block for this refusal");
             };
             if !lift.asked {
                 bail!("answer a hop-limit clarification only after the lead asks");
             }
-            if lift.answered {
+            if lift.answer.is_some() {
                 bail!("this hop-limit clarification was already answered");
             }
-            lift.answered = true;
-        }
+            let stored = truncate(trimmed, MAX_LIFT_TEXT);
+            lift.answer = Some(stored.clone());
+            stored
+        };
         state.record(AuditKind::Answer, refusal, actor);
-        Ok(())
+        Ok(stored)
     }
 
     /// Grants the reset named by `refusal`.
     ///
-    /// An active [`Turn::Chat`] of the lift's generation becomes `Turn::Chat(0)`. Any other turn, including
-    /// [`Turn::Request`], is left as it is and the grant waits for [`Requests::take_grant_for_chat_start`].
-    /// The fourth grant since the last user message is refused and does not reset.
+    /// The running turn is left as it is, including a clarification or a later reply. The grant waits for the
+    /// approval wake. That wake is the only caller that takes a grant which can still run. The fourth grant
+    /// since the last user message is refused and does not reset.
     pub fn approve(&self, refusal: u64) -> Result<()> {
         let mut state = self.0.locked();
         let actor_id = state.actor_of(refusal)?;
@@ -289,26 +322,53 @@ impl Requests {
             tracing::warn!(actor = %actor_id, refusal, "hop reset refused");
             bail!("hop reset limit ({MAX_RESETS}) reached since the last user message");
         }
-        let same_generation = state.actors.get(&actor_id).is_some_and(|actor| actor.generation == generation);
-        let chat = matches!(state.active.get(&actor_id), Some(Turn::Chat(_)));
-        {
-            let Some(actor) = state.actors.get_mut(&actor_id) else {
-                bail!("no open hop-limit block for this refusal");
-            };
-            actor.resets += 1;
-            actor.lift = None;
-            if same_generation && chat {
-                // This grant was absorbed by the running chat. Don't also bank one.
-                actor.grant = None;
-            } else {
-                actor.grant = Some(Grant { refusal, sender, generation });
-            }
-        }
-        if same_generation && chat {
-            state.active.insert(actor_id.clone(), Turn::Chat(0));
-        }
+        let Some(actor) = state.actors.get_mut(&actor_id) else {
+            bail!("no open hop-limit block for this refusal");
+        };
+        actor.resets += 1;
+        actor.lift = None;
+        actor.grant = Some(Grant { refusal, sender, generation });
         state.record(AuditKind::Reset, refusal, &actor_id);
         Ok(())
+    }
+
+    /// The approval wake was never queued. Drops that grant and the reset it counted, so a later refusal can open.
+    pub fn abort_unsent_reset(&self, actor: &str, refusal: u64) -> bool {
+        let mut state = self.0.locked();
+        let aborted = {
+            let Some(entry) = state.actors.get_mut(actor) else { return false };
+            if entry.grant.as_ref().is_none_or(|grant| grant.refusal != refusal) {
+                return false;
+            }
+            entry.grant = None;
+            entry.resets = entry.resets.saturating_sub(1);
+            true
+        };
+        if state.audit.last().is_some_and(|row| matches!(row.kind, AuditKind::Reset) && row.refusal == refusal) {
+            state.audit.pop();
+        }
+        aborted
+    }
+
+    /// The grant was taken, and its wake did not start a turn. The next reply begins at hop 0.
+    pub fn note_dropped_wake(&self, actor: &str) {
+        if let Some(entry) = self.0.locked().actors.get_mut(actor) {
+            entry.carry_reset = true;
+        }
+    }
+
+    /// A dropped wake left a reset for `actor`'s next reply. Does not consume it.
+    pub fn dropped_wake(&self, actor: &str) -> bool {
+        self.0.locked().actors.get(actor).is_some_and(|entry| entry.carry_reset)
+    }
+
+    /// Consumes a remembered reset once the reply turn that uses it has started.
+    pub fn take_dropped_wake(&self, actor: &str) -> bool {
+        let mut state = self.0.locked();
+        let Some(entry) = state.actors.get_mut(actor) else { return false };
+        let remembered = entry.carry_reset;
+        entry.carry_reset = false;
+        remembered
     }
 
     /// Closes the lift. The chain is unchanged, and another notice waits for a user message.
@@ -323,8 +383,26 @@ impl Requests {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn lift_open(&self, actor: &str) -> bool {
         self.0.locked().actors.get(actor).is_some_and(|entry| entry.lift.is_some())
+    }
+
+    /// Whether `refusal` is still the open lift (not denied, replaced or closed by a user message).
+    pub fn refusal_open(&self, refusal: u64) -> bool {
+        self.0.locked().actor_of(refusal).is_ok()
+    }
+
+    /// What the blocked bot explained for this lift, as the lead receives it.
+    #[cfg(test)]
+    pub fn explanation(&self, refusal: u64) -> Option<String> {
+        self.0.locked().lift_of(refusal).and_then(|lift| lift.explanation.clone())
+    }
+
+    /// What the blocked bot answered for this lift, as the lead receives it.
+    #[cfg(test)]
+    pub fn answer_text(&self, refusal: u64) -> Option<String> {
+        self.0.locked().lift_of(refusal).and_then(|lift| lift.answer.clone())
     }
 
     /// Marks `actor`'s running turn as a hop-limit clarification (`on`) or clears that when the turn ends.
@@ -357,6 +435,7 @@ impl Requests {
         true
     }
 
+    #[cfg(test)]
     pub fn audit_len(&self) -> usize {
         self.0.locked().audit.len()
     }
@@ -398,6 +477,11 @@ impl RequestState {
             Some((id, _)) => Ok(id.clone()),
             None => bail!("no open hop-limit block for this refusal"),
         }
+    }
+
+    #[cfg(test)]
+    fn lift_of(&self, refusal: u64) -> Option<&Lift> {
+        self.actors.values().find_map(|actor| actor.lift.as_ref().filter(|lift| lift.id == refusal))
     }
 
     fn record(&mut self, kind: AuditKind, refusal: u64, actor: &str) {
@@ -533,15 +617,15 @@ mod tests {
         let requests = Requests::default();
         requests.start_turn("a", Turn::Chat(MAX_REQUEST_HOPS));
         let refusal = requests.open_lift("sender", "a", 0).unwrap();
-        assert!(requests.explain("b", refusal).is_err());
-        requests.explain("a", refusal).unwrap();
-        assert!(requests.explain("a", refusal).is_err());
-        assert!(requests.answer("a", refusal).is_err());
+        assert!(requests.explain("b", refusal, "please").is_err());
+        requests.explain("a", refusal, "please").unwrap();
+        assert!(requests.explain("a", refusal, "again").is_err());
+        assert!(requests.answer("a", refusal, "because").is_err());
         requests.ask(refusal).unwrap();
         assert!(requests.ask(refusal).is_err());
-        assert!(requests.answer("b", refusal).is_err());
-        requests.answer("a", refusal).unwrap();
-        assert!(requests.answer("a", refusal).is_err());
+        assert!(requests.answer("b", refusal, "because").is_err());
+        requests.answer("a", refusal, "because").unwrap();
+        assert!(requests.answer("a", refusal, "again").is_err());
         requests.deny(refusal).unwrap();
         assert!(!requests.lift_open("a"));
         assert!(requests.deny(refusal).is_err());
@@ -558,15 +642,16 @@ mod tests {
     }
 
     #[test]
-    fn approve_during_an_active_chat_turn_resets_it() {
+    fn approve_during_an_active_chat_waits_for_its_wake() {
         let requests = Requests::default();
         requests.start_turn("a", Turn::Chat(MAX_REQUEST_HOPS));
         let refusal = requests.open_lift("sender", "a", 0).unwrap();
         requests.approve(refusal).unwrap();
-        assert!(matches!(requests.0.locked().active.get("a"), Some(&Turn::Chat(0))));
+        assert!(requests.open_lift("sender", "a", 0).is_none(), "a pending grant blocks another refusal");
+        assert!(matches!(requests.0.locked().active.get("a"), Some(&Turn::Chat(MAX_REQUEST_HOPS))));
         assert!(!requests.lift_open("a"));
-        assert!(!requests.take_grant_for_chat_start("a", 0, None));
-        assert_eq!(requests.reserve_message("a").unwrap(), 1);
+        assert!(requests.take_grant_for_chat_start("a", 0, Some(refusal)));
+        assert!(requests.reserve_message("a").unwrap_err().to_string().contains("hop limit"));
         assert!(requests.approve(refusal).is_err());
     }
 
@@ -591,7 +676,7 @@ mod tests {
         requests.end_turn("a");
         let refusal = requests.open_lift("sender", "a", requests.generation("a")).unwrap();
         requests.approve(refusal).unwrap();
-        assert!(requests.0.locked().active.get("a").is_none());
+        assert!(!requests.0.locked().active.contains_key("a"));
         assert!(!requests.lift_open("a"));
         assert!(!requests.take_grant_for_chat_start("a", 99, None));
         assert!(requests.take_grant_for_chat_start("a", 0, None));
@@ -607,7 +692,7 @@ mod tests {
         assert_eq!(requests.generation("a"), 1);
         assert!(!requests.lift_open("a"));
         assert!(requests.approve(refusal).is_err());
-        assert!(requests.explain("a", refusal).is_err());
+        assert!(requests.explain("a", refusal, "please").is_err());
         assert!(requests.open_lift("sender", "a", 0).is_none());
         assert!(matches!(requests.0.locked().active.get("a"), Some(&Turn::Chat(MAX_REQUEST_HOPS))));
 
@@ -628,7 +713,8 @@ mod tests {
             requests.start_turn("a", Turn::Chat(requests.hop_limit()));
             let refusal = requests.open_lift("sender", "a", requests.generation("a")).unwrap();
             requests.approve(refusal).unwrap();
-            assert!(matches!(requests.0.locked().active.get("a"), Some(&Turn::Chat(0))));
+            assert!(matches!(requests.0.locked().active.get("a"), Some(&Turn::Chat(MAX_REQUEST_HOPS))));
+            assert!(requests.take_grant_for_chat_start("a", 0, Some(refusal)));
         }
         requests.start_turn("a", Turn::Chat(requests.hop_limit()));
         let refusal = requests.open_lift("sender", "a", 0).unwrap();
@@ -645,7 +731,8 @@ mod tests {
         requests.user_message_started("a");
         let refusal = requests.open_lift("sender", "a", requests.generation("a")).unwrap();
         requests.approve(refusal).unwrap();
-        assert!(matches!(requests.0.locked().active.get("a"), Some(&Turn::Chat(0))));
+        assert!(matches!(requests.0.locked().active.get("a"), Some(&Turn::Chat(MAX_REQUEST_HOPS))));
+        assert!(requests.take_grant_for_chat_start("a", requests.generation("a"), Some(refusal)));
     }
 
     #[test]
@@ -708,5 +795,116 @@ mod tests {
         assert_eq!(requests.0.locked().messages, 0);
         requests.start_turn("a", Turn::Chat(0));
         assert_eq!(requests.reserve_message("a").unwrap(), 1);
+    }
+
+    #[test]
+    fn an_explanation_and_an_answer_are_stored_for_the_lead() {
+        let requests = Requests::default();
+        requests.start_turn("a", Turn::Chat(MAX_REQUEST_HOPS));
+        let refusal = requests.open_lift("sender", "a", 0).unwrap();
+        assert_eq!(requests.explanation(refusal), None);
+        assert!(requests.explain("a", refusal, "   ").is_err(), "blank text is not an explanation");
+
+        let explained = requests.explain("a", refusal, "  the user asked for this exact handoff  ").unwrap();
+        assert_eq!(explained, "the user asked for this exact handoff");
+        assert_eq!(requests.explanation(refusal).as_deref(), Some("the user asked for this exact handoff"));
+
+        requests.ask(refusal).unwrap();
+        assert!(requests.answer("a", refusal, " ").is_err(), "blank text is not an answer");
+        let answered = requests.answer("a", refusal, "answer text").unwrap();
+        assert_eq!(answered, "answer text");
+        assert_eq!(requests.answer_text(refusal).as_deref(), Some("answer text"));
+        assert_eq!(requests.explanation(refusal).as_deref(), Some("the user asked for this exact handoff"));
+        assert_eq!(requests.audit_len(), 4);
+    }
+
+    #[test]
+    fn stored_lift_text_is_truncated_to_400_characters() {
+        let requests = Requests::default();
+        let refusal = requests.open_lift("sender", "a", 0).unwrap();
+        let long = "x".repeat(MAX_LIFT_TEXT + 50);
+        let stored = requests.explain("a", refusal, &long).unwrap();
+        assert_eq!(stored.chars().count(), MAX_LIFT_TEXT + 1, "400 characters and the ellipsis");
+        assert!(stored.ends_with('…'));
+        assert_eq!(requests.explanation(refusal).as_deref(), Some(stored.as_str()));
+
+        requests.ask(refusal).unwrap();
+        let stored = requests.answer("a", refusal, &long).unwrap();
+        assert_eq!(requests.answer_text(refusal).as_deref(), Some(stored.as_str()));
+        assert!(stored.ends_with('…'));
+    }
+
+    #[test]
+    fn a_denied_or_closed_lift_is_no_longer_open() {
+        let requests = Requests::default();
+        let denial = requests.open_lift("sender", "a", 0).unwrap();
+        assert!(requests.refusal_open(denial));
+        requests.deny(denial).unwrap();
+        assert!(!requests.refusal_open(denial));
+
+        let closed = requests.open_lift("sender", "b", 0).unwrap();
+        assert!(requests.refusal_open(closed));
+        requests.user_message_started("b");
+        assert!(!requests.refusal_open(closed));
+
+        let replaced = requests.open_lift("sender", "c", 0).unwrap();
+        assert!(requests.refusal_open(replaced));
+        requests.approve(replaced).unwrap();
+        assert!(!requests.refusal_open(replaced));
+    }
+
+    #[test]
+    fn a_pending_grant_waits_for_the_matching_hop_lift_wake() {
+        let requests = Requests::default();
+        requests.start_turn("a", Turn::Request);
+        let refusal = requests.open_lift("sender", "a", 0).unwrap();
+        requests.approve(refusal).unwrap();
+        // A plain chat start (a reply turn) doesn't take it: only the wake for this refusal may.
+        assert!(requests.grant_is_pending("a"));
+        assert!(!requests.take_grant_for_chat_start("a", 0, Some(refusal + 1)));
+        assert!(requests.grant_is_pending("a"));
+        assert!(requests.take_grant_for_chat_start("a", 0, Some(refusal)));
+        assert!(!requests.grant_is_pending("a"));
+        assert!(!requests.take_grant_for_chat_start("a", 0, Some(refusal)));
+    }
+
+    #[test]
+    fn an_unsent_reset_releases_the_grant_and_the_budget() {
+        let requests = Requests::default();
+        let refusal = requests.open_lift("sender", "a", 0).unwrap();
+        let before = requests.audit_len();
+        requests.approve(refusal).unwrap();
+        assert!(!requests.abort_unsent_reset("a", refusal + 1));
+        assert!(requests.grant_is_pending("a"));
+        assert!(requests.abort_unsent_reset("a", refusal));
+        assert!(!requests.grant_is_pending("a"));
+        assert_eq!(requests.audit_len(), before);
+        // The aborted reset did not count, and it does not block the next refusal.
+        for _ in 0..3 {
+            let id = requests.open_lift("sender", "a", 0).unwrap();
+            requests.approve(id).unwrap();
+            assert!(requests.take_grant_for_chat_start("a", 0, Some(id)));
+        }
+        let blocked = requests.open_lift("sender", "a", 0).unwrap();
+        assert!(requests.approve(blocked).unwrap_err().to_string().contains("hop reset limit (3)"));
+    }
+
+    #[test]
+    fn a_dropped_wake_is_remembered_until_its_reply_starts() {
+        let requests = Requests::default();
+        let refusal = requests.open_lift("sender", "a", 0).unwrap();
+        requests.approve(refusal).unwrap();
+        assert!(requests.take_grant_for_chat_start("a", 0, Some(refusal)));
+        requests.note_dropped_wake("a");
+        assert!(requests.dropped_wake("a"));
+        // The grant is gone, so another refusal can open. The remembered reset stays until the reply starts.
+        assert!(requests.open_lift("sender", "a", 0).is_some());
+        assert!(requests.dropped_wake("a"));
+        assert!(requests.take_dropped_wake("a"));
+        assert!(!requests.dropped_wake("a"));
+
+        requests.note_dropped_wake("a");
+        requests.user_message_started("a");
+        assert!(!requests.dropped_wake("a"));
     }
 }

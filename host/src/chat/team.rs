@@ -522,9 +522,9 @@ fn call(hub: &Arc<Hub>, from: &str, turn: &str, name: &str, args: &Value) -> Res
                 Recipient::There(target) => bail!("{} is on another computer", target.address),
             }
         }
-        "explain_hop_block" => explain_hop_block(hub, turn, args),
+        "explain_hop_block" => explain_hop_block(hub, &source, turn, args),
         "ask_hop_clarification" => ask_hop_clarification(hub, &source, args),
-        "answer_hop_clarification" => answer_hop_clarification(hub, turn, args),
+        "answer_hop_clarification" => answer_hop_clarification(hub, &source, turn, args),
         "reset_hop_count" => reset_hop_count(hub, &source, args),
         "deny_hop_reset" => deny_hop_reset(hub, &source, args),
         _ => bail!("unknown team tool: {name}"),
@@ -562,7 +562,9 @@ fn message_bot(hub: &Arc<Hub>, source: &BotConfig, turn: &str, to: &str, message
     let target = visible_bot(hub, to)?;
     let hops = match hub.team.reserve_message_in(&source.id, turn) {
         Ok(hops) => hops,
-        Err(error) if hop_limit_error(&error) => return on_hop_limit(hub, source, turn, &target, message, error),
+        Err(error) if hop_limit_error(&error) => {
+            return on_hop_limit(hub, source, turn, &target.name, message, error);
+        }
         Err(error) => return Err(error),
     };
     let id = uuid::Uuid::new_v4().to_string();
@@ -581,8 +583,30 @@ fn message_bot(hub: &Arc<Hub>, source: &BotConfig, turn: &str, to: &str, message
     }))
 }
 
-fn hop_limit_error(error: &anyhow::Error) -> bool {
+pub(super) fn hop_limit_error(error: &anyhow::Error) -> bool {
     error.to_string().contains("hop limit (")
+}
+
+/// What the lead reads when the blocked bot explains itself or answers a question: a hop notice in the lead's chat,
+/// at hop 0, asking it to judge with the hop-limit tools. The stored text is the text delivered; it is never logged.
+fn hop_notice_to_lead(
+    hub: &Arc<Hub>,
+    source: &BotConfig,
+    refusal: u64,
+    heading: &str,
+    introduction: &str,
+    text: &str,
+) -> Result<()> {
+    let Some(lead) = local_lead(hub) else { return Ok(()) };
+    let id = uuid::Uuid::new_v4().to_string();
+    let prompt = format!(
+        "{introduction} Refusal {refusal}. Blocked bot: {}. Use only the hop-limit tools. Do not use message_bot.\n{text}",
+        source.name
+    );
+    let mut lifetime = MessageLifetime::new(hub, &id, text, Back::Lift, &lead.name);
+    let exchange = Exchange { request: &id, source: &source.id, target: &lead.id, text, peer_name: None };
+    lifetime.entries.push(exchange.notice(hub, &lead.id, heading, true)?);
+    lifetime.deliver(&lead.id, 0, Access::Allow, prompt)
 }
 
 fn refusal_arg(args: &Value) -> Result<u64> {
@@ -598,13 +622,18 @@ fn local_lead(hub: &Hub) -> Option<BotConfig> {
     hub.store.bots().ok()?.into_iter().find(|row| !row.deleted && row.config.lead).map(|row| row.config)
 }
 
-fn explain_hop_block(hub: &Arc<Hub>, turn: &str, args: &Value) -> Result<Value> {
+fn explain_hop_block(hub: &Arc<Hub>, source: &BotConfig, turn: &str, args: &Value) -> Result<Value> {
     let refusal = refusal_arg(args)?;
     let explanation = args["text"].as_str().unwrap_or("").trim();
     if explanation.is_empty() || explanation.len() > MAX_MESSAGE_BYTES {
         bail!("text must be nonempty and at most {MAX_MESSAGE_BYTES} bytes");
     }
-    hub.team.explain(turn, refusal)?;
+    let stored = hub.team.explain(turn, refusal, explanation)?;
+    let heading = format!("Explanation from {} for hop-limit refusal {refusal}.", source.name);
+    let introduction = "The bot blocked by the hop limit explained why its send should go through.";
+    if let Err(error) = hop_notice_to_lead(hub, source, refusal, &heading, introduction, &stored) {
+        tracing::warn!(refusal, error = format!("{error:#}"), "couldn't deliver a hop-limit explanation to the lead");
+    }
     tracing::info!(actor = %turn, refusal, "hop-limit explanation recorded");
     Ok(json!({ "refusal": refusal, "status": "recorded" }))
 }
@@ -619,10 +648,10 @@ fn ask_hop_clarification(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Re
         bail!("text must be nonempty and at most {MAX_MESSAGE_BYTES} bytes");
     }
     let actor = hub.team.lift_actor(refusal)?;
-    if let Some(named) = args["botId"].as_str() {
-        if named != actor {
-            bail!("botId does not match this hop-limit block");
-        }
+    if let Some(named) = args["botId"].as_str()
+        && named != actor
+    {
+        bail!("botId does not match this hop-limit block");
     }
     hub.team.ask(refusal)?;
     let shown = truncate(question, 400);
@@ -640,13 +669,18 @@ fn ask_hop_clarification(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Re
     Ok(json!({ "refusal": refusal, "status": "asked" }))
 }
 
-fn answer_hop_clarification(hub: &Arc<Hub>, turn: &str, args: &Value) -> Result<Value> {
+fn answer_hop_clarification(hub: &Arc<Hub>, source: &BotConfig, turn: &str, args: &Value) -> Result<Value> {
     let refusal = refusal_arg(args)?;
     let answer = args["text"].as_str().unwrap_or("").trim();
     if answer.is_empty() || answer.len() > MAX_MESSAGE_BYTES {
         bail!("text must be nonempty and at most {MAX_MESSAGE_BYTES} bytes");
     }
-    hub.team.answer(turn, refusal)?;
+    let stored = hub.team.answer(turn, refusal, answer)?;
+    let heading = format!("Answer from {} for hop-limit refusal {refusal}.", source.name);
+    let introduction = "The bot blocked by the hop limit answered your clarification.";
+    if let Err(error) = hop_notice_to_lead(hub, source, refusal, &heading, introduction, &stored) {
+        tracing::warn!(refusal, error = format!("{error:#}"), "couldn't deliver a hop-limit answer to the lead");
+    }
     tracing::info!(actor = %turn, refusal, "hop-limit clarification answered");
     Ok(json!({ "refusal": refusal, "status": "answered" }))
 }
@@ -657,14 +691,16 @@ fn reset_hop_count(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<V
     }
     let refusal = refusal_arg(args)?;
     let actor = hub.team.lift_actor(refusal)?;
-    if let Some(named) = args["botId"].as_str() {
-        if named != actor {
-            bail!("botId does not match this hop-limit block");
-        }
+    if let Some(named) = args["botId"].as_str()
+        && named != actor
+    {
+        bail!("botId does not match this hop-limit block");
     }
     hub.team.approve(refusal)?;
     if hub.team.grant_is_pending(&actor) {
-        hub.send_cmd(
+        // The wake is the only consumer of this grant. If it cannot be queued, drop the grant too: leaving it
+        // pending would block every later notice, and the tool is about to report that the reset did not happen.
+        if let Err(error) = hub.send_cmd(
             &actor,
             Cmd::HopLift {
                 text: format!(
@@ -673,7 +709,10 @@ fn reset_hop_count(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<V
                 refusal_id: refusal,
                 control: false,
             },
-        )?;
+        ) {
+            hub.team.abort_unsent_reset(&actor, refusal);
+            return Err(error);
+        }
     }
     tracing::info!(lead = %source.id, actor = %actor, refusal, "hop count reset");
     Ok(json!({ "refusal": refusal, "status": "reset" }))
@@ -685,21 +724,21 @@ fn deny_hop_reset(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Va
     }
     let refusal = refusal_arg(args)?;
     let actor = hub.team.lift_actor(refusal)?;
-    if let Some(named) = args["botId"].as_str() {
-        if named != actor {
-            bail!("botId does not match this hop-limit block");
-        }
+    if let Some(named) = args["botId"].as_str()
+        && named != actor
+    {
+        bail!("botId does not match this hop-limit block");
     }
     hub.team.deny(refusal)?;
     tracing::info!(lead = %source.id, refusal, "hop reset denied");
     Ok(json!({ "refusal": refusal, "status": "denied" }))
 }
 
-fn on_hop_limit(
+pub(super) fn on_hop_limit(
     hub: &Arc<Hub>,
     source: &BotConfig,
     turn: &str,
-    target: &BotConfig,
+    target_name: &str,
     message: &str,
     error: anyhow::Error,
 ) -> Result<Value> {
@@ -715,8 +754,8 @@ fn on_hop_limit(
     let shown = truncate(message, 400);
     let id = uuid::Uuid::new_v4().to_string();
     let prompt = format!(
-        "Hop limit reached. Refusal {refusal}. Blocked bot: {}. It tried to message {}. Use only the hop-limit tools. Do not use message_bot.\nRefused text:\n{shown}",
-        source.name, target.name
+        "Hop limit reached. Refusal {refusal}. Blocked bot: {}. It tried to message {target_name}. Use only the hop-limit tools. Do not use message_bot.\nRefused text:\n{shown}",
+        source.name
     );
     let mut lifetime = MessageLifetime::new(hub, &id, &shown, Back::Lift, &lead.name);
     let exchange = Exchange { request: &id, source: &source.id, target: &lead.id, text: &shown, peer_name: None };

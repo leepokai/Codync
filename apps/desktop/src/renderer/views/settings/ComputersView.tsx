@@ -7,6 +7,7 @@ import { Dialog, ModalHeader, Sheet, useDismiss } from '../../components/Overlay
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { offlineCloudStatus, placementLine, type StatusLine } from '../../lib/cloud-computer'
+import { accountComputerAction } from '../../lib/account-computer-action'
 import { useModel } from '../../lib/observable'
 import { useAccount } from '../../store/account'
 import { analytics } from '../../store/analytics'
@@ -338,11 +339,12 @@ function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: Cloud
   const dismiss = useDismiss()
   const access = useModel(app.accountComputers)
   const asking = access.asking.get(computer.computerId)
-  const store = app.store(computer.computerId)
+  // Its bots arrive after it attaches: Open waits for them.
+  const store = useModel(app.store(computer.computerId))
   const status = accountComputerStatus(computer, olderCopy)
+  const action = accountComputerAction(computer, olderCopy, store, asking !== undefined)
   const open = () => {
-    const bot = store?.roster[0]
-    if (bot) app.select({ computerId: computer.computerId, botId: bot.id })
+    app.select({ computerId: computer.computerId, botId: store!.roster[0]!.id })
     dismiss()
   }
   // The row is often last on the page: keep it in view while its reveal unfolds.
@@ -369,9 +371,9 @@ function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: Cloud
           <Text size="caption" tone={status.error ? 'danger' : olderCopy ? 'tertiary' : 'secondary'}>{tr(status.text)}</Text>
         </div>
         <Spacer />
-        {store && !store.isLoopback ? <Button onClick={open}>{tr('Open')}</Button>
-          : asking ? <Button onClick={() => access.cancel(computer.computerId)}>{tr('Cancel request')}</Button>
-          : computer.online && !computer.cloud && !olderCopy && computer.access !== 'granted' ? <Button onClick={() => void access.ask(computer)}>{tr('Ask for access')}</Button>
+        {action === 'open' || action === 'opening' ? <Button disabled={action === 'opening'} onClick={open}>{tr('Open')}</Button>
+          : action === 'cancel' ? <Button onClick={() => access.cancel(computer.computerId)}>{tr('Cancel request')}</Button>
+          : action === 'ask' ? <Button onClick={() => void access.ask(computer)}>{tr('Ask for access')}</Button>
           : null}
         {/* A cloud computer goes with Delete cloud computer, in its own section. */}
         {computer.online || computer.cloud ? null : <IconButton title="Remove from account" icon="trash" onClick={onRemove} />}

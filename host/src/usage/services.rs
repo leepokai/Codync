@@ -330,13 +330,13 @@ pub fn set_order(hub: &Hub, ids: &[String]) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::super::{Provider, near_limit};
     use super::*;
     use crate::remote::identity::Identity;
     use crate::store::{BotConfig, Fallback};
 
-    fn hub() -> std::sync::Arc<Hub> {
+    pub(in crate::usage) fn hub() -> std::sync::Arc<Hub> {
         let dir = std::env::temp_dir().join(format!("codync-usage-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();

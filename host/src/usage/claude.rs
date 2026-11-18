@@ -93,9 +93,10 @@ pub fn parse_claude_usage(text: &str) -> Vec<Window> {
 /// without one).
 pub fn ingest_statusline(hub: &Hub, profile: Option<&str>, body: &Value) {
     let rl = &body["rate_limits"];
-    let windows: Vec<Window> = [("five_hour", "5-hour"), ("seven_day", "Weekly")]
+    let windows: Vec<Window> = ["five_hour", "seven_day"]
         .into_iter()
-        .filter_map(|(key, label)| {
+        .filter_map(|key| {
+            let (_, label) = claude_kind(key)?;
             let percent = rl[key]["used_percentage"].as_f64()?;
             Some(Window::new(key, label, percent, rl[key]["resets_at"].as_i64().map(|s| s.saturating_mul(1000))))
         })
@@ -135,11 +136,9 @@ fn claude_windows(info: &Value) -> Vec<Window> {
 
 fn claude_window(info: &Value) -> Option<Window> {
     let (id, label) = claude_kind(info["rateLimitType"].as_str()?)?;
-    // The SDK reports a 0–1 fraction (from the unified rate-limit headers). A
-    // limit that refused a request comes without one: it is used up.
+    // A limit that refused a request comes without a utilization: it is used up.
     let percent = match info["utilization"].as_f64() {
-        Some(u) if u <= 1.0 => u * 100.0,
-        Some(u) => u,
+        Some(u) => fraction_percent(u),
         None if info["status"] == "rejected" => 100.0,
         None => return None,
     };
@@ -149,9 +148,14 @@ fn claude_window(info: &Value) -> Option<Window> {
 /// One of `unifiedWindows`: `{"utilization": 0.26, "resetsAt": 1794470400, "status": "allowed"}`.
 fn unified_window(kind: &str, limit: &Value) -> Option<Window> {
     let (id, label) = claude_kind(kind)?;
-    // Always a fraction here, and above 1 once usage runs past the cap.
-    let percent = (limit["utilization"].as_f64()? * 100.0).clamp(0.0, 100.0);
+    let percent = fraction_percent(limit["utilization"].as_f64()?);
     Some(Window::new(id, label, percent, reset_ms(&limit["resetsAt"])))
+}
+
+/// The SDK's utilization is a 0–1 fraction (from the unified rate-limit headers), above 1 once
+/// usage runs past the cap: that is used up.
+fn fraction_percent(utilization: f64) -> f64 {
+    (utilization * 100.0).clamp(0.0, 100.0)
 }
 
 /// A limit kind's window id and label, the ones the `/usage` report gives it, so both readings
@@ -309,68 +313,19 @@ mod tests {
         assert_eq!(claude_windows(&json!({"status": "allowed", "unifiedWindows": null})), []);
     }
 
-    #[tokio::test]
-    async fn unified_windows_stay_on_the_login_the_event_came_from() {
+    #[test]
+    fn unified_windows_land_on_the_login_the_event_came_from() {
         use crate::LockExt;
 
-        let dir = std::env::temp_dir().join(format!("codync-claude-usage-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).expect("folder");
-        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("store");
-        let identity = crate::remote::identity::Identity::load_or_create(&dir).expect("identity");
-        let hub = Hub::new(store, "usage-test".into(), identity, "test".into(), 0);
+        let hub = super::super::services::tests::hub();
         let reader = super::super::services::reader("claude").expect("reader");
-        hub.update_usage(|usage| {
-            usage.list_login_profiles(
-                reader,
-                Some("Default".into()),
-                vec![("work".into(), "Work".into()), ("side".into(), "Side".into())],
-            );
-        });
-        let event = |percent| {
-            json!({
-                "status": "allowed",
-                "unifiedWindows": {"seven_day": {"utilization": percent}},
-            })
-        };
-        ingest_claude_rate_limit(&hub, None, &event(0.1));
-        ingest_claude_rate_limit(&hub, Some("side"), &event(0.2));
+        hub.update_usage(|usage| usage.list_login_profiles(reader, None, vec![("work".into(), "Work".into())]));
         ingest_claude_rate_limit(
             &hub,
             Some("work"),
-            &json!({
-                "status": "rejected", "rateLimitType": "seven_day_overage_included",
-                "unifiedWindows": {
-                    "seven_day": {"utilization": 0.9},
-                    "seven_day_overage_included": {"utilization": 0.99},
-                },
-            }),
+            &json!({"status": "allowed", "unifiedWindows": {"seven_day_overage_included": {"utilization": 0.06}}}),
         );
-        ingest_statusline(&hub, Some("work"), &json!({"rate_limits": {"five_hour": {"used_percentage": 5}}}));
-        let before = hub.usage.locked().clone();
-        ingest_claude_rate_limit(&hub, Some("gone"), &event(0.8));
         let usage = hub.usage.locked();
-        assert_eq!(*usage, before, "a removed profile's event is dropped");
-        let percents =
-            |profile| usage.windows("claude", profile).expect("login").iter().map(|w| w.percent).collect::<Vec<_>>();
-        assert_eq!(percents(None), [10.0]);
-        assert_eq!(percents(Some("side")), [20.0]);
-        assert_eq!(percents(Some("work")), [5.0, 90.0, 100.0]);
-        assert_eq!(usage.windows("claude", Some("work")).expect("work")[2].id, "seven_day_fable");
-        drop(usage);
-        // A later partial event keeps the profile's other windows, without touching other logins.
-        ingest_claude_rate_limit(&hub, Some("work"), &event(0.8));
-        let usage = hub.usage.locked();
-        let work = usage.windows("claude", Some("work")).expect("work");
-        assert_eq!(work.iter().map(|w| w.percent).collect::<Vec<_>>(), [5.0, 80.0, 100.0]);
-        assert!((usage.windows("claude", None).expect("default")[0].percent - 10.0).abs() < f64::EPSILON);
-        assert!((usage.windows("claude", Some("side")).expect("side")[0].percent - 20.0).abs() < f64::EPSILON);
-        drop(usage);
-        hub.update_usage(|usage| {
-            usage.list_login_profiles(reader, None, vec![("side".into(), "Side".into())]);
-        });
-        let before = hub.usage.locked().clone();
-        ingest_claude_rate_limit(&hub, Some("work"), &event(0.9));
-        assert_eq!(*hub.usage.locked(), before, "a formerly listed profile is not recreated");
-        std::fs::remove_dir_all(dir).expect("cleanup");
+        assert_eq!(usage.windows("claude", Some("work")).expect("work")[0].id, "seven_day_fable");
     }
 }

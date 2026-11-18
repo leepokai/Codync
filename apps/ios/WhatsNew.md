@@ -14,6 +14,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 主畫面的 Codync 圖示可以顯示未讀數量，和 App 內各聊天的未讀數相加一致，讀完、或打開 App 時就會更新。預設關閉，可在「設定」→「通知」開啟「在 App 圖示上顯示未讀數」。
 - Bot 在做事時旁邊的小圖示換成跟頭像同一種點陣：工作中、搜尋、等你回覆、連線和編輯檔案各有自己的動作，小尺寸也看得清楚。
 - 動態島上工作中的 Bot 臉和旁邊的小圖示，點陣現在會對齊，不再錯位。
+- 需要更新時，更新卡片上的「立即更新」「更新 Codync」和「更新」按鈕會跟著 App 語言顯示。
 
 ### en-US
 - A bot's default workspace is now called Own folder.
@@ -22,6 +23,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - The Codync icon on the Home Screen can show your unread count, the same number your chats' badges add up to; it updates as you read them and whenever you open the app. It's off by default: turn on Unread count on app icon in Settings → Notifications.
 - The small icon beside a busy bot now uses the same dot grid as the avatars: working, searching, waiting for you, connecting and editing files each move their own way, and stay clear at small sizes.
 - In the Dynamic Island, a working bot's face and the icon beside it now draw their dots lined up instead of shifted.
+- The buttons on the update cards (Update now, Update Codync, Update) now show in the app's language.
 
 ## 2.49.1
 ### zh-Hant

@@ -240,7 +240,7 @@ public struct AppUpdateReminder: View {
             // Filled from the phrase keys: a sentence already holding "2.47.0" can't be matched back to "You have {version}.".
             UpdateReminderCard(title: L10n.fill(L10n.tr("Codync {version} is available"), ["version": version]),
                                detail: L10n.fill(L10n.tr("You have {version}."), ["version": AppVersion.current]),
-                               actionTitle: appUpdate == nil ? nil : "Update",
+                               actionTitle: appUpdate == nil ? nil : L10n.tr("Update"),
                                action: { appUpdate?() },
                                dismiss: appUpdates.dismissApp)
                 .padding(.vertical, 4)

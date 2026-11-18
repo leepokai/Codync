@@ -131,6 +131,36 @@ impl Trigger {
         }
     }
 
+    /// The same schedule `description` spells in English, as stable fields a client can say in
+    /// the person's own language. Anything it cannot state safely stays its raw cron expression.
+    fn presentation(&self) -> serde_json::Value {
+        match self {
+            Self::Interval { seconds } => serde_json::json!({"kind": "interval", "seconds": seconds}),
+            Self::Once { at } => serde_json::json!({"kind": "once", "at": at}),
+            Self::Cron { expression, time_zone } => calendar(expression).map_or_else(
+                || serde_json::json!({"kind": "cron", "expression": expression, "timeZone": time_zone}),
+                |calendar| {
+                    serde_json::json!({
+                        "kind": "calendar",
+                        "weekdays": calendar.weekdays,
+                        "hour": calendar.hour,
+                        "minute": calendar.minute,
+                        "expression": expression,
+                        "timeZone": time_zone,
+                    })
+                },
+            ),
+            Self::Webhook => serde_json::json!({"kind": "webhook"}),
+            // The event source and name read the same in every language; only Codync's wrapper is translated.
+            Self::Event { source, event, .. } => serde_json::json!({"kind": "event", "source": source, "event": event}),
+        }
+    }
+
+    /// What clients render for `triggers` beside `description`'s English, one item per trigger.
+    pub fn presentations(triggers: &[Self]) -> serde_json::Value {
+        serde_json::json!({"version": 1, "items": triggers.iter().map(Self::presentation).collect::<Vec<_>>()})
+    }
+
     pub fn matches(&self, payload: &serde_json::Value) -> bool {
         let Self::Event { source, event, filters } = self else { return false };
         payload["source"].as_str() == Some(source)
@@ -146,6 +176,29 @@ impl Trigger {
 }
 
 const WEEKDAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/// A calendar schedule a client can say itself: one time on the named weekdays.
+struct Calendar {
+    weekdays: Vec<&'static str>,
+    hour: u8,
+    minute: u8,
+}
+
+/// The calendar shapes `description` names in fixed sentences (`Every day at 09:00`,
+/// `Every Monday at 09:00`), as fields a client can put in its own language. Shapes with
+/// several times a day, or a day of the month, have no such fields and stay raw cron.
+fn calendar(expression: &str) -> Option<Calendar> {
+    let fields: Vec<&str> = expression.split_whitespace().collect();
+    let [minute, hour, "*", "*", weekday] = fields.as_slice() else { return None };
+    let minute = minute.parse::<u8>().ok().filter(|minute| *minute <= 59)?;
+    let hour = hour.parse::<u8>().ok().filter(|hour| *hour <= 23)?;
+    let weekdays = match *weekday {
+        "*" => WEEKDAYS.to_vec(),
+        "1-5" => WEEKDAYS[1..=5].to_vec(),
+        weekday => vec![*WEEKDAYS.get(weekday.parse::<usize>().ok()?)?],
+    };
+    Some(Calendar { weekdays, hour, minute })
+}
 
 /// The editor's calendar styles in fixed sentences the clients' catalogs translate
 /// (`Every day at 09:00, 18:00`, `Every Monday at 09:00`). Anything else stays on croner's sentence.
@@ -228,6 +281,65 @@ mod tests {
         assert!(t.matches(&serde_json::json!({"source":"github","event":"pull_request.opened","repo":"owner/repo"})));
         assert!(!t.matches(&serde_json::json!({"source":"github","event":"pull_request.opened","repo":"other/repo"})));
     }
+    #[test]
+    fn presentations_carry_each_schedule_beside_its_english() {
+        let triggers = vec![
+            Trigger::Interval { seconds: 1800 },
+            Trigger::Once { at: 1_800_000_000_000 },
+            Trigger::Cron { expression: "20 14 * * 0".into(), time_zone: "Asia/Taipei".into() },
+            Trigger::Webhook,
+            Trigger::Event {
+                source: "github".into(),
+                event: "pull_request.opened".into(),
+                filters: [("messageContains".into(), "secret".into())].into(),
+            },
+        ];
+        let presented = Trigger::presentations(&triggers);
+        assert_eq!(presented["version"], 1);
+        let items = presented["items"].as_array().unwrap();
+        assert_eq!(items.len(), triggers.len());
+        assert_eq!(items[0], serde_json::json!({"kind": "interval", "seconds": 1800}));
+        assert_eq!(items[1], serde_json::json!({"kind": "once", "at": 1_800_000_000_000i64}));
+        assert_eq!(
+            items[2],
+            serde_json::json!({"kind": "calendar", "weekdays": ["Sunday"], "hour": 14, "minute": 20,
+                "expression": "20 14 * * 0", "timeZone": "Asia/Taipei"})
+        );
+        assert_eq!(items[3], serde_json::json!({"kind": "webhook"}));
+        // The filter may hold private text: clients get the wrapper only, never its value.
+        assert_eq!(items[4], serde_json::json!({"kind": "event", "source": "github", "event": "pull_request.opened"}));
+        // The English this sits beside is unchanged.
+        assert_eq!(triggers[0].description(), "Every 30 minutes");
+        assert_eq!(triggers[2].description(), "Every Sunday at 14:20 · Asia/Taipei");
+    }
+
+    #[test]
+    fn presentations_cover_weekday_ranges_and_daily_schedules() {
+        let weekdays = |expression: &str| {
+            let trigger = Trigger::Cron { expression: expression.into(), time_zone: "UTC".into() };
+            Trigger::presentations(&[trigger])["items"][0]["weekdays"].clone()
+        };
+        assert_eq!(weekdays("0 9 * * *").as_array().unwrap().len(), 7);
+        assert_eq!(
+            weekdays("0 9 * * 1-5"),
+            serde_json::json!(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"])
+        );
+        assert_eq!(weekdays("0 9 * * 3"), serde_json::json!(["Wednesday"]));
+    }
+
+    #[test]
+    fn presentations_keep_cron_shapes_a_client_cannot_say() {
+        for expression in ["0 9,18 * * *", "47 * * * *", "*/15 * * * *", "0 9 31 * *", "0 9 * * 1,3"] {
+            let trigger = Trigger::Cron { expression: expression.into(), time_zone: "Europe/Rome".into() };
+            let item = &Trigger::presentations(std::slice::from_ref(&trigger))["items"][0];
+            assert_eq!(
+                item,
+                &serde_json::json!({"kind": "cron", "expression": expression, "timeZone": "Europe/Rome"}),
+                "{expression}"
+            );
+        }
+    }
+
     #[test]
     fn invalid_schedules_are_rejected() {
         assert!(Trigger::Interval { seconds: 0 }.validate(0).is_err());

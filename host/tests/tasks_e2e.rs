@@ -8,6 +8,7 @@ mod common;
 
 use common::host::Host;
 use serde_json::{Value, json};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 async fn wait<T>(what: &str, mut check: impl AsyncFnMut() -> Option<T>) -> T {
@@ -78,9 +79,20 @@ async fn relayed(host: &Host, bot: &str) -> Vec<String> {
 
 /// The prompts the bot's tasks got for `title`, oldest first.
 fn task_prompts(host: &Host, bot: &str, title: &str) -> Vec<Value> {
+    task_prompts_in(&host.workspace(bot), title)
+}
+
+/// The prompts the tasks working in `dir` got for `title`, oldest first.
+fn task_prompts_in(dir: &Path, title: &str) -> Vec<Value> {
     let named = format!(": \"{title}\".");
     let of_title = |p: &Value| p["text"].as_str().is_some_and(|t| t.contains("[Task]") && t.contains(&named));
-    host.log(bot, "prompts.jsonl").into_iter().filter(of_title).collect()
+    logged(dir, "prompts.jsonl").into_iter().filter(of_title).collect()
+}
+
+/// The JSON lines a fixture agent working in `dir` logged to `file` there.
+fn logged(dir: &Path, file: &str) -> Vec<Value> {
+    let log = std::fs::read_to_string(dir.join(file)).unwrap_or_default();
+    log.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).collect()
 }
 
 /// No client ever hears of a task as a bot, or of its transcript as a chat's.
@@ -809,6 +821,25 @@ async fn a_tasks_choice_card_ends_with_its_item() {
 }
 
 #[tokio::test]
+async fn a_tasks_choice_card_expires_with_its_270_second_call() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "task_agent.py", "").await;
+    host.reply(&bot, "ADD Pick one|ASK").await;
+    let card = wait("the card", async || {
+        let mut cards = history(&host, &bot).await.into_iter().filter(|e| e["data"]["decision"] == true);
+        cards.rfind(|e| e["data"]["status"] == "pending")
+    })
+    .await;
+    // Unlike a chat's card it doesn't stay open: a press there has no next message to become.
+    common::eventually("the task's card to expire at its deadline", Duration::from_secs(290), async || {
+        history(&host, &bot).await.iter().any(|e| e["id"] == card["id"] && e["data"]["status"] == "expired")
+    })
+    .await;
+    let relayed = reply(&host, &bot, "Relayed:").await;
+    assert!(relayed.contains("Refused: the card expired after four and a half minutes"), "{relayed}");
+}
+
+#[tokio::test]
 async fn a_tasks_edit_memory_is_its_own_turns_so_it_adds_and_never_takes_out() {
     let host = Host::start().await;
     let bot = bot_with(&host, 1).await;
@@ -840,7 +871,7 @@ async fn a_tasks_edit_memory_is_its_own_turns_so_it_adds_and_never_takes_out() {
 /// git in `dir` alone: a pre-commit hook running these tests sets `GIT_DIR` and `GIT_INDEX_FILE` for the commit
 /// being made, which would point every git here at the repository under test's own checkout. The host's own
 /// (`host/src/git.rs` `command`) clears the same; this test can't reach it.
-fn git_in(dir: &std::path::Path) -> std::process::Command {
+fn git_in(dir: &Path) -> std::process::Command {
     let mut cmd = std::process::Command::new("git");
     for (key, _) in std::env::vars_os().filter(|(k, _)| k.to_string_lossy().starts_with("GIT_")) {
         cmd.env_remove(key);
@@ -849,16 +880,25 @@ fn git_in(dir: &std::path::Path) -> std::process::Command {
     cmd
 }
 
-/// Makes `bot`'s folder a git repository with one commit, where the fixture's own files are ignored. False where
-/// git isn't installed.
-fn git_repo(host: &Host, bot: &str) -> bool {
-    let dir = host.home.join("bots").join(bot).join("workspace");
+/// Makes `dir` a git repository with one commit, where the fixture's own files are ignored. False where git isn't
+/// installed.
+fn git_repo(dir: &Path) -> bool {
     std::fs::write(dir.join(".gitignore"), "*.jsonl\nrelease-*\n").unwrap();
     std::fs::write(dir.join("README.md"), "# Repo\n").unwrap();
-    let git = |args: &[&str]| git_in(&dir).args(args).output().is_ok_and(|out| out.status.success());
+    let git = |args: &[&str]| git_in(dir).args(args).output().is_ok_and(|out| out.status.success());
     git(&["init", "-q"])
         && git(&["add", "."])
         && git(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "first"])
+}
+
+/// A bot like [`bot_with`]'s that works in a project folder of its own (not its own folder, where tasks never get
+/// worktrees), and that folder.
+async fn project_bot(host: &Host, agents: u8) -> (String, PathBuf) {
+    let dir = host.home.join("projects").join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(&dir).unwrap();
+    let bot = bot_with(host, agents).await;
+    host.call("updateBot", json!({"id": bot, "cwd": dir})).await;
+    (bot, dir)
 }
 
 /// The bot's row as a client holds it.
@@ -885,16 +925,15 @@ async fn relayed_for(host: &Host, bot: &str, title: &str) -> String {
 #[tokio::test]
 async fn a_task_beside_another_in_one_repository_works_in_a_worktree_of_its_own() {
     let host = Host::start().await;
-    let bot = bot_with(&host, 3).await;
+    let (bot, dir) = project_bot(&host, 3).await;
     assert_eq!(row(&host, &bot).await["gitRepo"], false);
-    if !git_repo(&host, &bot) {
+    if !git_repo(&dir) {
         return;
     }
     host.reply(&bot, "hello").await;
     let settings = row(&host, &bot).await;
     assert_eq!((&settings["gitRepo"], &settings["taskWorktrees"]), (&json!(true), &json!(true)), "on unless set");
     let branches = || {
-        let dir = host.home.join("bots").join(&bot).join("workspace");
         let out = git_in(&dir).args(["branch", "--list", "codync/*"]).output();
         String::from_utf8(out.unwrap().stdout).unwrap()
     };
@@ -907,7 +946,7 @@ async fn a_task_beside_another_in_one_repository_works_in_a_worktree_of_its_own(
     host.reply(&bot, "ADD Third|TOUCH HOLD:third").await;
     let third = in_worktree(&host, &bot, "Third").await;
     assert!(item(&host, &bot, "First", "working").await["worktree"].is_null(), "{first}");
-    let folder = |item: &Value| std::path::PathBuf::from(item["worktree"]["path"].as_str().unwrap());
+    let folder = |item: &Value| PathBuf::from(item["worktree"]["path"].as_str().unwrap());
     assert_eq!(second["worktree"]["branch"], "codync/second-task");
     assert_eq!(folder(&second), host.home.join("worktrees").join(&bot).join(id(&second)));
     assert_eq!(third["worktree"]["branch"], "codync/third");
@@ -918,8 +957,8 @@ async fn a_task_beside_another_in_one_repository_works_in_a_worktree_of_its_own(
     })
     .await;
     assert!(told.contains("you work in a git worktree of your own") && told.contains("codync/second-task"), "{told}");
-    assert_eq!(task_prompts(&host, &bot, "Second task"), [] as [Value; 0], "not in the bot's folder");
-    assert_eq!(host.log(&bot, "forks.jsonl").len(), 1, "only the first forked: a worktree's task starts anew");
+    assert_eq!(task_prompts_in(&dir, "Second task"), [] as [Value; 0], "not in the bot's folder");
+    assert_eq!(logged(&dir, "forks.jsonl").len(), 1, "only the first forked: a worktree's task starts anew");
 
     // Nothing changed in it: the worktree and its branch go, and the report says so.
     std::fs::write(folder(&second).join("release-second"), "").unwrap();
@@ -929,7 +968,8 @@ async fn a_task_beside_another_in_one_repository_works_in_a_worktree_of_its_own(
     if cfg!(windows) {
         assert!(report.contains("branch codync/second-task") && report.contains("nothing was merged"), "{report}");
     } else {
-        assert!(report.contains("had no changes and no commits and was removed with its branch"), "{report}");
+        let removed = "had no changes and no commits your folder doesn't have, and was removed with its branch";
+        assert!(report.contains(removed), "{report}");
         assert!(done["worktree"].is_null() && !folder(&second).exists(), "{done}");
         assert!(!branches().contains("codync/second-task"), "{}", branches());
     }
@@ -941,27 +981,58 @@ async fn a_task_beside_another_in_one_repository_works_in_a_worktree_of_its_own(
     assert!(report.contains(&place) && report.contains("nothing was merged"), "{report}");
     assert_eq!(item(&host, &bot, "Third", "done").await["worktree"], third["worktree"]);
     assert!(folder(&third).join("made.txt").exists() && branches().contains("codync/third"));
-    assert!(!host.home.join("bots").join(&bot).join("workspace/made.txt").exists(), "not in the bot's folder");
+    assert!(!dir.join("made.txt").exists(), "not in the bot's folder");
 
     // With the switch off, a task beside another works in the bot's folder as before.
     host.call("updateBot", json!({"id": bot, "taskWorktrees": false})).await;
     host.reply(&bot, "ADD Plain|HOLD:plain").await;
     let plain = item(&host, &bot, "Plain", "working").await;
-    wait("its prompt in the bot's folder", async || task_prompts(&host, &bot, "Plain").pop()).await;
+    wait("its prompt in the bot's folder", async || task_prompts_in(&dir, "Plain").pop()).await;
     assert!(item(&host, &bot, "Plain", "working").await["worktree"].is_null(), "{plain}");
-    release(&host, &bot, "plain");
-    release(&host, &bot, "first");
+    for name in ["plain", "first"] {
+        std::fs::write(dir.join(format!("release-{name}")), "").unwrap();
+    }
     item(&host, &bot, "First", "done").await;
 
-    // A folder that is no repository never gets one.
-    let other = bot_with(&host, 3).await;
-    host.reply(&other, "ADD One|HOLD:one").await;
-    item(&host, &other, "One", "working").await;
-    host.reply(&other, "ADD Two|HOLD:two").await;
-    item(&host, &other, "Two", "working").await;
-    wait("its prompt in the bot's folder", async || task_prompts(&host, &other, "Two").pop()).await;
-    assert!(work(&host, &other).await.iter().all(|i| i["worktree"].is_null()));
-    assert_eq!(row(&host, &other).await["gitRepo"], false);
+    // A project folder that is no repository never gets one, and neither does a bot's own folder, a repository
+    // Codync keeps versions in: all the bot's work stays there.
+    let (plain, plain_dir) = project_bot(&host, 3).await;
+    let own = bot_with(&host, 3).await;
+    wait("its own folder to keep versions", async || (row(&host, &own).await["gitRepo"] == true).then_some(())).await;
+    for (bot, dir) in [(&plain, plain_dir), (&own, host.workspace(&own))] {
+        host.reply(bot, "ADD One|HOLD:one").await;
+        item(&host, bot, "One", "working").await;
+        host.reply(bot, "ADD Two|HOLD:two").await;
+        item(&host, bot, "Two", "working").await;
+        wait("its prompt in the bot's folder", async || task_prompts_in(&dir, "Two").pop()).await;
+        assert!(work(&host, bot).await.iter().all(|i| i["worktree"].is_null()));
+    }
+    assert_eq!(row(&host, &plain).await["gitRepo"], false);
+}
+
+#[tokio::test]
+async fn a_bots_own_folder_keeps_a_version_before_and_after_a_turn_and_a_project_folder_none() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "task_agent.py", "").await;
+    let dir = host.workspace(&bot);
+    if !git_in(&dir).arg("--version").output().is_ok_and(|out| out.status.success()) {
+        return;
+    }
+    let log = || {
+        let out = git_in(&dir).args(["log", "--format=%s"]).output().unwrap();
+        String::from_utf8(out.stdout).unwrap().lines().map(str::to_owned).collect::<Vec<_>>()
+    };
+    let made = "Codync keeps versions of this folder";
+    wait("its own folder to become a repository", async || (log() == [made]).then_some(())).await;
+
+    // What changed since is saved before the turn, and what the turn changed (its agent's log) after it.
+    std::fs::write(dir.join("notes.md"), "before the turn").unwrap();
+    let (project, project_dir) = project_bot(&host, 1).await;
+    host.reply(&project, "Tidy up\nthe notes").await;
+    host.reply(&bot, "Tidy up\nthe notes").await;
+    let saved = wait("the turn's versions", async || Some(log()).filter(|log| log.len() == 3)).await;
+    assert_eq!(saved, ["Tidy up", "Before: Tidy up", made]);
+    assert!(!project_dir.join(".git").exists(), "a project folder's history is the user's");
 }
 
 /// A bot on `task_agent.py` run as Kimi Code, a harness Codync knows (so a sign-in it needs gets a card) that no
@@ -978,7 +1049,7 @@ fn relay_agent(name: &str) -> String {
 }
 
 /// Writes the flag file `name` in `bot`'s folder (see `task_agent.py`).
-fn flag(host: &Host, bot: &str, name: &str) -> std::path::PathBuf {
+fn flag(host: &Host, bot: &str, name: &str) -> PathBuf {
     let path = host.workspace(bot).join(name);
     std::fs::write(&path, "").unwrap();
     path

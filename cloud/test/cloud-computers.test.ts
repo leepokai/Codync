@@ -1,11 +1,12 @@
 // Codync Cloud: cloud computers on Boat (stubbed), the host's self-claim from its ticket, sleep and wake.
 
-import { runDurableObjectAlarm } from "cloudflare:test";
+import { runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { STOP_SETTLE_MS } from "../src/cloud-machines";
+import { STOP_SETTLE_MS, type CloudMachineRow, type Wake } from "../src/cloud-machines";
+import { WakeEpisode, WAKING_SHOWN_MS } from "../src/relay-wake";
 import { WAKE_RETRY_MS } from "../src/relay-wire";
 import { alarmAfter, boat, bothProviders, callWith, calls, cc, cloudComputer, hostClaim, instaboxApi, KEY, onBothProviders, relay, spyFetch, stoppedBoat, uid, withInstaboxKey, withKey } from "./cloud-helpers";
-import { call, clerkToken, devicePath, env, newHost, sleep, socket } from "./helpers";
+import { call, clerkToken, devicePath, env, hostSocket, newHost, sleep, socket } from "./helpers";
 import * as ref from "./ref";
 
 afterEach(() => vi.restoreAllMocks());
@@ -279,7 +280,8 @@ describe("sleep and wake", () => {
     // Its stop had all the time it needs, and the wake asks again.
     await env.DB.prepare("UPDATE cloud_machines SET updated_at = updated_at - ? WHERE id = ?").bind(STOP_SETTLE_MS, computer.id).run();
     await alarmAfter(computer.host, WAKE_RETRY_MS + 1_000);
-    expect((await dev.nextT("presence")).online).toBe(true);
+    // Waking while its stop took effect; then back.
+    expect((await dev.next((m) => m.t === "presence" && m.waking === null)).online).toBe(true);
     expect((await computer.hostWs.nextT("open")).dk).toBe(ref.b64url(computer.device.pub));
   });
 
@@ -300,6 +302,68 @@ describe("sleep and wake", () => {
     await vi.waitFor(() => expect(calls(fetch)).toContain("POST https://boat.dev/api/v1/sandboxes/bx_test/resume"));
     // A host process that survived the stop learns it was woken and reconnects.
     await vi.waitFor(async () => expect((await call("GET", "/v1/host/sleep", { key: host.sign })).body.state).toBe("starting"));
+  });
+
+  it("tells its devices it's waking until its host is back", async () => {
+    const { host, device, hostWs } = await cloudComputer();
+    hostWs.ws.close();
+    await sleep(100);
+    stoppedBoat();
+    const dev = await socket(devicePath(host), device);
+    expect(await dev.nextT("presence")).toMatchObject({ online: false, waking: null });
+    // Once the provider took the start, it's on its way rather than off.
+    const waking = await dev.nextT("presence");
+    expect(waking).toMatchObject({ online: false, waking: expect.any(Number) });
+    // A device that comes meanwhile hears it at once.
+    const second = await socket(devicePath(host), device);
+    expect((await second.nextT("presence")).waking).toBe(waking.waking);
+    await hostSocket(host, [{ dk: ref.b64url(device.pub), grant: null }]);
+    expect(await dev.nextT("presence")).toMatchObject({ online: true, waking: null });
+    // Booted: \`starting\` (which clients show as waking) is only ever on its way up.
+    expect((await call("GET", "/v1/host/sleep", { key: host.sign })).body.state).toBe("running");
+  });
+
+  it("shows a wake that ran past what one takes as offline", async () => {
+    const { host, device, hostWs } = await cloudComputer();
+    hostWs.ws.close();
+    await sleep(100);
+    stoppedBoat();
+    const dev = await socket(devicePath(host), device);
+    await dev.nextT("presence");
+    expect((await dev.nextT("presence")).waking).toEqual(expect.any(Number));
+    await runInDurableObject(relay(host), (_, state) => {
+      state.storage.sql.exec("UPDATE meta SET v = ? WHERE k = 'wakeStart'", String(Date.now() - WAKING_SHOWN_MS));
+    });
+    await runDurableObjectAlarm(relay(host));
+    expect(await dev.nextT("presence")).toMatchObject({ online: false, waking: null });
+    // Said once: the next alarm has nothing new to tell.
+    await runDurableObjectAlarm(relay(host));
+    await dev.none((m) => m.t === "presence");
+  });
+
+  it("shows a start the provider took after the last wake ran past what one takes as a wake of its own", () => {
+    const kept = new Map<string, string>();
+    const episode = new WakeEpisode({ get: (k) => kept.get(k) ?? null, set: (k, v) => void kept.set(k, v) });
+    const started: Wake = { result: "started", woken: { outcome: "started", machine: {} as CloudMachineRow } };
+    episode.tried(started, 1_000);
+    expect(episode.shown(1_000)).toBe(1_000);
+    // Its host never came back: past the cap it shows offline, and a try that started nothing keeps it so.
+    const later = 1_000 + WAKING_SHOWN_MS;
+    episode.tried({ result: "retry" }, later);
+    expect(episode.shown(later)).toBeNull();
+    episode.tried(started, later);
+    expect(episode.shown(later)).toBe(later);
+  });
+
+  it("never shows a computer it can't wake as waking", async () => {
+    const { host, device, hostWs } = await cloudComputer();
+    hostWs.ws.close();
+    await sleep(100);
+    // The owner's key was revoked: only they can fix it, so nothing starts and nothing retries.
+    boat("archived", { "/sandboxes/bx_test/resume": [401, { code: "unauthorized" }] });
+    const dev = await socket(devicePath(host), device);
+    expect(await dev.nextT("presence")).toMatchObject({ online: false, waking: null });
+    await dev.none((m) => m.t === "presence");
   });
 
   it("wakes it for an access request, which it has to answer", async () => {

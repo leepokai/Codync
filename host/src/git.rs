@@ -57,11 +57,25 @@ pub fn command(git: &Path, dir: &Path) -> tokio::process::Command {
 /// Runs `git <args>` in `dir` and gives what it printed, trimmed. An error when git isn't there, takes longer
 /// than `limit` (it is stopped) or fails, with what it said.
 pub async fn run(dir: &Path, args: &[&str], limit: Duration) -> Result<String> {
-    let git = program().await.ok_or_else(|| anyhow!("git isn't installed"))?;
-    let out = tokio::time::timeout(limit, command(&git, dir).args(args).output())
+    tokio::time::timeout(limit, output(dir, args, true))
         .await
         .map_err(|_| anyhow!("git {} took too long", args.first().copied().unwrap_or_default()))?
-        .context("starting git")?;
+}
+
+/// As [`run`], with no time limit, and never stopped, not even when the host stops: for git whose stop would leave
+/// its lock behind (`agent::versions`). What git printed is given as it is, untrimmed: a `-z` list's names may start
+/// or end with a space.
+pub async fn run_to_end(dir: &Path, args: &[&str]) -> Result<String> {
+    raw(dir, args, false).await
+}
+
+async fn output(dir: &Path, args: &[&str], stoppable: bool) -> Result<String> {
+    Ok(raw(dir, args, stoppable).await?.trim().to_owned())
+}
+
+async fn raw(dir: &Path, args: &[&str], stoppable: bool) -> Result<String> {
+    let git = program().await.ok_or_else(|| anyhow!("git isn't installed"))?;
+    let out = command(&git, dir).kill_on_drop(stoppable).args(args).output().await.context("starting git")?;
     if !out.status.success() {
         bail!(
             "git {} failed: {}",
@@ -69,5 +83,5 @@ pub async fn run(dir: &Path, args: &[&str], limit: Duration) -> Result<String> {
             String::from_utf8_lossy(&out.stderr).trim()
         );
     }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }

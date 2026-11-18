@@ -38,6 +38,7 @@ pub use worktree::{Worktree, enter as enter_worktree, in_repo};
 
 use crate::LockExt;
 use crate::agent::bot::Cmd;
+use crate::analytics::errors::host_error;
 use crate::analytics::{self, Event};
 use crate::hub::Hub;
 use crate::store::{BotConfig, Entry, Store, now_ms};
@@ -93,6 +94,8 @@ pub enum Outcome {
     Done(Option<String>),
     /// Why, in words for its bot.
     Failed(Failure, String),
+    /// The host couldn't give the item to its task, so no agent was ever asked; why, in words for its bot.
+    Undispatched(String),
     Stopped,
 }
 
@@ -101,9 +104,16 @@ impl Outcome {
     pub fn not_started(error: &anyhow::Error) -> Self {
         Self::Failed(Failure::Start, format!("{NOT_STARTED}{error:#}"))
     }
+
+    /// The host couldn't give the item to its task, for `error`: to the user, it could not start either.
+    fn not_dispatched(error: &anyhow::Error) -> Self {
+        Self::Undispatched(format!("{NOT_STARTED}{error:#}"))
+    }
 }
 
-/// What kept an item from finishing: `work_finished`'s `error`.
+/// What kept an item from finishing: `work_finished`'s `error`. Saved with its item, and a host from before a new
+/// one reads a box that names it as empty (`items::load`): what only `work_finished` tells apart stays out of
+/// here, as `dispatch` does ([`Outcome::Undispatched`]).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum Failure {
@@ -310,7 +320,7 @@ pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome) {
         Ok(Some(over)) => close(hub, bot, over, next),
         Ok(None) => next(hub),
         Err(error) => {
-            tracing::error!(task = %cfg.id, error = format!("{error:#}"), "couldn't save an item's end");
+            host_error!(hub, "couldn't save an item's end", task = %cfg.id, error = format!("{error:#}"));
             next(hub);
         }
     }
@@ -336,8 +346,9 @@ fn close(hub: &Arc<Hub>, bot: &str, (item, worktree): Over, then: impl FnOnce(&A
     };
     let owner = bot.to_owned();
     worktree::settle_then(hub, bot, &item.id.clone(), worktree, move |hub| {
+        let undispatched = item.undispatched;
         let item = items::load(&hub.store, &owner).into_iter().find(|i| i.id == item.id).unwrap_or(item);
-        ended(hub, &owner, &item);
+        ended(hub, &owner, &Item { undispatched, ..item });
         then(hub);
     });
 }
@@ -368,6 +379,11 @@ fn end(items: &mut [Item], task: &str, outcome: Outcome) -> Option<Item> {
             }
         }
         Outcome::Failed(failure, why) => (Status::Failed, Some(Err(why)), Some(failure)),
+        // To its bot, and in the box, a turn that never began; only `work_finished` tells the two apart.
+        Outcome::Undispatched(why) => {
+            item.undispatched = true;
+            (Status::Failed, Some(Err(why)), Some(Failure::Start))
+        }
         Outcome::Stopped => (Status::Stopped, None, None),
     };
     item.status = status;
@@ -385,15 +401,19 @@ fn end(items: &mut [Item], task: &str, outcome: Outcome) -> Option<Item> {
     Some(item.clone())
 }
 
-/// `work_finished` for `item`, which just ended.
-fn finished_properties(item: &Item) -> serde_json::Map<String, Value> {
+/// `work_finished` for `item`, which just ended. `agent`: the one its task was given, where a task took it (a turn
+/// that fell back names the agent it ran on in `turn_finished`).
+fn finished_properties(item: &Item, agent: Option<&str>) -> serde_json::Map<String, Value> {
     let mut properties = json!({
         "outcome": item.status, "start": item.start, "forkFailed": item.fork_failed,
         "minutes": (now_ms() - item.started_at.unwrap_or(item.created_at)) / 60_000,
         "source": item.source.kind(), "worktree": item.worktree.is_some(),
     });
+    if let Some(agent) = agent {
+        properties["agent"] = agent.into();
+    }
     if let Some(failure) = item.failure {
-        properties["error"] = json!(failure);
+        properties["error"] = if item.undispatched { "dispatch".into() } else { json!(failure) };
     }
     if item.worktree.as_ref().is_some_and(|w| w.left == worktree::Left::Kept) {
         properties["kept"] = true.into();
@@ -424,7 +444,9 @@ fn deliver(hub: &Hub, bot: &str, item: &Item) {
 
 /// `item` of `bot` ended: says so (`work_finished`), and its result goes where its source reads it.
 fn ended(hub: &Hub, bot: &str, item: &Item) {
-    analytics::capture(hub, Event::WorkFinished, finished_properties(item));
+    let task = item.task.as_deref().and_then(|task| hub.store.bot(task).ok().flatten());
+    let agent = task.as_ref().map(|task| task.config.backend.as_str());
+    analytics::capture(hub, Event::WorkFinished, finished_properties(item, agent));
     deliver(hub, bot, item);
 }
 
@@ -469,19 +491,20 @@ pub fn restore(hub: &Arc<Hub>) {
         if !lives(bot) {
             forget(hub, bot);
         } else if let Err(error) = pick_up(hub, bot) {
-            tracing::error!(bot, error = format!("{error:#}"), "couldn't pick up a bot's work");
+            host_error!(hub, "couldn't pick up a bot's work", bot, error = format!("{error:#}"));
         }
     }
     sources::settle_runs(hub);
+    worktree::tidy(hub);
 }
 
 /// `bot`'s box at host start: its tasks resume the turns the last process cut off, an item whose task can't ends,
 /// and the reports that never arrived are sent again.
 fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
-    let (resumed, failed, undelivered) = items::change(hub, bot, |items| {
+    let (resumed, failed, undelivered, recheck) = items::change(hub, bot, |items| {
         let now = now_ms();
         items.retain(|i| i.ended_at.is_none_or(|at| now - at <= KEEP_MS));
-        worktree::unsettled(items);
+        let recheck = worktree::recheck(items);
         // A request lived in the last process (its notices already say it was interrupted): it is never replayed.
         items.retain(|i| i.status.ended() || !matches!(i.source, Source::Request { .. }));
         // A task's actor resumes the turn the last process cut off; when it won't, nothing of the task runs.
@@ -496,8 +519,12 @@ fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
             .iter()
             .filter_map(|task| end_claimed(items, task, Outcome::Failed(Failure::Restart, CUT_OFF.into())))
             .collect();
-        Ok((resumed, failed, undelivered))
+        Ok((resumed, failed, undelivered, recheck))
     })?;
+    for (item, kept) in recheck {
+        let owner = bot.to_owned();
+        worktree::settle_then(hub, bot, &item, kept, move |hub| dispatch(hub, &owner));
+    }
     for task in resumed {
         if let Ok(Some(row)) = hub.store.bot(&task) {
             sources::resumed(hub, &row.config);
@@ -558,6 +585,25 @@ mod tests {
         assert!(stopped.status == Status::Stopped && stopped.report.is_none(), "the user knows");
         assert!(end(&mut items, "t3", Outcome::Stopped).is_none(), "its task has no item any more");
         assert_eq!(json!(Failure::EndedEarly), "ended_early");
+    }
+
+    #[test]
+    fn work_finished_names_the_agent_and_what_the_host_could_not_hand_over() {
+        let mut items = [working("a", "t1"), working("b", "t2")];
+        let error = anyhow!("no such chat");
+        let lost = end(&mut items, "t1", Outcome::not_dispatched(&error)).expect("ended");
+        assert_eq!(lost.result.as_deref(), Some("it could not start: no such chat"), "to its bot, it could not start");
+        assert_eq!(lost.failure, Some(Failure::Start), "as its item says, for its routine or request");
+        let saved = serde_json::to_string(&items).expect("a box");
+        assert!(!saved.contains("dispatch"), "a host from before `dispatch` still reads the box: {saved}");
+        let told = finished_properties(&lost, Some("claude"));
+        assert_eq!(
+            (&told["outcome"], &told["error"], &told["agent"]),
+            (&json!("failed"), &json!("dispatch"), &json!("claude"))
+        );
+        let never = end(&mut items, "t2", Outcome::not_started(&error)).expect("ended");
+        let told = finished_properties(&never, None);
+        assert_eq!((told["error"].as_str(), told.get("agent")), (Some("start"), None), "no task, no agent");
     }
 
     #[test]

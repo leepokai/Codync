@@ -48,6 +48,7 @@ export function statusText(store: BotStore) {
     case 'connecting':
       return 'Connecting…'
     case 'computerOffline':
+      if (store.isWaking) return 'Waking the computer…'
       return c.lastSeen ? `Offline · seen ${relativeDay(new Date(c.lastSeen))}` : 'Offline'
     case 'offline':
       return "Can't reach"

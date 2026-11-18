@@ -50,7 +50,7 @@ export function SkillSheet({ skill }: { skill: SkillRef }) {
   }
 
   const trailing = added ? (
-    <span title="Added" aria-label="Added" className="skill-added">
+    <span title={tr('Added')} aria-label={tr('Added')} className="skill-added">
       <Icon name="checkmark" size={13} weight="semibold" />
     </span>
   ) : adding ? <Spinner /> : <IconButton title="Add" icon="plus" onClick={() => void add()} />

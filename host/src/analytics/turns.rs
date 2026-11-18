@@ -32,17 +32,23 @@ pub enum TurnSource {
     FollowUp,
 }
 
-/// `turn_finished`: the bot's agent, how the turn ended, why it failed, how long it ran and the ceiling a network
-/// rule held it to; never its text or the error's.
-pub fn turn_finished(
-    hub: &Hub,
-    bot: &BotConfig,
-    outcome: TurnOutcome,
-    stop_reason: &str,
-    failure: Option<&anyhow::Error>,
-    source: TurnSource,
-    ms: i64,
-) {
+/// A turn that ended, as its actor knows it (`turn_finished`).
+#[derive(Clone, Copy)]
+pub struct TurnEnd<'a> {
+    pub outcome: TurnOutcome,
+    pub stop_reason: &'a str,
+    pub failure: Option<&'a anyhow::Error>,
+    pub source: TurnSource,
+    /// Where the item a task works came from (`chat::tasks::Source::kind`), as the turn began: the item may have
+    /// ended since (a Stop, a run past its limit). Told only of a task's turn.
+    pub work: &'static str,
+    pub ms: i64,
+}
+
+/// `turn_finished`: the bot's agent, how the turn ended, why it failed, how long it ran, the ceiling a network
+/// rule held it to and, for a task's turn, where its item came from; never its text or the error's.
+pub fn turn_finished(hub: &Hub, bot: &BotConfig, turn: TurnEnd<'_>) {
+    let TurnEnd { outcome, stop_reason, failure, source, work, ms } = turn;
     let failure = failure.map(failure_kind);
     let outcome = outcome_name(outcome, failure.map(|(kind, _)| kind));
     // ACP's stop reasons plus ours; anything else an adapter invents is just `other`.
@@ -64,6 +70,10 @@ pub fn turn_finished(
     let access = hub.ceilings.access(&bot.id);
     if access.is_ceiling() {
         p["ceiling"] = access.word().into();
+    }
+    // A task's turn: where the item it works came from, so the work a bot gave away is told from its chat.
+    if bot.is_task() {
+        p["work"] = work.into();
     }
     if let Some((kind, rpc)) = failure {
         p["error"] = kind.into();
@@ -272,6 +282,33 @@ mod tests {
         let limited = rpc_error(-32603, "x", Some("rate_limit"));
         assert_eq!(failure_kind(&limited).1.and_then(|r| r.kind.as_deref()), Some("rate_limit"));
         assert_eq!(code(&anyhow::anyhow!("something else")), ("other", None));
+    }
+
+    #[test]
+    fn a_tasks_turn_says_where_its_item_came_from() {
+        use crate::LockExt as _;
+        use crate::chat::calls::context::tests::{bot, hub};
+        let hub = hub();
+        let own = bot("b1", "Ada", "/tmp");
+        let task = BotConfig { id: "task-1".into(), task_of: Some("b1".into()), ..own.clone() };
+        // Its box holds no item at work any more: a run the user stopped has ended by the time its turn does.
+        let turn = TurnEnd {
+            outcome: TurnOutcome::Stopped,
+            stop_reason: "cancelled",
+            failure: None,
+            source: TurnSource::Routine,
+            work: "routine",
+            ms: 0,
+        };
+        for cfg in [&own, &task] {
+            turn_finished(&hub, cfg, turn);
+        }
+        let mut rx = hub.analytics.rx.locked().take().expect("nothing read it yet");
+        let mut work = Vec::new();
+        while let Ok(super::super::Msg::Event(event)) = rx.try_recv() {
+            work.push(event["properties"]["work"].clone());
+        }
+        assert_eq!(work, [Value::Null, json!("routine")], "the bot's own turn in its chat has none");
     }
 
     #[test]

@@ -2,6 +2,7 @@ package com.codync.android.core
 
 import java.io.IOException
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
@@ -46,6 +47,17 @@ class MailboxTest {
             val queued = channel.queued()
             assertTrue(queued.getValue("items").jsonArray.isEmpty())
             assertEquals("delivering", channel.cancelQueued(send.nonce))
+        } finally { channel.close() }
+    }
+    @Test fun `the relay waking the computer leaves it offline but on its way`(): Unit = runBlocking {
+        val relay = Relay()
+        val channel = connect(relay)
+        try {
+            assertEquals(LinkState.ComputerOffline(null), channel.state.value)
+            relay.incoming.send("""{"t":"presence","online":false,"lastSeenAt":5,"waking":9}""")
+            withTimeout(3_000) { channel.state.first { it == LinkState.ComputerOffline(5, waking = true) } }
+            relay.incoming.send("""{"t":"presence","online":false,"lastSeenAt":5,"waking":null}""")
+            withTimeout(3_000) { channel.state.first { it == LinkState.ComputerOffline(5) } }
         } finally { channel.close() }
     }
     @Test fun `relay rejections remain explicit for host online races and limits`() = runBlocking {

@@ -49,6 +49,10 @@ pub enum Event {
     HandoffCarried,
     /// A bot's agent stopped to give back what it held (`agent::bot::lifecycle`).
     AgentRetired,
+    /// A bot's own folder became a git repository that keeps its versions (`agent::versions`).
+    OwnFolderVersioned,
+    /// Saving a version of a bot's own folder failed (`stage`).
+    OwnFolderSaveFailed,
     /// Codync started summarizing a bot's chat (`agent::bot::compaction`).
     ContextCompacted,
     UsageReadFailed,
@@ -81,6 +85,8 @@ pub enum Event {
     WorkFinished,
     /// An item was moved, cut in, replaced, stopped, dropped or tried again (`how`), by the bot or the user (`by`).
     WorkSteered,
+    /// At host start, worktrees no item knew any more went, their work merged (`removed`).
+    WorktreesTidied,
     /// An item's turn couldn't go on until the user signs in to its agent, so it waits for them (`agent`, `source`).
     WorkNeedsSignIn,
     /// The user wrote to an item's thread (`chat::tasks::thread`): whether it reopened the item, and whether it waits.
@@ -147,8 +153,8 @@ pub enum Event {
     CloudKeyRemoved,
     /// The user deleted a Codync Cloud computer's snapshots (desktop; phones send their own).
     CloudSnapshotsDeleted,
-    /// The Ko-fi invitation under the first reply (desktop and terminal UI only) was shown; on the desktop, then opened
-    /// or dismissed.
+    /// A Ko-fi invitation (desktop and terminal UI only; at 3, 30 and 90 active days) was shown; on the desktop, then
+    /// opened or dismissed.
     KofiInviteShown,
     KofiInviteAnswered,
     /// An important release's highlights were on screen (docs/features/whats-new.md; desktop and terminal UI here,
@@ -212,6 +218,8 @@ impl Event {
             Self::AgentFellBack => "agent_fell_back",
             Self::HandoffCarried => "handoff_carried",
             Self::AgentRetired => "agent_retired",
+            Self::OwnFolderVersioned => "own_folder_versioned",
+            Self::OwnFolderSaveFailed => "own_folder_save_failed",
             Self::ContextCompacted => "context_compacted",
             Self::UsageReadFailed => "usage_read_failed",
             Self::SessionReset => "session_reset",
@@ -234,6 +242,7 @@ impl Event {
             Self::WorkAdded => "work_added",
             Self::WorkFinished => "work_finished",
             Self::WorkSteered => "work_steered",
+            Self::WorktreesTidied => "worktrees_tidied",
             Self::WorkNeedsSignIn => "work_needs_sign_in",
             Self::WorkMessaged => "work_messaged",
             Self::DevServerStarted => "dev_server_started",

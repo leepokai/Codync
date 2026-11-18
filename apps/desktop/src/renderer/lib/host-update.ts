@@ -1,4 +1,5 @@
 import { isBelow, type VersionMismatch } from '../../shared/compat.ts'
+import { fill } from '../../shared/fill.ts'
 import { trNow } from './l10n.ts'
 
 /** An update this app asked of a computer that's behind it (`installHostUpdate`). */
@@ -25,36 +26,32 @@ export const updateNeededText = {
   /** `cloud`: a Codync Cloud computer, which the cloud updates by itself. */
   title(m: VersionMismatch, host: string, cloud = false) {
     if (m.kind === 'updateApp') return trNow('Update this app')
-    return cloud ? trNow('Your cloud computer is updating…') : trNow('Update Codync on {host}').replaceAll('{host}', () => host)
+    return cloud ? trNow('Your cloud computer is updating…') : fill(trNow('Update Codync on {host}'), { host })
   },
   detail(m: VersionMismatch, host: string, os: string | null | undefined, instructions = true, cloud = false) {
     if (m.kind === 'updateApp') {
-      return trNow('The app on this computer needs to be {minimum} or newer ({host} requires it).')
-        .replaceAll('{host}', () => host)
-        .replaceAll('{minimum}', () => m.minimum)
+      return fill(trNow('The app on this computer needs to be {minimum} or newer ({host} requires it).'), { host, minimum: m.minimum })
     }
-    if (cloud) return trNow('Your cloud computer is updating to Codync {minimum} or newer; this app reconnects when it is done.')
-      .replaceAll('{minimum}', () => m.minimum)
-    const needs = trNow('Codync on {host} is {version}; that computer needs Codync {minimum} or newer.')
-      .replaceAll('{host}', () => host)
-      .replaceAll('{version}', () => m.version)
-      .replaceAll('{minimum}', () => m.minimum)
+    if (cloud) return fill(trNow('Your cloud computer is updating to Codync {minimum} or newer; this app reconnects when it is done.'), { minimum: m.minimum })
+    const needs = fill(trNow('Codync on {host} is {version}; that computer needs Codync {minimum} or newer.'), { host, version: m.version, minimum: m.minimum })
     return instructions ? `${needs} ${updateNeededText.how(os)}` : needs
   },
   /** How to update Codync on a computer this app can't update; `cloud`: a Codync Cloud computer, which updates by itself. */
   how(os: string | null | undefined, cloud = false) {
-    return cloud ? 'Codync Cloud updates it before it next sleeps.'
-      : os === 'macos' ? 'Open Codync on that Mac and choose Check for Updates.'
-      : os === 'linux' ? 'Run codync-host update there.'
-      : 'Update Codync on that computer.'
+    return cloud ? trNow('Codync Cloud updates it before it next sleeps.')
+      : os === 'macos' ? trNow('Open Codync on that Mac and choose Check for Updates.')
+      : os === 'linux' ? trNow('Run codync-host update there.')
+      : trNow('Update Codync on that computer.')
   },
   /** A computer updating at this app's request. */
   updating(host: string) {
-    return trNow('Updating Codync on {host}. This takes a few minutes.').replaceAll('{host}', () => host)
+    return fill(trNow('Updating Codync on {host}. This takes a few minutes.'), { host })
   },
   /** Why the last update asked of the computer didn't take. */
   notUpdated(last: HostUpdate, host: string) {
-    return last.kind === 'failed' ? last.message : `${host} didn't finish updating. Try again, or update Codync on that computer.`
+    return last.kind === 'failed'
+      ? last.message
+      : fill(trNow("{name} didn't finish updating. Try again, or update Codync on that computer."), { name: host })
   },
 }
 
@@ -78,7 +75,7 @@ export function hostVersionLine(version: string, latest: string | null | undefin
   if (offer.kind === 'updating') return line([updateNeededText.updating(host)], false, { kind: 'updating' })
   const minimum = mismatch?.kind === 'updateHost' ? mismatch.minimum : null
   const available = latest && isBelow(version, latest) ? latest : null
-  const due = minimum ? trNow('{host} needs Codync {version} or newer.').replaceAll('{host}', () => host).replaceAll('{version}', () => minimum) : available ? trNow('Version {version} is available.').replaceAll('{version}', () => available) : null
+  const due = minimum ? fill(trNow('{host} needs Codync {version} or newer.'), { host, version: minimum }) : available ? fill(trNow('Version {version} is available.'), { version: available }) : null
   if (!due) return line(latest ? [trNow('Up to date')] : [])
   if (offer.kind === 'unavailable') return line([due, updateNeededText.how(os, cloud)], minimum !== null)
   if (offer.last) return line([updateNeededText.notUpdated(offer.last, host)], true, { kind: 'button', title: trNow('Try again') })

@@ -40,7 +40,8 @@ enum class HostRoute { Direct, Relay }
 sealed interface LinkState {
     data object Connecting : LinkState
     data class Ready(val route: HostRoute) : LinkState
-    data class ComputerOffline(val lastSeenAt: Long?) : LinkState
+    /** The relay says the computer isn't connected; [waking]: the relay is starting it (a cloud computer asleep). */
+    data class ComputerOffline(val lastSeenAt: Long?, val waking: Boolean = false) : LinkState
     data class Failed(val message: String, val status: Int? = null) : LinkState
 }
 
@@ -141,7 +142,8 @@ class EncryptedChannel internal constructor(
                 handshakeDeadline?.cancel()
                 writer.withLock { handshake = null; sealer = null; opener = null }
                 dropPending(IOException("The computer is offline."))
-                mutableState.value = LinkState.ComputerOffline(wire["lastSeenAt"]?.jsonPrimitive?.longOrNull)
+                mutableState.value = LinkState.ComputerOffline(wire["lastSeenAt"]?.jsonPrimitive?.longOrNull,
+                    waking = wire["waking"]?.jsonPrimitive?.longOrNull != null)
                 firstState.complete(Unit)
             }
             "welcome" -> {

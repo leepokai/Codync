@@ -169,12 +169,12 @@ private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft
             ValueRow("Workspace", detail = if (draft.cwd.isEmpty()) "This bot has its own space for files. It can work in other folders when you ask."
                 else "This project is the default starting folder. The bot can work elsewhere when you ask.") {
                 DropdownMenu({ listOf(
-                    MenuItem("Personal workspace", selected = draft.cwd.isEmpty()) { change(draft.copy(cwd = "")) },
+                    MenuItem("Own folder", selected = draft.cwd.isEmpty()) { change(draft.copy(cwd = "")) },
                     MenuItem("Choose project folder…", selected = draft.cwd.isNotEmpty(), action = chooseFolder),
                 ) }, label = "Workspace") {
                     Row(Modifier.outline().pill(androidx.compose.ui.graphics.Color.Transparent), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(if (draft.cwd.isEmpty()) tr("Personal") else draft.cwd.trimEnd('/').substringAfterLast('/').ifEmpty { "/" },
+                        Text(if (draft.cwd.isEmpty()) tr("Own folder") else draft.cwd.trimEnd('/').substringAfterLast('/').ifEmpty { "/" },
                             style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Symbol("chevron.down", size = 13.dp, tint = Palette.secondary)
                     }
@@ -186,12 +186,13 @@ private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft
     }
     // Only from a host that has the box (its bots say).
     draft.maxAgents?.let { count ->
-        row { ValueRow("Agents at once") { Stepper(count, 1..MAX_AGENTS, { change(draft.copy(maxAgents = it)) }) } }
+        row { ValueRow("Threads at once") { Stepper(count, 1..MAX_AGENTS, { change(draft.copy(maxAgents = it)) }) } }
     }
-    // Only where it matters (the bot's folder is in a git repository) and the host has it.
-    draft.taskWorktrees?.takeIf { state.bots.firstOrNull { it.id == draft.id }?.gitRepo == true }?.let { on ->
+    // Only where it matters (a project folder in a git repository: a bot's own folder keeps all its work in one
+    // place) and the host has it.
+    draft.taskWorktrees?.takeIf { state.bots.firstOrNull { it.id == draft.id }?.let { it.gitRepo && !it.managedWorkspace } == true }?.let { on ->
         row {
-            SwitchRow("Worktree per agent", "Agents that work at once in this repository each get their own branch.", on,
+            SwitchRow("Worktree per thread", "Threads that work at once in this repository each get their own branch.", on,
                 { change(draft.copy(taskWorktrees = it)) })
         }
     }

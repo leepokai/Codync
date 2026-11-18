@@ -104,6 +104,19 @@ fn faces(hub: &Hub, bot: &BotConfig, from: Option<&str>) -> Vec<Value> {
         .collect()
 }
 
+/// What an alert seals for the phone: its text, the faces to draw and the unread total for the app icon.
+fn sealed_alert(hub: &Hub, bot: &BotConfig, from: Option<&str>, title: &str, subtitle: &str, body: &str) -> Value {
+    let mut secret = json!({"title": crate::agent::acp::truncate(title, 80), "subtitle": subtitle,
+        "body": crate::agent::acp::truncate(body, 400)});
+    if let Some(from) = from.filter(|f| *f != bot.id) {
+        secret["from"] = from.into();
+    }
+    secret["faces"] = faces(hub, bot, from).into();
+    // The phone adds its other computers' counts and badges the app icon with the sum.
+    secret["unread"] = hub.store.total_unread().into();
+    secret
+}
+
 /// `bot` is the chat the alert opens; `from` is the member bot speaking when that chat is a group.
 pub fn notify(hub: &Hub, bot: &BotConfig, from: Option<&str>, title: &str, body: &str, kind: AlertKind) {
     purge_dead_tickets(hub);
@@ -125,13 +138,7 @@ pub fn notify(hub: &Hub, bot: &BotConfig, from: Option<&str>, title: &str, body:
         AlertKind::NeedsInput => "Response needed",
         AlertKind::Failed => "Task failed",
     };
-    let mut secret = json!({"title": crate::agent::acp::truncate(title, 80), "subtitle": subtitle,
-        "body": crate::agent::acp::truncate(body, 400)});
-    if let Some(from) = from.filter(|f| *f != bot.id) {
-        secret["from"] = from.into();
-    }
-    secret["faces"] = faces(hub, bot, from).into();
-    let secret = secret.to_string();
+    let secret = sealed_alert(hub, bot, from, title, subtitle, body).to_string();
     let computer_id = hub.identity.computer_id();
     let mut notifications = Vec::new();
     for t in hub.store.push_tickets() {
@@ -185,6 +192,22 @@ fn activity_payload(rt: &Runtime) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chat::calls::context::tests::{bot, hub};
+    use crate::store::{EntryKind, Lane};
+
+    #[test]
+    fn an_alert_seals_the_computers_unread_total() {
+        let hub = hub();
+        let bot = bot("b1", "Bot", "/tmp");
+        hub.store.save_bot(&bot).unwrap();
+        hub.store
+            .insert_entry(&Lane::main("b1"), EntryKind::Agent, 1, &json!({"text": "done", "final": true}))
+            .unwrap();
+        let secret = sealed_alert(&hub, &bot, None, "Bot", "Task complete", "done");
+        assert_eq!(secret["unread"], 1);
+        assert_eq!(secret["title"], "Bot");
+        assert_eq!(secret["faces"][0]["id"], "b1");
+    }
 
     #[test]
     fn activity_failure_ends_with_error_and_never_includes_task_text() {

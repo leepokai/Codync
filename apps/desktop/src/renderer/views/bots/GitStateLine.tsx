@@ -5,7 +5,7 @@ import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { openLink } from '../../store/analytics'
 
-/** The manual's page on what agents working at once do with and without git, and how to install it. */
+/** The manual's page on what threads working at once do with and without git, and how to install it. */
 const WORKING_FOLDERS = 'https://codync.dev/docs/working-folders'
 
 const LINE: Record<GitState, string> = {

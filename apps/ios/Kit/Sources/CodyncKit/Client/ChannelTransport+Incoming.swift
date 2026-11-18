@@ -16,6 +16,8 @@ extension ChannelTransport {
         var d: String?
         var online: Bool?
         var lastSeenAt: Int64?
+        /// When the relay began waking the computer (ms); absent while it isn't.
+        var waking: Int64?
         var nonce: String?
         var state: String?
         var items: [QueuedItem]?
@@ -49,7 +51,7 @@ extension ChannelTransport {
             link?.handshake = nil
             link?.sealer = nil
             link?.opener = nil
-            setState(.hostOffline(lastSeen: lastSeen))
+            setState(.hostOffline(lastSeen: lastSeen, waking: wire.waking != nil))
         case "welcome":
             guard let hs = link?.handshake, let route = link?.route,
                   let ek = wire.ek.flatMap(Data.init(base64URL:)), let sig = wire.sig.flatMap(Data.init(base64URL:)) else {

@@ -18,7 +18,7 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     /// The login profile it runs on; nil for the login the computer already has.
     public var loginProfile: String?
     public var cwd: String
-    /// Host-allocated personal workspace rather than a user-selected project.
+    /// The bot's own folder, which the host made and keeps versions of, rather than a project the user chose.
     public var managedWorkspace: Bool = false
     /// `ask` or `auto`: whether Codync asks about what the agent asks, or approves it.
     public var permission: String
@@ -126,7 +126,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var needsInput: Bool { status == "needsInput" }
     /// Its band in the list: pinned bots, then the rest. Dragging stays inside a band.
     public var band: Int { pinned ? 0 : 1 }
-    public var folderName: String { managedWorkspace ? "Personal workspace" : (cwd as NSString).lastPathComponent }
+    /// Where it works, as a list shows it: its own folder, or its project folder's name.
+    public var folderName: String { managedWorkspace ? L10n.tr("Own folder") : (cwd as NSString).lastPathComponent }
 }
 
 extension Bot {

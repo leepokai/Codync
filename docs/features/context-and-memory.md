@@ -36,7 +36,8 @@ its own context and compacts it itself.
   twice. A task that starts from a new session gets a fresh snapshot like any session.
 - **Compaction epoch:** Codync advertises `clientCapabilities.session.compaction`. Each completed
   `compaction_update` (deduplicated by `compactionId`) increments `context.epoch.<bot>`; for an agent that has
-  never sent one, so does its `usage_update.used` falling below half of a previous value of at least 20k. The
+  never sent one, so does its `usage_update.used` falling below half of a previous value of at least 20k (a
+  stream's start reports zero use before the model has answered, which is not a reading, issue #496). The
   next turn re-renders the snapshot, and Claude's session is loaded again with the new system prompt. The adapter
   rebuilds its query and resumes the same conversation.
 - **Profile edits mid-session** (name, description, skills, the lead role) are sent once as an `<agent_profile_update>` block
@@ -150,21 +151,20 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   own memory. They fetch with `memory` and `memoryFile`, and fetch again when the bot's `memoryRev` moves. The
   apps' edit methods of 2.18 to 2.20 are gone, so the host's `minApp` is 2.21.0
   ([floor history](../reference/compatibility.md#floor-history)).
-- **Moving the old memory**, once, on the first start of a host that has it:
-  - the memory entries of 2.18 to 2.20 (`codync_mem::legacy`): each layer's active entries go into its `MEMORY.md`
-    as far as the cap allows (pinned first, then the newest), each with who wrote it and its source message; the
-    rest, the archived ones and any too long for one line go into a note, `earlier.md`. Entries a newer one
-    replaced, and facts the checks refuse (secrets, planted instructions, hidden characters), stay out. Old dream
-    runs keep their lines. Then the entries' tables go.
-  - each bot's Engram database (or the Markdown memory before it), the same way. Then the old files (deleted bots'
-    too) and the Engram download go, and dreaming starts from that point in the chat.
+- **Moving the old memory**, once, on the first start of a host that has it: the memory entries of 2.18 to 2.20
+  (`codync_mem::legacy`). Each layer's active entries go into its `MEMORY.md` as far as the cap allows (pinned
+  first, then the newest), each with who wrote it and its source message; the rest, the archived ones and any too
+  long for one line go into a note, `earlier.md`. Entries a newer one replaced, and facts the checks refuse
+  (secrets, planted instructions, hidden characters), stay out. Old dream runs keep their lines. Then the entries'
+  tables go. The Engram and Markdown memory from before 2.18 no longer moves (its files stay on disk); a host
+  coming from before 2.18 only drops the old keeper's store keys and re-renders each bot's instructions.
 
 ## Compaction and rollover (`host/src/agent/bot/compaction.rs`, rules in `codync_mem::compaction`)
 
 - **What the host records**, per session in `kv` (`compaction.<bot>.<session>`): context use and window size
-  from `usage_update`, compactions, and when turns end. How long the provider keeps prompts cached is learned
-  from turns that came after a pause (`cache.life.<bot>`); until then it is an hour for Claude on a subscription
-  and five minutes otherwise. Each turn's cached read and write tokens are logged (`turn usage`).
+  from `usage_update` (a zero is skipped), compactions, and when turns end. How long the provider keeps prompts
+  cached is learned from turns that came after a pause (`cache.life.<bot>`); until then it is an hour for Claude
+  on a subscription and five minutes otherwise. Each turn's cached read and write tokens are logged (`turn usage`).
 - **Compacting ahead of time**, when the user's threshold asks for it (Early's rules here), in the bot's own chat
   only (never rooms, routines or bot requests):
   - at the end of a turn past three quarters of the window or 200k tokens, whichever is less;

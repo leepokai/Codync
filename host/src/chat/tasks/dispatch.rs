@@ -5,6 +5,7 @@ use super::sources::{self, Begin};
 use super::worktree::{self, Place, Worktree};
 use super::{Outcome, finished, of, prompts};
 use crate::LockExt;
+use crate::analytics::errors::host_error;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, TASK_PREFIX, now_ms};
 use anyhow::Result;
@@ -186,7 +187,7 @@ pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
     let plan = match items::change(hub, bot, |items| plan(hub, &cfg, items, over)) {
         Ok(plan) => plan,
         Err(error) => {
-            tracing::error!(bot, error = format!("{error:#}"), "couldn't look over a bot's work");
+            host_error!(hub, "couldn't look over a bot's work", bot, error = format!("{error:#}"));
             // The hourly look tries again.
             super::sweep::arm(hub, bot);
             return;
@@ -199,7 +200,7 @@ pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
         if let Ok(Some(row)) = hub.store.bot(&task) {
             begin(hub, bot, &row.config, &item, false);
         } else {
-            tracing::error!(task, "a task that took more work is gone");
+            host_error!(hub, "a task that took more work is gone", task);
         }
     }
     for task in plan.end {
@@ -275,7 +276,12 @@ fn plan(hub: &Hub, cfg: &BotConfig, items: &mut Vec<Item>, over: Option<&str>) -
             item.fork_failed = false;
             // One it has from before (it gave way, or is tried again) is where its work is.
             item.worktree.take_if(|w| !worktree::usable(w));
-            let beside = cfg.task_worktrees && item.source.is_bot() && side_by_side && worktree::in_repo(&cfg.cwd);
+            // A bot's own folder keeps all its work in one place, with its versions (`agent::versions`).
+            let beside = cfg.task_worktrees
+                && !crate::agent::workspace::is_managed(cfg)
+                && item.source.is_bot()
+                && side_by_side
+                && worktree::in_repo(&cfg.cwd);
             item.place = if item.worktree.is_some() || beside { Place::Worktree } else { Place::Folder };
             // A routine's run starts as it did in the chat: a new session that knows only its own prompt.
             // ponytail: a task in a worktree starts from a brief, not a fork: a fork is taken in another folder
@@ -321,8 +327,8 @@ fn begin(hub: &Arc<Hub>, bot: &str, task: &BotConfig, item: &Item, first: bool) 
         crate::chat::messages::post(hub, task, json!({"text": text, "from": "host"}))
     };
     if let Err(error) = posted {
-        tracing::error!(task = %task.id, error = format!("{error:#}"), "couldn't hand work to a task");
-        finished(hub, task, Outcome::not_started(&error));
+        host_error!(hub, "couldn't hand work to a task", task = %task.id, error = format!("{error:#}"));
+        finished(hub, task, Outcome::not_dispatched(&error));
     }
 }
 

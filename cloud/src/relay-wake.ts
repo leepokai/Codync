@@ -60,16 +60,24 @@ export const reportWoken = (env: Env, woke: NonNullable<Wake["woken"]>, cause: W
 /** When the episode's first wake was tried (ms), and how many starts it asked of the provider since. */
 const START = "wakeStart";
 const STARTS = "wakeStarts";
+/** The episode's start its devices were last told (`presence.waking`), empty for none. */
+const SHOWN = "wakingShown";
+
+/** How long devices see a wake as one (`presence.waking`): most take 10 to 30 s; one still going after this has
+ * gone wrong, and its computer shows offline. */
+export const WAKING_SHOWN_MS = 5 * 60_000;
 
 /** A wake from its first try until the host is ready again, reported then as `cloud_computer_awake`: how long it took
  * and how many starts it asked of the provider. */
 export class WakeEpisode {
   constructor(private readonly meta: Meta) {}
 
-  /** A wake tried at `now` while the host is away: the first starts the episode. One that can't wake the computer ends
-   * it: nothing retries, and a computer that isn't a cloud computer never has one. */
+  /** A wake tried at `now` while the host is away: the first starts the episode, and so does a start the provider took
+   * once devices no longer see the last one (its host never came back). One that can't wake the computer ends it:
+   * nothing retries, and a computer that isn't a cloud computer never has one. */
   tried(w: Wake, now: number): void {
     if (w.result === "none") return this.end();
+    if (w.woken && w.result === "started" && this.shown(now) === null) this.end();
     if (!this.meta.get(START)) this.meta.set(START, String(now));
     if (w.woken) this.meta.set(STARTS, String(this.starts() + 1));
   }
@@ -87,6 +95,22 @@ export class WakeEpisode {
     } catch (e) {
       console.error(JSON.stringify({ msg: "cloud computer awake report failed", error: String(e) }));
     }
+  }
+
+  /** When this episode began (ms), while devices see it as a wake (`WAKING_SHOWN_MS`); null without one. */
+  shown(now: number): number | null {
+    const start = Number(this.meta.get(START) || 0);
+    return start && now - start < WAKING_SHOWN_MS ? start : null;
+  }
+
+  /** Devices were told `waking` (`presence.waking`). */
+  told(waking: number | null): void {
+    this.meta.set(SHOWN, String(waking ?? ""));
+  }
+
+  /** What devices see changed since they were last told: a wake began, or ended without its host. */
+  news(now: number): boolean {
+    return (this.meta.get(SHOWN) ?? "") !== String(this.shown(now) ?? "");
   }
 
   private starts(): number {

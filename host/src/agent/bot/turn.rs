@@ -3,7 +3,7 @@
 use super::sign_in::Held;
 use super::{Actor, Conn, Done, HostTurn, Instructions, NoticeStyle, Queued, Reacted, Seg};
 use crate::agent::acp::{self, Incoming};
-use crate::analytics::{self, TurnOutcome, TurnSource};
+use crate::analytics::{self, TurnEnd, TurnOutcome, TurnSource};
 use crate::chat::context::{self, Snapshot};
 use crate::chat::memory;
 use crate::chat::tasks::{self, Failure, Outcome, Source};
@@ -289,6 +289,8 @@ impl Actor {
             self.hub.routines.mark_started(&self.hub.store, id)?;
             self.set_inflight(true);
         }
+        // The bot's own folder is saved as it is, so what this turn changes there is a version of its own.
+        self.versions.before(&self.hub, &self.cfg, text).await;
         // From here what changes in its memory folders is the bot's, however it changed them: a task's too, as
         // its own turn's, in its own session. A task only adds to memory, also in a turn the user's message to its
         // thread started: what the user wants forgotten, the bot does in the chat.
@@ -360,6 +362,7 @@ impl Actor {
             return;
         }
         self.after_turn(done);
+        self.versions.after(&self.hub);
         // The bot's own edits to its memory files, checked and shown in the chat it made them from.
         memory::turns::scan_after_turn(self.hub.clone(), &self.cfg);
         if let (Some(conn), Some(sid)) = (self.conn.as_mut(), &self.turn_session)
@@ -388,8 +391,11 @@ impl Actor {
         {
             let text = e.data["text"].as_str().map(str::to_owned);
             // A pass stays in the trace: neither a room nor the user sees it (a bot request's reply goes back as it
-            // is, from a task too).
-            if self.in_request() || !text.as_deref().is_none_or(crate::chat::group::is_pass) {
+            // is, from a task too). A routine's pass may follow a line of text — in its chat or in the box — and the
+            // run still says nothing.
+            let pass: fn(&str) -> bool =
+                if self.in_routine() { crate::chat::group::ends_in_pass } else { crate::chat::group::is_pass };
+            if self.in_request() || !text.as_deref().is_none_or(pass) {
                 // A bot request's answer belongs to the bot that sent it and the exchange notice.
                 if !delegated {
                     e.data["final"] = true.into();
@@ -585,7 +591,8 @@ impl Actor {
         };
         let started = self.hub.runtime(&self.id()).started_at.unwrap_or_else(now_ms);
         let ms = now_ms() - started;
-        analytics::turn_finished(&self.hub, &self.cfg, outcome, stop_reason, failure, self.source(), ms);
+        let (source, work) = (self.source(), self.task_source.kind());
+        analytics::turn_finished(&self.hub, &self.cfg, TurnEnd { outcome, stop_reason, failure, source, work, ms });
     }
 
     /// The turn is a routine's run: in the chat, or a task's whose item is one.

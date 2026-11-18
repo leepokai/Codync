@@ -66,10 +66,10 @@ For one more look at something in a conversation you're already having ("check t
 
 ## Where results appear
 
-A run posts in the bot's chat: a line with the routine's name, such as "Routine · Morning summary", then the bot's reply, which is the result. The run's steps are in its item's details (the bot's **Details**, under **Threads** while it runs and **Recent** after). Tap the routine line to open the routine.
+A run posts in the bot's chat: a line with the routine's name, such as "Routine · Morning summary", then the bot's reply, which is the result. The run's steps are in its thread (the bot's **Details**, under **Threads** while it runs and **Recent** after). Tap the routine line to open the routine.
 
 - A successful run sends you a notification with its reply.
-- If there's nothing to report and the instruction allows silence, the run finishes without a message.
+- If there's nothing to report and the instruction allows silence, the run finishes without a message: a reply that is `(pass)`, or whose last line ends with `(pass)` right after a finished sentence ("Nothing new. (pass)"), is not posted. Anything the bot wrote before it stays in the run's steps.
 - A run that fails leaves a "Routine could not finish" line and notifies you.
 - Replying to a result continues your normal conversation with the bot, with the result quoted.
 
@@ -77,8 +77,8 @@ The routine list also shows what each routine is doing, such as Queued, Running,
 
 ### How a run works
 
-- **Away from the chat.** A run is an item in the bot's [event box](/docs/conversations#background-tasks): another session of the bot does it, so the chat stays free and you can keep writing to the bot while a routine runs. That session is a new one each time and doesn't see your conversation with the bot: it knows the bot's instructions, its memory and the routine's own prompt, and what a routine carries from one run to the next is its [progress note](#progress-from-one-run-to-the-next). When the run ends, its session and the agent started for it stop.
-- **Its turn in the box.** A run waits for a free place like the bot's other background work (**Agents at once** in the bot's **Settings**), so several routines of one bot can run side by side. In the bot's **Details** you can stop a run, drop one that waits, and try a failed one again. **Stop** in the chat doesn't stop a run.
+- **Away from the chat.** A run is a [thread](/docs/conversations#threads) of the bot: another session of the bot does it, so the chat stays free and you can keep writing to the bot while a routine runs. That session is a new one each time and doesn't see your conversation with the bot: it knows the bot's instructions, its memory and the routine's own prompt, and what a routine carries from one run to the next is its [progress note](#progress-from-one-run-to-the-next). When the run ends, its session and the agent started for it stop.
+- **Its turn in the box.** A run waits for a free place like the bot's other background work (**Threads at once** in the bot's **Settings**), so several routines of one bot can run side by side. In the bot's **Details** you can stop a run, drop one that waits, and try a failed one again. **Stop** in the chat doesn't stop a run.
 - **In the chat instead.** A bot with [computer use](/docs/computer-use) or **Manage the team** on runs its routines in its chat, one at a time, each in a fresh session that doesn't see your conversation; a message you send during a run waits until the run ends, and the run's steps are in **Full conversation**.
 - **No backlog.** Runs that came due while the host couldn't run them don't pile up. The routine runs once, then keeps its schedule.
 - **Approvals.** Unless the bot's **Permissions** are **Approve automatically**, a run that needs approval waits for you on a card in the chat, within its timeout.

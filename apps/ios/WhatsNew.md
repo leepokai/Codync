@@ -6,6 +6,29 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.49.3
+### zh-Hant
+- Bot 預設的工作區改名為「專屬資料夾」。
+- 電腦有安裝 Git 時，Codync 會在每一輪對話前後替 Bot 的專屬資料夾留一個版本：可以請 Bot 說明某一輪改了什麼，或把檔案還原成之前的樣子。「設定」的「工作區」下方會顯示 Git repository。
+- 在專屬資料夾裡，Bot 的背景工作都在同一個資料夾進行，所以那裡不再顯示「每個 thread 一個 worktree」開關。
+- Bot 在背景做的每件工作現在一律叫 thread：「設定」裡的「同時幾個 agent」改名為「同時幾個 thread」，「每個 agent 一個 worktree」改名為「每個 thread 一個 worktree」。
+- 主畫面的 Codync 圖示可以顯示未讀數量，和 App 內各聊天的未讀數相加一致，讀完、或打開 App 時就會更新。預設關閉，可在「設定」→「通知」開啟「在 App 圖示上顯示未讀數」。
+- Bot 在做事時旁邊的小圖示換成跟頭像同一種點陣：工作中、搜尋、等你回覆、連線和編輯檔案各有自己的動作，小尺寸也看得清楚。
+- 動態島上工作中的 Bot 臉和旁邊的小圖示，點陣現在會對齊，不再錯位。
+- 需要更新時，更新卡片上的「立即更新」「更新 Codync」和「更新」按鈕會跟著 App 語言顯示。
+- 從睡眠中醒來的 Codync Cloud 雲端電腦會顯示「正在喚醒電腦…」，不再顯示離線或連不上；這段時間傳的文字訊息會等它醒來再送出。
+
+### en-US
+- A bot's default workspace is now called Own folder.
+- With Git installed, Codync keeps a version of a bot's own folder before and after each turn: ask the bot what a turn changed, or to bring a file back as it was. Settings show Git repository under Workspace.
+- In its own folder, a bot's threads all work in that one folder, so Settings no longer show Worktree per thread there.
+- Each piece of work a bot does in the background is now called a thread everywhere: in Settings, Agents at once is now Threads at once, and Worktree per agent is now Worktree per thread.
+- The Codync icon on the Home Screen can show your unread count, the same number your chats' badges add up to; it updates as you read them and whenever you open the app. It's off by default: turn on Unread count on app icon in Settings → Notifications.
+- The small icon beside a busy bot now uses the same dot grid as the avatars: working, searching, waiting for you, connecting and editing files each move their own way, and stay clear at small sizes.
+- In the Dynamic Island, a working bot's face and the icon beside it now draw their dots lined up instead of shifted.
+- The buttons on the update cards (Update now, Update Codync, Update) now show in the app's language.
+- A Codync Cloud computer waking from sleep now shows Waking the computer… instead of offline or can't reach; a text message you send meanwhile goes out once it's up.
+
 ## 2.49.1
 ### zh-Hant
 - Bot 會把比較久的工作交給背景進行，而且可以同時做好幾件：聊天不會被占住，你可以繼續傳訊息，它也會照常回答。

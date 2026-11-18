@@ -447,3 +447,32 @@ fn pass_is_recognized_loosely() {
     }
     assert!(!is_pass("I'll pass this to Bob"));
 }
+
+#[test]
+fn a_routine_that_ends_in_a_pass_says_nothing() {
+    for t in [
+        "(pass)",
+        "Product newsletter, doesn't qualify. (pass)",
+        "**Nothing new in the inbox.**\n\n(pass)",
+        "All quiet.\n  (pass)  \n",
+        "Shipped.\n(pass).",
+        "**(pass)**",
+        "產品電子報，不符合條件。(pass)",
+        "沒有新郵件。(pass)。",
+        "",
+    ] {
+        assert!(ends_in_pass(t), "{t:?}");
+    }
+    for t in [
+        "I'll pass this to Bob",
+        "Nothing to pass.",
+        "Something to report.",
+        "Build failed.\n***",
+        "The (pass) line was empty.\nso nothing ran",
+        "Nightly checks:\n- build (fail)\n- lint (pass)",
+        "- (pass)",
+        "條件(pass)",
+    ] {
+        assert!(!ends_in_pass(t), "{t:?}");
+    }
+}

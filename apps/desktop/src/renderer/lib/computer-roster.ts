@@ -1,4 +1,5 @@
 import type { Bot } from '@shared/models'
+import type { Connection } from '../store/bot-store'
 
 type Ranked = Pick<Bot, 'pinned' | 'position' | 'lastAt'>
 
@@ -31,4 +32,20 @@ export function computerSections<C extends { id: string }, T extends { ref: { co
   const byID = new Map(sections.map((section) => [section.computer.id, section]))
   for (const item of roster) byID.get(item.ref.computerId)?.items.push(item)
   return sections
+}
+
+/** Fills a translated phrase's `%d` placeholders in order. */
+export const counted = (text: string, ...counts: number[]) => counts.reduce((s, n) => s.replace('%d', String(n)), text)
+
+/** The roster header's line for the computers it shows; `waking`: one is a cloud computer on its way up (`isWaking`). */
+export function connectionSummary(connections: Connection[], waking: boolean, tr: (text: string) => string) {
+  if (!connections.length) return tr('Computers')
+  const online = connections.filter((c) => c.kind === 'online').length
+  if (online === connections.length) return counted(tr('%d connected'), online)
+  if (online > 0) return counted(tr('%d/%d connected'), online, connections.length)
+  if (connections.some((c) => c.kind === 'connecting')) return tr('Connecting…')
+  if (waking) return tr('Waking the computer…')
+  if (connections.every((c) => c.kind === 'unauthorized')) return tr('No access')
+  if (connections.every((c) => c.kind === 'unpaired')) return tr('Not paired')
+  return counted(tr('%d offline'), connections.length)
 }

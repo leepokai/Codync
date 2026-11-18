@@ -210,18 +210,20 @@ class AppStore internal constructor(
         }
     }
 
-    /** The ready channel, waiting briefly for a reconnect; a timeout is an error the action shows. */
-    internal suspend fun ready(): EncryptedChannel = deadline(20_000, "Can't reach the computer. Check that it's on, then try again.") {
+    /** The ready channel, waiting briefly for a reconnect or a cloud computer the relay is waking; a timeout is an error
+     * the action shows. */
+    internal suspend fun ready(): EncryptedChannel = withTimeoutOrNull(20_000) {
         while (true) {
             val active = channel
-            if (active?.state?.value is LinkState.Ready) return@deadline active
+            if (active?.state?.value is LinkState.Ready) return@withTimeoutOrNull active
             val link = active?.state?.value
-            if (link is LinkState.ComputerOffline) throw IOException("The computer is offline.")
+            if (link is LinkState.ComputerOffline && !state.value.isWaking) throw IOException("The computer is offline.")
             if (link is LinkState.Failed && link.status in listOf(403, 426)) throw HostError(requireNotNull(link.status), link.message)
             delay(100)
         }
         @Suppress("UNREACHABLE_CODE") error("Unreachable")
-    }
+    } ?: throw IOException(if (state.value.isWaking) "Still waking the computer: try again in a moment."
+        else "Can't reach the computer. Check that it's on, then try again.")
 
     /** Runs [operation] as [key], its error shown; not while loading or while [key] still runs. Whether it started. */
     internal fun action(key: String, operation: suspend () -> Unit): Boolean {

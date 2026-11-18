@@ -447,7 +447,7 @@ function ChatSplitView() {
             <IconButton title="Extensions" icon="square.grid.2x2" size={36} onClick={openMarketplace} />
             <UpdateBadge size={32} />
             <RailAccountNotice />
-            <button className={`rail-profile ${showAccount ? 'open' : ''}`} aria-label="Open account menu for Account" title="Account" onClick={() => setShowAccount((s) => !s)}>
+            <button className={`rail-profile ${showAccount ? 'open' : ''}`} aria-label={tr('Open account menu for Account')} title={tr('Account')} onClick={() => setShowAccount((s) => !s)}>
               <ProfileAvatar />
             </button>
           </div>

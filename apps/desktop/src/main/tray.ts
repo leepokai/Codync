@@ -134,7 +134,7 @@ export class Tray {
               { label: this.tr(bot.detail), enabled: false },
               { label: this.tr('Open conversation'), click: () => send({ kind: 'openBot', ref: bot.ref }) },
             ]
-            if (bot.working) submenu.push({ label: this.tr('Stop task'), click: () => send({ kind: 'stopBot', ref: bot.ref }, false) })
+            if (bot.working) submenu.push({ label: this.tr('Stop'), click: () => send({ kind: 'stopBot', ref: bot.ref }, false) })
             items.push({ label: bot.name, icon: this.image(bot.avatar), submenu })
           }
         }

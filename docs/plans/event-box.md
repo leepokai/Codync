@@ -139,7 +139,7 @@ the time, as today. It opens Details. Its Stop (one item working) asks once, the
 | **Recent** | Items ended in the last day: done (a ring, time taken; opens its thread), stopped and failed (the danger mark, why; **Try again**). |
 
 **Settings** (the inspector's Settings tab; the phones' bot settings) gains what Details held: **Instructions** and
-**Agent** (the agent, model, fast mode, fallbacks) go first, then Profile, Workspace (with **Agents at once**, a
+**Agent** (the agent, model, fast mode, fallbacks) go first, then Profile, Workspace (with **Threads at once**, a
 1 to 6 stepper), Activity, Connectors, Skills.
 
 **Cut in** asks with the client's dialog: `Let "<title>" cut in`, `Every place is taken. Pick what gives way: its
@@ -163,8 +163,8 @@ every bot's work (stage 4).
 `{count} working` {count} 進行中, `{count} waiting` {count} 等待中, `Next up` 下一個, `{count} ahead` 前面還有
 {count} 件, `Follows what it works on` 接在進行中的事後面, `Near the usage limit: one at a time` 用量接近上限，一次只跑一個
 (stage 11; `Waiting for usage` 等用量恢復 before it), `Was cut in on; starts
-again` 被插隊，會重新開始, `First` 先做, `Cut in` 插隊, `Drop` 丟掉, `Try again` 再試, `Agents at once` 同時幾個
-agent, `Let "{title}" cut in` 讓「{title}」插隊, `Every place is taken. Pick what gives way: its session closes and
+again` 被插隊，會重新開始, `First` 先做, `Cut in` 插隊, `Drop` 丟掉, `Try again` 再試, `Threads at once` 同時幾個
+thread, `Let "{title}" cut in` 讓「{title}」插隊, `Every place is taken. Pick what gives way: its session closes and
 it starts again later.` 名額滿了。選一個讓位：它的 session 會關掉，之後重新開始。 The strings of 2.48.0 that still
 apply are reused; `{count} tasks running` goes.
 
@@ -184,9 +184,12 @@ apply are reused; `{count} tasks running` goes.
 ## Analytics
 
 `work_added {outcome: added | elsewhere | invalid | full | hops | failed, after, source}`, `work_finished {outcome,
-start, forkFailed, minutes, error, source, worktree, kept, worktreeFailed}` (`source`: `bot`, `routine`, `request`), `work_steered {how, by: bot |
+agent, start, forkFailed, minutes, error, source, worktree, kept, worktreeFailed}` (`source`: `bot`, `routine`, `request`), `work_steered {how, by: bot |
 user}`, replacing the `task_*` events. Screen `task`
-stays: it is the item's thread view (a task's transcript before stage 11).
+stays: it is the item's thread view (a task's transcript before stage 11). A task's `turn_finished` carries `work`
+(its item's source), which is where an item's failure gets its reason (the agent's error, a sign-in, a rate limit);
+the box's own failures that should never happen (a box that won't save, a task that is gone) go to
+[error tracking](../features/analytics.md#error-tracking).
 
 ## As built (host, stage 1)
 
@@ -230,7 +233,8 @@ from the text below:
   request starts like any item.
 - **A request answered with exactly `(pass)`** gives the asking bot those words, as a turn in the chat did.
 - **What those turns could do in the chat holds in their task**: `request_decision`, `send_message`, `send_file`
-  and artifact cards refused; the `routines` tools (and, from a run, `message_bot`) work as the bot. Stage 5's
+  and a request's artifact cards refused (a run's artifact card goes into the bot's chat); the `routines` tools
+  (and, from a run, `message_bot`) work as the bot. Stage 5's
   asking and sharing is for the bot's own items.
 - **A task's choice card is answered by a press only**: a message the user types is the coordinator's, so it neither
   answers the card nor ends it; the chat's Stop doesn't end it either (stopping the item does). The cases are
@@ -282,8 +286,8 @@ The same on iPhone, Android, desktop and terminal unless said; where it settles 
   Screen `all_work`.
 - **5.** The `In the background · <title>` line is on a task's choice card, file message, voice note and artifact
   card as on its permission card. A task's choice card has no **Something else** row: only a press answers it.
-- **7.** **Worktree per agent** is a switch in Settings > Workspace, shown only when the host says the bot's folder
-  is in a git repository and sends the setting, with the caption `Agents that work at once in this repository each
+- **7.** **Worktree per thread** is a switch in Settings > Workspace, shown only when the host says the bot's folder
+  is in a git repository and sends the setting, with the caption `Threads that work at once in this repository each
   get their own branch.` The item's branch is in its task's transcript header (terminal: `⎇ <branch>` after the
   status; the desktop shows the folder on hover), not on its Details row. Stage 11 put it on the row too
   ([as built](#as-built-iphone-android-and-desktop-stage-11)).
@@ -361,7 +365,7 @@ already routes by item). An item waiting on such a card reads `needsYou`.
 **6. Voice calls.** A task's activity joins the call's progress cues (said as the item's title and what it does),
 and an approval cue from a task names its item.
 
-**7. Worktrees.** Per bot setting `taskWorktrees` (Settings > Workspace, "Worktree per agent", on by default, shown
+**7. Worktrees.** Per bot setting `taskWorktrees` (Settings > Workspace, "Worktree per thread", on by default, shown
 only when the workspace is a git repository). With it on, a task that starts while another task of the bot works in
 the same repository gets its own git worktree (`~/.codync/worktrees/<bot>/<item>`, branch `codync/<title-slug>` from
 the workspace's HEAD) as its working directory; the first task alone keeps the workspace. Its report names the
@@ -418,9 +422,9 @@ thread directly, as to a chat. Demo of the desktop panel: https://claude.ai/arti
 - Settings > Workspace says under the folder whether it is a git repository: `Git repository`, `Not a git
   repository`, or `Git isn't installed on this computer`, with one information button (`info.circle`, `About
   working folders and git`) that opens the manual's page on working folders and git
-  (https://codync.dev/docs/working-folders: what agents working at once do with and without git, and how to install
+  (https://codync.dev/docs/working-folders: what threads working at once do with and without git, and how to install
   git on macOS, Linux and Windows). The terminal has the words in dim text and no button. Only for a bot whose host
-  sends `taskWorktrees`, and for the folder the host has saved. `Worktree per agent` stays where it is for a
+  sends `taskWorktrees`, and for the folder the host has saved. `Worktree per thread` stays where it is for a
   repository.
 - The host says which of the three it is (`bot.gitRepo`, `bot.gitInstalled`).
 

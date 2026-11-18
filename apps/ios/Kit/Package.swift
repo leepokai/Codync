@@ -17,7 +17,6 @@ let package = Package(
     ],
     targets: [
         .target(name: "CodyncKit", resources: [
-            .copy("Resources/ThirdPartyNotices"),
             .copy("Resources/Languages/zh-Hans.json"),
             .copy("Resources/Languages/zh-Hant.json"),
             .copy("Resources/Languages/ja.json"),

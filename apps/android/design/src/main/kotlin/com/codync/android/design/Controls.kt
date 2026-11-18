@@ -160,6 +160,15 @@ import com.kyant.shapes.RoundedRectangle
     }
 }
 
+/** A whole number with − and + beside it, kept within [range]: the replacement for `Stepper`. */
+@Composable fun Stepper(value: Int, range: IntRange, change: (Int) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        IconButton("Decrease", "minus", enabled = enabled && value > range.first) { change(value - 1) }
+        Text("$value", Modifier.widthIn(min = 24.dp), style = Type.body.monospacedDigit, color = Palette.text, textAlign = TextAlign.Center)
+        IconButton("Increase", "plus", enabled = enabled && value < range.last) { change(value + 1) }
+    }
+}
+
 /** Loading indicator: a thin arc that turns. */
 @Composable fun Spinner(size: Dp = 14.dp, modifier: Modifier = Modifier, color: Color = Palette.secondary) {
     val turn by rememberInfiniteTransition(label = "Spinner").animateFloat(0f, 360f,

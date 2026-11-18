@@ -6,6 +6,7 @@ import { Sheet } from '../components/Overlay'
 import { VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { refKey, type BotRef, type RosterItem } from '../store/app-model'
+import { useTr } from '../lib/use-language'
 import './search-palette.css'
 
 const isMac = window.codync.platform === 'darwin'
@@ -28,6 +29,7 @@ export function SearchPalette({ open, items, onPick, onClose }: { open: boolean;
 }
 
 function PaletteBody({ items, onPick, onClose }: { items: RosterItem[]; onPick: (ref: BotRef) => void; onClose: () => void }) {
+  const tr = useTr()
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const list = useRef<HTMLDivElement>(null)
@@ -63,7 +65,7 @@ function PaletteBody({ items, onPick, onClose }: { items: RosterItem[]; onPick: 
     <div className="palette" onKeyDown={onKey}>
       <div className="palette-field">
         <Icon name="magnifyingglass" size={15} color="var(--secondary)" />
-        <input autoFocus value={query} placeholder="Search" aria-label="Search bots" spellCheck={false} onChange={(e) => setQuery(e.target.value)} />
+        <input autoFocus value={query} placeholder={tr('Search')} aria-label={tr('Search bots')} spellCheck={false} onChange={(e) => setQuery(e.target.value)} />
       </div>
       <div className="palette-list" ref={list} role="listbox">
         {results.map((item, i) => (
@@ -83,7 +85,7 @@ function PaletteBody({ items, onPick, onClose }: { items: RosterItem[]; onPick: 
             {i < 9 ? <span className="key-cap palette-key">{`${modifier}${i + 1}`}</span> : null}
           </button>
         ))}
-        {results.length === 0 ? <div className="palette-empty">No matching bots</div> : null}
+        {results.length === 0 ? <div className="palette-empty">{tr('No matching bots')}</div> : null}
       </div>
     </div>
   )

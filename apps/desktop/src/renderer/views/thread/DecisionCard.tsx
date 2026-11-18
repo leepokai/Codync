@@ -5,11 +5,14 @@ import { Text } from '../../components/Text'
 import { IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { trNow } from '../../lib/l10n.ts'
+import { TaskLine } from './PermissionCard'
 import './permission-card.css'
 
 /** The card a bot's `request_decision` puts in the chat: its question, a numbered row per option (the suggested one
  *  marked), a last row for the user's own words, and what was picked. A press goes back as the bot's answer
- *  (`respondDecision`); own words go as an ordinary message, which the computer takes as the answer. */
+ *  (`respondDecision`); own words go as an ordinary message, which the computer takes as the answer. A task's card
+ *  says which item it comes from and has no row for own words: a typed message goes to the bot in the chat, and only
+ *  a press answers the task. */
 export function DecisionCard({ entry, answering, respond, reply }: {
   entry: Entry
   answering: string | null
@@ -26,6 +29,7 @@ export function DecisionCard({ entry, answering, respond, reply }: {
   const chosen = d.selected ?? null
   const suggested = d.recommended ?? null
   return (
+    // The item's row on the bot's Details finds its card by this.
     <div className="agent-inset">
       <VStack gap={12} className="permission-card decision-card">
         <HStack gap={8} align="flex-start">
@@ -38,6 +42,7 @@ export function DecisionCard({ entry, answering, respond, reply }: {
             <IconButton title={expanded ? 'Collapse' : 'Expand'} icon={expanded ? 'chevron.up' : 'chevron.down'} size={24} className="decision-card-more" onClick={toggle} />
           ) : null}
         </HStack>
+        <TaskLine entry={entry} />
         {pending ? (
           <VStack gap={2} className="decision-options">
             {choices.map((choice, i) => (
@@ -52,7 +57,7 @@ export function DecisionCard({ entry, answering, respond, reply }: {
                 {suggested === i ? <Text size="caption" tone="tertiary">{trNow('Suggested')}</Text> : null}
               </button>
             ))}
-            <OwnAnswer disabled={answering !== null} reply={reply} />
+            {d.task ? null : <OwnAnswer disabled={answering !== null} reply={reply} />}
           </VStack>
         ) : (
           <HStack gap={6}>

@@ -63,7 +63,8 @@ fn option_keys(opts: &[(String, String, String)]) -> Vec<String> {
 }
 
 /// A bot's choice card (`request_decision`): the bot's name heads it, its question in bold, then a button per option
-/// (the suggested one marked) and a pointer to the message box for the user's own words.
+/// (the suggested one marked) and a pointer to the message box for the user's own words. A task's card says where it
+/// comes from and has no such pointer: a typed message is for the bot in the chat, and only a pick answers the task.
 pub(super) fn decision_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, width: usize) {
     let t = theme();
     let answering = app.answering.get(&e.id);
@@ -71,6 +72,10 @@ pub(super) fn decision_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, widt
     let bw = width.saturating_sub(1).max(20);
     let inner = bw.saturating_sub(4);
     card_head(out, &format!(" ◆ {} ", truncate(&b.name, inner.saturating_sub(4))), bw);
+    let from = background_line(e);
+    if let Some(from) = &from {
+        card_row(out, vec![Span::styled(truncate(from, inner), t.dim)], inner);
+    }
     for l in md::wrap(&[Span::styled(question.to_owned(), t.text.add_modifier(Modifier::BOLD))], inner, &[], &[]) {
         card_row(out, l.spans, inner);
     }
@@ -96,7 +101,9 @@ pub(super) fn decision_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, widt
         }
     }
     // The message box below takes the user's own words.
-    card_row(out, vec![Span::styled(format!(" ↓ {}", tr("Something else")), t.dim)], inner);
+    if from.is_none() {
+        card_row(out, vec![Span::styled(format!(" ↓ {}", tr("Something else")), t.dim)], inner);
+    }
     card_foot(out, bw);
 }
 
@@ -148,6 +155,13 @@ pub(super) fn chosen_line(out: &mut Built, e: &Entry) {
     ]));
 }
 
+/// Where what a background task posts in the chat (a card, a file, an artifact) comes from: `In the background ·
+/// <its item's title>`; none for the chat's own.
+pub(super) fn background_line(e: &Entry) -> Option<String> {
+    let task = e.data["task"]["title"].as_str()?;
+    Some(format!("{} · {task}", tr("In the background")))
+}
+
 pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, width: usize) {
     let t = theme();
     let home = app.home.as_str();
@@ -160,6 +174,9 @@ pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, wi
     let room = inner.saturating_sub(w(&fill(&template, &[("name", &b.name), ("title", "")])) + 4);
     let head = format!(" ◆ {} ", fill(&template, &[("name", &b.name), ("title", &truncate(title, room))]));
     card_head(out, &head, bw);
+    if let Some(from) = background_line(e) {
+        card_row(out, vec![Span::styled(truncate(&from, inner), t.dim)], inner);
+    }
     if let Some(cmd) = e.data["command"].as_str().filter(|c| !c.is_empty()) {
         for (i, l) in md::wrap(&[Span::styled(cmd.to_owned(), t.bold)], inner.saturating_sub(2), &[], &[])
             .into_iter()
@@ -293,6 +310,51 @@ mod tests {
         let o = |k: &str| (String::new(), String::new(), k.to_owned());
         let keys = option_keys(&[o("allow_once"), o("allow_always"), o("reject_once"), o("reject_always")]);
         assert_eq!(keys, ["y", "a", "n", "4"]);
+    }
+
+    #[tokio::test]
+    async fn a_tasks_card_says_it_comes_from_the_background() {
+        use serde_json::json;
+        let app = crate::tui::app::test_app();
+        let bot = Bot::parse(&json!({"id": "a", "name": "Ada"})).expect("a bot with an id parses");
+        let card = |data: serde_json::Value| {
+            let entry = json!({"id": "p", "botId": "a", "seq": 1, "kind": "permission", "data": data});
+            let (_, e) = Entry::parse(&entry).expect("an entry parses");
+            let mut out = Built::default();
+            permission_card(&mut out, &app, &e, &bot, 60);
+            out.lines.iter().map(ToString::to_string).collect::<Vec<_>>()
+        };
+        let own = card(json!({"status": "pending", "title": "Run tests", "options": []}));
+        let task = card(json!({"status": "pending", "title": "Run tests", "options": [],
+            "task": {"id": "task-1", "title": "Fix login"}}));
+        assert_eq!(task.len(), own.len() + 1);
+        assert!(task[1].contains("In the background · Fix login"), "{task:?}");
+        assert!(!own.iter().any(|l| l.contains("In the background")));
+    }
+
+    #[tokio::test]
+    async fn a_tasks_choice_card_says_where_it_comes_from_and_takes_no_typed_answer() {
+        use serde_json::json;
+        let app = crate::tui::app::test_app();
+        let bot = Bot::parse(&json!({"id": "a", "name": "Ada"})).expect("a bot with an id parses");
+        let card = |more: serde_json::Value| {
+            let mut data = json!({"decision": true, "status": "pending", "question": "Squash or merge?",
+                "choices": ["Squash", "Merge"]});
+            data.as_object_mut().expect("an object").extend(more.as_object().cloned().unwrap_or_default());
+            let entry = json!({"id": "d", "botId": "a", "seq": 1, "kind": "notice", "data": data});
+            let (_, e) = Entry::parse(&entry).expect("an entry parses");
+            let mut out = Built::default();
+            decision_card(&mut out, &app, &e, &bot, 60);
+            (out.lines.iter().map(ToString::to_string).collect::<Vec<_>>(), out.buttons.len())
+        };
+        let (own, own_buttons) = card(json!({}));
+        let (task, task_buttons) = card(json!({"task": {"id": "task-1", "title": "Fix login"}, "item": "i"}));
+        assert!(own.iter().any(|l| l.contains("↓ Something else")), "{own:?}");
+        assert!(!own.iter().any(|l| l.contains("In the background")));
+        assert!(task[1].contains("In the background · Fix login"), "{task:?}");
+        assert!(task[2].contains("Squash or merge?"), "{task:?}");
+        assert!(!task.iter().any(|l| l.contains("Something else")), "only a pick answers a task's card");
+        assert_eq!((own_buttons, task_buttons), (2, 2), "the options are pressed as on any card");
     }
 
     #[test]

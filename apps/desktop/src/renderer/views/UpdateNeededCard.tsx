@@ -5,6 +5,7 @@ import { HStack, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { updateNeededText } from '../lib/host-update'
 import { useModel } from '../lib/observable'
+import { useTr } from '../lib/use-language'
 import { appFloor } from '../store/cloud'
 import { useApp, useStore } from '../store/context'
 import { UpdateButton, useUpdates } from './UpdateButton'
@@ -49,8 +50,9 @@ export function UpdateNeededCard() {
 export function AppFloorCard() {
   const floor = useModel(appFloor)
   const updates = useUpdates()
+  const tr = useTr()
   if (!floor.message) return null
-  return <UpdateNotice title="Update this app" detail={floor.message} button={updates && <UpdateButton updates={updates} kind="primary" />} />
+  return <UpdateNotice title={tr('Update this app')} detail={floor.message} button={updates && <UpdateButton updates={updates} kind="primary" />} />
 }
 
 function UpdateNotice({ title, detail, button, updating = false }: { title: string; detail: string; button: ReactNode; updating?: boolean }) {

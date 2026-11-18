@@ -178,7 +178,7 @@ export class ComputerRelay extends DurableObject<Env> {
       this.mailbox.drop(d.dk);
       dks.add(d.dk);
     }
-    for (const [ws, a] of this.devices()) if (dks.has(a.dk)) this.safeClose(ws, 4003, "revoked");
+    for (const [ws, a] of this.devices()) if (dks.has(a.dk)) await this.evict(ws, a, now, 4003, "revoked");
     this.toHosts({ t: "cloud.changed" });
     return Response.json({});
   }
@@ -270,8 +270,7 @@ export class ComputerRelay extends DurableObject<Env> {
 
   override async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     const a = ws.deserializeAttachment() as Attachment;
-    // It's alive after all, so closing it is quick.
-    if (a.retired) return this.safeClose(ws, a.retired.code, a.retired.reason);
+    if (a.retired) return this.closeRetired(ws, a);
     if (typeof message !== "string") return this.safeClose(ws, 4002, "protocolError");
     let msg: Msg;
     try {
@@ -365,9 +364,9 @@ export class ComputerRelay extends DurableObject<Env> {
     }
     for (const [dws, dev] of this.devices()) {
       if (dev.pair) {
-        if (!acl.offers.some((o) => o.id === dev.offer && o.exp > now)) this.safeClose(dws, 4410, "pairingExpired");
+        if (!acl.offers.some((o) => o.id === dev.offer && o.exp > now)) await this.evict(dws, dev, now, 4410, "pairingExpired");
       } else if (!acl.devices.some((x) => x.dk === dev.dk)) {
-        this.safeClose(dws, 4003, "revoked");
+        await this.evict(dws, dev, now, 4003, "revoked");
       }
     }
     send(ws, JSON.stringify({ t: "acl.ok", ver: acl.ver }));
@@ -440,15 +439,32 @@ export class ComputerRelay extends DurableObject<Env> {
   }
 
   /**
-   * Lets go of a socket: nothing is sent to it any more and the bookkeeping runs now. It isn't closed yet: closing
-   * a peer that's unreachable keeps the DO awake (billed) until TCP gives up, while a socket left alone doesn't.
-   * The alarm closes it later if it speaks again, or if the DO never got to sleep (data queued for it may be
-   * what keeps it awake, and only closing frees that).
+   * Lets go of a socket: nothing is sent to it any more and the bookkeeping runs now. It isn't closed yet: its peer
+   * is likely unreachable, so the close would go unanswered.
+   * The alarm closes it later, once (`closeRetired`), if it speaks again, or if the DO never got to sleep: data
+   * queued for it may be what keeps the DO awake, and only closing frees that.
    */
   private async retire(ws: WebSocket, a: Attachment, now: number, code: number, reason: string): Promise<void> {
     ws.serializeAttachment({ ...a, ...(a.role === "host" ? { ready: false } : {}), retired: { at: now, code, reason } });
     this.retiredHere.add(ws);
     await this.gone(ws, a, now);
+  }
+
+  /**
+   * Closes a retired socket, once. One that spoke again may be gone again by the time the alarm sees it (a laptop
+   * that wakes for a moment pings and sleeps): its close then waits for a peer that can't answer, and asking again
+   * at every alarm keeps the DO awake (billed as duration) until the connection dies, about 15 minutes later.
+   */
+  private closeRetired(ws: WebSocket, a: Attachment): void {
+    if (!a.retired || a.retired.closed) return;
+    ws.serializeAttachment({ ...a, retired: { ...a.retired, closed: true } });
+    this.safeClose(ws, a.retired.code, a.retired.reason);
+  }
+
+  /** Retires a socket whose peer is still there (expired pairing, revoked device) and closes it right away. */
+  private async evict(ws: WebSocket, a: Attachment, now: number, code: number, reason: string): Promise<void> {
+    await this.retire(ws, a, now, code, reason);
+    this.closeRetired(ws, ws.deserializeAttachment() as Attachment);
   }
 
   /** Bookkeeping for a socket that closed or that the DO let go of. */
@@ -469,7 +485,7 @@ export class ComputerRelay extends DurableObject<Env> {
       const a = ws.deserializeAttachment() as Attachment;
       const heard = Math.max(a.at, this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0);
       if (a.retired) {
-        if (heard > a.retired.at || this.retiredHere.has(ws)) this.safeClose(ws, a.retired.code, a.retired.reason);
+        if (heard > a.retired.at || this.retiredHere.has(ws)) this.closeRetired(ws, a);
       } else if (now - heard > SILENT_TIMEOUT_MS) {
         await this.retire(ws, a, now, 1011, "timeout");
       }
@@ -487,7 +503,7 @@ export class ComputerRelay extends DurableObject<Env> {
     for (const [ws, d] of this.devices()) {
       if (!d.pair) continue;
       const exp = Math.min(d.at + PAIRING_TTL_MS, acl?.offers.find((o) => o.id === d.offer)?.exp ?? 0);
-      if (exp <= now) this.safeClose(ws, 4410, "pairingExpired");
+      if (exp <= now) await this.evict(ws, d, now, 4410, "pairingExpired");
       else next = Math.min(next, exp);
     }
     // A delivery waiting out its retry wakes the DO when it's due.

@@ -322,6 +322,15 @@
   margin-bottom: 4px;
   user-select: none;
 }
+/* A quote in a bubble brings the quoted message into view. */
+.bubble-quote[role='button']:focus-visible {
+  outline: 2px solid var(--secondary);
+  border-radius: 4px;
+}
+/* A bot's quote sits above its bubble, in line with the bubble's text. */
+.agent-quote {
+  padding: 0 10px;
+}
 /* Agent-side cards (working, approvals) stop short of the far edge. */
 .agent-inset {
   padding-right: 40px;

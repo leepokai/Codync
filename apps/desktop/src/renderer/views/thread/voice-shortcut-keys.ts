@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VoiceKey } from '@shared/voice-shortcut'
 import type { Dictation } from './dictation'
 
@@ -15,30 +15,37 @@ export function queueVoiceKey(key: VoiceKey) {
 }
 
 /**
- * The voice input shortcut in the composer: a double tap dictates into it, the next tap sends
- * what was said once the last words are in.
+ * A submit for after dictation: it runs after the render that has the last words in the draft
+ * (a submit right away would send the draft without them).
  */
-export function useVoiceShortcut(dictation: Dictation, draft: string, submit: () => void, focus: () => void) {
+export function useSubmitAfterRender(submit: () => void) {
+  const [sending, setSending] = useState(false)
+  useEffect(() => {
+    if (!sending) return
+    setSending(false)
+    submit()
+  }, [sending, submit])
+  return useCallback(() => setSending(true), [])
+}
+
+/**
+ * The voice input shortcut in the composer: a double tap dictates into it, the next tap sends
+ * what was said once the last words are in (`send`, from `useSubmitAfterRender`).
+ */
+export function useVoiceShortcut(dictation: Dictation, draft: string, send: () => void, focus: () => void) {
   const latest = useRef({ draft, focus })
   latest.current = { draft, focus }
-  const [sending, setSending] = useState(false)
   useEffect(() => {
     const take = () => {
       const pending = pendingKey
       pendingKey = null
       if (!pending || Date.now() - pending.at > KEY_WAIT_MS) return
-      if (!dictation.shortcutKey(pending.key, () => setSending(true))) return
+      if (!dictation.shortcutKey(pending.key, send)) return
       latest.current.focus()
       dictation.start(latest.current.draft, true)
     }
     keyTakers.add(take)
     take()
     return () => void keyTakers.delete(take)
-  }, [dictation])
-  // Sent after the render that has the last words in the draft.
-  useEffect(() => {
-    if (!sending) return
-    setSending(false)
-    submit()
-  }, [sending, submit])
+  }, [dictation, send])
 }

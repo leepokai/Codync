@@ -736,7 +736,7 @@ dependencies = [
 
 [[package]]
 name = "codync-host"
-version = "2.47.0"
+version = "2.49.3"
 dependencies = [
  "anyhow",
  "axum",
@@ -790,6 +790,7 @@ dependencies = [
  "unicode-width",
  "url",
  "uuid",
+ "windows-registry",
  "windows-sys 0.61.2",
  "x25519-dalek",
  "zeroize",
@@ -808,7 +809,7 @@ dependencies = [
 
 [[package]]
 name = "codync-network"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",

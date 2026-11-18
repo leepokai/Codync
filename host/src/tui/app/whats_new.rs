@@ -13,10 +13,27 @@ use crate::tui::manage::Scroll;
 const FILE: &str = "tui-whats-new";
 const CURRENT: &str = env!("CARGO_PKG_VERSION");
 
+/// One highlight. Its preview clip (`media`) is for the apps; a terminal shows the link to the full video.
+#[derive(Debug, PartialEq, Deserialize)]
+pub struct Feature {
+    /// English phrases from the catalogs.
+    pub title: String,
+    pub body: String,
+    /// Still in beta: a tag beside the title.
+    #[serde(default)]
+    pub beta: bool,
+    /// Where the full video plays.
+    #[serde(default)]
+    pub film: Option<String>,
+}
+
 #[derive(Debug, PartialEq, Deserialize)]
 pub struct Announcement {
     pub version: String,
-    /// English phrases from the catalogs.
+    #[serde(default)]
+    pub features: Vec<Feature>,
+    /// Smaller changes: English phrases from the catalogs.
+    #[serde(default)]
     pub notes: Vec<String>,
 }
 
@@ -42,9 +59,9 @@ impl WhatsNew {
 /// The file every client reads, newest first.
 fn announcements() -> Vec<Announcement> {
     serde_json::from_str(include_str!(
-        "../../../../apps/ios/Kit/Sources/CodyncKit/Resources/Announcements/announcements.json"
+        "../../../../apps/ios/Kit/Sources/CodyncUI/Resources/Announcements/announcements.json"
     ))
-    .expect("announcements.json is a list of {version, notes}")
+    .expect("announcements.json is a list of {version, features, notes}")
 }
 
 /// Those with `seen < version ≤ current`, in the file's order (newest first); none without `seen`.
@@ -88,7 +105,10 @@ mod tests {
     use super::*;
 
     fn list(versions: &[&str]) -> Vec<Announcement> {
-        versions.iter().map(|v| Announcement { version: (*v).into(), notes: vec![format!("New in {v}.")] }).collect()
+        versions
+            .iter()
+            .map(|v| Announcement { version: (*v).into(), features: Vec::new(), notes: vec![format!("New in {v}.")] })
+            .collect()
     }
 
     fn due_versions(seen: Option<&str>, current: &str) -> Vec<String> {
@@ -99,11 +119,29 @@ mod tests {
     fn the_embedded_file_parses_newest_first() {
         let all = announcements();
         for a in &all {
-            assert!(a.version.split('.').count() == 3 && !a.notes.is_empty(), "{a:?}");
+            assert!(a.version.split('.').count() == 3 && !(a.features.is_empty() && a.notes.is_empty()), "{a:?}");
         }
         for pair in all.windows(2) {
             assert!(!at_least(&pair[1].version, &pair[0].version), "{} before {}", pair[0].version, pair[1].version);
         }
+    }
+
+    #[test]
+    fn a_feature_reads_without_its_optional_parts() {
+        let all: Vec<Announcement> = serde_json::from_str(
+            r#"[{"version": "2.44.0", "features": [{"title": "T", "body": "B", "media": "m"},
+                {"title": "U", "body": "C", "beta": true, "film": "https://example.com/f"}]}]"#,
+        )
+        .expect("the file's shape");
+        let film = Some("https://example.com/f".to_owned());
+        assert_eq!(
+            all[0].features,
+            [
+                Feature { title: "T".into(), body: "B".into(), beta: false, film: None },
+                Feature { title: "U".into(), body: "C".into(), beta: true, film },
+            ]
+        );
+        assert!(all[0].notes.is_empty(), "no notes");
     }
 
     #[test]

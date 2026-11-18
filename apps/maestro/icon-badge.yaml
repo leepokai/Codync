@@ -1,0 +1,92 @@
+# The iPhone's app icon counts the unread answers of every chat once Settings turns it on (it's off by default): two bots
+# with one each show 2 on the Home Screen, reading one lowers it to 1, and turning it off clears it. iPhone only: Android's launcher badge follows the alerts, which need real push
+# (AlertNotificationTest covers a read chat's alert going), and a second shard's bots would change the count. The phone
+# must already be signed in and paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes)
+# with nothing else unread there, so run it apart from `welcome`, whose clearState undoes that; the flow makes its own bots:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags badge \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e MODE_AGENT="$PWD/host/tests/fixtures/mode_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - badge
+onFlowComplete:
+  - runScript:
+      file: icon-badge.js
+      env:
+        CLEANUP: "true"
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - runScript: icon-badge.js
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          stopApp: false
+          permissions:
+            notifications: allow
+          arguments:
+            "-reviewInvitationOff": true
+      # The Bots tab (the bot list's title is "Bots" too).
+      - tapOn:
+          id: "bubble.left.and.bubble.right.fill"
+      - extendedWaitUntil:
+          visible: ${output.bots[1].name}
+          timeout: 30000
+      # Off by default: the icon shows no count.
+      - pressKey: Home
+      - assertNotVisible: "2 new items"
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          stopApp: false
+      - tapOn: "Settings"
+      - scrollUntilVisible:
+          element: "Unread count on app icon"
+          centerElement: true
+      # iOS shows a badge only once the app may notify.
+      - runFlow:
+          when:
+            visible: "Turn on"
+          commands:
+            - tapOn: "Turn on"
+            - tapOn:
+                text: "Allow"
+                optional: true
+      - tapOn: "Unread count on app icon"
+      - tapOn:
+          id: "bubble.left.and.bubble.right.fill"
+      - pressKey: Home
+      # The Home Screen icon's accessibility value carries its badge.
+      - extendedWaitUntil:
+          visible: "2 new items"
+          timeout: 10000
+      - takeScreenshot: icon-badge-two
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          stopApp: false
+      - tapOn: ${output.bots[0].name}
+      - extendedWaitUntil:
+          visible: "Ask ${output.bots[0].name}"
+          timeout: 15000
+      - pressKey: Home
+      - extendedWaitUntil:
+          visible: "1 new item"
+          timeout: 10000
+      - takeScreenshot: icon-badge-one
+      # Turned off, the count goes at once.
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          stopApp: false
+      - tapOn:
+          id: "BackButton"
+      - tapOn: "Settings"
+      - scrollUntilVisible:
+          element: "Unread count on app icon"
+          centerElement: true
+      - tapOn: "Unread count on app icon"
+      - tapOn:
+          id: "bubble.left.and.bubble.right.fill"
+      - pressKey: Home
+      - extendedWaitUntil:
+          notVisible: "1 new item"
+          timeout: 10000

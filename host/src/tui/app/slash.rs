@@ -1,6 +1,7 @@
 //! The composer's `/` commands, listed while the draft is just `/partial`: Fast mode runs here
 //! (`updateBot`); a skill fills in `/<id> `, which the host turns into "read this skill first"
-//! (`market::expand_command`). A group offers the same, over its members.
+//! (`market::expand_command`). A group offers the same, over its members. A bot's own chat also lists its agent's
+//! commands (`agentCommands`), which fill in `/<name> ` and go to the agent as typed.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::json;
@@ -13,6 +14,8 @@ pub enum SlashAction {
     Fast,
     DevServers,
     Skill,
+    /// One of the agent's own commands; `title` names the agent.
+    Agent,
 }
 
 /// A command the list offers.
@@ -28,8 +31,9 @@ impl SlashCommand {
     /// The row's text after `/name`.
     pub fn about(&self) -> String {
         match self.action {
-            SlashAction::Skill if self.detail.is_empty() => self.title.clone(),
+            SlashAction::Skill | SlashAction::Agent if self.detail.is_empty() => self.title.clone(),
             SlashAction::Skill => self.detail.replace('\n', " "),
+            SlashAction::Agent => format!("{} · {}", self.title, self.detail.replace('\n', " ")),
             SlashAction::Fast | SlashAction::DevServers => format!("{} · {}", self.title, self.detail),
         }
     }
@@ -86,10 +90,24 @@ impl App {
                 action: SlashAction::Skill,
             })
         });
+        let agent = self.bot().filter(|b| !b.group).into_iter().flat_map(|bot| {
+            let named = self.agent_name(bot.agent_step.as_deref().unwrap_or(&bot.backend));
+            bot.agent_commands.iter().map(move |(name, detail)| SlashCommand {
+                name: name.clone(),
+                title: named.clone(),
+                detail: detail.clone(),
+                action: SlashAction::Agent,
+            })
+        });
         self.built_in()
             .into_iter()
             .chain(skills)
-            .filter(|c| c.name.contains(&query) || c.title.to_lowercase().contains(&query))
+            .chain(agent)
+            .filter(|c| {
+                // An agent command's title is its agent's name, which would match every one of them.
+                c.name.to_lowercase().contains(&query)
+                    || (c.action != SlashAction::Agent && c.title.to_lowercase().contains(&query))
+            })
             .collect()
     }
 
@@ -114,7 +132,8 @@ impl App {
             KeyCode::Up => self.slash_pick = (typed, (sel + n - 1) % n),
             KeyCode::Tab | KeyCode::Enter => {
                 let picked = &commands[sel];
-                if k.code == KeyCode::Enter && picked.action == SlashAction::Skill && typed[1..] == picked.name {
+                let fills = matches!(picked.action, SlashAction::Skill | SlashAction::Agent);
+                if k.code == KeyCode::Enter && fills && typed[1..] == picked.name {
                     return false;
                 }
                 self.run_slash(picked);
@@ -149,7 +168,7 @@ impl App {
                 self.open_dev_servers();
                 String::new()
             }
-            SlashAction::Skill => format!("/{} ", command.name),
+            SlashAction::Skill | SlashAction::Agent => format!("/{} ", command.name),
         };
         if let Some(key) = self.selected.clone() {
             self.drafts.insert(key, Editor::with(&fill));
@@ -208,7 +227,7 @@ mod tests {
         app.drafts.insert("b".into(), super::Editor::with("/"));
         assert_eq!(names(&app), ["fast", "pdf", "docx"], "only skills the bot has on");
         app.drafts.insert("b".into(), super::Editor::with("/new"));
-        assert!(names(&app).is_empty(), "no command for a new session");
+        assert!(names(&app).is_empty(), "a new session is in the ^k menu");
         app.bots.get_mut("b").expect("the bot").fast_support = "unknown".into();
         app.drafts.insert("b".into(), super::Editor::with("/"));
         assert_eq!(names(&app), ["fast", "pdf", "docx"], "offered until the agent says otherwise");
@@ -230,6 +249,26 @@ mod tests {
         app.drafts.insert("b".into(), super::Editor::with("/fa"));
         assert!(app.slash_key(key(KeyCode::Tab)), "a built-in command runs");
         assert_eq!(app.draft().text, "", "and the draft clears");
+    }
+
+    #[tokio::test]
+    async fn the_agents_own_commands_follow_the_skills_and_fill_in() {
+        let commands = json!([{"name": "review", "description": "Review the changes"}, {"name": "compact"},
+            {"name": "plan", "description": "", "hint": "what to plan"}]);
+        let mut app = app_with(
+            &json!({"id": "b", "name": "Bot", "backend": "custom", "skills": ["pdf"], "fastModeSupport": "unsupported", "agentCommands": commands}),
+        );
+        app.drafts.insert("b".into(), super::Editor::with("/"));
+        assert_eq!(names(&app), ["pdf", "review", "compact", "plan"]);
+        let about: Vec<String> = app.slash_commands().iter().skip(1).map(super::SlashCommand::about).collect();
+        assert_eq!(about, ["custom · Review the changes", "custom", "custom · what to plan"], "marked with the agent");
+        app.drafts.insert("b".into(), super::Editor::with("/cust"));
+        assert!(names(&app).is_empty(), "the agent's name isn't a command's");
+        app.drafts.insert("b".into(), super::Editor::with("/rev"));
+        assert!(app.slash_key(key(KeyCode::Enter)), "Return fills it in");
+        assert_eq!(app.draft().text, "/review ");
+        app.drafts.insert("b".into(), super::Editor::with("/review"));
+        assert!(!app.slash_key(key(KeyCode::Enter)), "a command already typed out sends");
     }
 
     #[tokio::test]

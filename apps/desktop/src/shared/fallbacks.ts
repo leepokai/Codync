@@ -1,5 +1,5 @@
 import { AUTO_MODE } from './approvals.ts'
-import { isGroup, type Backend, type Bot, type BotDraft, type Fallback, type Resting } from './models.ts'
+import { isGroup, type Backend, type Bot, type BotDraft, type Fallback, type FallbackReason, type Resting } from './models.ts'
 
 /** The host refuses more. */
 export const MAX_FALLBACKS = 3
@@ -24,6 +24,25 @@ export function freeLogins(backend: Backend, taken: Login[]): (string | null)[] 
   return all.filter((loginProfile) => !taken.some((t) => sameLogin(t, { backend: backend.id, loginProfile })))
 }
 
+/** The agents a step can use: each with a login the rest of the chain (`taken`) doesn't have, and the ones `keep` is on
+ * while no other step has that login (a step keeps its own login, even one that has signed out since). */
+export const stepAgents = (backends: Backend[], taken: Login[], keep: (Login | null)[] = []): Backend[] =>
+  backends.filter((b) => keep.some((k) => k?.backend === b.id && !taken.some((t) => sameLogin(t, k))) || freeLogins(b, taken).length > 0)
+
+/** The logins `step` can pick on its agent: the free ones, and its own, even one that has signed out since. */
+export function stepLogins(agent: Backend, step: Login, taken: Login[]): (string | null)[] {
+  const free = freeLogins(agent, taken)
+  const own = step.loginProfile ?? null
+  return free.includes(own) ? free : [...free, own]
+}
+
+/** A step on `agent`: `own` (the step before it changed agent) when it's on that agent and its login isn't elsewhere in the
+ * chain (`taken`), else the agent's first free login with its default model. */
+export const stepOn = (agent: Backend, taken: Login[], own: Fallback | null = null): Fallback =>
+  own?.backend === agent.id && !taken.some((t) => sameLogin(t, own))
+    ? own
+    : { backend: agent.id, loginProfile: freeLogins(agent, taken)[0] ?? null, model: null, modelOptions: {} }
+
 /** The agent a bot runs on right now: its fallback's while it's on one. */
 export const runningAgent = (bot: Bot) => bot.agentStep?.agent ?? bot.backend
 
@@ -41,18 +60,41 @@ export function clockTime(ms: number, now: number): string {
 export const restLine = (rest: Resting, now: number) =>
   `${rest.reason === 'usageLimit' ? 'Usage resets' : 'Resting until'} ${clockTime(rest.until, now)}`
 
+/** Why an agent rests, in the banner's words: "is signed out", "is rate limited"… A usage limit says when it resets instead, and a missing model or mode never rests an agent (`rest::record`). */
+export function restPhrase(reason: FallbackReason): string {
+  switch (reason) {
+    case 'outOfCredits': return 'is out of credits'
+    case 'rateLimited': return 'is rate limited'
+    case 'overloaded': return 'is overloaded'
+    case 'signedOut': return 'is signed out'
+    case 'notStarting': return "couldn't start"
+    default: return "can't answer"
+  }
+}
+
+/** A sentence before it's translated: the phrase, and the names to put in once it's read in the app's language. */
+export interface FallbackPhrase {
+  key: string
+  values: Record<string, string>
+}
+
 /**
- * The Agent card's first line while the bot runs on a fallback; null on its own agent. `name` says what to call a login
- * ("Claude Code (Work)" on a login profile); `own` asks for the computer's own login by its name too, which tells two
- * logins of one agent apart.
+ * The Agent card's first line while the bot runs on a fallback, as a phrase and its names; null on its own agent. `name`
+ * says what to call a login ("Claude Code (Work)" on a login profile); `own` asks for the computer's own login by its
+ * name too, which tells two logins of one agent apart. Translating the phrase before the names go in keeps a name that
+ * holds " while " from being read as the sentence's own word.
  */
-export function stepBanner(bot: Bot, name: (login: Login, own: boolean) => string, now: number): string | null {
+export function stepBannerPhrase(bot: Bot, name: (login: Login, own: boolean) => string, now: number): FallbackPhrase | null {
   const step = stepLogin(bot)
   if (!step) return null
   const same = step.backend === bot.backend
   const [to, own] = [name(step, same), name(bot, same)]
   const rest = restOf(bot, bot, now)
-  return rest ? `Using ${to} until ${own} resets at ${clockTime(rest.until, now)}` : `Using ${to} while ${own} can't answer`
+  if (!rest) return { key: "Using {to} while {own} can't answer", values: { to, own } }
+  // A reset time is real only for a usage limit; another rest names what it is (signed out, rate limited…).
+  return rest.reason === 'usageLimit'
+    ? { key: 'Using {to} until {own} resets at {time}', values: { to, own, time: clockTime(rest.until, now) } }
+    : { key: `Using {to} while {own} ${restPhrase(rest.reason)}`, values: { to, own } }
 }
 
 /** The list with the fallback at `index` moved `by` places (clamped to the ends). */

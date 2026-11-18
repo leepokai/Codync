@@ -18,6 +18,10 @@
   background: var(--bubble-user);
   color: var(--text);
 }
+.styled-button.destructive {
+  background: var(--danger-fill);
+  color: var(--on-danger);
+}
 .styled-button:active:not(:disabled) {
   transform: scale(0.98);
   opacity: 0.85;
@@ -354,6 +358,11 @@
 }
 .value-row-value {
   color: var(--secondary);
+}
+/* A stepper's number, as wide as two digits so the buttons hold still. */
+.stepper-value {
+  min-width: 2ch;
+  text-align: center;
 }
 /* A row's note under its title (RowLabel). */
 .detail-note {

@@ -5,7 +5,20 @@ import kotlinx.serialization.json.Json
 
 /** A release's highlights, shown once after updating to it (iOS `Announcement`, docs/features/whats-new.md). */
 @Serializable
-data class Announcement(val version: String, val notes: List<String>) {
+data class Announcement(
+    val version: String,
+    val features: List<Feature> = emptyList(),
+    /** Smaller changes, text only: English interface phrases, translated in every catalog. */
+    val notes: List<String> = emptyList(),
+) {
+    /**
+     * One highlight: a short preview clip over its name and a sentence about it. [title] and [body] are English
+     * interface phrases; [beta] puts a tag beside the title; [media] names its muted, looping clip (`<media>.mp4`
+     * beside the file); [film] is where the full video plays.
+     */
+    @Serializable
+    data class Feature(val title: String, val body: String, val beta: Boolean = false, val media: String? = null, val film: String? = null)
+
     companion object {
         /** `announcements.json`, shared with every client; newest first. */
         fun parse(text: String): List<Announcement> = Json.decodeFromString(text)

@@ -223,13 +223,13 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
         crate::agent::fallback::name(&cfg.backend)
     };
     lines.push(format!(
-        "Environment: you run inside Codync. The user talks to you through Codync (its phone, desktop or terminal app), not in {engine}'s own CLI, IDE or app. The engine Codync runs you on is {engine}: where your base instructions describe its CLI, terminal, slash commands or keyboard shortcuts, they describe that engine, not where the user is, so don't point the user to them. A chat in Codync is one conversation that goes on, with no new session or clear for the user to start, so don't suggest starting over."
+        "Environment: you run inside Codync. The user talks to you through Codync (its phone, desktop or terminal app), not in {engine}'s own CLI, IDE or app. The engine Codync runs you on is {engine}: where your base instructions describe its CLI, terminal, slash commands or keyboard shortcuts, they describe that engine, not where the user is, so don't point the user to them. A chat in Codync is one conversation that goes on; where Codync offers New session in the bot's menu (^k in the terminal UI), the user can pick it to start over with a fresh context, and the chat stays."
     ));
     lines.push(String::new());
     lines.push(format!("Messages: {}", crate::chat::outbox::instructions()));
     lines.push(String::new());
     lines.push(
-        "Other conversations: your history is shared across them. A group chat turn starts with [Group chat: ...]; a request from another bot or a routine run says so in its first line. In group chats, routines and requests from other bots, send_message isn't available: your final reply is what gets delivered (to the room, the run's result or the bot that asked), so write it for its reader; group chats and requests from other bots can't use message_bot either. Replies to your own message_bot requests arrive as a turn of their own in this chat, starting with [Codync: ...]: carry on with the user's task from there, and your final reply goes to the user. These rules apply to the current turn, not later turns in this session. Only @-mention in group chats, and don't assume a group sees your private chat."
+        "Other conversations: your history is shared across them. A group chat turn starts with [Group chat: ...]; a request from another bot or a routine run says so in its first line; in your own chat, each user message starts with [Codync: message <id>], the id send_message and send_file take as reply_to. In group chats, routines and requests from other bots, send_message isn't available: your final reply is what gets delivered (to the room, the run's result or the bot that asked), so write it for its reader; group chats and requests from other bots can't use message_bot either. Replies to your own message_bot requests arrive as a turn of their own in this chat, starting with [Codync: <bot> replied to your message_bot request ...] (or couldn't finish it): carry on with the user's task from there, and your final reply goes to the user. These rules apply to the current turn, not later turns in this session. Only @-mention in group chats, and don't assume a group sees your private chat."
             .to_owned(),
     );
     lines.push(String::new());
@@ -238,11 +238,13 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
             .to_owned(),
     );
     lines.push(String::new());
-    lines.push(format!("Workspace: your default working directory is {}. {} Keep your own files and outputs there. For another project, use explicit paths or change directory for that command; don't change your bot configuration to work elsewhere. This directory is not a sandbox or a grant of access: follow the user's instructions and your permissions, and don't assume other bots' files are yours.", cfg.cwd, if crate::agent::workspace::is_managed(cfg) { "Codync allocated it for you alone." } else { "The user chose this project folder." }));
+    lines.push(format!("Workspace: your default working directory is {}. {} Keep your own files and outputs there. For another project, use explicit paths or change directory for that command; don't change your bot configuration to work elsewhere. This directory is not a sandbox or a grant of access: follow the user's instructions and your permissions, and don't assume other bots' files are yours.", cfg.cwd, workspace_origin(cfg)));
     lines.push(String::new());
     lines.push(crate::dev_servers::BRIEF.to_owned());
     lines.push(String::new());
     lines.push(crate::routines::BRIEF.to_owned());
+    lines.push(String::new());
+    lines.push(crate::chat::tasks::BRIEF.to_owned());
     if let Some(skills) = crate::market::skills_brief(store, &cfg.skills) {
         lines.push(String::new());
         lines.push(skills);
@@ -256,6 +258,17 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
         out.push_str(&memory);
     }
     out
+}
+
+/// Whose the bot's working directory is, and for its own folder, the versions Codync keeps there.
+fn workspace_origin(cfg: &BotConfig) -> &'static str {
+    match crate::agent::workspace::own_folder(cfg) {
+        Some(dir) if crate::agent::versions::kept(&dir) => {
+            "Codync allocated it for you alone and keeps its versions in git: it commits the folder before (\"Before: ...\") and after each turn, so git log and git diff show what each turn changed, and you can bring back an earlier version of a file when the user asks."
+        }
+        Some(_) => "Codync allocated it for you alone.",
+        None => "The user chose this project folder.",
+    }
 }
 
 /// The `<agent_profile_update>` block to append to the next message when the

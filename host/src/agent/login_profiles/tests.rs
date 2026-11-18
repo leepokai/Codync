@@ -274,3 +274,16 @@ fn an_account_is_in_use_by_a_bot_on_it_and_by_one_that_falls_back_to_it() {
     assert_eq!(users(&store, "a2").expect("bots"), ["Step"], "removing it would leave a fallback no save accepts");
     assert_eq!(users(&store, "gone").expect("bots"), Vec::<String>::new());
 }
+
+#[test]
+fn an_account_is_in_use_by_a_task_that_works_on_it() {
+    let store = store_with(&[("a1", "claude"), ("a2", "claude")]);
+    let save = |cfg: Value| store.save_bot(&serde_json::from_value(cfg).expect("bot")).expect("saved");
+    // The bot moved to another account since its task started.
+    save(json!({"id": "own", "name": "Own", "backend": "claude", "loginProfile": "a1"}));
+    save(json!({"id": "task-1", "name": "Own", "backend": "claude", "loginProfile": "a2", "taskOf": "own"}));
+    save(json!({"id": "task-2", "name": "Own", "backend": "claude", "loginProfile": "gone", "taskOf": "own"}));
+    crate::chat::tasks::put_working_for_test(&store, "own", "task-1");
+    assert_eq!(users(&store, "a2").expect("bots"), ["Own"], "its agent runs on it until its item ends");
+    assert_eq!(users(&store, "gone").expect("bots"), Vec::<String>::new(), "a task that ended holds nothing");
+}

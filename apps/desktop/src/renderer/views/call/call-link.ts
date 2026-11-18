@@ -10,6 +10,8 @@ const HEARING_PATIENCE_MS = 2_000
 export interface CallSession {
   /** A realtime provider's short-lived credential. */
   credential?: string
+  /** Google's built-in search is on for this session (the computer added it to the role); absent on older hosts. */
+  googleSearch?: boolean
   /** The voice's instructions: its role, then the background. */
   instructions: string
   /** The voice's tools in JSON Schema form. */
@@ -36,11 +38,13 @@ export class CallLink {
     readonly call: string,
   ) {}
 
-  /** Starts the call on the computer (again, when a provider session is replaced): what the voice needs. */
-  async start(mode: 'realtime' | 'speech' | 'device', provider: VoiceProvider | null = null, model?: string, voice?: string) {
+  /** Starts the call on the computer (again, when a provider session is replaced): what the voice needs.
+   * `googleSearch` asks for Gemini's built-in search; the session says whether it's on. */
+  async start(mode: 'realtime' | 'speech' | 'device', provider: VoiceProvider | null = null, model?: string, voice?: string,
+    googleSearch = false) {
     const client = await this.store.ready()
     return client.call<CallSession>('startCall', {
-      botId: this.botId, callId: this.call, mode, provider, model, voice, language: navigator.language,
+      botId: this.botId, callId: this.call, mode, provider, model, voice, language: navigator.language, googleSearch,
     }, 30_000)
   }
 

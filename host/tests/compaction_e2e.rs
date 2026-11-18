@@ -55,6 +55,22 @@ async fn a_full_conversation_is_compacted_with_its_keep_list() {
     assert!(host.prompts(&codex).iter().any(|p| p == "/compact"), "Codex's keep-list is in its config");
 }
 
+/// A gateway's Responses stream announces itself before the model answers, so the adapter reports zero use; an agent
+/// that never reports compactions must not have that zero read as one (issue #496).
+#[tokio::test]
+async fn a_stream_that_reports_zero_use_is_not_a_compaction() {
+    let host = Host::start().await;
+    let silent = host.fixture_bot("Silent", "instructions_agent.py", "silent").await;
+    host.reply(&silent, "USAGE 26247 SIZE 200000").await;
+    host.reply(&silent, "USAGE 0 SIZE 200000").await;
+    host.reply(&silent, "USAGE 27643 SIZE 200000").await;
+    let history = host.call("history", json!({"botId": silent})).await;
+    assert!(
+        !history["entries"].as_array().unwrap().iter().any(|e| e["data"]["compaction"].is_object()),
+        "a zero reading is not a compaction: {history}"
+    );
+}
+
 #[tokio::test]
 async fn the_users_threshold_decides_when_the_host_compacts() {
     let host = Host::start().await;
@@ -155,6 +171,24 @@ async fn turning_summaries_off_withdraws_a_fresh_conversation_already_drafted() 
     host.reply(&bot, "carry on").await;
     assert_eq!(host.requests(&bot, "session/new").len(), 1, "same conversation");
     assert!(!host.prompts(&bot).last().unwrap().contains("<handoff>"));
+}
+
+#[tokio::test]
+async fn a_new_session_carries_no_fresh_conversation_already_drafted() {
+    let host = Host::start().await;
+    let bot = early_bot(&host, "Fresh", "codex").await;
+    host.reply(&bot, "USAGE 210000 SIZE 1000000").await;
+    notice(&host, &bot, "compaction").await;
+    host.reply(&bot, "USAGE 210000 SIZE 1000000").await;
+    let card = notice(&host, &bot, "handoff").await;
+    assert_eq!(card["data"]["handoff"]["status"], "draft");
+
+    host.call("newSession", json!({"botId": bot})).await;
+    host.reply(&bot, "something else").await;
+    assert_eq!(host.requests(&bot, "session/new").len(), 2, "a new conversation");
+    assert!(!host.prompts(&bot).last().unwrap().contains("<handoff>"), "the old one's summary stays behind");
+    let card = common::steer::entry(&host, &bot, card["id"].as_str().unwrap()).await;
+    assert_eq!(card["data"]["handoff"]["status"], "kept", "the card is settled without being sent");
 }
 
 /// Holds a turn that fills the conversation, queues "second" (held too) behind it and lets the first end: the

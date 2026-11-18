@@ -312,7 +312,8 @@ async fn the_receiving_computers_rules_decide_but_answers_to_the_asker_pass() {
     assert!(laptop.send(elsewhere).await.is_err(), "coder didn't ask");
     let answer = Letter::new("intern", to("reviewer@desk"), "main").reply_to(asked.clone());
     assert_eq!(laptop.send(answer).await.unwrap(), Sent::Delivered);
-    assert_eq!(next(&mut desk_inbox).await.body, "main");
+    let got = next(&mut desk_inbox).await;
+    assert_eq!((got.body.as_str(), got.access), ("main", Access::Ask), "an answer past a deny is never freer than ask");
     let last = Letter::new("intern", to("reviewer@desk"), "done").reply_to(asked.clone()).meta(serde_json::json!({}));
     assert_eq!(laptop.send(last).await.unwrap(), Sent::Delivered);
     assert_eq!(next(&mut desk_inbox).await.body, "done");
@@ -321,6 +322,48 @@ async fn the_receiving_computers_rules_decide_but_answers_to_the_asker_pass() {
     let fake = Letter::new("intern", to("coder@desk"), "sneaky").reply_to("not-a-letter-of-yours");
     assert!(laptop.send(fake).await.is_err());
     for dir in [desk_dir, laptop_dir] {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[tokio::test]
+async fn a_letter_under_a_ceiling_says_so_and_only_reaches_an_agent_the_app_runs() {
+    use codync_network::{Access, Rule};
+    let (desk_dir, cloud_dir) = (temp_dir("desk12"), temp_dir("cloud12"));
+    let (desk, mut desk_inbox) = Node::start(&desk_dir, &Connector::Private).await.unwrap();
+    desk.create("desk").unwrap();
+    desk.set_agents([(agent("reviewer"), Reach::App), (agent("session"), Reach::Codex { thread: "t".into() })]);
+    let (cloud, _cloud_inbox) = Node::start(&cloud_dir, &Connector::Private).await.unwrap();
+    offer(&cloud, "lead");
+    cloud.join(&desk.invite().unwrap(), "cloud").await.unwrap();
+
+    cloud.send(Letter::new("lead", to("reviewer@desk"), "before")).await.unwrap();
+    assert_eq!(next(&mut desk_inbox).await.access, Access::Allow, "no rule: as before");
+    desk.set_rules(vec![Rule::new(Access::Ask, "*@cloud", "*").unwrap()]).unwrap();
+    cloud.send(Letter::new("lead", to("reviewer@desk"), "run the tests")).await.unwrap();
+    assert_eq!(next(&mut desk_inbox).await.access, Access::Ask);
+    let refused = cloud.send(Letter::new("lead", to("session@desk"), "run the tests")).await.unwrap_err();
+    assert_eq!(
+        refused.to_string(),
+        "desk refused it: session can't be held to asking its user, so it doesn't take messages from lead@cloud"
+    );
+    desk.set_rules(vec![Rule::new(Access::Auto, "*@cloud", "*").unwrap()]).unwrap();
+    cloud.send(Letter::new("lead", to("reviewer@desk"), "and lint")).await.unwrap();
+    assert_eq!(next(&mut desk_inbox).await.access, Access::Auto);
+    assert!(cloud.send(Letter::new("lead", to("session@desk"), "and lint")).await.is_err());
+    // The answer to the session's own request is the cloud's text too: refused the same way, also past a deny.
+    let ask = Letter::new("session", to("lead@cloud"), "which branch?");
+    let asked = ask.id.clone();
+    desk.send(ask).await.unwrap();
+    for access in [Access::Ask, Access::Deny] {
+        desk.set_rules(vec![Rule::new(access, "*@cloud", "*").unwrap()]).unwrap();
+        let answer = Letter::new("lead", to("session@desk"), "main").reply_to(asked.clone());
+        assert_eq!(
+            cloud.send(answer).await.unwrap_err().to_string(),
+            "desk refused it: session can't be held to asking its user, so it doesn't take messages from lead@cloud"
+        );
+    }
+    for dir in [desk_dir, cloud_dir] {
         let _ = std::fs::remove_dir_all(dir);
     }
 }

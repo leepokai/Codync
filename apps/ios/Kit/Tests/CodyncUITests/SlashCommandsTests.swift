@@ -27,6 +27,25 @@ private let installed = [("pdf", "PDF"), ("code-review", "Code Review"), ("xlsx"
     #expect(SlashCommands.list(for: try bot(#"{"id":"b","fastModeSupport":"unsupported"}"#), query: "", skills: []).isEmpty, "no Fast mode on offer")
 }
 
+@Test func aBotsAgentCommandsFollowItsSkillsMatchedByName() throws {
+    let commands = #"[{"name":"review","description":"Review the changes"},{"name":"compact","hint":"what to keep"}]"#
+    let claude = try bot(#"{"id":"b","backend":"claude","skills":["pdf"],"fastModeSupport":"unsupported","agentCommands":\#(commands)}"#)
+    let list = SlashCommands.list(for: claude, query: "", skills: installed)
+    #expect(list.map(\.name) == ["pdf", "review", "compact"])
+    #expect(list[1].action == .agent(name: "review", agent: "claude"))
+    #expect(list[2].detail == "what to keep", "the hint stands in for a missing description")
+    #expect(SlashCommands.list(for: claude, query: "rev", skills: installed).map(\.name) == ["review"])
+    let fallback = #"{"step":1,"agent":"codex","since":0}"#
+    let onFallback = try bot(#"{"id":"b","backend":"claude","fastModeSupport":"unsupported","agentStep":\#(fallback),"agentCommands":\#(commands)}"#)
+    #expect(SlashCommands.list(for: onFallback, query: "rev", skills: []).first?.action == .agent(name: "review", agent: "codex"))
+    let groups = SlashCommands.groups(list)
+    #expect(groups.map(\.agent) == [nil, "claude"], "Codync's, then the agent's")
+    #expect(groups.map { $0.commands.map(\.name) } == [["pdf"], ["review", "compact"]])
+    let group = try bot(#"{"id":"g","kind":"group","members":["b"],"agentCommands":\#(commands)}"#)
+    #expect(SlashCommands.list(for: group, members: [claude], query: "", skills: installed).map(\.name) == ["pdf"],
+            "a group has no agent of its own")
+}
+
 @Test func aGroupListsItsMembersFastModeAndTheirSkills() throws {
     let group = try bot(#"{"id":"g","kind":"group","members":["a","b","c"]}"#)
     let a = try bot(#"{"id":"a","name":"Ann","skills":["pdf"],"fastModeSupport":"offered"}"#)
@@ -84,7 +103,7 @@ private let installed = [("pdf", "PDF"), ("code-review", "Code Review"), ("xlsx"
         let commands = (0..<count).map {
             SlashCommand(name: "s\($0)", icon: "bolt", title: "Skill \($0)", detail: "", warning: false, action: .skill("s\($0)"))
         }
-        return UIHostingController(rootView: CommandList(commands: commands) { _ in })
+        return UIHostingController(rootView: CommandList(commands: commands, agentRegistry: { $0 }, agentName: { $0 }) { _ in })
             .sizeThatFits(in: CGSize(width: 390, height: 2000)).height
     }
     #expect(height(2) < 140, "two rows, not the 280-point cap")

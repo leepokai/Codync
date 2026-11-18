@@ -19,7 +19,11 @@ fn observed_events_carry_no_content() {
     let b = json!({"botId": "b1", "text": "secret plan", "replyTo": "e1", "attachments": ["u1", "u2"]});
     let (event, p) = props("send", &b).expect("send is tracked");
     assert_eq!(event, Event::MessageSent);
-    assert_eq!(p, json!({"reply": true, "attachments": 2, "client": "local"}));
+    assert_eq!(p, json!({"reply": true, "replyPart": false, "attachments": 2, "client": "local"}));
+    assert!(!p.to_string().contains("secret"));
+    let part = json!({"botId": "b1", "text": "why?", "replyTo": "e1", "replyPart": "the secret step"});
+    let (_, p) = props("send", &part).expect("send is tracked");
+    assert_eq!(p["replyPart"], true);
     assert!(!p.to_string().contains("secret"));
 
     let custom = json!({"name": "mine", "command": "/Users/me/bin/server"});
@@ -58,6 +62,15 @@ fn handoff_and_credentials_name_a_fixed_action() {
 #[test]
 fn settings_routines_screen_and_devices() {
     let setting = |m: &str, b: Value| props(m, &b).map(|(e, p)| (e, p["setting"].clone(), p["on"].clone()));
+    assert_eq!(
+        setting("setVoiceServer", json!({"provider": "openai", "url": "http://127.0.0.1:8890"})),
+        Some((Event::SettingChanged, json!("voice_server"), json!(true))),
+        "never the address"
+    );
+    assert_eq!(
+        setting("setVoiceServer", json!({"provider": "openai", "url": " "})).map(|(_, _, on)| on),
+        Some(json!(false))
+    );
     assert_eq!(
         setting("setCloud", json!({"enabled": true})),
         Some((Event::SettingChanged, json!("remote_access"), json!(true)))
@@ -177,6 +190,20 @@ fn connectors_skills_and_agents() {
         Some((Event::VoiceNoteSent, json!({"client": "local"})))
     );
     assert_eq!(sent(json!({"path": "report.pdf"})), None, "a file card isn't a voice note");
+    let quoting =
+        |name: &str, arguments: Value| props("chatCall", &json!({"botId": "b", "name": name, "arguments": arguments}));
+    assert_eq!(
+        quoting("send_message", json!({"text": "secret", "reply_to": "e1"})),
+        Some((Event::BotQuoted, json!({"tool": "message", "client": "local"})))
+    );
+    let file = quoting("send_file", json!({"path": "/secret/report.pdf", "reply_to": "e1"}));
+    assert_eq!(file.map(|(_, p)| p["tool"].clone()), Some(json!("file")));
+    let (event, p) =
+        observe(&Caller::Local, "chatCall", &json!({"name": "send_message", "arguments": {"reply_to": "e1"}}))
+            .expect("a quote is tracked");
+    let outcome = |answer: Value| answered(event, p.clone(), &answer).map(|p| p["outcome"].clone());
+    assert_eq!(outcome(json!({"sent": true})), Some(json!("quoted")));
+    assert_eq!(outcome(json!({"sent": true, "warning": "x"})), Some(json!("unquoted")));
     let published = |arguments: Value| {
         observe(&Caller::Local, "chatCall", &json!({"botId": "b", "name": "publish_artifact", "arguments": arguments}))
             .expect("a publish is tracked")
@@ -189,7 +216,7 @@ fn connectors_skills_and_agents() {
     );
     let (event, p) = published(json!({"path": "r.html", "artifact": "a1"}));
     let p = answered(event, p, &json!({"published": true, "card": "not posted"})).expect("published");
-    assert_eq!((p["change"].clone(), p["card"].clone()), (json!("update"), json!(false)), "a routine's has no card");
+    assert_eq!((p["change"].clone(), p["card"].clone()), (json!("update"), json!(false)), "a room's has no card");
     assert_eq!(props("connectorSignIn", &json!({"id": "c"})).map(|(e, _)| e), Some(Event::ConnectorSigninStarted));
     let setup = props("agentSetup", &json!({"backend": "claude-acp", "step": "install"}));
     assert_eq!(setup, Some((Event::AgentSetupStarted, json!({"agent": "claude-acp", "client": "local"}))));
@@ -378,4 +405,20 @@ fn a_failed_network_call_reports_what_it_was_and_others_nothing() {
         Some((Event::NetworkFailed, json!({"action": "remove", "client": "local", "stage": "action"})))
     );
     assert_eq!(failed_call("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})), None);
+    assert_eq!(failed_call("setCloudUrl", &json!({"url": "https://relay.example.com"})), None);
+}
+
+#[test]
+fn a_voice_server_that_wasnt_saved_reports_why_never_what_it_said() {
+    let (event, p) =
+        observe(&Caller::Local, "setVoiceServer", &json!({"provider": "openai", "url": "http://x"})).unwrap();
+    let refused = crate::voice::ServerRefused::error("unreachable", "Can't reach your server.");
+    let reported = |error: &anyhow::Error| failed(event, p.clone(), error).map(|(e, p)| (e, Value::Object(p)));
+    let with = |category: &str| {
+        let props =
+            json!({"setting": "voice_server", "on": true, "client": "local", "outcome": "failed", "error": category});
+        Some((Event::SettingChanged, props))
+    };
+    assert_eq!(reported(&refused), with("unreachable"));
+    assert_eq!(reported(&anyhow::anyhow!("the vault is locked")), with("other"));
 }

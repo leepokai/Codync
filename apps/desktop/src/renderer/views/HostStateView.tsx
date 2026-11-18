@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { fill } from '@shared/fill'
 import { CharacterAvatar, type Mood } from '../components/Avatar'
 import { Button } from '../components/Controls'
 import { Icon } from '../components/Icon'
@@ -32,7 +33,7 @@ function hostFailure(message: string, tr: (text: string) => string): string {
   if (loaded || message.includes('Bootstrap failed:')) {
     const path = loaded?.[1]
     return path
-      ? tr("The background service didn't start. macOS couldn't load {path}.").replaceAll('{path}', path)
+      ? fill(tr("The background service didn't start. macOS couldn't load {path}."), { path })
       : tr("The background service didn't start.")
   }
   return tr(message)

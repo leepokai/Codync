@@ -61,6 +61,8 @@ impl App {
             Reply::CallEntries(call) => {
                 self.call_entries.insert(call, entries_of(&v));
             }
+            Reply::TaskEntries(task) => self.task_fetched(&task, Ok(&v)),
+            Reply::ThreadSent(item) => self.thread_sent(&item, Ok(())),
             Reply::DevServerLogs(id) => {
                 let text = v["text"].as_str().unwrap_or_default().to_owned();
                 self.dev_server_logs(&id, Ok(text));
@@ -78,17 +80,17 @@ impl App {
             }
             Reply::Routines(bot) => {
                 if v["routines"].is_array() {
+                    let (work, max_agents) = self.bots.get(&bot).map_or((&[][..], None), |b| (&b.work, b.max_agents));
                     for o in &mut self.overlays {
-                        if let Overlay::Routines(l) = o
+                        if let Overlay::Details(l) = o
                             && l.bot == bot
                         {
                             // Follow-ups come and go with no key pressed: the cursor stays on the row it picked.
-                            let picked = l.picked().map(|row| row.id().clone());
+                            let picked = l.picked(work, max_agents).map(|row| row.id().to_owned());
                             l.items = Some(v["routines"].as_array().cloned().unwrap_or_default());
                             l.follow_ups = v["followUps"].as_array().cloned().unwrap_or_default();
                             l.runs = v["runs"].as_array().cloned().unwrap_or_default();
-                            let kept = picked.and_then(|id| l.rows().position(|row| *row.id() == id));
-                            l.cursor = kept.unwrap_or(l.cursor).min(l.rows().count().saturating_sub(1));
+                            l.keep_cursor(picked.as_deref(), work, max_agents);
                         }
                     }
                 } else {
@@ -115,7 +117,7 @@ impl App {
             }
             Reply::FollowUpCancelled(bot) => {
                 self.flash("Follow-up cancelled");
-                self.reload_routines(&bot);
+                self.reload_details(&bot);
             }
             Reply::RoutineSaved => {
                 if let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Routine(_))) {
@@ -325,6 +327,8 @@ impl App {
                 self.unfolded.retain(|id| !lines.contains(id));
                 self.flash(&e);
             }
+            Reply::TaskEntries(task) => self.task_fetched(task, Err(e)),
+            Reply::ThreadSent(item) => self.thread_sent(item, Err(e)),
             Reply::DevServerLogs(id) => self.dev_server_logs(id, Err(e)),
             Reply::BotChat { bot, peer } => {
                 for o in &mut self.overlays {
@@ -379,7 +383,7 @@ impl App {
                             m.busy = false;
                             m.error = Some(e.clone());
                         }
-                        Overlay::Routines(l) => {
+                        Overlay::Details(l) => {
                             l.items.get_or_insert_with(Vec::new);
                         }
                         _ => {}
@@ -416,7 +420,7 @@ impl App {
                         calls.push(("memoryFile", body, After::Sheet(Reply::MemoryFile(m.bot.clone()))));
                     }
                 }
-                Overlay::Routines(l) => {
+                Overlay::Details(l) => {
                     calls.push(("routines", json!({"botId": l.bot}), After::Sheet(Reply::Routines(l.bot.clone()))));
                 }
                 Overlay::Library(l) => {

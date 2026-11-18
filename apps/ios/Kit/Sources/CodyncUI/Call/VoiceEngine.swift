@@ -37,6 +37,7 @@ enum Reconnect {
 /// `CallView` only talks to this; nothing on the host changes.
 @MainActor
 protocol VoiceEngine: AnyObject, Observable {
+    var searchResult: CallSearchResult? { get }
     var phase: VoicePhase { get }
     /// Microphone loudness, 0…1, while listening.
     var level: Float { get }
@@ -60,6 +61,7 @@ protocol VoiceEngine: AnyObject, Observable {
 }
 
 extension VoiceEngine {
+    var searchResult: CallSearchResult? { nil }
     /// What the computer tells the call's voice, handed to the method that says it.
     func hear(_ cue: CallCue) {
         switch cue.kind {
@@ -94,6 +96,8 @@ struct VoiceError: LocalizedError {
 /// The engine picked in the call settings, kept on this device.
 enum VoiceSettings {
     static let engineKey = "callEngine"
+    static let googleSearchKey = "callGoogleSearch.gemini"
+    static var googleSearch: Bool { UserDefaults.standard.bool(forKey: googleSearchKey) }
 
     static var provider: VoiceProvider? {
         UserDefaults.standard.string(forKey: engineKey).flatMap(VoiceProvider.init(rawValue:))
@@ -127,15 +131,35 @@ enum VoiceSettings {
         UserDefaults.standard.set(data, forKey: defaultsKey(provider))
     }
 
+    /// Keeps what the computer says of each provider: its newest models become the defaults, and its server
+    /// decides the mode. Another server has other models: the ones picked, and the list, for the one before go.
     static func remember(_ status: VoiceStatus) {
-        for entry in status.providers { remember(entry.defaults, for: entry.provider) }
+        for entry in status.providers {
+            let p = entry.provider
+            if (UserDefaults.standard.string(forKey: serverKey(p)) ?? "") != (entry.server ?? "") {
+                for key in [modelKey(p), transcribeKey(p), speechKey(p), modelsKey(p)] {
+                    UserDefaults.standard.removeObject(forKey: key)
+                }
+            }
+            remember(entry.defaults, for: p)
+            UserDefaults.standard.set(entry.server, forKey: serverKey(p))
+        }
     }
+
+    /// The server the provider's Speech mode goes to, as the computer last said: `""` for the provider itself,
+    /// nothing where it has none to choose.
+    static func serverKey(_ provider: VoiceProvider) -> String { "callServer.\(provider.rawValue)" }
+
+    /// A server of the user's own holds no Realtime conversation, so Speech is its only mode; the picked mode
+    /// comes back with the provider.
+    static func speechOnly(_ server: String?) -> Bool { server?.isEmpty == false }
 
     /// `realtime` (a live conversation) or `speech` (speech to text, then the reply read aloud).
     static func modeKey(_ provider: VoiceProvider) -> String { "callMode.\(provider.rawValue)" }
 
     static func isSpeechMode(_ provider: VoiceProvider) -> Bool {
-        UserDefaults.standard.string(forKey: modeKey(provider)) == "speech"
+        speechOnly(UserDefaults.standard.string(forKey: serverKey(provider)))
+            || UserDefaults.standard.string(forKey: modeKey(provider)) == "speech"
     }
 
     static func transcribeKey(_ provider: VoiceProvider) -> String { "callSpeechToText.\(provider.rawValue)" }
@@ -174,7 +198,7 @@ enum VoiceSettings {
         guard let provider else { return "device \(UserDefaults.standard.string(forKey: OnDeviceEngine.languageKey) ?? "")" }
         return isSpeechMode(provider)
             ? "\(provider.rawValue) speech \(transcribeModel(provider)) \(speechModel(provider)) \(voice(provider))"
-            : "\(provider.rawValue) \(model(provider)) \(voice(provider))"
+            : "\(provider.rawValue) \(model(provider)) \(voice(provider)) \(provider == .gemini && googleSearch)"
     }
 
     static func voiceKey(_ provider: VoiceProvider) -> String { "callVoice.\(provider.rawValue)" }

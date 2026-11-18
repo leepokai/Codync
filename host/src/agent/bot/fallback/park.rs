@@ -48,7 +48,7 @@ impl Actor {
     /// Moves the main session to step `target`'s agent: parks this agent's session and resumes the other's.
     pub(super) async fn switch_to(&mut self, target: usize) {
         let bot = self.base.id.clone();
-        let (from, from_login) = (self.cfg.backend.clone(), fallback::login::of(&self.cfg));
+        let from_login = fallback::login::of(&self.cfg);
         // What this agent has seen of the chat: not a message that starts a turn it won't answer.
         let unseen = self
             .relay
@@ -75,15 +75,12 @@ impl Actor {
         for slot in self.run_slots() {
             self.set_session(Some(&slot), None);
         }
-        let left_session = self.session_id.clone();
+        self.owe_recap();
         self.cfg = fallback::effective(&self.base, target);
         let key = parked_key(&bot, &fallback::login::of(&self.cfg));
         let parked = self.hub.store.kv_get(&key).filter(|s| !s.is_empty());
         logged(&bot, "take the agent's parked session", self.hub.store.kv_delete(&key));
         self.set_session(None, parked.as_deref());
-        if ran {
-            self.relay.recap = Some((from, left_session));
-        }
         self.mark_step();
     }
 

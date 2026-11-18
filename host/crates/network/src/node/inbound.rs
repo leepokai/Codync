@@ -4,7 +4,7 @@ use super::{Inner, check_name, locked, remember};
 use crate::guard::digest;
 use crate::reach::Reach;
 use crate::roster::Change;
-use crate::rules;
+use crate::rules::{self, Access};
 use crate::types::Message;
 use crate::wire::{self, Envelope, Request, Response};
 use anyhow::{Result, anyhow, bail};
@@ -107,12 +107,20 @@ impl Inner {
         let name = |id: &EndpointId| roster.as_ref().map_or_else(|| "local".into(), |r| r.name(id));
         // This computer's rules, for letters from the others that don't answer one of its own.
         let answers = self.answers(peer, &envelope);
-        if peer != self.me()
-            && !answers
-            && !rules::allows(&locked(&self.rules), &name(&peer), &envelope.from, &envelope.to)
-        {
-            return refuse(format!("{} doesn't take messages from {}@{}", envelope.to, envelope.from, name(&peer)));
-        }
+        let access = if peer == self.me() {
+            Access::Allow
+        } else {
+            let default = *locked(&self.default_access);
+            rules::access(&locked(&self.rules), default, &name(&peer), &envelope.from, &envelope.to)
+        };
+        let access = match access {
+            Access::Deny if !answers => {
+                return refuse(format!("{} doesn't take messages from {}@{}", envelope.to, envelope.from, name(&peer)));
+            }
+            // An answer this computer asked for comes in whatever the rules say now, never freer than `ask`.
+            Access::Deny => Access::Ask,
+            access => access,
+        };
         let reach = locked(&self.agents).iter().find(|(a, _)| a.id == envelope.to).map(|(_, r)| r.clone());
         let reach = match reach {
             Some(reach) => reach,
@@ -122,6 +130,16 @@ impl Inner {
             None if envelope.reply_to.is_some() && answers => Reach::App,
             None => return refuse(format!("{} has no agent called {}", name(&self.me()), envelope.to)),
         };
+        // Only the app can hold an agent to a ceiling: a session the network knocks on acts as it likes.
+        // An answer too: it is text from that computer like a request.
+        if access.is_ceiling() && reach != Reach::App {
+            return refuse(format!(
+                "{} can't be held to asking its user, so it doesn't take messages from {}@{}",
+                envelope.to,
+                envelope.from,
+                name(&peer)
+            ));
+        }
         let pair = format!("{peer}/{}>{}", envelope.from, envelope.to);
         let meta = envelope.meta.as_ref().map(ToString::to_string).unwrap_or_default();
         // Two answers to two different letters may well say the same thing ("Done.").
@@ -134,7 +152,7 @@ impl Inner {
         // A recipient can reply as soon as delivery wakes it, before the handoff returns.
         // Keep this bounded metadata even on failure: a harness may already have seen the letter.
         self.heard(&envelope.id, envelope.hops);
-        let handed_over = self.hand_over(&reach, envelope.open(name(&peer))).await;
+        let handed_over = self.hand_over(&reach, envelope.open(name(&peer), access)).await;
         match handed_over {
             Ok(()) => {
                 remember(&mut locked(&self.taken), key, TAKEN_MAX);

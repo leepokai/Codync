@@ -1,8 +1,16 @@
 package com.codync.android
 
+import android.app.Activity
 import android.content.ClipboardManager
 import android.os.Build
+import android.text.Selection
+import android.text.Spannable
+import android.view.ActionMode
 import android.view.KeyEvent
+import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -13,6 +21,8 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import com.codync.android.core.*
 import com.codync.android.design.MenuItem
 import com.codync.android.design.ReactionPick
@@ -88,6 +98,44 @@ class MessageActionsMenuTest {
         back()
     }
 
+    @Test fun selectTextRepliesToTheSelectedPart() {
+        val bot = Bot("select-preview", "Scout")
+        val text = "Step one is done. **Step two** is risky."
+        val reply = Entry("reply", 1, bot.id, rev = 1, kind = "agent", data = buildJsonObject { put("text", text); put("final", true) })
+        val state = AppState(previewComputer, loading = false, selectedBot = bot.id, bots = listOf(bot), connection = LinkState.Ready(HostRoute.Direct),
+            historyEnd = mapOf(bot.id to HistoryEnd.Complete), hello = buildJsonObject { put("version", "2.48.1") }, entries = listOf(reply))
+        compose.setContent { Hosted { ChatScreen(state, store, {}) } }
+        compose.onNode(hasText("Step one", substring = true) and hasClickAction()).performTouchInput { longClick() }
+        compose.onNodeWithText("Select Text").performClick()
+        compose.onNodeWithText("Select Text").assertIsDisplayed()
+        // The sheet shows the text as written; selecting a part offers Reply in the selection toolbar.
+        val view = InstrumentationRegistry.getInstrumentation().run {
+            var found: TextView? = null
+            runOnMainSync { found = selectableText(resumedActivity().window.decorView, text) }
+            checkNotNull(found) { "the sheet's text" }
+        }
+        compose.runOnUiThread {
+            Selection.setSelection(view.text as Spannable, text.indexOf("**Step two**"), text.length)
+            val mode = view.startActionMode(view.customSelectionActionModeCallback, ActionMode.TYPE_FLOATING)
+            val item = (0 until mode.menu.size()).map(mode.menu::getItem).first { it.title == "Reply" }
+            mode.menu.performIdentifierAction(item.itemId, 0)
+        }
+        compose.onNodeWithTag("select-text").assertDoesNotExist()
+        compose.onNodeWithText("“Step two is risky.”").assertIsDisplayed()
+        compose.onNodeWithText("Reply…").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Cancel reply").performClick()
+        compose.onNodeWithContentDescription("Cancel reply").assertDoesNotExist()
+    }
+
+    private fun resumedActivity(): Activity =
+        ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).first()
+
+    private fun selectableText(view: View, text: String): TextView? = when {
+        view is TextView && view.isTextSelectable && view.text.toString() == text -> view
+        view is ViewGroup -> (0 until view.childCount).firstNotNullOfOrNull { selectableText(view.getChildAt(it), text) }
+        else -> null
+    }
+
     @Test fun reactionsAndOptionsCloseTheMenuAndRunOnce() {
         val invoked = mutableListOf<String>()
         compose.setContent { Hosted {
@@ -115,6 +163,19 @@ class MessageActionsMenuTest {
         back()
         compose.onNodeWithText("Copy").assertDoesNotExist()
         assertEquals(3, invoked.size)
+    }
+
+    @Test fun aTapReachesARowOnAClickableSurface() {
+        var taps = 0
+        compose.setContent { Hosted {
+            // A sheet's panel is clickable itself, so a tap on it doesn't close the sheet.
+            Box(Modifier.fillMaxSize().safeDrawingPadding().clickable {}) {
+                Text("Open the row", Modifier.contextActions(onClick = { taps++ }) { listOf(MenuItem("Copy")) })
+            }
+        } }
+        compose.onNodeWithText("Open the row").performTouchInput { click() }
+        compose.runOnIdle { assertEquals(1, taps) }
+        compose.onNodeWithText("Copy").assertDoesNotExist()
     }
 
     @Test fun linksKeepTheirTapAndHoldingOpensTheMenu() {

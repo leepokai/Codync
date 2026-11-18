@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""A stand-in for the Devin CLI, first on the PATH of an e2e sandbox's host (`npm run dev -- --cdp`), so the login
+profile screens run from end to end on no real agent and no real account. Devin keeps a login as a file in its data
+folder and signs in in a terminal, which is all a stand-in needs to be:
+
+- `devin auth login` waits for Enter, then writes the login file of the login profile it was started on. It writes
+  nothing on the computer's own login.
+- `devin acp` answers each message with the login it runs on."""
+
+import json
+import os
+import sys
+
+# Set only for a login profile, with its data folder in XDG_DATA_HOME (codync-accounts: `devin`).
+PROFILE = os.environ.get("CODYNC_AGENT_ACCOUNT")
+# The login file of that login profile. None on the computer's own login, whose files the stand-in never reads or
+# writes: a real Devin's login there must not count.
+LOGIN = os.path.join(os.environ["XDG_DATA_HOME"], "devin", "credentials.toml") if PROFILE else None
+
+
+def sign_in():
+    if not LOGIN:
+        print("The stand-in signs in login profiles only.")
+        return
+    input("Devin stand-in: press Enter to sign in. ")
+    os.makedirs(os.path.dirname(LOGIN), exist_ok=True)
+    with open(LOGIN, "w", encoding="utf-8") as f:
+        f.write("stand-in = true\n")
+    print("Signed in.")
+
+
+def send(value):
+    print(json.dumps({"jsonrpc": "2.0", **value}), flush=True)
+
+
+def acp():
+    for line in sys.stdin:
+        message = json.loads(line)
+        method, rid = message.get("method"), message.get("id")
+        if method is None or rid is None:
+            continue
+        if method == "initialize":
+            send({"id": rid, "result": {"protocolVersion": 1, "agentCapabilities": {}}})
+        elif method == "session/new":
+            send({"id": rid, "result": {"sessionId": "s1"}})
+        elif method == "session/prompt":
+            state = "signed in" if LOGIN and os.path.isfile(LOGIN) else "signed out"
+            text = f"Devin stand-in on {PROFILE or 'the default login'}, {state}"
+            update = {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": text}}
+            send({"method": "session/update", "params": {"sessionId": "s1", "update": update}})
+            send({"id": rid, "result": {"stopReason": "end_turn"}})
+        else:
+            send({"id": rid, "result": {}})
+
+
+if sys.argv[1:] == ["acp"]:
+    acp()
+elif sys.argv[1:] == ["auth", "login"]:
+    sign_in()
+else:
+    sys.exit(f"The Devin stand-in has no `{' '.join(sys.argv[1:])}`.")

@@ -106,6 +106,11 @@ pub fn put_proxied(store: &Store, slot: &str, record: &Record, keep: &Keep) -> R
     call(store, &request).map(|_: bool| ())
 }
 
+/// Whether `error` is a keeper from before connection revisions refusing a record that has one.
+pub fn predates_revisions(error: &anyhow::Error) -> bool {
+    error.to_string() == "the keeper refused: bad request"
+}
+
 pub fn delete(store: &Store, slot: &str) -> Result<()> {
     call(store, &Request::Delete { slot: slot.into() }).map(|_: bool| ())
 }

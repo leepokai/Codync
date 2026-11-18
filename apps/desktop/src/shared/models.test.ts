@@ -69,6 +69,8 @@ test('the user and final bot replies can be quoted, once the computer has them',
 
 test('a quote names who wrote it and falls back to file names', () => {
   assert.deepEqual(quoteOf(message('user', { text: 'hi' })), { id: 'e1', author: 'user', text: 'hi' })
+  assert.deepEqual(quoteOf(message('user', { text: 'one two three' }), ' two '), { id: 'e1', author: 'user', text: 'two', part: true }, 'the selected part stands for the message')
+  assert.equal(quoteOf(message('user', { text: 'hi' }), '  ').part, undefined)
   assert.equal(quoteOf(message('agent', { text: 'yo', final: true, author: 'ann' })).author, 'ann')
   assert.equal(quoteOf(message('agent', { text: 'yo', final: true })).author, 'b')
   assert.equal(quoteOf(message('user', { text: '', attachments: [{ id: 'a', name: 'a.png', size: 1 }, { id: 'c', name: 'c.pdf', size: 1 }] })).text, 'a.png, c.pdf')

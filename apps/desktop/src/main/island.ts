@@ -3,6 +3,7 @@ import { BrowserWindow, globalShortcut, ipcMain, screen } from 'electron'
 import type { WindowCommand } from '../shared/ipc'
 import type { VoiceKey } from '../shared/voice-shortcut'
 import { hitRect, hits, notchOf, PANEL, type IslandRect, type IslandScreen, type IslandSummary, type NotchScreen } from '../shared/island'
+import { headless, present, webPreferences } from './headless'
 import { prefs } from './host-controller'
 
 // Every NSScreen's frame, safe-area top and the menu bar on each side of the notch. JXA reaches
@@ -141,7 +142,7 @@ export class Island {
       acceptFirstMouse: true,
       // macOS: a non-activating panel on every Space and over full-screen apps; Windows: out of Alt+Tab.
       ...(isMac ? { type: 'panel' } : process.platform === 'win32' ? { type: 'toolbar' } : {}),
-      webPreferences: { preload: this.deps.preload, sandbox: true, contextIsolation: true },
+      webPreferences: webPreferences(this.deps.preload),
     })
     // Above the menu bar on macOS (main menu + 3).
     win.setAlwaysOnTop(true, isMac ? 'main-menu' : 'screen-saver', isMac ? 3 : 0)
@@ -151,7 +152,7 @@ export class Island {
     this.shaped = this.rect
     if (shapedWindow) win.setShape([this.shaped])
     else win.setIgnoreMouseEvents(true)
-    win.once('ready-to-show', () => win.showInactive())
+    win.once('ready-to-show', () => present(win, true))
     win.on('closed', () => {
       if (this.window === win) this.window = null
     })
@@ -192,7 +193,8 @@ export class Island {
 
   private setKeys(on: boolean) {
     for (const [accelerator, answer] of Object.entries(KEYS)) {
-      if (!on) {
+      // A headless run's island is never seen: keys typed in another app mustn't answer an approval there.
+      if (!on || headless) {
         globalShortcut.unregister(accelerator)
         continue
       }

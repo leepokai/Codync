@@ -2,7 +2,7 @@
 //! Cloud computer, through its keeper (`crate::keeper`), whose grant adds the key (proxied slots `voice:<provider>`),
 //! so nothing on the computer but the keeper ever holds it again.
 
-use super::Provider;
+use super::{Provider, server};
 use crate::keeper::client;
 use crate::keeper::record::{GEMINI, Keep, OPENAI, Record};
 use crate::market::vault;
@@ -66,16 +66,38 @@ impl Provider {
     }
 }
 
+/// Who answers an `Access`'s requests.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Upstream {
+    /// The provider itself (or the keeper, on its behalf).
+    Provider,
+    /// The OpenAI-compatible server saved in the call settings (`server`): Speech mode only.
+    Compatible,
+}
+
 /// Where requests to a provider go, and the key they carry (none through the keeper's grant, which adds it).
 pub(super) struct Access {
     base: String,
     key: Option<String>,
+    pub(super) upstream: Upstream,
 }
 
 impl Access {
-    /// Straight to the provider with `key`.
-    pub(super) fn direct(p: Provider, key: &str) -> Self {
-        Self { base: p.base().to_owned(), key: Some(key.to_owned()) }
+    /// Straight to the provider with `key`, or to the compatible `server` standing in for `OpenAI`.
+    pub(super) fn direct(p: Provider, key: &str, server: Option<String>) -> Self {
+        let key = Some(key.to_owned());
+        match server.filter(|_| p == Provider::OpenAi) {
+            Some(base) => Self { base, key, upstream: Upstream::Compatible },
+            None => Self { base: p.base().to_owned(), key, upstream: Upstream::Provider },
+        }
+    }
+
+    /// Who answers, for an error: the provider, or the user's own server.
+    pub(super) fn name(&self, p: Provider) -> &'static str {
+        match self.upstream {
+            Upstream::Provider => p.name(),
+            Upstream::Compatible => "your server",
+        }
     }
 
     /// A request to `path` on the provider (`/v1/models`).
@@ -107,13 +129,22 @@ pub(super) fn access(store: &Store, p: Provider) -> Result<Access> {
         if !client::has(store, &slot(p))? {
             return Err(missing(p));
         }
-        return Ok(Access { base: client::short_grant(store, &slot(p))?, key: None });
+        return Ok(Access { base: client::short_grant(store, &slot(p))?, key: None, upstream: Upstream::Provider });
     }
     let keys = load(store)?;
     match keys.get(p) {
         "" => Err(missing(p)),
-        key => Ok(Access::direct(p, key)),
+        key => Ok(Access::direct(p, key, server::saved(store))),
     }
+}
+
+/// The key saved for `p` on a computer of the user's own; `None` without one, or on a cloud computer (its keeper
+/// never gives a key back).
+pub(super) fn own(store: &Store, p: Provider) -> Result<Option<String>> {
+    if is_managed(store) {
+        return Ok(None);
+    }
+    Ok(Some(load(store)?.get(p).to_owned()).filter(|key| !key.is_empty()))
 }
 
 /// Keeps `key` for `p`; an empty one removes it.
@@ -161,5 +192,18 @@ mod tests {
         assert!(configured(&store, Provider::OpenAi).unwrap());
         let route = access(&store, Provider::OpenAi).unwrap();
         assert_eq!((route.base.as_str(), route.key.as_deref()), (OPENAI, Some("sk-voice")));
+        assert_eq!(own(&store, Provider::OpenAi).unwrap().as_deref(), Some("sk-voice"));
+    }
+
+    #[test]
+    fn a_saved_server_stands_in_for_openai_only() {
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        save(&store, Provider::OpenAi, "sk-voice").unwrap();
+        save(&store, Provider::Gemini, "g-key").unwrap();
+        server::save(&store, Some("http://127.0.0.1:8890")).unwrap();
+        let openai = access(&store, Provider::OpenAi).unwrap();
+        assert_eq!((openai.base.as_str(), openai.upstream), ("http://127.0.0.1:8890", Upstream::Compatible));
+        let gemini = access(&store, Provider::Gemini).unwrap();
+        assert_eq!((gemini.base.as_str(), gemini.upstream), (GEMINI, Upstream::Provider));
     }
 }

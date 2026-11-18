@@ -1,4 +1,4 @@
-//! Drawing the `manage` sheets: memory, routines, marketplace, agent sign-in, fields.
+//! Drawing the `manage` sheets: a bot's pages, the routine form, marketplace, agent sign-in, fields.
 
 // Drawing code reads best with x / y / w / t (theme) / r (rect).
 #![allow(clippy::many_single_char_names, clippy::similar_names)]
@@ -10,13 +10,17 @@ use ratatui::style::{Modifier, Style};
 use crate::tui::l10n::{fill, tr};
 use serde_json::Value;
 
+mod all_work_view;
 mod computer_view;
+mod details_view;
 mod gear_view;
 mod library_view;
 mod login_keys_view;
 mod market_view;
 mod memory_view;
+pub use all_work_view::draw as all_work;
 pub use computer_view::draw as computer;
+pub use details_view::draw as details;
 pub use gear_view::draw as gear;
 pub use library_view::draw as library;
 pub use login_keys_view::draw as key_import;
@@ -24,11 +28,10 @@ pub use market_view::draw as market;
 pub use memory_view::draw as memory;
 
 use super::app::{App, Editor};
-use super::manage::{AgentSetup, Fields, Page, RoutineField, RoutineForm, RoutineList, RoutineRow, SetupRow, Submit};
+use super::manage::{AgentSetup, Fields, Page, RoutineField, RoutineForm, SetupRow, Submit};
 use super::md::truncate;
 use super::view::{
-    centered, chain_line, composer_lines, frame_box, hline, input_line, put, restyle, rput, set_cursor, theme, u,
-    using_line, when_future, window,
+    centered, composer_lines, frame_box, hline, input_line, put, restyle, rput, set_cursor, theme, u, window,
 };
 
 fn s<'a>(v: &'a Value, k: &str) -> &'a str {
@@ -80,129 +83,6 @@ pub fn page_tabs(buf: &mut Buffer, inner: Rect, current: Page) -> Rect {
     }
     rput(buf, inner.right(), inner.y, "⇧←→ page", t.dim.patch(t.panel));
     Rect::new(inner.x, inner.y + 2, inner.width, inner.height.saturating_sub(2))
-}
-
-pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
-    let t = theme();
-    let r = centered(area, 90, 28);
-    let title = name_of(app, &l.bot);
-    let inner = frame_box(buf, r, t.text, t.panel, Some((&title, t.text)));
-    let mut inner = page_tabs(buf, inner, Page::Details);
-    // What changes often: the agent, its model and the instructions (`i` edits them in Settings).
-    if let Some(b) = app.bots.get(&l.bot).filter(|b| !b.group) {
-        let agent = app
-            .backends
-            .iter()
-            .find(|x| x["id"].as_str() == Some(b.backend.as_str()))
-            .map_or(&*b.backend, |x| s(x, "name"));
-        let model = b.model.as_deref().unwrap_or("default model");
-        let fast = if b.fast_mode { " · fast" } else { "" };
-        put(buf, inner.x, inner.y, inner.width, &format!("{agent} · {model}{fast}"), t.text.patch(t.panel));
-        rput(buf, inner.right(), inner.y, "i edits", t.dim.patch(t.panel));
-        let mut line = inner.y + 1;
-        // The agent it's on when its own can't answer, and the chain.
-        if let Some(using) = using_line(app, b) {
-            put(buf, inner.x, line, inner.width, &using, t.amber.patch(t.panel));
-            rput(buf, inner.right(), line, "B switches back", t.dim.patch(t.panel));
-            line += 1;
-        }
-        if let Some(chain) = chain_line(app, b) {
-            let room = usize::from(inner.width);
-            put(buf, inner.x, line, inner.width, &truncate(&chain, room), t.secondary.patch(t.panel));
-            line += 1;
-        }
-        let first = b.description.lines().find(|l| !l.trim().is_empty()).unwrap_or("No standing instructions");
-        let room = usize::from(inner.width);
-        put(buf, inner.x, line, inner.width, &truncate(first.trim(), room), t.secondary.patch(t.panel));
-        let used = line + 2 - inner.y;
-        inner = Rect::new(inner.x, inner.y + used, inner.width, inner.height.saturating_sub(used));
-    }
-    put(buf, inner.x, inner.y, inner.width, &tr("Routines"), t.bold.patch(t.panel));
-    let list_h = usize::from(inner.height.saturating_sub(3)) / 2;
-    match &l.items {
-        None => {
-            put(buf, inner.x, inner.y + 1, inner.width, &tr("Loading…"), t.dim.patch(t.panel));
-        }
-        Some(_) if l.rows().next().is_none() => {
-            put(
-                buf,
-                inner.x,
-                inner.y + 1,
-                inner.width,
-                &tr("No routines. n sets one up here, or ask the bot in chat."),
-                t.secondary.patch(t.panel),
-            );
-        }
-        Some(_) => {
-            let mut y = inner.y + 1;
-            for (i, item) in l.rows().enumerate().skip(window(l.cursor, list_h)).take(list_h) {
-                match item {
-                    RoutineRow::FollowUp(follow_up) => follow_up_row(buf, inner, y, i == l.cursor, follow_up),
-                    RoutineRow::Routine(it) => routine_row(buf, inner, y, i == l.cursor, it, &l.runs),
-                }
-                y += 2;
-            }
-        }
-    }
-    let keys = if matches!(l.picked(), Some(RoutineRow::FollowUp(_))) {
-        "x cancel follow-up · esc"
-    } else {
-        "n new · ↵ edit · space on/off · r run now · w copy webhook · W new key · x delete · esc"
-    };
-    footer(buf, inner, None, keys);
-}
-
-/// A follow-up the bot set for itself: a clock where a routine has its on/off dot, and when it happens.
-fn follow_up_row(buf: &mut Buffer, inner: Rect, y: u16, selected: bool, follow_up: &Value) {
-    let t = theme();
-    let base = row(buf, inner, y, selected);
-    put(buf, inner.x, y, 2, "◷", t.dim.patch(base));
-    let room = usize::from(inner.width.saturating_sub(2));
-    let note = s(follow_up, "note").lines().next().unwrap_or_default();
-    put(buf, inner.x + 2, y, u(room), &truncate(note, room), t.bold.patch(base));
-    let at = follow_up["at"].as_i64().unwrap_or_default();
-    let when = if at <= crate::store::now_ms() {
-        tr("Follow-up due now").into_owned()
-    } else {
-        fill(&tr("Follow-up at {time}"), &[("time", &when_future(at))])
-    };
-    put(buf, inner.x + 2, y + 1, u(room), &truncate(&when, room), t.secondary.patch(t.panel));
-}
-
-fn routine_row(buf: &mut Buffer, inner: Rect, y: u16, selected: bool, it: &Value, runs: &[Value]) {
-    let t = theme();
-    let base = row(buf, inner, y, selected);
-    let on = it["enabled"] == true;
-    put(buf, inner.x, y, 2, if on { "●" } else { "○" }, if on { t.bold } else { t.dim }.patch(base));
-    put(buf, inner.x + 2, y, inner.width / 2, s(it, "name"), t.bold.patch(base));
-    // A retry still waiting comes before the schedule's next run.
-    let retry = runs
-        .iter()
-        .find(|r| r["routineId"] == it["id"] && r["status"] == "pending")
-        .and_then(|r| r["notBefore"].as_i64());
-    let next = retry
-        .map(|ms| format!("retry {}", when_future(ms)))
-        .or_else(|| it["nextRunAt"].as_i64().map(|ms| format!("next {}", when_future(ms))));
-    rput(
-        buf,
-        inner.right(),
-        y,
-        &next.unwrap_or_else(|| if on { String::new() } else { "off".into() }),
-        t.dim.patch(base),
-    );
-    let when: Vec<String> = it["triggerDescriptions"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(|text| tr(text).into_owned())
-        .collect();
-    let (line, style) = match it["lastError"].as_str() {
-        Some(e) => (format!("{} · {e}", when.join(" · ")), t.red),
-        None => (when.join(" · "), t.secondary),
-    };
-    let room = usize::from(inner.width.saturating_sub(2));
-    put(buf, inner.x + 2, y + 1, u(room), &truncate(&line, room), style.patch(t.panel));
 }
 
 pub fn routine(buf: &mut Buffer, area: Rect, f: &RoutineForm) {
@@ -517,33 +397,4 @@ pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {
         "tab next field"
     };
     rput(buf, inner.right(), by, &tr(hint), t.dim.patch(t.panel));
-}
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::*;
-    use crate::tui::app::{screen, test_app};
-
-    #[tokio::test]
-    async fn the_routines_sheet_lists_follow_ups_above_the_routines_with_a_clock_and_when() {
-        let app = test_app();
-        let routine = json!({"id": "r", "name": "Morning summary", "enabled": true,
-            "triggerDescriptions": ["Every day at 09:00"]});
-        let list = RoutineList {
-            bot: "b".into(),
-            items: Some(vec![routine]),
-            follow_ups: vec![json!({"id": "f", "at": 0, "note": "Check the build\nthen the deploy"})],
-            ..Default::default()
-        };
-        let area = Rect::new(0, 0, 100, 30);
-        let lines = screen(area, |buf| routines(buf, area, &app, &list));
-        let at = |text: &str| lines.iter().position(|line| line.contains(text));
-        let note = at("◷ Check the build").expect("the note's first line, after its clock");
-        assert!(!lines[note].contains("then the deploy"));
-        assert!(lines[note + 1].contains("Follow-up due now"));
-        assert!(at("● Morning summary") > Some(note), "the routines come after");
-        assert!(at("x cancel follow-up").is_some(), "the keys of what is picked");
-    }
 }

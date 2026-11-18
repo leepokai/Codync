@@ -20,7 +20,7 @@ export function logins(p: UsageProvider): UsageLogin[] {
 const tightestOf = (windows: UsageWindow[]) =>
   windows.filter(isLimit).reduce<UsageWindow | null>((a, w) => (!a || w.percent > a.percent ? w : a), null)
 
-/** The login nearest a limit, which the menu bar and the island show for the agent: the default one when none has a limit. */
+/** The login nearest a limit, which the island shows for the agent: the default one when none has a limit. */
 export function tightestLogin(p: UsageProvider): UsageLogin {
   const all = logins(p)
   return all.reduce((a, l) => ((tightestOf(l.windows)?.percent ?? -1) > (tightestOf(a.windows)?.percent ?? -1) ? l : a), all[0])

@@ -2,6 +2,8 @@
 //! agent reports about its context and its own compactions, and the compactions and rollovers the host starts. The
 //! rules are `codync_mem::compaction`; this records what it needs and acts on what it decides.
 
+use std::collections::HashMap;
+
 use super::{Actor, Adapter, Done, Instructions, Queued};
 use crate::chat::{context, handoff, memory};
 use crate::store::{BotConfig, EntryKind, Lane, Store, now_ms};
@@ -47,17 +49,22 @@ pub fn context_window(store: &Store, bot: &str) -> Option<u64> {
     store.kv_get(&window_key(bot)).and_then(|v| v.parse().ok())
 }
 
+fn conversation_key(bot: &str, session: &str) -> String {
+    format!("compaction.{bot}.{session}")
+}
+
+/// What is known of `bot`'s conversation in `session`: how full its window is, and its compactions.
+pub(crate) fn conversation(store: &Store, bot: &str, session: &str) -> Conversation {
+    store.kv_get(&conversation_key(bot, session)).and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default()
+}
+
 impl Actor {
     fn conversation_key(&self, session: &str) -> String {
-        format!("compaction.{}.{session}", self.cfg.id)
+        conversation_key(&self.cfg.id, session)
     }
 
     fn conversation(&self, session: &str) -> Conversation {
-        self.hub
-            .store
-            .kv_get(&self.conversation_key(session))
-            .and_then(|v| serde_json::from_str(&v).ok())
-            .unwrap_or_default()
+        conversation(&self.hub.store, &self.cfg.id, session)
     }
 
     fn save_conversation(&self, session: &str, c: &Conversation) {
@@ -147,8 +154,8 @@ impl Actor {
     pub(super) fn track_usage(&mut self, used: u64, size: u64) {
         let Some(sid) = self.turn_session.clone() else { return };
         let Some(conn) = self.conn.as_mut() else { return };
-        let before = conn.usage.insert(sid, (used, size)).map(|(used, _)| used);
-        if !conn.reports_compaction && compacted_by_usage(before, used) {
+        let inferred = record_usage(&mut conn.usage, &sid, used, size);
+        if !conn.reports_compaction && inferred {
             self.compacted(&format!("usage-{}", now_ms()), None);
         }
     }
@@ -157,7 +164,7 @@ impl Actor {
     /// `context`), a harness that got them in its first message gets them again, and the chat shows the summary.
     pub(super) fn compacted(&mut self, id: &str, summary: Option<String>) {
         let Some(sid) = self.turn_session.clone() else { return };
-        match context::bump_epoch(&self.hub.store, &self.cfg.id, &sid, id) {
+        match context::bump_epoch(&self.hub.store, self.cfg.owner(), &sid, id) {
             Ok(true) => {}
             // The same compaction reported again; Claude's adapter carries the summary on one of its reports.
             Ok(false) => {
@@ -171,7 +178,7 @@ impl Actor {
                 return;
             }
         }
-        if let Err(error) = memory::compacted(&self.hub.store, &self.cfg.id, &sid) {
+        if let Err(error) = memory::compacted(&self.hub.store, self.cfg.owner(), &sid) {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the compaction");
         }
         if self.conn.as_ref().is_some_and(|c| c.instructions() == Instructions::FirstMessage) {
@@ -297,6 +304,15 @@ impl Actor {
         }
     }
 
+    /// The user started a new session themselves: nothing of the old conversation is carried into it, neither a
+    /// card waiting in the chat nor a handoff taken for a turn that couldn't start.
+    pub(super) fn drop_handoff(&mut self) {
+        self.handoff = None;
+        if let Some((card, _)) = handoff::pending(&self.hub.store, &self.cfg.id) {
+            handoff::withdraw(&self.hub, &self.cfg.id, &card);
+        }
+    }
+
     fn draft_handoff(&mut self, session: &str, reason: handoff::Reason) {
         if handoff::pending(&self.hub.store, &self.cfg.id).is_some() {
             return;
@@ -319,7 +335,7 @@ impl Actor {
         }
         crate::analytics::context_compacted(&self.hub, &self.cfg.backend, idle, at);
         let _ = self.dreamer.send(memory::DreamEvent::Flush);
-        if let Err(error) = context::refresh(&self.hub.store, &self.cfg.id, &sid) {
+        if let Err(error) = context::refresh(&self.hub.store, self.cfg.owner(), &sid) {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't refresh the opening");
         }
         self.compacting = Some(idle);
@@ -360,6 +376,18 @@ fn learned_life(answer: &Value, gap_ms: i64) -> Option<CacheLife> {
     CacheLife::observed(gap_ms, read, input)
 }
 
+/// Applies one `usage_update` to a session's last reading and says whether it reads as a compaction. A stream's first
+/// update can carry zeros before the model has answered (a gateway's `response.created`, issue #496): that zero is not
+/// a reading of the context, so it neither reads as a compaction nor becomes the baseline a later, real fall is
+/// measured against.
+fn record_usage(usage: &mut HashMap<String, (u64, u64)>, sid: &str, used: u64, size: u64) -> bool {
+    if used == 0 {
+        return false;
+    }
+    let before = usage.insert(sid.to_owned(), (used, size)).map(|(used, _)| used);
+    compacted_by_usage(before, used)
+}
+
 /// Whether a session's context use fell the way it does when the agent summarizes it: by more than half.
 fn compacted_by_usage(before: Option<u64>, used: u64) -> bool {
     before.is_some_and(|before| before >= COMPACTED_FROM && used < before / 2)
@@ -375,6 +403,26 @@ mod tests {
         assert!(!compacted_by_usage(Some(90_000), 60_000), "ordinary churn");
         assert!(!compacted_by_usage(Some(8_000), 1_000), "too little to summarize");
         assert!(!compacted_by_usage(None, 1_000), "the session's first report");
+    }
+
+    #[test]
+    fn a_stream_starting_at_zero_usage_is_not_a_compaction() {
+        let mut usage = HashMap::new();
+        assert!(!record_usage(&mut usage, "s", 26_247, 200_000), "the first answer's reading");
+        assert!(!record_usage(&mut usage, "s", 0, 200_000), "a stream's start before the model has answered");
+        assert_eq!(usage["s"], (26_247, 200_000), "the zero isn't kept as the context's use");
+        assert!(!record_usage(&mut usage, "s", 27_643, 200_000), "the same answer's real reading");
+        assert!(!record_usage(&mut usage, "s", 0, 200_000), "the next stream starts at zero again");
+        assert!(!record_usage(&mut usage, "s", 28_089, 200_000));
+        assert_eq!(usage["s"], (28_089, 200_000));
+    }
+
+    #[test]
+    fn a_real_fall_still_reads_as_a_compaction() {
+        let mut usage = HashMap::new();
+        assert!(!record_usage(&mut usage, "s", 90_000, 200_000));
+        assert!(record_usage(&mut usage, "s", 12_000, 200_000));
+        assert_eq!(usage["s"], (12_000, 200_000), "the compacted context is the new baseline");
     }
 
     #[test]

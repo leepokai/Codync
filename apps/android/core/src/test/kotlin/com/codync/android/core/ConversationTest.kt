@@ -46,6 +46,30 @@ class ConversationTest {
         assertEquals(500, long.replyQuote.text.length)
     }
 
+    @Test fun `a reply to a selected part quotes that part`() {
+        val answer = entry("agent", true)
+        assertEquals(ReplyQuote("e", "b", "sag", part = true), answer.replyQuote("  sag\n"))
+        assertEquals(4000, answer.replyQuote("x".repeat(4100)).text.length)
+        assertEquals(answer.replyQuote, answer.replyQuote("  \n"))
+        assertEquals(answer.replyQuote, answer.replyQuote(null))
+        val card = Entry("c", 1, "b", rev = 1, kind = "agent", data = buildJsonObject {
+            put("text", "Plan"); put("final", true); put("artifact", buildJsonObject { put("id", "a1"); put("title", "Plan") })
+        })
+        assertEquals(card.replyQuote, card.replyQuote("Pl"))
+        val sent = Entry("r", 2, "b", rev = 2, kind = "user", data = buildJsonObject {
+            put("text", "hi"); put("replyTo", buildJsonObject { put("id", "e"); put("author", "b"); put("text", "sag"); put("part", true) })
+        })
+        assertEquals(ReplyQuote("e", "b", "sag", part = true), sent.replyTo)
+    }
+
+    @Test fun `a send carries the selected part only when it quotes one`() {
+        val send = PendingSend("n", "b", "Why?", 1, replyTo = ReplyQuote("e", "b", "sag", part = true))
+        assertEquals(buildJsonObject { put("botId", "b"); put("text", "Why?"); put("clientNonce", "n"); put("replyTo", "e"); put("replyPart", "sag") },
+            send.body())
+        assertFalse("replyPart" in send.copy(replyTo = ReplyQuote("e", "b", "message")).body())
+        assertFalse("replyPart" in send.copy(replyTo = null).body())
+    }
+
     @Test fun `a send carries the message it quotes and its files`() {
         val send = PendingSend("n", "b", "Ship it", 1, replyTo = ReplyQuote("e", "user", "Ready?"))
         assertEquals(buildJsonObject { put("botId", "b"); put("text", "Ship it"); put("clientNonce", "n"); put("replyTo", "e")

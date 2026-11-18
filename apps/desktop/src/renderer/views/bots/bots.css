@@ -63,12 +63,25 @@ textarea.field-box {
   background: var(--chip-on);
   box-shadow: var(--chip-shadow);
   white-space: nowrap;
+  margin-top: 6px;
 }
 .fallback-menu {
   flex: none;
   width: 28px;
   height: 28px;
+  margin-top: 2px;
   border-radius: var(--radius-s);
+}
+/* A fallback's number and menu (and its chip, above) line up with its picker's summary line (32px); its rest line under the picker. */
+.fallback-number {
+  height: 32px;
+}
+/* IconSlot stretches its child; the number sits on the summary's middle instead. */
+.fallback-number > * {
+  align-self: center;
+}
+.fallback-rest {
+  padding-left: 20px;
 }
 
 .avatar-button {

@@ -32,6 +32,11 @@ async fn an_agent_that_only_resumes_keeps_its_conversation_and_gives_sessions_ba
     assert!(resumed[0]["params"]["mcpServers"].as_array().is_some_and(|s| !s.is_empty()), "{resumed:?}");
 
     // A routine run's session is spent when the run is; its MCP servers shouldn't stay until the agent stops.
+    // That is a run in the chat's own agent process; one in the bot's box ends with its task's process.
+    host.works_in_chat(&bot).await;
+    // Changing the bot restarted its agent; its conversation is open again before the run, so the run's session
+    // isn't the only one (an agent holding nothing else is stopped instead of asked to close).
+    host.reply(&bot, "three").await;
     let routine = json!({"botId": bot, "name": "Check", "instruction": "Report", "triggers": [{"type": "webhook"}]});
     let id = host.call("saveRoutine", routine).await["routine"]["id"].as_str().unwrap().to_owned();
     host.call("runRoutine", json!({"botId": bot, "id": id})).await;

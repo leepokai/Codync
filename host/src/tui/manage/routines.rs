@@ -1,64 +1,60 @@
-//! A bot's routines: the list and the form (what's typed for when: `when.rs`).
+//! A bot's Details page (its items' keys: `work.rs`) with its routines, and the routine form (what's typed for
+//! when: `when.rs`).
 
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
-use super::super::app::{After, App, Confirm, ConfirmAct, Editor, FIELDS, Field, Overlay};
+use super::super::app::{After, App, Confirm, ConfirmAct, Editor, Overlay};
 use super::when::{complete_zone, parse_when, when_text};
-use super::{Page, Reply, RoutineField, RoutineForm, RoutineList, RoutineRow, ctrl, newline, s};
+use super::{DetailRow, DetailsPage, Page, Reply, RoutineField, RoutineForm, ctrl, newline, s};
 use crate::routines::local_zone;
 
 impl App {
-    pub fn open_routines(&mut self) {
+    pub fn open_details(&mut self) {
         let Some(b) = self.bot().filter(|b| !b.group) else {
             self.flash("Routines belong to a bot, not a group");
             return;
         };
         let bot = b.id.clone();
         self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.clone()));
-        self.overlays.push(Overlay::Routines(RoutineList { bot, ..Default::default() }));
+        self.overlays.push(Overlay::Details(DetailsPage { bot, ..Default::default() }));
     }
 
     /// Loads `bot`'s routines sheet again, if it is open: its runs and follow-ups change with no key pressed.
-    pub(in crate::tui) fn reload_routines(&mut self, bot: &str) {
-        if self.overlays.iter().any(|o| matches!(o, Overlay::Routines(l) if l.bot == bot)) {
+    pub(in crate::tui) fn reload_details(&mut self, bot: &str) {
+        if self.overlays.iter().any(|o| matches!(o, Overlay::Details(l) if l.bot == bot)) {
             self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.to_owned()));
         }
     }
 
-    pub(in crate::tui) fn routines_key(&mut self, mut l: RoutineList, k: KeyEvent) -> Option<Overlay> {
+    pub(in crate::tui) fn details_key(&mut self, mut l: DetailsPage, k: KeyEvent) -> Option<Overlay> {
         if let Some(page) = Page::Details.step(k) {
             self.open_page(page);
             return None;
         }
-        let n = l.rows().count();
+        // A key of the picked item's own comes first.
+        l = match self.work_key(l, k) {
+            Ok(page) => return page,
+            Err(l) => l,
+        };
         let bot = l.bot.clone();
-        match (k.code, l.picked()) {
+        let (work, max_agents) = self.box_of(&bot);
+        let work = work.to_vec();
+        let n = l.rows(&work, max_agents).len();
+        match (k.code, l.picked(&work, max_agents)) {
             (KeyCode::Esc | KeyCode::Char('q' | 'R'), _) => return None,
             // The row stays until the host answers: a cancel that failed leaves a follow-up that still happens.
-            (KeyCode::Char('x'), Some(RoutineRow::FollowUp(f))) => {
+            (KeyCode::Char('x'), Some(DetailRow::FollowUp(f))) => {
                 let body = json!({"botId": bot, "id": f["id"]});
                 self.sheet("cancelFollowUp", body, Reply::FollowUpCancelled(bot.clone()));
             }
-            (KeyCode::Enter | KeyCode::Char('e' | ' ' | 'r' | 'w' | 'W'), Some(RoutineRow::FollowUp(_))) => {
+            (KeyCode::Enter | KeyCode::Char('e' | ' ' | 'r' | 'w' | 'W'), Some(DetailRow::FollowUp(_))) => {
                 self.flash("A follow-up is the bot's own: x cancels it");
-            }
-            // The agent, model and instructions shown above the routines are edited in Settings.
-            (KeyCode::Char('i'), _) => {
-                self.open_page(Page::Settings);
-                if let Some(Overlay::Form(f)) = self.overlays.last_mut() {
-                    f.field = FIELDS.iter().position(|x| *x == Field::Instructions).unwrap_or(0);
-                }
-                return None;
-            }
-            // The bot's own agent again, while it runs on a fallback.
-            (KeyCode::Char('B'), _) if self.bots.get(&bot).is_some_and(|b| b.agent_step.is_some()) => {
-                self.call("switchBack", json!({"botId": bot}), After::Nothing);
             }
             (KeyCode::Down | KeyCode::Char('j'), _) => l.cursor = (l.cursor + 1).min(n.saturating_sub(1)),
             (KeyCode::Up | KeyCode::Char('k'), _) => l.cursor = l.cursor.saturating_sub(1),
             (KeyCode::Char('n'), _) => {
-                self.overlays.push(Overlay::Routines(l));
+                self.overlays.push(Overlay::Details(l));
                 self.overlays.push(Overlay::Routine(Box::new(RoutineForm {
                     bot,
                     id: None,
@@ -73,7 +69,7 @@ impl App {
                 })));
                 return None;
             }
-            (KeyCode::Enter | KeyCode::Char('e'), Some(RoutineRow::Routine(r))) => {
+            (KeyCode::Enter | KeyCode::Char('e'), Some(DetailRow::Routine(r))) => {
                 let triggers = r["triggers"].clone();
                 let text = when_text(&triggers, &local_zone());
                 let original_text = r["triggerDescriptions"]
@@ -92,11 +88,11 @@ impl App {
                     error: None,
                     saving: false,
                 };
-                self.overlays.push(Overlay::Routines(l));
+                self.overlays.push(Overlay::Details(l));
                 self.overlays.push(Overlay::Routine(Box::new(form)));
                 return None;
             }
-            (KeyCode::Char(' '), Some(RoutineRow::Routine(r))) => {
+            (KeyCode::Char(' '), Some(DetailRow::Routine(r))) => {
                 let (id, on) = (r["id"].clone(), !r["enabled"].as_bool().unwrap_or(false));
                 self.sheet(
                     "setRoutineEnabled",
@@ -107,17 +103,17 @@ impl App {
                     item["enabled"] = on.into();
                 }
             }
-            (KeyCode::Char('r'), Some(RoutineRow::Routine(r))) => {
+            (KeyCode::Char('r'), Some(DetailRow::Routine(r))) => {
                 self.sheet("runRoutine", json!({"botId": bot, "id": r["id"]}), Reply::Routines(bot.clone()));
                 self.flash(&format!("Running {} now", s(r, "name")));
             }
-            (KeyCode::Char('w' | 'W'), Some(RoutineRow::Routine(r))) if !has_webhook(r) => {
+            (KeyCode::Char('w' | 'W'), Some(DetailRow::Routine(r))) if !has_webhook(r) => {
                 self.flash("Only a routine that runs on a webhook has a URL and key");
             }
-            (KeyCode::Char('w'), Some(RoutineRow::Routine(r))) => {
+            (KeyCode::Char('w'), Some(DetailRow::Routine(r))) => {
                 self.sheet("routineWebhook", json!({"botId": bot, "id": r["id"]}), Reply::Webhook);
             }
-            (KeyCode::Char('W'), Some(RoutineRow::Routine(r))) => {
+            (KeyCode::Char('W'), Some(DetailRow::Routine(r))) => {
                 let c = Confirm {
                     title: format!("Replace the webhook key of {}?", s(r, "name")),
                     detail: "Senders using the current key stop working.".into(),
@@ -125,11 +121,11 @@ impl App {
                     button: "Replace",
                     act: ConfirmAct::RotateRoutineKey(bot, s(r, "id")),
                 };
-                self.overlays.push(Overlay::Routines(l));
+                self.overlays.push(Overlay::Details(l));
                 self.overlays.push(Overlay::Confirm(c));
                 return None;
             }
-            (KeyCode::Char('x'), Some(RoutineRow::Routine(r))) => {
+            (KeyCode::Char('x'), Some(DetailRow::Routine(r))) => {
                 let c = Confirm {
                     title: format!("Delete the routine {}?", s(r, "name")),
                     detail: "It stops running.".into(),
@@ -137,13 +133,13 @@ impl App {
                     button: "Delete",
                     act: ConfirmAct::DeleteRoutine(bot, s(r, "id")),
                 };
-                self.overlays.push(Overlay::Routines(l));
+                self.overlays.push(Overlay::Details(l));
                 self.overlays.push(Overlay::Confirm(c));
                 return None;
             }
             _ => {}
         }
-        Some(Overlay::Routines(l))
+        Some(Overlay::Details(l))
     }
 
     pub(in crate::tui) fn routine_key(&mut self, mut f: Box<RoutineForm>, k: KeyEvent) -> Option<Overlay> {

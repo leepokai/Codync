@@ -17,6 +17,7 @@ mod fallbacks;
 mod forms;
 mod goto;
 mod help;
+mod kofi;
 mod lead_agent;
 mod network;
 mod network_rules;
@@ -28,30 +29,34 @@ mod queue;
 mod roster;
 mod skill;
 mod style;
+mod task;
 mod time;
 mod trace;
 mod transcript;
 mod usage;
 mod whats_new;
+mod work;
 
 pub(super) use buffer::{centered, frame_box, hline, put, restyle, rput, u, window};
 pub(super) use chat::composer_lines;
-pub(super) use fallbacks::{chain_line, using_line};
 #[cfg(test)]
 pub(super) use fallbacks::{rest_note, step_item};
+#[cfg(test)]
+pub(in crate::tui) use fallbacks::{rest_phrase, using_phrase};
 pub(super) use lead_agent::lead_agent_scroll_max;
 pub(super) use overlay::{field_line, input_line};
 pub(super) use style::theme;
 pub(super) use time::when;
 pub(super) use transcript::{file_size, unfoldable};
 pub(super) use usage::{usage_scroll_max, usage_services, when_future};
+pub(super) use work::work_row;
 
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
 
-use super::app::{App, Click, Focus, TraceMode, Width};
+use super::app::{App, Click, Focus, TraceMode, Width, WorkStatus};
 use super::md::{truncate, width as w};
 
 use buffer::{fill, vline};
@@ -164,8 +169,8 @@ fn status_line(buf: &mut Buffer, r: Rect, app: &mut App) {
     } else if app.mismatch.is_some() {
         x = put(buf, x, r.y, 20, "needs update", t.red.patch(t.panel)) + 2;
     }
-    let hint = if insert { "↵ send · esc nav" } else { "? keys" };
-    let mut right = rput(buf, r.right() - 1, r.y, hint, t.dim.patch(t.panel)).saturating_sub(3);
+    let hint = if insert { "↵ send · esc nav".to_owned() } else { nav_hint(app) };
+    let mut right = rput(buf, r.right() - 1, r.y, &hint, t.dim.patch(t.panel)).saturating_sub(3);
     let mut edge = right;
     // Usage: the first provider that has numbers, narrowest windows first.
     if r.width >= 100
@@ -199,6 +204,18 @@ fn status_line(buf: &mut Buffer, r: Rect, app: &mut App) {
     }
 }
 
+/// The status line's keys outside typing: `E` for the page of every bot's work, with how many items are worked on,
+/// only while some bot has a live or waiting item.
+fn nav_hint(app: &App) -> String {
+    if !app.any_work() {
+        return "? keys".into();
+    }
+    let shown = app.bots.values().filter(|b| !b.hidden);
+    let working = shown.flat_map(|b| &b.work).filter(|i| i.status == WorkStatus::Working).count();
+    let count = if working == 0 { String::new() } else { format!(" {working}") };
+    format!("E {}{count} · ? keys", super::l10n::tr("Work"))
+}
+
 /// How many of `n` bar cells a percentage fills (rounded).
 fn filled(pct: f64, n: u32) -> usize {
     (0..n).filter(|&i| (f64::from(i) + 0.5) * 100.0 / f64::from(n) < pct).count()
@@ -230,5 +247,33 @@ fn toasts(buf: &mut Buffer, area: Rect, app: &App) {
         }
         rput(buf, inner.right(), inner.y, hint, t.dim.patch(t.panel));
         y += 3;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tui::app::{Editor, Msg, screen, test_app};
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn e_shows_only_while_some_bot_has_live_or_waiting_items() {
+        let mut app = test_app();
+        let area = Rect::new(0, 0, 130, 44);
+        let keys = |app: &App| screen(area, |buf| help::help(buf, area, &Editor::default(), app.any_work())).join("\n");
+        let bot = |app: &mut App, statuses: &[&str]| {
+            let work: Vec<_> = statuses.iter().map(|s| json!({"id": s, "title": s, "status": s})).collect();
+            app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "a", "name": "A", "work": work}})));
+        };
+        bot(&mut app, &["done", "failed"]);
+        assert_eq!(nav_hint(&app), "? keys");
+        assert!(!keys(&app).contains("work: every bot's items"));
+        assert!(keys(&app).contains("rename / remove section"), "the section's key stays");
+
+        bot(&mut app, &["waiting"]);
+        assert_eq!(nav_hint(&app), "E Work · ? keys", "nothing worked on yet: no count");
+        bot(&mut app, &["working", "needsYou", "waiting"]);
+        assert_eq!(nav_hint(&app), "E Work 1 · ? keys", "how many items are worked on");
+        assert!(keys(&app).contains("work: every bot's items"));
     }
 }

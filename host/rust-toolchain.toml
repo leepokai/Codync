@@ -3,4 +3,6 @@
 # Bump deliberately: change both, run clippy on both, commit.
 [toolchain]
 channel = "1.99.0"
-components = ["clippy", "rustfmt"]
+# llvm-tools: on macOS rustc strips (`strip = true`) with the toolchain's rust-objcopy, which finds its libLLVM only
+# there; without it every Mac build left the host unstripped ("stripping debug info with `rust-objcopy` failed").
+components = ["clippy", "rustfmt", "llvm-tools"]

@@ -37,6 +37,8 @@ impl App {
             Msg::Connected { since } => {
                 self.stream_since = since;
                 self.floors.clear();
+                // A task's entries aren't in the catch-up: the open transcripts ask for what they missed.
+                self.reload_task_details();
             }
             Msg::Event(v) => self.on_event(&v),
             Msg::Reply(after, r) => self.on_reply(after, r),
@@ -74,9 +76,11 @@ impl App {
             Some("pairingRequests") => self.pairing_requests_changed(v),
             Some("bot") => {
                 self.upsert_bot(&v["bot"]);
+                self.close_idle_work_page();
                 self.memory_moved(&v["bot"]);
             }
             Some("artifact") => self.artifact_changed(&v["artifact"]),
+            Some("taskEntry") => self.task_entries.keep(v["task"].as_str(), &v["entry"]),
             Some("entry") => {
                 if let Some((bot, e)) = Entry::parse(&v["entry"])
                     && !self.outside_window(&bot, &e)
@@ -85,10 +89,9 @@ impl App {
                         self.entry_added(&bot, &e);
                         // A routine's run and a follow-up say in the chat that they began or were dropped.
                         if e.kind == Kind::Notice {
-                            self.reload_routines(&bot);
+                            self.reload_details(&bot);
                         }
                     }
-                    self.kofi_reply(&bot, &e);
                     self.entries.entry(bot).or_default().insert(e.seq, e);
                 }
             }
@@ -119,7 +122,9 @@ impl App {
     fn upsert_bot(&mut self, v: &Value) {
         let Some(id) = v["id"].as_str() else { return };
         if v["deleted"].as_bool().unwrap_or(false) {
-            self.bots.remove(id);
+            if let Some(gone) = self.bots.remove(id) {
+                self.tasks_ended(&gone.work, &[]);
+            }
             self.entries.remove(id);
             self.floors.remove(id);
             self.drafts.remove(id);
@@ -141,6 +146,9 @@ impl App {
         }
         let old = self.bots.insert(new.id.clone(), new.clone());
         let Some(old) = old else { return };
+        self.tasks_ended(&old.work, &new.work);
+        self.follow_tasks(&new.id);
+        self.keep_details_cursor(&new.id, (&old.work, old.max_agents));
         let watching = self.selected.as_deref() == Some(new.id.as_str()) && self.chat_visible() && self.term_focused;
         // A member's turn in a group is the group's: it alone says done / needs you.
         if !new.notify || watching || old.away().is_some() || new.away().is_some() {
@@ -251,10 +259,15 @@ impl App {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.analytics_hello(&v);
                 self.auto_order = v["autoOrder"].as_bool();
+                self.credentials_reset = v["credentialsReset"].as_bool().unwrap_or(false);
                 self.screen = v["screen"].clone();
             }
             After::Analytics => self.analytics_set(&v),
             After::AutoOrder => self.auto_order_set(&v),
+            After::CredentialsReset => {
+                self.backends = v["backends"].as_array().cloned().unwrap_or_default();
+                self.flash("Saved credentials reset. Enter them again where you use them.");
+            }
             After::Backends => {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.flash("Agents refreshed");
@@ -379,7 +392,7 @@ impl App {
                 }
                 // The stream may already hold a newer copy (its delivery status).
                 if let Some((bot, e)) = Entry::parse(&value["entry"]) {
-                    self.kofi_sent(&bot, &e);
+                    super::kofi::sent();
                     self.entries.entry(bot).or_default().entry(e.seq).or_insert(e);
                 }
                 self.flash("Sent");

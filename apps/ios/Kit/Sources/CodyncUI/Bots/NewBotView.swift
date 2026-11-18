@@ -65,7 +65,7 @@ public struct NewBotView: View {
 
 private extension BotStore {
     /// Picks an installed agent we know (a registry agent nobody chose is never the default);
-    /// empty cwd requests a personal workspace from the host. Connectors and skills stay unset:
+    /// empty cwd requests the bot's own folder from the host. Connectors and skills stay unset:
     /// the host turns on every one it can run.
     func fillDefaults(_ draft: inout BotDraft) {
         if hello?.backends.first(where: { $0.id == draft.backend })?.available != true,

@@ -88,12 +88,22 @@ public struct VoiceStatus: Decodable, Sendable {
         public var configured: Bool
         /// Missing from hosts before 2.6.3.
         public var defaults: VoiceDefaults?
+        /// The OpenAI-compatible server the computer sends this engine's Speech mode to, `""` for the provider
+        /// itself. Missing where there is none to choose: Gemini, a cloud computer, an older host.
+        public var server: String?
     }
 
     public var providers: [Provider]
+    /// Missing from hosts that cannot configure search for a call.
+    public var googleSearch: Bool?
 
     public func configured(_ provider: VoiceProvider) -> Bool {
         providers.first { $0.provider == provider }?.configured == true
+    }
+
+    /// What the Server row reads: the saved address, or OpenAI's own (only the OpenAI engine has the row).
+    public static func serverLabel(_ saved: String) -> String {
+        saved.isEmpty ? "api.openai.com" : saved
     }
 }
 

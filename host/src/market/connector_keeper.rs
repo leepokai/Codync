@@ -10,11 +10,12 @@
 //! only).
 
 use super::{Connector, oauth::OAuth, passwords};
+use crate::LockExt;
 use crate::keeper::PLACEHOLDER;
 use crate::keeper::client;
 use crate::keeper::record::{self, Keep, Record};
 use crate::store::Store;
-use anyhow::Result;
+use anyhow::{Result, bail};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -41,14 +42,11 @@ pub fn hand_over(store: &Store, items: &mut [Connector]) -> Result<()> {
     let mut live = BTreeSet::new();
     for c in items.iter_mut() {
         let Some((url, upstream)) = c.url.clone().and_then(|url| origin(&url).map(|o| (url, o))) else { continue };
-        live.insert(slot(&c.id));
         let headers: BTreeMap<String, String> =
             c.headers.iter().filter(|(_, v)| literal(v)).map(|(k, v)| (k.to_ascii_lowercase(), v.clone())).collect();
         let token: Option<OAuth> = c.oauth.clone().filter(|o| o.signed_in() && o.access_token != PLACEHOLDER);
-        if headers.is_empty() && token.is_none() {
-            continue;
-        }
         let mut record = Record::new(&upstream, headers);
+        record.auth_revision.clone_from(&c.auth_revision);
         if let Some(o) = &token {
             record.headers.insert("authorization".into(), format!("Bearer {}", o.access_token));
             record.oauth = Some(record::OAuth {
@@ -61,11 +59,19 @@ pub fn hand_over(store: &Store, items: &mut [Connector]) -> Result<()> {
                 resource: Some(url.clone()),
             });
         }
+        // `target` fills 1Password references' values at each use: keep the last ones, so a save with the same
+        // connection revision leaves the slot and its grants alone, and a new revision still retires the grants.
         let keep = Keep {
-            headers: c.headers.iter().filter(|(_, v)| *v == PLACEHOLDER).map(|(k, _)| k.clone()).collect(),
+            headers: c.headers.iter().filter(|(_, v)| !literal(v)).map(|(k, _)| k.clone()).collect(),
             oauth: token.is_none() && c.oauth.as_ref().is_some_and(|o| o.access_token == PLACEHOLDER),
         };
-        client::put_proxied(store, &slot(&c.id), &record, &keep)?;
+        // Rebuild even when only placeholders remain: omitted headers must disappear.
+        // With nothing to retain, cleanup below deletes the old slot and its grants.
+        if record.headers.is_empty() && record.oauth.is_none() && keep.headers.is_empty() && !keep.oauth {
+            continue;
+        }
+        live.insert(slot(&c.id));
+        put(store, &c.id, &record, &keep)?;
         for value in c.headers.values_mut().filter(|v| literal(v)) {
             PLACEHOLDER.clone_into(value);
         }
@@ -79,6 +85,21 @@ pub fn hand_over(store: &Store, items: &mut [Connector]) -> Result<()> {
         client::delete(store, &gone)?;
     }
     Ok(())
+}
+
+/// Saves connector `id`'s `record` with the keeper. One from before connection revisions refuses a record that has
+/// one: it still gets the revision already saved, without the field, as it always did. A new revision waits for its
+/// update: that keeper's live grants would carry the new secret to the old upstream.
+fn put(store: &Store, id: &str, record: &Record, keep: &Keep) -> Result<()> {
+    match client::put_proxied(store, &slot(id), record, keep) {
+        Err(e) if !record.auth_revision.is_empty() && client::predates_revisions(&e) => {
+            if !super::connectors(store)?.iter().any(|c| c.id == id && c.auth_revision == record.auth_revision) {
+                bail!("this computer's keeper is out of date: update Codync on this computer first");
+            }
+            client::put_proxied(store, &slot(id), &Record { auth_revision: String::new(), ..record.clone() }, keep)
+        }
+        answer => answer,
+    }
 }
 
 /// Whether the keeper dropped `c`'s sign-in, which it does once it can't renew it (no refresh token, or the server
@@ -98,10 +119,17 @@ pub async fn target(store: &Store, c: &Connector, url: &str) -> Result<Option<Va
     for (name, value) in c.headers.iter().filter(|(_, v)| v.starts_with("op://")) {
         resolved.insert(name.to_ascii_lowercase(), passwords::resolve(store, value).await?);
     }
+    // Resolution can await another process. Never grant a replacement slot to a
+    // lookup made from its previous definition, or overwrite it with stale secrets.
+    let _guard = store.connector_lock.locked();
+    if super::connectors(store)?.iter().find(|saved| saved.id == c.id) != Some(c) {
+        bail!("The connector changed while resolving its target. Retry the request.");
+    }
     if !resolved.is_empty() {
-        let record = Record::new(&upstream, resolved);
+        let mut record = Record::new(&upstream, resolved);
+        record.auth_revision.clone_from(&c.auth_revision);
         let keep = Keep { headers: c.headers.keys().cloned().collect(), oauth: true };
-        client::put_proxied(store, &slot, &record, &keep)?;
+        put(store, &c.id, &record, &keep)?;
     }
     if !client::has(store, &slot)? {
         return Ok(None);
@@ -109,7 +137,9 @@ pub async fn target(store: &Store, c: &Connector, url: &str) -> Result<Option<Va
     let base = client::short_grant(store, &slot)?;
     let parsed = reqwest::Url::parse(url)?;
     let query = parsed.query().map(|q| format!("?{q}")).unwrap_or_default();
-    Ok(Some(json!({"url": format!("{base}{}{query}", parsed.path()), "headers": {}, "base": base})))
+    Ok(Some(
+        json!({"url": format!("{base}{}{query}", parsed.path()), "headers": {}, "base": base, "connectorUrl": url, "authRevision": c.auth_revision}),
+    ))
 }
 
 #[cfg(all(test, unix))]
@@ -192,5 +222,101 @@ mod tests {
         })
         .unwrap();
         assert!(!client::has(&store, "connector:linear").unwrap());
+    }
+
+    #[test]
+    fn an_older_keeper_gets_the_saved_revision_without_it_but_never_a_new_one() {
+        use std::io::{BufRead as _, Write as _};
+        let socket = std::env::temp_dir().join(format!("ck-{}.sock", &uuid::Uuid::new_v4().simple().to_string()[..8]));
+        let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        // A keeper from before the field: it can't parse a record that has one. What each request carried.
+        let old = std::thread::spawn(move || {
+            (0..3)
+                .map(|_| {
+                    let (stream, _) = listener.accept().unwrap();
+                    let mut line = String::new();
+                    std::io::BufReader::new(&stream).read_line(&mut line).unwrap();
+                    let revision = line.contains("authRevision");
+                    let answer = if revision { "{\"error\":\"bad request\"}\n" } else { "{\"ok\":true}\n" };
+                    (&stream).write_all(answer.as_bytes()).unwrap();
+                    revision
+                })
+                .collect::<Vec<_>>()
+        });
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let saved: Connector = serde_json::from_value(
+            json!({"id": "x", "name": "X", "url": "https://mcp.example.com/mcp", "authRevision": "saved"}),
+        )
+        .unwrap();
+        save_connectors(&store, &[saved]).unwrap();
+        store.kv_set("test_keeper_socket", &socket.to_string_lossy()).unwrap();
+        let mut record = Record::header("https://mcp.example.com", "x-key", "k".into());
+        record.auth_revision = "saved".into();
+        put(&store, "x", &record, &Keep::default()).unwrap();
+        record.auth_revision = "edited".into();
+        let refused = put(&store, "x", &record, &Keep::default()).unwrap_err();
+        assert_eq!(refused.to_string(), "this computer's keeper is out of date: update Codync on this computer first");
+        assert_eq!(old.join().unwrap(), [true, false, true], "the saved revision goes again without the field");
+        let _ = std::fs::remove_file(socket);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_stale_target_lookup_cannot_grant_the_replacement_connection() {
+        let keeper = crate::keeper::tests::test_keeper();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        keeper.manage(&store);
+        let original: Connector = serde_json::from_value(json!({
+            "id":"stale", "name":"Stale", "url":"https://old.example/mcp",
+            "headers":{"X-Key":"old"}, "authRevision":"before"
+        }))
+        .unwrap();
+        save_connectors(&store, &[original]).unwrap();
+        let stale = connectors(&store).unwrap().remove(0);
+        update_connectors(&store, |all| {
+            all[0].url = Some("https://new.example/mcp".into());
+            all[0].headers.insert("X-Key".into(), "new".into());
+            all[0].auth_revision = "after".into();
+            Ok(())
+        })
+        .unwrap();
+        assert!(target(&store, &stale, stale.url.as_deref().unwrap()).await.is_err());
+        let record = keeper.keeper.record("connector:stale").unwrap().unwrap();
+        assert_eq!(record.upstream, "https://new.example");
+        assert_eq!(record.headers["x-key"], "new");
+        assert!(crate::market::oauth::target(&store, "stale", false).await.is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn saving_keeps_the_slot_a_1password_connector_fills_at_each_use() {
+        let keeper = crate::keeper::tests::test_keeper();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        keeper.manage(&store);
+        let c: Connector = serde_json::from_value(json!({
+            "id":"op", "name":"Op", "url":"https://mcp.example.com/mcp",
+            "headers":{"Authorization":"op://vault/item/field"}
+        }))
+        .unwrap();
+        save_connectors(&store, std::slice::from_ref(&c)).unwrap();
+        // What `target` puts there once the reference resolves.
+        let resolved = BTreeMap::from([("authorization".to_owned(), "resolved".to_owned())]);
+        client::put_proxied(
+            &store,
+            "connector:op",
+            &Record::new("https://mcp.example.com", resolved),
+            &Keep::default(),
+        )
+        .unwrap();
+        let grant = keeper.keeper.grant("connector:op", None).unwrap().token;
+        save_connectors(&store, std::slice::from_ref(&c)).unwrap();
+        assert!(client::has(&store, "connector:op").unwrap(), "a save must not cut the bridge's grant");
+        assert!(keeper.keeper.granted(&grant).is_some(), "the same connection revision keeps its grants");
+
+        // A new reference is a new connection revision: the old grants end at the save, before it ever resolves.
+        let mut edited = c;
+        edited.headers.insert("Authorization".into(), "op://vault/other/field".into());
+        edited.auth_revision = "after".into();
+        save_connectors(&store, &[edited]).unwrap();
+        assert!(keeper.keeper.granted(&grant).is_none(), "old grants can't keep sending the old credentials");
+        assert_eq!(keeper.keeper.record("connector:op").unwrap().unwrap().auth_revision, "after");
     }
 }

@@ -45,15 +45,20 @@ extension BotStore {
     static func artifactDraftKey(_ artifact: Artifact) -> String { "\(artifact.botId)/artifact/\(artifact.id)" }
 
     /// Transfer to the outbox now; an eventual acknowledgement must not erase a newer draft.
-    /// `draft`: whose draft it is (the chat's when nil). `replyTo`: the chat message it quotes.
+    /// `draft`: whose draft it is (the chat's when nil). `replyTo`: the chat message it quotes. `thread`: the item's
+    /// thread it goes to instead of the chat, as text alone.
     @discardableResult
     func sendComposerDraft(to botId: String, draft key: String? = nil, replyTo: ReplyQuote? = nil,
-                           files: [OutgoingFile] = []) -> Bool {
+                           files: [OutgoingFile] = [], thread: WorkThread? = nil) -> Bool {
         let key = key ?? botId
         let text = composerDraft(for: key)
         guard !retired, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty else { return false }
         let pasted = composerPasted[key] ?? []
-        send(text, to: botId, replyTo: replyTo, nonce: UUID().uuidString, files: files, pasted: pasted)
+        if let thread {
+            send(text, to: thread)
+        } else {
+            send(text, to: botId, replyTo: replyTo, nonce: UUID().uuidString, files: files, pasted: pasted)
+        }
         setComposerDraft("", for: key)
         return true
     }
@@ -91,12 +96,12 @@ extension BotStore {
         if let bot = bots[botId] { onSent?(bot, .sending) }
         // The relay mailbox holds text only: files, and the call a message was said in, wait for the computer.
         if canQueue, files.isEmpty, call == nil, let remote = transport as? any RemoteTransport {
-            return enqueue(remote, text: trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce, pasted: pasted)
+            return enqueue(remote, text: trimmed, botId: botId, replyTo: replyTo, nonce: nonce, pasted: pasted)
         }
-        return deliver(trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce, pasted: pasted, call: call)
+        return deliver(trimmed, botId: botId, replyTo: replyTo, nonce: nonce, pasted: pasted, call: call)
     }
 
-    private func deliver(_ text: String, botId: String, replyTo: String?, nonce: String, pasted: [String] = [],
+    private func deliver(_ text: String, botId: String, replyTo: ReplyQuote?, nonce: String, pasted: [String] = [],
                          call: String? = nil) -> Task<SendProgress, Never> {
         Task {
             do {
@@ -109,8 +114,8 @@ extension BotStore {
                         ids = uploaded
                     }
                     try Task.checkCancellation()
-                    return try await client.send(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo, attachments: ids,
-                                                 pasted: pasted, call: call)
+                    return try await client.send(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo?.id,
+                                                 replyPart: replyTo?.selectedPart, attachments: ids, pasted: pasted, call: call)
                 }
                 outgoingFiles[nonce] = nil
                 upsert(e)
@@ -129,7 +134,7 @@ extension BotStore {
     }
 
     /// The computer is offline: the message waits, sealed for it, in the relay mailbox.
-    private func enqueue(_ remote: any RemoteTransport, text: String, botId: String, replyTo: String?, nonce: String,
+    private func enqueue(_ remote: any RemoteTransport, text: String, botId: String, replyTo: ReplyQuote?, nonce: String,
                          pasted: [String]) -> Task<SendProgress, Never> {
         markLocal(nonce: nonce, botId: botId, status: "waiting")
         saveCache()
@@ -137,7 +142,8 @@ extension BotStore {
             defer { saveCache() }
             do {
                 try Task.checkCancellation()
-                try await remote.enqueue(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo, pasted: pasted)
+                try await remote.enqueue(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo?.id,
+                                         replyPart: replyTo?.selectedPart, pasted: pasted)
                 onPromptSent()
                 if let bot = bots[botId] { onSent?(bot, .queued) }
                 return .queued
@@ -159,7 +165,7 @@ extension BotStore {
         }
     }
 
-    private func deliverWhenOnline(_ text: String, botId: String, replyTo: String?, nonce: String, pasted: [String]) async -> SendProgress {
+    private func deliverWhenOnline(_ text: String, botId: String, replyTo: ReplyQuote?, nonce: String, pasted: [String]) async -> SendProgress {
         let deadline = ContinuousClock.now + .seconds(30)
         while !retired, !Task.isCancelled, connection != .online, ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(200))
@@ -264,7 +270,8 @@ extension BotStore {
         entry.data.attachments?.isEmpty == false && entry.data.clientNonce.flatMap { outgoingFiles[$0] } == nil
     }
 
-    public func retry(_ entry: Entry) {
+    public func retry(_ entry: Entry, in thread: WorkThread? = nil) {
+        if let thread { return resend(entry, to: thread) }
         guard !filesGone(entry) else {
             lastError = "This message's files aren't on this device anymore. Delete it and attach them again."
             return
@@ -307,7 +314,8 @@ extension BotStore {
         try? data.write(to: url)
     }
 
-    public func discard(_ entry: Entry) {
+    public func discard(_ entry: Entry, in thread: WorkThread? = nil) {
+        if let thread { return dropTaskEntry(entry.id, task: thread.task) }
         if let nonce = entry.data.clientNonce { outgoingFiles[nonce] = nil }
         entries[entry.botId]?.removeAll { $0.id == entry.id }
         scheduleSave()

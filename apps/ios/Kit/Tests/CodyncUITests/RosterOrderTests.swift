@@ -85,6 +85,17 @@ private func rosterBot(_ id: String, pinned: Bool = false, lead: Bool = false, h
     #expect(RosterSection.lines([roster[1]], folded: []) { $0 }.count == 2)
 }
 
+@Test func aSectionWaitsOnTheUserWhileOneOfItsBotsDoes() throws {
+    // Issue #366: its folded badge takes the needs-you colour.
+    var asking = try rosterBot("a", section: "Work", unread: 2)
+    asking.waiting = 1
+    let roster = try [asking, rosterBot("b", section: "Work"), rosterBot("c", section: "Home")]
+    let waiting = RosterSection.lines(roster, folded: []) { $0 }.compactMap { line -> String? in
+        if case let .header(section) = line { "\(section.name) \(section.waiting)" } else { nil }
+    }
+    #expect(waiting == ["Home false", "Work true"])
+}
+
 @MainActor @Test func theLeadSitsInItsSectionLikeAnyBot() throws {
     let (store, done) = try rosterStore([
         rosterBot("l", lead: true, section: "Work"), rosterBot("p", pinned: true, lastAt: 3),
@@ -172,6 +183,16 @@ private func rosterBot(_ id: String, pinned: Bool = false, lead: Bool = false, h
     #expect(!store.supportsQueueActions)
     store.hostVersion = HostVersion(version: "2.39.0")
     #expect(store.supportsQueueActions)
+}
+
+@MainActor @Test func aPartReplyNeedsAHostThatTakesIt() throws {
+    let (store, done) = rosterStore([])
+    defer { done() }
+    #expect(!store.supportsReplyPart) // The host hasn't answered yet.
+    store.hostVersion = HostVersion(version: "2.48.0")
+    #expect(!store.supportsReplyPart, "it would quote the whole message")
+    store.hostVersion = HostVersion(version: "2.48.1")
+    #expect(store.supportsReplyPart)
 }
 
 @MainActor @Test func aQueuedMessageTakenBackGoesAtOnceAndComesBackWhenRefused() async throws {

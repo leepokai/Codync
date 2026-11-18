@@ -323,13 +323,19 @@ pub async fn remove(hub: &Hub, id: &str) -> Result<()> {
     })
 }
 
-/// The bots whose agent or one of whose fallbacks is set to profile `id`, by name: saving one of them fails once
+/// The bots whose agent or one of whose fallbacks is set to profile `id`, or one of whose tasks works on it, by name: saving one of them fails once
 /// the profile is gone (`settle`).
 fn users(store: &Store, id: &str) -> Result<Vec<String>> {
     let uses = |cfg: &BotConfig| {
         cfg.login_profile.as_deref() == Some(id) || cfg.fallbacks.iter().any(|f| f.login_profile.as_deref() == Some(id))
     };
-    Ok(store.bots()?.into_iter().filter(|b| !b.deleted && uses(&b.config)).map(|b| b.config.name).collect())
+    // A task keeps the login its bot had when it started, whatever the bot is set to since.
+    let tasks = crate::chat::tasks::working_tasks(store);
+    let bots = store.bots()?.into_iter().filter(|b| !b.deleted).map(|b| b.config);
+    let mut names: Vec<String> = bots.chain(tasks).filter(uses).map(|cfg| cfg.name).collect();
+    names.sort();
+    names.dedup();
+    Ok(names)
 }
 
 /// What `backend`'s process needs to run on `profile`: an account's folder, or an API key profile's variables (with

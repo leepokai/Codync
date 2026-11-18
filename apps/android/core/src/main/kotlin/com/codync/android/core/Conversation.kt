@@ -77,6 +77,13 @@ data class Entry(
     }
     /** How a reply quotes this message until the computer's own quote arrives. */
     val replyQuote: ReplyQuote get() = ReplyQuote(id, if (kind == "user") "user" else data.text("author") ?: botId, quotePreview.take(500))
+    /** The quote of the `part` the user selected in this message (`send`'s `replyPart`); the whole message when nothing is
+     *  selected, and an artifact card always. */
+    fun replyQuote(part: String?): ReplyQuote {
+        val quote = replyQuote
+        val kept = part?.trim().orEmpty()
+        return if (kept.isEmpty() || artifact != null) quote else quote.copy(text = kept.take(PART_CHARACTERS), part = true)
+    }
 
     companion object {
         /** No text, or a pass the host keeps out of the chat (`is_pass` in host/src/chat/group.rs). */
@@ -113,8 +120,12 @@ private data class EntryFields(
 )
 @Serializable internal data class PermissionChoice(val optionId: String, val name: String, val kind: String)
 /** A quoted message: its entry, who wrote it (`user` or a bot id) and its text, cut short by the computer; `artifact` when it
- *  quotes an artifact card (the message is about that artifact). */
-@Serializable data class ReplyQuote(val id: String = "", val author: String = "", val text: String = "", val artifact: String? = null)
+ *  quotes an artifact card (the message is about that artifact); `part` when `text` is the part of it the user selected. */
+@Serializable data class ReplyQuote(val id: String = "", val author: String = "", val text: String = "", val artifact: String? = null,
+    val part: Boolean = false)
+
+/** How much of a selected part a reply keeps, as the computer does. */
+private const val PART_CHARACTERS = 4000
 
 @Serializable data class Attachment(val id: String, val name: String, val size: Long) {
     val isImage: Boolean get() = isImageName(name)
@@ -156,7 +167,8 @@ data class PendingSend(
     val status: SendStatus = SendStatus.Sending,
     val error: String? = null,
     val files: List<OutgoingFile> = emptyList(),
-    /** The message it quotes (`send`'s `replyTo` is its id), shown on the bubble until the computer has it. */
+    /** The message it quotes (`send`'s `replyTo` is its id, and `replyPart` its text when it quotes a selected part), shown on
+     *  the bubble until the computer has it. */
     val replyTo: ReplyQuote? = null,
     /** The voice call it was said in (on-device or speech to text). */
     val call: String? = null,
@@ -166,7 +178,7 @@ data class PendingSend(
     /** The `send` request for it (the relay mailbox's too), with the ids of its uploaded files. */
     fun body(attachments: List<String> = emptyList()): JsonObject = buildJsonObject {
         put("botId", botId); put("text", text); put("clientNonce", nonce)
-        replyTo?.let { put("replyTo", it.id) }
+        replyTo?.let { put("replyTo", it.id); if (it.part) put("replyPart", it.text) }
         call?.let { put("call", it) }
         if (pasted.isNotEmpty()) put("pasted", JsonArray(pasted.map(::JsonPrimitive)))
         if (attachments.isNotEmpty()) put("attachments", JsonArray(attachments.map(::JsonPrimitive)))
@@ -182,6 +194,8 @@ sealed interface MirrorEvent {
     data class Hello(val hostId: String, val rev: Long, val usage: JsonObject, val screen: JsonObject?, val network: NetworkView? = null) : MirrorEvent
     data class BotChanged(val bot: Bot) : MirrorEvent
     data class EntryChanged(val entry: Entry) : MirrorEvent
+    /** An entry of a background task's own transcript ([task]: its id), never a chat's: live only, never a checkpoint. */
+    data class TaskEntryChanged(val task: String, val entry: Entry) : MirrorEvent
     data class Usage(val value: JsonObject) : MirrorEvent
     data class Screen(val value: JsonObject) : MirrorEvent
     /** An artifact was published, updated or renamed (the catch-up replays it too), never a checkpoint. */
@@ -206,6 +220,9 @@ sealed interface MirrorEvent {
                 value["network"]?.takeUnless { it == JsonNull }?.let { runCatching { NetworkView.decode(it) }.getOrNull() })
             "bot" -> BotChanged(HostClient.decode(value.getValue("bot").jsonObject))
             "entry" -> EntryChanged(Entry.decode(value.getValue("entry").jsonObject))
+            // One this app can't read is passed over: the catch-up carries none, and the task's details fetch them again.
+            "taskEntry" -> runCatching { TaskEntryChanged(requireNotNull(value.text("task")), Entry.decode(value.getValue("entry").jsonObject)) }
+                .getOrDefault(Ignored)
             "usage" -> Usage(value.getValue("usage").jsonObject)
             "screen" -> Screen(value.getValue("screen").jsonObject)
             // One this app can't read is passed over rather than fetching everything again: a card or the Library reads it again.

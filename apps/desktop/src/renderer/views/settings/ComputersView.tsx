@@ -16,6 +16,7 @@ import { StoreContext, useApp } from '../../store/context'
 import { ComputerBadge } from '../ComputerBadge'
 import { PairingCode } from '../PairingCode'
 import { AuthorizedDevicesSection } from './AuthorizedDevicesSection'
+import { ResetSection } from './ResetSection'
 import { ComputersUsedSection } from './ComputersUsedSection'
 import { leavingRemovesText, withJoinRemoves } from '../../lib/account-copy'
 import { useJoinRemoves, useLeaveRemoves } from '../use-join-removes'
@@ -282,6 +283,8 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
       ) : null}
 
       {nested ? null : <AuthorizedDevicesSection store={store} />}
+
+      {store === app.local ? <ResetSection store={store} /> : null}
 
       <Sheet open={showVoice} onClose={() => setShowVoice(false)}>
         <StoreContext.Provider value={store}>

@@ -52,7 +52,7 @@ export function MemoryCard({ botId }: { botId: string }) {
       }} />
       <CardSection>
         {memory.error && <p role="alert" className="memory-error">{tr(memory.error)}</p>}
-        {!view && !memory.error && <p className="memory-muted">Loading memory…</p>}
+        {!view && !memory.error && <p className="memory-muted">{tr('Loading memory…')}</p>}
         {view && bot && section === 'yours' && <Switch on={bot.sharedMemory} onChange={(on) => host.setSharedMemory(bot, on)}>
           Use what your bots share
         </Switch>}

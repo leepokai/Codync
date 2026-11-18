@@ -47,7 +47,7 @@ async fn moves_old_memory_into_files_once() {
     .await;
 
     let view = host.memory(&a).await;
-    assert!(texts(&view["bot"]).is_empty());
+    assert_eq!(texts(&view["bot"]), Vec::<String>::new());
     assert_eq!(view["shared"], true, "a bot in its own workspace uses the shared layer");
     assert_eq!(texts(&view["yours"]), ["Time zone is Asia/Taipei"]);
     assert_eq!(view["yours"]["entries"][0]["author"], "user");

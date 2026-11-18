@@ -447,32 +447,36 @@ fn line(hub: &Hub, group: &BotConfig, e: &Entry, me: &BotConfig) -> String {
     }
 }
 
-/// A member's final text is a pass (the room doesn't see it).
+/// A member's final text is a pass (the room doesn't see it). The clients' step filters mirror this exact set
+/// (`Entry+WorkingSteps.swift`, `trace-turns.ts`), so it stays narrower than a routine's [`ends_in_pass`].
 pub fn is_pass(text: &str) -> bool {
     let t = text.trim().trim_matches(|c: char| c == '"' || c == '.' || c == '*').to_lowercase();
     t.is_empty() || t == PASS || t == "pass"
 }
 
-/// A routine's final text is a pass when its last non-blank line ends with one: the prompt asks for `(pass)` alone,
-/// and a quiet run that wrote a reason first ("Product newsletter, doesn't qualify. (pass)") still says nothing.
-/// What came before stays in the run's trace. A line that only punctuation would leave empty (`***`, a divider) is
-/// not a pass: the word itself has to be there, which is what a real report ends with instead.
+/// What may close or wrap a routine's pass: quotes, markdown emphasis, a full stop (`**(pass)**`, `(pass)。`).
+const PASS_WRAP: &[char] = &['"', '\'', '*', '.', '!', '?', '。', '！', '？'];
+/// What a parting pass may follow on its line: the end of a sentence, never a word or a list marker.
+const SENTENCE_END: &[char] = &['.', '!', '?', '…', '。', '！', '？'];
+
+/// A routine's final text is a pass when its last non-blank line is one, or ends a sentence with one: the prompt
+/// asks for `(pass)` alone, and a quiet run that wrote a reason first ("Product newsletter, doesn't qualify. (pass)")
+/// still says nothing. What came before stays in the run's trace. A status line that ends in the token
+/// ("- lint (pass)") is a report, not a pass.
 pub fn ends_in_pass(text: &str) -> bool {
     is_pass(text) || last_line_ends_in_pass(text)
 }
 
-/// The last non-blank line of `text`, less trailing punctuation, ends with `(pass)` after nothing but a break.
 fn last_line_ends_in_pass(text: &str) -> bool {
     let Some(line) = text.lines().rev().find(|line| !line.trim().is_empty()) else {
         return false;
     };
-    let line =
-        line.trim().trim_end_matches(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '*' | '.' | '!' | '?'));
-    let lower = line.to_lowercase();
-    let Some(before) = lower.strip_suffix(PASS) else {
+    let line = line.trim_end_matches(|c: char| c.is_whitespace() || PASS_WRAP.contains(&c)).to_lowercase();
+    let Some(before) = line.strip_suffix(PASS) else {
         return false;
     };
-    before.chars().next_back().is_none_or(|c| c.is_whitespace() || c.is_ascii_punctuation())
+    let before = before.trim_end_matches(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '*'));
+    before.is_empty() || before.ends_with(SENTENCE_END)
 }
 
 #[cfg(test)]

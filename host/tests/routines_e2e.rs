@@ -154,6 +154,16 @@ impl Host {
     }
 }
 
+/// A bot's chat history.
+async fn entries(host: &Host, bot: &str) -> Vec<Value> {
+    host.call("history", json!({"botId":bot})).await["entries"].as_array().unwrap().clone()
+}
+
+/// How many replies were posted in it.
+fn finals(entries: &[Value]) -> usize {
+    entries.iter().filter(|e| e["kind"] == "agent" && e["data"]["final"] == true).count()
+}
+
 #[tokio::test]
 async fn routines_execute_pause_deduplicate_and_reject_wrong_webhook_keys() {
     let mut host = Host::start().await;

@@ -26,6 +26,8 @@ Screenshots and traces work the same headless: `page.screenshot()` and `trace: '
 
 They also start it with `CODYNC_EXIT_WITH_STDIN=1` and hold its stdin open: the host shuts down when that pipe closes, so a run that fails, times out or is killed stops every host it started instead of leaving it running without a parent. The service's own host never sets it.
 
+`python3 tools/check-omp-sessions.py` runs the memory, network, routines, turns, files and team suites and fails if any of their hosts left a session folder in your oh-my-pi sessions (`~/.omp/agent/sessions`, or `$PI_CODING_AGENT_DIR/sessions`). It needs oh-my-pi installed, so CI doesn't run it: run it after changing how test hosts start or what the host runs an agent CLI for.
+
 Run them one at a time: never start a test binary several times in parallel, or several copies of the suite, not even to hunt a flake. Repeat it one run after another, a few times at most. On 2026-11-04 parallel repeats left about 200 `claude -p /usage` processes behind, using 55 GB on a 32 GB Mac, and froze it.
 
 `tests/iphone_reconnect_e2e.rs` drives the iPhone's own store and channel (`HostRestartCatchUpTests.swift` in `apps/ios/Kit`, run with `xcodebuild` on a simulator) through `private-relay/` against a host it restarts, with 30 chats and five days of history, and checks the phone stays on the relay, its catch-up after each restart holds only what is new, and no relayed device link overflows. It needs macOS, Xcode and Node, so it runs only when asked, after `npm ci` in `private-relay`: `CODYNC_IOS_SIMULATOR=<udid> cargo test --test iphone_reconnect_e2e -- --ignored`.

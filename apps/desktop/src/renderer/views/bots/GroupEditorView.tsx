@@ -11,6 +11,7 @@ import { errorText } from './drafts'
 import { AutoTextArea } from './parts'
 import './bots.css'
 import { useTr } from '../../lib/use-language'
+import { fill } from '@shared/fill'
 
 
 /**
@@ -124,7 +125,7 @@ function DeleteBotDialog({ bot, onClose, onDeleted }: { bot: Bot | null; onClose
   return (
     <Dialog
       open={bot !== null}
-      title={`Delete ${bot?.name ?? 'bot'}?`}
+      title={fill(tr('Delete {name}?'), { name: bot?.name ?? 'bot' })}
       message={tr(bot && isGroup(bot) ? 'Its bots and their own chats stay.' : 'Files it changed on your computer stay as they are.')}
       actions={[
         {

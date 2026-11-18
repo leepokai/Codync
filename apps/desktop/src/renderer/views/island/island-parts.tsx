@@ -4,6 +4,7 @@ import { CharacterAvatar, type Mood } from '../../components/Avatar'
 import { Icon } from '../../components/Icon'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
 import { useTr } from '../../lib/use-language'
+import { fill } from '@shared/fill'
 import { useArrivals, useFlip } from './island-motion'
 import { avatarColor, palette, withAlpha } from '../../lib/theme'
 
@@ -108,13 +109,14 @@ export function AgentRow({ color, name, subtitle }: { color: string; name: strin
 
 /** The other bots down the right edge; each opens its conversation. */
 export function MiniColumn({ bots, onOpen }: { bots: IslandBot[]; onOpen: (ref: string) => void }) {
+  const tr = useTr()
   const arrivals = useArrivals(bots.map((b) => b.ref))
   const column = useRef<HTMLDivElement>(null)
   useFlip(column)
   return (
     <div ref={column} className="island-minis">
       {bots.map((b) => (
-        <button key={b.ref} data-flip={b.ref} className={`island-mini ${arrivals.has(b.ref) ? 'island-swap' : ''}`} title={b.name} aria-label={`Open ${b.name}`} onClick={() => onOpen(b.ref)}>
+        <button key={b.ref} data-flip={b.ref} className={`island-mini ${arrivals.has(b.ref) ? 'island-swap' : ''}`} title={b.name} aria-label={fill(tr('Open {name}'), { name: b.name })} onClick={() => onOpen(b.ref)}>
           <CharacterAvatar customIcon={b.customIcon} shape={b.shape} color={b.color} size={18} mood={moodOf(b)} dark />
           <StatusDot bot={b} />
         </button>

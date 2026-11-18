@@ -11,6 +11,7 @@ import { Text } from '../../components/Text'
 import { messagePreview } from '../../lib/message-preview'
 import { useTr } from '../../lib/use-language'
 import { analytics } from '../../store/analytics'
+import { fill } from '@shared/fill'
 import { avatarColor } from '../../lib/theme'
 import { useStore as useLiveStore, useStoreRef as useStore } from '../../store/context'
 import { QUICK_REACTIONS, type BotStore } from '../../store/bot-store'
@@ -300,6 +301,7 @@ export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: 
  * bots that chose it. */
 export function ReactionsRow({ entry }: { entry: Entry }) {
   const store = useStore()
+  const tr = useTr()
   const mine = entry.data.reactions ?? []
   const theirs = groupBotReactions(entry.data.botReactions ?? [])
     .map(({ emoji, bots }) => ({ emoji, bots: bots.map((id) => store.bots.get(id)).filter((b): b is Bot => !!b) }))
@@ -308,7 +310,7 @@ export function ReactionsRow({ entry }: { entry: Entry }) {
   return (
     <HStack align="stretch" gap={4}>
       {mine.map((emoji) => (
-        <button key={emoji} className="press reaction-chip" title={`Remove ${emoji}`} aria-label={`Remove reaction ${emoji}`} onClick={() => store.react(entry, emoji)}>
+        <button key={emoji} className="press reaction-chip" title={fill(tr('Remove {emoji}'), { emoji })} aria-label={fill(tr('Remove reaction {emoji}'), { emoji })} onClick={() => store.react(entry, emoji)}>
           <Text size="body">{emoji}</Text>
         </button>
       ))}

@@ -29,7 +29,7 @@ export function CustomIconEditor({ target }: { target: string }) {
   const disabled = editor.busy || session.isBusy || !session.isReady || store.connection.kind !== 'online'
   if (!store.hello?.icons) return null
   return <VStack gap={10} className="custom-icon-editor">
-    <Text size="subheadline" weight="semibold">Custom icon</Text>
+    <Text size="subheadline" weight="semibold">{tr('Custom icon')}</Text>
     <HStack gap={8} wrap justify="center">
       <CustomIcon icon={icon} size={40} fallback={null} />
       <Button kind="secondary" disabled={disabled} onClick={() => requireAccount(() => input.current?.click())}>Upload from desktop</Button>
@@ -56,8 +56,8 @@ export function CustomIconEditor({ target }: { target: string }) {
     {icon && <SwitchRow title="Tint icon" detail="Turn off to keep the image's original colors." on={icon.tinted}
       onChange={(tinted) => { if (!disabled) void editor.save({ tinted }) }} />}
     <VStack gap={2} className="custom-icon-help">
-      <Text size="caption" tone="secondary">PNG, JPEG, WebP up to 5 MiB; SVG up to 256 KiB.</Text>
-      <Text size="caption" tone="secondary">Saved immediately. Custom images stay still.</Text>
+      <Text size="caption" tone="secondary">{tr('PNG, JPEG, WebP up to 5 MiB; SVG up to 256 KiB.')}</Text>
+      <Text size="caption" tone="secondary">{tr('Saved immediately. Custom images stay still.')}</Text>
     </VStack>
     <Dialog open={needsSignIn} title="Sign in required" message="Sign in to use custom images."
       onClose={() => setNeedsSignIn(false)} actions={[

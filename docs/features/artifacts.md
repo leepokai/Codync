@@ -22,10 +22,10 @@ When to make one is part of every bot's instructions (`chat::outbox::INSTRUCTION
 message, one artifact per subject, updated rather than made again. A session whose frozen instructions predate
 artifacts gets a one-line reminder of this with each message in the bot's own chat (`turn.rs`, like `send_file`'s).
 
-A publish in the bot's own chat also posts an artifact card there: a final `agent` entry with
-`{text: "Artifact: <title>", final: true, artifact: {id, title, updatedAt}}`. Older apps show the text. In a routine
-run, a group chat or a request from another bot the artifact is saved and in the chat's Library, but no card is
-posted (`card` in the answer says so), and the bot mentions it in its reply.
+A publish in the bot's own chat, or in a routine run (whose lane is that chat, in the chat or in a task), also posts
+an artifact card there: a final `agent` entry with `{text: "Artifact: <title>", final: true, artifact: {id, title,
+updatedAt}}`. Older apps show the text. In a group chat or a request from another bot the artifact is saved and in the
+chat's Library, but no card is posted (`card` in the answer says so), and the bot mentions it in its reply.
 
 A message about an artifact is a reply to its card: `replyTo` carries the artifact id and quotes it under its current
 title (`replies::quote`), and the bot reads `[Codync: this is about your artifact "<title>" (id …). Its current HTML is
@@ -78,7 +78,7 @@ All four clients show the same things; layout follows each platform.
     only cancels that, and the artifact stays open.
   - Bottom: a message box, "Message about “<title>”", that sends a reply to the artifact's card (`entryId`) to its
     bot. It keeps a draft of its own (`<bot>/artifact/<id>`), apart from the chat's. The viewer stays open; when the bot publishes the artifact again, it reloads. An artifact without a card
-    (published in a routine run) has no message box: there is nothing to reply to.
+    (published in a group chat or another bot's request) has no message box: there is nothing to reply to.
   - Loading shows the shared spinner; a failure shows "Couldn't open the artifact" with the error.
 - **Library**: the chat's artifacts and the files shared in it, grouped Today / Yesterday / This week (the last
   seven days) / Earlier. An artifact row is the artifact symbol and its title, opens the viewer, and its menu has

@@ -8,6 +8,7 @@ use crate::agent::fallback::Reason;
 
 use super::model::{Mark, Status};
 use super::tilde;
+use super::work::{self, WorkItem};
 
 /// The harness's own memory as the bot's Memory screen shows it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -27,6 +28,8 @@ pub struct Bot {
     pub color: String,
     pub shape: String,
     pub backend: String,
+    /// The login profile it runs on; none for the computer's own sign-in.
+    pub login_profile: Option<String>,
     pub cwd: String,
     pub managed_workspace: bool,
     pub auto: bool,
@@ -70,16 +73,22 @@ pub struct Bot {
     pub self_fallbacks: bool,
     /// The fallback agent it's on now; `None` on its own.
     pub agent_step: Option<String>,
+    /// The login profile of that agent the step runs on; `None`: its default one.
+    pub step_login_profile: Option<String>,
     /// Agents of its chain resting now.
     pub resting: Vec<Rest>,
     /// What it keeps running.
     pub dev_servers: Vec<super::super::manage::DevServer>,
     pub connectors: Vec<String>,
     pub skills: Vec<String>,
+    /// The `/` commands of the agent it runs on now, as `(name, description)`.
+    pub agent_commands: Vec<(String, String)>,
     pub status: Status,
     pub activity: String,
     pub started_at: Option<i64>,
     pub unread: i64,
+    /// How many of `unread` are cards waiting on the user: the badge turns amber.
+    pub waiting: i64,
     pub last_message: String,
     pub last_at: i64,
     /// A group chat: several bots and the user, no agent of its own.
@@ -87,14 +96,42 @@ pub struct Bot {
     pub members: Vec<String>,
     /// Where the running turn talks: a chat (`None` = its own).
     pub working_chat: Option<String>,
+    /// Its event box: the working items, then the waiting in the order they will be taken, then those ended in the
+    /// last day. Its own `status` stays the chat's.
+    pub work: Vec<WorkItem>,
+    /// The most agents it runs at once; `None` from a host before the box.
+    pub max_agents: Option<u8>,
+    /// How it stands outside its chat (`bot.outside.status`); `None` from a host before it.
+    pub outside: Option<Status>,
+    /// A task that starts beside another in the same git repository gets a worktree of its own; `None` from a host
+    /// before worktrees.
+    pub task_worktrees: Option<bool>,
+    /// Its folder is in a git repository: where `task_worktrees` matters.
+    pub git_repo: bool,
+    /// The host can run git; true from a host that doesn't say.
+    pub git_installed: bool,
 }
 
-/// An agent of a bot's chain that rests (`agent::fallback::resting`) until `until` (epoch ms).
+/// A login of a bot's chain (an agent on one of its login profiles, or none: its default one) that rests
+/// (`agent::fallback::resting`) until `until` (epoch ms).
 #[derive(Deserialize, Clone, Debug)]
 pub struct Rest {
     pub agent: String,
+    #[serde(default, rename = "loginProfile")]
+    pub login_profile: Option<String>,
     pub until: i64,
     pub reason: Reason,
+}
+
+/// A status as the wire names it; none for one this terminal doesn't know.
+fn status(v: &Value) -> Option<Status> {
+    match v.as_str()? {
+        "idle" => Some(Status::Idle),
+        "working" => Some(Status::Working),
+        "needsInput" => Some(Status::NeedsInput),
+        "error" => Some(Status::Error),
+        _ => None,
+    }
 }
 
 fn strs(v: &Value) -> Vec<String> {
@@ -166,7 +203,7 @@ impl Bot {
 
     /// Where it works, as the header shows it.
     pub fn folder(&self, home: &str) -> String {
-        if self.managed_workspace { "personal workspace".to_owned() } else { tilde(&self.cwd, home) }
+        if self.managed_workspace { "own folder".to_owned() } else { tilde(&self.cwd, home) }
     }
 
     pub(in crate::tui) fn parse(v: &Value) -> Option<Self> {
@@ -178,6 +215,7 @@ impl Bot {
             color: v["avatarColor"].as_str().unwrap_or("blue").to_owned(),
             shape: v["avatarShape"].as_str().unwrap_or("blob").to_owned(),
             backend: s("backend"),
+            login_profile: v["loginProfile"].as_str().map(str::to_owned),
             cwd: s("cwd"),
             managed_workspace: v["managedWorkspace"] == true,
             auto: v["permission"] == "auto",
@@ -213,24 +251,47 @@ impl Bot {
             fallbacks: serde_json::from_value(v["fallbacks"].clone()).unwrap_or_default(),
             self_fallbacks: v["selfFallbacks"].as_bool().unwrap_or(true),
             agent_step: v["agentStep"]["agent"].as_str().map(str::to_owned),
+            step_login_profile: v["agentStep"]["loginProfile"].as_str().map(str::to_owned),
             resting: serde_json::from_value(v["resting"].clone()).unwrap_or_default(),
             dev_servers: serde_json::from_value(v["devServers"].clone()).unwrap_or_default(),
             connectors: strs(&v["connectors"]),
             skills: strs(&v["skills"]),
-            status: match v["status"].as_str() {
-                Some("working") => Status::Working,
-                Some("needsInput") => Status::NeedsInput,
-                Some("error") => Status::Error,
-                _ => Status::Idle,
-            },
+            agent_commands: v["agentCommands"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|c| {
+                    // What it says it does, else what it takes after its name, as the other apps show.
+                    let about = c["description"].as_str().filter(|d| !d.is_empty()).or(c["hint"].as_str());
+                    Some((c["name"].as_str()?.to_owned(), about.unwrap_or_default().to_owned()))
+                })
+                .collect(),
+            status: status(&v["status"]).unwrap_or(Status::Idle),
+            outside: status(&v["outside"]["status"]),
             activity: s("activity"),
             started_at: v["startedAt"].as_i64(),
             unread: v["unread"].as_i64().unwrap_or(0),
+            waiting: v["waiting"].as_i64().unwrap_or(0),
             last_message: s("lastMessage"),
             last_at: v["lastAt"].as_i64().unwrap_or(0),
             group: v["kind"] == "group",
             members: strs(&v["members"]),
             working_chat: v["workingChat"].as_str().map(str::to_owned),
+            work: WorkItem::list(&v["work"]),
+            max_agents: work::max_agents(&v["maxAgents"]),
+            task_worktrees: v["taskWorktrees"].as_bool(),
+            git_repo: v["gitRepo"] == true,
+            git_installed: v["gitInstalled"] != false,
+        })
+    }
+
+    /// What Settings says under its folder; nothing from a host before worktrees, which doesn't tell.
+    pub fn git_line(&self) -> Option<&'static str> {
+        self.task_worktrees?;
+        Some(match (self.git_installed, self.git_repo) {
+            (false, _) => "Git isn't installed on this computer",
+            (true, true) => "Git repository",
+            (true, false) => "Not a git repository",
         })
     }
 
@@ -239,9 +300,9 @@ impl Bot {
         u8::from(!self.pinned)
     }
 
-    /// Agent `agent`'s rest, while it lasts at `now`.
-    pub fn rests(&self, agent: &str, now: i64) -> Option<&Rest> {
-        self.resting.iter().find(|r| r.agent == agent && r.until > now)
+    /// The rest of agent `agent` on `login_profile`, while it lasts at `now`.
+    pub fn rests(&self, agent: &str, login_profile: Option<&str>, now: i64) -> Option<&Rest> {
+        self.resting.iter().find(|r| r.agent == agent && r.login_profile.as_deref() == login_profile && r.until > now)
     }
 
     /// A turn is running: working, or waiting on the user.
@@ -259,8 +320,24 @@ impl Bot {
         self.working_chat.as_deref().filter(|c| *c != self.id)
     }
 
+    /// What its chat shows: the chat's own status.
     pub fn mark(&self) -> Mark {
-        match self.status {
+        self.mark_of(self.status)
+    }
+
+    /// What its row in the roster shows: how it stands outside its chat, where its box counts too (it works while
+    /// an item works or waits, and needs you while one waits on a card). The chat's own on a host before `outside`.
+    pub fn roster_mark(&self) -> Mark {
+        self.mark_of(self.outside.unwrap_or(self.status))
+    }
+
+    /// The messages in the badge the user hasn't read: what `markRead` clears (waiting cards stay counted).
+    pub fn unseen(&self) -> i64 {
+        self.unread - self.waiting
+    }
+
+    fn mark_of(&self, status: Status) -> Mark {
+        match status {
             Status::NeedsInput => Mark::Need,
             Status::Error => Mark::Error,
             Status::Working => Mark::Work,

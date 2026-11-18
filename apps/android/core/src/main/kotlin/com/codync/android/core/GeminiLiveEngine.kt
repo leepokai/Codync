@@ -22,6 +22,8 @@ import okio.ByteString
  * the server ends (`goAway`) is resumed with a fresh one, and a dropped one is tried again.
  */
 class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private val model: String, private val voice: String,
+    /** Asks the computer for Google's built-in search; it's on only when the computer's session confirms it. */
+    private val googleSearch: Boolean,
     private val link: CallLink,
     private val mic: MicSource, private val player: PcmPlayer, private val http: OkHttpClient,
     private val endpoint: String = ENDPOINT,
@@ -48,10 +50,13 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
     private var session: CallSession? = null
     /** Tool calls still running on the computer: replies wait, so the model gets each answer first. */
     private var toolsRunning = 0
+    private var searchTurn = CallSearchTurn()
     private var lastPlayed = 0L
     private var watchdog: Job? = null
     /** Playback stopped reporting progress after the voice's turn, and the call went back to listening. */
     @Volatile var onStall: (() -> Unit)? = null
+    /** Search was confirmed for a session, or an answer came with suggestions (analytics; never content). */
+    @Volatile var onSearch: ((CallSearchUse) -> Unit)? = null
 
     init { hop { connect() } }
 
@@ -80,13 +85,16 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
     }
 
     private suspend fun connect() {
-        val session = try { link.start(VoiceProvider.Gemini, model, voice) } catch (error: Exception) {
+        val session = try { link.start(VoiceProvider.Gemini, model, voice, googleSearch) } catch (error: Exception) {
             // Starting fails over; mid-call, the computer or Google may be back in a moment.
             if (connected) return dropped(error.message.orEmpty()) else throw error
         }
         if (ended) return
         val token = session.credential ?: throw IllegalStateException("Gemini sent no session credential.")
+        searchTurn = CallSearchTurn()
+        mutable.update { it.copy(searchResult = null) }
         this.session = session
+        if (session.googleSearch == true) onSearch?.invoke(CallSearchUse.Enabled)
         ready = false
         val url = "$endpoint?access_token=" + URLEncoder.encode(token, "UTF-8")
         socket = http.newWebSocket(Request.Builder().url(url).build(), Listener())
@@ -134,7 +142,10 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
                 putJsonObject("speechConfig") { putJsonObject("voiceConfig") { putJsonObject("prebuiltVoiceConfig") { put("voiceName", voice) } } }
             }
             putJsonObject("systemInstruction") { putJsonArray("parts") { addJsonObject { put("text", session?.instructions.orEmpty()) } } }
-            putJsonArray("tools") { addJsonObject { put("functionDeclarations", JsonArray(session?.tools.orEmpty().map(CallTool::gemini))) } }
+            putJsonArray("tools") {
+                addJsonObject { put("functionDeclarations", JsonArray(session?.tools.orEmpty().map(CallTool::gemini))) }
+                if (session?.googleSearch == true) addJsonObject { putJsonObject("googleSearch") { } }
+            }
             // Audio sessions are otherwise capped at 15 minutes.
             putJsonObject("contextWindowCompression") { putJsonObject("slidingWindow") { } }
             // What both sides said, for the call's line in the chat.
@@ -161,6 +172,10 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
             flush()
         }
         message.objectAt("serverContent")?.let { content ->
+            val answers = searchTurn.answers
+            val result = searchTurn.receive(content)
+            if (searchTurn.answers > answers) onSearch?.invoke(CallSearchUse.Answered)
+            mutable.update { it.copy(searchResult = result) }
             content.objectAt("inputTranscription")?.text("text")?.let { link.add("user", it) }
             content.objectAt("outputTranscription")?.text("text")?.let { link.add("voice", it) }
             if (content.flag("turnComplete") || content.flag("interrupted")) link.endTurn()

@@ -1,0 +1,46 @@
+# A bot waiting on an approval card keeps the card in its row's badge until it's answered (#366): opening the chat and
+# Mark as read leave it counted. Both phones, already paired to the isolated dev host, in English.
+# Env: HOST_PORT, HOST_TOKEN and FAKE_AGENT (absolute path to host/tests/fake_agent.py). No production endpoint or clearState.
+appId: com.pokai.Codync.ios.dev
+tags:
+  - permission
+onFlowComplete:
+  - runScript:
+      file: waiting-approval.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: waiting-approval.js
+- runFlow: subflows/bot-list.yaml
+# The card arrives while the bot list is on screen: the row counts it.
+- runScript:
+    file: waiting-approval.js
+    env:
+      SEND: "true"
+- extendedWaitUntil:
+    visible: ".*Needs approval.*"
+    timeout: 20000
+- assertVisible: ".*1 unread.*"
+# Opened and left unanswered, the card still waits.
+- tapOn: "${output.bot.name}.*"
+- extendedWaitUntil:
+    visible: "Edit a.txt"
+    timeout: 20000
+- runFlow: subflows/bot-list.yaml
+- extendedWaitUntil:
+    visible: ".*1 unread.*"
+    timeout: 20000
+# Mark as read leaves it counted too.
+- longPressOn: "${output.bot.name}.*"
+- tapOn: "Mark as read"
+- waitForAnimationToEnd
+- assertVisible: ".*1 unread.*"
+# Answered, with the reply read in its open chat, it leaves the badge.
+- tapOn: "${output.bot.name}.*"
+- tapOn: "Deny"
+- assertVisible: "Denied"
+- extendedWaitUntil:
+    visible: "Done: .*"
+    timeout: 20000
+- runFlow: subflows/bot-list.yaml
+- assertNotVisible: ".*1 unread.*"

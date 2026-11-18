@@ -44,6 +44,7 @@ On the existing `chat` helper (`dev_servers/tools.rs`): a new MCP server would a
 | `dev_server_logs {id, lines?}` | The end of its log (200 lines by default, at most 1000) |
 
 - At most 5 run per bot, however they start (a bot or a person); past that the error lists them.
+- A [background task](background-tasks.md)'s servers are its bot's (`tools::call` keys them to the task's owner): they show on the bot, count toward its 5, and outlive the task. Its approval card is the task's own, in the bot's chat.
 - A start finishes in a task of its own, so a request that goes away (a closed connection, a cancelled tool call) can't leave it half started. A stop that comes meanwhile ends it as soon as it's up.
 - The command ends when its first process ends, so bots give it as they'd run it in the foreground.
 - Bots hear about them in the tool's description and one line of their instructions (`BRIEF`). Nothing forces it: see
@@ -54,7 +55,9 @@ On the existing `chat` helper (`dev_servers/tools.rs`): a new MCP server would a
 ## Approval and safety
 
 - **Under Ask, a start waits on an approval card** with the command and folder (`chat::manage::approve`, as `update_bot`).
-  Under Auto it runs, like the agent's own commands. A server first started under Auto had no card, so it gets one when
+  Under Auto it runs, like the agent's own commands, unless a network rule holds the bot to a
+  [ceiling](codync-network.md#ceilings-auto-and-ask): a turn under one can't start a server at all, and what the
+  agent goes on with after that turn asks like Ask. A server first started under Auto had no card, so it gets one when
   the bot, now under Ask, starts it again (`Saved::approved`).
 - **The command runs outside any sandbox the agent has** (Codex has one). A sandboxed agent under Auto therefore has a
   way out of it through this tool. The card under Ask is the control; decided 2026-11-05 to match the agent's own
@@ -102,7 +105,7 @@ white, and color comes from the bots.
 - **Title:** the desktop's title pill shows `Builder :5173` in quiet text; the phones' subtitle shows `Connected · :5173`;
   the terminal's header shows it on the right. With more running it's `:5173 +2`; with no port, the server's name; none
   running, `Starting` or `Failed to start`; stopped, nothing. Opening the bot's details is what the title already does.
-- **Details:** a **Dev servers** section first on the Details tab, shown only when the bot has servers. A row is one line:
+- **Details:** a **Dev servers** section on the Details tab, after Routines, shown only when the bot has servers. A row is one line:
   name and port (or `Running`, `Starting`, `Stopped`, `Failed to start`). A click opens it in the browser, or with no port
   to open (a watch build, or one that ended) its logs; the rest (copy address, logs, restart, stop, remove) is behind
   `⋯`, which on the desktop shows only when the row is hovered.

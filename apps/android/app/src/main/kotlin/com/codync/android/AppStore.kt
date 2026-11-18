@@ -204,7 +204,7 @@ class AppStore internal constructor(
         if (PushPreferences.tasks(application)) {
             val watched = withContext(Dispatchers.IO) { feed.all().filter { !it.finished }.map { it.botId }.toSet() }
             for (bot in snapshot.bots.filter { it.id in watched }) {
-                val watch = withContext(Dispatchers.IO) { feed.local(bot) }
+                val watch = withContext(Dispatchers.IO) { feed.local(bot, outsideLine(bot) { it }) }
                 if (watch != null) NotificationDisplay.task(application, local.referenceId, id, watch)
             }
         }

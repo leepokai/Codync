@@ -26,7 +26,9 @@ onFlowComplete:
       - launchApp:
           appId: com.pokai.Codync.android.dev
 - tapOn: ${output.bot.name}
-- assertVisible: "Needs your choice"
+- assertVisible:
+    id: decision-card
+- assertVisible: "Something else"
 - tapOn:
     id: decision-expand
 - assertVisible: ".*Fifth line matters.*"
@@ -62,6 +64,24 @@ onFlowComplete:
 - runScript:
     file: decision.js
     env:
+      SEND: "ASK Own words?|Left|Right"
+- assertVisible: "Own words?"
+- tapOn:
+    id: decision-own
+- inputText: "Neither, go up"
+- tapOn:
+    id: decision-own-send
+- assertNotVisible:
+    id: decision-option-1
+- runScript:
+    file: decision.js
+    env:
+      VERIFY: answered
+      EXPECTED_CHOICE: "Neither, go up"
+      EXPECTED_REPLIES: "3"
+- runScript:
+    file: decision.js
+    env:
       SEND: "ASK Expired choice?|Left|Right"
 - assertVisible: "Expired choice?"
 - runScript:
@@ -75,4 +95,4 @@ onFlowComplete:
     file: decision.js
     env:
       VERIFY: expired
-      EXPECTED_REPLIES: "2"
+      EXPECTED_REPLIES: "3"

@@ -3,7 +3,7 @@
 
 use crate::agent::bot::Cmd;
 use crate::hub::Hub;
-use crate::store::Entry;
+use crate::store::{Entry, Store};
 use anyhow::{Result, anyhow, bail, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -16,9 +16,16 @@ pub(crate) const WAIT: Duration = Duration::from_secs(270);
 const MAX_OPTIONS: usize = 12;
 
 pub const INSTRUCTIONS: &str = "When the user should pick among a few ways forward, use request_decision(question, \
-options, recommended?) instead of repeating the question in a message. One card waits at a time, for up to four and a \
-half minutes. The user's button or typed choice answers this tool and is recorded in the chat; it does not start a \
-second turn. An expired card takes no answer. Do not choose the suggested option on the user's behalf.";
+options, recommended?) instead of repeating the question in a message. One card waits at a time. The user's \
+button, typed choice or own words answer this tool (their own words come back with custom: true) and are recorded in \
+the chat; it does not start a second turn. Without an answer in four and a half minutes the call returns \
+answered: false and, in your own chat, the card stays open: the user's later choice comes as their next message. Do \
+not choose the suggested option on the user's behalf.";
+
+/// What a chat's call whose wait ran out is told; its card stays open (`agent::bot::decisions`).
+const LEFT_OPEN: &str = "No answer yet. The card stays open: when the user chooses, their choice comes as their next \
+message, quoting this question. Don't ask it again or choose for them; go on with what doesn't depend on it, or end \
+your turn.";
 
 /// A choice card's lifecycle, stored lowercase in `data.status`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,7 +46,7 @@ impl Status {
 pub fn tool() -> Value {
     json!({
         "name": TOOL,
-        "description": "Ask the user to choose on a card in your own chat. Their choice returns to this call and is recorded as their reply. Ask one question at a time; do not repeat it in a message. Older clients can reply with the full option or its number.",
+        "description": "Ask the user to choose on a card in your own chat. Their choice returns to this call and is recorded as their reply; when they write their own answer instead, it comes back with custom: true. Ask one question at a time; do not repeat it in a message. Older clients can reply with the full option or its number.",
         "inputSchema": {"type": "object", "properties": {
             "question": {"type": "string", "minLength": 1, "maxLength": 2000},
             "options": {"type": "array", "minItems": 2, "maxItems": 12,
@@ -81,13 +88,33 @@ fn card_data(args: &Value) -> Result<Value> {
     if let Some(i) = recommended {
         let _ = write!(text, "\n\nSuggested: {}", choices[i]);
     }
-    text.push_str("\n\nReply with the full option or its number. Exact option text takes priority over a number.");
+    text.push_str(TYPED_HINT);
     Ok(json!({"decision": true, "text": text, "question": question, "choices": choices,
         "recommended": recommended, "status": Status::Pending, "selected": Value::Null}))
 }
 
+/// How a card's text tells a client without buttons to answer.
+const TYPED_HINT: &str =
+    "\n\nReply with the full option, its number or your own answer. Exact option text takes priority over a number.";
+
+/// A card's data for a card only a press answers (a task's, in its bot's chat): its text doesn't ask for a typed
+/// reply, which would go to the bot in the chat.
+pub fn pressed_only(mut data: Value) -> Value {
+    if let Some(text) = data["text"].as_str().and_then(|text| text.strip_suffix(TYPED_HINT)) {
+        data["text"] = text.to_owned().into();
+    }
+    data
+}
+
 pub fn is_card(card: &Entry) -> bool {
     card.kind == "notice" && card.data["decision"] == true
+}
+
+/// The choice card `id` while a press or reply can still answer it.
+pub fn pending_card(store: &Store, id: &str) -> Result<Entry> {
+    let card = store.entry(id).filter(is_card).ok_or_else(|| anyhow!("unknown decision card"))?;
+    ensure!(Status::of(&card.data) == Some(Status::Pending), "that card is already answered or expired");
+    Ok(card)
 }
 
 pub fn choices(card: &Entry) -> Vec<String> {
@@ -107,6 +134,41 @@ pub fn pick(choices: &[String], wanted: &str, numbered: bool) -> Option<String> 
     None
 }
 
+/// How the user answered a card; the `via` of `decision_answered` (never which option or the words).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Via {
+    /// A press on an option.
+    Button,
+    /// A typed option or its number.
+    Text,
+    /// The user's own words, typed instead of an option.
+    Custom,
+    /// A press or typed reply after the call stopped waiting, sent as the user's next message.
+    Late,
+}
+
+impl Via {
+    /// Records the answer, content-free.
+    pub fn capture(self, hub: &Hub) {
+        crate::analytics::capture(
+            hub,
+            crate::analytics::Event::DecisionAnswered,
+            serde_json::Map::from_iter([("via".into(), json!(self))]),
+        );
+    }
+}
+
+/// A press must name an option. A typed reply may also give its number, or else is the user's own words,
+/// unless it is empty or a `/command`, which runs as its own message.
+pub fn answer(choices: &[String], wanted: &str, typed: bool) -> Option<(String, Via)> {
+    if let Some(choice) = pick(choices, wanted, typed) {
+        return Some((choice, if typed { Via::Text } else { Via::Button }));
+    }
+    let own = wanted.trim();
+    (typed && !own.is_empty() && crate::market::slash_command(own).is_none()).then(|| (own.to_owned(), Via::Custom))
+}
+
 pub async fn ask(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     let cfg = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?.config;
     ensure!(!cfg.is_group(), "request_decision works only in a bot's own chat");
@@ -117,20 +179,23 @@ pub async fn ask(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     // The actor reads the same deadline, so a call dropped by this timeout is reported as one.
     let deadline = Instant::now() + WAIT;
     hub.send_cmd(&cfg.id, Cmd::Ask { data: card_data(args)?, started_at, deadline, reply })?;
-    tokio::time::timeout_at(deadline.into(), answered)
-        .await
-        .map_err(|_| anyhow!("the card expired after four and a half minutes without an answer"))?
-        .map_err(|_| anyhow!("the turn is no longer waiting for this choice"))?
+    match tokio::time::timeout_at(deadline.into(), answered).await {
+        Ok(answer) => answer.map_err(|_| anyhow!("the turn is no longer waiting for this choice"))?,
+        // A task's card ends with its call: a press there has no next message to become.
+        Err(_) if cfg.is_task() => bail!("{}", Expiry::Timeout.text()),
+        Err(_) => Ok(left_open()),
+    }
+}
+
+/// What a chat's call gets when its wait runs out unanswered.
+pub fn left_open() -> Value {
+    json!({"answered": false, "note": LEFT_OPEN})
 }
 
 /// An API success means the actor delivered this answer to its live tool waiter.
 pub async fn respond(hub: &Arc<Hub>, entry_id: &str, option: &str) -> Result<Value> {
-    let card = hub.store.entry(entry_id).ok_or_else(|| anyhow!("unknown card"))?;
-    ensure!(is_card(&card), "that entry is not a decision card");
-    if Status::of(&card.data) != Some(Status::Pending) {
-        bail!("that card is already answered or expired");
-    }
-    let owner = card.data["author"].as_str().unwrap_or(&card.bot_id);
+    let card = pending_card(&hub.store, entry_id)?;
+    let owner = crate::chat::tasks::card_actor(&card);
     let (reply, received) = tokio::sync::oneshot::channel();
     hub.send_cmd(owner, Cmd::Decision { entry_id: entry_id.to_owned(), choice: option.to_owned(), reply })?;
     tokio::time::timeout(Duration::from_secs(10), received)
@@ -143,7 +208,7 @@ pub async fn respond(hub: &Arc<Hub>, entry_id: &str, option: &str) -> Result<Val
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Expiry {
-    /// Four and a half minutes passed without an answer.
+    /// A task's card waited four and a half minutes without an answer (a chat's own card stays open instead).
     Timeout,
     /// The agent cancelled its tool call.
     Cancelled,
@@ -151,10 +216,13 @@ pub enum Expiry {
     Stopped,
     /// The turn ended with the card unanswered.
     TurnEnded,
-    /// The user sent a message that isn't one of the options.
+    /// The user sent a message the card can't take as an answer: with files or a quote, a `/command`, or call speech
+    /// that names no option.
     OtherMessage,
     /// The host restarted while the card waited.
     Restart,
+    /// The bot asked a new question while an open card waited.
+    AskedAgain,
 }
 
 impl Expiry {
@@ -167,6 +235,7 @@ impl Expiry {
             Self::TurnEnded => "the turn ended",
             Self::OtherMessage => "the user sent a different message",
             Self::Restart => "the host restarted",
+            Self::AskedAgain => "the bot asked again",
         }
     }
 
@@ -238,6 +307,18 @@ mod tests {
         assert_eq!(pick(&choices, "ship", true), None);
         assert_eq!(pick(&choices, "SHIP NOW", true), Some("Ship now".into()));
         assert_eq!(pick(&choices, "2", true), Some("Ship later".into()));
+    }
+
+    #[test]
+    fn typed_words_that_name_no_option_are_the_users_own_answer() {
+        let choices = vec!["Left".into(), "Right".into()];
+        assert_eq!(answer(&choices, "Right", false), Some(("Right".into(), Via::Button)));
+        assert_eq!(answer(&choices, "2", true), Some(("Right".into(), Via::Text)));
+        assert_eq!(answer(&choices, " Neither, go up ", true), Some(("Neither, go up".into(), Via::Custom)));
+        assert_eq!(answer(&choices, "Neither", false), None, "a press must name an option");
+        for value in ["", "  ", "/pdf merge these", "/compact"] {
+            assert_eq!(answer(&choices, value, true), None, "{value:?} runs as its own message");
+        }
     }
 
     #[test]

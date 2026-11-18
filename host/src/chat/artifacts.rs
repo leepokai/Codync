@@ -1,7 +1,8 @@
 //! Artifacts, Grok Bot's way: a self-contained HTML document a bot publishes for the user to come back to (a report,
 //! a tracker, a dashboard). The host keeps each artifact's latest HTML and title; publishing again with its id replaces
-//! it, and the apps show the newest. A publish in the bot's own chat also posts an artifact card there, and the user's
-//! replies to that card reach the bot as messages about the artifact (`chat::replies`).
+//! it, and the apps show the newest. A publish in the bot's own chat also posts an artifact card there — and so does a
+//! publish in a routine's run, which writes in that chat — and the user's replies to that card reach the bot as messages
+//! about the artifact (`chat::replies`).
 
 use crate::agent::bot::Cmd;
 use crate::chat::files;
@@ -161,10 +162,12 @@ fn write(dest: &Path, source: &Path) -> Result<(u64, String)> {
     Ok((u64::try_from(html.len())?, files::digest_hex(&Sha256::digest(&html))))
 }
 
-/// The `chat` server's artifact tools.
-pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value> {
+/// The `chat` server's artifact tools. A task's artifacts are its bot's; the card is posted by the actor that
+/// published it, the task's own, which puts it in the bot's chat.
+pub async fn call(hub: &Arc<Hub>, caller: &str, name: &str, args: &Value) -> Result<Value> {
+    let bot = &crate::chat::tasks::owner(&hub.store, caller);
     match name {
-        "publish_artifact" => publish(hub, bot, args).await,
+        "publish_artifact" => publish(hub, bot, caller, args).await,
         "list_artifacts" => {
             let artifacts: Vec<Value> = list(&hub.store, bot)
                 .iter()
@@ -179,7 +182,7 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
     }
 }
 
-async fn publish(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
+async fn publish(hub: &Arc<Hub>, bot: &str, actor: &str, args: &Value) -> Result<Value> {
     let row = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
     let source = args["path"].as_str().filter(|s| !s.is_empty()).ok_or_else(|| anyhow!("path is required"))?;
     let existing = match args["artifact"].as_str().filter(|s| !s.is_empty()) {
@@ -194,7 +197,9 @@ async fn publish(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
         (None, None) => bail!("title is required for a new artifact"),
     };
     let id = existing.as_ref().map_or_else(|| uuid::Uuid::new_v4().to_string(), |artifact| artifact.id.clone());
-    let (dest, source) = (html_path(bot, &id)?, Path::new(&row.config.cwd).join(source));
+    // From the folder of the actor that publishes: a task's may be a worktree of its own.
+    let folder = hub.store.bot(actor)?.map_or_else(|| row.config.cwd.clone(), |actor| actor.config.cwd);
+    let (dest, source) = (html_path(bot, &id)?, Path::new(&folder).join(source));
     let (size, sha256) = tokio::task::spawn_blocking(move || write(&dest, &source)).await??;
     let now = now_ms();
     let mut artifact = Artifact {
@@ -212,7 +217,7 @@ async fn publish(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     put(hub, &mut artifact)?;
     let mut answer = json!({"published": true, "artifact": {"id": artifact.id, "title": artifact.title}});
     let (reply, posted) = oneshot::channel();
-    hub.send_cmd(bot, Cmd::PostArtifact { data: artifact.card_entry(), reply })?;
+    hub.send_cmd(actor, Cmd::PostArtifact { data: artifact.card_entry(), reply })?;
     let posted = tokio::time::timeout(Duration::from_secs(10), posted)
         .await
         .map_err(|_| anyhow!("the artifact was saved, but its card wasn't posted in time"))?
@@ -222,7 +227,7 @@ async fn publish(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
             artifact.entry_id = Some(entry);
             put(hub, &mut artifact)?;
         }
-        // A routine, a room or a bot request: the artifact is in the chat's Library, and its reply says so.
+        // A room or a bot request: the artifact is in the chat's Library, and its reply says so.
         Err(error) => answer["card"] = format!("not posted ({error:#}); mention the artifact in your reply").into(),
     }
     Ok(answer)

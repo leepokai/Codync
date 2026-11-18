@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { compiledCron, durationText, repeatChoice, runLabel, type RoutineRun, type RoutineSchedulePreview } from './routine.ts'
+import { compiledCron, durationText, followUpLine, repeatChoice, runLabel, type FollowUp, type RoutineRun, type RoutineSchedulePreview } from './routine.ts'
 import { matchZones, timeZoneOptions, zoneOffset } from './time-zones.ts'
 
 test('time zones match like the phones: name start, word starts, inside, letters in order', () => {
@@ -62,4 +62,16 @@ test('a queued run says when a waiting retry goes', () => {
   assert.match(runLabel(run(120_000), 60_000), /^Retrying at \S/)
   assert.equal(runLabel(run(60_000), 120_000), 'Retrying')
   assert.equal(runLabel({ ...run(null), status: 'failed' }), 'Failed')
+})
+
+test('a waiting follow-up says when it happens: the time today, the date too on another day, or that it is due', () => {
+  const now = new Date(2026, 10, 14, 15, 0).getTime()
+  const followUp = (at: number): FollowUp => ({ id: 'f', botId: 'b', at, note: 'Check the build', createdAt: now })
+  // The app language's way of writing a time, whatever the computer's is.
+  assert.equal(followUpLine(followUp(now + 20 * 60_000), 'en-GB', now), 'Follow-up at 15:20')
+  const tomorrow = now + 24 * 3_600_000
+  const dated = new Date(tomorrow).toLocaleString('zh-Hant', { dateStyle: 'medium', timeStyle: 'short' })
+  assert.equal(followUpLine(followUp(tomorrow), 'zh-Hant', now), `Follow-up at ${dated}`)
+  // Due, and waiting its turn behind what the bot is doing.
+  assert.equal(followUpLine(followUp(now - 1), 'en-GB', now), 'Follow-up due now')
 })

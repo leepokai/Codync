@@ -1,6 +1,6 @@
 import type { ScreenDisplay, ScreenState } from '@shared/models'
 import type { ScreenPhase } from '../store/screen-session'
-import { fill } from './fill.ts'
+import { fill } from '../../shared/fill.ts'
 
 /** The screen can be watched: on, its helper running, and allowed to record. */
 export const screenAvailable = (s: ScreenState | null) => !!s && s.enabled && s.connected && s.capture

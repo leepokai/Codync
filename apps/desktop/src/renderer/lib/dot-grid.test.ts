@@ -42,6 +42,14 @@ test('a 1x screen gets a sparser grid that still fills a menu bar icon', () => {
   assert.equal(dotGrid(20, 1).pitch, 3)
 })
 
+test('a grid with its own cell count (the thinking orb) snaps the same way', () => {
+  for (const [size, cells] of [[13, 5], [16, 5], [20, 7]] as const) {
+    const { pitch, first } = dotGrid(size, 1, cells)
+    assert.ok(Number.isInteger(pitch) && first > 0 && first + (cells - 1) * pitch < size, `${size} pt, ${cells} cells`)
+    assert.equal(dotGrid(size, 2, cells).pitch, size / cells)
+  }
+})
+
 test('large avatars keep the 9 × 9 grid of large dots', () => {
   for (const scale of [1, 2, 3]) assert.equal(dotGrid(88, scale).cells, 9)
 })

@@ -1,10 +1,9 @@
 import { test, expect } from '@playwright/test'
-import { announcements, due } from '../src/renderer/lib/whats-new.ts'
+import { announcements, due, phrases } from '../src/renderer/lib/whats-new.ts'
 import { attach, setPref } from './sandbox.ts'
 
 // What's new (docs/features/whats-new.md) after an update from 0.0.0: the window shows only what announcements.json
-// says is due on this version, once. The file ships as [] (nothing shows); a temporary entry for the current version
-// walks the window itself.
+// says is due on this version, once. When nothing is due on this version, a temporary entry for it walks the window itself.
 test("an update shows the due What's new once, and nothing when none is due", async () => {
   const { browser, page } = await attach()
   try {
@@ -21,7 +20,13 @@ test("an update shows the due What's new once, and nothing when none is due", as
       return
     }
     await expect(sheet).toBeVisible()
-    for (const note of shown.flatMap((a) => a.notes)) await expect(sheet.getByText(note)).toBeVisible()
+    for (const phrase of phrases(shown)) await expect(sheet.getByText(phrase, { exact: true })).toBeVisible()
+    // Every clip is loaded and playing (muted, in a loop).
+    const clips = sheet.locator('video')
+    const withClip = shown.flatMap((a) => a.features ?? []).filter((f) => f.media)
+    await expect(clips).toHaveCount(withClip.length)
+    await expect(sheet.getByRole('button', { name: 'Watch the full video' })).toHaveCount(withClip.filter((f) => f.film).length)
+    for (const clip of await clips.all()) await expect.poll(() => clip.evaluate((v: HTMLVideoElement) => v.readyState >= 2 && !v.paused && v.muted && v.loop)).toBe(true)
     await expect.poll(seen).toBe(JSON.stringify(version))
     await page.keyboard.press('Escape')
     await expect(sheet).toBeHidden()

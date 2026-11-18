@@ -7,22 +7,49 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.46.2
+## 2.49.3
 ### zh-Hant
-- 更新提示會清楚指出需要更新這個 App，還是電腦上的 Codync；雲端電腦更新時也會顯示進度說明。
-- 在語音訊息載入時離開聊天，該語音不會在離開後才開始播放。
+- Bot 預設的工作區改名為「專屬資料夾」。
+- 電腦有安裝 Git 時，Codync 會在每一輪對話前後替 Bot 的專屬資料夾留一個版本：可以請 Bot 說明某一輪改了什麼，或把檔案還原成之前的樣子。「設定」的「工作區」下方會顯示 Git repository。
+- 在專屬資料夾裡，Bot 的背景工作都在同一個資料夾進行，所以那裡不再顯示「每個 agent 一個 worktree」開關。
+- 需要更新時，更新卡片上的「立即更新」「更新 Codync」按鈕會跟著 App 語言顯示。
 
 ### en-US
-- Update notices clearly identify whether this app or Codync on your computer needs updating, and explain when a cloud computer is updating itself.
-- Leaving a chat while a voice note is loading no longer lets it start playing afterward.
+- A bot's default workspace is now called Own folder.
+- With Git installed, Codync keeps a version of a bot's own folder before and after each turn: ask the bot what a turn changed, or to bring a file back as it was. Settings show Git repository under Workspace.
+- In its own folder, a bot's background tasks all work in that one folder, so Settings no longer show Worktree per agent there.
+- The buttons on the update card (Update now, Update Codync) now show in the app's language.
 
-## 2.46.1
+## 2.49.2
 ### zh-Hant
-- bot 詳細資料的「電腦」分頁改成點一下才開始顯示畫面，不會一打開就連線。
-- 遠端畫面在 5 分鐘沒有碰 App 後會自動暫停以節省流量，點一下就能繼續，原本的「接手控制」或「交還給 Bot」都會保留。
-- 權限核准卡片與連線請求卡片現在會跟著 app 的語言顯示。
+- 讀完聊天後，它的通知會自動消失，桌面圖示上的標記也會跟著消失。
+- Bot 在做事時旁邊的小圖示換成跟頭像同一種點陣：工作中、搜尋、等你回覆、連線和編輯檔案各有自己的動作，小尺寸也看得清楚。
 
 ### en-US
-- The Computer tab in bot details starts its picture when you tap it, instead of connecting as soon as it opens.
-- A computer's screen pauses after 5 minutes without you touching the app, to save data. Tap to continue; your Take over or Hand back to bots choice stays.
-- Approval and connection request cards now follow the app's language.
+- Reading a chat clears its notification, and the launcher badge with it.
+- The small icon beside a busy bot now uses the same dot grid as the avatars: working, searching, waiting for you, connecting and editing files each move their own way, and stay clear at small sizes.
+
+## 2.49.1
+### zh-Hant
+- Bot、例行任務和其他 Bot 的請求在背景工作，聊天照常回你。
+- 「工作」按鈕列出每個 Bot 的背景工作。
+- Bot 的「詳情」有 Threads 和 Event Box。
+- 點一個 thread 會開成一頁，可以像聊天一樣傳訊息；等待中的訊息可以「現在送」或「移除」。
+- 做完的 thread 也能再接著傳訊息。
+- 每個 thread 會顯示它的資料夾或分支。
+- 「設定」會說明資料夾是不是 git repository。
+- 背景工作可以問你問題或傳檔案。
+- 背景工作也會用備援；需要登入時會在聊天裡請你登入。
+- 轉寫中、雲端電腦更新等幾段介面文字，現在會以你選的語言顯示。
+
+### en-US
+- Bots, routines and bot requests work in the background.
+- The Work button lists background work.
+- Details: Threads, Event box.
+- Open a thread as a page and chat in it; Send now or Remove what waits.
+- A finished thread takes messages again.
+- Each thread shows its folder or branch.
+- Settings says whether the folder is a git repository.
+- Background work can ask or send files.
+- Background work uses fallbacks; sign-ins show in the chat.
+- More interface text shows in your language.

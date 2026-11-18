@@ -1,0 +1,93 @@
+# Replying to a part of a message on the phones: Select Text in a bot reply's long-press menu opens its text, Reply in
+# the selection menu quotes the selected word in the composer, and the sent bubble and the bot get that part; Reply
+# without Select Text still quotes the whole message; a bot's late answer (`reply_to`) shows its quote above it, and a tap
+# on that quote brings the quoted message into view. The
+# phone must already be signed in and paired with the host (a worktree's sandbox,
+# docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose clearState undoes that; the flow
+# makes its own bot there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags replies \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e MODE_AGENT="$PWD/host/tests/fixtures/mode_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - replies
+onFlowComplete:
+  - runScript:
+      file: reply-part.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: reply-part.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+# A bot made a moment ago can take a while to reach the phone's list.
+- extendedWaitUntil:
+    visible: ${output.bot.name}
+    timeout: 30000
+- tapOn: ${output.bot.name}
+- extendedWaitUntil:
+    visible: "mode agent · alpha beta gamma"
+    timeout: 20000
+- longPressOn: "mode agent · alpha beta gamma"
+- tapOn: "Select Text"
+# The sheet holds the text as written; a long press on its first word selects it and opens the selection menu.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - longPressOn:
+          id: "select-text"
+          point: "7%,2%"
+# The Android text is a platform view, which shows by its text, not by an id.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - longPressOn:
+          text: "mode agent · alpha beta gamma"
+          point: "7%,50%"
+- tapOn: "Reply"
+- assertNotVisible: "Select Text"
+- assertVisible: "“mode”"
+- tapOn: "Reply…"
+- inputText: "why this one"
+- tapOn: "Send"
+# The bubble keeps the part, and the bot is told which part the reply is about (its agent answers with what it was sent).
+- extendedWaitUntil:
+    visible: '[\s\S]*this replies to this part of your message: "mode"[\s\S]*'
+    timeout: 20000
+- assertVisible: "“mode”"
+# Reply without Select Text quotes the whole message.
+- longPressOn: "mode agent · alpha beta gamma"
+- tapOn: "Reply"
+- assertVisible: "“mode agent · alpha beta gamma”"
+- tapOn: "Cancel reply"
+- assertNotVisible: "“mode agent · alpha beta gamma”"
+# A bot's late answer quotes the message it answers above its bubble (iOS reads the quote by its accessibility label),
+# after a long message that pushes the quoted one out of sight.
+- runScript:
+    file: reply-part.js
+    env:
+      QUOTE: "true"
+- extendedWaitUntil:
+    visible: "About that one."
+    timeout: 20000
+- assertVisible: "(“alpha beta gamma”|Replying to alpha beta gamma)"
+- assertNotVisible: "alpha beta gamma"
+# A tap on the quote brings the quoted message into view.
+- tapOn: "(“alpha beta gamma”|Replying to alpha beta gamma)"
+- extendedWaitUntil:
+    visible: "alpha beta gamma"
+    timeout: 5000

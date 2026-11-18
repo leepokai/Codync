@@ -17,8 +17,8 @@ internal sealed interface RosterLine {
         override val key: String get() = bot.id
     }
 
-    /** [count] and [unread] cover the section's unpinned bots, the ones shown under it. */
-    data class Header(val name: String, val count: Int, val unread: Int, val folded: Boolean) : RosterLine {
+    /** [count], [unread] and [waiting] (those count a card waiting on the user) cover the section's unpinned bots, the ones shown under it. */
+    data class Header(val name: String, val count: Int, val unread: Int, val waiting: Boolean, val folded: Boolean) : RosterLine {
         override val key: String get() = "section:$name"
     }
 
@@ -45,12 +45,16 @@ internal fun rosterLines(roster: List<Bot>, folded: Set<String>, order: List<Str
             if (!moving) sections[null].orEmpty().forEach { add(RosterLine.Row(it)) }
         } else {
             val bots = sections.getValue(name)
-            val header = RosterLine.Header(name, bots.size, bots.sumOf { it.unread }, moving || name in folded)
+            val header = RosterLine.Header(name, bots.size, bots.sumOf { it.unread }, bots.any { it.waiting > 0 }, moving || name in folded)
             add(header)
             if (!header.folded) bots.forEach { add(RosterLine.Row(it)) }
         }
     }
 }
+
+/** The sorted [roster]'s bots in the order they show with nothing folded: what lists every bot the way the roster does. */
+internal fun shownBots(roster: List<Bot>, order: List<String> = emptyList()): List<Bot> =
+    rosterLines(roster, emptySet(), order).filterIsInstance<RosterLine.Row>().map { it.bot }
 
 /** The sections [bots] are in, sorted the way the phone's language sorts ("İş" where Turkish puts it). */
 internal fun sectionNames(bots: List<Bot>): List<String> = bots.mapNotNull(Bot::section).distinct().sortedWith(Collator.getInstance())

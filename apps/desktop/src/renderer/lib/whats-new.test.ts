@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { due, type Announcement } from './whats-new.ts'
+import { due, phrases, type Announcement } from './whats-new.ts'
 
 const a = (version: string): Announcement => ({ version, notes: [`Notes for ${version}`] })
 const versions = (list: Announcement[]) => list.map((x) => x.version)
@@ -23,4 +23,8 @@ test('only versions after seen and up to current are due', () => {
 
 test('versions compare as numbers, not text', () => {
   assert.deepEqual(versions(due([a('2.10.0')], '2.9.0', '2.10.0', false)), ['2.10.0'])
+})
+
+test('the phrases of an announcement are its features\' titles and bodies, then its notes', () => {
+  assert.deepEqual(phrases([{ version: '2.44.0', features: [{ title: 'T', body: 'B', media: 'm' }], notes: ['N'] }, { version: '2.43.0' }]), ['T', 'B', 'N'])
 })

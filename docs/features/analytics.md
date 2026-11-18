@@ -90,7 +90,9 @@ can be traced from the events around it:
   `analytics: true | false`.
 - **iPhone** (`CodyncKit` analytics client, no SDK) and **Android** (`Analytics.kt`, its port)
   send their own app-level events straight to PostHog. Widgets and the notification extension
-  never send.
+  never send. The iPhone's share extension has neither the install ID nor the Settings switch, so
+  it leaves its `share_sent` in the App Group (`Analytics.queueShare`) and the app sends it on its
+  next trip to the foreground.
 - **The Codync cloud** (Worker, `cloud/src/analytics.ts`) reports only what no device can see: asking
   the provider to wake a sleeping Codync Cloud computer and how long until its host was back. It
   follows that computer's own switch: the host tells the cloud as soon as it turns
@@ -142,8 +144,9 @@ builds PostHog frames itself (oldest first, the failing one last): generic `cust
 What leaves the device: the error's type (`Panic`, `TypeError`, `EXC_BAD_ACCESS`), how it was
 caught, function names, and file names and line numbers inside Codync's code (on the iPhone,
 code addresses and binary UUIDs instead); an absolute path keeps only its file name. Never the
-error's message: only a panic message written as a literal in the code, an Electron crash reason
-or a signal name. Release host builds are stripped, so a
+error's message: only a panic message written as a literal in the code, the fixed start of a
+runtime panic whose rest carries data (`OS can't spawn worker thread`, `index out of bounds`), an
+Electron crash reason or a signal name. Release host builds are stripped, so a
 host panic is its location only.
 
 Alerts email the owner, from insights on the *Codync users* dashboard (production only): *Any
@@ -171,7 +174,7 @@ join an iPhone's `computer_paired` to the computer's events on `computer` in SQL
 | New user | First event of any kind in the period. A new computer also sends `host_started` with `first_run`. |
 | Onboarded | Desktop: `onboarding_completed`. Phones: `computer_paired` (or `onboarding_completed` with `via = skipped`, which is not onboarded). Funnels: [analytics events](../reference/analytics-events.md#funnels). |
 | Star rate | `star_prompt_answered` with `starred` ÷ all `star_prompt_answered`, per `ask`. |
-| Ko-fi rate | `kofi_invite_answered` with `opened` ÷ `kofi_invite_shown`, per `app` (the terminal UI sends only `kofi_invite_shown`: its link opens in the terminal). |
+| Ko-fi rate | `kofi_invite_answered` with `opened` ÷ `kofi_invite_shown`, per `app` and `ask` (the terminal UI sends only `kofi_invite_shown`: its link opens in the terminal). |
 | Activated | Sent ≥1 message from a phone (`message_sent`, `client = remote`) within 7 days of first seen. In the first week of data, 4 of 5 such users came back after 24 h and none of the 6 computer-only ones did. |
 | Successful turn rate | `turn_finished` with `outcome = done` ÷ all `turn_finished` with `source = user`, per agent and per `$os`. |
 | Frustration rate | (`turn_stopped` + `session_reset`) ÷ `message_sent`, per `$os`. |

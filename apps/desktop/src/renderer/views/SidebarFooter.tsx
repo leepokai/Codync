@@ -47,9 +47,9 @@ export function SidebarFooter({ accountOpen, onAccount, onExtensions }: {
       ) : null}
       <button
         className={`sidebar-account ${accountOpen ? 'active' : ''}`}
-        aria-label="Open account menu for Account"
+        aria-label={tr('Open account menu for Account')}
         aria-expanded={accountOpen}
-        title="Account menu"
+        title={tr('Account menu')}
         onClick={onAccount}
       >
         <ProfileAvatar />

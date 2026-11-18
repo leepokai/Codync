@@ -33,9 +33,16 @@ pub(super) struct RequestState {
 }
 
 impl Requests {
+    #[cfg(test)]
     pub(super) fn reserve_message(&self, from: &str) -> Result<u8> {
+        self.reserve_message_in(from, from)
+    }
+
+    /// Takes one of `from`'s places for a message it sends from `turn`'s running turn: its own, or that of a task of
+    /// its that acts as it. The chain's hops so far are that turn's.
+    pub(super) fn reserve_message_in(&self, from: &str, turn: &str) -> Result<u8> {
         let mut state = self.0.locked();
-        let hops = state.next_hop(from)?;
+        let hops = state.next_hop(turn)?;
         if state.messages >= MAX_PENDING_MESSAGES {
             bail!("too many pending bot messages");
         }
@@ -61,6 +68,11 @@ impl Requests {
 
     pub fn start_turn(&self, bot: &str, turn: Turn) {
         self.0.locked().active.insert(bot.to_owned(), turn);
+    }
+
+    /// Whether `bot`'s running turn answers another bot's request.
+    pub fn answering(&self, bot: &str) -> bool {
+        matches!(self.0.locked().active.get(bot), Some(Turn::Request))
     }
 
     /// `bot`'s turn ended (or it was deleted): it can't send more until its next turn.

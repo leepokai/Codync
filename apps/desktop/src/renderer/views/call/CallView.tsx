@@ -5,6 +5,8 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { BotAvatar } from '../../components/Avatar'
 import { Icon } from '../../components/Icon'
 import { LevelDots } from '../../components/LevelDots'
+import { Reveal } from '../../components/Controls'
+import { SearchResultView } from './SearchResultView'
 import { Sheet } from '../../components/Overlay'
 import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
@@ -22,7 +24,7 @@ import { OpenAIRealtimeEngine } from './OpenAIRealtimeEngine'
 import { countVoiceUsage, fromBase64, onDeviceAvailable, onDeviceUnavailableReason, providerName, transcribeOnHost, VoiceEngine, VoiceSettings, voiceSettingsClosed, type VoicePhase, type VoiceProvider } from './voice'
 import { useTr } from '../../lib/use-language'
 import { trNow } from '../../lib/l10n.ts'
-import { fill } from '../../lib/fill.ts'
+import { fill } from '@shared/fill'
 import './call.css'
 
 /** What the call bar says for `phase`. */
@@ -127,7 +129,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
       next =
         provider === 'openai'
           ? new OpenAIRealtimeEngine(model, voice, call)
-          : new GeminiLiveEngine(model, voice, call)
+          : new GeminiLiveEngine(model, voice, VoiceSettings.googleSearch(provider), call)
       cloudStartedAt.current = Date.now()
       engineName.current = provider
     } else {
@@ -136,7 +138,10 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
       engineName.current = 'on_device'
     }
     quality.current!.begin(engineName.current)
-    if (next instanceof GeminiLiveEngine) next.onStall = () => quality.current!.stalled()
+    if (next instanceof GeminiLiveEngine) {
+      next.onStall = () => quality.current!.stalled()
+      next.onSearch = (use) => quality.current!.search(use)
+    }
     // Picks up the computer's newest models for the next call; this one starts right away.
     if (provider) void rememberStatus()
     // The computer decides what the voice hears (host chat/calls/announce); the engine only says it.
@@ -259,7 +264,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
             {providerName(session.provider)}
           </Text>
         ) : null}
-        <button className="call-round" title="Call settings" aria-label="Call settings" onClick={() => (openVoiceSettings ? openVoiceSettings() : setSettings(true))}>
+        <button className="call-round" title={tr('Call settings')} aria-label={tr('Call settings')} onClick={() => (openVoiceSettings ? openVoiceSettings() : setSettings(true))}>
           <Icon name="gearshape" size={16} weight="medium" scaled={false} />
         </button>
         <button
@@ -270,7 +275,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
         >
           <Icon name={muted ? 'mic.slash' : 'mic'} size={16} weight="medium" scaled={false} />
         </button>
-        <button className="call-round end" title="End call" aria-label="End call" onClick={onEnd}>
+        <button className="call-round end" title={tr('End call')} aria-label={tr('End call')} onClick={onEnd}>
           <Icon name="xmark" size={16} weight="semibold" scaled={false} />
         </button>
       </div>
@@ -283,6 +288,9 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
           {notice}
         </Text>
       ) : null}
+      <Reveal show={session?.searchResult != null}>
+        {session?.searchResult ? <SearchResultView result={session.searchResult} /> : null}
+      </Reveal>
       <Sheet open={settings} onClose={() => setSettings(false)}>
         <VoiceChatSettingsView />
       </Sheet>

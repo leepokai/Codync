@@ -24,6 +24,13 @@ impl Hub {
             v["sharedMemory"] = crate::chat::memory::shared(cfg).into();
             v["memoryRev"] = self.store.memory_rev().into();
             v["devServers"] = self.dev_servers.wire(&cfg.id);
+            // What the bot works on away from the chat, and what waits for it.
+            v["work"] = crate::chat::tasks::wire(self, cfg);
+            // Its folder is in a git repository. For a project folder (not `managedWorkspace`) that is where
+            // `taskWorktrees` matters, and a client shows its switch: the bot's own folder never gets worktrees.
+            v["gitRepo"] = crate::chat::tasks::in_repo(&cfg.cwd).into();
+            // Whether the host can run git at all: without it a repository gets no worktrees either.
+            v["gitInstalled"] = crate::git::installed().into();
         }
         let rt = if cfg.is_group() {
             // A group has no agent: Fast mode belongs to its members.
@@ -38,16 +45,26 @@ impl Hub {
         v["rev"] = row.rev.into();
         v["deleted"] = row.deleted.into();
         v["status"] = json!(rt.status);
-        v["activity"] = rt.activity.into();
+        v["activity"] = rt.activity.clone().into();
         v["startedAt"] = rt.started_at.into();
         v["workingChat"] = rt.lane.as_ref().map(|l| l.chat.clone()).into();
         v["fastModeSupport"] = rt.fast_mode.as_str().into();
         if !cfg.is_group() {
+            // The commands of the agent the bot runs on now: a fallback's while it answers.
+            let agent = rt.agent_step.as_ref().map_or(cfg.backend.as_str(), |s| s.agent.as_str());
+            v["agentCommands"] = json!(crate::agent::bot::agent_commands(&self.store, cfg, agent));
+            // How it stands to what shows it outside its chat (a Live Activity, an ongoing notification, a tray):
+            // the chat's status with its work in the background, as the pushes say it.
+            let (status, started_at) = crate::chat::tasks::outside(self, cfg, &rt);
+            v["outside"] = json!({"status": status, "startedAt": started_at});
             v["agentStep"] = json!(rt.agent_step);
             v["resting"] = json!(crate::agent::fallback::resting(&self.store, cfg, crate::store::now_ms()));
         }
         v["fastModeIssue"] = rt.fast_mode.issue().into();
-        v["unread"] = self.store.unread(&cfg.id, row.read_rev).into();
+        let badge = self.store.badge(&cfg.id, row.read_rev);
+        v["unread"] = badge.unread.into();
+        // How many of those are cards waiting on the user: the badge turns amber.
+        v["waiting"] = badge.waiting.into();
         let preview = last.as_ref().map(|l| match &l.author {
             // A group names who spoke.
             Some(author) if cfg.is_group() => format!("{}: {}", self.bot_name(author), l.text),
@@ -69,7 +86,7 @@ impl Hub {
 mod tests {
     use crate::hub::Hub;
     use crate::remote::identity::Identity;
-    use crate::store::Store;
+    use crate::store::{EntryKind, Lane, Store};
     use serde_json::json;
 
     #[test]
@@ -94,6 +111,35 @@ mod tests {
 
         let gemini = hub.bot_value_for_test("g");
         assert!(gemini["compaction"].is_null() && gemini["compactionTokens"].is_null(), "Codync can't compact it");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_waiting_card_keeps_its_badge_until_answered() {
+        // Issue #366.
+        let dir = std::env::temp_dir().join(format!("codync-waiting-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let bot = json!({"id": "b", "name": "b", "backend": "claude", "cwd": "/tmp"});
+        store.save_bot(&serde_json::from_value(bot).unwrap()).unwrap();
+        let hub = Hub::new(store, "test".into(), Identity::load_or_create(&dir).unwrap(), "token".into(), 0);
+        let card = || hub.add_entry(&Lane::main("b"), EntryKind::Permission, 1, &json!({"status": "pending"})).unwrap();
+        let (first, _second) = (card(), card());
+        let mut events = hub.events.subscribe();
+        let mut badges = || {
+            std::iter::from_fn(|| events.try_recv().ok())
+                .filter(|e| e["type"] == "bot")
+                .map(|e| (e["bot"]["unread"].clone(), e["bot"]["waiting"].clone()))
+                .collect::<Vec<_>>()
+        };
+
+        let rev = hub.store.bot("b").unwrap().unwrap().rev;
+        hub.mark_read("b").unwrap();
+        assert_eq!((badges(), hub.store.bot("b").unwrap().unwrap().rev), (vec![], rev), "only cards wait: a no-op");
+        assert_eq!(hub.bot_value("b").unwrap()["unread"], 2, "both still counted");
+
+        hub.set_entry(&first.id, &json!({"status": "answered"})).unwrap();
+        assert_eq!(badges(), [(json!(1), json!(1))], "answering one card sends the bot");
         std::fs::remove_dir_all(&dir).ok();
     }
 }

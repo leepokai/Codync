@@ -100,6 +100,7 @@ import kotlinx.serialization.json.decodeFromJsonElement
                     style = Type.subheadline, color = Palette.secondary)
             }
         }
+        TaskLine(entry)
         if (pending && request.kind == "login") {
             Box(Modifier.pill(Palette.bubbleAgent)) { PlainInput(username, { username = it }, "Username or email") }
             Box(Modifier.pill(Palette.bubbleAgent)) { PlainInput(value, { value = it }, "Password or op:// reference", secret = true) }
@@ -111,7 +112,7 @@ import kotlinx.serialization.json.decodeFromJsonElement
         }
         error?.let { Text(it, style = Type.footnote, color = Palette.danger) }
     }
-    CodyncSheet(agent, { agent = null }) { AgentSheet(it, state, store, recheck = true) }
+    CodyncSheet(agent, { agent = null }) { AgentSheet(it, state, store, recheck = request.loginProfile == null, openLoginProfile = request.loginProfile) }
 }
 
 /** The agent, website or service the request is for. */

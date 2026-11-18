@@ -1,3 +1,5 @@
+import { SearchTurn } from './search-result'
+import type { SearchUse } from './call-quality'
 import type { CallLink, CallSession } from './call-link'
 import { browserPorts, type CallOutput, type GeminiPorts, type LiveSocket } from './gemini-ports'
 import { errorMessage, fromBase64, onDevicesChanged, PROGRESS_TAG, reconnect, toBase64, VoiceEngine } from './voice'
@@ -30,6 +32,9 @@ export class GeminiLiveEngine extends VoiceEngine {
   readonly provider = 'gemini' as const
   /** Playback stopped reporting progress after the voice's turn, and the call went back to listening. */
   onStall: (() => void) | null = null
+  /** Search was confirmed for a session, or an answer came with suggestions (analytics; never content). */
+  onSearch: ((use: SearchUse) => void) | null = null
+  private searchTurn = new SearchTurn()
   private socket: LiveSocket | null = null
   /** Setup is done on the current socket. */
   private ready = false
@@ -59,13 +64,16 @@ export class GeminiLiveEngine extends VoiceEngine {
 
   private model: string
   private voice: string
+  /** Asks the computer for Google's built-in search; it's on only when the computer's session confirms it. */
+  private googleSearch: boolean
   private link: CallLink
   private ports: GeminiPorts
 
-  constructor(model: string, voice: string, link: CallLink, ports: GeminiPorts = browserPorts) {
+  constructor(model: string, voice: string, googleSearch: boolean, link: CallLink, ports: GeminiPorts = browserPorts) {
     super()
     this.model = model
     this.voice = voice
+    this.googleSearch = googleSearch
     this.link = link
     this.ports = ports
   }
@@ -76,10 +84,12 @@ export class GeminiLiveEngine extends VoiceEngine {
 
   private async connect() {
     try {
-      const session = await this.link.start('realtime', 'gemini', this.model, this.voice)
+      const session = await this.link.start('realtime', 'gemini', this.model, this.voice, this.googleSearch)
       if (this.ended) return
       if (!session.credential) throw new Error(trNow('Gemini sent no session credential.'))
+      this.clearSearch()
       this.session = session
+      if (session.googleSearch === true) this.onSearch?.('enabled')
       const socket = this.ports.socket(`${URL_BASE}?access_token=${encodeURIComponent(session.credential)}`)
       this.socket = socket
       this.ready = false
@@ -110,7 +120,7 @@ export class GeminiLiveEngine extends VoiceEngine {
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: this.voice } } },
       },
       systemInstruction: { parts: [{ text: this.session?.instructions ?? '' }] },
-      tools: [{ functionDeclarations: tools }],
+      tools: [{ functionDeclarations: tools }, ...(this.session?.googleSearch === true ? [{ googleSearch: {} }] : [])],
       // Audio sessions are otherwise capped at 15 minutes.
       contextWindowCompression: { slidingWindow: {} },
       // What both sides said, for the call's line in the chat.
@@ -123,6 +133,7 @@ export class GeminiLiveEngine extends VoiceEngine {
 
   end() {
     this.ended = true
+    this.clearSearch()
     this.onActivityChanged?.(false)
     const socket = this.socket
     this.socket = null
@@ -135,6 +146,14 @@ export class GeminiLiveEngine extends VoiceEngine {
     this.output?.close()
     this.output = null
   }
+  /** Search suggestions belong to one session's answers. */
+  private clearSearch() {
+    this.searchTurn = new SearchTurn()
+    if (this.searchResult === null) return
+    this.searchResult = null
+    this.changed()
+  }
+
 
   protected mutedChanged(on: boolean) {
     this.level = 0
@@ -221,6 +240,10 @@ export class GeminiLiveEngine extends VoiceEngine {
     }
     const content = msg.serverContent
     if (content) {
+      const answers = this.searchTurn.answers
+      const result = this.searchTurn.receive(content)
+      if (this.searchTurn.answers > answers) this.onSearch?.('answered')
+      if (this.searchResult !== result) { this.searchResult = result; this.changed() }
       if (typeof content.inputTranscription?.text === 'string') this.link.add('user', content.inputTranscription.text)
       if (typeof content.outputTranscription?.text === 'string') this.link.add('voice', content.outputTranscription.text)
       if (content.turnComplete === true || content.interrupted === true) this.link.endTurn()

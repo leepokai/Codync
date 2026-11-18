@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { Bot } from '@shared/models'
+import { AgentIcon } from '../../components/AgentIcon'
 import { BotAvatar } from '../../components/Avatar'
 import { Icon } from '../../components/Icon'
 import { usePresence } from '../../components/Overlay'
@@ -47,11 +48,16 @@ export function useComposerMenu<T>(draft: string, items: T[], pick: (item: T) =>
   return { shown, index, hover: (i: number) => setHighlight({ draft, index: i }), pick, onKey }
 }
 
-/** A list over the transcript, above the box: each row's icon, name and what it is. */
-function ComposerMenu<T>({ menu, label, row }: {
+/**
+ * A list over the transcript, above the box: each row's icon, name and what it is. `section` names the group a row
+ * comes from, null for the list's own (`ownSection`); while any row comes from elsewhere, a heading starts each group.
+ */
+function ComposerMenu<T>({ menu, label, row, section, ownSection = '' }: {
   menu: ComposerMenuState<T>
   label: string
   row: (item: T) => { key: string; icon: ReactNode; title: string; detail: string; warning?: boolean }
+  section?: (item: T) => string | null
+  ownSection?: string
 }) {
   const open = menu.shown.length > 0
   const { mounted, shown } = usePresence(open)
@@ -59,6 +65,8 @@ function ComposerMenu<T>({ menu, label, row }: {
   if (open) last.current = menu.shown
   const list = open ? menu.shown : last.current
   const rows = useRef<(HTMLButtonElement | null)[]>([])
+  const groupOf = (item: T) => section?.(item) ?? ownSection
+  const grouped = section !== undefined && list.some((item) => section(item) !== null)
   // Braces: newer Chromium returns a promise from `scrollIntoView`, which an effect mustn't return.
   useEffect(() => {
     void rows.current[menu.index]?.scrollIntoView({ block: 'nearest' })
@@ -69,23 +77,28 @@ function ComposerMenu<T>({ menu, label, row }: {
       <div className="menu-panel" role="listbox" aria-label={label}>
         {list.map((item, i) => {
           const { key, icon, title, detail, warning } = row(item)
+          const group = groupOf(item)
           return (
-            <button
-              key={key}
-              ref={(el) => { rows.current[i] = el }}
-              role="option"
-              aria-selected={i === menu.index}
-              className={`menu-row ${i === menu.index ? 'highlight' : ''}`}
-              title={detail || title}
-              onMouseEnter={() => menu.hover(i)}
-              // Keep the caret in the field.
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => menu.pick(item)}
-            >
-              <span className="menu-icon">{icon}</span>
-              <Text truncate>{title}</Text>
-              <Text truncate grow tone={warning ? 'attention' : 'secondary'}>{detail}</Text>
-            </button>
+            <Fragment key={key}>
+              {grouped && (i === 0 || groupOf(list[i - 1]) !== group) ? (
+                <div className="menu-section" role="presentation"><Text size="footnote" tone="secondary" truncate>{group}</Text></div>
+              ) : null}
+              <button
+                ref={(el) => { rows.current[i] = el }}
+                role="option"
+                aria-selected={i === menu.index}
+                className={`menu-row ${i === menu.index ? 'highlight' : ''}`}
+                title={detail || title}
+                onMouseEnter={() => menu.hover(i)}
+                // Keep the caret in the field.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => menu.pick(item)}
+              >
+                <span className="menu-icon">{icon}</span>
+                <Text truncate>{title}</Text>
+                <Text truncate grow tone={warning ? 'attention' : 'secondary'}>{detail}</Text>
+              </button>
+            </Fragment>
           )
         })}
       </div>
@@ -93,16 +106,25 @@ function ComposerMenu<T>({ menu, label, row }: {
   )
 }
 
-/** The `/` list: each command's icon, name and what it does. */
-export function CommandMenu({ menu }: { menu: ComposerMenuState<SlashCommand> }) {
+/**
+ * The `/` list: each command's icon (an agent's own command: that agent's logo), name and what it does. While any
+ * of the agent's own commands is listed, headings set Codync's (Fast mode, skills) apart from the agent's (its name).
+ */
+export function CommandMenu({ menu, agent }: { menu: ComposerMenuState<SlashCommand>; agent: { registry: (id: string) => string; name: (id: string) => string } }) {
   const tr = useTr()
-  return <ComposerMenu menu={menu} label={tr('Commands')} row={(c) => ({
+  const section = (c: SlashCommand) => c.action.kind === 'agent' ? agent.name(c.action.agent) : null
+  return <ComposerMenu menu={menu} label={tr('Commands')} section={section} ownSection="Codync" row={(c) => c.action.kind === 'agent' ? {
+    key: `agent:${c.name}`,
+    icon: <AgentIcon registry={agent.registry(c.action.agent)} size={12} color="var(--secondary)" />,
+    title: c.title,
+    detail: c.detail,
+  } : {
     key: `${c.action.kind}:${c.name}`,
     icon: <Icon name={c.icon} size={12} color="var(--secondary)" />,
     title: tr(c.title),
     detail: tr(c.detail),
     warning: c.warning,
-  })} />
+  }} />
 }
 
 /** The `@` list in a group: each member's face, name and description. */

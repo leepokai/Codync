@@ -2,11 +2,13 @@ import CodyncKit
 import Foundation
 
 /// A user-made section's heading in a computer's roster ("Work"): how many of its bots it lists,
-/// their unread messages (shown while it's folded) and whether it's folded on this device.
+/// their unread messages (shown while it's folded), whether those count a card waiting on the user and whether
+/// it's folded on this device.
 public struct RosterSection: Sendable {
     public let name: String
     public let count: Int
     public let unread: Int
+    public let waiting: Bool
     public let folded: Bool
 
     /// Section names as the roster lists them: the way the user's language sorts ("İş" in Turkish),
@@ -99,10 +101,18 @@ public struct RosterSection: Sendable {
             let items = bySection[name] ?? []
             let isFolded = folded.contains(name)
             let unread = items.reduce(0) { $0 + bot($1).unread }
-            lines.append(.header(RosterSection(name: name, count: items.count, unread: unread, folded: isFolded)))
+            let waiting = items.contains { bot($0).waiting > 0 }
+            let section = RosterSection(name: name, count: items.count, unread: unread, waiting: waiting, folded: isFolded)
+            lines.append(.header(section))
             if !isFolded { lines += items.map { RosterSectionLine.bot($0) } }
         }
         return lines
+    }
+
+    /// A computer's bots in the order `lines` shows them, the ones in a folded section included: what a view of
+    /// every bot lists (all bots' work).
+    public static func onScreen<Item>(_ roster: [Item], order: [String] = [], bot: (Item) -> Bot) -> [Item] {
+        lines(roster, folded: [], order: order, bot: bot).compactMap { if case let .bot(item) = $0 { item } else { nil } }
     }
 }
 

@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 /// Largest file accepted.
 pub const MAX_FILE: u64 = 100 * 1024 * 1024;
 
-/// Inside a personal workspace, so reading an upload needs no extra approval.
+/// Inside the bot's own folder, so reading an upload needs no extra approval.
 /// A group (no workspace) keeps its members' shared files in its data folder.
 pub fn root(cfg: &BotConfig) -> PathBuf {
     if workspace::is_managed(cfg) {

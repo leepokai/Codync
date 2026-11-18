@@ -9,7 +9,7 @@ quotes itself.
 - **Chat**: a bot's (or group's) one endless conversation.
 - **Reply**: a user message that answers an earlier message of the same chat (the user's own
   or a bot's final reply). It stays in the chat, in time order, and carries a quote of the
-  message it answers.
+  message it answers, or of the part of it the user selected.
 - **Group**: a roster row (`kind: "group"`) holding several bots and the user. It has a
   transcript but no agent, folder or harness of its own.
 - **Lane**: where a turn talks: a bot's own chat or a group's. `host/src/store/model.rs` `Lane`.
@@ -23,9 +23,11 @@ quotes itself.
 - Entry: `data.author` (the bot that wrote it; every agent-made entry has one); on a reply,
   `data.replyTo = {id, author, text}`: the answered message, who wrote it (`"user"` or a bot
   id) and its text (or its files' names when it has none), at most 500 bytes. The host builds
-  it from `send`'s `replyTo` (`host/src/chat/replies.rs`).
-- Read state: one per chat (`read_rev`). A bot's `unread` badge counts final replies and pending
-  cards newer than it; a reacted-to message doesn't count again.
+  it from `send`'s `replyTo` (`host/src/chat/replies.rs`), and for a bot's message from
+  `send_message` / `send_file`'s `reply_to` ([bots quote too](#bots-quote-too)).
+- Read state: one per chat (`read_rev`). A bot's `unread` badge counts final replies newer than
+  it, plus every permission card still pending, read or not; `waiting` says how many of those are
+  cards (the badge turns amber). A reacted-to message doesn't count again.
 - The `events` catch-up carries each chat's recent entries; `history` pages older ones.
 
 ## Methods (`POST /api/<method>`, same on the E2E channel)
@@ -41,7 +43,7 @@ quotes itself.
 | `stop` | `botId` | For a group: ends its room turn and stops members working in it. |
 | `react` | `entryId, emoji` | Toggles the user's reaction on a chat message (`data.reactions`, oldest first, at most 8). A reacted-to message never turns unread again. The bot isn't told, except in a group, where members see reactions on the room lines they're shown. Bots react themselves with the `chat` server's `react` ([bot reactions](chat-messages.md#bot-reactions)). |
 | `respondPermission` | `entryId, optionId?` | Routed to `data.author`, so cards in a group reach the bot that asked. |
-| `markRead` | `botId` | Reads the chat. A no-op when nothing there is unread, so clients call it whenever a chat is on screen. `send` marks its chat read. |
+| `markRead` | `botId` | Reads the chat. A no-op when nothing arrived since it was last read (a waiting permission card stays counted, `waiting` of `unread`), so clients call it whenever a chat is on screen. `send` marks its chat read. |
 
 ## How a group answers (`host/src/chat/group.rs`, `group/rooms.rs`, Grok Bot's design)
 
@@ -63,6 +65,8 @@ quotes itself.
   `(pass)` costs no extra rounds. Members speak one at a time; each round starts one member later.
 - `message_bot` is refused in a room turn (its reply would go to the member's own chat); members
   @-mention each other instead ([bot collaboration](bot-collaboration.md)).
+- `follow_up` is refused in a room turn for the same reason (its line and its later turn would go to
+  the member's own chat): the member says it can't check back there ([follow-ups](follow-ups.md)).
 - A group's `description` ("About") tells its members what the room is for.
 - A member runs the turn in its **own main session** (its history is unified across chats),
   told who's in the room and what was said since it last spoke there, framed as
@@ -102,6 +106,27 @@ earlier message: "…"]` or `… to Ann's message: "…"]`. It speaks as Codync,
 quote even when the quoted message is no longer in its session. Memory never takes the
 quote as the user's words: it stays in `data.replyTo`, apart from `data.text`.
 
+A reply can answer one part of a message: `send` takes `replyPart`, the text the user selected in
+the message `replyTo` names. The quote's `text` is then that part (up to 4,000 bytes, with
+`part: true`) and the note reads `[Codync: this replies to this part of your message: "…"]`.
+The host takes the part as the client sent it: what is selected in a rendered message isn't a
+substring of its Markdown source, and it comes from the user's own app. An artifact card is
+always quoted whole. A host before 2.48.1 ignores `replyPart` and would quote the whole
+message, so with one the phones offer no Select Text and the desktop's Reply quotes the whole message.
+
+## Bots quote too
+
+`send_message` and `send_file` take an optional `reply_to`: the id of a message in the bot's own
+chat (the user's, its own, an artifact card), built into `data.replyTo` by the same
+`replies::quote`, so a late answer shows what it answers (issue #402). The bot learns ids from
+the note that leads every user message in its own chat, `[Codync: message <id>]`
+(`prompt::of_entry`; left out of a message that is the agent's own `/command`, which only runs
+while it starts the prompt, and of what the host wrote, a task's brief), and from `search_history`.
+A [background task](background-tasks.md)'s file shows in its bot's chat, so its `send_file` quotes
+a message of that chat. An id it can't quote (unknown, deleted, another
+chat's, not a message) doesn't fail the send: the message goes out unquoted and the tool's
+answer carries a `warning`. Group room turns have no `send_message`, so they don't quote.
+
 ## Client checklist
 
 Roster row for groups (member avatars), a trace per turn, author label on group replies,
@@ -110,8 +135,17 @@ quick reactions and copy, never on the bubble, and the context menu; iPhone and 
 long-press, reactions on top of the menu; terminal: `r` picks a message, ↵ or `r` replies, esc
 cancels). While replying, the composer shows a quote
 bar on top (`text.bubble`, “text” on one line, an X to cancel; the terminal: `↳ “…”`), its
-placeholder reads "Reply…", and sending includes `replyTo`; leaving the chat cancels it. A
-user message with `data.replyTo` shows the quote at the top of its bubble. Every client shows a
+placeholder reads "Reply…", and sending includes `replyTo`; leaving the chat cancels it.
+Replying to a part: on the desktop, Reply (hover footer or context menu) quotes what is
+selected inside that message, and the whole message when nothing is; on iPhone and Android the
+long-press menu has **Select Text** before Reply (messages with text that take replies), which
+opens the message's text as written in a sheet, where the selection menu gains Reply; the
+terminal has no selection inside a message, so it replies to whole messages and shows a part
+quote like any other. The quote bar and the bubble show the part, and sending adds `replyPart`. A
+user message with `data.replyTo` shows the quote at the top of its bubble; a bot's message, on
+the line above its bubble (or file card). Tapping or clicking a quote in a bubble brings the quoted
+message to the middle of the chat (terminal: `q` on a picked message picks the one it quotes); only a
+message already loaded is found (`quote_opened` reports `found`), and the composer's quote bar doesn't jump. Every client shows a
 quote as its first non-empty line without Markdown markers (the roster's message preview rule). Reactions under
 a message (the user's: tap to take back; the bots': emoji plus the avatars of who chose it),
 group create/edit (name, members), Stop in a group calls `stop` with the group id.

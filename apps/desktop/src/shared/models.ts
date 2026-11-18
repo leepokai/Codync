@@ -1,6 +1,7 @@
 import type { ArtifactCard } from './artifacts'
 import type { CallLine } from './calls'
 import { normalizeDevServer, type DevServer } from './dev-servers.ts'
+import { normalizeMaxAgents, normalizeOutside, normalizeWork, type OutsideStatus, type WorkItem } from './work.ts'
 
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
@@ -19,8 +20,10 @@ export interface Bot {
   avatarShape: string
   backend: string
   command?: string | null
+  /** The login profile it runs on; absent for the login the computer already has. */
+  loginProfile?: string | null
   cwd: string
-  /** Host-allocated personal workspace rather than a user-selected project. */
+  /** The bot's own folder, which the host made and keeps versions of, rather than a project the user chose. */
   managedWorkspace: boolean
   /** `ask` or `auto`: whether Codync asks about what the agent asks, or approves it. */
   permission: string
@@ -57,6 +60,8 @@ export interface Bot {
   notify?: boolean | null
   connectors: string[]
   skills: string[]
+  /** The `/` commands of the agent it runs on now, as the agent lists them; none for a group. */
+  agentCommands: AgentCommand[]
   /** The bot can see and operate the computer's desktop. */
   computer: boolean
   /** The bot can create bots (which can too) and change any bot's setup (the built-in `manage` tools); null from an older host. */
@@ -86,12 +91,33 @@ export interface Bot {
   activity: string
   startedAt?: number | null
   workingChat?: string | null
+  /** Its box (`work.ts`): the live and waiting items in dispatch order, then those ended in the last day; none from
+   * a host before the box. */
+  work: WorkItem[]
+  /** The most agents it runs at once, 1 to 6; null from a host before the box. */
+  maxAgents: number | null
+  /** A task that starts while another of the bot's works in the same git repository gets a worktree of its own;
+   * null from a host before worktrees. */
+  taskWorktrees: boolean | null
+  /** The bot's folder is in a git repository: where `taskWorktrees` matters. */
+  gitRepo: boolean
+  /** Git is on the bot's computer; a host that doesn't say counts as having it. */
+  gitInstalled: boolean
+  /** How it stands outside its chat (`outsideStatus`); null from a host before it. `status` is the chat's alone. */
+  outside: OutsideStatus | null
   unread: number
+  /** How many of `unread` are cards waiting on the user: the badge turns amber. 0 from an older host. */
+  waiting: number
   lastMessage?: string | null
   lastAt: number
 }
 
 /** Lenient: a host that is a little newer or older than the app still yields a usable bot. */
+/** The messages in a bot's badge the user hasn't read: what `markRead` clears (waiting cards stay counted). */
+export function unseen(bot: Pick<Bot, 'unread' | 'waiting'>): number {
+  return bot.unread - bot.waiting
+}
+
 export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
   const createdAt = raw.createdAt ?? 0
   return {
@@ -104,6 +130,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     avatarShape: raw.avatarShape ?? 'blob',
     backend: raw.backend ?? 'custom',
     command: raw.command ?? null,
+    loginProfile: raw.loginProfile ?? null,
     cwd: raw.cwd ?? '',
     managedWorkspace: raw.managedWorkspace ?? false,
     permission: raw.permission ?? 'ask',
@@ -116,6 +143,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     fallbacks: raw.fallbacks ?? [],
     selfFallbacks: raw.selfFallbacks ?? null,
     agentStep: raw.agentStep ?? null,
+    agentCommands: raw.agentCommands ?? [],
     resting: raw.resting ?? [],
     devServers: (raw.devServers ?? []).map(normalizeDevServer),
     pinned: raw.pinned ?? false,
@@ -145,7 +173,14 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     activity: raw.activity ?? '',
     startedAt: raw.startedAt ?? null,
     workingChat: raw.workingChat ?? null,
+    work: normalizeWork(raw.work),
+    maxAgents: normalizeMaxAgents(raw.maxAgents),
+    taskWorktrees: raw.taskWorktrees ?? null,
+    gitRepo: raw.gitRepo ?? false,
+    gitInstalled: raw.gitInstalled ?? true,
+    outside: normalizeOutside(raw.outside),
     unread: raw.unread ?? 0,
+    waiting: raw.waiting ?? 0,
     lastMessage: raw.lastMessage ?? null,
     lastAt: raw.lastAt ?? createdAt,
   }
@@ -156,6 +191,8 @@ export interface Fallback {
   backend: string
   /** A custom command, only from the bot itself (the apps don't offer one). */
   command?: string
+  /** The login profile the step runs on; absent for the login the computer already has. */
+  loginProfile?: string | null
   model: string | null
   modelOptions: Record<string, string>
 }
@@ -164,9 +201,20 @@ export interface Fallback {
 export type FallbackReason = string
 
 /** The fallback a bot runs on: which step, its agent and model, since when, and why it left the one before. */
+/** One of an agent's own `/` commands (ACP `available_commands_update`). */
+export interface AgentCommand {
+  /** What follows the `/`. */
+  name: string
+  description: string
+  /** What to type after the name, for a command that takes input. */
+  hint?: string
+}
+
 export interface AgentStep {
   step: number
   agent: string
+  /** The login profile the step runs on; absent for the computer's own login. */
+  loginProfile?: string | null
   model: string | null
   since: number
   reason: FallbackReason | null
@@ -175,6 +223,8 @@ export interface AgentStep {
 /** An agent that can't answer until `until`. */
 export interface Resting {
   agent: string
+  /** The login profile that rests; absent for the computer's own login. */
+  loginProfile?: string | null
   until: number
   reason: FallbackReason
 }
@@ -184,8 +234,9 @@ export const isWorking = (b: Bot) => b.status === 'working' || b.status === 'nee
 export const needsInput = (b: Bot) => b.status === 'needsInput'
 /** Working right now in this chat (its own, or a group it's in). */
 export const isWorkingIn = (b: Bot, chat: string) => isWorking(b) && (b.workingChat ?? b.id) === chat
-export const folderName = (b: Bot) =>
-  b.managedWorkspace ? 'Personal workspace' : (b.cwd.split('/').filter(Boolean).pop() ?? b.cwd)
+/** Where the bot works, as a list shows it: its own folder, or its project folder's name. */
+export const folderName = (b: Bot, tr: (text: string) => string) =>
+  b.managedWorkspace ? tr('Own folder') : (b.cwd.split('/').filter(Boolean).pop() ?? b.cwd)
 
 export interface FileDiff {
   path: string
@@ -231,8 +282,10 @@ export interface ReplyQuote {
   id: string
   /** `user`, or the bot that wrote it. */
   author: string
-  /** Its text (or file names), at most 500 characters. */
+  /** Its text (or file names), at most 500 characters; the part the user selected in it when `part` is set. */
   text: string
+  /** The reply answers the part of the message the user selected, not all of it. */
+  part?: boolean
   /** The artifact, when it quotes an artifact card: the message is about that artifact. */
   artifact?: string
 }
@@ -391,8 +444,13 @@ export interface EntryData {
   /** The voice call it was said in (user), answered during (agent), or that it ends (notice): the chat shows those
    * messages only in the call's conversation. */
   call?: string
-  /** user: `voice` when a call's voice wrote it for the user (`send_to_bot`). */
+  /** user: `voice` when a call's voice wrote it for the user (`send_to_bot`), `host` when the host did (what a
+   * background task was told). */
   from?: string
+  /** The background task this chat entry comes from (its approval card). */
+  task?: { id: string; title: string }
+  /** The item of the bot's box that task works on. */
+  item?: string
   /** notice: what was said on a realtime call, oldest first. */
   transcript?: CallLine[]
 }
@@ -447,11 +505,12 @@ export function isReplyable(e: Entry): boolean {
   return !e.id.startsWith('local-') && (e.kind === 'user' || (e.kind === 'agent' && e.data.final === true))
 }
 
-/** The quote a sending reply shows until the computer's own replaces it. */
-export function quoteOf(e: Entry): ReplyQuote {
+/** The quote a sending reply shows until the computer's own replaces it; of `part`, the text selected in the message, when there is one. */
+export function quoteOf(e: Entry, part = ''): ReplyQuote {
   const names = [...(e.data.attachments ?? []), ...(e.data.files ?? [])].map((f) => f.name).join(', ')
   const quote: ReplyQuote = { id: e.id, author: e.kind === 'user' ? 'user' : (e.data.author ?? e.botId), text: (e.data.text || names).slice(0, 500) }
   if (e.data.artifact) quote.artifact = e.data.artifact.id
+  else if (part.trim()) Object.assign(quote, { text: part.trim().slice(0, 4000), part: true })
   return quote
 }
 
@@ -465,14 +524,27 @@ export interface UsageWindow {
   text?: string | null
 }
 
+/** One login profile's plan windows: none while it has no reading yet. */
+export interface UsageLoginProfile {
+  id: string
+  name: string
+  windows: UsageWindow[]
+  updatedAt: number
+}
+
 export interface UsageProvider {
   id: string
   name: string
+  /** The default login's windows. */
   windows: UsageWindow[]
   source: string
   updatedAt: number
   /** The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it. */
   registry?: string
+  /** What the default login is called, when the agent has login profiles to tell it from. */
+  defaultLoginProfile?: string
+  /** The agent's signed-in account login profiles, each with its own windows. Absent when it has one login. */
+  loginProfiles?: UsageLoginProfile[]
 }
 
 /** An agent the Usage screen can show or hide. The host keeps the choice, so every app follows it. */
@@ -504,7 +576,33 @@ export interface Backend {
   canInstall?: boolean
   /** Only for an agent that runs on Node.js, on a computer without its own: Codync's copy is missing or added. */
   node?: 'missing' | 'added' | null
+  /** Its login profiles beside the default one (absent from older hosts, which hide the feature). */
+  loginProfiles?: LoginProfile[]
+  /** The login the computer already has, beside `loginProfiles`: the name the user gave it and who it signs in, when known. */
+  defaultLoginProfile?: { name: string | null; label?: string | null; email?: string | null }
+  /** How an account profile of it signs in: its CLI in a terminal, or the agent itself in a browser on the computer. Null: it keeps one sign-in of its own, so it only takes API key profiles. */
+  loginProfileSignIn?: 'terminal' | 'browser' | null
+  /** The variable names its API key usually goes in, which the key form starts with. */
+  loginKeys?: string[]
 }
+
+/** One more login to an agent, beside the one the computer already has: the agent's own sign-in in a folder of the profile's (`account`), or named environment variables (`apiKey`). */
+export interface LoginProfile {
+  id: string
+  kind: 'account' | 'apiKey'
+  /** The user's name for it, else who it signs in once it has. */
+  name: string | null
+  /** The name the user gave it. */
+  label?: string | null
+  email?: string | null
+  signedIn: boolean
+  /** An API key profile's variable names; their values never leave the host. */
+  vars?: string[]
+}
+
+/** The login profiles a bot on `backend` can pick. One that isn't signed in can't run a bot; `picked`, the bot's own, stays listed so its row shows it. */
+export const loginProfileChoices = (backend: Backend, picked: string | null): LoginProfile[] =>
+  (backend.loginProfiles ?? []).filter((p) => p.signedIn || p.id === picked)
 
 export interface ScreenDisplay {
   id: number
@@ -575,6 +673,8 @@ export interface Hello {
   analytics?: boolean
   /** A bot with a new message moves to the top of the roster (`setAutoOrder`). Absent from older hosts. */
   autoOrder?: boolean
+  /** `resetCredentials` can be used on this computer (absent from older hosts, false on a Codync Cloud computer). */
+  credentialsReset?: boolean
 }
 
 export interface PairingInfo {
@@ -705,6 +805,8 @@ export interface BotDraft {
   avatarShape: string
   backend: string
   command?: string | null
+  /** Null for the login the computer already has: sent as is, so the host clears it. */
+  loginProfile?: string | null
   cwd: string
   permission: string
   /** Null for the agent's default: sent as is, so the host clears it. */
@@ -729,6 +831,10 @@ export interface BotDraft {
   harnessMemory?: boolean
   /** Left out where the bot has none: the host keeps what it has. */
   compaction?: CompactionThreshold
+  /** The most agents at once, 1 to 6; left out for a host before the box. */
+  maxAgents?: number
+  /** Left out for a host before worktrees. */
+  taskWorktrees?: boolean
 }
 
 export function draftOf(bot: Bot): BotDraft {
@@ -740,6 +846,7 @@ export function draftOf(bot: Bot): BotDraft {
     avatarShape: bot.avatarShape,
     backend: bot.backend,
     command: bot.command ?? null,
+    loginProfile: bot.loginProfile ?? null,
     cwd: bot.managedWorkspace ? '' : bot.cwd,
     permission: bot.permission,
     mode: bot.mode,
@@ -758,6 +865,8 @@ export function draftOf(bot: Bot): BotDraft {
     offeredToNetwork: bot.offeredToNetwork ?? undefined,
     reachableByAssistants: bot.reachableByAssistants ?? undefined,
     compaction: bot.compaction ?? undefined,
+    maxAgents: bot.maxAgents ?? undefined,
+    taskWorktrees: bot.taskWorktrees ?? undefined,
   }
 }
 

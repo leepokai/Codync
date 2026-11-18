@@ -1,6 +1,6 @@
 //! The `entries` table: the transcript of every chat.
 
-use super::model::{Entry, EntryKind, Lane};
+use super::model::{Entry, EntryKind, Lane, TASK_GLOB};
 use super::{Store, logged, next_rev, now_ms};
 use crate::LockExt;
 use anyhow::{Result, ensure};
@@ -164,17 +164,21 @@ impl Store {
         )?)
     }
 
-    /// Entries changed after `since`. A fresh client (`since == 0`) only gets the
+    /// Entries changed after `since`, in the chats clients list: a task's transcript is fetched by itself
+    /// (`taskEntries`). A fresh client (`since == 0`) only gets the
     /// newest `cap` entries per bot and pages older ones in with `history`.
     pub fn entries_since(&self, since: i64, cap: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let sql = if since == 0 {
             format!(
-                "SELECT {ENTRY_COLS} FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY bot_id ORDER BY seq DESC) AS rn FROM entries)
+                "SELECT {ENTRY_COLS} FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY bot_id ORDER BY seq DESC) AS rn FROM entries
+                   WHERE bot_id NOT GLOB '{TASK_GLOB}')
                  WHERE rn <= ?2 AND rev > ?1 ORDER BY seq"
             )
         } else {
-            format!("SELECT {ENTRY_COLS} FROM entries WHERE rev > ?1 AND ?2 > 0 ORDER BY seq")
+            format!(
+                "SELECT {ENTRY_COLS} FROM entries WHERE rev > ?1 AND ?2 > 0 AND bot_id NOT GLOB '{TASK_GLOB}' ORDER BY seq"
+            )
         };
         let mut st = c.prepare(&sql)?;
         Ok(st.query_map(params![since, cap], row_entry)?.collect::<rusqlite::Result<_>>()?)
@@ -203,6 +207,19 @@ impl Store {
              ORDER BY seq DESC LIMIT ?2"
         ))?;
         Ok(st.query_map(params![bot_id, limit], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The user's own messages in `bot_id`'s chat that still wait for their turn (not what the host wrote there),
+    /// oldest first.
+    pub fn queued_messages(&self, bot_id: &str) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND kind = 'user'
+               AND json_extract(data, '$.status') = 'queued'
+               AND COALESCE(json_extract(data, '$.from'), '') != 'host'
+             ORDER BY seq"
+        ))?;
+        Ok(st.query_map([bot_id], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
     /// Cards still waiting for the user to sign in to agent `backend`, oldest first.
@@ -374,6 +391,10 @@ impl Store {
                 };
                 e.data["status"] = status.into();
                 self.update_entry(id, &e.data)?;
+                if e.kind == EntryKind::Permission.as_str() {
+                    // Its chat's badge counted the card (`Store::badge`): resync the bot.
+                    self.touch_bot(&e.bot_id)?;
+                }
             }
         }
         Ok(Expired { closed: ids.len(), decisions })

@@ -39,7 +39,7 @@ extension BotStore {
                     } else {
                         continue
                     }
-                    if catchUpLeft == 0 { finishRefetch() }
+                    if catchUpLeft == 0 { finishCatchUp() }
                 }
             } catch is CancellationError {
                 return
@@ -51,6 +51,8 @@ extension BotStore {
                     return
                 }
             }
+            // Waiting for the next stream, the roster can fall behind. A cancelled task's stream is already replaced.
+            if !Task.isCancelled { streamCaughtUp = false }
             try? await Task.sleep(for: .seconds(backoff))
             backoff = min(backoff * 2, 20)
         }
@@ -121,14 +123,16 @@ extension BotStore {
             bump(rev)
         case .bot(let received):
             let bot = putHostBot(received)
+            dropEndedTasks()
             bump(bot.rev)
             onBotUpdated?(bot)
             onRosterChanged?()
-            if bot.unread > 0 { acknowledgeVisibleConversations(bot.id) }
+            if bot.unseen > 0 { acknowledgeVisibleConversations(bot.id) }
         case let .botDeleted(id, r):
             removeComposerDrafts(for: id)
             bots[id] = nil
             entries[id] = nil
+            dropEndedTasks()
             windowFloors[id] = nil
             bump(r)
             if selection == id { selection = nil }
@@ -142,6 +146,9 @@ extension BotStore {
             if let card = e.data.artifact { artifacts.announce(card) }
             bump(e.rev)
             acknowledgeVisibleConversations(e.botId, entry: e)
+        case let .taskEntry(task, e):
+            putTaskEntry(e, task: task)
+            bump(e.rev)
         case let .call(cue):
             // The computer decides what the voice hears; this device hands each cue over once.
             guard let id = UUID(uuidString: cue.call), let call = voiceCalls[id], cue.seq > heardCues[id, default: 0] else { break }
@@ -185,6 +192,7 @@ extension BotStore {
         persistComposerDrafts()
         bots = [:]
         entries = entries.mapValues { $0.filter { $0.id.hasPrefix("local-") } }.filter { !$0.value.isEmpty }
+        taskEntries = [:]
         selection = nil
         onRosterChanged?()
         rev = 0
@@ -226,6 +234,14 @@ extension BotStore {
         if !caughtUp && rev >= catchUpRev { caughtUp = true }
     }
 
+    /// This stream's catch-up is over: what was cut short is dropped, and the roster matches the host.
+    private func finishCatchUp() {
+        finishRefetch()
+        streamCaughtUp = true
+        // `rosterIsCurrent` turned true even if no bot changed.
+        onRosterChanged?()
+    }
+
     /// Per bot, the lowest synced `seq` in the mirror (optimistic entries don't count).
     /// Only entries the mirror had at `requestedSince`: newer ones (a send's RPC response landing
     /// before this hello) come again in this catch-up and say nothing about the window.
@@ -243,6 +259,13 @@ extension BotStore {
     static func isOutsideLoadedWindow(_ e: Entry, floor: Int64?, held: Bool) -> Bool {
         guard !held, let floor else { return false }
         return e.seq < floor
+    }
+
+    /// A task no item names any more is gone from the computer too; its transcript goes with it.
+    private func dropEndedTasks() {
+        guard !taskEntries.isEmpty else { return }
+        let named = Set(bots.values.flatMap(\.work).compactMap(\.task))
+        taskEntries = taskEntries.filter { named.contains($0.key) }
     }
 
     func upsert(_ e: Entry) {

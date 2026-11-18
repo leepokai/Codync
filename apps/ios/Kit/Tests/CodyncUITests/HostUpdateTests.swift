@@ -111,3 +111,10 @@ import Testing
     })
     #expect(translated == "Mac 上的 Codync 是 2.20.0；需要把那台電腦上的 Codync 升級到 2.26.0 或更高版本。 請在那台電腦上執行 codync-host update。")
 }
+
+@Test func updateCardActionsSpeakTheAppLanguage() {
+    // Translated through `L10n.tr` before the cards get them: a `Button` built from a plain `String` shows it verbatim.
+    #expect(L10n.tr("Update now", preference: .zhHant) == "立即更新")
+    #expect(L10n.tr("Update Codync", preference: .zhHant) == "更新 Codync")
+    #expect(L10n.tr("Update", preference: .zhHant) == "更新")
+}

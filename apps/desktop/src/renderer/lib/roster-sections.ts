@@ -10,17 +10,19 @@ export function hostHasSections(version: string): boolean {
   return !isBelow(version, ROSTER_SECTIONS_HOST)
 }
 
-/** What placing a bot in the roster reads: its pin, the section the user put it in, its unread count. */
+/** What placing a bot in the roster reads: its pin, the section the user put it in, its unread count and how
+ * many of those are cards waiting on the user. */
 interface Placed {
   pinned: boolean
   section?: string
   unread: number
+  waiting: number
 }
 
 /** One line of a computer's roster: a bot's row, a section header holding its rows, or the "Bots" label. */
 export type RosterLine<T> =
   | { kind: 'row'; item: T }
-  | { kind: 'section'; name: string; count: number; unread: number; folded: boolean; items: T[] }
+  | { kind: 'section'; name: string; count: number; unread: number; waiting: boolean; folded: boolean; items: T[] }
   | { kind: 'label' }
 
 /**
@@ -43,7 +45,7 @@ export function rosterGroups<T extends { bot: Placed }>(items: T[], folded: read
   const names = [...sectionNames(unpinned.map((item) => item.bot)), ...(unpinned.some((item) => !item.bot.section) ? [''] : [])]
   return orderedSections(names, order).map((name) => {
     const rows = unpinned.filter((item) => (item.bot.section ?? '') === name)
-    return { kind: 'section', name, count: rows.length, unread: rows.reduce((sum, item) => sum + item.bot.unread, 0), folded: name !== '' && folded.includes(name), items: rows }
+    return { kind: 'section', name, count: rows.length, unread: rows.reduce((sum, item) => sum + item.bot.unread, 0), waiting: rows.some((item) => item.bot.waiting > 0), folded: name !== '' && folded.includes(name), items: rows }
   })
 }
 
@@ -52,13 +54,19 @@ export function shownRows<T>(lines: RosterLine<T>[]): T[] {
   return lines.flatMap((line) => (line.kind === 'row' ? [line.item] : line.kind === 'label' || line.folded ? [] : line.items))
 }
 
+/** Every bot of a computer's roster in the order its rows are on screen, folded sections included: the pinned ones,
+ * then section by section in the user's order. */
+export function rosterRows<T extends { bot: Placed }>(items: T[], order: readonly string[] = []): T[] {
+  return shownRows(rosterLines(items, [], order))
+}
+
 /** The section a bot shows in: none for pinned bots, which stay on top (terminal `Bot::shown_section`). */
-export function shownSection(bot: Omit<Placed, 'unread'>): string | undefined {
+export function shownSection(bot: Pick<Placed, 'pinned' | 'section'>): string | undefined {
   return bot.pinned ? undefined : bot.section || undefined
 }
 
 /** Whether a drag (or Alt+↑/↓) may move one bot past another: the same band (pinned, the rest) and the same section shown. */
-export function sameRosterGroup(a: Omit<Placed, 'unread'>, b: Omit<Placed, 'unread'>): boolean {
+export function sameRosterGroup(a: Pick<Placed, 'pinned' | 'section'>, b: Pick<Placed, 'pinned' | 'section'>): boolean {
   return rosterBand(a) === rosterBand(b) && shownSection(a) === shownSection(b)
 }
 

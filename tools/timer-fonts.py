@@ -4,7 +4,7 @@
 Live Activities draw one frame and only a timer Text keeps updating, so each animation is a
 timer whose last digit is drawn in a font where `0`–`9` are the ten frames of a loop (every
 other character the timer prints shapes to nothing). One font per layer, stacked and tinted in
-the widget: the working bot (`CodyncBot-<shape>-Ink` / `-Tint`) and the thinking orb
+the widget: the working bot (`CodyncBot-<shape>-Ink` / `-Tint`) and the halftone thinking orb
 (`CodyncOrb-Ghost` / `-Dot`).
 
 The frames come from the app's own drawing code (`DottedBody.workingLoop`,
@@ -84,7 +84,10 @@ def build(name, frames, size, out):
     cmap.update({ord(str(i)): DIGITS[i] for i in range(10)})
     fb.setupCharacterMap(cmap)
     fb.setupGlyf(glyphs)
-    metrics = {g: (EM if g in DIGITS else 0, 0) for g in order}
+    # Text places a glyph by its left side bearing, not by its own coordinates: it has to be the
+    # glyph's xMin, or every frame slides left by its leftmost dot and the stacked layers drift apart.
+    glyf = fb.font["glyf"]
+    metrics = {g: (EM if g in DIGITS else 0, getattr(glyf[g], "xMin", 0)) for g in order}
     fb.setupHorizontalMetrics(metrics)
     fb.setupHorizontalHeader(ascent=EM, descent=0)
     fb.setupOS2(sTypoAscender=EM, sTypoDescender=0, sTypoLineGap=0, usWinAscent=EM, usWinDescent=0)

@@ -242,3 +242,47 @@ async fn agents_with_the_same_skill_share_one_copy() {
     drop(hub);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[tokio::test]
+async fn a_skill_removed_with_a_failed_agent_is_made_again_for_the_next_one() {
+    let dir = std::env::temp_dir().join(format!("codync-import-redo-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let store = crate::store::Store::open(&dir.join("t.db")).unwrap();
+    let identity = crate::remote::identity::Identity::load_or_create(&dir).unwrap();
+    let hub = crate::hub::Hub::new(store, "test".into(), identity, "token".into(), 0);
+    let manifest = json!({
+        "format": "codync-bot-import", "version": 1, "source": {"app": "grok-bot"},
+        "agents": [
+            // Makes `shared`, then fails on `broken`: `shared` goes again with it.
+            {"key": "first", "name": "First", "skills": ["agents/first/skills/shared", "agents/first/skills/broken"]},
+            // The same folder: it must be made anew, not pointed at the copy that was removed.
+            {"key": "second", "name": "Second", "skills": ["agents/second/skills/shared"]},
+        ],
+    })
+    .to_string();
+    let md: &[u8] = b"---\nname: Shared\ndescription: Used by two agents\n---\nDo it.";
+    let path = zip(&[
+        ("codync-import.json", manifest.as_bytes()),
+        ("agents/first/skills/shared/SKILL.md", md),
+        ("agents/first/skills/shared/notes.md", b"notes"),
+        ("agents/first/skills/broken/SKILL.md", b"\xff\xfe"),
+        ("agents/second/skills/shared/SKILL.md", md),
+        ("agents/second/skills/shared/notes.md", b"notes"),
+    ]);
+    let done = super::apply(&hub, &json!({"path": path})).await.unwrap();
+    std::fs::remove_file(path).unwrap();
+
+    let bots = done["bots"].as_array().unwrap();
+    let names: Vec<&str> = bots.iter().map(|b| b["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["Second"], "First fails on its second skill: {done}");
+    let enabled = hub.store.bot(bots[0]["id"].as_str().unwrap()).unwrap().unwrap().config.skills;
+    assert_eq!(enabled.len(), 1, "{enabled:?}");
+    let saved = crate::market::skills(&hub.store);
+    let skill = saved.iter().find(|s| s.id == enabled[0]).expect("the enabled skill is in the saved list");
+    assert_eq!(saved.len(), 1, "the removed copy isn't left behind");
+    assert!(skill.dir().join("SKILL.md").is_file(), "its folder is on disk");
+    assert!(skill.dir().join("notes.md").is_file(), "with the files beside SKILL.md");
+    crate::market::remove_skill(&hub.store, &skill.id).unwrap();
+    drop(hub);
+    let _ = std::fs::remove_dir_all(dir);
+}

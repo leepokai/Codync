@@ -453,5 +453,27 @@ pub fn is_pass(text: &str) -> bool {
     t.is_empty() || t == PASS || t == "pass"
 }
 
+/// A routine's final text is a pass when its last non-blank line ends with one: the prompt asks for `(pass)` alone,
+/// and a quiet run that wrote a reason first ("Product newsletter, doesn't qualify. (pass)") still says nothing.
+/// What came before stays in the run's trace. A line that only punctuation would leave empty (`***`, a divider) is
+/// not a pass: the word itself has to be there, which is what a real report ends with instead.
+pub fn ends_in_pass(text: &str) -> bool {
+    is_pass(text) || last_line_ends_in_pass(text)
+}
+
+/// The last non-blank line of `text`, less trailing punctuation, ends with `(pass)` after nothing but a break.
+fn last_line_ends_in_pass(text: &str) -> bool {
+    let Some(line) = text.lines().rev().find(|line| !line.trim().is_empty()) else {
+        return false;
+    };
+    let line =
+        line.trim().trim_end_matches(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '*' | '.' | '!' | '?'));
+    let lower = line.to_lowercase();
+    let Some(before) = lower.strip_suffix(PASS) else {
+        return false;
+    };
+    before.chars().next_back().is_none_or(|c| c.is_whitespace() || c.is_ascii_punctuation())
+}
+
 #[cfg(test)]
 mod tests;

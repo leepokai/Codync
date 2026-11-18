@@ -391,8 +391,11 @@ impl Actor {
         {
             let text = e.data["text"].as_str().map(str::to_owned);
             // A pass stays in the trace: neither a room nor the user sees it (a bot request's reply goes back as it
-            // is, from a task too).
-            if self.in_request() || !text.as_deref().is_none_or(crate::chat::group::is_pass) {
+            // is, from a task too). A routine's pass may follow a line of text — in its chat or in the box — and the
+            // run still says nothing.
+            let pass: fn(&str) -> bool =
+                if self.in_routine() { crate::chat::group::ends_in_pass } else { crate::chat::group::is_pass };
+            if self.in_request() || !text.as_deref().is_none_or(pass) {
                 // A bot request's answer belongs to the bot that sent it and the exchange notice.
                 if !delegated {
                     e.data["final"] = true.into();

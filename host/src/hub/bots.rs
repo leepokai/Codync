@@ -24,6 +24,8 @@ impl Hub {
     }
 
     pub fn create_bot(self: &Arc<Self>, mut cfg: BotConfig) -> Result<Value> {
+        // A bot born with skills on: cleanup mustn't remove one before the bot is saved.
+        let _skills = (!cfg.skills.is_empty()).then(crate::market::hold_skill_use);
         cfg.id = uuid::Uuid::new_v4().to_string();
         cfg.created_at = crate::store::now_ms();
         cfg.position = self.new_bot_position()?;
@@ -56,6 +58,8 @@ impl Hub {
 
     pub fn update_bot(&self, patch: &Value) -> Result<Value> {
         let id = patch["id"].as_str().ok_or_else(|| anyhow!("id required"))?.to_owned();
+        // Skills turned on: cleanup mustn't remove one between this and the save.
+        let _skills = patch.get("skills").map(|_| crate::market::hold_skill_use());
         // Read, merge and save under one lock: a section rename in between would otherwise be written back.
         let (before, cfg) = {
             let _g = self.emit_lock.locked();

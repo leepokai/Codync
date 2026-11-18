@@ -152,6 +152,7 @@ host answers and sends it once the host is up.
 | `connector_signin_started` | host | `connectorSignIn` | — |
 | `skill_installed` | host | `installSkill` | `custom` |
 | `skill_removed` | host | `removeSkill` | — |
+| `skills_cleaned` | host | `removeUnusedSkills` (the Remove unused skills button and `^k`) | `count` (skills removed), never which; when it fails `outcome` (`failed`), `error` (`other`) |
 | `skill_written` | host | A bot's `save_skill` (`chatCall`) | `change` (`new`/`update`) |
 | `artifact_published` | host | A bot's `publish_artifact` (`chatCall`) | `change` (`new`/`update`), `card` (whether its card went into the bot's chat), never its title |
 | `voice_note_sent` | host | A bot's `send_file` with text (`chatCall`): a message that carries a voice note | never the file, its name or the text |

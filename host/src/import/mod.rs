@@ -168,6 +168,8 @@ impl Importer {
 
     /// Its skills and workspace files: how many of each. On a failure, those it added go again.
     fn fill(&mut self, id: &str, bot: &Bot) -> Result<(usize, usize)> {
+        // Its skills are saved, then turned on: cleanup mustn't see them unused in between.
+        let _hold = market::hold_skill_use();
         let cwd = self.hub.store.bot(id)?.context("the new bot")?.config.cwd;
         let imported = Path::new(&cwd).join("imported");
         let mut skills = Vec::new();

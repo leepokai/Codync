@@ -52,6 +52,8 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
             let skill = market::update_custom_skill(&hub.store, &bot, &id, &name, &description, &instructions)?;
             (skill, "Updated the skill")
         } else {
+            // Saved, then turned on: cleanup mustn't see it unused in between.
+            let _hold = market::hold_skill_use();
             let skill = market::add_custom_skill(&hub.store, &name, &description, &instructions, Some(&bot))?;
             market::turn_on(&hub, Installed::Skills, std::slice::from_ref(&skill.id), Some(&bot))?;
             (skill, "Saved the skill")

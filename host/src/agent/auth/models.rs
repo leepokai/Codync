@@ -42,6 +42,9 @@ pub async fn shared_models(hub: &Hub, backend: &str) -> Result<Value> {
 /// Discover the agent's advertised models in an isolated, prompt-free session.
 /// This uses the same credentials as actual bot sessions and never reads project files.
 pub async fn models(store: &Store, backend: &str) -> Result<Value> {
+    if crate::agent::backends::agent_checks_off() {
+        bail!("agent checks are off on this host");
+    }
     let Started { acp, mut inbox, .. } = start(store, backend).await?;
     let result = tokio::time::timeout(Duration::from_mins(1), async {
         let request = acp.request("session/new", json!({"cwd": probe_dir(), "mcpServers": []}));

@@ -1,18 +1,23 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type CDPSession, type Locator } from '@playwright/test'
 import { api, attach, echoBot, setPref } from './sandbox.ts'
 
 // The compact details sheet is a card over the chat below 740 px of thread width (ThreadView's WIDE).
 // The viewport is emulated at 760x500 / 1200x760 here, so this checks layout, focus and hit testing,
 // not the OS window's own bounds or its native hit test.
-async function setViewport(page: Page, width: number, height: number) {
-  const client = await page.context().newCDPSession(page)
-  await client.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false })
-  await page.waitForTimeout(250) // the app measures the thread with a ResizeObserver, then re-renders
+async function setViewport(cdp: CDPSession, width: number, height: number) {
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false })
+  await new Promise((done) => setTimeout(done, 250)) // the app measures the thread with a ResizeObserver, then re-renders
 }
+
+const maskOf = (el: Locator) => el.evaluate((node) => {
+  const style = getComputedStyle(node)
+  return style.maskImage || style.webkitMaskImage
+})
 
 test('the compact details sheet scrolls from the keyboard and keeps its clicks', async () => {
   test.setTimeout(120_000)
   const { browser, page } = await attach()
+  const cdp = await page.context().newCDPSession(page)
   // A sandbox with no saved account covers the window with the welcome; mark that choice the way
   // `attach` marks the star ask, so the sheet being tested is never behind it. (`welcome-continue`
   // would do it too, but the welcome is briefly re-rendered while the saved account is restored,
@@ -36,7 +41,7 @@ test('the compact details sheet scrolls from the keyboard and keeps its clicks',
     }
     await expect(page.locator('.roster-row', { hasText: name })).toBeVisible()
     await page.locator('.roster-row', { hasText: name }).first().click()
-    await setViewport(page, 760, 500)
+    await setViewport(cdp, 760, 500)
 
     // The title pill opens the sheet while the thread is narrow (ThreadView's toggleDetails).
     await page.locator('.title-pill').click()
@@ -55,7 +60,7 @@ test('the compact details sheet scrolls from the keyboard and keeps its clicks',
     await expect.poll(() => scroll.evaluate((el) => Math.abs(el.scrollTop - (el.scrollHeight - el.clientHeight)) < 2)).toBe(true)
     // A column focused for the keyboard draws no ring around the card, and its fade is a mask.
     expect(await scroll.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('none')
-    expect(await scroll.evaluate((el) => getComputedStyle(el).maskImage || (getComputedStyle(el) as unknown as { webkitMaskImage: string }).webkitMaskImage)).toContain('linear-gradient')
+    expect(await maskOf(scroll)).toContain('linear-gradient')
 
     // The sheet has no window drag band, and its top strip now reaches the tabs.
     expect(await sheet.locator('.details-drag').evaluate((el) => getComputedStyle(el).display)).toBe('none')
@@ -70,7 +75,7 @@ test('the compact details sheet scrolls from the keyboard and keeps its clicks',
     expect(onTab).toBe(true)
 
     // A wider thread dismisses the sheet and hands the panel back to its dock, with the band it needs there.
-    await setViewport(page, 1200, 760)
+    await setViewport(cdp, 1200, 760)
     await expect(page.locator('.modal-content > .details-panel')).toHaveCount(0)
     await page.locator('.title-pill').click()
     const docked = page.locator('.side-panel .details-panel')
@@ -78,8 +83,9 @@ test('the compact details sheet scrolls from the keyboard and keeps its clicks',
     expect(await docked.locator('.details-drag').evaluate((el) => getComputedStyle(el).display)).toBe('block')
     expect(await docked.locator('.details-drag').evaluate((el) => getComputedStyle(el).height)).toBe('54px')
     expect(await docked.locator('.details-identity').evaluate((el) => getComputedStyle(el).paddingTop)).toBe('58px')
-    expect(await docked.locator('.details-scroll').evaluate((el) => getComputedStyle(el).maskImage || (getComputedStyle(el) as unknown as { webkitMaskImage: string }).webkitMaskImage)).toBe('none')
+    expect(await maskOf(docked.locator('.details-scroll'))).toBe('none')
   } finally {
+    await cdp.send('Emulation.clearDeviceMetricsOverride')
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
     await browser.close()
   }

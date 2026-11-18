@@ -88,7 +88,10 @@ function syncModals() {
     el.inert = false
     mutedByModals.delete(el)
   }
-  if (top && !top.contains(document.activeElement)) (top.querySelector<HTMLElement>('[data-autofocus]') ?? top.querySelector<HTMLElement>('[data-modal-card]'))?.focus({ preventScroll: true })
+  if (!top || top.contains(document.activeElement)) return
+  // A target on an inert page (one a thread slid over) can't take the focus, so it is passed over.
+  const target = [...top.querySelectorAll<HTMLElement>('[data-autofocus]')].find((el) => !el.closest('[inert]')) ?? top.querySelector<HTMLElement>('[data-modal-card]')
+  target?.focus({ preventScroll: true })
 }
 
 /**

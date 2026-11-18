@@ -4,6 +4,7 @@
 use super::dispatch::{self, TaskState};
 use super::{Failure, Outcome, Status, close, end_claimed, items};
 use crate::LockExt;
+use crate::analytics::errors::host_error;
 use crate::hub::Hub;
 use std::sync::Arc;
 use std::time::Duration;
@@ -61,7 +62,7 @@ pub(super) fn sweep(hub: &Arc<Hub>, bot: &str) {
     });
     match lost {
         Ok(failed) => failed.into_iter().for_each(|over| close(hub, bot, over, |_| {})),
-        Err(error) => tracing::error!(bot, error = format!("{error:#}"), "couldn't look a bot's work over"),
+        Err(error) => host_error!(hub, "couldn't look a bot's work over", bot, error = format!("{error:#}")),
     }
     dispatch::dispatch(hub, bot);
 }

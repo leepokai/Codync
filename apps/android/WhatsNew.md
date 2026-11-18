@@ -14,21 +14,16 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 在專屬資料夾裡，Bot 的背景工作都在同一個資料夾進行，所以那裡不再顯示「每個 thread 一個 worktree」開關。
 - Bot 在背景做的每件工作現在一律叫 thread：「設定」裡的「同時幾個 agent」改名為「同時幾個 thread」，「每個 agent 一個 worktree」改名為「每個 thread 一個 worktree」。
 - 需要更新時，更新卡片上的「立即更新」「更新 Codync」按鈕會跟著 App 語言顯示。
+- 讀完聊天後，它的通知會自動消失，桌面圖示上的標記也會跟著消失。
+- Bot 在做事時旁邊的小圖示換成跟頭像同一種點陣，每種狀態各有自己的動作。
 
 ### en-US
 - A bot's default workspace is now called Own folder.
 - With Git installed, Codync keeps a version of a bot's own folder before and after each turn: ask the bot what a turn changed, or to bring a file back.
-- Background work is now called a thread: Settings read Threads at once and Worktree per thread (formerly per agent; an own folder has no such switch).
-- The buttons on the update card (Update now, Update Codync) now show in the app's language.
-
-## 2.49.2
-### zh-Hant
-- 讀完聊天後，它的通知會自動消失，桌面圖示上的標記也會跟著消失。
-- Bot 在做事時旁邊的小圖示換成跟頭像同一種點陣：工作中、搜尋、等你回覆、連線和編輯檔案各有自己的動作，小尺寸也看得清楚。
-
-### en-US
-- Reading a chat clears its notification, and the launcher badge with it.
-- The small icon beside a busy bot now uses the same dot grid as the avatars: working, searching, waiting for you, connecting and editing files each move their own way, and stay clear at small sizes.
+- Background work is now called a thread: Threads at once, Worktree per thread.
+- The update card's buttons now show in the app's language.
+- Reading a chat clears its notification and the launcher badge.
+- A busy bot's small icon uses the avatars' dot grid, moving its own way for each state.
 
 ## 2.49.1
 ### zh-Hant

@@ -2218,5 +2218,6 @@
   "Sign in, or sign up for the free plan.": "登录，或注册免费方案。",
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "创建一把名为 codync 的 API 密钥，权限为 machines:read、machines:write 和 machines:delete。",
   "Connect {provider}": "连接 {provider}",
-  "Use the command line instead": "改用命令行"
+  "Use the command line instead": "改用命令行",
+  "Leave it empty to use the hostname.": "留空则使用主机名。"
 }

@@ -33,7 +33,7 @@ mod work;
 pub use all_work::{AllWork, AllWorkRow};
 pub use analytics::AnalyticsSheet;
 pub use dev_servers::{DevServer, DevServerSummary, DevServersSheet, LogsView, summary as dev_server_summary};
-pub use fields::{handoff_fields, section_fields};
+pub use fields::{handoff_fields, name_fields};
 pub use gear::{Gear, GearRow};
 pub use icons::icon_fields;
 pub use library::{ArtifactTitles, LibraryItem};
@@ -263,6 +263,8 @@ pub enum Submit {
     Section(String),
     /// A section's new name (its current one), or empty to remove it.
     RenameSection(String),
+    /// This computer's name, or empty for its hostname (`setComputerName`).
+    ComputerName,
     RenameArtifact {
         bot: String,
         artifact: String,

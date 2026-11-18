@@ -34,6 +34,7 @@ pub enum Event {
     BotUpdated,
     BotsReordered,
     SectionRenamed,
+    ComputerRenamed,
     BotDeleted,
     MessageSent,
     /// The user had a queued message handled now (`agent::bot::steer`).
@@ -208,6 +209,7 @@ impl Event {
             Self::BotUpdated => "bot_updated",
             Self::BotsReordered => "bots_reordered",
             Self::SectionRenamed => "section_renamed",
+            Self::ComputerRenamed => "computer_renamed",
             Self::BotDeleted => "bot_deleted",
             Self::MessageSent => "message_sent",
             Self::MessageSteered => "message_steered",

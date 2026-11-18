@@ -255,6 +255,16 @@ export class BotStore extends BotSync {
     }
   }
 
+  /** The user's name for this computer, empty for its hostname (a cloud computer is named in Codync Cloud). */
+  async setComputerName(name: string) {
+    try {
+      const res = await (await this.ready()).call<{ name: string }>('setComputerName', { name })
+      this.setHostName(res.name)
+    } catch (e) {
+      this.setError(errorText(e))
+    }
+  }
+
   /** Deletes the credentials saved on this computer, for one whose key is gone; agents' own sign-ins stay. */
   async resetCredentials() {
     try {

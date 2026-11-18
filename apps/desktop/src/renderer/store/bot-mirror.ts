@@ -28,6 +28,8 @@ import { TaskTranscripts } from './task-transcripts'
 
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
+/** The first host the user names (`setComputerName`). */
+const COMPUTER_NAME_HOST = '2.50.0'
 
 export type Connection =
   | { kind: 'unpaired' }
@@ -206,6 +208,12 @@ export class BotMirror extends Observable {
   /** The user picks the lead (`setLead`) and may delete it: an older host refuses both. */
   get hasLeadChoice() {
     return this.hostVersion !== null && !isBelow(this.hostVersion.version, LEAD_CHOICE_HOST)
+  }
+
+  /** The user names this computer here, on a host that takes it: a cloud computer is named in Codync Cloud. */
+  get canRename() {
+    return this.connection.kind === 'online' && this.hello?.device !== 'cloud'
+      && this.hostVersion !== null && !isBelow(this.hostVersion.version, COMPUTER_NAME_HOST)
   }
 
   /** What the update notice offers while this computer is behind this app. */

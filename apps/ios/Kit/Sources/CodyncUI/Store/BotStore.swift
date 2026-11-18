@@ -308,6 +308,13 @@ public final class BotStore {
 
     static let replyPartHost = "2.48.1"
 
+    /// From host 2.50.0 the user names their own computer (`setComputerName`); an older host has no such method.
+    public var supportsComputerName: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.computerNameHost) } ?? false
+    }
+
+    static let computerNameHost = "2.50.0"
+
     static let sectionsHost = "2.32.0"
 
     /// Display name for a harness id, as the host reports it (falls back to the built-in list).

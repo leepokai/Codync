@@ -296,6 +296,21 @@ fn a_bot_edit_names_the_settings_it_changes() {
 }
 
 #[test]
+fn a_computer_rename_reports_without_the_name() {
+    assert_eq!(
+        props("setComputerName", &json!({"name": "Work Mac"})),
+        Some((Event::ComputerRenamed, json!({"removed": false, "outcome": "renamed", "client": "local"})))
+    );
+    let (event, p) = observe(&Caller::Local, "setComputerName", &json!({"name": " "})).unwrap();
+    assert_eq!(p["removed"], true);
+    let failed = failed(event, p, &anyhow::anyhow!("A cloud computer is renamed in Codync Cloud."));
+    assert_eq!(
+        failed.map(|(_, p)| (p["outcome"].clone(), p["error"].clone())),
+        Some((json!("failed"), json!("other")))
+    );
+}
+
+#[test]
 fn sections_count_without_their_names() {
     assert_eq!(
         props("renameSection", &json!({"from": "Work", "to": "Play"})),

@@ -101,6 +101,7 @@ host answers and sends it once the host is up.
 | `bot_updated` | host | `updateBot` | `fields`: the settings that changed, as the bot config's own camelCase keys (`model`, `permission`, `pinned`, `section`, `modelOptions`, `fastMode`, …), never their values; when the edit changes `compaction`, also `compaction`: the kind picked (`early`/`nearLimit`/`off`/`tokens`, never the size) |
 | `bots_reordered` | host | `reorderBots` | — |
 | `section_renamed` | host | `renameSection` | `removed`: whether it removed the section (`to` empty or `null`); never the names |
+| `computer_renamed` | host | `setComputerName`: the user named a computer of their own | `removed`: whether it went back to the hostname (`name` empty); `outcome` (`renamed`/`failed`), `error` (`other`) when it failed; never the name |
 | `bot_deleted` | host | `deleteBot` | — |
 | `message_sent` | host | `send` to a chat (a resend counts once; one to an item's thread is `work_messaged`) | `kind`, `agent`, `reply` (whether it quotes a message), `replyPart` (whether it quotes a part the user selected in it), `attachments` (count) |
 | `message_steered` | host | *Send now* on a queued message (`steer`), once its outcome is known | `agent`, `how` (`joined` the running turn / `next` turn, the turn ended first / `interrupted` the user's turn / `moved_up` behind other work / `failed`, it waits) |

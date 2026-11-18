@@ -84,6 +84,7 @@ pub(super) fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::super
                     let hint = match a {
                         Action::Analytics => on_off(app.analytics),
                         Action::AutoOrder => on_off(app.auto_order),
+                        Action::ComputerName => app.host.as_str(),
                         Action::Language => language.as_ref(),
                         Action::ThinkingDetails => on_off(Some(super::super::details::enabled())),
                         _ => key,

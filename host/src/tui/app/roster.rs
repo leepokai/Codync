@@ -8,7 +8,7 @@ use icu_normalizer::DecomposingNormalizerBorrowed;
 use serde_json::json;
 
 use super::super::l10n::{fill, tr};
-use super::super::manage::{Submit, section_fields};
+use super::super::manage::{Submit, name_fields};
 use super::{After, App, Bot, Click, Confirm, ConfirmAct, Overlay};
 
 /// The first host with roster sections (`section`, `renameSection`).
@@ -254,7 +254,14 @@ impl App {
         if !names.is_empty() {
             note.push_str(&tr(" Sections: {list}").replace("{list}", &names.join(", ")));
         }
-        let fields = section_fields("Move to section", note, bot.section.as_deref(), Submit::Section(bot.id.clone()));
+        let fields = name_fields(
+            "Move to section",
+            note,
+            "Section",
+            "Section name",
+            bot.section.as_deref(),
+            Submit::Section(bot.id.clone()),
+        );
         self.overlays.push(Overlay::Fields(Box::new(fields)));
     }
 
@@ -269,7 +276,14 @@ impl App {
             return;
         };
         let note = "Empty removes the section; its bots stay. A name in use merges them.".to_owned();
-        let fields = section_fields("Rename section", note, Some(name.as_str()), Submit::RenameSection(name.clone()));
+        let fields = name_fields(
+            "Rename section",
+            note,
+            "Section",
+            "Section name",
+            Some(name.as_str()),
+            Submit::RenameSection(name.clone()),
+        );
         self.overlays.push(Overlay::Fields(Box::new(fields)));
     }
 

@@ -2218,5 +2218,6 @@
   "Sign in, or sign up for the free plan.": "Melde dich an oder registriere dich für den kostenlosen Plan.",
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "Erstelle einen API-Schlüssel namens codync mit den Berechtigungen machines:read, machines:write und machines:delete.",
   "Connect {provider}": "{provider} verbinden",
-  "Use the command line instead": "Stattdessen die Kommandozeile verwenden"
+  "Use the command line instead": "Stattdessen die Kommandozeile verwenden",
+  "Leave it empty to use the hostname.": "Leer lassen, um den Hostnamen zu verwenden."
 }

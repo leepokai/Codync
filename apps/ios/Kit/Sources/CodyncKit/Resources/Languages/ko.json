@@ -2218,5 +2218,6 @@
   "Sign in, or sign up for the free plan.": "로그인하거나 무료 플랜에 가입하세요.",
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "machines:read, machines:write, machines:delete 범위를 가진 codync라는 이름의 API 키를 만드세요.",
   "Connect {provider}": "{provider} 연결",
-  "Use the command line instead": "대신 명령줄 사용"
+  "Use the command line instead": "대신 명령줄 사용",
+  "Leave it empty to use the hostname.": "비워 두면 호스트 이름을 사용합니다."
 }

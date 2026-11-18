@@ -59,6 +59,7 @@ import kotlinx.serialization.json.put
     var confirmForget by remember { mutableStateOf<AppState?>(null) }
     var confirmRevoke by remember { mutableStateOf<CloudComputer?>(null) }
     var coloring by remember { mutableStateOf<String?>(null) }
+    var naming by remember { mutableStateOf<Naming?>(null) }
     var voice by remember { mutableStateOf<String?>(null) }
     var network by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(app.contextId) { accounts.refreshCloud() }
@@ -73,6 +74,8 @@ import kotlinx.serialization.json.put
                 CardSection {
                     computerRows(state, store, inAccount != null, app.isStale(state, states), app.access[id]?.code, app.account.userId != null,
                         ComputerActions({ extensions(id) }, store::openScreen, voice = { voice = id }, network = { network = id }, color = { coloring = id },
+                            rename = { naming = Naming("Computer name", state.hello?.text("name") ?: state.computer.name, "Leave it empty to use the hostname.",
+                                store::setComputerName) },
                             ask = inAccount?.let { c -> { ask(c) } }, revoke = inAccount?.takeIf { it.isGranted }?.let { c -> { confirmRevoke = c } }) {
                             confirmForget = state
                         })
@@ -109,6 +112,7 @@ import kotlinx.serialization.json.put
     CodyncSheet(networkState?.network?.let { networkState to it }, { network = null }) { (state, view) ->
         accounts.store(state.computer.id)?.let { NetworkSheet(view, it::refreshNetwork) }
     }
+    NameDialog(naming, "Name", { naming = null }, { it.take(CLOUD_NAME_LIMIT) }) { it.trim() }
     SwatchPanel(coloring != null, states.firstOrNull { it.computer.id == coloring }?.computer?.color, { coloring = null }) {
         accounts.store(coloring)?.setColor(it)
     }
@@ -125,7 +129,7 @@ import kotlinx.serialization.json.put
 
 /** What the paired computer's row and its menu open; `revoke` is set when this phone's account access can be revoked. */
 private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit, val voice: () -> Unit, val network: () -> Unit, val color: () -> Unit,
-    val ask: (() -> Unit)?, val revoke: (() -> Unit)?, val remove: () -> Unit)
+    val rename: () -> Unit, val ask: (() -> Unit)?, val revoke: (() -> Unit)?, val remove: () -> Unit)
 
 /**
  * The paired computer as the rows of its card: its connection and whether it's in the account, then
@@ -170,6 +174,7 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
     Column(Modifier.fillMaxWidth().contextActions(items = {
         listOfNotNull(
             MenuItem("Color", icon = "paintpalette", action = actions.color),
+            if (canRename(state)) MenuItem("Rename…", icon = "pencil", action = actions.rename) else null,
             if (online) MenuItem("Extensions", icon = "square.grid.2x2", action = actions.extensions) else null,
             if (online) MenuItem("Voice chat", icon = "waveform", action = actions.voice) else null,
             if (online && state.screen != null) MenuItem("Screen", icon = "display", action = actions.screen) else null,

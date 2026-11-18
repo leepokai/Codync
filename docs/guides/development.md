@@ -132,7 +132,8 @@ host and the memory crate (`cargo fmt --all --check`, clippy, and the tests with
 runs them: install it once with `cargo install cargo-nextest --locked`), desktop, cloud,
 relay, discord and private-relay (`npm run typecheck`, `npm test`), the Android app (core and app unit tests, and a Kotlin compile of
 the app and its instrumentation tests, with JDK 21), Linux screen helper formatting, a parse of the macOS
-screen helper's Swift sources (on macOS), and the website's user manual (`npm run check:docs` in `web/`: pages
+screen helper's Swift sources (on macOS), the PR validation script against the PR template
+(`tools/pr-validation-test.py`, which no CI job runs), and the website's user manual (`npm run check:docs` in `web/`: pages
 compile, links and anchors resolve). It checks the staged files only, in a copy under `.git/precommit-snapshot`,
 so other agents' uncommitted edits in the same checkout neither break nor rescue a commit; the
 host builds into `host/target/precommit`. Its unit tests always run; its end-to-end tests run for the

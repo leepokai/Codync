@@ -13,6 +13,9 @@ use zip::ZipArchive;
 const MAX_ENTRIES: usize = 5_000;
 const MAX_BYTES: u64 = 500 * 1024 * 1024;
 
+/// A folder's files as the zip's directory lists them: each path below it, its size and its checksum.
+pub type Fingerprint = Vec<(String, u64, u32)>;
+
 pub struct Archive {
     zip: ZipArchive<File>,
     /// Each safe file's path (below the archive's root folder, if it has one) → its zip index and size.
@@ -94,6 +97,20 @@ impl Archive {
     pub fn under(&self, dir: &str) -> Vec<String> {
         let prefix = format!("{}/", dir.trim_end_matches('/'));
         self.files.keys().filter_map(|p| p.strip_prefix(&prefix)).map(str::to_owned).collect()
+    }
+
+    /// What identifies folder `dir`'s files: each path below it with its size and the checksum the zip's directory
+    /// holds, so two folders with the same fingerprint hold the same files, without reading them.
+    pub fn fingerprint(&mut self, dir: &str) -> Result<Fingerprint> {
+        let prefix = format!("{}/", dir.trim_end_matches('/'));
+        let from = (Bound::Included(prefix.as_str()), Bound::Unbounded);
+        let below: Vec<(String, usize, u64)> = self
+            .files
+            .range::<str, _>(from)
+            .take_while(|(path, _)| path.starts_with(&prefix))
+            .map(|(path, &(index, size))| (path[prefix.len()..].to_owned(), index, size))
+            .collect();
+        below.into_iter().map(|(path, index, size)| Ok((path, size, self.zip.by_index(index)?.crc32()))).collect()
     }
 
     /// Copies folder `dir` into `dest`, keeping the paths below it; returns how many files it copied.

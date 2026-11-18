@@ -14,12 +14,14 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 在專屬資料夾裡，Bot 的背景工作都在同一個資料夾進行，所以那裡不再顯示「每個 thread 一個 worktree」開關。
 - Bot 在背景做的每件工作現在一律叫 thread：「設定」裡的「同時幾個 agent」改名為「同時幾個 thread」，「每個 agent 一個 worktree」改名為「每個 thread 一個 worktree」。
 - 需要更新時，更新卡片上的「立即更新」「更新 Codync」按鈕會跟著 App 語言顯示。
+- 智慧體多了 Muse Code，在電腦上裝好、登入一次就能用。
 
 ### en-US
 - A bot's default workspace is now called Own folder.
 - With Git installed, Codync keeps a version of a bot's own folder before and after each turn: ask the bot what a turn changed, or to bring a file back.
 - Background work is now called a thread: Settings read Threads at once and Worktree per thread (formerly per agent; an own folder has no such switch).
 - The buttons on the update card (Update now, Update Codync) now show in the app's language.
+- Muse Code is another agent: sign in once.
 
 ## 2.49.2
 ### zh-Hant

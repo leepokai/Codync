@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { join, resolve } from 'node:path'
+import { fixtureCommand } from './fixture-command.ts'
 import { api, attach, setPref, typeMessage } from './sandbox.ts'
 
 // A scripted agent that sets a 30-minute follow-up when its message carries FOLLOW_UP_HERE[note]
@@ -14,7 +15,7 @@ test('a follow-up a bot sets is a line in its chat and a card above its routines
     await setPref(page, 'appLanguage', 'en')
     await page.reload()
     const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-      name, backend: 'custom', command: `python3 -X utf8 -u '${agent}'`, connectors: [], skills: [], notify: false,
+      name, backend: 'custom', command: fixtureCommand(agent), connectors: [], skills: [], notify: false,
     })
     botId = bot.id
     await page.locator('.roster-row', { hasText: name }).click()

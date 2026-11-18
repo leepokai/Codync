@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { resolve } from 'node:path'
+import { fixtureCommand } from './fixture-command.ts'
 import { api, attach, setPref } from './sandbox.ts'
 
 test('a failed voice note offers retry in the selected language', async () => {
@@ -13,7 +14,7 @@ test('a failed voice note offers retry in the selected language', async () => {
     await setPref(page, 'appLanguage', 'fr')
     const agent = resolve(__dirname, '../../../host/tests/fixtures/steer_agent.py')
     const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-      name, backend: 'custom', command: `python3 -X utf8 -u '${agent}' voice 0`,
+      name, backend: 'custom', command: `${fixtureCommand(agent)} voice 0`,
       connectors: [], skills: [], notify: false,
     })
     botId = bot.id
@@ -47,7 +48,7 @@ test('a click on the voice note plays or pauses it; only its bar seeks', async (
     if (await continueWithoutAccount.isVisible()) await continueWithoutAccount.click()
     const agent = resolve(__dirname, '../../../host/tests/fixtures/steer_agent.py')
     const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-      name, backend: 'custom', command: `python3 -X utf8 -u '${agent}' voice-wav 0`,
+      name, backend: 'custom', command: `${fixtureCommand(agent)} voice-wav 0`,
       connectors: [], skills: [], notify: false,
     })
     botId = bot.id

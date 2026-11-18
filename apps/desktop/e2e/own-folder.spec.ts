@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
+import { fixtureCommand } from './fixture-command.ts'
 import { api, attach, echoBot, sandbox, setPref, taskAgent, typeMessage } from './sandbox.ts'
 
 const row = (page: Page, name: string) => page.locator('[data-roster-row]').filter({ has: page.getByText(name, { exact: true }) })
@@ -79,7 +80,7 @@ test("a turn in the bot's own folder leaves a version before and after it", asyn
     // On the scripted agent that logs each prompt in its folder (not `taskBot`, whose settings change would race the
     // folder's first version).
     botId = (await api<{ bot: { id: string } }>(page, 'createBot', {
-      name, backend: 'custom', command: `python3 -X utf8 -u '${taskAgent}'`, connectors: [], skills: [], notify: false,
+      name, backend: 'custom', command: fixtureCommand(taskAgent), connectors: [], skills: [], notify: false,
     })).bot.id
     const dir = join(sandbox().home, 'bots', botId, 'workspace')
     await expect.poll(() => versions(dir)).toEqual([MADE])

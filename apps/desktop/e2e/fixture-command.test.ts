@@ -11,3 +11,7 @@ test('macOS and Linux keep python3 and single quotes', () => {
   assert.equal(fixtureCommand('/repo/host/tests/fixtures/artifact_agent.py', 'darwin'), "python3 -X utf8 -u '/repo/host/tests/fixtures/artifact_agent.py'")
   assert.equal(fixtureCommand('/repo/host/tests/fixtures/artifact_agent.py', 'linux'), "python3 -X utf8 -u '/repo/host/tests/fixtures/artifact_agent.py'")
 })
+
+test('a single quote in a macOS or Linux path stays part of the path', () => {
+  assert.equal(fixtureCommand("/Users/o'neil/agent.py", 'darwin'), "python3 -X utf8 -u '/Users/o'\\''neil/agent.py'")
+})

@@ -1,4 +1,5 @@
 import { isBelow, type VersionMismatch } from '../../shared/compat.ts'
+import { fill } from '../../shared/fill.ts'
 import { trNow } from './l10n.ts'
 
 /** An update this app asked of a computer that's behind it (`installHostUpdate`). */
@@ -18,14 +19,6 @@ export const HOST_UPDATE_WAIT = 10 * 60_000
 export function offerHostUpdate(update: HostUpdate | null, canUpdate: boolean, now = Date.now()): HostUpdateOffer {
   if (update?.kind === 'requested' && now - update.at < HOST_UPDATE_WAIT) return { kind: 'updating' }
   return canUpdate ? { kind: 'available', last: update } : { kind: 'unavailable' }
-}
-
-/**
- * Fills every placeholder in one pass, so a name that itself looks like a placeholder (a computer
- * called `{minimum}`) stays as it is: text inserted by one replacement is never visited again.
- */
-export function fill(template: string, values: Record<string, string>): string {
-  return template.replace(/\{(\w+)\}/g, (whole, key: string) => values[key] ?? whole)
 }
 
 /** The words every client uses for a version mismatch (iOS, the TUI and this app). */
@@ -58,7 +51,7 @@ export const updateNeededText = {
   notUpdated(last: HostUpdate, host: string) {
     return last.kind === 'failed'
       ? last.message
-      : trNow("{name} didn't finish updating. Try again, or update Codync on that computer.").replaceAll('{name}', () => host)
+      : fill(trNow("{name} didn't finish updating. Try again, or update Codync on that computer."), { name: host })
   },
 }
 

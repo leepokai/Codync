@@ -115,7 +115,7 @@ The TUI connects to one host at a time, so it keeps its single roster.
   *Older copy · last seen …*.
 - **Updates**: electron-updater reads the release GitHub marks latest, and only the release gate
   (`tools/release-gate.py`) sets that mark
-  ([holding releases](../reference/compatibility.md#holding-releases-for-the-app-store)).
+  ([holding releases](../reference/compatibility.md#holding-releases-for-the-stores)).
   On macOS the app removes an idle installer job (`<appId>.ShipIt`) whose update request is gone:
   launchd would otherwise restart it every 2 seconds, forever.
 

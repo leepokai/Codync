@@ -398,8 +398,9 @@ of the bot's own items that starts **while another task of the bot is working** 
   over once its task's turn has ended; it reports nothing.
 - **At host start** every kept worktree, and one whose look the last process didn't finish, is looked over again
   (`recheck`, from `pick_up`): one the user has merged since goes, with its branch. So does a worktree under
-  `~/.codync/worktrees` that no item knows any more (its item ended more than a week ago, or its bot was deleted:
-  `tidy_orphans`), once its commits are merged; one that isn't merged stays, as the user's work. Between restarts a
+  `~/.codync/worktrees` that no item has as its own or works in any more (one inherited by an item that followed
+  counts, though it is named after the earlier item; it goes once its last item ended more than a week ago, or its
+  bot was deleted: `known`, `tidy_orphans`), once its commits are merged; one that isn't merged stays, as the user's work. Between restarts a
   kept worktree stays as it is.
 - An item that gave way, got a new brief or is tried again starts again in the worktree it had. While an ended
   item's worktree is being looked over (`Left::Settling`) the item tried again waits; the look notes kept or removed
@@ -460,8 +461,8 @@ An item's end sends no alert of its own: its report is a turn of the bot's, whos
 
 ## In the apps
 
-The capsule, the bot's Details (Threads, Event box, Later, Routines, Dev servers, Recent), `Agents at once` in its
-Settings and cutting in are specified in [the event box](../plans/event-box.md#in-the-apps) (stage 2). The sheet of every bot's work, the rows' source marks, the `In the background · <title>` line on what a task posts, the **Worktree per agent** switch and what follows `bot.outside` are in [as built, clients](../plans/event-box.md#as-built-clients-stages-3-to-8). An item's thread view, the where line on a row and in the thread's header, and the git state in Settings are in [stage 11, as built on the terminal](../plans/event-box.md#as-built-host-and-terminal-stage-11) and [on iPhone, Android and desktop](../plans/event-box.md#as-built-iphone-android-and-desktop-stage-11). A client reads `bot.work` and `bot.maxAgents`; both are
+The capsule, the bot's Details (Threads, Event box, Later, Routines, Dev servers, Recent), `Threads at once` in its
+Settings and cutting in are specified in [the event box](../plans/event-box.md#in-the-apps) (stage 2). The sheet of every bot's work, the rows' source marks, the `In the background · <title>` line on what a task posts, the **Worktree per thread** switch and what follows `bot.outside` are in [as built, clients](../plans/event-box.md#as-built-clients-stages-3-to-8). An item's thread view, the where line on a row and in the thread's header, and the git state in Settings are in [stage 11, as built on the terminal](../plans/event-box.md#as-built-host-and-terminal-stage-11) and [on iPhone, Android and desktop](../plans/event-box.md#as-built-iphone-android-and-desktop-stage-11). A client reads `bot.work` and `bot.maxAgents`; both are
 absent on an older host, where the feature doesn't show.
 
 ## Restart and cleanup
@@ -538,7 +539,8 @@ agent told the chat, a task's offer to add a fallback in the chat and new fallba
 that starts on a fallback never forking the chat's session); `memory_files_e2e` (a line a
 routine's run in a task takes out with a shell command is put back); unit tests of a worktree made, removed, kept,
 removed once merged and never touched when it isn't Codync's, the kept ones looked over again at a restart
-(`recheck`), and the walk that removes only merged worktrees no item knows (`tidy_orphans`) (`worktree.rs`), how a bot stands outside its chat (`items.rs`), unit tests of the dispatch order and the `wait` reasons
+(`recheck`), the walk that removes only merged worktrees no item knows (`tidy_orphans`), and an inherited worktree
+known after its earlier item is gone (`known`) (`worktree.rs`), how a bot stands outside its chat (`items.rs`), unit tests of the dispatch order and the `wait` reasons
 (`dispatch.rs`), the agent a new task starts on (`agent/fallback/mod.rs`), a task's held message sent again however
 old and not once its item ended (`market/agent_sign_in.rs`), an item's end and the restart rule, also for a run and a request (`mod.rs`), a source on the wire (`items.rs`), which bots keep runs in the chat (`sources.rs`), the 20 waiting items and the title and brief lengths (`tools.rs`), the prompts and the box's lines. Not
 covered by a test: a reopened item's kept worktree becoming its folder again and a removed one's task moving to the bot's folder end to end (the unit test covers the folder), a message to an item whose task is on an item that followed it, a message that arrives as the item's turn ends (the lock that orders them), a real agent resuming a reopened session, a replaced brief carrying what waited, a worktree reused by an item that starts again, one inherited by an item that follows, a

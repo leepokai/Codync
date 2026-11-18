@@ -6,7 +6,7 @@
 # comes from the background, its Threads row leads to it, and its report comes back as the bot's message; so does the
 # sign-in card of an agent the task needs signing in to, whose row names the agent, and the item goes on once a turn
 # of that agent ends well (it is signed in). A stopped
-# item is tried again from Recent, and Agents at once in Settings moves the ceiling. A row reads as one element on iPhone
+# item is tried again from Recent, and Threads at once in Settings moves the ceiling. A row reads as one element on iPhone
 # (its number, title and line together) and as separate texts on Android, hence the `.*` around titles. The phone must
 # already be signed in and paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so
 # run it apart from `welcome`, whose clearState undoes that; the flow makes its own bot there:
@@ -191,13 +191,13 @@ onFlowComplete:
 - scrollUntilVisible:
     element: "1 / 1"
     direction: UP
-# Agents at once, in Settings, is the ceiling Threads counts against (the system stepper on iPhone, ours on Android).
+# Threads at once, in Settings, is the ceiling Threads counts against (the system stepper on iPhone, ours on Android).
 # The page is still settling after Try again moved the row. Each scroll here waits for the page to settle, which on a
 # busy emulator takes most of the default 20 s for the few it needs.
 - waitForAnimationToEnd
 - tapOn: "Settings"
 - scrollUntilVisible:
-    element: "Agents at once"
+    element: "Threads at once"
     centerElement: true
     timeout: 60000
 # The iPhone's stepper names its buttons by identifier (their text is the value); ours on Android by label.

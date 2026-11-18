@@ -306,6 +306,7 @@ function ConnectionSubtitle() {
   const connecting = store.shownConnection.kind === 'connecting'
   const symbol = store.connection.kind !== 'online' ? 'wifi.slash' : store.hostRoute === 'relay' ? 'cloud' : store.hostRoute === 'direct' ? 'wifi' : store.hostRoute === 'loopback' ? 'desktopcomputer' : 'network'
   const description = (() => {
+    if (store.isWaking) return 'Waking the computer…'
     if (store.isAsleep) return 'Sleeping · wakes when you message'
     switch (store.shownConnection.kind) {
       case 'connecting':

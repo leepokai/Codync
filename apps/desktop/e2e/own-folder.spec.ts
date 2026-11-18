@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
+import { fixtureCommand } from './fixture-command.ts'
 import { api, attach, echoBot, sandbox, setPref, taskAgent, typeMessage } from './sandbox.ts'
 
 const row = (page: Page, name: string) => page.locator('[data-roster-row]').filter({ has: page.getByText(name, { exact: true }) })
@@ -63,7 +64,7 @@ test('a new bot works in its own folder: so named in the list, its chat and its 
     const details = await openSettings(page, name)
     await expect(details.locator('.workspace-pill')).toHaveText('Own folder')
     await expect(details).toContainText('Git repository')
-    await expect(details.getByText('Worktree per agent')).toHaveCount(0)
+    await expect(details.getByText('Worktree per thread')).toHaveCount(0)
     expect(versions(join(sandbox().home, 'bots', botId!, 'workspace'))).toEqual([MADE])
   } finally {
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
@@ -79,7 +80,7 @@ test("a turn in the bot's own folder leaves a version before and after it", asyn
     // On the scripted agent that logs each prompt in its folder (not `taskBot`, whose settings change would race the
     // folder's first version).
     botId = (await api<{ bot: { id: string } }>(page, 'createBot', {
-      name, backend: 'custom', command: `python3 -X utf8 -u '${taskAgent}'`, connectors: [], skills: [], notify: false,
+      name, backend: 'custom', command: fixtureCommand(taskAgent), connectors: [], skills: [], notify: false,
     })).bot.id
     const dir = join(sandbox().home, 'bots', botId, 'workspace')
     await expect.poll(() => versions(dir)).toEqual([MADE])
@@ -105,7 +106,7 @@ test('a project folder in a git repository keeps its worktree switch and its own
     const details = await openSettings(page, name)
     await expect(details.locator('.workspace-pill')).toHaveText(basename(dir))
     await expect(details).toContainText('Git repository')
-    await expect(details.getByText('Worktree per agent')).toBeVisible()
+    await expect(details.getByText('Worktree per thread')).toBeVisible()
     expect(versions(dir)).toEqual([])
   } finally {
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})

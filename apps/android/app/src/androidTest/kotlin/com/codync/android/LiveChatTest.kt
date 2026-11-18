@@ -18,6 +18,7 @@ import com.codync.android.core.*
 import kotlinx.serialization.json.*
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 
 /** Opt-in: the paired, isolated acceptance host uses host/tests/fake_agent.py. */
 class LiveChatTest {
@@ -35,6 +36,7 @@ class LiveChatTest {
         val local = LocalStore(context)
         requireFixtureHost(local.computers().single().id)
         val mirror = MirrorDatabase(context, local.directory, local.computers().single().id)
+        val prompts = savedReviewPrompts(context)
         compose.onNode(hasSetTextAction()).performTextReplacement(message)
         compose.onNodeWithContentDescription("Send").performClick()
         compose.waitUntil(30_000) { compose.onAllNodesWithText("Allow once").fetchSemanticsNodes().isNotEmpty() }
@@ -46,6 +48,8 @@ class LiveChatTest {
                 sent != null && entries.any { it.seq > sent.seq && it.kind == "agent" && it.isChat }
             }
             compose.onAllNodes(hasText("Done:", substring = true)).onLast().assertIsDisplayed()
+            // A prompt that arrived counts toward the rating invitation, once.
+            assertEquals(prompts + 1, savedReviewPrompts(context))
             if (InstrumentationRegistry.getArguments().getString("layoutSnapshots") == "true") {
                 val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
                 File(context.cacheDir, "layout-chat.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }

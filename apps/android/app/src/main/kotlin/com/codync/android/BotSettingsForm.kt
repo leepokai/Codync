@@ -186,13 +186,13 @@ private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft
     }
     // Only from a host that has the box (its bots say).
     draft.maxAgents?.let { count ->
-        row { ValueRow("Agents at once") { Stepper(count, 1..MAX_AGENTS, { change(draft.copy(maxAgents = it)) }) } }
+        row { ValueRow("Threads at once") { Stepper(count, 1..MAX_AGENTS, { change(draft.copy(maxAgents = it)) }) } }
     }
     // Only where it matters (a project folder in a git repository: a bot's own folder keeps all its work in one
     // place) and the host has it.
     draft.taskWorktrees?.takeIf { state.bots.firstOrNull { it.id == draft.id }?.let { it.gitRepo && !it.managedWorkspace } == true }?.let { on ->
         row {
-            SwitchRow("Worktree per agent", "Agents that work at once in this repository each get their own branch.", on,
+            SwitchRow("Worktree per thread", "Threads that work at once in this repository each get their own branch.", on,
                 { change(draft.copy(taskWorktrees = it)) })
         }
     }

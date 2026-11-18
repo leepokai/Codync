@@ -30,4 +30,5 @@ import Testing
     #expect(ConnectionSummary(connections: [.offline("timeout"), .computerOffline(lastSeen: nil)]).text == "2 offline")
     #expect(ConnectionSummary(connections: [.offline("timeout"), .connecting]).text == "Connecting…")
     #expect(ConnectionSummary(connections: [.unauthorized("revoked")]).text == "No access")
+    #expect(ConnectionSummary(connections: [.computerOffline(lastSeen: nil, waking: true)], waking: true).text == "Waking the computer…")
 }

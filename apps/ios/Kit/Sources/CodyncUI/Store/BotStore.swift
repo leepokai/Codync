@@ -28,8 +28,9 @@ public final class BotStore {
         case unpaired
         case connecting
         case online
-        /// The relay says the computer isn't connected; messages can wait in its mailbox.
-        case computerOffline(lastSeen: Date?)
+        /// The relay says the computer isn't connected; messages can wait in its mailbox. `waking`: the relay is
+        /// starting it (a cloud computer asleep).
+        case computerOffline(lastSeen: Date?, waking: Bool = false)
         /// Can't reach the computer at all (no direct route, no relay), or it can't confirm this
         /// device's access for now.
         case offline(String)
@@ -248,10 +249,21 @@ public final class BotStore {
         if case .updateHost = mismatch { cloudHosting != nil } else { false }
     }
 
-    /// A Codync Cloud computer that's asleep: a connection or a message wakes it, so it isn't offline.
+    /// A Codync Cloud computer that's asleep, or on its way up: a connection or a message wakes it, so it isn't offline.
     public var isAsleep: Bool {
-        if case .computerOffline = connection { cloudHosting?.state.isAsleep == true } else { false }
+        if case .computerOffline = connection { isWaking || cloudHosting?.state.isAsleep == true } else { false }
     }
+
+    /// The relay is waking this cloud computer (about 10 to 30 seconds), or its provider says it's starting: it's
+    /// coming, not offline.
+    public var isWaking: Bool {
+        guard case let .computerOffline(_, waking) = connection else { return false }
+        return waking || cloudHosting?.state == .starting
+    }
+
+    /// Can't be reached, and not because it's updating or asleep (or waking): messaging a sleeping cloud computer
+    /// wakes it (Android `AppState.unreachable`).
+    public var isUnreachable: Bool { isOffline && !isUpdating && !isAsleep }
 
         /// Roster order: the lead, pinned bots, then where the user dragged them, then most recent activity.
     public var roster: [Bot] {

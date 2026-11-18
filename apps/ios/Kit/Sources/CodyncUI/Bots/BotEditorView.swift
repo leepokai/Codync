@@ -214,10 +214,10 @@ struct BotSettingsForm: View {
                 ApprovalPicker(draft: $draft, reload: modelReload)
                 // Only from a host with a box (its bots say).
                 if let agents = draft.maxAgents {
-                    ValueRow("Agents at once") {
+                    ValueRow("Threads at once") {
                         HStack(spacing: 10) {
                             Text(verbatim: "\(agents)").monospacedDigit().foregroundStyle(Palette.text)
-                            Stepper(L10n.tr("Agents at once"), value: Binding(get: { agents }, set: { draft.maxAgents = $0 }),
+                            Stepper(L10n.tr("Threads at once"), value: Binding(get: { agents }, set: { draft.maxAgents = $0 }),
                                     in: Bot.maxAgentsRange)
                                 .labelsHidden()
                         }
@@ -226,7 +226,7 @@ struct BotSettingsForm: View {
                 // Only in a project folder in a git repository (a bot's own folder keeps all its work in one place),
                 // from a host that has the setting.
                 if bot?.gitRepo == true, bot?.managedWorkspace == false, let worktrees = draft.taskWorktrees {
-                    SwitchRow("Worktree per agent", detail: "Agents that work at once in this repository each get their own branch.",
+                    SwitchRow("Worktree per thread", detail: "Threads that work at once in this repository each get their own branch.",
                               isOn: Binding(get: { worktrees }, set: { draft.taskWorktrees = $0 }))
                 }
             }

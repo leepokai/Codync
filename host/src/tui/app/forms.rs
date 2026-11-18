@@ -498,7 +498,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn agents_at_once_steps_from_one_to_six_on_a_host_that_has_the_box() {
+    async fn threads_at_once_steps_from_one_to_six_on_a_host_that_has_the_box() {
         let mut app = test_app();
         let at = FIELDS.iter().position(|x| *x == Field::MaxAgents).expect("an agents field");
         let bot = json!({"id": "b", "name": "B", "backend": "claude", "maxAgents": 5});
@@ -521,13 +521,13 @@ mod tests {
         let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
         f.field = at - 1;
         let f = press(&mut app, f, [KeyCode::Tab]);
-        assert_eq!(f.field, at + 2, "past the fields it doesn't have: this one and Worktree per agent");
+        assert_eq!(f.field, at + 2, "past the fields it doesn't have: this one and Worktree per thread");
         let f = press(&mut app, f, [KeyCode::BackTab]);
         assert_eq!((f.field, f.changes()), (at - 1, json!({})));
     }
 
     #[tokio::test]
-    async fn worktree_per_agent_shows_only_for_a_project_in_a_git_repository_on_a_host_that_has_it() {
+    async fn worktree_per_thread_shows_only_for_a_project_in_a_git_repository_on_a_host_that_has_it() {
         let mut app = test_app();
         let at = FIELDS.iter().position(|x| *x == Field::TaskWorktrees).expect("a worktrees field");
         let mut editor = |id: &str, more: Value| {

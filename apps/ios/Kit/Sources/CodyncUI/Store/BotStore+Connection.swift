@@ -148,9 +148,9 @@ extension BotStore {
             case .connecting:
                 stopEvents()
                 setConnection(.connecting)
-            case let .hostOffline(lastSeen):
+            case let .hostOffline(lastSeen, waking):
                 stopEvents()
-                setConnection(.computerOffline(lastSeen: lastSeen))
+                setConnection(.computerOffline(lastSeen: lastSeen, waking: waking))
                 if let remote = transport as? any RemoteTransport {
                     Task { [weak self] in await self?.reconcileQueued(remote) }
                 }

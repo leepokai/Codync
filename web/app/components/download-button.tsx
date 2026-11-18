@@ -3,7 +3,7 @@
 import { AndroidLogo, CaretDown, DeviceMobile, LinuxLogo, Terminal, WindowsLogo } from "@phosphor-icons/react";
 import { AppleLogo } from "./apple-logo";
 import { useOs, type Os } from "./use-os";
-import { ANDROID_TEST, APP_STORE, DMG, LINUX, LINUX_ARM, WINDOWS } from "../links";
+import { APP_STORE, DMG, GOOGLE_PLAY, LINUX, LINUX_ARM, WINDOWS } from "../links";
 
 type Icon = typeof DeviceMobile | typeof AppleLogo;
 type Target = { label: string; detail: string; href: string; Icon: Icon; button?: string };
@@ -15,8 +15,7 @@ const targets: Record<Os | "terminal", Target> = {
   linux: { label: "Linux", detail: "AppImage for x86_64", href: LINUX, Icon: LinuxLogo, button: "Download for Linux (x86_64)" },
   "linux-arm64": { label: "Linux (Arm)", detail: "AppImage for arm64", href: LINUX_ARM, Icon: LinuxLogo, button: "Download for Linux (arm64)" },
   ios: { label: "iPhone", detail: "App Store", href: APP_STORE, Icon: DeviceMobile, button: "Get the iPhone app" },
-  // Android is in closed testing: this opens the tester sign-up form.
-  android: { label: "Android", detail: "Join the test on Google Play", href: ANDROID_TEST, Icon: AndroidLogo, button: "Join the Android test" },
+  android: { label: "Android", detail: "Google Play", href: GOOGLE_PLAY, Icon: AndroidLogo, button: "Get the Android app" },
   terminal: { label: "Terminal", detail: "Over SSH, any machine", href: "/#install", Icon: Terminal },
 };
 

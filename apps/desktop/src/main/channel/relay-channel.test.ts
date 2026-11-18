@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { createHash, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, sign } from 'node:crypto'
 import { mock, test } from 'node:test'
 import { b64url, computerIdRaw, FrameCodec, privateKey, rawPublic, unb64url } from './crypto.ts'
+import type { RelayPresence } from '../../shared/ipc'
 import { RelayChannel, type Socket } from './relay-channel.ts'
 
 const hostKey = privateKey('ed25519', Buffer.alloc(32, 1))
@@ -58,6 +59,7 @@ const publicX25519 = (raw: Buffer) => createPublicKey({ key: { kty: 'OKP', crv: 
 
 function channel() {
   const relays: FakeRelay[] = []
+  const presences: RelayPresence[] = []
   let refused = 0
   const ch = new RelayChannel({
     computerId: b64url(computerIdRaw(hostPub)),
@@ -69,9 +71,10 @@ function channel() {
       return r
     },
     onRefused: () => void refused++,
+    onPresence: (p) => void presences.push(p),
   })
   ch.setAttended(true)
-  return { ch, relays, refused: () => refused }
+  return { ch, relays, presences, refused: () => refused }
 }
 
 const tick = () => new Promise((r) => setImmediate(r))
@@ -81,7 +84,7 @@ test('a call waits while the computer sleeps, then goes out once it is back', as
   const answer = ch.call('hello', {}, 5000)
   const relay = relays[0]!
   relay.push({ t: 'presence', online: false, lastSeenAt: 1 })
-  assert.equal(ch.state, 'asleep')
+  assert.equal(ch.state, 'offline')
   relay.push({ t: 'presence', online: true })
   await tick()
   assert.equal(ch.state, 'ready')
@@ -103,8 +106,25 @@ test('a subscription gets its events and ends when the socket drops; a sleeping 
   relay.answer({ id: 1, ev: { type: 'hello', rev: 4 } })
   assert.deepEqual(events, [{ type: 'hello', rev: 4 }])
   relay.push({ t: 'presence', online: false, lastSeenAt: 2 })
-  assert.deepEqual(ended, { status: 0, message: 'Your computer is offline.', offline: true })
-  await assert.rejects(ch.call('hello', {}, 20), { offline: true })
+  assert.deepEqual(ended, { status: 0, message: 'Your computer is offline.', presence: 'offline' })
+  await assert.rejects(ch.call('hello', {}, 20), { presence: 'offline' })
+  ch.close()
+})
+
+test('a computer the relay is waking is told at once, and a call waits through the wake', async () => {
+  const { ch, relays, presences } = channel()
+  const answer = ch.call('hello', {}, 5000)
+  const relay = relays[0]!
+  relay.push({ t: 'presence', online: false, lastSeenAt: 2, waking: 3 })
+  assert.deepEqual(presences, ['waking'])
+  // One that gives up first says the computer is still on its way.
+  await assert.rejects(ch.call('hello', {}, 20), { presence: 'waking', message: 'Still waking the computer: try again in a moment.' })
+  relay.push({ t: 'presence', online: false, lastSeenAt: 2, waking: null })
+  relay.push({ t: 'presence', online: true })
+  await tick()
+  relay.answer({ id: 1, ok: { name: 'Codync Cloud' } })
+  assert.deepEqual(await answer, { name: 'Codync Cloud' })
+  assert.deepEqual(presences, ['waking', 'offline', 'online'])
   ch.close()
 })
 

@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from 'react'
+import { fill } from '@shared/fill'
 import { IconButton } from '../components/Controls'
 import { Icon } from '../components/Icon'
 import { Text } from '../components/Text'
@@ -85,6 +86,6 @@ function useAccountNotice() {
   useModel(app.local)
   const mismatch = app.cloud.mismatch
   if (!mismatch) return null
-  const text = mismatch.email ? tr(`This computer is in {name}'s account`).replaceAll('{name}', mismatch.email) : tr('This computer is in another account')
+  const text = mismatch.email ? fill(tr(`This computer is in {name}'s account`), { name: mismatch.email }) : tr('This computer is in another account')
   return { text, open: () => app.cloud.reconsiderMove() }
 }

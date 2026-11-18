@@ -5,6 +5,8 @@ import android.os.Build
 import com.codync.android.core.CloudError
 import com.codync.android.core.HostError
 import com.codync.android.core.PairingProblem
+import com.google.android.play.core.review.ReviewException
+import com.google.android.play.core.review.model.ReviewErrorCode
 import java.io.IOException
 import java.io.InterruptedIOException
 import kotlinx.coroutines.TimeoutCancellationException
@@ -103,6 +105,14 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class SettingChanged(val setting: PhoneSetting, val on: Boolean) : AnalyticsEvent("setting_changed") {
         override val properties get() = mapOf("setting" to setting.json, "on" to JsonPrimitive(on))
     }
+    /** The cooldown is used up and Google Play is about to be asked; not that its window showed (iOS `reviewRequested`). */
+    data class ReviewRequested(val prompts: Int) : AnalyticsEvent("review_requested") {
+        override val properties get() = mapOf("prompts" to JsonPrimitive(prompts), "policy" to JsonPrimitive("v2"))
+    }
+    /** Google Play couldn't be asked for its review window (Android only: StoreKit reports nothing). */
+    data class ReviewRequestFailed(val error: ReviewFailure) : AnalyticsEvent("review_request_failed") {
+        override val properties get() = mapOf("error" to error.json)
+    }
     /** Rate on Google Play, in Settings (iOS `reviewLinkOpened`). */
     data object ReviewLinkOpened : AnalyticsEvent("review_link_opened") {
         override val properties get() = mapOf("source" to JsonPrimitive("settings"))
@@ -197,6 +207,20 @@ internal enum class SignInProvider(override val wire: String) : CatalogValue { A
 
 /** The signed-out pairings' keys at sign-in: [Moved] with them, or listed to be scanned again ([Rescan]). */
 internal enum class MovedKeys(override val wire: String) : CatalogValue { Moved("moved"), Rescan("rescan") }
+
+/** Why Google Play's in-app review failed, from its `ReviewErrorCode`. */
+internal enum class ReviewFailure(override val wire: String) : CatalogValue {
+    NoPlayStore("no_play_store"), InvalidRequest("invalid_request"), Internal("internal"), Other("other");
+
+    companion object {
+        fun of(error: Throwable): ReviewFailure = when ((error as? ReviewException)?.errorCode) {
+            ReviewErrorCode.PLAY_STORE_NOT_FOUND -> NoPlayStore
+            ReviewErrorCode.INVALID_REQUEST -> InvalidRequest
+            ReviewErrorCode.INTERNAL_ERROR -> Internal
+            else -> Other
+        }
+    }
+}
 
 internal enum class SignInFailure(override val wire: String) : CatalogValue {
     Cancelled("cancelled"), Timeout("timeout"), Verification("verification"), Error("error")

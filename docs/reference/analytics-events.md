@@ -223,8 +223,8 @@ The *Onboarding & conversion* dashboard in PostHog reads these steps, each per `
 codync.dev counts visits without cookies or anything stored on the visitor's device
 (posthog-js `cookieless_mode: 'always'`, which needs the project's *cookieless server hash mode*;
 without it PostHog drops these events): `$pageview`, `$pageleave` (time on page and scroll depth), `$web_vitals` (load speed, without attribution), `download_clicked` (`platform`:
-`mac`/`windows`/`linux`/`ios`; `linux` counts the Linux download links (x86_64 and arm64) and copies of the install command; the Homebrew `mac` is a copy of its command),
-`link_opened` (`link`: `issues`, `github`, `discord`, `telegram` (the China community group), `product_hunt`, `ko_fi`, `demo`, `android_test`, which is the Google Play button that opens the Android tester sign-up form, and `cloud_new`, the homepage's "New" link to the Codync Cloud card). One document-level click listener in `web/app/analytics.tsx` matches each
+`mac`/`windows`/`linux`/`ios`/`android` (the store links); `linux` counts the Linux download links (x86_64 and arm64) and copies of the install command; the Homebrew `mac` is a copy of its command),
+`link_opened` (`link`: `issues`, `github`, `discord`, `telegram` (the China community group), `product_hunt`, `ko_fi`, `demo` and `cloud_new`, the homepage's "New" link to the Codync Cloud card). One document-level click listener in `web/app/analytics.tsx` matches each
 link's `href` against its `links` table, so a new link needs a row there to be counted; the film counts as `demo` when focus moves
 into its frame. Events go through the site's own `/e` path, which `web/vercel.json` rewrites to
 PostHog, so content blockers don't drop them; only Vercel has the rewrite, so `next dev` on a LAN
@@ -233,15 +233,16 @@ address sends nothing that arrives.
 ## Store review invitations (iPhone App Store, Android Google Play)
 
 These events use the existing phone sender, identity, environment, version and analytics
-opt-out. Android sends only `review_link_opened` until it has the invitation. No conversation content, message nonce, bot ID or review text is included.
+opt-out. No conversation content, message nonce, bot ID or review text is included.
 
 | Event | When | Properties |
 | --- | --- | --- |
-| `review_requested` | The persisted cooldown is consumed and StoreKit is about to be called | `prompts` (count), `policy: v2` |
+| `review_requested` | The persisted cooldown is consumed and StoreKit (Android: Google Play's in-app review) is about to be called | `prompts` (count), `policy: v2` |
+| `review_request_failed` | Android only: Google Play's in-app review API failed after `review_requested` (StoreKit reports nothing) | `error`: `no_play_store`, `invalid_request`, `internal`, `other` |
 | `review_link_opened` | The person taps Rate on the App Store (Android: Rate on Google Play) in Settings | `source: settings` |
 
 `review_requested` does not mean the system displayed a prompt or the person submitted a
-rating. Neither StoreKit nor Google Play provides those outcomes. The [invitation policy](../features/ios-review-invitation.md)
+rating. Neither StoreKit nor Google Play provides those outcomes. The [invitation policy](../features/review-invitation.md)
 describes timing, exclusions, and cooldowns.
 
 Both phones also report `link_opened` with `link: issues` for their independent **Report an issue** action, and `link: app_store` for **Update Codync** (Android opens Google Play).

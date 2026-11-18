@@ -1,0 +1,44 @@
+# A Codync Cloud computer asleep: opening the app wakes it, and the header reads Waking the computer… (not offline)
+# until it's connected; a computer in the account that can't be woken (not a cloud computer, and off) reads Offline.
+# Needs a local cloud with a cloud computer (`npm run cloud:stack` in cloud/ with a provider key, and
+# CODYNC_SLEEP_IDLE_SECS=60 so it falls asleep soon: docs/guides/cloud-computer-testing.md), the phone signed into the
+# account that owns it and pointed at that cloud (iPhone: SIMCTL_CHILD_CODYNC_CLOUD_URL=<url> in front of maestro, which
+# its launch passes on; Android: built with -PcodyncCloudUrl=<url> with -PcodyncClerkPublishableKey and
+# -PcodyncPushRelayUrl, plus adb reverse), another computer in that account that is off (a sandbox added to the account,
+# then stopped), and the cloud computer asleep (its host gone: `computers.online` 0). The app opens cold: one back from
+# the background keeps showing its last connection for 5 s, longer than InstaBox takes to resume a machine it just
+# suspended. Run the phones one after another, since the first to open wakes it for both, and apart from `smoke`, whose
+# welcome flow clears the sign-in:
+#   SIMCTL_CHILD_CODYNC_CLOUD_URL=<url> maestro --device <simulator udid> test --include-tags cloud-waking apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - cloud-waking
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+# Opening the app connects, which wakes the cloud computer: the header says so instead of offline.
+- extendedWaitUntil:
+    visible: "Waking the computer.*"
+    timeout: 30000
+- assertNotVisible: "1 offline"
+# Then it's up and connected.
+- extendedWaitUntil:
+    visible: "1 connected"
+    timeout: 180000
+# The other computer can't be woken: it reads Offline, not Waking.
+- tapOn: "1 connected"
+- tapOn: "Manage computers"
+- extendedWaitUntil:
+    visible: "Offline · In your account"
+    timeout: 20000
+- assertNotVisible: "Waking the computer.*"

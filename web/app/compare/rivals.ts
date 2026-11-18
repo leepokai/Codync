@@ -21,7 +21,7 @@ const us = {
   runs: "On your own computer: a Mac, a Windows PC, a Linux desktop or a headless server. Or a Codync Cloud computer (beta) on your own Boat or InstaBox account.",
   agents:
     "Claude Code, Codex, Cursor, Gemini, Copilot, OpenCode and about 40 more over ACP, on the plans and logins you already have.",
-  apps: "iPhone, Mac, Windows and Linux apps, plus a terminal UI over SSH.",
+  apps: "iPhone and Android apps, Mac, Windows and Linux desktop apps, plus a terminal UI over SSH.",
   data: "Stays on your computer. The phone connects directly, or through an end-to-end encrypted relay.",
   source: "Open source, Apache 2.0.",
   account: "Sign in with Apple, Google or GitHub, free. An account never unlocks a computer: each one approves each device itself.",

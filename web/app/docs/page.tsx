@@ -14,7 +14,7 @@ export default function DocsIndex() {
     <article>
       <h1 className="text-4xl font-semibold tracking-tighter text-neutral-50 md:text-5xl">Codync docs</h1>
       <p className="mt-5 max-w-[38rem] text-lg leading-relaxed text-neutral-400">
-        Codync turns the coding agents on your computer into bots you message from your iPhone, your desktop or a
+        Codync turns the coding agents on your computer into bots you message from your phone, your desktop or a
         terminal. This manual explains how bots work and how to set them up.
       </p>
       <div className="mt-12 grid gap-10 sm:grid-cols-2">

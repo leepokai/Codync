@@ -78,7 +78,7 @@ export default function Install() {
               <DeviceMobile size={28} weight="fill" className="text-neutral-50" />
               <h3 className="mt-5 text-xl font-semibold text-neutral-50">iPhone &amp; Android</h3>
               <p className="mt-2 flex-1 leading-relaxed text-neutral-400">
-                Get the app, then scan the code from <span className="text-neutral-200">Pair iPhone…</span> in the
+                Get the app, then scan the code from <span className="text-neutral-200">Pair phone…</span> in the
                 Mac menu bar, the Windows or Linux app, or <code className="font-mono text-neutral-200">codync-host pair</code>.
               </p>
               <div className="mt-5 flex flex-wrap gap-3">

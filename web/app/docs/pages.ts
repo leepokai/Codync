@@ -9,7 +9,7 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
       {
         slug: "getting-started",
         title: "Getting started",
-        description: "Install Codync on your computer, pair your iPhone, create your first bot and send it a message.",
+        description: "Install Codync on your computer, pair your phone, create your first bot and send it a message.",
       },
     ],
   },
@@ -98,7 +98,8 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
       {
         slug: "computer-use",
         title: "Computer use and remote screen",
-        description: "See and control your computer's screen from your iPhone, and let bots use the apps on your computer.",
+        description:
+          "See and control your computer's screen from your phone, and let bots use the apps on your computer.",
       },
       {
         slug: "voice",
@@ -139,7 +140,7 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
         slug: "updates",
         title: "Updates",
         description:
-          "How the desktop app, the host and the iPhone app update, what happens when the phone and computer versions differ, and how to uninstall Codync.",
+          "How the desktop app, the host and the phone apps update, what happens when the phone and computer versions differ, and how to uninstall Codync.",
       },
       {
         slug: "privacy",

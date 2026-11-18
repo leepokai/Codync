@@ -39,8 +39,11 @@ warning; the rest imports.
   warning; its model isn't (other apps' model ids aren't ACP ids).
   Colors and shapes cycle through the avatar choices.
 - **Avatar**: `setIcon` for `bot:<id>`; needs the computer signed in, else a warning and the default face.
-- **Skills**: each folder becomes a skill of that bot's own (`add_custom_skill` written by the bot, on for
-  it only), with the folder's other files beside `SKILL.md`.
+- **Skills**: each folder becomes a skill (`add_custom_skill` written by the first bot that has it, on for
+  the bot), with the folder's other files beside `SKILL.md`. A folder the same as one already imported, by
+  its `SKILL.md` text and its files' paths, sizes and checksums, isn't made again: the bots share that
+  skill (25 agents with the same 12 skills give 12 skills, not 300). The same `SKILL.md` beside other files is
+  another skill.
 - **Routines**: schedules map to cron, interval or one-time triggers (`schedule.rs`) in the routine's time
   zone (else this computer's).
 - **Memories**: into the bot's `MEMORY.md` as imported facts, through the same path as the old memory move
@@ -51,8 +54,8 @@ warning; the rest imports.
   member), since Codync keeps them per bot. A group whose bots already share one (two channels of the same
   members, or one the user made) isn't made again: a warning says it joins that group.
 
-A bot whose skills or files fail is deleted again with the skills and `imported/` files it got; the others
-carry on. Import counts as `bots_imported` in analytics (source and counts only).
+A bot whose skills or files fail is deleted again with the skills it made and the `imported/` files it got
+(a skill an earlier bot made stays, as that bot has it); the others carry on. Import counts as `bots_imported` in analytics (source and counts only).
 
 ## Safety (`host/src/import/archive.rs`)
 

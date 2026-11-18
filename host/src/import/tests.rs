@@ -189,3 +189,56 @@ async fn an_import_makes_bots_and_one_group_and_rolls_a_failed_bot_back() {
     drop(hub);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[tokio::test]
+async fn agents_with_the_same_skill_share_one_copy() {
+    let dir = std::env::temp_dir().join(format!("codync-import-hub-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let store = crate::store::Store::open(&dir.join("t.db")).unwrap();
+    let identity = crate::remote::identity::Identity::load_or_create(&dir).unwrap();
+    let hub = crate::hub::Hub::new(store, "test".into(), identity, "token".into(), 0);
+    let skill = |agent: &str| format!("agents/{agent}/skills/humanizer");
+    let manifest = json!({
+        "format": "codync-bot-import", "version": 1, "source": {"app": "grok-bot"},
+        "agents": [
+            {"key": "one", "name": "One", "skills": [skill("one"), "agents/one/skills/twin"]},
+            {"key": "two", "name": "Two", "skills": [skill("two")]},
+            // The same SKILL.md with another file beside it is another skill.
+            {"key": "three", "name": "Three", "skills": [skill("three")]},
+            // Fails on its second skill: the copy it shares with the others stays for them.
+            {"key": "four", "name": "Four", "skills": [skill("four"), "agents/four/skills/broken"]},
+        ],
+    })
+    .to_string();
+    let md: &[u8] = b"---\nname: Humanizer\ndescription: Make text sound human\n---\nEdit it.";
+    let path = zip(&[
+        ("codync-import.json", manifest.as_bytes()),
+        ("agents/one/skills/humanizer/SKILL.md", md),
+        ("agents/one/skills/humanizer/rules.md", b"rules"),
+        ("agents/one/skills/twin/SKILL.md", md),
+        ("agents/one/skills/twin/rules.md", b"rules"),
+        ("agents/two/skills/humanizer/SKILL.md", md),
+        ("agents/two/skills/humanizer/rules.md", b"rules"),
+        ("agents/three/skills/humanizer/SKILL.md", md),
+        ("agents/three/skills/humanizer/rules.md", b"other rules"),
+        ("agents/four/skills/humanizer/SKILL.md", md),
+        ("agents/four/skills/humanizer/rules.md", b"rules"),
+        ("agents/four/skills/broken/SKILL.md", b"\xff\xfe"),
+    ]);
+    let done = super::apply(&hub, &json!({"path": path})).await.unwrap();
+    std::fs::remove_file(path).unwrap();
+
+    let bots = done["bots"].as_array().unwrap();
+    let names: Vec<&str> = bots.iter().map(|b| b["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["One", "Two", "Three"], "Four fails on its second skill: {done}");
+    let enabled = |bot: &Value| hub.store.bot(bot["id"].as_str().unwrap()).unwrap().unwrap().config.skills;
+    let (one, two, three) = (enabled(&bots[0]), enabled(&bots[1]), enabled(&bots[2]));
+    assert_eq!(one.len(), 1, "the same folder twice in one agent is one skill: {one:?}");
+    assert_eq!(one, two, "the same skill in two agents is one copy");
+    assert_ne!(one, three, "the same SKILL.md beside other files is not the same skill");
+    assert_eq!(bots[0]["skills"].as_u64(), Some(1));
+    let all = crate::market::list_skills(&hub.store);
+    assert_eq!(all["items"].as_array().unwrap().len(), 2, "one copy each, none from Four: {all}");
+    drop(hub);
+    let _ = std::fs::remove_dir_all(dir);
+}

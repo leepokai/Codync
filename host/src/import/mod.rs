@@ -13,7 +13,7 @@ use crate::hub::Hub;
 use crate::market::{self, Installed};
 use crate::store::{AVATAR_COLORS, AVATAR_SHAPES};
 use anyhow::{Context, Result, bail};
-use archive::Archive;
+use archive::{Archive, Fingerprint};
 use base64::Engine as _;
 use manifest::{Bot, Plan};
 use serde_json::{Value, json};
@@ -58,7 +58,8 @@ pub async fn apply(hub: &Arc<Hub>, b: &Value) -> Result<Value> {
             .filter(|a| a["available"] == true)
             .filter_map(|a| a["id"].as_str().map(str::to_owned))
             .collect();
-        Ok(Importer { hub, archive, agents, warnings: std::mem::take(&mut plan.warnings) }.run(&plan))
+        let made = HashMap::new();
+        Ok(Importer { hub, archive, agents, made, warnings: std::mem::take(&mut plan.warnings) }.run(&plan))
     })
     .await?
 }
@@ -76,6 +77,9 @@ struct Importer {
     archive: Archive,
     /// The agents that run on this computer.
     agents: HashSet<String>,
+    /// The skills made so far, by what they were made from (the `SKILL.md` text and the folder's files): a later
+    /// agent with the same skill uses that one, instead of getting a copy of its own.
+    made: HashMap<(String, Fingerprint), String>,
     warnings: Vec<String>,
 }
 
@@ -166,18 +170,20 @@ impl Importer {
         self.create(&b).map(Some)
     }
 
-    /// Its skills and workspace files: how many of each. On a failure, those it added go again.
+    /// Its skills and workspace files: how many of each. On a failure, the skills it made and the files go again;
+    /// a skill an earlier agent made stays, as that agent still has it.
     fn fill(&mut self, id: &str, bot: &Bot) -> Result<(usize, usize)> {
         let cwd = self.hub.store.bot(id)?.context("the new bot")?.config.cwd;
         let imported = Path::new(&cwd).join("imported");
-        let mut skills = Vec::new();
-        let files = self.fill_into(id, bot, &imported, &mut skills);
+        let (mut skills, mut added) = (Vec::new(), Vec::new());
+        let files = self.fill_into(id, bot, &imported, &mut skills, &mut added);
         if files.is_err() {
-            for skill in &skills {
+            for skill in &added {
                 if let Err(e) = market::remove_skill(&self.hub.store, skill) {
                     tracing::warn!(skill, error = format!("{e:#}"), "couldn't remove a skill whose import failed");
                 }
             }
+            self.made.retain(|_, made| !added.contains(made));
             if let Err(e) = std::fs::remove_dir_all(&imported)
                 && e.kind() != std::io::ErrorKind::NotFound
             {
@@ -187,10 +193,23 @@ impl Importer {
         Ok((skills.len(), files?))
     }
 
-    /// `fill`'s steps; `skills` collects the ids of the skills it adds.
-    fn fill_into(&mut self, id: &str, bot: &Bot, imported: &Path, skills: &mut Vec<String>) -> Result<usize> {
+    /// `fill`'s steps; `skills` collects the ids of the bot's skills, `added` those of them it made.
+    fn fill_into(
+        &mut self,
+        id: &str,
+        bot: &Bot,
+        imported: &Path,
+        skills: &mut Vec<String>,
+        added: &mut Vec<String>,
+    ) -> Result<usize> {
         for dir in &bot.skills {
-            skills.push(self.skill(id, dir).with_context(|| format!("the skill {dir}"))?);
+            let (skill, new) = self.skill(id, dir).with_context(|| format!("the skill {dir}"))?;
+            if new {
+                added.push(skill.clone());
+            }
+            if !skills.contains(&skill) {
+                skills.push(skill);
+            }
         }
         market::turn_on(&self.hub, Installed::Skills, skills, Some(id))?;
         match &bot.files {
@@ -199,10 +218,15 @@ impl Importer {
         }
     }
 
-    /// A skill folder as a skill of that bot's own (on for it only); returns its id.
-    fn skill(&mut self, id: &str, dir: &str) -> Result<String> {
+    /// A skill folder as a skill for that bot; returns its id and whether it was made now. A folder the same as one
+    /// already imported isn't made again: that skill is the bot's too.
+    fn skill(&mut self, id: &str, dir: &str) -> Result<(String, bool)> {
         let md = String::from_utf8(self.archive.read(&format!("{dir}/SKILL.md"), MAX_SKILL_MD)?)
             .context("SKILL.md isn't UTF-8 text")?;
+        let key = (md.clone(), self.archive.fingerprint(dir)?);
+        if let Some(made) = self.made.get(&key) {
+            return Ok((made.clone(), false));
+        }
         let (name, description) = market::front_matter(&md);
         let name = name.unwrap_or_else(|| dir.rsplit('/').next().unwrap_or(dir).to_owned());
         let skill = market::add_custom_skill(
@@ -217,7 +241,8 @@ impl Importer {
             market::remove_skill(&self.hub.store, &skill.id)?;
             return Err(e);
         }
-        Ok(skill.id)
+        self.made.insert(key, skill.id.clone());
+        Ok((skill.id, true))
     }
 
     fn routine(&mut self, id: &str, name: &str, routine: &manifest::Routine) -> bool {

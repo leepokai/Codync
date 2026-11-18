@@ -35,6 +35,20 @@ export function mount() {
   ), 'flex-direction:column;gap:12px;padding:24px')
 }
 
+/** Cards for a computer this app can't update (Linux) and for an update it asked for that didn't finish. */
+export function mountHowTo() {
+  const store = (fields: Partial<FakeStore>) => Object.assign(new FakeStore(), fields) as unknown as BotStore
+  const cards = [
+    store({ hostUpdateOffer: { kind: 'unavailable' }, hello: { os: 'linux' } }),
+    store({ hostUpdateOffer: { kind: 'available', last: { kind: 'requested', at: 0 } } as FakeStore['hostUpdateOffer'] }),
+  ]
+  return mountOverlay('e2e-update-card', (
+    <AppContext.Provider value={new FakeApp() as unknown as AppModel}>
+      {cards.map((s, i) => <StoreContext.Provider key={i} value={s}><UpdateNeededCard /></StoreContext.Provider>)}
+    </AppContext.Provider>
+  ), 'flex-direction:column;gap:12px;padding:24px')
+}
+
 /** Picks a language in Settings while the cards stay on screen. */
 export function speak(language: AppLanguage) {
   prefs.appLanguage.set(language)

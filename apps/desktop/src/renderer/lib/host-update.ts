@@ -43,10 +43,10 @@ export const updateNeededText = {
   },
   /** How to update Codync on a computer this app can't update; `cloud`: a Codync Cloud computer, which updates by itself. */
   how(os: string | null | undefined, cloud = false) {
-    return cloud ? 'Codync Cloud updates it before it next sleeps.'
-      : os === 'macos' ? 'Open Codync on that Mac and choose Check for Updates.'
-      : os === 'linux' ? 'Run codync-host update there.'
-      : 'Update Codync on that computer.'
+    return cloud ? trNow('Codync Cloud updates it before it next sleeps.')
+      : os === 'macos' ? trNow('Open Codync on that Mac and choose Check for Updates.')
+      : os === 'linux' ? trNow('Run codync-host update there.')
+      : trNow('Update Codync on that computer.')
   },
   /** A computer updating at this app's request. */
   updating(host: string) {
@@ -54,7 +54,9 @@ export const updateNeededText = {
   },
   /** Why the last update asked of the computer didn't take. */
   notUpdated(last: HostUpdate, host: string) {
-    return last.kind === 'failed' ? last.message : `${host} didn't finish updating. Try again, or update Codync on that computer.`
+    return last.kind === 'failed'
+      ? last.message
+      : trNow("{name} didn't finish updating. Try again, or update Codync on that computer.").replaceAll('{name}', () => host)
   },
 }
 

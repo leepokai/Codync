@@ -64,6 +64,27 @@
   padding: 58px 20px 16px;
   text-align: center;
 }
+
+/* In a sheet the panel is a card, not the window's edge: nothing in it moves the window (the band would take the
+   clicks on what scrolls under it), the identity starts near the card's top, a mask fades what scrolls away, and the
+   column, focused so the keys scroll it, draws no ring around the card. */
+.modal-content > .details-panel .details-drag {
+  display: none;
+}
+.modal-content > .details-panel .work-thread-header {
+  -webkit-app-region: no-drag;
+}
+.modal-content > .details-panel .details-identity {
+  padding-top: 20px;
+}
+.modal-content > .details-panel .details-scroll {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 20px);
+  mask-image: linear-gradient(to bottom, transparent, #000 20px);
+}
+.modal-content > .details-panel .details-scroll:focus {
+  outline: none;
+}
+
 .details-name {
   margin-top: 10px;
   font-size: calc(16px * var(--scale));

@@ -40,13 +40,7 @@ fn paths(entry: &Entry) -> Vec<(String, &'static str)> {
         return Vec::new();
     }
     let completed = tool && entry.data["status"] == "completed";
-    let state = entry.data["status"].as_str().unwrap_or("unknown");
-    let proposed = match state {
-        "failed" => "failed change",
-        "denied" | "rejected" => "denied proposal",
-        "pending" | "in_progress" => "pending proposal",
-        _ => "unconfirmed proposal",
-    };
+    let proposed = proposal(entry);
     let mut paths: Vec<_> = entry.data["diffs"]
         .as_array()
         .into_iter()
@@ -78,6 +72,29 @@ fn paths(entry: &Entry) -> Vec<(String, &'static str)> {
         }
     }
     paths
+}
+
+/// What an unfinished change's entry says happened to it. A real permission card is stored as `answered`, with the
+/// chosen option in `selected` and its kind in `options`; older data wrote `denied`/`rejected` itself.
+fn proposal(entry: &Entry) -> &'static str {
+    match entry.data["status"].as_str().unwrap_or("unknown") {
+        "failed" => "failed change",
+        "denied" | "rejected" => "denied proposal",
+        "pending" | "in_progress" => "pending proposal",
+        "answered" => match chosen_kind(entry) {
+            Some(kind) if kind.starts_with("reject") => "denied proposal",
+            _ => "unconfirmed proposal",
+        },
+        _ => "unconfirmed proposal",
+    }
+}
+
+/// The kind (`allow_once`, `allow_always`, `reject_once`, …) of the option the user chose on a permission card.
+fn chosen_kind(entry: &Entry) -> Option<&str> {
+    let selected = entry.data["selected"].as_str()?;
+    let chosen =
+        entry.data["options"].as_array()?.iter().find(|option| option["optionId"].as_str() == Some(selected))?;
+    chosen["kind"].as_str()
 }
 
 /// Refuse traversal and Windows device/stream syntax before touching the filesystem.
@@ -181,4 +198,53 @@ fn inspect_inner(
     }
     file.sha256 = Some(sha);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::{Entry, EntryKind};
+    use serde_json::json;
+
+    fn card(data: serde_json::Value) -> Entry {
+        Entry {
+            id: "e1".into(),
+            seq: 1,
+            bot_id: "b1".into(),
+            rev: 1,
+            kind: EntryKind::Permission.as_str().to_owned(),
+            turn: 1,
+            data,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    /// The shape the host really stores: `answered`, the chosen option in `selected`, its kind in `options`.
+    #[test]
+    fn a_denied_edit_keeps_its_reason() {
+        let denied = card(json!({
+            "status": "answered",
+            "selected": "no",
+            "options": [
+                {"optionId": "yes", "name": "Allow", "kind": "allow_once"},
+                {"optionId": "no", "name": "Deny", "kind": "reject_once"},
+            ],
+            "diffs": [{"path": "src/lib.rs", "isNew": false}],
+        }));
+        assert_eq!(paths(&denied), [("src/lib.rs".to_owned(), "denied proposal")]);
+        let allowed = card(json!({
+            "status": "answered",
+            "selected": "yes",
+            "options": [
+                {"optionId": "yes", "name": "Allow", "kind": "allow_once"},
+                {"optionId": "no", "name": "Deny", "kind": "reject_once"},
+            ],
+            "diffs": [{"path": "src/lib.rs", "isNew": false}],
+        }));
+        assert_eq!(paths(&allowed), [("src/lib.rs".to_owned(), "unconfirmed proposal")]);
+        // Older data wrote the refusal itself.
+        let older = card(json!({"status": "denied", "diffs": [{"path": "src/lib.rs"}]}));
+        assert_eq!(paths(&older), [("src/lib.rs".to_owned(), "denied proposal")]);
+    }
 }

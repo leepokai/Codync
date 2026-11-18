@@ -71,40 +71,64 @@ pub fn render(ledger: &Ledger, budget: usize) -> Result<String> {
         return Ok(String::new());
     }
     if rows.is_empty() {
-        let only = format!(
-            "{OPEN}\nOmitted: {} items; {} labels not expanded. Use search_history before relying on them.\nOmitted due to budget/collection limit:\n{}{CLOSE}",
-            total,
-            total,
-            ledger.omitted.join("\n")
-        );
-        if only.len() > budget {
-            bail!("the {budget}-byte handoff allowance cannot name all {total} manifest items; no prompt was sent");
-        }
-        return Ok(only);
+        return labels_only(ledger, total, budget);
     }
     let full = format!("{OPEN}{}{CLOSE}", rows.iter().map(|(body, _)| body.as_str()).collect::<Vec<_>>().join("\n"));
     if ledger.omitted.is_empty() && full.len() <= budget {
         return Ok(full);
     }
-    let notice = |count: usize, skipped: usize| {
-        format!(
-            "\nOmitted: {count} items; {skipped} labels not expanded. Use search_history before relying on them.\nOmitted due to budget/collection limit:\n"
-        )
-    };
-    let mut labels = Vec::with_capacity(total);
-    for label in &ledger.omitted {
-        labels.push(label.as_str());
-    }
-    for (_, label) in &rows {
-        labels.push(label.as_str());
-    }
+    let labels: Vec<&str> =
+        ledger.omitted.iter().map(String::as_str).chain(rows.iter().map(|(_, label)| label.as_str())).collect();
     let label_bytes: usize = labels.iter().map(|label| label.len() + 1).sum();
-    let mut fixed = OPEN.len() + CLOSE.len() + notice(total, total).len() + label_bytes;
+    let fixed = OPEN.len() + CLOSE.len() + notice(total, total).len() + label_bytes;
     if fixed > budget {
         bail!("the {budget}-byte handoff allowance cannot name all {total} manifest items; no prompt was sent");
     }
+    let fitted = fit(&rows, &labels, ledger.omitted.len(), budget, fixed);
+    let mut out = format!("{OPEN}{}", fitted.details.join("\n"));
+    out.push_str(&notice(fitted.skipped, fitted.skipped));
+    out.push_str(&fitted.labels.join("\n"));
+    out.push_str(CLOSE);
+    if out.len() > budget {
+        bail!("the {budget}-byte handoff allowance cannot name all {total} manifest items; no prompt was sent");
+    }
+    Ok(out)
+}
+
+fn notice(count: usize, skipped: usize) -> String {
+    format!(
+        "\nOmitted: {count} items; {skipped} labels not expanded. Use search_history before relying on them.\nOmitted due to budget/collection limit:\n"
+    )
+}
+
+/// No row fits in full: the notice and every label, or an error that names the allowance.
+fn labels_only(ledger: &Ledger, total: usize, budget: usize) -> Result<String> {
+    let only = format!(
+        "{OPEN}\nOmitted: {total} items; {total} labels not expanded. Use search_history before relying on them.\nOmitted due to budget/collection limit:\n{}{CLOSE}",
+        ledger.omitted.join("\n")
+    );
+    if only.len() > budget {
+        bail!("the {budget}-byte handoff allowance cannot name all {total} manifest items; no prompt was sent");
+    }
+    Ok(only)
+}
+
+struct Fitted<'a> {
+    details: Vec<&'a str>,
+    labels: Vec<&'a str>,
+    skipped: usize,
+}
+
+/// Expand the rows that still fit, then name every row and collection omission that didn't.
+fn fit<'a>(
+    rows: &'a [(String, String)],
+    labels: &[&'a str],
+    collected: usize,
+    budget: usize,
+    mut fixed: usize,
+) -> Fitted<'a> {
     let mut details = Vec::new();
-    let mut omitted_rows = vec![true; rows.len()];
+    let mut omitted = vec![true; rows.len()];
     for (index, (body, _)) in rows.iter().enumerate() {
         let cost = body.len() + usize::from(!details.is_empty());
         if cost > budget.saturating_sub(fixed) {
@@ -112,22 +136,14 @@ pub fn render(ledger: &Ledger, budget: usize) -> Result<String> {
         }
         fixed += cost;
         details.push(body.as_str());
-        omitted_rows[index] = false;
+        omitted[index] = false;
     }
-    let skipped = ledger.omitted.len() + omitted_rows.iter().filter(|omitted| **omitted).count();
-    let header = notice(skipped, skipped);
-    let mut shown_labels = Vec::new();
-    for (index, label) in labels.into_iter().enumerate() {
-        if index < ledger.omitted.len() || omitted_rows[index - ledger.omitted.len()] {
-            shown_labels.push(label);
-        }
-    }
-    let mut out = format!("{OPEN}{}", details.join("\n"));
-    out.push_str(&header);
-    out.push_str(&shown_labels.join("\n"));
-    out.push_str(CLOSE);
-    if out.len() > budget {
-        bail!("the {budget}-byte handoff allowance cannot name all {total} manifest items; no prompt was sent");
-    }
-    Ok(out)
+    let skipped = collected + omitted.iter().filter(|row| **row).count();
+    let shown = labels
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index < collected || omitted[index - collected])
+        .map(|(_, label)| *label)
+        .collect();
+    Fitted { details, labels: shown, skipped }
 }

@@ -135,54 +135,43 @@ impl Recap<'_> {
         let mut candidate = Self { ..*self };
         let mut omitted = omitted;
         let mut messages = budget;
+        let mut refused = None;
         loop {
-            let text = candidate.render(Some(messages), &omitted)?;
-            if text.len() <= budget {
-                return Ok(text);
+            match candidate.render(Some(messages), &omitted) {
+                Ok(text) if text.len() <= budget => return Ok(text),
+                Ok(text) => {
+                    if messages > 0 {
+                        messages = messages.saturating_sub(text.len() - budget);
+                        continue;
+                    }
+                }
+                // The labels don't fit beside the messages: give them the whole allowance before dropping a section.
+                Err(error) => {
+                    refused = Some(error);
+                    if messages > 0 {
+                        messages = 0;
+                        continue;
+                    }
+                    // The labels fit nowhere beside the other sections: follow the same rule and name one away.
+                    if drop_largest(&mut candidate, &mut omitted) {
+                        messages = budget;
+                        continue;
+                    }
+                }
             }
-            if messages > 0 {
-                messages = messages.saturating_sub(text.len() - budget);
-                continue;
-            }
-            // A section that cannot fit is named with its original byte count and the reason, never silently dropped.
-            let Some(manifest) = candidate.manifest else {
-                let largest = [candidate.summary, candidate.plan, candidate.ledger, candidate.bookmark]
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, value)| value.map(|v| (i, v.len())))
-                    .max_by_key(|(_, bytes)| *bytes);
-                let Some((index, bytes)) = largest else {
-                    anyhow::bail!(
-                        "the target's {budget}-byte handoff allowance cannot hold its omission notice; no prompt was sent"
-                    );
-                };
-                let name = match index {
-                    0 => {
-                        candidate.summary = None;
-                        "summary"
-                    }
-                    1 => {
-                        candidate.plan = None;
-                        "open plan"
-                    }
-                    2 => {
-                        candidate.ledger = None;
-                        "ledger"
-                    }
-                    _ => {
-                        candidate.bookmark = None;
-                        "history bookmark"
-                    }
-                };
-                omitted.push(format!("{name} ({bytes} bytes; context budget; search_history)"));
-                messages = budget;
-                continue;
+            // The manifest is what this handoff adds, so its items are named only after every other section is gone.
+            let Some(manifest) = candidate.manifest.take() else {
+                if drop_largest(&mut candidate, &mut omitted) {
+                    messages = budget;
+                    continue;
+                }
+                if let Some(error) = refused {
+                    return Err(error);
+                }
+                anyhow::bail!(
+                    "the target's {budget}-byte handoff allowance cannot hold its omission notice; no prompt was sent"
+                );
             };
-            if manifest.rows_len() + manifest.omitted.len() == 0 {
-                candidate.manifest = None;
-                continue;
-            }
-            candidate.manifest = None;
             omitted.extend(manifest.omitted.iter().cloned());
             for (index, label) in manifest.labels().into_iter().enumerate() {
                 omitted.push(format!(
@@ -262,6 +251,36 @@ impl Recap<'_> {
     }
 }
 
+/// Name away the largest section that still has text, so the allowance goes to what remains. False when none is left.
+fn drop_largest(candidate: &mut Recap<'_>, omitted: &mut Vec<String>) -> bool {
+    let largest = [candidate.summary, candidate.plan, candidate.ledger, candidate.bookmark]
+        .iter()
+        .enumerate()
+        .filter_map(|(index, value)| value.map(|v| (index, v.len())))
+        .max_by_key(|(_, bytes)| *bytes);
+    let Some((index, bytes)) = largest else { return false };
+    let name = match index {
+        0 => {
+            candidate.summary = None;
+            "summary"
+        }
+        1 => {
+            candidate.plan = None;
+            "open plan"
+        }
+        2 => {
+            candidate.ledger = None;
+            "ledger"
+        }
+        _ => {
+            candidate.bookmark = None;
+            "history bookmark"
+        }
+    };
+    omitted.push(format!("{name} ({bytes} bytes; context budget; search_history)"));
+    true
+}
+
 #[cfg(test)]
 mod manifest_budget_tests {
     use super::*;
@@ -302,6 +321,43 @@ mod manifest_budget_tests {
         assert!(labels.contains("src/changed-0.rs") && labels.contains("4096 B"), "{labels}");
         assert!(labels.contains("modified"), "{labels}");
         assert!(labels.contains("Omitted"), "{labels}");
+    }
+
+    #[test]
+    fn a_large_summary_and_plan_are_named_away_so_the_labels_keep_their_room() {
+        let manifest = ledger::Ledger {
+            files: (0..3)
+                .map(|i| ledger::Touched {
+                    path: format!("src/changed-{i}.rs"),
+                    bytes: Some(2048),
+                    sha256: Some("b".repeat(64)),
+                    why: "modified",
+                    unavailable: None,
+                })
+                .collect(),
+            ..ledger::Ledger::default()
+        };
+        let summary = "s".repeat(3_000);
+        let plan = "p".repeat(2_000);
+        let said = [user("Continue")];
+        let room = 1_000;
+        let recap = Recap {
+            from: "Codex",
+            summary: Some(&summary),
+            plan: Some(&plan),
+            said: &said,
+            room: Some(room),
+            manifest: Some(&manifest),
+            ..Recap::default()
+        };
+        // The labels cannot be rendered beside a 5 kB summary and plan; the handoff names those sections away
+        // instead of failing the turn.
+        let text = recap.text().expect("a handoff that names what it dropped");
+        assert!(text.len() <= room, "{} of {room}", text.len());
+        assert!(text.contains("<ledger>"), "{text}");
+        assert!(text.contains("src/changed-0.rs"), "{text}");
+        assert!(text.contains("summary (3000 bytes"), "{text}");
+        assert!(text.contains("open plan (2000 bytes"), "{text}");
     }
 
     #[test]

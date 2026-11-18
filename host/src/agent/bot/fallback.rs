@@ -315,9 +315,6 @@ impl Actor {
         let fresh = self.fresh();
         let Some(entries) = self.main_messages(fresh) else { return Ok(None) };
         let said = carry::said(&entries);
-        if said.is_empty() {
-            return Ok(None);
-        }
         // The open plan and the ledger, as far back as the messages read.
         let oldest = entries.first().map_or(0, |e| e.seq).max(fresh);
         let from = fallback::name(from);
@@ -329,7 +326,17 @@ impl Actor {
             .map(|e| crate::chat::handoff::plan_text(&e.data));
         let index = self.ledger(oldest);
         let current = self.relay.attempt.as_ref().map(|a| a.entries.clone()).unwrap_or_default();
+        // A failed attempt that only used tools left no chat line behind: its files, commands and running services are
+        // still what the next agent needs, so the manifest is collected even when there is nothing to repeat.
         let manifest = carry::ledger::build(self.hub.clone(), self.cfg.clone(), fresh, current).await;
+        if said.is_empty()
+            && manifest.rows_len() + manifest.omitted.len() == 0
+            && summary.is_none()
+            && plan.is_none()
+            && index.is_none()
+        {
+            return Ok(None);
+        }
         let recap = carry::Recap {
             from: &from,
             summary: summary.as_deref(),

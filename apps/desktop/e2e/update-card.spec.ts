@@ -32,3 +32,25 @@ test("the update cards name their action in the app's language and follow a swit
     await browser.close()
   }
 })
+
+test("the how-to and stalled-update sentences read in the app's language", async () => {
+  const { browser, page } = await attach()
+  try {
+    await page.evaluate(() => localStorage.setItem('appLanguage', JSON.stringify('zh')))
+    await page.reload()
+    await page.evaluate(async (path) => {
+      const { mountHowTo } = await import(path) as typeof import('./update-card-fixture.tsx')
+      ;(window as unknown as { unmountCards: () => void }).unmountCards = mountHowTo()
+    }, fixture)
+    const cards = page.locator('.e2e-update-card')
+    await expect(cards.getByText('请在那台电脑上运行 codync-host update。')).toBeVisible()
+    await expect(cards.getByText('Mini 没有完成更新。请再试一次，或在那台电脑上更新 Codync。')).toBeVisible()
+    await expect(cards).not.toContainText('Run codync-host update there.')
+    await expect(cards).not.toContainText("didn't finish updating")
+  } finally {
+    await page.evaluate(() => (window as unknown as { unmountCards?: () => void }).unmountCards?.())
+    await page.evaluate(() => localStorage.removeItem('appLanguage'))
+    await page.reload()
+    await browser.close()
+  }
+})

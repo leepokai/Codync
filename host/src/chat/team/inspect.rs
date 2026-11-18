@@ -97,7 +97,7 @@ pub async fn call(hub: &Arc<Hub>, source: &BotConfig, actor: &str, name: &str, a
     let target = resolve_target(hub, source, name, args)?;
     match name {
         "bot_status" => status(hub, &target, args["messages"].as_i64().unwrap_or(0)),
-        "recent_messages" => Ok(insight::recent(hub, &target, args["count"].as_i64().unwrap_or(6))),
+        "recent_messages" => insight::recent(hub, &target, args["count"].as_i64().unwrap_or(6)),
         "answer_approval" => answer(hub, source, actor, &target, args["option"].as_str().unwrap_or_default()).await,
         "stop_bot" => stop(hub, source, actor, &target).await,
         _ => bail!("unknown team tool: {name}"),
@@ -146,7 +146,7 @@ fn status(hub: &Hub, cfg: &BotConfig, messages: i64) -> Result<Value> {
     out["id"] = cfg.id.clone().into();
     out["name"] = cfg.name.clone().into();
     if messages > 0 {
-        out["recentMessages"] = insight::recent(hub, cfg, messages.min(MESSAGES))["messages"].clone();
+        out["recentMessages"] = insight::recent(hub, cfg, messages.min(MESSAGES))?["messages"].clone();
     }
     Ok(out)
 }

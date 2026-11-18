@@ -4,6 +4,7 @@
 
 use crate::hub::{Hub, Runtime};
 use crate::store::{BotConfig, Entry, EntryKind, Lane};
+use anyhow::{Context, Result};
 use serde_json::{Value, json};
 
 /// Entries looked through for a bot's current work and its pending approval.
@@ -36,21 +37,29 @@ pub fn status(hub: &Hub, cfg: &BotConfig, recent: &[Entry]) -> Value {
 }
 
 /// The latest `count` messages as they were said: who wrote each and its text.
-pub fn recent(hub: &Hub, cfg: &BotConfig, count: i64) -> Value {
-    json!({"messages": said(hub, cfg, count, RECENT_CHARS).into_iter().map(|(from, text)| json!({"from": from, "text": text})).collect::<Vec<_>>()})
+pub fn recent(hub: &Hub, cfg: &BotConfig, count: i64) -> Result<Value> {
+    let messages = said(hub, cfg, count, RECENT_CHARS)?
+        .into_iter()
+        .map(|(from, text)| json!({"from": from, "text": text}))
+        .collect::<Vec<_>>();
+    Ok(json!({"messages": messages}))
 }
 
 /// The chat's last `count` messages as its readers name them: who wrote each, and its text shortened to `chars`.
-pub fn said(hub: &Hub, cfg: &BotConfig, count: i64, chars: usize) -> Vec<(String, String)> {
-    let messages = hub.store.messages_after(&Lane::main(&cfg.id), 0, count.clamp(1, MESSAGES)).unwrap_or_default();
-    messages
+/// A history that cannot be read is an error the caller reports: an empty list would read as a quiet chat.
+pub fn said(hub: &Hub, cfg: &BotConfig, count: i64, chars: usize) -> Result<Vec<(String, String)>> {
+    let messages = hub
+        .store
+        .messages_after(&Lane::main(&cfg.id), 0, count.clamp(1, MESSAGES))
+        .with_context(|| format!("couldn't read {}'s messages", cfg.name))?;
+    Ok(messages
         .iter()
         .map(|e| {
             let who =
                 writer(e).map_or_else(|| hub.bot_name(e.data["author"].as_str().unwrap_or(&cfg.id)), str::to_owned);
             (who, crate::agent::acp::truncate(e.data["text"].as_str().unwrap_or_default(), chars))
         })
-        .collect()
+        .collect())
 }
 
 /// Who wrote a chat message among the user's own, as the voice and the title writer name them; `None` for a bot.

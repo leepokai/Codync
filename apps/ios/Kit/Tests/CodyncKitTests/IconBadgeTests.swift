@@ -65,3 +65,8 @@ private func push(_ totals: [ComputerID: Int], into store: SharedStore.Context) 
     #expect(IconBadge.settled(behind: ["a", "b"], in: store) == 199_998, "what's saved already is bounded too")
     #expect(IconBadge.alerted(-2, from: "a", in: store) == 99_999)
 }
+
+@Test func theIconShowsNoCountWhileTheSwitchIsOff() {
+    #expect(IconBadge.shown(4, enabled: false) == 0)
+    #expect(IconBadge.shown(4, enabled: true) == 4)
+}

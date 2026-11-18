@@ -84,7 +84,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum AccessFailure: String, Sendable { case denied, expired, cancelled }
     public enum PromptSource: String, Sendable { case settings, widgets }
     public enum IconBadgeFailure: String, Sendable { case notAllowed = "not_allowed", other }
-    public enum Setting: String, Sendable { case push, liveActivities = "live_activities" }
+    public enum Setting: String, Sendable { case push, liveActivities = "live_activities", iconBadge = "icon_badge" }
     public enum Link: String, Sendable {
         case github, issues, appStore = "app_store", demo, tailscale, privacy, installCommand = "install_command", installLink = "install_link",
              whatsNewFilm = "whats_new_film", docs

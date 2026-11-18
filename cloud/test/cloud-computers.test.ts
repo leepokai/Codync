@@ -319,7 +319,7 @@ describe("sleep and wake", () => {
     expect((await second.nextT("presence")).waking).toBe(waking.waking);
     await hostSocket(host, [{ dk: ref.b64url(device.pub), grant: null }]);
     expect(await dev.nextT("presence")).toMatchObject({ online: true, waking: null });
-    // Booted: \`starting\` (which clients show as waking) is only ever on its way up.
+    // Booted: the account list's `starting` becomes `running` (clients take waking only from the relay's `presence.waking`).
     expect((await call("GET", "/v1/host/sleep", { key: host.sign })).body.state).toBe("running");
   });
 

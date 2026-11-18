@@ -269,13 +269,7 @@ private const val NETWORK_ICON = "codync.network"
 @Composable internal fun AccountComputerRow(computer: CloudComputer, code: String?, asking: Boolean, ask: () -> Unit,
     revoke: (() -> Unit)? = null) {
     val cloud = computer.cloud
-    val online = when {
-        cloud?.asleep == true -> "Sleeping · wakes when you message"
-        cloud?.failed == true -> "Cloud computer failed"
-        cloud?.starting == true && computer.online != true -> "Waking the computer…"
-        computer.online == true -> "Online"
-        else -> "Offline"
-    }
+    val online = cloud?.offlineText ?: if (computer.online == true) "Online" else "Offline"
     val detail = when {
         cloud != null && asking -> tr("Connecting to {name}…").replace("{name}", computer.name)
         code != null -> "Waiting for your OK on the computer · $code"

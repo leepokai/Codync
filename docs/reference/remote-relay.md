@@ -438,7 +438,7 @@ Channel 訊息與 DO 訊息的 `t` 值不重疊：channel 只有 `hello`/`welcom
 ### 7.5 Client 連線策略（Apple 與整合測試共通）
 
 1. 平行對所有 `urls`（`http://h:p` → `ws://h:p/channel?v=1`，`https://h` → `wss://h/channel?v=1`）開 WebSocket 並握手；**1.5 秒**內第一個完成握手的勝出。
-2. 都失敗且有 `cloud` → 連 `{cloud}/v1/relay/device/{computerId}`。每次收到 `presence online:true` 就（重新）送 `hello`；`online:false` → 狀態 `computerOffline(lastSeen)`，保持 socket（可用 mailbox），等下一個 `online:true`；帶 `waking` 時（或帳號清單說這台雲端電腦是 `starting`：host 一連上中繼就改成 `running`）顯示 "Waking the computer…"，不算離線。
+2. 都失敗且有 `cloud` → 連 `{cloud}/v1/relay/device/{computerId}`。每次收到 `presence online:true` 就（重新）送 `hello`；`online:false` → 狀態 `computerOffline(lastSeen)`，保持 socket（可用 mailbox），等下一個 `online:true`；帶 `waking` 時顯示 "Waking the computer…"，不算離線；只有中繼說了算（帳號清單的 `starting` 在 host 沒回來的喚醒後會一直留著）。
 3. 兩者都不可用 → `offline("Can't reach …")`，退避重試。
 4. App 回前景、網路路徑改變（`NWPathMonitor`）→ 重新跑 1–3（可能從中繼換回直連）；events 以當前 `rev` 重新訂閱。
 5. 每次 inner `hello` 成功後，把回應的 `urls`、`cloud`、`device`、`name`、`boxKey` 合併進持久化的 `Computer`（§3.3、§10）；帳號來源的 computer 因此在第一次中繼連線後也能試 LAN 直連。

@@ -179,10 +179,10 @@ export class BotMirror extends Observable {
     return this.connection.kind === 'computerOffline' && (this.isWaking || this.cloudHosting?.state === 'stopped' || this.cloudHosting?.state === 'stopping')
   }
 
-  /** The relay is waking this cloud computer (about 10 to 30 seconds), or its provider says it's starting: it's coming,
-   * not offline. */
+  /** The relay is waking this cloud computer (about 10 to 30 seconds): it's coming, not offline. Only the relay says so:
+   * the account list's `starting` stays after a wake whose host never came back. */
   get isWaking() {
-    return this.connection.kind === 'computerOffline' && (this.connection.waking === true || this.cloudHosting?.state === 'starting')
+    return this.connection.kind === 'computerOffline' && this.connection.waking === true
   }
 
   /** A Codync Cloud computer older than this app's `minHost`: the cloud updates it on its own (this app's `Codync-App` header asks for it). */

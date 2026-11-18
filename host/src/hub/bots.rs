@@ -74,6 +74,9 @@ impl Hub {
             if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&before) {
                 crate::chat::memory::changed(self, Some(&id));
             }
+            if cfg.fallbacks != before.fallbacks {
+                crate::chat::tasks::fallbacks_changed(self, &cfg);
+            }
             self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
         }
         self.emit_bot(&id);
@@ -82,12 +85,13 @@ impl Hub {
     }
 
     pub fn delete_bot(&self, id: &str) -> Result<()> {
-        // Its tasks go first: they are the bot's own work.
+        // Its tasks go first: they are the bot's own work. Its box goes below.
         for task in crate::chat::tasks::of(&self.store, id) {
             self.delete_bot(&task.id)?;
         }
         self.routines.disable_bot(&self.store, id)?;
         self.team.end_turn(id);
+        self.ceilings.set(id, codync_network::Access::Allow);
         crate::chat::group::stop(self, id);
         let _ = self.send_cmd(id, Cmd::Shutdown);
         self.bots.locked().remove(id);
@@ -102,7 +106,7 @@ impl Hub {
                 let _ = self.events.send(deleted);
             }
         }
-        crate::chat::tasks::forget(&self.store, id);
+        crate::chat::tasks::forget(self, id);
         crate::network::publish(self);
         // Its shared files and artifacts are unreachable once the bot is deleted.
         let folders = [crate::chat::files::root(id), crate::chat::artifacts::root(id)];

@@ -1,8 +1,9 @@
 name: Release gate
 
-# Marks the newest release the App Store's iPhone app works with as GitHub's latest and points the
-# Homebrew tap at it (tools/release-gate.py): website downloads, install.sh and every updater follow
-# that mark, so a release that needs a newer iPhone app waits for App Review. After each release,
+# Marks the newest release the App Store's iPhone app and Google Play's Android app work with as
+# GitHub's latest and points the Homebrew tap at it (tools/release-gate.py): website downloads,
+# install.sh and every updater follow that mark, so a release that needs a newer phone app waits
+# for both stores' reviews. After each release,
 # and every 5 minutes while a newer release waits or the Homebrew tap trails the latest one: the cloud
 # Worker's cron (cloud/src/release-gate.ts) dispatches it, since GitHub runs schedules late or not at all.
 on:
@@ -12,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       allow_back:
-        description: "Mark an older release than the latest (when the latest needs an iPhone app still in review)"
+        description: "Mark an older release than the latest (when the latest needs a phone app still in store review)"
         type: boolean
         default: false
 

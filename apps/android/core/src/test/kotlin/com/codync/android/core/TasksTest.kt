@@ -11,32 +11,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TasksTest {
-    private fun bot(tasks: String?) =
-        HostClient.decode(Json.parseToJsonElement("""{"id":"b","name":"Bot","rev":1${tasks?.let { ""","tasks":$it""" }.orEmpty()}}""").jsonObject)
-    private fun task(status: TaskStatus = TaskStatus.Working, activity: String = "", title: String = "Fix login", id: String = "task-1") =
-        BotTask(id, title, status, activity, startedAt = 1)
     private fun entry(id: String, seq: Long, rev: Long, text: String = id, botId: String = "task-1") =
         Entry(id, seq, botId, rev, "agent", data = buildJsonObject { put("text", text) })
     private fun event(task: String, entry: Entry) = MirrorEvent.TaskEntryChanged(task, entry)
-
-    @Test fun `a bot's tasks decode, and survive the mirror's copy`() {
-        val bot = bot("""[{"id":"task-1","title":"Fix login","status":"needsInput","activity":"Reading","startedAt":5,"start":"fork"}]""")
-        assertEquals(listOf(BotTask("task-1", "Fix login", TaskStatus.NeedsInput, "Reading", 5)), bot.tasks)
-        assertEquals(bot, HostClient.decode(Json.parseToJsonElement(WireJson.encodeToString(Bot.serializer(), bot)).jsonObject))
-    }
-
-    @Test fun `a host from before tasks has none`() {
-        assertEquals(emptyList<BotTask>(), bot(null).tasks)
-    }
-
-    @Test fun `tasks this app can't read never lose the bot`() {
-        assertEquals(emptyList<BotTask>(), bot("null").tasks)
-        assertEquals(emptyList<BotTask>(), bot(""""soon"""").tasks)
-        assertEquals(emptyList<BotTask>(), bot("""{"id":"task-1"}""").tasks)
-        // A task without an id is left out; one with fields missing, null or a status it doesn't know still shows.
-        val mixed = bot("""[7, {"title":"No id"}, {"id":"task-1","title":null,"startedAt":null}, {"id":"task-2"}, {"id":"task-3","status":"paused","title":"New"}]""")
-        assertEquals(listOf(BotTask("task-1"), BotTask("task-2"), BotTask("task-3", "New", TaskStatus.Working)), mixed.tasks)
-    }
 
     @Test fun `a task entry event is its own kind, never a chat's entry`() {
         val wire = Json.parseToJsonElement(
@@ -51,24 +28,6 @@ class TasksTest {
             """{"type":"taskEntry","rev":9,"task":"task-1"}""", """{"type":"taskEntry","rev":9,"task":"task-1","entry":{"id":""}}""")) {
             assertEquals(wire, MirrorEvent.Ignored, MirrorEvent.decode(Json.parseToJsonElement(wire).jsonObject))
         }
-    }
-
-    @Test fun `one task says what it is doing`() {
-        assertEquals(TasksSummary.One(TaskWhat("Needs you", phrase = true)), tasksSummary(listOf(task(TaskStatus.NeedsInput, "Reading"))))
-        assertEquals(TasksSummary.One(TaskWhat("Starting…", phrase = true)), tasksSummary(listOf(task(TaskStatus.Starting))))
-        assertEquals(TasksSummary.One(TaskWhat("Reading", phrase = true)), tasksSummary(listOf(task(activity = "Reading"))))
-        // With no step yet, its title, which is the bot's own words.
-        assertEquals(TasksSummary.One(TaskWhat("Fix login", phrase = false)), tasksSummary(listOf(task())))
-    }
-
-    @Test fun `several tasks say how many, and whether one needs the user`() {
-        assertEquals(TasksSummary.Several(2, needsInput = false), tasksSummary(listOf(task(), task(TaskStatus.Starting, id = "task-2"))))
-        assertEquals(TasksSummary.Several(3, needsInput = true),
-            tasksSummary(listOf(task(), task(TaskStatus.NeedsInput, id = "task-2"), task(id = "task-3"))))
-    }
-
-    @Test fun `only the tasks still going are live`() {
-        assertEquals(listOf(TaskStatus.Starting, TaskStatus.Working, TaskStatus.NeedsInput), TaskStatus.entries.filter { it.live })
     }
 
     @Test fun `a task's entries merge once each, the higher rev winning, oldest first`() {

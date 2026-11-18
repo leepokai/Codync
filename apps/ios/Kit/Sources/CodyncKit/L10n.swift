@@ -221,6 +221,10 @@ public enum L10n {
     private static let localizableSlots: Set<String> = [
         "{hint}", "{error}", "{setup}", "{kind}", "{when}", "{status}", "{reason}", "{shortcut}", "{changes}",
     ]
+    /// Slots that only ever hold a number, so free text ("…the host service isn't installed") never fills "{count} installed".
+    private static let numericSlots: Set<String> = ["{count}", "{unread}", "{cap}"]
+    /// A version slot holds only a version ("2.47.0", "2.47.0-dev"), so "You have reached your limit." never fills "You have {version}.".
+    private static let versionShape = #"^\d+(\.\d+)*(-[\w.]+)?$"#
 
     private static func fill(
         _ text: String,
@@ -247,7 +251,10 @@ public enum L10n {
                 guard pos < text.endIndex else { return nil }
                 end = text.endIndex
             }
-            caps[token] = String(text[pos..<end])
+            let value = String(text[pos..<end])
+            if numericSlots.contains(token), !value.allSatisfy({ $0.isASCII && ($0.isNumber || $0 == "," || $0 == ".") }) { return nil }
+            if token == "{version}", value.range(of: versionShape, options: .regularExpression) == nil { return nil }
+            caps[token] = value
             pos = end
         }
         guard pos == text.endIndex else { return nil }

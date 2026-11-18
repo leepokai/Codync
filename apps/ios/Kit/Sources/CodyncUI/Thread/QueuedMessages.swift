@@ -2,10 +2,12 @@ import CodyncKit
 import SwiftUI
 
 /// The user's messages waiting behind the bot's work, above the composer: each one line, sent now into the running
-/// turn (`steer`) or taken back. An older computer has neither action, so the rows only show.
+/// turn (`steer`) or taken back. An older computer has neither action, so the rows only show. Under an item's thread
+/// (`workThread`) they are that thread's.
 struct QueuedMessages: View {
     let entries: [Entry]
     @Environment(BotStore.self) private var model
+    @Environment(\.workThread) private var thread
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -44,8 +46,8 @@ struct QueuedMessages: View {
                 .padding(.vertical, model.supportsQueueActions ? 0 : 9)
             if model.supportsQueueActions {
                 Group {
-                    IconButton("Send now", systemImage: "arrow.turn.down.right") { model.steer(entry) }
-                    IconButton("Remove", systemImage: "trash") { model.unqueue(entry) }
+                    IconButton("Send now", systemImage: "arrow.turn.down.right") { model.steer(entry, in: thread) }
+                    IconButton("Remove", systemImage: "trash") { model.unqueue(entry, in: thread) }
                 }
                 .disabled(model.answering[entry.id] != nil)
             }

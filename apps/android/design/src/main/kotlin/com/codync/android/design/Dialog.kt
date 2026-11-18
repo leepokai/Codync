@@ -35,8 +35,11 @@ import androidx.compose.ui.unit.dp
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
 
-/** A button in a Codync dialog; [enabled] is off while what it asks for isn't valid yet (a field that doesn't read). */
-class DialogAction(val title: String, val destructive: Boolean = false, val enabled: Boolean = true, val action: () -> Unit)
+/**
+ * A button in a Codync dialog; [enabled] is off while what it asks for isn't valid yet (a field that doesn't read).
+ * [verbatim] shows [title] as it is, never translated: words the user or a bot gave.
+ */
+class DialogAction(val title: String, val destructive: Boolean = false, val enabled: Boolean = true, val verbatim: Boolean = false, val action: () -> Unit)
 
 /**
  * A centered card over a dimmed screen with the actions and Cancel: the replacement for
@@ -70,7 +73,7 @@ class DialogAction(val title: String, val destructive: Boolean = false, val enab
                 }
                 field?.invoke()
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (action in actions()) DialogButton(tr(action.title), action.destructive, prominent = true, enabled = action.enabled) { dismiss(); action.action() }
+                    for (action in actions()) DialogButton(if (action.verbatim) action.title else tr(action.title), action.destructive, prominent = true, enabled = action.enabled) { dismiss(); action.action() }
                     if (cancel != null) DialogButton(tr(cancel), destructive = false, prominent = false) { dismiss() }
                 }
             }

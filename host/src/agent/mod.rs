@@ -15,6 +15,7 @@ pub mod node;
 pub mod own_memory;
 pub mod registry;
 pub mod term;
+pub mod versions;
 pub mod workspace;
 
 pub(crate) mod process;

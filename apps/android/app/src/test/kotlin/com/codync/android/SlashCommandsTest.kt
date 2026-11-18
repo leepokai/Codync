@@ -1,5 +1,7 @@
 package com.codync.android
 
+import com.codync.android.core.AgentCommand
+import com.codync.android.core.AgentStep
 import com.codync.android.core.Bot
 import com.codync.android.core.FastModeState
 import com.codync.android.core.GroupFastMode
@@ -17,6 +19,25 @@ class SlashCommandsTest {
         assertEquals(listOf("review"), SlashCommands.list(bot, "", skills).map { it.name }.filter { it != "fast" })
         assertNull("a new session is in the bot's menu", SlashCommands.builtIn(bot, " /new "))
         assertTrue(SlashCommands.list(Bot("g", "Team", kind = "group"), "", skills).isEmpty())
+    }
+
+    @Test fun `a bot's agent commands follow its skills, matched by name, and fill in`() {
+        val commands = listOf(AgentCommand("review", "Review the changes"), AgentCommand("compact", hint = "what to keep"))
+        val skills = listOf(InstalledSkill("pdf", "PDF", "", "src", "/p"))
+        val claude = Bot("b", "Bot", backend = "claude", skills = listOf("pdf"), fastModeSupport = "unsupported", agentCommands = commands)
+        val list = SlashCommands.list(claude, "", skills)
+        assertEquals(listOf("pdf", "review", "compact"), list.map { it.name })
+        assertEquals("claude", list[1].agent)
+        assertTrue(list[1].fills)
+        assertEquals("the hint stands in for a missing description", "what to keep", list[2].detail)
+        assertEquals(listOf("review"), SlashCommands.list(claude, "rev", skills).map { it.name })
+        val onFallback = claude.copy(agentStep = AgentStep(step = 1, agent = "codex"))
+        assertEquals("codex", SlashCommands.list(onFallback, "rev", skills).single().agent)
+        val groups = SlashCommands.groups(list)
+        assertEquals("Codync's, then the agent's", listOf(null, "claude"), groups.map { it.first })
+        assertEquals(listOf(listOf("pdf"), listOf("review", "compact")), groups.map { g -> g.second.map { it.name } })
+        val group = Bot("g", "Team", kind = "group", members = listOf("b"), agentCommands = commands)
+        assertEquals("a group has no agent of its own", listOf("pdf"), SlashCommands.list(group, "", skills, listOf(claude)).map { it.name })
     }
 
     @Test fun `a group lists its members' Fast mode and the union of their skills`() {

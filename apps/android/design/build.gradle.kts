@@ -14,7 +14,7 @@ android {
     }
 }
 android.testOptions.unitTests.all {
-    it.systemProperty("codync.orbs", rootProject.file("../ios/Kit/Tests/CodyncKitTests/Fixtures/thinking-orbs-golden.json").absolutePath)
+    it.systemProperty("codync.orbs", rootProject.file("../ios/Kit/Tests/CodyncKitTests/Fixtures/thinking-orb-frames.json").absolutePath)
 }
 kotlin.compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
 

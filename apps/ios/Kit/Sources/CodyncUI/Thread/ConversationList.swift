@@ -38,22 +38,15 @@ struct ConversationList: View {
     /// Letting go of a full pull past the top: the force refresh, its indicator held until it returns.
     var refresh: (() async -> Void)?
     @State private var pull = PullToRefresh()
-    /// The safe area (under the bars, above the composer and the keyboard) and the whole screen.
-    @State private var safeFrame = CGRect.zero
-    @State private var fullFrame = CGRect.zero
 
     var body: some View {
-        ZStack {
-            GeometryReader { _ in
-                Color.clear.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { fullFrame = $0 }
-            }
-            .ignoresSafeArea()
-            // The list itself stays inside the safe area (so its rows never see one) and
-            // reaches out past it.
+        // The list itself stays inside the safe area (so its rows never see one) and reaches out past it. Its
+        // size and insets are read in the update that changes them, so the list moves with the keyboard's own
+        // animation, in step with the composer.
+        GeometryReader { geometry in
+            let insets = geometry.safeAreaInsets
             ConversationCollection(rows: rows, following: $following, reveal: reveal, nearTop: nearTop, refresh: refresh, pull: pull,
-                                   outsets: UIEdgeInsets(top: max(0, safeFrame.minY - fullFrame.minY), left: 0,
-                                                         bottom: max(0, fullFrame.maxY - safeFrame.maxY), right: 0))
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { safeFrame = $0 }
+                                   size: geometry.size, outsets: UIEdgeInsets(top: insets.top, left: 0, bottom: insets.bottom, right: 0))
         }
         .overlay(alignment: .top) {
             if refresh != nil { PullIndicator(pull: pull).padding(.top, 8) }
@@ -71,7 +64,8 @@ private struct ConversationCollection: UIViewRepresentable {
     let nearTop: (() -> Void)?
     let refresh: (() async -> Void)?
     let pull: PullToRefresh
-    /// How far past its frame the list reaches: under the bars, the composer and the keyboard.
+    /// The safe area's size, and how far past it the list reaches: under the bars, the composer and the keyboard.
+    let size: CGSize
     let outsets: UIEdgeInsets
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -98,6 +92,11 @@ private struct ConversationCollection: UIViewRepresentable {
         private var lastReveal: ConversationReveal?
         private var lastOffset: CGFloat = 0
         private var reduceMotion = false
+        /// The pull as last told to `pull`, read here instead of from it: the list also scrolls inside SwiftUI's
+        /// update of this view, and a read of `pull` there makes each step of a pull run the update again, whose
+        /// snapshot snaps the pull back.
+        private var pulled: CGFloat = 0
+        private var refreshing = false
 
         func makeView() -> ConversationCollectionView {
             let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(80))
@@ -161,8 +160,9 @@ private struct ConversationCollection: UIViewRepresentable {
             }
             if sent { setFollowing(true) }
 
-            if let container = view.superview as? ConversationContainer, container.outsets != parent.outsets {
+            if let container = view.superview as? ConversationContainer, container.size != parent.size || container.outsets != parent.outsets {
                 animate(context.transaction.animation) {
+                    container.size = parent.size
                     container.outsets = parent.outsets
                     container.layoutIfNeeded()
                 }
@@ -201,10 +201,15 @@ private struct ConversationCollection: UIViewRepresentable {
         private func reveal(_ reveal: ConversationReveal?) {
             guard let reveal, reveal != lastReveal, let path = dataSource.indexPath(for: reveal.id) else { return }
             lastReveal = reveal
+            view.layoutIfNeeded()
+            // Already where it would be brought (a row by the end can't reach the middle): nothing moves,
+            // and a list at the end keeps following.
+            if let frame = view.layoutAttributesForItem(at: path)?.frame,
+               abs(view.centeredOffset(of: frame) - view.contentOffset.y) < 1 { return }
             view.cancelScrollingToEnd()
             setFollowing(false)
-            view.layoutIfNeeded()
             view.scrollToItem(at: path, at: .centeredVertically, animated: !reduceMotion)
+            if reduceMotion { settle() }
         }
 
         /// Rows going in or out above: the first row on screen stays where it is.
@@ -257,12 +262,13 @@ private struct ConversationCollection: UIViewRepresentable {
 
         func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint,
                                        targetContentOffset: UnsafeMutablePointer<CGPoint>) {
-            guard let parent, let refresh = parent.refresh, parent.pull.progress >= 1, !parent.pull.refreshing,
+            guard let parent, let refresh = parent.refresh, pulled >= 1, !refreshing,
                   let container = view.superview as? ConversationContainer else { return }
             // The chat eases back to just below the indicator and stays there while it turns. UIKit's
             // own bounce would fight the new inset (and snapshots applied meanwhile clamp it), so it's
             // stopped and the chat is moved here instead.
             targetContentOffset.pointee = scrollView.contentOffset
+            refreshing = true
             parent.pull.refreshing = true
             container.hold = PullToRefresh.hold
             container.layoutIfNeeded()
@@ -297,7 +303,7 @@ private struct ConversationCollection: UIViewRepresentable {
         }
 
         func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
-            if view.following { view.pinToEnd() }
+            settle()
         }
 
         /// Long enough to read as a refresh even when the link comes back at once; then the chat
@@ -306,6 +312,8 @@ private struct ConversationCollection: UIViewRepresentable {
             let start = ContinuousClock.now
             await refresh()
             try? await Task.sleep(until: start + .milliseconds(600))
+            refreshing = false
+            pulled = 0
             pull.refreshing = false
             pull.progress = 0
             animate(PullToRefresh.settle) { [view] in
@@ -320,15 +328,17 @@ private struct ConversationCollection: UIViewRepresentable {
 
         /// The ring follows the pull past the top; a tap of feedback says letting go will refresh.
         private func trackPull(_ scrollView: UIScrollView) {
-            guard let pull = parent?.pull, parent?.refresh != nil, !pull.refreshing else { return }
+            guard let pull = parent?.pull, parent?.refresh != nil, !refreshing else { return }
             let distance = -(scrollView.contentOffset.y + scrollView.adjustedContentInset.top)
             let progress = min(max(distance / PullToRefresh.distance, 0), 1)
-            guard progress != pull.progress else { return }
+            guard progress != pulled else { return }
             if progress == 1, scrollView.isTracking { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+            pulled = progress
             pull.progress = progress
         }
 
-        /// The reader stopped scrolling: resting at the end follows again; anywhere else stays put.
+        /// The list stopped moving (the reader's scrolling, a row brought into view): resting at the end follows again;
+        /// anywhere else stays put.
         private func settle() {
             setFollowing(view.followingAfterInteraction())
             if view.following { view.pinToEnd() }
@@ -357,40 +367,6 @@ private final class ConversationLayout: UICollectionViewCompositionalLayout {
         attributes.alpha = 0
         attributes.transform = CGAffineTransform(translationX: 0, y: 12).scaledBy(x: 0.94, y: 0.94)
         return attributes
-    }
-}
-
-/// Holds the list inside the safe area and lets it reach past it by `outsets`, which become
-/// its content insets: rows scroll under the bars and the composer but never get a safe area
-/// of their own (a row taking one as padding near an edge would resize itself as it moves).
-private final class ConversationContainer: UIView {
-    let list: ConversationCollectionView
-    var outsets = UIEdgeInsets.zero {
-        didSet { if outsets != oldValue { setNeedsLayout() } }
-    }
-    /// Extra room above the rows while a pull refreshes.
-    var hold: CGFloat = 0 {
-        didSet { if hold != oldValue { setNeedsLayout() } }
-    }
-
-    init(list: ConversationCollectionView) {
-        self.list = list
-        super.init(frame: .zero)
-        addSubview(list)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let frame = bounds.inset(by: UIEdgeInsets(top: -outsets.top, left: 0, bottom: -outsets.bottom, right: 0))
-        let insets = UIEdgeInsets(top: outsets.top + hold, left: 0, bottom: outsets.bottom, right: 0)
-        list.updateViewport(frame: frame, insets: insets, indicators: outsets)
-    }
-
-    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        list.frame.contains(point)
     }
 }
 

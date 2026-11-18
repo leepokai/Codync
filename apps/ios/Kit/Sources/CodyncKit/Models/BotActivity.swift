@@ -85,3 +85,11 @@ public struct BotActivityAttributes: ActivityAttributes {
         customIconTinted = bot.customIcon?.tinted
     }
 }
+
+public extension BotActivityAttributes.ContentState {
+    /// What a bot's Live Activity shows from what the app holds: how it stands outside its chat, and the roster's
+    /// line. The computer's pushes carry the same status, with no line.
+    init(outside bot: Bot) {
+        self.init(status: bot.outsideStatus, activity: bot.outsideLine(), startedAt: bot.outsideStartedAt.map(Date.init(milliseconds:)))
+    }
+}

@@ -29,18 +29,24 @@ internal val AppState.cloudUnreached: String? get() = cloud?.let { when {
     else -> null
 } }
 
-/** A Codync Cloud computer that's asleep: a connection or a message wakes it, so it isn't offline (iOS `BotStore.isAsleep`). */
-internal val AppState.isAsleep: Boolean get() = connection is LinkState.ComputerOffline && cloud?.asleep == true
+/** The relay is waking this cloud computer (about 10 to 30 seconds), or its provider says it's starting: it's coming,
+ * not offline (iOS `BotStore.isWaking`). */
+internal val AppState.isWaking: Boolean get() =
+    (connection as? LinkState.ComputerOffline)?.let { it.waking || cloud?.starting == true } == true
+
+/** A Codync Cloud computer that's asleep, or on its way up: a connection or a message wakes it, so it isn't offline
+ * (iOS `BotStore.isAsleep`). */
+internal val AppState.isAsleep: Boolean get() = connection is LinkState.ComputerOffline && (isWaking || cloud?.asleep == true)
 
 /** Can't be reached, and not because it's updating or asleep: a sleeping cloud computer is fine, messaging it wakes it. */
 internal val AppState.unreachable: Boolean get() =
-    (connection is LinkState.ComputerOffline || connection is LinkState.Failed) && !isUpdating && cloud?.asleep != true
+    (connection is LinkState.ComputerOffline || connection is LinkState.Failed) && !isUpdating && cloud?.asleep != true && !isWaking
 
 /** One short line for the computer's connection, next to its name (iOS `BotStore.statusText`). */
 internal fun statusText(state: AppState): String = if (state.isUpdating) "Updating…" else when (val link = state.connection) {
     is LinkState.Ready -> if (state.mismatch != null) state.updateWord else "Online"
     LinkState.Connecting -> "Connecting…"
-    is LinkState.ComputerOffline -> state.cloudUnreached ?: link.lastSeenAt?.let { "Offline · seen ${RelativeTime.day(it)}" } ?: "Offline"
+    is LinkState.ComputerOffline -> if (state.isWaking) "Waking the computer…" else state.cloudUnreached ?: link.lastSeenAt?.let { "Offline · seen ${RelativeTime.day(it)}" } ?: "Offline"
     is LinkState.Failed -> when {
         link.unauthorized -> link.message
         state.mismatch != null -> "Needs update"
@@ -56,7 +62,7 @@ internal fun computerStatusText(state: AppState, stale: Boolean): String =
 internal fun connectionLabel(state: AppState): String = when (val link = state.connection) {
     is LinkState.Ready -> if (state.mismatch != null) state.updateWord else "Connected"
     LinkState.Connecting -> "Connecting…"
-    is LinkState.ComputerOffline -> if (state.cloud?.asleep == true) "Sleeping" else "Offline"
+    is LinkState.ComputerOffline -> if (state.isWaking) "Waking the computer…" else if (state.cloud?.asleep == true) "Sleeping" else "Offline"
     is LinkState.Failed -> if (link.unauthorized) "No access" else if (state.cloud?.asleep == true) "Sleeping" else "Offline"
 }
 
@@ -142,6 +148,7 @@ internal fun connectionSummary(states: List<AppState>): Phrase {
         online == states.size -> Phrase("%d connected", listOf(online))
         online > 0 -> Phrase("%d/%d connected", listOf(online, states.size))
         states.any { it.connection is LinkState.Connecting } -> Phrase("Connecting…")
+        states.any { it.isWaking } -> Phrase("Waking the computer…")
         states.all { it.connection.unauthorized } -> Phrase("No access")
         else -> Phrase("%d offline", listOf(states.size))
     }

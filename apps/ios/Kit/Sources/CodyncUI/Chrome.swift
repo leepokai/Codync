@@ -180,7 +180,10 @@ private struct FadeLayer<Layer: View>: View {
     }
 }
 
-/// Keeps the edge swipe back working on screens whose navigation bar we replaced.
+/// Keeps the swipe back working on screens whose navigation bar we replaced: the edge swipe and the swipe anywhere on
+/// the page (iOS 26), which the system refuses while its bar is hidden. Every page of a stack that hides the bar
+/// carries it, its root too: the page shown holds both swipes and gives them back to the system as it goes, so a
+/// native page in the same stack swipes as the system has it.
 public struct SwipeBackEnabler: UIViewControllerRepresentable {
     public init() {}
 
@@ -188,13 +191,36 @@ public struct SwipeBackEnabler: UIViewControllerRepresentable {
     public func updateUIViewController(_ controller: Controller, context: Context) {}
 
     public final class Controller: UIViewController, UIGestureRecognizerDelegate {
-        override public func didMove(toParent parent: UIViewController?) {
-            super.didMove(toParent: parent)
-            navigationController?.interactivePopGestureRecognizer?.delegate = self
+        /// Each swipe this page holds, with the system's delegate for it (never another page's).
+        private var held: [(swipe: UIGestureRecognizer, system: UIGestureRecognizerDelegate?)] = []
+
+        // On appearing, not on joining its parent: a page pushed inside a sheet joins it before the navigation
+        // controller holds it, and never got the swipe.
+        override public func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            guard let navigationController else { return }
+            held = [navigationController.interactivePopGestureRecognizer, navigationController.interactiveContentPopGestureRecognizer]
+                .compactMap { $0 }
+                .map { swipe in (swipe, (swipe.delegate as? Controller)?.system(of: swipe) ?? swipe.delegate) }
+            for (swipe, _) in held { swipe.delegate = self }
+        }
+
+        override public func viewDidDisappear(_ animated: Bool) {
+            super.viewDidDisappear(animated)
+            for (swipe, system) in held where swipe.delegate === self { swipe.delegate = system }
+        }
+
+        private func system(of swipe: UIGestureRecognizer) -> UIGestureRecognizerDelegate? {
+            held.first { $0.swipe === swipe }?.system
         }
 
         public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            (navigationController?.viewControllers.count ?? 0) > 1
+            guard let navigationController, navigationController.viewControllers.count > 1 else { return false }
+            // The swipe anywhere starts only on a drag to the right, so the page still scrolls.
+            guard gestureRecognizer === navigationController.interactiveContentPopGestureRecognizer,
+                  let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
+            let velocity = pan.velocity(in: pan.view)
+            return velocity.x > abs(velocity.y)
         }
     }
 }

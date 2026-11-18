@@ -6,6 +6,7 @@ every mode switch; with a `limit` file every prompt fails the way Claude's adapt
 
 import json
 import os
+import re
 import sys
 
 mode = "read-only"
@@ -53,6 +54,8 @@ for line in sys.stdin:
         send({"id": rid, "error": limit})
     elif method == "session/prompt":
         text = " ".join(b.get("text", "") for b in params.get("prompt", []))
+        # Echoed without the id note that leads each user message, so the answer reads as the message did.
+        text = re.sub(r"\[Codync: message [^\]]*\]\n", "", text)
         update = {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": f"mode {mode} · {text}"}}
         send({"method": "session/update", "params": {"sessionId": "s1", "update": update}})
         if os.path.exists("planless"):

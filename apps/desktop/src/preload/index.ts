@@ -86,6 +86,7 @@ const bridge: CodyncBridge = {
   channel: {
     call: (computerId, signKey, method, body, timeoutMs) => invoke('channel:call', computerId, signKey, method, body, timeoutMs),
     stream: (computerId, signKey, path, onData, onEnd) => openStream('channel', [computerId, signKey, path], onData, onEnd),
+    onPresence: (cb) => listen('channel:presence', cb),
   },
   account: {
     state: () => ipcRenderer.invoke('account:state'),

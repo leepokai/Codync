@@ -29,7 +29,7 @@ struct RosterSectionHeader: View {
             Spacer(minLength: 8)
             // Fades however it changes: a message arriving while folded isn't animated by the store.
             ZStack {
-                if showsUnread { UnreadBadge(count: section.unread).transition(.opacity) }
+                if showsUnread { UnreadBadge(count: section.unread, waiting: section.waiting).transition(.opacity) }
             }
             .animation(Motion.reduced(Motion.fade, reduceMotion), value: showsUnread)
             .layoutPriority(1)
@@ -54,7 +54,7 @@ struct RosterSectionHeader: View {
         .accessibilityAction(.default) { toggle() }
     }
 
-    /// "Work, 2 bots, 3 unread": what the count and the badge stand for, its phrase translated
+    /// "Work, 2 bots, 3 unread" (", Needs approval" while a bot in it waits on a card): what the count and the badge stand for, its phrase translated
     /// before the name goes in.
     private var spoken: String {
         let phrase = switch (section.count == 1, showsUnread) {
@@ -64,9 +64,11 @@ struct RosterSectionHeader: View {
         case (false, true): L10n.tr("{name}, {count} bots, {unread} unread")
         }
         // The name goes in last, so one that reads "{count}" stays as the user typed it.
-        return phrase.replacingOccurrences(of: "{count}", with: String(section.count))
+        let counted = phrase.replacingOccurrences(of: "{count}", with: String(section.count))
             .replacingOccurrences(of: "{unread}", with: String(section.unread))
             .replacingOccurrences(of: "{name}", with: section.name)
+        // The amber badge, said: its rows, which would say it, are folded away.
+        return showsUnread && section.waiting ? counted + ", " + L10n.tr("Needs approval") : counted
     }
 }
 

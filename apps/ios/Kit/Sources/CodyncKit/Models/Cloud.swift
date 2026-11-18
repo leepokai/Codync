@@ -53,6 +53,11 @@ public enum CloudMachineState: String, Codable, Sendable {
 
     /// Asleep or falling asleep: a connection or a message wakes it, so it isn't offline.
     public var isAsleep: Bool { self == .stopped || self == .stopping }
+
+    /// Its offline computer's line where only the account's list is known: asleep, or on its way up.
+    public var offlineText: String? {
+        if isAsleep { "Sleeping · wakes when you message" } else if self == .starting { "Waking the computer…" } else { nil }
+    }
 }
 
 /// One of the account's Codync Cloud computers (`GET` / `POST` / `PATCH /v1/cloud-computers`).

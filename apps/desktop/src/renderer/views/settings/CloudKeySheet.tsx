@@ -5,7 +5,7 @@ import { ModalHeader } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import type { CloudCredential, CloudProvider, CloudProviderOffer } from '../../lib/cloud-computer'
-import { fill } from '../../lib/fill'
+import { fill } from '@shared/fill'
 import { useTr } from '../../lib/use-language'
 import type { CloudComputerModel } from '../../store/cloud-computer'
 

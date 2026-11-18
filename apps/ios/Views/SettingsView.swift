@@ -11,6 +11,7 @@ struct SettingsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var notificationsAllowed: Bool?
     @AppStorage(Analytics.enabledKey) private var analyticsEnabled = true
+    @AppStorage(IconBadge.enabledKey, store: SharedStore.defaults) private var iconBadge = false
     @State private var confirmStartOver = false
     @State private var aboutAnalytics = false
 
@@ -31,6 +32,8 @@ struct SettingsView: View {
 
             CardSection("Notifications", footer: "Get a result summary, a request for input, or a failure notice. Notification previews follow your iOS settings.") {
                 notificationsRow
+                Toggle(isOn: Binding(get: { iconBadge }, set: { app.setIconBadge($0) })) { Text(L10n.tr("Unread count on app icon")).foregroundStyle(Palette.text) }
+                    .toggleStyle(.codync)
             }
 
             CardSection(footer: "Which features you use, never your messages, code or files. Helps us spot bugs sooner and make Codync better for you.") {

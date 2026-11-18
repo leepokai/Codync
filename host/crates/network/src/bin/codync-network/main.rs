@@ -26,7 +26,8 @@ then, from any terminal or agent on this computer:
   remove <computer> [--cascade]  take a computer out for good (--cascade: and what it admitted)
   recover <code>          make this computer the owner with the recovery code
   rules                   who on the other computers may write to agents here (first match decides)
-  rules allow|deny <agent@computer> <agent> [--first]  add a rule (* matches any; --first puts it on top)
+  rules allow|auto|ask|deny <agent@computer> <agent> [--first]  add a rule (* matches any; --first puts it on top;
+                          auto, ask: only for an agent an app runs, which asks its user about what it does)
   rules remove <n>        take out rule n";
 
 /// The agent a person at this computer's terminal speaks as.
@@ -108,7 +109,9 @@ async fn daemon(dir: &Path, connector: &Connector, args: &[String]) -> Result<()
         tokio::select! {
             Some(m) = inbox.recv() => {
                 let kind = if m.wake { "" } else { " (notice)" };
-                println!("← {}{kind} [{}]: {}", m.from, m.id, m.body);
+                // This computer's rule holds the sender to a ceiling: whoever reads the letter acts no more freely.
+                let level = if m.access.is_ceiling() { format!(" ({})", m.access.word()) } else { String::new() };
+                println!("← {}{kind}{level} [{}]: {}", m.from, m.id, m.body);
             }
             line = lines.next_line(), if typing => match line {
                 Ok(Some(line)) if line.trim() == "quit" => break,

@@ -22,10 +22,12 @@ import androidx.annotation.DrawableRes
     "arrow.triangle.2.circlepath" -> R.drawable.sf_arrow_triangle_2_circlepath
     "arrow.triangle.branch" -> R.drawable.sf_arrow_triangle_branch
     "arrow.turn.down.right" -> R.drawable.sf_arrow_turn_down_right
+    "arrow.turn.right.up" -> R.drawable.sf_arrow_turn_right_up
     "arrow.up" -> R.drawable.sf_arrow_up
     "arrow.up.doc.on.clipboard" -> R.drawable.sf_arrow_up_doc_on_clipboard
     "arrow.up.left.and.arrow.down.right" -> R.drawable.sf_arrow_up_left_and_arrow_down_right
     "arrow.up.right" -> R.drawable.sf_arrow_up_right
+    "arrow.up.to.line" -> R.drawable.sf_arrow_up_to_line
     "arrowshape.turn.up.left" -> R.drawable.sf_arrowshape_turn_up_left
     "battery.100percent" -> R.drawable.sf_battery_100percent
     "battery.75percent" -> R.drawable.sf_battery_75percent
@@ -39,6 +41,7 @@ import androidx.annotation.DrawableRes
     "bubble.left.and.bubble.right.fill" -> R.drawable.sf_bubble_left_and_bubble_right_fill
     "calendar" -> R.drawable.sf_calendar
     "camera.fill" -> R.drawable.sf_camera_fill
+    "character.cursor.ibeam" -> R.drawable.sf_character_cursor_ibeam
     "chart.bar" -> R.drawable.sf_chart_bar
     "chart.bar.doc.horizontal" -> R.drawable.sf_chart_bar_doc_horizontal
     "checklist" -> R.drawable.sf_checklist
@@ -120,6 +123,7 @@ import androidx.annotation.DrawableRes
     "mic" -> R.drawable.sf_mic
     "mic.fill" -> R.drawable.sf_mic_fill
     "mic.slash" -> R.drawable.sf_mic_slash
+    "minus" -> R.drawable.sf_minus
     "minus.circle" -> R.drawable.sf_minus_circle
     "moon" -> R.drawable.sf_moon
     "moon.zzz.fill" -> R.drawable.sf_moon_zzz_fill
@@ -177,6 +181,7 @@ import androidx.annotation.DrawableRes
     "text.bubble" -> R.drawable.sf_text_bubble
     "trash" -> R.drawable.sf_trash
     "tray" -> R.drawable.sf_tray
+    "tray.full" -> R.drawable.sf_tray_full
     "waveform" -> R.drawable.sf_waveform
     "wifi" -> R.drawable.sf_wifi
     "wifi.exclamationmark" -> R.drawable.sf_wifi_exclamationmark

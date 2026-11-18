@@ -67,6 +67,7 @@ const bridge: CodyncBridge = {
       onEnd({ status: 503, message: DEMO_UNAVAILABLE })
       return () => {}
     },
+    onPresence: none,
   },
   account: {
     state: async () => account,
@@ -154,7 +155,7 @@ try {
   localStorage.setItem('macAccountOnboardingCompleted', 'true')
   localStorage.setItem('computerAccessSetup', JSON.stringify('later'))
   localStorage.setItem('githubStarAsk', JSON.stringify({ kind: 'done' }))
-  localStorage.setItem('kofiInvite', JSON.stringify({ kind: 'done' }))
+  localStorage.setItem('kofiAsk', JSON.stringify({ asked: 3, day: 0 }))
   localStorage.setItem('extensionsMovedTipSeen', 'true')
   localStorage.setItem('whatsNewSeen', JSON.stringify(version))
 } catch {}

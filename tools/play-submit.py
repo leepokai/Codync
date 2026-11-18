@@ -41,7 +41,7 @@ NOTES = Path(__file__).resolve().parent.parent / "apps/android/WhatsNew.md"
 # strings, What's new announcements and push relay it takes from the iPhone kit. Tests, the
 # emulator-only release acceptance build and the Play notes never reach the bundle.
 ANDROID_PATHS = ["apps/android", "apps/shared", "apps/ios/Kit/Sources/CodyncKit/Resources/Languages",
-                 "apps/ios/Kit/Sources/CodyncKit/Resources/Announcements",
+                 "apps/ios/Kit/Sources/CodyncUI/Resources/Announcements",
                  "apps/ios/Kit/Sources/CodyncKit/Client/SharedStore.swift",
                  ":(exclude)apps/android/*/src/test/*", ":(exclude)apps/android/*/src/androidTest/*",
                  ":(exclude)apps/android/app/src/releaseAcceptance", ":(exclude)apps/android/README.md",

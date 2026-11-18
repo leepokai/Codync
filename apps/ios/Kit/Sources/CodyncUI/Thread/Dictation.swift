@@ -34,10 +34,10 @@ struct DictationService {
 }
 
 /// Dictation into the message box. With on-device speech the words appear as they're recognized,
-/// after what was already typed, and the recording pill's stop, or the recognizer finishing on a
-/// pause, stops it; it uses the call's language setting. With a provider picked beside the mic, it
-/// records, and the pill's stop has the computer transcribe all of it with the user's key; the
-/// transcript goes after what's in the box by then.
+/// after what was already typed (words after a pause go after the ones before), and the recording
+/// pill's stop, or the recognizer finishing, stops it; it uses the call's language setting. With a
+/// provider picked beside the mic, it records, and the pill's stop has the computer transcribe all
+/// of it with the user's key; the transcript goes after what's in the box by then.
 @MainActor @Observable
 final class Dictation {
     private(set) var listening = false {
@@ -62,8 +62,12 @@ final class Dictation {
     @ObservationIgnored private var edit: (((String) -> String) -> Void)?
     /// The box when dictation started.
     @ObservationIgnored private var before = ""
+    /// What the on-device recognizer heard since then.
+    @ObservationIgnored private var segments = SpeechSegments()
     /// A recording's transcription; `stop()` cancels it so no more pieces go out on the user's key.
     @ObservationIgnored private var transcription: Task<Void, Never>?
+    /// Runs once the transcript is in the box (a send while dictating); dropped on a failure or a stop.
+    @ObservationIgnored private var done: (() -> Void)?
     /// Bumped per start and stop, so a start still waiting (key check, permission) or a late
     /// result from an earlier recognition is dropped.
     @ObservationIgnored private var generation = 0
@@ -81,21 +85,15 @@ final class Dictation {
     /// Transcription requests in flight at once, under the channel's and the providers' limits.
     private static let inFlight = 3
 
-    /// `said` after what's already in the box, with one space between.
-    static func join(_ before: String, _ said: String) -> String {
-        if before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return said }
-        if said.isEmpty { return before }
-        return before.last?.isWhitespace == true ? before + said : before + " " + said
-    }
-
     /// Starts with the engine picked beside the mic, after `draft`; a provider goes through `model`'s
     /// computer. A `stop()` (another chat, a call, a send) or another tap while it waits wins.
     func start(after draft: String, model: BotStore, edit: @escaping ((String) -> String) -> Void) async {
-        guard !listening, !transcribing else { return }
+        guard !busy else { return }
         failure = nil
         needsKey = false
         generation += 1
         before = draft
+        segments = SpeechSegments()
         if let provider = service.picked() {
             await record(provider, model: model, generation: generation, edit: edit)
         } else {
@@ -103,24 +101,45 @@ final class Dictation {
         }
     }
 
-    /// The pill's stop: on-device speech has already typed its words; a recording gets transcribed.
-    func finish() {
-        guard let recording else { return stop() }
+    /// Listening, or waiting for a recording's transcript.
+    var busy: Bool { listening || transcribing }
+
+    /// The pill's stop, or a send while dictating: on-device speech has already typed its words; a recording gets
+    /// transcribed. `done` runs once the words are in the box, not after a failure.
+    func finish(then done: (() -> Void)? = nil) {
+        // Still transcribing: `done` waits for it too, so a second send doesn't go before the words.
+        if transcribing {
+            if let done { self.done = done }
+            return
+        }
+        guard let recording else {
+            stop()
+            done?()
+            return
+        }
         let edit = edit
         stop()
-        guard recording.pcm.count >= Self.minBytes else { return }
+        guard recording.pcm.count >= Self.minBytes else {
+            done?()
+            return
+        }
         let generation = generation
         transcribing = true
+        self.done = done
         transcription = Task {
             do {
                 let said = try await service.transcribe(recording.pcm, recording.provider, recording.model)
                 guard generation == self.generation else { return }
-                edit? { Self.join($0, said) }
+                edit? { SpeechSegments.join($0, said) }
             } catch {
                 guard generation == self.generation else { return }
                 failure = error.localizedDescription
+                self.done = nil
             }
             transcribing = false
+            let done = self.done
+            self.done = nil
+            done?()
         }
     }
 
@@ -129,6 +148,7 @@ final class Dictation {
         generation += 1
         transcription?.cancel()
         transcription = nil
+        done = nil
         task?.cancel()
         task = nil
         request?.endAudio()
@@ -264,13 +284,13 @@ final class Dictation {
             for try await done in group { keep(done) }
             return texts
         }
-        return VoiceSettings.inReadersScript(texts.filter { !$0.isEmpty }.reduce("", join))
+        return VoiceSettings.inReadersScript(texts.filter { !$0.isEmpty }.reduce("", SpeechSegments.join))
     }
 
-    private func recognized(_ text: String, final: Bool, generation: Int) {
+    private func recognized(_ text: String, final: Bool, ends: Bool, generation: Int) {
         guard generation == self.generation else { return }
-        let before = before
-        edit? { _ in Self.join(before, text) }
+        let said = SpeechSegments.join(before, segments.heard(text, ends: ends))
+        edit? { _ in said }
         if final { stop() }
     }
 
@@ -278,11 +298,12 @@ final class Dictation {
         { result, error in
             let text = result?.bestTranscription.formattedString
             let final = result?.isFinal ?? false
+            let ends = result?.endsSegment ?? false
             // Silence just ends it; any other failure says why instead of ending without a word.
             let failure = error.flatMap { OnDeviceSpeech.isSilence($0) ? nil : OnDeviceSpeech.unheard }
             let failed = error != nil
             Task { @MainActor in
-                if let text { dictation.recognized(text, final: final, generation: generation) }
+                if let text { dictation.recognized(text, final: final, ends: ends, generation: generation) }
                 guard failed, generation == dictation.generation else { return }
                 dictation.failure = failure
                 dictation.stop()

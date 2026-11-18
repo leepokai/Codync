@@ -55,7 +55,9 @@ On the existing `chat` helper (`dev_servers/tools.rs`): a new MCP server would a
 ## Approval and safety
 
 - **Under Ask, a start waits on an approval card** with the command and folder (`chat::manage::approve`, as `update_bot`).
-  Under Auto it runs, like the agent's own commands. A server first started under Auto had no card, so it gets one when
+  Under Auto it runs, like the agent's own commands, unless a network rule holds the bot to a
+  [ceiling](codync-network.md#ceilings-auto-and-ask): a turn under one can't start a server at all, and what the
+  agent goes on with after that turn asks like Ask. A server first started under Auto had no card, so it gets one when
   the bot, now under Ask, starts it again (`Saved::approved`).
 - **The command runs outside any sandbox the agent has** (Codex has one). A sandboxed agent under Auto therefore has a
   way out of it through this tool. The card under Ask is the control; decided 2026-11-05 to match the agent's own
@@ -103,7 +105,7 @@ white, and color comes from the bots.
 - **Title:** the desktop's title pill shows `Builder :5173` in quiet text; the phones' subtitle shows `Connected · :5173`;
   the terminal's header shows it on the right. With more running it's `:5173 +2`; with no port, the server's name; none
   running, `Starting` or `Failed to start`; stopped, nothing. Opening the bot's details is what the title already does.
-- **Details:** a **Dev servers** section first on the Details tab, shown only when the bot has servers. A row is one line:
+- **Details:** a **Dev servers** section on the Details tab, after Routines, shown only when the bot has servers. A row is one line:
   name and port (or `Running`, `Starting`, `Stopped`, `Failed to start`). A click opens it in the browser, or with no port
   to open (a watch build, or one that ended) its logs; the rest (copy address, logs, restart, stop, remove) is behind
   `⋯`, which on the desktop shows only when the row is hovered.

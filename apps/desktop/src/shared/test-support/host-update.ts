@@ -30,10 +30,16 @@ export function hostUpdateFixture(options: { environment?: 'main' | 'dev'; platf
     if (!behavior.installed) throw new Error('No service')
     return binary.replace(/codync-host\.exe$/, identity.supervisor)
   }
+  /** What `reg export` writes for the Run key: the value with backslashes and quotes escaped. */
+  const runKeyExport = () => {
+    const escape = (text: string) => text.replace(/[\\"]/g, '\\$&')
+    return `\uFEFFWindows Registry Editor Version 5.00\r\n\r\n"${identity.windowsService}"="${escape(`"${service()}" serve --port 19222`)}"\r\n`
+  }
   const fs = {
     existsSync: (name: string) => !options.missingBinary && name === binary,
     realpathSync: (name: string) => name,
-    readFileSync: (name: string) => name.endsWith('host-prefs.json') ? JSON.stringify(persisted) : service(),
+    readFileSync: (name: string) => name.endsWith('host-prefs.json') ? JSON.stringify(persisted) : name.endsWith('.reg') ? runKeyExport() : service(),
+    rmSync: () => {},
     mkdirSync: () => {},
     writeFileSync: (_name: string, value: string) => { Object.assign(persisted, JSON.parse(value)) },
     promises: {
@@ -42,7 +48,7 @@ export function hostUpdateFixture(options: { environment?: 'main' | 'dev'; platf
   }
   const module = loadMainModule<typeof import('../../main/host-controller.ts')>('host-controller', {
     'node:events': { EventEmitter }, 'node:crypto': crypto, 'node:path': path, 'node:fs': fs,
-    'node:os': { homedir: () => '/home/test', platform: () => platform },
+    'node:os': { homedir: () => '/home/test', platform: () => platform, tmpdir: () => '/tmp' },
     'node:child_process': {
       execFileSync: () => service(),
       execFile: (_bin: string, args: string[], _options: unknown, callback: (error: { code: number } | null, stdout: string, stderr: string) => void) => {

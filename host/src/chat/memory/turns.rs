@@ -1,5 +1,6 @@
 //! Which bot's turn a change the scan finds in a memory folder is credited to: the turns running now, and the
-//! memory files their tool calls touched. The scan itself is `files`.
+//! memory files their tool calls touched. The scan itself is `files`. A turn is its actor's: the bot's own, or
+//! one of its tasks' (`chat::tasks`), whose writes are the bot's, made in the task's session.
 
 use super::files::{self, SETTLE_MS};
 use crate::LockExt;
@@ -15,6 +16,9 @@ use std::sync::{Arc, Mutex};
 /// bot's, even one no tool call of it named (a shell command, say), once the turn ran a tool that can write files.
 #[derive(Clone, Debug)]
 pub(super) struct Turn {
+    /// Whose turn it is: the bot, or one of its tasks. Each has one turn at a time.
+    actor: String,
+    /// The bot whose memory it writes: the actor, or a task's bot.
     bot: String,
     /// When it began, Unix ms; also its id.
     start: i64,
@@ -31,12 +35,14 @@ pub(super) struct Turn {
 // ponytail: in memory, so a host restart forgets turns; a change made just before one is then the computer's.
 static TURNS: Mutex<Vec<Turn>> = Mutex::new(Vec::new());
 
-/// A bot is about to prompt its agent. A turn of it that never ended (a fallback took over) is this one now.
-pub fn begin_turn(bot: &str, session: &str, message: Option<String>) {
+/// `cfg` (a bot, or one of its tasks) is about to prompt its agent. A turn of it that never ended (a fallback took
+/// over) is this one now. `message` is `Runtime::message` of that turn: a task's has none, so a task only adds.
+pub fn begin_turn(cfg: &BotConfig, session: &str, message: Option<String>) {
     let mut turns = TURNS.locked();
-    turns.retain(|t| t.bot != bot || t.ended.is_some());
+    turns.retain(|t| t.actor != cfg.id || t.ended.is_some());
     turns.push(Turn {
-        bot: bot.to_owned(),
+        actor: cfg.id.clone(),
+        bot: cfg.owner().to_owned(),
         start: crate::store::now_ms(),
         session: session.to_owned(),
         message,
@@ -45,22 +51,30 @@ pub fn begin_turn(bot: &str, session: &str, message: Option<String>) {
     });
 }
 
-/// A bot's turn didn't start after all: nothing of it is left to scan.
-pub fn drop_turn(bot: &str) {
-    TURNS.locked().retain(|t| t.bot != bot || t.ended.is_some());
+/// An actor's turn didn't start after all: nothing of it is left to scan.
+pub fn drop_turn(actor: &str) {
+    TURNS.locked().retain(|t| t.actor != actor || t.ended.is_some());
 }
 
-/// Notes that the bot's running turn ran a tool that can write files; the turn's start.
-fn wrote(bot: &str) -> Option<i64> {
+/// The running turn of `actor` (a bot, or one of its tasks): its session, and the user's message that started it
+/// when it is one the user started in the bot's own chat. What a memory tool call made in it is credited to.
+pub fn running(actor: &str) -> Option<(String, Option<String>)> {
+    let turns = TURNS.locked();
+    turns.iter().find(|t| t.actor == actor && t.ended.is_none()).map(|t| (t.session.clone(), t.message.clone()))
+}
+
+/// Notes that the actor's running turn ran a tool that can write files; the turn's start.
+fn wrote(actor: &str) -> Option<i64> {
     let mut turns = TURNS.locked();
-    let turn = turns.iter_mut().find(|t| t.bot == bot && t.ended.is_none())?;
+    let turn = turns.iter_mut().find(|t| t.actor == actor && t.ended.is_none())?;
     turn.wrote = true;
     Some(turn.start)
 }
 
-/// The tool call of a bot that last touched a memory file, and in which turn, so the scan credits the change to it.
+/// The tool call that last touched a memory file, and in which turn, so the scan credits the change to it.
 #[derive(Serialize, Deserialize)]
 struct Touch {
+    /// The turn's actor: the bot, or one of its tasks.
     bot: String,
     /// The [`Turn::start`] of the turn it was made in.
     #[serde(default)]
@@ -84,8 +98,9 @@ pub fn touched(hub: &Hub, cfg: &BotConfig, tool: &serde_json::Value) {
         .chain(tool["diffs"].as_array())
         .flatten()
         .filter_map(|item| item["path"].as_str());
+    // A task's memory folders are its bot's.
     let folders: Vec<(PathBuf, Option<String>)> =
-        files::layers(cfg).into_iter().map(|layer| (files::folder(layer.as_deref()), layer)).collect();
+        files::layers(&cfg.as_owner()).into_iter().map(|layer| (files::folder(layer.as_deref()), layer)).collect();
     for path in paths {
         // The name as the folders have it (`health/allergies.md`), whichever separator the agent's path used.
         let named = folders.iter().find_map(|(dir, layer)| {
@@ -107,12 +122,13 @@ fn touch_key(layer: Option<&str>, name: &str) -> String {
 
 /// At the end of a turn: the bot's edits usually come right before its reply, so a file still settling is taken
 /// once it has. The turn stays the bot's until then.
-pub fn scan_after_turn(hub: Arc<Hub>, cfg: BotConfig) {
+pub fn scan_after_turn(hub: Arc<Hub>, cfg: &BotConfig) {
     let mut start = None;
-    for turn in TURNS.locked().iter_mut().filter(|t| t.bot == cfg.id && t.ended.is_none()) {
+    for turn in TURNS.locked().iter_mut().filter(|t| t.actor == cfg.id && t.ended.is_none()) {
         turn.ended = Some(crate::store::now_ms());
         start = Some(turn.start);
     }
+    let (actor, cfg) = (cfg.id.clone(), cfg.as_owner());
     tokio::spawn(async move {
         let (h, c) = (hub.clone(), cfg.clone());
         if tokio::task::spawn_blocking(move || files::scan(&h, &c)).await.unwrap_or(false) {
@@ -120,7 +136,7 @@ pub fn scan_after_turn(hub: Arc<Hub>, cfg: BotConfig) {
             let c = cfg.clone();
             let _ = tokio::task::spawn_blocking(move || files::scan(&hub, &c)).await;
         }
-        TURNS.locked().retain(|t| t.bot != cfg.id || Some(t.start) != start);
+        TURNS.locked().retain(|t| t.actor != actor || Some(t.start) != start);
     });
 }
 
@@ -148,7 +164,7 @@ pub(super) fn turn_of(
         .cloned()
         .collect();
     let config = |bot: &str| hub.store.bot(bot).ok().flatten().filter(|row| !row.deleted).map(|row| row.config);
-    let named = touch.and_then(|touch| turns.iter().find(|t| t.bot == touch.bot && t.start == touch.turn).cloned());
+    let named = touch.and_then(|touch| turns.iter().find(|t| t.actor == touch.bot && t.start == touch.turn).cloned());
     if let Some(turn) = named
         && let Some(cfg) = config(&turn.bot)
     {

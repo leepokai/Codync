@@ -57,6 +57,8 @@ export interface Retired {
   at: number;
   code: number;
   reason: string;
+  /** The close was already asked for; asking again keeps the DO awake while its peer can't answer. */
+  closed?: boolean;
 }
 
 export interface Acl {

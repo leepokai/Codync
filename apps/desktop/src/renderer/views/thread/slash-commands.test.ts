@@ -27,6 +27,22 @@ test('built-in commands come first, then only the bot\'s own skills, by name or 
   assert.deepEqual(slashCommands(normalizeBot({ id: 'b', fastModeSupport: 'unsupported' }), '', []), [], 'no Fast mode on offer')
 })
 
+test('a bot\'s agent commands follow its skills, matched by name, and fill in like a skill', () => {
+  const agentCommands = [{ name: 'review', description: 'Review the changes' }, { name: 'compact', description: '', hint: 'what to keep' }]
+  const bot = normalizeBot({ id: 'b', backend: 'claude', skills: ['pdf'], fastModeSupport: 'unsupported', agentCommands })
+  const listed = slashCommands(bot, '', installed)
+  assert.deepEqual(listed.map((c) => c.name), ['pdf', 'review', 'compact'])
+  assert.deepEqual(listed[1].action, { kind: 'agent', agent: 'claude' })
+  assert.equal(listed[2].detail, 'what to keep', 'the hint stands in for a missing description')
+  assert.deepEqual(slashCommands(bot, 'rev', installed).map((c) => c.name), ['review'])
+  const onFallback = normalizeBot({ ...bot, agentStep: { step: 1, agent: 'codex', model: null, since: 0, reason: null } })
+  assert.deepEqual(slashCommands(onFallback, 'rev', installed)[0].action, { kind: 'agent', agent: 'codex' }, 'the agent answering now')
+  assert.equal(returnRuns(listed[1], '/rev'), true)
+  assert.equal(returnRuns(listed[1], '/review'), false, 'typed out, Return sends it')
+  const group = normalizeBot({ id: 'g', kind: 'group', members: ['b'], agentCommands })
+  assert.deepEqual(slashCommands(group, '', installed, [bot]).map((c) => c.name), ['pdf'], 'a group has no agent of its own')
+})
+
 test('a group lists its bots\' commands: Fast mode for all of them, then every skill one of them has', () => {
   const group = normalizeBot({ id: 'g', kind: 'group', members: ['a', 'b'] })
   const a = normalizeBot({ id: 'a', name: 'Ada', skills: ['pdf'], fastModeSupport: 'offered' })

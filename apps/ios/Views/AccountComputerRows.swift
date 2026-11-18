@@ -38,7 +38,7 @@ struct AccountComputerRow: View {
         return switch computer.access {
         case "granted" where revoke != nil: "Approved for an earlier install of Codync. Revoke it, then ask again."
         case "pending": "\(online) · A request is waiting"
-        default: !computer.isOnline && computer.cloud?.state.isAsleep == true ? "Sleeping · wakes when you message" : "\(online) · In your account"
+        default: (computer.isOnline ? nil : computer.cloud?.state.offlineText) ?? "\(online) · In your account"
         }
     }
 }

@@ -2,10 +2,16 @@ package com.codync.android
 
 import com.codync.android.core.Computer
 import com.codync.android.core.VersionMismatch
+import com.codync.android.design.AppLanguage
+import com.codync.android.design.translate
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.Assert.*
 import org.junit.Test
+import java.io.File
 
 class HostUpdateNoticeTest {
     private val behind = VersionMismatch.UpdateHost("2.23.1", "2.26.0")
@@ -33,6 +39,14 @@ class HostUpdateNoticeTest {
             notice(true, HostUpdate.Requested(now - HOST_UPDATE_WAIT_MS + 1)))
         assertEquals(HostUpdateNotice("$needs Mini didn't finish updating. Try again, or update Codync on that computer.", true),
             notice(true, HostUpdate.Requested(now - HOST_UPDATE_WAIT_MS)))
+    }
+
+    @Test fun aStalledUpdateReadsInTheAppLanguage() {
+        // The filled sentence goes through the catalog's "{name} didn't finish updating…" template at display time.
+        val zh = Json.parseToJsonElement(File("../../ios/Kit/Sources/CodyncKit/Resources/Languages/zh-Hans.json").readText())
+            .jsonObject.mapValues { it.value.jsonPrimitive.content }
+        val stalled = line("2.29.0", update = HostUpdate.Requested(now - HOST_UPDATE_WAIT_MS)).detail.single()
+        assertEquals("Mini 没有完成更新。请再试一次，或在那台电脑上更新 Codync。", translate(stalled, AppLanguage.Zh, false, zh))
     }
 
     @Test fun aRefusedUpdateSaysWhy() {

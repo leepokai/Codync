@@ -4,8 +4,8 @@ Routines belong to an agent bot and are usually created by talking to it ("I wan
 a routine that…"); the host gives the [lead bot](lead-bot.md) one of its own, *Check in*. Every agent receives the built-in `routines` MCP server. The Details page
 of the bot's details (the desktop's details panel; the phones' details sheet, which tapping the
 chat's title or a routine's notice opens) shows a compact list
-(name, schedule, on/off switch), with the [follow-ups](follow-ups.md#in-the-routines-list) the bot set for
-itself listed above it on dashed cards. **+** opens the form for doing it by hand;
+(name, schedule, on/off switch) under **Routines**, with the [follow-ups](follow-ups.md#in-details) the bot set for
+itself in their own **Later** section above it, on dashed cards. **+** opens the form for doing it by hand;
 requests to the bot are typed directly in the chat. A row opens
 the same form filled in, with delete and test run beside Save; the row's switch
 pauses and resumes. Run results appear in the chat. The form is name, instruction, a **When to run** type (Schedule or Webhook, the two
@@ -112,7 +112,21 @@ next deadlines and run records are saved in SQLite (`routines.v1`). Due triggers
 are coalesced into one run per routine; only one routine per bot is dispatched at a
 time. Bot actors serialize routine work with ordinary conversation work.
 
-A run talks in the bot's chat: a "Routine · <name>" notice, then the run's trace and
+A run is an item in the bot's [box](background-tasks.md#other-sources): it waits for a place under the bot's
+`maxAgents` and a task works it, so the chat stays free and a bot's routines may run side by side. When a task takes
+it, the "Routine · <name>" notice goes into the chat and takes a turn there; the run's trace is the task's
+transcript (the item's details), and its reply, which is the result, is posted in the chat as the bot's message in
+that turn when the run ends. Nothing of it is a turn of the bot's own. The task starts in a new session that knows
+only the run's prompt, as a run in the chat does (no fork of the chat's session, nothing of the chat), with the
+bot's instructions and memory; what it writes to memory is checked as a routine's turn is (it only adds). The `routines` tools reach
+the bot's routines from it, so `save_progress` and `follow_up` work as before, and `send_message`, `send_file`,
+`request_decision` and `add_work` are refused as before. The run's item can be stopped (the run is cancelled),
+dropped while it waits, and tried again (the routine runs again) from the bot's Details; pausing or deleting the
+routine takes a waiting run out of the box. Stop in the chat doesn't cancel it.
+
+A bot with computer use or Manage the team on runs its routines in its chat instead, one at a time, since a task
+has neither (`tasks::boxed`); the rest of this paragraph is that path. A run talks in the bot's chat: a
+"Routine · <name>" notice, then the run's trace and
 its reply, which is the result, all in the turn the notice takes when the run begins (a
 message sent meanwhile gets the next one). It runs in a fresh agent session of its own
 (`routines::session_slot`, kept in kv `lane.session.<bot>@<bot>/routine-<run>` so a
@@ -130,18 +144,20 @@ Replying to a run's result goes to the bot's main session, with the result quote
 deleting cancels pending runs; work already running can finish. Deleting a bot
 cancels its pending work. Missed intervals coalesce rather than replaying a backlog.
 
-Pending runs survive a restart. The actor claims a run only when it reaches the
-front of its queue, using the latest saved instruction. Runs interrupted during
+Pending runs survive a restart. A run is claimed only when a task takes it (in the chat: when it reaches the
+front of the bot's queue), using the latest saved instruction. A run in the box that a restart cut off goes on in
+its task's session when the task can resume (its time limit counts again from there); when it can't, or the box
+lost the run, it becomes `interrupted` at once. Runs in the chat interrupted during
 execution become `recovering` and load their existing agent session. If the
 provider cannot load it, they become `interrupted` instead of replaying the task
-in a new session (the retry rules below still apply). Session recovery cannot
+in a new session. Either way the retry rules below still apply, and a run is never replayed from the start. Session recovery cannot
 guarantee exactly-once external side effects; inspect the transcript before retrying
 an interrupted action.
 
 ### Failed runs (`routines/retry.rs`)
 
 A failed or interrupted run is tried again only when that can't repeat work. The
-host checks the run's turn for a tool call whose ACP kind isn't `read`, `search`,
+host checks the run's turn (its task's, for a run in the box) for a tool call whose ACP kind isn't `read`, `search`,
 `fetch` or `think` (an unknown kind counts as acting; `store::acted_in_turn`).
 
 - **Nothing acted** (a rate limit, an agent that didn't start, a session it couldn't
@@ -166,7 +182,8 @@ host checks the run's turn for a tool call whose ACP kind isn't `read`, `search`
   (busy); a paused routine is refused until it's resumed.
 
 Each run has a timeout (default one hour, configurable from 1 to 86400 seconds).
-A hung agent is terminated so subsequent work can proceed. When the time limit cuts
+A hung agent is terminated so subsequent work can proceed (a run in the box: its task is stopped, and its process
+ended if it ignores that for 15 seconds). When the time limit cuts
 session setup short, an agent that can reopen sessions is stopped too, so a session it was
 still opening can't stay open unknown to the host; one that can't keeps running with the
 sessions it has. A run's outcome is
@@ -262,6 +279,10 @@ reconstruction of every Grok Bot routine behavior.
 
 ## Validation
 
+`host/tests/tasks_e2e.rs` covers a run as an item (its message in the chat, `(pass)`, progress, stop, try again, a
+restart). Of the suites below, the tests about a run's own session in the chat (its close, its setup cut short by
+the time limit, an agent that can't close sessions, a run's memory edits) use a bot with Manage the team on; the
+rest run their routines in the box.
 `host/tests/routines_e2e.rs` starts isolated hosts and deterministic ACP agents,
 checks real scheduled execution, webhook credentials, delivery deduplication,
 pause/delete/edit while queued, crash recovery in the same session, unsupported

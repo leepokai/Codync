@@ -3,7 +3,7 @@ import { IconButton } from '../components/Controls'
 import { Icon } from '../components/Icon'
 import type { pointerDrag } from '../lib/pointer-drag'
 import { useTr } from '../lib/use-language'
-import { fill } from '../lib/fill.ts'
+import { fill } from '@shared/fill'
 import { useSlide } from '../lib/slide'
 import type { BotStore } from '../store/bot-store'
 import { ComputerBadge } from './ComputerBadge'
@@ -67,7 +67,7 @@ export function ComputerHeadingLabel({ store, compact, collapsed }: { store: Bot
       {!compact ? (
         <span className="computer-roster-label">
           <strong>{store.hostName}</strong>
-          <span className={`computer-roster-status ${store.shownConnection.kind === 'online' ? '' : 'warning'}`}>{tr(store.connectionLabel)}</span>
+          <span className={`computer-roster-status ${store.isOffline && !store.isUpdating && !store.isAsleep ? 'warning' : ''}`}>{tr(store.connectionLabel)}</span>
         </span>
       ) : null}
       <span className={`computer-roster-chevron ${collapsed ? 'collapsed' : ''}`}><Icon name="chevron.down" size={9} /></span>

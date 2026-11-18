@@ -208,11 +208,6 @@ pub(super) fn registry(id: &str) -> Option<&'static str> {
     backends::harness(id).and_then(|harness| harness.registry)
 }
 
-/// A bot here runs this agent, as its own or a fallback.
-pub(super) fn runs(store: &Store, backend: &str) -> bool {
-    backends::harness_of(backend).is_some_and(|harness| used_agents(store).contains(harness.id))
-}
-
 /// The agents this computer's bots run, by their readers' ids.
 fn used_agents(store: &Store) -> HashSet<&'static str> {
     let bots = store.bots().unwrap_or_else(|error| {
@@ -335,13 +330,13 @@ pub fn set_order(hub: &Hub, ids: &[String]) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::super::{Provider, near_limit};
     use super::*;
     use crate::remote::identity::Identity;
     use crate::store::{BotConfig, Fallback};
 
-    fn hub() -> std::sync::Arc<Hub> {
+    pub(in crate::usage) fn hub() -> std::sync::Arc<Hub> {
         let dir = std::env::temp_dir().join(format!("codync-usage-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
@@ -426,15 +421,6 @@ mod tests {
         set_shown(&hub, "cursor", false).unwrap();
         assert_eq!(hub.usage.locked().providers, [], "no stale reading stays behind");
         assert!(wanted_readers(&hub.store).is_empty());
-    }
-
-    #[test]
-    fn a_bot_runs_an_agent_by_either_of_its_ids() {
-        let hub = hub();
-        hub.store.save_bot(&bot("b1", "grok-build", Some("antigravity"))).unwrap();
-        assert!(runs(&hub.store, "grok"));
-        assert!(runs(&hub.store, "antigravity-acp"), "a fallback counts");
-        assert!(!runs(&hub.store, "cursor"));
     }
 
     #[test]

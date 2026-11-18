@@ -142,7 +142,7 @@ android {
     buildFeatures.buildConfig = true
     buildFeatures.resValues = true
     sourceSets.getByName("main").assets.srcDir(rootProject.file("../ios/Kit/Sources/CodyncKit/Resources/Languages"))
-    sourceSets.getByName("main").assets.srcDir(rootProject.file("../ios/Kit/Sources/CodyncKit/Resources/Announcements"))
+    sourceSets.getByName("main").assets.srcDir(rootProject.file("../ios/Kit/Sources/CodyncUI/Resources/Announcements"))
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("../../docs/reference/fixtures"))
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
@@ -175,8 +175,9 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
     implementation(libs.work)
-    // What Google Play has for this app (the update notice).
+    // What Google Play has for this app (the update notice) and its in-app review window.
     implementation(libs.play.app.update)
+    implementation(libs.play.review)
     implementation(libs.glance)
     // Remote screen video and OpenAI Realtime voice, as the iPhone app's WebRTC.
     implementation(libs.webrtc)

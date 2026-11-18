@@ -1,3 +1,4 @@
+import { fill } from '@shared/fill'
 import { Dialog } from '../components/Overlay'
 import { leavingRemovesText } from '../lib/account-copy'
 import { useModel } from '../lib/observable'
@@ -15,7 +16,7 @@ export function MoveComputerPrompt() {
   useModel(app.local)
   const offer = app.cloud.moveOffer
   const names = useLeaveRemoves(offer?.store ?? null, offer !== null)
-  const where = offer?.from ? tr("It's in {name}'s account.").replaceAll('{name}', offer.from) : tr("It's in another account.")
+  const where = offer?.from ? fill(tr("It's in {name}'s account."), { name: offer.from }) : tr("It's in another account.")
   return (
     <Dialog
       open={offer !== null}

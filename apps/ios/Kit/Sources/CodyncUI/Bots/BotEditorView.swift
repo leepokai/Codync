@@ -55,19 +55,14 @@ public struct BotEditorView: View {
     }
 }
 
-/// Which settings a form shows: all of them (the editor), what changes often (instructions, model,
-/// fast mode: the details sheet's Details page) or the rest (its Settings page).
-enum FormPart {
-    case all, often, rarely
-}
-
-/// Bot settings, in sections in the Settings style (`CardSection`). `scrolls` is off where a
-/// surrounding view scrolls (the details sheet).
+/// Bot settings, in sections in the Settings style (`CardSection`): what it is told and what runs it first.
+/// `scrolls` is off where a surrounding view scrolls (the details sheet).
 struct BotSettingsForm: View {
     @Binding var draft: BotDraft
     let error: String?
     var scrolls = true
-    var part: FormPart = .all
+    /// On the details sheet, whose Computer page has the computer's switch.
+    var inDetails = false
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pickingFolder = false
@@ -100,24 +95,6 @@ struct BotSettingsForm: View {
         }
     }
 
-    /// What changes often: on the details sheet's Details page.
-    private var oftenSections: some View {
-        VStack(alignment: .leading, spacing: 30) {
-            CardSection("Instructions") { instructions }
-            CardSection("Agent") {
-                fallbackBanner
-                modelPicker
-                loginProfilePicker
-                fallbackList
-                compactionPicker
-            }
-            .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot?.agentStep)
-            if let error {
-                Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger)
-            }
-        }
-    }
-
     private var instructions: some View {
         Field("Standing instructions", detail: "Rules that always apply. Put task-specific requests in the chat instead.") {
             TextField(L10n.tr("e.g. Reviews PRs. Never pushes without asking."), text: $draft.description, axis: .vertical)
@@ -134,7 +111,7 @@ struct BotSettingsForm: View {
                          agents: (model.hello?.backends ?? []).map { ($0.id, model.agentLabel($0)) } + [("custom", "Custom command")],
                          onAgentChange: { draft.setAgent($0) }, command: $draft.command,
                          installHint: model.hello?.backends.first { $0.id == draft.backend && !$0.available }?.installHint,
-                         restLine: bot?.rest(of: draft.login)?.line, onReload: { modelReload += 1 })
+                         restLine: bot?.rest(of: draft.login).map { L10n.tr($0.line) }, onReload: { modelReload += 1 }) {}
     }
 
     /// Only when the host has login profiles (an older one sends none).
@@ -162,12 +139,18 @@ struct BotSettingsForm: View {
         }
     }
 
-    @ViewBuilder private var sections: some View {
-        if part == .often { oftenSections } else { allSections }
-    }
-
-    private var allSections: some View {
+    private var sections: some View {
         VStack(alignment: .leading, spacing: 30) {
+            CardSection("Instructions") { instructions }
+            CardSection("Agent") {
+                fallbackBanner
+                modelPicker
+                loginProfilePicker
+                fallbackList
+                compactionPicker
+            }
+            .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot?.agentStep)
+
             CardSection("Profile") {
                 VStack(alignment: .leading, spacing: 12) {
                     Button {
@@ -193,30 +176,21 @@ struct BotSettingsForm: View {
                 Field("Name") {
                     TextField("Name", text: $draft.name).fieldBox()
                 }
-                if part == .all { instructions }
                 if let bot, let creator = bot.createdBy {
                     ValueRow("Created by", value: "\(model.bots[creator]?.name ?? "A bot") · \(Date(milliseconds: bot.createdAt).formatted(date: .abbreviated, time: .omitted))")
                 }
             }
 
-            // On the details sheet the agent and its model are on the Details page; what's left is where it works.
-            CardSection(part == .all ? "Agent" : "Workspace") {
-                if part == .all { fallbackBanner }
+            CardSection("Workspace") {
                 ValueRow("Computer") {
                     Text(model.hostName).lineLimit(1)
-                }
-                if part == .all {
-                    modelPicker
-                    loginProfilePicker
-                    fallbackList
-                    compactionPicker
                 }
                 ValueRow("Workspace", detail: draft.cwd.isEmpty
                          ? "This bot has its own space for files. It can work in other folders when you ask."
                          : "This project is the default starting folder. The bot can work elsewhere when you ask.") {
                     DropdownMenu {
                         [
-                            MenuItem("Personal workspace", selected: draft.cwd.isEmpty) {
+                            MenuItem("Own folder", selected: draft.cwd.isEmpty) {
                                 withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.cwd = "" }
                             },
                             MenuItem("Choose project folder…", selected: !draft.cwd.isEmpty) {
@@ -225,7 +199,7 @@ struct BotSettingsForm: View {
                         ]
                     } label: {
                         HStack(spacing: 6) {
-                            Text(draft.cwd.isEmpty ? L10n.tr("Personal") : (draft.cwd as NSString).lastPathComponent).lineLimit(1)
+                            Text(draft.cwd.isEmpty ? L10n.tr("Own folder") : (draft.cwd as NSString).lastPathComponent).lineLimit(1)
                             Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(Palette.secondary)
                         }
                         .foregroundStyle(Palette.text)
@@ -233,14 +207,34 @@ struct BotSettingsForm: View {
                     }
                     .help(draft.cwd.isEmpty ? "A persistent workspace allocated for this bot" : draft.cwd)
                 }
+                // From a host that says, for any folder (one Codync made too).
+                if let bot, bot.taskWorktrees != nil {
+                    GitStateRow(state: bot.gitState)
+                }
                 ApprovalPicker(draft: $draft, reload: modelReload)
+                // Only from a host with a box (its bots say).
+                if let agents = draft.maxAgents {
+                    ValueRow("Threads at once") {
+                        HStack(spacing: 10) {
+                            Text(verbatim: "\(agents)").monospacedDigit().foregroundStyle(Palette.text)
+                            Stepper(L10n.tr("Threads at once"), value: Binding(get: { agents }, set: { draft.maxAgents = $0 }),
+                                    in: Bot.maxAgentsRange)
+                                .labelsHidden()
+                        }
+                    }
+                }
+                // Only in a project folder in a git repository (a bot's own folder keeps all its work in one place),
+                // from a host that has the setting.
+                if bot?.gitRepo == true, bot?.managedWorkspace == false, let worktrees = draft.taskWorktrees {
+                    SwitchRow("Worktree per thread", detail: "Threads that work at once in this repository each get their own branch.",
+                              isOn: Binding(get: { worktrees }, set: { draft.taskWorktrees = $0 }))
+                }
             }
-            .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot?.agentStep)
 
             CardSection("Activity") {
                 SwitchRow("Notifications", detail: "Get notified when this bot finishes or needs you",
                           isOn: Binding(get: { draft.notify ?? true }, set: { draft.notify = $0 }))
-                if model.screen != nil, part == .all {
+                if model.screen != nil, !inDetails {
                     SwitchRow("Use the computer", detail: model.screen?.controlReady != true
                         ? "Let this bot use apps. On that computer, open Codync → Settings → Computer access to set up permissions first."
                         : model.screen?.enabled == true
@@ -275,7 +269,7 @@ struct BotSettingsForm: View {
             PluginToggles(
                 title: "Skills",
                 empty: "No skills yet. Get some from Extensions, or write your own.",
-                items: model.installedSkills.map { ($0.id, $0.name, $0.description) },
+                items: model.installedSkills.map { ($0.id, $0.name, "") },
                 selection: Binding(get: { draft.skills ?? [] }, set: { draft.skills = $0 }),
                 info: { id in viewingSkill = model.installedSkills.first { $0.id == id }.map(SkillRef.init) }
             )

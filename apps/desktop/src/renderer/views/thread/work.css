@@ -1,0 +1,292 @@
+/* A bot's work in the background: the capsule above the composer (WorkCapsule.tsx), the items on its Details
+   (WorkTimeline.tsx) and the dialogs they ask with (WorkDialogs.tsx). */
+/* The composer's own box (its column and 14px side padding), so the capsule is as wide as the composer under it. */
+.work-capsule-slot {
+  width: 100%;
+  max-width: var(--column);
+  margin: 0 auto;
+  padding: 0 14px 8px;
+}
+.work-capsule {
+  width: 100%;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 4px 0 12px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+}
+/* Without Stop the text ends as far from the edge as it starts. */
+.work-capsule.plain {
+  padding-right: 6px;
+}
+.work-capsule-open {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 100%;
+  padding-right: 6px;
+  flex: 1;
+}
+.work-capsule-lead {
+  flex: none;
+}
+
+/* An item's mark: a dot for what goes on or went wrong, a ring for what waits or is done. */
+.work-dot {
+  flex: none;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.work-dot.attention {
+  background: var(--warning);
+}
+.work-dot.live {
+  background: var(--text);
+  animation: work-dot-live 1.4s var(--ease) infinite;
+}
+.work-dot.waiting {
+  border: 1.5px solid var(--tertiary);
+}
+.work-dot.done {
+  border: 1.5px solid var(--secondary);
+}
+.work-dot.danger {
+  background: var(--danger);
+}
+@keyframes work-dot-live {
+  50% {
+    opacity: 0.3;
+    transform: scale(0.75);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .work-dot.live {
+    animation: none;
+  }
+}
+
+.work-row {
+  padding-right: 8px;
+}
+.work-row + .work-row {
+  box-shadow: inset 0 0.5px 0 var(--border);
+}
+.work-row-open {
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 14px;
+  font-size: var(--text-body);
+  text-align: left;
+}
+/* An item's title with where it came from before it. */
+.work-row-title {
+  max-width: 100%;
+  min-width: 0;
+}
+.work-row-source {
+  display: flex;
+  flex: none;
+}
+/* Where an item's task works (WorkWhere.tsx): a folder too long for the line gives up its start, never its last name. */
+.work-where {
+  min-width: 0;
+}
+.work-where-lead {
+  flex: 0 1000 auto;
+}
+.work-where-end {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+.work-row-where {
+  display: flex;
+  max-width: 100%;
+  min-width: 0;
+}
+/* In a thread's header it copies the path. */
+.work-where-copy {
+  display: flex;
+  min-width: 0;
+  margin: -2px -6px;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  transition: background-color var(--hover);
+  -webkit-app-region: no-drag;
+}
+.work-where-copy:hover {
+  background: rgba(var(--text-rgb), 0.08);
+}
+.work-where-copy:active {
+  background: rgba(var(--text-rgb), 0.14);
+}
+
+/* An item's thread, in the inspector in place of its pages (WorkThread.tsx): the header, the transcript, the box. */
+.work-thread {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+/* As tall as the band over the pages, and it moves the window like that band; its controls stay clickable. */
+.work-thread-header {
+  flex: none;
+  min-height: 54px;
+  box-sizing: border-box;
+  padding: 8px 11px;
+  box-shadow: inset 0 -0.5px 0 var(--border);
+  -webkit-app-region: drag;
+}
+.work-thread-header .icon-button {
+  -webkit-app-region: no-drag;
+}
+.work-thread-meta {
+  min-width: 0;
+}
+.work-thread-status {
+  flex: none;
+}
+.work-thread-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.work-thread-content {
+  padding: 14px;
+  font-size: var(--text-callout);
+}
+.work-thread-note {
+  text-align: center;
+  padding: 16px 0;
+}
+/* What the task was told, folded under one line. */
+.work-thread-told {
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+.work-thread-told-label {
+  padding: 10px 12px;
+  border-radius: var(--radius-m);
+  text-align: left;
+  transition: background-color var(--hover);
+}
+.work-thread-told-label:hover {
+  background: rgba(var(--text-rgb), 0.04);
+}
+.work-thread-told-label:active {
+  background: rgba(var(--text-rgb), 0.08);
+}
+.work-thread-told-text {
+  padding: 0 12px 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* What the host told it later: a quote, as in a message. */
+.work-thread-quote {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding-left: 10px;
+  box-shadow: inset 3px 0 0 var(--border);
+}
+/* What the task put in the bot's chat: one quiet line that shows it there. */
+.work-thread-shared {
+  display: flex;
+  min-width: 0;
+  margin: -2px -6px;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  text-align: left;
+  transition: background-color var(--hover);
+}
+.work-thread-shared:hover {
+  background: rgba(var(--text-rgb), 0.06);
+}
+.work-thread-shared:active {
+  background: rgba(var(--text-rgb), 0.12);
+}
+/* The task's reply, as the chat's bubble: the panel is narrow, and nothing sits beside the bubble here. */
+.work-thread-content .message.agent .message-body {
+  max-width: 100%;
+  margin-right: 0;
+}
+/* The user's own message, on the right as in the chat; fainter while it waits for the task's turn. */
+.work-thread-mine {
+  align-self: flex-end;
+  max-width: 86%;
+  min-width: 0;
+}
+.work-thread-mine .bubble {
+  transition: opacity var(--fade);
+}
+.work-thread-mine.queued .bubble {
+  opacity: 0.6;
+}
+.work-thread-mine-status {
+  flex: none;
+  padding-right: 2px;
+}
+.work-thread-read-only {
+  flex: none;
+  padding: 10px 16px 14px;
+  text-align: center;
+}
+.work-thread-composer {
+  flex: none;
+  padding: 8px 12px 12px;
+}
+/* No button before the field: the text starts where a bubble's does. */
+.work-thread-composer .composer-box {
+  padding-left: 14px;
+}
+
+/* A place not in use: as tall as an item's row, in faint text. */
+.work-row.free {
+  min-height: 48px;
+  padding-left: 14px;
+}
+/* An item's place in line, where a thread's row has its mark. */
+.work-row-number {
+  flex: none;
+  min-width: 8px;
+  text-align: center;
+}
+.work-section-count {
+  flex: none;
+}
+/* A choice in words on a row (Cut in): smaller than a sheet's button. */
+.styled-button.work-row-button {
+  flex: none;
+  min-height: calc(24px * var(--scale));
+  padding: 0 10px;
+  font-size: var(--text-callout);
+}
+.work-row-actions {
+  flex: none;
+  opacity: 0;
+  transition: opacity var(--hover);
+}
+.work-row:hover .work-row-actions,
+.work-row-actions:focus-within {
+  opacity: 1;
+}
+
+/* A working item to give way, in the cut-in dialog. */
+.cut-in-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--radius-m);
+  background: var(--field);
+  text-align: left;
+  transition: background-color var(--hover);
+}
+.cut-in-pick:hover {
+  background: rgba(var(--text-rgb), 0.11);
+}

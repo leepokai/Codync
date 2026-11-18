@@ -97,6 +97,15 @@ class QueuedMessagesTest {
         assertEquals(emptyList<Entry>(), withRemovals(listOf(removed), emptyMap()))
     }
 
+    @Test fun `a row is brought into view by its id or its message's entry id, and none when nothing asks`() {
+        val items = chatItems(listOf(user("first", 1), user("second", 2, nonce = "n")), emptyList(), busy = false)
+        assertTrue(items.first() is ChatItem.Separator)
+        // Opening a chat reveals nothing: it stays on the newest message.
+        assertEquals(null, items.rowOf(null))
+        assertEquals(items.indexOfLast { it is ChatItem.Message }, items.rowOf("second"))
+        assertEquals(null, items.rowOf("gone"))
+    }
+
     @Test fun `a send that waits on the computer doesn't show again as this phone's`() {
         val entries = listOf(user("waiting", 2, "queued", nonce = "n"))
         val pending = listOf(PendingSend("n", "bot", "waiting", 1))

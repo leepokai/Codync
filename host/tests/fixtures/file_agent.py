@@ -1,6 +1,7 @@
 """ACP fixture using the real built-in stdio chat MCP, including resumed sessions. `share-image` shares a real PNG."""
 import json
 import os
+import re
 import subprocess
 import struct
 import sys
@@ -35,6 +36,9 @@ def prompt(message):
         tools = request('tools/list', {})['tools']
         assert any(tool['name'] == 'send_file' for tool in tools)
         text = params['prompt'][0]['text']
+        # Quotes the message it answers, by the id that leads it in the bot's own chat (`reply_to`).
+        asked = re.search(r'^\[Codync: message ([^\]]+)\]$', text, re.M)
+        quote = {'reply_to': asked.group(1)} if asked else {}
         results = []
         if 'share-image' in text:
             Path(session['cwd'], 'chart.png').write_bytes(png(400, 300))
@@ -44,11 +48,12 @@ def prompt(message):
                 results.append(request('tools/call', {'name':'send_file', 'arguments':{'path':path}}))
         elif 'spoken' in text:
             for path in ['note.m4a', 'report.pdf']:
-                results.append(request('tools/call', {'name':'send_file', 'arguments':{'path':path, 'text':'Here is the **plan**.'}}))
+                results.append(request('tools/call', {'name':'send_file', 'arguments':{'path':path, 'text':'Here is the **plan**.', **quote}}))
         else:
             paths = ['binary.dat', '.hidden', 'empty', 'report.pdf']
             for path in paths:
-                results.append(request('tools/call', {'name':'send_file', 'arguments':{'path':path}}))
+                arguments = {'path':path, **(quote if 'in a reply' in text else {})}
+                results.append(request('tools/call', {'name':'send_file', 'arguments':arguments}))
         Path(session['cwd'], 'file-results.json').write_text(json.dumps(results))
         mcp.stdin.close()
     if 'files-only' not in text:

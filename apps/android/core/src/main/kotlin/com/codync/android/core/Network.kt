@@ -37,7 +37,16 @@ data class NetworkInfo(
     val computers: List<NetworkComputer> = emptyList(),
     /** Who on its other computers may message this computer's bots, the first match deciding. */
     val rules: List<NetworkRule> = emptyList(),
+    /** What a computer no rule matches gets; hosts before 2.49.0 send none and let it in at allow. */
+    val defaultAccess: String = "allow",
 ) {
+    /** The rules' footer, untranslated: what decides, and what a computer no rule matches gets. */
+    val rulesFooter: String get() = if (defaultAccess == "allow") {
+        "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in."
+    } else {
+        "The first rule that matches decides. A computer no rule matches gets Auto. Answers to this computer's own messages always get in."
+    }
+
     /**
      * How [rule] reads: "Allow: {from} → {to}", with the bots' names where this network knows them. [tr] translates
      * each template before its names go in.
@@ -54,7 +63,12 @@ data class NetworkInfo(
             me.agents.firstOrNull { it.id == rule.toAgent }?.name
         } ?: rule.toAgent
         // An access this app doesn't know reads as deny, never wider than it is.
-        val access = if (rule.access == "allow") "Allow: {from} → {to}" else "Deny: {from} → {to}"
+        val access = when (rule.access) {
+            "allow" -> "Allow: {from} → {to}"
+            "auto" -> "Auto: {from} → {to}"
+            "ask" -> "Ask: {from} → {to}"
+            else -> "Deny: {from} → {to}"
+        }
         return fill(tr(access), "from" to from, "to" to to)
     }
 

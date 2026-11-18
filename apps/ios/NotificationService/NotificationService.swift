@@ -27,6 +27,9 @@ final class NotificationService: UNNotificationServiceExtension {
         content.title = alert.title
         content.subtitle = alert.subtitle ?? ""
         content.body = alert.body
+        if let unread = alert.unread, let badge = IconBadge.alerted(unread, from: computerId, in: store) {
+            content.badge = IconBadge.shown(badge) as NSNumber
+        }
         contentHandler(Self.fromBot(content, alert: alert, botId: info["botId"] as? String, computerId: computerId, store: store))
     }
 

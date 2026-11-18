@@ -160,6 +160,8 @@ fn chinese_replaces_a_known_phrase_and_leaves_the_rest() {
     assert_eq!(translate("Add connector", true).as_ref(), "添加连接器");
     assert_eq!(translate("Name your group", true).as_ref(), "给群聊起个名字");
     assert_eq!(translate("Nothing installed", true).as_ref(), "还没有安装");
+    assert_eq!(translate("Codync 2.47.0 is available", true).as_ref(), "Codync 2.47.0 已推出");
+    assert_eq!(translate("You have reached your limit.", true).as_ref(), "You have reached your limit.");
     assert_eq!(translate("No setup needed.", true).as_ref(), "无需设置。");
     assert_eq!(
         translate("Runs the official installer on this Mac.", true).as_ref(),
@@ -246,23 +248,85 @@ fn host_schedule_sentences_match_their_catalog_templates() {
 }
 
 #[test]
-fn background_task_words_read_in_traditional_chinese() {
+fn event_box_words_read_in_traditional_chinese() {
     for (english, chinese) in [
         ("In the background", "背景"),
         ("Needs you", "需要你"),
-        ("{count} tasks running", "{count} 件事"),
+        ("Threads", "Threads"),
+        ("Event box", "Event Box"),
+        ("Free", "空位"),
+        ("Later", "之後"),
+        ("Recent", "最近"),
+        ("{count} working", "{count} 進行中"),
+        ("{count} waiting", "{count} 等待中"),
+        ("Waiting", "等待中"),
+        ("Next up", "下一個"),
+        ("{count} ahead", "前面還有 {count} 件"),
+        ("Follows what it works on", "接在進行中的事後面"),
+        ("Near the usage limit: one at a time", "用量接近上限，一次只跑一個"),
+        ("Read only: a routine's run", "唯讀：例行任務的執行"),
+        ("Read only: another bot's request", "唯讀：另一個 bot 的請求"),
+        ("Was cut in on; starts again", "被插隊，會重新開始"),
+        ("First", "先做"),
+        ("Cut in", "插隊"),
+        ("Drop", "丟掉"),
+        ("Threads at once", "同時幾個 thread"),
+        ("Work", "工作"),
+        ("Worktree per thread", "每個 thread 一個 worktree"),
+        ("Git repository", "Git repository"),
+        ("Not a git repository", "不是 git repository"),
+        ("Git isn't installed on this computer", "這台電腦沒有安裝 git"),
+        (
+            "Threads that work at once in this repository each get their own branch.",
+            "同時在這個 repository 工作的 thread 各有自己的分支。",
+        ),
+        ("Let \"{title}\" cut in", "讓「{title}」插隊"),
+        (
+            "Every place is taken. Pick what gives way: its session closes and it starts again later.",
+            "名額滿了。選一個讓位：它的 session 會關掉，之後重新開始。",
+        ),
         ("Stop the background work?", "停止背景的工作？"),
         ("What it already changed stays.", "已經改的內容會留著。"),
-        ("In the background: {what}", "背景：{what}"),
+        ("Nothing in the background", "背景沒有在進行的事"),
         ("Done", "完成"),
         ("Failed", "失敗"),
         ("Stopped", "已停止"),
         ("B opens", "B 開啟"),
         ("X stops", "X 停止"),
+        ("↵ opens", "↵ 開啟"),
         ("Picking up from the chat…", "正在從聊天接著做…"),
     ] {
         assert_eq!(translate_with(english, &super::HANT), chinese);
     }
-    // A step's own words stay as the task wrote them.
-    assert_eq!(translate_with("In the background: Reading files", &super::HANT), "背景：Reading files");
+    // Counts fill in, and a title stays as the bot wrote it.
+    assert_eq!(translate_with("2 working", &super::HANT), "2 進行中");
+    assert_eq!(translate_with("3 ahead", &super::HANT), "前面還有 3 件");
+    let title = fill(&translate_with("Let \"{title}\" cut in", &super::HANT), &[("title", "Fix login")]);
+    assert_eq!(title, "讓「Fix login」插隊");
+}
+
+#[test]
+fn fallback_lines_read_in_traditional_chinese() {
+    use crate::agent::fallback::Reason;
+    use crate::tui::view::{rest_phrase, using_phrase};
+    // The reasons `rest::record` rests an agent for, and none; a missing model or mode never rests one.
+    let rests = [
+        Reason::UsageLimit,
+        Reason::OutOfCredits,
+        Reason::RateLimited,
+        Reason::Overloaded,
+        Reason::SignedOut,
+        Reason::NotStarting,
+    ];
+    for rest in rests.map(Some).into_iter().chain([None]) {
+        let key = using_phrase(rest);
+        assert_ne!(translate_with(&key, &super::HANT), key, "{rest:?}");
+    }
+    for reason in [Reason::UsageLimit, Reason::SignedOut] {
+        assert_ne!(translate_with(rest_phrase(reason), &super::HANT), rest_phrase(reason), "{reason:?}");
+    }
+    let key = using_phrase(Some(Reason::SignedOut));
+    let line =
+        fill(&translate_with(&key, &super::HANT), &[("to", "Codex"), ("own", "Kimi Code (Work while traveling)")]);
+    assert_eq!(line, "正在使用 Codex，Kimi Code (Work while traveling) 已登出");
 }

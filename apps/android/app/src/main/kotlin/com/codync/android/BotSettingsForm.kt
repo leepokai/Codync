@@ -22,9 +22,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
 import com.codync.android.core.BotDraft
+import com.codync.android.core.GitState
+import com.codync.android.core.gitState
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import com.codync.android.core.LinkState
+import com.codync.android.core.MAX_AGENTS
 import com.codync.android.core.login
-import com.codync.android.core.logins
 import com.codync.android.core.restOf
 import com.codync.android.core.ScreenState
 import com.codync.android.design.*
@@ -35,63 +40,40 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 
 /**
- * Which settings a form shows (iOS `FormPart`): all of them (the editor), what changes often (instructions and the agent:
- * the details sheet's Details page) or the rest (its Settings page).
+ * Bot settings, in sections in the Settings style (`CardSection`), with the pickers they open: what it is told and what
+ * runs it first. [inDetails]: on the details sheet, whose Computer page has the computer's switch.
  */
-internal enum class FormPart { All, Often, Rarely }
-
-/** Bot settings, in sections in the Settings style (`CardSection`), with the pickers they open. */
-@Composable internal fun BotSettingsForm(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, part: FormPart,
-    modifier: Modifier = Modifier, error: String? = state.error) {
+@Composable internal fun BotSettingsForm(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit,
+    modifier: Modifier = Modifier, inDetails: Boolean = false, error: String? = state.error) {
     var folders by remember { mutableStateOf(false) }
     // The Avatar row unfolds the picker (iOS `pickingAvatar`).
     var pickingAvatar by remember { mutableStateOf(false) }
     var viewingSkill by remember { mutableStateOf<SkillRef?>(null) }
-    var addingFallback by remember { mutableStateOf(false) }
     // Retry model list reloads Permissions too: its modes come from the same list.
     var modelReload by remember { mutableIntStateOf(0) }
     val online = state.actualConnection is LinkState.Ready
     val bot = state.bots.firstOrNull { it.id == draft.id }
     LaunchedEffect(online) { if (online) store.refreshPlugins() }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(30.dp)) {
-        when (part) {
-            FormPart.All -> {
-                CardSection("Profile") {
-                    avatarRows(state, store, draft, change, pickingAvatar) { pickingAvatar = !pickingAvatar }
-                    nameRow(draft, change); instructionsRow(draft, change); createdByRow(state, bot)
-                }
-                CardSection("Agent") {
-                    fallbackBanner(state, store, bot); computerRow(state, online)
-                    agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ }) { addingFallback = true }
-                    compactionRow(bot, draft, change); placeRows(state, store, draft, change, modelReload) { folders = true }
-                }
-                CardSection("Activity") {
-                    notifyRow(draft, change); computerUseRow(state, draft, change); manageTeamRow(state, draft, change); reachRows(state, draft, change)
-                }
-                Plugins(state, draft, change) { viewingSkill = it }
-            }
-            FormPart.Often -> {
-                CardSection("Instructions") { instructionsRow(draft, change) }
-                CardSection("Agent") {
-                    fallbackBanner(state, store, bot)
-                    agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ }) { addingFallback = true }
-                    compactionRow(bot, draft, change)
-                    if (!online) row { OfflineNote() }
-                }
-            }
-            FormPart.Rarely -> {
-                CardSection("Profile") {
-                    avatarRows(state, store, draft, change, pickingAvatar) { pickingAvatar = !pickingAvatar }
-                    nameRow(draft, change); createdByRow(state, bot)
-                }
-                // The agent and its model are on the Details page; what's left is where it works.
-                CardSection("Workspace") {
-                    computerRow(state, online); placeRows(state, store, draft, change, modelReload) { folders = true }
-                }
-                CardSection("Activity") { notifyRow(draft, change); manageTeamRow(state, draft, change); reachRows(state, draft, change) }
-                Plugins(state, draft, change) { viewingSkill = it }
-            }
+        CardSection("Instructions") { instructionsRow(draft, change) }
+        CardSection("Agent") {
+            fallbackBanner(state, store, bot)
+            agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ })
+            compactionRow(bot, draft, change)
         }
+        CardSection("Profile") {
+            avatarRows(state, store, draft, change, pickingAvatar) { pickingAvatar = !pickingAvatar }
+            nameRow(draft, change); createdByRow(state, bot)
+        }
+        CardSection("Workspace") {
+            computerRow(state, online); placeRows(state, store, draft, change, modelReload) { folders = true }
+        }
+        CardSection("Activity") {
+            notifyRow(draft, change)
+            if (!inDetails) computerUseRow(state, draft, change)
+            manageTeamRow(state, draft, change); reachRows(state, draft, change)
+        }
+        Plugins(state, draft, change) { viewingSkill = it }
         // A save that didn't take, under the form (iOS `error`).
         error?.let { Text(tr(it), style = Type.footnote, color = Palette.danger) }
     }
@@ -101,9 +83,6 @@ internal enum class FormPart { All, Often, Rarely }
         }
     }
     CodyncSheet(viewingSkill, { viewingSkill = null }) { SkillSheet(it, state, store) }
-    CodyncSheet(addingFallback, { addingFallback = false }) {
-        AddFallbackSheet(state, store, draft.logins) { change(draft.copy(fallbacks = draft.fallbacks.orEmpty() + it)); addingFallback = false }
-    }
 }
 
 @Composable private fun OfflineNote() = Text(tr("Reconnect to this computer to save settings."), style = Type.caption, color = Palette.warning)
@@ -158,13 +137,13 @@ private fun CardRows.computerRow(state: AppState, online: Boolean) = row {
 
 /** The agent, its model and the fallbacks that carry on for it. */
 private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, bot: Bot?, modelReload: Int,
-    reloadModels: () -> Unit, addFallback: () -> Unit) {
+    reloadModels: () -> Unit) {
     row {
         AgentModelPicker(state, store::agentModels, draft.backend, draft.model, draft.modelOptions, draft.fastMode ?: false, bot,
             { model, options -> change(draft.copy(model = model, modelOptions = options)) }, { change(draft.copy(fastMode = it)) },
             agents = agentChoices(state) + ("custom" to "Custom command"),
             chooseAgent = { if (it != draft.backend) change(draft.withAgent(it)) }, onReload = reloadModels) {
-                bot?.restOf(draft.login)?.let { Text(it.line(RelativeTime.clock(it.until)), style = Type.caption, color = Palette.secondary) }
+                bot?.restOf(draft.login)?.let { Text(tr(it.line(RelativeTime.clock(it.until))), style = Type.caption, color = Palette.secondary) }
                 backends(state).firstOrNull { it.text("id") == draft.backend && !it.available }?.text("installHint")?.takeIf(String::isNotBlank)?.let {
                     Text(it, style = Type.caption, color = Palette.warning)
                 }
@@ -175,33 +154,58 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
     loginProfileRow(state, store, draft, change)
     // Only from a host that has fallbacks (its bots say).
     val list = draft.fallbacks ?: return
-    row { FallbackList(state, draft.login, list, bot, { change(draft.copy(fallbacks = it)) }, addFallback) }
+    row { FallbackList(state, store, draft.login, list, bot, { change(draft.copy(fallbacks = it)) }) }
     row {
         SwitchRow("Let the bot change its fallbacks", "It can set this list itself, for example when you ask it to.", draft.selfFallbacks != false,
             { change(draft.copy(selfFallbacks = it)) })
     }
 }
 
-/** Where the bot works and what it may do there without asking. */
+/** Where the bot works, how many of its agents work at once and what it may do there without asking. */
 private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, modelReload: Int,
     chooseFolder: () -> Unit) {
     row {
-        ValueRow("Workspace", detail = if (draft.cwd.isEmpty()) "This bot has its own space for files. It can work in other folders when you ask."
-            else "This project is the default starting folder. The bot can work elsewhere when you ask.") {
-            DropdownMenu({ listOf(
-                MenuItem("Personal workspace", selected = draft.cwd.isEmpty()) { change(draft.copy(cwd = "")) },
-                MenuItem("Choose project folder…", selected = draft.cwd.isNotEmpty(), action = chooseFolder),
-            ) }, label = "Workspace") {
-                Row(Modifier.outline().pill(androidx.compose.ui.graphics.Color.Transparent), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(if (draft.cwd.isEmpty()) tr("Personal") else draft.cwd.trimEnd('/').substringAfterLast('/').ifEmpty { "/" },
-                        style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Symbol("chevron.down", size = 13.dp, tint = Palette.secondary)
+        Column {
+            ValueRow("Workspace", detail = if (draft.cwd.isEmpty()) "This bot has its own space for files. It can work in other folders when you ask."
+                else "This project is the default starting folder. The bot can work elsewhere when you ask.") {
+                DropdownMenu({ listOf(
+                    MenuItem("Own folder", selected = draft.cwd.isEmpty()) { change(draft.copy(cwd = "")) },
+                    MenuItem("Choose project folder…", selected = draft.cwd.isNotEmpty(), action = chooseFolder),
+                ) }, label = "Workspace") {
+                    Row(Modifier.outline().pill(androidx.compose.ui.graphics.Color.Transparent), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(if (draft.cwd.isEmpty()) tr("Own folder") else draft.cwd.trimEnd('/').substringAfterLast('/').ifEmpty { "/" },
+                            style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Symbol("chevron.down", size = 13.dp, tint = Palette.secondary)
+                    }
                 }
             }
+            // The folder as the computer has it saved: a new bot has none yet, and an older host doesn't say.
+            state.bots.firstOrNull { it.id == draft.id }?.let(::gitState)?.let { GitLine(it) }
+        }
+    }
+    // Only from a host that has the box (its bots say).
+    draft.maxAgents?.let { count ->
+        row { ValueRow("Threads at once") { Stepper(count, 1..MAX_AGENTS, { change(draft.copy(maxAgents = it)) }) } }
+    }
+    // Only where it matters (a project folder in a git repository: a bot's own folder keeps all its work in one
+    // place) and the host has it.
+    draft.taskWorktrees?.takeIf { state.bots.firstOrNull { it.id == draft.id }?.let { it.gitRepo && !it.managedWorkspace } == true }?.let { on ->
+        row {
+            SwitchRow("Worktree per thread", "Threads that work at once in this repository each get their own branch.", on,
+                { change(draft.copy(taskWorktrees = it)) })
         }
     }
     row { ApprovalRow(state, store::agentModels, draft, change, modelReload) }
+}
+
+/** Under the folder: whether it is a git repository, and the manual's page on what agents working at once do with and without git. */
+@Composable private fun GitLine(git: GitState) {
+    val uri = LocalUriHandler.current
+    Row(Modifier.semantics { testTagsAsResourceId = true }.testTag("git-state"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(tr(git.title), Modifier.weight(1f, fill = false), style = Type.caption, color = Palette.secondary)
+        IconButton("About working folders and git", "info.circle") { uri.open("https://codync.dev/docs/working-folders", OutboundLink.Docs) }
+    }
 }
 
 private fun CardRows.notifyRow(draft: BotDraft, change: (BotDraft) -> Unit) =
@@ -249,7 +253,7 @@ private fun CardRows.reachRows(state: AppState, draft: BotDraft, change: (BotDra
         plugins?.connectors.orEmpty().map { Triple(it.id, it.name, it.command ?: it.url.orEmpty()) },
         draft.connectors.orEmpty(), { change(draft.copy(connectors = it)) })
     PluginToggles("Skills", "No skills yet. Get some from Extensions, or write your own.",
-        plugins?.skills.orEmpty().map { Triple(it.id, it.name, it.description) }, draft.skills.orEmpty(), { change(draft.copy(skills = it)) }) { id ->
+        plugins?.skills.orEmpty().map { Triple(it.id, it.name, "") }, draft.skills.orEmpty(), { change(draft.copy(skills = it)) }) { id ->
         plugins?.skills?.firstOrNull { it.id == id }?.let { viewSkill(SkillRef(it.id, it.name, it.description)) }
     }
 }

@@ -30,6 +30,30 @@ const BOT_COLS: &str = "id, config, rev, deleted, session_id, read_rev";
 const SAVE_BOT: &str = "INSERT INTO bots(id, rev, config) VALUES(?1, ?2, ?3)
      ON CONFLICT(id) DO UPDATE SET rev = ?2, config = ?3 WHERE deleted = 0";
 
+/// A chat's badge (`Store::badge`): what it counts, and how many of those are cards waiting on the user, which
+/// turn it amber.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Badge {
+    pub unread: i64,
+    pub waiting: i64,
+}
+
+impl Badge {
+    /// The messages in it the user hasn't read: what `Hub::mark_read` clears.
+    pub fn unseen(self) -> i64 {
+        self.unread - self.waiting
+    }
+}
+
+/// A finished agent message the badge counts.
+const UNREAD_MESSAGE: &str =
+    "(kind = 'agent' AND json_extract(data, '$.final') = 1 AND json_extract(data, '$.call') IS NULL
+    AND json_extract(data, '$.reactions') IS NULL)";
+/// A permission card still waiting on the user.
+const WAITING_CARD: &str = "(kind = 'permission' AND json_extract(data, '$.status') = 'pending')";
+/// Newer than the bot's `read_rev` (`?2`).
+const UNSEEN: &str = "COALESCE(json_extract(data, '$.contentRev'), rev) > ?2";
+
 impl Store {
     /// The roster's rows: bots and groups, deleted ones included. Task bots aren't among them (`task_bots`).
     pub fn bots(&self) -> Result<Vec<BotRow>> {
@@ -130,21 +154,33 @@ impl Store {
         Ok(rev)
     }
 
-    /// Final agent messages + pending permission cards newer than what the user has read. A reacted-to message
-    /// doesn't count again when it changes: the user reacted, so they have seen it. A bot's reaction isn't a change
-    /// either (`contentRev`, see `Hub::bot_react`). Nor is a reply on a voice call: the user heard it.
-    pub fn unread(&self, id: &str, read_rev: i64) -> i64 {
+    /// The badge: final agent messages newer than what the user has read, plus every permission card still waiting
+    /// on them (opening the chat doesn't answer it, so it counts until answered). A reacted-to message doesn't count
+    /// again when it changes: the user reacted, so they have seen it. A bot's reaction isn't a change either
+    /// (`contentRev`, see `Hub::bot_react`). Nor is a reply on a voice call: the user heard it.
+    pub fn badge(&self, id: &str, read_rev: i64) -> Badge {
         let c = self.db.locked();
-        let n = c.query_row(
-            "SELECT COUNT(*) FROM entries WHERE bot_id = ?1 AND
-               ((kind = 'agent' AND json_extract(data, '$.final') = 1 AND json_extract(data, '$.call') IS NULL) OR
-                (kind = 'permission' AND json_extract(data, '$.status') = 'pending')) AND
-               json_extract(data, '$.reactions') IS NULL AND
-               COALESCE(json_extract(data, '$.contentRev'), rev) > ?2",
+        let badge = c.query_row(
+            &format!(
+                "SELECT COUNT(*), COALESCE(SUM({WAITING_CARD}), 0) FROM entries WHERE bot_id = ?1 AND
+                   (({UNREAD_MESSAGE} AND {UNSEEN}) OR {WAITING_CARD})"
+            ),
             params![id, read_rev],
-            |r| r.get(0),
+            |r| Ok(Badge { unread: r.get(0)?, waiting: r.get(1)? }),
         );
-        logged("unread", n).unwrap_or(0)
+        logged("unread", badge).unwrap_or_default()
+    }
+
+    /// Unread across the roster the phones show (no deleted or hidden bots): the app icon's badge.
+    pub fn total_unread(&self) -> i64 {
+        let rows = self.bots().unwrap_or_else(|error| {
+            tracing::warn!(error = format!("{error:#}"), "couldn't list bots for the unread total");
+            Vec::new()
+        });
+        rows.iter()
+            .filter(|b| !b.deleted && !b.config.hidden)
+            .map(|b| self.badge(&b.config.id, b.read_rev).unread)
+            .sum()
     }
 
     /// Newest chat-visible line for the roster preview, with its author
@@ -222,6 +258,8 @@ mod tests {
             compaction: codync_mem::compaction::Threshold::Early,
             auto_name: false,
             task_of: None,
+            max_agents: 3,
+            task_worktrees: true,
             created_at: 0,
         };
         // Several at once: each with its own rev, in order.
@@ -236,14 +274,18 @@ mod tests {
             .insert_entry(&Lane::main("b1"), EntryKind::Agent, 1, &serde_json::json!({"text": "yo", "final": false}))
             .unwrap();
         assert!(a.rev > u.rev);
-        assert_eq!(s.unread("b1", 0), 0, "narration is not unread");
+        assert_eq!(s.badge("b1", 0).unread, 0, "narration is not unread");
         let a2 = s.update_entry(&a.id, &serde_json::json!({"text": "yo!", "final": true})).unwrap().unwrap();
-        assert_eq!(s.unread("b1", 0), 1);
+        assert_eq!(s.badge("b1", 0).unread, 1);
+        assert_eq!(s.total_unread(), 1);
+        s.save_bot(&BotConfig { hidden: true, ..cfg.clone() }).unwrap();
+        assert_eq!(s.total_unread(), 0, "a hidden bot isn't on the phone's roster");
+        s.save_bot(&cfg).unwrap();
         assert_eq!(s.entries_since(a2.rev - 1, 500).unwrap().len(), 1);
         assert_eq!(s.entries_since(0, 1).unwrap().len(), 1, "fresh sync is capped per bot");
         assert_eq!(s.last_message("b1").unwrap().text, "yo!");
         let r = s.mark_read("b1").unwrap();
-        assert_eq!(s.unread("b1", r), 0);
+        assert_eq!(s.badge("b1", r).unread, 0);
         assert_eq!(s.history("b1", a.seq, 10).unwrap().len(), 1);
         assert_eq!(s.bot("b1").unwrap().unwrap().config.permission, Permission::Ask);
         assert!(s.bot("missing").unwrap().is_none());
@@ -252,7 +294,24 @@ mod tests {
         s.insert_entry(&Lane::main("b1"), EntryKind::User, 2, &said).unwrap();
         let heard = serde_json::json!({"text": "heard on it", "final": true, "call": "c"});
         s.insert_entry(&Lane::main("b1"), EntryKind::Agent, 2, &heard).unwrap();
-        assert_eq!((s.unread("b1", r), s.last_message("b1").unwrap().text.as_str()), (0, "yo!"));
+        assert_eq!((s.badge("b1", r).unread, s.last_message("b1").unwrap().text.as_str()), (0, "yo!"));
+
+        // A waiting approval card counts until answered, even once its chat was read (#366).
+        let pending = serde_json::json!({"status": "pending"});
+        let card = s.insert_entry(&Lane::main("b1"), EntryKind::Permission, 3, &pending).unwrap();
+        let waiting = Badge { unread: 1, waiting: 1 };
+        assert_eq!((s.badge("b1", r), waiting.unseen()), (waiting, 0), "nothing to read, still waiting");
+        assert_eq!(s.total_unread(), 1, "a waiting card counts on the app icon too");
+        let r = s.mark_read("b1").unwrap();
+        assert_eq!(s.badge("b1", r), waiting, "read, still waiting");
+        s.update_entry(&card.id, &serde_json::json!({"status": "answered"})).unwrap();
+        assert_eq!(s.badge("b1", r), Badge::default(), "answered");
+        // A restart expires a waiting card and resyncs its bot, so clients catching up see the badge drop.
+        s.insert_entry(&Lane::main("b1"), EntryKind::Permission, 3, &pending).unwrap();
+        let rev = s.bot("b1").unwrap().unwrap().rev;
+        s.expire_pending().unwrap();
+        assert!(s.bot("b1").unwrap().unwrap().rev > rev, "resynced");
+        assert_eq!(s.badge("b1", r), Badge::default(), "expired");
 
         let reply = serde_json::json!({"text": "done", "final": true});
         // A deleted bot stays deleted, and its winding-down actor leaves no lines behind.
@@ -264,7 +323,10 @@ mod tests {
             s.kv_set(k, "1").unwrap();
         }
         s.kv_set("context.window.b10", "1").unwrap();
+        s.insert_entry(&Lane::main("b1"), EntryKind::Agent, 3, &reply).unwrap();
+        assert_eq!(s.total_unread(), 1);
         s.delete_bot("b1").unwrap();
+        assert_eq!(s.total_unread(), 0, "a deleted bot isn't on the phone's roster");
         assert_eq!((s.kv_get("fallback.session.b1.codex"), s.kv_get("fallback.on.b1")), (None, None));
         assert!(compaction.iter().all(|k| s.kv_get(k).is_none()), "its compaction records");
         assert!(s.kv_get("context.window.b10").is_some(), "another bot's window");

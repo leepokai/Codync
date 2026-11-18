@@ -2211,5 +2211,6 @@
   "{name} remembered it": "{name} 记下的",
   "Codync {version} is available": "Codync {version} 已推出",
   "You have {version}.": "你目前是 {version}。",
-  "Couldn't restore sign-in. Check your connection and retry.": "无法恢复登录。检查网络后重试。"
+  "Couldn't restore sign-in. Check your connection and retry.": "无法恢复登录。检查网络后重试。",
+  "Still waking the computer: try again in a moment.": "还在唤醒电脑，请稍后再试。"
 }

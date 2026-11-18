@@ -1,4 +1,4 @@
-import { app, ipcMain, type WebContents } from 'electron'
+import { app, BrowserWindow, ipcMain, type WebContents } from 'electron'
 import { appHeader } from '../../shared/compat'
 import type { AccountService } from '../account'
 import { isAttended, onAttention } from '../attention'
@@ -7,7 +7,7 @@ import { unb64url } from './crypto.ts'
 import { RelayChannel, unreachable, type ChannelError, type Socket } from './relay-channel.ts'
 
 // The renderer's way to account computers over the relay: the same calls and streams as the loopback proxy
-// (`host-proxy.ts`), carried by one `RelayChannel` per computer.
+// (`host-proxy.ts`), carried by one `RelayChannel` per computer, and each presence the relay tells one.
 
 const channels = new Map<string, RelayChannel>()
 const streams = new Map<string, () => void>()
@@ -42,6 +42,9 @@ async function channelFor(account: AccountService, computerId: string, signKey: 
       return socket as unknown as Socket
     },
     onRefused: () => channels.get(key) === channel && channels.delete(key),
+    onPresence: (presence) => {
+      for (const w of BrowserWindow.getAllWindows()) w.webContents.send('channel:presence', { computerId, presence })
+    },
   })
   channel.setAttended(isAttended())
   channels.set(key, channel)

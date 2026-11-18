@@ -75,10 +75,11 @@ export interface StatusLine {
 export const placementLine = (p: CloudPlacement, tr: (text: string) => string) =>
   tr('Runs on {provider} · {region}').replace('{provider}', p.providerName).replace('{region}', p.region)
 
-/** An offline cloud computer that sleeps isn't offline, and one that failed is an error; null: plain offline. */
+/** An offline cloud computer that sleeps, or is starting, isn't offline, and one that failed is an error; null: plain offline. */
 export function offlineCloudStatus(cloud: CloudPlacement | null | undefined): StatusLine | null {
   if (!cloud) return null
   if (cloud.state === 'stopped' || cloud.state === 'stopping') return { text: 'Sleeping · wakes when you message', error: false }
+  if (cloud.state === 'starting') return { text: 'Waking the computer…', error: false }
   if (cloud.state === 'failed') return { text: 'Cloud computer failed', error: true }
   return null
 }

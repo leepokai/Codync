@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { computerSections, moveInOrder, orderedComputers, rosterBand, rosterOrder } from './computer-roster.ts'
+import { computerSections, connectionSummary, moveInOrder, orderedComputers, rosterBand, rosterOrder } from './computer-roster.ts'
 
 test('saved computer order survives reconnect order and appends new computers', () => {
   const computers = [{ id: 'new' }, { id: 'a' }, { id: 'b' }]
@@ -36,4 +36,13 @@ test('pinned bots sort first; the lead is placed like any bot', () => {
   const bots = [bot('recent', { lastAt: 9 }), bot('pinned', { pinned: true, position: -5 }), bot('lead', { lead: true, position: 3 }), bot('dragged', { position: -1 })]
   assert.deepEqual([...bots].sort(rosterOrder).map((b) => b.id), ['pinned', 'dragged', 'recent', 'lead'])
   assert.equal(rosterBand(bot('lead', { lead: true })), rosterBand(bot('other')), 'a drag moves the lead among the rest')
+})
+
+test('the header sums up the computers it shows, a cloud computer on its way as waking', () => {
+  const tr = (text: string) => text
+  const asleep = { kind: 'computerOffline', lastSeen: null } as const
+  assert.equal(connectionSummary([{ kind: 'online' }, asleep], false, tr), '1/2 connected')
+  assert.equal(connectionSummary([asleep], false, tr), '1 offline')
+  assert.equal(connectionSummary([{ ...asleep, waking: true }], true, tr), 'Waking the computer…')
+  assert.equal(connectionSummary([{ kind: 'connecting' }, asleep], true, tr), 'Connecting…')
 })

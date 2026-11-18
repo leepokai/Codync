@@ -35,6 +35,8 @@ data class CloudComputer(val computerId: String, val name: String, val signKey: 
 data class CloudPlacement(val provider: String, val providerName: String, val region: String, val state: String) {
     /** Asleep, or going to sleep: it wakes when a device connects or a message arrives. */
     val asleep: Boolean get() = state == "stopped" || state == "stopping"
+    /** On its way up (a wake): it's coming, not offline. */
+    val starting: Boolean get() = state == "starting"
     val failed: Boolean get() = state == "failed"
 }
 

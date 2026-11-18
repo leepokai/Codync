@@ -67,7 +67,7 @@ export function ComputerHeadingLabel({ store, compact, collapsed }: { store: Bot
       {!compact ? (
         <span className="computer-roster-label">
           <strong>{store.hostName}</strong>
-          <span className={`computer-roster-status ${store.shownConnection.kind === 'online' ? '' : 'warning'}`}>{tr(store.connectionLabel)}</span>
+          <span className={`computer-roster-status ${store.isOffline && !store.isUpdating && !store.isAsleep ? 'warning' : ''}`}>{tr(store.connectionLabel)}</span>
         </span>
       ) : null}
       <span className={`computer-roster-chevron ${collapsed ? 'collapsed' : ''}`}><Icon name="chevron.down" size={9} /></span>

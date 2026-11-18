@@ -8,7 +8,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { fromB64url, NONCE_TTL_MS, randomId, utf8, verifyEd25519 } from "./auth";
-import { wake, type Wake, type WakeCause } from "./cloud-machines";
+import { booted, wake, type Wake, type WakeCause } from "./cloud-machines";
 import { HostCalls } from "./host-calls";
 import type { Env } from "./index";
 import { HookBox } from "./relay-hooks";
@@ -224,14 +224,15 @@ export class ComputerRelay extends DurableObject<Env> {
     if (now - woke < WAKE_DEBOUNCE_MS) return this.wakeLater(woke + WAKE_DEBOUNCE_MS, cause);
     this.setMeta("wokeAt", String(now));
     const sleepId = this.meta("sleepId");
-    const w = await wake(this.env, id, now).catch((e): Wake => {
+    // A wake that failed (it may not even be a cloud computer) is retried, and leaves the episode as it was.
+    const w = await wake(this.env, id, now).catch((e): Wake | null => {
       console.error("cloud computer wake failed", { computerId: id, error: String(e) });
-      return { result: "retry" };
+      return null;
     });
-    if (w.woken) this.ctx.waitUntil(reportWoken(this.env, w.woken, cause, now));
+    if (w?.woken) this.ctx.waitUntil(reportWoken(this.env, w.woken, cause, now));
     // Its host may be back already (its machine was starting by the time `wake` returned): nothing left to time.
-    if (!this.readyHost()) this.episode.tried(w, now);
-    const { result } = w;
+    if (w && !this.readyHost()) this.episode.tried(w, now);
+    const result = w?.result ?? "retry";
     // A host that asked to sleep while `wake` read its machine runs only until its stop takes effect: retried, as
     // a wake that found it `stopping` is.
     if (result === "running" && this.meta("sleepId") === sleepId) {
@@ -240,6 +241,7 @@ export class ComputerRelay extends DurableObject<Env> {
       this.setMeta("wokeAt", "0");
       await this.wakeLater(now + WAKE_RETRY_MS, "retry");
     }
+    this.announceWake(now);
   }
 
   /** It never stopped (the stop failed): the host that asked to sleep is still connected and fine
@@ -497,6 +499,8 @@ export class ComputerRelay extends DurableObject<Env> {
     if (host) this.hooks.deliver(host, now);
     const cause = this.schedule.due(now);
     if (cause) await this.wakeHost(now, cause);
+    // A wake past what devices are shown (`WAKING_SHOWN_MS`) reads as offline.
+    this.announceWake(now);
 
     const acl = this.acl();
     let next = now + ALARM_MS;
@@ -522,10 +526,7 @@ export class ComputerRelay extends DurableObject<Env> {
     this.mailbox.requeue();
     this.hooks.requeue();
     this.calls.offline();
-    if (!this.readyHost(exclude)) {
-      const presence = JSON.stringify(this.presence(exclude));
-      for (const [ws] of this.devices()) send(ws, presence);
-    }
+    if (!this.readyHost(exclude)) this.toDevicesPresence(now, exclude);
     await this.recordPresence(false, now);
   }
 
@@ -533,7 +534,8 @@ export class ComputerRelay extends DurableObject<Env> {
     const id = this.meta("computerId");
     if (!id) return;
     try {
-      await this.env.DB.prepare("UPDATE computers SET online = ?, last_seen_at = ? WHERE id = ?").bind(online ? 1 : 0, now, id).run();
+      const seen = this.env.DB.prepare("UPDATE computers SET online = ?, last_seen_at = ? WHERE id = ?").bind(online ? 1 : 0, now, id);
+      await (online ? this.env.DB.batch([seen, booted(this.env, id, now)]) : seen.run());
     } catch (e) {
       console.error("presence write failed", { computerId: id, error: String(e) });
     }
@@ -553,9 +555,25 @@ export class ComputerRelay extends DurableObject<Env> {
       .find((ws) => ws !== exclude && (ws.deserializeAttachment() as HostAttachment).ready);
   }
 
-  private presence(exclude?: WebSocket) {
+  /** `waking`: when the relay began waking this cloud computer (ms), while devices are shown it as waking. */
+  private presence(exclude?: WebSocket, now = Date.now()) {
     const last = this.meta("lastSeenAt");
-    return { t: "presence", online: !!this.readyHost(exclude), lastSeenAt: last === null ? null : Number(last) };
+    const online = !!this.readyHost(exclude);
+    return { t: "presence", online, lastSeenAt: last === null ? null : Number(last), waking: online ? null : this.episode.shown(now) };
+  }
+
+  /** Every device hears the offline computer's presence. */
+  private toDevicesPresence(now: number, exclude?: WebSocket): void {
+    const presence = this.presence(exclude, now);
+    this.episode.told(presence.waking);
+    const text = JSON.stringify(presence);
+    for (const [ws] of this.devices()) send(ws, text);
+  }
+
+  /** Devices hear when the wake they see changed while the computer is offline: one began, or ended without its host
+   * (it can't be woken, or it ran past `WAKING_SHOWN_MS`). */
+  private announceWake(now: number): void {
+    if (!this.readyHost() && this.episode.news(now)) this.toDevicesPresence(now);
   }
 
   private hosts(): [WebSocket, HostAttachment][] {

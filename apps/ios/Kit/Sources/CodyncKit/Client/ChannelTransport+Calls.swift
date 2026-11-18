@@ -45,7 +45,7 @@ extension ChannelTransport {
     /// What a link state the caller can't use means to it.
     private func linkError(_ state: LinkState) -> HostError {
         switch state {
-        case let .hostOffline(lastSeen): .computerOffline(lastSeen: lastSeen)
+        case let .hostOffline(lastSeen, _): .computerOffline(lastSeen: lastSeen)
         case let .unauthorized(message): .unauthorized(message)
         case .failed where needsUpgrade: .upgradeRequired
         case .connecting, .ready, .failed: computer.cloud == nil ? .unreachableDirectly : .unreachable

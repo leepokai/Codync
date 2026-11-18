@@ -8,6 +8,8 @@ mod common;
 
 #[path = "routines_e2e/follow_ups.rs"]
 mod follow_ups;
+#[path = "routines_e2e/quiet.rs"]
+mod quiet;
 #[path = "routines_e2e/timeout.rs"]
 mod timeout;
 

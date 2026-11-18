@@ -843,8 +843,6 @@
   "On the computer, open Codync → Settings → Computer access. Permissions are set separately on each computer.": "Sul computer, apri Codync → Impostazioni → Accesso al computer. Le autorizzazioni si impostano separatamente su ogni computer.",
   "On the other computer, choose Join with invite under Network.": "Sull'altro computer, scegli Unisciti con invito in Rete.",
   "On this Android version a task shows as an ongoing notification. Live updates and the status bar chip need Android 16 QPR1.": "In questa versione di Android un'attività appare come notifica in corso. Gli aggiornamenti in tempo reale e il chip nella barra di stato richiedono Android 16 QPR1.",
-  "On your Mac, click Codync in the menu bar, then Pair iPhone.": "Sul tuo Mac, fai clic su Codync nella barra dei menu, poi su Associa iPhone.",
-  "On your Mac, click Codync in the menu bar, then Pair iPhone. The same code pairs this phone.": "Sul tuo Mac, fai clic su Codync nella barra dei menu, poi su Associa iPhone. Lo stesso codice associa questo telefono.",
   "On your computer, run this in a terminal:": "Sul tuo computer, esegui questo in un terminale:",
   "On {name} ({kind})": "Su {name} ({kind})",
   "On-device speech, on this computer. During a call, applies when you close settings.": "Riconoscimento vocale sul dispositivo, su questo computer. Durante una chiamata, si applica quando chiudi le impostazioni.",
@@ -897,9 +895,6 @@
   "Pair a computer": "Associa un computer",
   "Pair a computer later from Manage computers.": "Associa un computer più tardi da Gestisci computer.",
   "Pair a phone…": "Associa un telefono…",
-  "Pair iPhone": "Associa iPhone",
-  "Pair iPhone with {name}": "Associa iPhone a {name}",
-  "Pair iPhone…": "Associa iPhone…",
   "Paired with a QR code": "Associato con un codice QR",
   "Paired with a QR code · connected": "Associato con un codice QR · connesso",
   "Paired with a QR code · seen {when}": "Associato con un codice QR · visto {when}",
@@ -2219,5 +2214,10 @@
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "Crea una chiave API chiamata codync con i permessi machines:read, machines:write e machines:delete.",
   "Connect {provider}": "Collega {provider}",
   "Use the command line instead": "Usa invece la riga di comando",
-  "Leave it empty to use the hostname.": "Lascia vuoto per usare il nome host."
+  "Leave it empty to use the hostname.": "Lascia vuoto per usare il nome host.",
+  "Pair phone…": "Associa telefono…",
+  "Pair phone with {name}": "Associa telefono a {name}",
+  "Pair phone": "Associa telefono",
+  "On your Mac, click Codync in the menu bar, then Pair phone. The same code pairs this phone.": "Sul tuo Mac, fai clic su Codync nella barra dei menu, poi su Associa telefono. Lo stesso codice associa questo telefono.",
+  "On your Mac, click Codync in the menu bar, then Pair phone.": "Sul tuo Mac, fai clic su Codync nella barra dei menu, poi su Associa telefono."
 }

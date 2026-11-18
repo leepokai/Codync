@@ -134,7 +134,7 @@ and phones and the desktop app see it as an older copy once the new one is reach
 (offline, named like a computer they use or see online, and last seen before that one
 joined the account) and offer to remove it; pair again or ask for access to reach the new one.
 
-On the computer, open Codync in the menu bar and choose **Pair iPhone…**, then scan the
+On the computer, open Codync in the menu bar and choose **Pair phone…**, then scan the
 code on the phone (or paste its `codync://pair` link, or type the short code
 `codync-host pair` prints). The phone sends a device certificate from the cloud with
 `pair`, and the host checks it offline: a computer in an account lets in phones of that

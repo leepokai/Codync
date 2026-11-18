@@ -41,7 +41,7 @@ export function ArtifactView({ botId, artifactId, close }: { botId: string; arti
     }}>
       <div className="top-chrome">
         <div className="top-chrome-row">
-          <MacChatButton className="ringed" title={tr('Close artifact')} icon="xmark" direction={[-1, 0]} onClick={close} />
+          <MacChatButton className="ringed" title="Close artifact" icon="xmark" direction={[-1, 0]} onClick={close} />
           <Spacer />
           {artifact ? (
             <DropdownMenu className="mac-chat-button ringed artifact-share" title={tr('Share artifact')} items={() => artifactShareItems(store, artifact, setError)}>

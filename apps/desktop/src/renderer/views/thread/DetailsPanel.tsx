@@ -56,7 +56,6 @@ export function DetailsPanel({ botId, routineId, tab, setTab, thread, openThread
   close: () => void
 }) {
   const store = useStore()
-  const tr = useTr()
   const bot = store.bots.get(botId) ?? null
   const group = !!bot && isGroup(bot)
   useScreenViewed('bot_details')
@@ -66,8 +65,8 @@ export function DetailsPanel({ botId, routineId, tab, setTab, thread, openThread
       <div className={reading ? 'details-page away' : 'details-page'} inert={reading}>
         <div className="details-drag" />
         <div className="details-actions">
-          {bot && !group ? <MacChatButton className="ringed" title={tr('Create template')} icon="square.and.arrow.up" onClick={share} /> : null}
-          <MacChatButton className="ringed" title={tr('Close details')} icon="xmark" onClick={close} />
+          {bot && !group ? <MacChatButton className="ringed" title="Create template" icon="square.and.arrow.up" onClick={share} /> : null}
+          <MacChatButton className="ringed" title="Close details" icon="xmark" onClick={close} />
         </div>
         <div className="details-scroll">
           {bot ? <Identity bot={bot} /> : null}

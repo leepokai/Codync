@@ -26,7 +26,7 @@ export function SectionHeader({ title, children }: { title: string; children?: R
   )
 }
 
-export const errorText = (e: unknown) => (e instanceof Error ? e.message : typeof e === 'object' && e && 'message' in e ? String(e.message) : String(e))
+export { errorText } from '../../lib/error-text'
 
 /** "3:27 PM", "Yesterday", "Monday" or "Sep 16" (kit's `RelativeTime.day`). */
 export function relativeDay(date: Date, now = new Date()) {

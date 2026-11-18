@@ -1,6 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "redirects": [{ "source": "/:path((?!e/).+)/", "destination": "/:path", "permanent": true }],
+  "redirects": [
+    { "source": "/:path((?!e/).+)/", "destination": "/:path", "permanent": true },
+    { "source": "/wechat", "destination": "https://t.me/+e5egWrp5z4BlOWNl", "permanent": false }
+  ],
   "rewrites": [{ "source": "/e/:path(.*)", "destination": "https://us.i.posthog.com/:path" }],
   "git": {
     "deploymentEnabled": {

@@ -1,4 +1,5 @@
-//! Events outside API calls: the host's own start (and a cloud computer's keeper), a phone added, a phone connecting.
+//! Events outside API calls: the host's own start (and a cloud computer's keeper and sleep), a phone added, a phone
+//! connecting.
 
 use super::{Analytics, Event, capture, platform, platform_of};
 use crate::LockExt as _;
@@ -20,9 +21,10 @@ pub enum Via {
 }
 
 /// `host_started`, once per start of the host; `service`: run by launchd, systemd or Windows' runner.
-pub fn host_started(hub: &Hub, service: bool) {
+/// `loopback`: listening on this computer only (`install --bind 127.0.0.1`).
+pub fn host_started(hub: &Hub, service: bool, loopback: bool) {
     let version = env!("CARGO_PKG_VERSION");
-    let p = started(hub.store.kv_get(KV_STARTED).as_deref(), version, service);
+    let p = started(hub.store.kv_get(KV_STARTED).as_deref(), version, service, loopback);
     if let Err(e) = hub.store.kv_set(KV_STARTED, version) {
         tracing::warn!(error = format!("{e:#}"), "couldn't save the version this host started as");
     }
@@ -31,13 +33,14 @@ pub fn host_started(hub: &Hub, service: bool) {
 
 /// `host_started`'s properties, from the version the host last started as (`None`: a host
 /// from before this was kept, which is neither new nor known to have changed).
-fn started(last: Option<&str>, version: &str, service: bool) -> Map<String, Value> {
+fn started(last: Option<&str>, version: &str, service: bool, loopback: bool) -> Map<String, Value> {
     let mut p = Map::new();
     p.insert("first_run".into(), (last == Some("")).into());
     if let Some(from) = last.filter(|v| !v.is_empty() && *v != version) {
         p.insert("updated_from".into(), from.into());
     }
     p.insert("service".into(), service.into());
+    p.insert("loopback".into(), loopback.into());
     p
 }
 
@@ -64,6 +67,34 @@ pub fn cloud_keeper_checked(hub: &Hub, state: KeeperState, sudo: bool) {
         hub,
         Event::CloudKeeperChecked,
         Map::from_iter([("state".into(), state.into()), ("sudo".into(), sudo.into())]),
+    );
+}
+
+/// What came of a cloud computer's host asking the cloud to put it to sleep (`cloud_sleep_asked`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SleepOutcome {
+    /// The cloud took it: the machine stops.
+    Asleep,
+    /// The cloud answered with an update to install instead.
+    Update,
+    /// Refused while a device is connected.
+    InUse,
+    /// Any other error.
+    Failed,
+}
+
+/// `cloud_sleep_asked`: an idle cloud computer's host asked to sleep; `routine`: to be woken for its next routine.
+pub fn cloud_sleep_asked(hub: &Hub, outcome: SleepOutcome, routine: bool) {
+    let outcome = match outcome {
+        SleepOutcome::Asleep => "asleep",
+        SleepOutcome::Update => "update",
+        SleepOutcome::InUse => "in_use",
+        SleepOutcome::Failed => "failed",
+    };
+    capture(
+        hub,
+        Event::CloudSleepAsked,
+        Map::from_iter([("outcome".into(), outcome.into()), ("routine".into(), routine.into())]),
     );
 }
 
@@ -145,6 +176,17 @@ impl Analytics {
     }
 }
 
+/// `remote_screen_finished`: how a viewer's screen session ended, on which client, whether through TURN, and how long
+/// it lasted from `screenPrepare`.
+pub fn remote_screen_finished(hub: &Hub, key: &str, ended: &crate::screen::EndedViewer) {
+    let mut p = Map::new();
+    p.insert("platform".into(), platform_of(hub, key).into());
+    p.insert("outcome".into(), ended.outcome.into());
+    p.insert("relay".into(), ended.relay.into());
+    p.insert("seconds".into(), ended.seconds.into());
+    capture(hub, Event::RemoteScreenFinished, p);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,30 +215,46 @@ mod tests {
 
     #[test]
     fn a_start_says_whether_it_is_new_or_updated() {
-        let p = |last, service| Value::Object(started(last, "2.20.0", service));
-        assert_eq!(p(Some(""), true), json!({"first_run": true, "service": true}));
-        assert_eq!(p(Some("2.19.3"), false), json!({"first_run": false, "updated_from": "2.19.3", "service": false}));
-        assert_eq!(p(Some("2.20.0"), true), json!({"first_run": false, "service": true}));
-        assert_eq!(p(None, true), json!({"first_run": false, "service": true}), "a host from before this was kept");
+        let p = |last, service| Value::Object(started(last, "2.20.0", service, false));
+        assert_eq!(p(Some(""), true), json!({"first_run": true, "service": true, "loopback": false}));
+        assert_eq!(
+            p(Some("2.19.3"), false),
+            json!({"first_run": false, "updated_from": "2.19.3", "service": false, "loopback": false})
+        );
+        assert_eq!(p(Some("2.20.0"), true), json!({"first_run": false, "service": true, "loopback": false}));
+        assert_eq!(
+            p(None, true),
+            json!({"first_run": false, "service": true, "loopback": false}),
+            "a host from before this was kept"
+        );
+        assert_eq!(started(None, "2.20.0", true, true)["loopback"], json!(true));
     }
 
-    #[test]
-    fn a_cloud_computer_reports_its_keeper_and_sudo_once_per_start() {
+    /// The events `report` queued on a throwaway host.
+    fn queued(report: impl FnOnce(&Hub)) -> Vec<Value> {
         use crate::LockExt as _;
-        let dir = std::env::temp_dir().join(format!("codync-keeper-event-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("codync-cloud-event-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let store = crate::store::Store::open(std::path::Path::new(":memory:")).unwrap();
         let identity = crate::remote::identity::Identity::load_or_create(&dir).unwrap();
         let hub = Hub::new(store, "h".into(), identity, "t".into(), 0);
-        cloud_keeper_checked(&hub, KeeperState::Missing, true);
-        cloud_keeper_checked(&hub, KeeperState::Unlocked, false);
-        cloud_keeper_checked(&hub, KeeperState::Locked, false);
-
+        report(&hub);
         let mut rx = hub.analytics.rx.locked().take().unwrap();
         let mut sent = Vec::new();
         while let Ok(super::super::Msg::Event(event)) = rx.try_recv() {
             sent.push(event);
         }
+        std::fs::remove_dir_all(&dir).unwrap();
+        sent
+    }
+
+    #[test]
+    fn a_cloud_computer_reports_its_keeper_and_sudo_once_per_start() {
+        let sent = queued(|hub| {
+            cloud_keeper_checked(hub, KeeperState::Missing, true);
+            cloud_keeper_checked(hub, KeeperState::Unlocked, false);
+            cloud_keeper_checked(hub, KeeperState::Locked, false);
+        });
         let own = |e: &Value| json!({"event": e["event"], "state": e["properties"]["state"], "sudo": e["properties"]["sudo"]});
         assert_eq!(
             sent.iter().map(own).collect::<Vec<_>>(),
@@ -224,6 +282,25 @@ mod tests {
                 "sudo"
             ]
         );
-        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_cloud_computer_reports_what_came_of_asking_to_sleep() {
+        let sent = queued(|hub| {
+            cloud_sleep_asked(hub, SleepOutcome::Asleep, true);
+            cloud_sleep_asked(hub, SleepOutcome::Update, false);
+            cloud_sleep_asked(hub, SleepOutcome::InUse, false);
+            cloud_sleep_asked(hub, SleepOutcome::Failed, true);
+        });
+        let own = |e: &Value| json!({"event": e["event"], "outcome": e["properties"]["outcome"], "routine": e["properties"]["routine"]});
+        assert_eq!(
+            sent.iter().map(own).collect::<Vec<_>>(),
+            [
+                json!({"event": "cloud_sleep_asked", "outcome": "asleep", "routine": true}),
+                json!({"event": "cloud_sleep_asked", "outcome": "update", "routine": false}),
+                json!({"event": "cloud_sleep_asked", "outcome": "in_use", "routine": false}),
+                json!({"event": "cloud_sleep_asked", "outcome": "failed", "routine": true}),
+            ]
+        );
     }
 }

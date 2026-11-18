@@ -68,17 +68,57 @@ class DictationTest {
         }
     }
 
-    @Test fun `a transcript arriving after a stop is dropped`() {
+    @Test fun `a send while dictating waits for the transcript, and a second send waits too`() {
         val transcript = Pending<String>(); val mic = Mic()
         dictating(transcript = transcript, mic = mic) { dictation, service, _ ->
-            var box = "Fix the bug"
-            dictation.dictate(DictationText.MIN_BYTES, mic, service) { box = it(box) }
+            var box = "A"; val sent = mutableListOf<String>()
+            dictation.start(box, service) { box = it(box) }
+            assertTrue(until { dictation.listening })
+            mic.heard?.invoke(ByteArray(DictationText.MIN_BYTES), 0.5f)
+            assertTrue(until { dictation.level > 0 })
+            dictation.finish { sent += box }
+            dictation.finish { sent += box }
+            assertTrue(until { transcript.calls == 1 })
+            assertTrue(sent.isEmpty())
+            transcript.answer.complete("and the follow-up")
+            assertTrue(until { sent.isNotEmpty() })
+            assertEquals(listOf("A and the follow-up"), sent)
+        }
+    }
+
+    @Test fun `a send while dictating sends nothing when transcription fails`() {
+        val transcript = Pending<String>(); val mic = Mic()
+        dictating(transcript = transcript, mic = mic) { dictation, service, _ ->
+            var sent = false
+            dictation.start("A", service) { }
+            assertTrue(until { dictation.listening })
+            mic.heard?.invoke(ByteArray(DictationText.MIN_BYTES), 0.5f)
+            assertTrue(until { dictation.level > 0 })
+            dictation.finish { sent = true }
+            assertTrue(until { transcript.calls == 1 })
+            transcript.answer.completeExceptionally(IOException("The computer is offline."))
+            assertTrue(until { !dictation.transcribing })
+            assertFalse(sent)
+            assertEquals("The computer is offline.", dictation.failure)
+        }
+    }
+
+    @Test fun `a transcript arriving after a stop is dropped, with the send waiting for it`() {
+        val transcript = Pending<String>(); val mic = Mic()
+        dictating(transcript = transcript, mic = mic) { dictation, service, _ ->
+            var box = "Fix the bug"; var sent = false
+            dictation.start(box, service) { box = it(box) }
+            assertTrue(until { dictation.listening })
+            mic.heard?.invoke(ByteArray(DictationText.MIN_BYTES), 0.5f)
+            assertTrue(until { dictation.level > 0 })
+            dictation.finish { sent = true }
             assertTrue(until { transcript.calls == 1 })
             dictation.stop()
             assertFalse(dictation.transcribing)
             transcript.answer.complete("too late")
             repeat(10) { yield() }
             assertEquals("Fix the bug", box)
+            assertFalse(sent)
             assertTrue(dictation.failure == null && !dictation.transcribing)
         }
     }
@@ -96,12 +136,17 @@ class DictationTest {
         }
     }
 
-    @Test fun `a tap of the mic sends nothing`() {
+    @Test fun `a tap of the mic sends nothing, and a send goes right away`() {
         val transcript = Pending<String>(); val mic = Mic()
         dictating(transcript = transcript, mic = mic) { dictation, service, _ ->
-            dictation.dictate(DictationText.MIN_BYTES - 1, mic, service) { }
+            var sent = false
+            dictation.start("", service) { }
+            assertTrue(until { dictation.listening })
+            mic.heard?.invoke(ByteArray(DictationText.MIN_BYTES - 1), 0.5f)
+            assertTrue(until { dictation.level > 0 })
+            dictation.finish { sent = true }
             repeat(10) { yield() }
-            assertFalse(dictation.transcribing)
+            assertTrue(sent && !dictation.transcribing)
             assertEquals(0, transcript.calls)
         }
     }

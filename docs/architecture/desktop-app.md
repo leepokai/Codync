@@ -24,9 +24,9 @@ reaching the end of a history response determines when there are no earlier mess
 |---|---|
 | `src/main/` | Main process: host service (`host-controller.ts`), loopback HTTP/SSE proxy (`host-proxy.ts`), menu bar/tray, windows, account sign-in (Clerk Frontend API, `account.ts`), cloud API and device key (`cloud.ts`), updates (`updates.ts`), SSH tunnels (`ssh.ts`), Codync Screen agent (`screen.ts`), on-device speech (`speech.ts`) and its [voice input shortcut](../features/voice-call.md#voice-input-shortcut) (`voice-shortcut.ts`), browser sign-in callbacks (`auth.ts`), the [notch island](../features/notch-island.md) window (`island.ts`), [error tracking](../features/analytics.md#error-tracking) (`error-reports.ts`) and reloading a crashed window (`renderer-recovery.ts`) |
 | `src/preload/` | The `window.codync` bridge (types in `src/shared/ipc.ts`) |
-| `src/renderer/store/` | `BotStore` (port of kit's; `bot-store.ts` actions over `bot-sync.ts` events stream and `bot-mirror.ts` state), `AppModel` (window state, approvals), `CloudModel` (claims, cloud default), `AccountSession` |
+| `src/renderer/store/` | `BotStore` (port of kit's; `bot-store.ts` actions over `bot-sync.ts` events stream and `bot-mirror.ts` state), `AppModel` (window state, approvals), `CloudModel` (claims, cloud default), `AccountSession`, `ScreenSession` (another computer's screen over WebRTC, `screen-session.ts`) |
 | `src/renderer/components/` | Design system: controls, overlays (sheets, dialogs, menus), SF Symbol icons, character avatars, thinking orbs |
-| `src/renderer/views/` | Screens, mirroring kit's folders (`thread/`, `bots/`, `marketplace/`, `settings/`, `routines/`, `call/`) |
+| `src/renderer/views/` | Screens, mirroring kit's folders (`thread/`, `bots/`, `marketplace/`, `settings/`, `routines/`, `call/`, `screen/`); ⌘F find in the open chat is `FindBar.tsx` over `use-conversation-find.ts`, which searches what messages say in the transcript (`data-find-root`; only text under `data-find-text`, as on the phones and the terminal; `data-find-block` keeps a table cell's text to itself) and paints matches with CSS custom highlights (`lib/transcript-find.ts`), keeping the current match as messages load and scrolling it into view on both axes (`lib/find-position.ts`) |
 | `native/speech-macos/` | `codync-speech`, a Swift helper running SFSpeechRecognizer for on-device calls |
 | `tools/export-symbols.swift` | Renders the SF Symbols the app uses into masks at build time (macOS) |
 
@@ -64,8 +64,9 @@ The TUI connects to one host at a time, so it keeps its single roster.
 
 - **First-run computer access** uses a capsule with one permission per panel, the app icon above it, and directional transitions (disabled with Reduce Motion). GitHub Star is the optional final panel and shares its answer history with the invitation at the fifth prompt. macOS has three permission panels; Linux combines capture and input; Windows only shows control availability. Settings and the menu-bar setup keep their permission overview. iOS, Android and the terminal UI continue to show remote permission status and direct people to this desktop setup; they cannot request these desktop OS grants.
 
+- **Ko-fi invitation** (`views/KofiPrompt.tsx` on the `InviteSheet` the star ask shares, `lib/use-kofi-ask.ts`, rule in `lib/kofi-ask.ts`): a sheet at most three times per computer, at 3, 30 and 90 active days (days it sent a prompt on, voice calls and task threads included; counted from 2.49.2). Each one comes at the next opening of the chat window once its count is reached (the launch, or showing it again after it closed to the background; not coming back from behind another window), never in the one that reached it, and waits the days between its mark and the one before, counted from the last, so one that came late never brings the next one sooner. It counts once on screen, answered or not; *Support on Ko-fi* ends them, *Not now* (or Escape, or a click outside) leaves the next one waiting. An opening with a GitHub star ask due or What's new up leaves it for a later one, so one invitation comes at a time. The days follow KDE's yearly ask and the stores' three-a-year rating rule: after people have found value, then rarely. The terminal UI shows the same sheet at start, after What's new (`host/src/tui/app/kofi.rs`, state in `tui-kofi-invite`, days it sent a message on); esc closes it and its link opens in the terminal. Each client keeps its own state, like the star ask: it's a client's invitation, not host state. iOS and Android don't show it: App Store and Google Play rules on external tip links outside the US.
 - **Local host recovery** uses the Codync character: looking around and bobbing while starting,
-  resting for setup, and a still disappointed expression with lowered eyelids and a downturned mouth if the host is missing or
+  resting for setup, and a still sad expression, open eyes whose outer corners droop and no mouth, if the host is missing or
   failed. Error text and install/retry actions remain available in both full-window and compact
   recovery layouts. Reduced motion removes the animation. This screen belongs to the desktop
   service manager; iOS, Android and the TUI connect to hosts but do not install or start that service.
@@ -114,9 +115,7 @@ The TUI connects to one host at a time, so it keeps its single roster.
   *Older copy · last seen …*.
 - **Updates**: electron-updater reads the release GitHub marks latest, and only the release gate
   (`tools/release-gate.py`) sets that mark
-  ([holding releases](../reference/compatibility.md#holding-releases-for-the-app-store)).
-  Installs of the SwiftUI app get the first desktop release through one more Sparkle appcast, generated for the zip by the release workflow (deprecated, removed after
-  2026-11-06: [updates guide](../guides/updates.md#deprecated-the-sparkle-migration-appcast-remove-after-2026-11-06)).
+  ([holding releases](../reference/compatibility.md#holding-releases-for-the-stores)).
   On macOS the app removes an idle installer job (`<appId>.ShipIt`) whose update request is gone:
   launchd would otherwise restart it every 2 seconds, forever.
 
@@ -150,7 +149,8 @@ CODYNC_PORT=19333 CODYNC_HOME=/path/to/home npm run dev   # against a manually r
 npm run typecheck && npm test
 ```
 
-UI checks: `CODYNC_SHOW_INACTIVE=1` opens the window without taking focus,
+UI checks: `CODYNC_HEADLESS=1` keeps every window off the screen (what `npm run dev -- --cdp` sets:
+[headless by default](../guides/test-stack.md#headless-by-default)), `CODYNC_SHOW_INACTIVE=1` opens the window without taking focus,
 `CODYNC_DEBUG_OPEN=newBot|newGroup|plugins|computers|<bot name>` opens a screen, and
 `CODYNC_REMOTE_DEBUG=<port>` lets a script drive the renderer over the DevTools protocol.
 Each packaging script names its environment:

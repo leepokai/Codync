@@ -41,13 +41,13 @@ public struct UpdateNeededCard: View {
             }
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 6) {
-                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text)
+                Text(L10n.tr(title)).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text)
                 Text(detail)
                     .font(.footnote)
                     .foregroundStyle(Palette.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let action {
-                    Button(action.title, action: action.run)
+                    Button(L10n.tr(action.title), action: action.run)
                         .buttonStyle(.primary)
                         .disabled(inReview)
                         .padding(.top, 4)
@@ -63,12 +63,12 @@ public struct UpdateNeededCard: View {
     var title: String { UpdateNeededText.title(mismatch, host: store.hostName, cloud: store.cloudHosting != nil) }
     var detail: String {
         let offer = hostOffer
-        if offer == .updating { return UpdateNeededText.updating(host: store.hostName) }
-        let text = UpdateNeededText.detail(mismatch, host: store.hostName, hostVersion: store.hostVersion?.version,
+        if offer == .updating { return L10n.tr(UpdateNeededText.updating(host: store.hostName)) }
+        let text = UpdateNeededText.detail(mismatch, host: store.hostName,
                                            // With a button here, instructions for that computer would only confuse.
                                            os: store.hello?.os, instructions: action == nil,
-                                           cloud: store.cloudHosting != nil)
-        if case let .available(last?) = offer { return "\(text) \(UpdateNeededText.notUpdated(last, host: store.hostName))" }
+                                           cloud: store.cloudHosting != nil, translate: { L10n.tr($0) })
+        if case let .available(last?) = offer { return "\(text) \(L10n.tr(UpdateNeededText.notUpdated(last, host: store.hostName)))" }
         return inReview ? "\(text) That version is still in App Store review; it'll be there soon." : text
     }
 
@@ -108,19 +108,21 @@ public enum UpdateNeededText {
         }
     }
 
-    public static func detail(_ mismatch: VersionMismatch, host: String, hostVersion: String?, os: String?,
-                              instructions: Bool = true, cloud: Bool = false) -> String {
+    public static func detail(_ mismatch: VersionMismatch, host: String, os: String?,
+                              instructions: Bool = true, cloud: Bool = false, translate: (String) -> String = { $0 }) -> String {
         switch mismatch {
         case let .updateApp(minimum):
-            let runs = hostVersion.map { "\(host) runs Codync \($0) and" } ?? host
-            return "\(runs) needs this app to be \(minimum) or newer. Your chats are safe on the computer."
+            return L10n.fill(translate("This app needs to be {minimum} or newer ({host} requires it)."),
+                             ["host": host, "minimum": minimum])
         case let .appFloor(reason):
             return reason
-        case let .updateHost(version, minimum) where cloud:
-            return "It's moving from Codync \(version) to \(minimum) or newer. This app reconnects when it's done."
+        case let .updateHost(_, minimum) where cloud:
+            return L10n.fill(translate("Your cloud computer is updating to Codync {minimum} or newer; this app reconnects when it is done."),
+                             ["minimum": minimum])
         case let .updateHost(version, minimum):
-            let needs = "\(host) runs Codync \(version); this app needs \(minimum) or newer."
-            return instructions ? "\(needs) \(how(os: os))" : needs
+            let needs = L10n.fill(translate("Codync on {host} is {version}; that computer needs Codync {minimum} or newer."),
+                                  ["host": host, "version": version, "minimum": minimum])
+            return instructions ? "\(needs) \(translate(how(os: os)))" : needs
         }
     }
 
@@ -235,9 +237,10 @@ public struct AppUpdateReminder: View {
 
     public var body: some View {
         if let appUpdates, let version = appUpdates.newerApp {
-            UpdateReminderCard(title: "Codync \(version) is available",
-                               detail: "You have \(AppVersion.current).",
-                               actionTitle: appUpdate == nil ? nil : "Update",
+            // Filled from the phrase keys: a sentence already holding "2.47.0" can't be matched back to "You have {version}.".
+            UpdateReminderCard(title: L10n.fill(L10n.tr("Codync {version} is available"), ["version": version]),
+                               detail: L10n.fill(L10n.tr("You have {version}."), ["version": AppVersion.current]),
+                               actionTitle: appUpdate == nil ? nil : L10n.tr("Update"),
                                action: { appUpdate?() },
                                dismiss: appUpdates.dismissApp)
                 .padding(.vertical, 4)

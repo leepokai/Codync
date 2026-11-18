@@ -5,6 +5,7 @@ import { HStack, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { updateNeededText } from '../lib/host-update'
 import { useModel } from '../lib/observable'
+import { useTr } from '../lib/use-language'
 import { appFloor } from '../store/cloud'
 import { useApp, useStore } from '../store/context'
 import { UpdateButton, useUpdates } from './UpdateButton'
@@ -21,7 +22,7 @@ export function UpdateNeededCard() {
   if (!mismatch) return null
   const host = store.hostName
   // The cloud updates a cloud computer on its own: this app's version asks for it.
-  if (store.isCloudUpdating) return <UpdateNotice title={updateNeededText.title(mismatch, host, true)} detail={updateNeededText.detail(mismatch, host, null, null, false, true)} button={null} updating />
+  if (store.isCloudUpdating) return <UpdateNotice title={updateNeededText.title(mismatch, host, true)} detail={updateNeededText.detail(mismatch, host, null, false, true)} button={null} updating />
   const offer = mismatch.kind === 'updateHost' ? store.hostUpdateOffer : null
   // This app updates itself (its download and restart, as in Settings); on macOS and Windows this
   // computer's own host is put back on the app's bundled copy. Any other computer that can update
@@ -37,7 +38,7 @@ export function UpdateNeededCard() {
     : action === 'askHost' ? <Button onClick={() => store.requestHostUpdate()}>Update now</Button>
     : null
   // With a button here, instructions for that computer would only confuse.
-  const needs = updateNeededText.detail(mismatch, host, store.hostVersion?.version, store.hello?.os, action === null)
+  const needs = updateNeededText.detail(mismatch, host, store.hello?.os, action === null)
   const detail =
     offer?.kind === 'updating' ? updateNeededText.updating(host)
     : offer?.kind === 'available' && offer.last ? `${needs} ${updateNeededText.notUpdated(offer.last, host)}`
@@ -49,8 +50,9 @@ export function UpdateNeededCard() {
 export function AppFloorCard() {
   const floor = useModel(appFloor)
   const updates = useUpdates()
+  const tr = useTr()
   if (!floor.message) return null
-  return <UpdateNotice title="Update this app" detail={floor.message} button={updates && <UpdateButton updates={updates} kind="primary" />} />
+  return <UpdateNotice title={tr('Update this app')} detail={floor.message} button={updates && <UpdateButton updates={updates} kind="primary" />} />
 }
 
 function UpdateNotice({ title, detail, button, updating = false }: { title: string; detail: string; button: ReactNode; updating?: boolean }) {

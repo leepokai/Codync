@@ -33,6 +33,11 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var diffs: [FileDiff]?
     public var locations: [Location]?
     public var options: [PermissionOption]?
+    /// Additive notice card (its `status` is a `DecisionStatus`). Permission options retain their existing object format.
+    public var decision: Bool?
+    public var question: String?
+    public var choices: [String]?
+    public var recommended: Int?
     public var selected: String?
     public var command: String?
     public var detail: String?
@@ -58,6 +63,8 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var attachments: [Attachment]?
     /// Immutable files explicitly sent by the bot.
     public var files: [SharedFile]?
+    /// agent: the message is a voice note, played inside its bubble above the text.
+    public var voiceNote: Bool?
     /// notice: a finished voice call's length.
     public var callSeconds: Int?
     /// The voice call it was said in (user), answered during (agent), or that it ends (notice); the chat shows those
@@ -71,6 +78,10 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var transcript: [CallLine]?
     /// agent: an artifact card, the bot's artifact as published then (the newest version shows).
     public var artifact: ArtifactRef?
+    /// permission: the background task that asks (`WorkItem.swift`); the card sits in its bot's chat.
+    public var task: TaskRef?
+    /// permission: the item that task works on.
+    public var item: ItemRef?
 
     public init(text: String? = nil, status: String? = nil, clientNonce: String? = nil) {
         self.text = text
@@ -103,12 +114,18 @@ public struct ReplyQuote: Codable, Hashable, Sendable {
     public var author: String
     public var text: String
     public var artifact: String?
+    /// The reply answers the part of the message the user selected, which `text` then is.
+    public var part: Bool?
 
-    public init(id: String, author: String, text: String, artifact: String? = nil) {
+    /// The selected part, as `send` takes it beside the message's id.
+    public var selectedPart: String? { part == true ? text : nil }
+
+    public init(id: String, author: String, text: String, artifact: String? = nil, part: Bool? = nil) {
         self.id = id
         self.author = author
         self.text = text
         self.artifact = artifact
+        self.part = part
     }
 
     public init(from decoder: any Decoder) throws {
@@ -117,6 +134,7 @@ public struct ReplyQuote: Codable, Hashable, Sendable {
         author = try c.decodeIfPresent(String.self, forKey: .author) ?? ""
         text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
         artifact = try c.decodeIfPresent(String.self, forKey: .artifact)
+        part = try c.decodeIfPresent(Bool.self, forKey: .part)
     }
 }
 
@@ -140,6 +158,13 @@ extension EntryData {
             }
         }
     }
+
+    /// The sound a voice-note message plays inside its bubble: its first file, when the host marked the message
+    /// and the chat can play it. A sound shared without the mark stays a file card.
+    public var voiceNoteFile: SharedFile? {
+        guard voiceNote == true, let file = files?.first, file.playsInChat else { return nil }
+        return file
+    }
 }
 
 /// A file sent with a message; the agent reads it on the computer.
@@ -159,5 +184,23 @@ public struct Attachment: Codable, Hashable, Sendable, Identifiable {
     public static func isImage(_ name: String) -> Bool {
         ["png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp"].contains((name as NSString).pathExtension.lowercased())
     }
+
+    public static func isAudio(_ name: String) -> Bool {
+        ["mp3", "m4a", "wav", "aac"].contains((name as NSString).pathExtension.lowercased())
+    }
 }
 
+
+/// A choice card's (`request_decision`) lifecycle, as the host writes it in `status`.
+public enum DecisionStatus: String, Sendable {
+    case pending, answered, expired
+}
+
+public extension EntryData {
+    /// A background task put it in the chat (a card, a file, a voice note, an artifact): its line names the task,
+    /// and typing in the chat doesn't answer it.
+    var isFromTask: Bool { !(task?.title.isEmpty ?? true) || !(item?.id.isEmpty ?? true) }
+
+    /// A choice card's status; nil for a value this app doesn't know.
+    var decisionStatus: DecisionStatus? { status.flatMap(DecisionStatus.init(rawValue:)) }
+}

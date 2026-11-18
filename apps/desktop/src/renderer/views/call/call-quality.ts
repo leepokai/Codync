@@ -1,6 +1,9 @@
 import type { AnalyticsEvent, VoiceCallEngine, VoiceFailure, VoiceStuck } from '@shared/analytics'
 import type { VoiceFailureKind, VoicePhase } from './voice'
 
+/** `enabled`: the session has Google Search; `answered`: an answer came with its suggestions. */
+export type SearchUse = 'enabled' | 'answered'
+
 const isConnecting = (phase: VoicePhase) => phase === 'starting' || phase === 'reconnecting'
 
 /**
@@ -18,6 +21,8 @@ export class CallQuality {
   private stuck: VoiceStuck = 'none'
   private failure: VoiceFailure = 'none'
   private last: VoicePhase = 'starting'
+  private googleSearch = false
+  private searches = 0
   /** When the current connecting phase began. */
   private since = 0
 
@@ -40,6 +45,8 @@ export class CallQuality {
     this.stuck = 'none'
     this.failure = 'none'
     this.last = 'starting'
+    this.googleSearch = false
+    this.searches = 0
   }
 
   phase(phase: VoicePhase, failure: VoiceFailureKind | null) {
@@ -61,6 +68,12 @@ export class CallQuality {
     if (this.stuck === 'none') this.stuck = 'speaking'
   }
 
+  /** Google Search was confirmed for this engine's session, or an answer came with its suggestions. */
+  search(use: SearchUse) {
+    this.googleSearch = true
+    if (use === 'answered') this.searches++
+  }
+
   /** The engine is done (replaced, or the call ended): its report. */
   report() {
     if (!this.engine) return
@@ -72,6 +85,7 @@ export class CallQuality {
       reconnects: this.reconnects,
       stuck: this.stuck,
       failure: this.failure,
+      ...(this.googleSearch ? { google_search: true, searches: this.searches } : {}),
     })
     this.engine = null
   }

@@ -40,7 +40,7 @@ jobs:
             git tag "$TAG"
             git push origin "$TAG"
             # Created here, before the build jobs upload to it, so it carries a description. Not
-            # latest: release-gate.yml marks it once it's uploaded and the App Store has its iPhone app.
+            # latest: release-gate.yml marks it once it's uploaded and the App Store and Google Play have its phone apps.
             tools/release-notes.sh "$TAG" > notes.md
             gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md --generate-notes --latest=false
             # Announce it in the Discord server's #releases channel. A release created with

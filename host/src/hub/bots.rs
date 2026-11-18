@@ -9,6 +9,20 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 impl Hub {
+    /// Makes `cfg` ready to save. Called under `emit_lock`, with the save: its login profile can't be removed in
+    /// between (`login_profiles::remove`).
+    fn settle_config(&self, cfg: &mut BotConfig) -> Result<()> {
+        crate::agent::login_profiles::settle(&self.store, cfg)?;
+        crate::agent::fallback::tidy(cfg);
+        cfg.section = sections::normalize_section(cfg.section.as_deref())?;
+        // ponytail: validated under the lock, so a workspace folder on a hung network share (its `is_dir`)
+        // stalls every bot's events until it answers. Upgrade: build and validate outside the lock from a
+        // snapshot, then save under it only if the stored config is unchanged (compare the serialized configs,
+        // not rev), else retry.
+        validate(cfg)?;
+        crate::agent::workspace::prepare(cfg)
+    }
+
     pub fn create_bot(self: &Arc<Self>, mut cfg: BotConfig) -> Result<Value> {
         cfg.id = uuid::Uuid::new_v4().to_string();
         cfg.created_at = crate::store::now_ms();
@@ -25,12 +39,9 @@ impl Hub {
                 return Ok(self.bot_value(&existing).unwrap_or(Value::Null));
             }
         }
-        crate::agent::fallback::tidy(&mut cfg);
-        cfg.section = sections::normalize_section(cfg.section.as_deref())?;
-        validate(&cfg)?;
-        crate::agent::workspace::prepare(&mut cfg)?;
         {
             let _g = self.emit_lock.locked();
+            self.settle_config(&mut cfg)?;
             self.store.save_bot(&cfg)?;
         }
         crate::network::publish(self);
@@ -53,14 +64,7 @@ impl Hub {
             if cfg.is_group() {
                 cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
             }
-            crate::agent::fallback::tidy(&mut cfg);
-            cfg.section = sections::normalize_section(cfg.section.as_deref())?;
-            // ponytail: validated under the lock, so a workspace folder on a hung network share (its
-            // `is_dir`) stalls every bot's events until it answers. Upgrade: build and validate outside the
-            // lock from a snapshot, then save under it only if the stored config is unchanged (compare the
-            // serialized configs, not rev), else retry.
-            validate(&cfg)?;
-            crate::agent::workspace::prepare(&mut cfg)?;
+            self.settle_config(&mut cfg)?;
             crate::agent::own_memory::settle(&mut cfg, &row.config, patch);
             self.store.save_bot(&cfg)?;
             (row.config, cfg)
@@ -70,6 +74,9 @@ impl Hub {
             if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&before) {
                 crate::chat::memory::changed(self, Some(&id));
             }
+            if cfg.fallbacks != before.fallbacks {
+                crate::chat::tasks::fallbacks_changed(self, &cfg);
+            }
             self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
         }
         self.emit_bot(&id);
@@ -78,9 +85,14 @@ impl Hub {
     }
 
     pub fn delete_bot(&self, id: &str) -> Result<()> {
+        // Its tasks go first: they are the bot's own work. Its box goes below.
+        for task in crate::chat::tasks::of(&self.store, id) {
+            self.delete_bot(&task.id)?;
+        }
         self.routines.disable_bot(&self.store, id)?;
         self.team.end_turn(id);
-        self.groups.stop(self, id);
+        self.ceilings.set(id, codync_network::Access::Allow);
+        crate::chat::group::stop(self, id);
         let _ = self.send_cmd(id, Cmd::Shutdown);
         self.bots.locked().remove(id);
         self.runtime.locked().remove(id);
@@ -88,9 +100,13 @@ impl Hub {
         {
             let _g = self.emit_lock.locked();
             let rev = self.store.delete_bot(id)?;
-            let _ =
-                self.events.send(json!({"type": "bot", "rev": rev, "bot": {"id": id, "deleted": true, "rev": rev}}));
+            // No client ever listed a task bot, so none hears it go.
+            if !crate::store::is_task_id(id) {
+                let deleted = json!({"type": "bot", "rev": rev, "bot": {"id": id, "deleted": true, "rev": rev}});
+                let _ = self.events.send(deleted);
+            }
         }
+        crate::chat::tasks::forget(self, id);
         crate::network::publish(self);
         // Its shared files and artifacts are unreachable once the bot is deleted.
         let folders = [crate::chat::files::root(id), crate::chat::artifacts::root(id)];

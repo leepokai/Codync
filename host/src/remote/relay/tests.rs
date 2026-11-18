@@ -14,8 +14,13 @@ use x25519_dalek::StaticSecret;
 fn temp_hub() -> Arc<Hub> {
     let dir = std::env::temp_dir().join(format!("codync-relay-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
+    open_hub(&dir)
+}
+
+/// The host over `dir`'s database and identity, as `serve` opens it after a restart.
+fn open_hub(dir: &std::path::Path) -> Arc<Hub> {
     let store = Store::open(&dir.join("t.db")).unwrap();
-    Hub::new(store, "host".into(), Identity::load_or_create(&dir).unwrap(), "token".into(), 0)
+    Hub::new(store, "host".into(), Identity::load_or_create(dir).unwrap(), "token".into(), 0)
 }
 
 /// What the fake cloud saw and does.
@@ -426,4 +431,289 @@ async fn a_private_relay_gets_its_token_only_to_enroll_and_never_changes_account
     assert_eq!(hub.cloud.status().relay, cloud::RelayKind::Private);
     let creds = hub.routines.credentials(&hub, &bot_id, &routine_id, false).unwrap();
     assert_eq!(creds["url"], Value::Null, "a private relay delivers no public webhook");
+}
+
+/// A session whose sink is a real WebSocket, so what it sends can be read.
+async fn test_session(hub: Arc<Hub>) -> (Session, mpsc::UnboundedReceiver<Value>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (out_tx, out_rx) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        while let Some(Ok(Message::Text(t))) = ws.next().await {
+            if out_tx.send(serde_json::from_str(t.as_str()).unwrap()).is_err() {
+                break;
+            }
+        }
+    });
+    let (client, _) = tokio_tungstenite::connect_async(format!("ws://{addr}")).await.unwrap();
+    let (sink, _stream) = client.split();
+    let address = cloud::Address { url: "http://127.0.0.1".into(), token: None, kind: cloud::RelayKind::Codync };
+    let session = Session {
+        hub,
+        address,
+        sink,
+        links: HashMap::new(),
+        outs: StreamMap::new(),
+        pulls: JoinSet::new(),
+        assistant: JoinSet::new(),
+        held: None,
+        ready: true,
+        retried: false,
+    };
+    (session, out_rx)
+}
+
+/// The device end of a relay link, doing the channel handshake over the relay's `Session`.
+struct RelayPhone {
+    key: SigningKey,
+    session: Session,
+    out: mpsc::UnboundedReceiver<Value>,
+    sealer: Option<crypto::Sealer>,
+    opener: Option<crypto::Opener>,
+    link: String,
+}
+
+impl RelayPhone {
+    async fn open(hub: &Arc<Hub>, key: SigningKey, link: &str) -> Self {
+        let (mut session, out) = test_session(hub.clone()).await;
+        let dk = b64(key.verifying_key().as_bytes());
+        session.on_message(&json!({"t": "open", "link": link, "dk": dk, "pair": false}).to_string()).await.unwrap();
+        Self { key, session, out, sealer: None, opener: None, link: link.to_owned() }
+    }
+
+    async fn send(&mut self, v: Value) {
+        let frames = self.sealer.as_mut().map(|sealer| sealer.seal(v.to_string().as_bytes()).unwrap());
+        for frame in frames.unwrap_or_else(|| vec![v]) {
+            let msg = json!({"t": "data", "link": self.link, "m": frame});
+            self.session.on_message(&msg.to_string()).await.unwrap();
+        }
+    }
+
+    async fn wire(&mut self) -> Value {
+        timeout(Duration::from_secs(5), async {
+            loop {
+                tokio::select! {
+                    biased;
+                    message = self.out.recv() => {
+                        let message = message.unwrap();
+                        assert_eq!(message["t"], "data", "link remains open: {message}");
+                        return message["m"].clone();
+                    }
+                    Some((link, message)) = self.session.outs.next() => {
+                        self.session.link_out(link, message).await.unwrap();
+                    }
+                }
+            }
+        })
+        .await
+        .expect("relay answers in time")
+    }
+
+    async fn hello(&mut self, hub: &Hub) {
+        let ek = StaticSecret::from(crypto::random::<32>());
+        let ek_pub = crypto::x25519_pub(&ek);
+        let n = crypto::random::<32>();
+        let dk = self.key.verifying_key().to_bytes();
+        let cid = hub.identity.cid_raw();
+        let sig = crypto::sign(&self.key, &crypto::hs1_input(&cid, &dk, &ek_pub, &n));
+        self.send(json!({"t": "hello", "v": 1, "dk": b64(&dk), "ek": b64(&ek_pub),
+            "n": b64(&n), "sig": b64(&sig), "pair": false}))
+            .await;
+        let w = self.wire().await;
+        let ek_h: [u8; 32] = crypto::unb64_n(w["ek"].as_str().unwrap()).unwrap();
+        let th = crypto::transcript_hash(&cid, &dk, &ek_pub, &n, &ek_h);
+        crypto::verify(&hub.identity.sign_pub(), &th, &crypto::unb64_n(w["sig"].as_str().unwrap()).unwrap()).unwrap();
+        let keys = crypto::channel_keys(&crypto::x25519(&ek, &ek_h).unwrap(), &th);
+        self.sealer = Some(crypto::Sealer::new(keys.d2h));
+        self.opener = Some(crypto::Opener::new(keys.h2d, 16 << 20));
+    }
+
+    async fn recv(&mut self) -> Value {
+        loop {
+            let v = self.wire().await;
+            if v["t"] == "f"
+                && let Some(bytes) = self.opener.as_mut().unwrap().open(&v).unwrap()
+            {
+                return serde_json::from_slice(&bytes).unwrap();
+            }
+        }
+    }
+}
+
+/// A paired phone's key.
+fn phone_key(hub: &Hub) -> SigningKey {
+    let key = SigningKey::from_bytes(&crypto::random());
+    hub.store
+        .put_device(&Device {
+            key: b64(key.verifying_key().as_bytes()),
+            name: "Phone".into(),
+            platform: "ios".into(),
+            source: DeviceSource::Local,
+            grant_id: None,
+            scopes: vec![Scope::Control],
+            lease_until: None,
+            created_at: 0,
+            last_seen_at: None,
+            account: DeviceAccount::Unrecorded,
+        })
+        .unwrap();
+    key
+}
+
+/// `bots` chats with `turns` messages each.
+fn history(hub: &Hub, bots: usize, turns: i64) -> Vec<String> {
+    (0..bots)
+        .map(|i| {
+            let id = format!("b{i}");
+            hub.store
+                .save_bot(&serde_json::from_value(json!({"id": id, "name": id, "createdAt": 0})).unwrap())
+                .unwrap();
+            for turn in 0..turns {
+                hub.store
+                    .insert_entry(
+                        &crate::store::Lane::main(&id),
+                        crate::store::EntryKind::User,
+                        turn,
+                        &json!({"text": format!("m{turn}")}),
+                    )
+                    .unwrap();
+            }
+            id
+        })
+        .collect()
+}
+
+impl RelayPhone {
+    /// Subscribes to events from `since` and reads the whole catch-up; returns its `hello`.
+    async fn catch_up(&mut self, id: u64, since: i64) -> (Value, Vec<Value>) {
+        self.send(json!({"id": id, "sub": "events", "b": {"since": since, "client": "ios"}})).await;
+        let hello = self.recv().await;
+        let mut events = Vec::new();
+        for _ in 0..hello["ev"]["catchUp"].as_u64().unwrap() {
+            events.push(self.recv().await["ev"].clone());
+        }
+        (hello, events)
+    }
+
+    /// Waits, without forwarding anything, until this link's relay queue is full: its channel's
+    /// writer is then stuck sending, so the channel reads nothing either.
+    async fn fill_queues(&mut self) {
+        timeout(Duration::from_secs(5), async {
+            while self.session.outs.iter().find(|(link, _)| *link == self.link).unwrap().1.as_ref().len() < 64 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn an_overflowed_link_reconnects_and_resumes_from_its_rev() {
+    let hub = temp_hub();
+    let key = phone_key(&hub);
+    history(&hub, 1, 1);
+    let mut p = RelayPhone::open(&hub, key, "L1").await;
+    p.hello(&hub).await;
+    let (hello, _) = p.catch_up(1, 0).await;
+    let rev = hello["ev"]["rev"].as_i64().unwrap();
+    // A channel that never reads again: a full queue nobody drains, while the real channel's
+    // input stays open (dropping it would end that channel normally instead).
+    let (tx, _stalled) = mpsc::channel(1);
+    tx.try_send(Value::Null).unwrap();
+    let _input = p.session.links.insert("L1".into(), tx);
+    tokio::time::pause();
+    p.send(json!({"id": 2, "cancel": true})).await;
+    tokio::time::resume();
+    let RelayPhone { mut session, mut out, key, .. } = p;
+    let close = timeout(Duration::from_secs(5), out.recv()).await.unwrap().unwrap();
+    assert_eq!(
+        (close["t"].as_str(), close["link"].as_str(), close["code"].as_u64()),
+        (Some("close"), Some("L1"), Some(4008)),
+        "{close}"
+    );
+    assert!(!session.links.contains_key("L1"), "the overflowed link is gone");
+    let dk = b64(key.verifying_key().as_bytes());
+    session.on_message(&json!({"t": "open", "link": "L2", "dk": dk, "pair": false}).to_string()).await.unwrap();
+    let mut p = RelayPhone { key, session, out, sealer: None, opener: None, link: "L2".into() };
+    p.hello(&hub).await;
+    let new = hub
+        .store
+        .insert_entry(&crate::store::Lane::main("b0"), crate::store::EntryKind::User, 1, &json!({"text": "new"}))
+        .unwrap();
+    let (hello, events) = p.catch_up(1, rev).await;
+    assert_eq!(hello["ev"]["catchUp"], 2, "the icons snapshot and the new message");
+    assert_eq!(events[0]["type"], "icons");
+    assert_eq!(events[1]["entry"]["id"], new.id);
+}
+
+#[tokio::test]
+async fn a_link_whose_channel_waits_on_its_answers_stays_open() {
+    let hub = temp_hub();
+    let key = phone_key(&hub);
+    history(&hub, 30, 250);
+    let mut phone = RelayPhone::open(&hub, key, "busy").await;
+    phone.hello(&hub).await;
+    phone.send(json!({"id": 1, "sub": "events", "b": {"since": 0, "client": "ios"}})).await;
+    phone.fill_queues().await;
+    // A burst read off the socket at once, each answered: the channel can't read the next one until
+    // its answer is out, so the relay must keep forwarding while it waits.
+    let burst = LINK_BUFFER as u64 * 3;
+    for _ in 0..burst {
+        phone.send(json!({"id": 1, "sub": "events", "b": {"since": 0, "client": "ios"}})).await;
+        assert!(phone.session.links.contains_key("busy"), "a busy link must stay open");
+    }
+    let hello = phone.recv().await;
+    let mut catch_up = hello["ev"]["catchUp"].as_u64().unwrap();
+    let mut refused = 0;
+    while catch_up > 0 || refused < burst {
+        let v = phone.recv().await;
+        if v["err"]["status"] == 400 {
+            refused += 1;
+        } else {
+            catch_up -= 1;
+        }
+    }
+}
+
+#[tokio::test]
+async fn after_a_host_restart_a_reconnecting_iphone_catches_up_only_new_messages() {
+    let dir = std::env::temp_dir().join(format!("codync-relay-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = open_hub(&dir);
+    let key = phone_key(&hub);
+    let bots = history(&hub, 30, 250);
+    let mut phone = RelayPhone::open(&hub, key.clone(), "before").await;
+    phone.hello(&hub).await;
+    let (hello, _) = phone.catch_up(1, 0).await;
+    assert_eq!(hello["ev"]["catchUp"], 30 * 201 + 1, "a first sync holds 200 entries and the bot per chat, plus icons");
+    let rev = hello["ev"]["rev"].as_i64().unwrap();
+    drop(phone);
+    drop(hub);
+
+    let hub = open_hub(&dir);
+    let new: Vec<_> = bots[..2]
+        .iter()
+        .map(|id| {
+            hub.store
+                .insert_entry(
+                    &crate::store::Lane::main(id),
+                    crate::store::EntryKind::User,
+                    250,
+                    &json!({"text": "new"}),
+                )
+                .unwrap()
+                .id
+        })
+        .collect();
+    let mut phone = RelayPhone::open(&hub, key, "after").await;
+    phone.hello(&hub).await;
+    let (hello, events) = phone.catch_up(1, rev).await;
+    assert_eq!(hello["ev"]["catchUp"], 3, "the icons snapshot and the two new messages");
+    assert_eq!(events[0]["type"], "icons");
+    let caught: Vec<_> = events[1..].iter().map(|e| e["entry"]["id"].as_str().unwrap().to_owned()).collect();
+    assert_eq!(caught, new);
+    assert!(phone.session.links.contains_key("after"), "no link overflowed");
 }

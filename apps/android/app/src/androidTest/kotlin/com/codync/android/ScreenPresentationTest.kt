@@ -72,10 +72,23 @@ class ScreenPresentationTest {
         compose.onNodeWithContentDescription("Save").assertDoesNotExist()
     }
 
-    @Test fun aBotsTouchAndHoldMenuHasNoNewSession() = compose.withPreviewAccounts(computer) { accounts ->
-        compose.setContent { Hosted { CodyncApp(fixture(), computers, accounts) } }
-        compose.rosterActions(bot.name)
-        compose.onNodeWithText("Edit profile").assertIsDisplayed()
+    @Test fun onlyABotsTouchAndHoldMenuStartsANewSession() = compose.withPreviewAccounts(computer) { accounts ->
+        val group = Bot("presentation-group", "Crew", kind = "group", members = listOf(bot.id))
+        val withGroup = mapOf(computer.id to state.copy(bots = listOf(bot, group)))
+        compose.setContent { Hosted { CodyncApp(fixture(), withGroup, accounts) } }
+        compose.rosterAction(bot.name, "New session")
+        compose.onNodeWithText("Start a new session?").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("Start a new session?").assertDoesNotExist()
+        // Confirmed, it asks this bot's computer for a new session (and waits for the link, as nothing links a preview).
+        val store = requireNotNull(accounts.store(computer.id))
+        compose.rosterAction(bot.name, "New session")
+        compose.onNodeWithText("New session").performClick()
+        compose.onNodeWithText("Start a new session?").assertDoesNotExist()
+        compose.waitUntil(5_000) { "newSession:" + bot.id in store.state.value.busy }
+        // A group has no agent session of its own.
+        compose.rosterActions(group.name)
+        compose.onNodeWithText("Edit group").assertIsDisplayed()
         compose.onNodeWithText("New session").assertDoesNotExist()
     }
 

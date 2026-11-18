@@ -51,7 +51,7 @@ fn network(slot: &Slot) -> Value {
         "id": slot.id, "key": node.network_id(), "name": slot.name, "computer": node.name(), "role": mine,
         "canInvite": mine.is_some_and(Role::invites), "canRecover": mine.is_some_and(|r| r != Role::Owner),
         "connector": slot.connector,
-        "computers": computers, "rules": node.rules(),
+        "computers": computers, "rules": node.rules(), "defaultAccess": node.default_access(),
     })
 }
 
@@ -80,7 +80,7 @@ async fn add<T>(
     let _one = hub.network.changing.lock().await;
     let mut all = saved::load(&hub.store);
     let id = saved::new_id(&all);
-    let saved = Saved { id: id.clone(), name: saved::free_name(&all, name)?, connector, rules: Vec::new() };
+    let saved = Saved::new(id.clone(), saved::free_name(&all, name)?, connector);
     let (node, inbox) = start_node(&saved).await?;
     let made = match first(&node).await {
         Ok(it) => it,
@@ -191,7 +191,7 @@ pub fn recover(hub: &Hub, network: Option<&str>, code: &str) -> Result<Value> {
 }
 
 /// `setNetworkRules`: who on a network's other computers may write to this computer's bots, in
-/// order (the first match decides); an empty list lets everyone.
+/// order (the first match decides); a computer no rule matches gets [`super::DEFAULT_ACCESS`].
 pub async fn set_rules(hub: &Hub, network: Option<&str>, rules: &Value) -> Result<Value> {
     let rules: Vec<Rule> =
         serde_json::from_value(rules.clone()).context("rules are {fromComputer, fromAgent, toAgent, access}")?;
@@ -199,11 +199,7 @@ pub async fn set_rules(hub: &Hub, network: Option<&str>, rules: &Value) -> Resul
     let _one = hub.network.changing.lock().await;
     let slot = joined(hub, network)?;
     slot.node.set_rules(rules.clone())?;
-    let mut all = saved::load(&hub.store);
-    if let Some(saved) = all.iter_mut().find(|s| s.id == slot.id) {
-        saved.rules = rules;
-    }
-    saved::save(&hub.store, &all)?;
+    saved::update(&hub.store, &slot.id, |saved| saved.rules = rules)?;
     emit(hub);
     Ok(status(hub))
 }

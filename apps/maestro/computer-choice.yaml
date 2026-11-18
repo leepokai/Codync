@@ -1,7 +1,7 @@
 # First-run setup, signed in to an account that already has a computer: nothing is asked by itself, the first page
 # offers that computer or a new one, and the new one's install page has the download link to send.
 # Needs a phone that hasn't finished setup, signed in with `npm run phone-account`, and a computer in that account
-# (`npm run dev -- --cloud`, then **Add to account** in its window, docs/guides/dev-app.md), so it keeps the app's state: run it apart from `smoke`,
+# (`npm run dev -- --cloud`, or its own local cloud on a branch that changes cloud/, then **Add to account** in its window, docs/guides/dev-app.md), so it keeps the app's state: run it apart from `smoke`,
 # whose welcome flow clears that state. It ends with a request on the computer: each computer-choice flow starts from
 # its own fresh setup, in its own run.
 # One flow for iPhone and Android (docs/guides/test-stack.md):

@@ -180,6 +180,12 @@ private struct ComputerRows: View {
             }
         }
         ComputerNotificationsRow(store: store)
+        if store.connection == .online, store.hello?.autoOrder != nil {
+            Toggle(isOn: Binding(get: { store.autoOrder }, set: { store.setAutoOrder($0) })) {
+                RowLabel("Move active bots to the top", systemImage: "arrow.up")
+            }
+            .toggleStyle(.codync)
+        }
         ComputerConnectionRow(store: store)
         AddToAccountRow(store: store)
         // Kept while an update asked from here restarts the computer: its spinner says it's updating.

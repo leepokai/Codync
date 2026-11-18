@@ -34,9 +34,10 @@ object AvatarPalette {
 
 data class AvatarFace(val shape: String, val color: String, val status: String = "idle", val customImage: String? = null, val customTinted: Boolean = false)
 
-/** Static system-widget drawing uses the same mask, palette and eyes as the app; [cells] is its grid (7, 9 or 13). */
-fun characterAvatarBitmap(shape: String, color: String, pixels: Int, ink: Int, highlight: Int? = null, cells: Int = 9): android.graphics.Bitmap {
-    require(pixels in 1..256 && cells in listOf(7, 9, 13))
+/** Static system-widget drawing uses the same mask, palette, eyes and 9 × 9 grid as the app. */
+fun characterAvatarBitmap(shape: String, color: String, pixels: Int, ink: Int, highlight: Int? = null): android.graphics.Bitmap {
+    require(pixels in 1..256)
+    val cells = 9
     val bitmap = android.graphics.Bitmap.createBitmap(pixels, pixels, android.graphics.Bitmap.Config.ARGB_8888)
     val canvas = android.graphics.Canvas(bitmap)
     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
@@ -50,8 +51,8 @@ fun characterAvatarBitmap(shape: String, color: String, pixels: Int, ink: Int, h
         val u = (x - half) / half; val v = (half - y) / half
         val z = sqrt(max(.2, 1.0 - u * u - v * v))
         val shade = .3 + .7 * max(0.0, (u * lx + v * ly + z * lz) / (sqrt(u * u + v * v + z * z) * ll))
-        val radius = (step * .42 * (.55 + .45 * shade)).toFloat()
-        paint.color = ink; paint.alpha = (dotInk(cells, shade) * 255).roundToInt().coerceIn(0, 255)
+        val radius = dotRadius(step, shade)
+        paint.color = ink; paint.alpha = (dotInk(shade) * 255).roundToInt().coerceIn(0, 255)
         canvas.drawCircle(x, y, radius, paint)
         if (shade > .6) {
             paint.color = highlight ?: (AvatarPalette.colors[color] ?: AvatarPalette.colors.getValue("blue")).toInt()
@@ -78,7 +79,8 @@ fun characterAvatarBitmap(shape: String, color: String, pixels: Int, ink: Int, h
         val seconds by transition.animateFloat(0f, 3600f, infiniteRepeatable(tween(3_600_000, easing = LinearEasing)), label = "Character light and eyes")
         seconds.toDouble()
     } else 0.0
-    val cells = if (size < 18.dp) 7 else if (size < 28.dp) 9 else 13
+    // 9 × 9 large dots from 18 dp up; tiny icons use 7 × 7 so the gaps and hollow eyes survive.
+    val cells = if (size < 18.dp) 7 else 9
     val dots = remember(shape, cells) { avatarDots(shape, cells) }
     val ink = monochrome ?: Palette.text
     val tint = monochrome ?: highlight ?: AvatarPalette.tint(color)
@@ -100,8 +102,8 @@ fun characterAvatarBitmap(shape: String, color: String, pixels: Int, ink: Int, h
             val nl = sqrt(u * u + v * v + z * z)
             var shade = .3 + .7 * max(0.0, (u * lx + v * ly + z * lz) / (nl * ll))
             if (status == "needsInput") shade *= .6 + .4 * (.5 + .5 * sin(sqrt((u * u + v * v).toDouble()) * 9 - time * 5))
-            val radius = (step * .42 * (.55 + .45 * shade)).toFloat()
-            drawCircle(ink.copy(alpha = dotInk(cells, shade).toFloat()), radius, center)
+            val radius = dotRadius(step, shade)
+            drawCircle(ink.copy(alpha = dotInk(shade).toFloat()), radius, center)
             if (shade > .6) drawCircle(tint.copy(alpha = ((shade - .6) / .4).toFloat().coerceIn(0f, 1f)), radius, center)
         }
     }
@@ -130,10 +132,12 @@ fun characterAvatarBitmap(shape: String, color: String, pixels: Int, ink: Int, h
     }
 }
 
-private fun eyeColumns(cells: Int) = when (cells) { 7 -> listOf(2, 4); 9 -> listOf(3, 6); else -> listOf(4, 8) }
-private fun eyeRows(cells: Int) = when (cells) { 7 -> listOf(2, 3); 9 -> listOf(3, 4); else -> listOf(4, 5, 6) }
-/** A dot's ink opacity for its shade: finer grids fade their dim side further. */
-private fun dotInk(cells: Int, shade: Double) = if (cells < 13) .4 + .4 * shade else .2 + .4 * min(1.0, shade / .7)
+private fun eyeColumns(cells: Int) = if (cells == 7) listOf(2, 4) else listOf(3, 6)
+private fun eyeRows(cells: Int) = if (cells == 7) listOf(2, 3) else listOf(3, 4)
+/** A dot's ink opacity for its shade. */
+private fun dotInk(shade: Double) = .4 + .4 * shade
+/** A dot's radius for its shade: large dots with a clear gap between them. */
+private fun dotRadius(step: Float, shade: Double) = (step * .4 * (.7 + .3 * shade)).toFloat()
 
 /** Integer mask is computed once per shape/grid, never in the animation loop. */
 private fun avatarDots(shape: String, cells: Int): List<Pair<Int, Int>> {

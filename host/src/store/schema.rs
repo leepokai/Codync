@@ -6,8 +6,9 @@ use rusqlite::{Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::Mutex;
 
-/// Current schema version (kv `schema`).
-const SCHEMA: i64 = 8;
+/// Current schema version (kv `schema`). `hello` carries it: a migration may rewrite or delete rows in place, so
+/// a client whose copy was synced under another schema fetches the conversation again.
+pub const SCHEMA: i64 = 8;
 
 /// 3: authorized devices (keys, not push tickets) with their push and Live Activity
 /// tickets. The old ticket-only `devices` table is dropped; phones re-register on connect.
@@ -288,7 +289,7 @@ mod tests {
         assert_eq!(s.entry("see").unwrap().data["replyTo"]["text"], "a.png", "a files-only message quotes its files");
         assert!(s.entry("q").unwrap().rev > 10, "synced clients get the changes");
         assert_eq!(s.entry("tool").unwrap().rev, 7, "thread trace isn't sent again");
-        assert_eq!(s.unread("b", 10), 0, "a read chat stays read");
+        assert_eq!(s.badge("b", 10).unread, 0, "a read chat stays read");
         assert_eq!(s.kv_get("read.root"), None);
         assert_eq!(s.kv_get("lane.session.b@b/root"), None);
         assert_eq!(s.kv_get("lane.session.b@b/routine-r1").as_deref(), Some("s2"), "a run's session stays");

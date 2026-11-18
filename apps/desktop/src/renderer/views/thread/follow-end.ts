@@ -1,7 +1,8 @@
 import { useLayoutEffect, useRef, type UIEvent } from 'react'
 import { scrolledToEnd } from './trace-turns'
 
-/** A scroll box that opens at the end and follows new content there until the reader scrolls up. */
+/** A scroll box that opens at the end and follows new content there until the reader scrolls up; `toEnd` brings it
+ * back (a message the reader sends). */
 export function useFollowEnd() {
   const ref = useRef<HTMLDivElement>(null)
   const atEnd = useRef(true)
@@ -12,5 +13,8 @@ export function useFollowEnd() {
   const onScroll = (e: UIEvent<HTMLDivElement>) => {
     atEnd.current = scrolledToEnd(e.currentTarget)
   }
-  return { ref, onScroll }
+  const toEnd = () => {
+    atEnd.current = true
+  }
+  return { ref, onScroll, toEnd }
 }

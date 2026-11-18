@@ -106,11 +106,14 @@ private fun AppStore.setFastMode(bot: Bot, on: Boolean) {
 /** The bot's own agent again while it runs on a fallback: now if idle, else from its next turn. The host posts the chat line. */
 fun AppStore.switchBack(bot: Bot) = command("switchBack", body("botId" to bot.id), "switchBack:" + bot.id)
 
+/** The bot's agent starts over with a fresh context; the chat stays. */
+fun AppStore.newSession(bot: Bot) = command("newSession", body("botId" to bot.id), "newSession:" + bot.id)
+
 fun AppStore.deleteBot(bot: Bot, onDeleted: () -> Unit) = action("delete:" + bot.id) {
     val active = ready()
     active.call("deleteBot", body("botId" to bot.id))
     mutableState.update { it.copy(selectedBot = it.selectedBot.takeUnless { id -> id == bot.id },
-        // Its chat's draft and its artifacts' (`artifactDraftKey`).
+        // Its chat's draft, its artifacts' (`artifactDraftKey`) and its threads' (`threadDraftKey`).
         drafts = it.drafts.filterKeys { key -> key != bot.id && !key.startsWith("${bot.id}/") }) }
     persistDrafts()
     onDeleted()
@@ -146,6 +149,11 @@ fun AppStore.routineAction(botId: String, id: String, method: String, enabled: B
     active.call(method, buildJsonObject { put("botId", botId); put("id", id); enabled?.let { put("enabled", it) } })
     receiveRoutines(botId)
     done()
+}
+/** Drops a follow-up of the bot's that hasn't happened yet. */
+fun AppStore.cancelFollowUp(botId: String, id: String) = action("routines:$botId") {
+    ready().call("cancelFollowUp", body("botId" to botId, "id" to id))
+    receiveRoutines(botId)
 }
 /** Runs a failed routine run's work again, from its notice; the notice's update drops the button. */
 fun AppStore.retryRoutineRun(entry: Entry) = action("retry:" + entry.id) {
@@ -224,6 +232,19 @@ suspend fun AppStore.routineWebhook(botId: String, id: String, rotate: Boolean =
 /** Saves a dragged roster order (the host syncs it to every device). */
 internal fun AppStore.reorder(ids: List<String>) =
     command("reorderBots", buildJsonObject { putJsonArray("ids") { ids.forEach { add(JsonPrimitive(it)) } } }, "reorder")
+
+/** Whether a bot with a new message moves to the top of this computer's roster (iOS `autoOrder`); missing from older hosts. */
+internal fun autoOrder(hello: JsonObject?): Boolean? = hello?.get("autoOrder")?.jsonPrimitive?.booleanOrNull
+
+/** Turns automatic roster order on or off, shown at once and put back if the computer refuses (iOS `setAutoOrder`). */
+internal fun AppStore.setAutoOrder(on: Boolean) {
+    showAutoOrder(on)
+    command("setAutoOrder", buildJsonObject { put("enabled", on) }, "autoOrder", onFailure = { showAutoOrder(!on) })
+}
+
+/** The automatic order switch as the computer has it: switched here, or its `autoOrder` event (switched from another device). */
+internal fun AppStore.showAutoOrder(on: Boolean) =
+    mutableState.update { state -> state.hello?.let { state.copy(hello = JsonObject(it + ("autoOrder" to JsonPrimitive(on)))) } ?: state }
 
 /** Whether the bot's harness keeps its own memory on beside Codync's (iOS `setHarnessMemory`). */
 internal fun AppStore.setHarnessMemory(bot: Bot, on: Boolean) =

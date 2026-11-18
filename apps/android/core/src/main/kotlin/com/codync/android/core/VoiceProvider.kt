@@ -28,10 +28,20 @@ enum class VoiceProvider(val id: String, val title: String, val keyPage: String,
 /** The provider's newest model for each voice mode, as the computer last found them. */
 @Serializable data class VoiceDefaults(val realtime: String, val transcribe: String, val speech: String)
 
-@Serializable data class VoiceStatus(val providers: List<ProviderStatus> = emptyList()) {
-    /** `provider` stays a string so a provider added by a newer computer doesn't break the list. */
-    @Serializable data class ProviderStatus(val provider: String, val configured: Boolean = false, val defaults: VoiceDefaults? = null)
+@Serializable data class VoiceStatus(val providers: List<ProviderStatus> = emptyList(), val googleSearch: Boolean = false) {
+    /**
+     * `provider` stays a string so a provider added by a newer computer doesn't break the list. [server]: the
+     * OpenAI-compatible server the computer sends this engine's Speech mode to, `""` for the provider itself; null where
+     * there is none to choose (Gemini, a cloud computer, an older host).
+     */
+    @Serializable data class ProviderStatus(val provider: String, val configured: Boolean = false, val defaults: VoiceDefaults? = null,
+        val server: String? = null)
     fun configured(provider: VoiceProvider): Boolean = providers.any { it.provider == provider.id && it.configured }
+
+    companion object {
+        /** What the Server row reads: the saved address, or OpenAI's own (only the OpenAI engine has the row). */
+        fun serverLabel(saved: String): String = saved.ifEmpty { "api.openai.com" }
+    }
 }
 
 /** The models the computer's key can use, per voice mode. */
@@ -54,15 +64,36 @@ class VoiceChoices(private val read: (String) -> String?, private val write: (St
         get() = VoiceProvider.of(read("dictationEngine"))
         set(value) = write("dictationEngine", value?.id)
 
+    var googleSearch: Boolean
+        get() = read("callGoogleSearch.gemini") == "true"
+        set(value) = write("callGoogleSearch.gemini", value.toString())
+
     fun defaults(provider: VoiceProvider): VoiceDefaults = read("callDefaults.${provider.id}")
         ?.let { runCatching { WireJson.decodeFromString(VoiceDefaults.serializer(), it) }.getOrNull() } ?: provider.defaults
     fun remember(defaults: VoiceDefaults?, provider: VoiceProvider) {
         if (defaults != null) write("callDefaults.${provider.id}", WireJson.encodeToString(VoiceDefaults.serializer(), defaults))
     }
-    fun remember(status: VoiceStatus) { for (entry in status.providers) VoiceProvider.of(entry.provider)?.let { remember(entry.defaults, it) } }
+    /**
+     * Keeps what the computer says of each provider: its newest models become the defaults, and its server decides the mode.
+     * Another server has other models: the ones picked, and the list, for the one before go.
+     */
+    fun remember(status: VoiceStatus) {
+        for (entry in status.providers) VoiceProvider.of(entry.provider)?.let {
+            if (server(it).orEmpty() != entry.server.orEmpty()) {
+                for (kind in Model.entries) write("${kind.prefix}.${it.id}", null)
+                write("callModels.${it.id}", null)
+            }
+            remember(entry.defaults, it); write("callServer.${it.id}", entry.server)
+        }
+    }
+
+    /** The server the provider's Speech mode goes to, as the computer last said: `""` for the provider itself, null where it has none to choose. */
+    fun server(provider: VoiceProvider): String? = read("callServer.${provider.id}")
+    /** A server of the user's own holds no Realtime conversation, so Speech is its only mode; the picked mode comes back with the provider. */
+    fun speechOnly(provider: VoiceProvider): Boolean = !server(provider).isNullOrEmpty()
 
     /** Speech: speech to text, then the reply read aloud. Otherwise a realtime conversation. */
-    fun speechMode(provider: VoiceProvider): Boolean = read("callMode.${provider.id}") == "speech"
+    fun speechMode(provider: VoiceProvider): Boolean = speechOnly(provider) || read("callMode.${provider.id}") == "speech"
     fun speechMode(provider: VoiceProvider, on: Boolean) = write("callMode.${provider.id}", if (on) "speech" else "realtime")
 
     fun model(provider: VoiceProvider, kind: Model): String = read("${kind.prefix}.${provider.id}") ?: fallback(provider, kind)
@@ -79,7 +110,7 @@ class VoiceChoices(private val read: (String) -> String?, private val write: (St
     fun engineChoice(provider: VoiceProvider?, language: String): String = when {
         provider == null -> "device $language"
         speechMode(provider) -> "${provider.id} speech ${model(provider, Model.Transcribe)} ${model(provider, Model.Speech)} ${voice(provider)}"
-        else -> "${provider.id} ${model(provider, Model.Realtime)} ${voice(provider)}"
+        else -> "${provider.id} ${model(provider, Model.Realtime)} ${voice(provider)} ${provider == VoiceProvider.Gemini && googleSearch}"
     }
 
     /** The provider's model list as last fetched with the user's key. */

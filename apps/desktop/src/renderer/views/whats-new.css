@@ -1,0 +1,32 @@
+/* What's new: each highlight's looping clip over its name and a sentence about it. */
+.whats-new-clip {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--radius-m);
+  background: #000; /* the clips' own stage, in both themes */
+}
+.whats-new-clip video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* Opens the full video: over the clip, so white on a dark disc in both themes. */
+.whats-new-film {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(10px);
+  color: #fff;
+}
+.whats-new-version {
+  margin-right: 6px;
+}

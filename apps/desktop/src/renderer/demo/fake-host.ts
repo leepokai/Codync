@@ -11,7 +11,6 @@ const TYPING_MS = 1500
 export const DEMO_UNAVAILABLE = 'Not available in the web demo. Install Codync to use this.'
 
 export class FakeHost {
-  readonly hostId = 'demo-host'
   private rev = 0
   private seq = 0
   private bots = new Map<string, Bot>()
@@ -24,16 +23,21 @@ export class FakeHost {
 
   constructor(
     readonly version: string,
+    private readonly computer: story.DemoComputer,
     now = Date.now(),
   ) {
-    for (const b of story.bots) {
+    for (const b of computer.bots) {
       this.bots.set(b.id, normalizeBot({ ...b, cwd: b.kind === 'group' ? '' : story.cwd, createdAt: now - 86_400_000, permission: b.permission ?? 'auto' }))
     }
-    for (const s of story.entries) this.add({ botId: s.botId, kind: s.kind, data: s.data }, s.id, now - s.at * 60_000, false)
+    for (const s of computer.entries) this.add({ botId: s.botId, kind: s.kind, data: s.data }, s.id, now - s.at * 60_000, false)
     for (const b of this.bots.values()) {
       this.refreshPreview(b)
       b.rev = ++this.rev
     }
+  }
+
+  get hostId() {
+    return `${this.computer.id}-host`
   }
 
   // MARK: events
@@ -44,7 +48,7 @@ export class FakeHost {
       ...[...this.bots.values()].filter((b) => b.rev > since).map((b) => ({ rev: b.rev, line: { type: 'bot', rev: b.rev, bot: this.botJSON(b) } })),
       ...this.entries.filter((e) => e.rev > since).map((e) => ({ rev: e.rev, line: { type: 'entry', rev: e.rev, entry: e } })),
     ].sort((a, b) => a.rev - b.rev)
-    const hello = { type: 'hello', hostId: this.hostId, computerId: story.COMPUTER_ID, rev: this.rev, usage: story.usage(Date.now()), screen: null }
+    const hello = { type: 'hello', hostId: this.hostId, computerId: this.computer.id, rev: this.rev, usage: story.usage(Date.now()), screen: null }
     let open = true
     const listener = (line: string) => open && onData(line)
     setTimeout(() => {
@@ -78,11 +82,17 @@ export class FakeHost {
 
   /** The host's `bot_json`: a group is busy while one of its members works in it. */
   private botJSON(b: Bot): Bot {
-    if (b.kind !== 'group') return b
+    const chat = { ...b, waiting: this.waitingCards(b.id) }
+    if (b.kind !== 'group') return chat
     const busy = b.members.map((m) => this.bots.get(m)).find((m) => m && m.status !== 'idle' && m.workingChat === b.id)
     return busy
-      ? { ...b, status: busy.status, activity: busy.activity, startedAt: busy.startedAt, workingChat: b.id }
-      : b
+      ? { ...chat, status: busy.status, activity: busy.activity, startedAt: busy.startedAt, workingChat: b.id }
+      : chat
+  }
+
+  /** The permission cards in a chat still waiting on the user: its badge counts them until they're answered. */
+  private waitingCards(chat: string) {
+    return this.entries.filter((e) => e.kind === 'permission' && e.botId === chat && e.data.status === 'pending').length
   }
 
   // MARK: entries
@@ -142,7 +152,7 @@ export class FakeHost {
 
   private replyText(botId: string) {
     if (this.pending(botId)) return story.waitingReply
-    const pool = story.replies[botId] ?? ['Got it. I\'ll take a look and report back.']
+    const pool = this.computer.replies[botId] ?? ['Got it. I\'ll take a look and report back.']
     const i = this.nextReply.get(botId) ?? 0
     this.nextReply.set(botId, i + 1)
     return pool[i % pool.length]!
@@ -166,8 +176,8 @@ export class FakeHost {
     switch (method) {
       case 'hello':
         return {
-          hostId: this.hostId, computerId: story.COMPUTER_ID, signKey: '', boxKey: '', cloud: null, name: story.HOST_NAME,
-          version: this.version, minApp: this.version, os: 'macos', device: 'MacBookPro', home: '/Users/demo', rev: this.rev, analytics: this.analytics,
+          hostId: this.hostId, computerId: this.computer.id, signKey: '', boxKey: '', cloud: null, name: this.computer.name,
+          version: this.version, minApp: this.version, os: 'macos', device: this.computer.device, home: '/Users/demo', rev: this.rev, analytics: this.analytics,
           urls: [], backends: [
             { id: 'claude', name: 'Claude Code', available: true, installed: true, signedIn: true, command: 'claude', installHint: '' },
             { id: 'codex', name: 'Codex', available: true, installed: true, signedIn: true, command: 'codex', installHint: '' },
@@ -185,15 +195,16 @@ export class FakeHost {
         const chat = this.bots.get(str('botId'))
         if (!chat) throw fail('That bot was deleted.')
         const target = this.entries.find((e) => e.id === str('replyTo') && e.botId === chat.id && isReplyable(e))
-        const replyTo = target && quoteOf(target)
+        const replyTo = target && quoteOf(target, str('replyPart'))
         const entry = this.add({ botId: chat.id, kind: 'user', data: { text: str('text'), status: 'sent', clientNonce: str('clientNonce'), ...(replyTo ? { replyTo } : {}) } })
         void this.converse(chat, str('text'), replyTo?.author)
         return { entry }
       }
       case 'markRead': {
         const bot = this.bots.get(str('botId'))
-        if (bot && bot.unread > 0) {
-          bot.unread = 0
+        const waiting = bot ? this.waitingCards(bot.id) : 0
+        if (bot && bot.unread > waiting) {
+          bot.unread = waiting
           this.emitBot(bot)
         }
         return {}
@@ -215,6 +226,8 @@ export class FakeHost {
         this.settle(id)
         return {}
       }
+      case 'newSession':
+        return {}
       case 'createBot':
       case 'updateBot':
         return { bot: this.saveBot(b as unknown as BotDraft | GroupDraft) }
@@ -289,6 +302,8 @@ export class FakeHost {
     const allowed = !!option && option.kind.startsWith('allow')
     e.data = { ...e.data, status: optionId ? 'answered' : 'cancelled', selected: optionId ?? undefined }
     this.emitEntry(e)
+    const chat = this.bots.get(e.botId)
+    if (chat) this.emitBot(Object.assign(chat, { unread: Math.max(0, chat.unread - 1) }))
     const author = e.data.author ?? e.botId
     void (async () => {
       this.setStatus(author, 'working', allowed ? 'Editing src/pace.js' : 'Typing…', e.botId)

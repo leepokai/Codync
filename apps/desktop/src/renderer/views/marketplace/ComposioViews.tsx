@@ -11,7 +11,7 @@ import {
 } from './market-models'
 import { AppLogo, ErrorText, Field, filled } from './pieces'
 import { useTr } from '../../lib/use-language'
-import { fill } from '../../lib/fill.ts'
+import { fill } from '@shared/fill'
 
 
 /**

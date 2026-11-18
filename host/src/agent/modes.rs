@@ -29,6 +29,30 @@ pub struct Modes {
     pub list: Vec<Mode>,
     /// The id of its Auto mode, if it has one.
     auto: Option<String>,
+    /// The mode a turn under a ceiling took the session out of, until the bot's own turn puts it back: where a bot
+    /// that wants [`AUTO`] works on an agent without one, which no other field names.
+    pub lowered_from: Option<String>,
+}
+
+/// How freely a turn may work at most, whatever the bot's mode: what the network's rules allow the sender of the
+/// text it works on (`codync_network::Access`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ceiling {
+    /// The agent asks before every change and command (a read-only mode where it has no such mode: there it asks
+    /// to go further).
+    Ask,
+    /// The agent's Auto mode at most: it does by itself what it judges safe.
+    Auto,
+}
+
+impl Ceiling {
+    pub fn of(access: codync_network::Access) -> Option<Self> {
+        match access {
+            codync_network::Access::Ask => Some(Self::Ask),
+            codync_network::Access::Auto => Some(Self::Auto),
+            codync_network::Access::Allow | codync_network::Access::Deny => None,
+        }
+    }
 }
 
 /// What a session does for the mode a bot wants (see [`switch`]).
@@ -37,7 +61,8 @@ pub enum Switch<'a> {
     /// It's in that mode already, or the bot wants [`AUTO`] from an agent without one, which keeps its own.
     Stay,
     To(&'a Mode),
-    /// The agent doesn't have that mode: the turn doesn't start, rather than run in one the user didn't pick.
+    /// The agent doesn't have that mode: the turn doesn't start, rather than run in one the user didn't pick (a fallback
+    /// step may run in its [`Modes::stand_in`]).
     Missing,
 }
 
@@ -57,11 +82,80 @@ impl Modes {
             (None, text(&modes["currentModeId"]), list.collect())
         };
         let auto = auto_mode(backend, &list).map(|m| m.id.clone());
-        (!list.is_empty()).then(|| Self { config_id, opening: current.clone(), current, list, auto })
+        (!list.is_empty()).then(|| Self {
+            config_id,
+            opening: current.clone(),
+            current,
+            list,
+            auto,
+            lowered_from: None,
+        })
     }
 
     fn by_id(&self, id: &str) -> Option<&Mode> {
         self.list.iter().find(|m| m.id == id)
+    }
+
+    /// The mode a fallback step runs in when it doesn't have `wanted`, the bot's mode on its own agent: the most
+    /// permissive of its modes that is no more permissive than `wanted` (see [`rank`]), the first listed on a tie.
+    /// `None` when none qualifies, so the step doesn't take the turn rather than work more freely than the user picked;
+    /// also when `wanted` itself can't be ranked (OpenCode's `build`), since how free it is can't be told.
+    pub fn stand_in(&self, wanted: &str) -> Option<&Mode> {
+        self.freest_within(if wanted == AUTO { AUTO_RANK } else { rank(wanted)? })
+    }
+
+    /// The most permissive mode ranked `limit` or lower, the first listed on a tie.
+    fn freest_within(&self, limit: u8) -> Option<&Mode> {
+        let mut best: Option<(u8, &Mode)> = None;
+        for mode in &self.list {
+            let r = self.rank_of(mode);
+            if r < UNKNOWN && r <= limit && best.is_none_or(|(b, _)| r > b) {
+                best = Some((r, mode));
+            }
+        }
+        best.map(|(_, mode)| mode)
+    }
+
+    /// The mode a bot that wants `wanted` works in here: the agent's own id, [`AUTO`] for its Auto mode under any id
+    /// (without one, the mode a ceiling turn took the session out of), `None` for the mode the session opened in.
+    fn own(&self, wanted: Option<&str>) -> Option<&Mode> {
+        let id = match wanted {
+            None => self.opening.as_deref(),
+            Some(AUTO) => self.auto.as_deref().or(self.lowered_from.as_deref()),
+            Some(id) => Some(id),
+        };
+        id.and_then(|id| self.by_id(id))
+    }
+
+    /// The mode a turn under `ceiling` runs in for a bot that wants `wanted`: the bot's own when it is no freer than
+    /// the ceiling, otherwise the freest that is no freer than either, so a ceiling never lets the bot work more
+    /// freely than it is set to. `None` when the agent has none (or `wanted` is a mode it lacks that can't be
+    /// ranked), so the turn doesn't start rather than work more freely than that.
+    pub fn under(&self, wanted: Option<&str>, ceiling: Ceiling) -> Option<&Mode> {
+        let ceiling = match ceiling {
+            Ceiling::Ask => ASK_RANK,
+            Ceiling::Auto => AUTO_RANK,
+        };
+        // Asked for Auto, an agent without it keeps the mode its session is in.
+        let kept = || self.current.as_deref().filter(|_| wanted == Some(AUTO)).and_then(|id| self.by_id(id));
+        let own = self.own(wanted).or_else(kept);
+        let limit = match (own, wanted) {
+            (Some(mode), _) => self.rank_of(mode),
+            // A mode from another agent (a fallback step), as its stand-in ranks it.
+            (None, Some(id)) if id != AUTO => rank(id)?,
+            (None, _) => UNKNOWN,
+        }
+        .min(ceiling);
+        own.filter(|m| self.rank_of(m) <= limit).or_else(|| self.freest_within(limit))
+    }
+
+    /// How freely `mode` lets this agent act: its Auto mode ranks as Auto; any other the higher of what its id and
+    /// name say, [`UNKNOWN`] when neither says.
+    fn rank_of(&self, mode: &Mode) -> u8 {
+        if self.auto.as_deref() == Some(mode.id.as_str()) {
+            return AUTO_RANK;
+        }
+        rank(&mode.id).into_iter().chain(rank(&mode.name)).max().unwrap_or(UNKNOWN)
     }
 
     /// What clients offer: `[{id, name, description}]`, the Auto mode first and listed as [`AUTO`], so a bot's choice
@@ -88,17 +182,35 @@ pub fn switch<'a>(modes: Option<&'a Modes>, wanted: Option<&str>) -> Switch<'a> 
     let Some(modes) = modes else {
         return if wanted.is_some_and(|id| id != AUTO) { Switch::Missing } else { Switch::Stay };
     };
-    let mode = match wanted {
-        None => modes.opening.as_deref().and_then(|id| modes.by_id(id)),
-        Some(AUTO) => modes.auto.as_deref().and_then(|id| modes.by_id(id)),
-        Some(id) => match modes.by_id(id) {
-            Some(mode) => Some(mode),
-            None => return Switch::Missing,
-        },
-    };
+    let mode = modes.own(wanted);
+    if mode.is_none() && wanted.is_some_and(|id| id != AUTO) {
+        return Switch::Missing;
+    }
     match mode {
         Some(mode) if modes.current.as_deref() != Some(&mode.id) => Switch::To(mode),
         _ => Switch::Stay,
+    }
+}
+
+/// The rank of a mode that asks before every edit and command (see [`rank`]).
+const ASK_RANK: u8 = 1;
+/// The rank of an Auto mode (see [`rank`]).
+const AUTO_RANK: u8 = 3;
+/// A mode [`rank`] can't place: the most permissive, so it never stands in for another.
+const UNKNOWN: u8 = 5;
+
+/// How freely a mode lets the agent act, from its id or name, least first: read-only and plan (0), ask, manual and
+/// `default` (Claude's Manual) (1), auto-edit (2), Auto ([`AUTO_RANK`], only the agent's own: another agent's `auto` may approve
+/// everything), bypass and full access (4). `None` for words it doesn't know.
+fn rank(word: &str) -> Option<u8> {
+    let word: String = word.chars().filter(char::is_ascii_alphanumeric).map(|c| c.to_ascii_lowercase()).collect();
+    match word.as_str() {
+        "readonly" | "plan" => Some(0),
+        // `default` is Claude's Manual (and Gemini's ask-first default): it asks before every edit.
+        "ask" | "manual" | "dontask" | "default" => Some(ASK_RANK),
+        "autoedit" | "acceptedits" => Some(2),
+        "bypass" | "bypasspermissions" | "fullaccess" | "agentfullaccess" | "yolo" => Some(4),
+        _ => None,
     }
 }
 
@@ -209,6 +321,72 @@ mod tests {
         // Nor is Claude's, run as a custom command: Codync can't tell which agent it is.
         let custom = Modes::from_session(&claude(), "custom").unwrap();
         assert_eq!(to(&custom, Some(AUTO)), None);
+    }
+
+    #[test]
+    fn a_fallback_stands_in_with_its_freest_mode_no_freer_than_the_bots() {
+        let stand_in = |modes: &Modes, wanted: &str| modes.stand_in(wanted).map(|m| m.id.clone());
+        let codex = Modes::from_session(&codex(), "codex").unwrap();
+        assert_eq!(stand_in(&codex, "plan").as_deref(), Some("read-only"));
+        assert_eq!(stand_in(&codex, "acceptEdits").as_deref(), Some("read-only"), "Auto review is freer");
+        assert_eq!(stand_in(&codex, "bypassPermissions").as_deref(), Some("agent-full-access"));
+        let claude = Modes::from_session(&claude(), "claude").unwrap();
+        assert_eq!(stand_in(&claude, "read-only").as_deref(), Some("plan"));
+        assert_eq!(stand_in(&claude, "agent-full-access").as_deref(), Some("auto"));
+        assert_eq!(stand_in(&codex, AUTO).as_deref(), Some("agent"), "the bot's Auto takes the step's Auto review");
+        // A bot mode that can't be ranked never lets a fallback pick one, not even full access.
+        assert_eq!(stand_in(&codex, "build"), None);
+        // Claude's Manual is `default`: a fallback never takes an edit-without-asking mode for it.
+        let edits = json!({"modes": {"currentModeId": "acceptEdits", "availableModes": [{"id": "plan", "name": "Plan"}, {"id": "acceptEdits", "name": "Accept edits"}]}});
+        let edits = Modes::from_session(&edits, "other").unwrap();
+        assert_eq!(stand_in(&edits, "default").as_deref(), Some("plan"));
+        // Nothing as careful as Plan: no stand-in, and never the mode it opened in for that alone.
+        let manual = json!({"modes": {"currentModeId": "ask", "availableModes": [{"id": "ask", "name": "Ask"}, {"id": "code", "name": "Code"}]}});
+        let legacy = Modes::from_session(&manual, "kimi").unwrap();
+        assert_eq!(stand_in(&legacy, "plan"), None);
+        assert_eq!(stand_in(&legacy, "default").as_deref(), Some("ask"), "Code is unknown, so never picked");
+        // Goose's `auto` approves every tool call: unknown, like its other modes, so nothing stands in.
+        let goose = Modes::from_session(&goose(), "goose").unwrap();
+        assert_eq!(stand_in(&goose, "bypassPermissions"), None);
+    }
+
+    #[test]
+    fn a_ceiling_keeps_the_bots_mode_when_careful_enough_and_lowers_it_otherwise() {
+        let under = |modes: &Modes, wanted: Option<&str>, ceiling| modes.under(wanted, ceiling).map(|m| m.id.clone());
+        let claude = Modes::from_session(&claude(), "claude").unwrap();
+        assert_eq!(under(&claude, Some("bypassPermissions"), Ceiling::Ask).as_deref(), Some("default"));
+        assert_eq!(under(&claude, Some(AUTO), Ceiling::Ask).as_deref(), Some("default"));
+        assert_eq!(under(&claude, Some("acceptEdits"), Ceiling::Ask).as_deref(), Some("default"));
+        assert_eq!(under(&claude, Some("plan"), Ceiling::Ask).as_deref(), Some("plan"), "never freer than the bot");
+        assert_eq!(under(&claude, None, Ceiling::Ask).as_deref(), Some("default"), "the mode it opened in");
+        assert_eq!(under(&claude, Some("acceptEdits"), Ceiling::Auto).as_deref(), Some("acceptEdits"));
+        assert_eq!(under(&claude, Some(AUTO), Ceiling::Auto).as_deref(), Some("auto"));
+        // Codex has no mode that asks each time: read-only, where it asks to go further.
+        let codex = Modes::from_session(&codex(), "codex").unwrap();
+        assert_eq!(under(&codex, Some("agent-full-access"), Ceiling::Ask).as_deref(), Some("read-only"));
+        assert_eq!(under(&codex, Some("agent-full-access"), Ceiling::Auto).as_deref(), Some("agent"));
+        assert_eq!(under(&codex, None, Ceiling::Auto).as_deref(), Some("agent"));
+        // Modes that can't be ranked may approve everything: none fits under a ceiling.
+        let goose = Modes::from_session(&goose(), "goose").unwrap();
+        assert_eq!(under(&goose, None, Ceiling::Ask), None);
+        assert_eq!(under(&goose, Some("auto"), Ceiling::Auto), None);
+        // An agent without Auto keeps its mode for a bot that wants Auto: a ceiling never frees it.
+        let gemini = json!({"modes": {"currentModeId": "default", "availableModes": [
+            {"id": "default", "name": "Default"}, {"id": "autoEdit", "name": "Auto Edit"}, {"id": "yolo", "name": "YOLO"},
+        ]}});
+        let mut gemini = Modes::from_session(&gemini, "gemini").unwrap();
+        assert_eq!(under(&gemini, Some(AUTO), Ceiling::Auto).as_deref(), Some("default"));
+        assert_eq!(under(&gemini, Some("yolo"), Ceiling::Auto).as_deref(), Some("autoEdit"));
+        // Lowered from Auto Edit to ask, it goes back there on the bot's own turn, and no further under Auto.
+        gemini.current = Some("default".into());
+        gemini.lowered_from = Some("autoEdit".into());
+        assert_eq!(under(&gemini, Some(AUTO), Ceiling::Auto).as_deref(), Some("autoEdit"));
+        assert_eq!(switch(Some(&gemini), Some(AUTO)), Switch::To(&gemini.list[1]));
+        // A fallback step without the bot's mode: no freer than the bot's, as its stand-in.
+        assert_eq!(under(&codex, Some("plan"), Ceiling::Auto).as_deref(), Some("read-only"));
+        assert_eq!(under(&codex, Some("build"), Ceiling::Auto), None, "how free the bot's mode is can't be told");
+        assert_eq!(Ceiling::of(codync_network::Access::Allow), None);
+        assert_eq!(Ceiling::of(codync_network::Access::Ask), Some(Ceiling::Ask));
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //! the bots' (`data.botReactions`, one `{bot, emoji}` per bot, set with the `react` tool).
 
 use super::Hub;
-use crate::store::{Entry, EntryKind};
+use crate::store::Entry;
 use anyhow::{Result, bail};
 use serde_json::json;
 
@@ -52,9 +52,7 @@ impl Hub {
 
 /// Only a message the user sees takes reactions: theirs, or a bot's final one.
 fn chat_message(e: &Entry) -> Result<()> {
-    let visible =
-        e.kind == EntryKind::User.as_str() || (e.kind == EntryKind::Agent.as_str() && e.data["final"] == true);
-    if !visible {
+    if !e.is_message() {
         bail!("only chat messages take reactions");
     }
     Ok(())

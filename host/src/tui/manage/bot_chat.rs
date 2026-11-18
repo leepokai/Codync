@@ -6,7 +6,8 @@ use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::json;
 
 use super::super::app::{App, Exchange, Overlay};
-use super::{BotChatSheet, Reply, ctrl};
+use super::scroll::up_from_end;
+use super::{BotChatSheet, Reply};
 
 impl App {
     /// Opens the conversation a bot-message row in the selected chat stands for.
@@ -32,18 +33,10 @@ impl App {
     }
 
     pub(in crate::tui) fn bot_chat_key(mut c: BotChatSheet, k: KeyEvent) -> Option<Overlay> {
-        let max = c.max_scroll.get();
-        let half = (c.page.get() / 2).max(1);
-        match k.code {
-            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter => return None,
-            KeyCode::Up | KeyCode::Char('k') => c.scroll = (c.scroll + 1).min(max),
-            KeyCode::Down | KeyCode::Char('j') => c.scroll = c.scroll.saturating_sub(1),
-            KeyCode::PageUp => c.scroll = (c.scroll + half).min(max),
-            KeyCode::PageDown => c.scroll = c.scroll.saturating_sub(half),
-            KeyCode::Char('u') if ctrl(k) => c.scroll = (c.scroll + half).min(max),
-            KeyCode::Char('d') if ctrl(k) => c.scroll = c.scroll.saturating_sub(half),
-            _ => {}
+        if matches!(k.code, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter) {
+            return None;
         }
+        up_from_end(&mut c.scroll, c.max_scroll.get(), c.page.get(), k);
         Some(Overlay::BotChat(c))
     }
 }

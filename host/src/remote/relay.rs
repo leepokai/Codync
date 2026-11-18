@@ -46,6 +46,8 @@ const STABLE: Duration = Duration::from_mins(1);
 const REPLACED_WAIT: Duration = Duration::from_mins(5);
 /// A device's messages waiting for its channel; the relay already rate-limits devices.
 const LINK_BUFFER: usize = 256;
+/// How long a full link may go unread before it counts as stalled and is closed.
+const LINK_STALL: Duration = Duration::from_secs(10);
 const REPLACED: u16 = 4009;
 const RATE_LIMITED: u16 = 4008;
 
@@ -384,6 +386,36 @@ impl Session {
         self.send(&json!({"t": "close", "link": link, "code": code, "reason": reason})).await
     }
 
+    /// Hands `m` to a busy link once its channel reads again. Meanwhile every link's answers keep
+    /// going out (a channel waiting to send one reads nothing until its queue drains), but no
+    /// relay message is read. Only a channel that reads nothing for `LINK_STALL` is closed, however
+    /// busy the other links are; one that closes meanwhile drops `m`.
+    async fn wait_for_room(&mut self, link: &str, tx: &mpsc::Sender<Value>, m: Value) -> Result<()> {
+        let deadline = Instant::now() + LINK_STALL;
+        loop {
+            tokio::select! {
+                biased;
+                permit = tx.reserve() => {
+                    match permit {
+                        Ok(permit) => permit.send(m),
+                        Err(_) => _ = self.links.remove(link),
+                    }
+                    return Ok(());
+                }
+                () = tokio::time::sleep_until(deadline) => {
+                    tracing::warn!(link, "device link overflowed; closing it");
+                    return self.close_link(link, RATE_LIMITED, "rateLimited").await;
+                }
+                Some((out_link, out)) = self.outs.next() => {
+                    self.link_out(out_link, out).await?;
+                    if !self.links.contains_key(link) {
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
     async fn on_message(&mut self, text: &str) -> Result<()> {
         let v: Value = serde_json::from_str(text).unwrap_or_default();
         match v["t"].as_str().unwrap_or_default() {
@@ -406,9 +438,9 @@ impl Session {
                 let m = if v["m"].is_object() { v["m"].clone() } else { Value::Null };
                 match tx.try_send(m) {
                     Ok(()) => {}
-                    Err(mpsc::error::TrySendError::Full(_)) => {
-                        tracing::warn!(link, "device link overflowed; closing it");
-                        self.close_link(link, RATE_LIMITED, "rateLimited").await?;
+                    Err(mpsc::error::TrySendError::Full(m)) => {
+                        let tx = tx.clone();
+                        self.wait_for_room(link, &tx, m).await?;
                     }
                     Err(mpsc::error::TrySendError::Closed(_)) => {
                         self.links.remove(link);

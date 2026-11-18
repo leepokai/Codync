@@ -1,5 +1,8 @@
 package com.codync.android
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -22,14 +25,9 @@ class AttachmentFiles(private val context: Context, private val directory: File)
 
     suspend fun import(uri: Uri): OutgoingFile = withContext(Dispatchers.IO) {
         check(outgoing.mkdirs() || outgoing.isDirectory)
-        var name = "file"
-        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                name = cursor.getString(0) ?: name
-                if (!cursor.isNull(1)) require(cursor.getLong(1) <= MAX_FILE_BYTES) { "Files must be 100 MiB or smaller." }
-            }
-        }
-        name = cleanName(name)
+        val (named, size) = describe(context.contentResolver, uri)
+        require(size == null || size <= MAX_FILE_BYTES) { "Files must be 100 MiB or smaller." }
+        val name = cleanName(named)
         val used = outgoing.listFiles().orEmpty().sumOf { it.length() }
         require(outgoing.listFiles().orEmpty().size < 200 && used < 512L * 1024 * 1024) {
             "Attachment storage is full. Send or remove older files first."
@@ -97,9 +95,25 @@ class AttachmentFiles(private val context: Context, private val directory: File)
         return File(root, UUID.randomUUID().toString())
     }
 
+    /**
+     * Picture [source] itself as a clip (iOS `UIPasteboard` image): a copy named [name] in a `shareFolder`, as a
+     * `content://` link the app that pastes reads through the FileProvider. The clipboard grants it that read once
+     * [putOnClipboard] has it.
+     */
+    fun stageImage(source: File, name: String): ClipData {
+        val copy = File(shareFolder().apply { mkdirs() }, cleanName(name))
+        source.copyTo(copy, overwrite = true)
+        return ClipData.newUri(context.contentResolver, copy.name, uri(copy))
+    }
+
+    /** [clip] as the clipboard's current item. */
+    fun putOnClipboard(clip: ClipData) = context.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+
+    private fun uri(shared: File) = FileProvider.getUriForFile(context, context.packageName + ".files", shared)
+
     /** The system share sheet for a file in a `shareFolder`. */
     fun open(shared: File, name: String) {
-        val uri = FileProvider.getUriForFile(context, context.packageName + ".files", shared)
+        val uri = uri(shared)
         val type = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(shared.extension.lowercase()) ?: "application/octet-stream"
         val intent = Intent(Intent.ACTION_SEND).setType(type).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         context.startActivity(Intent.createChooser(intent, "Share $name").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -114,13 +128,28 @@ class AttachmentFiles(private val context: Context, private val directory: File)
         fun moved(file: OutgoingFile, from: File, to: File): OutgoingFile =
             if (inOutgoing(from, file.path)) file.copy(path = File(outgoingFolder(to), File(file.path).name).path) else file
 
+        /** [uri]'s name ("file" when its app gives none) and size (null when it doesn't say), as its app tells them. */
+        fun describe(resolver: ContentResolver, uri: Uri): Pair<String, Long?> {
+            var name: String? = null
+            var size: Long? = null
+            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    name = cursor.getString(0)
+                    if (!cursor.isNull(1)) size = cursor.getLong(1)
+                }
+            }
+            return (name?.takeIf { it.isNotBlank() } ?: "file") to size
+        }
+
         fun cleanName(value: String): String {
             val name = value.substringAfterLast('/').substringAfterLast('\\').trim().trimStart('.').filter { !it.isISOControl() }
             val usable = name.ifBlank { "file" }
             require(usable.toByteArray(Charsets.UTF_8).size <= 200) { "The file name is too long." }
             return usable
         }
-        fun thumbnail(file: File, maxPixels: Int): Bitmap = ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
+        fun thumbnail(file: File, maxPixels: Int): Bitmap = thumbnail(ImageDecoder.createSource(file), maxPixels)
+        /** [source] decoded at most about [maxPixels] on its long side. */
+        fun thumbnail(source: ImageDecoder.Source, maxPixels: Int): Bitmap = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             val longest = maxOf(info.size.width, info.size.height)
             decoder.setTargetSampleSize(maxOf(1, (longest + maxPixels - 1) / maxPixels))

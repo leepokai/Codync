@@ -16,9 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
@@ -38,15 +38,25 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * A conversation's scrolling list (iOS `ConversationList`): it opens at the newest message and follows
+ * A conversation's scrolling list (iOS `ConversationList`): it opens at the newest message (then `onOpened`) and follows
  * it as messages arrive (`last`, `rev`, `working`) until the reader scrolls away; then a round button
  * leads back down. With `refresh`, a pull past the top runs it, its indicator at `indicatorTop`.
  */
-@Composable internal fun ConversationList(last: String?, rev: Long?, working: Boolean, padding: PaddingValues,
-    refresh: (suspend () -> Unit)? = null, indicatorTop: Dp = 0.dp, content: LazyListScope.() -> Unit) {
-    val list = rememberLazyListState()
+@Composable internal fun ConversationList(list: LazyListState, last: String?, rev: Long?, working: Boolean, padding: PaddingValues,
+    refresh: (suspend () -> Unit)? = null, indicatorTop: Dp = 0.dp, reveal: ConversationReveal? = null, onOpened: () -> Unit = {},
+    content: LazyListScope.() -> Unit) {
     val bottom = padding.calculateBottomPadding()
-    val following = rememberFollowing(list, last, rev, working, bottom)
+    val following = rememberFollowing(list, last, rev, working, bottom, onOpened)
+    // Find's shown match: its row a third of the way down, leaving the newest message. Keyed on the row, not its index,
+    // so earlier messages loading above don't scroll back to it.
+    LaunchedEffect(reveal?.id, reveal?.step) {
+        val row = reveal ?: return@LaunchedEffect
+        following.value = false
+        val layout = list.layoutInfo
+        list.animateScrollToItem(row.index, -(layout.viewportEndOffset - layout.viewportStartOffset) / 3)
+        // A row by the end leaves the list at the end: it follows again, as on iOS.
+        following.value = !list.canScrollForward
+    }
     val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
     // Child controls consume their taps; only a plain conversation tap clears the composer.
@@ -65,11 +75,16 @@ import kotlinx.coroutines.launch
     }
 }
 
+/** A row ([id], now at [index]) to bring into view: each new [step] scrolls to it again (find's next match). */
+internal data class ConversationReveal(val id: String, val index: Int, val step: Int)
+
 /** Stays on the newest message until the reader scrolls away; scrolling back down follows again. */
-@Composable internal fun rememberFollowing(list: LazyListState, last: String?, rev: Long?, working: Boolean, bottom: Dp): MutableState<Boolean> {
+@Composable internal fun rememberFollowing(list: LazyListState, last: String?, rev: Long?, working: Boolean, bottom: Dp,
+    onOpened: () -> Unit = {}): MutableState<Boolean> {
     val following = remember { mutableStateOf(true) }
     // The reader's drag and its fling, until it settles: a new step never pulls it back down meanwhile.
     val touched = remember { mutableStateOf(false) }
+    fun follows() = following.value && !touched.value
     LaunchedEffect(list) {
         // Only the reader's own scroll decides: new content arriving (even while Codync is in the background) keeps the follow.
         launch { list.interactionSource.interactions.collect { if (it is DragInteraction.Start) touched.value = true } }
@@ -80,6 +95,7 @@ import kotlinx.coroutines.launch
     LaunchedEffect(Unit) {
         snapshotFlow { list.layoutInfo.totalItemsCount }.first { it > 0 }
         list.scrollToEnd(animated = false)
+        onOpened()
     }
     // The working steps can grow without a new chat entry. Follow their measured size,
     // not its offset (scrolling itself changes offsets), and always yield to the reader.
@@ -89,12 +105,21 @@ import kotlinx.coroutines.launch
             layout.visibleItemsInfo.lastOrNull()?.takeIf { it.index == layout.totalItemsCount - 1 }
                 ?.let { Triple(it.key, it.size, layout.viewportEndOffset - layout.viewportStartOffset) }
         }.collect { size ->
-            if (size != null && following.value && !touched.value) list.scrollToEnd(animated = false)
+            if (size != null && follows()) list.scrollToEnd(animated = false)
         }
     }
-    // A new message, or the box growing (keyboard, more lines): stay on the newest.
-    LaunchedEffect(last, rev, working, bottom) {
-        if (following.value && !touched.value && list.layoutInfo.totalItemsCount > 0) list.scrollToEnd(animated = true)
+    // A new message: glide down to it.
+    LaunchedEffect(last, rev, working) {
+        if (follows()) list.scrollToEnd(animated = true)
+    }
+    // The box growing (keyboard, more lines) changes on every frame of the keyboard's own animation: ask for the end as
+    // the composition is applied, for the layout that follows (a LaunchedEffect would run after it). A glide would
+    // start over on each frame and only arrive once the keyboard has stopped.
+    // ponytail: one frame behind the composer, whose height is measured a frame earlier; move the list by the
+    // keyboard inset in the layout phase if that ever shows.
+    DisposableEffect(bottom) {
+        if (follows()) list.requestScrollToEnd()
+        onDispose {}
     }
     return following
 }
@@ -109,6 +134,12 @@ private suspend fun LazyListState.scrollToEnd(animated: Boolean) {
         else animateScrollBy((end.offset + end.size + layoutInfo.afterContentPadding - layoutInfo.viewportEndOffset).coerceAtLeast(0).toFloat())
     }
     scrollToItem(count - 1, Int.MAX_VALUE)
+}
+
+/** [scrollToEnd] without a glide or a suspension: it lands in the layout that follows. */
+private fun LazyListState.requestScrollToEnd() {
+    val count = layoutInfo.totalItemsCount
+    if (count > 0) requestScrollToItem(count - 1, Int.MAX_VALUE)
 }
 
 /** Scrolled away from the newest messages: a round button back down to them. */

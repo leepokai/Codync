@@ -8,11 +8,12 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { fromB64url, NONCE_TTL_MS, randomId, utf8, verifyEd25519 } from "./auth";
-import { wake } from "./cloud-machines";
+import { wake, type Wake, type WakeCause } from "./cloud-machines";
 import { HostCalls } from "./host-calls";
 import type { Env } from "./index";
 import { HookBox } from "./relay-hooks";
 import { Mailbox } from "./relay-mailbox";
+import { type Meta, reportWoken, WakeEpisode, WakeSchedule } from "./relay-wake";
 import {
   ALARM_MS,
   ASSISTANT_TIMEOUT_MS,
@@ -49,6 +50,10 @@ export class ComputerRelay extends DurableObject<Env> {
   private readonly hooks: HookBox;
   /** Cloud assistant calls waiting on the host. */
   private readonly calls = new HostCalls();
+  private readonly wakeMeta: Meta = { get: (k) => this.meta(k), set: (k, v) => this.setMeta(k, v) };
+  /** A sleeping cloud computer's next wake from the alarm, and each wake until its host is ready (`relay-wake.ts`). */
+  private readonly schedule = new WakeSchedule(this.wakeMeta);
+  private readonly episode = new WakeEpisode(this.wakeMeta);
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -81,7 +86,7 @@ export class ComputerRelay extends DurableObject<Env> {
       this.toHosts({ t: "cloud.changed" });
       // An access request: a sleeping cloud computer has to wake to answer it.
       const body = (await req.json().catch(() => null)) as { wake?: unknown } | null;
-      if (body?.wake === true) await this.wakeHost(Date.now());
+      if (body?.wake === true) await this.wakeHost(Date.now(), "access");
       return Response.json({});
     }
     return errorResponse(404, "notFound");
@@ -148,7 +153,7 @@ export class ComputerRelay extends DurableObject<Env> {
     send(server, JSON.stringify(this.presence()));
     const host = this.readyHost();
     if (host) send(host, JSON.stringify({ t: "open", link: a.link, dk, pair: a.pair }));
-    else this.ctx.waitUntil(this.wakeHost(now));
+    else this.ctx.waitUntil(this.wakeHost(now, "device"));
     await this.ensureAlarm(deadline);
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -173,7 +178,7 @@ export class ComputerRelay extends DurableObject<Env> {
       this.mailbox.drop(d.dk);
       dks.add(d.dk);
     }
-    for (const [ws, a] of this.devices()) if (dks.has(a.dk)) this.safeClose(ws, 4003, "revoked");
+    for (const [ws, a] of this.devices()) if (dks.has(a.dk)) await this.evict(ws, a, now, 4003, "revoked");
     this.toHosts({ t: "cloud.changed" });
     return Response.json({});
   }
@@ -186,7 +191,7 @@ export class ComputerRelay extends DurableObject<Env> {
     if (queued) {
       const host = this.readyHost();
       if (host) this.hooks.deliver(host, now);
-      else this.ctx.waitUntil(this.wakeHost(now));
+      else this.ctx.waitUntil(this.wakeHost(now, "message"));
       await this.ensureAlarm(now + ALARM_MS);
     }
     return res;
@@ -199,10 +204,12 @@ export class ComputerRelay extends DurableObject<Env> {
     if (this.devices().some(([, d]) => !d.pair)) return errorResponse(409, "conflict");
     const b = (await req.json().catch(() => null)) as { wakeAt?: unknown } | null;
     const wakeAt = typeof b?.wakeAt === "number" && Number.isSafeInteger(b.wakeAt) ? b.wakeAt : null;
-    this.setMeta("wakeAt", wakeAt === null ? "" : String(wakeAt));
+    this.schedule.set(wakeAt, "routine");
+    this.setMeta("sleepId", crypto.randomUUID());
     if (wakeAt !== null) await this.ensureAlarm(wakeAt);
     // Offline from now on: the machine stops within a minute, and its socket may never close cleanly. The host
-    // stays connected until then; a wake that finds the machine still running takes it back (`wakeHost`).
+    // stays connected until then; a wake that finds the machine still running once its stop had time to take
+    // effect takes it back (`wakeHost`; before that, `wake` retries).
     for (const [ws, a] of this.hosts()) if (a.ready) ws.serializeAttachment({ ...a, ready: false });
     await this.hostOffline(Date.now());
     return Response.json({});
@@ -210,21 +217,28 @@ export class ComputerRelay extends DurableObject<Env> {
 
   /** Starts this computer when it is a sleeping cloud computer, at most once a minute; retried while it can't.
    * Asked again within that minute, it tries once the minute is up: the computer may have gone back to sleep. */
-  private async wakeHost(now: number): Promise<void> {
+  private async wakeHost(now: number, cause: WakeCause): Promise<void> {
     const id = this.meta("computerId");
     if (!id || this.readyHost()) return;
     const woke = Number(this.meta("wokeAt") ?? 0);
-    if (now - woke < WAKE_DEBOUNCE_MS) return this.wakeLater(woke + WAKE_DEBOUNCE_MS);
+    if (now - woke < WAKE_DEBOUNCE_MS) return this.wakeLater(woke + WAKE_DEBOUNCE_MS, cause);
     this.setMeta("wokeAt", String(now));
-    const result = await wake(this.env, id, now).catch((e) => {
+    const sleepId = this.meta("sleepId");
+    const w = await wake(this.env, id, now).catch((e): Wake => {
       console.error("cloud computer wake failed", { computerId: id, error: String(e) });
-      return "retry" as const;
+      return { result: "retry" };
     });
-    if (result === "running") {
+    if (w.woken) this.ctx.waitUntil(reportWoken(this.env, w.woken, cause, now));
+    // Its host may be back already (its machine was starting by the time `wake` returned): nothing left to time.
+    if (!this.readyHost()) this.episode.tried(w, now);
+    const { result } = w;
+    // A host that asked to sleep while `wake` read its machine runs only until its stop takes effect: retried, as
+    // a wake that found it `stopping` is.
+    if (result === "running" && this.meta("sleepId") === sleepId) {
       await this.takeBackHost(now);
-    } else if (result === "retry") {
+    } else if (result === "running" || result === "retry") {
       this.setMeta("wokeAt", "0");
-      await this.wakeLater(now + WAKE_RETRY_MS);
+      await this.wakeLater(now + WAKE_RETRY_MS, "retry");
     }
   }
 
@@ -235,12 +249,9 @@ export class ComputerRelay extends DurableObject<Env> {
     if (ws && a) await this.markReady(ws, a, now);
   }
 
-  /** Wakes it from the alarm at `at`, unless a wake is already due by then. */
-  private async wakeLater(at: number): Promise<void> {
-    const due = Number(this.meta("wakeAt") || 0);
-    if (due && due <= at) return;
-    this.setMeta("wakeAt", String(at));
-    await this.ensureAlarm(at);
+  /** Wakes it from the alarm at `at` for `cause`, unless a wake is already due by then. */
+  private async wakeLater(at: number, cause: WakeCause): Promise<void> {
+    if (this.schedule.sooner(at, cause)) await this.ensureAlarm(at);
   }
 
   // ---- the cloud assistant (§7.9) ----
@@ -259,8 +270,7 @@ export class ComputerRelay extends DurableObject<Env> {
 
   override async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     const a = ws.deserializeAttachment() as Attachment;
-    // It's alive after all, so closing it is quick.
-    if (a.retired) return this.safeClose(ws, a.retired.code, a.retired.reason);
+    if (a.retired) return this.closeRetired(ws, a);
     if (typeof message !== "string") return this.safeClose(ws, 4002, "protocolError");
     let msg: Msg;
     try {
@@ -317,7 +327,7 @@ export class ComputerRelay extends DurableObject<Env> {
   private async markReady(ws: WebSocket, a: HostAttachment, now: number): Promise<void> {
     ws.serializeAttachment({ ...a, ready: true });
     this.setMeta("lastSeenAt", String(now));
-    this.setMeta("wakeAt", "");
+    this.schedule.clear();
     await this.recordPresence(true, now);
     const presence = JSON.stringify(this.presence());
     for (const [dws, d] of this.devices()) {
@@ -326,6 +336,8 @@ export class ComputerRelay extends DurableObject<Env> {
     }
     this.mailbox.deliver(ws, now);
     this.hooks.deliver(ws, now);
+    const id = this.meta("computerId");
+    if (id) this.ctx.waitUntil(this.episode.ready(this.env, id, now));
   }
 
   private async onAcl(ws: WebSocket, a: HostAttachment, msg: Msg, now: number): Promise<void> {
@@ -352,9 +364,9 @@ export class ComputerRelay extends DurableObject<Env> {
     }
     for (const [dws, dev] of this.devices()) {
       if (dev.pair) {
-        if (!acl.offers.some((o) => o.id === dev.offer && o.exp > now)) this.safeClose(dws, 4410, "pairingExpired");
+        if (!acl.offers.some((o) => o.id === dev.offer && o.exp > now)) await this.evict(dws, dev, now, 4410, "pairingExpired");
       } else if (!acl.devices.some((x) => x.dk === dev.dk)) {
-        this.safeClose(dws, 4003, "revoked");
+        await this.evict(dws, dev, now, 4003, "revoked");
       }
     }
     send(ws, JSON.stringify({ t: "acl.ok", ver: acl.ver }));
@@ -406,7 +418,7 @@ export class ComputerRelay extends DurableObject<Env> {
 
   private async mboxPut(ws: WebSocket, a: DeviceAttachment, msg: Msg, now: number): Promise<void> {
     if (!this.mailbox.put(ws, a.dk, msg, now, !!this.readyHost())) return;
-    this.ctx.waitUntil(this.wakeHost(now));
+    this.ctx.waitUntil(this.wakeHost(now, "message"));
     await this.ensureAlarm(now + ALARM_MS);
   }
 
@@ -427,15 +439,32 @@ export class ComputerRelay extends DurableObject<Env> {
   }
 
   /**
-   * Lets go of a socket: nothing is sent to it any more and the bookkeeping runs now. It isn't closed yet: closing
-   * a peer that's unreachable keeps the DO awake (billed) until TCP gives up, while a socket left alone doesn't.
-   * The alarm closes it later if it speaks again, or if the DO never got to sleep (data queued for it may be
-   * what keeps it awake, and only closing frees that).
+   * Lets go of a socket: nothing is sent to it any more and the bookkeeping runs now. It isn't closed yet: its peer
+   * is likely unreachable, so the close would go unanswered.
+   * The alarm closes it later, once (`closeRetired`), if it speaks again, or if the DO never got to sleep: data
+   * queued for it may be what keeps the DO awake, and only closing frees that.
    */
   private async retire(ws: WebSocket, a: Attachment, now: number, code: number, reason: string): Promise<void> {
     ws.serializeAttachment({ ...a, ...(a.role === "host" ? { ready: false } : {}), retired: { at: now, code, reason } });
     this.retiredHere.add(ws);
     await this.gone(ws, a, now);
+  }
+
+  /**
+   * Closes a retired socket, once. One that spoke again may be gone again by the time the alarm sees it (a laptop
+   * that wakes for a moment pings and sleeps): its close then waits for a peer that can't answer, and asking again
+   * at every alarm keeps the DO awake (billed as duration) until the connection dies, about 15 minutes later.
+   */
+  private closeRetired(ws: WebSocket, a: Attachment): void {
+    if (!a.retired || a.retired.closed) return;
+    ws.serializeAttachment({ ...a, retired: { ...a.retired, closed: true } });
+    this.safeClose(ws, a.retired.code, a.retired.reason);
+  }
+
+  /** Retires a socket whose peer is still there (expired pairing, revoked device) and closes it right away. */
+  private async evict(ws: WebSocket, a: Attachment, now: number, code: number, reason: string): Promise<void> {
+    await this.retire(ws, a, now, code, reason);
+    this.closeRetired(ws, ws.deserializeAttachment() as Attachment);
   }
 
   /** Bookkeeping for a socket that closed or that the DO let go of. */
@@ -456,7 +485,7 @@ export class ComputerRelay extends DurableObject<Env> {
       const a = ws.deserializeAttachment() as Attachment;
       const heard = Math.max(a.at, this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0);
       if (a.retired) {
-        if (heard > a.retired.at || this.retiredHere.has(ws)) this.safeClose(ws, a.retired.code, a.retired.reason);
+        if (heard > a.retired.at || this.retiredHere.has(ws)) this.closeRetired(ws, a);
       } else if (now - heard > SILENT_TIMEOUT_MS) {
         await this.retire(ws, a, now, 1011, "timeout");
       }
@@ -466,25 +495,22 @@ export class ComputerRelay extends DurableObject<Env> {
     this.sql.exec("DELETE FROM nonces WHERE exp <= ?", now);
     const host = this.readyHost();
     if (host) this.hooks.deliver(host, now);
-    const wakeAt = Number(this.meta("wakeAt") || 0);
-    if (wakeAt && wakeAt <= now) {
-      this.setMeta("wakeAt", "");
-      await this.wakeHost(now);
-    }
+    const cause = this.schedule.due(now);
+    if (cause) await this.wakeHost(now, cause);
 
     const acl = this.acl();
     let next = now + ALARM_MS;
     for (const [ws, d] of this.devices()) {
       if (!d.pair) continue;
       const exp = Math.min(d.at + PAIRING_TTL_MS, acl?.offers.find((o) => o.id === d.offer)?.exp ?? 0);
-      if (exp <= now) this.safeClose(ws, 4410, "pairingExpired");
+      if (exp <= now) await this.evict(ws, d, now, 4410, "pairingExpired");
       else next = Math.min(next, exp);
     }
     // A delivery waiting out its retry wakes the DO when it's due.
     const due = this.hooks.nextRetry(now);
     if (due !== null) next = Math.min(next, due);
     // A sleeping cloud computer's next routine, or a wake that has to be retried.
-    const pendingWake = Number(this.meta("wakeAt") || 0);
+    const pendingWake = this.schedule.pending();
     if (pendingWake) next = Math.min(next, pendingWake);
     const busy = this.ctx.getWebSockets().length > 0 || this.mailbox.any() || this.hooks.any() || pendingWake > 0;
     if (busy) await this.ctx.storage.setAlarm(next);

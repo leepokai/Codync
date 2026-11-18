@@ -2,10 +2,10 @@ import CodyncKit
 import SwiftUI
 
 // The Agent card's fallbacks (docs/features/agent-fallback.md): while the bot runs on one, a banner to switch back;
-// after Model, its fallbacks in order, moved and removed from each row's menu and added with +. Edits change the
-// draft, which saves like the rest of the form.
+// after Model, its fallbacks in order, each picked in place, moved and removed from its row's menu and added with +.
+// Edits change the draft, which saves like the rest of the form.
 
-/// The Agent card's first row while the bot runs on one of its fallbacks.
+/// The Agent card's first row while the bot runs on one of its fallbacks (`step`).
 struct FallbackBanner: View {
     let bot: Bot
     let step: AgentStep
@@ -14,7 +14,8 @@ struct FallbackBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             AgentIcon(registry: model.agentRegistry(step.agent), size: 18)
-            Text(text)
+            // The phrase is translated before its names go in: a login profile named "Work while traveling" stays whole.
+            Text(bot.stepBannerPhrase(name: name).map { L10n.fill(L10n.tr($0.key), $0.values) } ?? "")
                 .font(.subheadline)
                 .foregroundStyle(Palette.text)
                 .fixedSize(horizontal: false, vertical: true)
@@ -25,29 +26,40 @@ struct FallbackBanner: View {
         }
     }
 
-    private var text: String {
-        let to = model.backendName(step.agent), own = model.backendName(bot.backend)
-        guard let rest = bot.rest(of: bot.backend) else { return "Using \(to) while \(own) can't answer" }
-        return "Using \(to) until \(own) resets at \(RelativeTime.clock(Date(milliseconds: rest.until)))"
+    /// "Claude Code (Work)": a login on a login profile, and the computer's own when it's asked for by name.
+    private func name(_ login: AgentLogin, own: Bool) -> String {
+        let backend = model.hello?.backends.first { $0.id == login.backend }
+        let agent = model.backendName(login.backend)
+        let loginProfile = login.loginProfile.map { id in backend?.loginProfiles?.first { $0.id == id }?.name ?? L10n.tr("New login profile") }
+            ?? (own ? backend?.defaultLoginProfile?.name ?? L10n.tr("Default login profile") : nil)
+        return loginProfile.map { "\(agent) (\($0))" } ?? agent
     }
 }
 
-/// The fallbacks (a header with ⓘ and +, a row per fallback, the caption) and whether the bot may change them.
+/// The fallbacks (a header with ⓘ and +, a row per fallback, the caption) and whether the bot may change them. Each
+/// fallback is picked in place like the bot's own agent, and moved or removed from its menu.
 struct FallbackList: View {
     @Binding var draft: BotDraft
     /// The saved bot: the fallback it's on and the agents resting.
     let bot: Bot?
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var adding = false
+    /// The step + just added: it opens on its pickers.
+    @State private var added: Int?
+    /// Bumped when a move or removal renumbers the rows, so each starts afresh on the step now in its place.
+    @State private var order = 0
     @State private var explaining = false
 
     private var fallbacks: [BotFallback] { draft.fallbacks ?? [] }
 
-    /// Agents a new fallback can use: each agent appears once, the bot's own included.
-    private var choices: [Backend] {
-        (model.hello?.backends ?? []).filter { b in b.id != draft.backend && !fallbacks.contains { $0.backend == b.id } }
+    /// Each login is in the chain once, the bot's own included: an agent comes again only on another of its login profiles.
+    /// Step `i` keeps its own login.
+    private func taken(but i: Int) -> [AgentLogin] {
+        [draft.login] + fallbacks.enumerated().filter { $0.offset != i }.map(\.element.login)
     }
+
+    /// The agents a new step can use.
+    private var choices: [Backend] { (model.hello?.backends ?? []).usable(taken: taken(but: fallbacks.count)) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -55,8 +67,11 @@ struct FallbackList: View {
             if fallbacks.isEmpty {
                 Text(L10n.tr("No fallbacks yet.")).foregroundStyle(Palette.secondary).transition(.opacity)
             }
-            ForEach(Array(fallbacks.enumerated()), id: \.element.backend) { i, fallback in
-                row(fallback, at: i).transition(.opacity)
+            // By place, not login: picking another agent keeps the row (and its open picker) where it is.
+            ForEach(Array(fallbacks.indices), id: \.self) { i in
+                FallbackRow(fallback: step(i), number: i + 1, taken: taken(but: i), bot: bot, expanded: added == i) { menu(at: i) }
+                    .id(order)
+                    .transition(.opacity)
             }
             Text(L10n.tr("If {agent} runs out of usage or can't answer, the bot carries on with the next one. Chat, memory and workspace carry over.").replacingOccurrences(of: "{agent}", with: model.backendName(draft.backend)))
                 .font(.caption)
@@ -64,7 +79,6 @@ struct FallbackList: View {
                 .lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .codyncSheet(isPresented: $adding) { AddFallbackSheet(choices: choices) { new in change { $0.append(new) } } }
         .codyncSheet(isPresented: $explaining) { FallbackInfoSheet() }
         SwitchRow("Let the bot change its fallbacks", detail: "It can set this list itself, for example when you ask it to.",
                   isOn: Binding(get: { draft.selfFallbacks ?? true }, set: { draft.selfFallbacks = $0 }))
@@ -76,48 +90,37 @@ struct FallbackList: View {
             IconButton("About fallbacks", systemImage: "info.circle") { explaining = true }
             Spacer(minLength: 8)
             if fallbacks.count < BotFallback.limit, !choices.isEmpty {
-                IconButton("Add fallback", systemImage: "plus") { adding = true }
+                IconButton("Add fallback", systemImage: "plus") { add() }
             }
         }
     }
 
-    private func row(_ fallback: BotFallback, at i: Int) -> some View {
-        let name = model.hello?.backends.first { $0.id == fallback.backend }.map(model.agentLabel) ?? model.backendName(fallback.backend)
-        return HStack(spacing: 10) {
-            Text(L10n.tr("\(i + 1)")).font(.subheadline.monospacedDigit()).foregroundStyle(Palette.secondary)
-            AgentIcon(registry: model.agentRegistry(fallback.backend), size: 18)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("\(L10n.tr(name)) · \(L10n.tr(fallback.model ?? "Default"))").foregroundStyle(Palette.text).lineLimit(1)
-                if let rest = bot?.rest(of: fallback.backend) {
-                    Text(rest.line).font(.caption).foregroundStyle(Palette.secondary)
-                }
-            }
-            Spacer(minLength: 8)
-            if bot?.agentStep?.agent == fallback.backend {
-                Text(L10n.tr("In use"))
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(Palette.text)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Palette.bubbleUser, in: Capsule())
-            }
-            DropdownMenu { menu(at: i) } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Palette.secondary)
-                    .frame(width: 36, height: 36)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("\(name) fallback actions")
-        }
+    /// + : a step on the first installed agent with a free login, at the end, open on its pickers.
+    private func add() {
+        guard let agent = choices.first(where: \.available) ?? choices.first else { return }
+        let step = BotFallback.on(agent, taken: taken(but: fallbacks.count))
+        added = fallbacks.count
+        change { $0.append(step) }
+    }
+
+    /// Step `i` in the draft, for its row.
+    private func step(_ i: Int) -> Binding<BotFallback> {
+        Binding(get: { fallbacks.indices.contains(i) ? fallbacks[i] : BotFallback(backend: "") },
+                set: { new in if draft.fallbacks?.indices.contains(i) == true { draft.fallbacks?[i] = new } })
     }
 
     private func menu(at i: Int) -> [MenuItem] {
         var items: [MenuItem] = []
-        if i > 0 { items.append(MenuItem("Move up", icon: "arrow.up") { change { $0.swapAt(i, i - 1) } }) }
-        if i < fallbacks.count - 1 { items.append(MenuItem("Move down", icon: "arrow.down") { change { $0.swapAt(i, i + 1) } }) }
-        items.append(MenuItem("Remove", icon: "trash", destructive: true, divider: !items.isEmpty) { change { $0.remove(at: i) } })
+        if i > 0 { items.append(MenuItem("Move up", icon: "arrow.up") { renumber { $0.swapAt(i, i - 1) } }) }
+        if i < fallbacks.count - 1 { items.append(MenuItem("Move down", icon: "arrow.down") { renumber { $0.swapAt(i, i + 1) } }) }
+        items.append(MenuItem("Remove", icon: "trash", destructive: true, divider: true) { renumber { $0.remove(at: i) } })
         return items
+    }
+
+    private func renumber(_ edit: (inout [BotFallback]) -> Void) {
+        added = nil
+        order += 1
+        change(edit)
     }
 
     private func change(_ edit: (inout [BotFallback]) -> Void) {
@@ -127,38 +130,68 @@ struct FallbackList: View {
     }
 }
 
-/// +: a new fallback's agent and model, from the same pickers as the bot's own.
-struct AddFallbackSheet: View {
-    let choices: [Backend]
-    let add: (BotFallback) -> Void
-    @State private var fallback: BotFallback
+/// One fallback: its place, its agent, model and login picked in place like the bot's own, whether it's resting or in
+/// use, and its menu.
+private struct FallbackRow: View {
+    @Binding var fallback: BotFallback
+    let number: Int
+    /// The rest of the chain's logins.
+    let taken: [AgentLogin]
+    let bot: Bot?
+    let expanded: Bool
+    let menu: () -> [MenuItem]
     @Environment(BotStore.self) private var model
-    @Environment(\.dismissModal) private var dismiss
-
-    init(choices: [Backend], add: @escaping (BotFallback) -> Void) {
-        self.choices = choices
-        self.add = add
-        _fallback = State(initialValue: BotFallback(backend: (choices.first(where: \.available) ?? choices.first)?.id ?? ""))
-    }
+    /// The step as it was on its own agent while another is picked: picking that agent again brings back its model and login.
+    @State private var own: BotFallback?
 
     var body: some View {
-        VStack(spacing: 0) {
-            ModalHeader("Add fallback") {
-                IconButton("Add", systemImage: "checkmark") {
-                    add(fallback)
-                    dismiss()
+        let choices = (model.hello?.backends ?? []).usable(taken: taken, keeping: [fallback.login] + (own.map { [$0.login] } ?? []))
+        let agent = choices.first { $0.id == fallback.backend }
+        let loginProfile = fallback.loginProfile.flatMap { id in agent?.loginProfiles?.first { $0.id == id } }
+        // The step's login shows beside its agent: "Claude Code (Work)".
+        let agents = choices.map { backend in
+            let label = L10n.tr(model.agentLabel(backend))
+            return (backend.id, backend.id == fallback.backend ? loginProfile.map { "\(label) (\($0.name ?? L10n.tr("New login profile")))" } ?? label : label)
+        }
+        let name = agents.first { $0.0 == fallback.backend }?.1 ?? model.backendName(fallback.backend)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 10) {
+                Text(L10n.tr("\(number)")).font(.subheadline.monospacedDigit()).foregroundStyle(Palette.secondary)
+                AgentModelPicker(backend: fallback.backend, selection: $fallback.model, options: $fallback.modelOptions, agents: agents,
+                                 onAgentChange: { id in
+                                     guard let next = choices.first(where: { $0.id == id }) else { return }
+                                     let step = BotFallback.on(next, taken: taken, own: own)
+                                     own = step == own ? nil : own ?? fallback
+                                     fallback = step
+                                 },
+                                 expanded: expanded) {
+                    if let agent, agent.loginProfiles != nil {
+                        LoginProfileRow(backend: agent, loginProfile: $fallback.loginProfile, free: agent.logins(for: fallback.login, taken: taken))
+                    }
                 }
-                .disabled(fallback.backend.isEmpty)
+                if bot?.stepLogin == fallback.login {
+                    Text(L10n.tr("In use"))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Palette.text)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Palette.bubbleUser, in: Capsule())
+                }
+                DropdownMenu { menu() } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Palette.secondary)
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
+                }
+                // The 36pt target centered on the summary's first line.
+                .padding(.vertical, -8)
+                .accessibilityLabel("\(name) fallback actions")
             }
-            CardForm {
-                CardSection {
-                    AgentModelPicker(backend: fallback.backend, selection: $fallback.model, options: $fallback.modelOptions,
-                                     agents: choices.map { ($0.id, model.agentLabel($0)) },
-                                     onAgentChange: { fallback.backend = $0; fallback.model = nil; fallback.modelOptions = [:] })
-                }
+            if let rest = bot?.rest(of: fallback.login) {
+                Text(L10n.tr(rest.line)).font(.caption).foregroundStyle(Palette.secondary)
             }
         }
-        .background(Palette.background)
     }
 }
 

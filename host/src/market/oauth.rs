@@ -12,10 +12,12 @@
 
 mod device;
 mod discovery;
+mod registration;
 
 pub use device::offers_sign_in;
 pub use discovery::required;
 use discovery::{resource_metadata, server_metadata, split};
+use registration::register_client;
 
 use crate::LockExt;
 use crate::hub::Hub;
@@ -76,6 +78,7 @@ struct Pending {
     verifier: String,
     redirect_uri: String,
     resource: String,
+    revision: String,
     started: Instant,
 }
 
@@ -107,15 +110,21 @@ fn text(v: &Value) -> Option<String> {
 }
 
 /// `c` is connector `id` still pointing at `url`: while a request to its server is in flight, it
-/// can be removed and another added under its id.
-fn is_at(c: &Connector, id: &str, url: Option<&str>) -> bool {
-    c.id == id && c.url.as_deref() == url
+/// can be edited, including away from this URL and back again.
+fn is_at(c: &Connector, id: &str, url: Option<&str>, revision: &str) -> bool {
+    c.id == id && c.url.as_deref() == url && c.auth_revision == revision
 }
 
 /// Changes connector `id` while it still points at `url`: every change here follows a request to its server.
-fn update(store: &Store, id: &str, url: Option<&str>, f: impl FnOnce(&mut Connector)) -> Result<Connector> {
+fn update(
+    store: &Store,
+    id: &str,
+    url: Option<&str>,
+    revision: &str,
+    f: impl FnOnce(&mut Connector),
+) -> Result<Connector> {
     market::update_connectors(store, |all| {
-        let c = all.iter_mut().find(|c| is_at(c, id, url)).ok_or_else(|| anyhow!("unknown connector"))?;
+        let c = all.iter_mut().find(|c| is_at(c, id, url, revision)).ok_or_else(|| anyhow!("unknown connector"))?;
         f(c);
         Ok(c.clone())
     })
@@ -141,48 +150,34 @@ pub async fn start(hub: &Arc<Hub>, id: &str, callback: Callback, shows_code: boo
         return device::start(hub, &c, &meta, app, token_endpoint).await;
     }
 
+    let loopback = loopback_uri(hub.port);
     let app = app_uri(store);
     let redirect_uri = match callback {
-        Callback::Host => loopback_uri(hub.port),
+        Callback::Host => loopback.clone(),
         Callback::App => app
             .clone()
             .ok_or_else(|| anyhow!("The Codync cloud is off on this computer, so sign in from the computer itself."))?,
     };
     let authorize = text(&meta["authorization_endpoint"]).ok_or_else(|| anyhow!("no authorization endpoint"))?;
 
-    // Register once with every redirect URI we might use; again if they changed.
-    let wanted: Vec<String> = std::iter::once(loopback_uri(hub.port)).chain(app).collect();
+    // Reuse a client already registered for the redirect URI this sign-in needs; otherwise register
+    // with every URI we might use. A server that only takes the loopback URI still signs in here.
     let mut oauth = c.oauth.clone().unwrap_or_default();
-    if oauth.client_id.is_empty() || !wanted.iter().all(|u| oauth.redirect_uris.contains(u)) {
-        let register = text(&meta["registration_endpoint"]).ok_or_else(|| {
+    if oauth.client_id.is_empty() || !oauth.redirect_uris.contains(&redirect_uri) {
+        let register_endpoint = text(&meta["registration_endpoint"]).ok_or_else(|| {
             anyhow!(
                 "{} doesn't let new apps sign in on their own. Add it as a custom connector with a token header.",
                 c.name
             )
         })?;
-        let res = crate::http()
-            .post(&register)
-            .json(&json!({
-                "client_name": "Codync",
-                "redirect_uris": wanted,
-                "grant_types": ["authorization_code", "refresh_token"],
-                "response_types": ["code"],
-                "token_endpoint_auth_method": "none",
-            }))
-            .timeout(TIMEOUT)
-            .send()
+        let wanted: Vec<String> = std::iter::once(loopback.clone()).chain(app).collect();
+        register_client(&register_endpoint, wanted, loopback, callback, &mut oauth)
             .await
-            .with_context(|| format!("registering with {}", c.name))?;
-        let status = res.status();
-        let v: Value = res.json().await.unwrap_or(Value::Null);
-        oauth.client_id =
-            text(&v["client_id"]).ok_or_else(|| anyhow!("{} refused the registration ({status})", c.name))?;
-        oauth.client_secret = text(&v["client_secret"]);
-        oauth.redirect_uris = wanted;
+            .with_context(|| format!("signing in to {}", c.name))?;
     }
     oauth.token_endpoint = token_endpoint;
     let client_id = oauth.client_id.clone();
-    update(store, id, Some(&url), |c| c.oauth = Some(oauth))?;
+    update(store, id, Some(&url), &c.auth_revision, |c| c.oauth = Some(oauth))?;
 
     let verifier = crate::remote::crypto::b64(&crate::remote::crypto::random::<32>());
     let challenge = crate::remote::crypto::b64(&crate::remote::crypto::sha256(&[verifier.as_bytes()]));
@@ -208,7 +203,14 @@ pub async fn start(hub: &Arc<Hub>, id: &str, callback: Callback, shows_code: boo
     map.retain(|_, p| p.started.elapsed() < PENDING_FOR);
     map.insert(
         state,
-        Pending { connector: id.to_owned(), verifier, redirect_uri, resource: url, started: Instant::now() },
+        Pending {
+            connector: id.to_owned(),
+            verifier,
+            redirect_uri,
+            resource: url,
+            revision: c.auth_revision.clone(),
+            started: Instant::now(),
+        },
     );
     let callback = match callback {
         Callback::Host => "host",
@@ -231,7 +233,7 @@ pub async fn finish(store: &Store, state: &str, code: Option<&str>, error: Optio
     let code = code.ok_or_else(|| anyhow!("Sign-in didn't return a code"))?;
     let c = market::connectors(store)?
         .into_iter()
-        .find(|c| is_at(c, &p.connector, Some(&p.resource)))
+        .find(|c| is_at(c, &p.connector, Some(&p.resource), &p.revision))
         .ok_or_else(|| anyhow!("unknown connector"))?;
     let oauth = c.oauth.ok_or_else(|| anyhow!("unknown connector"))?;
     let v = token_request(
@@ -245,7 +247,7 @@ pub async fn finish(store: &Store, state: &str, code: Option<&str>, error: Optio
         ],
     )
     .await?;
-    update(store, &p.connector, Some(&p.resource), |c| store_tokens(c, &v))
+    update(store, &p.connector, Some(&p.resource), &p.revision, |c| store_tokens(c, &v))
 }
 
 async fn token_request(oauth: &OAuth, form: &[(&str, &str)]) -> Result<Value> {
@@ -299,7 +301,7 @@ fn store_tokens(c: &mut Connector, v: &Value) {
 
 /// Forgets a connector's tokens (keeps its registration).
 fn sign_out(store: &Store, c: &Connector) -> Result<Connector> {
-    update(store, &c.id, c.url.as_deref(), |c| {
+    update(store, &c.id, c.url.as_deref(), &c.auth_revision, |c| {
         if let Some(o) = &mut c.oauth {
             o.access_token.clear();
             o.refresh_token = None;
@@ -310,7 +312,7 @@ fn sign_out(store: &Store, c: &Connector) -> Result<Connector> {
 
 /// Forgets a connector's tokens and its registration: the next sign-in registers again.
 fn unregister(store: &Store, c: &Connector) -> Result<Connector> {
-    update(store, &c.id, c.url.as_deref(), |c| {
+    update(store, &c.id, c.url.as_deref(), &c.auth_revision, |c| {
         if let Some(o) = &mut c.oauth {
             *o = OAuth::default();
         }
@@ -350,7 +352,7 @@ pub async fn target(store: &Store, id: &str, stale: bool) -> Result<Value> {
         let o = fresh(store, &c, &url, o, stale).await?;
         headers.insert("Authorization".into(), format!("Bearer {}", o.access_token));
     }
-    Ok(json!({"url": url, "headers": headers}))
+    Ok(json!({"url":url,"connectorUrl":url,"headers":headers,"authRevision":c.auth_revision}))
 }
 
 /// `o`, or a new token when it's about to expire (or `stale`). `url`: the connector's.
@@ -364,7 +366,10 @@ async fn fresh(store: &Store, c: &Connector, url: &str, o: &OAuth, stale: bool) 
     }
     let _one = REFRESH.lock().await;
     // Someone else may have refreshed while we waited.
-    let current = market::connectors(store)?.into_iter().find(|x| is_at(x, &c.id, Some(url))).and_then(|x| x.oauth);
+    let current = market::connectors(store)?
+        .into_iter()
+        .find(|x| is_at(x, &c.id, Some(url), &c.auth_revision))
+        .and_then(|x| x.oauth);
     if let Some(cur) = &current
         && cur.access_token != o.access_token
         && cur.signed_in()
@@ -398,7 +403,9 @@ async fn renew(store: &Store, c: &Connector, url: &str, o: &OAuth, stale: bool) 
         tracing::warn!(connector = %c.id, %status, error = v["error"].as_str().unwrap_or_default(), "token refresh refused");
     }
     match renewal {
-        Renewal::Renewed => Ok(update(store, &c.id, Some(url), |c| store_tokens(c, &v))?.oauth.unwrap_or_default()),
+        Renewal::Renewed => {
+            Ok(update(store, &c.id, Some(url), &c.auth_revision, |c| store_tokens(c, &v))?.oauth.unwrap_or_default())
+        }
         Renewal::Retry => retry(),
         Renewal::Revoked => {
             sign_out(store, c)?;

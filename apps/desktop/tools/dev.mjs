@@ -3,20 +3,23 @@
 // ~/.codync-dev-<name>, a port kept in that folder's sandbox.json, its own app data, and a host
 // this run builds, starts and stops. Flags (`npm run dev -- --list`): --shared takes the default
 // Codync Dev from a worktree, --sandbox runs a sandbox from the main checkout, --name <name> runs
-// the sandbox of that name, --cloud lets the sandbox host use the dev cloud, --cdp opens the
-// DevTools protocol on the sandbox port + 10000, --onboarding shows the welcome flow (a sandbox
-// starts past it), --list shows every sandbox, --prune deletes the ones whose worktree is gone
-// (and their Clerk test accounts and iPhone simulators).
+// the sandbox of that name, --cloud lets the sandbox use the dev cloud, --local-cloud gives it its own
+// local cloud (the default on a branch that changes cloud/: local-cloud.mjs), --cdp opens the
+// DevTools protocol on the sandbox port + 10000, gives the host the stand-in agent CLIs and keeps
+// the app's windows off the screen (--headed shows them), --onboarding shows the welcome flow (a
+// sandbox starts past it), --list shows every sandbox, --prune deletes the ones whose worktree is
+// gone (and their Clerk test accounts and iPhone simulators).
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { homedir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { deleteTestAccount, mintTicket, secretKey } from './dev-account.mjs'
-import { SANDBOX_PREFIX, sandboxName, sandboxPorts, sandboxSimulator } from '../src/shared/dev-sandbox.ts'
+import { changesCloud, sandboxCloud } from './local-cloud.mjs'
+import { SANDBOX_PREFIX, sandboxCloudMode, sandboxName, sandboxPorts, sandboxSimulator } from '../src/shared/dev-sandbox.ts'
 
 const desktop = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const root = resolve(desktop, '../..')
@@ -24,7 +27,7 @@ const windows = process.platform === 'win32'
 const { values: flags } = parseArgs({
   options: {
     shared: { type: 'boolean' }, sandbox: { type: 'boolean' }, name: { type: 'string' },
-    cloud: { type: 'boolean' }, onboarding: { type: 'boolean' }, cdp: { type: 'boolean' }, list: { type: 'boolean' }, prune: { type: 'boolean' },
+    cloud: { type: 'boolean' }, 'local-cloud': { type: 'boolean' }, onboarding: { type: 'boolean' }, cdp: { type: 'boolean' }, headed: { type: 'boolean' }, list: { type: 'boolean' }, prune: { type: 'boolean' },
   },
 })
 
@@ -167,29 +170,41 @@ async function sandbox() {
     fail(`Port ${port} of the sandbox ${name} is in use: another npm run dev runs this sandbox, or an earlier run left its host running. Stop that process, or run another sandbox with --name <name>.`)
   }
   mkdirSync(home, { recursive: true })
-  if (!record) writeFileSync(recordFile, `${JSON.stringify({ worktree: root, port }, null, 2)}\n`)
+  // Written at every start: `headless` tells the e2e specs whether this run keeps its windows off the screen.
+  const headless = Boolean(flags.cdp) && !flags.headed
+  writeFileSync(recordFile, `${JSON.stringify({ worktree: root, port, headless }, null, 2)}\n`)
 
   const host = buildHost()
   const log = join(home, 'host.log')
-  // CODYNC_VAULT: the credential key goes with the sandbox folder, so Keychain neither keeps it nor asks about it.
-  const hostEnv = { ...childEnv(), CODYNC_HOME: home, CODYNC_VAULT: 'folder', ...(flags.cloud ? {} : { CODYNC_CLOUD: 'off' }) }
-  const out = openSync(log, 'a')
-  const hostProcess = spawn(host, ['serve', '--port', String(port)], { env: hostEnv, stdio: ['ignore', out, out] })
-  hostProcess.on('error', (e) => fail(`Couldn't start ${host}: ${e.message}`))
+  let hostProcess = null
   let app = null
+  let cloud = null
   let stopping = false
   const stop = (code) => {
     stopping = true
+    // Still starting the local cloud: exiting stops it (local-cloud.mjs).
+    if (!hostProcess) process.exit(code)
     hostProcess.kill()
     app?.stop()
+    cloud.stop()
     process.exitCode = code
   }
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => stop(130))
+  const mode = sandboxCloudMode({ cloud: flags.cloud, localCloud: flags['local-cloud'], changesCloud: changesCloud(root), windows })
+  cloud = await sandboxCloud({ mode, root, home, port }).catch((e) => fail(`Local cloud: ${e.message}`))
+  // CODYNC_VAULT: the credential key goes with the sandbox folder, so Keychain neither keeps it nor asks about it.
+  const hostEnv = { ...childEnv(), CODYNC_HOME: home, CODYNC_VAULT: 'folder', ...cloud.hostEnv }
+  // --cdp: the stand-in agent CLIs come first on PATH, so the specs sign no real agent in
+  // (host/tests/fixtures/bin/README.md). They are scripts: not on Windows.
+  if (flags.cdp && !windows) hostEnv.PATH = [join(root, 'host/tests/fixtures/bin'), hostEnv.PATH].join(delimiter)
+  const out = openSync(log, 'a')
+  hostProcess = spawn(host, ['serve', '--port', String(port)], { env: hostEnv, stdio: ['ignore', out, out] })
+  hostProcess.on('error', (e) => fail(`Couldn't start ${host}: ${e.message}`))
   hostProcess.on('exit', (code) => {
     if (stopping) return
     console.error(`The sandbox host stopped (exit ${code}). See ${log}`)
     stop(1)
   })
-  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => stop(130))
   for (let tries = 0; !(await answers(port)); tries++) {
     if (stopping) return
     if (tries === 60) {
@@ -201,15 +216,18 @@ async function sandbox() {
 
   const cdp = flags.cdp ? port + 10000 : null
   const command = `CODYNC_HOME="${home}" "${host}"`
-  console.log(`\nCodync Dev (${name}): a sandbox on port ${port}, data in ${home}${flags.cloud ? '' : ', dev cloud off'}`)
+  console.log(`\nCodync Dev (${name}): a sandbox on port ${port}, data in ${home}${cloud.note}`)
   console.log(`  pair a phone or simulator  ${command} pair --port ${port}`)
   if (process.platform === 'darwin') console.log(`  its iPhone simulator       ${simulatorHint(name)}`)
   console.log(`  terminal UI                ${command} tui --port ${port}`)
   if (cdp) console.log(`  DevTools protocol          127.0.0.1:${cdp}`)
+  for (const hint of cloud.hints) console.log(hint)
   console.log('')
   const appEnv = {
-    ...childEnv(), CODYNC_HOME: home, CODYNC_PORT: String(port),
+    ...childEnv(), CODYNC_HOME: home, CODYNC_PORT: String(port), ...cloud.appEnv,
     ...(cdp ? { CODYNC_REMOTE_DEBUG: String(cdp) } : {}),
+    // An e2e sandbox keeps its windows off the screen unless asked to show them (src/main/headless.ts).
+    ...(headless ? { CODYNC_HEADLESS: '1' } : {}),
     CODYNC_DEV_ONBOARDING: flags.onboarding ? 'reset' : 'skip',
   }
   // The app trades the token only while it has no active session, so a signed-out or expired sandbox signs in again.
@@ -232,12 +250,16 @@ if (flags.list || flags.prune) {
   await listAndPrune()
 } else {
   if (flags.shared && (flags.sandbox || flags.name)) fail('--shared runs the default Codync Dev: leave out --sandbox and --name.')
+  if (flags.cloud && flags['local-cloud']) fail('Pick one cloud: --cloud (the dev cloud) or --local-cloud (the sandbox\'s own).')
+  if (flags['local-cloud'] && windows) fail('The sandbox\'s own local cloud doesn\'t run on Windows yet: test a cloud/ change on macOS or Linux.')
   run(process.execPath, [join(desktop, 'tools/account-config.mjs'), 'dev'])
   // A fresh `npm ci` (a new worktree) can leave Electron's binary undownloaded.
   if (!existsSync(join(desktop, 'node_modules/electron/path.txt'))) run(process.execPath, [join(desktop, 'node_modules/electron/install.js')])
   const mainCheckout = statSync(join(root, '.git')).isDirectory()
   if (flags.sandbox || flags.name || (!mainCheckout && !flags.shared)) {
     await sandbox()
+  } else if (flags['local-cloud']) {
+    fail('--local-cloud runs in a sandbox: add --sandbox, or leave out --shared.')
   } else {
     const { child, stop } = startApp()
     for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, stop)

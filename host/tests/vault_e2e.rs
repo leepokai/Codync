@@ -39,3 +39,17 @@ async fn a_folder_key_outlives_a_restart_and_only_its_user_can_read_it() {
     let logins = host.call("credentialLogins", json!({})).await;
     assert_eq!(logins["items"][0]["username"], "me", "{logins}");
 }
+
+#[tokio::test]
+async fn a_reset_leaves_no_api_key_profile_looking_signed_in() {
+    let host = Host::start().await;
+    let added = host.call("addLoginProfile", json!({"backend": "cursor", "kind": "apiKey"})).await;
+    let id = added["loginProfile"]["id"].as_str().unwrap().to_owned();
+    let set = host.call("setLoginProfileKeys", json!({"loginProfile": id, "vars": {"MY_KEY": "secret"}})).await;
+    assert_eq!(set["signedIn"], true);
+
+    let reset = host.call("resetCredentials", json!({})).await;
+    let cursor = reset["backends"].as_array().unwrap().iter().find(|a| a["id"] == "cursor").unwrap();
+    let profile = &cursor["loginProfiles"][0];
+    assert_eq!((&profile["id"], &profile["vars"], &profile["signedIn"]), (&json!(id), &json!([]), &json!(false)));
+}

@@ -1,0 +1,59 @@
+# A voice note a bot sends (send_file with text), on the phones: the player sits in the message above its text, a tap on
+# its play button plays it (the clock runs) and another pauses it (the clock stops). The phone must already be signed in
+# and paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from
+# `welcome`, whose clearState undoes that; the flow makes its own bot there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags attachments \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e STEER_AGENT="$PWD/host/tests/fixtures/steer_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - attachments
+onFlowComplete:
+  - runScript:
+      file: voice-note.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: voice-note.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+# A bot made a moment ago can take a while to reach the phone's list.
+- extendedWaitUntil:
+    visible: ${output.bot.name}
+    timeout: 30000
+- tapOn: ${output.bot.name}
+- extendedWaitUntil:
+    visible: "Listen before it joined"
+    timeout: 20000
+# The player is one element, "Voice note, <its clock or size>"; its play button is at its start.
+- assertVisible: "Voice note, .*"
+- tapOn:
+    text: "Voice note, .*"
+    point: "4%,50%"
+    waitToSettleTimeoutMs: 300
+- extendedWaitUntil:
+    visible: "Voice note, 0:0[1-3] / 0:04.*"
+    timeout: 10000
+- tapOn:
+    text: "Voice note, .*"
+    point: "4%,50%"
+    waitToSettleTimeoutMs: 300
+# Paused, the clock stays where it stopped.
+- copyTextFrom: "Voice note, .*"
+- extendedWaitUntil:
+    notVisible: ${maestro.copiedText}
+    timeout: 2500
+    optional: true
+- assertVisible: ${maestro.copiedText}

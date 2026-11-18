@@ -332,19 +332,33 @@ fn awaiting_worker(state: &State) -> bool {
 }
 
 fn spawn_job(executable: &Path, args: &[String]) -> Result<()> {
+    if !cfg!(target_os = "linux") {
+        // submit jobs do not restart on exit. Remove only a completed old job;
+        // an active worker holds update.lock, acquired by our caller above.
+        let _ = std::process::Command::new("launchctl").args(["remove", "com.pokai.codync.update"]).output();
+    }
+    let output = job_command(executable, args).output().context("launching the independent host updater")?;
+    ensure!(output.status.success(), "could not launch updater: {}", String::from_utf8_lossy(&output.stderr).trim());
+    Ok(())
+}
+
+/// The worker runs under the user manager or launchd, not the host's service, so it gets the service's data folder and
+/// release channel from here.
+fn job_command(executable: &Path, args: &[String]) -> std::process::Command {
+    let env = [
+        format!("CODYNC_HOME={}", service::data_dir().display()),
+        format!("CODYNC_RELEASES_URL={}", release::releases()),
+    ];
     let mut command;
     if cfg!(target_os = "linux") {
         command = std::process::Command::new("systemd-run");
         command
             .args(["--user", "--collect", "--unit=codync-host-update", "--property=Type=exec"])
-            .arg(format!("--setenv=CODYNC_HOME={}", service::data_dir().display()))
+            .args(env.iter().map(|e| format!("--setenv={e}")))
             .arg("--")
             .arg(executable)
             .args(args);
     } else {
-        // submit jobs do not restart on exit. Remove only a completed old job;
-        // an active worker holds update.lock, acquired by our caller above.
-        let _ = std::process::Command::new("launchctl").args(["remove", "com.pokai.codync.update"]).output();
         command = std::process::Command::new("launchctl");
         command
             .args(["submit", "-l", "com.pokai.codync.update", "-o"])
@@ -352,13 +366,11 @@ fn spawn_job(executable: &Path, args: &[String]) -> Result<()> {
             .arg("-e")
             .arg(service::data_dir().join("update.log"))
             .args(["--", "/usr/bin/env"])
-            .arg(format!("CODYNC_HOME={}", service::data_dir().display()))
+            .args(env)
             .arg(executable)
             .args(args);
     }
-    let output = command.output().context("launching the independent host updater")?;
-    ensure!(output.status.success(), "could not launch updater: {}", String::from_utf8_lossy(&output.stderr).trim());
-    Ok(())
+    command
 }
 
 /// Checks for a release now and installs it in the background (the cloud refused this version).

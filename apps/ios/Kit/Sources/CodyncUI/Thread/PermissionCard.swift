@@ -27,7 +27,7 @@ struct PermissionCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text(headline).font(.headline).foregroundStyle(Palette.text)
+                Text(L10n.tr(headline)).font(.headline).foregroundStyle(Palette.text)
                 if pending {
                     Circle().fill(Palette.warning).frame(width: 7, height: 7)
                 }
@@ -36,9 +36,10 @@ struct PermissionCard: View {
                 .font(.subheadline.monospaced())
                 .foregroundStyle(Palette.secondary)
                 .lineLimit(expanded ? nil : 3)
-            Label("Runs on \(hostName)\(d.cwd.map { " · \(($0 as NSString).lastPathComponent)" } ?? "")", systemImage: "desktopcomputer")
+            Label(L10n.fill(L10n.tr("Runs on {name}{path}"), ["name": hostName, "path": d.cwd.map { " · \(($0 as NSString).lastPathComponent)" } ?? ""]), systemImage: "desktopcomputer")
                 .font(.caption)
                 .foregroundStyle(Palette.tertiary)
+            TaskLine(data: d)
 
             if hasDetail {
                 Disclosure(isExpanded: $expanded) {
@@ -83,10 +84,10 @@ struct PermissionCard: View {
 
     private func label(_ o: PermissionOption) -> String {
         switch o.kind {
-        case "allow_once": "Allow once"
-        case "allow_always": "Always allow"
-        case "reject_once": "Deny"
-        case "reject_always": "Never"
+        case "allow_once": L10n.tr("Allow once")
+        case "allow_always": L10n.tr("Always allow")
+        case "reject_once": L10n.tr("Deny")
+        case "reject_always": L10n.tr("Never")
         default: o.name
         }
     }
@@ -122,14 +123,14 @@ struct PermissionCard: View {
         case "answered":
             let chosen = d.options?.first { $0.optionId == d.selected }
             return switch chosen?.kind {
-            case "allow_once": "Allowed once"
-            case "allow_always": "Always allowed"
-            case "reject_once": "Denied"
-            case "reject_always": "Never allowed"
-            default: chosen?.name ?? "Answered"
+            case "allow_once": L10n.tr("Allowed once")
+            case "allow_always": L10n.tr("Always allowed")
+            case "reject_once": L10n.tr("Denied")
+            case "reject_always": L10n.tr("Never allowed")
+            default: chosen?.name ?? L10n.tr("Answered")
             }
-        case "cancelled": return "Cancelled"
-        default: return "Expired — the agent moved on"
+        case "cancelled": return L10n.tr("Cancelled")
+        default: return L10n.tr("Expired — the agent moved on")
         }
     }
 }
@@ -176,6 +177,21 @@ struct DiffView: View {
             }
             .frame(maxHeight: 260)
             .background(Palette.codeBackground, in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+}
+
+/// "In the background · <title>" under what a background task put in the chat (a card, a file, a voice note, an
+/// artifact); nothing for the chat's own.
+struct TaskLine: View {
+    let data: EntryData
+
+    var body: some View {
+        if let task = data.task, !task.title.isEmpty {
+            Label(L10n.tr("In the background") + " · " + task.title, systemImage: "clock")
+                .font(.caption)
+                .foregroundStyle(Palette.tertiary)
+                .lineLimit(1)
         }
     }
 }

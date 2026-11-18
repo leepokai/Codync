@@ -15,7 +15,7 @@ public struct Routine: Codable, Identifiable, Hashable, Sendable {
     public var lastError: String?
 
     /// A timeout as typed, in words: whole hours, else whole minutes, else seconds; anything else as typed.
-    public static func timeoutText(_ text: String) -> String {
+    public static func timeoutText(_ text: String, locale: Locale = .autoupdatingCurrent) -> String {
         guard let seconds = Int(text), seconds >= 0 else { return "\(text)s" }
         let unit: Duration.UnitsFormatStyle.Unit
         if seconds > 0, seconds % 3600 == 0 {
@@ -25,7 +25,7 @@ public struct Routine: Codable, Identifiable, Hashable, Sendable {
         } else {
             unit = .seconds
         }
-        return Duration.seconds(seconds).formatted(.units(allowed: [unit], width: .wide))
+        return Duration.seconds(seconds).formatted(.units(allowed: [unit], width: .wide).locale(locale))
     }
 }
 
@@ -61,9 +61,31 @@ public struct RoutineRun: Codable, Identifiable, Hashable, Sendable {
     public var isActive: Bool { ["pending", "starting", "running", "recovering"].contains(status) }
 }
 
+/// A deadline a bot set for itself: one later turn in its own chat, then it is gone.
+public struct FollowUp: Codable, Identifiable, Hashable, Sendable {
+    public var id: String
+    public var botId: String
+    /// When it is due (Unix ms).
+    public var at: Int64
+    public var note: String
+    public var createdAt: Int64
+
+    /// When it happens, for its row, translated: the time today, the date too on another day, as `locale` writes them.
+    public func line(locale: Locale, now: Date = .now, calendar: Calendar = .current) -> String {
+        let date = Date(milliseconds: at)
+        // Due and waiting its turn behind what the bot is doing.
+        guard date > now else { return L10n.tr("Follow-up due now") }
+        let today = calendar.isDate(date, inSameDayAs: now)
+        let when = date.formatted(Date.FormatStyle(date: today ? .omitted : .abbreviated, time: .shortened).locale(locale))
+        return L10n.tr("Follow-up at {time}").replacingOccurrences(of: "{time}", with: when)
+    }
+}
+
 public struct RoutineListing: Codable, Sendable {
     public var routines: [Routine]
     public var runs: [RoutineRun]
+    /// The follow-ups still waiting (a host from before them: nil).
+    public var followUps: [FollowUp]?
 }
 
 /// A routine's webhook: `url` is public through the Codync cloud (nil while the cloud is off),
@@ -86,6 +108,12 @@ extension HostClient {
     public func routineAction(_ method: String, botId: String, id: String, enabled: Bool? = nil) async throws {
         struct Body: Encodable { let botId: String; let id: String; let enabled: Bool? }
         let _: Empty = try await call(method, Body(botId: botId, id: id, enabled: enabled))
+    }
+
+    /// Drops a follow-up that hasn't happened yet.
+    public func cancelFollowUp(botId: String, id: String) async throws {
+        struct Body: Encodable { let botId: String; let id: String }
+        let _: Empty = try await call("cancelFollowUp", Body(botId: botId, id: id))
     }
 
     /// Runs a failed run's work again, with the event it had.

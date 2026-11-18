@@ -1,0 +1,45 @@
+# The fallback banner and the own agent's rest line in the app's language (#461), on the bot `fallback-banner.js` makes:
+# its Kimi Code signed out, Codex carrying on. Both phones, already paired to the host, showing Simplified Chinese: the
+# iPhone gets it from the launch argument below; set the Android app's locale first with
+# `adb shell cmd locale set-app-locales com.pokai.Codync.android.dev --locales zh-CN` (`--locales ""` resets it), so run
+# it apart from the English flows:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags language \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e FIXTURE_AGENT="$PWD/host/tests/fixtures/relay_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - language
+onFlowComplete:
+  - runScript:
+      file: fallback-banner.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: fallback-banner.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+            "-AppleLanguages": "(zh-Hans)"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+- tapOn: "${output.bot.name}，查看详情"
+- tapOn: "设置"
+- extendedWaitUntil:
+    visible: "正在使用 Codex，Kimi Code 已退出登录"
+    timeout: 10000
+- assertNotVisible: "Using Codex .*"
+# The agent picker (its summary row names the agent) opens on its rest line.
+- tapOn: "Kimi Code \\(not installed\\).*"
+- assertVisible: "休息到 .*"
+- assertNotVisible: "Resting until .*"
+- takeScreenshot: fallback-banner-language

@@ -11,8 +11,9 @@ use super::super::md::truncate;
 use super::buffer::{put, rput, u};
 use super::style::theme;
 
-/// Draws `bot`'s waiting messages right over the composer at `box_top`: where the band starts.
-pub(super) fn queue_band(buf: &mut Buffer, r: Rect, app: &App, bot: &Bot, box_top: u16, typing: bool) -> u16 {
+/// Draws `bot`'s waiting messages over the composer, down to `bottom` (the composer, or the background line over
+/// it): where the band starts.
+pub(super) fn queue_band(buf: &mut Buffer, r: Rect, app: &App, bot: &Bot, bottom: u16, typing: bool) -> u16 {
     let t = theme();
     let keys = match (app.queue_keys(), typing) {
         (false, _) => QueueKeys::Hidden,
@@ -20,7 +21,7 @@ pub(super) fn queue_band(buf: &mut Buffer, r: Rect, app: &App, bot: &Bot, box_to
         (true, true) => QueueKeys::AfterEsc,
     };
     let rows = queued_rows(&app.queued(&bot.id), keys);
-    let strip_top = box_top.saturating_sub(u(rows.len()));
+    let strip_top = bottom.saturating_sub(u(rows.len()));
     for (i, (text, hint)) in rows.iter().enumerate() {
         let y = strip_top + u(i);
         let room = rput(buf, r.right() - 1, y, hint, t.dim).saturating_sub(r.x + 3);
@@ -31,7 +32,7 @@ pub(super) fn queue_band(buf: &mut Buffer, r: Rect, app: &App, bot: &Bot, box_to
 
 /// Which keys the queue band names.
 #[derive(Clone, Copy)]
-enum QueueKeys {
+pub(super) enum QueueKeys {
     /// A host too old for them.
     Hidden,
     Ready,
@@ -41,7 +42,7 @@ enum QueueKeys {
 
 /// The queue band's rows, (text, keys): up to three messages, oldest first (more are counted), `S` beside the first
 /// (it goes next) and `D` beside the last.
-fn queued_rows(queued: &[&Entry], keys: QueueKeys) -> Vec<(String, String)> {
+pub(super) fn queued_rows(queued: &[&Entry], keys: QueueKeys) -> Vec<(String, String)> {
     let label = |e: &Entry| {
         let text = super::roster::plain(e.text().lines().next().unwrap_or_default());
         let files: Vec<String> = e.attachments().iter().map(|(name, _)| format!("▤ {name}")).collect();

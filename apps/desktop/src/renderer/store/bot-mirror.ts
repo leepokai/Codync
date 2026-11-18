@@ -10,6 +10,7 @@ import {
   type PairingRequest,
   type ScreenState,
   type Usage,
+  normalizeBot,
   withoutRemoved,
 } from '@shared/models'
 import type { NetworkView, RecoveryCode } from '@shared/network'
@@ -23,6 +24,7 @@ import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
 import { loadIconCache, saveIconCache } from '../lib/icon-cache'
 import { trNow } from '../lib/l10n.ts'
+import { TaskTranscripts } from './task-transcripts'
 
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
@@ -83,6 +85,7 @@ export class BotMirror extends Observable {
   hostUpdate: HostUpdate | null = null
   bots = new Map<string, Bot>()
   entries = new Map<string, Entry[]>()
+  private taskTranscripts = new TaskTranscripts()
   usage: Usage = { providers: [] }
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
@@ -105,10 +108,13 @@ export class BotMirror extends Observable {
 
   protected waiting = 0
   protected rev = 0
+  /** While everything is fetched again (`refetchAll`): the entries the computer has sent since it began. */
+  protected refetched: Set<string> | null = null
   protected hostId: string | null = null
   protected retired = false
   protected unreadable = false
   protected saveTimer: ReturnType<typeof setTimeout> | null = null
+  /** What the mirror was synced under (`syncStamp`): from the cache, then from each hello. Null: nothing held yet. */
   protected cacheStamp: string | null = null
 
   constructor(
@@ -144,6 +150,13 @@ export class BotMirror extends Observable {
 
   get hostName() {
     return this.hello?.name ?? this.computer.name
+  }
+
+  /** The automatic bot order switch as the computer has it: switched here, or its `autoOrder` event (another device). */
+  showAutoOrder(on: boolean) {
+    if (!this.hello || this.hello.autoOrder === on) return
+    this.hello = { ...this.hello, autoOrder: on }
+    this.changed()
   }
 
   /** A new name for this computer: its host's `name` event, or a cloud computer renamed from here (shown before its host,
@@ -241,8 +254,9 @@ export class BotMirror extends Observable {
     return list ? withoutRemoved(list) : []
   }
 
+  /** Not while everything is fetched again (`refetchAll`): a page would sit below entries about to go. */
   canLoadOlder(botId: string) {
-    return canLoadHistory(this.allEntries(botId), this.historyComplete.has(botId))
+    return !this.refetched && canLoadHistory(this.allEntries(botId), this.historyComplete.has(botId))
   }
 
   members(group: Bot) {
@@ -280,6 +294,7 @@ export class BotMirror extends Observable {
   }
 
   protected upsert(e: Entry) {
+    this.refetched?.add(e.id)
     const list = [...(this.entries.get(e.botId) ?? [])]
     const i = list.findIndex((x) => x.id === e.id)
     if (i >= 0) {
@@ -301,6 +316,21 @@ export class BotMirror extends Observable {
       return
     }
     this.entries.set(e.botId, list)
+  }
+
+  /** Holds a task's transcript from now until the returned function is called: its details are open. */
+  watchTask(taskId: string): () => void {
+    return this.taskTranscripts.watch(taskId)
+  }
+
+  /** A watched task's transcript, oldest first. */
+  taskEntriesOf(taskId: string): Entry[] {
+    return this.taskTranscripts.of(taskId)
+  }
+
+  /** More of a task's transcript (fetched, or a live `taskEntry`). */
+  protected mergeTask(taskId: string, entries: Entry[]) {
+    this.taskTranscripts.merge(taskId, entries)
   }
 
   setError(message: string | null) {
@@ -335,7 +365,8 @@ export class BotMirror extends Observable {
       this.cacheStamp = cache.stamp ?? ''
       this.hostId = cache.hostId ?? null
       this.rev = cache.rev
-      this.bots = new Map(cache.bots.map((b) => [b.id, b]))
+      // A copy cached by an older app lacks the fields added since.
+      this.bots = new Map(cache.bots.map((b) => [b.id, normalizeBot(b)]))
       const grouped = new Map<string, Entry[]>()
       for (const e of cache.entries) grouped.set(e.botId, [...(grouped.get(e.botId) ?? []), e])
       this.entries = grouped
@@ -357,7 +388,9 @@ export class BotMirror extends Observable {
       kept.push(...list.filter((e) => e.id.startsWith('local-') && e.data.status === 'failed'))
     }
     const bots = [...this.bots.values()].map(({ customIcon: _image, ...bot }) => bot)
-    const cache = { stamp: `${this.appVersion}/${this.hello?.version ?? ''}`, hostId: this.hostId, rev: this.rev, bots, entries: kept }
+    // Saved partway through a refetch, the cache says so: the next launch begins it again.
+    const stamp = this.refetched ? '' : this.cacheStamp ?? ''
+    const cache = { stamp, hostId: this.hostId, rev: this.rev, bots, entries: kept }
     try {
       localStorage.setItem(this.cacheKey, JSON.stringify(cache))
     } catch {}

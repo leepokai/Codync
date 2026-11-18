@@ -29,6 +29,13 @@ internal val AppState.cloudUnreached: String? get() = cloud?.let { when {
     else -> null
 } }
 
+/** A Codync Cloud computer that's asleep: a connection or a message wakes it, so it isn't offline (iOS `BotStore.isAsleep`). */
+internal val AppState.isAsleep: Boolean get() = connection is LinkState.ComputerOffline && cloud?.asleep == true
+
+/** Can't be reached, and not because it's updating or asleep: a sleeping cloud computer is fine, messaging it wakes it. */
+internal val AppState.unreachable: Boolean get() =
+    (connection is LinkState.ComputerOffline || connection is LinkState.Failed) && !isUpdating && cloud?.asleep != true
+
 /** One short line for the computer's connection, next to its name (iOS `BotStore.statusText`). */
 internal fun statusText(state: AppState): String = if (state.isUpdating) "Updating…" else when (val link = state.connection) {
     is LinkState.Ready -> if (state.mismatch != null) state.updateWord else "Online"

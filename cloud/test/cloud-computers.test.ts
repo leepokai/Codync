@@ -2,18 +2,20 @@
 
 import { runDurableObjectAlarm } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { boat, bothProviders, calls, cc, cloudComputer, hostClaim, instaboxApi, KEY, onBothProviders, relay, stoppedBoat, uid, withInstaboxKey, withKey } from "./cloud-helpers";
-import { call, clerkToken, devicePath, newHost, sleep, socket } from "./helpers";
+import { STOP_SETTLE_MS } from "../src/cloud-machines";
+import { WAKE_RETRY_MS } from "../src/relay-wire";
+import { alarmAfter, boat, bothProviders, callWith, calls, cc, cloudComputer, hostClaim, instaboxApi, KEY, onBothProviders, relay, spyFetch, stoppedBoat, uid, withInstaboxKey, withKey } from "./cloud-helpers";
+import { call, clerkToken, devicePath, env, newHost, sleep, socket } from "./helpers";
 import * as ref from "./ref";
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("cloud computers", () => {
-  it("is refused for accounts off the allowlist", async () => {
+  it("is open to every account, on a cloud that can seal their keys", async () => {
     const fetch = boat();
-    const other = uid();
-    expect((await cc("GET", other, "user_other")).body).toEqual({ cloudComputers: [], available: false, limit: 3, providers: [] });
-    expect((await cc("POST", other, "user_other")).status).toBe(403);
+    const noKeys = async (method: string) => callWith({ CLOUD_SECRET_KEYS: undefined }, method, "/v1/cloud-computers", { token: await clerkToken(uid()) });
+    expect((await noKeys("GET")).body).toEqual({ cloudComputers: [], available: false, limit: 3, providers: [] });
+    expect((await noKeys("POST")).status).toBe(403);
     expect(fetch).not.toHaveBeenCalled();
     const open = (await cc("GET", uid())).body;
     expect(open).toMatchObject({
@@ -26,6 +28,13 @@ describe("cloud computers", () => {
     });
     expect(open.providers[0].setup.commands).toContain("boat api-key create codync --env <id> --ttl never --actions sandbox.create,");
     expect(open.providers[1].setup.commands).toContain("instabox keys create --name codync --scope machines:read,machines:write,machines:delete");
+    // Only a provider with a free plan offers one.
+    expect(open.providers[0].offer).toBeUndefined();
+    expect(open.providers[1].offer).toEqual({
+      label: "Get a free sandbox",
+      detail: "InstaBox's free plan includes one machine (4 vCPU, 8 GiB).",
+      url: "https://instabox.sh/pricing",
+    });
   });
 
   it("needs the user's own Boat key", async () => {
@@ -34,7 +43,7 @@ describe("cloud computers", () => {
     const refused = await cc("POST", userId);
     expect(refused.status).toBe(409);
     expect(refused.body.error.message).toBe("Connect a cloud provider first.");
-    expect((await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "nimbus" })).status).toBe(400);
+    expect((await cc("POST", userId, "/v1/cloud-computers", { provider: "nimbus" })).status).toBe(400);
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -42,7 +51,7 @@ describe("cloud computers", () => {
     const userId = uid();
     await withKey(userId);
     const fetch = boat();
-    const created = await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "boat", name: " Lab " });
+    const created = await cc("POST", userId, "/v1/cloud-computers", { provider: "boat", name: " Lab " });
     expect(created.status).toBe(200);
     expect(created.body.cloudComputer).toMatchObject({ name: "Lab", provider: "boat", providerName: "Boat", region: "EU", state: "starting", computerId: null, snapshots: true });
     const id = created.body.cloudComputer.cloudComputerId as string;
@@ -79,8 +88,8 @@ describe("cloud computers", () => {
     expect((await call("DELETE", `/v1/computers/${host.cid}`, { token })).status).toBe(409);
 
     const destroy = boat("cancelled");
-    expect((await cc("DELETE", userId, userId, "/v1/cloud-computers/cm_nope")).status).toBe(404);
-    expect((await cc("DELETE", userId, userId, `/v1/cloud-computers/${id}`)).status).toBe(200);
+    expect((await cc("DELETE", userId, "/v1/cloud-computers/cm_nope")).status).toBe(404);
+    expect((await cc("DELETE", userId, `/v1/cloud-computers/${id}`)).status).toBe(200);
     const [dUrl, dInit] = destroy.mock.lastCall!;
     expect(dUrl).toBe("https://boat.dev/api/v1/sandboxes/bx_test");
     expect((dInit!.headers as Record<string, string>)["X-Ascii-Confirm-Delete"]).toBe("bx_test");
@@ -97,10 +106,10 @@ describe("several cloud computers", () => {
     await withInstaboxKey(userId);
     boat();
     expect((await cc("POST", userId)).body.error.message).toBe("Choose the provider to create it on.");
-    const first = await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "boat" });
+    const first = await cc("POST", userId, "/v1/cloud-computers", { provider: "boat" });
     expect(first.body.cloudComputer.name).toBe("Cloud computer");
     instaboxApi();
-    const second = await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "instabox", name: "Build box" });
+    const second = await cc("POST", userId, "/v1/cloud-computers", { provider: "instabox", name: "Build box" });
     expect(second.status).toBe(200);
     const listed = await cc("GET", userId);
     expect(listed.body.cloudComputers.map((m: { name: string; provider: string }) => [m.name, m.provider])).toEqual([
@@ -108,21 +117,21 @@ describe("several cloud computers", () => {
       ["Build box", "instabox"],
     ]);
 
-    expect((await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "instabox" })).status).toBe(200);
-    const over = await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "instabox" });
+    expect((await cc("POST", userId, "/v1/cloud-computers", { provider: "instabox" })).status).toBe(200);
+    const over = await cc("POST", userId, "/v1/cloud-computers", { provider: "instabox" });
     expect(over.status).toBe(409);
     expect(over.body.error.message).toBe("You can have up to 3 cloud computers. Delete one to make another.");
 
     // A key with a computer on it stays; the other provider's key goes once its computers are gone.
-    const removeBoat = await cc("DELETE", userId, userId, "/v1/cloud-credentials/boat");
+    const removeBoat = await cc("DELETE", userId, "/v1/cloud-credentials/boat");
     expect(removeBoat.body.error.message).toBe("Delete your cloud computers on it first: Codync needs the key to put them to sleep.");
   });
 
   it("renames one, as its computer too, and its host is told", async () => {
     const { userId, host, id } = await cloudComputer();
     const token = await clerkToken(userId);
-    expect((await cc("PATCH", userId, userId, `/v1/cloud-computers/${id}`, { name: "  " })).status).toBe(400);
-    const renamed = await cc("PATCH", userId, userId, `/v1/cloud-computers/${id}`, { name: "Research" });
+    expect((await cc("PATCH", userId, `/v1/cloud-computers/${id}`, { name: "  " })).status).toBe(400);
+    const renamed = await cc("PATCH", userId, `/v1/cloud-computers/${id}`, { name: "Research" });
     expect(renamed.body.cloudComputer.name).toBe("Research");
     expect((await call("GET", "/v1/computers", { token })).body.computers[0].name).toBe("Research");
     // The host takes it from its state, and registering again keeps it.
@@ -150,20 +159,57 @@ describe("several cloud computers", () => {
     const { id } = await cloudComputer();
     const other = uid();
     const fetch = boat("ready");
-    expect((await cc("PATCH", other, other, `/v1/cloud-computers/${id}`, { name: "Mine" })).status).toBe(404);
-    expect((await cc("DELETE", other, other, `/v1/cloud-computers/${id}/snapshots`)).status).toBe(404);
-    expect((await cc("DELETE", other, other, `/v1/cloud-computers/${id}`)).status).toBe(404);
+    expect((await cc("PATCH", other, `/v1/cloud-computers/${id}`, { name: "Mine" })).status).toBe(404);
+    expect((await cc("DELETE", other, `/v1/cloud-computers/${id}/snapshots`)).status).toBe(404);
+    expect((await cc("DELETE", other, `/v1/cloud-computers/${id}`)).status).toBe(404);
     expect(fetch).not.toHaveBeenCalled();
   });
 });
 
+/** The host asks to sleep and Boat takes the stop, but still reports the machine running when a device connects:
+ * the wake waits for the stop, and the machine stays recorded stopping, so its host keeps waiting too. */
+async function wakeWhileStopping({ host, device, hostWs }: Awaited<ReturnType<typeof cloudComputer>>) {
+  boat("archiving");
+  expect((await call("POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } })).status).toBe(200);
+  const fetch = boat("ready");
+  const dev = await socket(devicePath(host), device);
+  expect((await dev.nextT("presence")).online).toBe(false);
+  await vi.waitFor(() => expect(calls(fetch)).toContain("GET https://boat.dev/api/v1/sandboxes/bx_test"));
+  await sleep(100);
+  expect(hostWs.msgs.some((m) => m.t === "open")).toBe(false);
+  expect((await call("GET", "/v1/host/sleep", { key: host.sign })).body.state).toBe("stopping");
+  return dev;
+}
+
 describe("sleep and wake", () => {
   it("stops an idle cloud computer, but not while a device is connected", async () => {
-    const { host, device } = await cloudComputer();
+    const { host, device, id } = await cloudComputer();
     const dev = await socket(devicePath(host), device);
     const fetch = boat("archiving");
-    const busy = await call("POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } });
+    const state = async () => (await call("GET", "/v1/host/sleep", { key: host.sign })).body.state;
+    const before = await state();
+    // Recorded `stopping` before its relay is asked to take the host offline, and put back when the relay refuses or
+    // can't be reached.
+    const asked: unknown[] = [];
+    const RELAY = {
+      idFromName: (name: string) => env.RELAY.idFromName(name),
+      get: (doId: DurableObjectId) => ({
+        fetch: async (url: string, init: RequestInit) => {
+          asked.push((await env.DB.prepare("SELECT state FROM cloud_machines WHERE id = ?").bind(id).first())?.state);
+          return env.RELAY.get(doId).fetch(url, init);
+        },
+      }),
+    } as unknown as typeof env.RELAY;
+    const busy = await callWith({ RELAY }, "POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } });
     expect(busy.body.error.code).toBe("conflict");
+    expect(asked).toEqual(["stopping"]);
+    expect(await state()).toBe(before);
+    const unreachable = {
+      idFromName: RELAY.idFromName,
+      get: () => ({ fetch: () => Promise.reject(new Error("relay unreachable")) }),
+    } as unknown as typeof env.RELAY;
+    expect((await callWith({ RELAY: unreachable }, "POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } })).status).toBe(500);
+    expect(await state()).toBe(before);
     // A relay from an earlier test may still be finishing a wake: only this computer's stop counts.
     const stop = "POST https://boat.dev/api/v1/sandboxes/bx_test/stop";
     expect(calls(fetch)).not.toContain(stop);
@@ -171,7 +217,7 @@ describe("sleep and wake", () => {
     await sleep(100);
     expect((await call("POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } })).status).toBe(200);
     expect(calls(fetch).filter((c) => c === stop)).toHaveLength(1);
-    expect((await call("GET", "/v1/host/sleep", { key: host.sign })).body.state).toBe("stopping");
+    expect(await state()).toBe("stopping");
     expect((await call("POST", "/v1/host/sleep", { key: (await newHost()).sign, body: {} })).status).toBe(404);
   });
 
@@ -192,15 +238,57 @@ describe("sleep and wake", () => {
     expect((await dev.nextT("presence")).online).toBe(true);
   });
 
-  it("takes the host back when the machine never stopped", async () => {
-    const { host, device, hostWs } = await cloudComputer();
-    boat("archiving");
-    expect((await call("POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } })).status).toBe(200);
-    boat("ready");
+  it("takes the host back at the first wake when the provider was too busy to stop it", async () => {
+    const { host, device } = await cloudComputer();
+    boat("ready", { "/sandboxes/bx_test/stop": [429, { code: "rate_limited" }] });
+    const refused = await call("POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } });
+    expect(refused.body.error.code).toBe("providerUnavailable");
+    expect((await call("GET", "/v1/host/sleep", { key: host.sign })).body.state).toBe("running");
     const dev = await socket(devicePath(host), device);
     expect((await dev.nextT("presence")).online).toBe(false);
     expect((await dev.nextT("presence")).online).toBe(true);
-    expect((await hostWs.nextT("open")).dk).toBe(ref.b64url(device.pub));
+  });
+
+  it("doesn't take the host back for a wake that read its machine before it asked to sleep again", async () => {
+    const { host, device } = await cloudComputer();
+    // A stop turned down as busy: recorded running, its host connected but offline.
+    boat("ready", { "/sandboxes/bx_test/stop": [429, { code: "rate_limited" }] });
+    await call("POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } });
+    // A wake reads it as running; the host asks to sleep again before the provider answers.
+    let answer!: () => void;
+    const held = new Promise<void>((r) => (answer = r));
+    const fetch = spyFetch().mockImplementation(async (_url, init) => {
+      if (init?.method !== "POST") await held;
+      return Response.json({ ok: true, sandbox: { id: "bx_test", state: init?.method === "POST" ? "archiving" : "ready" } });
+    });
+    const wakeBody = JSON.stringify({ wake: true });
+    const waking = relay(host).fetch("https://do/internal/changed", { method: "POST", headers: { "X-Codync-Internal": "1" }, body: wakeBody });
+    await vi.waitFor(() => expect(calls(fetch)).toContain("GET https://boat.dev/api/v1/sandboxes/bx_test"));
+    expect((await call("POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } })).status).toBe(200);
+    answer();
+    await waking;
+    // Still running only because its stop hasn't taken effect yet: the host stays offline.
+    const dev = await socket(devicePath(host), device);
+    expect((await dev.nextT("presence")).online).toBe(false);
+    await dev.none((m) => m.t === "presence" && m.online === true);
+  });
+
+  it("takes the host back when the machine never stopped", async () => {
+    const computer = await cloudComputer();
+    const dev = await wakeWhileStopping(computer);
+    // Its stop had all the time it needs, and the wake asks again.
+    await env.DB.prepare("UPDATE cloud_machines SET updated_at = updated_at - ? WHERE id = ?").bind(STOP_SETTLE_MS, computer.id).run();
+    await alarmAfter(computer.host, WAKE_RETRY_MS + 1_000);
+    expect((await dev.nextT("presence")).online).toBe(true);
+    expect((await computer.hostWs.nextT("open")).dk).toBe(ref.b64url(computer.device.pub));
+  });
+
+  it("keeps a wake that came while its stop was taking effect, and starts it once stopped", async () => {
+    const computer = await cloudComputer();
+    await wakeWhileStopping(computer);
+    const retried = stoppedBoat();
+    await alarmAfter(computer.host, WAKE_RETRY_MS + 1_000);
+    expect(calls(retried)).toContain("POST https://boat.dev/api/v1/sandboxes/bx_test/resume");
   });
 
   it("wakes it when a device connects while it sleeps", async () => {
@@ -248,12 +336,7 @@ describe("sleep and wake", () => {
     // The retry runs from the alarm once its time has come.
     await sleep(100);
     const retried = stoppedBoat();
-    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 21_000 });
-    try {
-      await runDurableObjectAlarm(relay(host));
-    } finally {
-      vi.useRealTimers();
-    }
+    await alarmAfter(host, 21_000);
     expect(calls(retried)).toContain("POST https://boat.dev/api/v1/sandboxes/bx_test/resume");
   });
 
@@ -271,12 +354,7 @@ describe("sleep and wake", () => {
     await socket(devicePath(host), device);
     await sleep(100);
     expect(calls(second)).toEqual([]);
-    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 61_000 });
-    try {
-      await runDurableObjectAlarm(relay(host));
-    } finally {
-      vi.useRealTimers();
-    }
+    await alarmAfter(host, 61_000);
     expect(calls(second)).toContain("POST https://boat.dev/api/v1/sandboxes/bx_test/resume");
   });
 });

@@ -6,7 +6,7 @@
 //! Everything here is blocking (`std::fs`, `std::process`): async callers go
 //! through `spawn_blocking`.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 
 mod addresses;
 pub use addresses::{addresses, interface_addresses, public_addresses};
+pub mod bind;
 
 #[cfg(unix)]
 mod unix;
@@ -56,9 +57,15 @@ pub fn binary_identity() -> Option<&'static (String, String)> {
     BINARY_IDENTITY.get()
 }
 
+/// How long a stopping host may take: its bots get 5 s, then its agents and dev servers up to 10 s to end by themselves
+/// and 15 s to end from their leaves up (`agent/acp.rs`, `agent/process.rs`), then its analytics are sent (3 s). launchd
+/// waits as long before it kills the host (`ExitTimeOut`), which would leave its agents running.
+const HOST_EXIT: Duration = Duration::from_secs(40);
+
 /// Do not claim a restart succeeded while an old daemon still holds the data.
 fn wait_for_host_exit() -> Result<()> {
-    let deadline = Instant::now() + Duration::from_secs(15);
+    // A moment past launchd's kill.
+    let deadline = Instant::now() + HOST_EXIT + Duration::from_secs(5);
     loop {
         match lock_host() {
             Ok(lock) => {
@@ -76,6 +83,9 @@ fn wait_for_host_exit() -> Result<()> {
 pub const DEFAULT_PORT: u16 = crate::environment::Environment::current().port();
 /// Marker between our command and a wrapped user status line.
 const STATUSLINE_MARK: &str = " statusline --";
+/// What follows [`STATUSLINE_MARK`] in the current form (`--command=<one quoted word>`); without it the
+/// rest is an older unquoted wrap. A host older than this form restores `command=…` verbatim on uninstall.
+const STATUSLINE_COMMAND: &str = "command=";
 
 /// The user's home. Codync can't do anything useful without one, so its absence is fatal.
 pub(crate) fn home() -> PathBuf {
@@ -113,14 +123,6 @@ pub fn lock_host() -> Result<std::fs::File> {
     fs2::FileExt::try_lock_exclusive(&file)
         .context("another codync-host is already running for this data directory")?;
     Ok(file)
-}
-
-fn run(cmd: &str, args: &[&str]) -> Result<()> {
-    let ok = Command::new(cmd).args(args).status().with_context(|| format!("running {cmd}"))?.success();
-    if !ok {
-        bail!("{cmd} {} failed", args.join(" "));
-    }
-    Ok(())
 }
 
 /// Holds a sleep inhibitor while any bot is working.
@@ -279,31 +281,40 @@ fn write_settings(settings: &Path, v: &Value) -> Result<()> {
 
 /// Routes Claude Code's status line through `codync-host statusline` so usage
 /// limits reach the host locally. An existing status line keeps working: it is
-/// wrapped (`codync-host statusline -- <original>`) and restored on uninstall.
+/// wrapped as one quoted word (`codync-host statusline --command='<original>'`), so
+/// Claude Code's shell hands it over intact and the host runs it through a shell
+/// once, and it is restored on uninstall.
 pub fn ensure_statusline(settings: &Path) -> Result<bool> {
     let mut v = read_settings(settings)?.unwrap_or_else(|| json!({}));
-    let mut current = v["statusLine"]["command"].as_str().map(str::to_owned);
+    let current = v["statusLine"]["command"].as_str().map(str::to_owned);
     if v.get("statusLine").is_some() && current.is_none() {
         return Ok(false); // not a command status line; leave it alone
     }
-    let exe = current_exe()?;
-    let ours = format!("'{}' statusline", exe.to_string_lossy());
-    if let Some(cmd) = current.as_deref() {
-        if cmd.starts_with(&ours) {
-            return Ok(false);
+    let exe = format!("'{}'", current_exe()?.to_string_lossy());
+    let ours = format!("{exe} statusline");
+    // Ours (maybe from a host binary that moved, or in the older unquoted form) gets re-pointed.
+    let original = current.as_deref().map(|cmd| unwrap_statusline(cmd).unwrap_or_else(|| cmd.to_owned()));
+    let command = match original.filter(|o| !o.trim().is_empty()) {
+        Some(original) => {
+            let word = shlex::try_quote(&original).context("the status line command holds a NUL")?;
+            format!("{exe}{STATUSLINE_MARK}{STATUSLINE_COMMAND}{word}")
         }
-        // Wrapped by a host binary that moved or was deleted: re-point it.
-        if let Some(original) = unwrap_statusline(cmd) {
-            current = Some(original.to_owned()).filter(|o| !o.is_empty());
-        }
-    }
-    let command = match current {
-        Some(original) => format!("{ours} -- {original}"),
         None => ours,
     };
+    if current.as_deref() == Some(command.as_str()) {
+        return Ok(false);
+    }
     v["statusLine"] = json!({"type": "command", "command": command});
     write_settings(settings, &v)?;
     Ok(true)
+}
+
+/// [`ensure_statusline`] for a status line we already wrap (a host that moved, or an older form),
+/// so an update picks up the current form; a status line the user took back stays theirs.
+pub fn refresh_statusline(settings: &Path) -> Result<bool> {
+    let ours = read_settings(settings)?
+        .is_some_and(|v| v["statusLine"]["command"].as_str().is_some_and(|cmd| unwrap_statusline(cmd).is_some()));
+    if ours { ensure_statusline(settings) } else { Ok(false) }
 }
 
 /// Undoes [`ensure_statusline`].
@@ -312,7 +323,7 @@ pub fn restore_statusline(settings: &Path) -> Result<()> {
     let Some(cmd) = v["statusLine"]["command"].as_str().map(str::to_owned) else { return Ok(()) };
     match unwrap_statusline(&cmd) {
         None => return Ok(()),
-        Some("") => {
+        Some(original) if original.is_empty() => {
             if let Some(root) = v.as_object_mut() {
                 root.remove("statusLine");
             }
@@ -324,12 +335,20 @@ pub fn restore_statusline(settings: &Path) -> Result<()> {
 
 /// The command our wrapper wraps (empty when it wraps nothing), or `None`
 /// when `cmd` isn't ours.
-fn unwrap_statusline(cmd: &str) -> Option<&str> {
-    // Ours always starts with the quoted host path followed by ` statusline`.
-    if !cmd.starts_with('\'') || !cmd.contains("' statusline") {
+fn unwrap_statusline(cmd: &str) -> Option<String> {
+    // Ours always starts with the quoted host path followed by ` statusline`: this host, or one that moved.
+    let (program, _) = cmd.strip_prefix('\'')?.split_once("' statusline")?;
+    let program = Path::new(program);
+    let named = program.file_name().is_some_and(|name| name == "codync-host" || name == "codync-host.exe");
+    if !named && current_exe().ok().as_deref() != Some(program) {
         return None;
     }
-    Some(cmd.split_once(STATUSLINE_MARK).map_or("", |(_, original)| original.trim()))
+    let Some((_, rest)) = cmd.split_once(STATUSLINE_MARK) else { return Some(String::new()) };
+    Some(match rest.strip_prefix(STATUSLINE_COMMAND) {
+        Some(word) => shlex::split(word).map_or_else(|| word.to_owned(), |words| words.join(" ")),
+        // The older unquoted form holds the original verbatim.
+        None => rest.trim().to_owned(),
+    })
 }
 
 #[cfg(test)]
@@ -396,13 +415,69 @@ mod tests {
         let f = temp_settings(r#"{"statusLine":{"type":"command","command":"sh ~/mine.sh"}}"#);
         assert!(ensure_statusline(&f).unwrap());
         assert!(!ensure_statusline(&f).unwrap(), "idempotent");
-        assert!(read(&f)["statusLine"]["command"].as_str().unwrap().ends_with("statusline -- sh ~/mine.sh"));
+        assert!(read(&f)["statusLine"]["command"].as_str().unwrap().ends_with("statusline --command='sh ~/mine.sh'"));
         let stale = r#"{"statusLine":{"type":"command","command":"'/gone/codync-host' statusline -- sh ~/mine.sh"}}"#;
         std::fs::write(&f, stale).unwrap();
         assert!(ensure_statusline(&f).unwrap(), "re-points a moved host");
         let cmd = read(&f)["statusLine"]["command"].as_str().unwrap().to_owned();
-        assert!(!cmd.contains("/gone/") && cmd.ends_with("statusline -- sh ~/mine.sh"));
+        assert!(!cmd.contains("/gone/") && cmd.ends_with("statusline --command='sh ~/mine.sh'"));
         restore_statusline(&f).unwrap();
         assert_eq!(read(&f)["statusLine"]["command"], "sh ~/mine.sh");
+    }
+
+    #[test]
+    fn an_unquoted_wrap_gets_quoted() {
+        let ours = format!("'{}' statusline", current_exe().unwrap().to_string_lossy());
+        let settings = |command: &str| json!({"statusLine": {"type": "command", "command": command}}).to_string();
+        // An older wrap whose original is one quoted word keeps its quotes.
+        for (original, quoted) in [("sh ~/mine.sh", "'sh ~/mine.sh'"), ("'/a b/s.sh'", r#""'/a b/s.sh'""#)] {
+            let f = temp_settings(&settings(&format!("{ours} -- {original}")));
+            assert!(refresh_statusline(&f).unwrap());
+            assert_eq!(read(&f)["statusLine"]["command"], format!("{ours} --command={quoted}"));
+            restore_statusline(&f).unwrap();
+            assert_eq!(read(&f)["statusLine"]["command"], original);
+        }
+        let f = temp_settings(&settings(&ours));
+        assert!(!ensure_statusline(&f).unwrap(), "wraps nothing");
+        restore_statusline(&f).unwrap();
+        assert!(read(&f).get("statusLine").is_none());
+        let f = temp_settings(&settings("sh ~/mine.sh"));
+        assert!(!refresh_statusline(&f).unwrap(), "the user's own line stays theirs");
+        // Also one that only looks like ours: another program's `statusline`.
+        let f = temp_settings(&settings("'/usr/local/bin/my-helper' statusline"));
+        assert!(!refresh_statusline(&f).unwrap());
+        restore_statusline(&f).unwrap();
+        assert_eq!(read(&f)["statusLine"]["command"], "'/usr/local/bin/my-helper' statusline");
+    }
+
+    /// Runs the settings command the way Claude Code does (one shell), with the host
+    /// replaced by `printf` to capture its argv, parsed and joined as `Sub::Statusline` does.
+    #[cfg(unix)]
+    fn run_statusline(cmd: &str) -> String {
+        let exe = format!("'{}'", current_exe().unwrap().to_string_lossy());
+        let args = cmd.strip_prefix(&exe).expect("our wrapper");
+        let out = crate::shell::line(&format!("printf '%s\\0' {args}")).std().output().unwrap();
+        let printed = String::from_utf8(out.stdout).unwrap();
+        let cli = <crate::Cli as clap::Parser>::try_parse_from(
+            std::iter::once("codync-host").chain(printed.split_terminator('\0')),
+        )
+        .unwrap();
+        let Some(crate::Sub::Statusline { command, wrapped, .. }) = cli.cmd else { panic!("not statusline") };
+        let out = crate::shell::line(&command.unwrap_or_else(|| wrapped.join(" "))).std().output().unwrap();
+        String::from_utf8(out.stdout).unwrap()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_wrapped_status_line_keeps_its_shell_quoting() {
+        for original in ["printf '%s|' 'a b' c", r#"/bin/sh -c 'X="a  b"; printf "%s|" "$X"' && printf ok"#] {
+            let expected = crate::shell::line(original).std().output().unwrap();
+            let f = temp_settings(&json!({"statusLine": {"type": "command", "command": original}}).to_string());
+            ensure_statusline(&f).unwrap();
+            let cmd = read(&f)["statusLine"]["command"].as_str().unwrap().to_owned();
+            assert_eq!(run_statusline(&cmd), String::from_utf8(expected.stdout).unwrap(), "{cmd}");
+            restore_statusline(&f).unwrap();
+            assert_eq!(read(&f)["statusLine"]["command"], original);
+        }
     }
 }

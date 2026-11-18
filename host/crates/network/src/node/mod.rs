@@ -1,7 +1,9 @@
 //! One computer on the network: its iroh endpoint, its roster and the agents it offers.
 
+mod conns;
 mod directory;
 mod endpoint;
+mod hello;
 mod inbound;
 mod outbox;
 
@@ -14,20 +16,16 @@ use crate::wire::{self, ALPN, Agent, Request, Response, Ticket};
 use anyhow::{Context, Result, anyhow, bail};
 use iroh::endpoint::Connection;
 use iroh::protocol::Router;
-use iroh::{Endpoint, EndpointAddr, EndpointId};
+use iroh::{Endpoint, EndpointId};
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, watch};
-use tokio::task::JoinSet;
 
 /// How long an invite stays good.
 pub const INVITE_FOR: Duration = Duration::from_hours(1);
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-/// Long enough for the other computer to knock on its agent's harness.
-const CALL_TIMEOUT: Duration = Duration::from_secs(20);
 const INBOX_SIZE: usize = 256;
 /// Letters whose handoff count a reply may need, and requests an answer may come back to, newest kept.
 const HEARD_MAX: usize = 1000;
@@ -57,11 +55,17 @@ struct Inner {
     taken: Mutex<VecDeque<String>>,
     /// Who may write to this computer's agents (`rules`).
     rules: Mutex<Vec<Rule>>,
+    /// What a sender no rule matches gets ([`Node::set_default_access`]).
+    default_access: Mutex<rules::Access>,
     /// Requests this computer sent, newest kept: the letter's id, the computer it went to and
     /// the agent here that sent it. That computer's answer to that agent passes the rules.
     asked: Mutex<VecDeque<(String, EndpointId, String)>>,
     outbox: Mutex<Vec<outbox::Queued>>,
     inbox: mpsc::Sender<Message>,
+    /// The open connection to each other computer, whichever side opened it ([`conns`]).
+    conns: Mutex<HashMap<EndpointId, Connection>>,
+    /// One connection attempt at a time per computer.
+    dialing: Mutex<HashMap<EndpointId, Arc<tokio::sync::Mutex<()>>>>,
     /// The command an agent the network knocks on runs to answer.
     reply_command: Mutex<String>,
     /// What the app calls this network; invites carry it (`set_network_name`).
@@ -81,7 +85,7 @@ impl Node {
     pub async fn start(dir: &Path, connector: &Connector) -> Result<(Self, mpsc::Receiver<Message>)> {
         std::fs::create_dir_all(dir)?;
         let key = endpoint::load_key(dir)?;
-        let endpoint = endpoint::bind(key, connector).await?;
+        let endpoint = endpoint::bind(dir, key, connector).await?;
         let (tx, rx) = mpsc::channel(INBOX_SIZE);
         let inner = Arc::new(Inner {
             endpoint: endpoint.clone(),
@@ -97,9 +101,12 @@ impl Node {
             held: Mutex::default(),
             taken: Mutex::default(),
             rules: Mutex::default(),
+            default_access: Mutex::new(rules::Access::Allow),
             asked: Mutex::default(),
             outbox: Mutex::default(),
             inbox: tx,
+            conns: Mutex::default(),
+            dialing: Mutex::default(),
             reply_command: Mutex::new("codync-network".into()),
             network_name: Mutex::default(),
             changed: watch::Sender::new(()),
@@ -107,8 +114,6 @@ impl Node {
         let router = Router::builder(endpoint).accept(ALPN, inbound::Handler(inner.clone())).spawn();
         endpoint::settle(&inner.endpoint, connector).await;
         inner.locate(inner.endpoint.addr())?;
-        // Catch up with the others: a computer that was off may have missed a removal.
-        inner.clone().hello_all();
         tokio::spawn(outbox::retry_loop(Arc::downgrade(&inner)));
         tokio::spawn(endpoint::follow_addr(Arc::downgrade(&inner), inner.endpoint.watch_addr()));
         Ok((Self { inner, router }, rx))
@@ -164,10 +169,10 @@ impl Node {
         }
         let ticket = Ticket::decode(ticket)?;
         let request = Request::Join { network: ticket.network, secret: ticket.secret, name: check_name(name)? };
-        let conn = tokio::time::timeout(CONNECT_TIMEOUT, self.inner.endpoint.connect(ticket.addr, ALPN))
+        let conn = conns::dial(&self.inner.endpoint, ticket.addr)
             .await
-            .context("the inviting computer didn't answer; is it on?")??;
-        let answer = wire::call(&conn, &request).await;
+            .context("the inviting computer didn't answer; is it on?")?;
+        let answer = conns::ask(&conn, &request).await;
         conn.close(0u32.into(), b"done");
         match answer? {
             Response::Welcome { roster } if roster.network == ticket.network => {
@@ -187,7 +192,11 @@ impl Node {
                 self.inner.save(&roster)?;
                 *guard = Some(roster);
                 drop(guard);
-                self.inner.clone().hello_all();
+                // Before the app offers its agents, a hello would tell the others it offers none
+                // (and could land after the one that does): the first `set_agents` says it.
+                if self.inner.ready.load(Ordering::Acquire) {
+                    self.inner.clone().hello_all();
+                }
                 Ok(())
             }
             Response::Refused { reason } => bail!("{reason}"),
@@ -228,8 +237,9 @@ impl Node {
         Ok(())
     }
 
-    /// What this computer offers. The first call opens it to letters, and the others hear at once,
-    /// so what waited for it while it started comes now.
+    /// What this computer offers. The first call opens it to letters, and the others hear at once
+    /// (the hello that catches up with them, which a computer that was off may need for a removal it
+    /// missed), so what waited for it while it started comes now.
     pub fn set_agents(&self, agents: impl IntoIterator<Item = (Agent, Reach)>) {
         let before = self.inner.offered();
         // A session the network knocks on is the kind its harness is, whatever the app said.
@@ -267,6 +277,17 @@ impl Node {
         locked(&self.inner.rules).clone()
     }
 
+    /// What a sender no rule matches gets: `Allow` unless the app sets another (a Codync host sets `Auto`). Only an
+    /// app that holds its agents to a ceiling should set `Auto` or `Ask`: a letter under one to a session the network
+    /// knocks on is refused.
+    pub fn set_default_access(&self, access: rules::Access) {
+        *locked(&self.inner.default_access) = access;
+    }
+
+    pub fn default_access(&self) -> rules::Access {
+        *locked(&self.inner.default_access)
+    }
+
     /// What the app calls this network (`home`, `work`) when a computer is in several: the invites
     /// it makes carry the name, so the computer that joins can call it the same ([`crate::read_invite`]).
     pub fn set_network_name(&self, name: Option<String>) {
@@ -280,13 +301,8 @@ impl Node {
 
     /// Every computer in the network, asked now for what it offers.
     pub async fn peers(&self) -> Result<Vec<Peer>> {
-        let roster = self.inner.roster()?;
-        let mut asks = JoinSet::new();
-        for id in roster.members().keys().filter(|id| **id != self.id()).copied() {
-            let inner = self.inner.clone();
-            asks.spawn(async move { inner.hello(id).await });
-        }
-        while asks.join_next().await.is_some() {}
+        self.inner.roster()?;
+        self.inner.hello_each(self.inner.others()).await;
         Ok(self.directory())
     }
 
@@ -416,70 +432,8 @@ impl Inner {
     /// lock until `roster` is the one kept in memory, so a watcher woken here reads it.
     fn save(&self, roster: &Roster) -> Result<()> {
         roster.save(&self.dir)?;
+        self.close_outsiders(roster);
         self.changed.send_replace(());
-        Ok(())
-    }
-
-    async fn connect(&self, id: EndpointId) -> Result<Connection> {
-        let addr = locked(&self.roster)
-            .as_ref()
-            .and_then(|r| r.members().get(&id).map(|m| m.addr.clone()))
-            .unwrap_or_else(|| EndpointAddr::new(id));
-        // ponytail: a new connection per call; keep them open when traffic makes setup cost show.
-        Ok(tokio::time::timeout(CONNECT_TIMEOUT, self.endpoint.connect(addr, ALPN)).await??)
-    }
-
-    async fn call(&self, id: EndpointId, request: &Request) -> Result<Response> {
-        let conn = self.connect(id).await?;
-        let answer = tokio::time::timeout(CALL_TIMEOUT, wire::call(&conn, request)).await;
-        conn.close(0u32.into(), b"done");
-        answer?
-    }
-
-    /// Swaps rosters and agent lists with one member.
-    async fn hello(self: &Arc<Self>, id: EndpointId) -> Result<Vec<Agent>> {
-        let request = Request::Hello { roster: self.roster()?, agents: self.offered() };
-        let answer = self.call(id, &request).await;
-        let agents = match answer {
-            Ok(Response::Hello { roster, agents }) => {
-                self.merge(&roster)?;
-                self.clone().flush(id);
-                agents
-            }
-            Ok(Response::Refused { reason }) => {
-                self.saw(id, None);
-                bail!("{reason}")
-            }
-            Ok(_) => bail!("unexpected answer"),
-            Err(e) => {
-                self.saw(id, None);
-                return Err(e);
-            }
-        };
-        self.saw(id, Some(agents.clone()));
-        Ok(agents)
-    }
-
-    /// Says hello to every other member in the background, so a change reaches them.
-    fn hello_all(self: Arc<Self>) {
-        let Ok(roster) = self.roster() else { return };
-        let me = self.me();
-        for id in roster.members().keys().copied().filter(|id| *id != me) {
-            let inner = self.clone();
-            tokio::spawn(async move {
-                if let Err(e) = inner.hello(id).await {
-                    tracing::debug!(peer = %id.fmt_short(), error = format!("{e:#}"), "hello didn't get through");
-                }
-            });
-        }
-    }
-
-    fn merge(&self, theirs: &Roster) -> Result<()> {
-        let mut guard = locked(&self.roster);
-        let Some(mine) = guard.as_mut() else { return Ok(()) };
-        if mine.merge(theirs) {
-            self.save(mine)?;
-        }
         Ok(())
     }
 }
@@ -498,4 +452,27 @@ fn remember<T>(list: &mut VecDeque<T>, item: T, max: usize) {
         list.pop_front();
     }
     list.push_back(item);
+}
+
+#[cfg(test)]
+mod testing {
+    use crate::reach::Reach;
+    use crate::wire::{Agent, AgentKind};
+    use std::time::Duration;
+
+    /// An agent the app takes letters for.
+    pub(super) fn agent(id: &str) -> (Agent, Reach) {
+        (Agent { id: id.into(), name: id.into(), about: String::new(), kind: AgentKind::Codync }, Reach::App)
+    }
+
+    /// Waits up to 10 s until `done`.
+    pub(super) async fn until(what: &str, done: impl Fn() -> bool) {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !done() {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("timed out waiting until {what}"));
+    }
 }

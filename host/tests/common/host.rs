@@ -5,6 +5,7 @@
 
 use serde_json::{Value, json};
 use std::{
+    ffi::{OsStr, OsString},
     path::PathBuf,
     process::Child,
     time::{Duration, Instant},
@@ -17,6 +18,8 @@ pub struct Host {
     /// `http://127.0.0.1:<port>`.
     pub base: String,
     pub token: String,
+    /// What [`Self::start_with`] set on top of the test host's own, kept by [`Self::restart`].
+    env: Vec<(String, OsString)>,
 }
 
 impl Drop for Host {
@@ -31,12 +34,13 @@ impl Host {
         Self::start_with(&[]).await
     }
 
-    /// [`Self::start`] with `env` on top of the test host's own. [`Self::restart`] doesn't keep it.
-    pub async fn start_with(env: &[(&str, &std::ffi::OsStr)]) -> Self {
+    /// [`Self::start`] with `env` on top of the test host's own.
+    pub async fn start_with(env: &[(&str, &OsStr)]) -> Self {
         let home = std::env::temp_dir().join(format!("codync-memory-e2e-{}", uuid::Uuid::new_v4()));
         let (child, base) = super::serve_with(&home, env).await;
         let token = std::fs::read_to_string(home.join("token")).unwrap().trim().to_owned();
-        Self { child, home, base, token }
+        let env = env.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect();
+        Self { child, home, base, token, env }
     }
 
     /// Kills the host outright, as a crash would. `restart` starts it again.
@@ -45,11 +49,12 @@ impl Host {
         let _ = self.child.wait();
     }
 
-    /// Stops the host, lets `between` change its files, and starts it again on the same data.
+    /// Stops the host, lets `between` change its files, and starts it again on the same data and env.
     pub async fn restart(&mut self, between: impl FnOnce(&std::path::Path)) {
         super::stop(&mut self.child);
         between(&self.home);
-        let (child, base) = super::serve(&self.home).await;
+        let env: Vec<(&str, &OsStr)> = self.env.iter().map(|(k, v)| (k.as_str(), v.as_os_str())).collect();
+        let (child, base) = super::serve_with(&self.home, &env).await;
         self.child = child;
         self.base = base;
     }
@@ -148,10 +153,15 @@ impl Host {
 
     /// A bot running `tests/fixtures/<fixture>` with `args`.
     pub async fn fixture_bot(&self, name: &str, fixture: &str, args: &str) -> String {
-        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(fixture);
-        let command = format!("{} {args}", super::python_agent(&script));
+        let command = super::fixture_command(fixture, args);
         let bot = json!({"name": name, "backend": "custom", "command": command, "connectors": [], "notify": false});
         self.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned()
+    }
+
+    /// From here `bot` takes its routine runs and other bots' requests as turns in its chat, not as items in its
+    /// box: it manages the team, which a task can't.
+    pub async fn works_in_chat(&self, bot: &str) {
+        self.call("updateBot", json!({"id": bot, "manageTeam": true})).await;
     }
 
     /// Sends `text` and waits for the bot's reply.
@@ -178,9 +188,14 @@ impl Host {
         }
     }
 
+    /// `bot`'s folder, where its fixture agent runs.
+    pub fn workspace(&self, bot: &str) -> PathBuf {
+        self.home.join("bots").join(bot).join("workspace")
+    }
+
     /// The JSON lines a fixture agent logged to `file` in a bot's workspace (none before it started).
     pub fn log(&self, bot: &str, file: &str) -> Vec<Value> {
-        let log = std::fs::read_to_string(self.home.join("bots").join(bot).join("workspace").join(file));
+        let log = std::fs::read_to_string(self.workspace(bot).join(file));
         log.unwrap_or_default().lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).collect()
     }
 

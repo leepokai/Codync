@@ -132,7 +132,7 @@ function CreateLayout({ title, preview, name, placeholder, onName, canCreate, co
 
   return (
     <VStack className="create-sheet">
-      <ModalHeader title={title} />
+      <ModalHeader title={tr(title)} />
       <VStack align="center" gap={20} className="create-body">
         {preview}
         <input
@@ -140,7 +140,7 @@ function CreateLayout({ title, preview, name, placeholder, onName, canCreate, co
           autoFocus
           value={name}
           placeholder={tr(placeholder)}
-          aria-label="Name"
+          aria-label={tr('Name')}
           onChange={(e) => onName(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) submit()

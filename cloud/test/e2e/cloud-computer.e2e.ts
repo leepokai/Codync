@@ -47,7 +47,6 @@ async function main() {
   if (swept.length) console.log(`  swept test machines left behind: ${swept.join(", ")}`);
   await cloud.start({
     CLOUD_SECRET_KEYS: `k1:${randomBytes(32).toString("base64")}`,
-    CLOUD_COMPUTER_USERS: USER_ID,
     // A machine a crashed run leaves behind stops by itself; two hours cover the long run.
     CLOUD_AUTO_STOP_SECONDS: "7200",
     CLOUD_MACHINE_PREFIX: TEST_PREFIX,
@@ -58,7 +57,6 @@ async function main() {
     ...(proxy ? { BOAT_API_URL: `http://127.0.0.1:${proxyPort}` } : {}),
   });
   const token = await cloud.token(USER_ID);
-  check((await cloud.call("POST", "/v1/cloud-computers", { token: await cloud.token("user_not_listed") })).status === 403, "a user off the list is refused");
   check((await cloud.call("POST", "/v1/cloud-computers", { token })).status === 409, "no cloud computer before the user's own key");
   const saved = await cloud.call("PUT", "/v1/cloud-credentials/boat", { token, body: { key } });
   check(saved.body.credential?.hint === `${key.slice(0, key.indexOf("_") + 1)}…${key.slice(-4)}`, `Boat took the key; only its hint comes back (${saved.status})`);

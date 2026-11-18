@@ -3,11 +3,13 @@ import { registerAppearance } from './appearance'
 import { execFileSync } from 'node:child_process'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
-import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, session, shell, type IpcMainInvokeEvent, type OpenDialogOptions } from 'electron'
-import type { HostSnapshot, WindowCommand } from '../shared/ipc'
+import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, session, shell, type IpcMainInvokeEvent, type OpenDialogOptions } from 'electron'
+import type { HostSnapshot, TraySummary, WindowCommand } from '../shared/ipc'
+import { chatWindowMinHeight, chatWindowMinWidth } from '../shared/chat-layout'
 import { devPort, HostController } from './host-controller'
 import { registerFileSaves } from './file-saves'
 import { keepArtifactsInFrame, registerArtifacts, registerArtifactScheme } from './artifacts'
+import { registerRemoteKeyboard } from './remote-keyboard'
 import { registerHostProxy } from './host-proxy'
 import { readClipboardFiles, readFiles } from './files'
 import { Tray } from './tray'
@@ -30,6 +32,9 @@ import { registerErrorReports } from './error-reports'
 import { registerRendererRecovery } from './renderer-recovery'
 import { reportHostSetupFailure } from './analytics'
 import { launchAtLogin, openedAtLogin, setLaunchAtLogin, updateLoginItem } from './login-item'
+import { applyMenu } from './app-menu'
+import { activate, present, webPreferences } from './headless'
+import { resolvedLanguage } from '../renderer/lib/l10n'
 
 /** macOS's user-facing computer name, else the host name. */
 function computerName() {
@@ -77,23 +82,31 @@ function openChat() {
   if (chat) {
     // Shown again after being hidden (closed to the background): the launch itself is `app_opened`.
     if (!chat.isVisible() && !chat.webContents.isLoading()) chat.webContents.send('app:command', { kind: 'windowOpened' } satisfies WindowCommand)
-    chat.show()
-    chat.focus()
+    present(chat)
     return chat
   }
   chat = new BrowserWindow({
     width: 1100,
     height: 760,
-    minWidth: 760,
-    minHeight: 500,
+    minWidth: chatWindowMinWidth,
+    minHeight: chatWindowMinHeight,
     title: app.getName(),
     show: false,
     backgroundColor: background(),
     titleBarStyle: isMac ? 'hidden' : 'default',
-    webPreferences: { preload: join(__dirname, '../preload/index.js'), sandbox: true, contextIsolation: true },
+    webPreferences: webPreferences(join(__dirname, '../preload/index.js')),
   })
   // CODYNC_SHOW_INACTIVE: development and UI checks open the window without taking focus.
-  chat.on('ready-to-show', () => (process.env.CODYNC_SHOW_INACTIVE ? chat?.showInactive() : chat?.show()))
+  chat.on('ready-to-show', () => chat && present(chat, Boolean(process.env.CODYNC_SHOW_INACTIVE)))
+  // The minimum is the page's (chat-window.css): on Windows and Linux the frame and menu bar come on
+  // top of it, or they cut the composer off (#476). Their size is known once the window is shown.
+  // Not `useContentSize`: on Windows its minimum leaves the menu bar out.
+  chat.once('show', () => {
+    if (!chat) return
+    const [width, height] = chat.getSize()
+    const [contentWidth, contentHeight] = chat.getContentSize()
+    chat.setMinimumSize(chatWindowMinWidth + width - contentWidth, chatWindowMinHeight + height - contentHeight)
+  })
   // Closing hides: the window keeps the stores (and the menu bar's data) alive.
   chat.on('close', (e) => quitLifecycle.closeToBackground(e, () => chat?.hide()))
   chat.on('closed', () => (chat = null))
@@ -106,8 +119,7 @@ function openChat() {
 function openPairing() {
   if (pairing) {
     pairing.webContents.send('app:command', { kind: 'reviewApprovals' } satisfies WindowCommand)
-    pairing.show()
-    pairing.focus()
+    present(pairing)
     return
   }
   pairing = new BrowserWindow({
@@ -116,45 +128,19 @@ function openPairing() {
     useContentSize: true,
     resizable: false,
     title: 'Pair iPhone',
+    show: false,
     backgroundColor: background(),
-    webPreferences: { preload: join(__dirname, '../preload/index.js'), sandbox: true, contextIsolation: true },
+    webPreferences: webPreferences(join(__dirname, '../preload/index.js')),
   })
+  pairing.once('ready-to-show', () => pairing && present(pairing))
   pairing.on('closed', () => (pairing = null))
   void pairing.loadURL(rendererURL('pairing'))
 }
 
 export function send(command: WindowCommand, show = true) {
   const window = show ? openChat() : chat
-  if (show && isMac) app.focus({ steal: true })
+  if (show) activate()
   window?.webContents.send('app:command', command)
-}
-
-function menu() {
-  const template: Electron.MenuItemConstructorOptions[] = [
-    ...(isMac ? [{ role: 'appMenu' as const }] : []),
-    { role: 'fileMenu' },
-    { role: 'editMenu' },
-    {
-      label: 'View',
-      submenu: [
-        { label: 'Bigger', accelerator: 'CmdOrCtrl+=', click: () => send({ kind: 'stepTextSize', up: true }, false) },
-        { label: 'Smaller', accelerator: 'CmdOrCtrl+-', click: () => send({ kind: 'stepTextSize', up: false }, false) },
-        { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: () => send({ kind: 'stepTextSize', up: null }, false) },
-        { type: 'separator' },
-        { label: 'New Bot', accelerator: 'CmdOrCtrl+N', click: () => send({ kind: 'newBot' }) },
-        { label: 'Search Bots', accelerator: 'CmdOrCtrl+F', click: () => send({ kind: 'search' }) },
-        { label: 'Toggle Sidebar', accelerator: 'Ctrl+CmdOrCtrl+S', click: () => send({ kind: 'toggleSidebar' }, false) },
-        { label: 'Conversation Details', accelerator: 'Alt+CmdOrCtrl+I', click: () => send({ kind: 'toggleDetails' }, false) },
-        { label: 'Refresh', accelerator: 'CmdOrCtrl+R', click: () => send({ kind: 'refresh' }, false) },
-        { type: 'separator' },
-        // The dev page reload sits on ⇧⌘R, leaving ⌘R to Refresh.
-        ...(app.isPackaged ? [] : [{ role: 'toggleDevTools' as const }, { role: 'forceReload' as const }]),
-        { role: 'togglefullscreen' },
-      ],
-    },
-    { role: 'windowMenu' },
-  ]
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
 function registerIPC(tray: Tray) {
@@ -164,6 +150,7 @@ function registerIPC(tray: Tray) {
   ipcMain.on('app:scheme', (e) => (e.returnValue = identity.scheme))
   registerFileSaves()
   registerArtifacts()
+  registerRemoteKeyboard()
   ipcMain.on('app:version', (e) => (e.returnValue = app.getVersion()))
   ipcMain.on('app:computerName', (e) => (e.returnValue = computerName()))
   ipcMain.on('app:openedAtLogin', (e) => (e.returnValue = openedAtLogin()))
@@ -194,10 +181,13 @@ function registerIPC(tray: Tray) {
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
   ipcMain.handle('app:clipboardFiles', () => readClipboardFiles())
-  ipcMain.on('app:traySummary', (_e, summary) => tray.update(summary))
+  ipcMain.on('app:traySummary', (_e, summary: TraySummary) => {
+    tray.update(summary)
+    applyMenu(summary.language, send)
+  })
   ipcMain.on('app:showWindow', () => {
     openChat()
-    if (isMac) app.focus({ steal: true })
+    activate()
   })
   ipcMain.handle('app:showInDock', () => showInDock())
   ipcMain.handle('app:setShowInDock', (_e, on: boolean) => {
@@ -275,7 +265,7 @@ if (yieldsToInstall()) {
     session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'media' || permission === 'clipboard-sanitized-write'))
     account.register(() => BrowserWindow.getAllWindows())
     updates.register(() => BrowserWindow.getAllWindows())
-    menu()
+    applyMenu(resolvedLanguage('system', app.getLocale()), send)
     host.on('change', () => {
       const s = snapshot()
       for (const w of BrowserWindow.getAllWindows()) w.webContents.send('host:change', s)

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.semantics.contentDescription
@@ -50,16 +51,47 @@ import com.codync.android.core.RoutineDraft
 import com.codync.android.core.RoutineScheduleDraft
 import com.codync.android.core.RoutineSchedulePreview
 import com.codync.android.core.RoutineWebhook
+import com.codync.android.core.TimeoutUnit
 import com.codync.android.core.canEdit
 import com.codync.android.core.routineRepeats
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
+import android.icu.text.MeasureFormat
+import android.icu.util.Measure
+import android.icu.util.MeasureUnit
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+/**
+ * What the bot set itself to do later, on its details' Details page above its routines ([RoutinesView] keeps the
+ * listing current); nothing with none. A follow-up is the bot's own one-off, not a standing routine: a dashed
+ * outline, a clock and a way to drop it.
+ */
+@Composable internal fun FollowUpsSection(bot: Bot, state: AppState, store: AppStore) {
+    val followUps = state.routines[bot.id]?.followUps.orEmpty()
+    if (followUps.isEmpty()) return
+    val idle = state.actualConnection is LinkState.Ready && "routines:${bot.id}" !in state.busy
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionHeading("Later", Modifier.padding(start = 2.dp))
+        for (followUp in followUps) {
+            Row(Modifier.outlinedCard(vertical = 0.dp, dashed = true), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Symbol("clock", Modifier.padding(top = 12.dp), size = 13.dp, tint = Palette.secondary)
+                Column(Modifier.weight(1f).padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(followUp.note, style = Type.system(13f), color = Palette.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(tr(followUp.line(appLocale())), style = Type.caption, color = Palette.secondary)
+                }
+                IconButton("Cancel follow-up", "xmark", Modifier.padding(top = 2.dp).offset(x = 6.dp), enabled = idle) {
+                    store.cancelFollowUp(bot.id, followUp.id)
+                }
+            }
+        }
+    }
+}
 
 /**
  * A bot's routines, on its details' Details page (iOS `RoutinesView`); a row opens its editor.
@@ -85,7 +117,7 @@ import kotlinx.coroutines.launch
                 Row(Modifier.outlinedCard(vertical = 0.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f).plainButton { editing = routine.id }.padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(routine.name, style = Type.system(13f), color = Palette.text)
-                        Text(listing?.summary(routine).orEmpty(), style = Type.caption, color = if (routine.lastError == null) Palette.secondary else Palette.danger)
+                        Text(listing?.summary(routine, translator()).orEmpty(), style = Type.caption, color = if (routine.lastError == null) Palette.secondary else Palette.danger)
                     }
                     CodyncSwitch(routine.enabled, { store.routineAction(bot.id, routine.id, "setRoutineEnabled", it) },
                         Modifier.width(34.dp).semantics { contentDescription = routine.name }, enabled = online && !busy) {}
@@ -143,8 +175,9 @@ import kotlinx.coroutines.launch
         catch (failure: Exception) { if (draft.schedule == requested) previewError = failure.message ?: "Couldn't check this schedule." }
     }
     val canSave = draft.name.isNotBlank() && draft.instruction.isNotBlank() && online && !busy && loaded && checked == draft.schedule && previewError == null
+    val translate = translator()
     val options = buildList {
-        if (routine != null && routine.keepsOriginal && routine.triggers.isNotEmpty()) add("keep" to routine.triggerDescriptions.joinToString(" · "))
+        if (routine != null && routine.keepsOriginal && routine.triggers.isNotEmpty()) add("keep" to routine.scheduleLine(translate))
         add("cron" to "Schedule"); add("webhook" to "Webhook")
     }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
@@ -193,10 +226,10 @@ import kotlinx.coroutines.launch
                 val turn by animateFloatAsState(if (advanced) 180f else 0f, Motion.layout(), label = "Chevron")
                 Row(Modifier.fillMaxWidth().plainButton { advanced = !advanced }.padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Run settings", style = Type.subheadline, color = Palette.secondary)
+                    Text(tr("Run settings"), style = Type.subheadline, color = Palette.secondary)
                     Symbol("chevron.down", Modifier.rotate(turn), size = 11.dp, tint = Palette.secondary)
                     Spacer(Modifier.weight(1f))
-                    if (!advanced) Text("Timeout ${draft.timeoutText}", style = Type.subheadline, color = Palette.tertiary)
+                    if (!advanced) Text(tr("Timeout {time}").replace("{time}", timeoutWords(draft, appLocale())), style = Type.subheadline, color = Palette.tertiary)
                 }
                 AnimatedVisibility(advanced, enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
                     exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
@@ -240,6 +273,13 @@ import kotlinx.coroutines.launch
     }
 }
 
+/** [RoutineDraft.timeoutParts] in words in `locale`; anything else stays as typed plus "s". */
+private fun timeoutWords(draft: RoutineDraft, locale: Locale): String {
+    val (amount, unit) = draft.timeoutParts ?: return "${draft.timeoutSeconds}s"
+    val measure = when (unit) { TimeoutUnit.Hour -> MeasureUnit.HOUR; TimeoutUnit.Minute -> MeasureUnit.MINUTE; TimeoutUnit.Second -> MeasureUnit.SECOND }
+    return MeasureFormat.getInstance(locale, MeasureFormat.FormatWidth.WIDE).format(Measure(amount, measure))
+}
+
 private fun Int.twoDigits() = toString().padStart(2, '0')
 private val HOURS = (0..23).map { it to it.twoDigits() }
 private val MINUTES = (0..59).map { it to it.twoDigits() }
@@ -257,13 +297,13 @@ private val WEEKDAYS = listOf(1 to "Monday", 2 to "Tuesday", 3 to "Wednesday", 4
 
 /** One quiet line under the schedule fields: what the host read, or why it can't (with the cron fields' order while it checks a Custom one). */
 @Composable private fun SchedulePreview(preview: RoutineSchedulePreview?, error: String?, cronHint: Boolean) {
-    Column(Modifier.padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(Modifier.padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         when {
             error != null -> Text(tr(error), style = Type.caption, color = Palette.danger)
             preview != null -> {
-                Text(preview.summary, style = Type.caption.medium, color = Palette.text)
+                Text(tr(preview.summary), style = Type.caption.medium, color = Palette.text)
                 preview.nextRunAt?.let {
-                    val whenText = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))
+                    val whenText = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, appLocale()).format(Date(it))
                     Text(tr("Next {when}").replace("{when}", whenText), style = Type.caption, color = Palette.secondary)
                 }
                 preview.warning?.let { Text(tr(it), style = Type.caption, color = Palette.secondary) }

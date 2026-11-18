@@ -1,10 +1,12 @@
-//! Buffer helpers: text, lines, boxes and fills.
+//! Buffer helpers: text, lines, boxes, fills and scrolled sheets.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 
+use super::super::l10n::tr;
+use super::super::manage::Scroll;
 use super::super::md::width as w;
 use super::style::theme;
 
@@ -80,6 +82,27 @@ pub(in crate::tui) fn frame_box(
         put(buf, r.x + 2, r.y, r.width.saturating_sub(4), &format!(" {t} "), s.patch(bg).add_modifier(Modifier::BOLD));
     }
     Rect::new(r.x + 2, r.y + 1, r.width.saturating_sub(4), r.height.saturating_sub(2))
+}
+
+/// A sheet that only shows text: `lines` from `scroll`'s position, the scroll hint below; sets `scroll`'s bounds.
+pub(super) fn scroll_sheet(buf: &mut Buffer, r: Rect, title: &str, lines: &[Line<'_>], scroll: &Scroll) {
+    let t = theme();
+    let inner = frame_box(buf, r, t.text, t.panel, Some((title, t.text)));
+    if inner.height < 3 {
+        return;
+    }
+    hline(buf, inner.x, inner.bottom() - 2, inner.width, t.dim.patch(t.panel));
+    let hint = format!(" {}", tr("↑↓ scroll · esc close"));
+    put(buf, inner.x, inner.bottom() - 1, inner.width, &hint, t.dim.patch(t.panel));
+
+    let body = Rect::new(inner.x, inner.y, inner.width, inner.height - 2);
+    let h = usize::from(body.height);
+    let max = lines.len().saturating_sub(h);
+    scroll.max.set(max);
+    scroll.page.set(h);
+    for (i, l) in lines.iter().skip(scroll.pos.min(max)).take(h).enumerate() {
+        put_line(buf, body.x, body.y + u(i), body.width, l);
+    }
 }
 
 pub(super) fn dim_all(buf: &mut Buffer) {

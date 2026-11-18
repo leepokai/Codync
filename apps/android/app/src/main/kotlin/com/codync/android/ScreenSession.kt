@@ -86,6 +86,9 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
     private var renewJob: Job? = null
     private var connectionTimer: Job? = null
     private var generation = 0
+    /** The last [view] asked for, sent again whenever an input channel opens: one asked for before it was open (a viewer
+     * that just appeared) or before a reconnect would otherwise be lost. */
+    private var requestedView: Pair<ScreenRect?, ScreenSize>? = null
     /** Where the video draws; the session moves it between tracks and detaches it before a track is freed. */
     var sink: VideoSink? = null
         set(value) {
@@ -366,10 +369,14 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
     }
 
     /** What to stream: a region of the display (points; `null` = all of it) at the viewer's pixel size. */
-    fun view(crop: ScreenRect?, pixels: ScreenSize) = send(ScreenRequests.view(display?.id, crop, pixels))
+    fun view(crop: ScreenRect?, pixels: ScreenSize) {
+        requestedView = crop to pixels
+        send(ScreenRequests.view(display?.id, crop, pixels))
+    }
 
     fun switchDisplay(d: ScreenDisplay) {
         display = d
+        requestedView = requestedView?.let { (_, pixels) -> null to pixels }
         send(ScreenRequests.switchDisplay(d.id))
     }
 
@@ -415,7 +422,12 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
             scope.launch { if (generation == this@ScreenSession.generation) received(reply) }
         }
         override fun onBufferedAmountChange(previous: Long) = Unit
-        override fun onStateChange() = Unit
+        override fun onStateChange() {
+            scope.launch {
+                if (generation != this@ScreenSession.generation || reliable?.state() != DataChannel.State.OPEN) return@launch
+                requestedView?.let { (crop, pixels) -> view(crop, pixels) }
+            }
+        }
     }
 
     private class Sdp(val created: (SessionDescription) -> Unit = {}, val failed: (String?) -> Unit, val onSet: () -> Unit = {}) : SdpObserver {

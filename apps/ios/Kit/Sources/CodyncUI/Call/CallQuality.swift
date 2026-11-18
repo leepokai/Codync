@@ -4,6 +4,9 @@ import Foundation
 /// How each engine of a call fares, for analytics (never content): one `voice_call_quality` per engine, sent when it's
 /// replaced or the call ends — milliseconds until it was ready, reconnects, the first phase stuck too long, why it
 /// failed.
+/// `enabled`: the session has Google Search; `answered`: an answer came with its suggestions.
+enum CallSearchUse { case enabled, answered }
+
 @MainActor
 final class CallQuality {
     /// Connecting (or reconnecting) this long counts as stuck.
@@ -17,6 +20,8 @@ final class CallQuality {
     private var stuck = AnalyticsEvent.VoiceStuck.none
     private var failure = AnalyticsEvent.VoiceFailure.none
     private var last: VoicePhase = .starting
+    /// Answers with Google's search suggestions; nil while this engine's session has no search.
+    private var searches: Int?
     /// When the current connecting phase began.
     private var since: ContinuousClock.Instant
 
@@ -39,6 +44,7 @@ final class CallQuality {
         stuck = .none
         failure = .none
         last = .starting
+        searches = nil
     }
 
     func phase(_ phase: VoicePhase) {
@@ -60,11 +66,17 @@ final class CallQuality {
         if stuck == .none { stuck = .speaking }
     }
 
+    /// Google Search was confirmed for this engine's session, or an answer came with its suggestions.
+    func search(_ use: CallSearchUse) {
+        searches = (searches ?? 0) + (use == .answered ? 1 : 0)
+    }
+
     /// The engine is done (replaced, or the call ended): its report.
     func report() {
         guard let engine else { return }
         if last.isConnecting { checkStuck() }
-        capture(.voiceCallQuality(engine, readyMs: readyMs, reconnects: reconnects, stuck: stuck, failure: failure))
+        capture(.voiceCallQuality(engine, readyMs: readyMs, reconnects: reconnects, stuck: stuck, failure: failure,
+                                  searches: searches))
         self.engine = nil
     }
 

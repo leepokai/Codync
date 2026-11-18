@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -40,11 +41,21 @@ import com.kyant.shapes.RoundedRectangle
     }
 }
 
-/** The `/` list: each command's icon, name and what it does; tapping one runs it (iOS `CommandList`). */
-@Composable internal fun CommandList(commands: List<SlashCommand>, pick: (SlashCommand) -> Unit, modifier: Modifier = Modifier) {
+/**
+ * The `/` list: each command's icon (an agent's own command: that agent's logo), name and what it does; tapping one runs it
+ * (iOS `CommandList`). While any of the agent's own commands is listed, headings set Codync's (Fast mode, skills) apart from the agent's.
+ */
+@Composable internal fun CommandList(commands: List<SlashCommand>, agentRegistry: (String) -> String, agentName: (String) -> String,
+    pick: (SlashCommand) -> Unit, modifier: Modifier = Modifier) {
+    val groups = SlashCommands.groups(commands)
     ComposerList(modifier) {
-        for (command in commands) ComposerListRow(command.title, command.detail, { pick(command) }, command.warning) {
-            Symbol(command.icon, size = 17.dp, tint = Palette.secondary)
+        for ((agent, rows) in groups) {
+            if (groups.size > 1 || agent != null) Text(agent?.let(agentName) ?: "Codync",
+                Modifier.fillMaxWidth().semantics { heading() }.padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 2.dp),
+                style = Type.footnote, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            for (command in rows) ComposerListRow(command.title, command.detail, { pick(command) }, command.warning) {
+                if (agent != null) AgentIcon(agentRegistry(agent), 15.dp) else Symbol(command.icon, size = 17.dp, tint = Palette.secondary)
+            }
         }
     }
 }

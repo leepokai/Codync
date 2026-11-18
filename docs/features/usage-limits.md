@@ -19,6 +19,35 @@ On the wire, `usage` gains `services: [{id, name, shown, registry?}]` next to `p
 
 Adding an agent is one row in `READERS` (`usage/services.rs`). The reader's `id` is the harness id, so a bot's `backend` finds it (`backends::harness_of`, which also answers to the registry id).
 
+## Login profiles
+
+An agent with signed-in [account login profiles](login-profiles.md) lists every login under its name, the default one
+first, each with its own windows. An agent on one login looks as it always did.
+
+- **On the wire:** a provider's `windows` stay the default login's. `loginProfiles: [{id, name, windows, updatedAt}]`
+  holds the accounts, and `defaultLoginProfile` what the default login is called beside them (the user's name for it,
+  or who it signs in). Both are absent while the agent has one login, so an older app shows the default login as before.
+- **Which rows:** `services::sync` lists the signed-in accounts of each agent that gets read
+  (`login_profiles::usage_rows`). An API key has no plan, and a signed-out account nothing to ask. A profile
+  renamed, removed, signed in or signed out (a turn refused for auth too) changes its row right away
+  (`usage::login_profiles_changed`), and a new row is read without waiting for the poll; so is a default login that
+  has no reading yet. The default logins' names follow each sign-in refresh.
+- **How they're read:** the same local reading as the default login, with the agent's own variable pointing its CLI at
+  the profile's folder (`Reader::read_profile`): `claude -p /usage` under `CLAUDE_CONFIG_DIR`, `codex app-server` under
+  `CODEX_HOME`. The profile can't be removed while that check runs (`login_profiles::hold`). Claude's status line and rate-limit events land on the row of the login their session runs on (the
+  status line hook sends `CODYNC_AGENT_ACCOUNT` as `?loginProfile=`). No provider API is called. The other agents'
+  accounts list with **No reading yet**.
+- **A row with nothing read** says **No reading yet**; so does the default login when only an account has numbers,
+  and the agent's row in the chooser while none of its logins has any.
+- **What goes by them:** background work (`near_limit`) and a fallback's rest (`rest::reset_time`) go by the windows
+  of the login the bot runs on (`Usage::windows`).
+- **One agent, one line:** the notch island, the widgets and the mascot's "nearly used up" show the login nearest a
+  limit (`tightestLogin`), without its name. The Usage screens and the terminal UI's sheet show all.
+- **The menu bar, a level at a time** (`shared/tray-usage.ts`): an agent on one login lists its limits under its name,
+  and one with several is a single row that opens every login's, a login with nothing read saying **No reading yet**.
+  With more than one computer in the app, a **Usage limits** title leads a row per connected computer that has limits
+  to show (a paused or offline one is left out rather than shown with old numbers), and each opens its own agents.
+
 ## Readers
 
 | Agent | How it reads | Checked against |
@@ -36,6 +65,12 @@ Adding an agent is one row in `READERS` (`usage/services.rs`). The reader's `id`
 
 The readers checked only against source fail closed: anything unexpected is no reading, never a wrong number. Check one against a real login when a computer has it.
 
+### Claude's rate-limit event
+
+The Claude adapter passes the Agent SDK's `rate_limit_info` through whole, in `usage_update._meta["_claude/rateLimit"]`. Its own `utilization` comes only with a warning or a refusal. A limit that is merely `allowed` has it in `unifiedWindows` (`five_hour`, `seven_day`, `seven_day_overage_included`), which the host reads too; the limit the event is about wins over its entry there. Claude Code marks that field internal and the SDK's types leave it out, so it can go away: an event without it reads as before. `seven_day_overage_included` reads into the `/usage` report's **Weekly · Fable** row (`seven_day_fable`): Claude Code's own name for that kind is "Fable limit", and the event names no model, so the name is fixed in the host.
+
+On a computer where Claude runs on a `claude setup-token` token (`CLAUDE_CODE_OAUTH_TOKEN`), this is the only reading: that token only runs models, so `claude -p /usage` reports no plan limits. The limits then show after a bot's first turn, and only the windows the event lists.
+
 ### An agent's own slash command
 
 `usage/acp_read.rs` runs an ACP slash command that the adapter answers itself. Antigravity's `/usage` is one: its ACP server handles it with no LLM and asks Google with its own login, so the host never touches that login.
@@ -43,7 +78,7 @@ The readers checked only against source fail closed: anything unexpected is no r
 - **Only when advertised.** The command is sent only after the session lists it in `available_commands_update`. Sent to an agent that doesn't know it, it would reach the model and spend the plan it was meant to read.
 - **One session per agent,** resumed for every reading (`usage.session.<id>` in the host's kv): each new Antigravity session leaves a conversation database behind, about 400 KB.
 - **Never a browser.** A signed-out Antigravity starts its browser sign-in as soon as a session opens, and it would do so at every poll. The reading runs with `BROWSER=true`, which its Python honors, then gives up after 30 seconds. Windows has no such command, so there it needs a saved login file first.
-- **A bot's build is left alone.** Installing a new registry build removes the one before it, so while a bot here runs that agent and its current version isn't installed, readings wait for that bot's next start to bring it (`backends::update_pending`). Installs run one at a time and check again once they get their turn.
+- **One install at a time.** A reading and a sign-in check can start the same registry agent at once: its installs run one at a time and check again once they get their turn.
 - **A download isn't cut short.** No timeout wraps a reader's start, or a slow connection would start over at every poll. The handshake has its own.
 
 The report is Markdown meant for people, so an update can change it; `parse` is how that surfaces.

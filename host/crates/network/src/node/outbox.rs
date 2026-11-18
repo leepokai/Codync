@@ -1,9 +1,11 @@
-//! Letters for computers that are away: kept, and sent once they answer again.
+//! Letters for computers that are away: kept, and sent once they answer again. The same retry
+//! pass opens a connection to each member this computer has none open to.
 
 use super::{Inner, locked};
 use crate::wire::{Envelope, Request, Response};
 use anyhow::{Result, bail};
 use iroh::EndpointId;
+use std::collections::HashSet;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -60,11 +62,24 @@ impl Inner {
             }
         });
     }
+
+    /// Says hello to every computer letters wait for and every one with no open connection: one
+    /// that gets through opens a connection and flushes that computer's letters.
+    pub(super) async fn retry(self: &Arc<Self>) {
+        let mut due: HashSet<EndpointId> = {
+            let mut outbox = locked(&self.outbox);
+            outbox.retain(|q| q.since.elapsed() < KEEP_FOR);
+            outbox.iter().map(|q| q.to).collect()
+        };
+        due.extend(self.unconnected());
+        self.hello_each(due).await;
+    }
 }
 
-/// Letters for computers that were away go out when those answer; this asks them now and then.
-/// And every few hours it compares rosters with everyone, so a removal reaches a computer nobody
-/// happened to write to.
+/// Letters for computers that were away go out when those answer; this asks them now and then,
+/// and every computer this one has no open connection to, so a computer whose firewall lets in
+/// only what it started opens one the others then write over. And every few hours it compares
+/// rosters with everyone, so a removal reaches a computer nobody happened to write to.
 pub(super) async fn retry_loop(inner: Weak<Inner>) {
     let mut synced = Instant::now();
     loop {
@@ -74,15 +89,6 @@ pub(super) async fn retry_loop(inner: Weak<Inner>) {
             synced = Instant::now();
             inner.clone().hello_all();
         }
-        let mut waiting: Vec<EndpointId> = {
-            let mut outbox = locked(&inner.outbox);
-            outbox.retain(|q| q.since.elapsed() < KEEP_FOR);
-            outbox.iter().map(|q| q.to).collect()
-        };
-        waiting.dedup();
-        for id in waiting {
-            // A hello that gets through flushes that computer's letters.
-            let _ = inner.hello(id).await;
-        }
+        inner.retry().await;
     }
 }

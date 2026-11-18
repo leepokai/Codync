@@ -7,7 +7,7 @@
 **The open-source Grok Bot alternative.**<br>
 Bring your own agent and subscription — Claude Code, Codex, Gemini CLI, Cursor and 40+ more — as teammates you can message from your phone.
 
-[Website](https://www.codync.dev) · [Docs](https://www.codync.dev/docs) · [Compare](https://www.codync.dev/compare) · [Launch film](https://youtu.be/QAhyZWpV70U) · [X @trycodync](https://x.com/trycodync)
+[Website](https://www.codync.dev) · [Docs](https://www.codync.dev/docs) · [Compare](https://www.codync.dev/compare) · [Launch film](https://youtu.be/QAhyZWpV70U) · [X @trycodync](https://x.com/trycodync) · <ins>[Support Codync ☕](https://ko-fi.com/leepokai)</ins>
 
 [![Star Codync on GitHub](https://img.shields.io/github/stars/leepokai/Codync?style=social&label=Star)](https://github.com/leepokai/Codync/stargazers)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/leepokai)<br>
@@ -23,7 +23,7 @@ macOS: Apple Silicon + Intel (DMG) · Windows: x64 installer · Linux: AppImage 
 [![App Store](https://img.shields.io/badge/App_Store-iOS-0D96F6?logo=apple&logoColor=white)](https://apps.apple.com/app/codync/id6760984418)
 [![Homebrew](https://img.shields.io/badge/Homebrew-codync-FBB040?logo=homebrew&logoColor=white)](https://github.com/leepokai/homebrew-codync)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/KBAX3Qznxh)
-[![WeChat and Lark China](https://img.shields.io/badge/WeChat_/_Lark-China_community-07C160?logo=wechat&logoColor=white)](#community)
+[![Telegram China](https://img.shields.io/badge/Telegram-China_community-26A5E4?logo=telegram&logoColor=white)](https://t.me/+e5egWrp5z4BlOWNl)
 [![Release](https://img.shields.io/github/v/release/leepokai/Codync?color=black)](https://github.com/leepokai/Codync/releases/latest)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 <br>
@@ -40,6 +40,7 @@ macOS: Apple Silicon + Intel (DMG) · Windows: x64 installer · Linux: AppImage 
 <img src="docs/screenshots/desktop-macos.png" width="760" alt="Codync desktop app on macOS: four bots in the sidebar and the welcome screen with no bot selected">
 
 <a href="https://apps.apple.com/app/codync/id6760984418"><img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" height="54" alt="Download on the App Store"></a>
+<a href="https://play.google.com/store/apps/details?id=com.pokai.Codync.android"><img src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg" height="54" alt="Get it on Google Play"></a>
 
 </div>
 
@@ -122,9 +123,9 @@ Open Codync: it sets up the host on first launch. **Open Codync** opens the full
 
 **Windows** — [download codync-windows-x64.exe](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe) and run it. It installs for your user and starts the host at sign-in. The installer isn't code-signed yet, so SmartScreen asks you to confirm it once (**More info → Run anyway**). Not on Windows yet: remote screen, on-device speech and the Claude Code status line hook. Details: [desktop app](docs/architecture/desktop-app.md#platform-notes).
 
-**iPhone** — [get Codync on the App Store](https://apps.apple.com/app/codync/id6760984418) (iOS 26+, free), then scan the QR code from **Pair iPhone…** on the Mac, the Windows or Linux app, or `codync-host pair`.
+**iPhone and Android** — [get Codync on the App Store](https://apps.apple.com/app/codync/id6760984418) (iOS 26+, free) or [on Google Play](https://play.google.com/store/apps/details?id=com.pokai.Codync.android) (Android 10+, free), then scan the QR code from **Pair iPhone…** on the Mac, the Windows or Linux app, or `codync-host pair`.
 
-> **Why the iPhone app can be a version behind:** every iPhone release goes through Apple's App Review first, which usually takes a day or more, so the App Store version can trail the Mac, Windows, Linux and host releases. Your computer accounts for that: an update that needs a newer iPhone app waits until that version is in the App Store, then installs, and the iPhone app shows a reminder when a newer version is available.
+> **Why the iPhone app can be a version behind:** every iPhone release goes through Apple's App Review first, which usually takes a day or more, so the App Store version can trail the Mac, Windows, Linux and host releases. Your computer accounts for that: an update that needs a newer phone app waits until the App Store has the iPhone version and Google Play has the Android version, then installs, and the iPhone app shows a reminder when a newer version is available.
 
 **Linux** — the host, plus the desktop app:
 
@@ -245,16 +246,14 @@ Clients and the host each name the oldest version of the other they still work w
 
 ## Community
 
-| Discord | WeChat · China community | Lark · if you can't join on WeChat |
-| --- | --- | --- |
-| [Join Discord](https://discord.gg/KBAX3Qznxh) for questions, help and feedback. | A community for Codync users in China to share tips, ask questions and give feedback. Scan with regular WeChat; WeCom is not required. | If you can't join the WeChat group, join here instead. Scan with the Lark app; you need a Lark account. |
-| | <img src="web/public/wechat-group.png" width="200" alt="QR code to join the Codync WeChat community for users in China"> | <img src="web/public/lark-group.png" width="200" alt="QR code to join the Codync Lark community for users in China"> |
-| | [Download the QR code](web/public/wechat-group.png) · [WeChat community page](https://www.codync.dev/wechat) | [Download the QR code](web/public/lark-group.png) · [Open in Lark](https://applink.larksuite.com/client/chat/chatter/add_by_link?link_token=210q827f-a135-4b31-8be0-d4baf5lgh4cj&qr_code=true) |
+| Discord | Telegram · China community |
+| --- | --- |
+| [Join Discord](https://discord.gg/KBAX3Qznxh) for questions, help and feedback. | [Join the Telegram group](https://t.me/+e5egWrp5z4BlOWNl), a community for Codync users in China to share tips, ask questions and give feedback. |
 
 ## Contact
 
 - Email: [kevin@codync.dev](mailto:kevin@codync.dev)
-- Questions and bug reports: [GitHub Issues](https://github.com/leepokai/Codync/issues), [Discord](https://discord.gg/KBAX3Qznxh) or [WeChat or Lark (China)](#community)
+- Questions and bug reports: [GitHub Issues](https://github.com/leepokai/Codync/issues), [Discord](https://discord.gg/KBAX3Qznxh) or [Telegram (China)](https://t.me/+e5egWrp5z4BlOWNl)
 - Security issues: report privately as described in [SECURITY.md](SECURITY.md) (GitHub private reporting or email)
 - Community rules: [Code of Conduct](CODE_OF_CONDUCT.md)
 

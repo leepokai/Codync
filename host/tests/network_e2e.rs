@@ -34,7 +34,8 @@ impl Host {
         Self { child, home, base, token }
     }
 
-    async fn call(&self, method: &str, body: Value) -> Value {
+    /// Whether the host took the call, and its answer.
+    async fn post(&self, method: &str, body: Value) -> (bool, Value) {
         let response = reqwest::Client::new()
             .post(format!("{}/api/{method}", self.base))
             .bearer_auth(&self.token)
@@ -43,10 +44,49 @@ impl Host {
             .send()
             .await
             .unwrap();
-        let status = response.status();
-        let value: Value = response.json().await.unwrap();
-        assert!(status.is_success(), "{method}: {value}");
+        (response.status().is_success(), response.json().await.unwrap())
+    }
+
+    async fn call(&self, method: &str, body: Value) -> Value {
+        let (ok, value) = self.post(method, body).await;
+        assert!(ok, "{method}: {value}");
         value
+    }
+
+    /// A call that must be refused: its error text.
+    async fn refused(&self, method: &str, body: Value) -> String {
+        let (ok, value) = self.post(method, body).await;
+        assert!(!ok, "{method} should have been refused: {value}");
+        value["error"].as_str().unwrap_or_default().to_owned()
+    }
+
+    /// Stops the host, lets `change` edit its database while it's down, and starts it again on the same data.
+    async fn restart(&mut self, change: impl FnOnce(&rusqlite::Connection)) {
+        common::stop(&mut self.child);
+        change(&rusqlite::Connection::open(self.home.join("codync.db")).unwrap());
+        (self.child, self.base) = common::serve(&self.home).await;
+    }
+
+    /// The saved networks (kv `networks`).
+    fn saved_networks(&self) -> Value {
+        let db = rusqlite::Connection::open(self.home.join("codync.db")).unwrap();
+        let text: String = db.query_row("SELECT v FROM kv WHERE k = 'networks'", [], |row| row.get(0)).unwrap();
+        serde_json::from_str(&text).unwrap()
+    }
+
+    /// The first network's rules, once its node has started.
+    async fn rules(&self) -> Value {
+        tokio::time::timeout(Duration::from_secs(40), async {
+            loop {
+                let status = self.call("networkStatus", json!({})).await;
+                if status["joined"] == true {
+                    return status["networks"][0]["rules"].clone();
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        })
+        .await
+        .expect("the network did not start")
     }
 
     async fn bot(&self, name: &str) -> String {
@@ -102,6 +142,10 @@ async fn two_computers() -> (Host, Host, String, String) {
     assert_eq!((home["computer"].as_str(), home["role"].as_str()), (Some("laptop"), Some("member")));
     let reviewer = desk.bot("Reviewer").await;
     let lead = laptop.bot("Lead").await;
+    // As the computers already in a network are kept when the default became `auto`.
+    let allow = json!({"rules": [{"fromComputer": "*", "fromAgent": "*", "toAgent": "*", "access": "allow"}]});
+    desk.call("setNetworkRules", allow.clone()).await;
+    laptop.call("setNetworkRules", allow).await;
     (desk, laptop, reviewer, lead)
 }
 
@@ -121,6 +165,20 @@ async fn a_bot_messages_a_bot_on_another_computer_and_relays_its_reply() {
     let reviewer_row = bots["bots"].as_array().unwrap().iter().find(|b| b["id"] == "reviewer@desk").cloned().unwrap();
     assert_eq!(reviewer_row["kind"], "codync");
     assert_eq!(laptop.call("teamCall", list("codex")).await["total"], 0);
+
+    // The desk names the lead from its own listing of the laptop, which it takes when asked: until then the
+    // request's notice could only show the address (`lead@laptop`).
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let peers = desk.call("networkPeers", json!({})).await;
+            if computer(&peers, "laptop")["agents"].as_array().is_some_and(|a| a.iter().any(|a| a["id"] == "lead")) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("the desk never listed the laptop's lead");
 
     // The lead lists the reviewer by its address and messages it; its turn ends at once.
     laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk"})).await;
@@ -155,7 +213,7 @@ async fn a_stopped_or_failed_request_ends_the_senders_notice() {
     // cancelled, and nothing wakes the lead.
     laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk PERMISSION then stop"})).await;
     desk.wait_for(&reviewer, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
-    desk.call("stop", json!({"botId": reviewer})).await;
+    desk.call("stopWork", json!({"botId": reviewer})).await;
     let stopped = laptop.wait_for(&lead, exchange("cancelled")).await;
     assert!(stopped["data"]["botMessage"]["detail"].as_str().unwrap().starts_with("Reviewer on desk was stopped"));
 
@@ -273,6 +331,140 @@ async fn a_bot_kept_off_the_network_and_a_deny_rule_keep_letters_out() {
     desk.call("send", json!({"botId": secret, "text": "TRY lead@laptop status?"})).await;
     let answered = desk.wait_for(&secret, exchange("completed")).await;
     assert_eq!(answered["data"]["botMessage"]["reply"], "reply: status?", "{answered}");
+}
+
+/// The session modes a bot's agent lists from its next session on, the first the one it opens in.
+fn list_modes(host: &Host, bot: &str, ids: &[&str]) {
+    let modes: Vec<Value> = ids.iter().map(|id| json!({"id": id, "name": id})).collect();
+    let listed = json!({"modes": {"currentModeId": ids[0], "availableModes": modes}});
+    std::fs::write(host.home.join(bot).join("modes.json"), listed.to_string()).unwrap();
+}
+
+/// The modes the host switched a bot's agent to, in order.
+fn switched(host: &Host, bot: &str) -> Vec<String> {
+    let log = std::fs::read_to_string(host.home.join(bot).join("modes.jsonl")).unwrap_or_default();
+    log.lines().map(|l| serde_json::from_str(l).unwrap()).collect()
+}
+
+#[tokio::test]
+async fn a_rule_at_ask_holds_a_bot_that_approves_by_itself_to_asking() {
+    let (desk, laptop, reviewer, lead) = two_computers().await;
+    list_modes(&desk, "Reviewer", &["bypassPermissions", "default"]);
+    list_modes(&laptop, "Lead", &["bypassPermissions", "default"]);
+    desk.call("updateBot", json!({"id": reviewer, "permission": "auto"})).await;
+    let pending = |e: &Value| e["kind"] == "permission" && e["data"]["status"] == "pending";
+    let relayed = |text: &'static str| move |e: &Value| is_final(e) && e["data"]["text"] == text;
+
+    // At allow the laptop's request runs as the reviewer is set, so its tool call is approved for it.
+    laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk PERMISSION first"})).await;
+    laptop.wait_for(&lead, relayed("Relayed: reply: PERMISSION first")).await;
+    assert!(switched(&desk, "Reviewer").is_empty(), "it stayed in its own mode");
+
+    // At ask the same request waits for the desk's user, in the agent's asking mode.
+    let rules = json!([{"fromComputer": "laptop", "fromAgent": "*", "toAgent": "*", "access": "ask"}]);
+    let view = desk.call("setNetworkRules", json!({"rules": rules})).await;
+    assert_eq!(view["networks"][0]["rules"][0]["access"], "ask");
+    laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk PERMISSION second"})).await;
+    let card = desk.wait_for(&reviewer, pending).await;
+    assert_eq!(switched(&desk, "Reviewer"), ["default"]);
+    let prompts = std::fs::read_to_string(desk.home.join("Reviewer/prompts.jsonl")).unwrap();
+    let told = prompts.lines().last().unwrap();
+    assert!(told.contains("a computer the user trusts less than this one"), "{told}");
+
+    // A task of the reviewer answers it: only reading and answering the user are left to that task.
+    let task = card["data"]["task"]["id"].as_str().expect("a task's card").to_owned();
+    let tool = |name: &str, arguments: Value| json!({"botId": task, "name": name, "arguments": arguments});
+    let command = format!("{} -c \"import time; time.sleep(300)\"", common::python());
+    let server = desk.refused("chatCall", tool("start_dev_server", json!({"command": command}))).await;
+    assert!(server.contains("start_dev_server isn't available in this turn"), "{server}");
+    let routine = desk.refused("routineCall", tool("save_routine", json!({}))).await;
+    assert!(routine.contains("save_routine isn't available in this turn"), "{routine}");
+    desk.call("respondPermission", json!({"entryId": card["id"], "optionId": "allow"})).await;
+    laptop.wait_for(&lead, relayed("Relayed: reply: PERMISSION second")).await;
+
+    // The user's own message runs in the chat as the bot is set: only the task's session was held.
+    desk.call("send", json!({"botId": reviewer, "text": "PERMISSION mine"})).await;
+    desk.wait_for(&reviewer, relayed("reply: PERMISSION mine")).await;
+    assert_eq!(switched(&desk, "Reviewer"), ["default"]);
+
+    // An answer from a computer under a ceiling holds the turn that reads it to the ceiling too.
+    let rules = json!([{"fromComputer": "desk", "fromAgent": "*", "toAgent": "*", "access": "ask"}]);
+    laptop.call("setNetworkRules", json!({"rules": rules})).await;
+    let allow = json!([{"fromComputer": "*", "fromAgent": "*", "toAgent": "*", "access": "allow"}]);
+    desk.call("setNetworkRules", json!({"rules": allow})).await;
+    laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk third"})).await;
+    laptop.wait_for(&lead, relayed("Relayed: reply: third")).await;
+    assert_eq!(switched(&laptop, "Lead"), ["default"]);
+    let prompts = std::fs::read_to_string(laptop.home.join("Lead/prompts.jsonl")).unwrap();
+    let told = prompts.lines().last().unwrap();
+    assert!(told.contains("these are bot replies") && told.contains("a computer the user trusts less"), "{told}");
+    // The ceiling stands past that turn's end: background work would run without it.
+    let work = json!({"botId": lead, "name": "add_work", "arguments": {"title": "More", "brief": "More"}});
+    let refused = laptop.refused("chatCall", work).await;
+    assert!(refused.contains("add_work isn't available in this turn"), "{refused}");
+
+    // That turn messages no one: the answer's text can't travel on to a bot that isn't held to the ceiling.
+    std::fs::write(desk.home.join("Reviewer/handoff.json"), r#"{"target":"lead@laptop"}"#).unwrap();
+    std::fs::write(laptop.home.join("Lead/handoff.json"), r#"{"target":"reviewer@desk"}"#).unwrap();
+    laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk CHAIN"})).await;
+    let stopped = laptop
+        .wait_for(&lead, |e| is_final(e) && e["data"]["text"].as_str().is_some_and(|t| t.starts_with("Chain stopped")))
+        .await;
+    let text = stopped["data"]["text"].as_str().unwrap();
+    assert!(text.contains("a computer the user trusts less"), "{text}");
+}
+
+#[tokio::test]
+async fn a_computer_no_rule_matches_works_under_auto() {
+    let (desk, laptop, reviewer, lead) = two_computers().await;
+    list_modes(&desk, "Reviewer", &["bypassPermissions", "default", "auto"]);
+    desk.call("updateBot", json!({"id": reviewer, "permission": "auto"})).await;
+    let view = desk.call("setNetworkRules", json!({"rules": []})).await;
+    assert_eq!(view["networks"][0]["defaultAccess"], "auto");
+    laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk PERMISSION review"})).await;
+    // Not approved by itself, in a mode no freer than Auto: the fixture's `auto` isn't Claude's, so `default`.
+    let card = desk.wait_for(&reviewer, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
+    assert_eq!(switched(&desk, "Reviewer"), ["default"]);
+    desk.call("respondPermission", json!({"entryId": card["id"], "optionId": "allow"})).await;
+    let relayed = |e: &Value| is_final(e) && e["data"]["text"] == "Relayed: reply: PERMISSION review";
+    laptop.wait_for(&lead, relayed).await;
+}
+
+#[tokio::test]
+async fn a_network_saved_before_the_auto_default_keeps_its_computers_at_allow_once() {
+    let (mut desk, _laptop, _, _) = two_computers().await;
+    desk.call("setNetworkRules", json!({"rules": []})).await;
+    // The network as a host before the `auto` default saved it.
+    desk.restart(|db| {
+        let text: String = db.query_row("SELECT v FROM kv WHERE k = 'networks'", [], |row| row.get(0)).unwrap();
+        let mut networks: Value = serde_json::from_str(&text).unwrap();
+        networks[0].as_object_mut().unwrap().remove("auto_default").expect("saved since the default");
+        db.execute("UPDATE kv SET v = ?1 WHERE k = 'networks'", [networks.to_string()]).unwrap();
+    })
+    .await;
+    // The laptop, already in it, keeps what it had; this computer gets no rule of its own.
+    let kept = json!([{"fromComputer": "laptop", "fromAgent": "*", "toAgent": "*", "access": "allow"}]);
+    assert_eq!(desk.rules().await, kept);
+    assert_eq!(desk.saved_networks()[0]["auto_default"], true);
+    assert_eq!(desk.saved_networks()[0]["rules"], kept);
+    // Once: what the user changes later stays.
+    desk.call("setNetworkRules", json!({"rules": []})).await;
+    desk.restart(|_| {}).await;
+    assert_eq!(desk.rules().await, json!([]));
+}
+
+#[tokio::test]
+async fn an_agent_that_cant_be_held_to_a_ceiling_doesnt_work_on_the_request() {
+    let (desk, laptop, reviewer, lead) = two_computers().await;
+    // The reviewer's agent lists no modes, so how freely it works can't be told.
+    let rules = json!([{"fromComputer": "laptop", "fromAgent": "*", "toAgent": "*", "access": "auto"}]);
+    desk.call("setNetworkRules", json!({"rules": rules})).await;
+    laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk review this"})).await;
+    let failed = laptop.wait_for(&lead, exchange("failed")).await;
+    let detail = failed["data"]["botMessage"]["detail"].as_str().unwrap();
+    assert!(detail.contains("no mode careful enough"), "{detail}");
+    let history = desk.call("history", json!({"botId": reviewer})).await;
+    assert!(!history["entries"].as_array().unwrap().iter().any(is_final), "the reviewer never answered");
 }
 
 #[tokio::test]

@@ -49,7 +49,7 @@ Next steps:
    not run for another bot.
 3. Keep `host/crates/network` at its 0.x version rule: every release that changes it bumps `codync-network`.
 4. Upkeep: each release, run the conformance set against the current agent versions and record failures in
-   [ACP adapter workarounds](reference/acp-adapter-workarounds.md) when they come from an adapter.
+   [upstream agent bugs](upstream-agents/README.md) when they come from an agent.
 
 Done when: the conformance set passes on every supported agent type across two computers, on the same network, in CI
 or in a documented manual run, and the network docs list no open "Beta" gaps.
@@ -81,9 +81,9 @@ by those results.
 Goal: every agent that Codync drives over ACP keeps working as adapters change, and the patches around them shrink
 over time.
 
-Where it stands: the host drives agents over ACP (`host/src/agent/acp.rs`, `host/src/agent/bot/`). Each adapter bug
-patched in the host has a row in [ACP adapter workarounds](reference/acp-adapter-workarounds.md) (last checked
-2026-11-02). Open upstream items include codex-acp#647 (429s and other errors sent as reply text) and the JetBrains AIR opt-in that works around it.
+Where it stands: the host drives agents over ACP (`host/src/agent/acp.rs`, `host/src/agent/bot/`). Each agent bug,
+patched in the host or not, has a row on its agent's page in [upstream agent bugs](upstream-agents/README.md) (last
+checked 2026-11-02). Open upstream items include codex-acp#647 (429s and other errors sent as reply text) and the JetBrains AIR opt-in that works around it.
 
 Next steps:
 

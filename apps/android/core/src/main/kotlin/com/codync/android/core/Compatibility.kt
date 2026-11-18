@@ -45,7 +45,7 @@ object AppVersion {
         return false
     }
 
-    private fun parse(version: String): List<Int>? = version.substringBefore('-').split('.').map { it.toIntOrNull() ?: return null }
+    internal fun parse(version: String): List<Int>? = version.substringBefore('-').split('.').map { it.toIntOrNull() ?: return null }
 }
 
 /** A newer release of this app to remind about (iOS `UpdateReminder.app`): the store has one, and it wasn't dismissed. */

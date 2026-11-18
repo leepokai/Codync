@@ -10,7 +10,7 @@ class RosterSectionOrderTest {
         fun shown(order: List<String>) = rosterLines(bots, emptySet(), order).filterIsInstance<RosterLine.Row>().map { it.bot.id }
         assertEquals(listOf("pin", "loose", "a", "b"), shown(listOf("", "Work")))
         assertEquals(listOf("pin", "a", "b", "loose"), shown(listOf("Work", "")))
-        assertEquals(listOf(RosterLine.Row(bots[0]), RosterLine.Label, RosterLine.Header("Work", 2, 0, true)),
+        assertEquals(listOf(RosterLine.Row(bots[0]), RosterLine.Label, RosterLine.Header("Work", 2, 0, waiting = false, folded = true)),
             rosterLines(bots, emptySet(), listOf("", "Work"), moving = true))
     }
     @Test fun aHeadingDragMovesBothWaysAcrossBots() {

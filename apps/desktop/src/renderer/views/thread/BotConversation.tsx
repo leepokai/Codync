@@ -4,6 +4,7 @@ import { Icon } from '../../components/Icon'
 import { ModalHeader } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { copyText } from '../../lib/image-clipboard'
 import { useStore } from '../../store/context'
 import { botConversation, buildBotConversation, groupSummary, peerNameIn, verbOf, type BotConversationRow, type BotExchange } from './bot-exchange'
 import { AuthorLabel, Bubble, TimeSeparator } from './ChatRows'
@@ -11,11 +12,12 @@ import { MarkdownText } from './Markdown'
 import './bot-conversation.css'
 import { useFetched } from '../../lib/use-fetched'
 import { useTr } from '../../lib/use-language'
-import { fill } from '../../lib/fill.ts'
+import { fill } from '@shared/fill'
 
 
 /** The compact chat row for bot-to-bot messages with one peer: who, never what. Opens the conversation. */
 export function BotMessageRow({ exchanges, open }: { exchanges: BotExchange[]; open: (peerId: string) => void }) {
+  const tr = useTr()
   const store = useStore()
   const { peerId, peerName, count, failed } = groupSummary(exchanges)
   const peer = store.bots.get(peerId)
@@ -25,7 +27,7 @@ export function BotMessageRow({ exchanges, open }: { exchanges: BotExchange[]; o
     <button
       className={failed ? 'press bot-message-row failed' : 'press bot-message-row'}
       onClick={() => open(peerId)}
-      title="Open conversation"
+      title={tr('Open conversation')}
       aria-label={`${lead} ${name}${failed ? ', failed' : ''}`}
     >
       {failed ? <Icon name="exclamationmark.triangle.fill" size={10} color="var(--danger)" /> : null}
@@ -106,7 +108,7 @@ function ConversationRow({ row, peer }: { row: BotConversationRow; peer: Peer })
           {row.showsAuthor ? <AuthorLabel botId={row.author} name={name(row.author)} /> : null}
           <div className="message agent">
             <div className="message-body">
-              <Bubble className="bubble agent selectable" items={() => [{ title: 'Copy', icon: 'square.on.square', action: () => window.codync.app.copy(row.text) }]}>
+              <Bubble className="bubble agent selectable" items={() => [{ title: 'Copy', icon: 'square.on.square', action: () => void copyText(row.text) }]}>
                 <MarkdownText text={row.text} />
               </Bubble>
             </div>

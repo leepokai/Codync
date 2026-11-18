@@ -15,8 +15,8 @@ public struct AccessoryWidgetCard: View {
         self.usage = usage; self.paired = paired
     }
 
-    private var needs: Int { bots.filter(\.needsInput).count }
-    private var working: Int { bots.filter { $0.isWorking && !$0.needsInput }.count }
+    private var needs: Int { bots.filter(\.needsYouOutside).count }
+    private var working: Int { bots.filter { $0.isBusyOutside && !$0.needsYouOutside }.count }
     private var count: Int { needs > 0 ? needs : working > 0 ? working : bots.count }
     private var botLabel: String { needs > 0 ? (needs == 1 ? "needs you" : "need you") : working > 0 ? "working" : (bots.count == 1 ? "bot" : "bots") }
     private var top: (name: String, window: UsageWindow)? {
@@ -58,7 +58,7 @@ public struct AccessoryWidgetCard: View {
                     Text(headline).font(.system(size: 12, weight: .semibold)).lineLimit(1)
                     if paired, kind == .bots {
                         ForEach(bots.sorted { rank($0) < rank($1) }.prefix(2)) { bot in
-                            Text("\(widgetName(bot)) · \(L10n.tr(bot.needsInput ? "Needs you" : bot.isWorking ? "Working" : "Ready"))")
+                            Text("\(widgetName(bot)) · \(L10n.tr(bot.needsYouOutside ? "Needs you" : bot.isBusyOutside ? "Working" : "Ready"))")
                                 .font(.system(size: 10)).lineLimit(1)
                         }
                     } else if paired, let top {
@@ -74,5 +74,5 @@ public struct AccessoryWidgetCard: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func rank(_ bot: Bot) -> Int { bot.needsInput ? 0 : bot.isWorking ? 1 : 2 }
+    private func rank(_ bot: Bot) -> Int { bot.needsYouOutside ? 0 : bot.isBusyOutside ? 1 : 2 }
 }

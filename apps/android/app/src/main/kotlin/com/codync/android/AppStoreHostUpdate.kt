@@ -1,6 +1,7 @@
 package com.codync.android
 
 import com.codync.android.core.AppVersion
+import com.codync.android.core.fill
 import com.codync.android.core.LinkState
 import com.codync.android.core.VersionMismatch
 import kotlinx.coroutines.CancellationException
@@ -35,16 +36,26 @@ internal val AppState.isUpdating get() = connection !is LinkState.Ready && hostU
 internal data class HostUpdateNotice(val detail: String, val offersUpdate: Boolean)
 
 internal fun hostUpdateNotice(host: String, mismatch: VersionMismatch.UpdateHost, os: String?, canUpdate: Boolean,
-    update: HostUpdate?, now: Long): HostUpdateNotice {
-    if (update.updating(now)) return HostUpdateNotice(updatingText(host), false)
-    val needs = "$host runs Codync ${mismatch.version}; this app needs ${mismatch.minimum} or newer."
-    if (!canUpdate) return HostUpdateNotice("$needs ${howToUpdate(os)}", false)
+    update: HostUpdate?, now: Long, translate: (String) -> String = { it }): HostUpdateNotice {
+    if (update.updating(now)) return HostUpdateNotice(translate(updatingText(host)), false)
+    val needs = fill(translate("Codync on {host} is {version}; that computer needs Codync {minimum} or newer."),
+        "host" to host, "version" to mismatch.version, "minimum" to mismatch.minimum)
+    if (!canUpdate) return HostUpdateNotice("$needs ${translate(howToUpdate(os))}", false)
     return HostUpdateNotice(when (update) {
         is HostUpdate.Failed -> "$needs ${update.message}"
-        is HostUpdate.Requested -> "$needs ${notUpdatedText(host)}"
+        is HostUpdate.Requested -> "$needs ${translate(notUpdatedText(host))}"
         null -> needs
     }, true)
 }
+
+/** The app on this phone is behind the computer, rather than the computer being behind this app. */
+internal fun appUpdateDetail(host: String, minimum: String, translate: (String) -> String = { it }) =
+    fill(translate("This app needs to be {minimum} or newer ({host} requires it)."), "host" to host, "minimum" to minimum)
+
+/** A cloud computer updates itself and reconnects without asking the person to update it. */
+internal fun cloudUpdateDetail(minimum: String, translate: (String) -> String = { it }) =
+    fill(translate("Your cloud computer is updating to Codync {minimum} or newer; this app reconnects when it is done."),
+        "minimum" to minimum)
 
 private fun updatingText(host: String) = "Updating Codync on $host. This takes a few minutes."
 private fun notUpdatedText(host: String) = "$host didn't finish updating. Try again, or update Codync on that computer."
@@ -77,7 +88,7 @@ internal fun hostVersionLine(version: String, latest: String?, mismatch: Version
     if (update.updating(now)) return HostVersionLine(version, listOf(updatingText(host)), accessory = HostVersionLine.Accessory.Updating)
     val minimum = (mismatch as? VersionMismatch.UpdateHost)?.minimum
     val available = latest?.takeIf { AppVersion.isBelow(version, it) }
-    val due = minimum?.let { "This app needs $it or newer." } ?: available?.let { "Version $it is available." }
+    val due = minimum?.let { "$host needs Codync $it or newer." } ?: available?.let { "Version $it is available." }
         ?: return HostVersionLine(version, if (latest == null) emptyList() else listOf("Up to date"))
     if (!canUpdate) return HostVersionLine(version, listOf(due, howToUpdate(os, cloud)), warns = minimum != null)
     val tryAgain = HostVersionLine.Accessory.Button("Try again")

@@ -1,0 +1,55 @@
+# Routines on the phones in Italian: the list row's schedule line, then the editor's trigger choice, the host's sentence
+# and the next run, and the run settings' timeout and seconds label. The phone must already be signed in and paired with
+# the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`; the iPhone
+# gets Italian from its launch arguments, Android from its language file, written before the run:
+#   adb shell run-as com.pokai.Codync.android.dev sh -c 'mkdir -p shared_prefs && echo "<map><string name=\"appLanguage\">it</string></map>" > shared_prefs/codync-language.xml'
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags routines \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - routines
+onFlowComplete:
+  - runScript:
+      file: routines.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: routines.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+            "-appLanguage": "it"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- extendedWaitUntil:
+    visible: ${output.bot.name}
+    timeout: 30000
+- tapOn: ${output.bot.name}
+- tapOn: ${output.bot.name}
+- scrollUntilVisible:
+    element: "Daily check"
+    direction: DOWN
+- assertVisible: "Ogni giorno alle 09:00 · Europe/Rome"
+- takeScreenshot: routines-list
+- tapOn: "Daily check"
+- assertVisible: "Pianificazione"
+- assertVisible: "Ogni giorno alle 09:00 · Europe/Rome"
+- assertVisible: "Prossima esecuzione: .*"
+- assertVisible: "Timeout 1 ora"
+- takeScreenshot: routines-editor
+- tapOn: "Impostazioni di esecuzione"
+- assertVisible: "Timeout \\(secondi\\)"
+- takeScreenshot: routines-run-settings
+# The trigger menu offers Webhook in the same language; picking it leaves the sentence for the webhook's note.
+- tapOn: "Pianificazione"
+- tapOn: "Webhook"
+- assertNotVisible: "Ogni giorno alle 09:00 · Europe/Rome"

@@ -108,7 +108,7 @@ class BotEditorTest {
         render(scout.copy(cwd = "/home/Project", notify = null), fixture().copy(plugins = plugins))
         compose.onNodeWithText("This project is the default starting folder. The bot can work elsewhere when you ask.").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Workspace").performClick()
-        compose.onNodeWithText("Personal workspace").performClick()
+        compose.onNodeWithText("Own folder").performClick()
         compose.onNodeWithText("This bot has its own space for files. It can work in other folders when you ask.").assertIsDisplayed()
         // A new bot works in the agent's Auto mode; while the agent's modes load, Auto, Ask me and Approve automatically.
         compose.onNodeWithText("The agent decides what's safe and asks you about the rest.").performScrollTo().assertIsDisplayed()
@@ -124,6 +124,16 @@ class BotEditorTest {
         compose.onNodeWithContentDescription("Workspace").performScrollTo().performClick()
         compose.onNodeWithText("Choose project folder…").performClick()
         compose.onNodeWithText("Choose workspace").assertIsDisplayed()
+    }
+
+    @Test fun worktreePerThreadShowsOnlyForAProjectInAGitRepository() {
+        val project = Bot("fixture", cwd = "/home/Project", gitRepo = true, taskWorktrees = true)
+        var saved by mutableStateOf(project)
+        compose.setContent { Hosted { BotEditor(fixture().copy(bots = listOf(saved)), scout.copy(taskWorktrees = true), store) } }
+        toggle("Worktree per thread").performScrollTo().assertIsOn()
+        // The bot's own folder is a repository too, where all its work stays: no switch there.
+        saved = project.copy(cwd = "/data/bots/fixture/workspace", managedWorkspace = true)
+        toggle("Worktree per thread").assertDoesNotExist()
     }
 
     @Test fun permissionsListTheAgentsOwnModesWithTheirWords() {

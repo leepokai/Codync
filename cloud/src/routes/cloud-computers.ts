@@ -47,28 +47,24 @@ const view = (r: CloudMachineRow) => ({
   createdAt: r.created_at,
 });
 
-/** An allowlist of Clerk user ids decides who may have one (`*`: everyone), on a Worker that can seal their keys. */
-const available = (c: Ctx, userId: string) => {
-  const allowed = (c.env.CLOUD_COMPUTER_USERS ?? "").split(",").map((s) => s.trim());
-  return canSeal(c.env) && (allowed.includes(userId) || allowed.includes("*"));
-};
-
-export async function allowedUser(c: Ctx) {
+/** The signed-in user, on a Worker that can seal their keys (`CLOUD_SECRET_KEYS`): every account may then have one. */
+export async function cloudUser(c: Ctx) {
   const u = await user(c);
-  if (!available(c, u.userId)) throw new ApiError("forbidden", "Codync Cloud isn't available for this account yet.");
+  if (!canSeal(c.env)) throw new ApiError("forbidden", "Codync Cloud isn't available here.");
   return u;
 }
 
 /** The provider busy or failing: another try may work. */
 export const unreachable = () => new ApiError("providerUnavailable", "Couldn't reach the cloud provider. Try again in a minute.");
 
-export function value<T>(o: Outcome<T>): T {
+/** The outcome's value, or the error the apps show for it; `refused`: what to say when the provider just said no. */
+export function value<T>(o: Outcome<T>, refused = "The cloud provider couldn't do this right now. Try again in a minute."): T {
   if (o.ok) return o.value;
   console.log(JSON.stringify({ msg: "cloud computer provider refused", code: o.detail, message: o.message }));
   if (o.retryable) throw unreachable();
   // The apps show the key's problem too; this says it where the user just tapped.
   if (o.needsOwner) throw new ApiError("keyRefused", problemText(o.code));
-  throw new ApiError("internal", "The cloud provider couldn't do this right now. Try again in a minute.");
+  throw new ApiError("internal", refused);
 }
 
 async function mine(c: Ctx, id: string) {
@@ -90,7 +86,7 @@ function nameOf(c: Ctx): string | null {
  * `name` (default "Cloud computer") is what every app shows for it.
  */
 export async function createCloudComputer(c: Ctx) {
-  const u = await allowedUser(c);
+  const u = await cloudUser(c);
   const name = nameOf(c) ?? "Cloud computer";
   // ponytail: two creates at the same instant can both pass the count; the limit is a guard rail, not billing.
   if ((await machinesOf(c.env, u.userId)).length >= CLOUD_COMPUTER_LIMIT) {
@@ -131,6 +127,8 @@ export async function createCloudComputer(c: Ctx) {
     vault_sealed: vault.sealed,
     vault_key_id: vault.keyId,
     keeper_key: null,
+    // Its host says once it asks to sleep.
+    analytics: null,
     created_at: c.now,
     updated_at: c.now,
   };
@@ -153,7 +151,7 @@ export async function getCloudComputers(c: Ctx) {
   const rows = await machinesOf(c.env, u.userId);
   // Each at once, on its own: a provider out of reach leaves its machines as last seen, and the others still show.
   await Promise.all(rows.map((row) => settle(c.env, row, c.now)));
-  const open = rows.length > 0 || available(c, u.userId);
+  const open = rows.length > 0 || canSeal(c.env);
   return {
     cloudComputers: rows.map(view),
     available: open,
@@ -180,13 +178,16 @@ export async function renameCloudComputer(c: Ctx, [id]: string[]) {
   return { cloudComputer: view(row) };
 }
 
+const BACKUP_KEPT = "The backup couldn't be deleted. Try again in a minute.";
+
 /** `DELETE /v1/cloud-computers/:id`: erases the machine, its snapshots and its backup, and takes the computer out
- * of the account. */
+ * of the account. The backup goes first: one that can't be deleted yet keeps the computer listed, so deleting it can
+ * be tried again (a backup left behind would never expire). */
 export async function deleteCloudComputer(c: Ctx, [id]: string[]) {
   const { u, row } = await mine(c, id!);
   const d = drivers[row.provider];
+  value(await dropBackup(c.env, row), BACKUP_KEPT);
   value(d.deleted(await providerSend(c.env, u.userId, row.provider, d.destroy(row.provider_id, crypto.randomUUID()), c.now)));
-  if (!(await dropBackup(c.env, row))) console.error(JSON.stringify({ msg: "cloud computer backup left behind", machine: row.id, backup: row.backup }));
   if (row.computer_id) await unclaim(c.env, row.computer_id, u.userId, c.now);
   await c.env.DB.batch([
     machineDeleted(c.env, row.id, c.now),
@@ -211,7 +212,7 @@ export async function deleteCloudSnapshots(c: Ctx, [id]: string[]) {
     }
     value(d.done(await providerSend(c.env, u.userId, row.provider, d.deleteHistory(row.provider_id), c.now)));
   }
-  if (!(await dropBackup(c.env, row))) throw new ApiError("internal", "The backup couldn't be deleted. Try again in a minute.");
+  value(await dropBackup(c.env, row), BACKUP_KEPT);
   await audit(c.env, u.userId, "cloudComputer.deleteSnapshots", row.id, "ok", c.now).run();
   return {};
 }

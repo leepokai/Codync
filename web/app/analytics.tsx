@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import posthog from "posthog-js";
 import "posthog-js/dist/web-vitals"; // Bundled, as external loading is off below.
-import { ANDROID_TEST, APP_STORE, DISCORD, DMG, GITHUB, KO_FI, LARK_JOIN, LARK_QR, LINUX, LINUX_ARM, PRODUCT_HUNT, WECHAT_QR, WINDOWS } from "./links";
+import { APP_STORE, CHINA_COMMUNITY, CLOUD_SECTION, DISCORD, DMG, GITHUB, GOOGLE_PLAY, KO_FI, LINUX, LINUX_ARM, PRODUCT_HUNT, WINDOWS } from "./links";
 
 // Cookieless counts for codync.dev (docs/reference/analytics-events.md, Website). Nothing is
 // stored on the device; PostHog's server hashes the visitor per day.
@@ -11,20 +11,18 @@ const TOKEN = "phc_rQHvxdSFKnMquPfMjmiMhXhM4tqJ5qCYsWuVEoFxCCWX"; // write-only 
 const LOCAL = ["localhost", "127.0.0.1", "[::1]"];
 const MAIN = ["codync.dev", "www.codync.dev"];
 
-export type Platform = "mac" | "windows" | "linux" | "ios";
+export type Platform = "mac" | "windows" | "linux" | "ios" | "android";
 
-const downloads: Record<string, Platform> = { [DMG]: "mac", [WINDOWS]: "windows", [LINUX]: "linux", [LINUX_ARM]: "linux", [APP_STORE]: "ios" };
+const downloads: Record<string, Platform> = { [DMG]: "mac", [WINDOWS]: "windows", [LINUX]: "linux", [LINUX_ARM]: "linux", [APP_STORE]: "ios", [GOOGLE_PLAY]: "android" };
 // Matched by prefix, first hit wins.
 const links: [prefix: string, link: string][] = [
   [`${GITHUB}/issues`, "issues"],
   [GITHUB, "github"],
   [DISCORD, "discord"],
-  [LARK_JOIN, "lark"],
-  [LARK_QR, "lark_qr"],
-  [WECHAT_QR, "wechat_qr"],
+  [CHINA_COMMUNITY, "telegram"],
   [PRODUCT_HUNT, "product_hunt"],
   [KO_FI, "ko_fi"],
-  [ANDROID_TEST, "android_test"],
+  [CLOUD_SECTION, "cloud_new"],
 ];
 
 export function track(event: "download_clicked", props: { platform: Platform }): void;

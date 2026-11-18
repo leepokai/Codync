@@ -24,8 +24,9 @@ function listen<T>(channel: string, cb: (value: T) => void) {
 }
 
 // A dev sandbox starts past onboarding (`skip`: only a window that never chose is seeded) or back at
-// its welcome flow (`reset`); see tools/dev.mjs. Skipping also answers the GitHub star ask, which a
-// fresh sandbox would otherwise show at once as an installation that never saw the setup page.
+// its welcome flow (`reset`); see tools/dev.mjs. Skipping also answers the GitHub star ask and marks
+// What's new seen on this version, which a fresh sandbox would otherwise show at once as an installation
+// that never saw the setup page or as an update from before the feature.
 const devOnboarding = ipcRenderer.sendSync('app:devOnboarding') as 'skip' | 'reset' | null
 if (devOnboarding) {
   try {
@@ -33,10 +34,12 @@ if (devOnboarding) {
       localStorage.removeItem('macAccountOnboardingCompleted')
       localStorage.removeItem('computerAccessSetup')
       localStorage.removeItem('githubStarAsk')
+      localStorage.removeItem('whatsNewSeen')
     } else {
       if (localStorage.getItem('macAccountOnboardingCompleted') === null) localStorage.setItem('macAccountOnboardingCompleted', 'true')
       if (localStorage.getItem('computerAccessSetup') === null) localStorage.setItem('computerAccessSetup', '"later"')
       if (localStorage.getItem('githubStarAsk') === null) localStorage.setItem('githubStarAsk', '{"kind":"done"}')
+      if (localStorage.getItem('whatsNewSeen') === null) localStorage.setItem('whatsNewSeen', JSON.stringify(ipcRenderer.sendSync('app:version')))
     }
   } catch (error) {
     // Storage unavailable: the window just shows onboarding, which only costs a dev run a click.
@@ -160,6 +163,7 @@ const bridge: CodyncBridge = {
     reportError: (report) => ipcRenderer.send('app:reportError', report),
     openExternal: (url) => ipcRenderer.send('app:openExternal', url),
     copy: (text) => ipcRenderer.send('app:copy', text),
+    remoteKeyboard: (on) => ipcRenderer.send('app:remoteKeyboard', on),
     pickFiles: () => ipcRenderer.invoke('app:pickFiles'),
     pickExport: () => ipcRenderer.invoke('app:pickExport'),
     readClipboardFiles: () => ipcRenderer.invoke('app:clipboardFiles'),

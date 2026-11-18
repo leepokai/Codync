@@ -60,14 +60,17 @@ test('turning on Reach from anywhere asks to add a computer in no account first'
     await page.waitForTimeout(5_000)
     expect(await owner(page)).toBeNull()
 
-    // A saved private relay never asks: it has no accounts, though off the status names no relay.
+    // A saved private relay never asks: it has no accounts, though off the status names no relay. Not on a local cloud
+    // (plain http, loopback only: a sandbox's own, named by `CODYNC_CLOUD_URL`), which a saved address never overrides.
     await api(page, 'setCloudUrl', { url: 'https://relay.example.com' })
-    await reach.click()
-    await expect(dialog).toHaveCount(0)
-    await expect(reach).toHaveAttribute('aria-checked', 'false')
-    await expect.poll(async () => (await status(page)).relay, { timeout: 30_000 }).toBe('codync')
-    await turnedOnWithoutAsking()
-    expect((await status(page)).relay).toBe('private')
+    if (!on.url?.startsWith('http://')) {
+      await reach.click()
+      await expect(dialog).toHaveCount(0)
+      await expect(reach).toHaveAttribute('aria-checked', 'false')
+      await expect.poll(async () => (await status(page)).relay, { timeout: 30_000 }).toBe('codync')
+      await turnedOnWithoutAsking()
+      expect((await status(page)).relay).toBe('private')
+    }
     await api(page, 'setCloudUrl', { url: null })
 
     // Add to account turns it on and adds it.

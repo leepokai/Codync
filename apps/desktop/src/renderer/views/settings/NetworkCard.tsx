@@ -2,7 +2,7 @@ import type { Network, NetworkComputer, NetworkRule } from '@shared/network'
 import { Button, CardSection, IconButton } from '../../components/Controls'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import { botsTemplate, moved, presenceTitle, roleTitle, ruleLine } from '../../lib/network-copy'
+import { botsTemplate, moved, presenceTitle, roleTitle, ruleLine, rulesFooter } from '../../lib/network-copy'
 import { useTr } from '../../lib/use-language'
 import type { BotStore } from '../../store/bot-store'
 
@@ -72,9 +72,9 @@ export function NetworkCard({ net, outside, rulesOf, several, disabled, act }: {
           title={rulesOf.length > 1 ? tr('Who may message bots on {name}').replaceAll('{name}', of.net.computer) : 'Who may message bots here'}
           accessory={<IconButton title="Add rule" icon="plus" disabled={disabled} onClick={() => act.addRule(of)} />}
           footer={
-            n === rulesOf.length - 1
-              ? "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in."
-              : null
+            // ponytail: the last computer's default stands for all; computers on hosts of different versions
+            // can differ, a footer per computer if that matters.
+            n === rulesOf.length - 1 ? rulesFooter(of.net) : null
           }
         >
           {of.net.rules.map((rule, i) => (

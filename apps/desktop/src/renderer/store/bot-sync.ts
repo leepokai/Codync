@@ -1,4 +1,4 @@
-import { isChat, type AccessRequest, type CloudStatus, type Entry, type Hello, type PairingRequest } from '@shared/models'
+import { isChat, unseen, type AccessRequest, type CloudStatus, type Entry, type Hello, type PairingRequest } from '@shared/models'
 import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
 import { undoOnFailure } from '../lib/undo-on-failure'
@@ -287,7 +287,7 @@ export class BotSync extends BotMirror {
         this.putHostBot(event.bot)
         this.bump(event.bot.rev)
         this.onRosterChanged?.()
-        if (event.bot.unread > 0) this.acknowledgeVisible(event.bot.id)
+        if (unseen(event.bot) > 0) this.acknowledgeVisible(event.bot.id)
         break
       case 'botDeleted':
         this.composerDrafts.removeBot(event.id)

@@ -1,5 +1,6 @@
 //! What the call's voice hears from the computer while the call lasts (`docs/plans/voice-architecture.md`, stage
-//! 2): the bot's final replies, approvals waiting, failures, and short progress while it works. Each goes out as a
+//! 2): the bot's final replies, approvals and choices waiting, failures, and short progress while it works, in its
+//! chat or on an item in the background (`chat::tasks`). Each goes out as a
 //! `call` event that only the app holding the call receives (`api::events`), worded for the call's voice (a
 //! realtime model relays it; on-device and speech-to-text calls read it aloud); the app hands it to its voice.
 
@@ -7,7 +8,7 @@ use super::speech::spoken;
 use super::tools::{approval, runtime};
 use super::{CallMode, state};
 use crate::LockExt;
-use crate::hub::{BotStatus, Hub, Runtime};
+use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, Entry, EntryKind, Store, now_ms};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -63,8 +64,11 @@ enum Kind {
 enum Cue {
     /// A final reply as written; in a group, with the member who wrote it.
     Reply { from: Option<String>, text: String },
-    /// An approval card waiting: who asks, for what, and its options' names.
-    Approval { from: String, request: String, options: Vec<String> },
+    /// An approval card waiting: who asks, for what, and its options' names. `item`: the work in the background
+    /// that asks, by its title; none for the chat's own turn.
+    Approval { from: String, item: Option<String>, request: String, options: Vec<String> },
+    /// A choice card waiting (`request_decision`): the same, with its question.
+    Choice { from: String, item: Option<String>, question: String, options: Vec<String> },
     /// An error notice in the chat.
     Failure { from: String, text: String },
     /// What the bot is doing.
@@ -85,12 +89,23 @@ impl Cue {
                 };
                 Some((Kind::Reply, text))
             }
-            Self::Approval { from, request, options } => {
-                let request = spoken(request, LINE_CHARS);
+            Self::Approval { from, item, request, options } => {
+                let (request, work) = (spoken(request, LINE_CHARS), for_item(item.as_deref()));
                 let text = if relayed {
-                    format!("{from} needs the user's approval: {request} (options: {})", options.join(", "))
+                    format!("{from} needs the user's approval{work}: {request} (options: {})", options.join(", "))
                 } else {
-                    format!("{from} needs your approval in the chat: {request}")
+                    format!("{from} needs your approval in the chat{work}: {request}")
+                };
+                Some((Kind::Notice, text))
+            }
+            Self::Choice { from, item, question, options } => {
+                let (question, work) = (spoken(question, LINE_CHARS), for_item(item.as_deref()));
+                let text = if relayed {
+                    // A card of work in the background takes a press only: what the user says goes to the chat.
+                    let how = if item.is_some() { " It is answered by pressing an option in the chat." } else { "" };
+                    format!("{from} asks the user to choose{work}: {question} (options: {}).{how}", options.join(", "))
+                } else {
+                    format!("{from} asks you to choose in the chat{work}: {question}")
                 };
                 Some((Kind::Notice, text))
             }
@@ -100,6 +115,60 @@ impl Cue {
             Self::Progress(line) => relayed.then(|| (Kind::Progress, line.clone())),
         }
     }
+}
+
+/// How a cue names the work in the background it comes from.
+fn for_item(title: Option<&str>) -> String {
+    title.map(|title| format!(" for \"{}\" in the background", spoken(title, LINE_CHARS))).unwrap_or_default()
+}
+
+/// What the call's bot does now: its chat's turn, or one of its items in the background.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Doing {
+    /// The item in the background: its id and title. None: the chat's own turn.
+    item: Option<(String, String)>,
+    /// Its activity line, shortened for speech; empty when it says none.
+    activity: String,
+}
+
+impl Doing {
+    fn key(&self) -> Option<&str> {
+        self.item.as_ref().map(|(id, _)| id.as_str())
+    }
+
+    /// Who does it, as a progress line begins: the bot, or the bot on that item.
+    fn line(&self, name: &str) -> String {
+        match &self.item {
+            Some((_, title)) => {
+                format!("{name}, in the background on \"{}\": {}", spoken(title, LINE_CHARS), self.activity)
+            }
+            None => format!("{name}: {}", self.activity),
+        }
+    }
+
+    fn still(&self, name: &str) -> String {
+        let on = match &self.item {
+            Some((_, title)) => format!(" in the background on \"{}\"", spoken(title, LINE_CHARS)),
+            None => String::new(),
+        };
+        if self.activity.is_empty() {
+            format!("{name} is still working{on}.")
+        } else {
+            format!("{name} is still working{on}: {}", self.activity)
+        }
+    }
+}
+
+/// What `cfg` does now, the chat's own turn first, then each of its items at work in the background.
+fn doing(hub: &Hub, cfg: &BotConfig) -> Vec<Doing> {
+    let rt = runtime(hub, cfg);
+    let chat = (rt.status == BotStatus::Working)
+        .then(|| Doing { item: None, activity: spoken(rt.activity.trim(), LINE_CHARS) });
+    let items = if cfg.is_group() { Vec::new() } else { crate::chat::tasks::doing(hub, cfg) };
+    let items = items
+        .into_iter()
+        .map(|d| Doing { item: Some((d.item, d.title)), activity: spoken(d.activity.trim(), LINE_CHARS) });
+    chat.into_iter().chain(items).collect()
 }
 
 /// What a call has told its voice so far, and what it tells it next.
@@ -113,8 +182,10 @@ struct Announcer {
     /// When the call began (ms): what the chat held before it isn't said.
     since: i64,
     last_cue: Instant,
-    /// The last progress line's activity and when it went out.
-    progress: Option<(String, Instant)>,
+    /// The activity last said of the chat's turn (`None`) and of each item in the background (its id).
+    told: HashMap<Option<String>, String>,
+    /// When the last progress line went out, or a cue that makes progress wait.
+    progressed: Option<Instant>,
 }
 
 impl Announcer {
@@ -125,14 +196,14 @@ impl Announcer {
             .filter(|e| e.kind == EntryKind::Agent.as_str() && e.data["final"] != true)
             .map(|e| e.id.clone())
             .collect();
-        Self { cfg, said: HashSet::new(), open, since, last_cue: now, progress: None }
+        Self { cfg, said: HashSet::new(), open, since, last_cue: now, told: HashMap::new(), progressed: None }
     }
 
     /// An event of the hub's stream.
     fn event(&mut self, hub: &Hub, v: &Value, now: Instant) -> Option<Cue> {
         match v["type"].as_str()? {
             "entry" => self.entry(hub, &v["entry"], now),
-            "bot" if v["bot"]["id"] == self.cfg.id.as_str() => self.progress(&runtime(hub, &self.cfg), now),
+            "bot" if v["bot"]["id"] == self.cfg.id.as_str() => self.progress(&doing(hub, &self.cfg), now),
             _ => None,
         }
     }
@@ -144,9 +215,10 @@ impl Announcer {
     }
 
     /// Every few seconds: progress that waited out the rate limit, else a "still working" after a long silence.
-    fn tick(&mut self, rt: &Runtime, now: Instant) -> Option<Cue> {
-        self.progress(rt, now)
-            .or_else(|| if now.duration_since(self.last_cue) >= SILENCE { self.still_working(rt, now) } else { None })
+    fn tick(&mut self, doing: &[Doing], now: Instant) -> Option<Cue> {
+        self.progress(doing, now).or_else(|| {
+            if now.duration_since(self.last_cue) >= SILENCE { self.still_working(doing, now) } else { None }
+        })
     }
 
     fn entry(&mut self, hub: &Hub, e: &Value, now: Instant) -> Option<Cue> {
@@ -161,7 +233,16 @@ impl Announcer {
             k if k == EntryKind::Permission.as_str() && new && data["status"] == "pending" => {
                 let (request, options) = approval(data);
                 let options = options.into_iter().map(str::to_owned).collect();
-                Cue::Approval { from: self.author(hub, data), request: request.to_owned(), options }
+                Cue::Approval { from: self.author(hub, data), item: item(data), request: request.to_owned(), options }
+            }
+            k if k == EntryKind::Notice.as_str() && new && data["decision"] == true && data["status"] == "pending" => {
+                let options = data["choices"].as_array().into_iter().flatten().filter_map(Value::as_str);
+                Cue::Choice {
+                    from: self.author(hub, data),
+                    item: item(data),
+                    question: data["question"].as_str().unwrap_or_default().to_owned(),
+                    options: options.map(str::to_owned).collect(),
+                }
             }
             k if k == EntryKind::Notice.as_str() && new && data["style"] == "error" => Cue::Failure {
                 from: self.author(hub, data),
@@ -173,8 +254,7 @@ impl Announcer {
         self.last_cue = now;
         // Progress right after a cue is stale (`send_message` leaves "Working…" just before the turn ends): the next
         // line waits out the limit.
-        let last = self.progress.take().map(|(last, _)| last).unwrap_or_default();
-        self.progress = Some((last, now));
+        self.progressed = Some(now);
         Some(cue)
     }
 
@@ -192,40 +272,36 @@ impl Announcer {
         data["author"].as_str().map_or_else(|| self.cfg.name.clone(), |id| hub.bot_name(id))
     }
 
-    /// What the bot is doing, when that changed and the last line is old enough.
-    fn progress(&mut self, rt: &Runtime, now: Instant) -> Option<Cue> {
-        let doing = doing(rt)?;
-        let changed =
-            self.progress.as_ref().is_none_or(|(last, at)| *last != doing && now.duration_since(*at) >= PROGRESS_EVERY);
-        if doing.is_empty() || !changed {
+    /// What the bot is doing, in its chat or on an item in the background: the first whose activity changed since
+    /// it was last said, when the last line is old enough.
+    fn progress(&mut self, doing: &[Doing], now: Instant) -> Option<Cue> {
+        if self.progressed.is_some_and(|at| now.duration_since(at) < PROGRESS_EVERY) {
             return None;
         }
-        let line = format!("{}: {doing}", self.cfg.name.trim());
-        Some(self.progressed(doing, line, now))
+        let said = |d: &&Doing| self.told.get(&d.key().map(str::to_owned)) == Some(&d.activity);
+        let next = doing.iter().find(|d| !d.activity.is_empty() && !said(d))?;
+        let line = next.line(self.cfg.name.trim());
+        Some(self.progress_said(next, line, now))
     }
 
     /// Whatever the bot is doing, after a long silence.
-    fn still_working(&mut self, rt: &Runtime, now: Instant) -> Option<Cue> {
-        let doing = doing(rt)?;
-        let name = self.cfg.name.trim();
-        let line = if doing.is_empty() {
-            format!("{name} is still working.")
-        } else {
-            format!("{name} is still working: {doing}")
-        };
-        Some(self.progressed(doing, line, now))
+    fn still_working(&mut self, doing: &[Doing], now: Instant) -> Option<Cue> {
+        let first = doing.first()?;
+        let line = first.still(self.cfg.name.trim());
+        Some(self.progress_said(first, line, now))
     }
 
-    fn progressed(&mut self, doing: String, line: String, now: Instant) -> Cue {
-        self.progress = Some((doing, now));
+    fn progress_said(&mut self, doing: &Doing, line: String, now: Instant) -> Cue {
+        self.told.insert(doing.key().map(str::to_owned), doing.activity.clone());
+        self.progressed = Some(now);
         self.last_cue = now;
         Cue::Progress(line)
     }
 }
 
-/// The bot's activity line while it works, shortened for speech.
-fn doing(rt: &Runtime) -> Option<String> {
-    (rt.status == BotStatus::Working).then(|| spoken(rt.activity.trim(), LINE_CHARS))
+/// The work in the background a card comes from, by its title; none for a card of the chat's own turn.
+fn item(data: &Value) -> Option<String> {
+    data["task"]["title"].as_str().filter(|title| !title.is_empty()).map(str::to_owned)
 }
 
 /// Tells the call's app what its voice should say until the call ends or the app leaves it idle; for a call watched
@@ -261,7 +337,7 @@ pub(super) fn watch(hub: &Arc<Hub>, call: &str, bot: &str) {
                     if !watching(&hub.store, &call, task) {
                         break;
                     }
-                    announcer.tick(&runtime(&hub, &announcer.cfg), Instant::now()).into_iter().collect()
+                    announcer.tick(&doing(&hub, &announcer.cfg), Instant::now()).into_iter().collect()
                 }
             };
             for cue in &cues {
@@ -321,6 +397,7 @@ pub fn replay(owner: &str) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hub::Runtime;
     use crate::store::{BotKind, Lane};
 
     fn entry(hub: &Hub, bot: &str, kind: EntryKind, data: &Value) -> Value {
@@ -335,8 +412,13 @@ mod tests {
         (hub, cfg)
     }
 
-    fn working(activity: &str) -> Runtime {
+    fn busy(activity: &str) -> Runtime {
         Runtime { status: BotStatus::Working, activity: activity.into(), ..Runtime::default() }
+    }
+
+    /// The chat's own turn, doing `activity`.
+    fn working(activity: &str) -> [Doing; 1] {
+        [Doing { item: None, activity: activity.into() }]
     }
 
     #[tokio::test]
@@ -422,7 +504,12 @@ mod tests {
             "it shortens replies itself"
         );
         assert_eq!(reply.words(CallMode::Realtime), Some((Kind::Reply, "See main.rs: (code)".into())));
-        let card = Cue::Approval { from: "Mika".into(), request: "Edit a.txt".into(), options: vec!["Allow".into()] };
+        let card = Cue::Approval {
+            from: "Mika".into(),
+            item: None,
+            request: "Edit a.txt".into(),
+            options: vec!["Allow".into()],
+        };
         assert_eq!(
             card.words(CallMode::Device),
             Some((Kind::Notice, "Mika needs your approval in the chat: Edit a.txt".into()))
@@ -438,7 +525,7 @@ mod tests {
         let bot = json!({"type": "bot", "bot": {"id": cfg.id}});
         assert_eq!(a.event(&hub, &bot, t0), None, "an idle bot has no progress");
 
-        hub.set_runtime(&cfg.id, |r| *r = working("Running `cargo test`"));
+        hub.set_runtime(&cfg.id, |r| *r = busy("Running `cargo test`"));
         assert_eq!(a.event(&hub, &bot, t0), Some(Cue::Progress("Mika: Running cargo test".into())));
         let editing = working("Editing main.rs");
         let soon = t0 + Duration::from_secs(5);
@@ -448,7 +535,7 @@ mod tests {
         assert_eq!(a.tick(&editing, later + Duration::from_secs(20)), None, "nothing changed, not silent long enough");
         let quiet = later + SILENCE;
         assert_eq!(a.tick(&editing, quiet), Some(Cue::Progress("Mika is still working: Editing main.rs".into())));
-        assert_eq!(a.tick(&Runtime::default(), quiet + SILENCE), None, "an idle bot isn't working");
+        assert_eq!(a.tick(&[], quiet + SILENCE), None, "an idle bot isn't working");
     }
 
     #[tokio::test]
@@ -457,15 +544,90 @@ mod tests {
         let t0 = Instant::now();
         let mut a = Announcer::new(cfg.clone(), &[], now_ms(), t0);
         let bot = json!({"type": "bot", "bot": {"id": cfg.id}});
-        hub.set_runtime(&cfg.id, |r| *r = working("Running tests"));
+        hub.set_runtime(&cfg.id, |r| *r = busy("Running tests"));
         assert!(a.event(&hub, &bot, t0).is_some());
         let later = t0 + PROGRESS_EVERY;
         let reply = entry(&hub, &cfg.id, EntryKind::Agent, &json!({"text": "Done.", "final": true}));
         assert!(a.event(&hub, &reply, later).is_some());
-        hub.set_runtime(&cfg.id, |r| *r = working("Working…"));
+        hub.set_runtime(&cfg.id, |r| *r = busy("Working…"));
         assert_eq!(a.event(&hub, &bot, later), None, "the turn is ending, not starting new work");
         let still = a.tick(&working("Working…"), later + PROGRESS_EVERY);
         assert_eq!(still, Some(Cue::Progress("Mika: Working…".into())), "still working once the limit passed");
+    }
+
+    #[tokio::test]
+    async fn work_in_the_background_joins_the_progress_and_its_cards_name_their_item() {
+        let (hub, cfg) = setup("b-box");
+        let t0 = Instant::now();
+        let mut a = Announcer::new(cfg.clone(), &[], now_ms(), t0);
+        let bot = json!({"type": "bot", "bot": {"id": cfg.id}});
+        // The chat is idle; a task works on an item of the bot's box.
+        crate::chat::tasks::put_working_for_test(&hub.store, &cfg.id, "task-1");
+        assert_eq!(a.event(&hub, &bot, t0), None, "its task says nothing yet");
+        hub.set_runtime("task-1", |r| *r = busy("Running `cargo test`"));
+        let said = a.event(&hub, &bot, t0);
+        assert_eq!(said, Some(Cue::Progress("Mika, in the background on \"Work\": Running cargo test".into())));
+
+        // The chat's own turn and the item each say what changed, once, one line at a time.
+        hub.set_runtime(&cfg.id, |r| *r = busy("Reading the docs"));
+        let later = t0 + PROGRESS_EVERY;
+        assert_eq!(a.tick(&doing(&hub, &cfg), later), Some(Cue::Progress("Mika: Reading the docs".into())));
+        hub.set_runtime("task-1", |r| r.activity = "Editing main.rs".into());
+        let next = later + PROGRESS_EVERY;
+        assert_eq!(
+            a.tick(&doing(&hub, &cfg), next),
+            Some(Cue::Progress("Mika, in the background on \"Work\": Editing main.rs".into()))
+        );
+        assert_eq!(a.tick(&doing(&hub, &cfg), next + PROGRESS_EVERY), None, "nothing changed");
+        hub.set_runtime(&cfg.id, |r| *r = Runtime::default());
+        let quiet = next + SILENCE;
+        assert_eq!(
+            a.tick(&doing(&hub, &cfg), quiet),
+            Some(Cue::Progress("Mika is still working in the background on \"Work\": Editing main.rs".into()))
+        );
+
+        // A card its task raises in the chat names the item; an item that waits on the user isn't at work.
+        hub.set_runtime("task-1", |r| r.status = BotStatus::NeedsInput);
+        assert_eq!(doing(&hub, &cfg), []);
+        let task = json!({"id": "task-1", "title": "Work"});
+        let card = json!({"title": "Run the tests", "status": "pending", "options": [{"name": "Allow"}],
+            "author": cfg.id, "task": task, "item": "i1"});
+        let cue = a.event(&hub, &entry(&hub, &cfg.id, EntryKind::Permission, &card), quiet).unwrap();
+        assert_eq!(
+            cue.words(CallMode::Realtime),
+            Some((
+                Kind::Notice,
+                "Mika needs the user's approval for \"Work\" in the background: Run the tests (options: Allow)".into()
+            ))
+        );
+        assert_eq!(
+            cue.words(CallMode::Device),
+            Some((
+                Kind::Notice,
+                "Mika needs your approval in the chat for \"Work\" in the background: Run the tests".into()
+            ))
+        );
+        let choice = json!({"decision": true, "question": "Which branch?", "choices": ["main", "dev"],
+            "status": "pending", "author": cfg.id, "task": task, "item": "i1"});
+        let cue = a.event(&hub, &entry(&hub, &cfg.id, EntryKind::Notice, &choice), quiet).unwrap();
+        assert_eq!(
+            cue.words(CallMode::Realtime),
+            Some((
+                Kind::Notice,
+                "Mika asks the user to choose for \"Work\" in the background: Which branch? (options: main, dev). It \
+                 is answered by pressing an option in the chat."
+                    .into()
+            ))
+        );
+        // The chat's own choice card is said too, with no item.
+        let own = json!({"decision": true, "question": "Ship it?", "choices": ["Yes", "No"], "status": "pending"});
+        let cue = a.event(&hub, &entry(&hub, &cfg.id, EntryKind::Notice, &own), quiet).unwrap();
+        assert_eq!(
+            cue.words(CallMode::Speech),
+            Some((Kind::Notice, "Mika asks you to choose in the chat: Ship it?".into()))
+        );
+        let answered = json!({"decision": true, "question": "Old?", "choices": ["Yes"], "status": "answered"});
+        assert_eq!(a.event(&hub, &entry(&hub, &cfg.id, EntryKind::Notice, &answered), quiet), None);
     }
 
     #[tokio::test]

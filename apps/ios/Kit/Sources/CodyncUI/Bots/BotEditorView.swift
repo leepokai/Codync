@@ -111,7 +111,7 @@ struct BotSettingsForm: View {
                          agents: (model.hello?.backends ?? []).map { ($0.id, model.agentLabel($0)) } + [("custom", "Custom command")],
                          onAgentChange: { draft.setAgent($0) }, command: $draft.command,
                          installHint: model.hello?.backends.first { $0.id == draft.backend && !$0.available }?.installHint,
-                         restLine: bot?.rest(of: draft.login)?.line, onReload: { modelReload += 1 })
+                         restLine: bot?.rest(of: draft.login).map { L10n.tr($0.line) }, onReload: { modelReload += 1 }) {}
     }
 
     /// Only when the host has login profiles (an older one sends none).
@@ -190,7 +190,7 @@ struct BotSettingsForm: View {
                          : "This project is the default starting folder. The bot can work elsewhere when you ask.") {
                     DropdownMenu {
                         [
-                            MenuItem("Personal workspace", selected: draft.cwd.isEmpty) {
+                            MenuItem("Own folder", selected: draft.cwd.isEmpty) {
                                 withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.cwd = "" }
                             },
                             MenuItem("Choose project folder…", selected: !draft.cwd.isEmpty) {
@@ -199,7 +199,7 @@ struct BotSettingsForm: View {
                         ]
                     } label: {
                         HStack(spacing: 6) {
-                            Text(draft.cwd.isEmpty ? L10n.tr("Personal") : (draft.cwd as NSString).lastPathComponent).lineLimit(1)
+                            Text(draft.cwd.isEmpty ? L10n.tr("Own folder") : (draft.cwd as NSString).lastPathComponent).lineLimit(1)
                             Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(Palette.secondary)
                         }
                         .foregroundStyle(Palette.text)
@@ -207,17 +207,27 @@ struct BotSettingsForm: View {
                     }
                     .help(draft.cwd.isEmpty ? "A persistent workspace allocated for this bot" : draft.cwd)
                 }
+                // From a host that says, for any folder (one Codync made too).
+                if let bot, bot.taskWorktrees != nil {
+                    GitStateRow(state: bot.gitState)
+                }
                 ApprovalPicker(draft: $draft, reload: modelReload)
                 // Only from a host with a box (its bots say).
                 if let agents = draft.maxAgents {
-                    ValueRow("Agents at once") {
+                    ValueRow("Threads at once") {
                         HStack(spacing: 10) {
                             Text(verbatim: "\(agents)").monospacedDigit().foregroundStyle(Palette.text)
-                            Stepper(L10n.tr("Agents at once"), value: Binding(get: { agents }, set: { draft.maxAgents = $0 }),
+                            Stepper(L10n.tr("Threads at once"), value: Binding(get: { agents }, set: { draft.maxAgents = $0 }),
                                     in: Bot.maxAgentsRange)
                                 .labelsHidden()
                         }
                     }
+                }
+                // Only in a project folder in a git repository (a bot's own folder keeps all its work in one place),
+                // from a host that has the setting.
+                if bot?.gitRepo == true, bot?.managedWorkspace == false, let worktrees = draft.taskWorktrees {
+                    SwitchRow("Worktree per thread", detail: "Threads that work at once in this repository each get their own branch.",
+                              isOn: Binding(get: { worktrees }, set: { draft.taskWorktrees = $0 }))
                 }
             }
 

@@ -1,7 +1,7 @@
 // ComputerRelay DO through the Worker: admission, ACL, presence, forwarding, mailbox, limits.
 
 import { runDurableObjectAlarm, runInDurableObject, SELF } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import V from "../../docs/reference/fixtures/remote-relay-vectors.json";
 import type { ComputerRelay } from "../src/relay";
 import { PING } from "../src/relay-wire";
@@ -20,6 +20,21 @@ const ageDevices = (host: TestHost) =>
   runInDurableObject(stub(host), (_, state) => {
     for (const ws of state.getWebSockets("device")) ws.serializeAttachment({ ...ws.deserializeAttachment(), at: Date.now() - 91_000 });
   });
+
+/**
+ * Runs four alarms while no close is answered (a peer that's gone: the socket stays listed); the closes asked for.
+ * `wait` comes first, unanswered too: the DO's own alarm may run in it (a pairing offer's expiry).
+ */
+async function closesAsked(host: TestHost, wait = 0): Promise<number> {
+  const close = vi.spyOn(WebSocket.prototype, "close").mockImplementation(() => {});
+  try {
+    await sleep(wait);
+    for (let alarm = 0; alarm < 4; alarm++) await runDurableObjectAlarm(stub(host));
+    return close.mock.calls.length;
+  } finally {
+    close.mockRestore();
+  }
+}
 
 /** A host with one authorized (local) device, both connected; the host is ready unless told otherwise. */
 async function pair(o: { ready?: boolean } = {}) {
@@ -264,6 +279,22 @@ describe("presence and forwarding", () => {
     await hostWs.nextT("close");
     await runDurableObjectAlarm(stub(host));
     expect(await dev.closed()).toBe(1011);
+  });
+
+  it("asks a retired socket to close only once, though its peer never answers", async () => {
+    const { host, hostWs, dev } = await pair();
+    await dev.nextT("presence");
+    await hostWs.nextT("open");
+    await ageDevices(host);
+    expect(await closesAsked(host)).toBe(1);
+  });
+
+  it("asks an expired pairing socket to close only once, though its peer never answers", async () => {
+    const host = await newHost();
+    const offer = ref.offerId(ref.random(16));
+    await hostSocket(host, [], { offers: [{ id: offer, exp: Date.now() + 200 }] });
+    await socket(devicePath(host, offer), ref.signKey());
+    expect(await closesAsked(host, 250)).toBe(1);
   });
 
   it("keeps a device socket that pings", async () => {

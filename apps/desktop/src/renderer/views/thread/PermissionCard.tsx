@@ -7,7 +7,7 @@ import { Text } from '../../components/Text'
 import './permission-card.css'
 import { useTr } from '../../lib/use-language'
 import { trNow } from '../../lib/l10n.ts'
-import { fill } from '../../lib/fill.ts'
+import { fill } from '@shared/fill'
 
 
 /** What the agent wants, from the tool's kind (also the notch island's headline). */
@@ -49,6 +49,14 @@ export function optionLabel(o: PermissionOption) {
   }
 }
 
+/** Under what a task put in the chat (its approval or choice card, a file, an artifact): that it comes from the
+ * background, and which item. Nothing for the chat's own. */
+export function TaskLine({ entry }: { entry: Entry }) {
+  const tr = useTr()
+  const task = entry.data.task
+  return task ? <Text as="div" size="caption" tone="tertiary" truncate className="task-line">{tr('In the background')} · {task.title}</Text> : null
+}
+
 /** Approval card in Grok Bot's choice-card style: what the agent wants, where it runs, the answers. */
 export function PermissionCard({ entry, hostName, answering, respond }: { entry: Entry; hostName: string; answering: string | null; respond: (option: string | null) => void }) {
   const tr = useTr()
@@ -60,7 +68,7 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
   const cwd = d.cwd ? ` · ${d.cwd.split('/').filter(Boolean).pop() ?? d.cwd}` : ''
   return (
     // The item's row on the bot's Details finds its card by this.
-    <div className="agent-inset" data-work-item={d.item}>
+    <div className="agent-inset">
       <VStack gap={10} className="permission-card">
         <HStack gap={8}>
           <Text size="headline" tone="text">{permissionHeadline(d.toolKind)}</Text>
@@ -73,7 +81,7 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
           <Icon name="desktopcomputer" size={10} color="var(--tertiary)" />
           <Text size="caption" tone="tertiary">{fill(tr('Runs on {name}{path}'), { name: hostName, path: cwd })}</Text>
         </HStack>
-        {d.task ? <Text as="div" size="caption" tone="tertiary" truncate>{tr('In the background')} · {d.task.title}</Text> : null}
+        <TaskLine entry={entry} />
         {hasDetail ? (
           <Disclosure expanded={expanded} onToggle={() => setExpanded((e) => !e)} label={<Text size="caption" weight="medium" tone="secondary">{tr(`Details`)}</Text>}>
             <VStack gap={8} className="permission-card-details">

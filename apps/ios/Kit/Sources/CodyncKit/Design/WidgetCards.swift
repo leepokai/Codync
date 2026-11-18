@@ -166,12 +166,12 @@ public struct BotsWidgetCard: View {
 
     private var ordered: [Bot] {
         bots.sorted {
-            let rank: (Bot) -> Int = { $0.needsInput ? 0 : $0.isWorking ? 1 : 2 }
+            let rank: (Bot) -> Int = { $0.needsYouOutside ? 0 : $0.isBusyOutside ? 1 : 2 }
             return rank($0) == rank($1) ? $0.lastAt > $1.lastAt : rank($0) < rank($1)
         }
     }
-    private var needs: Int { bots.filter(\.needsInput).count }
-    private var working: Int { bots.filter { $0.isWorking && !$0.needsInput }.count }
+    private var needs: Int { bots.filter(\.needsYouOutside).count }
+    private var working: Int { bots.filter { $0.isBusyOutside && !$0.needsYouOutside }.count }
     private var count: Int { needs > 0 ? needs : working > 0 ? working : bots.count }
     private var label: String { needs > 0 ? (needs == 1 ? "Needs you" : "Need you") : working > 0 ? "Working" : bots.isEmpty ? "No bots yet" : "All quiet" }
 
@@ -255,15 +255,15 @@ public struct BotsWidgetCard: View {
             CharacterAvatar(bot: bot, size: 24, still: true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(widgetName(bot)).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.text)
-                if bot.isWorking, !bot.activity.isEmpty {
-                    Text(L10n.tr(bot.activity)).font(.system(size: 10)).foregroundStyle(Palette.secondary)
+                if bot.isBusyOutside, !bot.outsideLine().isEmpty {
+                    Text(bot.outsideLine()).font(.system(size: 10)).foregroundStyle(Palette.secondary)
                         .contentTransition(.interpolate)
                 }
             }
             .lineLimit(1)
             Spacer(minLength: 4)
             Text(L10n.tr(state.label))
-                .font(.system(size: 10, weight: bot.needsInput ? .semibold : .regular))
+                .font(.system(size: 10, weight: bot.needsYouOutside ? .semibold : .regular))
                 .foregroundStyle(state.tint)
                 .lineLimit(1)
                 .contentTransition(.interpolate)
@@ -280,9 +280,9 @@ func widgetName(_ bot: Bot) -> String {
 public extension Bot {
     /// The state word the widgets show and its color: only what needs you (or failed) stands out.
     var widgetState: (label: String, tint: Color) {
-        if needsInput { return ("Needs you", Palette.attention) }
-        if status == "error" { return ("Failed", Palette.danger) }
-        if isWorking { return ("Working", Palette.text) }
+        if needsYouOutside { return ("Needs you", Palette.attention) }
+        if outsideStatus == "error" { return ("Failed", Palette.danger) }
+        if isBusyOutside { return ("Working", Palette.text) }
         return ("Ready", Palette.secondary)
     }
 }
@@ -306,7 +306,7 @@ public struct BotsTeamCard: View {
         let picked = (0..<4).map { i in i < picks.count ? picks[i].flatMap { byId[$0] } : nil }
         let taken = Set(picked.compactMap { $0?.id })
         var queue = bots.filter { !$0.hidden && !taken.contains($0.id) }.sorted {
-            let rank: (Bot) -> Int = { $0.needsInput ? 0 : $0.isWorking ? 1 : 2 }
+            let rank: (Bot) -> Int = { $0.needsYouOutside ? 0 : $0.isBusyOutside ? 1 : 2 }
             return rank($0) == rank($1) ? $0.lastAt > $1.lastAt : rank($0) < rank($1)
         }[...]
         return picked.map { $0 ?? queue.popFirst() }
@@ -352,7 +352,7 @@ public struct BotsTeamCard: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 16))
         .overlay(alignment: .topTrailing) {
-            if bot.isWorking || bot.status == "error" {
+            if bot.isBusyOutside || bot.outsideStatus == "error" {
                 Circle().fill(bot.widgetState.tint).frame(width: 7, height: 7).padding(7)
             }
         }

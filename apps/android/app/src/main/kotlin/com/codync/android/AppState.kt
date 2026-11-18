@@ -2,6 +2,7 @@ package com.codync.android
 
 import com.codync.android.core.*
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
@@ -95,6 +96,10 @@ data class AppState(
     val selectedBot: String? = null,
     /** A call to start in this bot's chat once it shows ("Talk to Codync"). */
     val callRequest: String? = null,
+    /** A bot whose details open over its chat once it shows, at the thread of the item named (null: its Details page): a heading or a row of the view of all bots' work. */
+    val detailsRequest: Pair<String, String?>? = null,
+    /** A bot and the item of its whose card its chat brings into view once it holds it (a needs-you row of the view of all bots' work). */
+    val cardRequest: Pair<String, WorkItem>? = null,
     val trace: Boolean = false,
     val busy: Set<String> = emptySet(),
     /** Chats that page back no further, and why: their earlier row is dropped. */
@@ -106,6 +111,8 @@ data class AppState(
     val library: Map<String, List<LibraryItem>> = emptyMap(),
     /** The transcripts of the background tasks whose details are open, by task id; never part of [entries]. */
     val taskEntries: Map<String, List<Entry>> = emptyMap(),
+    /** The user's messages to a thread on their way or refused, by item id, until the thread's transcript has them; in memory only, like the transcript. */
+    val threadSends: Map<String, List<PendingSend>> = emptyMap(),
     val plugins: PluginListing? = null,
     val voice: VoiceCallViewState? = null,
     /** The computer's remote screen (`null`: the host predates it). */
@@ -126,6 +133,9 @@ data class AppState(
     val appFloor: String? = null,
     val error: String? = null,
 ) {
+    /** The computer's home folder, which a folder on it shows as `~`; empty before its hello. */
+    internal val home: String get() = hello?.get("home")?.jsonPrimitive?.contentOrNull.orEmpty()
+
     /** Connection alone cannot make a cached roster current before event catch-up. */
     internal val widgetBotsCurrent: Boolean get() {
         val head = hello?.get("rev")?.jsonPrimitive?.longOrNull ?: return false

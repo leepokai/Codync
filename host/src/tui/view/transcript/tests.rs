@@ -60,6 +60,50 @@ async fn an_artifact_card_is_one_line_with_its_newest_title() {
     assert!(!lines.iter().any(|l| l.contains("Weekly report")));
 }
 
+#[tokio::test]
+async fn what_a_task_shares_in_the_chat_says_it_comes_from_the_background() {
+    use crate::tui::app::Msg;
+    use serde_json::json;
+    let mut app = app_with_bots();
+    let task = json!({"id": "task-1", "title": "Fix login"});
+    let shared = [
+        ("file", json!({"files": [{"id": "f", "name": "report.pdf", "size": 2048, "sha256": "hash"}]})),
+        (
+            "voice",
+            json!({"voiceNote": true, "files": [{"id": "v", "name": "note.m4a", "size": 2048, "sha256": "hash"}]}),
+        ),
+        ("card", json!({"artifact": {"id": "p", "title": "Weekly report", "updatedAt": 1}})),
+    ];
+    for (seq, (id, more)) in (1..).zip(&shared) {
+        // Each once from a task and once from the chat itself.
+        for (from_task, id) in [(true, format!("task-{id}")), (false, format!("own-{id}"))] {
+            let mut data = json!({"author": "a", "text": "Said aloud.", "final": true});
+            data.as_object_mut().unwrap().extend(more.as_object().cloned().unwrap());
+            if from_task {
+                data["task"] = task.clone();
+                data["item"] = "i".into();
+            }
+            let seq = seq * 2 + i64::from(from_task);
+            app.on_msg(Msg::Event(
+                json!({"type": "entry", "entry": {"id": id, "botId": "a", "seq": seq, "kind": "agent",
+                "turn": seq, "data": data}}),
+            ));
+        }
+    }
+    let chat = build_chat(&app, &app.bots["a"], 80);
+    let lines: Vec<_> = chat.lines.iter().map(ToString::to_string).collect();
+    let from: Vec<usize> = (0..lines.len()).filter(|i| lines[*i] == " In the background · Fix login").collect();
+    assert_eq!(from.len(), 3, "the task's three, none of the chat's own: {lines:?}");
+    let under = |at: usize, text: &str| lines[at + 1].contains(text);
+    assert!(
+        lines.iter().filter(|l| l.contains("report.pdf")).count() == 2
+            && from.iter().any(|at| under(*at, "report.pdf"))
+    );
+    assert!(from.iter().any(|at| under(*at, "note.m4a")), "a voice note");
+    assert!(from.iter().any(|at| under(*at, "Artifact: Weekly report")), "an artifact card");
+    assert!(lines[from[0] - 1].contains("Egan"), "under the bot's name: {lines:?}");
+}
+
 fn app_with_bots() -> App {
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     let mut app = App::new(super::super::super::net::Client::new("http://127.0.0.1:1", None), tx, String::new());
@@ -188,6 +232,21 @@ fn a_reply_shows_the_message_it_answers() {
     let text: Vec<String> = out.lines.iter().map(ToString::to_string).collect();
     assert_eq!(text[1], " ↳ “Plan”", "{text:?}");
     assert!(text[2].contains("why?"));
+
+    // A bot's message quotes the same way (`send_message`'s `reply_to`).
+    let answer = Entry {
+        id: "r".into(),
+        seq: 3,
+        turn: 2,
+        kind: Kind::Agent,
+        created_at: 0,
+        data: serde_json::json!({"text": "Because.", "final": true, "replyTo": {"id": "u", "author": "user", "text": "why?"}}),
+    };
+    let mut out = Built::default();
+    entry_lines(&mut out, &app, &app.bots["a"], &answer, &HashMap::new(), 80);
+    let text: Vec<String> = out.lines.iter().map(ToString::to_string).collect();
+    assert_eq!(text[1], " ↳ “why?”", "{text:?}");
+    assert!(text[2].contains("Because."));
 }
 
 #[tokio::test]

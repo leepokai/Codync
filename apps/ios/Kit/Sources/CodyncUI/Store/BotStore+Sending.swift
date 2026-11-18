@@ -45,15 +45,20 @@ extension BotStore {
     static func artifactDraftKey(_ artifact: Artifact) -> String { "\(artifact.botId)/artifact/\(artifact.id)" }
 
     /// Transfer to the outbox now; an eventual acknowledgement must not erase a newer draft.
-    /// `draft`: whose draft it is (the chat's when nil). `replyTo`: the chat message it quotes.
+    /// `draft`: whose draft it is (the chat's when nil). `replyTo`: the chat message it quotes. `thread`: the item's
+    /// thread it goes to instead of the chat, as text alone.
     @discardableResult
     func sendComposerDraft(to botId: String, draft key: String? = nil, replyTo: ReplyQuote? = nil,
-                           files: [OutgoingFile] = []) -> Bool {
+                           files: [OutgoingFile] = [], thread: WorkThread? = nil) -> Bool {
         let key = key ?? botId
         let text = composerDraft(for: key)
         guard !retired, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty else { return false }
         let pasted = composerPasted[key] ?? []
-        send(text, to: botId, replyTo: replyTo, nonce: UUID().uuidString, files: files, pasted: pasted)
+        if let thread {
+            send(text, to: thread)
+        } else {
+            send(text, to: botId, replyTo: replyTo, nonce: UUID().uuidString, files: files, pasted: pasted)
+        }
         setComposerDraft("", for: key)
         return true
     }
@@ -265,7 +270,8 @@ extension BotStore {
         entry.data.attachments?.isEmpty == false && entry.data.clientNonce.flatMap { outgoingFiles[$0] } == nil
     }
 
-    public func retry(_ entry: Entry) {
+    public func retry(_ entry: Entry, in thread: WorkThread? = nil) {
+        if let thread { return resend(entry, to: thread) }
         guard !filesGone(entry) else {
             lastError = "This message's files aren't on this device anymore. Delete it and attach them again."
             return
@@ -308,7 +314,8 @@ extension BotStore {
         try? data.write(to: url)
     }
 
-    public func discard(_ entry: Entry) {
+    public func discard(_ entry: Entry, in thread: WorkThread? = nil) {
+        if let thread { return dropTaskEntry(entry.id, task: thread.task) }
         if let nonce = entry.data.clientNonce { outgoingFiles[nonce] = nil }
         entries[entry.botId]?.removeAll { $0.id == entry.id }
         scheduleSave()

@@ -150,6 +150,15 @@ fn fuzzy_is_a_subsequence_match() {
     assert!(fuzzy("web", &["Rex", "~/mycode/web"]));
 }
 
+#[test]
+fn a_path_starts_at_home_only_inside_the_home_folder() {
+    assert_eq!(tilde("/Users/me/code", "/Users/me"), "~/code");
+    assert_eq!(tilde("/Users/me", "/Users/me/"), "~");
+    assert_eq!(tilde(r"C:\Users\me\code", r"C:\Users\me"), r"~\code");
+    assert_eq!(tilde("/Users/me2/x", "/Users/me"), "/Users/me2/x", "another folder that only starts the same");
+    assert_eq!(tilde("/srv/app", ""), "/srv/app");
+}
+
 #[tokio::test]
 async fn the_chat_on_screen_is_marked_read() {
     let mut app = test_app();
@@ -180,6 +189,40 @@ async fn r_on_a_picked_message_replies_to_it() {
     assert_eq!(app.reply.as_deref(), Some("e1"));
     assert_eq!(app.replying_to().map(Entry::quoted).as_deref(), Some("hi"));
     assert!(app.typing && app.pick.is_none());
+}
+
+#[tokio::test]
+async fn q_on_a_picked_quote_picks_the_quoted_message() {
+    let mut app = test_app();
+    app.bots.insert("b".into(), Bot::parse(&json!({"id": "b", "name": "Bot"})).expect("a bot with an id parses"));
+    app.selected = Some("b".into());
+    let messages = [
+        (1, "user", json!({"text": "why?"})),
+        (
+            2,
+            "agent",
+            json!({"text": "Because.", "final": true, "replyTo": {"id": "e1", "author": "user", "text": "why?"}}),
+        ),
+        (
+            3,
+            "agent",
+            json!({"text": "Late.", "final": true, "replyTo": {"id": "gone", "author": "user", "text": "old"}}),
+        ),
+    ];
+    for (seq, kind, data) in messages {
+        let v = json!({"botId": "b", "id": format!("e{seq}"), "seq": seq, "turn": 1, "kind": kind, "data": data});
+        let (bot, e) = Entry::parse(&v).expect("a full entry parses");
+        app.entries.entry(bot).or_default().insert(e.seq, e);
+    }
+    let q = crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('q'));
+    app.pick = Some("e2".into());
+    assert!(app.pick_key(q));
+    assert_eq!(app.pick.as_deref(), Some("e1"), "the quoted message is picked, so it comes on screen");
+    assert!(app.pick_key(q), "q never quits while a message is picked");
+    assert_eq!(app.pick.as_deref(), Some("e1"), "a message that quotes nothing stays picked");
+    app.pick = Some("e3".into());
+    assert!(app.pick_key(q));
+    assert_eq!(app.pick.as_deref(), Some("e3"), "a quote of a message that isn't loaded stays put");
 }
 
 #[tokio::test]

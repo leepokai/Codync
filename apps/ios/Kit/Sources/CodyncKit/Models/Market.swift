@@ -302,6 +302,8 @@ public struct ConnectionRequest: Codable, Hashable, Sendable {
     public var backend: String?
     /// Agent sign-in requests: the login profile it is for, when it isn't the computer's own login.
     public var loginProfile: String?
+    /// Agent sign-in requests: the messages it holds, which go out again once the user has signed in.
+    public var entryIds: [String]?
     /// App requests: the app's logo, when Composio lists it.
     public var logo: String?
 }

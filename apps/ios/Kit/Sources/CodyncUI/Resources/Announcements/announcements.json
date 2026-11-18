@@ -1,0 +1,20 @@
+[
+  {
+    "version": "2.47.1",
+    "features": [
+      {
+        "title": "Codync Cloud",
+        "beta": true,
+        "body": "Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.",
+        "media": "cloud",
+        "film": "https://youtu.be/VERc5uEeXCo"
+      },
+      {
+        "title": "Login profiles",
+        "body": "Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.",
+        "media": "login-profiles",
+        "film": "https://youtu.be/h6WgQWvbvsA"
+      }
+    ]
+  }
+]

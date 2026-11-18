@@ -76,6 +76,11 @@ impl Store {
         Ok(())
     }
 
+    /// Deletes every row whose value starts with `prefix`; returns how many went.
+    pub fn kv_delete_values(&self, prefix: &str) -> Result<usize> {
+        Ok(self.db.locked().execute("DELETE FROM kv WHERE substr(v, 1, length(?1)) = ?1", [prefix])?)
+    }
+
     /// Keys starting with `prefix`.
     pub fn kv_prefix(&self, prefix: &str) -> Vec<String> {
         let c = self.db.locked();

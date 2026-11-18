@@ -132,13 +132,16 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     if draft.text.is_empty() {
         // The apps' wording.
         let placeholder = if let Some(pick) = &app.pick {
-            let artifact = app.lane(&b.id).iter().any(|e| &e.id == pick && e.artifact().is_some());
-            if artifact {
-                "j k pick · o open in the browser · f save as HTML · ↵ reply · 1–6 react · c copy · esc"
+            let picked = app.lane(&b.id).into_iter().find(|e| &e.id == pick);
+            let keys = if picked.as_ref().is_some_and(|e| e.pending()) {
+                "its keys answer it"
+            } else if picked.as_ref().is_some_and(|e| e.artifact().is_some()) {
+                "j k pick · o open in the browser · f save as HTML · ↵ reply · 1–6 react · c copy"
             } else {
-                "j k pick · ↵ reply · 1–6 react · f save files · c copy · esc"
-            }
-            .to_owned()
+                "j k pick · ↵ reply · 1–6 react · f save files · c copy"
+            };
+            let quoted = picked.is_some_and(|e| e.quotes().is_some());
+            format!("{keys}{} · esc", if quoted { " · q quoted message" } else { "" })
         } else if app.reply.is_some() {
             tr("Reply…").into_owned()
         } else if b.group {
@@ -319,7 +322,7 @@ fn command_menu(buf: &mut Buffer, body: Rect, app: &App) {
         let x = put(buf, body.x + 3, y, 26, &truncate(&format!("/{}", c.name), 26), name.patch(bg)) + 2;
         let hint = match (i == sel, c.action) {
             (false, _) => "",
-            (true, SlashAction::Skill) => "tab fills in",
+            (true, SlashAction::Skill | SlashAction::Agent) => "tab fills in",
             (true, _) => "↵ runs",
         };
         let rx = rput(buf, body.right() - 1, y, hint, t.dim.patch(bg));

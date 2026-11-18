@@ -1,6 +1,6 @@
 //! The background service on macOS (a launchd agent) and Linux (a systemd user unit).
 
-use super::{create_parent, current_exe, data_dir, home, run, wait_for_host_exit};
+use super::{create_parent, current_exe, data_dir, home, wait_for_host_exit};
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -194,6 +194,14 @@ fn current_uid() -> String {
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map_or_else(|| "501".into(), |s| s.trim().to_owned())
+}
+
+fn run(cmd: &str, args: &[&str]) -> Result<()> {
+    let ok = Command::new(cmd).args(args).status().with_context(|| format!("running {cmd}"))?.success();
+    if !ok {
+        bail!("{cmd} {} failed", args.join(" "));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

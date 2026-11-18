@@ -2,10 +2,9 @@
 //! brief, stop it, drop it, try it again.
 
 use super::dispatch::{Places, Standing};
-use super::items::{self, Item, Status};
-use super::{dispatch, finished_properties};
+use super::items::{self, Item, Status, find};
+use super::{dispatch, ended, sources};
 use crate::agent::bot::Cmd;
-use crate::analytics::{self, Event};
 use crate::hub::Hub;
 use crate::store::now_ms;
 use anyhow::{Result, anyhow, bail};
@@ -40,10 +39,6 @@ impl Steer {
     }
 }
 
-fn find<'a>(items: &'a mut [Item], id: &str) -> Result<&'a mut Item> {
-    items.iter_mut().find(|i| i.id == id).ok_or_else(|| anyhow!("no such work"))
-}
-
 fn waiting<'a>(items: &'a mut [Item], id: &str) -> Result<&'a mut Item> {
     let item = find(items, id)?;
     if item.status != Status::Waiting {
@@ -72,14 +67,24 @@ pub fn first(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
     Ok(())
 }
 
+/// `item` gives its task up to start again later. What the user wrote to its thread and no turn took yet goes with
+/// it, as what they said since (the closed task's Stop takes those messages back). The task, to close.
+fn release(hub: &Hub, item: &mut Item, front: i64) -> Option<String> {
+    let task = item.task.clone();
+    if let Some(task) = &task {
+        super::thread::carry(&hub.store, item, task);
+    }
+    item.set_aside(front);
+    task
+}
+
 /// Sets `gives_way` aside, if any, and puts `id` first. The task that gave its item up, to close.
-fn give_way(items: &mut [Item], id: &str, gives_way: Option<&str>) -> Result<Option<String>> {
+fn give_way(hub: &Hub, items: &mut [Item], id: &str, gives_way: Option<&str>) -> Result<Option<String>> {
     let mut released = None;
     if let Some(gives_way) = gives_way {
         let front = items::front(items);
         let item = find(items, gives_way)?;
-        released.clone_from(&item.task);
-        item.set_aside(front);
+        released = release(hub, item, front);
         item.cut_in = true;
     }
     let front = items::front(items);
@@ -96,25 +101,33 @@ pub fn cut_in(hub: &Arc<Hub>, bot: &str, id: &str, instead_of: Option<&str>) -> 
     let released = items::change(hub, bot, |items| {
         waiting(items, id)?;
         let full = dispatch::places(hub, &cfg, items, None).free == 0;
+        // Only the bot's own work gives way: it starts again later, which a routine run or a request never does.
         let gives_way = if let Some(named) = instead_of {
             let item = find(items, named)?;
             if item.status != Status::Working {
                 bail!("\"{}\" isn't working: nothing to give way", item.title);
             }
+            if !item.source.is_bot() {
+                bail!(
+                    "\"{}\" is a routine run or another bot's request: it can't give way, stop it instead",
+                    item.title
+                );
+            }
             Some(named.to_owned())
         } else {
-            let working = items.iter().filter(|i| i.status == Status::Working);
+            let working = items.iter().filter(|i| i.status == Status::Working && i.source.is_bot());
             working.max_by_key(|i| i.started_at).map(|i| i.id.clone())
         };
         let gives_way = gives_way.filter(|_| full);
         // Tried on a copy first: a session is only closed for an item that then starts.
         let mut freed = items.clone();
-        give_way(&mut freed, id, gives_way.as_deref())?;
-        // The bot's own turn (it may be the one steering) only delays the start.
-        let places = Places { coordinator_free: true, ..dispatch::places(hub, &cfg, &freed, None) };
+        let closed = give_way(hub, &mut freed, id, gives_way.as_deref())?;
+        // The bot's own turn (it may be the one steering) only delays the start, and so does the closed task's
+        // while it stops.
+        let places = Places { coordinator_free: true, ..dispatch::places(hub, &cfg, &freed, closed.as_deref()) };
         let standings = dispatch::standings(&freed, &places, |task| dispatch::task_state(hub, task, None));
         let starts = standings.iter().any(|(item, standing)| item == id && *standing == Standing::Start);
-        give_way(items, id, gives_way.as_deref().filter(|_| starts))
+        give_way(hub, items, id, gives_way.as_deref().filter(|_| starts))
     })?;
     settle(hub, bot, released);
     Ok(())
@@ -128,12 +141,11 @@ pub fn replace(hub: &Arc<Hub>, bot: &str, id: &str, brief: &str) -> Result<()> {
         if item.status.ended() {
             bail!("\"{}\" has ended: add new work instead", item.title);
         }
-        brief.clone_into(&mut item.brief);
-        let released = item.task.clone().filter(|_| item.status == Status::Working);
-        if released.is_some() {
-            item.set_aside(front);
+        if !item.source.is_bot() {
+            bail!("\"{}\" is a routine run or another bot's request: its brief isn't yours to replace", item.title);
         }
-        Ok(released)
+        brief.clone_into(&mut item.brief);
+        Ok(if item.status == Status::Working { release(hub, item, front) } else { None })
     })?;
     settle(hub, bot, released);
     Ok(())
@@ -154,36 +166,53 @@ pub fn stop(hub: &Arc<Hub>, bot: &str, id: Option<&str>) -> Result<()> {
                 let task = item.task.clone().filter(|_| item.status == Status::Working);
                 item.status = Status::Stopped;
                 item.ended_at = Some(now);
-                (task, item.clone())
+                // Under the box's lock, so it comes before any message the user writes to its thread from here,
+                // which reopens it: its Stop drops only what waited in the thread until now.
+                if let Some(task) = task {
+                    let _ = hub.send_cmd(&task, Cmd::Stop);
+                }
+                item.clone()
             })
             .collect::<Vec<_>>())
     })?;
-    for (task, item) in stopped {
-        analytics::capture(hub, Event::WorkFinished, finished_properties(&item, None));
-        if let Some(task) = task {
-            let _ = hub.send_cmd(&task, Cmd::Stop);
-        }
+    for item in stopped {
+        // A routine's run is cancelled; the bot that asked hears its request was stopped.
+        ended(hub, bot, &item);
     }
     settle(hub, bot, None);
     Ok(())
 }
 
-/// Takes a waiting item, or one that ended, out of the box.
+/// Takes a waiting item, or one that ended, out of the box. A waiting routine run is cancelled, and the bot whose
+/// request waited hears it was.
 pub fn drop_item(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
-    items::change(hub, bot, |items| {
-        let item = find(items, id)?;
+    let dropped = items::change(hub, bot, |items| {
+        let item = find(items, id)?.clone();
         if item.status == Status::Working {
             bail!("\"{}\" is being worked on: stop it first", item.title);
         }
         items.retain(|i| i.id != id);
-        Ok(())
+        Ok(item)
     })?;
+    if dropped.status == Status::Waiting {
+        sources::deliver(hub, bot, &dropped);
+    }
+    // A worktree it had from before it gave way goes with it, if nothing was done there.
+    super::worktree::leave(std::slice::from_ref(&dropped));
     settle(hub, bot, None);
     Ok(())
 }
 
-/// A stopped or failed item goes back to waiting, last.
+/// A stopped or failed item goes back to waiting, last. A routine's run isn't done again as it was: the routine
+/// runs again, as a new item.
 pub fn retry(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
+    let item = items::load(&hub.store, bot).into_iter().find(|i| i.id == id).ok_or_else(|| anyhow!("no such work"))?;
+    if !matches!(item.status, Status::Stopped | Status::Failed) {
+        bail!("only work that was stopped or failed can be tried again");
+    }
+    if !item.source.is_bot() {
+        return sources::run_again(hub, bot, &item);
+    }
     items::change(hub, bot, |items| {
         let last = items::last(items);
         let item = find(items, id)?;
@@ -194,6 +223,7 @@ pub fn retry(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
         item.ended_at = None;
         item.result = None;
         item.report = None;
+        item.failure = None;
         item.cut_in = false;
         item.restarted = false;
         Ok(())

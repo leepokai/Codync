@@ -1,4 +1,4 @@
-//! The What's new sheet: each announcement's version, then its notes.
+//! The What's new sheet: each highlight's name, what it does and the link to its video, then the smaller changes.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -14,22 +14,36 @@ pub(super) fn whats_new(buf: &mut Buffer, area: Rect, s: &WhatsNew) {
     let t = theme();
     let most = centered(area, 72, area.height.saturating_sub(4));
     let width = usize::from(most.width.saturating_sub(4));
-    let mut lines = Vec::new();
+    let pad = [Span::raw(" ")];
+    let wrapped = |text: String| md::wrap(&[Span::styled(text, t.secondary)], width, &pad, &pad);
+    // A row apart, like the apps' stories.
+    let mut blocks: Vec<Vec<Line>> = Vec::new();
     for a in &s.due {
-        if !lines.is_empty() {
-            lines.push(Line::default());
-        }
-        lines.push(Line::from(Span::styled(format!(" {}", a.version), t.bold)));
-        // A row apart, like the apps' rows.
-        for (i, note) in a.notes.iter().enumerate() {
-            if i > 0 {
-                lines.push(Line::default());
+        for f in &a.features {
+            let mut title = vec![Span::styled(format!(" {}", tr(&f.title)), t.bold)];
+            if f.beta {
+                title.push(Span::styled(format!(" {}", tr("Beta")), t.secondary));
             }
-            let note = Span::styled(tr(note).into_owned(), t.secondary);
-            lines.extend(md::wrap(&[note], width, &[Span::raw(" ")], &[Span::raw(" ")]));
+            let mut block = vec![Line::from(title)];
+            block.extend(wrapped(tr(&f.body).into_owned()));
+            // The full video: terminals open a link they recognize.
+            if let Some(film) = &f.film {
+                block.extend(wrapped(format!("▶ {film}")));
+            }
+            blocks.push(block);
+        }
+        if !a.notes.is_empty() {
+            let mut block = vec![Line::from(Span::styled(format!(" {}", tr("Also in this release")), t.bold))];
+            block.extend(a.notes.iter().flat_map(|note| wrapped(tr(note).into_owned())));
+            blocks.push(block);
         }
     }
+    let lines = blocks.join(&Line::default());
+    let title = match s.due.first() {
+        Some(a) => format!("{} {}", tr("What's new"), a.version),
+        None => tr("What's new").into_owned(),
+    };
     // Borders and the footer around the lines, as tall as they need.
     let r = centered(area, most.width, u(lines.len() + 4).min(most.height));
-    scroll_sheet(buf, r, tr("What's new").as_ref(), &lines, &s.scroll);
+    scroll_sheet(buf, r, &title, &lines, &s.scroll);
 }

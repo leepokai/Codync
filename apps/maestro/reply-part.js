@@ -12,6 +12,12 @@ const api = (method, body) => {
 
 if (typeof CLEANUP !== 'undefined') {
   if (output.bot) api('deleteBot', { botId: output.bot.id })
+} else if (typeof QUOTE !== 'undefined') {
+  // A long message pushes the quoted one out of sight, then a late answer quotes it (`reply_to`), as a background
+  // result sends it.
+  const text = Array.from({ length: 60 }, (_, i) => `Line ${i}.`).join('\n\n')
+  api('chatCall', { botId: output.bot.id, name: 'send_message', arguments: { text } })
+  api('chatCall', { botId: output.bot.id, name: 'send_message', arguments: { text: 'About that one.', reply_to: output.asked } })
 } else {
   const name = `Reply check ${Math.random().toString(36).slice(2, 6)}`
   const bot = api('createBot', {
@@ -21,8 +27,9 @@ if (typeof CLEANUP !== 'undefined') {
   // The first message of a session carries the bot's whole profile, which the agent would answer with: the flow replies
   // to the answer to the second one, which is only `mode agent · alpha beta gamma`.
   let answered = false
+  let asked
   for (const text of ['hello', 'alpha beta gamma']) {
-    api('send', { botId: bot.id, text })
+    asked = api('send', { botId: bot.id, text }).entry
     answered = false
     for (let tries = 0; tries < 100 && !answered; tries++) {
       const until = Date.now() + 100
@@ -32,4 +39,5 @@ if (typeof CLEANUP !== 'undefined') {
     if (!answered) break
   }
   if (!answered) throw new Error('the bot never answered')
+  output.asked = asked.id
 }

@@ -18,7 +18,12 @@ keys and preserve every `{placeholder}`. Missing phrases fall back to English;
 Traditional Chinese retains its existing Simplified fallback. Translate an
 interface template before inserting a user's name or text. Conversation content
 is not translated. The desktop catalog test checks key and placeholder parity, and that every
-[What's new](../features/whats-new.md) note is a phrase in every catalog.
+[What's new](../features/whats-new.md) title, body and note, and every literal `tr()` /
+`trNow()` phrase in `apps/desktop/src`, is a phrase in every catalog, so a new desktop
+string fails CI until it is translated. It also checks that every literal `L10n.tr("…")`
+in `apps/ios` and `tr("…")` in `apps/android/app` and `host/src/tui` is a catalog key
+(trimmed), so a client that words a shared phrase differently fails too. Text a view
+shows without one of these calls stays English: route it through the client's translator.
 
 A captured name, title, query, sign-in code or message is opaque, even when it
 matches an English interface phrase. Only app-owned `{hint}`, `{error}`,
@@ -26,6 +31,9 @@ matches an English interface phrase. Only app-owned `{hint}`, `{error}`,
 translate recursively. Cloud errors use `{reason}` and `{hint}` for their
 interface text; keyboard hints use `{shortcut}`. Substitute captured values in
 one pass so a name containing another placeholder's spelling stays literal.
+When matching a filled sentence back to its phrase, `{count}`, `{unread}` and
+`{cap}` take only numbers and `{version}` only a version (`2.47.0`, `2.47.0-dev`),
+so free text such as "You have reached your limit." never fills "You have {version}.".
 
 Russian system locales (including `ru-RU` and `ru_RU.UTF-8`) use `ru`, shown
 as **Русский** after Brazilian Portuguese. The Russian catalog uses a fixed

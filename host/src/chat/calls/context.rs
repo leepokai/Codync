@@ -217,7 +217,8 @@ fn work(hub: &Hub, cfg: &BotConfig, recent: &[Entry]) -> String {
         lines.push(format!("Doing: {}", rt.activity.trim()));
     }
     if let Some(w) = waiting(recent) {
-        lines.push(format!("Waiting for approval: {} (options: {})", w.request, w.options.join(", ")));
+        let work = w.work.map(|title| format!(" for its work in the background \"{title}\"")).unwrap_or_default();
+        lines.push(format!("Waiting for approval{work}: {} (options: {})", w.request, w.options.join(", ")));
     }
     let queued = recent.iter().filter(|e| e.kind == EntryKind::User.as_str() && e.data["status"] == "queued").count();
     if queued > 0 {
@@ -360,6 +361,7 @@ pub(crate) mod tests {
             auto_name: false,
             task_of: None,
             max_agents: 3,
+            task_worktrees: true,
             lead: false,
             created_at: 0,
         }
@@ -381,13 +383,10 @@ pub(crate) mod tests {
         hub.store.memory_write(|c, now, rev| mf::record(c, &change, now, rev)).unwrap();
     }
 
-    /// git in `dir` alone: a pre-commit hook running these tests sets `GIT_DIR` and `GIT_INDEX_FILE` for the commit.
-    fn git(dir: &Path, args: &[&str]) -> bool {
-        let mut cmd = std::process::Command::new("git");
-        for (key, _) in std::env::vars_os().filter(|(k, _)| k.to_string_lossy().starts_with("GIT_")) {
-            cmd.env_remove(key);
-        }
-        cmd.args(args).current_dir(dir).output().is_ok_and(|o| o.status.success())
+    /// git in `dir` alone, as the host runs it: a pre-commit hook running these tests sets `GIT_DIR` and
+    /// `GIT_INDEX_FILE` for the commit.
+    async fn git(dir: &Path, args: &[&str]) -> bool {
+        crate::git::run(dir, args, std::time::Duration::from_secs(10)).await.is_ok()
     }
 
     #[tokio::test]
@@ -396,9 +395,9 @@ pub(crate) mod tests {
         let repo = std::env::temp_dir().join(format!("codync-call-repo-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&repo).unwrap();
         std::fs::write(repo.join("cart.ts"), "x").unwrap();
-        let repo_ok = git(&repo, &["init", "-q", "-b", "main"])
-            && git(&repo, &["add", "cart.ts"])
-            && git(&repo, &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "Add the cart"]);
+        let repo_ok = git(&repo, &["init", "-q", "-b", "main"]).await
+            && git(&repo, &["add", "cart.ts"]).await
+            && git(&repo, &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "Add the cart"]).await;
         // Unstaged, so its porcelain line starts with a space.
         std::fs::write(repo.join("cart.ts"), "y").unwrap();
         let id = uuid::Uuid::new_v4().to_string();

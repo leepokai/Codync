@@ -5,7 +5,7 @@ import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, session, shell, type IpcMainInvokeEvent, type OpenDialogOptions } from 'electron'
 import type { HostSnapshot, TraySummary, WindowCommand } from '../shared/ipc'
-import { chatWindowMinWidth } from '../shared/chat-layout'
+import { chatWindowMinHeight, chatWindowMinWidth } from '../shared/chat-layout'
 import { devPort, HostController } from './host-controller'
 import { registerFileSaves } from './file-saves'
 import { keepArtifactsInFrame, registerArtifacts, registerArtifactScheme } from './artifacts'
@@ -33,6 +33,7 @@ import { registerRendererRecovery } from './renderer-recovery'
 import { reportHostSetupFailure } from './analytics'
 import { launchAtLogin, openedAtLogin, setLaunchAtLogin, updateLoginItem } from './login-item'
 import { applyMenu } from './app-menu'
+import { activate, present, webPreferences } from './headless'
 import { resolvedLanguage } from '../renderer/lib/l10n'
 
 /** macOS's user-facing computer name, else the host name. */
@@ -81,23 +82,31 @@ function openChat() {
   if (chat) {
     // Shown again after being hidden (closed to the background): the launch itself is `app_opened`.
     if (!chat.isVisible() && !chat.webContents.isLoading()) chat.webContents.send('app:command', { kind: 'windowOpened' } satisfies WindowCommand)
-    chat.show()
-    chat.focus()
+    present(chat)
     return chat
   }
   chat = new BrowserWindow({
     width: 1100,
     height: 760,
     minWidth: chatWindowMinWidth,
-    minHeight: 500,
+    minHeight: chatWindowMinHeight,
     title: app.getName(),
     show: false,
     backgroundColor: background(),
     titleBarStyle: isMac ? 'hidden' : 'default',
-    webPreferences: { preload: join(__dirname, '../preload/index.js'), sandbox: true, contextIsolation: true },
+    webPreferences: webPreferences(join(__dirname, '../preload/index.js')),
   })
   // CODYNC_SHOW_INACTIVE: development and UI checks open the window without taking focus.
-  chat.on('ready-to-show', () => (process.env.CODYNC_SHOW_INACTIVE ? chat?.showInactive() : chat?.show()))
+  chat.on('ready-to-show', () => chat && present(chat, Boolean(process.env.CODYNC_SHOW_INACTIVE)))
+  // The minimum is the page's (chat-window.css): on Windows and Linux the frame and menu bar come on
+  // top of it, or they cut the composer off (#476). Their size is known once the window is shown.
+  // Not `useContentSize`: on Windows its minimum leaves the menu bar out.
+  chat.once('show', () => {
+    if (!chat) return
+    const [width, height] = chat.getSize()
+    const [contentWidth, contentHeight] = chat.getContentSize()
+    chat.setMinimumSize(chatWindowMinWidth + width - contentWidth, chatWindowMinHeight + height - contentHeight)
+  })
   // Closing hides: the window keeps the stores (and the menu bar's data) alive.
   chat.on('close', (e) => quitLifecycle.closeToBackground(e, () => chat?.hide()))
   chat.on('closed', () => (chat = null))
@@ -110,8 +119,7 @@ function openChat() {
 function openPairing() {
   if (pairing) {
     pairing.webContents.send('app:command', { kind: 'reviewApprovals' } satisfies WindowCommand)
-    pairing.show()
-    pairing.focus()
+    present(pairing)
     return
   }
   pairing = new BrowserWindow({
@@ -120,16 +128,18 @@ function openPairing() {
     useContentSize: true,
     resizable: false,
     title: 'Pair iPhone',
+    show: false,
     backgroundColor: background(),
-    webPreferences: { preload: join(__dirname, '../preload/index.js'), sandbox: true, contextIsolation: true },
+    webPreferences: webPreferences(join(__dirname, '../preload/index.js')),
   })
+  pairing.once('ready-to-show', () => pairing && present(pairing))
   pairing.on('closed', () => (pairing = null))
   void pairing.loadURL(rendererURL('pairing'))
 }
 
 export function send(command: WindowCommand, show = true) {
   const window = show ? openChat() : chat
-  if (show && isMac) app.focus({ steal: true })
+  if (show) activate()
   window?.webContents.send('app:command', command)
 }
 
@@ -177,7 +187,7 @@ function registerIPC(tray: Tray) {
   })
   ipcMain.on('app:showWindow', () => {
     openChat()
-    if (isMac) app.focus({ steal: true })
+    activate()
   })
   ipcMain.handle('app:showInDock', () => showInDock())
   ipcMain.handle('app:setShowInDock', (_e, on: boolean) => {

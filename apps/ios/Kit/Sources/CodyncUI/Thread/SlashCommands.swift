@@ -2,7 +2,8 @@ import CodyncKit
 
 /// A command in the composer's `/` list.
 struct SlashCommand: Identifiable, Equatable {
-    enum Action: Hashable { case fast, skill(String) }
+    /// `agent`: one of the agent's own commands, with the agent that lists it (its logo marks the row).
+    enum Action: Hashable { case fast, skill(String), agent(name: String, agent: String) }
 
     /// What follows the `/`.
     let name: String
@@ -17,7 +18,8 @@ struct SlashCommand: Identifiable, Equatable {
 
 /// The composer's `/` commands, listed while the draft is just `/partial`, the same in a group: Fast mode runs here
 /// through the host's `updateBot` (a group's on each member; a new session is in the bot's menu); a skill fills in `/<id> `, and the host turns that message into "read this skill first"
-/// (`host/src/market/skills.rs` `expand_command`). docs/features/marketplace.md, "Commands".
+/// (`host/src/market/skills.rs` `expand_command`). A bot's own chat then lists its agent's commands (`agentCommands`),
+/// which fill in `/<name> ` and reach the agent as typed. docs/features/marketplace.md, "Commands".
 enum SlashCommands {
     /// The command name being typed after a leading `/`, before any space.
     static func query(_ draft: String) -> String? {
@@ -26,15 +28,32 @@ enum SlashCommands {
     }
 
     /// Built-in commands, then the skills the bot has on (a group's: any member's), whose name or
-    /// title holds `query`. `members` are a group's bots.
+    /// title holds `query`, then a bot's agent's own commands whose name holds it. `members` are a group's bots.
     static func list(for bot: Bot?, members: [Bot] = [], query: String, skills: [InstalledSkill]) -> [SlashCommand] {
         guard let bot else { return [] }
         let owners = bot.isGroup ? members : [bot]
         let own = skills.filter { skill in owners.contains { $0.skills.contains(skill.id) } }.map {
             SlashCommand(name: $0.id, icon: "book.pages", title: $0.name, detail: $0.description, warning: false, action: .skill($0.id))
         }
-        return (builtIn(bot, members: members) + own).filter {
+        let codync = (builtIn(bot, members: members) + own).filter {
             query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.title.localizedCaseInsensitiveContains(query)
+        }
+        let agent = bot.isGroup ? [] : bot.agentCommands.map {
+            SlashCommand(name: $0.name, icon: "", title: $0.name, detail: $0.description.isEmpty ? $0.hint ?? "" : $0.description,
+                         warning: false, action: .agent(name: $0.name, agent: bot.runningAgent))
+        }
+        return codync + agent.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+    }
+
+    /// The list in runs by where each command comes from: Codync (`agent` nil), or the agent that lists it.
+    static func groups(_ commands: [SlashCommand]) -> [(agent: String?, commands: [SlashCommand])] {
+        commands.reduce(into: []) { groups, command in
+            let agent: String? = if case .agent(_, let agent) = command.action { agent } else { nil }
+            if groups.last?.agent == agent, !groups.isEmpty {
+                groups[groups.count - 1].commands.append(command)
+            } else {
+                groups.append((agent, [command]))
+            }
         }
     }
 

@@ -77,7 +77,7 @@ function ZoneList({ zone, pick }: { zone: string; pick: (zone: string) => void }
           setHighlight(0)
         }}
       />
-      <div ref={list} className="zone-list" role="listbox" aria-label="Time zones">
+      <div ref={list} className="zone-list" role="listbox" aria-label={tr('Time zones')}>
         {matches.map((z, i) => (
           <button
             key={z.id}

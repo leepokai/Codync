@@ -76,6 +76,7 @@ impl App {
             Some("pairingRequests") => self.pairing_requests_changed(v),
             Some("bot") => {
                 self.upsert_bot(&v["bot"]);
+                self.close_idle_work_page();
                 self.memory_moved(&v["bot"]);
             }
             Some("artifact") => self.artifact_changed(&v["artifact"]),
@@ -91,7 +92,6 @@ impl App {
                             self.reload_details(&bot);
                         }
                     }
-                    self.kofi_reply(&bot, &e);
                     self.entries.entry(bot).or_default().insert(e.seq, e);
                 }
             }
@@ -147,6 +147,7 @@ impl App {
         let old = self.bots.insert(new.id.clone(), new.clone());
         let Some(old) = old else { return };
         self.tasks_ended(&old.work, &new.work);
+        self.follow_tasks(&new.id);
         self.keep_details_cursor(&new.id, (&old.work, old.max_agents));
         let watching = self.selected.as_deref() == Some(new.id.as_str()) && self.chat_visible() && self.term_focused;
         // A member's turn in a group is the group's: it alone says done / needs you.
@@ -258,10 +259,15 @@ impl App {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.analytics_hello(&v);
                 self.auto_order = v["autoOrder"].as_bool();
+                self.credentials_reset = v["credentialsReset"].as_bool().unwrap_or(false);
                 self.screen = v["screen"].clone();
             }
             After::Analytics => self.analytics_set(&v),
             After::AutoOrder => self.auto_order_set(&v),
+            After::CredentialsReset => {
+                self.backends = v["backends"].as_array().cloned().unwrap_or_default();
+                self.flash("Saved credentials reset. Enter them again where you use them.");
+            }
             After::Backends => {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.flash("Agents refreshed");
@@ -386,7 +392,7 @@ impl App {
                 }
                 // The stream may already hold a newer copy (its delivery status).
                 if let Some((bot, e)) = Entry::parse(&value["entry"]) {
-                    self.kofi_sent(&bot, &e);
+                    super::kofi::sent();
                     self.entries.entry(bot).or_default().entry(e.seq).or_insert(e);
                 }
                 self.flash("Sent");

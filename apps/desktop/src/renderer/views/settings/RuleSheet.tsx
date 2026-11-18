@@ -4,19 +4,24 @@ import { CardSection, ChoiceList, ChoicePicker, IconButton, Reveal, Spinner, Swi
 import { ModalHeader, useDismiss } from '../../components/Overlay'
 import { VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import { ANY } from '../../lib/network-copy'
+import { ANY, beforeCeilings } from '../../lib/network-copy'
+import { useTr } from '../../lib/use-language'
 import type { BotStore } from '../../store/bot-store'
 import { network } from '../../store/network'
 import { errorText } from './parts'
 
-const ACCESS: { id: NetworkRule['access']; label: string }[] = [
-  { id: 'allow', label: 'Allow' },
-  { id: 'deny', label: 'Deny' },
+/** The most trusted first; `auto` and `ask` are ceilings, never freer than the bot is set. */
+const ACCESS: { id: NetworkRule['access']; label: string; detail: string }[] = [
+  { id: 'allow', label: 'Allow', detail: 'Its requests run as the bot is set.' },
+  { id: 'auto', label: 'Auto', detail: 'The bot does by itself only what its agent judges safe, and asks you about the rest.' },
+  { id: 'ask', label: 'Ask', detail: 'Every change and command the bot makes for it waits for your approval.' },
+  { id: 'deny', label: 'Deny', detail: 'Its messages are refused.' },
 ]
 
 /** A new rule for `net`: who on its other computers may message which bot here. Saves the whole list. */
 export function RuleSheet({ store, net }: { store: BotStore; net: Network }) {
   const dismiss = useDismiss()
+  const tr = useTr()
   const [access, setAccess] = useState<NetworkRule['access']>('deny')
   const [fromComputer, setFromComputer] = useState(ANY)
   const [fromAgent, setFromAgent] = useState(ANY)
@@ -43,7 +48,8 @@ export function RuleSheet({ store, net }: { store: BotStore; net: Network }) {
       await network.setRules(store, net.id, first ? [rule, ...net.rules] : [...net.rules, rule])
       dismiss()
     } catch (e) {
-      setProblem(errorText(e))
+      const problem = errorText(e)
+      setProblem(beforeCeilings(problem) ? tr('Update Codync on that computer.') : problem)
     } finally {
       setBusy(false)
     }

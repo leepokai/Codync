@@ -4,6 +4,7 @@ mod analytics;
 mod approvals;
 mod auto_order;
 mod bot;
+mod credentials;
 mod editor;
 mod events;
 mod exchange;
@@ -34,8 +35,10 @@ pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};
 pub use editor::Editor;
 pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group, rows};
 pub use find::{Find, match_ranges};
+pub use kofi::KofiSheet;
 pub(in crate::tui) use kofi::URL as KOFI_URL;
 pub use model::{After, Entry, Kind, Mark, Msg, Status};
+pub use queue::Queued;
 pub use roster::{RosterLine, cursor_line, rename_fold, roster_lines, stops};
 pub use slash::SlashAction;
 pub(super) use steps::{running_turn, working_steps};
@@ -45,7 +48,9 @@ pub use ui::{
     TraceMode, Width,
 };
 pub use whats_new::WhatsNew;
-pub use work::{Background, MAX_AGENTS, Sections, WorkItem, WorkStatus, can_cut_in, counts, places, word};
+pub use work::{
+    Background, MAX_AGENTS, Sections, Source, WorkItem, WorkStatus, can_cut_in, counts, places, shared_line, word,
+};
 
 use crate::tui::l10n::tr;
 use serde_json::{Value, json};
@@ -171,9 +176,10 @@ pub struct App {
     pub analytics: Option<bool>,
     /// Whether a bot with a new message moves to the top of the roster (`None`: before `hello`, or an older host).
     pub auto_order: Option<bool>,
+    /// Whether `resetCredentials` can be used here (`hello`): not on a Codync Cloud computer or an older host.
+    pub credentials_reset: bool,
     /// What usage analytics has reported this run (`app_opened`, `screen_viewed`).
     seen: analytics::Seen,
-    kofi: kofi::Invite,
 }
 
 impl App {
@@ -247,8 +253,8 @@ impl App {
             hint: None,
             analytics: None,
             auto_order: None,
+            credentials_reset: false,
             seen: analytics::Seen::default(),
-            kofi: kofi::Invite::load(),
         }
     }
 
@@ -265,7 +271,7 @@ impl App {
     pub fn counts(&self) -> [usize; 4] {
         let mut c = [0; 4];
         for b in self.bots.values().filter(|b| !b.hidden) {
-            match b.mark() {
+            match b.roster_mark() {
                 Mark::Need => c[0] += 1,
                 Mark::Work => c[1] += 1,
                 Mark::Unread => c[2] += 1,
@@ -291,15 +297,34 @@ impl App {
     }
 
     pub fn pending(&self) -> Option<&Entry> {
-        let id = self.selected.as_ref()?;
-        self.lane(id).into_iter().rev().find(|e| e.pending())
+        self.to_answer(|_| true)
     }
 
     /// The newest pending card of one kind: F-keys answer the choice card and y/a/n/N the approval, even when a
     /// card of the other kind came after it.
     pub fn pending_of(&self, kind: Kind) -> Option<&Entry> {
+        self.to_answer(|e| e.kind == kind)
+    }
+
+    /// The selected chat's pending card that `wanted` takes and the keys answer: the picked one (Work's `↵` on an
+    /// item that needs you picks its card), else the newest.
+    fn to_answer(&self, wanted: impl Fn(&Entry) -> bool) -> Option<&Entry> {
         let id = self.selected.as_ref()?;
-        self.lane(id).into_iter().rev().find(|e| e.kind == kind && e.pending())
+        let cards: Vec<&Entry> = self.lane(id).into_iter().filter(|e| e.pending() && wanted(e)).collect();
+        cards.iter().find(|e| self.pick.as_ref() == Some(&e.id)).or(cards.last()).copied()
+    }
+
+    /// The card `item` waits on in `bot`'s chat (an approval, a choice, a sign-in): the newest one, or, when that is a
+    /// sign-in and another (the agent the turn left signed out, while its fallback was too) holds the item's message,
+    /// that one, whose sign-in sends it again.
+    pub fn card_of(&self, bot: &str, item: &WorkItem) -> Option<&Entry> {
+        let waits = |e: &&Entry| (e.pending() || e.waits_for_sign_in()) && e.data["item"] == item.id.as_str();
+        let cards: Vec<&Entry> = self.lane(bot).into_iter().filter(waits).collect();
+        let newest = *cards.last()?;
+        if !newest.waits_for_sign_in() {
+            return Some(newest);
+        }
+        Some(cards.into_iter().rfind(|e| e.holds_messages()).unwrap_or(newest))
     }
 
     /// The message the composer replies to, in the selected chat.
@@ -353,7 +378,7 @@ impl App {
             || self.bots.values().any(|b| b.status == Status::Working || b.work.iter().any(|i| i.status.live()))
     }
 
-    fn select(&mut self, id: &str) {
+    pub(in crate::tui) fn select(&mut self, id: &str) {
         if self.selected.as_deref() != Some(id) {
             self.close_find();
             self.selected = Some(id.to_owned());
@@ -371,7 +396,7 @@ impl App {
         let ids: Vec<(String, bool)> = self
             .roster()
             .iter()
-            .map(|b| (b.id.clone(), b.mark() == want && (want != Mark::Need || b.away().is_none())))
+            .map(|b| (b.id.clone(), b.roster_mark() == want && (want != Mark::Need || b.away().is_none())))
             .collect();
         let start = self.selected.as_ref().and_then(|s| ids.iter().position(|(x, _)| x == s)).map_or(0, |i| i + 1);
         let found = (0..ids.len()).map(|k| &ids[(start + k) % ids.len()]).find(|(_, hit)| *hit).cloned();
@@ -422,7 +447,7 @@ impl App {
         if self.chat_visible()
             && self.term_focused
             && let Some(b) = self.bot()
-            && b.unread > 0
+            && b.unseen() > 0
         {
             let id = b.id.clone();
             if self.reading.insert(id.clone()) {
@@ -515,9 +540,12 @@ pub fn fuzzy(query: &str, fields: &[&str]) -> bool {
     })
 }
 
+/// `path` with the computer's `home` folder as `~`, on either kind of separator; unchanged outside the home folder
+/// (`/Users/me2` isn't in `/Users/me`) or without one.
 pub fn tilde(path: &str, home: &str) -> String {
+    let home = home.trim_end_matches(['/', '\\']);
     match path.strip_prefix(home) {
-        Some(rest) if !home.is_empty() => format!("~{rest}"),
+        Some(rest) if !home.is_empty() && (rest.is_empty() || rest.starts_with(['/', '\\'])) => format!("~{rest}"),
         _ => path.to_owned(),
     }
 }
@@ -526,6 +554,41 @@ pub fn tilde(path: &str, home: &str) -> String {
 pub(in crate::tui) fn test_app() -> App {
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     App::new(Client::new("http://127.0.0.1:1", None), tx, String::new())
+}
+
+/// A host that hands each request it gets to `requests`, answering them all alike: its address and `requests`.
+#[cfg(test)]
+pub(in crate::tui) async fn recording_host() -> (String, tokio::sync::mpsc::UnboundedReceiver<String>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("a free port");
+    let base = format!("http://{}", listener.local_addr().expect("its address"));
+    let (seen, requests) = tokio::sync::mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            let mut request = Vec::new();
+            while !request.ends_with(b"}") {
+                let mut chunk = [0; 4096];
+                let read = socket.read(&mut chunk).await.expect("a request");
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&chunk[..read]);
+            }
+            let _ = seen.send(String::from_utf8_lossy(&request).into_owned());
+            let answer = b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}";
+            let _ = socket.write_all(answer).await;
+        }
+    });
+    (base, requests)
+}
+
+/// The next request [`recording_host`] got.
+#[cfg(test)]
+pub(in crate::tui) async fn next_request(requests: &mut tokio::sync::mpsc::UnboundedReceiver<String>) -> String {
+    tokio::time::timeout(Duration::from_secs(10), requests.recv())
+        .await
+        .expect("the host hears of it in time")
+        .expect("the host is up")
 }
 
 /// What `draw` leaves in `area`, line by line.

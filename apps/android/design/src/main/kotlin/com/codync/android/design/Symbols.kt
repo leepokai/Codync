@@ -181,6 +181,7 @@ import androidx.annotation.DrawableRes
     "text.bubble" -> R.drawable.sf_text_bubble
     "trash" -> R.drawable.sf_trash
     "tray" -> R.drawable.sf_tray
+    "tray.full" -> R.drawable.sf_tray_full
     "waveform" -> R.drawable.sf_waveform
     "wifi" -> R.drawable.sf_wifi
     "wifi.exclamationmark" -> R.drawable.sf_wifi_exclamationmark

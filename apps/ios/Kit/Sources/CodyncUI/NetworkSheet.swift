@@ -33,7 +33,7 @@ public struct NetworkSheet: View {
                         ForEach(network.computers ?? []) { NetworkComputerRow(computer: $0) }
                     }
                     if let rules = network.rules, !rules.isEmpty {
-                        CardSection("Who may message bots here", footer: "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in.") {
+                        CardSection("Who may message bots here", footer: network.rulesFooter) {
                             ForEach(Array(rules.enumerated()), id: \.offset) { _, rule in
                                 Text(network.text(of: rule)).font(.subheadline).foregroundStyle(Palette.text)
                                     .frame(maxWidth: .infinity, alignment: .leading)

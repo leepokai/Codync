@@ -33,9 +33,11 @@ mod connector_keeper;
 mod custom;
 mod install;
 mod registry;
+mod remote_update;
 mod skills;
 mod updates;
 
+pub use connector_update::update_connector;
 pub use custom::add_custom_connector;
 pub use install::{import_connectors, install_connector, list_connectors, remove_connector};
 pub use registry::{browse_connectors, connector_info, refresh_first_page};
@@ -92,9 +94,18 @@ pub struct Connector {
     /// Remote servers that want sign-in; see `oauth`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oauth: Option<oauth::OAuth>,
+    /// Changes when a remote URL or headers are edited, invalidating in-flight sign-ins.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub auth_revision: String,
 }
 
 impl Connector {
+    /// Retires this connection's sign-ins, keeper grants and running proxies: call it on every remote
+    /// URL or header change.
+    pub fn new_auth_revision(&mut self) {
+        self.auth_revision = uuid::Uuid::new_v4().to_string();
+    }
+
     /// ACP `McpServer`. Remote servers run through this host's `remote` proxy (`codync-host mcp remote`),
     /// which keeps sign-in tokens fresh and works with agents that only speak stdio.
     /// A remote server still waiting for sign-in is left out.
@@ -273,13 +284,14 @@ fn save<T: Serialize>(store: &crate::store::Store, key: &str, items: &[T]) -> Re
     store.kv_set(key, &serde_json::to_string(items)?)
 }
 
-pub fn save_connectors(store: &crate::store::Store, items: &[Connector]) -> Result<()> {
+/// Saves `items` and returns them as stored: on a managed computer, with the keeper's secrets replaced by placeholders.
+pub fn save_connectors(store: &crate::store::Store, items: &[Connector]) -> Result<Vec<Connector>> {
+    let mut items = items.to_vec();
     if crate::remote::managed::is_managed(store) {
-        let mut items = items.to_vec();
         connector_keeper::hand_over(store, &mut items)?;
-        return vault::write(store, CONNECTORS_SLOT, &serde_json::to_string(&items)?);
     }
-    vault::write(store, CONNECTORS_SLOT, &serde_json::to_string(items)?)
+    vault::write(store, CONNECTORS_SLOT, &serde_json::to_string(&items)?)?;
+    Ok(items)
 }
 
 /// Serialize read/modify/write so OAuth refreshes and installations cannot replace each other.
@@ -287,18 +299,26 @@ pub fn update_connectors<T>(
     store: &crate::store::Store,
     change: impl FnOnce(&mut Vec<Connector>) -> Result<T>,
 ) -> Result<T> {
+    update_saved(store, change).map(|(result, _)| result)
+}
+
+/// [`update_connectors`], also returning the list as stored.
+fn update_saved<T>(
+    store: &crate::store::Store,
+    change: impl FnOnce(&mut Vec<Connector>) -> Result<T>,
+) -> Result<(T, Vec<Connector>)> {
     let _guard = store.connector_lock.locked();
     let mut all = connectors(store)?;
     let result = change(&mut all)?;
-    save_connectors(store, &all)?;
-    Ok(result)
+    let saved = save_connectors(store, &all)?;
+    Ok((result, saved))
 }
 
 fn add_connector(store: &crate::store::Store, mut c: Connector) -> Result<Value> {
     update_connectors(store, |all| {
         if c.registry_name.is_none() {
             // Recheck under the write lock: another install may have finished during OAuth discovery.
-            ensure_name_available(&c.name, all)?;
+            ensure_name_available(&c.name, all, None)?;
         }
         // A registry server is installed once: installing it again replaces it under the id the bots know.
         if let Some(name) = c.registry_name.as_deref()
@@ -317,8 +337,8 @@ fn add_connector(store: &crate::store::Store, mut c: Connector) -> Result<Value>
 
 /// A custom connector can't take an installed connector's name. Names are compared as
 /// given, not as slugs: distinct names may share an id prefix.
-fn ensure_name_available(name: &str, all: &[Connector]) -> Result<()> {
-    if all.iter().any(|c| c.name == name) {
+fn ensure_name_available(name: &str, all: &[Connector], except_id: Option<&str>) -> Result<()> {
+    if all.iter().any(|c| c.name == name && Some(c.id.as_str()) != except_id) {
         bail!(
             "A connector named \"{name}\" is already installed. Sign in to it or remove it in your library, or choose another name."
         );
@@ -373,6 +393,7 @@ mod tests {
             url: None,
             headers: BTreeMap::new(),
             oauth: None,
+            auth_revision: String::new(),
         };
         let exe = std::path::Path::new("/bin/codync-host");
         let config = c.acp(exe, 1).unwrap();

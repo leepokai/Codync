@@ -47,7 +47,7 @@ The host listens on `0.0.0.0:19222` unless `install --bind` saved another addres
 - **No desktop app.** The Linux desktop app (`codync`, AppImage/deb/tar.gz) needs a graphical session; it uses the installed `codync-host`. On a server, use the phone, the desktop app on another computer over SSH, or `codync-host tui`.
 - **Keep-awake is a no-op.** The host tries `systemd-inhibit` while a bot works; VMs don't sleep, and failure only logs a warning.
 - **One of the account's computers.** A VM pairs like any other computer; the phones show it beside the rest, under its own heading.
-- **Usage limits** come from the local Claude and Codex installs, same as on a desktop.
+- **Usage limits** come from the local Claude and Codex installs, same as on a desktop. Where Claude runs on a `claude setup-token` token (`CLAUDE_CODE_OAUTH_TOKEN`), its limits show after a bot's first turn, and only the windows Claude reports with it ([Claude's rate-limit event](../features/usage-limits.md#claudes-rate-limit-event)).
 
 ## Verification — 2026-09-26
 

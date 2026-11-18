@@ -10,7 +10,7 @@ pub async fn add_custom_connector(store: &crate::store::Store, b: &Value) -> Res
     let name =
         b["name"].as_str().map(str::trim).filter(|s| !s.is_empty()).ok_or_else(|| anyhow!("`name` is required"))?;
     let all = connectors(store)?;
-    ensure_name_available(name, &all)?;
+    ensure_name_available(name, &all, None)?;
     let c = custom(name, b, &all).await?;
     add_connector(store, c)
 }
@@ -32,14 +32,12 @@ pub(super) async fn custom(name: &str, b: &Value, all: &[Connector]) -> Result<C
         url: None,
         headers: map(&b["headers"]),
         oauth: None,
+        auth_revision: String::new(),
     };
     let url =
         ["url", "serverUrl", "httpUrl"].iter().find_map(|k| b[*k].as_str()).map(str::trim).filter(|s| !s.is_empty());
     if let Some(url) = url {
-        let local = ["http://localhost", "http://127.0.0.1", "http://[::1]"].iter().any(|p| url.starts_with(p));
-        if !url.starts_with("https://") && !local {
-            bail!("remote connectors need an https URL");
-        }
+        validate_url(url)?;
         if oauth::required(url, &c.headers).await {
             c.oauth = Some(oauth::OAuth::default());
         }
@@ -53,6 +51,20 @@ pub(super) async fn custom(name: &str, b: &Value, all: &[Connector]) -> Result<C
         .ok_or_else(|| anyhow!("give a command or a URL"))?;
     (c.command, c.args) = super::command_line::split_command(line, b.get("args"))?;
     Ok(c)
+}
+
+pub(super) fn validate_url(raw: &str) -> Result<()> {
+    let url = reqwest::Url::parse(raw).map_err(|_| anyhow!("Invalid remote URL"))?;
+    let loopback = url.host_str().is_some_and(|h| {
+        h == "localhost" || h.trim_matches(['[', ']']).parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+    });
+    if !(url.scheme() == "https" || url.scheme() == "http" && loopback) || url.host_str().is_none() {
+        bail!("Use HTTPS, or HTTP on a loopback address");
+    }
+    if !url.username().is_empty() || url.password().is_some() || url.fragment().is_some() {
+        bail!("Remote URLs cannot contain user information or a fragment");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -180,5 +192,25 @@ mod tests {
         assert_ne!(first["id"], second["id"]);
         super::super::import_connectors(&store, r#"{"mcpServers":{"A B":{"command":"node c.js"}}}"#).await.unwrap();
         assert_eq!(connectors(&store).unwrap().len(), 3);
+    }
+}
+
+#[cfg(test)]
+mod url_tests {
+    use super::*;
+    use serde_json::json;
+    #[tokio::test]
+    async fn custom_urls_reject_deceptive_loopbacks_before_discovery() {
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).unwrap();
+        for url in [
+            "http://localhost.example.com/mcp",
+            "http://127.0.0.1.example.com/mcp",
+            "https://user:password@example.com/mcp",
+            "https://example.com/mcp#fragment",
+            "file:///tmp/mcp",
+        ] {
+            assert!(add_custom_connector(&store, &json!({"name":"Remote","url":url})).await.is_err(), "{url}");
+            assert_eq!(connectors(&store).unwrap(), Vec::<Connector>::new());
+        }
     }
 }

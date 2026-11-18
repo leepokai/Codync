@@ -1,5 +1,5 @@
 import type { Bot } from '@shared/models'
-import { isLive, itemLine, type WorkItem, type WorkStatus } from '@shared/work'
+import { givesWay, itemLine, type WorkItem, type WorkStatus } from '@shared/work'
 import { Dialog } from '../../components/Overlay'
 import { VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
@@ -32,7 +32,7 @@ export function StopWorkDialog({ botId, itemId, onClose }: { botId: string; item
   )
 }
 
-/** Every place is taken: asks which of the bot's live items gives way to `item`; closed while it is null. */
+/** Every place is taken: asks which of the bot's live items that may give way does, to `item`; closed while it is null. */
 export function CutInDialog({ bot, item, onClose }: { bot: Bot; item: WorkItem | null; onClose: () => void }) {
   const tr = useTr()
   const store = useStore()
@@ -45,7 +45,7 @@ export function CutInDialog({ bot, item, onClose }: { bot: Bot; item: WorkItem |
       onClose={onClose}
     >
       <VStack gap={6}>
-        {item ? bot.work.filter(isLive).map((giving) => (
+        {item ? bot.work.filter(givesWay).map((giving) => (
           <button
             key={giving.id}
             className="cut-in-pick"

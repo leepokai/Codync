@@ -1,0 +1,16 @@
+.invite-sheet-star {
+  color: var(--star);
+  fill: currentColor;
+  flex: none;
+}
+.invite-sheet-body {
+  padding: 0 20px 20px;
+}
+.invite-sheet-message {
+  line-height: 1.5;
+}
+.invite-sheet-app-icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+}

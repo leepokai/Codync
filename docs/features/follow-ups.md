@@ -9,7 +9,7 @@ computer doing the remembering instead of the model.
 |---|---|---|
 | Whose | The user's standing task | The bot's own reminder |
 | How often | Every time a trigger fires | Once |
-| Session | A fresh one per run | The bot's chat, with what was said before |
+| Session | A task's, away from the chat | The bot's chat, with what was said before |
 | In the apps | A row under Routines in Details, with a switch | A dashed card under Later in Details, and a line in the chat |
 | When it fails | Retried, with a Try again button | A failure line, like any turn |
 
@@ -29,7 +29,9 @@ On the built-in `routines` MCP server every agent has:
 `follow_up` works only from a turn in the bot's own chat. In a group room, or while the bot answers another bot's
 `message_bot` request, it is refused (`own_chat`: the running turn's lane is another chat, or the team's turn is
 a request): the line and the later turn go to the bot's own chat, where the room or the asking bot would never
-see them. The refusal tells the bot to say in its reply that it can't check back from there.
+see them. The refusal tells the bot to say in its reply that it can't check back from there. A turn a network rule holds to a
+[ceiling](codync-network.md#ceilings-auto-and-ask) can't call it either (the API refuses it with every tool that
+isn't a read or an answer to the user): its later turn would act on the sender's text without the ceiling.
 
 The server's instructions tell the bot to set one whenever something in its own chat needs another look later,
 never to say it will check back without setting one, and to use a routine for anything recurring.

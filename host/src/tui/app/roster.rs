@@ -9,7 +9,7 @@ use serde_json::json;
 
 use super::super::l10n::{fill, tr};
 use super::super::manage::{Submit, section_fields};
-use super::{After, App, Bot, Click, Overlay};
+use super::{After, App, Bot, Click, Confirm, ConfirmAct, Overlay};
 
 /// The first host with roster sections (`section`, `renameSection`).
 const SECTIONS_SINCE: &str = "2.32.0";
@@ -20,12 +20,13 @@ const LEAD_CHOICE_SINCE: &str = "2.33.0";
 pub enum RosterLine<'a> {
     /// `PINNED` above the pinned bots, `BOTS` above the bots in no section.
     Label(&'static str),
-    /// A section's label: how many bots it holds, their unread messages (shown while folded) and the
-    /// first of them, which the cursor lands on while it is folded.
+    /// A section's label: how many bots it holds, their unread messages (shown while folded), whether
+    /// those count a card waiting on the user, and the first of them, which the cursor lands on while it is folded.
     Section {
         name: &'a str,
         bots: usize,
         unread: i64,
+        waiting: bool,
         folded: bool,
         first: &'a Bot,
     },
@@ -79,6 +80,7 @@ pub fn roster_lines<'a>(roster: &[&'a Bot], folded: &HashSet<String>) -> Vec<Ros
                         name,
                         bots: members.len(),
                         unread: members.iter().map(|m| m.unread).sum(),
+                        waiting: members.iter().any(|m| m.waiting > 0),
                         folded: folded.contains(name),
                         first: b,
                     }
@@ -223,6 +225,23 @@ impl App {
         }
     }
 
+    /// ^k "New session for this bot…": once confirmed, its agent starts over with a fresh context; the chat stays.
+    pub(super) fn ask_new_session(&mut self) {
+        let Some(b) = self.bot() else { return };
+        if b.group {
+            self.flash("A group has no session of its own");
+            return;
+        }
+        let c = Confirm {
+            title: tr("Start a new session?").into_owned(),
+            detail: "The agent forgets this conversation's context.".into(),
+            note: "The transcript stays here.".into(),
+            button: "New session",
+            act: ConfirmAct::NewSession(b.id.clone()),
+        };
+        self.overlays.push(Overlay::Confirm(c));
+    }
+
     /// `w`: "Move to section" for the selected bot: one of the sections, a new name, or empty for none.
     pub(super) fn ask_section(&mut self) {
         if self.bot().is_none() || !self.sections_supported() {
@@ -281,9 +300,10 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{Bot, Click, Overlay, test_app};
+    use super::super::super::net::Client;
+    use super::super::{Bot, Click, Overlay, next_request, recording_host, test_app};
     use super::{App, NOT_IN_A_SECTION, RosterLine, cursor_line, rename_fold, roster_lines, section_key};
-    use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
     use ratatui::layout::Rect;
     use serde_json::json;
     use std::collections::HashSet;
@@ -322,6 +342,29 @@ mod tests {
         assert_eq!(shown(&app), ["PINNED", "p", "▾ home (1)", "h", "▾ Work (2)", "w1", "w2", "BOTS", "x"]);
         app.folded.insert("Work".into());
         assert_eq!(shown(&app), ["PINNED", "p", "▾ home (1)", "h", "▸ Work (2) 3", "BOTS", "x"]);
+    }
+
+    #[tokio::test]
+    async fn only_a_bot_starts_a_new_session_once_confirmed() {
+        let (base, mut requests) = recording_host().await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(Client::new(&base, Some("token")), tx, String::new());
+        add(&mut app, "b", false, None, 1, 0);
+        let group = json!({"id": "g", "kind": "group", "lastAt": 0});
+        app.bots.insert("g".into(), Bot::parse(&group).expect("a group with an id parses"));
+        app.selected = Some("b".into());
+        app.ask_new_session();
+        assert!(
+            matches!(app.overlays.last(), Some(Overlay::Confirm(c)) if matches!(&c.act, super::ConfirmAct::NewSession(id) if id == "b"))
+        );
+        app.overlay_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        let sent = next_request(&mut requests).await;
+        assert!(sent.starts_with("POST /api/newSession") && sent.contains(r#""botId":"b""#), "{sent}");
+        assert!(app.overlays.is_empty(), "confirming closes it");
+        app.selected = Some("g".into());
+        app.ask_new_session();
+        assert!(app.overlays.is_empty(), "a group has no session of its own");
+        assert_eq!(app.hint.as_ref().map(|(s, _)| s.as_str()), Some("A group has no session of its own"));
     }
 
     #[tokio::test]

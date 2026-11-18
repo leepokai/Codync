@@ -284,7 +284,7 @@ const wrapUp = (it, sec, outcome, repro) => agent(`Write the GitHub comments for
 ${PATHS}
 Outcome: ${JSON.stringify(outcome)}
 Drafts, in plain friendly English, each claim about the product checked against the code, nothing from the item quoted except file paths:
-- merged PR: a short thank-you confirming the merge into dev and that it ships in the next release; a first-time contributor (no earlier merged PR) also gets https://discord.codync.dev (the Codync Discord and its Contributor role). Each linked issue gets "fixed on dev by #${it.number}, ships in the next release" (closed only once that release is out).
+- merged PR: a short thank-you confirming the merge into dev and that it ships in the next release; a first-time contributor (no earlier merged PR) also gets https://discord.codync.dev (the Codync Discord and its Contributor role). Each linked issue gets "fixed on dev by #${it.number}, ships in the next release" (then it is closed).
 - landed issue fix: the fix is on dev in that commit and ships in the next release.
 - changes: a review requesting changes: each point with file and line, what's wrong and what would fix it, plus what the author still owes (end-to-end Validation, the after-change report, Greptile 4/5 or more on their latest commit for anything beyond a small bug fix).
 - reply: to the reporter: what was checked and seen, and what's needed (steps, version, logs with secrets removed) or why it works as designed.
@@ -297,8 +297,8 @@ const NEXT = {
   ask: 'Ask the maintainer whether to go ahead, with the summary, reasons and drafts. On a yes, rerun with approved: [number]. resumeFromRunId reuses the security check and judgment, so use it only while the PR\'s head is still security.facts.head_sha; a moved head needs a fresh run. Post the drafts only if they agree.',
   reply: 'Read the drafts, check each claim, post them.',
   changes: 'Read the review draft, check each claim, post it as a review requesting changes.',
-  merged: 'Post the drafts. Close linked issues only once the release carrying the fix is out.',
-  landed: 'Post the drafts. Close the issue only once the release carrying the fix is out.',
+  merged: 'Post the drafts, then close the linked issues (gh issue close N --reason completed): a fix merged into dev closes its issue.',
+  landed: 'Post the drafts, then close the issue (gh issue close N --reason completed): a fix merged into dev closes its issue.',
   unfinished: 'Report to the maintainer what stopped it (why). Its worktree is kept: stop its `npm run dev` sandbox, keeping the files. A head that moved needs a fresh run (never resumeFromRunId, which replays the old security check) before anything else.',
 }
 

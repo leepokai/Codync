@@ -42,6 +42,17 @@ pub(super) fn forget(store: &Store, id: &str) -> Result<()> {
     auth::forget_env(store, &slot(id))
 }
 
+/// After the vault's reset deleted every profile's variables: no API key profile lists them or counts as signed in.
+pub fn forget_all(store: &Store) -> Result<()> {
+    change(store, |profiles| {
+        for profile in profiles.iter_mut().filter(|p| p.kind == Kind::ApiKey) {
+            profile.vars.clear();
+            profile.account.signed_in = false;
+        }
+        Ok(())
+    })
+}
+
 /// The names of the login shell's variables the user can import, sorted.
 pub async fn shell_names() -> Result<Vec<String>> {
     let names: BTreeSet<String> = shell_env().await?.into_iter().map(|(name, _)| name).filter(|n| offered(n)).collect();

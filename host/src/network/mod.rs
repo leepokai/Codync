@@ -259,6 +259,10 @@ fn list(names: &[impl AsRef<str>]) -> String {
     }
 }
 
+/// What a computer no rule matches gets: its bots' requests, and their answers, run under the `auto` ceiling
+/// ([ceilings](../../../docs/features/codync-network.md#ceilings-auto-and-ask)).
+pub const DEFAULT_ACCESS: codync_network::Access = codync_network::Access::Auto;
+
 /// Starts the node of every network this computer is in.
 pub async fn start(hub: &Arc<Hub>) {
     if let Err(error) = saved::migrate(&hub.store, &crate::service::data_dir()) {
@@ -266,9 +270,35 @@ pub async fn start(hub: &Arc<Hub>) {
     }
     for saved in saved::load(&hub.store) {
         let id = saved.id.clone();
-        if let Err(error) = boot(hub, &saved).await {
-            tracing::warn!(network = id, error = format!("{error:#}"), "couldn't start a network");
-            crate::analytics::network_failed(hub, crate::analytics::NetworkStage::Start);
+        match boot(hub, &saved).await {
+            Ok(slot) if !saved.auto_default => keep_members(hub, &slot).await,
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(network = id, error = format!("{error:#}"), "couldn't start a network");
+                crate::analytics::network_failed(hub, crate::analytics::NetworkStage::Start);
+            }
+        }
+    }
+}
+
+/// A network saved before the `auto` default keeps the computers already in it at `allow` (what they had), once.
+async fn keep_members(hub: &Hub, slot: &Slot) {
+    let _one = hub.network.changing.lock().await;
+    let members: Vec<String> = slot.node.directory().into_iter().filter(|p| !p.me).map(|p| p.name).collect();
+    let rules = saved::kept_members(slot.node.rules(), &members);
+    let kept = slot.node.set_rules(rules.clone()).and_then(|()| {
+        saved::update(&hub.store, &slot.id, |saved| {
+            saved.rules = rules;
+            saved.auto_default = true;
+        })
+    });
+    match kept {
+        Ok(()) => {
+            tracing::info!(network = slot.name, kept = members.len(), "computers already in the network keep allow");
+        }
+        Err(error) => {
+            tracing::warn!(error = format!("{error:#}"), "couldn't keep the network's computers at allow");
+            crate::analytics::network_failed(hub, crate::analytics::NetworkStage::Migrate);
         }
     }
 }
@@ -291,6 +321,7 @@ fn take_in(
     node: Node,
     inbox: tokio::sync::mpsc::Receiver<codync_network::Message>,
 ) -> Slot {
+    node.set_default_access(DEFAULT_ACCESS);
     if let Err(error) = node.set_rules(saved.rules.clone()) {
         tracing::warn!(error = format!("{error:#}"), "couldn't apply the network's rules; none apply");
     }

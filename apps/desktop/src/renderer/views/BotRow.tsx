@@ -6,6 +6,7 @@ import { Icon } from '../components/Icon'
 import { HStack, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { ThinkingOrb } from '../components/ThinkingOrb'
+import { UnreadBadge } from '../components/UnreadBadge'
 import { messagePreview } from '../lib/message-preview'
 import { useModel } from '../lib/observable'
 import { useTr } from '../lib/use-language'
@@ -29,7 +30,7 @@ export const BotRow = memo(function BotRow({ bot, store, compact, usingComputer,
           <HStack align="stretch" grow>
             <Preview bot={bot} store={store} />
           </HStack>
-          {bot.unread > 0 ? <span className="unread-badge">{bot.unread}</span> : null}
+          {bot.unread > 0 ? <UnreadBadge count={bot.unread} waiting={bot.waiting > 0} /> : null}
         </HStack>
       </VStack>
     </HStack>
@@ -40,7 +41,7 @@ export const BotRow = memo(function BotRow({ bot, store, compact, usingComputer,
  * background; otherwise the last message (Grok Bot row behavior). */
 function Preview({ bot, store }: { bot: Bot; store: BotStore }) {
   const tr = useTr()
-  const place = bot.managedWorkspace ? tr('Personal workspace') : folderName(bot)
+  const place = folderName(bot, tr)
   const line = rosterLine(bot, tr)
   if (line?.kind === 'needsYou') {
     return (

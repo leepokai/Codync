@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { TRAY_SYMBOLS, type TrayImage, type TraySummary, type TrayUsageAgent, type TrayUsageComputer } from '@shared/ipc'
-import { isGroup, needsInput, folderName, type Bot, type UsageProvider, type UsageWindow } from '@shared/models'
+import { isGroup, folderName, type Bot, type UsageProvider, type UsageWindow } from '@shared/models'
 import type { NetworkView } from '@shared/network'
-import { isBusy, summaryLine } from '@shared/work'
+import { outsideStatus, summaryLine, worksOutside } from '@shared/work'
 import { iconBitmap, drawIconBitmap } from '../lib/icon-bitmap'
 import { drawCharacter, moodOf } from '../components/Avatar'
 import { fallbackPath } from '../components/icon-fallbacks'
@@ -49,13 +49,15 @@ function canvasImage(key: string, width: number, height: number, draw: (ctx: Can
 
 function avatarIcon(bot: Bot) {
   const bitmap = iconBitmap(bot.customIcon)?.image
-  const key = `bot|${bot.customIcon?.dataUrl ?? ""}|${bot.customIcon?.tinted}|${bitmap?.complete}|${bot.id}|${bot.avatarShape}|${bot.avatarColor}|${bot.status}|${bot.unread > 0}`
+  // The dot follows how the bot stands outside its chat: an item waiting on the user shows it too.
+  const asks = outsideStatus(bot) === 'needsInput'
+  const key = `bot|${asks}|${bot.customIcon?.dataUrl ?? ""}|${bot.customIcon?.tinted}|${bitmap?.complete}|${bot.id}|${bot.avatarShape}|${bot.avatarColor}|${bot.status}|${bot.unread > 0}`
   return canvasImage(key, 20, 20, (ctx) => {
     const dark = isDark()
     if (!drawIconBitmap(ctx, bot.customIcon, 20, avatarColor(bot.avatarColor))) drawCharacter(ctx, { shape: bot.avatarShape, fill: avatarColor(bot.avatarColor), size: 20, mood: moodOf(bot, false), dark, t: 0, still: true })
-    const badge = needsInput(bot) ? palette(dark).warning : bot.unread > 0 ? (dark ? '#FFFFFF' : '#000000') : null
+    const badge = asks ? palette(dark).warning : bot.unread > 0 ? (dark ? '#FFFFFF' : '#000000') : null
     if (badge) {
-      const r = needsInput(bot) ? 3.6 : 2.8
+      const r = asks ? 3.6 : 2.8
       ctx.beginPath()
       ctx.arc(20 - r, 20 - r, r + 1, 0, Math.PI * 2)
       ctx.fillStyle = dark ? '#1e1e1e' : '#f2f2f2'
@@ -70,7 +72,7 @@ function avatarIcon(bot: Bot) {
 
 /** A bot's line under its name in the tray menu and the notch island, in its roster row's order (`summaryLine`);
  * with nothing to say, where it works. */
-export const botDetail = (bot: Bot) => summaryLine(bot, tr) ?? folderName(bot)
+export const botDetail = (bot: Bot) => summaryLine(bot, tr) ?? folderName(bot, tr)
 
 /** One usage limit's bar in the provider's color: amber from 70%, red from 90%. */
 function barIcon(providerId: string, window: UsageWindow) {
@@ -163,11 +165,12 @@ function usageAgent(p: UsageProvider, iconStyle: 'character' | 'original'): Tray
   }
 }
 
-/** Every computer with usage limits to show, in the app's order; unnamed while the app has one computer. */
+/** Every computer with usage limits to show, in the app's order; unnamed while the app has one computer. One that isn't
+ * connected (offline, or a cloud computer let go to sleep while the window is away) is left out: its readings are old. */
 function usageComputers(app: AppModel, iconStyle: 'character' | 'original'): TrayUsageComputer[] {
   return app.computers
     .flatMap((c) => app.store(c.id) ?? [])
-    .filter((store) => store.usage.providers.length > 0)
+    .filter((store) => store.connection.kind === 'online' && store.usage.providers.length > 0)
     .map((store) => ({
       name: app.computers.length > 1 ? store.computer.name : null,
       symbol: computerSymbol(store.computer.device),
@@ -209,7 +212,7 @@ export function useTraySummary(app: AppModel) {
           ref: `${i.ref.computerId}/${i.ref.botId}`,
           name: app.computers.length > 1 ? `${i.bot.name} · ${i.computer.name}` : i.bot.name,
           detail: botDetail(i.bot),
-          working: isBusy(i.bot),
+          working: worksOutside(i.bot),
           avatar: avatarIcon(i.bot),
         })),
         usage: usageComputers(app, iconStyle),

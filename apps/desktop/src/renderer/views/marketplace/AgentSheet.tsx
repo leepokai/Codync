@@ -9,7 +9,7 @@ import { Text } from '../../components/Text'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
 import { useStore } from '../../store/context'
 import { useTr } from '../../lib/use-language'
-import { fill } from '../../lib/fill.ts'
+import { fill } from '@shared/fill'
 import { errorText, market, type AgentAuth, type AuthMethod } from './market-models'
 import { ErrorText, Field, OptionRow, ScreenHeader, SlideStack, WebLink, filled } from './pieces'
 import { LoginProfileKeys } from './LoginProfileKeys'
@@ -320,7 +320,7 @@ function AgentKeysForm({ backend, method, saved, back, done }: {
         {saved.length ? (
           <CardSection>
             <button className="market-danger-button" onClick={() => void save(Object.fromEntries(vars.map((v) => [v.name, ''])))}>
-              Remove saved keys
+              {tr('Remove saved keys')}
             </button>
           </CardSection>
         ) : null}

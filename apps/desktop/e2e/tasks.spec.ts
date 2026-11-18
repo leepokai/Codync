@@ -1,5 +1,15 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
-import { api, attach, taskBot, typeMessage } from './sandbox.ts'
+import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fixtureCommand } from './fixture-command.ts'
+import { api, attach, sandbox, taskAgent, taskBot, typeMessage } from './sandbox.ts'
+
+/** The prompts of the task working item `title`, as the scripted agent logged them in the bot's folder. */
+const taskPrompts = (botId: string, title: string) =>
+  readFileSync(join(sandbox().home, 'bots', botId, 'workspace', 'prompts.jsonl'), 'utf8')
+    .split('\n').filter(Boolean)
+    .map((line) => JSON.parse(line) as { session: string; text: string })
+    .filter((p) => p.text.includes('[Task]') && p.text.includes(`"${title}"`))
 
 // The event box (docs/plans/event-box.md) on the scripted agent host/tests/fixtures/task_agent.py:
 //   - A message line `ADD <title>|<brief>` in the bot's chat adds an item (reply `Added: {"itemId":…}`); titles are
@@ -7,7 +17,11 @@ import { api, attach, taskBot, typeMessage } from './sandbox.ts'
 //   - The brief decides what the item's task does. `HOLD:<name>`: it works until it is stopped (or a file
 //     `release-<name>` appears in the bot's workspace). `PERMISSION`: it asks for approval (a card titled
 //     `Run the tests`, one option, shown as `Allow once`) and goes on once answered. Neither: it finishes at once.
+//   - `SIGNIN`: the task's turn fails once asking to sign in, and goes through when its message comes again.
 //   - A task's report comes back to the chat as `Relayed: …`.
+//   - What the user writes to an item's thread is a turn of its task, answered `Thread <their words>: same session`
+//     (or `picked up`); words that hold `HOLD:<name>` keep that turn working, and `ASK` raises a choice card
+//     (`Which?`, A or B) first.
 const HOLD = 'HOLD:e2e'
 const ASKS = 'Run the tests'
 
@@ -21,8 +35,8 @@ const botState = async (page: Page, botId: string) => (await api<{ bot: BotState
 const statuses = async (page: Page, botId: string) => Object.fromEntries((await botState(page, botId)).work.map((i) => [i.title, i.status]))
 
 /** A bot on the scripted agent with its chat open; `maxAgents` sets how many of its agents may run at once. */
-async function openBot(page: Page, name: string, maxAgents?: number) {
-  const bot = await taskBot(page, name)
+async function openBot(page: Page, name: string, maxAgents?: number, backend?: string) {
+  const bot = await taskBot(page, name, backend)
   if (maxAgents) await api(page, 'updateBot', { id: bot.id, maxAgents })
   await page.locator('.roster-row', { hasText: name }).click()
   return bot.id
@@ -45,6 +59,17 @@ async function cleanUp(page: Page, botId: string | undefined) {
   await api(page, 'deleteBot', { botId }).catch(() => {})
 }
 
+/** Ends agent `backend`'s rest on this computer, through a bot of its own that switches back to it. */
+async function endRest(page: Page, backend: string) {
+  const bot = await taskBot(page, `Rest ${backend} e2e ${Date.now()}`, backend)
+  try {
+    await api(page, 'switchBack', { botId: bot.id })
+    await expect.poll(async () => ((await api<{ bot: { resting?: unknown[] } }>(page, 'updateBot', { id: bot.id })).bot.resting ?? []).length).toBe(0)
+  } finally {
+    await api(page, 'deleteBot', { botId: bot.id }).catch(() => {})
+  }
+}
+
 const capsule = (page: Page) => page.locator('.work-capsule')
 
 /** Opens the bot's Details from the capsule. */
@@ -62,13 +87,40 @@ const section = (details: Locator, title: string) =>
 /** An item's row in a section. */
 const row = (details: Locator, title: string, item: string) => section(details, title).locator('.work-row[data-work-status]', { hasText: item })
 
+/** The thread the inspector shows in place of its pages. */
+const threadPanel = (details: Locator) => details.locator('.work-thread')
+
+/** Opens the thread of an item's row; it takes the place of Details, with no dialog. */
+async function openThread(details: Locator, itemRow: Locator) {
+  await itemRow.locator('.work-row-open').click()
+  const thread = threadPanel(details)
+  await expect(thread).toBeVisible()
+  await expect(details.locator('.details-page.away')).toHaveCount(1)
+  await expect(details.page().getByRole('dialog')).toHaveCount(0)
+  return thread
+}
+
+/** Back to Details from a thread. */
+async function closeThread(details: Locator) {
+  await threadPanel(details).getByRole('button', { name: 'Back to details' }).click()
+  await expect(threadPanel(details)).toHaveCount(0)
+  await expect(details.locator('.details-page.away')).toHaveCount(0)
+}
+
+/** Writes to the open thread. */
+async function typeInThread(details: Locator, text: string) {
+  const box = threadPanel(details).getByRole('textbox', { name: 'Message this thread' })
+  await box.fill(text)
+  await box.press('Enter')
+}
+
 /** A row's icon action, which shows once the row is hovered. */
 async function hoverAction(itemRow: Locator, name: string) {
   await itemRow.hover()
   await itemRow.getByRole('button', { name, exact: true }).click()
 }
 
-test('a working item shows in the capsule and on Details, opens its transcript, and stops once asked', async () => {
+test('a working item shows in the capsule and on Details, opens its thread in the panel, and stops once asked', async () => {
   const { browser, page } = await attach()
   const name = `Work e2e ${Date.now()}`
   let botId: string | undefined
@@ -80,6 +132,10 @@ test('a working item shows in the capsule and on Details, opens its transcript, 
     await expect(capsule(page)).toContainText('In the background ·')
     await expect(capsule(page)).toContainText(/\d+:\d\d/)
     await expect(capsule(page)).not.toContainText('1 working')
+    // As wide as the composer under it.
+    const [above, below] = await Promise.all([capsule(page).boundingBox(), page.locator('.composer-surface').boundingBox()])
+    expect(Math.abs(above!.x - below!.x)).toBeLessThanOrEqual(1)
+    expect(Math.abs(above!.width - below!.width)).toBeLessThanOrEqual(1)
     // The chat itself is free: the roster row counts what goes on in the background.
     await expect(page.locator('.roster-row', { hasText: name })).toContainText('1 working')
     // And it answers: a message typed under the capsule gets its reply while the item is worked on.
@@ -99,17 +155,24 @@ test('a working item shows in the capsule and on Details, opens its transcript, 
     await expect(section(details, 'Recent')).toHaveCount(0)
     await expect(details.locator('.agent-picker')).toHaveCount(0)
 
-    // A working row opens its task's transcript: what it was told, as a quote, and nothing to type into.
-    await working.locator('.work-row-open').click()
-    const transcript = page.getByRole('dialog').filter({ has: page.locator('.trace-content') })
-    await expect(transcript).toContainText('Audit the repo')
-    await expect(transcript).toContainText('Working')
-    await expect(transcript.locator('.task-told').first()).toContainText(HOLD)
-    await expect(transcript.locator('textarea')).toHaveCount(0)
-    await transcript.getByRole('button', { name: 'Close' }).click()
-    await expect(transcript).toHaveCount(0)
-    // None of the task's transcript is in the chat.
-    await expect(page.locator('.transcript .task-told')).toHaveCount(0)
+    // A working row opens its thread in the panel, not in a dialog: its title, status and time on top, what it was
+    // told folded under one line, and a box to write to it. The chat stays beside it.
+    const thread = await openThread(details, working)
+    const header = thread.locator('.work-thread-header')
+    await expect(header).toContainText('Audit the repo')
+    await expect(header).toContainText('Working')
+    await expect(header).toContainText(/\d+:\d\d/)
+    await expect(header.getByRole('button', { name: 'Stop', exact: true })).toBeVisible()
+    const told = thread.locator('.work-thread-told')
+    await expect(told).not.toContainText(HOLD)
+    await told.getByRole('button', { name: 'What it was told' }).click()
+    await expect(told).toContainText(HOLD)
+    await expect(thread.getByRole('textbox', { name: 'Message this thread' })).toBeVisible()
+    await expect(page.locator('.transcript')).toContainText('reply: are you there?')
+    await expect(page.locator('.transcript .work-thread-told')).toHaveCount(0)
+    // Back returns to Details, where the row still is.
+    await closeThread(details)
+    await expect(working).toHaveAttribute('data-work-status', 'working')
 
     // The capsule's Stop asks once.
     await capsule(page).getByRole('button', { name: 'Stop' }).click()
@@ -123,6 +186,91 @@ test('a working item shows in the capsule and on Details, opens its transcript, 
     await expect(capsule(page)).toHaveCount(0)
     await expect(row(details, 'Recent', 'Audit the repo')).toHaveAttribute('data-work-status', 'stopped')
     await expect(section(details, 'Threads')).toHaveCount(0)
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+test('a message to a working thread waits with Send now and Remove, and one to a done item reopens it', async () => {
+  const { browser, page } = await attach()
+  const name = `Work thread e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name)
+    await addWork(page, botId, 'Audit the repo', HOLD)
+    await addWork(page, botId, 'Quick look', 'nothing to wait for')
+    await expect.poll(async () => (await statuses(page, botId!))['Quick look']).toBe('done')
+
+    // The task's turn runs, so what is written to its thread waits: the chat's bubble, with Send now and Remove.
+    const details = await openDetails(page)
+    const thread = await openThread(details, row(details, 'Threads', 'Audit the repo'))
+    await typeInThread(details, 'also check the tests')
+    const waiting = thread.locator('.work-thread-mine', { hasText: 'also check the tests' })
+    await expect(waiting).toHaveAttribute('data-message-status', 'queued')
+    await expect(waiting.getByRole('button', { name: 'Send now', exact: true })).toBeVisible()
+    await waiting.getByRole('button', { name: 'Remove', exact: true }).click()
+    await expect(waiting).toHaveCount(0)
+    // Taken back, it changed nothing: the item works on, and the bot's chat never had the message.
+    expect((await statuses(page, botId))['Audit the repo']).toBe('working')
+    await expect(page.locator('.transcript')).not.toContainText('also check the tests')
+    await closeThread(details)
+
+    // A done item's thread takes a message too: its task answers it in the same thread.
+    const done = row(details, 'Recent', 'Quick look')
+    await expect(done).toHaveAttribute('data-work-status', 'done')
+    await openThread(details, done)
+    await expect(thread.locator('.work-thread-header')).toContainText('Quick look')
+    await typeInThread(details, 'look again')
+    await expect(thread.locator('.work-thread-mine', { hasText: 'look again' })).toBeVisible()
+    await expect(thread.locator('.work-thread-scroll')).toContainText(/Thread look again: (same session|picked up)/)
+    // While the turn a message started runs, the item is a thread again: working, back under Threads.
+    await expect.poll(async () => (await statuses(page, botId!))['Quick look']).toBe('done')
+    await typeInThread(details, 'once more HOLD:again')
+    await expect(thread.locator('.work-thread-header')).toContainText('Working')
+    await closeThread(details)
+    await expect(row(details, 'Threads', 'Quick look')).toHaveAttribute('data-work-status', 'working')
+    await expect(row(details, 'Recent', 'Quick look')).toHaveCount(0)
+    await expect(section(details, 'Threads')).toContainText('2 / 3')
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+test("what the task puts in the chat is one line of its open thread that shows it there, and a routine's run is read only", async () => {
+  const { browser, page } = await attach()
+  const name = `Work thread card e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name)
+    await addWork(page, botId, 'Quick look', 'nothing to wait for')
+    await expect.poll(async () => (await statuses(page, botId!))['Quick look']).toBe('done')
+    await page.getByRole('button', { name: `${name}, view details` }).click()
+    const details = page.locator('.details-panel')
+
+    // What the user writes may need them again: the task's card stays in the chat, and the thread says so in one
+    // line, which brings the card into view there.
+    const thread = await openThread(details, row(details, 'Recent', 'Quick look'))
+    await typeInThread(details, `which one? ASK ${HOLD}`)
+    const asked = thread.locator('.work-thread-shared', { hasText: 'Asked: Which?' })
+    await expect(asked).toBeVisible()
+    await expect(thread.locator('.decision-card')).toHaveCount(0)
+    await expect(thread.locator('.work-thread-header')).toContainText('Needs you')
+    await asked.click()
+    const card = page.locator('.transcript .decision-card', { hasText: 'Which?' })
+    await expect(card).toBeInViewport()
+    await card.locator('.decision-option', { hasText: 'A' }).click()
+    await expect(thread.locator('.work-thread-shared', { hasText: 'Answered: A' })).toBeVisible()
+    await expect(thread.locator('.work-thread-header')).toContainText('Working')
+    await closeThread(details)
+
+    // A routine's run can be read and stopped, not written to.
+    const { routine } = await api<{ routine: { id: string } }>(page, 'saveRoutine', { botId, name: 'Digest', instruction: HOLD, triggers: [{ type: 'webhook' }] })
+    await api(page, 'runRoutine', { botId, id: routine.id })
+    const run = await openThread(details, row(details, 'Threads', 'Digest'))
+    await expect(run.locator('.work-thread-read-only')).toHaveText("Read only: a routine's run")
+    await expect(run.getByRole('textbox', { name: 'Message this thread' })).toHaveCount(0)
   } finally {
     await cleanUp(page, botId)
     await browser.close()
@@ -236,6 +384,119 @@ test("an item's approval card in the chat says it comes from the background, and
   }
 })
 
+test("a task's agent sign-in is asked in the chat, its row leads to the card, and the item goes on once signed in", async () => {
+  const { browser, page } = await attach()
+  const name = `Work sign-in e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    // As Kimi Code, an agent the host knows by name, so the sign-in its task needs gets a card.
+    botId = await openBot(page, name, undefined, 'kimi')
+    await addWork(page, botId, 'Log in', 'SIGNIN')
+
+    const card = page.locator('.request-card', { hasText: 'In the background · Log in' })
+    await expect(card).toContainText('Kimi Code')
+    await expect(capsule(page)).toContainText(/In the background ·\s*Needs you/)
+
+    // On Details its row says which agent to sign in to, and opens the chat at the card.
+    const details = await openDetails(page)
+    const asking = row(details, 'Threads', 'Log in')
+    await expect(asking).toHaveAttribute('data-work-status', 'needsYou')
+    await expect(asking).toContainText('Needs Kimi Code sign-in')
+    await asking.locator('.work-row-open').click()
+    await expect(card).toBeInViewport()
+
+    // A turn of the agent that ends well says it's signed in: the item's message goes out again, to the same task.
+    await api(page, 'send', { botId, text: 'hello' })
+    await expect(card).toContainText('Signed in')
+    await expect(page.locator('.transcript')).toContainText('Relayed:')
+    await expect(row(details, 'Recent', 'Log in')).toHaveAttribute('data-work-status', 'done')
+    // The new agent process (the old one kept the old sign-in) went on in the task's session.
+    const tries = taskPrompts(botId, 'Log in')
+    expect(tries).toHaveLength(2)
+    expect(tries[1].session).toBe(tries[0].session)
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+test('when the fallback is signed out too, the row names and opens the sign-in that sends the work again', async () => {
+  const { browser, page } = await attach()
+  const name = `Work two sign-ins e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    // Kimi Code with a Qwen Code fallback (no other spec uses it: it rests signed out after this), both the scripted
+    // agent, and every task turn asks to sign in. Neither rests from an earlier run (a rest is the computer's, for an
+    // hour): Switch back ends a bot's own agent's.
+    await endRest(page, 'qwen')
+    await endRest(page, 'kimi')
+    botId = await openBot(page, name, undefined, 'kimi')
+    await api(page, 'updateBot', { id: botId, fallbacks: [{ backend: 'qwen', command: fixtureCommand(taskAgent), model: null, modelOptions: {} }] })
+    const signedOut = join(sandbox().home, 'bots', botId, 'workspace', 'task-signedout')
+    writeFileSync(signedOut, '')
+    await addWork(page, botId, 'Two sign-ins', 'anything')
+
+    // Two sign-in cards: Kimi Code's holds the item's message, Qwen Code's is newer.
+    const cards = page.locator('.request-card', { hasText: 'In the background · Two sign-ins' })
+    await expect(cards).toHaveCount(2)
+    const kimi = cards.filter({ hasText: 'Kimi Code' })
+    await expect(cards.filter({ hasText: 'Qwen Code' })).toHaveCount(1)
+
+    // The row names Kimi Code, whose sign-in sends the work again, and opens the chat at its card.
+    const details = await openDetails(page)
+    const asking = row(details, 'Threads', 'Two sign-ins')
+    await expect(asking).toHaveAttribute('data-work-status', 'needsYou')
+    await expect(asking).toContainText('Needs Kimi Code sign-in')
+    await asking.locator('.work-row-open').click()
+    await expect(kimi).toBeInViewport()
+
+    // Signed in to Kimi Code (a turn of it ends well), the item goes on.
+    unlinkSync(signedOut)
+    await api(page, 'send', { botId, text: 'hello' })
+    await expect(kimi).toContainText('Signed in')
+    await expect(row(details, 'Recent', 'Two sign-ins')).toHaveAttribute('data-work-status', 'done')
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+test("a task's choice card and the file it shares say they come from the background, and only a press answers", async () => {
+  const { browser, page } = await attach()
+  const name = `Work choice e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name)
+    // The fixture's task asks `Which?` with the choices A and B, then sends a file.
+    await addWork(page, botId, 'Pick one', 'ASK then SHARE')
+
+    const card = page.locator('.decision-card', { hasText: 'Which?' })
+    await expect(card).toContainText('In the background · Pick one')
+    // No row for the user's own words: a typed message is for the bot in the chat, not the task.
+    await expect(card.locator('.decision-own')).toHaveCount(0)
+    await expect(capsule(page)).toContainText(/In the background ·\s*Needs you/)
+    await typeMessage(page, 'are you there?')
+    await expect(page.locator('.transcript')).toContainText('reply: are you there?')
+    await expect(card.locator('.decision-option')).toHaveCount(2)
+
+    // Its row on Details says what the card asks and opens the chat at it.
+    const details = await openDetails(page)
+    const asking = row(details, 'Threads', 'Pick one')
+    await expect(asking).toHaveAttribute('data-work-status', 'needsYou')
+    await expect(asking).toContainText('Which?')
+    await asking.locator('.work-row-open').click()
+    await expect(card).toBeInViewport()
+
+    await card.locator('.decision-option', { hasText: 'A' }).click()
+    // The file the task shares afterwards is the bot's message, marked the same way.
+    await expect(page.locator('.message.agent', { has: page.locator('.file-message') }).locator('.task-line')).toHaveText('In the background · Pick one')
+    await expect(capsule(page)).toHaveCount(0)
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
 test('a working row stops once asked, and a stopped item tries again', async () => {
   const { browser, page } = await attach()
   const name = `Work stop e2e ${Date.now()}`
@@ -269,7 +530,67 @@ test('a working row stops once asked, and a stopped item tries again', async () 
   }
 })
 
-test('Settings holds Instructions and Agent first, and Agents at once steps between 1 and 6', async () => {
+test("one view lists every bot's work, with the same rows and actions, and leads to a bot's Details and threads", async () => {
+  const { browser, page } = await attach()
+  const name = `Work all e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    // Shown only while some bot has live or waiting items.
+    const button = page.locator('.sidebar-header').getByRole('button', { name: 'Work', exact: true })
+    const others = await button.count()
+    botId = await openBot(page, name, 1)
+    await addWork(page, botId, 'Long job', HOLD)
+    await addWork(page, botId, 'Next job', HOLD)
+    await expect(button).toBeVisible()
+    // The button counts what is worked on, on every bot.
+    if (!others) await expect(page.locator('.sidebar-header .all-work-count')).toHaveText('1')
+
+    await button.click()
+    const sheet = page.getByRole('dialog').filter({ has: page.locator('.all-work-list') })
+    await expect(sheet).toContainText('Work')
+    const group = sheet.locator(`[data-all-work-bot="${name}"]`)
+    // The bot's threads, then its box: no titles, no free places, nothing that ended.
+    await expect(group.locator('.work-row')).toHaveText([/Long job/, /^1Next job.*Next up/])
+    await expect(group.locator('.work-row.free')).toHaveCount(0)
+    await expect(sheet.locator('.details-section-title')).toHaveCount(0)
+
+    // The same actions as on the bot's Details.
+    await expect(group.getByRole('button', { name: 'Cut in' })).toBeVisible()
+    await hoverAction(group.locator('.work-row', { hasText: 'Next job' }), 'Drop')
+    await expect(group.locator('.work-row')).toHaveText([/Long job/])
+    expect(await statuses(page, botId)).toEqual({ 'Long job': 'working' })
+
+    // The heading opens that bot's Details.
+    await group.locator('.all-work-bot').click()
+    await expect(sheet).toHaveCount(0)
+    const details = page.locator('.details-panel')
+    await expect(details.getByRole('tab', { name: 'Details', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(row(details, 'Threads', 'Long job')).toHaveAttribute('data-work-status', 'working')
+
+    // A row of an item a task has opens that bot's chat with the thread in its inspector.
+    await button.click()
+    await group.locator('.work-row', { hasText: 'Long job' }).locator('.work-row-open').click()
+    await expect(sheet).toHaveCount(0)
+    await expect(threadPanel(details).locator('.work-thread-header')).toContainText('Long job')
+    await closeThread(details)
+
+    // The view closes by itself when the last item ends, and its button goes with it.
+    await button.click()
+    await expect(sheet).toBeVisible()
+    await api(page, 'stopWork', { botId })
+    if (!others) {
+      await expect(sheet).toHaveCount(0)
+      await expect(button).toHaveCount(0)
+    } else {
+      await expect(group).toHaveCount(0)
+    }
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+test('Settings holds Instructions and Agent first, and Threads at once steps between 1 and 6', async () => {
   const { browser, page } = await attach()
   const name = `Work agents e2e ${Date.now()}`
   let botId: string | undefined
@@ -280,7 +601,7 @@ test('Settings holds Instructions and Agent first, and Agents at once steps betw
     await details.getByRole('tab', { name: 'Settings', exact: true }).click()
     await expect(details.locator('.card-section h3')).toHaveText(['Instructions', 'Agent', 'Profile', 'Workspace', 'Activity', 'Connectors', 'Skills'])
 
-    const agents = details.locator('.value-row', { hasText: 'Agents at once' })
+    const agents = details.locator('.value-row', { hasText: 'Threads at once' })
     await expect(agents.locator('.stepper-value')).toHaveText('2')
     await agents.getByRole('button', { name: 'Decrease' }).click()
     await expect(agents.locator('.stepper-value')).toHaveText('1')

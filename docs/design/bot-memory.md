@@ -18,10 +18,9 @@ Left before release, found 2026-10-18 and put off by the owner for now:
 - **Bots inherit the owner's own Claude Code setup** (`~/.claude/CLAUDE.md`, permission mode, claude.ai
   connectors); isolating them waits for the owner's decision ([evaluation](#evaluation)).
 - **The move from old memory**, tried on a copy of the owner's data (149, 188 and 3 entries moved, none lost):
-  - Old Markdown memory is mostly the bot's own replies ("需要我幫什麼忙嗎？"), and it comes in active up to
-    the cap. Only profile, pinned and personal-scope facts should come in active; the rest archived.
-  - The old files are deleted once moved, with no backup; entries refused by the checks vanish with them.
-  - An empty (0-byte) `engram.db` fails the move on every start, so that bot never finishes moving.
+  - ~~Old Markdown memory comes in active up to the cap.~~ Gone with the move from Engram and the Markdown memory
+    before it in 2.49.3: memory from before 2.18 no longer carries over, and its files stay on disk untouched.
+  - The old entries' tables are dropped once moved, with no backup; entries refused by the checks vanish with them.
 
 Built differently from the plan below, for now:
 
@@ -233,6 +232,9 @@ meet in the same rules:
   file, once that turn ran a tool that can write files (an edit, delete, move or command), so a shell command meets
   the same rules. Any other change (an editor on the computer) is recorded as the computer's, unchecked: the user
   owns their computer. The opening shows such a line only once it passes the checks.
+- A turn is its actor's (`memory::turns`): the bot's, or one of its [tasks'](../features/background-tasks.md#memory).
+  A task's writes, by `edit_memory` or its own tools, are its own turn's: credited to its bot, made in the task's
+  session, and under the rule of a turn the user didn't start, whatever the chat does meanwhile.
 
 Host writes (`edit_memory`, dreaming, the one-time moves) are compare-and-swap on the content's hash, through a
 temporary file renamed over the file. A file that changed meanwhile isn't overwritten; the other change is
@@ -251,8 +253,8 @@ model's judgment.
   changes around it. The list catches known attack wording only; a planted fact in plain words passes, bounded by
   the turn rule below, the provenance the bot can't set, and dreaming's review.
 - **Who asked.** In a turn the user started in the bot's own chat, the bot may add, change and take out lines.
-  In any other turn (routines, webhooks, rooms, other bots, a message the host wrote in the user's place) it may
-  only add lines. That keeps a routine or another bot that read a planted instruction from wiping memory; a bot
+  In any other turn (routines, webhooks, rooms, other bots, a message the host wrote in the user's place, a task
+  working in the background) it may only add lines. That keeps a routine or another bot that read a planted instruction from wiping memory; a bot
   told by a page the user had it read in their own turn still can.
 - **Forgetting.** When a change in the user's own turn takes a fact out of a layer, and no other file of the layer
   holds it (it may have moved into a note), the fact and the message it was learned from are tombstoned. No bot
@@ -356,7 +358,8 @@ it offers (`Instructions` in `agent/bot`):
 3. **Every other agent: the first message.** A `<bot-profile>` block precedes the first prompt of a new session, and each retry until a prompt carrying it succeeds (the snapshot's `unprompted`, kept across a host restart).
    After a compaction the next prompt carries a fresh one that says it replaces any earlier profile, so the agent
    never holds two versions that disagree. The compaction is the agent's `compaction_update`, or, for an agent
-   that never sent one, its `usage_update.used` falling below half of a previous value of at least 20k.
+   that never sent one, its `usage_update.used` falling below half of a previous value of at least 20k. A stream's
+   start reports zero use before the model has answered, which is not a reading (issue #496).
 
 Measured 2026-10-18 at `initialize`:
 

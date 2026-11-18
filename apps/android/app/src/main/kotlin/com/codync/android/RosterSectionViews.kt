@@ -46,6 +46,8 @@ import com.codync.android.design.*
         header.count == 1 -> tr("{name}, 1 bot, {unread} unread")
         else -> tr("{name}, {count} bots, {unread} unread")
     }.replace("{count}", "${header.count}").replace("{unread}", "${header.unread}").replace("{name}", header.name)
+        // The amber badge, said: its rows, which would say it, are folded away.
+        .let { if (unread && header.waiting) it + ", " + tr("Needs approval") else it }
     val tap = if (actions.isEmpty() && drag == null) Modifier.clickable(role = Role.Button, onClick = toggle)
         else Modifier.contextActions(onClick = toggle, reorder = drag) { actions }.semantics { role = Role.Button }
     Row(modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp).then(tap)
@@ -65,7 +67,7 @@ import com.codync.android.design.*
         Spacer(Modifier.width(8.dp))
         // The badge sits at the trailing edge, next to the chevron, as on iPhone and the desktop.
         AnimatedVisibility(header.folded && header.unread > 0, Modifier.padding(end = 6.dp), enter = fadeIn(Motion.fade()), exit = fadeOut(Motion.fade())) {
-            UnreadBadge(header.unread)
+            UnreadBadge(header.unread, waiting = header.waiting)
         }
         Symbol("chevron.down", Modifier.rotate(turn), size = 14.dp, tint = Palette.tertiary)
     }

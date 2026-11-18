@@ -6,6 +6,7 @@
 #![allow(clippy::many_single_char_names)]
 
 mod agent;
+mod all_work;
 mod analytics;
 mod bot_chat;
 mod computer;
@@ -29,6 +30,7 @@ mod tasks;
 mod when;
 mod work;
 
+pub use all_work::{AllWork, AllWorkRow};
 pub use analytics::AnalyticsSheet;
 pub use dev_servers::{DevServer, DevServerSummary, DevServersSheet, LogsView, summary as dev_server_summary};
 pub use fields::{handoff_fields, section_fields};
@@ -38,14 +40,14 @@ pub use library::{ArtifactTitles, LibraryItem};
 pub use login_keys::KeyImport;
 pub use memory::{MemoryMode, MemorySheet, Section};
 pub use network::{NetReply, NetworkSheet, Recovery, Step};
-pub use network_rules::{RuleField, RuleForm};
+pub use network_rules::{LEVELS, RuleField, RuleForm, level_detail, level_name};
 pub use network_setup::{CONNECTORS, Setup, SetupField};
 pub use pages::Page;
 pub use scroll::Scroll;
 pub use skill::SkillSheet;
 pub use tasks::{Fetched, TaskEntries, TaskSheet};
 pub use when::complete_zone;
-pub use work::{CutIn, DetailRow, DetailSection, WorkAct};
+pub use work::{CutIn, DetailRow, DetailSection, WorkAct, giving_way};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};
@@ -85,6 +87,9 @@ pub enum Reply {
     CallEntries(String),
     /// A task's transcript (`taskEntries`), by task id.
     TaskEntries(String),
+    /// `send` to an item's thread (the item's id; its task may change meanwhile): its draft leaves the composer once
+    /// the host has the message.
+    ThreadSent(String),
     /// A registry page: the search it lists and the cursor it was asked at (`None`: the first page).
     Registry {
         search: String,

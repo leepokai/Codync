@@ -21,6 +21,15 @@ public struct NetworkView: Codable, Hashable, Sendable {
         public var computers: [Computer]?
         /// Who on its other computers may message this computer's bots, the first match deciding.
         public var rules: [Rule]?
+        /// What a computer no rule matches gets; hosts before 2.49.0 send none and let it in at allow.
+        public var defaultAccess: Rule.Access?
+
+        /// The rules' footer, untranslated: what decides, and what a computer no rule matches gets.
+        public var rulesFooter: String {
+            (defaultAccess ?? .allow) == .allow
+                ? "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in."
+                : "The first rule that matches decides. A computer no rule matches gets Auto. Answers to this computer's own messages always get in."
+        }
 
         /// "Deny: any bot on laptop → Reviewer", names from what each computer offers.
         public func text(of rule: Rule) -> String {
@@ -37,8 +46,7 @@ public struct NetworkView: Codable, Hashable, Sendable {
                 ? L10n.tr("any bot on {computer}").replacingOccurrences(of: "{computer}", with: rule.fromComputer)
                 : L10n.fill(L10n.tr("{bot} on {computer}"), ["bot": named(rule.fromAgent, agents(false, rule.fromComputer)), "computer": rule.fromComputer])
             let to = rule.toAgent == Rule.any ? L10n.tr("any bot here") : named(rule.toAgent, agents(true, nil))
-            let template = rule.access == .allow ? "Allow: {from} → {to}" : "Deny: {from} → {to}"
-            return L10n.fill(L10n.tr(template), ["from": from, "to": to])
+            return L10n.fill(L10n.tr(rule.access.template), ["from": from, "to": to])
         }
     }
 
@@ -50,10 +58,20 @@ public struct NetworkView: Codable, Hashable, Sendable {
         public var access: Access
 
         public enum Access: String, Codable, Hashable, Sendable {
-            case allow, deny
+            /// The most trusted first; `auto` and `ask` are ceilings on how the bot works for the sender.
+            case allow, auto, ask, deny
             /// Anything a newer host adds reads as a refusal: showing more access than there is would mislead.
             public init(from decoder: any Decoder) throws {
                 self = Access(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .deny
+            }
+
+            var template: String {
+                switch self {
+                case .allow: "Allow: {from} → {to}"
+                case .auto: "Auto: {from} → {to}"
+                case .ask: "Ask: {from} → {to}"
+                case .deny: "Deny: {from} → {to}"
+                }
             }
         }
     }

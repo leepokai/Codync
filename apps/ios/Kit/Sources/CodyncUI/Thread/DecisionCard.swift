@@ -41,8 +41,11 @@ struct DecisionCard: View {
                     ForEach(Array((d.choices ?? []).enumerated()), id: \.offset) { index, choice in
                         option(choice, index: index)
                     }
-                    OwnAnswer(reply: reply)
-                        .disabled(answering != nil).opacity(answering == nil ? 1 : 0.4)
+                    // Typing in the chat doesn't answer a task's card: only its options do.
+                    if !d.isFromTask {
+                        OwnAnswer(reply: reply)
+                            .disabled(answering != nil).opacity(answering == nil ? 1 : 0.4)
+                    }
                 }
                 .padding(.horizontal, -8)
             } else {
@@ -50,6 +53,7 @@ struct DecisionCard: View {
                     .font(.caption.weight(.medium)).foregroundStyle(Palette.secondary)
                     .accessibilityIdentifier("decision-outcome")
             }
+            TaskLine(data: d)
         }
         .padding(16).frame(maxWidth: 420, alignment: .leading)
         .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 22, style: .continuous))

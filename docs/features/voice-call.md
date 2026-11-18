@@ -29,8 +29,9 @@ way open with a sentence or two, read aloud like any reply and part of the call 
   from Electron's window-drag region so the gear, mute and end buttons receive mouse clicks.
   The iPhone places its capsule below native navigation; the terminal has no call controls.
 - Speech → text with `SFSpeechRecognizer` (on-device when the language supports it) in the language
-  picked under Voice chat → Language (`callLanguage`; empty follows the system's first language,
-  which is often English on bilingual setups). A pause ends an
+  picked under Voice chat → Language (`callLanguage`; empty follows the system's first language the
+  recognizer has, from `Locale.preferredLanguages`; `SFSpeechRecognizer()` only when none is, since its
+  `Locale.current` is English in the app, whose only bundle localization is English, #321). A pause ends an
   utterance and sends it as the call's message (`BotStore.send` with the call's id), so it takes the normal
   path: queued while the bot works, folded into its next turn. It and the bot's replies show in the call's
   conversation, not in the chat (below).
@@ -79,8 +80,12 @@ pill's stop turns the pill into "Transcribing…" and the whole recording goes t
 box when it arrives (typing goes on while it records). The recording goes in 20 s pieces (one
 channel message each on the iPhone; under the host's 2 MB request body on the desktop), three at a
 time, joined in order; a tail under half a second stays with the piece before, and the first piece
-that fails fails the dictation. Under half a second of audio in all is dropped. Sending a message,
-starting a call or switching chats drops a dictation still recording or transcribing. The
+that fails fails the dictation. Under half a second of audio in all is dropped. Send while dictating
+with a provider finishes it first (`finish` with a completion on every client) and sends the typed
+and dictated text as one message once the transcript is in; a failed transcription sends nothing and
+leaves the box. (On device, the desktop's Send waits for the helper's last words; the phones send
+what was recognized so far, as the pill's stop does.)
+Starting a call or switching chats drops a dictation still recording or transcribing. The
 recording's length counts toward the provider's minutes this month. The island's mic stays
 on-device (its window doesn't reach the host).
 
@@ -222,15 +227,21 @@ where the key goes. The address must be https, or plain http to this computer, w
 since the saved key goes out as a bearer token. A saved key is checked with the new server's `/v1/models` before the
 address is kept, and a later key is checked with it the same way; a server that doesn't answer is refused, never a quiet
 fallback to OpenAI, and its errors name **your server**. A server that answers but doesn't take the saved key is refused
-too, saying to remove the key, save the server, then add the server's key. Its models become the defaults. Speech clips are requested and
+too, saying to remove the key, save the server, then add the server's key. Every model it lists can be picked for both
+Speech jobs whatever its name (`voiceModels` `transcribe` and `speech` are its whole list, `models` is empty): the
+defaults are the ones named like OpenAI's (`whisper-1`, `tts-1`), else the first it lists. Speech clips are requested and
 returned as WAV, so the server needs no AAC encoder. **Realtime** isn't available with a server of the user's own (the
 device would connect to OpenAI with a credential only that server issued). Each device keeps the `server` of every
 `voiceStatus` it reads (`callServer.<provider>`: the call settings, dictation, and the start of a call), and while it is
 one of the user's own, that engine is in Speech mode on the device whatever mode was picked: the Mode row reads
 **Speech** with "Your own server works in Speech mode only.", and calls use Speech. The picked mode (`callMode.<provider>`)
-is left as it was and comes back with OpenAI; other engines keep theirs. A device that hasn't read the status since the
+is left as it was and comes back with OpenAI; other engines keep theirs. A `server` other than the one the device kept
+drops the models picked for the one before (`callModel`, `callSpeechToText`, `callSpeechModel`) and its cached list
+(`callModels`), so a name only one server knows never goes to the other. A device that hasn't read the status since the
 server was saved starts one Realtime call, which says to use Speech mode. An empty address goes back to OpenAI without
-a check, so a key only the server took never holds the address and isn't sent to OpenAI for one. The section's footer
+a check and deletes the key saved with the server, and the defaults go back to OpenAI's: a key only the server took
+never holds the address and never goes to OpenAI, and the user adds an OpenAI key again (the Server row's footnote
+says so, and the section shows no key at once). The section's footer
 ("billed by OpenAI") and the call bar still name the engine, OpenAI: the Server row is where the address shows.
 
 **Google Search** is an opt-in switch shown only for Gemini in Realtime mode on desktop, iPhone and Android.
@@ -296,7 +307,8 @@ shows the provider's name next to the dots whenever audio leaves the device.
   OpenAI itself, the saved address otherwise, absent for Gemini and on a Codync Cloud computer), `setVoiceKey
   {provider, key}` (checked with one credential mint, or the saved server's `/v1/models`, before it's kept; empty
   removes it), `setVoiceServer {provider, url}` (OpenAI only, loopback only like `setVoiceKey`; a saved key is checked
-  with the new server's `/v1/models` first; empty goes back to OpenAI; refused on a Codync Cloud computer),
+  with the new server's `/v1/models` first; empty goes back to OpenAI and deletes the saved OpenAI key; refused on a
+  Codync Cloud computer),
   `voiceSession {provider, model, voice}` → `{credential}`, `voiceModels {provider}` → `{models,
   transcribe, speech}`, `voiceTranscribe {provider, model, audio}` (base64 16 kHz WAV) → `{text}`,
   `voiceSpeak {provider, model, voice, text}` → `{audio, format}`.
@@ -383,9 +395,15 @@ carries audio and talks to these methods:
 
 - The host decides what the voice hears while the call lasts (`chat::calls::announce`, one watcher per call): each
   new final reply in the bot's chat (one already final when the call began isn't; one that began before it and
-  finishes during it is), an approval card waiting, a failure notice, and the bot's activity line while it works:
+  finishes during it is), an approval card waiting, a choice card waiting (`request_decision`: "Mika asks the
+  user to choose: … (options: …)"), a failure notice, and the bot's activity line while it works:
   at most one progress line every 15 s, only when it changed, and "<bot> is still working" after 45 s with nothing
-  said. It sends each as a `call` event `{call, owner, kind: reply | notice | progress, text, seq}`, worded for the
+  said. [Work in the background](background-tasks.md) joins in: each item at work is a progress line of its own
+  when what its task does changed (`Mika, in the background on "Fix login": Running tests`, the chat's own turn
+  first, each said once per change, within the same 15 s), the "still working" names the item when only the box
+  works, and an approval or choice card a task raised in the chat names its item (`Mika needs the user's approval
+  for "Fix login" in the background: …`); a task's choice card adds that it takes a press in the chat, since what
+  the user says goes to the bot there. `bot_status` names the item with a pending approval (`approval.work`). It sends each as a `call` event `{call, owner, kind: reply | notice | progress, text, seq}`, worded for the
   call's mode as `startCall` last gave it: a realtime voice gets replies shortened for speech, approvals with their
   options ("Mika needs the user's approval: … (options: …)") and progress; an on-device or speech-to-text call gets
   replies as written (its engine shortens them), approvals for the listener ("Mika needs your approval in the chat:
@@ -500,7 +518,8 @@ Host tests (`chat::calls`) cover a call's flow (start, lines, `send_to_bot` with
 end), the voice's instructions (the relay role and the bot's name first, each section present and within its cap,
 OpenAI's smaller share), transcript checks and dreaming over a call. `chat::calls::announce` tests cover what the
 voice hears: new replies, approvals and failures said once, a reply unfinished when the call began, a group's
-member named, the wording per call mode, progress rate-limited with a "still working" after a silence, and the
+member named, the wording per call mode, progress rate-limited with a "still working" after a silence, work in the
+background in the progress and its cards naming their item, a choice card said, and the
 replies and notices kept for the device holding the call; `api::events` tests check that only that device gets
 them, and `calls_e2e` that an on-device call hears its approval and reply. `StoreTests` (iPhone) hand each cue to
 the call once, also when a reconnect replays it after an engine switch; the desktop tests parse cues

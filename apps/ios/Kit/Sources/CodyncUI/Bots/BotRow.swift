@@ -47,7 +47,7 @@ public struct BotRow: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     preview
                     Spacer(minLength: 4)
-                    if bot.unread > 0 { UnreadBadge(count: bot.unread) }
+                    if bot.unread > 0 { UnreadBadge(count: bot.unread, waiting: bot.waiting > 0) }
                 }
             }
         }
@@ -78,7 +78,7 @@ public struct BotRow: View {
         case .lastMessage where bot.status == "error":
             line(MessagePreview.text(bot.lastMessage ?? "Something went wrong"), color: Palette.danger)
         case .lastMessage:
-            line(MessagePreview.text(bot.lastMessage ?? (bot.isGroup ? "\(bot.members.count) bots" : "\(model.backendName(bot.backend)) · \(bot.managedWorkspace ? L10n.tr("Personal workspace") : bot.folderName)")),
+            line(MessagePreview.text(bot.lastMessage ?? (bot.isGroup ? "\(bot.members.count) bots" : "\(model.backendName(bot.backend)) · \(bot.folderName)")),
                  color: Palette.secondary)
         }
     }
@@ -97,18 +97,23 @@ public struct BotRow: View {
     }
 }
 
-/// An unread count in an accent capsule: a bot's, or a folded section's.
+/// An unread count in an accent capsule: a bot's, or a folded section's. `waiting`: it counts a card waiting on
+/// the user, so it takes the needs-you colour of the avatar badge.
 public struct UnreadBadge: View {
     let count: Int
+    let waiting: Bool
 
-    public init(count: Int) { self.count = count }
+    public init(count: Int, waiting: Bool) {
+        self.count = count
+        self.waiting = waiting
+    }
 
     public var body: some View {
         Text("\(count)")
             .font(.caption2.bold())
-            .foregroundStyle(Palette.onAccent)
+            .foregroundStyle(waiting ? Palette.onWarning : Palette.onAccent)
             .padding(.horizontal, 6)
             .frame(minWidth: 18, minHeight: 18)
-            .background(Palette.accentFill, in: Capsule())
+            .background(waiting ? Palette.warning : Palette.accentFill, in: Capsule())
     }
 }

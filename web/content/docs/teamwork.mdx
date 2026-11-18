@@ -28,8 +28,8 @@ The recipient's tool calls and thinking are in its own **Full conversation**.
 Bots never wait on each other. When one bot messages another:
 
 1. **The request is queued and the sender goes on at once.** It can finish its turn or keep working.
-2. **The recipient does the work** away from its chat, as an item in its [event box](/docs/conversations#background-tasks): its chat stays free, and the request waits for a free place like its other background work. A recipient with [computer use](/docs/computer-use) or **Manage the team** on does it in its chat instead, one thing at a time.
-3. **The answer goes back to the sender**, not to you. It shows in the conversation sheet and in the item's steps in the recipient's **Details**, but not as a message in the recipient's chat.
+2. **The recipient does the work** away from its chat, as a [thread](/docs/conversations#threads): its chat stays free, and the request waits for a free place like its other background work. A recipient with [computer use](/docs/computer-use) or **Manage the team** on does it in its chat instead, one thing at a time.
+3. **The answer goes back to the sender**, not to you. It shows in the conversation sheet and in the thread's steps in the recipient's **Details**, but not as a message in the recipient's chat.
 4. **The sender takes the answer as a new turn of its own** and replies to you in its chat, with the usual "done" notification. Answers that arrive while the sender is busy are taken together in one turn. A request that failed comes back the same way, so the sender can tell you.
 
 Because nobody waits, there's no time limit: the recipient takes as long as the work needs.

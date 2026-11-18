@@ -63,7 +63,7 @@ test('a new bot works in its own folder: so named in the list, its chat and its 
     const details = await openSettings(page, name)
     await expect(details.locator('.workspace-pill')).toHaveText('Own folder')
     await expect(details).toContainText('Git repository')
-    await expect(details.getByText('Worktree per agent')).toHaveCount(0)
+    await expect(details.getByText('Worktree per thread')).toHaveCount(0)
     expect(versions(join(sandbox().home, 'bots', botId!, 'workspace'))).toEqual([MADE])
   } finally {
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
@@ -105,7 +105,7 @@ test('a project folder in a git repository keeps its worktree switch and its own
     const details = await openSettings(page, name)
     await expect(details.locator('.workspace-pill')).toHaveText(basename(dir))
     await expect(details).toContainText('Git repository')
-    await expect(details.getByText('Worktree per agent')).toBeVisible()
+    await expect(details.getByText('Worktree per thread')).toBeVisible()
     expect(versions(dir)).toEqual([])
   } finally {
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})

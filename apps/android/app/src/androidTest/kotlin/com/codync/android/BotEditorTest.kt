@@ -126,14 +126,14 @@ class BotEditorTest {
         compose.onNodeWithText("Choose workspace").assertIsDisplayed()
     }
 
-    @Test fun worktreePerAgentShowsOnlyForAProjectInAGitRepository() {
+    @Test fun worktreePerThreadShowsOnlyForAProjectInAGitRepository() {
         val project = Bot("fixture", cwd = "/home/Project", gitRepo = true, taskWorktrees = true)
         var saved by mutableStateOf(project)
         compose.setContent { Hosted { BotEditor(fixture().copy(bots = listOf(saved)), scout.copy(taskWorktrees = true), store) } }
-        toggle("Worktree per agent").performScrollTo().assertIsOn()
+        toggle("Worktree per thread").performScrollTo().assertIsOn()
         // The bot's own folder is a repository too, where all its work stays: no switch there.
         saved = project.copy(cwd = "/data/bots/fixture/workspace", managedWorkspace = true)
-        toggle("Worktree per agent").assertDoesNotExist()
+        toggle("Worktree per thread").assertDoesNotExist()
     }
 
     @Test fun permissionsListTheAgentsOwnModesWithTheirWords() {

@@ -589,7 +589,7 @@ test("one view lists every bot's work, with the same rows and actions, and leads
   }
 })
 
-test('Settings holds Instructions and Agent first, and Agents at once steps between 1 and 6', async () => {
+test('Settings holds Instructions and Agent first, and Threads at once steps between 1 and 6', async () => {
   const { browser, page } = await attach()
   const name = `Work agents e2e ${Date.now()}`
   let botId: string | undefined
@@ -600,7 +600,7 @@ test('Settings holds Instructions and Agent first, and Agents at once steps betw
     await details.getByRole('tab', { name: 'Settings', exact: true }).click()
     await expect(details.locator('.card-section h3')).toHaveText(['Instructions', 'Agent', 'Profile', 'Workspace', 'Activity', 'Connectors', 'Skills'])
 
-    const agents = details.locator('.value-row', { hasText: 'Agents at once' })
+    const agents = details.locator('.value-row', { hasText: 'Threads at once' })
     await expect(agents.locator('.stepper-value')).toHaveText('2')
     await agents.getByRole('button', { name: 'Decrease' }).click()
     await expect(agents.locator('.stepper-value')).toHaveText('1')

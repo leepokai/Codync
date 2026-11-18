@@ -1108,7 +1108,6 @@
   "· now": "· 지금",
   "Install Codync Dev on {name} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.": "{name}에 Codync Dev를 설치하고 한 번 여세요. Linux에서는 개발용 호스트를 ~/.local/bin/codync-dev-host에 설치하세요.",
   "Version {version} is available: run codync-host update": "{version} 버전 사용 가능: codync-host update를 실행하세요",
-  "View": "보기",
   "Download failed: {error}": "다운로드 실패: {error}",
   "{error} Draft kept; Enter retries, Ctrl+C clears text.": "{error} 초안 유지됨; Enter로 다시 시도, Ctrl+C로 글 지우기.",
   "1 s": "1초",

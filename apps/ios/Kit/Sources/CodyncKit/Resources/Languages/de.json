@@ -1108,7 +1108,6 @@
   "· now": "· jetzt",
   "Install Codync Dev on {name} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.": "Installiere Codync Dev auf {name} und öffne es einmal. Installiere unter Linux den Entwicklungs-Host als ~/.local/bin/codync-dev-host.",
   "Version {version} is available: run codync-host update": "Version {version} ist verfügbar: führe codync-host update aus",
-  "View": "Darstellung",
   "Download failed: {error}": "Download fehlgeschlagen: {error}",
   "{error} Draft kept; Enter retries, Ctrl+C clears text.": "{error} Entwurf behalten; Enter versucht es erneut, Ctrl+C löscht den Text.",
   "1 s": "1 s",

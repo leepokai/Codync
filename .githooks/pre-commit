@@ -137,6 +137,13 @@ if touches '^apps/(android/|project\.yml|ios/Kit/Tests/CodyncKitTests/Fixtures/t
     fi
 fi
 
+# The PR validation check reads the base branch's template, and no CI job runs its test.
+if touches '^(tools/pr-validation|\.github/pull_request_template\.md)'; then
+    staged_copy
+    echo "Checking the PR validation script against the PR template..."
+    python3 "$snapshot/tools/pr-validation-test.py"
+fi
+
 if touches '^apps/screen-linux/'; then
     staged_copy
     echo "Checking Linux screen helper formatting..."

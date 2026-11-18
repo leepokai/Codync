@@ -1,3 +1,4 @@
+import type { CallError, RelayAbsence, RelayPresence } from '../../shared/ipc'
 import { deviceHello, FrameCodec, unb64url, type DeviceKey } from './crypto.ts'
 
 // One end-to-end encrypted channel to an account computer over the Codync relay (docs/reference/remote-relay.md
@@ -6,12 +7,8 @@ import { deviceHello, FrameCodec, unb64url, type DeviceKey } from './crypto.ts'
 // window (`setAttended`), so a cloud computer can sleep once this app stops looking: a phone connects only in the
 // foreground the same way.
 
-export interface ChannelError {
-  status: number
-  message: string
-  /** The computer isn't connected to the relay (asleep, or off). */
-  offline?: boolean
-}
+/** A call or stream that failed, as the renderer gets it. */
+export type ChannelError = CallError
 
 /** What the channel needs from a WebSocket (the global one in the app, a fake in tests). */
 export interface Socket {
@@ -29,6 +26,8 @@ export interface ChannelSetup {
   dial: () => Socket
   /** Called once it turned this device away for good, so the next use starts over. */
   onRefused: () => void
+  /** Each presence the relay sends: whether the computer is connected, or on its way. */
+  onPresence: (presence: RelayPresence) => void
 }
 
 type Inner = { id: number; ok?: unknown; err?: { status?: number; message?: string }; ev?: unknown; end?: boolean }
@@ -61,10 +60,15 @@ const IDLE = 15_000
 const BROKEN = 4000
 
 export const unreachable = (): ChannelError => ({ status: 0, message: "Can't reach your computer. Is it on and connected to the internet?" })
-const asleep = (): ChannelError => ({ status: 0, message: 'Your computer is offline.', offline: true })
+const asleep = (presence: RelayAbsence): ChannelError => ({
+  status: 0,
+  message: presence === 'waking' ? 'Still waking the computer: try again in a moment.' : 'Your computer is offline.',
+  presence,
+})
 
 export class RelayChannel {
-  state: 'idle' | 'connecting' | 'asleep' | 'ready' | 'refused' = 'idle'
+  /** `offline`, `waking`: the relay says the computer isn't connected (`RelayPresence`). */
+  state: 'idle' | 'connecting' | 'offline' | 'waking' | 'ready' | 'refused' = 'idle'
   private socket: Socket | null = null
   private codec: FrameCodec | null = null
   private hello: ReturnType<typeof deviceHello> | null = null
@@ -102,7 +106,7 @@ export class RelayChannel {
         timer: setTimeout(() => {
           if (!this.calls.delete(call)) return
           if (call.id !== null) this.sendInner({ id: call.id, cancel: true })
-          reject(this.state === 'asleep' ? asleep() : unreachable())
+          reject(this.lost())
           this.settle()
         }, timeoutMs),
       }
@@ -207,12 +211,15 @@ export class RelayChannel {
       return
     }
     switch (wire.t) {
-      case 'presence':
+      case 'presence': {
+        const presence: RelayPresence = wire.online === true ? 'online' : wire.waking != null ? 'waking' : 'offline'
         // The computer (re)joined: whatever channel there was is gone; a fresh handshake.
-        this.drop(wire.online === true ? unreachable() : asleep())
-        if (wire.online === true) this.startHandshake()
-        else this.state = 'asleep'
+        this.drop(presence === 'online' ? unreachable() : asleep(presence))
+        if (presence === 'online') this.startHandshake()
+        else this.state = presence
+        this.setup.onPresence(presence)
         break
+      }
       case 'welcome':
         return this.welcome(wire as { ek: string; sig: string })
       case 'reject':
@@ -288,7 +295,7 @@ export class RelayChannel {
     this.stopTimers()
     if (code === 4001 || code === 4003) return this.refuse({ status: 401, message: "This device isn't allowed on that computer anymore." })
     if (code === 4400) return this.refuse({ status: 426, message: 'Update Codync to keep using this computer.' })
-    this.drop(this.state === 'asleep' ? asleep() : unreachable())
+    this.drop(this.lost())
     this.state = 'idle'
     if (this.attended && (this.calls.size || this.subs.size)) this.again()
   }
@@ -308,6 +315,11 @@ export class RelayChannel {
       this.retry = null
       if (this.attended && !this.socket && (this.calls.size || this.subs.size)) this.open()
     }, delay)
+  }
+
+  /** Why what waits can't be answered now: the computer away from the relay, or no link at all. */
+  private lost(): ChannelError {
+    return this.state === 'offline' || this.state === 'waking' ? asleep(this.state) : unreachable()
   }
 
   /** The channel is gone: what was sent on it can't be answered any more. What still waits to be sent waits on. */

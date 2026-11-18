@@ -222,7 +222,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
                 // let in: another account's, one it can't confirm, or one its user declined.
                 case let .http(403, message): message.hasPrefix("This pairing code expired") ? .expired : .unauthorized
                 case .unauthorized, .http(401, _): .unauthorized
-                case .unreachable, .computerOffline: .unreachable
+                case .unreachable, .computerOffline, .computerWaking: .unreachable
                 case .http: .other
                 }
             case let url as URLError where url.code == .timedOut: self = .timeout

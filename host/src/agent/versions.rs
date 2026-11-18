@@ -207,6 +207,11 @@ async fn commit(dir: &Path, message: &str) -> Result<bool, (Stage, anyhow::Error
         return Err((Stage::Busy, anyhow!("git is at work there ({busy})")));
     }
     let too_big = too_big(dir).await.map_err(|e| (Stage::Look, e))?;
+    // What stays out stays out even when the bot staged it itself; what else it staged (a `git rm --cached`) is kept.
+    let unstaged: Vec<String> = too_big.iter().map(|name| format!(":(literal){name}")).collect();
+    let mut reset = vec!["reset", "-q", "--", ":(literal)uploads"];
+    reset.extend(unstaged.iter().map(String::as_str));
+    git(dir, &reset).await.map_err(|e| (Stage::Add, e))?;
     let left_out: Vec<String> = too_big.iter().map(|name| format!(":(exclude,literal){name}")).collect();
     let mut add = vec!["add", "-A", "--", ".", UPLOADS];
     add.extend(left_out.iter().map(String::as_str));
@@ -218,19 +223,21 @@ async fn commit(dir: &Path, message: &str) -> Result<bool, (Stage, anyhow::Error
 }
 
 /// `git <args>` in `dir`, as Codync, to its end: a stopped `add` or `commit` would leave its lock behind, and no
-/// version would be saved there again.
+/// version would be saved there again. Its output untrimmed: a `-z` list's names may start with a space.
 async fn git(dir: &Path, args: &[&str]) -> Result<String> {
     let all: Vec<&str> = AS_CODYNC.iter().chain(args).copied().collect();
     crate::git::run_to_end(dir, &all).await
 }
 
-/// The new and changed files of `dir` bigger than [`BIGGEST`], as git names them.
+/// The new and changed files of `dir` bigger than [`BIGGEST`], as git names them, the ones the bot staged included.
 async fn too_big(dir: &Path) -> Result<Vec<String>> {
-    let listed = git(dir, &["ls-files", "-z", "--others", "--modified", "--exclude-standard"]).await?;
+    let changed = git(dir, &["ls-files", "-z", "--others", "--modified", "--exclude-standard"]).await?;
+    let staged = git(dir, &["diff", "--cached", "--name-only", "-z", "--diff-filter=AM"]).await?;
     let dir = dir.to_owned();
     let big = tokio::task::spawn_blocking(move || {
-        listed
+        changed
             .split('\0')
+            .chain(staged.split('\0'))
             .filter(|name| std::fs::metadata(dir.join(name)).is_ok_and(|m| m.is_file() && m.len() > BIGGEST))
             .map(str::to_owned)
             .collect()
@@ -282,6 +289,32 @@ mod tests {
         std::fs::write(dir.join("notes.md"), "kept").expect("a file");
         commit(&dir, "First").await.expect("made");
         assert_eq!(files(&dir).await, [".gitignore", "notes.md"]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn what_the_bot_staged_itself_stays_out_too() {
+        let Some(dir) = folder().await else { return };
+        commit(&dir, "First").await.expect("made");
+        std::fs::write(dir.join("uploads/photo.png"), "sent").expect("an upload");
+        let big = std::fs::File::create(dir.join(" video.mp4")).expect("a file");
+        big.set_len(BIGGEST + 1).expect("a big one");
+        std::fs::write(dir.join("notes.md"), "kept").expect("a file");
+        git(&dir, &["add", "-A", "--", ".", "uploads"]).await.expect("the bot's own add");
+        commit(&dir, "Second").await.expect("saved");
+        assert_eq!(files(&dir).await, [".gitignore", "notes.md"], "no upload, no big file with a leading space");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn a_file_the_bot_stopped_tracking_stays_untracked() {
+        let Some(dir) = folder().await else { return };
+        std::fs::write(dir.join("secret.env"), "key").expect("a file");
+        commit(&dir, "First").await.expect("made");
+        std::fs::write(dir.join(".gitignore"), "secret.env\n").expect("ignored now");
+        git(&dir, &["rm", "-q", "--cached", "secret.env"]).await.expect("the bot's own rm");
+        commit(&dir, "Second").await.expect("saved");
+        assert_eq!(files(&dir).await, [".gitignore"]);
         let _ = std::fs::remove_dir_all(dir);
     }
 

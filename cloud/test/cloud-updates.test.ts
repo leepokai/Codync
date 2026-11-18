@@ -22,7 +22,8 @@ async function withPhone(app: string) {
 describe("app versions", () => {
   it("keeps each device's version and shows which provider runs a cloud computer", async () => {
     const { listed, device } = await withPhone("ios/2.26.0; minHost=2.25.0");
-    expect(listed.body.computers[0].cloud).toEqual({ provider: "boat", providerName: "Boat", region: "EU", state: "starting" });
+    // Its host is connected, so it booted.
+    expect(listed.body.computers[0].cloud).toEqual({ provider: "boat", providerName: "Boat", region: "EU", state: "running" });
     const row = await env.DB.prepare("SELECT app_version, min_host FROM devices WHERE sign_pub = ?").bind(ref.b64url(device.pub)).first();
     expect(row).toEqual({ app_version: "2.26.0", min_host: "2.25.0" });
   });

@@ -294,13 +294,20 @@ pub(super) fn tidy(hub: &Arc<Hub>) {
         let Ok(mut bots) = tokio::fs::read_dir(root()).await else { return };
         while let Ok(Some(bot)) = bots.next_entry().await {
             let items = super::items::load(&hub.store, &bot.file_name().to_string_lossy());
-            removed += tidy_orphans(&bot.path(), &items.into_iter().map(|i| i.id).collect()).await;
+            removed += tidy_orphans(&bot.path(), &known(&items)).await;
         }
         if removed > 0 {
             let properties = serde_json::json!({"removed": removed}).as_object().cloned().unwrap_or_default();
             crate::analytics::capture(&hub, crate::analytics::Event::WorktreesTidied, properties);
         }
     });
+}
+
+/// The worktree folders `items` still use: each item's own, and the one it works in, named after the item it went
+/// on from, which may be gone since.
+fn known(items: &[Item]) -> HashSet<String> {
+    let used = items.iter().filter_map(|i| i.worktree.as_ref()).filter_map(|w| Path::new(&w.path).file_name());
+    items.iter().map(|i| i.id.clone()).chain(used.map(|name| name.to_string_lossy().into_owned())).collect()
 }
 
 /// The worktrees in a bot's folder of them, `dir`, whose item isn't one of `known`: each goes when its commits are
@@ -442,6 +449,15 @@ mod tests {
             assert_eq!(recheck(&mut items).len(), again, "{then:?}");
         }
         assert_eq!(left(&items), Some(Left::InUse), "one in use is left as it is");
+    }
+
+    #[test]
+    fn a_worktree_an_item_went_on_in_is_known_after_the_first_item_is_gone() {
+        let worktree = serde_json::json!({"branch": "codync/t", "path": "/w/bot/i1", "cwd": "/w/bot/i1", "base": ""});
+        let item = serde_json::json!({"id": "i2", "title": "t", "brief": "x", "status": "working", "order": 2,
+            "createdAt": 0, "worktree": worktree});
+        let items: Vec<Item> = serde_json::from_value(serde_json::json!([item])).expect("items");
+        assert_eq!(known(&items), HashSet::from(["i1".to_owned(), "i2".to_owned()]));
     }
 
     #[test]

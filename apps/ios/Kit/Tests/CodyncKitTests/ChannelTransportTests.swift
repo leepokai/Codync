@@ -348,6 +348,10 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     #expect(await t.settled(within: .seconds(5)) == .hostOffline(lastSeen: seen))
     await #expect(throws: HostError.computerOffline(lastSeen: seen)) { _ = try await t.call("hello", body: Data(), timeout: 1) }
 
+    // The relay is waking it (a cloud computer asleep): still offline, the mailbox too, but on its way.
+    await relay.push(["t": "presence", "online": false, "lastSeenAt": 1_790_000_000_000, "waking": 1_790_000_100_000])
+    #expect(await waitFor(t.states()) { $0 == .hostOffline(lastSeen: seen, waking: true) } == .hostOffline(lastSeen: seen, waking: true))
+
     // Queue a message: it goes out sealed for the host's box key.
     let nonce = "3F2504E0-4F89-11D3-9A0C-0305E82C3301"
     async let queued: Void = t.enqueue(botId: "b1", text: "hi", clientNonce: nonce)

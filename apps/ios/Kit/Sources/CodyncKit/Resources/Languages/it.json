@@ -2211,5 +2211,6 @@
   "{name} remembered it": "Ricordato da {name}",
   "Codync {version} is available": "Codync {version} è disponibile",
   "You have {version}.": "Hai la versione {version}.",
-  "Couldn't restore sign-in. Check your connection and retry.": "Impossibile ripristinare l'accesso. Controlla la connessione e riprova."
+  "Couldn't restore sign-in. Check your connection and retry.": "Impossibile ripristinare l'accesso. Controlla la connessione e riprova.",
+  "Still waking the computer: try again in a moment.": "Riattivazione del computer in corso: riprova tra un momento."
 }

@@ -2211,5 +2211,6 @@
   "{name} remembered it": "Запомнил(а) {name}",
   "Codync {version} is available": "Доступен Codync {version}",
   "You have {version}.": "У вас версия {version}.",
-  "Couldn't restore sign-in. Check your connection and retry.": "Не удалось восстановить вход. Проверьте подключение и попробуйте снова."
+  "Couldn't restore sign-in. Check your connection and retry.": "Не удалось восстановить вход. Проверьте подключение и попробуйте снова.",
+  "Still waking the computer: try again in a moment.": "Компьютер всё ещё пробуждается: попробуйте через минуту."
 }

@@ -2211,5 +2211,6 @@
   "{name} remembered it": "{name} が記憶しました",
   "Codync {version} is available": "Codync {version} が利用可能です",
   "You have {version}.": "現在のバージョンは {version} です。",
-  "Couldn't restore sign-in. Check your connection and retry.": "サインインを復元できませんでした。接続を確認して、もう一度お試しください。"
+  "Couldn't restore sign-in. Check your connection and retry.": "サインインを復元できませんでした。接続を確認して、もう一度お試しください。",
+  "Still waking the computer: try again in a moment.": "まだコンピューターを起動しています。少し待ってからもう一度お試しください。"
 }

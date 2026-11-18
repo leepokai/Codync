@@ -21,7 +21,7 @@ public struct ComputerFilterHeader: View {
     }
 
     private var stores: [BotStore] { selection.shown.compactMap { accounts.store(for: $0) } }
-    private var summary: String { ConnectionSummary(connections: stores.map(\.shownConnection)).text }
+    private var summary: String { ConnectionSummary(connections: stores.map(\.shownConnection), waking: stores.contains(where: \.isWaking)).text }
 
     public var body: some View {
         Menu {
@@ -90,6 +90,7 @@ public struct ComputerFilterHeader: View {
 
 public extension BotStore {
     var connectionLabel: String {
+        if isWaking { return "Waking the computer…" }
         if isAsleep { return "Sleeping" }
         return switch shownConnection {
         case .online where isCloudUpdating: "Updating…"

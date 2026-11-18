@@ -63,12 +63,17 @@ pub async fn run(dir: &Path, args: &[&str], limit: Duration) -> Result<String> {
 }
 
 /// As [`run`], with no time limit, and never stopped, not even when the host stops: for git whose stop would leave
-/// its lock behind (`agent::versions`).
+/// its lock behind (`agent::versions`). What git printed is given as it is, untrimmed: a `-z` list's names may start
+/// or end with a space.
 pub async fn run_to_end(dir: &Path, args: &[&str]) -> Result<String> {
-    output(dir, args, false).await
+    raw(dir, args, false).await
 }
 
 async fn output(dir: &Path, args: &[&str], stoppable: bool) -> Result<String> {
+    Ok(raw(dir, args, stoppable).await?.trim().to_owned())
+}
+
+async fn raw(dir: &Path, args: &[&str], stoppable: bool) -> Result<String> {
     let git = program().await.ok_or_else(|| anyhow!("git isn't installed"))?;
     let out = command(&git, dir).kill_on_drop(stoppable).args(args).output().await.context("starting git")?;
     if !out.status.success() {
@@ -78,5 +83,5 @@ async fn output(dir: &Path, args: &[&str], stoppable: bool) -> Result<String> {
             String::from_utf8_lossy(&out.stderr).trim()
         );
     }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }

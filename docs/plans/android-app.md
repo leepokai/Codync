@@ -29,7 +29,7 @@ emulator against a real host; device acceptance is listed separately.
 | Live updates | Android 16 Live updates (`ProgressStyle`), the status bar chip on Android 16 QPR1 (API 36.1); it follows how the bot stands outside its chat (`bot.outside`, `TaskFeed.kt`), so it stays while background work runs, and shows the roster's line (`Needs you`, the chat's activity, `2 working · 3 waiting`) while the app runs | Background updates need FCM in the deployment |
 | Version check | `VersionMismatch.MIN_HOST`, the host's `minApp`, the update card in the roster and in place of the composer (Update Codync opens Google Play; greyed out while Play doesn't have the version yet), the newer-release reminder (`AppUpdates.kt`, Play's in-app update info) | Set `MIN_HOST` to the first release that ships Android support when it's cut |
 | Remote screen | Ported: viewer from Computers, the chat header (watch a bot, then take over) and `codync-dev://screen`; WebRTC H.264, trackpad and direct touch, long-press drag, two-finger scroll, pinch zoom streaming the visible region, keyboard with IME and modifier keys, clipboard, displays, take over/hand back, Rotate, trickle ICE that keeps the video through a channel reconnect, idle pause (after 5 minutes untouched, tap to continue) | Pinch, IME composition and a hardware keyboard on a device; TURN relay path and renewal; idle pause on a live picture (touches and keys restarting the count, Take over kept on continuing) |
-| Analytics | Ported: PostHog feature events with the Settings switch (and its sheet), crash reports sent on the next launch; Rate on Google Play and Report an issue | The rating invitation, with the Play release |
+| Analytics | Ported: PostHog feature events with the Settings switch (and its sheet), crash reports sent on the next launch; the rating invitation (Play's in-app review, the iPhone's policy), Rate on Google Play and Report an issue | Play's review window on an install from Google Play |
 | Packaging | Debug, R8 release signed with the Play upload key, `versionCode` from the version, Firebase (`codync-auth`) and private configuration, `Submit Android` to Google Play (production since 2.49.1) | See [Before a Play release](#before-a-play-release) |
 
 ## Gates before merge into dev
@@ -66,7 +66,7 @@ device acceptance, and the account flows on main (they were walked on dev; main 
 | Remote screen: Chinese IME composition, a hardware keyboard, the TURN relay path and its credential renewal | `ScreenKeys.kt`, `ScreenSession.kt`, `ScreenView.kt` | A computer it's safe to type into, and a signed-in host for the relay; viewing, trackpad and pinch zoom are verified |
 | On-device voice with a live microphone | `PlatformSpeech.kt`, `LocalVoiceAudio.kt` | A phone; on the emulator the recognizer was fed the speech fixture |
 | Camera QR pairing (focus and 1080p frames), launcher widget refresh, foldables, TalkBack end to end | `QrViewfinder.kt`, `CodyncWidgets.kt` | Physical devices; portrait lock with the rotating screen viewer, 130% text and TalkBack's Move up/down were checked on the emulator |
-| Update info from Google Play itself | `AppUpdates.kt` | An install from Google Play (a debug build gets none); `AppUpdatesTest` drives the update reminder and *Update Codync* through Play's `FakeAppUpdateManager` |
+| Google Play's review window, and update info from Google Play itself | `AppUpdates.kt`, `ReviewPrompt.kt` | An install from Google Play (a debug build gets neither); the review policy has `ReviewTest` and the ask `ReviewPromptTest`, and `AppUpdatesTest` drives the update reminder and *Update Codync* through Play's `FakeAppUpdateManager` |
 
 ### Different from the iPhone on purpose or by platform
 
@@ -131,8 +131,8 @@ the Dynamic Island) with its feature graphic, per language.
   them as `AccountConfig.plist`), so the Android build stops parsing the iOS kit's
   `SharedStore.swift` and iPhone-only edits there stop counting as Android changes.
 - [x] *Rate on Google Play* and *Report an issue* in the Settings tab, since 2026-10-31.
-- [ ] The rating invitation through Play's in-app review API, with the iPhone's policy
-  ([review invitation](../features/ios-review-invitation.md)): left out until the app is on Google Play.
+- [x] The rating invitation through Play's in-app review API, with the iPhone's policy
+  ([review invitation](../features/review-invitation.md)), since the app is on Google Play.
 - [x] *Release to production* permission for `codync-play`, `PLAY_TRACK=production`, the production
   track's countries and the app's trader declaration with `codync.dev/terms` (2026-11-19).
 

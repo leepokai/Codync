@@ -19,4 +19,11 @@ assert mod.problems(ticked.replace("\n", "\r\n")) == [], "CRLF bodies from the w
 assert mod.problems("") == ["The `## Validation` section of the PR template is missing."]
 one_unticked = ticked.replace("- [x] Targets", "- [ ] Targets", 1)
 assert len(mod.problems(one_unticked)) == 1
+assert mod.problems("## Validation\n"), "an empty checklist must fail"
+shortened = "\n".join(line for line in ticked.splitlines() if "- [x] Targets" not in line)
+assert [p for p in mod.problems(shortened) if p.startswith("Missing: Targets")], "a dropped item must fail"
+noted = ticked.replace("`dev`, not `main`", "`dev`, not `main` N/A: release PR", 1)
+assert mod.problems(noted) == [], "a note after an item still counts"
+reworded = ticked.replace("- [x] Targets `dev`", "- [x] Aims at `dev`", 1)
+assert mod.problems(reworded) == [], "an item the template reworded since still counts"
 print("ok")

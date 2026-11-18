@@ -11,9 +11,9 @@ extension BotStore {
         connection == .online && heldDrop == nil && eventsTask != nil && !retired ? client : nil
     }
 
-    /// The client once the link is up. A reconnect in progress is waited out (headers show it,
-    /// see `shownConnection`), and an unreachable computer gets one fresh attempt first. A computer
-    /// that is off or refusing this device throws at once; so does a reconnect that outlasts `deadline`.
+    /// The client once the link is up. A reconnect in progress, or a cloud computer the relay is waking, is waited
+    /// out (headers show it, see `shownConnection`), and an unreachable computer gets one fresh attempt first. A
+    /// computer that is off or refusing this device throws at once; so does a wait that outlasts `deadline`.
     func ready(until deadline: ContinuousClock.Instant = .now + BotStore.actionPatience) async throws -> HostClient {
         var counted = false
         var retried = false
@@ -22,13 +22,14 @@ extension BotStore {
             if let live { return live }
             switch connection {
             case .online, .connecting: break
+            case .computerOffline where isWaking: break
             case .offline where !retried:
                 // The link retries on a backoff of up to 30 s: with someone waiting, try now.
                 retried = true
                 restartStream()
             case .offline, .unpaired: throw HostError.unreachable
             // The relay reports when it comes back, so there is no attempt of ours to wait for.
-            case let .computerOffline(lastSeen): throw HostError.computerOffline(lastSeen: lastSeen)
+            case let .computerOffline(lastSeen, _): throw HostError.computerOffline(lastSeen: lastSeen)
             case let .unauthorized(message): throw HostError.unauthorized(message)
             }
             guard ContinuousClock.now < deadline else { break }
@@ -38,7 +39,7 @@ extension BotStore {
             }
             try await Task.sleep(for: .milliseconds(100))
         }
-        throw HostError.unreachable
+        throw isWaking ? HostError.computerWaking : HostError.unreachable
     }
 
     /// Runs `op` once the link is up. With `replay`, only for calls the computer can safely get

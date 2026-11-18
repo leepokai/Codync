@@ -213,7 +213,7 @@ private struct ComputerRows: View {
             }
             if let hosting = store.cloudHosting { CloudHostingLine(hosting) }
             connectionDetail
-            if store.isOffline, !store.isUpdating, !store.isAsleep, let ask {
+            if store.isUnreachable, let ask {
                 Button(accounts.pendingAccess[store.computer.id] == nil ? "Ask for access" : "Show code", action: ask)
                     .buttonStyle(.secondary)
             }
@@ -259,7 +259,7 @@ private struct ComputerRows: View {
 
     private var connectionDetail: some View {
         Text(L10n.tr(detail)).font(.footnote)
-            .foregroundStyle(store.isOffline && !store.isUpdating && !store.isAsleep ? Palette.warning : Palette.secondary)
+            .foregroundStyle(store.isUnreachable ? Palette.warning : Palette.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
 

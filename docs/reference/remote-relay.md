@@ -446,7 +446,7 @@ Channel 訊息與 DO 訊息的 `t` 值不重疊：channel 只有 `hello`/`welcom
 ### 7.6 心跳、重連、限流
 
 - 心跳：host 與 device 每 30 秒送 `{"t":"ping"}`（中繼）；直連時 host 每 15 秒送 WebSocket Ping frame，client 45 秒沒收到任何資料視為斷線。
-- DO alarm：只要有 socket 或 mailbox 項目就每 60 秒一次：任何 socket（host 與 device）的 `ctx.getWebSocketAutoResponseTimestamp()` 超過 90 秒 → **退役**：attachment 記 `retired`，之後 DO 不再送任何東西給它；host 標記離線，device 通知 host `close` 該 link。退役的 socket 不立刻關：對已經連不到的 peer 呼叫 `close()` 會讓 DO 一直醒著（計 duration）到 TCP 放棄為止，放著不動則不會。它之後再說話（收到訊息、或 ping 時間晚於退役時間）就以記下的 code 關閉；若 DO 從退役起一直沒睡過（同一個 instance 還記得它），下一次 alarm 也關它，因為卡在它佇列裡的資料可能正是 DO 睡不著的原因，只有關掉才會釋放。清除過期 mailbox（通知 `mbox.expired`）與過期 nonces。
+- DO alarm：只要有 socket 或 mailbox 項目就每 60 秒一次：任何 socket（host 與 device）的 `ctx.getWebSocketAutoResponseTimestamp()` 超過 90 秒 → **退役**：attachment 記 `retired`，之後 DO 不再送任何東西給它；host 標記離線，device 通知 host `close` 該 link。退役的 socket 不立刻關：它的 peer 多半已經連不到，close 等不到回應。它之後再說話（收到訊息、或 ping 時間晚於退役時間）就以記下的 code 關閉；若 DO 從退役起一直沒睡過（同一個 instance 還記得它），下一次 alarm 也關它，因為卡在它佇列裡的資料可能正是 DO 睡不著的原因，只有關掉才會釋放。**DO 主動關的 socket 只關一次**（attachment 記 `retired.closed`）：實測對連不到的 peer 關一次不計費，重複關才會。再說話的 peer 可能在 alarm 看到它之前又不見了（睡眠中的筆電短暫醒來，送一次 ping 又睡回去），這時 close 等不到對方回應，若每次 alarm 都再呼叫一次 `close()`，DO 會一直醒著（計 duration）到連線死掉為止，約 15 分鐘。配對過期（`4410`）與撤銷（`4003`）的 socket 對方還在，所以退役後立刻關，同樣只關一次。清除過期 mailbox（通知 `mbox.expired`）與過期 nonces。
 - 重連退避：host 1 s 起倍增至 60 s、device 1 s 起倍增至 30 s，皆 full jitter；穩定 60 秒後重置。
 - `4100 paired` → 立即以一般模式重連（§4.1）。
 - 不重試的 close code：`4001 unauthorized`、`4003 revoked`、`4410 pairingExpired`（device 顯示需重新授權）；`4009 replaced` → host 等 5 分鐘再試並記錄 `error`（可能有人複製了 `identity.json`）；`4400 unsupportedVersion` → 顯示需要更新。

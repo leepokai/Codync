@@ -259,15 +259,22 @@ fn clean_reference(value: &str) -> &str {
 }
 
 fn looks_like_reference(value: &str) -> bool {
-    if value.len() < 3 || value.starts_with('-') {
+    if value.starts_with('-') {
+        return false;
+    }
+    // `#1` is a whole reference of its own, and short enough to fall under the length cutoff below.
+    let issue =
+        value.strip_prefix('#').is_some_and(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()));
+    if issue {
+        return true;
+    }
+    if value.len() < 3 {
         return false;
     }
     let lower = value.to_lowercase();
     let path = (value.contains('/') || value.contains('\\')) && value != "/";
     let url = lower.starts_with("http://") || lower.starts_with("https://");
     let uuid = uuid::Uuid::parse_str(value).is_ok();
-    let issue =
-        value.strip_prefix('#').is_some_and(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()));
     let issue_phrase = lower.split_once(' ').is_some_and(|(kind, number)| {
         matches!(kind, "issue" | "pr" | "pull") && !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit())
     });
@@ -282,7 +289,7 @@ fn looks_like_reference(value: &str) -> bool {
         && value.chars().any(|c| c.is_ascii_alphabetic())
         && value.chars().any(|c| c.is_ascii_digit())
         && value.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
-    path || url || uuid || issue || issue_phrase || file || code
+    path || url || uuid || issue_phrase || file || code
 }
 
 fn commands(entries: &[Entry], omitted: &mut Vec<String>) -> Vec<Command> {

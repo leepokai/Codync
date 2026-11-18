@@ -125,10 +125,12 @@ impl Actor {
                     || cfg.model != self.cfg.model
                     || cfg.model_options != self.cfg.model_options
                     || (memory_changed && !resumes);
-                self.restart_before_turn |= cfg.connectors != self.cfg.connectors
+                let mcp_layout_changed = cfg.connectors != self.cfg.connectors
                     || cfg.computer != self.cfg.computer
                     || cfg.manage_team != self.cfg.manage_team
                     || memory_changed;
+                self.restart_before_turn |= mcp_layout_changed;
+                self.open_session_fresh |= mcp_layout_changed;
                 // Live sessions switch before their next turn (see `fast_mode`).
                 let fast_changed = cfg.fast_mode != self.cfg.fast_mode;
                 let mode_changed = cfg.mode != self.cfg.mode;
@@ -229,6 +231,7 @@ impl Actor {
 
     /// A new agent, model, command, folder or memory: the agent starts again with a fresh context.
     pub(super) async fn restart_agent(&mut self) {
+        self.open_session_fresh = false;
         self.files.cancel();
         if let Some(c) = self.conn.take() {
             c.acp.kill().await;

@@ -147,6 +147,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         exit_tail: None,
         agent_error: None,
         restart_before_turn: false,
+        open_session_fresh: false,
         restart_after_turn: false,
         fast_support,
         idle_checked: Instant::now(),
@@ -373,6 +374,9 @@ struct Actor {
     /// The agent's process is stale (its tools changed, or the grants or sign-in it started with are gone): a new one
     /// starts before the next turn, which reopens its session. An agent that can't reopen one keeps its process.
     restart_before_turn: bool,
+    /// Codync's MCP servers changed: the next turn must open a session anew, not reuse a loaded id (`session/load` may
+    /// not reattach bridges; leepokai/Codync#508).
+    open_session_fresh: bool,
     /// A change that restarts the agent (`restart_agent`) came during a turn: it restarts once the turn ends.
     restart_after_turn: bool,
     /// What the agent says about Fast mode; clients see it in the bot's runtime.

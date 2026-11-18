@@ -69,3 +69,11 @@ test('how to update a computer this app cannot update is in the app language', (
   assert.equal(updateNeededText.how('windows'), '请在那台电脑上更新 Codync。')
   assert.equal(updateNeededText.how('linux', true), 'Codync Cloud 会在它下次休眠前更新它。')
 })
+
+test('a computer named like a placeholder keeps its name', (t) => {
+  testLanguage(t, 'en-US')
+  const behind = { kind: 'updateHost', version: '2.20.0', minimum: '2.26.0' } as const
+  // Filling in one pass: the name inserted for {host} is never read as a placeholder itself.
+  assert.equal(updateNeededText.detail(behind, '{minimum}', 'macos', false), 'Codync on {minimum} is 2.20.0; that computer needs Codync 2.26.0 or newer.')
+  assert.equal(hostVersionLine('2.20.0', null, behind, { kind: 'unavailable' }, '{version}', 'macos').detail[0], '{version} needs Codync 2.26.0 or newer.')
+})

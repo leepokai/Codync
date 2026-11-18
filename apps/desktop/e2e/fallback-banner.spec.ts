@@ -1,11 +1,12 @@
 import { test, expect, type Page } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { fixtureCommand } from './fixture-command.ts'
 import { api, attach, sandbox } from './sandbox.ts'
 
 // A scripted agent that asks to sign in while `<name>.signedout` is in its folder (host/tests/fixtures/relay_agent.py).
 const relayAgent = resolve(__dirname, '../../../host/tests/fixtures/relay_agent.py')
-const agent = (name: string) => `python3 -X utf8 -u '${relayAgent}' ${name}`
+const agent = (name: string) => `${fixtureCommand(relayAgent)} ${name}`
 
 type Bot = { id: string; agentStep?: unknown; resting?: { reason: string }[] }
 

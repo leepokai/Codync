@@ -1,6 +1,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fixtureCommand } from './fixture-command.ts'
 import { api, attach, sandbox, taskAgent, taskBot, typeMessage } from './sandbox.ts'
 
 /** The prompts of the task working item `title`, as the scripted agent logged them in the bot's folder. */
@@ -430,7 +431,7 @@ test('when the fallback is signed out too, the row names and opens the sign-in t
     await endRest(page, 'qwen')
     await endRest(page, 'kimi')
     botId = await openBot(page, name, undefined, 'kimi')
-    await api(page, 'updateBot', { id: botId, fallbacks: [{ backend: 'qwen', command: `python3 -X utf8 -u '${taskAgent}'`, model: null, modelOptions: {} }] })
+    await api(page, 'updateBot', { id: botId, fallbacks: [{ backend: 'qwen', command: fixtureCommand(taskAgent), model: null, modelOptions: {} }] })
     const signedOut = join(sandbox().home, 'bots', botId, 'workspace', 'task-signedout')
     writeFileSync(signedOut, '')
     await addWork(page, botId, 'Two sign-ins', 'anything')

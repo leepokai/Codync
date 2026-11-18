@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { join, resolve } from 'node:path'
+import { fixtureCommand } from './fixture-command.ts'
 import { api, attach, typeMessage } from './sandbox.ts'
 
 // A scripted agent that answers `initialize` the way Claude's adapter does and reports the context use a message names
@@ -59,7 +60,7 @@ test('once the agent tells its window, Set a size lists sizes by 100K and takes 
   const name = `Summarize sizes e2e ${Date.now()}`
   let botId: string | undefined
   try {
-    const command = `python3 -X utf8 -u '${agent}' claude`
+    const command = `${fixtureCommand(agent)} claude`
     botId = (await api<{ bot: Bot }>(page, 'createBot', { name, backend: 'custom', command, connectors: [], skills: [], notify: false })).bot.id
     const row = await summarizeRow(page, name)
     await expect(row, 'a custom command shows it once it runs Claude').toHaveCount(0)
@@ -111,7 +112,7 @@ test('a zero context reading before the real one is no summary, a real fall stil
   let botId: string | undefined
   try {
     // An agent that never reports compactions itself, so Codync reads one from a fall in its context use.
-    const command = `python3 -X utf8 -u '${agent}' silent`
+    const command = `${fixtureCommand(agent)} silent`
     botId = (await api<{ bot: Bot }>(page, 'createBot', { name, backend: 'custom', command, connectors: [], skills: [], notify: false })).bot.id
     await page.locator('.roster-row', { hasText: name }).click()
     let replies = 0

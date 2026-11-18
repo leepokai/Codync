@@ -45,6 +45,12 @@ fn paths(entry: &Entry) -> Vec<(String, &'static str)> {
         "failed" => "failed change",
         "denied" | "rejected" => "denied proposal",
         "pending" | "in_progress" => "pending proposal",
+        // Both Allow and Deny are saved as `answered`, so the choice in `selected` decides what the card proposed.
+        "answered" if permission => match allowed(entry) {
+            Some(true) => "approved proposal",
+            Some(false) => "denied proposal",
+            None => "unconfirmed proposal",
+        },
         _ => "unconfirmed proposal",
     };
     let mut paths: Vec<_> = entry.data["diffs"]
@@ -78,6 +84,23 @@ fn paths(entry: &Entry) -> Vec<(String, &'static str)> {
         }
     }
     paths
+}
+
+/// Whether the user allowed a card they answered: `answer_permission` saves Allow and Deny alike as `answered`, with the
+/// choice in `selected`, so the option's `kind` is what says whether the change was refused.
+fn allowed(entry: &Entry) -> Option<bool> {
+    let selected = entry.data["selected"].as_str()?;
+    let kind = entry.data["options"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|option| option["optionId"] == selected)
+        .and_then(|option| option["kind"].as_str());
+    Some(match kind {
+        Some(kind) => kind.starts_with("allow"),
+        // A card built without kinds (`chat`'s own approvals) names each option by the decision it makes.
+        None => selected.starts_with("allow"),
+    })
 }
 
 /// Refuse traversal and Windows device/stream syntax before touching the filesystem.

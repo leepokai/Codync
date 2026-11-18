@@ -136,7 +136,7 @@ commands and 6 servers, the rest counted ("and 4 more"). The next agent reads a 
 
 Alongside this index, a new session receives a **Context Manifest** gathered by rule, without a model call. It covers
 the same `newSession` boundary and the latest relevant turn: the user's constraint wording and paths/URLs/ids; files
-that were created, modified, read, proposed or refused, with path, current bytes, SHA-256 and the reason; commands
+that were created, modified, read, proposed, approved or refused, with path, current bytes, SHA-256 and the reason; commands
 with their tool state and reported exit code; running dev servers, active routine runs and pending approvals. Relative
 paths are inspected only in the bot's workspace and enabled memory folders, with a 64 MiB hash cap, a one-second
 inspection deadline and a two-second actor timeout. Unknown sizes, failed hashes and timed-out collection are named,

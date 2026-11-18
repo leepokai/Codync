@@ -125,6 +125,12 @@ fn apostrophes_inside_words_do_not_hide_paths_from_the_manifest() {
 }
 
 #[test]
+fn single_digit_issue_numbers_are_kept_as_references() {
+    let entries = [entry(1, 1, EntryKind::User, json!({"text":"Fix #1 and #9 before #409."}))];
+    assert_eq!(references(&entries, &mut Vec::new()), ["#1", "#9", "#409"]);
+}
+
+#[test]
 fn files_have_complete_hashes_resolved_from_the_bots_working_folder() {
     let dir = Temp::new();
     std::fs::write(dir.path().join("same.txt"), "hello").unwrap();
@@ -160,6 +166,53 @@ fn denied_pending_failed_and_unknown_edits_are_not_completed_work() {
         ["unconfirmed proposal", "failed change", "pending proposal", "denied proposal", "created"]
     );
     assert!(!files.iter().any(|f| f.path == "invented.txt"));
+}
+
+#[test]
+fn answered_permission_cards_keep_the_users_decision() {
+    let dir = Temp::new();
+    let options = json!([
+        {"optionId": "a", "name": "Allow", "kind": "allow_once"},
+        {"optionId": "r", "name": "Deny", "kind": "reject_once"}
+    ]);
+    let entries = [
+        entry(
+            1,
+            1,
+            EntryKind::Permission,
+            json!({"status":"answered","selected":"r","options":options.clone(),"diffs":[{"path":"refused.txt"}]}),
+        ),
+        entry(
+            2,
+            1,
+            EntryKind::Permission,
+            json!({"status":"answered","selected":"a","options":options,"diffs":[{"path":"allowed.txt"}]}),
+        ),
+        entry(
+            3,
+            1,
+            EntryKind::Permission,
+            json!({"status":"answered","selected":"deny","options":[{"optionId":"deny","name":"Deny"}],
+                   "diffs":[{"path":"refused-unnamed.txt"}]}),
+        ),
+        entry(
+            4,
+            1,
+            EntryKind::Permission,
+            json!({"status":"answered","selected":"allow","options":[{"optionId":"allow","name":"Allow"}],
+                   "diffs":[{"path":"allowed-unnamed.txt"}]}),
+        ),
+    ];
+    let files = files::collect(&entries, dir.path(), &[], &mut Vec::new());
+    assert_eq!(
+        files.iter().map(|f| (f.path.as_str(), f.why)).collect::<Vec<_>>(),
+        [
+            ("allowed-unnamed.txt", "approved proposal"),
+            ("refused-unnamed.txt", "denied proposal"),
+            ("allowed.txt", "approved proposal"),
+            ("refused.txt", "denied proposal")
+        ]
+    );
 }
 
 #[test]

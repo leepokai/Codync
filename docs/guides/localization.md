@@ -14,10 +14,12 @@ imports them, the terminal embeds them, and Android includes that directory as
 an asset source. Do not create a second Android copy.
 
 English source phrases are the lookup keys. All catalogs must have identical
-keys and preserve every `{placeholder}`. Missing phrases fall back to English;
+keys, spell each key once (JSON readers keep only the last one, so the other
+translation is lost), and preserve every `{placeholder}`. Missing phrases fall back to English;
 Traditional Chinese retains its existing Simplified fallback. Translate an
 interface template before inserting a user's name or text. Conversation content
-is not translated. The desktop catalog test checks key and placeholder parity, and that every
+is not translated. The desktop catalog test checks key and placeholder parity, that no catalog
+spells a key twice, and that every
 [What's new](../features/whats-new.md) title, body and note, and every literal `tr()` /
 `trNow()` phrase in `apps/desktop/src`, is a phrase in every catalog, so a new desktop
 string fails CI until it is translated. It also checks that every literal `L10n.tr("…")`

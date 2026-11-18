@@ -4,7 +4,9 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { announcements, phrases } from './whats-new.ts'
 
 const directory = new URL('../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/', import.meta.url)
-const read = (language: string): Record<string, string> => JSON.parse(readFileSync(new URL(`${language}.json`, directory), 'utf8'))
+const languages = readdirSync(directory).filter((name) => name.endsWith('.json')).map((name) => name.slice(0, -'.json'.length))
+const text = (language: string): string => readFileSync(new URL(`${language}.json`, directory), 'utf8')
+const read = (language: string): Record<string, string> => JSON.parse(text(language))
 
 /** Every key the file spells out, in order, including a repeat a parser would drop. */
 const spelledKeys = (text: string): string[] => {
@@ -28,8 +30,8 @@ const spelledKeys = (text: string): string[] => {
 }
 
 test('no catalog spells a key twice, so a translation is never dropped', () => {
-  for (const locale of ['zh-Hans', 'zh-Hant', 'ja', 'ko', 'fr', 'de', 'es', 'pt-BR', 'ru', 'it']) {
-    const keys = spelledKeys(readFileSync(new URL(`${locale}.json`, directory), 'utf8'))
+  for (const locale of languages) {
+    const keys = spelledKeys(text(locale))
     const repeated = keys.filter((key, index) => keys.indexOf(key) !== index)
     assert.deepEqual(repeated, [], `${locale}: the last one wins, so "${repeated.at(-1) ?? ''}" loses its other translation`)
   }
@@ -37,7 +39,7 @@ test('no catalog spells a key twice, so a translation is never dropped', () => {
 
 test('all shipped catalogs have the same keys and preserve interpolation tokens', () => {
   const source = read('zh-Hans')
-  for (const locale of ['zh-Hant', 'ja', 'ko', 'fr', 'de', 'es', 'pt-BR', 'ru', 'it']) {
+  for (const locale of languages.filter((language) => language !== 'zh-Hans')) {
     const catalog = read(locale)
     assert.equal(catalog.English, "English", `${locale}: English keeps its native name in language menus`)
     assert.deepEqual(Object.keys(catalog).sort(), Object.keys(source).sort(), locale)
@@ -56,7 +58,7 @@ test("every What's new phrase is translated in every catalog, and the clips besi
   // Every app ships the whole folder: a clip no feature names is dead weight in all of them.
   assert.deepEqual(clips.sort(), announcements.flatMap((a) => a.features ?? []).flatMap((f) => (f.media ? `${f.media}.mp4` : [])).sort())
   for (const clip of clips) assert.ok(statSync(new URL(clip, folder)).size < 300_000, clip)
-  for (const locale of ['zh-Hans', 'zh-Hant', 'ja', 'ko', 'fr', 'de', 'es', 'pt-BR', 'ru', 'it']) {
+  for (const locale of languages) {
     const catalog = read(locale)
     for (const note of phrases(announcements)) assert.ok(Object.hasOwn(catalog, note), `${locale}: ${note}`)
   }
@@ -72,7 +74,7 @@ test('every literal tr() / trNow() phrase in the desktop source has a catalog en
       keys.add(literal.replace(/\\(.)/g, (_, char: string) => (char === 'n' ? '\n' : char)))
     }
   }
-  for (const locale of ['zh-Hans', 'zh-Hant', 'ja', 'ko', 'fr', 'de', 'es', 'pt-BR', 'ru', 'it']) {
+  for (const locale of languages) {
     const catalog = read(locale)
     assert.deepEqual([...keys].filter((key) => !Object.hasOwn(catalog, key)).sort(), [], locale)
   }

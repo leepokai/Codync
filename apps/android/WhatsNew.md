@@ -16,14 +16,16 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 需要更新時，更新卡片上的「立即更新」「更新 Codync」按鈕會跟著 App 語言顯示。
 - 讀完聊天後，它的通知會自動消失，桌面圖示上的標記也會跟著消失。
 - Bot 在做事時旁邊的小圖示換成跟頭像同一種點陣，每種狀態各有自己的動作。
+- 傳出第五則訊息後，Codync 可能會邀請你在 Google Play 評分；之後至少相隔 120 天。
 
 ### en-US
 - A bot's default workspace is now called Own folder.
-- With Git installed, Codync keeps a version of a bot's own folder before and after each turn: ask the bot what a turn changed, or to bring a file back.
+- With Git, Codync versions a bot's own folder around each turn: ask what a turn changed, or bring a file back.
 - Background work is now called a thread: Threads at once, Worktree per thread.
 - The update card's buttons now show in the app's language.
 - Reading a chat clears its notification and the launcher badge.
-- A busy bot's small icon uses the avatars' dot grid, moving its own way for each state.
+- A busy bot's small icon uses the avatars' dot grid.
+- Codync may invite you to rate it after your fifth message.
 
 ## 2.49.1
 ### zh-Hant

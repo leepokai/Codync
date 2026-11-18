@@ -1987,8 +1987,6 @@
   "The provider refused this key.": "プロバイダがこのキーを拒否しました。",
   "Couldn't reach the cloud provider. Try again in a minute.": "クラウドプロバイダに接続できませんでした。1 分ほどしてからもう一度お試しください。",
   "Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.": "クラウドコンピュータはあなた自身のアカウントで動きます。キーは暗号化して保管され、表示されるのは末尾 4 文字だけです。",
-  "How to make a key": "キーの作り方",
-  "Make a key with only what Codync needs in your {provider} account, then paste it above.": "{provider} アカウントで Codync に必要な権限だけを持つキーを作成し、上に貼り付けてください。",
   "Open {provider}": "{provider} を開く",
   "{provider} API key": "{provider} の API キー",
   "Runs on your own account with a cloud provider, which bills you while it's awake. It sleeps when idle and wakes when you message it.": "クラウドプロバイダのあなた自身のアカウントで動き、起動している時間分だけ請求されます。使っていないときはスリープし、メッセージを送ると起動します。",
@@ -1999,7 +1997,6 @@
   "Cloud computer": "クラウドコンピュータ",
   "Cloud computer {n}": "クラウドコンピュータ {n}",
   "Add a key first": "先にキーを追加",
-  "Free sandbox available": "無料サンドボックスあり",
   "Get a free sandbox": "無料サンドボックスを入手",
   "InstaBox's free plan includes one machine (4 vCPU, 8 GiB).": "InstaBox の無料プランにはマシンが 1 台含まれます（4 vCPU、8 GiB）。",
   "Rename…": "名前を変更…",
@@ -2212,5 +2209,14 @@
   "Codync {version} is available": "Codync {version} が利用可能です",
   "You have {version}.": "現在のバージョンは {version} です。",
   "Couldn't restore sign-in. Check your connection and retry.": "サインインを復元できませんでした。接続を確認して、もう一度お試しください。",
-  "Still waking the computer: try again in a moment.": "まだコンピューターを起動しています。少し待ってからもう一度お試しください。"
+  "Still waking the computer: try again in a moment.": "まだコンピューターを起動しています。少し待ってからもう一度お試しください。",
+  "From $20 a month": "月額 $20 から",
+  "Free plan available": "無料プランあり",
+  "Create an environment named codync and mark it safe for third parties.": "codync という名前の環境を作成し、サードパーティに安全と設定します。",
+  "Create an API key for that environment that never expires, with the sandbox and snapshot actions.": "その環境用に、期限なしで sandbox と snapshot の操作を持つ API キーを作成します。",
+  "Copy the key and paste it below.": "キーをコピーして、下に貼り付けます。",
+  "Sign in, or sign up for the free plan.": "サインインするか、無料プランに登録します。",
+  "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "machines:read、machines:write、machines:delete のスコープを持つ codync という名前の API キーを作成します。",
+  "Connect {provider}": "{provider} に接続",
+  "Use the command line instead": "代わりにコマンドラインを使う"
 }

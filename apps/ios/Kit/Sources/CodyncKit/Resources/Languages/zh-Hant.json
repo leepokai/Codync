@@ -1987,8 +1987,6 @@
   "The provider refused this key.": "供應商拒絕了這把金鑰。",
   "Couldn't reach the cloud provider. Try again in a minute.": "無法連線到雲端供應商，請一分鐘後再試。",
   "Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.": "你的雲端電腦執行在你自己的賬戶上。金鑰加密保存，只顯示最後四碼。",
-  "How to make a key": "如何建立金鑰",
-  "Make a key with only what Codync needs in your {provider} account, then paste it above.": "在你的 {provider} 賬戶裡建立一把只含 Codync 所需權限的金鑰，再貼到上面。",
   "Open {provider}": "開啟 {provider}",
   "{provider} API key": "{provider} API 金鑰",
   "Runs on your own account with a cloud provider, which bills you while it's awake. It sleeps when idle and wakes when you message it.": "執行在你自己的雲端供應商賬戶上，供應商依它醒著的時間向你收費。閒置時休眠，你傳訊息時喚醒。",
@@ -1999,7 +1997,6 @@
   "Cloud computer": "雲端電腦",
   "Cloud computer {n}": "雲端電腦 {n}",
   "Add a key first": "請先加入金鑰",
-  "Free sandbox available": "有免費沙盒",
   "Get a free sandbox": "取得免費沙盒",
   "InstaBox's free plan includes one machine (4 vCPU, 8 GiB).": "InstaBox 的免費方案包含一台機器（4 vCPU、8 GiB）。",
   "Rename…": "重新命名…",
@@ -2212,5 +2209,14 @@
   "Codync {version} is available": "Codync {version} 已推出",
   "You have {version}.": "你目前是 {version}。",
   "Couldn't restore sign-in. Check your connection and retry.": "無法恢復登入。檢查網路後重試。",
-  "Still waking the computer: try again in a moment.": "還在喚醒電腦，請稍後再試。"
+  "Still waking the computer: try again in a moment.": "還在喚醒電腦，請稍後再試。",
+  "From $20 a month": "每月 $20 起",
+  "Free plan available": "有免費方案",
+  "Create an environment named codync and mark it safe for third parties.": "建立一個名為 codync 的環境，並將它標記為對第三方安全。",
+  "Create an API key for that environment that never expires, with the sandbox and snapshot actions.": "為這個環境建立一把永不過期的 API 金鑰，包含 sandbox 和 snapshot 操作。",
+  "Copy the key and paste it below.": "複製這把金鑰，貼到下方。",
+  "Sign in, or sign up for the free plan.": "登入，或註冊免費方案。",
+  "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "建立一把名為 codync 的 API 金鑰，權限為 machines:read、machines:write 和 machines:delete。",
+  "Connect {provider}": "連接 {provider}",
+  "Use the command line instead": "改用命令列"
 }

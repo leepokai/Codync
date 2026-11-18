@@ -2,6 +2,7 @@ package com.codync.android
 
 import android.content.ClipData
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,35 +38,55 @@ import kotlinx.coroutines.launch
 /** "Boat API key": a provider's key sheet, its menu items, and its field. */
 @Composable internal fun keyTitle(providerName: String) = tr("{provider} API key").replace("{provider}", providerName)
 
-/**
- * One provider's key (iOS `CloudKeySheet`), from New cloud computer or a cloud computer's `⋯`: the key to the user's own
- * account there, pasted once, checked and kept encrypted by the cloud, and shown afterwards only by its last four; while
- * the provider turns it down, what to fix shows under it. Saving one closes the sheet.
- */
+/** One provider's key (iOS `CloudKeySheet`), from a provider row's or a cloud computer's `⋯`: [CloudKeyForm]. Saving one
+ * closes the sheet. */
 @Composable internal fun CloudKeySheet(provider: String, offer: CloudOffer, state: AccountContext, store: AccountStore) {
     DisposableEffect(store) {
         store.cloudSheetShown(true)
         onDispose { store.cloudSheetShown(false) }
     }
     val p = offer.providers.firstOrNull { it.provider == provider } ?: return
+    val dismiss = LocalDismissModal.current
     Column(Modifier.fillMaxSize().background(Palette.background)) {
         ModalHeader(keyTitle(p.name))
-        CardForm {
-            CardSection(footer = "Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.") {}
-            CardSection {
-                row { KeyRow(p, cloudKeyAction(provider) in state.busy, offer.canRemoveKey(provider), state.cloudErrorAt(CloudErrorPlace.Key(provider)), store) }
-                p.offer?.let { row { OfferRow(p.provider, it) } }
-                row { SetupRow(p) }
+        CardForm { CloudKeyForm(p, offer, state, store, dismiss) }
+    }
+}
+
+/**
+ * One provider's key (iOS `CloudKeyForm`), in its own sheet and as New cloud computer's key step: how to make one on the
+ * provider's site (numbered, then its page), the key to the user's own account there (pasted once, checked and kept
+ * encrypted by the cloud, shown afterwards only by its last four, with what to fix while the provider turns it down),
+ * its free plan, and the command line way, folded away. [saved] runs once a key is kept.
+ */
+@Composable internal fun CloudKeyForm(provider: CloudProvider, offer: CloudOffer, state: AccountContext, store: AccountStore, saved: () -> Unit) {
+    // Above the key: the last step says to paste it below. An older cloud sends no steps, only the page.
+    val steps = provider.setup.steps
+    CardSection {
+        if (steps.isNotEmpty()) row {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                for ((index, step) in steps.withIndex()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("${index + 1}.", Modifier.alignByBaseline(), style = Type.body.monospacedDigit, color = Palette.tertiary)
+                    Text(tr(step), Modifier.alignByBaseline(), style = Type.body, color = Palette.text)
+                }
             }
         }
+        row { WebLink(tr("Open {provider}").replace("{provider}", provider.name), provider.setup.page) }
+    }
+    CardSection(footer = "Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.") {
+        row {
+            KeyRow(provider, cloudKeyAction(provider.provider) in state.busy, offer.canRemoveKey(provider.provider),
+                state.cloudErrorAt(CloudErrorPlace.Key(provider.provider)), store, saved)
+        }
+        provider.offer?.let { row { OfferRow(provider.provider, it) } }
+        row { CommandLine(provider.setup.commands) }
     }
 }
 
 /** The provider's key: its last four with replace and remove, or a field to paste it; [error] when saving or removing
- * it failed, under the key. */
-@Composable private fun KeyRow(provider: CloudProvider, busy: Boolean, canRemove: Boolean, error: String?, store: AccountStore) {
+ * it failed, under the key. [saved] runs once one is kept. */
+@Composable private fun KeyRow(provider: CloudProvider, busy: Boolean, canRemove: Boolean, error: String?, store: AccountStore, saved: () -> Unit) {
     var replacing by remember { mutableStateOf(false) }
-    val dismiss = LocalDismissModal.current
     val credential = provider.credential
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (credential != null && !replacing) {
@@ -72,7 +94,7 @@ import kotlinx.coroutines.launch
             credential.problem?.let { Text(tr(it), style = Type.footnote, color = Palette.danger) }
         } else {
             KeyEntry(provider, busy, replacing, cancel = { replacing = false }) { key, done ->
-                store.saveCloudKey(provider.provider, key) { replacing = false; done(); dismiss() }
+                store.saveCloudKey(provider.provider, key) { replacing = false; done(); saved() }
             }
         }
         error?.let { Text(tr(it), style = Type.footnote, color = Palette.danger) }
@@ -121,26 +143,24 @@ import kotlinx.coroutines.launch
     }
 }
 
-/** How to make the key, folded away: the cloud's own steps, to copy, or the provider's page. */
-@Composable private fun SetupRow(provider: CloudProvider) {
+/** The cloud's commands that make the key, folded away. */
+@Composable private fun CommandLine(commands: String) {
     var open by remember { mutableStateOf(false) }
-    Disclosure(open, { open = !open }, label = { Text(tr("How to make a key"), style = Type.body, color = Palette.text) }) {
-        Column(Modifier.padding(top = 2.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(tr("Make a key with only what Codync needs in your {provider} account, then paste it above.").replace("{provider}", provider.name),
-                style = Type.footnote, color = Palette.secondary)
-            Commands(provider.setup.commands)
-            WebLink(tr("Open {provider}").replace("{provider}", provider.name), provider.setup.page, Type.footnote)
-        }
+    Disclosure(open, { open = !open }, label = { Text(tr("Use the command line instead"), style = Type.body, color = Palette.text) }) {
+        Commands(commands)
     }
 }
 
+/** One command a line, scrolled sideways rather than wrapped: wrapping breaks them into commands that don't exist. */
 @Composable private fun Commands(text: String) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     var copied by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().clip(RoundedRectangle(12.dp)).background(Palette.bubbleUser).padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.weight(1f)) { SelectionContainer { Text(text, style = Type.caption.monospaced, color = Palette.text) } }
+        Box(Modifier.weight(1f).horizontalScroll(rememberScrollState())) {
+            SelectionContainer { Text(text, style = Type.caption.monospaced, color = Palette.text, softWrap = false) }
+        }
         IconButton(if (copied) "Copied" else "Copy", if (copied) "checkmark" else "doc.on.doc") {
             scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Key commands", text))); copied = true }
         }

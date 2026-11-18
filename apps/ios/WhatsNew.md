@@ -17,6 +17,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 動態島上工作中的 Bot 臉和旁邊的小圖示，點陣現在會對齊，不再錯位。
 - 需要更新時，更新卡片上的「立即更新」「更新 Codync」和「更新」按鈕會跟著 App 語言顯示。
 - 從睡眠中醒來的 Codync Cloud 雲端電腦會顯示「正在喚醒電腦…」，不再顯示離線或連不上；這段時間傳的文字訊息會等它醒來再送出。
+- 建立 Codync Cloud 雲端電腦改成在同一個畫面一步一步來：先選供應商（看得到在哪裡執行、要多少錢），再照著步驟到供應商網站建立金鑰並貼上，最後取名、建立。
 
 ### en-US
 - A bot's default workspace is now called Own folder.
@@ -28,6 +29,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - In the Dynamic Island, a working bot's face and the icon beside it now draw their dots lined up instead of shifted.
 - The buttons on the update cards (Update now, Update Codync, Update) now show in the app's language.
 - A Codync Cloud computer waking from sleep now shows Waking the computer… instead of offline or can't reach; a text message you send meanwhile goes out once it's up.
+- Setting up a Codync Cloud computer now goes step by step in one sheet: pick a provider (where it runs, what it costs), follow the steps to make its key and paste it, then name it and create it.
 
 ## 2.49.1
 ### zh-Hant

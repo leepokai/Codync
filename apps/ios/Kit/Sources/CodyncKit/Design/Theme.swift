@@ -42,6 +42,7 @@ public enum Palette {
     public static let accentDim = Color(light: 0xD9D9D9, dark: 0x333333)
     public static let danger = Color(light: 0xC23A2B, dark: 0xF0A7A7)
     public static let warning = Color(hex: 0xF0A030)
+    public static let onWarning = Color(hex: 0x000000)
     /// A bot that needs you, in widgets and Live Activities: readable amber in both modes.
     public static let attention = Color(light: 0x936000, dark: 0xECAF52)
     public static let codeBackground = Color(light: 0xF4F4F4, dark: 0x111111)

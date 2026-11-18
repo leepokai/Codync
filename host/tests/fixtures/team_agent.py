@@ -1,6 +1,7 @@
 """Deterministic ACP agent for delegation tests; no provider or network access."""
 
 import json
+import re
 import pathlib
 import subprocess
 import sys
@@ -64,7 +65,8 @@ REPLIES_END = "\n\n[Codync: these are bot replies"
 
 
 def prompt(request):
-    text = request["params"]["prompt"][0]["text"]
+    # Commands and the prompts the tests check are read without the id note that leads each user message.
+    text = re.sub(r"\[Codync: message [^\]]*\]\n", "", request["params"]["prompt"][0]["text"])
     with open("prompts.jsonl", "a") as log:
         log.write(json.dumps(text) + "\n")
     if "ROOM_DECISION" in text and "[Group chat" in text:
@@ -129,8 +131,9 @@ def prompt(request):
         update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})
         send({"id": request["id"], "result": {"stopReason": "end_turn"}})
         return
-    if text.split("\n\n")[-1].startswith(("ASK ", "ASK_HOLD ", "ASK_AFTER_MESSAGE ", "ASK_PERMISSION ")):
+    if text.split("\n\n")[-1].startswith(("ASK ", "ASK_HOLD ", "ASK_AFTER_MESSAGE ", "ASK_PERMISSION ", "ASK_TWICE ")):
         # ASK <question>|<option>|<option>[|<recommended>]: one card, and its answer as this turn's reply.
+        # ASK_TWICE asks again when the first call comes back.
         command, body = text.split("\n\n")[-1].split(" ", 1)
         if command == "ASK_AFTER_MESSAGE":
             sent = mcp_call("chat", "send_message", {"text": "Here are your choices"})
@@ -145,6 +148,8 @@ def prompt(request):
         if len(fields) > 3:
             arguments["recommended"] = fields[-1]
         response = mcp_call("chat", "request_decision", arguments)
+        if command == "ASK_TWICE":
+            response = mcp_call("chat", "request_decision", {**arguments, "question": "Again?"})
         if command == "ASK_AFTER_MESSAGE" and not response.get("isError"):
             reacted = mcp_call("chat", "react", {"emoji": "👍"})
             assert not reacted.get("isError"), reacted
@@ -246,13 +251,20 @@ for line in sys.stdin:
         with open("sessions.jsonl", "a") as log:
             log.write(json.dumps(request) + "\n")
         pathlib.Path("servers.json").write_text(json.dumps(request["params"]["mcpServers"]))
-        send({"id": request["id"], "result": {"sessionId": "session"}})
+        # modes.json in the bot's folder: the session modes this agent lists (none without it).
+        listed = pathlib.Path("modes.json")
+        modes = json.loads(listed.read_text()) if listed.exists() else {}
+        send({"id": request["id"], "result": {"sessionId": "session", **modes}})
     elif method == "session/prompt":
         cancel = threading.Event()
         permission = threading.Event()
         threading.Thread(target=prompt, args=(request,), daemon=True).start()
     elif method == "session/cancel":
         cancel.set()
+    elif method == "session/set_mode":
+        with open("modes.jsonl", "a") as log:
+            log.write(json.dumps(request["params"]["modeId"]) + "\n")
+        send({"id": request["id"], "result": {}})
     elif request.get("id") == "permission":
         permission_reply = request.get("result")
         permission.set()

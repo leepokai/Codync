@@ -103,6 +103,10 @@ test('known chrome becomes Chinese and everything else stays', () => {
   assert.equal(translate('Apps', 'zh', false), '应用')
   assert.equal(translate('Agents', 'zh', false), '智能体')
   assert.equal(translate('Installed', 'zh', false), '已安装')
+  assert.equal(translate('3 installed', 'zh', false), '已安装 3 个')
+  assert.equal(translate("Error: the host service isn't installed", 'zh', false), "Error: the host service isn't installed")
+  assert.equal(translate('Codync 2.47.0 is available', 'zh', false), 'Codync 2.47.0 已推出')
+  assert.equal(translate('You have reached your limit.', 'zh', false), 'You have reached your limit.')
   assert.equal(translate('Not installed', 'zh', false), '未安装')
   assert.equal(translate('Set up', 'zh', false), '设置')
   assert.equal(translate('Writing a reply…', 'zh', false), '正在写回复…')
@@ -217,6 +221,21 @@ test('bot, routine and message slots keep what the user wrote; other slots still
   assert.equal(translate('Message from Reviewer: Settings', 'ru', false), 'Сообщение от Reviewer: Settings')
   assert.equal(translate('Last run connected', 'ru', false), `${translate('Last run {status}', 'ru', false).replace('{status}', '')}${translate('connected', 'ru', false)}`)
   assert.equal(translate('constructor', 'ru', false), 'constructor')
+})
+
+test('follow-up notices translate around the wait and keep the note as written', () => {
+  assert.equal(translate('Follow-up in 1 minute: Settings', 'zh-Hant', 'en'), '1 分鐘後跟進：Settings')
+  assert.equal(translate('Follow-up in 20 minutes: Settings', 'zh-Hant', 'en'), '20 分鐘後跟進：Settings')
+  // A note that reads like another wait stays a note: the wait ends at the first colon.
+  assert.equal(translate('Follow-up in about 3 hours: look again in 5 minutes: maybe', 'zh', false), '约 3 小时后跟进：look again in 5 minutes: maybe')
+  assert.equal(translate('Follow-up in 1 minute: wait 5 minutes: then check', 'zh-Hant', 'en'), '1 分鐘後跟進：wait 5 minutes: then check')
+  assert.equal(translate('Follow-up in about 2 days: rerun if 3 hours: passed', 'zh-Hant', 'en'), '約 2 天後跟進：rerun if 3 hours: passed')
+  assert.equal(translate('Follow-up in about 2 days: Plan', 'ru', false), 'Проверка через примерно 2 дн.: Plan')
+  assert.equal(translate('Follow-up · Plan', 'ja', false), 'フォローアップ · Plan')
+  assert.equal(translate('Follow-up cancelled: Plan', 'fr', false), 'Suivi annulé : Plan')
+  // A waiting follow-up's row in the routines list.
+  assert.equal(translate('Follow-up at 15:42', 'zh-Hant', 'en'), '15:42 跟進')
+  assert.equal(translate('Follow-up due now', 'zh-Hant', 'en'), '即將跟進')
 })
 
 test('filled interface templates preserve user-owned names', () => {

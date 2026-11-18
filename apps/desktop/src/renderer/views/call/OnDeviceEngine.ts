@@ -1,6 +1,7 @@
 import type { SpeechEvent } from '@shared/ipc'
 import { onDeviceUnavailableReason, spokenText, VoiceEngine, VoiceSettings, type VoiceFailureKind } from './voice'
 import { trNow } from '../../lib/l10n.ts'
+import { SpeechSegments } from '../thread/speech-segments.ts'
 
 /**
  * The reply's language from its script, for picking a voice (replies may be English while the
@@ -39,6 +40,8 @@ export class OnDeviceEngine extends VoiceEngine {
   readonly provider = null
   /** What you're saying right now. */
   private heard = ''
+  /** The recognizer's results since listening started, as one transcript. */
+  private segments = new SpeechSegments()
   /** A recognition is running (between our start and stop). */
   private recognizing = false
   /** The helper said it's listening (permissions granted). */
@@ -49,8 +52,11 @@ export class OnDeviceEngine extends VoiceEngine {
   private offEvents: (() => void) | null = null
   private speakGeneration = 0
 
-  constructor(private send: (text: string) => void) {
+  private send: (text: string) => void
+
+  constructor(send: (text: string) => void) {
     super()
+    this.send = send
   }
 
   async start() {
@@ -114,6 +120,7 @@ export class OnDeviceEngine extends VoiceEngine {
 
   private listen() {
     this.heard = ''
+    this.segments = new SpeechSegments()
     if (this.phase !== 'listening' && this.everStarted) this.setPhase('listening')
     if (this.muted || this.ended) return
     this.recognizing = true
@@ -145,7 +152,7 @@ export class OnDeviceEngine extends VoiceEngine {
         break
       case 'partial':
       case 'final':
-        this.recognized(e.text, e.type === 'final')
+        this.recognized(this.segments.heard(e), e.type === 'final')
         break
       case 'error':
         // Before it listened: permissions or no recognizer for the language.

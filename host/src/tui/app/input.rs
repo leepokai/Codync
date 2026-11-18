@@ -52,6 +52,7 @@ impl App {
                 _ => None,
             },
             Overlay::Market(m) => Some(&mut m.query),
+            Overlay::Task(s) if s.typing => Some(&mut s.draft),
             Overlay::Fields(f) => f.current().map(|i| &mut i.ed),
             Overlay::Routine(f) => Some(match f.field {
                 super::super::manage::RoutineField::Name => &mut f.name,
@@ -214,8 +215,13 @@ impl App {
             KeyCode::Char('J') => self.reorder_bot(1),
             KeyCode::Char(c @ '1'..='9') => {
                 let i = (c as usize) - ('1' as usize);
-                let pending =
-                    if roster_page { None } else { self.pending().map(|e| (e.id.clone(), e.answer_options())) };
+                // Only a card the bot waits on, or the picked one: a choice card left open by an idle bot keeps its
+                // F-keys, so 1–9 still jump to a bot.
+                let waits = self.bot().is_some_and(|b| b.status == Status::NeedsInput);
+                let pending = self
+                    .pending()
+                    .filter(|e| !roster_page && (waits || self.pick.as_ref() == Some(&e.id)))
+                    .map(|e| (e.id.clone(), e.answer_options()));
                 match pending {
                     Some((entry, opts)) if !opts.is_empty() => {
                         if let Some(option) = opts.get(i) {
@@ -328,7 +334,8 @@ impl App {
             KeyCode::Char('b') => self.compact = !self.compact,
             KeyCode::Char('U') => self.overlays.push(Overlay::Usage(0)),
             KeyCode::Char('M') => self.open_memory(),
-            KeyCode::Char('R') => self.open_routines(),
+            // `B` is the same page from the chat, where the line over the composer names it.
+            KeyCode::Char('R' | 'B') => self.open_details(),
             KeyCode::Char('O') => self.open_computer(),
             KeyCode::Char('L') => self.open_library(),
             KeyCode::Char('A') => self.open_market(),
@@ -352,6 +359,7 @@ impl App {
             }
             KeyCode::Char('S') => self.steer_next(),
             KeyCode::Char('D') => self.unqueue_last(),
+            KeyCode::Char('X') => self.ask_stop_work(),
             KeyCode::Char('*') => self.make_lead(),
             KeyCode::Char('x') => {
                 // An older host keeps its lead.
@@ -384,6 +392,7 @@ impl App {
             }
             KeyCode::Char('w') => self.ask_section(),
             KeyCode::Char('W') => self.ask_rename_section(),
+            KeyCode::Char('E') => self.open_all_work(),
             KeyCode::Char('z') => self.toggle_section(),
             KeyCode::Char('c') => self.copy_last(),
             _ => {}

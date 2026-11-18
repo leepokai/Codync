@@ -26,6 +26,8 @@ public final class VoiceReleaseRunner extends Instrumentation {
         File temporary = new File(getTargetContext().getCacheDir(), "release-voice-smoke");
         try {
             if (!Build.PRODUCT.contains("sdk")) throw new IllegalStateException("Use an emulator for release acceptance");
+            Class<?> webRtc = Class.forName("com.codync.android.ReleaseWebRtcSmoke", true, getTargetContext().getClassLoader());
+            webRtc.getMethod("run", Instrumentation.class).invoke(null, this);
             temporary.mkdirs();
             copy(getTargetContext().getAssets(), "voice/vosk-model-small-en-us-0.15", temporary);
             byte[] wav;
@@ -65,7 +67,7 @@ public final class VoiceReleaseRunner extends Instrumentation {
             if (!heard.toString().contains("one zero zero zero one") || !heard.toString().contains("zero one eight zero three")) throw new AssertionError("Minified speech recognition did not match the fixture");
             Class<?> widgets = Class.forName("com.codync.android.ReleaseWidgetSmoke", true, getTargetContext().getClassLoader());
             widgets.getMethod("run", Instrumentation.class).invoke(null, this);
-            result.putString("stream", "\nOK (2 tests)\n");
+            result.putString("stream", "\nOK (3 tests)\n");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             Throwable detail = error instanceof java.lang.reflect.InvocationTargetException && error.getCause() != null ? error.getCause() : error;

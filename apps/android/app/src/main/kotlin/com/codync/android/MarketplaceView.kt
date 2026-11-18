@@ -1,7 +1,6 @@
 package com.codync.android
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -36,7 +35,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -204,16 +202,6 @@ import kotlinx.coroutines.launch
 }
 
 /** The computer it all lives on, credentials beside the title, and the way to what's installed. */
-/** A list whose rows blur and fade out under either edge while there is more past it (the desktop's Extensions lists). */
-@Composable private fun ScrollEdges(listState: LazyListState, modifier: Modifier, list: @Composable () -> Unit) {
-    GlassStage(modifier, chrome = {
-        val top by animateFloatAsState(if (listState.canScrollBackward) 1f else 0f, Motion.fade(), label = "Top edge")
-        val bottom by animateFloatAsState(if (listState.canScrollForward) 1f else 0f, Motion.fade(), label = "Bottom edge")
-        ScrollEdge(Edge.Top, 32.dp, Modifier.graphicsLayer { alpha = top })
-        ScrollEdge(Edge.Bottom, 32.dp, Modifier.align(Alignment.BottomCenter).graphicsLayer { alpha = bottom })
-    }) { list() }
-}
-
 @Composable private fun Header(state: AppState, modifier: Modifier, showInstalled: () -> Unit, showCredentials: () -> Unit) {
     val connectors = state.plugins?.connectors.orEmpty()
     val skills = state.plugins?.skills.orEmpty()

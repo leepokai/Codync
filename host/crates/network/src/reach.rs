@@ -192,6 +192,7 @@ mod tests {
             reply_to: None,
             hops: 0,
             meta: None,
+            access: crate::Access::Allow,
         }
     }
 

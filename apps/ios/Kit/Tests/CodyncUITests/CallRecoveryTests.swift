@@ -344,7 +344,7 @@ final class GeminiCall {
         quality.stalled()
         quality.phase(.failed("Lost the connection to Gemini.", .connection))
         quality.begin(.onDevice)
-        guard case let .voiceCallQuality(engine, readyMs, reconnects, stuck, failure) = try #require(events.first) else {
+        guard case let .voiceCallQuality(engine, readyMs, reconnects, stuck, failure, _) = try #require(events.first) else {
             Issue.record("not a quality event")
             return
         }
@@ -361,5 +361,22 @@ final class GeminiCall {
         now += CallQuality.stuckAfter
         quality.report()
         #expect(events == [.voiceCallQuality(.openai, readyMs: nil, reconnects: 0, stuck: .connecting, failure: .none)])
+    }
+
+    @Test func qualitySaysWhetherGoogleSearchWasOnOnlyWhenItWas() {
+        var events: [AnalyticsEvent] = []
+        let quality = CallQuality(capture: { events.append($0) })
+        quality.begin(.gemini)
+        quality.search(.enabled)
+        quality.search(.answered)
+        quality.search(.answered)
+        quality.begin(.gemini)
+        quality.report()
+        guard case let .voiceCallQuality(_, _, _, _, _, first) = events[0],
+              case let .voiceCallQuality(_, _, _, _, _, second) = events[1] else {
+            Issue.record("not quality events")
+            return
+        }
+        #expect(first == 2 && second == nil)
     }
 }

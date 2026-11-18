@@ -2,111 +2,12 @@ import CodyncKit
 import SwiftUI
 import UIKit
 
-// Codync's own screen chrome: modals, headers and icon buttons.
+// Codync's own screen chrome: modals and screen headers (`IconButton` and `ModalHeader` live in CodyncKit, for the share extension).
 // Present with `.codyncSheet`, title with `ModalHeader` / `ScreenHeader`.
 // The iPhone bot list and conversation use the native navigation toolbar for Liquid Glass.
 // Every transition animates (Motion.layout / Motion.fade), honoring Reduce Motion.
 
-// MARK: - Icon button
-
-/// Plain icon button that lights up on hover and press. Icon-only, labelled for VoiceOver.
-public struct IconButton: View {
-    let title: String
-    let systemImage: String
-    let action: () -> Void
-
-    public init(_ title: String, systemImage: String, action: @escaping () -> Void) {
-        self.title = title
-        self.systemImage = systemImage
-        self.action = action
-    }
-
-    public var body: some View {
-        Button(L10n.tr(title), systemImage: systemImage, action: action)
-            .labelStyle(.iconOnly)
-            .buttonStyle(IconButtonStyle())
-            .help(L10n.tr(title))
-    }
-}
-
-public struct IconButtonStyle: ButtonStyle {
-    private let size: CGFloat = 36
-
-    public init() {}
-
-    public func makeBody(configuration: Configuration) -> some View {
-        IconButtonBody(configuration: configuration, size: size)
-    }
-
-    private struct IconButtonBody: View {
-        let configuration: Configuration
-        let size: CGFloat
-        @State private var hovering = false
-        @Environment(\.isEnabled) private var isEnabled
-
-        var body: some View {
-            configuration.label
-                .font(.system(size: size / 2, weight: .medium))
-                .foregroundStyle(hovering ? Palette.text : Palette.secondary)
-                .frame(width: size, height: size)
-                .background(
-                    Palette.text.opacity(configuration.isPressed ? 0.14 : hovering ? 0.08 : 0),
-                    in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-                )
-                .opacity(isEnabled ? 1 : 0.35)
-                .scaleEffect(configuration.isPressed ? Motion.pressScale : 1)
-                .animation(Motion.press, value: configuration.isPressed)
-                .animation(Motion.hover, value: hovering)
-                .contentShape(Rectangle())
-                .onHover { hovering = $0 }
-        }
-    }
-}
-
 // MARK: - Headers
-
-/// A modal's title row: title, optional trailing actions, and a close button.
-public struct ModalHeader<Title: View, Trailing: View>: View {
-    let title: Title
-    let trailing: Trailing
-    @Environment(\.dismissModal) private var dismiss
-
-    /// A header whose title is a view (a bot pair, say), set in the header's font.
-    public init(@ViewBuilder title: () -> Title, @ViewBuilder trailing: () -> Trailing) {
-        self.title = title()
-        self.trailing = trailing()
-    }
-
-    public var body: some View {
-        HStack(spacing: 8) {
-            title
-                .font(.body.weight(.semibold))
-                .foregroundStyle(Palette.text)
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            trailing
-            IconButton("Close", systemImage: "xmark") { dismiss() }
-                .keyboardShortcut(.cancelAction)
-        }
-        .padding(.leading, 20)
-        .padding(.trailing, 12)
-        .frame(height: 56)
-    }
-}
-
-public extension ModalHeader where Title == Text {
-    init(_ title: String, @ViewBuilder trailing: () -> Trailing) {
-        self.init(title: { Text(L10n.tr(title)) }, trailing: trailing)
-    }
-}
-
-public extension ModalHeader where Title == Text, Trailing == EmptyView {
-    init(_ title: String) { self.init(title) { EmptyView() } }
-}
-
-public extension ModalHeader where Trailing == EmptyView {
-    init(@ViewBuilder title: () -> Title) { self.init(title: title) { EmptyView() } }
-}
 
 /// A full screen's top bar (replaces the navigation bar): leading, centered title, trailing.
 public struct ScreenHeader<Leading: View, Title: View, Trailing: View>: View {
@@ -147,19 +48,6 @@ public struct BackButton: View {
 }
 
 // MARK: - Modals
-
-/// Closes the modal the view is in (the replacement for `\.dismiss` inside `.codyncSheet`).
-public struct DismissModalAction: Sendable {
-    let action: @MainActor @Sendable () -> Void
-
-    public init(_ action: @escaping @MainActor @Sendable () -> Void) { self.action = action }
-
-    @MainActor public func callAsFunction() { action() }
-}
-
-public extension EnvironmentValues {
-    @Entry var dismissModal = DismissModalAction {}
-}
 
 public extension View {
     /// Presents a Codync modal as the system bottom sheet.
@@ -292,7 +180,10 @@ private struct FadeLayer<Layer: View>: View {
     }
 }
 
-/// Keeps the edge swipe back working on screens whose navigation bar we replaced.
+/// Keeps the swipe back working on screens whose navigation bar we replaced: the edge swipe and the swipe anywhere on
+/// the page (iOS 26), which the system refuses while its bar is hidden. Every page of a stack that hides the bar
+/// carries it, its root too: the page shown holds both swipes and gives them back to the system as it goes, so a
+/// native page in the same stack swipes as the system has it.
 public struct SwipeBackEnabler: UIViewControllerRepresentable {
     public init() {}
 
@@ -300,13 +191,36 @@ public struct SwipeBackEnabler: UIViewControllerRepresentable {
     public func updateUIViewController(_ controller: Controller, context: Context) {}
 
     public final class Controller: UIViewController, UIGestureRecognizerDelegate {
-        override public func didMove(toParent parent: UIViewController?) {
-            super.didMove(toParent: parent)
-            navigationController?.interactivePopGestureRecognizer?.delegate = self
+        /// Each swipe this page holds, with the system's delegate for it (never another page's).
+        private var held: [(swipe: UIGestureRecognizer, system: UIGestureRecognizerDelegate?)] = []
+
+        // On appearing, not on joining its parent: a page pushed inside a sheet joins it before the navigation
+        // controller holds it, and never got the swipe.
+        override public func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            guard let navigationController else { return }
+            held = [navigationController.interactivePopGestureRecognizer, navigationController.interactiveContentPopGestureRecognizer]
+                .compactMap { $0 }
+                .map { swipe in (swipe, (swipe.delegate as? Controller)?.system(of: swipe) ?? swipe.delegate) }
+            for (swipe, _) in held { swipe.delegate = self }
+        }
+
+        override public func viewDidDisappear(_ animated: Bool) {
+            super.viewDidDisappear(animated)
+            for (swipe, system) in held where swipe.delegate === self { swipe.delegate = system }
+        }
+
+        private func system(of swipe: UIGestureRecognizer) -> UIGestureRecognizerDelegate? {
+            held.first { $0.swipe === swipe }?.system
         }
 
         public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            (navigationController?.viewControllers.count ?? 0) > 1
+            guard let navigationController, navigationController.viewControllers.count > 1 else { return false }
+            // The swipe anywhere starts only on a drag to the right, so the page still scrolls.
+            guard gestureRecognizer === navigationController.interactiveContentPopGestureRecognizer,
+                  let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
+            let velocity = pan.velocity(in: pan.view)
+            return velocity.x > abs(velocity.y)
         }
     }
 }

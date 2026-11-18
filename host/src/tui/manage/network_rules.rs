@@ -1,6 +1,7 @@
 //! A network's rules in the network sheet: who on its other computers may message this
 //! computer's bots, the first match deciding (`codync_network::rules`).
 
+use codync_network::Access;
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
@@ -10,10 +11,34 @@ use super::network::{NetReply, NetworkSheet, Step};
 
 const ANY: &str = "*";
 
+/// The levels a rule can take, the most trusted first, as the form cycles them.
+pub const LEVELS: [Access; 4] = [Access::Allow, Access::Auto, Access::Ask, Access::Deny];
+
+/// How the form names a level.
+pub fn level_name(access: Access) -> &'static str {
+    match access {
+        Access::Allow => "Allow",
+        Access::Auto => "Auto",
+        Access::Ask => "Ask",
+        Access::Deny => "Deny",
+    }
+}
+
+/// What a level lets its sender have a bot here do.
+pub fn level_detail(access: Access) -> &'static str {
+    match access {
+        Access::Allow => "Its requests run as the bot is set.",
+        Access::Auto => "The bot does by itself only what its agent judges safe, and asks you about the rest.",
+        Access::Ask => "Every change and command the bot makes for it waits for your approval.",
+        Access::Deny => "Its messages are refused.",
+    }
+}
+
 /// A new rule: each choice cycles through "any" and the names the network offers.
 #[derive(Default)]
 pub struct RuleForm {
-    pub deny: bool,
+    /// Index into [`LEVELS`].
+    pub access: usize,
     /// Index into `NetworkSheet::rule_choices`; 0 is any.
     pub from_computer: usize,
     pub from_agent: usize,
@@ -93,7 +118,13 @@ impl NetworkSheet {
             ANY => tr("any bot here").into_owned(),
             id => self.me().and_then(|me| agent_name(me, id)).unwrap_or(id).to_owned(),
         };
-        let template = if rule["access"] == "deny" { "Deny: {from} → {to}" } else { "Allow: {from} → {to}" };
+        // An access this build doesn't know reads as deny, never wider than it is.
+        let template = match serde_json::from_value(rule["access"].clone()).unwrap_or(Access::Deny) {
+            Access::Allow => "Allow: {from} → {to}",
+            Access::Auto => "Auto: {from} → {to}",
+            Access::Ask => "Ask: {from} → {to}",
+            Access::Deny => "Deny: {from} → {to}",
+        };
         fill(&tr(template), &[("from", &from), ("to", &to)])
     }
 }
@@ -143,7 +174,7 @@ impl App {
             KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') => {
                 let by = if k.code == KeyCode::Left { -1 } else { 1 };
                 match form.field {
-                    RuleField::Access => form.deny = !form.deny,
+                    RuleField::Access => form.access = cycle(form.access, by, LEVELS.len()),
                     RuleField::FromComputer => {
                         form.from_computer = cycle(form.from_computer, by, choices.computers.len());
                         form.from_agent = 0;
@@ -160,7 +191,7 @@ impl App {
                     "fromComputer": pick(&choices.computers, form.from_computer),
                     "fromAgent": pick(&choices.agents, form.from_agent),
                     "toAgent": pick(&choices.mine, form.to_agent),
-                    "access": if form.deny { "deny" } else { "allow" },
+                    "access": LEVELS[form.access],
                 });
                 let mut rules: Vec<Value> = n.rules().to_vec();
                 if form.first {
@@ -195,6 +226,12 @@ mod tests {
         assert_eq!(n.rule_text(&deny), "Deny: any bot on laptop → any bot here");
         let allow = json!({"fromComputer": "laptop", "fromAgent": "coder", "toAgent": "reviewer", "access": "allow"});
         assert_eq!(n.rule_text(&allow), "Allow: Coder on laptop → Reviewer");
+        let level = |access: &str| {
+            n.rule_text(&json!({"fromComputer": "*", "fromAgent": "*", "toAgent": "*", "access": access}))
+        };
+        assert_eq!(level("auto"), "Auto: any bot on any computer → any bot here");
+        assert_eq!(level("ask"), "Ask: any bot on any computer → any bot here");
+        assert_eq!(level("later"), "Deny: any bot on any computer → any bot here", "never wider than it is");
     }
 
     #[tokio::test]
@@ -207,7 +244,7 @@ mod tests {
             form = next;
         }
         let choices = n.rule_choices(&form);
-        assert_eq!((form.deny, choices.computers[form.from_computer].0.as_str()), (true, "laptop"));
+        assert_eq!((LEVELS[form.access], choices.computers[form.from_computer].0.as_str()), (Access::Auto, "laptop"));
         assert_eq!(choices.agents[form.from_agent].0, "coder", "only the laptop's agents once it's picked");
         assert!(matches!(app.rule_form_key(&mut n, form, key(KeyCode::Enter)), Step::Rules(_)));
         assert!(n.busy, "saved with setNetworkRules");

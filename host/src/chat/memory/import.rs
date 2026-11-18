@@ -105,7 +105,7 @@ fn move_entries(hub: &Hub) -> Result<()> {
 /// instructions, hidden characters) stay out. Facts a file already holds aren't written twice, so a move cut short
 /// can run again. `about` describes `earlier.md` when it's new. Returns how many facts it wrote.
 fn move_in(hub: &Hub, layer: Option<&str>, facts: Vec<Fact>, rest: Vec<Fact>, about: &str) -> Result<usize> {
-    let writer = Writer { author: Author::Imported, bot: None, cause: Cause::Edit, message: None };
+    let writer = Writer { author: Author::Imported, bot: None, cause: Cause::Edit, message: None, session: None };
     let main = files::read(layer, MAIN)?;
     let mut lines = main.clone().unwrap_or_default();
     let held: Vec<String> = mf::facts(&lines).into_iter().map(str::to_lowercase).collect();

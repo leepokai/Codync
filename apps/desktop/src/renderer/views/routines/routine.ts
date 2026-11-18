@@ -67,9 +67,31 @@ export function runLabel(run: RoutineRun, now = Date.now()) {
   }
 }
 
+/** A deadline a bot set for itself: one later turn in its own chat, then it is gone. */
+export interface FollowUp {
+  id: string
+  botId: string
+  /** When it is due (Unix ms). */
+  at: number
+  note: string
+  createdAt: number
+}
+
+/** When a waiting follow-up happens, for its row: the time today, the date too on another day, as `locale` writes them. */
+export function followUpLine(followUp: FollowUp, locale: string, now = Date.now()) {
+  // Due and waiting its turn behind what the bot is doing.
+  if (followUp.at <= now) return trNow('Follow-up due now')
+  const at = new Date(followUp.at)
+  const today = at.toDateString() === new Date(now).toDateString()
+  const when = today ? at.toLocaleTimeString(locale, { timeStyle: 'short' }) : at.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
+  return trNow('Follow-up at {time}').replaceAll('{time}', () => when)
+}
+
 export interface RoutineListing {
   routines: Routine[]
   runs: RoutineRun[]
+  /** The follow-ups still waiting; a host from before them sends none. */
+  followUps?: FollowUp[]
 }
 
 /** `url` is public through the Codync cloud (null while the cloud is off), `localUrl` works on the host itself. */

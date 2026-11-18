@@ -1,0 +1,62 @@
+# A fallback is edited in place (#377): its row opens on the step's agent and model, like the bot's own, another model
+# is picked, and the step keeps its place in the chain; + then adds a step already open on its pickers. The phone must
+# already be signed in and paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so
+# run it apart from `welcome`, whose clearState undoes that; the flow makes its own bot there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags fallbacks \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e FIXTURE_AGENT="$PWD/host/tests/fixtures/relay_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - fallbacks
+onFlowComplete:
+  - runScript:
+      file: fallback-edit.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: fallback-edit.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+- tapOn: "${output.bot.name}, view details"
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element: "Codex.* · e2e-model"
+# The row opens on its model list, as the bot's own agent does.
+- tapOn: "Codex.* · e2e-model"
+# The agent's default model, the one every agent lists (not a "Default login profile" picker above the list).
+- scrollUntilVisible:
+    element: "Default(?! login profile).*"
+- tapOn: "Default(?! login profile).*"
+- assertNotVisible: "e2e-model"
+- extendedWaitUntil:
+    # The summary goes on with the model's options when it has any ("· Medium").
+    visible: "Codex.* · Default.*"
+    timeout: 5000
+- runScript:
+    file: fallback-edit.js
+    env:
+      STEP: saved
+# Closed again, so the only open row's model button is the new step's.
+- tapOn: "Codex.* · Default.*"
+- tapOn: "Add fallback"
+# The new step opens on its agent and model without a tap.
+- extendedWaitUntil:
+    visible: "Default"
+    timeout: 5000
+- runScript:
+    file: fallback-edit.js
+    env:
+      STEP: added

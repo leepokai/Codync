@@ -24,7 +24,7 @@ pub fn post(hub: &Arc<Hub>, cfg: &BotConfig, mut data: Value) -> Result<Entry> {
         crate::chat::group::start(hub, cfg, lane);
     } else {
         // `/skill …` reaches the agent as "read this skill first"; the chat keeps what was typed.
-        let prompt = crate::chat::prompt::of_entry(hub, cfg, &e.data);
+        let prompt = crate::chat::prompt::of_entry(hub, cfg, &e);
         hub.send_cmd(&cfg.id, Cmd::Send { lane, entry_id: e.id.clone(), text: prompt })?;
     }
     Ok(e)

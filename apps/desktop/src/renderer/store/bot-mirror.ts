@@ -10,6 +10,7 @@ import {
   type PairingRequest,
   type ScreenState,
   type Usage,
+  normalizeBot,
   withoutRemoved,
 } from '@shared/models'
 import type { NetworkView, RecoveryCode } from '@shared/network'
@@ -23,6 +24,7 @@ import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
 import { loadIconCache, saveIconCache } from '../lib/icon-cache'
 import { trNow } from '../lib/l10n.ts'
+import { TaskTranscripts } from './task-transcripts'
 
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
@@ -83,6 +85,7 @@ export class BotMirror extends Observable {
   hostUpdate: HostUpdate | null = null
   bots = new Map<string, Bot>()
   entries = new Map<string, Entry[]>()
+  private taskTranscripts = new TaskTranscripts()
   usage: Usage = { providers: [] }
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
@@ -315,6 +318,21 @@ export class BotMirror extends Observable {
     this.entries.set(e.botId, list)
   }
 
+  /** Holds a task's transcript from now until the returned function is called: its details are open. */
+  watchTask(taskId: string): () => void {
+    return this.taskTranscripts.watch(taskId)
+  }
+
+  /** A watched task's transcript, oldest first. */
+  taskEntriesOf(taskId: string): Entry[] {
+    return this.taskTranscripts.of(taskId)
+  }
+
+  /** More of a task's transcript (fetched, or a live `taskEntry`). */
+  protected mergeTask(taskId: string, entries: Entry[]) {
+    this.taskTranscripts.merge(taskId, entries)
+  }
+
   setError(message: string | null) {
     this.lastError = message
     this.changed()
@@ -347,7 +365,8 @@ export class BotMirror extends Observable {
       this.cacheStamp = cache.stamp ?? ''
       this.hostId = cache.hostId ?? null
       this.rev = cache.rev
-      this.bots = new Map(cache.bots.map((b) => [b.id, b]))
+      // A copy cached by an older app lacks the fields added since.
+      this.bots = new Map(cache.bots.map((b) => [b.id, normalizeBot(b)]))
       const grouped = new Map<string, Entry[]>()
       for (const e of cache.entries) grouped.set(e.botId, [...(grouped.get(e.botId) ?? []), e])
       this.entries = grouped

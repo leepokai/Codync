@@ -104,20 +104,15 @@ fn handle(keeper: &Keeper, request: Request) -> Result<Value> {
             boot: keeper.boot.clone(),
         })?,
         Request::Put { slot, value } => {
-            keeper.secrets.put(&*keeper.key()?, checked(&slot)?, Kind::Visible, value.as_bytes())?;
-            keeper.revoke_slot(&slot);
+            keeper.put_visible(checked(&slot)?, value.as_bytes())?;
             json!(true)
         }
         Request::PutProxied { slot, record, keep } => {
-            let slot = checked(&slot)?;
-            let old = keeper.record(slot)?;
-            let record = (*record).checked()?.keeping(old, &keep);
-            keeper.put_record(slot, &record)?;
+            keeper.replace_record(checked(&slot)?, *record, &keep)?;
             json!(true)
         }
         Request::Delete { slot } => {
-            keeper.secrets.delete(checked(&slot)?)?;
-            keeper.revoke_slot(&slot);
+            keeper.delete(checked(&slot)?)?;
             json!(true)
         }
         Request::Has { slot } => json!(keeper.secrets.kind(checked(&slot)?).is_some()),

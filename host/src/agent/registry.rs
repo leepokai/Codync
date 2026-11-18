@@ -10,6 +10,7 @@ use crate::shell;
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -309,11 +310,6 @@ fn binary_dir(agent: &Value) -> Result<PathBuf> {
     Ok(crate::service::data_dir().join("agents").join(id).join(version))
 }
 
-/// Starting this agent would first install its current build, and with it remove the one before.
-pub fn update_pending(agent: &Value) -> bool {
-    launch_kind(agent) == Some(Launch::Download) && binary_dir(agent).is_ok_and(|dir| !dir.join(".installed").exists())
-}
-
 /// Downloads + extracts a binary distribution into [`binary_dir`].
 async fn install_binary(agent: &Value, target: &Value, cmd: &Path, progress: &impl Fn(&str)) -> Result<PathBuf> {
     // A sign-in check and a usage reading can start the same agent at once: installing side by side,
@@ -321,6 +317,8 @@ async fn install_binary(agent: &Value, target: &Value, cmd: &Path, progress: &im
     // ponytail: one lock for every agent's install, as npx has. Per agent if one big download holding up another hurts.
     static INSTALLING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let dir = binary_dir(agent)?;
+    // Before the `.installed` check: a removal running now either sees this folder or has already taken `.installed`.
+    STARTED_FROM.locked().insert(dir.clone());
     let installed = async || tokio::fs::try_exists(dir.join(".installed")).await.unwrap_or(false);
     if installed().await {
         return Ok(dir);
@@ -368,13 +366,19 @@ async fn install_binary(agent: &Value, target: &Value, cmd: &Path, progress: &im
     Ok(dir)
 }
 
-/// Registry builds update often; keep only the version just installed.
+/// The builds this host run has started agents from. One may still run: claude-agent-acp opens each new session with
+/// the `claude` beside it (#500), so its folder stays until the host restarts and a later update removes it.
+// ponytail: grows by one build per update while the host runs; count live processes per folder if disk use hurts.
+static STARTED_FROM: Mutex<BTreeSet<PathBuf>> = Mutex::new(BTreeSet::new());
+
+/// Registry builds update often; keep only the version just installed, and the ones agents may still run from.
 fn remove_other_versions(installed: &Path) {
     let Some(parent) = installed.parent() else { return };
     let Ok(entries) = std::fs::read_dir(parent) else { return };
+    let started = STARTED_FROM.locked();
     for e in entries.flatten() {
         let p = e.path();
-        if p != installed && p.is_dir() {
+        if p != installed && p.is_dir() && !started.contains(&p) {
             let _ = std::fs::remove_dir_all(p);
         }
     }
@@ -460,6 +464,31 @@ mod tests {
         remove_other_versions(&root.join("1.1.0"));
         assert!(!root.join("1.0.0").exists());
         assert!(root.join("1.1.0").exists());
+    }
+
+    /// #500: claude-agent-acp opens each new session with the `claude` beside it. Another start that installed the
+    /// next build removed the folder a running bot's agent came from, and every new session of that bot (each
+    /// routine run) failed with "The Claude CLI is missing" until the host restarted.
+    #[tokio::test]
+    async fn an_update_keeps_the_build_a_running_agent_came_from() {
+        let id = format!("test-{}", uuid::Uuid::new_v4());
+        let root = crate::service::data_dir().join("agents").join(&id);
+        let (old, new) = (root.join("0.107.1"), root.join("0.107.2"));
+        for dir in [&old, &new] {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(dir.join(".installed"), "").unwrap();
+            std::fs::write(dir.join("claude"), "").unwrap();
+        }
+        // Already installed, so this returns at once, the way a bot's start does.
+        let started =
+            install_binary(&json!({"id": id, "version": "0.107.1"}), &json!({}), Path::new("claude"), &|_| {})
+                .await
+                .unwrap();
+        remove_other_versions(&new);
+        let kept = old.join("claude").exists();
+        STARTED_FROM.locked().remove(&started);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(kept, "the running agent's next session needs the claude beside it");
     }
 
     #[cfg(unix)]

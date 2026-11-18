@@ -108,7 +108,7 @@ import kotlin.math.sin
             // Restoring sign-in failed (the only account error): Clerk retries on its own with a backoff of up to a minute; Try again asks now.
             state.account.error?.let {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(it, Modifier.weight(1f, fill = false), style = Type.footnote, color = Palette.danger)
+                    Text(tr(it), Modifier.weight(1f, fill = false), style = Type.footnote, color = Palette.danger)
                     IconButton("Try again", "arrow.clockwise") { store.retryAccounts() }
                 }
             }

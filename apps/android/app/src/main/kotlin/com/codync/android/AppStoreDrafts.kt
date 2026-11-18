@@ -2,9 +2,7 @@ package com.codync.android
 
 import android.net.Uri
 import java.io.File
-import java.nio.ByteBuffer
-import java.nio.CharBuffer
-import java.nio.charset.CodingErrorAction
+import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.codync.android.core.*
@@ -20,18 +18,6 @@ fun AppStore.editDraft(botId: String, text: String) {
     if (current?.text == text || current == null && text.isEmpty()) return
     try { updateDraft((current ?: ComposerDraft(botId)).copy(text = text)) }
     catch (error: Exception) { showError(error) }
-}
-
-/** Puts [text] after what's in [botId]'s message box (text shared from another app), as much of it as the box holds. */
-fun AppStore.appendDraft(botId: String, text: String) = editDraft(botId, sharedDraft(state.value.drafts[botId]?.text.orEmpty(), text))
-
-/** [shared] after [before], cut at a character's edge to the most a draft holds (`DraftBook.TEXT_BYTES` of UTF-8). */
-internal fun sharedDraft(before: String, shared: String): String {
-    val joined = DictationText.join(before, shared)
-    val input = CharBuffer.wrap(joined)
-    // The encoder stops before the first character that doesn't fit, never inside one; a lone surrogate counts as the '?' it's saved as.
-    Charsets.UTF_8.newEncoder().onMalformedInput(CodingErrorAction.REPLACE).encode(input, ByteBuffer.allocate(DraftBook.TEXT_BYTES), true)
-    return joined.substring(0, input.position())
 }
 
 fun AppStore.addDraftFiles(botId: String, files: List<OutgoingFile>) {
@@ -95,19 +81,47 @@ fun AppStore.sendDraft(key: String, botId: String, text: String, replyTo: ReplyQ
     }
 }
 
+/**
+ * [text] and [files] go to chat [botId] as one message, as its box sends one ([sendDraft]) but leaving its draft alone:
+ * something another app shared, [pasted] what of it came from that app. [ShareOutcome.Queued] when the computer can't take it
+ * now and its relay or this phone holds it.
+ */
+internal suspend fun AppStore.sendShared(botId: String, text: String, files: List<OutgoingFile>, pasted: List<String>): ShareOutcome {
+    val send = PendingSend(UUID.randomUUID().toString(), botId, text.trim(), System.currentTimeMillis(), files = files, pasted = pasted)
+    // Once saved, the message and its files are the chat's: the share sheet closing mid-way mustn't drop either.
+    withContext(NonCancellable) {
+        discardOnFailure(files) { withContext(Dispatchers.IO) { requireNotNull(database).save(send) } }
+        lastSentNonce = send.nonce
+        action("send:" + send.nonce) { deliver(send) }
+        // In the chat before it opens.
+        refresh()
+    }
+    return if (state.value.actualConnection is LinkState.Ready) ShareOutcome.Sent else ShareOutcome.Queued
+}
+
 fun AppStore.importFiles(uris: List<Uri>, onImported: (List<OutgoingFile>) -> Unit) = action("attachments") {
+    val files = importAll(uris)
+    discardOnFailure(files) { onImported(files) }
+}
+
+/** [uris] copied into this account's outgoing files; none stay when one of them fails. */
+internal suspend fun AppStore.importAll(uris: List<Uri>): List<OutgoingFile> {
     val imported = mutableListOf<OutgoingFile>()
-    try {
+    discardOnFailure(imported) {
         for (uri in uris) {
             require(uri.scheme == "content") { "Choose a file using Photos or Files." }
             imported.add(attachments.import(uri))
         }
-        onImported(imported.toList())
-    } catch (error: Throwable) {
-        withContext(NonCancellable + Dispatchers.IO) { imported.forEach(attachments::discard) }
+    }
+    return imported.toList()
+}
+
+/** Runs [use]; when it fails, [files] are deleted again. */
+private suspend fun <T> AppStore.discardOnFailure(files: List<OutgoingFile>, use: suspend () -> T): T =
+    try { use() } catch (error: Throwable) {
+        withContext(NonCancellable + Dispatchers.IO) { files.forEach(attachments::discard) }
         throw error
     }
-}
 fun AppStore.removeFile(file: OutgoingFile) = action("remove:" + file.path) { withContext(Dispatchers.IO) { attachments.discard(file) } }
 
 suspend fun AppStore.attachment(botId: String, file: Attachment): File =

@@ -21,7 +21,8 @@ fun AppStore.openBot(id: String?) {
         windows.remove(left)
         mutableState.update { it.copy(historyEnd = it.historyEnd - left) }
     }
-    mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving }) }
+    mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving },
+        detailsRequest = it.detailsRequest.takeUnless { leaving }, cardRequest = it.cardRequest.takeUnless { leaving }) }
     if (id != null) { opened(this); acknowledgeVisible() }
     // The open chat swaps its preview for its window.
     if (leaving) contextScope.launch { refresh() }
@@ -41,6 +42,58 @@ fun AppStore.requestCall(botId: String) {
     }
 }
 
+/** Opens [botId]'s chat with its details over it, at the thread of its item [itemId] when one is named; the chat takes the request (`takeDetailsRequest`). */
+internal fun AppStore.openDetails(botId: String, itemId: String? = null) {
+    openBot(botId)
+    mutableState.update { it.copy(detailsRequest = botId to itemId) }
+}
+
+/** Once: what [botId]'s details were asked to open on, or null when they weren't. */
+internal fun AppStore.takeDetailsRequest(botId: String): DetailsRequest? {
+    val (asked, itemId) = state.value.detailsRequest ?: return null
+    if (asked != botId) return null
+    mutableState.update { it.copy(detailsRequest = null) }
+    return DetailsRequest(itemId = itemId)
+}
+
+/** Opens [botId]'s chat at the card its [item] waits on (iOS `requestCard`); the chat takes the request (`takeCardRequest`). */
+internal fun AppStore.openCard(botId: String, item: WorkItem) {
+    openBot(botId)
+    mutableState.update { it.copy(cardRequest = botId to item) }
+}
+
+/** Once. */
+internal fun AppStore.takeCardRequest(botId: String): Boolean {
+    if (state.value.cardRequest?.first != botId) return false
+    mutableState.update { it.copy(cardRequest = null) }
+    return true
+}
+
+/**
+ * Pages [botId]'s open chat back for the card its [item] waits on while the rows loaded don't hold it (iOS
+ * `card(for:in:)`); the chat takes the request once it holds the card. One it can't find drops the request, and the
+ * chat stays where it was.
+ */
+internal fun AppStore.pageToCard(botId: String, item: WorkItem) = action(historyKey(botId)) {
+    val found = { pendingCard(state.value.entries.filter { it.botId == botId }, item) != null }
+    try {
+        pageUntil(found, more = { state.value.selectedBot == botId && botId !in state.value.historyEnd }) { pageHistory(botId) }
+    } finally {
+        if (!found() && state.value.cardRequest == (botId to item)) takeCardRequest(botId)
+    }
+}
+
+/** How many older pages opening an item's card loads to find it, like the iPhone. */
+private const val CARD_PAGES = 5
+
+/** Pages back ([page]) until [found], while [more] can come, [CARD_PAGES] pages at most. */
+internal suspend fun pageUntil(found: () -> Boolean, more: () -> Boolean, page: suspend () -> Unit) {
+    repeat(CARD_PAGES) {
+        if (found() || !more()) return
+        page()
+    }
+}
+
 /** Once: a chat that already has a call takes it too, so it can't start one later. */
 fun AppStore.takeCallRequest(botId: String): Boolean {
     if (state.value.callRequest != botId) return false
@@ -51,16 +104,28 @@ fun AppStore.takeCallRequest(botId: String): Boolean {
 /** The chat being read (iOS `ReadingConversation`): the open one, still on screen under Full conversation. */
 internal val AppState.readingChats: List<String> get() = listOfNotNull(selectedBot)
 
-/** The chats events make unread while they're on screen: a message in one, or its bot counting unread. */
+/** The chats events make unread while they're on screen: a message in one, or its bot counting unread messages. */
 internal fun readAfter(events: List<MirrorEvent>, chats: List<String>): List<String> = chats.filter { chat ->
     events.any { event ->
         when (event) {
             is MirrorEvent.EntryChanged -> event.entry.isChat && event.entry.botId == chat
-            is MirrorEvent.BotChanged -> event.bot.id == chat && event.bot.unread > 0
+            is MirrorEvent.BotChanged -> event.bot.id == chat && event.bot.unseen > 0
             else -> false
         }
     }
 }
+
+/** The chats whose alert (`alerts`: bot → the alert's kind) events have dealt with, here or on another device: a reply
+ *  once nothing is unread, a question once the bot (or a task of its) no longer waits. A failure never counted unread, so it stays. */
+internal fun readChats(events: List<MirrorEvent>, alerts: Map<String, String>): List<String> =
+    events.filterIsInstance<MirrorEvent.BotChanged>().associateBy { it.bot.id }.values.map { it.bot }.filter { bot ->
+        bot.unread == 0 && when (alerts[bot.id]) {
+            "done" -> true
+            // A background task's question waits outside the chat.
+            "needsInput" -> "needsInput" !in setOf(bot.status, bot.outsideStatus)
+            else -> false
+        }
+    }.map { it.id }
 
 /** Marks the chats on screen read (`chats`: only these); the host ignores it when nothing there is unread. */
 internal fun AppStore.acknowledgeVisible(chats: List<String> = state.value.readingChats) {
@@ -180,6 +245,14 @@ fun AppStore.cancelQueued(send: PendingSend) = action("cancel:" + send.nonce) {
     }
 }
 
+/** Sends [text] to chat [botId] outside its message box: a choice card's own answer, or what was said on voice [call]. */
+fun AppStore.sendText(botId: String, text: String, call: String? = null) {
+    if (state.value.loading || text.isBlank()) return
+    val send = PendingSend(UUID.randomUUID().toString(), botId, text.trim(), System.currentTimeMillis(), call = call)
+    lastSentNonce = send.nonce
+    action("save:" + send.nonce) { savePending(send); deliver(send) }
+}
+
 internal suspend fun AppStore.deliver(send: PendingSend) {
     if (!sends.add(send.nonce)) return
     try {
@@ -242,6 +315,9 @@ internal fun holdsOnPhone(cloud: String?, link: LinkState): Boolean = cloud == n
     is LinkState.Failed -> link.status !in listOf(403, 426)
     else -> false
 }
+
+/** The computer can't take a message now, but text still goes: its relay holds it, or with no relay this phone does. */
+internal val AppState.holdsText get() = actualConnection is LinkState.ComputerOffline || holdsOnPhone(computer.cloud, actualConnection)
 
 /** No relay holds it, so taking it back touches only this phone (iOS `BotStore.cancelQueued`). */
 internal fun discardsOnPhone(cloud: String?, status: SendStatus): Boolean = cloud == null || status == SendStatus.Held

@@ -1,8 +1,8 @@
 import { execFile, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { existsSync, mkdirSync, promises as fs, readFileSync, realpathSync, writeFileSync } from 'node:fs'
-import { homedir, platform } from 'node:os'
+import { existsSync, mkdirSync, promises as fs, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, platform, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { app } from 'electron'
 import type { HostState, LocalHost } from '../shared/ipc'
@@ -60,17 +60,29 @@ export const bundlesHost = isMac || isWindows
 /** The service definition `codync-host install` wrote (`null`: not installed). */
 function serviceDefinition(): string | null {
   try {
-    if (isWindows) {
-      // The per-user Run key that starts the host at sign-in.
-      const key = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
-      return execFileSync('reg', ['query', key, '/v', identity.windowsService], { encoding: 'utf8', windowsHide: true })
-    }
+    if (isWindows) return runKeyValue()
     const file = isMac
       ? join(homedir(), `Library/LaunchAgents/${identity.hostLabel}.plist`)
       : join(homedir(), `.config/systemd/user/${identity.systemdUnit}`)
     return readFileSync(file, 'utf8')
   } catch {
     return null
+  }
+}
+
+/**
+ * The per-user Run key value that starts the host at sign-in. `reg export` writes UTF-16, where
+ * `reg query` prints in the console's code page (GBK, Shift-JIS…) and mangles non-ASCII paths.
+ */
+function runKeyValue(): string | null {
+  const file = join(tmpdir(), `codync-run-${process.pid}.reg`)
+  try {
+    execFileSync('reg', ['export', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run', file, '/y'], { stdio: 'ignore', windowsHide: true })
+    // `"CodyncHost"="\"C:\\…\\codync-hostw.exe\" serve --port 19222"`, with `\` and `"` escaped.
+    const line = readFileSync(file, 'utf16le').split(/\r?\n/).find((l) => l.startsWith(`"${identity.windowsService}"=`))
+    return line?.replace(/\\(.)/g, '$1') ?? null
+  } finally {
+    rmSync(file, { force: true })
   }
 }
 
@@ -155,6 +167,10 @@ export class HostController extends EventEmitter<{ change: []; setupFailed: [sta
     if (devPort === null && !serviceInstalled()) {
       // The app is the way to run the host: set it up right away, unless the user took it out.
       if (this.uninstalled()) return this.setState({ kind: 'notInstalled' })
+      // Security software can drop the Run entry while the host `install` started keeps running
+      // (`connect` still replaces a host that isn't this app's). The app's first request can take
+      // seconds on a cold start; a host that isn't running refuses at once, so waiting costs nothing.
+      if (isWindows && await fetchHealth(baseURL, 15_000)) return this.connect()
       return this.install()
     }
     // A service left by another copy of the app (moved, deleted or replaced) can't start this
@@ -265,9 +281,9 @@ export class HostController extends EventEmitter<{ change: []; setupFailed: [sta
 
   async isIdleForUpdate(): Promise<boolean> {
     if (this.installing || this.preparingForUpdate || devPort !== null) return false
-    if (!serviceInstalled()) return true
+    // Ask the host first: on Windows its Run entry can be gone while it keeps working.
     const health = await fetchHealth()
-    return health?.busy === false
+    return health ? health.busy === false : !serviceInstalled()
   }
 
   private stopLoop() {
@@ -375,6 +391,9 @@ function serviceRuns(bin: string) {
   if (service === null) return false
   // Windows' service starts the launcher next to the host (codync-hostw.exe).
   const runs = (path: string) => service.includes(isWindows ? path.replace(/codync-host\.exe$/, identity.supervisor) : path)
+  // A Mac service written before it named this app gets no Local Network access: write it again.
+  // A host outside an app (a development build) has no app to name.
+  if (isMac && bin.includes('.app/') && !service.includes('<key>AssociatedBundleIdentifiers</key>')) return false
   return runs(bin) || runs(resolved(bin))
 }
 

@@ -25,6 +25,7 @@ Source review, a passing build, local integration tests and production acceptanc
 | Reproduce or check something on Windows (UTM VM) | [Windows testing](guides/windows-testing.md) |
 | Set up accounts, approvals or desktop SSH | [Accounts and SSH](guides/accounts-and-ssh.md) |
 | Check connectors against live services | [Connector verification](guides/connector-verification.md) |
+| Change what bots on other computers may do here (codync-network rules) | [codync-network](features/codync-network.md#ceilings-auto-and-ask), [network request risks](reference/network-request-risks.md) |
 | Change transport or cryptography | [Remote protocol](reference/remote-relay.md) and [shared vectors](reference/fixtures/README.md) |
 | Review an issue or pull request | [Issue and PR review](guides/issue-pr-review.md) (the `review-issue-pr` workflow) and its [security check](guides/security-check.md) |
 | Record or patch around an agent's bug, or check whether upstream fixed one | [Upstream agent bugs](upstream-agents/README.md) (one page per agent) |
@@ -45,12 +46,16 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Bot memory research](design/bot-memory-research.md) (files vs. database, embeddings, open-source systems, harness instructions)
 - [Bot workspaces](features/bot-workspaces.md)
 - [Bot import](features/bot-import.md) (agents from a Grok Bot export file become bots)
+- [Login profiles](features/login-profiles.md) (more than one login per agent, by account or API key; each bot picks its own)
 - [Agent fallbacks](features/agent-fallback.md) (the next agent carries a turn on when the bot's own runs out of usage)
 - [Routines](features/routines.md)
+- [Background tasks](features/background-tasks.md) (a bot puts long work in its event box as items, other sessions of itself take them, and the chat stays free to answer; plan: [plans/event-box.md](plans/event-box.md))
+- [Follow-ups](features/follow-ups.md) (a bot sets itself one later turn in its chat, to look at something again)
 - [Dev servers](features/dev-servers.md) (programs a bot keeps running: the host runs them, every client shows their port)
 - [Voice calls](features/voice-call.md)
 - [iOS Shortcuts](features/ios-shortcuts.md)
 - [File attachments](features/file-attachments.md)
+- [Share to a bot](features/share-to-bot.md) (other apps' share sheets send text, links and files to a bot, on iPhone and Android)
 - [Artifacts and the Library](features/artifacts.md)
 - [Remote screen](features/remote-screen.md) and [computer use](features/computer-use.md)
 - [Computer identity and list ordering](features/computer-order.md)
@@ -67,6 +72,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Optional sign-in](plans/optional-sign-in.md) (signed-out phones, computers in no account, the relay only within an account; built, the rollout steps remain)
 - [Windows remote screen](plans/windows-remote-screen.md) (a screen helper for Windows; planned)
 - [Android parity and acceptance](plans/android-app.md)
+- [Event box](plans/event-box.md) (a bot's long work as items in a box, taken by a bounded number of its agent sessions; the host and the apps being built, other sources and the rest in its stages)
 - [codync-network and cloud assistants: what's left](plans/codync-network-next.md) (network screens in every app, access rules, Codync's own relays, and the rest, in build order)
 - [Harness memory](plans/harness-memory.md) (the switch that keeps a harness's own memory on; a choice of it instead of Codync's, planned)
 - [Error tracking detail](plans/error-tracking-detail.md) (symbolicated iPhone crashes and sessions, built; consented problem reports, proposed)

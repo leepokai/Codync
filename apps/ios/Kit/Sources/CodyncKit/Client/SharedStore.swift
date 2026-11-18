@@ -11,7 +11,8 @@ public enum SharedStore {
     /// The APNs push relay (relay/ in this repo).
     public static let relayURL = "https://codync-relay.kevin2005ha.workers.dev"
 
-    private static var defaults: UserDefaults { UserDefaults(suiteName: appGroup) ?? .standard }
+    /// The App Group's shared defaults, read by the app, its widgets and its notification extension alike.
+    public static var defaults: UserDefaults { UserDefaults(suiteName: appGroup) ?? .standard }
 
     /// Widgets read only the account selected by the app. Stores capture a fixed
     /// context so late responses from a previous account cannot write into it.
@@ -26,7 +27,7 @@ public enum SharedStore {
     /// and computers so the same account comes back without a check), and the signed-out context.
     public static func eraseAll(suite: String = appGroup) {
         let defaults = Context(accountID: nil, suite: suite).defaults
-        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("account.") || Context.names.contains(key) {
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("account.") || key.hasPrefix(Context.pushedPrefix) || Context.names.contains(key) {
             defaults.removeObject(forKey: key)
         }
         DeviceIdentity.deleteAll()
@@ -47,7 +48,11 @@ public enum SharedStore {
             self.suite = suite
         }
 
-        fileprivate static let names = ["computers", "bots", "usage", "lastComputerId", "composerDrafts", "computerOrder", "shortcutLeadComputer"]
+        fileprivate static let names = ["computers", "bots", "usage", "lastComputerId", "composerDrafts", "computerOrder", "shortcutLeadComputer",
+                                        "shareRecipients"]
+        /// One key per computer (`pushedUnread.<id>`), so the app and the notification extension never write over
+        /// each other's: each sets or removes only its own.
+        fileprivate static let pushedPrefix = "pushedUnread."
         fileprivate func key(_ name: String) -> String { accountID == nil ? name : "account.\(id).\(name)" }
         public static func digest(_ value: String) -> String {
             SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -74,6 +79,18 @@ public enum SharedStore {
             get { read([BotSnapshot].self, "bots") ?? [] }
             nonmutating set { write(newValue, "bots") }
         }
+        /// Each computer's unread total from its latest alert while the app was away; the app drops a
+        /// computer's once its roster has caught up with the host (`IconBadge.settled`).
+        public var pushedUnread: [ComputerID: Int] {
+            let prefix = key(Self.pushedPrefix)
+            return defaults.dictionaryRepresentation().reduce(into: [:]) { pushed, item in
+                if item.key.hasPrefix(prefix), let unread = item.value as? Int { pushed[String(item.key.dropFirst(prefix.count))] = unread }
+            }
+        }
+        /// Sets (nil: drops) one computer's alert total, leaving the others' untouched.
+        public func setPushedUnread(_ unread: Int?, for computerId: ComputerID) {
+            defaults.set(unread, forKey: key(Self.pushedPrefix + computerId))
+        }
         public var usage: [ComputerID: Usage] {
             get { read([ComputerID: Usage].self, "usage") ?? [:] }
             nonmutating set { write(newValue, "usage") }
@@ -82,6 +99,12 @@ public enum SharedStore {
         public var composerDrafts: [ComputerID: [String: String]] {
             get { read([ComputerID: [String: String]].self, "composerDrafts") ?? [:] }
             nonmutating set { write(newValue, "composerDrafts") }
+        }
+
+        /// Whom the share sheet sent to lately, the most recent first (`ShareRecipient.remembered(in:)`).
+        public var shareRecipients: [ShareRecipient] {
+            get { read([ShareRecipient].self, "shareRecipients") ?? [] }
+            nonmutating set { write(newValue, "shareRecipients") }
         }
 
         /// The computer whose lead a shortcut that names no bot calls (Settings); nil: the first computer with one.
@@ -129,6 +152,7 @@ public enum SharedStore {
         /// `erase()`, except for the mirror caches in `kept` (`adopt(from:)`).
         fileprivate func erase(keeping kept: [URL]) {
             for name in Self.names { defaults.removeObject(forKey: key(name)) }
+            for computerId in pushedUnread.keys { setPushedUnread(nil, for: computerId) }
             DeviceIdentity.delete(context: self)
             do { try ActivityIconCache.erase(context: id) }
             catch { Logger(subsystem: "com.pokai.Codync", category: "CustomIcon").error("Cannot erase activity icons: \(error.localizedDescription)") }

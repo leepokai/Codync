@@ -91,6 +91,17 @@ impl Host {
     }
 }
 
+/// Sends `go` to `bot`, whose agent then works forever and ignores the cancel, and stops it: after the grace period its
+/// process is stopped and the turn ends.
+async fn assert_stop_ends_the_turn(host: &Host, bot: &str) {
+    host.call("send", json!({"botId": bot, "text": "go"})).await;
+    host.wait_for(bot, Duration::from_mins(1), |e| e["data"]["text"] == "Working on it").await;
+    host.call("stop", json!({"botId": bot})).await;
+    host.wait_for(bot, Duration::from_secs(40), |e| e["kind"] == "notice" && e["data"]["text"] == "Stopped.").await;
+    let sync = common::snapshot(&host.base, &host.token).await;
+    assert_eq!(common::bot(&sync, bot)["status"], "idle");
+}
+
 #[tokio::test]
 async fn stop_ends_a_turn_whose_agent_ignores_the_cancel() {
     if common::python_missing() {
@@ -98,13 +109,52 @@ async fn stop_ends_a_turn_whose_agent_ignores_the_cancel() {
     }
     let host = Host::start().await;
     let bot = host.bot("Stuck", "tests/fixtures/stubborn_agent.py").await;
-    host.call("send", json!({"botId": bot, "text": "go"})).await;
-    host.wait_for(&bot, Duration::from_mins(1), |e| e["data"]["text"] == "Working on it").await;
-    host.call("stop", json!({"botId": bot})).await;
-    // The agent never answers: after the grace period its process is stopped and the turn ends.
-    host.wait_for(&bot, Duration::from_secs(40), |e| e["kind"] == "notice" && e["data"]["text"] == "Stopped.").await;
+    assert_stop_ends_the_turn(&host, &bot).await;
+}
+
+/// Ends the process the escaped-child agent left (its pid in `escaped.pid`), when the test is done with it.
+#[cfg(unix)]
+struct Escaped(PathBuf);
+
+#[cfg(unix)]
+impl Drop for Escaped {
+    fn drop(&mut self) {
+        if let Ok(pid) = std::fs::read_to_string(&self.0) {
+            common::kill(pid.trim());
+        }
+    }
+}
+
+/// #466: a Stop the agent ignores ends the turn even when something the agent started still holds its stdout open.
+#[cfg(unix)]
+#[tokio::test]
+async fn stop_ends_a_turn_whose_agent_left_a_process_holding_its_output() {
+    if common::python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.bot("Escaped", "tests/fixtures/escaped_child_agent.py").await;
+    let _escaped = Escaped(host.home.join("Escaped").join("escaped.pid"));
+    assert_stop_ends_the_turn(&host, &bot).await;
+}
+
+/// #466: an agent that exits mid-turn fails its turn even when something it started still holds its stdout open.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_turn_ends_when_its_agent_exits_leaving_a_process_holding_its_output() {
+    if common::python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.bot("Escaped", "tests/fixtures/escaped_child_agent.py").await;
+    let _escaped = Escaped(host.home.join("Escaped").join("escaped.pid"));
+    host.call("send", json!({"botId": bot, "text": "leave"})).await;
+    host.wait_for(&bot, Duration::from_secs(20), |e| {
+        e["data"]["text"].as_str().is_some_and(|t| t.starts_with("The agent failed"))
+    })
+    .await;
     let sync = common::snapshot(&host.base, &host.token).await;
-    assert_eq!(common::bot(&sync, &bot)["status"], "idle");
+    assert_eq!(common::bot(&sync, &bot)["status"], "error");
 }
 
 #[tokio::test]

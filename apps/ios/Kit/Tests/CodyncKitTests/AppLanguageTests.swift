@@ -83,11 +83,11 @@ struct AppLanguageTests {
         #expect(L10n.tr("the Codync cloud refused (403 forbidden): Sign in on the computer to use remote screen relay.", preference: .zh, systemIsChinese: false) == "Codync 云拒绝了（403 禁止）：请先在电脑上登录，才能使用远程屏幕中继。")
         #expect(L10n.tr("Privacy", preference: .zh, systemIsChinese: false) == "隐私")
         #expect(L10n.tr("Share usage analytics", preference: .zh, systemIsChinese: false) == "共享用量分析")
-        #expect(L10n.tr("Personal workspace", preference: .zh, systemIsChinese: false) == "个人工作区")
+        #expect(L10n.tr("Own folder", preference: .zh, systemIsChinese: false) == "专属文件夹")
         #expect(L10n.tr("Fast mode", preference: .zh, systemIsChinese: false) == "快速模式")
         #expect(L10n.tr("Use the computer", preference: .zh, systemIsChinese: false) == "使用电脑")
         #expect(L10n.tr("{size} pt (Default)", preference: .zh, systemIsChinese: false) == "{size} pt（默认）")
-        #expect(L10n.tr("Cursor · Personal workspace", preference: .zh, systemIsChinese: false) == "Cursor · Personal workspace")
+        #expect(L10n.tr("Cursor · Own folder", preference: .zh, systemIsChinese: false) == "Cursor · Own folder")
     }
 
     @Test func chatMenuAndMemoryTranslateAsTheirOwnPhrases() {
@@ -111,6 +111,10 @@ struct AppLanguageTests {
         #expect(L10n.tr("Apps", preference: .zh, systemIsChinese: false) == "应用")
         #expect(L10n.tr("Agents", preference: .zh, systemIsChinese: false) == "智能体")
         #expect(L10n.tr("Installed", preference: .zh, systemIsChinese: false) == "已安装")
+        #expect(L10n.tr("3 installed", preference: .zh, systemIsChinese: false) == "已安装 3 个")
+        #expect(L10n.tr("Error: the host service isn't installed", preference: .zh, systemIsChinese: false) == "Error: the host service isn't installed")
+        #expect(L10n.tr("Codync 2.47.0 is available", preference: .zh, systemIsChinese: false) == "Codync 2.47.0 已推出")
+        #expect(L10n.tr("You have reached your limit.", preference: .zh, systemIsChinese: false) == "You have reached your limit.")
         #expect(L10n.tr("Not installed", preference: .zh, systemIsChinese: false) == "未安装")
         #expect(L10n.tr("Set up", preference: .zh, systemIsChinese: false) == "设置")
         #expect(L10n.tr("Writing a reply…", preference: .zh, systemIsChinese: false) == "正在写回复…")
@@ -191,6 +195,25 @@ extension AppLanguageTests {
         #expect(changed.withLock { $0 })
         #expect(AppLanguage.preference(in: store) == .ja)
         store.removeObject(forKey: AppLanguage.storageKey)
+    }
+
+    @Test func followUpNoticesTranslateAroundTheWaitAndKeepTheNote() {
+        func hant(_ text: String) -> String { L10n.tr(text, preference: .zhHant, systemIsChinese: false) }
+        #expect(hant("Follow-up in 1 minute: Settings") == "1 分鐘後跟進：Settings")
+        #expect(hant("Follow-up in 20 minutes: Settings") == "20 分鐘後跟進：Settings")
+        // A note that reads like another wait stays a note: the wait ends at the first colon.
+        #expect(hant("Follow-up in about 3 hours: look again in 5 minutes: maybe")
+            == "約 3 小時後跟進：look again in 5 minutes: maybe")
+        #expect(hant("Follow-up in 1 minute: wait 5 minutes: then check")
+            == "1 分鐘後跟進：wait 5 minutes: then check")
+        #expect(hant("Follow-up in about 2 days: rerun if 3 hours: passed")
+            == "約 2 天後跟進：rerun if 3 hours: passed")
+        #expect(hant("Follow-up in about 2 days: Plan") == "約 2 天後跟進：Plan")
+        #expect(hant("Follow-up · Plan") == "跟進 · Plan")
+        #expect(hant("Follow-up cancelled: Plan") == "已取消跟進：Plan")
+        // A waiting follow-up's row in the routines list.
+        #expect(hant("Follow-up at 15:42") == "15:42 跟進")
+        #expect(hant("Follow-up due now") == "即將跟進")
     }
 
     @Test func botRoutineAndMessageSlotsKeepWhatTheUserWrote() {

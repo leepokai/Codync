@@ -33,6 +33,17 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let provider = crate::voice::Provider::parse(str_arg(&b, "provider")?)?;
             crate::voice::set_key(&hub.store, provider, b["key"].as_str().unwrap_or_default()).await?
         }
+        // The agents come back checked again: a sign-in that used a deleted key is gone.
+        "resetCredentials" => {
+            let removed = crate::market::vault::reset(hub.clone()).await?;
+            crate::agent::login_profiles::keys::forget_all(&hub.store)?;
+            crate::market::agent_sign_in::refresh(hub).await;
+            json!({"removed": removed, "backends": agents(hub)})
+        }
+        "setVoiceServer" => {
+            let provider = crate::voice::Provider::parse(str_arg(&b, "provider")?)?;
+            crate::voice::set_server(&hub.store, provider, b["url"].as_str().unwrap_or_default()).await?
+        }
         "voiceSession" => {
             let provider = crate::voice::Provider::parse(str_arg(&b, "provider")?)?;
             crate::voice::session(&hub.store, provider, str_arg(&b, "model")?, str_arg(&b, "voice")?).await?
@@ -77,7 +88,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "os": std::env::consts::OS,
                 "device": crate::remote::managed::computer_device(&hub.store).await?,
                 "home": dirs::home_dir().map(|p| p.to_string_lossy().into_owned()),
-                "backends": backends::list(),
+                "backends": agents(hub),
                 "icons": icons.icons,
                 "iconsRevision": icons.icons_revision,
                 "rev": hub.store.current_rev(),
@@ -85,6 +96,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "analytics": hub.analytics.state(),
                 // Whether a bot with a new message moves to the top of the roster (`setAutoOrder`).
                 "autoOrder": hub.auto_order(),
+                // `resetCredentials` can be used here (a Codync Cloud computer's keeper holds its credentials).
+                "credentialsReset": !crate::remote::managed::is_managed(&hub.store),
                 // Before 2.41.0, apps called `joinAccount` when this was true. It takes a certificate now, which they
                 // don't send, so they aren't told to.
                 "joinAccount": false,
@@ -97,7 +110,43 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "refreshBackends" => {
             tokio::task::spawn_blocking(backends::hydrate_path).await?;
             crate::market::agent_sign_in::refresh(hub).await;
-            json!({"backends": backends::list()})
+            json!({"backends": agents(hub)})
+        }
+        // A new login profile for an agent, not signed in yet: `kind` is `account` (its sign-in follows:
+        // `agentSetup` or `agentAuthenticate` with it) or `apiKey` (`setLoginProfileKeys` gives it its keys).
+        "addLoginProfile" => {
+            let kind = crate::agent::login_profiles::Kind::parse(&b["kind"])?;
+            let profile = crate::agent::login_profiles::add(&hub.store, str_arg(&b, "backend")?, kind).await?;
+            json!({"loginProfile": profile, "backends": agents(hub)})
+        }
+        // The user's name for a login profile, or with no `loginProfile` for the agent's default one; empty clears it.
+        "renameLoginProfile" => {
+            let name = b["name"].as_str().unwrap_or_default();
+            let profile = b["loginProfile"].as_str();
+            crate::agent::login_profiles::rename(&hub.store, str_arg(&b, "backend")?, profile, name)?;
+            usage::login_profiles_changed(hub);
+            json!({"backends": agents(hub)})
+        }
+        // An API key profile's variables: `vars` typed by the user (an empty value removes one), and `import`, names
+        // whose values the host reads from the login shell now. Values never come back.
+        "setLoginProfileKeys" => {
+            let none = serde_json::Map::new();
+            let typed = b["vars"].as_object().unwrap_or(&none);
+            let import: Vec<String> = match &b["import"] {
+                Value::Null => Vec::new(),
+                names => serde_json::from_value(names.clone()).context("`import` is a list of variable names")?,
+            };
+            let id = str_arg(&b, "loginProfile")?;
+            let mut status = crate::market::agent_sign_in::set_keys(hub, id, typed, &import).await?;
+            status["backends"] = agents(hub).into();
+            status
+        }
+        // The names (never the values) of the login shell's variables an API key profile can import.
+        "loginShellVariables" => json!({"names": crate::agent::login_profiles::keys::shell_names().await?}),
+        "removeLoginProfile" => {
+            crate::agent::login_profiles::remove(hub, str_arg(&b, "loginProfile")?).await?;
+            usage::login_profiles_changed(hub);
+            json!({"backends": agents(hub)})
         }
         "usage" => {
             if b["refresh"].as_bool().unwrap_or(false) {
@@ -144,9 +193,30 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let (cols, rows) = term_size(&b);
             // Node.js belongs to the computer, not to one agent.
             let backend = if step == crate::agent::term::Step::Node { "" } else { str_arg(&b, "backend")? };
-            json!({"term": hub.terms.start(backend, step, b["method"].as_str(), cols, rows).await?})
+            let term = match b["loginProfile"].as_str().filter(|_| step == crate::agent::term::Step::Login) {
+                Some(id) => {
+                    let command = crate::agent::login_profiles::login_command(&hub.store, id).await?;
+                    hub.terms.sign_in_account(backend, id, &command, cols, rows)?
+                }
+                None => hub.terms.start(backend, step, b["method"].as_str(), cols, rows).await?,
+            };
+            json!({"term": term})
         }
         "agentModels" => crate::agent::auth::shared_models(hub, str_arg(&b, "backend")?).await?,
+        // A login profile's own sign-in state: `{signedIn, loginProfile}`, and the agent list it changed.
+        "agentAuth" if b["loginProfile"].is_string() => {
+            let id = str_arg(&b, "loginProfile")?;
+            let mut status = crate::market::agent_sign_in::check_login_profile(hub, id).await?;
+            status["backends"] = agents(hub).into();
+            status
+        }
+        // An account login profile whose agent signs itself in (a browser on this computer): the same answer once
+        // it's done.
+        "agentAuthenticate" if b["loginProfile"].is_string() => {
+            let mut status = crate::market::agent_sign_in::sign_in_account(hub, str_arg(&b, "loginProfile")?).await?;
+            status["backends"] = agents(hub).into();
+            status
+        }
         "agentAuth" | "agentAuthenticate" | "setAgentEnv" => {
             let backend = str_arg(&b, "backend")?;
             let status = match method {
@@ -242,6 +312,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         _ => return Ok(ControlFlow::Continue(b)),
     }))
+}
+
+/// The agents this computer can run, each with its login profiles.
+fn agents(hub: &Hub) -> Vec<Value> {
+    let mut agents = backends::list();
+    crate::agent::login_profiles::annotate(&hub.store, &mut agents);
+    agents
 }
 
 fn term_size(b: &Value) -> (u16, u16) {

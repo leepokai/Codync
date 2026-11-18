@@ -144,6 +144,12 @@ class LocalStore(private val context: Context, val contextId: String = "local") 
         if (id == null) File(directory, "shortcut-lead").delete() else write(AtomicFile(File(directory, "shortcut-lead")), id.toByteArray())
     }
 
+    /** The chats things shared from other apps went to, most recent first (`ShareToBot`'s Recent). */
+    fun shareRecipients(): List<ShareRecipient> = AtomicFile(File(directory, "share-recipients.json")).takeIf { it.baseFile.exists() }
+        ?.let { json.decodeFromString<List<ShareRecipient>>(it.readFully().toString(Charsets.UTF_8)) }.orEmpty()
+    fun saveShareRecipients(recipients: List<ShareRecipient>) =
+        write(AtomicFile(File(directory, "share-recipients.json")), json.encodeToString(recipients).toByteArray())
+
     fun setupComplete(): Boolean = File(directory, "setup-complete").exists()
     fun hasIdentity(): Boolean = File(directory, "identity").exists()
     fun completeSetup() = write(AtomicFile(File(directory, "setup-complete")), byteArrayOf(1))

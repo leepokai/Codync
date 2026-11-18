@@ -1,0 +1,66 @@
+# New session in a bot's touch-and-hold menu on the phones: it asks first, then the bot's next turn runs in a fresh agent
+# session while the chat keeps its messages; a group's menu has no such row. The phone must already be signed in and
+# paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from
+# `welcome`, whose clearState undoes that; the flow makes its own bot and group there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags new-session \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e MODE_AGENT="$PWD/host/tests/fixtures/mode_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - new-session
+onFlowComplete:
+  - runScript:
+      file: new-session.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: new-session.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+# A bot made a moment ago can take a while to reach the phone's list.
+- extendedWaitUntil:
+    visible: ${output.bot.name}
+    timeout: 30000
+- longPressOn: ${output.bot.name}
+- tapOn: "New session"
+- assertVisible: "Start a new session?"
+- tapOn: "Cancel"
+- assertNotVisible: "Start a new session?"
+- longPressOn: ${output.bot.name}
+- tapOn: "New session"
+- assertVisible: "The conversation stays here, but the agent starts with a fresh context."
+- tapOn: "New session"
+- assertNotVisible: "Start a new session?"
+- runScript:
+    file: new-session.js
+    env:
+      STEP: second
+# A group has no agent session of its own (Mark as read closes its menu).
+- extendedWaitUntil:
+    visible: ${output.group.name}
+    timeout: 30000
+- longPressOn: ${output.group.name}
+- assertVisible: "Edit group"
+- assertNotVisible: "New session"
+- tapOn: "Mark as read"
+# The chat keeps the message from before the new session, above the fresh session's answer (which repeats the profile).
+- tapOn: ${output.bot.name}
+- extendedWaitUntil:
+    visible: "second"
+    timeout: 20000
+- scrollUntilVisible:
+    element: "hello"
+    direction: UP
+    timeout: 60000

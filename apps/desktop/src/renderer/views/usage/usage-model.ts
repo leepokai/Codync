@@ -19,12 +19,6 @@ export const providerRegistry = ({ id, registry }: UsageProvider) =>
 /** The character that stands for this provider. */
 export const mascotShape = (id: string) => (id === 'codex' ? 'hex' : 'blob')
 
-/** A plan window. Notes (today's tokens, a dollar balance) are not limits. */
-export const isLimit = (w: UsageWindow) => !w.text
-
-export const tightest = (p: UsageProvider) =>
-  p.windows.filter(isLimit).reduce<UsageWindow | null>((a, w) => (!a || w.percent > a.percent ? w : a), null)
-
 /** "62% used": the share of the cap already spent, said so (a bare percent reads as what's left). */
 export const usedText = (percent: number, tr: (text: string) => string) =>
   tr('{percent}% used').replace('{percent}', String(Math.round(percent)))

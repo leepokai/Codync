@@ -10,7 +10,7 @@ import { ErrorText, Field, WebLink } from './pieces'
 import { usePlugins } from './plugins'
 import { signInCode } from './sign-in-code'
 import { useTr } from '../../lib/use-language'
-import { fill } from '../../lib/fill.ts'
+import { fill } from '@shared/fill'
 
 /** A sign-in with a code (GitHub): the code to paste on its page, before the page opens. */
 export function SignInCodeDialog() {

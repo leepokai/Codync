@@ -30,6 +30,7 @@ struct ConnectionRequestCard: View {
                 Spacer(minLength: 8)
                 trailing
             }
+            TaskLine(data: entry.data)
             // The card has no fill, so each field gets one.
             if pending, request.kind == "login" {
                 TextField(L10n.tr("Username or email"), text: $username)
@@ -64,7 +65,7 @@ struct ConnectionRequestCard: View {
         .codyncSheet(item: $app) { app in
             ComposioConnectSheet(app: app, requestId: entry.id) { self.app = nil }
         }
-        .codyncSheet(item: $agent) { AgentSheet(initial: $0, recheck: true) }
+        .codyncSheet(item: $agent) { AgentSheet(initial: $0, recheck: request.loginProfile == nil, signInLoginProfile: request.loginProfile) }
         .signInCodeDialog(signInFlow.codePrompt)
         .onDisappear { value = ""; username = "" }
     }

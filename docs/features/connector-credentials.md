@@ -30,6 +30,15 @@ its selected host.
   with `CODYNC_VAULT=folder` keeps the key in `<data dir>/vault.key`, protected by file permissions alone.
   A production build ignores the switch.
 
+`resetCredentials` (loopback only: desktop Settings → Computers → Reset → Saved credentials, asked twice, the terminal palette's *Reset saved
+credentials…*) is the way out when the key is gone but sealed records remain (data moved to a new computer without its
+keychain, which otherwise fails every unlock with *the key … is missing*): it deletes every `vault:v1:` row,
+`vault.id` and `vault.initialized` and drops the cached key and a folder key; the next unlock makes a new key under a
+new id. The old keyring item stays, since a copy of this database elsewhere (a sandbox) may still use it. API key
+login profiles lose their variable names and sign-in with their values (`login_profiles::keys::forget_all`). It answers
+with the agents checked again. A Codync Cloud computer refuses it (its keeper holds the records); `hello`'s
+`credentialsReset` says whether a computer offers it.
+
 A host makes its key the first time something needs the vault, such as a connector, voice, credential or agent
 sign-in request, or a new bot once connectors are saved. A new computer's first start makes none.
 
@@ -81,13 +90,38 @@ clears it; `env` merges, with `null` removing a key. A change to how it runs (`c
 `args`, `env`) is checked on the edited copy and exactly that copy is saved if it passes,
 so a typo can't break a working connector and an error means the edit changed nothing. A
 save by anything else during the check refuses the edit, so overlapping edits never combine
-into settings nobody checked. A new `name` or `description` alone starts nothing: it saves
+into settings nobody checked. A rename cannot take another installed connector's name; rejection leaves the saved
+connector and bot choices unchanged. The name is checked again after verification,
+under the save lock, so a concurrent install cannot introduce a collision. An unchanged
+name remains valid, including duplicates imported from a config. A new `name` or `description` alone starts nothing: it saves
 even while the server can't start, `verify` is null in the answer and no bot restarts.
-Otherwise the bots that have the connector on are told to rebuild their tools. An agent that
-can resume restarts whole before its next turn (not only this connector's process); one
-that can't keeps its session, and the old definition, until its next new session. A bot
-that can't be told is logged and doesn't fail the saved edit. Registry and remote
-connectors are refused (`host/src/market/connector_update.rs`).
+Otherwise the bots that have the connector on are told to rebuild their tools (`Cmd::RefreshTools`,
+`Actor::restart_stale`). An agent that can resume restarts whole before its next turn (not only this
+connector's process) and goes on in its session; one that can't starts again once its turn ends, in a
+new session told the conversation so far (the recap a move to another agent gets), so its next turn
+has the new definition without the user starting over. A bot
+that can't be told is logged and doesn't fail the saved edit (`host/src/market/connector_update.rs`).
+
+Custom URL connectors use the same loopback-only method with `url` and `headers`.
+Remote connection changes are saved before verification, allowing sign-in against
+the new endpoint; failed verification leaves the edit saved. Old running proxies are
+already invalidated, so affected bots refresh their tools whenever the revision moved,
+whether or not the check passed (`credentialUpdateConnector` on a remote connector too);
+the new proxies use the saved settings once the server or sign-in is fixed.
+Metadata-only edits need no check. Explicit URL/header retries verify even when
+unchanged, so repeating the current URL after sign-in refreshes affected bots.
+The saved connection is checked before and after verification; token refreshes may
+advance the same grant, but intervening edits cannot supply its readiness result.
+URL changes require explicit replacement headers,
+and clear the old OAuth grant. URL or header changes advance the revision and
+invalidate pending sign-ins; a running proxy moves to the edited connection without
+the old server's session (one on the older SSE transport stops instead, and so does one
+whose new server needs a session: both answer that the tools reconnect from the next turn,
+when the bot's agent has started again on the new revision, as above).
+On managed computers, the keeper record also carries this revision. A path-only or query-only URL edit retires old grants even when the origin and header values stay the same; metadata-only edits and unchanged URL retries keep them. A keeper from before the field refuses it. It still gets the revision already saved, without the field, as it always did (another connector saved, a 1Password reference resolved), but an edit to a new revision fails with "this computer's keeper is out of date: update Codync on this computer first": saved without the revision, that keeper's live grants could carry the new secret to the old URL.
+
+See [remote edit details](../guides/connector-verification.md#editing-a-custom-remote-connector).
+Registry connectors are still refused.
 
 ## Conversation requests
 
@@ -113,14 +147,18 @@ others show the agent's error. A new bot gets the card before its first message
 when the agent's sign-in check, run in the background as the bot is created, finds
 it signed out. When a [fallback agent](agent-fallback.md) takes the turn over, or a bot skips
 an agent another bot found signed out, the card comes anyway, holding no message (the fallback
-answers it). A bot keeps one such card in each chat; messages that fail later join it. The
+answers it). A bot keeps one such card per login in each chat; messages that fail later join it. A
+[background task](background-tasks.md#fallbacks-and-sign-in)'s card goes to its bot's chat, one per login for each
+task, marked as its item's. Each held message goes out again to the chat it was written in. The
 card's Sign in opens the agent's sign-in sheet from Extensions. As soon as a sign-in
-check (`agentAuth`, `agentAuthenticate`, `setAgentEnv`, connectorRequestFinish on the
+check (`agentAuth`, `agentAuthenticate`, `setAgentEnv`, `setLoginProfileKeys` for a card on an API key
+[login profile](login-profiles.md), connectorRequestFinish on the
 card, a new bot's check, or the re-check at host start and `refreshBackends`) finds
 the agent signed in, or a turn of the agent finishes (signed in outside Codync),
 every pending card for it completes, its messages go out again and bots that moved on to a
 fallback while it was signed out come back on their next message;
-a message older than 24 hours isn't sent again. The card itself doesn't expire.
+a chat's message older than 24 hours isn't sent again (a task's goes as long as its item still works). The card
+itself doesn't expire.
 
 MCP connection requests and runtime secret retrieval are loopback-only. Authorized
 Control devices may submit or cancel requests. No endpoint exposes a generic

@@ -78,6 +78,8 @@ fn main_sessions(rows: &[Value]) -> Vec<Value> {
 async fn a_run_on_an_agent_that_cant_close_sessions_leaves_no_mcp_servers_behind() {
     let host = Host::start().await;
     let bot = host.fixture_bot("no-close", "resource_agent.py", "--no-close --stubborn-workers").await;
+    // Its runs are turns in its chat: these tests are about a run's own session there.
+    host.works_in_chat(&bot).await;
     host.reply(&bot, "Main").await;
     let id = routine(&host, &bot).await;
     for n in 1..=3 {
@@ -100,6 +102,8 @@ async fn a_run_on_an_agent_that_cant_close_sessions_leaves_no_mcp_servers_behind
 async fn a_waiting_message_keeps_the_agent_until_its_turn_ends() {
     let host = Host::start().await;
     let bot = host.fixture_bot("no-close-queued", "resource_agent.py", "--no-close --stubborn-workers").await;
+    // Its runs are turns in its chat: these tests are about a run's own session there.
+    host.works_in_chat(&bot).await;
     host.reply(&bot, "Main").await;
     let id = routine_doing(&host, &bot, "Report once HOLD").await;
     host.call("runRoutine", json!({"botId": bot, "id": id})).await;
@@ -126,6 +130,8 @@ async fn a_waiting_message_keeps_the_agent_until_its_turn_ends() {
 async fn routines_without_close_release_connectors_and_resume_the_same_main_chat() {
     let host = Host::start().await;
     let bot = host.fixture_bot("resource-no-close", "resource_agent.py", "--no-close").await;
+    // Its runs are turns in its chat: these tests are about a run's own session there.
+    host.works_in_chat(&bot).await;
     host.reply(&bot, "Remember our main conversation").await;
     let id = routine(&host, &bot).await;
     for n in 1..=20 {
@@ -147,6 +153,8 @@ async fn routines_without_close_release_connectors_and_resume_the_same_main_chat
 async fn a_failed_close_stops_the_agent_with_its_mcp_servers() {
     let host = Host::start().await;
     let bot = host.fixture_bot("resource-close-failed", "resource_agent.py", "--fail-close --stubborn-workers").await;
+    // Its runs are turns in its chat: these tests are about a run's own session there.
+    host.works_in_chat(&bot).await;
     host.reply(&bot, "Main").await;
     let id = routine(&host, &bot).await;
     run(&host, &bot, &id, 1).await;
@@ -159,6 +167,8 @@ async fn a_failed_close_stops_the_agent_with_its_mcp_servers() {
 async fn resume_only_agents_release_routine_sessions_and_keep_their_main_conversation() {
     let host = Host::start().await;
     let bot = host.fixture_bot("resource-resume-only", "resource_agent.py", "--resume-only --no-close").await;
+    // Its runs are turns in its chat: these tests are about a run's own session there.
+    host.works_in_chat(&bot).await;
     host.reply(&bot, "Main").await;
     let id = routine(&host, &bot).await;
     for n in 1..=5 {

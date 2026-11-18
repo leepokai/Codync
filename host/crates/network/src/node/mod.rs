@@ -55,6 +55,8 @@ struct Inner {
     taken: Mutex<VecDeque<String>>,
     /// Who may write to this computer's agents (`rules`).
     rules: Mutex<Vec<Rule>>,
+    /// What a sender no rule matches gets ([`Node::set_default_access`]).
+    default_access: Mutex<rules::Access>,
     /// Requests this computer sent, newest kept: the letter's id, the computer it went to and
     /// the agent here that sent it. That computer's answer to that agent passes the rules.
     asked: Mutex<VecDeque<(String, EndpointId, String)>>,
@@ -99,6 +101,7 @@ impl Node {
             held: Mutex::default(),
             taken: Mutex::default(),
             rules: Mutex::default(),
+            default_access: Mutex::new(rules::Access::Allow),
             asked: Mutex::default(),
             outbox: Mutex::default(),
             inbox: tx,
@@ -272,6 +275,17 @@ impl Node {
 
     pub fn rules(&self) -> Vec<Rule> {
         locked(&self.inner.rules).clone()
+    }
+
+    /// What a sender no rule matches gets: `Allow` unless the app sets another (a Codync host sets `Auto`). Only an
+    /// app that holds its agents to a ceiling should set `Auto` or `Ask`: a letter under one to a session the network
+    /// knocks on is refused.
+    pub fn set_default_access(&self, access: rules::Access) {
+        *locked(&self.inner.default_access) = access;
+    }
+
+    pub fn default_access(&self) -> rules::Access {
+        *locked(&self.inner.default_access)
     }
 
     /// What the app calls this network (`home`, `work`) when a computer is in several: the invites

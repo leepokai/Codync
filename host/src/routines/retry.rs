@@ -12,10 +12,15 @@ use super::{
 const DELAYS: [i64; 3] = [60, 300, 900];
 
 /// Whether run `id` used a tool that may have changed something. A run that never began didn't;
-/// one whose check fails counts as acted.
-pub fn acted(hub: &Hub, id: &str) -> bool {
-    let Some(notice) = hub.store.entry(&notice_id(id)) else { return false };
-    hub.store.acted_in_turn(&notice.bot_id, notice.turn).unwrap_or_else(|error| {
+/// one whose check fails counts as acted. `task`: the task that worked it in the box, whose one turn is the run
+/// (a run in the chat is the turn its line took).
+pub fn acted(hub: &Hub, id: &str, task: Option<&str>) -> bool {
+    let turn = match task {
+        Some(task) => Some((task.to_owned(), hub.store.max_turn(task))),
+        None => hub.store.entry(&notice_id(id)).map(|notice| (notice.bot_id, notice.turn)),
+    };
+    let Some((chat, turn)) = turn else { return false };
+    hub.store.acted_in_turn(&chat, turn).unwrap_or_else(|error| {
         tracing::warn!(run = id, error = format!("{error:#}"), "couldn't check what a failed run did; not retrying it");
         true
     })
@@ -128,7 +133,7 @@ mod tests {
         let mut run: Run = new_run(&r, json!({"source":"schedule"}), None);
         run.status = Status::Failed;
         run.attempt = attempt;
-        (State { routines: vec![r], runs: vec![run] }, 0)
+        (State { routines: vec![r], runs: vec![run], follow_ups: Vec::new() }, 0)
     }
 
     #[test]

@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +54,8 @@ import kotlinx.coroutines.launch
         following.value = false
         val layout = list.layoutInfo
         list.animateScrollToItem(row.index, -(layout.viewportEndOffset - layout.viewportStartOffset) / 3)
+        // A row by the end leaves the list at the end: it follows again, as on iOS.
+        following.value = !list.canScrollForward
     }
     val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
@@ -81,6 +84,7 @@ internal data class ConversationReveal(val id: String, val index: Int, val step:
     val following = remember { mutableStateOf(true) }
     // The reader's drag and its fling, until it settles: a new step never pulls it back down meanwhile.
     val touched = remember { mutableStateOf(false) }
+    fun follows() = following.value && !touched.value
     LaunchedEffect(list) {
         // Only the reader's own scroll decides: new content arriving (even while Codync is in the background) keeps the follow.
         launch { list.interactionSource.interactions.collect { if (it is DragInteraction.Start) touched.value = true } }
@@ -101,12 +105,21 @@ internal data class ConversationReveal(val id: String, val index: Int, val step:
             layout.visibleItemsInfo.lastOrNull()?.takeIf { it.index == layout.totalItemsCount - 1 }
                 ?.let { Triple(it.key, it.size, layout.viewportEndOffset - layout.viewportStartOffset) }
         }.collect { size ->
-            if (size != null && following.value && !touched.value) list.scrollToEnd(animated = false)
+            if (size != null && follows()) list.scrollToEnd(animated = false)
         }
     }
-    // A new message, or the box growing (keyboard, more lines): stay on the newest.
-    LaunchedEffect(last, rev, working, bottom) {
-        if (following.value && !touched.value && list.layoutInfo.totalItemsCount > 0) list.scrollToEnd(animated = true)
+    // A new message: glide down to it.
+    LaunchedEffect(last, rev, working) {
+        if (follows()) list.scrollToEnd(animated = true)
+    }
+    // The box growing (keyboard, more lines) changes on every frame of the keyboard's own animation: ask for the end as
+    // the composition is applied, for the layout that follows (a LaunchedEffect would run after it). A glide would
+    // start over on each frame and only arrive once the keyboard has stopped.
+    // ponytail: one frame behind the composer, whose height is measured a frame earlier; move the list by the
+    // keyboard inset in the layout phase if that ever shows.
+    DisposableEffect(bottom) {
+        if (follows()) list.requestScrollToEnd()
+        onDispose {}
     }
     return following
 }
@@ -121,6 +134,12 @@ private suspend fun LazyListState.scrollToEnd(animated: Boolean) {
         else animateScrollBy((end.offset + end.size + layoutInfo.afterContentPadding - layoutInfo.viewportEndOffset).coerceAtLeast(0).toFloat())
     }
     scrollToItem(count - 1, Int.MAX_VALUE)
+}
+
+/** [scrollToEnd] without a glide or a suspension: it lands in the layout that follows. */
+private fun LazyListState.requestScrollToEnd() {
+    val count = layoutInfo.totalItemsCount
+    if (count > 0) requestScrollToItem(count - 1, Int.MAX_VALUE)
 }
 
 /** Scrolled away from the newest messages: a round button back down to them. */

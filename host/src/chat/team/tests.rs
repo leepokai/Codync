@@ -563,3 +563,69 @@ fn restart_marks_requests_interrupted_without_replaying_them() {
     assert_eq!(interrupted.data["botMessage"]["text"], "Work");
     assert!(interrupted.data["botMessage"]["detail"].as_str().unwrap().contains("Interrupted by host restart"));
 }
+
+fn lead(f: &Fixture, id: &str) {
+    let mut cfg = visible_bot(&f.hub, id).unwrap();
+    cfg.lead = true;
+    f.hub.store.save_bot(&cfg).unwrap();
+}
+
+#[tokio::test]
+async fn a_failed_hop_notice_leaves_explain_and_answer_available() {
+    let f = Fixture::new();
+    lead(&f, "c");
+    let refusal = f.hub.team.open_lift("a", "a", 0).unwrap();
+    // The lead's actor is gone, so the notice cannot be queued.
+    f.hub.send_cmd("c", Cmd::Shutdown).unwrap();
+    f.until(|| f.hub.send_cmd("c", Cmd::RefreshTools).is_err()).await;
+
+    let explain = call(&f.hub, "a", "a", "explain_hop_block", &json!({"refusalId": refusal, "text": "because"}));
+    let error = explain.unwrap_err().to_string();
+    assert!(error.contains("unknown bot") || error.contains("bot stopped"), "{error}");
+    assert!(!error.contains("already explained"), "{error}");
+    assert_eq!(f.hub.team.explanation(refusal), None);
+    let again = call(&f.hub, "a", "a", "explain_hop_block", &json!({"refusalId": refusal, "text": "because"}));
+    let error = again.unwrap_err().to_string();
+    assert!(!error.contains("already explained"), "{error}");
+    assert_eq!(f.hub.team.explanation(refusal), None);
+
+    f.hub.team.ask(refusal).unwrap();
+    let answer =
+        call(&f.hub, "a", "a", "answer_hop_clarification", &json!({"refusalId": refusal, "text": "the detail"}));
+    let error = answer.unwrap_err().to_string();
+    assert!(error.contains("unknown bot") || error.contains("bot stopped"), "{error}");
+    assert!(!error.contains("already answered"), "{error}");
+    assert_eq!(f.hub.team.answer_text(refusal), None);
+    let again =
+        call(&f.hub, "a", "a", "answer_hop_clarification", &json!({"refusalId": refusal, "text": "the detail"}));
+    assert!(!again.unwrap_err().to_string().contains("already answered"));
+    assert_eq!(f.hub.team.answer_text(refusal), None);
+    f.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_delivered_hop_notice_consumes_explain_and_answer() {
+    let f = Fixture::new();
+    lead(&f, "c");
+    let refusal = f.hub.team.open_lift("a", "a", 0).unwrap();
+
+    let recorded =
+        call(&f.hub, "a", "a", "explain_hop_block", &json!({"refusalId": refusal, "text": "because the user asked"}))
+            .unwrap();
+    assert_eq!(recorded["status"], "recorded");
+    f.until(|| f.prompts_of("c").iter().any(|prompt| prompt.contains("explained why"))).await;
+    assert_eq!(f.hub.team.explanation(refusal).as_deref(), Some("because the user asked"));
+    let again = call(&f.hub, "a", "a", "explain_hop_block", &json!({"refusalId": refusal, "text": "again"}));
+    assert!(again.unwrap_err().to_string().contains("already explained"));
+
+    f.hub.team.ask(refusal).unwrap();
+    let answered =
+        call(&f.hub, "a", "a", "answer_hop_clarification", &json!({"refusalId": refusal, "text": "the detail"}))
+            .unwrap();
+    assert_eq!(answered["status"], "answered");
+    f.until(|| f.prompts_of("c").iter().any(|prompt| prompt.contains("answered your clarification"))).await;
+    assert_eq!(f.hub.team.answer_text(refusal).as_deref(), Some("the detail"));
+    let again = call(&f.hub, "a", "a", "answer_hop_clarification", &json!({"refusalId": refusal, "text": "again"}));
+    assert!(again.unwrap_err().to_string().contains("already answered"));
+    f.shutdown().await;
+}

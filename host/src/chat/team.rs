@@ -631,8 +631,11 @@ fn explain_hop_block(hub: &Arc<Hub>, source: &BotConfig, turn: &str, args: &Valu
     let stored = hub.team.explain(turn, refusal, explanation)?;
     let heading = format!("Explanation from {} for hop-limit refusal {refusal}.", source.name);
     let introduction = "The bot blocked by the hop limit explained why its send should go through.";
+    // The explanation stays once-only only after the notice is queued. A send that cannot queue it leaves the
+    // text in place, the same way an unsent reset gives its grant back.
     if let Err(error) = hop_notice_to_lead(hub, source, refusal, &heading, introduction, &stored) {
-        tracing::warn!(refusal, error = format!("{error:#}"), "couldn't deliver a hop-limit explanation to the lead");
+        hub.team.abort_unsent_explanation(turn, refusal);
+        return Err(error);
     }
     tracing::info!(actor = %turn, refusal, "hop-limit explanation recorded");
     Ok(json!({ "refusal": refusal, "status": "recorded" }))
@@ -679,7 +682,8 @@ fn answer_hop_clarification(hub: &Arc<Hub>, source: &BotConfig, turn: &str, args
     let heading = format!("Answer from {} for hop-limit refusal {refusal}.", source.name);
     let introduction = "The bot blocked by the hop limit answered your clarification.";
     if let Err(error) = hop_notice_to_lead(hub, source, refusal, &heading, introduction, &stored) {
-        tracing::warn!(refusal, error = format!("{error:#}"), "couldn't deliver a hop-limit answer to the lead");
+        hub.team.abort_unsent_answer(turn, refusal);
+        return Err(error);
     }
     tracing::info!(actor = %turn, refusal, "hop-limit clarification answered");
     Ok(json!({ "refusal": refusal, "status": "answered" }))
@@ -749,7 +753,9 @@ pub(super) fn on_hop_limit(
     if lead.id == source.id {
         return Err(error);
     }
-    let generation = hub.team.generation(turn);
+    // Captured with the rejection. A later read can belong to a user message that started in the gap, and storing
+    // that generation would let an approval reset the new chain.
+    let Some(generation) = requests::hop_generation(&error) else { return Err(error) };
     let Some(refusal) = hub.team.open_lift(&source.id, turn, generation) else { return Err(error) };
     let shown = truncate(message, 400);
     let id = uuid::Uuid::new_v4().to_string();

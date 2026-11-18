@@ -123,6 +123,27 @@ struct Audit {
     actor: String,
 }
 
+/// A hop-limit rejection. [`HopLimited::generation`] is the actor's generation under the same lock as the rejection,
+/// so a user message that starts afterwards cannot retag the refusal.
+#[derive(Debug)]
+pub(super) struct HopLimited {
+    pub(super) generation: u64,
+    limit: u8,
+}
+
+impl std::fmt::Display for HopLimited {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "bot request hop limit ({}) reached; ask the user before starting another chain", self.limit)
+    }
+}
+
+impl std::error::Error for HopLimited {}
+
+/// The generation captured with a hop-limit rejection, when `error` is one.
+pub(super) fn hop_generation(error: &anyhow::Error) -> Option<u64> {
+    error.downcast_ref::<HopLimited>().map(|hop| hop.generation)
+}
+
 impl Requests {
     #[cfg(test)]
     pub(super) fn reserve_message(&self, from: &str) -> Result<u8> {
@@ -332,6 +353,42 @@ impl Requests {
         Ok(())
     }
 
+    /// The explanation notice was never queued. Clears it so the blocked bot can explain again.
+    pub fn abort_unsent_explanation(&self, actor: &str, refusal: u64) -> bool {
+        let mut state = self.0.locked();
+        let aborted = {
+            let Some(entry) = state.actors.get_mut(actor) else { return false };
+            let Some(lift) = entry.lift.as_mut() else { return false };
+            if lift.id != refusal || lift.explanation.is_none() {
+                return false;
+            }
+            lift.explanation = None;
+            true
+        };
+        if state.audit.last().is_some_and(|row| matches!(row.kind, AuditKind::Explain) && row.refusal == refusal) {
+            state.audit.pop();
+        }
+        aborted
+    }
+
+    /// The answer notice was never queued. Clears it so the blocked bot can answer again.
+    pub fn abort_unsent_answer(&self, actor: &str, refusal: u64) -> bool {
+        let mut state = self.0.locked();
+        let aborted = {
+            let Some(entry) = state.actors.get_mut(actor) else { return false };
+            let Some(lift) = entry.lift.as_mut() else { return false };
+            if lift.id != refusal || lift.answer.is_none() {
+                return false;
+            }
+            lift.answer = None;
+            true
+        };
+        if state.audit.last().is_some_and(|row| matches!(row.kind, AuditKind::Answer) && row.refusal == refusal) {
+            state.audit.pop();
+        }
+        aborted
+    }
+
     /// The approval wake was never queued. Drops that grant and the reset it counted, so a later refusal can open.
     pub fn abort_unsent_reset(&self, actor: &str, refusal: u64) -> bool {
         let mut state = self.0.locked();
@@ -466,7 +523,8 @@ impl RequestState {
                 )
             }
             Some(&Turn::Chat(hops)) if hops >= limit => {
-                bail!("bot request hop limit ({limit}) reached; ask the user before starting another chain")
+                let generation = self.actors.get(from).map_or(0, |actor| actor.generation);
+                Err(HopLimited { generation, limit }.into())
             }
             Some(&Turn::Chat(hops)) => Ok(hops + 1),
         }
@@ -887,6 +945,48 @@ mod tests {
         }
         let blocked = requests.open_lift("sender", "a", 0).unwrap();
         assert!(requests.approve(blocked).unwrap_err().to_string().contains("hop reset limit (3)"));
+    }
+
+    #[test]
+    fn a_failed_delivery_leaves_the_explanation_and_the_answer_for_a_retry() {
+        let requests = Requests::default();
+        let refusal = requests.open_lift("sender", "a", 0).unwrap();
+        let before = requests.audit_len();
+        requests.explain("a", refusal, "because").unwrap();
+        assert!(requests.explain("a", refusal, "again").is_err());
+        assert!(requests.abort_unsent_explanation("a", refusal));
+        assert!(!requests.abort_unsent_explanation("a", refusal));
+        assert_eq!(requests.explanation(refusal), None);
+        assert_eq!(requests.audit_len(), before);
+        assert_eq!(requests.explain("a", refusal, "because").unwrap(), "because");
+        assert!(requests.explain("a", refusal, "again").unwrap_err().to_string().contains("already explained"));
+
+        requests.ask(refusal).unwrap();
+        requests.answer("a", refusal, "the detail").unwrap();
+        assert!(requests.answer("a", refusal, "again").is_err());
+        assert!(requests.abort_unsent_answer("a", refusal));
+        assert_eq!(requests.answer_text(refusal), None);
+        assert!(!requests.abort_unsent_answer("other", refusal));
+        assert_eq!(requests.answer("a", refusal, "the detail").unwrap(), "the detail");
+        assert!(requests.answer("a", refusal, "again").unwrap_err().to_string().contains("already answered"));
+    }
+
+    #[test]
+    fn a_user_message_before_open_lift_does_not_store_the_new_generation() {
+        let requests = Requests::default();
+        requests.user_message_started("a");
+        requests.start_turn("a", Turn::Chat(MAX_REQUEST_HOPS));
+        let rejected = requests.reserve_message("a").unwrap_err();
+        let generation = hop_generation(&rejected).expect("the rejection carries the generation");
+        assert_eq!(generation, 1);
+        assert!(rejected.to_string().contains("hop limit (8)"));
+        assert_eq!(requests.0.locked().messages, 0);
+
+        // The user message lands after the rejection and before the refusal is stored.
+        requests.user_message_started("a");
+        assert_eq!(requests.generation("a"), generation + 1);
+        assert!(requests.open_lift("sender", "a", generation).is_none());
+        assert!(!requests.lift_open("a"), "the refusal must not be stored on the new generation");
     }
 
     #[test]

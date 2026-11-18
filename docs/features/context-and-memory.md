@@ -151,14 +151,13 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   own memory. They fetch with `memory` and `memoryFile`, and fetch again when the bot's `memoryRev` moves. The
   apps' edit methods of 2.18 to 2.20 are gone, so the host's `minApp` is 2.21.0
   ([floor history](../reference/compatibility.md#floor-history)).
-- **Moving the old memory**, once, on the first start of a host that has it:
-  - the memory entries of 2.18 to 2.20 (`codync_mem::legacy`): each layer's active entries go into its `MEMORY.md`
-    as far as the cap allows (pinned first, then the newest), each with who wrote it and its source message; the
-    rest, the archived ones and any too long for one line go into a note, `earlier.md`. Entries a newer one
-    replaced, and facts the checks refuse (secrets, planted instructions, hidden characters), stay out. Old dream
-    runs keep their lines. Then the entries' tables go.
-  - each bot's Engram database (or the Markdown memory before it), the same way. Then the old files (deleted bots'
-    too) and the Engram download go, and dreaming starts from that point in the chat.
+- **Moving the old memory**, once, on the first start of a host that has it: the memory entries of 2.18 to 2.20
+  (`codync_mem::legacy`). Each layer's active entries go into its `MEMORY.md` as far as the cap allows (pinned
+  first, then the newest), each with who wrote it and its source message; the rest, the archived ones and any too
+  long for one line go into a note, `earlier.md`. Entries a newer one replaced, and facts the checks refuse
+  (secrets, planted instructions, hidden characters), stay out. Old dream runs keep their lines. Then the entries'
+  tables go. The Engram and Markdown memory from before 2.18 no longer moves (its files stay on disk); a host
+  coming from before 2.18 only drops the old keeper's store keys and re-renders each bot's instructions.
 
 ## Compaction and rollover (`host/src/agent/bot/compaction.rs`, rules in `codync_mem::compaction`)
 

@@ -22,7 +22,7 @@ class IslandTransport implements HostTransport {
       return await window.codync.island.call(this.ref, method, body, timeoutMs)
     } catch (e) {
       const error = e as CallError
-      throw new HostError(error.status, error.message, error.offline === true)
+      throw new HostError(error.status, error.message, error.presence ?? null)
     }
   }
 

@@ -1796,7 +1796,7 @@
   "{count} notes, over the {cap}-note cap. Ask the bot to merge some.": "笔记有 {count} 条，超过 {cap} 条的上限。请让 Bot 合并一些。",
   "{count} working": "{count} 进行中",
   "{device} Using {name}.": "{device}。正在使用 {name}。",
-  "{error} Pick OpenAI or Gemini beside the mic.": "{error} 请在麦克风旁选择 OpenAI 或 Gemini。",
+  "{error} Pick another engine beside the mic.": "{error} 请在麦克风旁选择其他引擎。",
   "{name} and {other}": "{name} 和 {other}",
   "{name} is larger than 100 MB.": "{name} 超过 100 MB。",
   "{name} isn't available ({reason}). Using on-device voice.": "{name} 不可用（{reason}）。正在使用设备端语音。",

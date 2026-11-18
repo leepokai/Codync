@@ -45,7 +45,7 @@ export async function answerIslandCall(app: AppModel, call: Extract<WindowComman
     const value = await (await store.ready()).call(call.method, call.body, call.timeoutMs)
     window.codync.island.answer(call.id, { ok: true, value })
   } catch (e) {
-    const error = e instanceof HostError ? { status: e.status, message: e.message, offline: e.offline } : { status: 0, message: String(e) }
+    const error = e instanceof HostError ? { status: e.status, message: e.message, presence: e.presence ?? undefined } : { status: 0, message: String(e) }
     window.codync.island.answer(call.id, { ok: false, error })
   }
 }

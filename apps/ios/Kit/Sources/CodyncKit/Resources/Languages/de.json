@@ -1796,7 +1796,7 @@
   "{count} notes, over the {cap}-note cap. Ask the bot to merge some.": "{count} Notizen, über dem Limit von {cap}. Bitte den Bot, einige zusammenzuführen.",
   "{count} working": "{count} aktiv",
   "{device} Using {name}.": "{device}. Verwendet {name}.",
-  "{error} Pick OpenAI or Gemini beside the mic.": "{error} Wähle OpenAI oder Gemini neben dem Mikrofon.",
+  "{error} Pick another engine beside the mic.": "{error} Wähle neben dem Mikrofon ein anderes Sprachsystem.",
   "{name} and {other}": "{name} und {other}",
   "{name} is larger than 100 MB.": "{name} ist größer als 100 MB.",
   "{name} isn't available ({reason}). Using on-device voice.": "{name} ist nicht verfügbar ({reason}). Verwende Stimme auf dem Gerät.",

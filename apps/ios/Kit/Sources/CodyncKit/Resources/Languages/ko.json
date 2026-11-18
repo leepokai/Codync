@@ -1796,7 +1796,7 @@
   "{count} notes, over the {cap}-note cap. Ask the bot to merge some.": "메모 {count}개, 한도 {cap}개 초과. 봇에게 일부 병합을 요청하세요.",
   "{count} working": "{count}개 작업 중",
   "{device} Using {name}.": "{device}. {name} 사용 중.",
-  "{error} Pick OpenAI or Gemini beside the mic.": "{error} 마이크 옆에서 OpenAI 또는 Gemini를 선택하세요.",
+  "{error} Pick another engine beside the mic.": "{error} 마이크 옆에서 다른 엔진을 선택하세요.",
   "{name} and {other}": "{name} 및 {other}",
   "{name} is larger than 100 MB.": "{name}은(는) 100MB보다 큽니다.",
   "{name} isn't available ({reason}). Using on-device voice.": "{name}을(를) 사용할 수 없습니다 ({reason}). 기기 내 음성을 사용합니다.",

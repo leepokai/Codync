@@ -237,6 +237,7 @@ function InstalledView({ back }: { back: () => void }) {
   const tr = useTr()
   const plugins = usePlugins(store)
   const [removing, setRemoving] = useState<{ id: string; name: string; isSkill: boolean } | null>(null)
+  const [removingUnused, setRemovingUnused] = useState(false)
   const [signingIn, setSigningIn] = useState<string | null>(null)
   const [viewingSkill, setViewingSkill] = useState<SkillRef | null>(null)
   const empty = plugins.installedConnectors.length === 0 && plugins.installedSkills.length === 0
@@ -255,6 +256,14 @@ function InstalledView({ back }: { back: () => void }) {
     try {
       if (r.isSkill) await plugins.removeSkill(r.id)
       else await plugins.removeConnector(r.id)
+    } catch (e) {
+      store.setError(errorText(e))
+    }
+  }
+
+  const removeUnused = async () => {
+    try {
+      await plugins.removeUnusedSkills()
     } catch (e) {
       store.setError(errorText(e))
     }
@@ -289,6 +298,9 @@ function InstalledView({ back }: { back: () => void }) {
             ) : null}
             {plugins.installedSkills.length ? (
               <MarketSection title="Skills">
+                <div>
+                  <Button kind="secondary" onClick={() => setRemovingUnused(true)}>Remove unused skills</Button>
+                </div>
                 <ItemGrid>
                   {plugins.installedSkills.map((s) => (
                     <ItemRow
@@ -312,6 +324,13 @@ function InstalledView({ back }: { back: () => void }) {
         message={removing ? tr(removing.isSkill ? 'Bots stop using this skill.' : 'Bots lose this connector, and the keys saved for it are deleted.') : null}
         actions={removing ? [{ title: 'Remove', destructive: true, action: () => void remove(removing) }] : []}
         onClose={() => setRemoving(null)}
+      />
+      <Dialog
+        open={removingUnused}
+        title={tr('Remove unused skills?')}
+        message={tr('Deletes the skills no bot has on. Skills a bot uses stay.')}
+        actions={[{ title: 'Remove', destructive: true, action: () => void removeUnused() }]}
+        onClose={() => setRemovingUnused(false)}
       />
       <FormSheet open={viewingSkill !== null} onClose={() => setViewingSkill(null)}>
         {viewingSkill ? <SkillSheet key={viewingSkill.name} skill={viewingSkill} /> : null}

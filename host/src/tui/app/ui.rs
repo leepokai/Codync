@@ -116,6 +116,8 @@ pub enum ConfirmAct {
     RotateRoutineKey(String, String),
     RemoveConnector(String),
     RemoveSkill(String),
+    /// Every skill no bot has on (`removeUnusedSkills`).
+    RemoveUnusedSkills,
     /// Asks again before deleting every credential saved on this computer: it's dangerous and final.
     ResetCredentials,
     /// Deletes them (`resetCredentials`).

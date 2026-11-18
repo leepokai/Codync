@@ -140,6 +140,18 @@ impl App {
                 m.searched = Some(search);
             }
             KeyCode::Enter => return self.market_enter(m),
+            KeyCode::Char('k') if ctrl(k) && m.tab == Tab::Skills => {
+                let c = Confirm {
+                    title: tr("Remove unused skills?").into_owned(),
+                    detail: tr("Deletes the skills no bot has on. Skills a bot uses stay.").into_owned(),
+                    note: String::new(),
+                    button: "Remove",
+                    act: ConfirmAct::RemoveUnusedSkills,
+                };
+                self.overlays.push(Overlay::Market(m));
+                self.overlays.push(Overlay::Confirm(c));
+                return None;
+            }
             KeyCode::Char('x') if ctrl(k) => {
                 let (id, name, skill) = match self.market_rows(&m).get(m.cursor) {
                     Some(Row::Installed(c)) => (s(c, "id"), s(c, "name"), false),
@@ -428,5 +440,30 @@ mod tests {
         app.on_sheet_reply(Reply::SignIn, Ok(json!({"url": device, "callback": "host", "code": "ABCD-1234"})));
         let hint = &app.hint.as_ref().expect("the code shows").0;
         assert!(hint.contains("ABCD-1234") && hint.contains(device), "{hint}");
+    }
+
+    #[tokio::test]
+    async fn ctrl_k_on_skills_asks_before_removing_the_unused_ones() {
+        use super::super::super::app::ConfirmAct;
+        use crossterm::event::KeyModifiers;
+        let ctrl_k = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        for (tab, asks) in [(Tab::Connectors, false), (Tab::Skills, true)] {
+            let mut app = open();
+            let Some(Overlay::Market(mut m)) = app.overlays.pop() else { panic!("the marketplace is open") };
+            m.tab = tab;
+            let m = app.market_key(m, ctrl_k);
+            assert_eq!(m.is_none(), asks, "{tab:?}: only the skills tab asks");
+            match (asks, app.overlays.last()) {
+                (true, Some(Overlay::Confirm(c))) => {
+                    assert!(matches!(c.act, ConfirmAct::RemoveUnusedSkills), "it asks, and doesn't remove yet");
+                    assert!(
+                        matches!(app.overlays.iter().rev().nth(1), Some(Overlay::Market(_))),
+                        "the list stays under it"
+                    );
+                }
+                (false, None) => assert!(m.is_some(), "other tabs leave ^k to the search box"),
+                _ => panic!("unexpected overlays for {tab:?}"),
+            }
+        }
     }
 }

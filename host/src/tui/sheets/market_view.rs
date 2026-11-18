@@ -94,7 +94,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
     let keys = match m.tab {
         Tab::Agents => tr("tab switch · ↵ install / sign in · ^r refresh · esc close"),
         Tab::Connectors => tr("tab switch · ↵ add / sign in · ^x remove · ^r refresh · esc"),
-        Tab::Skills => tr("tab switch · ↵ details · ^x remove · esc close"),
+        Tab::Skills => tr("tab switch · ↵ details · ^x remove · ^k remove unused · esc close"),
     };
     let loading = m.loading && m.tab == Tab::Connectors && !rows.is_empty();
     let registry = tr("Loading the registry…");

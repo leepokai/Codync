@@ -359,6 +359,26 @@ pub fn remove_skill(store: &crate::store::Store, id: &str) -> Result<()> {
     })
 }
 
+/// The skills no bot has on: nothing reads them, so the library can drop them without a bot noticing.
+fn unused_skills(store: &crate::store::Store) -> Result<Vec<String>> {
+    let mut used = std::collections::HashSet::new();
+    for row in store.bots()?.into_iter().chain(store.task_bots()?) {
+        if !row.deleted {
+            used.extend(row.config.skills);
+        }
+    }
+    Ok(skills(store).into_iter().map(|s| s.id).filter(|id| !used.contains(id)).collect())
+}
+
+/// Removes the skills no bot has on (`unused_skills`); returns their ids.
+pub fn remove_unused_skills(store: &crate::store::Store) -> Result<Vec<String>> {
+    let unused = unused_skills(store)?;
+    for id in &unused {
+        remove_skill(store, id)?;
+    }
+    Ok(unused)
+}
+
 /// `/name rest` → `name` and the rest; the rest is `None` while the name is still being typed.
 pub fn slash_command(text: &str) -> Option<(&str, Option<&str>)> {
     let body = text.strip_prefix('/')?;
@@ -495,6 +515,36 @@ mod tests {
         assert_eq!(body("---\nname: pdf\ndescription: x\n---\n\n# PDF\nUse it.\n"), "# PDF\nUse it.");
         assert_eq!(body("# No front matter\n"), "# No front matter");
         assert_eq!(body("---\nname: open\n"), "", "an unclosed front matter has no body");
+    }
+
+    #[tokio::test]
+    async fn skills_no_bot_has_on_are_the_unused_ones() {
+        let dir = std::env::temp_dir().join(format!("codync-skills-hub-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let store = crate::store::Store::open(&dir.join("t.db")).expect("store");
+        let identity = crate::remote::identity::Identity::load_or_create(&dir).expect("identity");
+        let hub = crate::hub::Hub::new(store, "test".into(), identity, "token".into(), 0);
+        let tag = uuid::Uuid::new_v4();
+        let ids: Vec<String> = ["kept", "idle", "other"].iter().map(|n| format!("test-{n}-{tag}")).collect();
+        let all: Vec<Skill> = ids
+            .iter()
+            .map(|id| serde_json::from_value(json!({"id": id, "name": "Same", "source": "custom"})).expect("skill"))
+            .collect();
+        save(&hub.store, "skills", &all).expect("save skills");
+        let cfg = crate::agent::new_bot::with_defaults(&hub, json!({"name": "Bot"})).await.expect("defaults");
+        let bot = hub.create_bot(cfg).expect("a bot")["id"].as_str().expect("an id").to_owned();
+        hub.update_bot(&json!({"id": bot, "skills": [ids[0]]})).expect("skills on");
+
+        assert_eq!(unused_skills(&hub.store).expect("unused"), ids[1..], "only the skill the bot has on stays");
+        assert_eq!(remove_unused_skills(&hub.store).expect("removed"), ids[1..]);
+        let left: Vec<String> = skills(&hub.store).into_iter().map(|s| s.id).collect();
+        assert_eq!(left, [ids[0].clone()]);
+        assert!(remove_unused_skills(&hub.store).expect("again").is_empty(), "nothing left to remove");
+
+        hub.delete_bot(&bot).expect("deleted");
+        assert_eq!(unused_skills(&hub.store).expect("unused"), [ids[0].clone()], "a deleted bot uses nothing");
+        drop(hub);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

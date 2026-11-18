@@ -208,6 +208,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             market::remove_skill(&hub.store, str_arg(&b, "id")?)?;
             json!({})
         }
+        // Every skill no bot has on, at once; their ids come back.
+        "removeUnusedSkills" => json!({"ids": market::remove_unused_skills(&hub.store)?}),
         _ => return Ok(ControlFlow::Continue(b)),
     }))
 }

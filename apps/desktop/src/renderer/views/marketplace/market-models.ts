@@ -98,6 +98,14 @@ export interface MarketConnector {
   options: InstallOption[]
 }
 
+/**
+ * A line to tell skills apart in a list: the id of a skill whose name another skill shares (an import can leave
+ * copies, `humanizer`, `humanizer-2`…), nothing for a skill whose name is its own.
+ */
+export function skillCopyLabel(skills: { id: string; name: string }[], skill: { id: string; name: string }): string {
+  return skills.some((other) => other.id !== skill.id && other.name === skill.name) ? skill.id : ''
+}
+
 export interface InstalledSkill {
   id: string
   name: string
@@ -217,6 +225,8 @@ export const market = {
   installSkill: (c: HostClient, source: string) => c.call('installSkill', { source }, s(60)),
   addSkill: (c: HostClient, name: string, description: string, instructions: string) => c.call('installSkill', { name, description, instructions }),
   removeSkill: (c: HostClient, id: string) => c.call('removeSkill', { id }),
+  /** Every skill no bot has on; the ids it removed. */
+  removeUnusedSkills: async (c: HostClient) => (await c.call<{ ids: string[] }>('removeUnusedSkills')).ids,
   /** A skill's `SKILL.md` without its front matter: an installed one by `id`, a catalog one by `source`. */
   skillDetails: async (c: HostClient, which: { id: string } | { source: string }) => (await c.call<{ markdown: string }>('skillDetails', which, s(60))).markdown,
   connectorInfo: (c: HostClient, registryName: string) => c.call<MarketConnector>('connectorInfo', { registryName }, s(60)),

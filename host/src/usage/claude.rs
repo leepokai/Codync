@@ -8,8 +8,12 @@ use crate::hub::Hub;
 
 /// Flags for `claude -p /usage`. Stream JSON carries the structured
 /// `usage_report`. The empty strict MCP config keeps the check from starting
-/// every MCP server the user has set up.
-const USAGE_ARGS: [&str; 9] = [
+/// every MCP server the user has set up. `--settings` blanks the variables
+/// that route Claude Code off the subscription, whether the environment or a
+/// settings file sets them: a routed `/usage` reports token costs instead of
+/// the plan's limits (#372). The rest of the settings' `env`, a proxy for one,
+/// still applies.
+const USAGE_ARGS: [&str; 11] = [
     "-p",
     "/usage",
     "--output-format",
@@ -19,6 +23,8 @@ const USAGE_ARGS: [&str; 9] = [
     "--strict-mcp-config",
     "--mcp-config",
     r#"{"mcpServers":{}}"#,
+    "--settings",
+    r#"{"env":{"ANTHROPIC_API_KEY":"","ANTHROPIC_AUTH_TOKEN":"","ANTHROPIC_BASE_URL":"","CLAUDE_CODE_USE_BEDROCK":"","CLAUDE_CODE_USE_VERTEX":"","CLAUDE_CODE_USE_FOUNDRY":""}}"#,
 ];
 
 /// `claude -p /usage`: Claude Code's own local usage report, no model call.
@@ -189,6 +195,50 @@ mod tests {
         let config = USAGE_ARGS.iter().position(|a| *a == "--mcp-config").expect("--mcp-config missing");
         let empty: Value = serde_json::from_str(USAGE_ARGS[config + 1]).unwrap();
         assert_eq!(empty, json!({ "mcpServers": {} }));
+    }
+
+    /// Issue #372: Claude Code routed off the subscription answers `/usage` with token costs, not the
+    /// plan's limits. The fake CLI answers as Claude Code 2.1.327 did, with user settings that set a
+    /// gateway and a proxy: `--settings` overrides their `env` and the environment's, and an empty
+    /// value counts as unset.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn usage_is_read_from_the_subscription_when_claude_code_is_routed_elsewhere() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("codync-claude-usage-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let claude = dir.join("claude");
+        std::fs::write(
+            &claude,
+            r#"#!/bin/sh
+routing="ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_USE_FOUNDRY"
+ANTHROPIC_BASE_URL=http://gateway HTTPS_PROXY=http://proxy:8080
+while [ $# -gt 0 ]; do
+  case $1 in
+    --setting-sources) unset ANTHROPIC_BASE_URL HTTPS_PROXY ;;
+    --settings) for var in $routing; do case $2 in *"\"$var\":\"\""*) unset $var ;; esac; done ;;
+  esac
+  shift
+done
+[ -n "$HTTPS_PROXY" ] || exit 1
+for var in $routing; do
+  if [ -n "$(printenv $var)" ]; then echo '{"type":"result","result":"Estimated cost:        $0.0000"}'; exit; fi
+done
+echo '{"type":"assistant","usage_report":{"rate_limits":{"limits":[{"kind":"weekly_all","percent":43,"resets_at":"2026-11-21T04:00:00+00:00"}]}}}'
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let _path = crate::agent::backends::TestSearchPath::set(dir.clone());
+        let routed = vec![
+            ("ANTHROPIC_AUTH_TOKEN".to_owned(), "gateway-token".to_owned()),
+            ("CLAUDE_CODE_USE_BEDROCK".to_owned(), "1".to_owned()),
+        ];
+        let windows = collect(routed).await;
+        std::fs::remove_dir_all(&dir).ok();
+        let windows = windows.expect("the subscription's limits, not the gateway's token costs");
+        assert_eq!(windows[0].id, "seven_day");
+        assert!((windows[0].percent - 43.0).abs() < f64::EPSILON);
     }
 
     #[test]

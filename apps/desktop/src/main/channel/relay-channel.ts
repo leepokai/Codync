@@ -239,11 +239,9 @@ export class RelayChannel {
     this.state = 'connecting'
     const socket = this.socket
     if (this.handshakeTimer) clearTimeout(this.handshakeTimer)
-    // The deadline runs from when `hello` leaves: it may wait out the relay's window first.
-    this.out?.send(() => {
-      this.handshakeTimer = setTimeout(() => this.hello === hello && this.socket === socket && socket?.close(1000), HANDSHAKE)
-      return [JSON.stringify(hello.hello)]
-    })
+    this.handshakeTimer = setTimeout(() => this.hello === hello && this.socket === socket && socket?.close(1000), HANDSHAKE)
+    // Not behind what waits for the relay's window: the computer closes a link whose `hello` is late.
+    this.out?.sendFirst(JSON.stringify(hello.hello))
   }
 
   private welcome(wire: { ek: string; sig: string }) {

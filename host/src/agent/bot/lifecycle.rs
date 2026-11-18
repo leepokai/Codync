@@ -3,7 +3,8 @@
 //! or with its session left open (an agent that can't close one), the agent stops with everything it started.
 //! The next message starts the agent again and reopens the session, so the conversation carries on.
 //! Agents that can't reopen a session keep everything: stopping them would lose the conversation.
-//! An agent whose keeper grants are gone (a cloud computer's keeper started again) starts again too.
+//! An agent whose keeper grants are gone (a cloud computer's keeper started again) starts again too, and so does one
+//! whose sign-in was replaced or whose connector was edited ([`Actor::restart_stale`]).
 
 use super::Actor;
 use super::background_work::background_work;
@@ -104,9 +105,24 @@ impl Actor {
         let Some(conn) = &self.conn else { return };
         match after_keeper(conn.acp.holds_grants(), conn.sessions.reopen.is_some(), self.turn.is_some()) {
             AfterKeeper::Nothing => {}
-            AfterKeeper::BeforeNextTurn => self.tools_changed = true,
+            AfterKeeper::BeforeNextTurn => self.restart_before_turn = true,
             AfterKeeper::AfterTurn => self.restart_after_turn = true,
             AfterKeeper::Now => self.restart_agent().await,
+        }
+    }
+
+    /// The process is stale (the sign-in it started with was replaced, or a connector it runs was edited and its old
+    /// proxy refuses): the next turn starts a new one. An agent that can reopen its session goes on in it, so a task
+    /// keeps its fork or brief and what it did; one that can't starts a new session, told the conversation so far as
+    /// after a move to another agent (a task's, the chat it comes from too). With no process (it quit, or couldn't
+    /// start), the next turn starts one and reopens the session where it can, as after any exit.
+    pub(super) fn restart_stale(&mut self) {
+        let Some(conn) = &self.conn else { return };
+        if conn.sessions.reopen.is_some() {
+            self.restart_before_turn = true;
+        } else {
+            self.restart_after_turn = true;
+            self.owe_recap();
         }
     }
 

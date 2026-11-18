@@ -48,6 +48,7 @@ test('Send while dictating sends the typed text with the words said so far', asy
     await api(page, 'setVoiceKey', { provider: 'openai', key: '' }).catch(() => {})
     await api(page, 'setVoiceServer', { provider: 'openai', url: '' }).catch(() => {})
     if (botId) await api(page, 'deleteBot', { botId })
+    await page.reload().catch(() => {}) // Brings back the real microphone and closes the tone.
     await browser.close()
     compatible.close()
   }

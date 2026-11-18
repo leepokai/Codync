@@ -5,7 +5,7 @@ use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
-use super::super::app::{App, COLORS, Editor, FIELDS, Field, Form, GroupField, GroupForm, SHAPES, tilde};
+use super::super::app::{App, Bot, COLORS, Editor, FIELDS, Field, Form, GroupField, GroupForm, SHAPES, tilde};
 use super::super::l10n::tr;
 use super::super::manage::Page;
 use super::super::md::{truncate, width as w, wrap};
@@ -55,7 +55,7 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
             let using = app.bots.get(&f.bot_id).and_then(|b| super::fallbacks::using_line(app, b))?;
             return Some((format!("{using} · b switches back"), t.amber));
         }
-        Field::Fast => match app.bots.get(&f.bot_id).and_then(super::super::app::Bot::fast_refusal) {
+        Field::Fast => match app.bots.get(&f.bot_id).and_then(Bot::fast_refusal) {
             Some(why) => return Some((why, t.amber)),
             None => tr("Faster replies for more usage, on models that offer it (Claude Code, Codex)").into_owned(),
         },
@@ -84,11 +84,11 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
             tr("Agents that work at once in this repository each get their own branch.").into_owned()
         }
         Field::Team => {
-            "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.".to_owned()
+            tr("Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.").into_owned()
         }
         Field::Network => tr("Offered to the network: bots on your other computers can see and message this bot.").into_owned(),
         Field::Assistants => {
-            tr("Reachable by cloud assistants: ChatGPT or Claude in your Codync login profile can see and message this bot.")
+            tr("Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.")
                 .into_owned()
         }
         _ => return None,
@@ -209,7 +209,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 // Known once the agent's model list loads, or once the bot's own sessions say.
                 let saved = app.bots.get(&f.bot_id).filter(|b| b.backend == f.backend);
                 let offered = match app.models.get(&f.backend) {
-                    _ if saved.is_some_and(super::super::app::Bot::fast_shown) => "",
+                    _ if saved.is_some_and(Bot::fast_shown) => "",
                     Some(Some(_)) if !app.fast_mode.contains(&f.backend) => "  · not offered by this agent",
                     _ => "",
                 };
@@ -301,16 +301,19 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     &format!(
                         "{}  ▸",
                         truncate(
-                            &if f.cwd.is_empty() {
-                                tr("Personal workspace").into_owned()
-                            } else {
-                                tilde(&f.cwd, &app.home)
-                            },
+                            &if f.cwd.is_empty() { tr("Own folder").into_owned() } else { tilde(&f.cwd, &app.home) },
                             usize::from(vw.saturating_sub(4))
                         )
                     ),
                     t.text.patch(base),
                 );
+                // Of the folder the bot has: one picked here and not saved yet isn't known.
+                let saved = app.bots.get(&f.bot_id).filter(|b| f.cwd == if b.managed_workspace { "" } else { &b.cwd });
+                if let Some(line) = saved.and_then(Bot::git_line)
+                    && y + 1 < inner.bottom().saturating_sub(FOOTER)
+                {
+                    put(buf, vx, y + 1, vw, &tr(line), t.dim.patch(t.panel));
+                }
             }
             Field::MaxAgents => {
                 let n = f.max_agents.unwrap_or_default();
@@ -414,7 +417,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     let x = put(buf, inner.x, by, 14, save, t.btn_primary) + 1;
     put(buf, x, by, 12, " esc Cancel ", t.text.patch(t.btn).add_modifier(Modifier::BOLD));
     let hint = match f.current() {
-        Field::Folder => "↵ project folder · backspace personal · tab next field",
+        Field::Folder => "↵ project folder · backspace own folder · tab next field",
         Field::Connectors => "←→ move · space toggle · tab next",
         Field::ModelOptions => "←→ move · space change · tab next",
         Field::Skills => "←→ move · space toggle · i details · tab next",
@@ -501,7 +504,7 @@ pub(super) fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm)
         put_line(buf, inner.x + 2, y, 2, &avatar(app, b));
         put(buf, inner.x + 5, y, inner.width / 2, &b.name, if sel { t.bold } else { t.text }.patch(base));
         let folder = if b.managed_workspace {
-            "personal".to_owned()
+            "own folder".to_owned()
         } else {
             std::path::Path::new(&b.cwd).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default()
         };

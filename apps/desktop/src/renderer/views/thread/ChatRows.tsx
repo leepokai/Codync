@@ -11,6 +11,7 @@ import { Text } from '../../components/Text'
 import { messagePreview } from '../../lib/message-preview'
 import { useTr } from '../../lib/use-language'
 import { analytics } from '../../store/analytics'
+import { fill } from '@shared/fill'
 import { avatarColor } from '../../lib/theme'
 import { useStore as useLiveStore, useStoreRef as useStore } from '../../store/context'
 import { QUICK_REACTIONS, type BotStore } from '../../store/bot-store'
@@ -34,7 +35,8 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
   entry: Entry
   groupStart: boolean
   chat: Bot | null
-  openTrace: () => void
+  /** Opens what the bot did for a message; absent where a card is shown outside the chat. */
+  openTrace?: () => void
   /** Quotes this message in the composer, or the part of it that is selected; absent where the computer can't take replies. */
   onReply?: (quote: ReplyQuote) => void
   /** Opens a bot's Agent settings (a failure notice's "Add a fallback"). */
@@ -48,14 +50,14 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
   switch (entry.kind) {
     case 'user':
       return (
-        <VStack align="flex-end" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'} onPointerDownCapture={selected.keep}>
+        <VStack align="flex-end" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'} onPointerDownCapture={selected.keep} onFocus={selected.keepFocused}>
           <UserBubble entry={entry} reply={reply} />
           <ReactionsRow entry={entry} />
         </VStack>
       )
     case 'agent':
       return (
-        <VStack align="flex-start" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'} onPointerDownCapture={selected.keep}>
+        <VStack align="flex-start" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'} onPointerDownCapture={selected.keep} onFocus={selected.keepFocused}>
           {chat && isGroup(chat) && groupStart ? <AuthorLabel botId={entry.data.author} /> : null}
           <AgentBubble entry={entry} openTrace={openTrace} reply={reply} openArtifact={openArtifact} />
           <VStack gap={4} className={chat && isGroup(chat) ? 'chat-row-indent' : undefined}>
@@ -223,14 +225,16 @@ function UserStatus({ entry, hovering }: { entry: Entry; hovering: boolean }) {
   }
 }
 
-export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: Entry; openTrace: () => void; reply?: () => void; openArtifact?: (artifactId: string) => void }) {
+/** `plain` is a message read outside its chat (a task's reply in its thread): only Copy and a file's own actions, no
+ * reactions, Reply or what it did. */
+export function AgentBubble({ entry, openTrace, reply, openArtifact, plain = false }: { entry: Entry; openTrace?: () => void; reply?: () => void; openArtifact?: (artifactId: string) => void; plain?: boolean }) {
   const store = useStore()
   const [hovering, setHovering] = useState(false)
   const voiceNote = voiceNoteOf(entry.data)
-  const reactions = reactionPick(store, entry)
+  const reactions = plain ? undefined : reactionPick(store, entry)
   const rest = (): MenuItem[] => [
     ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
-    { title: 'Show what it did', icon: 'list.bullet', action: openTrace },
+    ...(openTrace ? [{ title: 'Show what it did', icon: 'list.bullet', action: openTrace }] : []),
   ]
   // A shared picture or voice note has the same menu as the bubble: reactions, Reply and what it did, its own items in place of Copy.
   const menu: MessageMenu = { items: rest, reactions }
@@ -258,7 +262,7 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: 
             <MarkdownText text={entry.data.text ?? ''} findable />
           )}
         </Bubble>
-        <MessageActions className="trailing" visible={hovering} reactions={reactions} reply={reply} trace={openTrace} copy={messageCopyItems(store, entry)} />
+        {reactions ? <MessageActions className="trailing" visible={hovering} reactions={reactions} reply={reply} trace={openTrace} copy={messageCopyItems(store, entry)} /> : null}
       </div>
       <TaskLine entry={entry} />
     </div>
@@ -283,6 +287,7 @@ export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: 
           <Icon name="exclamationmark.triangle.fill" size={10} color="var(--danger)" />
           <VStack gap={10} align="flex-start">
             <Text size="footnote" tone="text" className="selectable">{text}</Text>
+            <TaskLine entry={entry} />
             {addFallback ? <Button kind="secondary" onClick={addFallback}>{tr('Add a fallback')}</Button> : null}
           </VStack>
         </HStack>
@@ -296,6 +301,7 @@ export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: 
  * bots that chose it. */
 export function ReactionsRow({ entry }: { entry: Entry }) {
   const store = useStore()
+  const tr = useTr()
   const mine = entry.data.reactions ?? []
   const theirs = groupBotReactions(entry.data.botReactions ?? [])
     .map(({ emoji, bots }) => ({ emoji, bots: bots.map((id) => store.bots.get(id)).filter((b): b is Bot => !!b) }))
@@ -304,7 +310,7 @@ export function ReactionsRow({ entry }: { entry: Entry }) {
   return (
     <HStack align="stretch" gap={4}>
       {mine.map((emoji) => (
-        <button key={emoji} className="press reaction-chip" title={`Remove ${emoji}`} aria-label={`Remove reaction ${emoji}`} onClick={() => store.react(entry, emoji)}>
+        <button key={emoji} className="press reaction-chip" title={fill(tr('Remove {emoji}'), { emoji })} aria-label={fill(tr('Remove reaction {emoji}'), { emoji })} onClick={() => store.react(entry, emoji)}>
           <Text size="body">{emoji}</Text>
         </button>
       ))}
@@ -337,17 +343,18 @@ function MessageActions({ visible, className, reactions, reply, trace, copy }: {
   /** What its Copy is (`copyItems`). */
   copy: MenuItem[]
 }) {
+  const tr = useTr()
   const [menu, setMenu] = useState<'reactions' | 'more' | null>(null)
   const smile = useRef<HTMLButtonElement>(null)
   const more = useRef<HTMLButtonElement>(null)
   const shown = visible || menu !== null
   return (
     <div className={`message-actions ${className} ${shown ? 'shown' : ''}`} aria-hidden={!shown}>
-      <button ref={smile} className="message-action" title="Add reaction" aria-label="Add reaction" onClick={() => setMenu('reactions')}>
+      <button ref={smile} className="message-action" title={tr('Add reaction')} aria-label={tr('Add reaction')} onClick={() => setMenu('reactions')}>
         <Icon name="face.smiling" size={14} />
       </button>
       {reply ? <IconButton title="Reply" icon="arrowshape.turn.up.left" size={26} onClick={reply} /> : null}
-      <button ref={more} className="message-action" title="More message actions" aria-label="More message actions" onClick={() => setMenu('more')}>
+      <button ref={more} className="message-action" title={tr('More message actions')} aria-label={tr('More message actions')} onClick={() => setMenu('more')}>
         <Icon name="ellipsis" size={14} />
       </button>
       <AnchoredMenu open={menu === 'reactions'} onClose={() => setMenu(null)} anchor={smile} items={() => []} reactions={reactions} />

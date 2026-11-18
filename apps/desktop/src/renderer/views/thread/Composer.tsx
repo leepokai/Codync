@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { groupFastMode } from '@shared/fast-mode'
 import { artifactDraftKey, artifactQuote, type Artifact } from '@shared/artifacts'
 import { isGroup, isWorkingIn, type Bot, type ReplyQuote } from '@shared/models'
@@ -15,7 +15,7 @@ import { useStore } from '../../store/context'
 import { MAX_FILE_SIZE, type OutgoingFile } from '../../store/outgoing-files'
 import { pluginsFor } from '../marketplace/plugins'
 import { pastedFiles, readPicked } from './composer-files'
-import { composerEnter } from './composer-keyboard'
+import { ComposerField } from './ComposerField'
 import { CommandMenu, MentionMenu, useComposerMenu } from './ComposerMenu'
 import { ComposerAttachment } from './ComposerAttachment'
 import { QuoteRow } from './ChatRows'
@@ -64,8 +64,6 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
   const [voiceSettings, setVoiceSettings] = useState(false)
   const dictation = useDictation((change) => drafts.set(draftKey, change(drafts.get(draftKey))), () => setVoiceSettings(true))
   const field = useRef<HTMLTextAreaElement>(null)
-  const measure = useRef<HTMLDivElement>(null)
-  const composing = useRef(false)
   /** Text pasted into this draft since the last send. */
   const pasted = useRef<string[]>([])
   const working = !!bot && isWorkingIn(bot, botId)
@@ -90,25 +88,6 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
   useEffect(() => {
     if (reply) field.current?.focus()
   }, [reply])
-
-  // Measure a separate, wrapping copy: collapsing the live textarea to zero breaks its
-  // height transition, caret scroll and IME composition. Observe font/width changes too.
-  useLayoutEffect(() => {
-    const el = field.current
-    const mirror = measure.current
-    if (!el || !mirror) return
-    const resize = () => {
-      const style = getComputedStyle(el)
-      const line = parseFloat(style.lineHeight)
-      const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
-      const height = Math.min(mirror.getBoundingClientRect().height, line * 8 + padding)
-      el.style.height = `${height}px`
-    }
-    resize()
-    const observer = new ResizeObserver(resize)
-    observer.observe(mirror)
-    return () => observer.disconnect()
-  }, [])
 
   const suggestions = mentionSuggestions(draft, members)
   const mention = (member: Bot) => {
@@ -216,56 +195,40 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
           <div className="composer-box">
             {/* One capsule: attachments, the field, and send / stop / call. */}
             {canAttach ? (
-              <button className="press composer-add" aria-label="Add files" title="Add files" onClick={() => void window.codync.app.pickFiles().then(append)}>
+              <button className="press composer-add" aria-label={tr('Add files')} title={tr('Add files')} onClick={() => void window.codync.app.pickFiles().then(append)}>
                 <Icon name="plus" size={13} weight="medium" color="var(--text)" />
               </button>
             ) : null}
-            <div className="composer-field">
-              <div ref={measure} className="composer-measure" aria-hidden="true">{draft + '\u200b'}</div>
-              <textarea
-                ref={field}
-                rows={1}
-                value={draft}
-                placeholder={placeholder}
-                spellCheck
-                aria-label={tr(reply ? 'Reply' : 'Message')}
-                aria-keyshortcuts="Enter Shift+Enter"
-                onCompositionStart={() => { composing.current = true }}
-                onCompositionEnd={() => { composing.current = false }}
-                onChange={(e) => {
-                  setDraft(e.target.value)
-                  // Starting a command: list the computer's skills again.
-                  if (bot && e.target.value === '/') void plugins.refresh()
-                }}
-                onKeyDown={(e) => {
-                  const inInputMethod = composing.current || e.nativeEvent.isComposing || e.keyCode === 229
-                  if (commandMenu.onKey(e, inInputMethod) || mentionMenu.onKey(e, inInputMethod)) return
-                  if (e.key === 'Escape' && reply) {
-                    e.preventDefault()
-                    cancelReply?.()
-                    return
-                  }
-                  // Return sends, Shift-Return adds a line; an input method's Return picks its candidate.
-                  const action = composerEnter({ key: e.key, shiftKey: e.shiftKey, altKey: e.altKey, repeat: e.repeat, isComposing: composing.current || e.nativeEvent.isComposing, keyCode: e.keyCode })
-                  if (e.key === 'Enter' && e.repeat && !e.shiftKey && !e.altKey) e.preventDefault()
-                  if (action === 'send') {
-                    e.preventDefault()
-                    submit()
-                  }
-                }}
-                onPaste={(e) => {
-                  const types = [...e.clipboardData.types]
-                  const hasFiles = types.includes('Files')
-                  // Pasted text is sent marked as pasted: memory never takes it as the user's own words.
-                  if (types.includes('text/plain') && !e.clipboardData.files.length) pasted.current.push(e.clipboardData.getData('text/plain'))
-                  // ⌘V with a copied file or image: attach it (the field alone would paste a name).
-                  if (!canAttach) return
-                  if (!hasFiles || (types.includes('text/plain') && !e.clipboardData.files.length)) return
-                  e.preventDefault()
-                  void pastedFiles(window.codync.app.readClipboardFiles, [...e.clipboardData.files]).then(append)
-                }}
-              />
-            </div>
+            <ComposerField
+              field={field}
+              value={draft}
+              placeholder={placeholder}
+              label={tr(reply ? 'Reply' : 'Message')}
+              onChange={(text) => {
+                setDraft(text)
+                // Starting a command: list the computer's skills again.
+                if (bot && text === '/') void plugins.refresh()
+              }}
+              onSend={submit}
+              onKey={(e, inInputMethod) => {
+                if (commandMenu.onKey(e, inInputMethod) || mentionMenu.onKey(e, inInputMethod)) return true
+                if (e.key !== 'Escape' || !reply) return false
+                e.preventDefault()
+                cancelReply?.()
+                return true
+              }}
+              onPaste={(e) => {
+                const types = [...e.clipboardData.types]
+                const hasFiles = types.includes('Files')
+                // Pasted text is sent marked as pasted: memory never takes it as the user's own words.
+                if (types.includes('text/plain') && !e.clipboardData.files.length) pasted.current.push(e.clipboardData.getData('text/plain'))
+                // ⌘V with a copied file or image: attach it (the field alone would paste a name).
+                if (!canAttach) return
+                if (!hasFiles || (types.includes('text/plain') && !e.clipboardData.files.length)) return
+                e.preventDefault()
+                void pastedFiles(window.codync.app.readClipboardFiles, [...e.clipboardData.files]).then(append)
+              }}
+            />
             {dictation.listening || dictation.transcribing ? (
               <RecordingPill
                 startedAt={dictation.startedAt}
@@ -276,7 +239,7 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
               />
             ) : dictation.available ? (
               <HStack as="span" gap={0} className="composer-mic-group">
-                <button className="press composer-mic" aria-label="Dictate" title="Dictate" onClick={() => dictation.start(draft)}>
+                <button className="press composer-mic" aria-label={tr('Dictate')} title={tr('Dictate')} onClick={() => dictation.start(draft)}>
                   <Icon name="mic" size={13} weight="medium" />
                 </button>
                 <DictationEngineMenu />

@@ -37,6 +37,7 @@ impl App {
             items.extend(
                 ACTIONS
                     .iter()
+                    .filter(|(_, _, a)| *a != Action::ResetCredentials || self.credentials_reset)
                     .filter(|(label, _, _)| {
                         let translated = super::super::l10n::tr(label);
                         fuzzy(q, &[label, translated.as_ref()])
@@ -63,6 +64,7 @@ impl App {
             Action::CheckUpdate => self.call("checkHostUpdate", json!({}), After::Update),
             Action::Analytics => self.toggle_analytics(),
             Action::AutoOrder => self.toggle_auto_order(),
+            Action::ResetCredentials => self.ask_reset_credentials(),
             Action::AboutAnalytics => self.overlays.push(Overlay::Analytics(AnalyticsSheet::default())),
             Action::Appearance(mode) => match super::super::appearance::select(mode) {
                 Ok(()) => self.flash(&format!("Appearance: {}", mode.name())),
@@ -115,6 +117,10 @@ impl App {
                         ),
                         ConfirmAct::RemoveConnector(id) => self.call("removeConnector", json!({"id": id}), changed),
                         ConfirmAct::RemoveSkill(id) => self.call("removeSkill", json!({"id": id}), changed),
+                        ConfirmAct::ResetCredentials => self.ask_delete_credentials(),
+                        ConfirmAct::DeleteCredentials => {
+                            self.call("resetCredentials", json!({}), After::CredentialsReset);
+                        }
                         ConfirmAct::StopWork { bot, item } => self.stop_work(bot, item),
                     }
                     None
@@ -145,6 +151,7 @@ impl App {
             Overlay::Analytics(s) => s.key(k),
             Overlay::Network(n) => self.network_key(n, k),
             Overlay::WhatsNew(s) => s.key(k),
+            Overlay::Kofi(s) => s.key(k),
             // A phone that scanned the code waits for this computer to let it in.
             o @ Overlay::Pair(_)
                 if !self.pairing_requests.is_empty() && matches!(k.code, KeyCode::Char('y' | 'w' | 'n')) =>

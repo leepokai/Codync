@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { draftOf, normalizeBot, type Entry } from './models.ts'
-import { allWork, canCutIn, canRetry, capsuleLabel, givesWay, itemLine, normalizeWork, outsideStatus, worksOutside, pendingAsks, rosterLine, summaryLine, waitText, workCounts, workSections, workStatusWord, type WorkItem, type WorkStatus } from './work.ts'
+import { allWork, canCutIn, canRetry, capsuleLabel, gitState, givesWay, isThreadMessage, itemLine, normalizeWork, outsideStatus, worksOutside, pendingAsks, pendingCards, readOnlyReason, rosterLine, sharedLine, summaryLine, threadEntries, waitText, whereLine, wherePath, workCounts, workSections, workStatusWord, type WorkItem, type WorkStatus } from './work.ts'
 
 const same = (text: string) => text
 const item = (id: string, status: WorkStatus = 'working', change: Partial<WorkItem> = {}): WorkItem => ({
-  id, title: `Title ${id}`, status, activity: '', task: null, wait: null, cutIn: false, createdAt: 1000, startedAt: null, endedAt: null, result: '', source: null, worktree: null, ...change,
+  id, title: `Title ${id}`, status, activity: '', task: null, wait: null, cutIn: false, createdAt: 1000, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, ...change,
 })
 const ids = (items: WorkItem[]) => items.map((i) => i.id)
 
@@ -26,10 +26,10 @@ test('a bot from a host before the box has no work and no ceiling, and one with 
   ]
   const work = normalizeBot({ id: 'b', work: raw as WorkItem[] }).work
   assert.deepEqual(work, [
-    { id: 'i1', title: 'Audit', status: 'needsYou', activity: 'Reading', task: 'task-1', wait: null, cutIn: true, createdAt: 3, startedAt: 5, endedAt: null, result: '', source: null, worktree: null },
-    { id: 'i2', title: '', status: 'waiting', activity: '', task: null, wait: { kind: 'behind', ahead: 2 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null },
-    { id: 'i3', title: '', status: 'waiting', activity: '', task: null, wait: null, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null },
-    { id: 'i4', title: '', status: 'waiting', activity: '', task: null, wait: { kind: 'behind', ahead: 1 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null },
+    { id: 'i1', title: 'Audit', status: 'needsYou', activity: 'Reading', task: 'task-1', wait: null, cutIn: true, createdAt: 3, startedAt: 5, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false },
+    { id: 'i2', title: '', status: 'waiting', activity: '', task: null, wait: { kind: 'behind', ahead: 2 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false },
+    { id: 'i3', title: '', status: 'waiting', activity: '', task: null, wait: null, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false },
+    { id: 'i4', title: '', status: 'waiting', activity: '', task: null, wait: { kind: 'behind', ahead: 1 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false },
   ], 'a status this app does not know, or none, leaves the item out; a reason it does not know reads as none')
 })
 
@@ -90,7 +90,7 @@ test('a roster row says the most pressing thing first', () => {
   const bot = (status: string, items: WorkItem[] = work, activity = '') => ({ status, activity, work: items })
   // Needs you: the chat's own card, then an item's.
   assert.deepEqual(rosterLine(bot('needsInput', work, 'Wants to run npm test'), same), { kind: 'needsYou', text: 'Wants to run npm test' })
-  assert.deepEqual(rosterLine(bot('needsInput'), same), { kind: 'needsYou', text: 'Needs your approval' })
+  assert.deepEqual(rosterLine(bot('needsInput'), same), { kind: 'needsYou', text: 'Needs approval' })
   assert.deepEqual(rosterLine(bot('working', [...work, item('d', 'needsYou')], 'Thinking…'), same), { kind: 'needsYou', text: 'Needs you' })
   // Then what the chat itself does.
   assert.deepEqual(rosterLine(bot('working', work, 'Thinking…'), same), { kind: 'working', text: 'Thinking…' })
@@ -123,7 +123,7 @@ test('a waiting item says why it waits', () => {
   assert.equal(waitText(waiting({ wait: { kind: 'next', ahead: 0 } }), same), 'Next up')
   assert.equal(waitText(waiting({ wait: { kind: 'behind', ahead: 3 } }), same), '3 ahead')
   assert.equal(waitText(waiting({ wait: { kind: 'after', ahead: 0 } }), same), 'Follows what it works on')
-  assert.equal(waitText(waiting({ wait: { kind: 'usage', ahead: 0 } }), same), 'Waiting for usage')
+  assert.equal(waitText(waiting({ wait: { kind: 'usage', ahead: 0 } }), same), 'Near the usage limit: one at a time')
   assert.equal(waitText(waiting({ wait: { kind: 'next', ahead: 0 }, cutIn: true }), same), 'Was cut in on; starts again')
   assert.equal(waitText(waiting({}), same), 'Waiting', 'no reason from the host')
   assert.equal(waitText(waiting({ wait: { kind: 'behind', ahead: 2 } }), (text) => (text === '{count} ahead' ? '前面還有 {count} 件' : text)), '前面還有 2 件')
@@ -257,13 +257,127 @@ test("try again is not offered on another bot's request, and a routine's run or 
 
 test('an item that needs the user is asked what its card in the chat asks', () => {
   const card = (id: string, data: Entry['data']): Entry => ({ id, seq: 1, botId: 'b', rev: 1, kind: 'permission', turn: 1, data, createdAt: 0, updatedAt: 0 })
-  const asks = pendingAsks([
+  const chat = [
     card('e1', { status: 'pending', title: 'npm test', item: 'i1', task: { id: 'task-1', title: 'Run the suite' } }),
     card('e2', { status: 'allowed', title: 'rm -rf build', item: 'i2' }),
     card('e3', { status: 'pending', title: 'the chat\'s own card' }),
     { ...card('e5', { status: 'pending', decision: true, question: 'Which branch?', item: 'i5' }), kind: 'notice' },
     { ...card('e6', { status: 'answered', decision: true, question: 'Done already', item: 'i6' }), kind: 'notice' },
     { ...card('e4', { status: 'pending', title: 'not a card', item: 'i4' }), kind: 'notice' },
-  ])
-  assert.deepEqual([...asks], [['i1', 'npm test'], ['i5', 'Which branch?']], 'an approval\'s title, a choice\'s question')
+    { ...card('e7', { item: 'i7', connectionRequest: { kind: 'agent', status: 'pending', title: 'Kimi Code' } }), kind: 'notice' },
+    { ...card('e8', { item: 'i8', connectionRequest: { kind: 'agent', status: 'ready', title: 'Codex' } }), kind: 'notice' },
+    // The turn left Kimi Code signed out, and its fallback was too: Kimi Code's card holds the item's message.
+    { ...card('e9', { item: 'i9', connectionRequest: { kind: 'agent', status: 'pending', title: 'Kimi Code', entryIds: ['m9'] } }), kind: 'notice' },
+    { ...card('e10', { item: 'i9', connectionRequest: { kind: 'agent', status: 'pending', title: 'Codex', entryIds: [] } }), kind: 'notice' },
+    // A sign-in that holds the item's message, then an approval its running turn now waits on.
+    { ...card('e11', { item: 'i11', connectionRequest: { kind: 'agent', status: 'pending', title: 'Kimi Code', entryIds: ['m11'] } }), kind: 'notice' },
+    card('e12', { status: 'pending', title: 'npm run build', item: 'i11' }),
+  ]
+  const asks = pendingAsks(chat, (text) => (text === 'Needs {agent} sign-in' ? '需要登入 {agent}' : text))
+  assert.deepEqual(
+    [...asks],
+    [['i1', 'npm test'], ['i5', 'Which branch?'], ['i7', '需要登入 Kimi Code'], ['i9', '需要登入 Kimi Code'], ['i11', 'npm run build']],
+    'an approval\'s title, a choice\'s question, the agent a sign-in waits on (the one whose card sends the work again)',
+  )
+  // The row opens the card it reads.
+  assert.equal(pendingCards(chat).get('i9')?.id, 'e9')
+  assert.equal(pendingCards(chat).get('i11')?.id, 'e12')
+})
+
+test('an item that needs the user opens at its newest waiting card', () => {
+  const card = (id: string, status: string): Entry => ({ id, seq: 1, botId: 'b', rev: 1, kind: 'permission', turn: 1, data: { status, item: 'i1' }, createdAt: 0, updatedAt: 0 })
+  const entries = [card('e1', 'pending'), card('e2', 'pending'), card('e3', 'allowed')]
+  assert.equal(pendingCards(entries).get('i1')?.id, 'e2', 'an answered card is not the one waiting')
+  assert.equal(pendingCards(entries).get('i2'), undefined)
+})
+
+test('the host says which threads take a message, and a read-only one says whose it is', () => {
+  const [own, old] = normalizeWork([{ id: 'a', status: 'working', talk: true }, { id: 'b', status: 'working' }])
+  assert.equal(own!.talk, true)
+  assert.equal(old!.talk, false, 'a host from before threads names none')
+  assert.equal(readOnlyReason(item('a', 'working', { talk: true })), null)
+  assert.equal(readOnlyReason(item('a', 'working', { source: { kind: 'routine', id: 'r1' } })), "Read only: a routine's run")
+  assert.equal(readOnlyReason(item('a', 'done', { source: { kind: 'request', id: null } })), "Read only: another bot's request")
+  assert.equal(readOnlyReason(item('a', 'done')), null, "the bot's own item that takes none has nothing to explain")
+})
+
+test('an item says where its task works: its branch in a worktree, else its folder with home as ~', () => {
+  const worktree = { branch: 'codync/fix-login', path: '/Users/u/.codync/worktrees/b/a' }
+  assert.equal(whereLine(item('a'), '/Users/u'), null, 'no task has taken it')
+  assert.equal(normalizeWork([{ id: 'a', status: 'working', folder: '' }])[0]!.folder, null)
+  assert.deepEqual(whereLine(item('a', 'working', { folder: '/Users/u/code/app' }), '/Users/u'), { kind: 'folder', text: '~/code/app' })
+  assert.deepEqual(whereLine(item('a', 'working', { folder: '/Users/u' }), '/Users/u/'), { kind: 'folder', text: '~' })
+  assert.deepEqual(whereLine(item('a', 'working', { folder: '/Users/uma/app' }), '/Users/u'), { kind: 'folder', text: '/Users/uma/app' }, 'another folder that only starts the same')
+  assert.deepEqual(whereLine(item('a', 'working', { folder: '/srv/app' }), '/Users/u'), { kind: 'folder', text: '/srv/app' })
+  assert.deepEqual(whereLine(item('a', 'working', { folder: '/srv/app' }), ''), { kind: 'folder', text: '/srv/app' }, 'a computer that names no home')
+  assert.deepEqual(whereLine(item('a', 'working', { folder: 'C:\\Users\\u\\code\\app' }), 'C:\\Users\\u'), { kind: 'folder', text: '~\\code\\app' })
+  assert.deepEqual(whereLine(item('a', 'working', { folder: `${worktree.path}/web`, worktree }), '/Users/u'), { kind: 'branch', text: 'codync/fix-login' })
+  // What the line copies is the task's own folder, which is inside the worktree.
+  assert.equal(wherePath(item('a', 'working', { folder: `${worktree.path}/web`, worktree })), `${worktree.path}/web`)
+  assert.equal(wherePath(item('a', 'working', { worktree })), worktree.path, 'a host that names no folder')
+  assert.equal(wherePath(item('a')), null)
+})
+
+test("Settings says whether the bot's folder is a git repository, or that git is missing", () => {
+  assert.equal(gitState(normalizeBot({ id: 'b', gitRepo: true })), 'repo', 'a host that does not say counts as having git')
+  assert.equal(gitState(normalizeBot({ id: 'b', gitRepo: false, gitInstalled: true })), 'none')
+  assert.equal(gitState(normalizeBot({ id: 'b', gitRepo: false, gitInstalled: false })), 'missing')
+  assert.equal(gitState({ gitRepo: true, gitInstalled: false }), 'missing')
+})
+
+test("a thread's transcript folds what the host told the task first, and leaves out what the user took back", () => {
+  const entry = (id: string, kind: Entry['kind'], data: Entry['data']): Entry => ({ id, seq: 1, botId: 'task-1', rev: 1, kind, turn: 1, data, createdAt: 0, updatedAt: 0 })
+  const brief = entry('e1', 'user', { text: 'Audit\n\nHOLD', from: 'host' })
+  const again = entry('e5', 'user', { text: 'A new brief', from: 'host' })
+  const typed = entry('e3', 'user', { text: 'also the tests', status: 'queued' })
+  const { told, rest } = threadEntries([brief, entry('e2', 'tool', { title: 'ls' }), typed, entry('e4', 'user', { text: 'never mind', status: 'cancelled', removed: true }), again])
+  assert.equal(told, brief)
+  assert.deepEqual(rest.map((e) => e.id), ['e2', 'e3', 'e5'], 'what it is told later stays in its place')
+  assert.deepEqual(threadEntries([typed]), { told: null, rest: [typed] })
+  assert.deepEqual(threadEntries([]), { told: null, rest: [] })
+})
+
+test("a thread shows what its task put in the chat where it came, and a task's final replies as messages", () => {
+  const entry = (id: string, kind: Entry['kind'], data: Entry['data'], createdAt = 0, botId = 'b'): Entry => ({ id, seq: 1, botId, rev: 1, kind, turn: 1, data, createdAt, updatedAt: 0 })
+  const task = { id: 'task-1', title: 'Fix login' }
+  const own = [entry('t1', 'tool', { title: 'ls' }, 10, 'task-1'), entry('t2', 'agent', { text: 'Done', final: true }, 30, 'task-1')]
+  const chat = [
+    entry('c1', 'agent', { text: 'log.txt', final: true, files: [], task }, 5),
+    entry('c2', 'permission', { status: 'allowed', title: 'npm test', task }, 20),
+    entry('c3', 'permission', { status: 'pending', title: "another task's", task: { id: 'task-2', title: 'Docs' } }, 21),
+    entry('c4', 'agent', { text: "the chat's own", final: true }, 22),
+    entry('c5', 'notice', { status: 'pending', decision: true, question: 'Which?', task }, 30),
+  ]
+  assert.deepEqual(threadEntries(own, chat, 'task-1').rest.map((e) => e.id), ['c1', 't1', 'c2', 't2', 'c5'], 'answered cards too; the task first at the same moment')
+  assert.deepEqual(threadEntries(own, chat, 'task-9').rest.map((e) => e.id), ['t1', 't2'])
+  assert.equal(isThreadMessage(entry('a', 'agent', { text: 'Report', final: true })), true)
+  assert.equal(isThreadMessage(entry('a', 'agent', { text: 'Reading the files' })), false, 'what it says on the way is a step')
+  assert.equal(isThreadMessage(entry('a', 'user', { text: 'typed', final: true })), false)
+})
+
+test('what a task put in the chat is one line of its thread, saying how it stands', () => {
+  const entry = (kind: Entry['kind'], data: Entry['data']): Entry => ({ id: 'c', seq: 1, botId: 'b', rev: 1, kind, turn: 1, data, createdAt: 0, updatedAt: 0 })
+  const line = (kind: Entry['kind'], data: Entry['data']) => sharedLine(entry(kind, data), same)
+  const options = [{ optionId: 'ok', name: 'Allow', kind: 'allow_once' }, { optionId: 'no', name: 'Deny', kind: 'reject_once' }, { optionId: 'x', name: 'Skip', kind: 'other' }]
+  const approval = (status: string, selected?: string) => line('permission', { status, title: 'npm test', options, selected })
+  assert.deepEqual(approval('pending'), { symbol: 'hand.raised', text: 'Waiting for your approval: npm test' })
+  assert.deepEqual(approval('answered', 'ok'), { symbol: 'checkmark', text: 'Approved: npm test' })
+  assert.deepEqual(approval('answered', 'no'), { symbol: 'xmark', text: 'Denied: npm test' })
+  assert.equal(approval('answered', 'x')?.text, 'Answered: Skip')
+  assert.deepEqual(approval('expired'), { symbol: 'clock', text: 'Not answered: npm test' })
+  const choice = (status: string, selected?: string) => line('notice', { decision: true, status, question: 'Squash?', choices: ['Yes', 'No'], selected })
+  assert.equal(choice('pending')?.text, 'Asked: Squash?')
+  assert.equal(choice('answered', 'No')?.text, 'Answered: No')
+  assert.equal(choice('expired')?.text, 'Not answered: Squash?')
+  const signIn = (status: string) => line('notice', { text: 'Needs you to sign in.', connectionRequest: { kind: 'agent', status, title: 'Kimi Code' } })
+  assert.deepEqual(signIn('pending'), { symbol: 'hand.raised', text: 'Needs Kimi Code sign-in' })
+  assert.deepEqual(signIn('ready'), { symbol: 'checkmark', text: 'Signed in' })
+  assert.deepEqual(signIn('cancelled'), { symbol: 'xmark', text: 'Cancelled' })
+  assert.equal(line('notice', { text: 'Connect', connectionRequest: { kind: 'oauth', status: 'pending', title: 'Linear' } }), null, "a connector's card is not a task's")
+  const file = { id: 'f', name: 'log.txt', size: 3, sha256: '' }
+  assert.deepEqual(line('agent', { final: true, files: [file] }), { symbol: 'doc', text: 'Sent a file: log.txt' })
+  assert.deepEqual(line('agent', { final: true, files: [file], voiceNote: true, text: 'Hi' }), { symbol: 'waveform', text: 'Sent a voice note' })
+  assert.deepEqual(line('agent', { final: true, artifact: { id: 'a', title: 'Plan', updatedAt: 0 } }), { symbol: 'doc.richtext', text: 'Made an artifact: Plan' })
+  assert.equal(line('agent', { text: 'Just words', final: true }), null)
+  assert.equal(line('notice', { text: 'A notice' }), null)
 })

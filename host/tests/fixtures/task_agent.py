@@ -11,7 +11,17 @@ A routine run and another bot's request read the same words in the routine's ins
 `SEND` (a message to the user), `PROGRESS` (saves the routine's progress note), `FOLLOW` (sets a follow-up) and
 `PASS` (nothing to tell).
 
-Argument `no-fork`: the agent doesn't advertise `session/fork`. A `no-start` file in its folder: it doesn't start.
+What the user writes to a task's thread is a turn of its own: it answers `Thread <their words>: <notes>`, where the
+notes say whether the session is the one that did the work (`same session`) or a new one told of it (`picked up`),
+and the words may hold `HOLD:<name>`, `NEST` and `ASK` as a brief does.
+
+Arguments: `no-fork`: the agent doesn't advertise `session/fork`. `no-load`: nor `session/load`, so a session can't
+be picked up again. `steer`: it takes a message into its running turn (`_session/steering`), and the turn's reply
+ends with `joined <the message>`. A `no-start` file in its folder: it doesn't start.
+A `signedout` file: every prompt fails asking to sign in (ACP's -32000). `task-signedout` / `task-limit`: a task's
+turn does its work and then fails, asking to sign in or the way Claude's adapter reports a usage limit. A brief that
+says `SIGNIN` does that once: its turn leaves a `sign-in-asked` file and fails asking to sign in, and the message,
+sent again, goes through.
 """
 
 import json
@@ -29,6 +39,16 @@ if pathlib.Path("no-start").exists():
     sys.exit(1)
 
 CAN_FORK = "no-fork" not in sys.argv
+CAN_LOAD = "no-load" not in sys.argv
+CAN_STEER = "steer" in sys.argv
+# What the user's messages steered into the running turn said.
+joined = []
+SIGNED_OUT = {"code": -32000, "message": "Authentication required"}
+LIMIT = {
+    "code": -32603,
+    "message": "Internal error: You've hit your limit · resets 3pm (Asia/Taipei)",
+    "data": {"errorKind": "rate_limit"},
+}
 output_lock = threading.Lock()
 cancel = threading.Event()
 permission = threading.Event()
@@ -160,13 +180,29 @@ def work(text, session):
     if "FORGET" in brief:
         arguments = {"file": "MEMORY.md", "old": "- Has two cats\n", "new": ""}
         notes.append(said(server_tool("memory", "edit_memory", arguments), "Forgot: ")[:60])
+    if joined:
+        notes.append("joined " + " + ".join(joined))
     return f"Report {title}: " + "; ".join(notes)
+
+
+def thread(text):
+    """A task's turn on what the user wrote to its thread."""
+    words = re.findall(r"^\[Codync: message [^\]]+\]\n([^\n]*)", text, re.M)
+    notes = ["picked up" if "in a session that can't be picked up" in text else "same session"]
+    if any("NEST" in word for word in words):
+        notes.append(said(chat_tool("add_work", {"title": "Inner", "brief": "x"}), "Nested: ")[:60])
+    if any("ASK" in word for word in words):
+        notes.append(ask())
+    hold(" ".join(words))
+    return f"Thread {' + '.join(words)}: " + "; ".join(notes)
 
 
 def answer(text, session):
     """What this turn replies."""
     if "[Codync: your work" in text:
         return relayed(text)
+    if "in this work's thread" in text:
+        return thread(text)
     if "[Task]" in text:
         return work(text, session)
     if "Scheduled routine:" in text:
@@ -208,9 +244,21 @@ def prompt(request):
     session = request["params"]["sessionId"]
     text = request["params"]["prompt"][0]["text"]
     log("prompts.jsonl", {"session": session, "text": text})
+    if pathlib.Path("signedout").exists():
+        send({"id": request["id"], "error": SIGNED_OUT})
+        return
     reply = answer(text, session)
     if cancel.is_set():
         send({"id": request["id"], "result": {"stopReason": "cancelled"}})
+        return
+    failure = {"task-signedout": SIGNED_OUT, "task-limit": LIMIT}
+    failed = [error for name, error in failure.items() if "[Task]" in text and pathlib.Path(name).exists()]
+    asked = pathlib.Path("sign-in-asked")
+    if "[Task]" in text and "SIGNIN" in text and not asked.exists():
+        asked.write_text("")
+        failed.append(SIGNED_OUT)
+    if failed:
+        send({"id": request["id"], "error": failed[0]})
         return
     send({"method": "session/update", "params": {"sessionId": session, "update": {
         "sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}}}})
@@ -225,8 +273,11 @@ for line in sys.stdin:
         capabilities = {"close": {}}
         if CAN_FORK:
             capabilities["fork"] = {}
-        send({"id": message["id"], "result": {"protocolVersion": 1, "agentCapabilities": {
-            "loadSession": True, "sessionCapabilities": capabilities}}})
+        initialized = {"protocolVersion": 1, "agentCapabilities": {
+            "loadSession": CAN_LOAD, "sessionCapabilities": capabilities}}
+        if CAN_STEER:
+            initialized["_meta"] = {"steering": {"supported": True}}
+        send({"id": message["id"], "result": initialized})
     elif method in ("session/new", "session/fork", "session/load"):
         servers = params.get("mcpServers", servers)
         session = params["sessionId"] if method == "session/load" else new_session()
@@ -239,7 +290,13 @@ for line in sys.stdin:
     elif method == "session/prompt":
         cancel.clear()
         permission.clear()
+        joined.clear()
         threading.Thread(target=prompt, args=(message,), daemon=True).start()
+    elif method == "_session/steering" and CAN_STEER:
+        # The user's words, between Codync's own lines (the message's id before them, a thread's note after).
+        words = [line for line in params["prompt"][0]["text"].splitlines() if line and not line.startswith("[Codync:")]
+        joined.append(words[-1])
+        send({"id": message["id"], "result": {"outcome": "injected"}})
     elif method == "session/cancel":
         cancel.set()
     elif message.get("id") == "permission" and method is None:

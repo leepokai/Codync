@@ -164,8 +164,14 @@ pub enum Reported {
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<VoiceNoteFailure>,
     },
-    KofiInviteShown,
+    /// `ask`: which invitation (1 for the first); older clients don't say.
+    KofiInviteShown {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ask: Option<u8>,
+    },
     KofiInviteAnswered {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ask: Option<u8>,
         opened: bool,
     },
     WhatsNewShown,
@@ -615,7 +621,12 @@ mod tests {
             (json!({"event": "window_recovery", "app": "desktop", "outcome": "gave_up"}), Event::WindowRecovery),
             (json!({"event": "continued_without_account", "app": "desktop"}), Event::ContinuedWithoutAccount),
             (json!({"event": "kofi_invite_shown", "app": "tui"}), Event::KofiInviteShown),
+            (json!({"event": "kofi_invite_shown", "app": "tui", "ask": 2}), Event::KofiInviteShown),
             (json!({"event": "kofi_invite_answered", "app": "desktop", "opened": true}), Event::KofiInviteAnswered),
+            (
+                json!({"event": "kofi_invite_answered", "app": "desktop", "ask": 1, "opened": false}),
+                Event::KofiInviteAnswered,
+            ),
             (json!({"event": "whats_new_shown", "app": "tui"}), Event::WhatsNewShown),
             (
                 json!({"event": "join_offer_answered", "app": "desktop", "outcome": "kept_out"}),

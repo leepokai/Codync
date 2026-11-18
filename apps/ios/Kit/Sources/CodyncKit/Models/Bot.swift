@@ -18,7 +18,7 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     /// The login profile it runs on; nil for the login the computer already has.
     public var loginProfile: String?
     public var cwd: String
-    /// Host-allocated personal workspace rather than a user-selected project.
+    /// The bot's own folder, which the host made and keeps versions of, rather than a project the user chose.
     public var managedWorkspace: Bool = false
     /// `ask` or `auto`: whether Codync asks about what the agent asks, or approves it.
     public var permission: String
@@ -105,6 +105,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var taskWorktrees: Bool?
     /// Its folder is in a git repository: where `taskWorktrees` matters.
     public var gitRepo: Bool = false
+    /// Whether the computer has git. Nil from an older host: it reads as installed.
+    public var gitInstalled: Bool?
     /// How it stands outside its chat (`Bot.Outside`). Nil from an older host: the chat's own status.
     public var outside: Outside?
     public var unread: Int
@@ -124,7 +126,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var needsInput: Bool { status == "needsInput" }
     /// Its band in the list: pinned bots, then the rest. Dragging stays inside a band.
     public var band: Int { pinned ? 0 : 1 }
-    public var folderName: String { managedWorkspace ? "Personal workspace" : (cwd as NSString).lastPathComponent }
+    /// Where it works, as a list shows it: its own folder, or its project folder's name.
+    public var folderName: String { managedWorkspace ? L10n.tr("Own folder") : (cwd as NSString).lastPathComponent }
 }
 
 extension Bot {
@@ -188,6 +191,7 @@ extension Bot {
         maxAgents = (try? c.decodeIfPresent(Int.self, forKey: .maxAgents)).map { min(max($0, Bot.maxAgentsRange.lowerBound), Bot.maxAgentsRange.upperBound) }
         taskWorktrees = try? c.decodeIfPresent(Bool.self, forKey: .taskWorktrees)
         gitRepo = (try? c.decodeIfPresent(Bool.self, forKey: .gitRepo)) ?? false
+        gitInstalled = try? c.decodeIfPresent(Bool.self, forKey: .gitInstalled)
         outside = try? c.decodeIfPresent(Outside.self, forKey: .outside)
         unread = try c.decodeIfPresent(Int.self, forKey: .unread) ?? 0
         waiting = try c.decodeIfPresent(Int.self, forKey: .waiting) ?? 0

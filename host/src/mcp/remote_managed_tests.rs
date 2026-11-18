@@ -96,13 +96,16 @@ async fn managed_header_removal_replaces_the_keeper_record() {
     let record = fixture.keeper.keeper.record("connector:remote").unwrap().unwrap();
     assert!(!record.headers.contains_key("x-key"));
     assert_eq!(record.headers["x-other"], "retained");
-    assert!(fixture.send(&old).await.is_err(), "a saved credential edit invalidates an old proxy");
+    // A running proxy follows the saved edit, as a new one does.
+    fixture.send(&old).await.unwrap();
     fixture.send(&fixture.remote()).await.unwrap();
     {
         let seen = fixture.seen.lock().unwrap();
-        assert_eq!(seen.len(), 2);
-        assert!(!seen[1].1.contains_key("x-key"));
-        assert_eq!(seen[1].1["x-other"], "retained");
+        assert_eq!(seen.len(), 3);
+        for (_, headers) in &seen[1..] {
+            assert!(!headers.contains_key("x-key"));
+            assert_eq!(headers["x-other"], "retained");
+        }
     }
     update_connectors(&fixture.store, |all| {
         all[0].headers.clear();
@@ -112,8 +115,8 @@ async fn managed_header_removal_replaces_the_keeper_record() {
     .unwrap();
     fixture.send(&fixture.remote()).await.unwrap();
     let seen = fixture.seen.lock().unwrap();
-    assert_eq!(seen.len(), 3);
-    assert!(!seen[2].1.contains_key("x-key") && !seen[2].1.contains_key("x-other"));
+    assert_eq!(seen.len(), 4);
+    assert!(!seen[3].1.contains_key("x-key") && !seen[3].1.contains_key("x-other"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -129,11 +132,14 @@ async fn managed_url_change_without_credentials_never_uses_the_previous_target()
         Ok(())
     })
     .unwrap();
-    assert!(fixture.send(&old).await.is_err());
+    // The running proxy goes to the new target too, never the previous one.
+    fixture.send(&old).await.unwrap();
     fixture.send(&fixture.remote()).await.unwrap();
     let seen = fixture.seen.lock().unwrap();
-    assert_eq!(seen.len(), 2);
-    assert_eq!(seen[1].0, "/new");
-    assert!(!seen[1].1.contains_key("x-key") && !seen[1].1.contains_key("x-other"));
+    assert_eq!(seen.len(), 3);
+    for (path, headers) in &seen[1..] {
+        assert_eq!(path, "/new");
+        assert!(!headers.contains_key("x-key") && !headers.contains_key("x-other"));
+    }
     assert_eq!(connectors(&fixture.store).unwrap()[0].headers, std::collections::BTreeMap::new());
 }

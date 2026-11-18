@@ -85,15 +85,24 @@ impl Actor {
     }
 
     fn can_send_file(&self) -> Result<()> {
+        self.turn_writes()?;
+        ensure!(self.in_own_chat(), "send_file is only available in the bot's own chat");
+        Ok(())
+    }
+
+    /// A turn that may still write into the chat: one is running, and the user hasn't stopped it.
+    fn turn_writes(&self) -> Result<()> {
         ensure!(!self.stop_requested, "turn is stopping");
-        ensure!(self.in_own_chat(), "send_file and artifact cards are only available in the bot's own chat");
         ensure!(self.turn.is_some(), "no turn is running: between turns, tell the user with send_message");
         Ok(())
     }
 
     /// A published artifact's card (`chat::artifacts`, its entry's `data`): a message of the turn, like a shared file.
+    /// A routine's run posts it too: its lane is the bot's own chat, and that is where the user reads what the run
+    /// published (`#380`). A room's or another bot's request leaves the artifact in the Library with no card.
     pub(super) fn post_artifact(&mut self, data: Value) -> Result<String> {
-        self.can_send_file()?;
+        self.turn_writes()?;
+        ensure!(self.in_own_chat() || self.in_routine(), "artifact cards go only to the bot's own chat");
         let text = data["text"].as_str().unwrap_or_default().to_owned();
         self.close_seg();
         let entry =

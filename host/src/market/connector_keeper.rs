@@ -71,7 +71,7 @@ pub fn hand_over(store: &Store, items: &mut [Connector]) -> Result<()> {
             continue;
         }
         live.insert(slot(&c.id));
-        client::put_proxied(store, &slot(&c.id), &record, &keep)?;
+        put(store, &c.id, &record, &keep)?;
         for value in c.headers.values_mut().filter(|v| literal(v)) {
             PLACEHOLDER.clone_into(value);
         }
@@ -85,6 +85,21 @@ pub fn hand_over(store: &Store, items: &mut [Connector]) -> Result<()> {
         client::delete(store, &gone)?;
     }
     Ok(())
+}
+
+/// Saves connector `id`'s `record` with the keeper. One from before connection revisions refuses a record that has
+/// one: it still gets the revision already saved, without the field, as it always did. A new revision waits for its
+/// update: that keeper's live grants would carry the new secret to the old upstream.
+fn put(store: &Store, id: &str, record: &Record, keep: &Keep) -> Result<()> {
+    match client::put_proxied(store, &slot(id), record, keep) {
+        Err(e) if !record.auth_revision.is_empty() && client::predates_revisions(&e) => {
+            if !super::connectors(store)?.iter().any(|c| c.id == id && c.auth_revision == record.auth_revision) {
+                bail!("this computer's keeper is out of date: update Codync on this computer first");
+            }
+            client::put_proxied(store, &slot(id), &Record { auth_revision: String::new(), ..record.clone() }, keep)
+        }
+        answer => answer,
+    }
 }
 
 /// Whether the keeper dropped `c`'s sign-in, which it does once it can't renew it (no refresh token, or the server
@@ -114,7 +129,7 @@ pub async fn target(store: &Store, c: &Connector, url: &str) -> Result<Option<Va
         let mut record = Record::new(&upstream, resolved);
         record.auth_revision.clone_from(&c.auth_revision);
         let keep = Keep { headers: c.headers.keys().cloned().collect(), oauth: true };
-        client::put_proxied(store, &slot, &record, &keep)?;
+        put(store, &c.id, &record, &keep)?;
     }
     if !client::has(store, &slot)? {
         return Ok(None);
@@ -208,6 +223,43 @@ mod tests {
         .unwrap();
         assert!(!client::has(&store, "connector:linear").unwrap());
     }
+
+    #[test]
+    fn an_older_keeper_gets_the_saved_revision_without_it_but_never_a_new_one() {
+        use std::io::{BufRead as _, Write as _};
+        let socket = std::env::temp_dir().join(format!("ck-{}.sock", &uuid::Uuid::new_v4().simple().to_string()[..8]));
+        let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        // A keeper from before the field: it can't parse a record that has one. What each request carried.
+        let old = std::thread::spawn(move || {
+            (0..3)
+                .map(|_| {
+                    let (stream, _) = listener.accept().unwrap();
+                    let mut line = String::new();
+                    std::io::BufReader::new(&stream).read_line(&mut line).unwrap();
+                    let revision = line.contains("authRevision");
+                    let answer = if revision { "{\"error\":\"bad request\"}\n" } else { "{\"ok\":true}\n" };
+                    (&stream).write_all(answer.as_bytes()).unwrap();
+                    revision
+                })
+                .collect::<Vec<_>>()
+        });
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let saved: Connector = serde_json::from_value(
+            json!({"id": "x", "name": "X", "url": "https://mcp.example.com/mcp", "authRevision": "saved"}),
+        )
+        .unwrap();
+        save_connectors(&store, &[saved]).unwrap();
+        store.kv_set("test_keeper_socket", &socket.to_string_lossy()).unwrap();
+        let mut record = Record::header("https://mcp.example.com", "x-key", "k".into());
+        record.auth_revision = "saved".into();
+        put(&store, "x", &record, &Keep::default()).unwrap();
+        record.auth_revision = "edited".into();
+        let refused = put(&store, "x", &record, &Keep::default()).unwrap_err();
+        assert_eq!(refused.to_string(), "this computer's keeper is out of date: update Codync on this computer first");
+        assert_eq!(old.join().unwrap(), [true, false, true], "the saved revision goes again without the field");
+        let _ = std::fs::remove_file(socket);
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn a_stale_target_lookup_cannot_grant_the_replacement_connection() {
         let keeper = crate::keeper::tests::test_keeper();

@@ -28,15 +28,18 @@ export function computerSelection(all: string[], hidden: string) {
   }
 }
 
-function summary(connections: Connection[]) {
-  if (!connections.length) return 'Computers'
+/** Fills a translated phrase's `%d` placeholders in order. */
+const counted = (text: string, ...counts: number[]) => counts.reduce((s, n) => s.replace('%d', String(n)), text)
+
+function summary(connections: Connection[], tr: (text: string) => string) {
+  if (!connections.length) return tr('Computers')
   const online = connections.filter((c) => c.kind === 'online').length
-  if (online === connections.length) return `${online} connected`
-  if (online > 0) return `${online}/${connections.length} connected`
-  if (connections.some((c) => c.kind === 'connecting')) return 'Connecting…'
-  if (connections.every((c) => c.kind === 'unauthorized')) return 'No access'
-  if (connections.every((c) => c.kind === 'unpaired')) return 'Not paired'
-  return `${connections.length} offline`
+  if (online === connections.length) return counted(tr('%d connected'), online)
+  if (online > 0) return counted(tr('%d/%d connected'), online, connections.length)
+  if (connections.some((c) => c.kind === 'connecting')) return tr('Connecting…')
+  if (connections.every((c) => c.kind === 'unauthorized')) return tr('No access')
+  if (connections.every((c) => c.kind === 'unpaired')) return tr('Not paired')
+  return counted(tr('%d offline'), connections.length)
 }
 
 /** The roster's connection summary, with details and filters on demand. */
@@ -49,7 +52,7 @@ export function ComputerFilterHeader({ hidden, setHidden, manage, compact = fals
   const selection = computerSelection(app.computers.map((c) => c.id), hidden)
   const stores = selection.shown.map((id) => app.store(id)).filter((s) => !!s)
   const online = stores.filter((s) => s.shownConnection.kind === 'online').length
-  const text = pendingSummary ? `${online ? `${online} connected · ` : ''}${pendingSummary}` : summary(stores.map((s) => s.shownConnection))
+  const text = pendingSummary ? `${online ? `${counted(tr('%d connected'), online)} · ` : ''}${pendingSummary}` : summary(stores.map((s) => s.shownConnection), tr)
   const items = (): MenuItem[] => {
     const list: MenuItem[] = [{ title: 'All computers', icon: 'desktopcomputer', selected: selection.shown.length === app.computers.length, keepsOpen: true, action: () => setHidden('') }]
     for (const c of app.computers) {

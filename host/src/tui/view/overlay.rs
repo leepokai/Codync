@@ -160,6 +160,7 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::Analytics(s) => super::analytics::analytics(buf, area, s),
         Overlay::Network(n) => super::network::network(buf, area, n),
         Overlay::WhatsNew(s) => super::whats_new::whats_new(buf, area, s),
+        Overlay::Kofi(s) => super::kofi::kofi(buf, area, s),
     }
 }
 

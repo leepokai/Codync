@@ -315,7 +315,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
           <HStack gap={8} className="settings-row">
             <input
               type="password"
-              aria-label="API key"
+              aria-label={tr('API key')}
               placeholder={info.keyPrompt}
               value={key}
               spellCheck={false}
@@ -339,7 +339,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
             <Spacer />
             {replacing ? (
               <button className="settings-quiet-button" onClick={() => { setReplacing(false); setKey(''); setResult(null) }}>
-                Cancel
+                {tr('Cancel')}
               </button>
             ) : null}
           </Text>

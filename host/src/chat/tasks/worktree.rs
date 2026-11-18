@@ -1,15 +1,16 @@
 //! A git worktree for a task that starts while another task of its bot works in the same repository, so the two
 //! don't write over each other: `~/.codync/worktrees/<bot>/<item>`, on a branch `codync/<title>` from the
 //! workspace's HEAD. When its item is over, a worktree with no changes and no commits of its own goes, with its
-//! branch; anything else stays, and the item's report says where. Codync never merges, rebases or resets, and forces
-//! nothing that held work (only a worktree it made a moment ago and can't use is taken back): work on a branch is
-//! the user's to take.
+//! branch; anything else stays, and the item's report says where, until the user has merged its commits (looked at
+//! again at each host start). Codync never merges, rebases or resets, and forces nothing that held work (only a
+//! worktree it made a moment ago and can't use is taken back): work on a branch is the user's to take.
 
 use super::items::{Item, Status};
 use crate::hub::Hub;
 use crate::store::BotConfig;
 use anyhow::{Context as _, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -41,12 +42,12 @@ pub enum Left {
     #[default]
     InUse,
     /// Its item is over and it is being looked over (`settle_then`): work tried again waits until that says kept or
-    /// removed; a message to the item's thread takes it back (`InUse`). A host that stopped meanwhile left it kept
-    /// (`unsettled`).
+    /// removed; a message to the item's thread takes it back (`InUse`). A host that stopped meanwhile looks it over
+    /// again when it starts (`recheck`).
     Settling,
-    /// It has changes or commits of its own: it stays, with its branch.
+    /// It has changes, or commits of its own the user hasn't merged: it stays, with its branch.
     Kept,
-    /// It had neither: it and its branch are gone.
+    /// It had no changes, and no commits the repository's own checkout doesn't have: it and its branch are gone.
     Removed,
 }
 
@@ -76,7 +77,7 @@ impl Worktree {
         let Self { branch, path, .. } = self;
         match self.left {
             Left::Removed => "[Codync: it worked in a git worktree of its own, which had no changes and no commits \
-                              and was removed with its branch.]"
+                              your folder doesn't have, and was removed with its branch.]"
                 .to_owned(),
             Left::Kept | Left::Settling => format!(
                 "[Codync: it worked in a git worktree of its own, because other work of yours ran in the same \
@@ -209,10 +210,11 @@ async fn discard(workspace: &Path, dir: &Path, branch: &str) {
     }
 }
 
-/// `worktree`'s item is over: a worktree with no changes and no commits of its own goes, with its branch; anything
-/// else stays. One Codync didn't make, or can't read, is never touched.
+/// `worktree`'s item is over: a worktree with no changes goes, with its branch, when it has no commits of its own or
+/// they are merged into the repository's own checkout; anything else stays. One Codync didn't make, or can't read, is
+/// never touched.
 pub async fn settle(worktree: &Worktree) -> Left {
-    match remove_if_untouched(worktree).await {
+    match remove_if_done(worktree).await {
         Ok(left) => left,
         Err(error) => {
             tracing::warn!(path = worktree.path, error = format!("{error:#}"), "left a task's worktree as it is");
@@ -221,7 +223,7 @@ pub async fn settle(worktree: &Worktree) -> Left {
     }
 }
 
-async fn remove_if_untouched(worktree: &Worktree) -> Result<Left> {
+async fn remove_if_done(worktree: &Worktree) -> Result<Left> {
     ensure!(ours(worktree), "not a worktree Codync made");
     let dir = Path::new(&worktree.path);
     if !dir.is_dir() {
@@ -231,16 +233,21 @@ async fn remove_if_untouched(worktree: &Worktree) -> Result<Left> {
     // Untracked files count whatever the user's `status.showUntrackedFiles` says, which git's own check on
     // removal follows: this one is what keeps a task's new files.
     let dirty = !git(&["status", "--porcelain", "--untracked-files=all"]).await?.is_empty();
-    let head = git(&["rev-parse", "HEAD"]).await?;
     let on = git(&["rev-parse", "--abbrev-ref", "HEAD"]).await?;
-    let tip = crate::git::run(dir, &["rev-parse", &format!("refs/heads/{}", worktree.branch)], LIMIT).await?;
-    // On another branch, or with its own moved: it did something there.
-    if dirty || head != worktree.base || tip != worktree.base || on != worktree.branch {
+    // On another branch: it did something there.
+    if dirty || on != worktree.branch {
         return Ok(Left::Kept);
     }
+    let tip = git(&["rev-parse", "HEAD"]).await?;
     // From the repository itself: a worktree can't remove the folder it is run in.
     let common = git(&["rev-parse", "--path-format=absolute", "--git-common-dir"]).await?;
     let repo = Path::new(&common);
+    // Commits of its own stay until the repository's own checkout has them (the user merged them).
+    if tip != worktree.base
+        && crate::git::run(repo, &["merge-base", "--is-ancestor", &tip, "HEAD"], LIMIT).await.is_err()
+    {
+        return Ok(Left::Kept);
+    }
     // Without --force: git refuses a worktree that changed meanwhile, and a branch that isn't merged.
     crate::git::run(repo, &["worktree", "remove", &worktree.path], LIMIT).await?;
     if let Err(error) = crate::git::run(repo, &["branch", "-d", &worktree.branch], LIMIT).await {
@@ -252,18 +259,74 @@ async fn remove_if_untouched(worktree: &Worktree) -> Result<Left> {
 /// The worktree of item `id` of `items`, when the item is over and no work waits to follow it there: taken to be
 /// looked over ([`settle_then`]), once. It reads as settling until that says what became of it.
 pub(super) fn claim(items: &mut [Item], id: &str) -> Option<Worktree> {
+    take(items, id, |left| left == Left::InUse)
+}
+
+/// At host start: the worktrees the last process kept (the user may have merged one since), or didn't finish
+/// looking over, each with its item, taken to be looked over again as [`claim`] takes one.
+// ponytail: only at host start (updates restart it); on a timer if merged worktrees pile up between restarts.
+pub(super) fn recheck(items: &mut [Item]) -> Vec<(String, Worktree)> {
+    let again = |left: Left| matches!(left, Left::Kept | Left::Settling);
+    let ids: Vec<String> =
+        items.iter().filter(|i| i.worktree.as_ref().is_some_and(|w| again(w.left))).map(|i| i.id.clone()).collect();
+    ids.into_iter().filter_map(|id| take(items, &id, again).map(|worktree| (id, worktree))).collect()
+}
+
+fn take(items: &mut [Item], id: &str, from: impl Fn(Left) -> bool) -> Option<Worktree> {
     let followed = items.iter().any(|i| i.status == Status::Waiting && i.after.as_deref() == Some(id));
     let item = items.iter_mut().find(|i| i.id == id && i.status.ended() && !followed)?;
-    let worktree = item.worktree.as_mut().filter(|w| w.left == Left::InUse)?;
+    let worktree = item.worktree.as_mut().filter(|w| from(w.left))?;
     worktree.left = Left::Settling;
     Some(worktree.clone())
 }
 
-/// At host start: a look the last process didn't finish leaves its worktree kept, as it is.
-pub(super) fn unsettled(items: &mut [Item]) {
-    for worktree in items.iter_mut().filter_map(|i| i.worktree.as_mut()).filter(|w| w.left == Left::Settling) {
-        worktree.left = Left::Kept;
+/// At host start, once every box was picked up: the worktrees no item knows any more (it was over long ago, or its
+/// bot is gone) go when their commits are merged.
+pub(super) fn tidy(hub: &Arc<Hub>) {
+    // Unit tests share one data folder: a hub starting in one would take another test's worktrees.
+    if cfg!(test) {
+        return;
     }
+    let Ok(runtime) = tokio::runtime::Handle::try_current() else { return };
+    let hub = hub.clone();
+    runtime.spawn(async move {
+        let mut removed = 0;
+        let Ok(mut bots) = tokio::fs::read_dir(root()).await else { return };
+        while let Ok(Some(bot)) = bots.next_entry().await {
+            let items = super::items::load(&hub.store, &bot.file_name().to_string_lossy());
+            removed += tidy_orphans(&bot.path(), &known(&items)).await;
+        }
+        if removed > 0 {
+            let properties = serde_json::json!({"removed": removed}).as_object().cloned().unwrap_or_default();
+            crate::analytics::capture(&hub, crate::analytics::Event::WorktreesTidied, properties);
+        }
+    });
+}
+
+/// The worktree folders `items` still use: each item's own, and the one it works in, named after the item it went
+/// on from, which may be gone since.
+fn known(items: &[Item]) -> HashSet<String> {
+    let used = items.iter().filter_map(|i| i.worktree.as_ref()).filter_map(|w| Path::new(&w.path).file_name());
+    items.iter().map(|i| i.id.clone()).chain(used.map(|name| name.to_string_lossy().into_owned())).collect()
+}
+
+/// The worktrees in a bot's folder of them, `dir`, whose item isn't one of `known`: each goes when its commits are
+/// merged, as [`settle`] says. How many went.
+async fn tidy_orphans(dir: &Path, known: &HashSet<String>) -> usize {
+    let mut removed = 0;
+    let Ok(mut items) = tokio::fs::read_dir(dir).await else { return 0 };
+    while let Ok(Some(item)) = items.next_entry().await {
+        if known.contains(&*item.file_name().to_string_lossy()) {
+            continue;
+        }
+        let dir = item.path();
+        let Ok(branch) = crate::git::run(&dir, &["symbolic-ref", "--short", "HEAD"], LIMIT).await else { continue };
+        let path = dir.to_string_lossy().into_owned();
+        // No base known: only its merged commits let it go.
+        let orphan = Worktree { branch, cwd: path.clone(), path, base: String::new(), left: Left::Kept };
+        removed += usize::from(settle(&orphan).await == Left::Removed);
+    }
+    removed
 }
 
 /// The worktrees of `items` that are over and that nothing works in any more (`busy`: a task's turn still runs),
@@ -293,8 +356,7 @@ pub(super) fn settle_then(
     let Ok(runtime) = tokio::runtime::Handle::try_current() else { return then(hub) };
     let (hub, bot, item) = (hub.clone(), bot.to_owned(), item.to_owned());
     runtime.spawn(async move {
-        // ponytail: a host that stops here leaves an untouched worktree behind, marked kept (`unsettled`); look
-        // them over at host start if that ever piles up.
+        // A host that stops here looks it over again when it starts (`recheck`).
         let left = settle(&worktree).await;
         let noted = super::items::change(&hub, &bot, |items| {
             let item = items.iter_mut().find(|i| i.id == item);
@@ -373,15 +435,29 @@ mod tests {
     }
 
     #[test]
-    fn a_worktree_being_looked_over_settles_or_stays_kept_after_a_restart() {
+    fn a_worktree_kept_or_being_looked_over_is_looked_over_again_after_a_restart() {
         let worktree = serde_json::json!({"branch": "codync/t", "path": "/w", "cwd": "/w", "base": "abc"});
         let item = serde_json::json!({"id": "i1", "title": "t", "brief": "x", "status": "failed", "order": 1,
             "createdAt": 0, "worktree": worktree});
         let mut items: Vec<Item> = serde_json::from_value(serde_json::json!([item])).expect("items");
+        let left = |items: &[Item]| items[0].worktree.as_ref().map(|w| w.left);
         assert_eq!(claim(&mut items, "i1").map(|w| w.left), Some(Left::Settling));
         assert!(claim(&mut items, "i1").is_none(), "once");
-        unsettled(&mut items);
-        assert_eq!(items[0].worktree.as_ref().map(|w| w.left), Some(Left::Kept));
+        assert_eq!(recheck(&mut items).len(), 1, "a look the last process didn't finish");
+        for (then, again) in [(Left::Kept, 1), (Left::Removed, 0), (Left::InUse, 0)] {
+            items[0].worktree.as_mut().expect("a worktree").left = then;
+            assert_eq!(recheck(&mut items).len(), again, "{then:?}");
+        }
+        assert_eq!(left(&items), Some(Left::InUse), "one in use is left as it is");
+    }
+
+    #[test]
+    fn a_worktree_an_item_went_on_in_is_known_after_the_first_item_is_gone() {
+        let worktree = serde_json::json!({"branch": "codync/t", "path": "/w/bot/i1", "cwd": "/w/bot/i1", "base": ""});
+        let item = serde_json::json!({"id": "i2", "title": "t", "brief": "x", "status": "working", "order": 2,
+            "createdAt": 0, "worktree": worktree});
+        let items: Vec<Item> = serde_json::from_value(serde_json::json!([item])).expect("items");
+        assert_eq!(known(&items), HashSet::from(["i1".to_owned(), "i2".to_owned()]));
     }
 
     #[test]
@@ -447,9 +523,41 @@ mod tests {
         assert_eq!(settle(&foreign).await, Left::Kept);
         assert!(Path::new(&web).exists());
 
-        for kept in [&dirty, &committed] {
-            let _ = std::fs::remove_dir_all(&kept.path);
+        // Once the user merged its commits, a kept one goes, as one no item knows any more (no base) does.
+        let orphan = Worktree { base: String::new(), left: Left::Kept, ..committed.clone() };
+        assert_eq!(settle(&orphan).await, Left::Kept, "not merged yet");
+        crate::git::run(&repo, &["merge", "-q", "--ff-only", &committed.branch], LIMIT).await.expect("merged");
+        assert_eq!(settle(&orphan).await, Left::Removed);
+        assert_eq!(branches(&repo).await, "codync/fix-login-2", "with its branch");
+
+        let _ = std::fs::remove_dir_all(&dirty.path);
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    #[tokio::test]
+    async fn at_host_start_a_worktree_no_item_knows_goes_only_once_merged() {
+        let Some(repo) = repo().await else { return };
+        let web = repo.join("web").to_string_lossy().into_owned();
+        // A bot of its own: the other tests' worktrees are in other folders.
+        let (bot, known) = (item(), item());
+        // Untouched, so it would go too if it weren't an item's.
+        let working = create(&web, &bot, &known, "Working").await.expect("a worktree");
+        let commit = ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-am", "work"];
+        let mut orphans = Vec::new();
+        for title in ["Merged", "Not merged"] {
+            let orphan = create(&web, &bot, &item(), title).await.expect("a worktree");
+            std::fs::write(Path::new(&orphan.cwd).join("index.html"), title).expect("a change");
+            crate::git::run(Path::new(&orphan.path), &commit, LIMIT).await.expect("a commit");
+            orphans.push(orphan);
         }
+        crate::git::run(&repo, &["merge", "-q", "--ff-only", &orphans[0].branch], LIMIT).await.expect("merged");
+
+        assert_eq!(tidy_orphans(&root().join(&bot), &HashSet::from([known])).await, 1);
+        let there = |w: &Worktree| Path::new(&w.path).exists();
+        assert!(!there(&orphans[0]) && there(&orphans[1]) && there(&working));
+        assert_eq!(branches(&repo).await, "codync/not-merged\ncodync/working");
+
+        let _ = std::fs::remove_dir_all(root().join(&bot));
         let _ = std::fs::remove_dir_all(repo);
     }
 

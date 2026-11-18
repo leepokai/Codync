@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { join, resolve } from 'node:path'
+import { fixtureCommand } from './fixture-command.ts'
 import { api, attach, freezeHost } from './sandbox.ts'
 
 // A scripted agent that answers `Message <n>` with `Reply <n>` after the tool calls the message names
@@ -37,7 +38,7 @@ test('a chat keeps its messages while a new version fetches it again, then holds
   let thaw: (() => void) | undefined
   try {
     const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-      name, backend: 'custom', command: `python3 -X utf8 -u '${agent}'`, connectors: [], skills: [], notify: false,
+      name, backend: 'custom', command: fixtureCommand(agent), connectors: [], skills: [], notify: false,
     })
     botId = bot.id
     // 260 tool rows put the first message below the newest 200 a catch-up from the start brings.

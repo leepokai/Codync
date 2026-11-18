@@ -56,7 +56,7 @@ Under **Engine**, pick one. The choice is kept on this device. Changed during a 
 - You speak in the language set under **Language** (by default, your device's first language).
 - A pause ends what you said and sends it to the bot as part of the call. If the bot is busy, it's queued like any other message. Set the pause under **Send after a pause of** (1 s, 1.5 s or 2.5 s).
 - Each reply is read aloud in the language it's written in, skipping code blocks and formatting. Set **Reading speed** to Slower, Normal or Faster. The microphone pauses while a reply is read.
-- When the bot asks for approval or asks you to choose, the call tells you what it asks; answer it in the chat. When the question comes from a [background task](/docs/conversations#background-tasks), the call names the item. If it runs into a problem, the call tells you that too.
+- When the bot asks for approval or asks you to choose, the call tells you what it asks; answer it in the chat. When the question comes from a [thread](/docs/conversations#threads), the call names the thread. If it runs into a problem, the call tells you that too.
 - A reply that arrives while the call briefly loses its connection is read once it's back.
 - If speech recognition keeps failing, the call stops and asks you to check the microphone and speech recognition settings.
 
@@ -69,7 +69,7 @@ Each provider has two modes, under **Mode**:
 - **Realtime:** a live conversation with the provider's realtime model. You can talk over replies.
 - **Speech:** the same loop as On device, using the provider's speech-to-text and text-to-speech models instead. What you say is sent when you pause, and replies are read aloud.
 
-In Realtime mode, the voice model is the bot's voice line, not the bot: it talks with you, and the bot does the work. It passes your requests on to the bot (along with your own words, so nothing gets lost in its wording), reads the bot's replies out in shortened form, keeps you posted while the bot works (and tells you what it's doing when you ask), lets you know when an approval is waiting, answers an approval for you once you've said which option, can stop the bot (which also stops its background work, waiting items included), and can look up what the bot remembers.
+In Realtime mode, the voice model is the bot's voice line, not the bot: it talks with you, and the bot does the work. It passes your requests on to the bot (along with your own words, so nothing gets lost in its wording), reads the bot's replies out in shortened form, keeps you posted while the bot works (and tells you what it's doing when you ask), lets you know when an approval is waiting, answers an approval for you once you've said which option, can stop the bot (which also stops its background work, waiting threads included), and can look up what the bot remembers.
 
 Before a Realtime call, your computer gives the voice model the background it needs: the date and time, what your bots remember about you, this bot's settings and memory, the project's git branch and recent changes, what the bot is working on, the recent messages and calls in this chat, your other bots, and the files shared in the chat. When the call reconnects or you switch engine mid-call, the voice model also gets what was said on the call so far. Like your audio, it goes to OpenAI or Google on your own key.
 

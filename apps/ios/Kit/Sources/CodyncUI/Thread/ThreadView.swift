@@ -311,6 +311,7 @@ public struct ThreadView: View {
     }
 
     private var connectionDescription: String {
+        if model.isWaking { return "Waking the computer…" }
         if model.isAsleep { return "Sleeping · wakes when you message" }
         switch model.shownConnection {
         case .connecting: return "Connecting"
@@ -440,7 +441,7 @@ struct IntroCard: View {
             CharacterAvatar(bot: bot, size: 72)
             Text(bot.name).font(.title2.weight(.semibold)).foregroundStyle(Palette.text)
             Text(bot.managedWorkspace
-                 ? "\(model.backendName(bot.backend)) · \(L10n.tr("Personal workspace"))"
+                 ? "\(model.backendName(bot.backend)) · \(L10n.tr("Own folder"))"
                  : L10n.fill(L10n.tr("{agent} in {path}"), ["agent": model.backendName(bot.backend), "path": bot.cwd]))
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondary)

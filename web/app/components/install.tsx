@@ -5,7 +5,7 @@ import CopyCommand from "./copy-command";
 import Halftone from "./halftone";
 import Reveal from "./reveal";
 import SectionHeader from "./section-header";
-import { ANDROID_TEST, APP_STORE, DMG, INSTALL_SH, LINUX, LINUX_ARM, WINDOWS } from "../links";
+import { APP_STORE, DMG, GOOGLE_PLAY, INSTALL_SH, LINUX, LINUX_ARM, WINDOWS } from "../links";
 
 export default function Install() {
   return (
@@ -85,9 +85,8 @@ export default function Install() {
                 <a href={APP_STORE} target="_blank" rel="noopener noreferrer" className="inline-flex transition hover:opacity-80 active:scale-[0.98]">
                   <Image src="/app-store-badge.svg" alt="Download on the App Store" width={120} height={40} className="h-11 w-auto" />
                 </a>
-                {/* Android is in closed testing: the badge opens the tester sign-up form. */}
-                <a href={ANDROID_TEST} target="_blank" rel="noopener noreferrer" className="inline-flex transition hover:opacity-80 active:scale-[0.98]">
-                  <Image src="/google-play-badge.svg" alt="Join the Android test on Google Play" width={180} height={53} className="h-11 w-auto" />
+                <a href={GOOGLE_PLAY} target="_blank" rel="noopener noreferrer" className="inline-flex transition hover:opacity-80 active:scale-[0.98]">
+                  <Image src="/google-play-badge.svg" alt="Get it on Google Play" width={180} height={53} className="h-11 w-auto" />
                 </a>
               </div>
             </div>

@@ -213,9 +213,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
 }
 
 /// A connector reaches an agent as part of its tools, so a bot that has it turned on asks for them
-/// again. An agent that can resume restarts whole before its next turn; one that can't keeps its
-/// session and the old definition until its next new session. No other bot is touched. The change
-/// is already saved, so a bot that can't hear of it is logged and doesn't stop the others.
+/// again. An agent that can resume restarts whole before its next turn; one that can't starts again
+/// once its turn ends, in a new session told the conversation so far. No other bot is touched. The
+/// change is already saved, so a bot that can't hear of it is logged and doesn't stop the others.
 fn refresh_tools_for_bots_using(hub: &Hub, id: &str) {
     let bots = match market::bots_using(&hub.store, id) {
         Ok(bots) => bots,

@@ -56,6 +56,30 @@ import Testing
     #expect(store.connection == .online)
 }
 
+@MainActor @Test func cloudComputerTheRelayWakesReadsAsWakingNotOffline() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.hostOffline(lastSeen: nil))
+    let store = BotStore(computer: randomComputer("Cloud"), storage: storage) { _ in fake }
+    defer { store.retire() }
+    store.setActive(true)
+    #expect(await until { store.connection == .computerOffline(lastSeen: nil) })
+    #expect(!store.isWaking && !store.isAsleep && store.connectionLabel == "Offline")
+    await fake.set(.hostOffline(lastSeen: nil, waking: true))
+    #expect(await until { store.isWaking })
+    #expect(store.isAsleep && store.connectionLabel == "Waking the computer…")
+    // Its provider starting it reads the same; asleep, it sleeps.
+    await fake.set(.hostOffline(lastSeen: nil))
+    store.cloudHosting = CloudHosting(provider: "boat", providerName: "Boat", region: "EU", state: .starting)
+    #expect(await until { store.connection == .computerOffline(lastSeen: nil) })
+    #expect(store.isWaking && store.connectionLabel == "Waking the computer…")
+    #expect(CloudMachineState.starting.offlineText == "Waking the computer…")
+    store.cloudHosting = CloudHosting(provider: "boat", providerName: "Boat", region: "EU", state: .stopped)
+    #expect(!store.isWaking && store.connectionLabel == "Sleeping")
+    #expect(CloudMachineState.stopped.offlineText == "Sleeping · wakes when you message")
+    #expect(CloudMachineState.running.offlineText == nil)
+}
+
 @MainActor @Test func initialUnreachableEventuallyShowsOffline() async throws {
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }

@@ -19,9 +19,9 @@ the change.
 | --- | --- | --- |
 | `getting-started` | Install, pair, first bot | `README.md`, [updates](updates.md), [dev app](dev-app.md) for names only |
 | `bots` | Creating, settings, workspaces, hiding, permissions, new session, importing from Grok Bot | [bot workspaces](../features/bot-workspaces.md), [conversation runtime](../architecture/conversation-runtime.md), [bot import](../features/bot-import.md) |
-| `working-folders` | A bot's folder, where background tasks work, the worktrees Codync makes and leaves, bringing a branch in, working without a git repository or without git, installing git | [background tasks](../features/background-tasks.md#worktrees), `host/src/chat/tasks/worktree.rs`, `host/src/git.rs` |
+| `working-folders` | A bot's folder, where threads work, the worktrees Codync makes and leaves, bringing a branch in, working without a git repository or without git, installing git | [background tasks](../features/background-tasks.md#worktrees), `host/src/chat/tasks/worktree.rs`, `host/src/git.rs` |
 | `agents` | Known agents, registry, custom command, Extensions, sign-in, models | [extensions](../features/marketplace.md), `host/src/agent/backends.rs` |
-| `conversations` | Messages, files, approval cards, background tasks, stop, replies, reactions, commands, fresh conversations, notifications, sending from a script (`codync-host send`) | `README.md` (`codync-host send`), [chat messages](../features/chat-messages.md), [background tasks](../features/background-tasks.md), [file attachments](../features/file-attachments.md), [context and memory](../features/context-and-memory.md), [notifications](../design/push-and-live-activity.md) |
+| `conversations` | Messages, files, approval cards, threads, stop, replies, reactions, commands, fresh conversations, notifications, sending from a script (`codync-host send`) | `README.md` (`codync-host send`), [chat messages](../features/chat-messages.md), [background tasks](../features/background-tasks.md), [file attachments](../features/file-attachments.md), [context and memory](../features/context-and-memory.md), [notifications](../design/push-and-live-activity.md) |
 | `groups` | Group chats | [groups and replies](../features/groups-and-replies.md) |
 | `teamwork` | Bots messaging bots, bots on your other computers, Manage the team | [bot collaboration](../features/bot-collaboration.md), [codync-network](../features/codync-network.md) |
 | `cloud-assistants` | The MCP connector for ChatGPT, Claude and other assistants: turning it on, adding it, what it can do, privacy | [cloud assistants](../features/cloud-assistants.md) |
@@ -36,6 +36,7 @@ the change.
 | `remote-access` | Relay, direct routes, pairing, accounts, reverse proxy, SSH computers | [remote protocol](../reference/remote-relay.md), [accounts and SSH](accounts-and-ssh.md) |
 | `codync-cloud` | Cloud computers on the user's own Boat or InstaBox account: keys and what Codync does with them, create, sleep and wake, rename, snapshots, delete | [Codync Cloud](../plans/codync-cloud.md), [cloud computer testing](cloud-computer-testing.md), `cloud/src/cloud-credentials.ts` |
 | `linux-servers` | Headless install, reaching it, firewall, approvals | [Linux servers](linux-servers.md) |
+| `windows-antivirus` | Security software stopping the Windows host or removing its startup entry: signs, what Codync installs and where, what to allow, the firewall prompt | `host/src/service/windows.rs`, `apps/desktop/electron-builder.yml`, [Windows testing](windows-testing.md) |
 | `updates` | App and host updates, version mismatch, uninstall | [updates](updates.md), [compatibility](../reference/compatibility.md) |
 | `privacy` | What stays on the computer, what Codync's services see, analytics | [analytics](../features/analytics.md), [remote protocol](../reference/remote-relay.md); keep it consistent with the policy page `web/app/privacy/page.tsx` |
 

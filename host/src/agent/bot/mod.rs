@@ -89,6 +89,8 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     let fast_support = FastModeSupport::from_stored(hub.store.kv_get(&fast_mode::stored_key(&cfg.id)).as_deref());
     let support = fast_support.clone();
     hub.set_runtime(&cfg.id, |r| r.fast_mode = support);
+    let mut versions = crate::agent::versions::Saves::default();
+    versions.ready(&hub, &base);
     let actor = Actor {
         hub,
         base,
@@ -112,6 +114,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         applied_system: HashMap::new(),
         dreamer,
         turn_text: None,
+        versions,
         turn_entries: Vec::new(),
         turn_call: None,
         turn_memory_revision: String::new(),
@@ -137,6 +140,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         files: files::FileShares::default(),
         perms: HashMap::new(),
         asked: HashMap::new(),
+        open_card: None,
         stop_requested: false,
         stopped_for_message: false,
         cancel_deadline: None,
@@ -170,6 +174,8 @@ struct SessionCaps {
     steering: bool,
     /// `session/fork`: a new session that starts as a copy of another, which a task's does (`chat::tasks`).
     fork: bool,
+    /// `session/delete`: a background job's session leaves the agent's saved history (`chat::oneshot`).
+    delete: bool,
 }
 
 /// How the bot's instructions (identity and memory) reach the agent.
@@ -216,7 +222,8 @@ pub(crate) struct Conn {
     mode_set: HashSet<String>,
     /// The agent reports compactions (`compaction_update`); until it does, a fall in usage stands in for them.
     reports_compaction: bool,
-    /// Each session's context use and window size at its last `usage_update`.
+    /// Each session's context use and window size at its last `usage_update` that reported use (a stream's
+    /// provisional zero is skipped, see `record_usage`).
     usage: HashMap<String, (u64, u64)>,
     /// Codync's MCP servers each session knows by another name (`codex_names`), as it was created or loaded with.
     renamed: HashMap<String, codex_names::Renamed>,
@@ -225,6 +232,10 @@ pub(crate) struct Conn {
 }
 
 impl Conn {
+    pub(crate) fn deletes_sessions(&self) -> bool {
+        self.sessions.delete
+    }
+
     pub(crate) fn instructions(&self) -> Instructions {
         // Claude's adapter rebuilds the standard field without the `_meta` object's options, so Claude stays on it.
         if self.adapter == Adapter::Claude {
@@ -299,6 +310,8 @@ struct Actor {
     dreamer: mpsc::UnboundedSender<memory::DreamEvent>,
     /// The user's words for this turn (None for a hidden turn or one not from the user); feeds memory.
     turn_text: Option<String>,
+    /// The versions its turns save in the bot's own folder (`agent::versions`).
+    versions: crate::agent::versions::Saves,
     /// The user messages this turn answers (none when it isn't the user's).
     turn_entries: Vec<String>,
     /// The voice call this turn answers while it lasts: its replies carry it (`chat::calls`).
@@ -345,6 +358,8 @@ struct Actor {
     perms: HashMap<String, updates::Answer>,
     /// Decision card id -> the live tool call waiting for this turn's choice.
     asked: HashMap<String, decisions::Asked>,
+    /// The chat's choice card whose call stopped waiting: the user's press or next message still answers it.
+    open_card: Option<String>,
     stop_requested: bool,
     /// Send now stopped the turn for a waiting message (`steer`): that message going out says so, not a `Stopped.`
     /// line drawn under it.

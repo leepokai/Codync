@@ -28,8 +28,8 @@ impl App {
             .map_or_else(|| tr("New login profile").into_owned(), str::to_owned)
     }
 
-    /// Whether the form has `field`: no Login profile for an agent without login profiles, no Agents at once on a
-    /// host without the event box, no Worktree per agent outside a git repository.
+    /// Whether the form has `field`: no Login profile for an agent without login profiles, no Threads at once on a
+    /// host without the event box, no Worktree per thread outside a git repository.
     pub(in crate::tui) fn field_shown(&self, f: &Form, field: Field) -> bool {
         match field {
             Field::LoginProfile => self.login_profiles(&f.backend).is_some(),

@@ -68,7 +68,7 @@ export function UsageView({ model }: { model: IslandModel }) {
     return (
       <div className="island-card island-empty">
         <span className="island-empty-text">
-          <span className="island-title">No usage yet.</span>
+          <span className="island-title">{tr('No usage yet.')}</span>
           <span className="island-subtitle">{tr('Plan limits show up here once an agent reports them.')}</span>
         </span>
       </div>

@@ -518,7 +518,7 @@ internal fun timerText(millis: Long): String {
         val lines = if (bot.kind == "group") listOfNotNull(
             members.joinToString(" · ") { it.name }.takeIf { bot.name != members.joinToString(", ") { it.name } },
             bot.description.ifEmpty { null }) else listOfNotNull(
-            if (bot.managedWorkspace) "${backendName(state, bot.backend)} · ${tr("Personal workspace")}"
+            if (bot.managedWorkspace) "${backendName(state, bot.backend)} · ${tr("Own folder")}"
             else fill(tr("{agent} in {path}"), "agent" to backendName(state, bot.backend), "path" to bot.cwd),
             bot.description.ifEmpty { null })
         for (line in lines) Text(line, style = Type.subheadline, color = Palette.secondary, textAlign = TextAlign.Center)

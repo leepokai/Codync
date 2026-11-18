@@ -5,7 +5,7 @@ import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, session, shell, type IpcMainInvokeEvent, type OpenDialogOptions } from 'electron'
 import type { HostSnapshot, TraySummary, WindowCommand } from '../shared/ipc'
-import { chatWindowMinWidth } from '../shared/chat-layout'
+import { chatWindowMinHeight, chatWindowMinWidth } from '../shared/chat-layout'
 import { devPort, HostController } from './host-controller'
 import { registerFileSaves } from './file-saves'
 import { keepArtifactsInFrame, registerArtifacts, registerArtifactScheme } from './artifacts'
@@ -89,7 +89,7 @@ function openChat() {
     width: 1100,
     height: 760,
     minWidth: chatWindowMinWidth,
-    minHeight: 500,
+    minHeight: chatWindowMinHeight,
     title: app.getName(),
     show: false,
     backgroundColor: background(),
@@ -98,6 +98,15 @@ function openChat() {
   })
   // CODYNC_SHOW_INACTIVE: development and UI checks open the window without taking focus.
   chat.on('ready-to-show', () => chat && present(chat, Boolean(process.env.CODYNC_SHOW_INACTIVE)))
+  // The minimum is the page's (chat-window.css): on Windows and Linux the frame and menu bar come on
+  // top of it, or they cut the composer off (#476). Their size is known once the window is shown.
+  // Not `useContentSize`: on Windows its minimum leaves the menu bar out.
+  chat.once('show', () => {
+    if (!chat) return
+    const [width, height] = chat.getSize()
+    const [contentWidth, contentHeight] = chat.getContentSize()
+    chat.setMinimumSize(chatWindowMinWidth + width - contentWidth, chatWindowMinHeight + height - contentHeight)
+  })
   // Closing hides: the window keeps the stores (and the menu bar's data) alive.
   chat.on('close', (e) => quitLifecycle.closeToBackground(e, () => chat?.hide()))
   chat.on('closed', () => (chat = null))

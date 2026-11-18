@@ -18,10 +18,9 @@ Left before release, found 2026-10-18 and put off by the owner for now:
 - **Bots inherit the owner's own Claude Code setup** (`~/.claude/CLAUDE.md`, permission mode, claude.ai
   connectors); isolating them waits for the owner's decision ([evaluation](#evaluation)).
 - **The move from old memory**, tried on a copy of the owner's data (149, 188 and 3 entries moved, none lost):
-  - Old Markdown memory is mostly the bot's own replies ("需要我幫什麼忙嗎？"), and it comes in active up to
-    the cap. Only profile, pinned and personal-scope facts should come in active; the rest archived.
-  - The old files are deleted once moved, with no backup; entries refused by the checks vanish with them.
-  - An empty (0-byte) `engram.db` fails the move on every start, so that bot never finishes moving.
+  - ~~Old Markdown memory comes in active up to the cap.~~ Gone with the move from Engram and the Markdown memory
+    before it in 2.49.3: memory from before 2.18 no longer carries over, and its files stay on disk untouched.
+  - The old entries' tables are dropped once moved, with no backup; entries refused by the checks vanish with them.
 
 Built differently from the plan below, for now:
 
@@ -359,7 +358,8 @@ it offers (`Instructions` in `agent/bot`):
 3. **Every other agent: the first message.** A `<bot-profile>` block precedes the first prompt of a new session, and each retry until a prompt carrying it succeeds (the snapshot's `unprompted`, kept across a host restart).
    After a compaction the next prompt carries a fresh one that says it replaces any earlier profile, so the agent
    never holds two versions that disagree. The compaction is the agent's `compaction_update`, or, for an agent
-   that never sent one, its `usage_update.used` falling below half of a previous value of at least 20k.
+   that never sent one, its `usage_update.used` falling below half of a previous value of at least 20k. A stream's
+   start reports zero use before the model has answered, which is not a reading (issue #496).
 
 Measured 2026-10-18 at `initialize`:
 

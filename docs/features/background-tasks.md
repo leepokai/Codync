@@ -296,8 +296,9 @@ A card that belongs to a task, case by case:
 | The user types a message | It answers the card, or ends it (`other_message`) | Nothing: in the chat the message is for the bot, and in the task's [thread](#talking-to-a-thread) it waits behind the card's turn. Only a press answers, so the card's text doesn't ask for a typed reply |
 | Stop in the chat | Ends it (`stopped`) | Nothing: the chat's Stop is the chat's turn. Stopping the item (`stopWork`, the bot's `steer_work stop`) ends it |
 | The item gives way or gets a new brief | | Ends it (`stopped`): its task is closed |
-| The turn ends | Ends it (`turn_ended`) | The task's turn, not the chat's: a card the task left open ends with the item |
-| Four and a half minutes | Ends it (`timeout`), the call returns | The same; the task goes on without an answer |
+| The turn ends | Ends it (`turn_ended`), unless its call already ran out (the card is open) | The task's turn, not the chat's: a card the task left open ends with the item |
+| Four and a half minutes | The call returns `answered: false` and the card stays open: a press or the user's next message answers it later as their next message ([choice cards](chat-messages.md)) | Ends it (`timeout`), the call returns an error; the task goes on without an answer, since a press there has no next message to become |
+| The bot asks again | Ends the open card (`asked_again`) | One card per task, as below |
 | Host restart | Ends it (`restart`) | The same: the resumed task has no call waiting |
 | One at a time | One card per bot | One card per task; two tasks may each have one open in the chat |
 | Alert | *needs you*, the bot's chat | The same, named for the bot |
@@ -327,7 +328,8 @@ prompt or the request as it is, not an item's brief, and **their result takes no
   `recipient finished without a text reply`, both as from a turn in the chat. Its title is the request's first line.
 
 What such a turn could and couldn't do in the chat holds in its task (`Actor::task_source`): `request_decision`,
-`send_message`, `send_file` and artifact cards are refused with the same words; the `routines` tools work, as the
+`send_message`, `send_file` and a request's artifact cards are refused with the same words (a run's artifact card
+goes into the bot's chat, as from a run there); the `routines` tools work, as the
 bot (a run saves its progress and sets follow-ups, an asked bot runs its own routine); `message_bot` works from a
 run and is refused in a request; `follow_up` is refused in a request. `add_work` is refused as in any task. A
 request from another computer under a network rule's `auto` or `ask` holds its task to that
@@ -370,7 +372,8 @@ credited to its bot and made in the task's session, for the bot's own items, a r
 ## Worktrees
 
 Two tasks in one git repository would write over each other's files. With **`taskWorktrees`** on (per bot, on
-unless set; it matters only where the bot's folder is in a git repository, `gitRepo` on the wire), a task for one
+unless set; it matters only where the bot's folder is a project folder in a git repository, `gitRepo` on the wire:
+a bot's [own folder](bot-workspaces.md#versions) keeps all its work in one place, with its versions), a task for one
 of the bot's own items that starts **while another task of the bot is working** gets a git worktree of its own
 (`worktree.rs`):
 
@@ -388,10 +391,17 @@ of the bot's own items that starts **while another task of the bot is working** 
 - **When the item is over** and nothing waits to follow it (an item the hourly look or a host restart ended
   included): a worktree with nothing in `git status --porcelain --untracked-files=all` (untracked files count
   whatever the user's `status.showUntrackedFiles` says), on
-  its own branch, with that branch still at the commit it started from, is removed (`git worktree remove`, then
-  `git branch -d`, neither forced), and the report says so. Anything else is kept, with its branch, and the
-  item's report to the chat names the branch and the folder, for the bot to tell the user and merge when asked.
-  An item the user stopped is looked over once its task's turn has ended; it reports nothing.
+  its own branch, with that branch still at the commit it started from or merged into the repository's own checkout
+  (`git merge-base --is-ancestor <tip> HEAD`), is removed (`git worktree remove`, then `git branch -d`, neither
+  forced), and the report says so. Anything else is kept, with its branch, and the item's report to the chat names
+  the branch and the folder, for the bot to tell the user and merge when asked. An item the user stopped is looked
+  over once its task's turn has ended; it reports nothing.
+- **At host start** every kept worktree, and one whose look the last process didn't finish, is looked over again
+  (`recheck`, from `pick_up`): one the user has merged since goes, with its branch. So does a worktree under
+  `~/.codync/worktrees` that no item has as its own or works in any more (one inherited by an item that followed
+  counts, though it is named after the earlier item; it goes once its last item ended more than a week ago, or its
+  bot was deleted: `known`, `tidy_orphans`), once its commits are merged; one that isn't merged stays, as the user's work. Between restarts a
+  kept worktree stays as it is.
 - An item that gave way, got a new brief or is tried again starts again in the worktree it had. While an ended
   item's worktree is being looked over (`Left::Settling`) the item tried again waits; the look notes kept or removed
   and runs the dispatcher again. A message to the item's thread meanwhile takes the worktree back as in use, which
@@ -432,7 +442,8 @@ An item's end sends no alert of its own: its report is a turn of the bot's, whos
 - Bot: `outside: {status, startedAt}`: how the bot stands [outside its chat](#outside-the-chat) (`idle`, `working`,
   `needsInput`, `error`), where `status` is the chat's alone. Absent on an older host: `status` then.
 - Bot: `taskWorktrees` (true unless set; `updateBot`), and `gitRepo`: whether the bot's folder is in a git
-  repository, which is where the setting matters and a client shows its switch. Both absent on an older host.
+  repository, which, for a project folder (not `managedWorkspace`), is where the setting matters and a client shows
+  its switch. Both absent on an older host.
 - Bot: `gitInstalled`: whether the host can run git (`git::installed`: the answer of `git::program`, kept for the
   process and looked up again in the background at most every five minutes, so a snapshot never waits for it; true
   until the first look ends, which the host starts as it starts). Absent on an older host: read as installed. With
@@ -450,8 +461,8 @@ An item's end sends no alert of its own: its report is a turn of the bot's, whos
 
 ## In the apps
 
-The capsule, the bot's Details (Threads, Event box, Later, Routines, Dev servers, Recent), `Agents at once` in its
-Settings and cutting in are specified in [the event box](../plans/event-box.md#in-the-apps) (stage 2). The sheet of every bot's work, the rows' source marks, the `In the background · <title>` line on what a task posts, the **Worktree per agent** switch and what follows `bot.outside` are in [as built, clients](../plans/event-box.md#as-built-clients-stages-3-to-8). An item's thread view, the where line on a row and in the thread's header, and the git state in Settings are in [stage 11, as built on the terminal](../plans/event-box.md#as-built-host-and-terminal-stage-11) and [on iPhone, Android and desktop](../plans/event-box.md#as-built-iphone-android-and-desktop-stage-11). A client reads `bot.work` and `bot.maxAgents`; both are
+The capsule, the bot's Details (Threads, Event box, Later, Routines, Dev servers, Recent), `Threads at once` in its
+Settings and cutting in are specified in [the event box](../plans/event-box.md#in-the-apps) (stage 2). The sheet of every bot's work, the rows' source marks, the `In the background · <title>` line on what a task posts, the **Worktree per thread** switch and what follows `bot.outside` are in [as built, clients](../plans/event-box.md#as-built-clients-stages-3-to-8). An item's thread view, the where line on a row and in the thread's header, and the git state in Settings are in [stage 11, as built on the terminal](../plans/event-box.md#as-built-host-and-terminal-stage-11) and [on iPhone, Android and desktop](../plans/event-box.md#as-built-iphone-android-and-desktop-stage-11). A client reads `bot.work` and `bot.maxAgents`; both are
 absent on an older host, where the feature doesn't show.
 
 ## Restart and cleanup
@@ -484,7 +495,7 @@ code only: no agent is woken unless an item was lost.
 - A worktree is a new checkout: what git ignores in the bot's folder (installed packages, build output, local env
   files) isn't in it, and removing an untouched one deletes what its task left there ignored.
 - On Windows a worktree whose agent process is still in it can't be removed and stays (kept). A host that stops
-  while it looks a worktree over leaves it, marked kept at its next start (`worktree::unsettled`).
+  while it looks a worktree over looks it over again at its next start (`worktree::recheck`).
 - A turn of the chat that ends while items still work alerts as done with the bot's words; the Live Activity goes
   on.
 - A Live Activity or ongoing notification updated by a push shows the status only; the counts line needs the app
@@ -515,7 +526,8 @@ task's choice card answered by a press and not by a typed message, ended by stop
 Stop, its file and artifact in the chat and kept with the bot; a run that never forks nor sees the chat, a request's
 `(pass)`; a task's `edit_memory` adding and refused a removal while the user's own turn runs in the chat; a task
 beside another in a repository working in its worktree, an untouched one removed with its branch, a touched one
-kept and named in the report, the switch off and a folder that is no repository; a message to a working thread
+kept and named in the report, the switch off, a project folder that is no repository and a bot's own folder (a
+repository, never a worktree); a message to a working thread
 queued, sent twice as one, removed, delivered in the task's session and in the item's one report, the refusals of a
 task's own id, another bot's item, a waiting item and a routine's run; Send now stopping the turn for the message
 and joining it where the agent steers; a message to an ended item reopening it past the ceiling, `add_work` still
@@ -525,12 +537,15 @@ thread taking a message afterwards; what waited going with an item that gives wa
 chat and its item going on in the same task once signed in, a task moving past a signed-out agent and its next
 agent told the chat, a task's offer to add a fallback in the chat and new fallbacks reaching a running task, a task
 that starts on a fallback never forking the chat's session); `memory_files_e2e` (a line a
-routine's run in a task takes out with a shell command is put back); unit tests of a worktree made, removed, kept
-and never touched when it isn't Codync's (`worktree.rs`), how a bot stands outside its chat (`items.rs`), unit tests of the dispatch order and the `wait` reasons
+routine's run in a task takes out with a shell command is put back); unit tests of a worktree made, removed, kept,
+removed once merged and never touched when it isn't Codync's, the kept ones looked over again at a restart
+(`recheck`), the walk that removes only merged worktrees no item knows (`tidy_orphans`), and an inherited worktree
+known after its earlier item is gone (`known`) (`worktree.rs`), how a bot stands outside its chat (`items.rs`), unit tests of the dispatch order and the `wait` reasons
 (`dispatch.rs`), the agent a new task starts on (`agent/fallback/mod.rs`), a task's held message sent again however
 old and not once its item ended (`market/agent_sign_in.rs`), an item's end and the restart rule, also for a run and a request (`mod.rs`), a source on the wire (`items.rs`), which bots keep runs in the chat (`sources.rs`), the 20 waiting items and the title and brief lengths (`tools.rs`), the prompts and the box's lines. Not
 covered by a test: a reopened item's kept worktree becoming its folder again and a removed one's task moving to the bot's folder end to end (the unit test covers the folder), a message to an item whose task is on an item that followed it, a message that arrives as the item's turn ends (the lock that orders them), a real agent resuming a reopened session, a replaced brief carrying what waited, a worktree reused by an item that starts again, one inherited by an item that follows, a
-stopped item's worktree looked over, an item stopped while it waits for a sign-in ending its task, a worktree's dev server and artifact, git failing, a real agent in a worktree,
+stopped item's worktree looked over, an item stopped while it waits for a sign-in ending its task, a worktree's dev server and artifact, git failing, a real agent in a worktree, the host-start reclaim end to end (`tidy` spawning
+`tidy_orphans`, `pick_up` settling what `recheck` took),
 the Live Activity push itself (the relay isn't in the tests), a routine's time limit in a task, a lost run or request at the hourly look, a run the box lost at host start, a request from another computer or the cloud assistant as an item, `message_bot` from a run's task, a task's voice note, a choice card's timeout and its end at a host restart, the usage and in-a-row limits, the desktop's Add a fallback opening Settings, `add_work` refused in a room or a bot's request (a routine run is: `routines/tests.rs`), a report turn that fails, a
 task's dev server, an item sent back to waiting by a restart end to end, the 7-day purge, and the box's lines in a
 known harness's prompt.

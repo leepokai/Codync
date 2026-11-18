@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { resolve } from 'node:path'
+import { fixtureCommand } from './fixture-command.ts'
 import { api, attach } from './sandbox.ts'
 
 type Entry = { id: string; turn: number; kind: string; data: { decision?: boolean; status?: string; selected?: string; from?: string } }
@@ -16,9 +17,7 @@ test('choice buttons preserve numeric labels and show the same answer after a la
     if (await offline.isVisible()) await offline.click()
     await expect(page.locator('.sidebar-account')).toBeVisible()
     const fixture = resolve(__dirname, '../../../host/tests/fixtures/team_agent.py')
-    const command = process.platform === 'win32'
-      ? `python -X utf8 -u "${fixture}"`
-      : `python3 -X utf8 -u '${fixture.replaceAll("'", "'\\''")}'`
+    const command = fixtureCommand(fixture)
     const name = `Choice e2e ${Date.now()}`
     const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
       name, backend: 'custom', command, connectors: [], skills: [], notify: false,

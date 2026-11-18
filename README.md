@@ -40,6 +40,7 @@ macOS: Apple Silicon + Intel (DMG) · Windows: x64 installer · Linux: AppImage 
 <img src="docs/screenshots/desktop-macos.png" width="760" alt="Codync desktop app on macOS: four bots in the sidebar and the welcome screen with no bot selected">
 
 <a href="https://apps.apple.com/app/codync/id6760984418"><img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" height="54" alt="Download on the App Store"></a>
+<a href="https://play.google.com/store/apps/details?id=com.pokai.Codync.android"><img src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg" height="54" alt="Get it on Google Play"></a>
 
 </div>
 
@@ -122,9 +123,9 @@ Open Codync: it sets up the host on first launch. **Open Codync** opens the full
 
 **Windows** — [download codync-windows-x64.exe](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe) and run it. It installs for your user and starts the host at sign-in. The installer isn't code-signed yet, so SmartScreen asks you to confirm it once (**More info → Run anyway**). Not on Windows yet: remote screen, on-device speech and the Claude Code status line hook. Details: [desktop app](docs/architecture/desktop-app.md#platform-notes).
 
-**iPhone** — [get Codync on the App Store](https://apps.apple.com/app/codync/id6760984418) (iOS 26+, free), then scan the QR code from **Pair iPhone…** on the Mac, the Windows or Linux app, or `codync-host pair`.
+**iPhone and Android** — [get Codync on the App Store](https://apps.apple.com/app/codync/id6760984418) (iOS 26+, free) or [on Google Play](https://play.google.com/store/apps/details?id=com.pokai.Codync.android) (Android 10+, free), then scan the QR code from **Pair iPhone…** on the Mac, the Windows or Linux app, or `codync-host pair`.
 
-> **Why the iPhone app can be a version behind:** every iPhone release goes through Apple's App Review first, which usually takes a day or more, so the App Store version can trail the Mac, Windows, Linux and host releases. Your computer accounts for that: an update that needs a newer iPhone app waits until that version is in the App Store, then installs, and the iPhone app shows a reminder when a newer version is available.
+> **Why the iPhone app can be a version behind:** every iPhone release goes through Apple's App Review first, which usually takes a day or more, so the App Store version can trail the Mac, Windows, Linux and host releases. Your computer accounts for that: an update that needs a newer phone app waits until the App Store has the iPhone version and Google Play has the Android version, then installs, and the iPhone app shows a reminder when a newer version is available.
 
 **Linux** — the host, plus the desktop app:
 

@@ -24,7 +24,7 @@ The first time a bot reaches a device on your network, such as a model server, m
 
 ### Windows
 
-Download [codync-windows-x64.exe](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe) and run it. It installs for your user only, and the host starts each time you sign in to Windows. It asks whether to share usage analytics from this computer ([what's shared](/docs/privacy#usage-analytics)). The installer isn't code-signed yet, so SmartScreen asks you to confirm once: choose **More info**, then **Run anyway**.
+Download [codync-windows-x64.exe](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe) and run it. It installs for your user only, and the host starts each time you sign in to Windows. It asks whether to share usage analytics from this computer ([what's shared](/docs/privacy#usage-analytics)). The installer isn't code-signed yet, so SmartScreen asks you to confirm once: choose **More info**, then **Run anyway**. If the window says **The host isn't running**, your antivirus may have stopped it: see [Windows and antivirus](/docs/windows-antivirus).
 
 Codync shows a tray icon. Left-click it to open the chat window, right-click it for the menu. Remote screen isn't available on Windows yet.
 
@@ -47,7 +47,7 @@ The app first offers to sign in with Apple, Google or GitHub. Signed in, it asks
 
 Setup also offers an optional GitHub star. If you skip it, the desktop app invites you once more when you've sent your fifth message from that computer. That invitation has two actions: **Star on GitHub** opens the repository, and **Not now** dismisses it. You can also dismiss it by clicking outside the card or pressing Escape. Opening the repository or dismissing this invitation ends the invitations on that computer.
 
-Under the first reply to the first message you send from a computer, the desktop app shows a one-time Ko-fi invitation: **Support on Ko-fi** opens the page and **×** dismisses it, and either one ends it. If a GitHub star invitation came up in that session, it waits for the next one. The terminal UI shows the same line and link once. The phone apps don't show it.
+Once you've sent messages from a computer on 3 different days, the desktop app invites you to support Codync on Ko-fi the next time you open its window, and again at 30 and 90 days. **Support on Ko-fi** opens the page and ends the invitations; **Not now** leaves the next one waiting. It never comes in the same opening as a GitHub star invitation or What's new. The terminal UI shows the same invitation when it starts; Escape closes it. The phone apps don't show it.
 
 The computer menu shows a device icon beside each name, helping you distinguish a laptop, Mac mini, or Linux computer. Connection status appears alongside the name (on a separate secondary line on desktop and Android). Tick or untick computers to choose whose bots the list shows; the menu stays open while you pick, so you can change several at once, and **All computers** shows every one again.
 
@@ -70,9 +70,9 @@ On a Mac, macOS may deny Local Network access to a host installed without the ap
 
 ## 2. Install the iPhone app
 
-Get [Codync on the App Store](https://apps.apple.com/app/codync/id6760984418). It's free and needs iOS 26 or later.
+Get [Codync on the App Store](https://apps.apple.com/app/codync/id6760984418). It's free and needs iOS 26 or later. On Android, get [Codync on Google Play](https://play.google.com/store/apps/details?id=com.pokai.Codync.android): also free, for Android 10 or later.
 
-Every iPhone release goes through Apple's App Review first, so the App Store version can trail the computer apps. Your computer waits to install an update that needs a newer iPhone app until that version is in the App Store. See [Updates](/docs/updates).
+Every iPhone release goes through Apple's App Review first, so the App Store version can trail the computer apps. Your computer waits to install an update that needs a newer phone app until the App Store has the iPhone version and Google Play has the Android version. See [Updates](/docs/updates).
 
 ## 3. Pair your iPhone
 
@@ -112,7 +112,7 @@ Pick an avatar and type a name, then create it. The name is optional: a bot with
 Every bot, your lead bot too, starts with these defaults, which you can change in its settings:
 
 - **Agent:** Claude Code when it can run on the computer, otherwise the first agent Codync knows that can.
-- **Workspace:** a personal folder of its own.
+- **Workspace:** **Own folder**, a folder of its own that Codync keeps versions of (see [Working folders and git](/docs/working-folders#versions-of-a-bots-own-folder)).
 - **Permissions:** the agent's Auto mode, so it asks you only about what it won't decide on its own (Ask me when the agent has no Auto mode).
 - **Notifications:** on.
 - **Connectors and skills:** every one installed on the computer is turned on (connectors only when the computer's credential store is available; see [Linux servers](/docs/linux-servers#limits-on-a-headless-server)).

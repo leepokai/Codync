@@ -35,11 +35,17 @@ export interface HostSnapshot {
   logPath: string
 }
 
+/** An account computer as the relay last told it: connected (`online`), not (`offline`: a cloud computer asleep, or
+ * one that's off), or not yet but on its way (`waking`: the relay is starting a cloud computer asleep). */
+export type RelayPresence = 'online' | 'offline' | 'waking'
+/** An account computer the relay says isn't connected. */
+export type RelayAbsence = Exclude<RelayPresence, 'online'>
+
 export interface CallError {
   status: number
   message: string
-  /** An account computer that isn't connected to the relay (a cloud computer asleep, or one that's off). */
-  offline?: boolean
+  /** An account computer that isn't connected to the relay. */
+  presence?: RelayAbsence
 }
 
 /** A host call's outcome as it crosses IPC (an Error doesn't). */
@@ -224,6 +230,8 @@ export interface CodyncBridge {
     call(computerId: string, signKey: string, method: string, body: unknown, timeoutMs: number): Promise<unknown>
     /** `path`: `/events?…` or `/term/{id}`, as on a loopback host. */
     stream(computerId: string, signKey: string, path: string, onData: (line: string) => void, onEnd: (error: CallError | null) => void): () => void
+    /** Each presence the relay tells an open channel, as it comes. */
+    onPresence(cb: (p: { computerId: string; presence: RelayPresence }) => void): () => void
   }
   account: {
     state(): Promise<AccountState>

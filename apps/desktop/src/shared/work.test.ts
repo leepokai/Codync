@@ -90,7 +90,7 @@ test('a roster row says the most pressing thing first', () => {
   const bot = (status: string, items: WorkItem[] = work, activity = '') => ({ status, activity, work: items })
   // Needs you: the chat's own card, then an item's.
   assert.deepEqual(rosterLine(bot('needsInput', work, 'Wants to run npm test'), same), { kind: 'needsYou', text: 'Wants to run npm test' })
-  assert.deepEqual(rosterLine(bot('needsInput'), same), { kind: 'needsYou', text: 'Needs your approval' })
+  assert.deepEqual(rosterLine(bot('needsInput'), same), { kind: 'needsYou', text: 'Needs approval' })
   assert.deepEqual(rosterLine(bot('working', [...work, item('d', 'needsYou')], 'Thinking…'), same), { kind: 'needsYou', text: 'Needs you' })
   // Then what the chat itself does.
   assert.deepEqual(rosterLine(bot('working', work, 'Thinking…'), same), { kind: 'working', text: 'Thinking…' })

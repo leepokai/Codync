@@ -33,7 +33,8 @@ export type Connection =
   | { kind: 'unpaired' }
   | { kind: 'connecting' }
   | { kind: 'online' }
-  | { kind: 'computerOffline'; lastSeen: number | null }
+  /** `waking`: the relay is starting it (a cloud computer asleep). */
+  | { kind: 'computerOffline'; lastSeen: number | null; waking?: boolean }
   | { kind: 'offline'; message: string }
   | { kind: 'unauthorized'; message: string }
 
@@ -173,9 +174,15 @@ export class BotMirror extends Observable {
     this.changed()
   }
 
-  /** A Codync Cloud computer that's asleep: a connection or a message wakes it, so it isn't offline. */
+  /** A Codync Cloud computer that's asleep, or on its way up: a connection or a message wakes it, so it isn't offline. */
   get isAsleep() {
-    return this.connection.kind === 'computerOffline' && (this.cloudHosting?.state === 'stopped' || this.cloudHosting?.state === 'stopping')
+    return this.connection.kind === 'computerOffline' && (this.isWaking || this.cloudHosting?.state === 'stopped' || this.cloudHosting?.state === 'stopping')
+  }
+
+  /** The relay is waking this cloud computer (about 10 to 30 seconds), or its provider says it's starting: it's coming,
+   * not offline. */
+  get isWaking() {
+    return this.connection.kind === 'computerOffline' && (this.connection.waking === true || this.cloudHosting?.state === 'starting')
   }
 
   /** A Codync Cloud computer older than this app's `minHost`: the cloud updates it on its own (this app's `Codync-App` header asks for it). */
@@ -269,6 +276,7 @@ export class BotMirror extends Observable {
   }
 
   get connectionLabel() {
+    if (this.isWaking) return 'Waking the computer…'
     if (this.isAsleep) return 'Sleeping'
     switch (this.shownConnection.kind) {
       case 'online':

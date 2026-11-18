@@ -95,6 +95,7 @@ const bridge: CodyncBridge = {
         ipcRenderer.send('channel:stream:close', id)
       }
     },
+    onPresence: (cb) => listen('channel:presence', cb),
   },
   account: {
     state: () => ipcRenderer.invoke('account:state'),

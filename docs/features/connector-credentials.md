@@ -95,9 +95,11 @@ connector and bot choices unchanged. The name is checked again after verificatio
 under the save lock, so a concurrent install cannot introduce a collision. An unchanged
 name remains valid, including duplicates imported from a config. A new `name` or `description` alone starts nothing: it saves
 even while the server can't start, `verify` is null in the answer and no bot restarts.
-Otherwise the bots that have the connector on are told to rebuild their tools. An agent that
-can resume restarts whole before its next turn (not only this connector's process); one
-that can't keeps its session, and the old definition, until its next new session. A bot
+Otherwise the bots that have the connector on are told to rebuild their tools (`Cmd::RefreshTools`,
+`Actor::restart_stale`). An agent that can resume restarts whole before its next turn (not only this
+connector's process) and goes on in its session; one that can't starts again once its turn ends, in a
+new session told the conversation so far (the recap a move to another agent gets), so its next turn
+has the new definition without the user starting over. A bot
 that can't be told is logged and doesn't fail the saved edit (`host/src/market/connector_update.rs`).
 
 Custom URL connectors use the same loopback-only method with `url` and `headers`.
@@ -114,7 +116,8 @@ URL changes require explicit replacement headers,
 and clear the old OAuth grant. URL or header changes advance the revision and
 invalidate pending sign-ins; a running proxy moves to the edited connection without
 the old server's session (one on the older SSE transport stops instead, and so does one
-whose new server needs a session: both say to restart the connector's tools).
+whose new server needs a session: both answer that the tools reconnect from the next turn,
+when the bot's agent has started again on the new revision, as above).
 On managed computers, the keeper record also carries this revision. A path-only or query-only URL edit retires old grants even when the origin and header values stay the same; metadata-only edits and unchanged URL retries keep them. A keeper from before the field refuses it. It still gets the revision already saved, without the field, as it always did (another connector saved, a 1Password reference resolved), but an edit to a new revision fails with "this computer's keeper is out of date: update Codync on this computer first": saved without the revision, that keeper's live grants could carry the new secret to the old URL.
 
 See [remote edit details](../guides/connector-verification.md#editing-a-custom-remote-connector).

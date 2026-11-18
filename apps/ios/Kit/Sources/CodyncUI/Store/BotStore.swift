@@ -28,8 +28,9 @@ public final class BotStore {
         case unpaired
         case connecting
         case online
-        /// The relay says the computer isn't connected; messages can wait in its mailbox.
-        case computerOffline(lastSeen: Date?)
+        /// The relay says the computer isn't connected; messages can wait in its mailbox. `waking`: the relay is
+        /// starting it (a cloud computer asleep).
+        case computerOffline(lastSeen: Date?, waking: Bool = false)
         /// Can't reach the computer at all (no direct route, no relay), or it can't confirm this
         /// device's access for now.
         case offline(String)
@@ -42,6 +43,11 @@ public final class BotStore {
     /// The first catch-up has arrived: everything up to the host's rev when this app connected.
     public internal(set) var caughtUp = false
     var catchUpRev = Int64.max
+    /// This events stream has delivered its whole catch-up; false again as soon as the stream stops or is replaced.
+    var streamCaughtUp = false
+    /// Online and caught up on this stream: the roster matches the host, so the icon badge stops using
+    /// the computer's alert counts.
+    var rosterIsCurrent: Bool { connection == .online && streamCaughtUp }
     /// The `since` this connection's events stream was opened with; the `hello` that opens its
     /// catch-up reads it (after a mirror reset `rev` no longer says what was requested).
     var requestedSince: Int64 = 0
@@ -115,7 +121,7 @@ public final class BotStore {
     public var onSent: (@MainActor (Bot, SendProgress) -> Void)?
     /// A prompt reached the computer or its mailbox.
     var onPromptSent: @MainActor () -> Void = { ReviewInvitation.shared.sent() }
-    /// A bot appeared, changed or went away.
+    /// A bot appeared, changed or went away, or this stream's catch-up finished (`rosterIsCurrent`).
     var onRosterChanged: (@MainActor () -> Void)?
     /// The computer's addresses or keys changed (merged from its `hello`); persist it.
     var onComputerChanged: (@MainActor (Computer) -> Void)?
@@ -135,7 +141,8 @@ public final class BotStore {
     var rev: Int64 = 0
     var hostId: String?
     var streamTask: Task<Void, Never>?
-    var eventsTask: Task<Void, Never>?
+    /// Replacing or dropping it clears `streamCaughtUp`: no new stream has caught up yet.
+    var eventsTask: Task<Void, Never>? { didSet { streamCaughtUp = false } }
     var isActive = true
     /// A call's audio: what the computer tells its voice (`CallCue`), and its end.
     struct VoiceCall {
@@ -242,10 +249,21 @@ public final class BotStore {
         if case .updateHost = mismatch { cloudHosting != nil } else { false }
     }
 
-    /// A Codync Cloud computer that's asleep: a connection or a message wakes it, so it isn't offline.
+    /// A Codync Cloud computer that's asleep, or on its way up: a connection or a message wakes it, so it isn't offline.
     public var isAsleep: Bool {
-        if case .computerOffline = connection { cloudHosting?.state.isAsleep == true } else { false }
+        if case .computerOffline = connection { isWaking || cloudHosting?.state.isAsleep == true } else { false }
     }
+
+    /// The relay is waking this cloud computer (about 10 to 30 seconds), or its provider says it's starting: it's
+    /// coming, not offline.
+    public var isWaking: Bool {
+        guard case let .computerOffline(_, waking) = connection else { return false }
+        return waking || cloudHosting?.state == .starting
+    }
+
+    /// Can't be reached, and not because it's updating or asleep (or waking): messaging a sleeping cloud computer
+    /// wakes it (Android `AppState.unreachable`).
+    public var isUnreachable: Bool { isOffline && !isUpdating && !isAsleep }
 
         /// Roster order: the lead, pinned bots, then where the user dragged them, then most recent activity.
     public var roster: [Bot] {

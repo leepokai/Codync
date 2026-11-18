@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test'
 import { join, resolve } from 'node:path'
+import { fixtureCommand } from './fixture-command.ts'
 import { api, attach, typeMessage } from './sandbox.ts'
 
 // A scripted agent that asks before editing a.txt, then replies with the answer it got (host/tests/fake_agent.py).
 const agent = join(resolve(__dirname, '../../..'), 'host/tests/fake_agent.py')
-const python = process.platform === 'win32' ? `python -X utf8 -u "${agent}"` : `python3 -X utf8 -u '${agent}'`
 
 test('an approval card reads in the app language, its answers and outcome too', async () => {
   const { browser, page } = await attach()
@@ -14,7 +14,7 @@ test('an approval card reads in the app language, its answers and outcome too', 
     await page.reload()
     const name = `Approval language e2e ${Date.now()}`
     const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-      name, backend: 'custom', command: python, connectors: [], skills: [], notify: false, permission: 'ask',
+      name, backend: 'custom', command: fixtureCommand(agent), connectors: [], skills: [], notify: false, permission: 'ask',
     })
     botId = bot.id
     await page.locator('.roster-row', { hasText: name }).click()

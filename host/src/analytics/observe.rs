@@ -191,6 +191,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             Event::SkillInstalled
         }
         "removeSkill" => Event::SkillRemoved,
+        "removeUnusedSkills" => Event::SkillsCleaned,
         // A bot's `save_skill`: a new skill, or new text for one (`id`).
         "chatCall" if b["name"] == crate::chat::skills::TOOL => {
             let rewrite = crate::chat::skills::rewritten_id(&b["arguments"]).is_some();
@@ -317,6 +318,10 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
         Event::ConnectorsImported => {
             p.insert("count".into(), answer["items"].as_array().map_or(0, Vec::len).into());
         }
+        // How many skills went, never which.
+        Event::SkillsCleaned => {
+            p.insert("count".into(), answer["ids"].as_array().map_or(0, Vec::len).into());
+        }
         // The file names its app: only the ones Codync reads leave the computer.
         Event::BotsImported => {
             let source = answer["source"].as_str().filter(|s| matches!(*s, "grok-bot" | "openbot"));
@@ -368,7 +373,7 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
             p.insert("stage".into(), "action".into());
             Some((Event::NetworkFailed, p))
         }
-        Event::CredentialsReset => {
+        Event::CredentialsReset | Event::SkillsCleaned => {
             p.insert("outcome".into(), "failed".into());
             p.insert("error".into(), "other".into());
             Some((event, p))

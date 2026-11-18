@@ -175,6 +175,14 @@ fn connectors_skills_and_agents() {
         Some((Event::ConnectorRemoved, json!({"client": "local"})))
     );
     assert_eq!(props("removeSkill", &json!({"id": "s"})).map(|(e, _)| e), Some(Event::SkillRemoved));
+    let (event, p) = props("removeUnusedSkills", &json!({})).expect("a cleanup is tracked");
+    assert_eq!(event, Event::SkillsCleaned);
+    let done = answered(event, p.as_object().cloned().unwrap_or_default(), &json!({"ids": ["a", "b"]}));
+    assert_eq!(done.and_then(|p| p.get("count").cloned()), Some(json!(2)), "how many, never which");
+    let (_, lost) =
+        failed(event, Map::new(), &anyhow::anyhow!("secret path /x")).expect("a failed cleanup is reported");
+    assert_eq!(lost["error"], "other");
+    assert!(!lost.values().any(|v| v.to_string().contains("secret")), "never the error's message");
     let written =
         |arguments: Value| props("chatCall", &json!({"botId": "b", "name": "save_skill", "arguments": arguments}));
     assert_eq!(

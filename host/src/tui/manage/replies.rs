@@ -445,12 +445,16 @@ impl App {
 
     /// Keeps the installed lists the marketplace and the bot form show.
     pub(in crate::tui) fn set_plugins(&mut self, connectors: bool, items: Vec<Value>) -> Vec<Toggle> {
+        let named = |c: &Value| c["name"].as_str().or_else(|| c["id"].as_str()).map(str::to_owned);
         let list = items
             .iter()
             .filter_map(|c| {
                 let id = c["id"].as_str()?.to_owned();
-                let name = c["name"].as_str().unwrap_or(&id).to_owned();
-                Some(Toggle { id, name, on: false })
+                let name = named(c)?;
+                // Skills an import copied share a name: the id tells them apart.
+                let shared =
+                    !connectors && items.iter().filter(|other| named(other).as_ref() == Some(&name)).count() > 1;
+                Some(Toggle { name: if shared { format!("{name} ({id})") } else { name }, id, on: false })
             })
             .collect();
         if connectors {
@@ -487,5 +491,27 @@ mod tests {
         assert!(webhook_copied(&json!({"url": "https://x"})).contains("public URL"));
         assert!(webhook_copied(&json!({"url": null, "needsAccount": true})).contains("not in an account"));
         assert!(webhook_copied(&json!({"url": null, "needsAccount": false})).contains("the cloud is off"));
+    }
+
+    #[tokio::test]
+    async fn skills_that_share_a_name_are_listed_with_their_id() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(super::super::super::net::Client::new("http://127.0.0.1:1", None), tx, String::new());
+        let items = vec![
+            json!({"id": "humanizer", "name": "Humanizer"}),
+            json!({"id": "humanizer-2", "name": "Humanizer"}),
+            json!({"id": "pdf", "name": "PDF"}),
+        ];
+        let names = |toggles: Vec<Toggle>| toggles.into_iter().map(|t| t.name).collect::<Vec<_>>();
+        assert_eq!(
+            names(app.set_plugins(false, items.clone())),
+            ["Humanizer (humanizer)", "Humanizer (humanizer-2)", "PDF"],
+            "only the copies carry their id"
+        );
+        assert_eq!(
+            names(app.set_plugins(true, items)),
+            ["Humanizer", "Humanizer", "PDF"],
+            "connectors keep their names"
+        );
     }
 }

@@ -19,6 +19,7 @@ import { ApprovalRow } from './ApprovalRow'
 import { CompactionRow } from './CompactionRow'
 import { agentChoice, AgentStepBanner, FallbacksRow } from './Fallbacks'
 import { errorText, isValid, lastPathComponent, normalized, useFollowSaved, usePlugins, type Plugins } from './drafts'
+import { skillCopyLabel } from '../marketplace/market-models'
 import { FormSheet } from '../marketplace/pieces'
 import { SkillSheet, type SkillRef } from '../marketplace/SkillSheet'
 import { AnchoredPanel, AutoTextArea, AvatarPicker, Field, SwitchRow } from './parts'
@@ -288,7 +289,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
         <PluginToggles
           title="Skills"
           empty="No skills yet. Get some from Extensions, or write your own."
-          items={skills.map((s) => ({ id: s.id, name: s.name, detail: '' }))}
+          items={skills.map((s) => ({ id: s.id, name: s.name, detail: skillCopyLabel(skills, s) }))}
           selection={draft.skills ?? []}
           onChange={(ids) => set('skills', ids)}
           onInfo={(item) => {

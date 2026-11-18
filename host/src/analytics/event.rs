@@ -117,6 +117,7 @@ pub enum Event {
     ConnectorSigninStarted,
     SkillInstalled,
     SkillRemoved,
+    SkillsCleaned,
     SkillWritten,
     /// A bot's `publish_artifact`.
     ArtifactPublished,
@@ -264,6 +265,7 @@ impl Event {
             Self::ConnectorSigninStarted => "connector_signin_started",
             Self::SkillInstalled => "skill_installed",
             Self::SkillRemoved => "skill_removed",
+            Self::SkillsCleaned => "skills_cleaned",
             Self::SkillWritten => "skill_written",
             Self::ArtifactPublished => "artifact_published",
             Self::VoiceNoteSent => "voice_note_sent",

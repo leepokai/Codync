@@ -117,6 +117,7 @@ impl App {
                         ),
                         ConfirmAct::RemoveConnector(id) => self.call("removeConnector", json!({"id": id}), changed),
                         ConfirmAct::RemoveSkill(id) => self.call("removeSkill", json!({"id": id}), changed),
+                        ConfirmAct::RemoveUnusedSkills => self.call("removeUnusedSkills", json!({}), changed),
                         ConfirmAct::ResetCredentials => self.ask_delete_credentials(),
                         ConfirmAct::DeleteCredentials => {
                             self.call("resetCredentials", json!({}), After::CredentialsReset);

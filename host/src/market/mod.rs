@@ -42,8 +42,8 @@ pub use custom::add_custom_connector;
 pub use install::{import_connectors, install_connector, list_connectors, remove_connector};
 pub use registry::{browse_connectors, connector_info, refresh_first_page};
 pub use skills::{
-    add_custom_skill, browse_skills, expand_command, install_skill, list_skills, remove_skill, skill_details,
-    skills_brief, slash_command, turn_on_installed_once, update_custom_skill,
+    add_custom_skill, browse_skills, expand_command, hold_skill_use, install_skill, list_skills, remove_skill,
+    remove_unused_skills, skill_details, skills_brief, slash_command, turn_on_installed_once, update_custom_skill,
 };
 pub(crate) use skills::{body as skill_body, front_matter};
 
@@ -259,6 +259,7 @@ pub fn turn_on(hub: &crate::hub::Hub, kind: Installed, ids: &[String], bot: Opti
     if ids.is_empty() {
         return Ok(());
     }
+    let _hold = hold_skill_use();
     let _guard = TURN_ON.locked();
     for row in hub.store.bots()? {
         if row.deleted || row.config.is_group() || bot.is_some_and(|b| b != row.config.id) {

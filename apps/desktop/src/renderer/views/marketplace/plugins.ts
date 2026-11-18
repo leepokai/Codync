@@ -71,6 +71,11 @@ export class Plugins extends Observable {
     await this.after(market.removeSkill(await this.store.ready(), id))
   }
 
+  /** Removes every skill no bot has on. */
+  async removeUnusedSkills() {
+    await this.after(market.removeUnusedSkills(await this.store.ready()))
+  }
+
   /**
    * Signs in to a remote connector (host/src/market/oauth.rs). With an `app` callback the system
    * browser returns `codync://oauth?…` and the code goes to the host; with `host` the browser

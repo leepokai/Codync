@@ -9,6 +9,35 @@ use std::time::{Duration, Instant};
 
 static SKILL_CATALOG: Mutex<Option<(Instant, Value)>> = Mutex::new(None);
 static SKILLS_LOCK: Mutex<()> = Mutex::new(());
+static SKILL_USE: Mutex<()> = Mutex::new(());
+
+thread_local! {
+    static HOLDING_USE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Held by `hold_skill_use`; releases the lock when dropped.
+pub struct UseGuard(Option<std::sync::MutexGuard<'static, ()>>);
+
+impl Drop for UseGuard {
+    fn drop(&mut self) {
+        if self.0.is_some() {
+            HOLDING_USE.set(false);
+        }
+    }
+}
+
+/// Keeps `remove_unused_skills` from running while a skill is being added and turned on, or a bot's skills are
+/// being changed: between saving a skill and turning it on nothing uses it yet, and cleanup must not read that
+/// as unused. Lock order: this, then `TURN_ON`, `SKILLS_LOCK` and the bots' lock. A thread that already holds it
+/// (a skill saved, then turned on through `update_bot`) takes it again without waiting for itself.
+pub fn hold_skill_use() -> UseGuard {
+    if HOLDING_USE.get() {
+        return UseGuard(None);
+    }
+    let guard = SKILL_USE.locked();
+    HOLDING_USE.set(true);
+    UseGuard(Some(guard))
+}
 
 /// `Skill::source` of a skill written in Codync rather than downloaded.
 const CUSTOM: &str = "custom";
@@ -359,6 +388,30 @@ pub fn remove_skill(store: &crate::store::Store, id: &str) -> Result<()> {
     })
 }
 
+/// The skills no bot has on: nothing reads them, so the library can drop them without a bot noticing.
+fn unused_skills(store: &crate::store::Store) -> Result<Vec<String>> {
+    let mut used = std::collections::HashSet::new();
+    for row in store.bots()?.into_iter().chain(store.task_bots()?) {
+        if !row.deleted {
+            used.extend(row.config.skills);
+        }
+    }
+    Ok(skills(store).into_iter().map(|s| s.id).filter(|id| !used.contains(id)).collect())
+}
+
+/// Removes the skills no bot has on (`unused_skills`); returns their ids. Blocking (reads and deletes folders):
+/// call through `spawn_blocking`. Holds `hold_skill_use` from the check to the last deletion, so a bot
+/// that turns a skill on, or a skill saved for a bot, isn't swept away between the two. A skill installed from the
+/// catalog is on for no bot until its install finishes: cleanup run at that moment removes it.
+pub fn remove_unused_skills(store: &crate::store::Store) -> Result<Vec<String>> {
+    let _hold = hold_skill_use();
+    let unused = unused_skills(store)?;
+    for id in &unused {
+        remove_skill(store, id)?;
+    }
+    Ok(unused)
+}
+
 /// `/name rest` → `name` and the rest; the rest is `None` while the name is still being typed.
 pub fn slash_command(text: &str) -> Option<(&str, Option<&str>)> {
     let body = text.strip_prefix('/')?;
@@ -495,6 +548,61 @@ mod tests {
         assert_eq!(body("---\nname: pdf\ndescription: x\n---\n\n# PDF\nUse it.\n"), "# PDF\nUse it.");
         assert_eq!(body("# No front matter\n"), "# No front matter");
         assert_eq!(body("---\nname: open\n"), "", "an unclosed front matter has no body");
+    }
+
+    #[tokio::test]
+    async fn skills_no_bot_has_on_are_the_unused_ones() {
+        let dir = std::env::temp_dir().join(format!("codync-skills-hub-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let store = crate::store::Store::open(&dir.join("t.db")).expect("store");
+        let identity = crate::remote::identity::Identity::load_or_create(&dir).expect("identity");
+        let hub = crate::hub::Hub::new(store, "test".into(), identity, "token".into(), 0);
+        let tag = uuid::Uuid::new_v4();
+        let ids: Vec<String> = ["kept", "idle", "other"].iter().map(|n| format!("test-{n}-{tag}")).collect();
+        let all: Vec<Skill> = ids
+            .iter()
+            .map(|id| serde_json::from_value(json!({"id": id, "name": "Same", "source": "custom"})).expect("skill"))
+            .collect();
+        save(&hub.store, "skills", &all).expect("save skills");
+        let cfg = crate::agent::new_bot::with_defaults(&hub, json!({"name": "Bot"})).await.expect("defaults");
+        let bot = hub.create_bot(cfg).expect("a bot")["id"].as_str().expect("an id").to_owned();
+        hub.update_bot(&json!({"id": bot, "skills": [ids[0]]})).expect("skills on");
+
+        assert_eq!(unused_skills(&hub.store).expect("unused"), ids[1..], "only the skill the bot has on stays");
+        assert_eq!(remove_unused_skills(&hub.store).expect("removed"), ids[1..]);
+        let left: Vec<String> = skills(&hub.store).into_iter().map(|s| s.id).collect();
+        assert_eq!(left, [ids[0].clone()]);
+        assert!(remove_unused_skills(&hub.store).expect("again").is_empty(), "nothing left to remove");
+
+        hub.delete_bot(&bot).expect("deleted");
+        assert_eq!(unused_skills(&hub.store).expect("unused"), [ids[0].clone()], "a deleted bot uses nothing");
+        drop(hub);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn cleanup_waits_for_a_skill_that_is_being_turned_on() {
+        let dir = std::env::temp_dir().join(format!("codync-skills-lock-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let store = std::sync::Arc::new(crate::store::Store::open(&dir.join("t.db")).expect("store"));
+        let id = format!("test-idle-{}", uuid::Uuid::new_v4());
+        let idle: Skill = serde_json::from_value(json!({"id": id, "name": "Idle", "source": "custom"})).expect("skill");
+        save(&store, "skills", &[idle]).expect("save skills");
+
+        let hold = hold_skill_use();
+        let again = hold_skill_use();
+        drop(again);
+        let sweeper = {
+            let store = store.clone();
+            std::thread::spawn(move || remove_unused_skills(&store))
+        };
+        std::thread::sleep(Duration::from_millis(150));
+        assert!(!sweeper.is_finished(), "cleanup holds off while a skill is being turned on");
+        assert_eq!(skills(&store).len(), 1, "and removes nothing meanwhile");
+        drop(hold);
+        let removed = sweeper.join().expect("no panic").expect("cleanup");
+        assert_eq!(removed, [id], "it goes once the skill is settled");
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

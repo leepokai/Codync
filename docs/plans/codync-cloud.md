@@ -270,7 +270,7 @@ second" on Fly) with no app release needed for the provider itself.
 - **Codync's host updates itself.** The host installed by the public script is a standalone release, so its
   automatic updater is on (checked on the trial VM: `Host 2.24.0 · upToDate · Automatic updates: on`): once a
   day, while awake and no bot is working, it fetches the signed release, installs it and restarts under systemd.
-  The release gate already keeps any version the App Store iPhone app can't talk to from becoming "latest", so
+  The release gate already keeps any version the App Store's iPhone app or Google Play's Android app can't talk to from becoming "latest", so
   cloud hosts follow the same compatibility rules as every other host.
 - **Sleeping machines**: a cold resume starts a new host process, which checks about a minute after waking and
   waits while bots work. Step 2 adds "update, then sleep": the host checks for a release when it decides it is
@@ -303,7 +303,7 @@ A self-updating cloud host must never outrun the user's own apps: if a release r
 their phone, the phone shows *Update this app* and stops syncing. Two layers:
 
 1. Already there: the release gate keeps a release that raises `MIN_APP` from becoming "latest" until the App
-   Store has that iPhone app, and `MIN_APP` only rises on renames and removals.
+   Store and Google Play have that phone app, and `MIN_APP` only rises on renames and removals.
 2. For cloud computers, do what MausBot does with its homes: Codync's cloud owns the host version instead of the
    host's own updater (`managed.json` turns automatic updates off). Every signed-in request from an app to the
    Worker carries the app's version (MausBot: `x-openmausbot-version`), so the Worker knows which versions an

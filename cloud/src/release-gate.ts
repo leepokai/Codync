@@ -1,10 +1,11 @@
 // Runs the release gate (.github/workflows/release-gate.yml) every 5 minutes while a published release
-// waits behind GitHub's latest mark, for App Review (its MIN_APP is ahead of the App Store) or for its
-// last files, and while the Homebrew tap trails the latest release (a tap update that failed after the
-// mark moved). The App Store's iPhone app asks for its own host the moment it's out
-// (docs/reference/compatibility.md, "Holding releases for the App Store"), and GitHub ran the
+// waits behind GitHub's latest mark, for a store's review (its MIN_APP is ahead of the App Store or
+// Google Play) or for its last files, and while the Homebrew tap trails the latest release (a tap
+// update that failed after the mark moved). A held release should reach downloads soon after the
+// slower store's review passes
+// (docs/reference/compatibility.md, "Holding releases for the stores"), and GitHub ran the
 // workflow's hourly schedule late or not at all, so this replaced it.
-// The gate reads the App Store itself, on GitHub's runners: Apple refuses the lookup from Workers (403).
+// The gate reads the stores itself, on GitHub's runners: Apple refuses the lookup from Workers (403).
 // Without a token (`RELEASE_GATE_TOKEN`, Actions: write on the repository) it does nothing.
 
 import type { Env } from "./index";

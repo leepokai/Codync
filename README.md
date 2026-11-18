@@ -124,7 +124,7 @@ Open Codync: it sets up the host on first launch. **Open Codync** opens the full
 
 **iPhone** — [get Codync on the App Store](https://apps.apple.com/app/codync/id6760984418) (iOS 26+, free), then scan the QR code from **Pair iPhone…** on the Mac, the Windows or Linux app, or `codync-host pair`.
 
-> **Why the iPhone app can be a version behind:** every iPhone release goes through Apple's App Review first, which usually takes a day or more, so the App Store version can trail the Mac, Windows, Linux and host releases. Your computer accounts for that: an update that needs a newer iPhone app waits until that version is in the App Store, then installs, and the iPhone app shows a reminder when a newer version is available.
+> **Why the iPhone app can be a version behind:** every iPhone release goes through Apple's App Review first, which usually takes a day or more, so the App Store version can trail the Mac, Windows, Linux and host releases. Your computer accounts for that: an update that needs a newer phone app waits until the App Store has the iPhone version and Google Play has the Android version, then installs, and the iPhone app shows a reminder when a newer version is available.
 
 **Linux** — the host, plus the desktop app:
 

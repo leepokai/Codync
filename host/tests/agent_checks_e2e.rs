@@ -9,7 +9,7 @@ mod common;
 use std::ffi::OsString;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Fake `claude` and `cursor-agent` that log their process id and arguments, then never finish, not even when their stdin
 /// closes. The PATH with them and no other agent CLI, and their log.
@@ -185,15 +185,25 @@ async fn agent_probes_leave_no_session_in_the_users_omp() {
     ];
     let (mut host, base) = common::serve_with(&home, &env).await;
     let token = std::fs::read_to_string(home.join("token")).unwrap();
-    let models = reqwest::Client::new()
-        .post(format!("{base}/api/agentModels"))
-        .bearer_auth(token.trim())
-        .json(&serde_json::json!({"backend": "omp"}))
-        .send()
-        .await
-        .unwrap();
-    let status = models.status();
-    assert!(status.is_success(), "agentModels: {status} {}", models.text().await.unwrap());
+    // The lead bot's own sign-in check starts oh-my-pi as the host comes up: two of its processes on one agent
+    // directory can lose one, so a probe that failed that way is tried again once the check is done.
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        let models = reqwest::Client::new()
+            .post(format!("{base}/api/agentModels"))
+            .bearer_auth(token.trim())
+            .json(&serde_json::json!({"backend": "omp"}))
+            .send()
+            .await
+            .unwrap();
+        let status = models.status();
+        let body = models.text().await.unwrap();
+        if status.is_success() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "agentModels: {status} {body}");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
     assert_eq!(omp_sessions(&home.join(".omp/agent"), &home), Vec::<String>::new(), "a probe session in ~/.omp");
     assert_ne!(omp_sessions(&common::agent_dir(&home), &home), Vec::<String>::new(), "no probe session");
     common::stop(&mut host);

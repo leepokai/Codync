@@ -1987,8 +1987,6 @@
   "The provider refused this key.": "제공업체가 이 키를 거부했습니다.",
   "Couldn't reach the cloud provider. Try again in a minute.": "클라우드 제공업체에 연결할 수 없습니다. 1분 후에 다시 시도하세요.",
   "Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.": "클라우드 컴퓨터는 내 계정에서 실행됩니다. 키는 암호화되어 보관되며 마지막 네 자리만 표시됩니다.",
-  "How to make a key": "키 만드는 방법",
-  "Make a key with only what Codync needs in your {provider} account, then paste it above.": "{provider} 계정에서 Codync에 필요한 권한만 가진 키를 만든 뒤 위에 붙여 넣으세요.",
   "Open {provider}": "{provider} 열기",
   "{provider} API key": "{provider} API 키",
   "Runs on your own account with a cloud provider, which bills you while it's awake. It sleeps when idle and wakes when you message it.": "클라우드 제공업체의 내 계정에서 실행되며, 깨어 있는 시간만큼 요금이 청구됩니다. 쉬고 있으면 잠자기 상태가 되고 메시지를 보내면 깨어납니다.",
@@ -1999,7 +1997,6 @@
   "Cloud computer": "클라우드 컴퓨터",
   "Cloud computer {n}": "클라우드 컴퓨터 {n}",
   "Add a key first": "먼저 키를 추가하세요",
-  "Free sandbox available": "무료 샌드박스 제공",
   "Get a free sandbox": "무료 샌드박스 받기",
   "InstaBox's free plan includes one machine (4 vCPU, 8 GiB).": "InstaBox 무료 요금제에는 머신 1대(4 vCPU, 8 GiB)가 포함됩니다.",
   "Rename…": "이름 변경…",
@@ -2212,5 +2209,15 @@
   "Codync {version} is available": "Codync {version}을(를) 사용할 수 있습니다",
   "You have {version}.": "현재 버전은 {version}입니다.",
   "Couldn't restore sign-in. Check your connection and retry.": "로그인을 복원하지 못했습니다. 연결을 확인하고 다시 시도하세요.",
-  "Still waking the computer: try again in a moment.": "아직 컴퓨터를 깨우는 중입니다. 잠시 후 다시 시도하세요."
+  "Still waking the computer: try again in a moment.": "아직 컴퓨터를 깨우는 중입니다. 잠시 후 다시 시도하세요.",
+  "From $20 a month": "월 $20부터",
+  "Free plan available": "무료 플랜 있음",
+  "Create an environment named codync and mark it safe for third parties.": "codync라는 이름의 환경을 만들고 서드 파티에 안전하다고 표시하세요.",
+  "Create an API key for that environment that never expires, with the sandbox and snapshot actions.": "그 환경에서 만료되지 않고 sandbox와 snapshot 작업을 가진 API 키를 만드세요.",
+  "Copy the key and paste it below.": "키를 복사해 아래에 붙여 넣으세요.",
+  "Sign in, or sign up for the free plan.": "로그인하거나 무료 플랜에 가입하세요.",
+  "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "machines:read, machines:write, machines:delete 범위를 가진 codync라는 이름의 API 키를 만드세요.",
+  "Connect {provider}": "{provider} 연결",
+  "Use the command line instead": "대신 명령줄 사용",
+  "Leave it empty to use the hostname.": "비워 두면 호스트 이름을 사용합니다."
 }

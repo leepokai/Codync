@@ -322,6 +322,16 @@ extension BotStore {
         Task { await attempt(replay: true, undo: { self.hello?.autoOrder = !on }) { try await $0.setAutoOrder(on) } }
     }
 
+    /// Whether the user names this computer here, on a host that takes it: a cloud computer is named in Codync Cloud.
+    public var canRename: Bool {
+        connection == .online && supportsComputerName && hello.map { $0.device != "cloud" } == true
+    }
+
+    /// The user's name for this computer, empty for its hostname.
+    public func setComputerName(_ name: String) {
+        Task { await attempt { self.hello?.name = try await $0.setComputerName(name) } }
+    }
+
     /// One place up (-1) or down (+1) among the bots it moves with (`isRosterPeer`: its band and, below the top, its section; VoiceOver).
     public func move(_ botId: String, by offset: Int) {
         guard let bot = bots[botId] else { return }

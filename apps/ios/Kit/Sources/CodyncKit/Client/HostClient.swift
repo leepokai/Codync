@@ -353,6 +353,13 @@ public extension HostClient {
         return out
     }
 
+    /// The user's name for this computer, empty for its hostname; answers the name every app shows now.
+    func setComputerName(_ name: String) async throws -> String {
+        struct Named: Decodable { var name: String }
+        let named: Named = try await self.call("setComputerName", ["name": name])
+        return named.name
+    }
+
     /// Whether a bot with a new message moves to the top of the roster.
     func setAutoOrder(_ enabled: Bool) async throws {
         let _: Empty = try await self.call("setAutoOrder", ["enabled": enabled])

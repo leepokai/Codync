@@ -1987,8 +1987,6 @@
   "The provider refused this key.": "El proveedor rechazó esta clave.",
   "Couldn't reach the cloud provider. Try again in a minute.": "No se pudo conectar con el proveedor de nube. Inténtalo de nuevo en un minuto.",
   "Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.": "Tu ordenador en la nube funciona en tu propia cuenta. Las claves se guardan cifradas; solo se ven sus últimos cuatro caracteres.",
-  "How to make a key": "Cómo crear una clave",
-  "Make a key with only what Codync needs in your {provider} account, then paste it above.": "Crea en tu cuenta de {provider} una clave solo con lo que Codync necesita y pégala arriba.",
   "Open {provider}": "Abrir {provider}",
   "{provider} API key": "Clave de API de {provider}",
   "Runs on your own account with a cloud provider, which bills you while it's awake. It sleeps when idle and wakes when you message it.": "Funciona en tu propia cuenta de un proveedor de nube, que te cobra el tiempo que está activo. Entra en reposo cuando no se usa y se activa cuando le escribes.",
@@ -1999,7 +1997,6 @@
   "Cloud computer": "Ordenador en la nube",
   "Cloud computer {n}": "Ordenador en la nube {n}",
   "Add a key first": "Primero añade una clave",
-  "Free sandbox available": "Sandbox gratuito disponible",
   "Get a free sandbox": "Obtener un sandbox gratuito",
   "InstaBox's free plan includes one machine (4 vCPU, 8 GiB).": "El plan gratuito de InstaBox incluye una máquina (4 vCPU, 8 GiB).",
   "Rename…": "Renombrar…",
@@ -2212,5 +2209,15 @@
   "Codync {version} is available": "Codync {version} está disponible",
   "You have {version}.": "Tienes la versión {version}.",
   "Couldn't restore sign-in. Check your connection and retry.": "No se pudo restaurar el inicio de sesión. Comprueba tu conexión y vuelve a intentarlo.",
-  "Still waking the computer: try again in a moment.": "Todavía activando el ordenador: inténtalo de nuevo en un momento."
+  "Still waking the computer: try again in a moment.": "Todavía activando el ordenador: inténtalo de nuevo en un momento.",
+  "From $20 a month": "Desde 20 $ al mes",
+  "Free plan available": "Plan gratuito disponible",
+  "Create an environment named codync and mark it safe for third parties.": "Crea un entorno llamado codync y márcalo como seguro para terceros.",
+  "Create an API key for that environment that never expires, with the sandbox and snapshot actions.": "Crea para ese entorno una clave de API que no caduque nunca, con las acciones de sandbox y snapshot.",
+  "Copy the key and paste it below.": "Copia la clave y pégala abajo.",
+  "Sign in, or sign up for the free plan.": "Inicia sesión o regístrate en el plan gratuito.",
+  "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "Crea una clave de API llamada codync con los permisos machines:read, machines:write y machines:delete.",
+  "Connect {provider}": "Conectar {provider}",
+  "Use the command line instead": "Usar la línea de comandos",
+  "Leave it empty to use the hostname.": "Déjalo vacío para usar el nombre de host."
 }

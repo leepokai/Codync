@@ -1987,8 +1987,6 @@
   "The provider refused this key.": "Провайдер отклонил этот ключ.",
   "Couldn't reach the cloud provider. Try again in a minute.": "Не удалось связаться с облачным провайдером. Попробуйте через минуту.",
   "Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.": "Облачный компьютер работает в вашем собственном аккаунте. Ключи хранятся в зашифрованном виде; видны только последние четыре символа.",
-  "How to make a key": "Как создать ключ",
-  "Make a key with only what Codync needs in your {provider} account, then paste it above.": "Создайте в аккаунте {provider} ключ только с тем, что нужно Codync, и вставьте его выше.",
   "Open {provider}": "Открыть {provider}",
   "{provider} API key": "API-ключ {provider}",
   "Runs on your own account with a cloud provider, which bills you while it's awake. It sleeps when idle and wakes when you message it.": "Работает в вашем собственном аккаунте у облачного провайдера, который берёт плату за время, пока компьютер не спит. Засыпает в простое и просыпается, когда вы пишете.",
@@ -1999,7 +1997,6 @@
   "Cloud computer": "Облачный компьютер",
   "Cloud computer {n}": "Облачный компьютер {n}",
   "Add a key first": "Сначала добавьте ключ",
-  "Free sandbox available": "Есть бесплатная песочница",
   "Get a free sandbox": "Получить бесплатную песочницу",
   "InstaBox's free plan includes one machine (4 vCPU, 8 GiB).": "Бесплатный тариф InstaBox включает одну машину (4 vCPU, 8 GiB).",
   "Rename…": "Переименовать…",
@@ -2212,5 +2209,15 @@
   "Codync {version} is available": "Доступен Codync {version}",
   "You have {version}.": "У вас версия {version}.",
   "Couldn't restore sign-in. Check your connection and retry.": "Не удалось восстановить вход. Проверьте подключение и попробуйте снова.",
-  "Still waking the computer: try again in a moment.": "Компьютер всё ещё пробуждается: попробуйте через минуту."
+  "Still waking the computer: try again in a moment.": "Компьютер всё ещё пробуждается: попробуйте через минуту.",
+  "From $20 a month": "От $20 в месяц",
+  "Free plan available": "Есть бесплатный план",
+  "Create an environment named codync and mark it safe for third parties.": "Создайте окружение с именем codync и отметьте его как безопасное для третьих сторон.",
+  "Create an API key for that environment that never expires, with the sandbox and snapshot actions.": "Создайте для этого окружения бессрочный API-ключ с действиями sandbox и snapshot.",
+  "Copy the key and paste it below.": "Скопируйте ключ и вставьте его ниже.",
+  "Sign in, or sign up for the free plan.": "Войдите или зарегистрируйтесь на бесплатном плане.",
+  "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "Создайте API-ключ с именем codync и правами machines:read, machines:write и machines:delete.",
+  "Connect {provider}": "Подключить {provider}",
+  "Use the command line instead": "Использовать командную строку",
+  "Leave it empty to use the hostname.": "Оставьте пустым, чтобы использовать имя хоста."
 }

@@ -1,9 +1,8 @@
 import CodyncKit
 import SwiftUI
 
-/// One provider's key, from New cloud computer or a cloud computer's `⋯`: the key to the user's own account there,
-/// pasted once, checked and kept encrypted by the cloud, and shown afterwards only by its last four; while the provider
-/// turns it down, what to fix shows under it. Saving one closes it.
+/// One provider's key, from a cloud computer's `⋯` or a provider's in New cloud computer: `CloudKeyForm` under the
+/// provider's name. Saving one closes it.
 public struct CloudKeySheet: View {
     let store: CloudMachineStore
     let provider: String
@@ -18,18 +17,48 @@ public struct CloudKeySheet: View {
         VStack(spacing: 0) {
             if let provider = store.providers.first(where: { $0.provider == self.provider }) {
                 ModalHeader { Text(verbatim: L10n.fill(L10n.tr("{provider} API key"), ["provider": provider.name])) }
-                CardForm {
-                    CardSection(footer: "Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.") {
-                        CloudKeyRow(store: store, provider: provider) { dismiss() }
-                        if let offer = provider.offer { CloudOfferRow(provider: provider.provider, offer: offer) }
-                        CloudKeySetupRow(provider: provider)
-                    }
-                }
+                CloudKeyForm(store: store, provider: provider) { dismiss() }
             }
         }
         .background(Palette.background)
-        // Closed, its failure was seen: New cloud computer under it shows only a removal asked from its own row.
-        .onDisappear { store.clearError(at: .key(provider)) }
+    }
+}
+
+/// One provider's key, in its own sheet and as New cloud computer's key step: how to make one on the provider's site
+/// (numbered, then its page), the key to the user's own account there (pasted once, checked and kept encrypted by the
+/// cloud, shown afterwards only by its last four, with what to fix while the provider turns it down), its free plan,
+/// and the command line way, folded away. `saved` once a key is kept.
+struct CloudKeyForm: View {
+    let store: CloudMachineStore
+    let provider: CloudProvider
+    let saved: () -> Void
+
+    var body: some View {
+        CardForm {
+            // Above the key: the last step says to paste it below. An older cloud sends no steps, only the page.
+            CardSection {
+                if let steps = provider.setup.steps, !steps.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(Array(steps.enumerated()), id: \.offset) { step($0.offset + 1, $0.element) }
+                    }
+                }
+                WebLink(L10n.fill(L10n.tr("Open {provider}"), ["provider": provider.name]), url: provider.setup.page)
+            }
+            CardSection(footer: "Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.") {
+                CloudKeyRow(store: store, provider: provider, done: saved)
+                if let offer = provider.offer { CloudOfferRow(provider: provider.provider, offer: offer) }
+                CloudCommandLineRow(commands: provider.setup.commands)
+            }
+        }
+        // Left, its failure was seen: New cloud computer shows only a removal asked from a provider's own row.
+        .onDisappear { store.clearError(at: .key(provider.provider)) }
+    }
+
+    private func step(_ number: Int, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(verbatim: "\(number).").monospacedDigit().foregroundStyle(Palette.tertiary)
+            Text(L10n.tr(text)).foregroundStyle(Palette.text).fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -139,47 +168,36 @@ private struct CloudOfferRow: View {
     }
 }
 
-/// How to make the key, folded away: the cloud's own steps, to copy, or the provider's page.
-private struct CloudKeySetupRow: View {
-    let provider: CloudProvider
+/// The cloud's commands that make the key, folded away: one a line, to copy.
+private struct CloudCommandLineRow: View {
+    let commands: String
     @State private var open = false
     @State private var copied = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Disclosure(isExpanded: $open) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(L10n.fill(L10n.tr("Make a key with only what Codync needs in your {provider} account, then paste it above."), ["provider": provider.name]))
-                    .font(.footnote)
-                    .foregroundStyle(Palette.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                commands
-                WebLink(L10n.fill(L10n.tr("Open {provider}"), ["provider": provider.name]), url: provider.setup.page).font(.footnote)
+            // Scrolled sideways rather than wrapped: wrapping hyphenates them into commands that don't exist.
+            HStack(alignment: .top, spacing: 8) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    Text(verbatim: commands)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Palette.text)
+                        .textSelection(.enabled)
+                        .fixedSize()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                IconButton(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") {
+                    Pasteboard.copy(commands)
+                    withAnimation(Motion.reduced(Motion.hover, reduceMotion)) { copied = true }
+                }
             }
+            .padding(.vertical, 8)
+            .padding(.leading, 12)
+            .padding(.trailing, 6)
+            .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 12))
         } label: {
-            Text(L10n.tr("How to make a key")).foregroundStyle(Palette.text)
+            Text(L10n.tr("Use the command line instead")).foregroundStyle(Palette.text)
         }
-    }
-
-    /// One command a line, scrolled sideways rather than wrapped: wrapping hyphenates them into commands that don't exist.
-    private var commands: some View {
-        HStack(alignment: .top, spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                Text(verbatim: provider.setup.commands)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(Palette.text)
-                    .textSelection(.enabled)
-                    .fixedSize()
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            IconButton(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") {
-                Pasteboard.copy(provider.setup.commands)
-                withAnimation(Motion.reduced(Motion.hover, reduceMotion)) { copied = true }
-            }
-        }
-        .padding(.vertical, 8)
-        .padding(.leading, 12)
-        .padding(.trailing, 6)
-        .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 12))
     }
 }

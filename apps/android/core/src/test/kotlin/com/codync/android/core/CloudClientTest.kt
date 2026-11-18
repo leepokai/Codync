@@ -226,7 +226,7 @@ class CloudClientTest {
         assertEquals("雲端電腦 2", named("雲端電腦", "Cloud computer 2").suggestedName("雲端電腦", "雲端電腦 {n}"))
     }
 
-    @Test fun `a new cloud computer goes where a key works, or where one was picked once it does`() {
+    @Test fun `a new cloud computer goes where a key works, once one is added`() {
         val setup = CloudKeySetup("https://boat.dev/dashboard", "boat env new codync")
         val boat = CloudProvider("boat", "Boat", "EU", "boat_…", setup, CloudCredential("boat_…9abc"))
         val refused = CloudProvider("instabox", "InstaBox", "US", "ibk_…", setup, CloudCredential("ibk_…0001", "This key has expired. Make a new one.", blocking = true))
@@ -235,12 +235,20 @@ class CloudClientTest {
         val unpaid = boat.copy(credential = CloudCredential("boat_…9abc", "This account needs an active plan."))
         assertEquals(listOf(true, false, false, true), listOf(boat, refused, none, unpaid).map { it.usable })
         val offer = CloudOffer(available = true, providers = listOf(refused, none, boat))
-        assertEquals("boat", offer.chosenProvider(null))
-        // A key turned down can't be picked; one picked before its key was added is, once it is.
-        assertEquals("boat", offer.chosenProvider("instabox"))
-        assertEquals("boat", offer.chosenProvider("nimbus"))
-        assertEquals("nimbus", offer.withCredential("nimbus", CloudCredential("nim_…0002")).chosenProvider("nimbus"))
-        assertNull(offer.copy(providers = listOf(refused, none)).chosenProvider(null))
+        assertTrue(offer.withCredential("nimbus", CloudCredential("nim_…0002")).providers[1].usable)
+        // Under its name: what it costs (translated), or that it needs a key from a cloud that doesn't say; then the key's
+        // hint, or what to fix while the provider turns it down.
+        val de = { text: String -> mapOf("From \$20 a month" to "Ab 20 \$ im Monat")[text] ?: text }
+        assertEquals("Asia · Ab 20 \$ im Monat" to false, none.copy(plan = "From \$20 a month").detail(de))
+        assertEquals("Asia · Add a key first" to false, none.detail(de))
+        assertEquals("EU · boat_…9abc" to false, boat.detail(de))
+        assertEquals("This account needs an active plan." to true, unpaid.detail(de))
+    }
+
+    @Test fun `at the account's limit Create says why it's off`() {
+        val three = List(3) { CloudMachine("cm_$it", "Cloud computer $it", "boat", "Boat", "EU", "running") }
+        assertNull(CloudOffer(three.take(2), true).limitNote())
+        assertEquals("You can have up to 3 cloud computers. Delete one to make another.", CloudOffer(three, true).limitNote())
     }
 
     @Test fun `a key stays while any cloud computer runs on its provider`() {
@@ -255,8 +263,9 @@ class CloudClientTest {
         server.start()
         try {
             val setup = """"setup":{"page":"https://boat.dev/dashboard","commands":"boat env new codync"}"""
+            val steps = """"setup":{"page":"https://boat.dev/dashboard","steps":["Create an environment named codync.","Copy the key and paste it below."],"commands":"boat env new codync"}"""
             server.enqueue(MockResponse().setBody("""{"cloudComputers":[],"available":true,"providers":[
-                {"provider":"boat","name":"Boat","region":"EU","keyPrompt":"boat_…",$setup,
+                {"provider":"boat","name":"Boat","region":"EU","plan":"From $20 a month","keyPrompt":"boat_…",$steps,
                  "credential":{"hint":"boat_…9abc","problem":"This key has expired. Make a new one.","blocking":true,"updatedAt":5}},
                 {"provider":"nimbus","name":"Nimbus","region":"Asia","keyPrompt":"nim_…",$setup,"credential":null,
                  "offer":{"label":"Get a free sandbox","detail":"A free plan.","url":"https://nimbus.example/pricing"}}]}"""))
@@ -267,7 +276,12 @@ class CloudClientTest {
             val offer = client.cloudComputers()
             assertEquals(listOf("Boat", "Nimbus"), offer.providers.map { it.name })
             assertEquals(CloudCredential("boat_…9abc", "This key has expired. Make a new one.", blocking = true), offer.providers[0].credential)
-            assertEquals(CloudKeySetup("https://boat.dev/dashboard", "boat env new codync"), offer.providers[0].setup)
+            assertEquals(CloudKeySetup("https://boat.dev/dashboard", "boat env new codync",
+                listOf("Create an environment named codync.", "Copy the key and paste it below.")), offer.providers[0].setup)
+            assertEquals("From $20 a month", offer.providers[0].plan)
+            // An older cloud names no plan and no steps: only the commands.
+            assertNull(offer.providers[1].plan)
+            assertEquals(CloudKeySetup("https://boat.dev/dashboard", "boat env new codync"), offer.providers[1].setup)
             // A free plan only where the cloud names one.
             assertNull(offer.providers[0].offer)
             assertEquals(CloudProviderOffer("Get a free sandbox", "A free plan.", "https://nimbus.example/pricing"), offer.providers[1].offer)

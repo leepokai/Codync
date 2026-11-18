@@ -120,6 +120,12 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("removed".into(), b["to"].as_str().is_none_or(|t| t.trim().is_empty()).into());
             Event::SectionRenamed
         }
+        "setComputerName" => {
+            // Whether it went back to the hostname; never the name.
+            p.insert("removed".into(), b["name"].as_str().is_none_or(|n| n.trim().is_empty()).into());
+            p.insert("outcome".into(), "renamed".into());
+            Event::ComputerRenamed
+        }
         "deleteBot" => Event::BotDeleted,
         // To an item's thread: what came of it is the answer's to say (`answered`). Never the text.
         "send" if b["itemId"].is_string() => Event::WorkMessaged,
@@ -360,7 +366,7 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
 /// `action`) as `network_failed` with `stage` `action`, a connector edit, a login profile, a voice server and a
-/// message to an item's thread report their category and a credentials reset `other`, never the message; other
+/// message to an item's thread report their category and a credentials reset or a computer rename `other`, never the message; other
 /// failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     match event {
@@ -368,7 +374,7 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
             p.insert("stage".into(), "action".into());
             Some((Event::NetworkFailed, p))
         }
-        Event::CredentialsReset => {
+        Event::CredentialsReset | Event::ComputerRenamed => {
             p.insert("outcome".into(), "failed".into());
             p.insert("error".into(), "other".into());
             Some((event, p))

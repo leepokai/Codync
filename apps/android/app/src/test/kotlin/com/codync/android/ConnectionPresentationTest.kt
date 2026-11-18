@@ -75,13 +75,20 @@ class ConnectionPresentationTest {
         assertEquals("Connecting…", statusText(cloudState(LinkState.Connecting, "stopped")))
         assertTrue(asleep.isAsleep)
         assertFalse(cloudState(LinkState.Connecting, "stopped").isAsleep)
-        // The relay waking it, or its provider starting it: on its way, not offline.
+        // The relay waking it: on its way, not offline. The account list's `starting` alone isn't (the relay's word wins).
         val waking = cloudState(LinkState.ComputerOffline(null, waking = true), "running")
         assertEquals("Waking the computer…", statusText(waking))
         assertEquals("Waking the computer…", connectionLabel(waking))
         assertTrue(waking.isWaking && waking.isAsleep && !waking.unreachable)
-        assertEquals("Waking the computer…", statusText(cloudState(LinkState.ComputerOffline(null), "starting")))
+        assertEquals("Offline", statusText(cloudState(LinkState.ComputerOffline(null), "starting")))
         assertEquals("Offline", statusText(cloudState(LinkState.ComputerOffline(null), "running")))
+        // An action waits out the relay waking it, and only that.
+        assertNull(cantWait(LinkState.ComputerOffline(null, waking = true)))
+        assertNull(cantWait(LinkState.Connecting))
+        assertEquals("The computer is offline.", cantWait(LinkState.ComputerOffline(null))?.message)
+        assertEquals(403, (cantWait(LinkState.Failed("Revoked", 403)) as HostError).status)
+        assertEquals("Still waking the computer: try again in a moment.", waitedTooLong(LinkState.ComputerOffline(null, waking = true)).message)
+        assertEquals("Can't reach the computer. Check that it's on, then try again.", waitedTooLong(LinkState.ComputerOffline(null)).message)
         val behind = cloudState(LinkState.Ready(HostRoute.Relay), "running").copy(hello = buildJsonObject { put("version", "2.0.0") })
         assertTrue(behind.cloudUpdating)
         assertEquals("Updating…", statusText(behind))

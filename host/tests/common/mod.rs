@@ -22,14 +22,21 @@ pub fn agent_dir(home: &Path) -> PathBuf {
     home.join("pi-agent")
 }
 
-/// `codync-host serve` on `home` with the cloud off. It stops when its stdin closes: the pipe lives in the
-/// returned `Child` and the test process, so a run that is killed takes its hosts with it.
+/// `codync-host serve` on `home`, isolated from the computer: the cloud off, no agent CLI checks, its credential key
+/// and oh-my-pi's sessions kept in `home`. It stops when its stdin closes: the pipe lives in the returned `Child` and
+/// the test process, so a run that is killed takes its hosts with it.
 pub fn host_command(home: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_codync-host"));
     command
         .arg("serve")
         .env("CODYNC_HOME", home)
         .env("CODYNC_CLOUD", "off")
+        // Pairing checks the phone's account: tests sign certificates with `TEST_CLOUD_SEED`.
+        .env("CODYNC_DEVICE_CERT_KEY", test_cloud_key())
+        // A test host leaves the computer's agent CLIs and the user's logins alone.
+        .env("CODYNC_AGENT_CHECKS", "off")
+        // And the computer's credential store: its key goes with `home`, so no test can leave one behind.
+        .env("CODYNC_VAULT", "folder")
         .env("PI_CODING_AGENT_DIR", agent_dir(home))
         .env("CODYNC_EXIT_WITH_STDIN", "1")
         .stdin(Stdio::piped());
@@ -56,12 +63,6 @@ pub async fn serve_with(home: &Path, env: &[(&str, &std::ffi::OsStr)]) -> (Child
         let base = format!("http://127.0.0.1:{port}");
         let mut child = host_command(home)
             .args(["--bind", "127.0.0.1", "--port", &port.to_string()])
-            // Pairing checks the phone's account: tests sign certificates with `TEST_CLOUD_SEED`.
-            .env("CODYNC_DEVICE_CERT_KEY", test_cloud_key())
-            // A test host leaves the computer's agent CLIs and the user's logins alone.
-            .env("CODYNC_AGENT_CHECKS", "off")
-            // And the computer's credential store: its key goes with `home`, so no test can leave one behind.
-            .env("CODYNC_VAULT", "folder")
             .envs(env.iter().copied())
             .stdout(output(&log))
             .stderr(output(&log))

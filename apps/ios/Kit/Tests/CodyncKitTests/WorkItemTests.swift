@@ -246,7 +246,7 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         #expect(try bot("").rosterLine == .lastMessage)
         // The chat's own request says what it asks; an item's only that it needs the user, as on every client.
         #expect(try bot(#","status":"needsInput","activity":"Run the tests""# + asking).needsYouLine == "Run the tests")
-        #expect(try bot(#","status":"needsInput""#).needsYouLine == "Needs your approval")
+        #expect(try bot(#","status":"needsInput""#).needsYouLine == "Needs approval")
         #expect(try bot(asking).needsYouLine == "Needs you")
     }
 
@@ -283,7 +283,7 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
             "{count} waiting": "{count} 等待中", "Next up": "下一個", "{count} ahead": "前面還有 {count} 件",
             "Follows what it works on": "接在進行中的事後面", "Near the usage limit: one at a time": "用量接近上限，一次只跑一個",
             "Was cut in on; starts again": "被插隊，會重新開始", "First": "先做", "Cut in": "插隊", "Drop": "丟掉",
-            "Agents at once": "同時幾個 agent", "Let \"{title}\" cut in": "讓「{title}」插隊",
+            "Threads at once": "同時幾個 thread", "Let \"{title}\" cut in": "讓「{title}」插隊",
             "Every place is taken. Pick what gives way: its session closes and it starts again later.": "名額滿了。選一個讓位：它的 session 會關掉，之後重新開始。",
             "Stop the background work?": "停止背景的工作？", "What it already changed stays.": "已經改的內容會留著。",
         ]
@@ -303,7 +303,7 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
     @Test func theNewWordsAreInEveryLanguage() {
         for language in [AppLanguage.zh, .ja, .ko, .fr, .de, .es, .ptBR, .ru, .it] {
             for word in ["Free", "Later", "{count} waiting", "Next up", "{count} ahead", "Follows what it works on",
-                         "Near the usage limit: one at a time", "Was cut in on; starts again", "First", "Cut in", "Drop", "Agents at once",
+                         "Near the usage limit: one at a time", "Was cut in on; starts again", "First", "Cut in", "Drop", "Threads at once",
                          "Let \"{title}\" cut in"] {
                 #expect(L10n.tr(word, preference: language) != word, "\(word) in \(language)")
             }

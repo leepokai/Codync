@@ -17,7 +17,7 @@ import kotlinx.serialization.json.decodeFromJsonElement
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
     /** Its newest card in the bot's chat, what a message about the artifact replies to; null when no card was posted
-     *  (a routine run, a group chat or another bot's request). */
+     *  (a group chat or another bot's request). */
     val entryId: String? = null,
 ) {
     companion object {

@@ -11,7 +11,7 @@ findings stayed unexplained for lack of detail).
 
 | Client | What an error report carries | Gap |
 |---|---|---|
-| Host | Panic location (file and line) and a literal panic message; release builds are stripped, so no frames | Which code path led there; a formatted panic message (`failed printing to stderr: …`) is dropped |
+| Host | Panic location (file and line) and a literal panic message, or the fixed start of a known runtime panic (`RUNTIME_PANICS` in `host/src/analytics/errors.rs`); release builds are stripped, so no frames | Which code path led there; any other formatted panic message (`failed printing to stderr: …`) is dropped |
 | Desktop | Type, mechanism and readable frames (the renderer is built unminified) | A `DOMException` or a rejection has no stack, and no message is sent, so `NotFoundError` can't be placed |
 | iPhone | MetricKit type, signal and code addresses, symbolicated by PostHog (A1) | — |
 | Android | Type and frames (class, method, file, line) | — |

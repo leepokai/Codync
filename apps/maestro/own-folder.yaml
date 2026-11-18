@@ -1,0 +1,49 @@
+# A bot's own folder on the phones: a new bot works there by default, and its row in the list, its chat's intro and the
+# Workspace pill in its settings call it Own folder. Its settings have no Worktree per thread switch, though Codync keeps
+# the folder a git repository (every agent works in that one folder); a bot on a project folder in a git repository
+# keeps the switch. The phone must already be signed in and paired with the host (a worktree's sandbox,
+# docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose clearState undoes that; the flow
+# makes its own bots there, the second in PROJECT_DIR, a git repository:
+#   project=$(mktemp -d) && git -C "$project" init -q
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags bot-settings \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e FIXTURE_AGENT="$PWD/host/tests/fixtures/instructions_agent.py" -e PROJECT_DIR="$project" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - bot-settings
+onFlowComplete:
+  - runScript:
+      file: own-folder.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: own-folder.js
+- runFlow:
+    file: subflows/bot-list.yaml
+- assertVisible: ".*· Own folder.*"
+- tapOn: ${output.bot.name}
+- extendedWaitUntil:
+    visible: ".* · Own folder"
+    timeout: 10000
+- tapOn: "${output.bot.name}, view details"
+- tapOn: "Settings"
+# The place rows end with Threads at once, where a Worktree per thread switch would follow. The iPhone reads a switch row
+# as one element (its title, then its detail), hence the `.*`.
+- scrollUntilVisible:
+    element: "Threads at once"
+    centerElement: true
+- assertVisible: "Own folder"
+- assertNotVisible: "Worktree per thread.*"
+- takeScreenshot: own-folder-settings
+- tapOn: "Close details"
+- runFlow:
+    file: subflows/bot-list.yaml
+- tapOn: ${output.project.name}
+- tapOn: "${output.project.name}, view details"
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element: "Threads at once"
+    centerElement: true
+- assertVisible: ${output.project.folder}
+- assertVisible: "Worktree per thread.*"
+- takeScreenshot: project-folder-settings

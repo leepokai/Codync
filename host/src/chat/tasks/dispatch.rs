@@ -275,7 +275,12 @@ fn plan(hub: &Hub, cfg: &BotConfig, items: &mut Vec<Item>, over: Option<&str>) -
             item.fork_failed = false;
             // One it has from before (it gave way, or is tried again) is where its work is.
             item.worktree.take_if(|w| !worktree::usable(w));
-            let beside = cfg.task_worktrees && item.source.is_bot() && side_by_side && worktree::in_repo(&cfg.cwd);
+            // A bot's own folder keeps all its work in one place, with its versions (`agent::versions`).
+            let beside = cfg.task_worktrees
+                && !crate::agent::workspace::is_managed(cfg)
+                && item.source.is_bot()
+                && side_by_side
+                && worktree::in_repo(&cfg.cwd);
             item.place = if item.worktree.is_some() || beside { Place::Worktree } else { Place::Folder };
             // A routine's run starts as it did in the chat: a new session that knows only its own prompt.
             // ponytail: a task in a worktree starts from a brief, not a fork: a fork is taken in another folder

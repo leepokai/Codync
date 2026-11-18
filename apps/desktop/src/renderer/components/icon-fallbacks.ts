@@ -112,6 +112,7 @@ const map: Record<string, IconNode> = {
   'hand.point.up.left': L.Pointer,
   'hand.raised': L.Hand,
   'hand.raised.slash': L.HandMetal,
+  'heart.fill': L.Heart,
   'info.circle': L.Info,
   iphone: L.Smartphone,
   key: L.Key,

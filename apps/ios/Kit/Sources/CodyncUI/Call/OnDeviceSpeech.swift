@@ -7,10 +7,15 @@ enum OnDeviceSpeech {
     static let unavailable = "Speech recognition isn't available for this language right now."
     static let unheard = "Couldn't hear you. Check the microphone and Speech Recognition in Settings."
 
-    /// The language picked in the call settings, else the phone's.
-    static func recognizer() -> SFSpeechRecognizer? {
-        UserDefaults.standard.string(forKey: OnDeviceEngine.languageKey)
-            .flatMap { $0.isEmpty ? nil : SFSpeechRecognizer(locale: Locale(identifier: $0)) } ?? SFSpeechRecognizer()
+    /// The language picked in the call settings, else the phone's first language the recognizer has, else
+    /// `SFSpeechRecognizer()`. That one comes last: it follows `Locale.current`, which the app's English-only bundle
+    /// localization makes English on any phone (#321).
+    static func recognizer(
+        setting: String? = UserDefaults.standard.string(forKey: OnDeviceEngine.languageKey),
+        languages: [String] = Locale.preferredLanguages
+    ) -> SFSpeechRecognizer? {
+        if let setting, !setting.isEmpty { return SFSpeechRecognizer(locale: Locale(identifier: setting)) }
+        return languages.lazy.compactMap { SFSpeechRecognizer(locale: Locale(identifier: $0)) }.first ?? SFSpeechRecognizer()
     }
 
     /// Words as they're heard, punctuated, recognized on the phone when the recognizer can.

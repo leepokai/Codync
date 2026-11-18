@@ -25,7 +25,7 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
         slug: "working-folders",
         title: "Working folders and git",
         description:
-          "Where a bot and its background tasks work, what Git worktrees Codync makes and leaves, and what to do without a Git repository or without Git.",
+          "Where a bot and its threads work, what Git worktrees Codync makes and leaves, and what to do without a Git repository or without Git.",
       },
       {
         slug: "agents",
@@ -36,7 +36,7 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
         slug: "conversations",
         title: "Conversations",
         description:
-          "Chatting with a bot: messages and files, approval cards, background tasks, stopping, replies, reactions, commands, fresh conversations and notifications.",
+          "Chatting with a bot: messages and files, approval cards, threads, stopping, replies, reactions, commands, fresh conversations and notifications.",
       },
       {
         slug: "groups",
@@ -128,6 +128,12 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
         title: "Linux servers",
         description:
           "Run the Codync host on a headless Linux server or cloud VM, pair your phone with it, and reach it from anywhere.",
+      },
+      {
+        slug: "windows-antivirus",
+        title: "Windows and antivirus",
+        description:
+          "What to allow in Microsoft Defender or other security software when it stops the Codync host on Windows or removes its startup entry.",
       },
       {
         slug: "updates",

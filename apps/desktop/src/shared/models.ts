@@ -23,7 +23,7 @@ export interface Bot {
   /** The login profile it runs on; absent for the login the computer already has. */
   loginProfile?: string | null
   cwd: string
-  /** Host-allocated personal workspace rather than a user-selected project. */
+  /** The bot's own folder, which the host made and keeps versions of, rather than a project the user chose. */
   managedWorkspace: boolean
   /** `ask` or `auto`: whether Codync asks about what the agent asks, or approves it. */
   permission: string
@@ -234,8 +234,9 @@ export const isWorking = (b: Bot) => b.status === 'working' || b.status === 'nee
 export const needsInput = (b: Bot) => b.status === 'needsInput'
 /** Working right now in this chat (its own, or a group it's in). */
 export const isWorkingIn = (b: Bot, chat: string) => isWorking(b) && (b.workingChat ?? b.id) === chat
-export const folderName = (b: Bot) =>
-  b.managedWorkspace ? 'Personal workspace' : (b.cwd.split('/').filter(Boolean).pop() ?? b.cwd)
+/** Where the bot works, as a list shows it: its own folder, or its project folder's name. */
+export const folderName = (b: Bot, tr: (text: string) => string) =>
+  b.managedWorkspace ? tr('Own folder') : (b.cwd.split('/').filter(Boolean).pop() ?? b.cwd)
 
 export interface FileDiff {
   path: string

@@ -7,17 +7,15 @@
 
 use crate::agent::acp::{Acp, Incoming};
 use crate::agent::auth::{self, Started};
-use crate::agent::backends;
 use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
-use std::future::Future;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
+use super::Window;
 use super::reading::{self, UsageReadStage};
-use super::{Window, services};
 
 /// A signed-out agent waits here for a sign-in that never comes.
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
@@ -29,19 +27,6 @@ const COMMANDS_TIMEOUT: Duration = Duration::from_secs(5);
 const NO_BROWSER: &[(&str, &str)] = &[("BROWSER", "true")];
 #[cfg(windows)]
 const NO_BROWSER: &[(&str, &str)] = &[];
-
-/// What `reading` finds through `backend`'s server, one at a time. Nothing while a bot here runs on
-/// an older build: installing the new one would remove it, and that bot's next start brings it.
-pub(super) async fn guarded(
-    hub: &Hub,
-    backend: &str,
-    reading: impl Future<Output = Result<Vec<Window>, UsageReadStage>>,
-) -> Option<Vec<Window>> {
-    if services::runs(&hub.store, backend) && backends::update_pending(backend) {
-        return None;
-    }
-    reading::guarded(hub, backend, reading).await
-}
 
 /// `backend`'s server, past `initialize`. A first start can download its build, which is why no
 /// timeout wraps this: one cut short would start over at every poll. The handshake has its own.
@@ -59,7 +44,7 @@ pub(super) async fn command_reading(
     command: &str,
     parse: fn(&str) -> Option<Vec<Window>>,
 ) -> Option<Vec<Window>> {
-    guarded(hub, backend, async {
+    reading::guarded(hub, backend, async {
         let text = ask(&hub.store, backend, command).await?;
         parse(&text).ok_or(UsageReadStage::Parse)
     })

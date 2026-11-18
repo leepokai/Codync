@@ -9,7 +9,7 @@ Memory is plain Markdown files on your computer. The bot keeps them up to date i
 | **About you** | Facts every bot should know: your name, time zone, people. | Every bot that uses what your bots share. |
 | **This bot** | What this bot learned about you. | Only this bot. |
 
-A bot in its own personal workspace uses **About you** by default; a bot working in a project folder doesn't. Change it with **Use what your bots share** on the bot's **About you** tab (`s` in the terminal UI).
+A bot in its own folder uses **About you** by default; a bot working in a project folder doesn't. Change it with **Use what your bots share** on the bot's **About you** tab (`s` in the terminal UI).
 
 Each layer has two kinds of file:
 
@@ -27,7 +27,7 @@ To change what a bot remembers, tell it in its chat: "Remember that I'm vegetari
 What a bot may change depends on where it's working:
 
 - **In its own chat, answering you:** it can add, change or remove anything. Its MEMORY.md may grow to twice its limit there, so what you ask it to remember is never turned away for lack of room.
-- **Everywhere else** (routines, [background tasks](/docs/conversations#background-tasks), [group chats](/docs/groups), requests from [other bots](/docs/teamwork) and the turns where their answers come back): it can only add lines, within the limit. When MEMORY.md is full, it writes a note instead.
+- **Everywhere else** (routines, [threads](/docs/conversations#threads), [group chats](/docs/groups), requests from [other bots](/docs/teamwork) and the turns where their answers come back): it can only add lines, within the limit. When MEMORY.md is full, it writes a note instead.
 
 Every change is checked first. Memory can't take in hidden characters, links that carry instructions, planted instructions, passwords, keys, or ID or card numbers. A change that breaks a rule is put back, and the bot is told why.
 
@@ -75,7 +75,7 @@ The **Dreams** tab shows each run: added lines in green, taken-out lines in red,
 
 Some agents keep a memory of their own, such as Claude Code's auto memory. Codync turns it off for every bot by default, so each bot has one memory and you see all of it here.
 
-Where Codync can switch it, the **This bot** section has a switch named after the agent, such as **Claude Code's own memory** (`m` in the terminal UI). That's available for Claude Code, GitHub Copilot, CodeBuddy Code, WorkBuddy, and Qwen Code in a bot's personal workspace. Gemini CLI, Hermes Agent, Kilo Code and Kiro have no switch Codync can use.
+Where Codync can switch it, the **This bot** section has a switch named after the agent, such as **Claude Code's own memory** (`m` in the terminal UI). That's available for Claude Code, GitHub Copilot, CodeBuddy Code, WorkBuddy, and Qwen Code in a bot's own folder. Gemini CLI, Hermes Agent, Kilo Code and Kiro have no switch Codync can use.
 
 If you turn it on:
 

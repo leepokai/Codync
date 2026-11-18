@@ -13,6 +13,8 @@ class L10nTest {
         "Message from {bot}: {message}" to "Сообщение от {bot}: {message}",
         "Last run {status}" to "Последний запуск: {status}",
         "{count} installed" to "Установлено: {count}",
+        "You have {version}." to "У вас {version}.",
+        "Codync {version} is available" to "Вышел Codync {version}",
     )
 
     private fun ru(text: String) = translate(text, AppLanguage.Ru, false, phrases)
@@ -27,6 +29,11 @@ class L10nTest {
     @Test fun `number slots only take numbers`() {
         assertEquals("Установлено: 3", ru("3 installed"))
         assertEquals("Error: the host service isn't installed", ru("Error: the host service isn't installed"))
+    }
+
+    @Test fun `version slots only take versions`() {
+        assertEquals("Вышел Codync 2.47.0-dev", ru("Codync 2.47.0-dev is available"))
+        assertEquals("You have reached your limit.", ru("You have reached your limit."))
     }
 
     @Test fun `app-owned slots still translate`() {

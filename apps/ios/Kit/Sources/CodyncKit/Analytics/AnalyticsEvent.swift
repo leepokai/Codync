@@ -40,6 +40,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case accessRequestFailed(AccessFailure)
     case notificationsAnswered(granted: Bool, source: PromptSource)
     case notificationOpened(NotificationKind)
+    case iconBadgeFailed(IconBadgeFailure)
     case settingChanged(Setting, on: Bool)
     case linkOpened(Link)
     case voiceCallStarted(VoiceEngine)
@@ -82,7 +83,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum PairVia: String, Sendable { case qr, link, account }
     public enum AccessFailure: String, Sendable { case denied, expired, cancelled }
     public enum PromptSource: String, Sendable { case settings, widgets }
-    public enum Setting: String, Sendable { case push, liveActivities = "live_activities" }
+    public enum IconBadgeFailure: String, Sendable { case notAllowed = "not_allowed", other }
+    public enum Setting: String, Sendable { case push, liveActivities = "live_activities", iconBadge = "icon_badge" }
     public enum Link: String, Sendable {
         case github, issues, appStore = "app_store", demo, tailscale, privacy, installCommand = "install_command", installLink = "install_link",
              whatsNewFilm = "whats_new_film", docs
@@ -258,6 +260,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .accessRequestFailed: "access_request_failed"
         case .notificationsAnswered: "notifications_answered"
         case .notificationOpened: "notification_opened"
+        case .iconBadgeFailed: "icon_badge_failed"
         case .settingChanged: "setting_changed"
         case .linkOpened: "link_opened"
         case .voiceCallStarted: "voice_call_started"
@@ -314,6 +317,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .accessRequestFailed(reason): return ["reason": .string(reason.rawValue)]
         case let .notificationsAnswered(granted, source): return ["granted": .bool(granted), "source": .string(source.rawValue)]
         case let .notificationOpened(kind): return ["kind": .string(kind.rawValue)]
+        case let .iconBadgeFailed(reason): return ["reason": .string(reason.rawValue)]
         case let .settingChanged(setting, on): return ["setting": .string(setting.rawValue), "on": .bool(on)]
         case let .linkOpened(link): return ["link": .string(link.rawValue)]
         case let .voiceCallStarted(engine): return ["engine": .string(engine.rawValue)]

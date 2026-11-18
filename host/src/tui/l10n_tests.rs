@@ -160,6 +160,8 @@ fn chinese_replaces_a_known_phrase_and_leaves_the_rest() {
     assert_eq!(translate("Add connector", true).as_ref(), "添加连接器");
     assert_eq!(translate("Name your group", true).as_ref(), "给群聊起个名字");
     assert_eq!(translate("Nothing installed", true).as_ref(), "还没有安装");
+    assert_eq!(translate("Codync 2.47.0 is available", true).as_ref(), "Codync 2.47.0 已推出");
+    assert_eq!(translate("You have reached your limit.", true).as_ref(), "You have reached your limit.");
     assert_eq!(translate("No setup needed.", true).as_ref(), "无需设置。");
     assert_eq!(
         translate("Runs the official installer on this Mac.", true).as_ref(),
@@ -268,15 +270,15 @@ fn event_box_words_read_in_traditional_chinese() {
         ("First", "先做"),
         ("Cut in", "插隊"),
         ("Drop", "丟掉"),
-        ("Agents at once", "同時幾個 agent"),
+        ("Threads at once", "同時幾個 thread"),
         ("Work", "工作"),
-        ("Worktree per agent", "每個 agent 一個 worktree"),
+        ("Worktree per thread", "每個 thread 一個 worktree"),
         ("Git repository", "Git repository"),
         ("Not a git repository", "不是 git repository"),
         ("Git isn't installed on this computer", "這台電腦沒有安裝 git"),
         (
-            "Agents that work at once in this repository each get their own branch.",
-            "同時在這個 repository 工作的 agent 各有自己的分支。",
+            "Threads that work at once in this repository each get their own branch.",
+            "同時在這個 repository 工作的 thread 各有自己的分支。",
         ),
         ("Let \"{title}\" cut in", "讓「{title}」插隊"),
         (

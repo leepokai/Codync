@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
+import { fixtureCommand } from './fixture-command.ts'
 import { SANDBOX_PREFIX, sandboxName } from '../src/shared/dev-sandbox.ts'
 import type { HostSnapshot } from '../src/shared/ipc.ts'
 
@@ -61,9 +62,12 @@ export async function attach(): Promise<{ browser: Browser; page: Page }> {
     .find((p) => !p.url().startsWith('devtools://'))
   if (!page) throw new Error('The sandbox app has no window open.')
   await setPref(page, 'githubStarAsk', { kind: 'done' }) // Its sheet would cover what a test clicks.
-  // So would the ask to add a computer in no account, on a signed-in `--cloud` sandbox.
-  const notNow = page.getByRole('alertdialog').getByRole('button', { name: 'Not now' })
-  if (await notNow.isVisible()) await notNow.click()
+  await setPref(page, 'kofiAsk', { asked: 3, day: 0 }) // So would the Ko-fi invitation's, on a sandbox used for days.
+  // So would the ask to add a computer in no account, on a signed-in `--cloud` sandbox, and a Ko-fi invitation already up.
+  for (const sheet of [page.getByRole('alertdialog'), page.getByRole('dialog', { name: 'Support Codync' })]) {
+    const notNow = sheet.getByRole('button', { name: 'Not now' })
+    if (await notNow.isVisible()) await notNow.click()
+  }
   return { browser, page }
 }
 
@@ -78,7 +82,7 @@ export async function setPref(page: Page, key: string, value: unknown) {
 /** A bot on the scripted agent, which waits up to `seconds` for a steered message. */
 export async function steerBot(page: Page, name: string, seconds: number) {
   const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-    name, backend: 'custom', command: `python3 -X utf8 -u '${steerAgent}' steer ${seconds}`, connectors: [], skills: [], notify: false,
+    name, backend: 'custom', command: `${fixtureCommand(steerAgent)} steer ${seconds}`, connectors: [], skills: [], notify: false,
   })
   return bot
 }
@@ -86,7 +90,7 @@ export async function steerBot(page: Page, name: string, seconds: number) {
 /** A bot on the scripted agent that answers each message with `mode read-only · <the message>`, in `cwd` when given (the agent logs its calls to calls.jsonl there). */
 export async function echoBot(page: Page, name: string, cwd?: string) {
   const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-    name, backend: 'custom', command: `python3 -X utf8 -u '${echoAgent}'`, cwd, connectors: [], skills: [], notify: false,
+    name, backend: 'custom', command: fixtureCommand(echoAgent), cwd, connectors: [], skills: [], notify: false,
   })
   return bot
 }
@@ -95,7 +99,7 @@ export async function echoBot(page: Page, name: string, cwd?: string) {
  * `backend` (an agent the host knows by name gets that agent's sign-in card when it needs one). */
 export async function taskBot(page: Page, name: string, backend = 'custom') {
   const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-    name, backend, command: `python3 -X utf8 -u '${taskAgent}'`, connectors: [], skills: [], notify: false,
+    name, backend, command: fixtureCommand(taskAgent), connectors: [], skills: [], notify: false,
   })
   await api(page, 'updateBot', { id: bot.id, permission: 'ask' })
   return bot

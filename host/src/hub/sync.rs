@@ -26,7 +26,8 @@ impl Hub {
             v["devServers"] = self.dev_servers.wire(&cfg.id);
             // What the bot works on away from the chat, and what waits for it.
             v["work"] = crate::chat::tasks::wire(self, cfg);
-            // Its folder is in a git repository: where `taskWorktrees` matters, and a client shows its switch.
+            // Its folder is in a git repository. For a project folder (not `managedWorkspace`) that is where
+            // `taskWorktrees` matters, and a client shows its switch: the bot's own folder never gets worktrees.
             v["gitRepo"] = crate::chat::tasks::in_repo(&cfg.cwd).into();
             // Whether the host can run git at all: without it a repository gets no worktrees either.
             v["gitInstalled"] = crate::git::installed().into();

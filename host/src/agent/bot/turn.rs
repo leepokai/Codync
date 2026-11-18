@@ -289,6 +289,8 @@ impl Actor {
             self.hub.routines.mark_started(&self.hub.store, id)?;
             self.set_inflight(true);
         }
+        // The bot's own folder is saved as it is, so what this turn changes there is a version of its own.
+        self.versions.before(&self.hub, &self.cfg, text).await;
         // From here what changes in its memory folders is the bot's, however it changed them: a task's too, as
         // its own turn's, in its own session. A task only adds to memory, also in a turn the user's message to its
         // thread started: what the user wants forgotten, the bot does in the chat.
@@ -360,6 +362,7 @@ impl Actor {
             return;
         }
         self.after_turn(done);
+        self.versions.after(&self.hub);
         // The bot's own edits to its memory files, checked and shown in the chat it made them from.
         memory::turns::scan_after_turn(self.hub.clone(), &self.cfg);
         if let (Some(conn), Some(sid)) = (self.conn.as_mut(), &self.turn_session)

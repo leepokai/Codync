@@ -320,7 +320,7 @@ function AgentKeysForm({ backend, method, saved, back, done }: {
         {saved.length ? (
           <CardSection>
             <button className="market-danger-button" onClick={() => void save(Object.fromEntries(vars.map((v) => [v.name, ''])))}>
-              Remove saved keys
+              {tr('Remove saved keys')}
             </button>
           </CardSection>
         ) : null}

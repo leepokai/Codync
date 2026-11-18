@@ -70,7 +70,7 @@ fn plain_instructions(server: Server) -> String {
 /// The team server's instructions for `bot`, worded by its approvals; `None` (the plain ones) when the host can't say,
 /// so starting a bot never waits on the host for long.
 async fn team_instructions(bot: &str, port: u16) -> Option<String> {
-    let token = std::fs::read_to_string(crate::service::data_dir().join("token")).ok()?;
+    let token = tokio::fs::read_to_string(crate::service::data_dir().join("token")).await.ok()?;
     let reply = reqwest::Client::new()
         .post(format!("http://127.0.0.1:{port}/api/teamInstructions"))
         .bearer_auth(token.trim())
@@ -100,7 +100,8 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
 
 /// [`serve`] with `instructions` read already (what the host words by the bot's approvals); `None`: read them here.
 pub async fn serve_with(bot: String, port: u16, server: Server, instructions: Option<String>) -> Result<()> {
-    let token = std::fs::read_to_string(crate::service::data_dir().join("token")).unwrap_or_default();
+    // The same non-blocking read as [`team_instructions`]: neither holds an async worker on the token file.
+    let token = tokio::fs::read_to_string(crate::service::data_dir().join("token")).await.unwrap_or_default();
     let token: Arc<str> = token.trim().into();
     let bot: Arc<str> = bot.into();
     let mut lines = BufReader::new(tokio::io::stdin()).lines();

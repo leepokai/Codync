@@ -24,11 +24,17 @@ const calls: string[] = []
 let posts = 0
 /** When set, the next POST waits for it before answering, as a slow network would. */
 let holdPost: Promise<void> | null = null
+/** When set, the next status poll waits for it, then fails as an unreachable cloud would. */
+let failGet: Promise<void> | null = null
 const cloudRequest = async (_account: unknown, method: string, path: string, body: unknown) => {
   calls.push(`${method} ${path}`)
   if (path.endsWith('/access-requests')) {
     if (holdPost) await holdPost
     return { ok: true, value: { requestId: `r${++posts}`, expiresAt: Date.now() + 600_000, commit: body } }
+  }
+  if (method === 'GET' && failGet) {
+    await failGet
+    return { ok: false, error: { status: 0, code: 'unreachable', message: 'offline' } }
   }
   if (method === 'GET') return { ok: true, value: polls.length > 1 ? polls.shift()! : polls[0]! }
   return { ok: true, value: {} }
@@ -79,6 +85,21 @@ test('cancelling withdraws the request from the computer, before or after its co
     assert.equal(calls.at(-1), 'DELETE v1/access-requests/r1')
     assert.equal(sent.length, answered ? 1 : 0)
   }
+})
+
+test('cancelling while a status poll is out still withdraws the request when that poll fails', async () => {
+  calls.length = sent.length = 0
+  posts = 0
+  quick = false
+  const held = deferred()
+  failGet = held.promise
+  const asking = requestAccess()
+  for (let i = 0; i < 100 && !calls.at(-1)?.startsWith('GET'); i++) await settle()
+  handlers.get('cloud:cancelAccess')!({}, 'studio')
+  held.resolve()
+  failGet = null
+  assert.equal(await ending(asking), 'cancelled')
+  assert.deepEqual(steps(), ['POST computers/studio/access-requests', 'GET access-requests/r1', 'DELETE access-requests/r1'])
 })
 
 test('asking again waits for the withdrawn request to be gone, so the computer keeps the new one', async () => {

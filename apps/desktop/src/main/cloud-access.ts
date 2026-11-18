@@ -28,7 +28,8 @@ async function requestAccess(account: AccountService, computer: AccessComputer, 
   const wait = async (done: (s: Status) => boolean): Promise<{ ok: true; value: Status } | Extract<AccessResult, { ok: false }> | null> => {
     while (Date.now() < expiresAt && !signal.aborted) {
       const res = await cloudRequest(account, 'GET', `v1/access-requests/${requestId}`, undefined, false)
-      if (!res.ok) return res
+      // A poll that failed after the request was withdrawn still takes it back below, so the computer's list drops it.
+      if (!res.ok) return signal.aborted ? null : res
       const s = res.value as unknown as Status
       if (s.status !== 'pending' || done(s)) return { ok: true, value: s }
       await sleep(POLL_MS, undefined, { signal }).catch(() => {})

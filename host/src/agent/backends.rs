@@ -18,7 +18,7 @@ mod search_path;
 mod sign_in;
 mod workbuddy;
 pub use catalog::HARNESSES;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) use search_path::TestSearchPath;
 pub use search_path::{hydrate_path, on_path, which};
 pub use sign_in::{

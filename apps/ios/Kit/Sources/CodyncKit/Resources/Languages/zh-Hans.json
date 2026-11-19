@@ -2229,5 +2229,14 @@
   "Connect {provider}": "连接 {provider}",
   "Use the command line instead": "改用命令行",
   "Leave it empty to use the hostname.": "留空则使用主机名。",
-  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "这项工作已在没有你的情况下连续进行 8 步，达到上限。点“继续”让它接着进行。"
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "这项工作已在没有你的情况下连续进行 8 步，达到上限。点“继续”让它接着进行。",
+  "Not connected": "未连接",
+  "Connected · opening…": "已连接 · 正在打开…",
+  "Confirm host key…": "确认主机密钥…",
+  "Confirm the host key": "确认主机密钥",
+  "Retrying…": "正在重试…",
+  "Reading SSH settings…": "正在读取 SSH 设置…",
+  "Reading the host key…": "正在读取主机密钥…",
+  "Signing in…": "正在登录…",
+  "Opening the tunnel…": "正在打开隧道…"
 }

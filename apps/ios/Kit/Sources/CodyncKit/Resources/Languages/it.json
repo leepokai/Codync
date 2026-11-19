@@ -2229,5 +2229,14 @@
   "Connect {provider}": "Collega {provider}",
   "Use the command line instead": "Usa invece la riga di comando",
   "Leave it empty to use the hostname.": "Lascia vuoto per usare il nome host.",
-  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Questo lavoro è andato avanti per 8 passaggi di fila senza di te, il massimo possibile. Tocca «Continua» per proseguire."
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Questo lavoro è andato avanti per 8 passaggi di fila senza di te, il massimo possibile. Tocca «Continua» per proseguire.",
+  "Not connected": "Non connesso",
+  "Connected · opening…": "Connesso · apertura…",
+  "Confirm host key…": "Conferma chiave host…",
+  "Confirm the host key": "Conferma la chiave host",
+  "Retrying…": "Nuovo tentativo…",
+  "Reading SSH settings…": "Lettura impostazioni SSH…",
+  "Reading the host key…": "Lettura chiave host…",
+  "Signing in…": "Accesso in corso…",
+  "Opening the tunnel…": "Apertura del tunnel…"
 }

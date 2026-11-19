@@ -2229,5 +2229,14 @@
   "Connect {provider}": "{provider} に接続",
   "Use the command line instead": "代わりにコマンドラインを使う",
   "Leave it empty to use the hostname.": "空欄にするとホスト名を使います。",
-  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "この作業はあなたを介さずに 8 ステップ続き、上限に達しました。「続ける」で先に進めます。"
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "この作業はあなたを介さずに 8 ステップ続き、上限に達しました。「続ける」で先に進めます。",
+  "Not connected": "未接続",
+  "Connected · opening…": "接続済み · 開いています…",
+  "Confirm host key…": "ホスト鍵を確認…",
+  "Confirm the host key": "ホスト鍵を確認",
+  "Retrying…": "再試行中…",
+  "Reading SSH settings…": "SSH 設定を読み取り中…",
+  "Reading the host key…": "ホスト鍵を読み取り中…",
+  "Signing in…": "サインイン中…",
+  "Opening the tunnel…": "トンネルを開いています…"
 }

@@ -2229,5 +2229,14 @@
   "Connect {provider}": "{provider} 연결",
   "Use the command line instead": "대신 명령줄 사용",
   "Leave it empty to use the hostname.": "비워 두면 호스트 이름을 사용합니다.",
-  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "이 작업이 사용자 없이 8단계 연속 진행되어 한도에 도달했습니다. 계속하려면 \"계속\"을 누르세요."
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "이 작업이 사용자 없이 8단계 연속 진행되어 한도에 도달했습니다. 계속하려면 \"계속\"을 누르세요.",
+  "Not connected": "연결 안 됨",
+  "Connected · opening…": "연결됨 · 여는 중…",
+  "Confirm host key…": "호스트 키 확인…",
+  "Confirm the host key": "호스트 키 확인",
+  "Retrying…": "다시 시도 중…",
+  "Reading SSH settings…": "SSH 설정 읽는 중…",
+  "Reading the host key…": "호스트 키 읽는 중…",
+  "Signing in…": "로그인 중…",
+  "Opening the tunnel…": "터널 여는 중…"
 }

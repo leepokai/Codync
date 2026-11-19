@@ -2229,5 +2229,14 @@
   "Connect {provider}": "Подключить {provider}",
   "Use the command line instead": "Использовать командную строку",
   "Leave it empty to use the hostname.": "Оставьте пустым, чтобы использовать имя хоста.",
-  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Эта работа прошла 8 шагов подряд без вас — это предел. Нажмите «Продолжить», чтобы продолжить."
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Эта работа прошла 8 шагов подряд без вас — это предел. Нажмите «Продолжить», чтобы продолжить.",
+  "Not connected": "Не подключено",
+  "Connected · opening…": "Подключено · открывается…",
+  "Confirm host key…": "Подтвердите ключ хоста…",
+  "Confirm the host key": "Подтвердите ключ хоста",
+  "Retrying…": "Повторная попытка…",
+  "Reading SSH settings…": "Читаем настройки SSH…",
+  "Reading the host key…": "Читаем ключ хоста…",
+  "Signing in…": "Входим…",
+  "Opening the tunnel…": "Открываем туннель…"
 }

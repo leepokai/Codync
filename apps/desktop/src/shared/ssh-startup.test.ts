@@ -72,3 +72,16 @@ test('every phrase of the summary goes through the catalogs (#517)', () => {
   assert.equal(parts.length, 4)
   for (const part of parts) assert.match(part, /^‹.*›$/, `untranslated: ${part}`)
 })
+
+test('every fixed phrase of status detail goes through the catalogs and splits Retrying… (#521)', () => {
+  const tr = (text: string) => `‹${text}›`
+  assert.equal(sshStatusDetail({ kind: 'idle' }, false, tr), '‹Not connected›')
+  assert.equal(sshStatusDetail({ kind: 'connecting', step: 'Reading the host key…' }, false, tr), '‹Reading the host key…›')
+  assert.equal(sshStatusDetail({ kind: 'installing', step: 'Starting codync-host…' }, false, tr), '‹Starting codync-host…›')
+  assert.equal(sshStatusDetail({ kind: 'confirmHostKey', name: 'remote', fingerprints: [] }, false, tr), '‹Confirm host key…›')
+  assert.equal(sshStatusDetail({ kind: 'connected', localPort: 19333 }, true, tr), '‹Connected›')
+  assert.equal(sshStatusDetail({ kind: 'connected', localPort: 19333 }, false, tr), '‹Connected · opening…›')
+  assert.equal(sshStatusDetail({ kind: 'notInstalled' }, false, tr), '‹Host not installed›')
+  assert.equal(sshStatusDetail({ kind: 'retrying', message: 'Host unreachable' }, false, tr), 'Host unreachable ‹Retrying…›')
+  assert.equal(sshStatusDetail({ kind: 'failed', message: 'Permission denied' }, false, tr), 'Permission denied')
+})

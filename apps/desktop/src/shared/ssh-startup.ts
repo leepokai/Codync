@@ -25,15 +25,15 @@ export function sshSummary(statuses: SSHStatus[], tr: (text: string) => string):
   ].filter(Boolean).join(' · ')
 }
 
-export function sshStatusDetail(status: SSHStatus, attached = true): string {
+export function sshStatusDetail(status: SSHStatus, attached = true, tr: (text: string) => string = (text) => text): string {
   switch (status.kind) {
-    case 'idle': return 'Not connected'
+    case 'idle': return tr('Not connected')
     case 'connecting':
-    case 'installing': return status.step
-    case 'retrying': return `${status.message} Retrying…`
-    case 'confirmHostKey': return 'Confirm host key…'
-    case 'connected': return attached ? 'Connected' : 'Connected · opening…'
+    case 'installing': return tr(status.step)
+    case 'retrying': return `${status.message} ${tr('Retrying…')}`
+    case 'confirmHostKey': return tr('Confirm host key…')
+    case 'connected': return attached ? tr('Connected') : tr('Connected · opening…')
     case 'failed': return status.message
-    case 'notInstalled': return 'Host not installed'
+    case 'notInstalled': return tr('Host not installed')
   }
 }

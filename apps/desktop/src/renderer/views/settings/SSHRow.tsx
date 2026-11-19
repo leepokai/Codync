@@ -21,17 +21,17 @@ export function SSHRow({ profile, status, edit, attached = true }: { profile: SS
   const line = (() => {
     switch (status.kind) {
       case 'idle':
-        return `${target} · Not connected`
+        return `${target} · ${tr('Not connected')}`
       case 'connecting':
-        return status.step
+        return tr(status.step)
       case 'installing':
         return tr(status.step)
       case 'confirmHostKey':
-        return `${target} · Confirm the host key`
+        return `${target} · ${tr('Confirm the host key')}`
       case 'connected':
-        return `${target} · ${sshStatusDetail(status, attached)}`
+        return `${target} · ${sshStatusDetail(status, attached, tr)}`
       case 'retrying':
-        return `${status.message} Retrying…`
+        return `${status.message} ${tr('Retrying…')}`
       case 'failed':
         return status.message
       case 'notInstalled':

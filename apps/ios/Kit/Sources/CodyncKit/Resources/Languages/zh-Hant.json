@@ -2229,5 +2229,14 @@
   "Connect {provider}": "連接 {provider}",
   "Use the command line instead": "改用命令列",
   "Leave it empty to use the hostname.": "留空則使用主機名稱。",
-  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "這項工作已在沒有你的情況下連續進行 8 步，達到上限。按「繼續」讓它接著進行。"
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "這項工作已在沒有你的情況下連續進行 8 步，達到上限。按「繼續」讓它接著進行。",
+  "Not connected": "未連線",
+  "Connected · opening…": "已連線 · 正在開啟…",
+  "Confirm host key…": "確認主機金鑰…",
+  "Confirm the host key": "確認主機金鑰",
+  "Retrying…": "正在重試…",
+  "Reading SSH settings…": "正在讀取 SSH 設定…",
+  "Reading the host key…": "正在讀取主機金鑰…",
+  "Signing in…": "正在登入…",
+  "Opening the tunnel…": "正在開啟通道…"
 }

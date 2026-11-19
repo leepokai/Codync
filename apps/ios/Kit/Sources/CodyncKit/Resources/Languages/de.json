@@ -2229,5 +2229,14 @@
   "Connect {provider}": "{provider} verbinden",
   "Use the command line instead": "Stattdessen die Kommandozeile verwenden",
   "Leave it empty to use the hostname.": "Leer lassen, um den Hostnamen zu verwenden.",
-  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Diese Arbeit lief 8 Schritte am Stück ohne dich, so viele wie möglich. Mit „Weiter“ geht es weiter."
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Diese Arbeit lief 8 Schritte am Stück ohne dich, so viele wie möglich. Mit „Weiter“ geht es weiter.",
+  "Not connected": "Nicht verbunden",
+  "Connected · opening…": "Verbunden · wird geöffnet…",
+  "Confirm host key…": "Hostschlüssel bestätigen…",
+  "Confirm the host key": "Hostschlüssel bestätigen",
+  "Retrying…": "Wird wiederholt…",
+  "Reading SSH settings…": "SSH-Einstellungen werden gelesen…",
+  "Reading the host key…": "Hostschlüssel wird gelesen…",
+  "Signing in…": "Anmeldung läuft…",
+  "Opening the tunnel…": "Tunnel wird geöffnet…"
 }

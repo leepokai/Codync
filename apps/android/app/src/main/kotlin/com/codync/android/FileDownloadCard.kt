@@ -19,7 +19,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,7 +39,6 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Entry
-import com.codync.android.core.LinkState
 import com.codync.android.core.SharedFile
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
@@ -48,22 +46,19 @@ import com.kyant.shapes.RoundedRectangle
 import kotlin.math.roundToInt
 import kotlin.math.sign
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
-/** A file a bot shared, as iOS `FileDownloadCard`: an image shows itself (tap for full size), a voice note plays, then its
- *  name and size, and a button to download (or cancel). One accessibility element: `<name>, <caption>` plus the actions.
- *  Holding it opens its message's `menu`; an image's copies the picture or its name. */
+/** A file a bot shared that stays a file (a `playsInChat` sound gets the voice note bubble instead), as iOS
+ *  `FileDownloadCard`: an image shows itself (tap for full size), then its name and size, and a button to download
+ *  (or cancel). One accessibility element: `<name>, <caption>` plus the actions. Holding it opens its message's
+ *  `menu`; an image's copies the picture or its name. */
 @Composable internal fun FileDownloadCard(entry: Entry, file: SharedFile, menu: MessageMenu, state: AppState, store: AppStore) {
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     var viewing by remember { mutableStateOf(false) }
-    val player = if (file.playsInChat) rememberSharedAudio(entry, file, store, state.actualConnection is LinkState.Ready) else null
-    val scope = rememberCoroutineScope()
     val translate = translator()
     val download = state.fileDownloads[file.id]
     val busy = download is FileDownloadState.Downloading
-    val caption = detail(file, download, player, translate)
-    val play = { player?.let { scope.launch { it.toggle() } }; Unit }
+    val caption = detail(file, download, tr = translate)
     val save = { store.toggleFile(entry.id, entry.botId, file) }
     val view = if (file.showsAsImage) ({ viewing = true }) else null
     Column(Modifier.fillMaxWidth().contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() }) {
@@ -71,35 +66,30 @@ import kotlinx.coroutines.launch
     }.clip(RoundedRectangle(16.dp)).background(Palette.bubbleAgent)
         .clearAndSetSemantics {
             contentDescription = "${file.name}, $caption"
-            audioSeek(player)
             customActions = listOfNotNull(
-                player?.let { audio -> CustomAccessibilityAction(translate(if (audio.phase == AudioPhase.Playing) "Pause" else "Play")) { play(); true } },
                 CustomAccessibilityAction(translate(if (busy) "Cancel download" else "Download")) { save(); true },
                 view?.let { open -> CustomAccessibilityAction(translate("View")) { open(); true } })
-            onClick(label = when {
-                view != null -> translate("View")
-                player != null -> translate(if (player.phase == AudioPhase.Playing) "Pause" else "Play")
-                else -> translate(if (busy) "Cancel download" else "Download")
-            }) { (view ?: player?.let { play } ?: save)(); true }
+            onClick(label = translate(if (view != null) "View" else if (busy) "Cancel download" else "Download")) { (view ?: save)(); true }
         }.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (file.showsAsImage) SharedImage(file, entry.id, 720, state, store, Modifier.sizeIn(maxHeight = 280.dp)
-            .clip(RoundedRectangle(10.dp)).plainButton { viewing = true })
-        FileRow(file, download, player, caption, save, play)
+            .clip(RoundedRectangle(10.dp)).plainButton { viewing = true }.semantics { contentDescription = file.name })
+        FileRow(file, download, caption, save)
     }
 
     SharedImageSheet(file.takeIf { viewing }, entry, menu, state, store) { viewing = false }
 }
 
-@Composable private fun FileRow(file: SharedFile, download: FileDownloadState?, audio: SharedAudio?, caption: String,
-    save: () -> Unit, play: () -> Unit) {
+/** Its icon, name and caption, and the download button. */
+@Composable private fun FileRow(file: SharedFile, download: FileDownloadState?, caption: String, save: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (audio != null) SharedAudioButton(audio, play) else Symbol(AttachmentIcon.symbol(file.name), size = 24.dp, tint = Palette.secondary)
+        Symbol(AttachmentIcon.symbol(file.name), size = 24.dp, tint = Palette.secondary)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(file.name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(caption, style = Type.caption2, color = if (audio?.phase == AudioPhase.Failed) Palette.danger else Palette.secondary)
-            if (audio != null && audio.duration > 0.0 && audio.phase != AudioPhase.Failed) AudioProgress(audio)
+            Text(caption, style = Type.caption2, color = Palette.secondary)
         }
-        Box(Modifier.size(48.dp).plainButton(action = save), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(48.dp).plainButton(action = save)
+            .semantics { contentDescription = (if (download is FileDownloadState.Downloading) "Cancel download " else "Download ") + file.name },
+            contentAlignment = Alignment.Center) {
             Symbol(if (download is FileDownloadState.Downloading) "xmark" else "arrow.down.to.line", size = 20.dp, tint = Palette.text)
         }
     }
@@ -163,7 +153,7 @@ internal fun clock(seconds: Double): String {
 /** How a download from the image viewer ended. */
 private fun reportViewerDownload(error: ImageError?) = Analytics.capture(AnalyticsEvent.ImagePreviewAction(ImageAction.Download, ImageFrom.Viewer, error))
 
-/** A shared file's caption: a player failure, then how its download goes, then the sound's progress, then its size. */
+/** A shared file's caption: how its download goes, then its size; a sound's player keeps its own clock caption. */
 internal fun detail(file: SharedFile, download: FileDownloadState?, audio: SharedAudio? = null, tr: (String) -> String = { it }): String {
     if (audio?.phase == AudioPhase.Failed) return tr("Couldn't play. Tap to retry.")
     val size = formatBytes(file.size)

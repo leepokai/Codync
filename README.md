@@ -119,11 +119,11 @@ brew install --cask leepokai/codync/codync
 
 All three install the same signed, notarized app.
 
-Open Codync: it sets up the host on first launch. **Open Codync** opens the full window; **Pair iPhone…** shows the QR code.
+Open Codync: it sets up the host on first launch. **Open Codync** opens the full window; **Pair phone…** shows the QR code.
 
 **Windows** — [download codync-windows-x64.exe](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe) and run it. It installs for your user and starts the host at sign-in. The installer isn't code-signed yet, so SmartScreen asks you to confirm it once (**More info → Run anyway**). Not on Windows yet: remote screen, on-device speech and the Claude Code status line hook. Details: [desktop app](docs/architecture/desktop-app.md#platform-notes).
 
-**iPhone and Android** — [get Codync on the App Store](https://apps.apple.com/app/codync/id6760984418) (iOS 26+, free) or [on Google Play](https://play.google.com/store/apps/details?id=com.pokai.Codync.android) (Android 10+, free), then scan the QR code from **Pair iPhone…** on the Mac, the Windows or Linux app, or `codync-host pair`.
+**iPhone and Android** — [get Codync on the App Store](https://apps.apple.com/app/codync/id6760984418) (iOS 26+, free) or [on Google Play](https://play.google.com/store/apps/details?id=com.pokai.Codync.android) (Android 10+, free), then scan the QR code from **Pair phone…** on the Mac, the Windows or Linux app, or `codync-host pair`.
 
 > **Why the iPhone app can be a version behind:** every iPhone release goes through Apple's App Review first, which usually takes a day or more, so the App Store version can trail the Mac, Windows, Linux and host releases. Your computer accounts for that: an update that needs a newer phone app waits until the App Store has the iPhone version and Google Play has the Android version, then installs, and the iPhone app shows a reminder when a newer version is available.
 

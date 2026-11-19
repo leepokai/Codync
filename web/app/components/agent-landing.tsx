@@ -21,7 +21,7 @@ export default function AgentLanding({ page }: { page: AgentPage }) {
     ["Install Codync on your computer", "On a Mac, download the app or run brew install --cask leepokai/codync/codync. On Windows, run the installer. On Linux, use the install script."],
     [`Sign in to ${agent} there`, page.login],
     [`Create a ${agent} bot`, `Pick ${agent} as the bot's agent and choose the folder it works in.`],
-    ["Pair your iPhone", "Get Codync from the App Store and scan the pairing code from the Mac menu bar, or the Windows or Linux app."],
+    ["Pair your phone", "Get Codync from the App Store or Google Play and scan the pairing code from the Mac menu bar, or the Windows or Linux app."],
   ];
   const faqJsonLd = {
     "@context": "https://schema.org",

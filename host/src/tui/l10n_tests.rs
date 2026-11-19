@@ -330,3 +330,18 @@ fn fallback_lines_read_in_traditional_chinese() {
         fill(&translate_with(&key, &super::HANT), &[("to", "Codex"), ("own", "Kimi Code (Work while traveling)")]);
     assert_eq!(line, "正在使用 Codex，Kimi Code (Work while traveling) 已登出");
 }
+
+#[test]
+fn pairing_reads_pair_phone_like_the_other_apps() {
+    use crate::tui::app::{ACTIONS, Action};
+    let (label, _, _) =
+        ACTIONS.iter().find(|(_, _, action)| *action == Action::Pair).expect("the palette pairs a phone");
+    // The desktop tray and Settings › Computers use these same keys, so every client says the same words.
+    assert_eq!(*label, "Pair phone…");
+    assert_eq!(translate_with(label, &super::HANT), "配對手機…");
+    assert_eq!(translate_with("Pair phone", &super::HANT), "配對手機");
+    assert_eq!(
+        translate_with("Scan with the Codync app, or open on the phone:", &super::HANT),
+        "用 Codync App 掃描，或在手機上打開："
+    );
+}

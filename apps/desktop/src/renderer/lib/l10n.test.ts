@@ -64,6 +64,7 @@ test('known chrome becomes Chinese and everything else stays', () => {
   assert.equal(translate('Open {name}', 'zh', false).replaceAll('{name}', 'Codync Dev'), '打开 Codync Dev')
   assert.equal(translate('Quit {name}', 'zh', false).replaceAll('{name}', 'Codync Dev'), '退出 Codync Dev')
   assert.equal(translate('Pair phone…', 'zh', false), '配对手机…')
+  assert.equal(translate('None yet. Pair a phone, or approve one from your account.', 'zh', false), '还没有。配对一台手机，或从账户里批准一台。')
   assert.equal(translate('Remote screen', 'zh', false), '远程屏幕')
   assert.equal(translate('Text Size', 'zh', false), '文字大小')
   assert.equal(translate('Restart host', 'zh', false), '重启 Host')

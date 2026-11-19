@@ -81,7 +81,7 @@ pub const ACTIONS: [(&str, &str, Action); 23] = [
     ("Refresh agents", "", Action::RefreshAgents),
     ("Move active bots to the top", "", Action::AutoOrder),
     ("Computer name", "", Action::ComputerName),
-    ("Pair a phone…", "P", Action::Pair),
+    ("Pair phone…", "P", Action::Pair),
     ("Network: your other computers…", "N", Action::Network),
     ("Usage", "U", Action::Usage),
     ("Check for updates", "", Action::CheckUpdate),

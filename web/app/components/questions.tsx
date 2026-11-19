@@ -18,7 +18,7 @@ const questions: [string, string][] = [
   ],
   [
     "How do I start?",
-    "Install Codync on the computer your agents run on and create a bot. Then pair your iPhone by scanning the code from the Mac menu bar, the Windows or Linux app, or codync-host pair. Signing in with Apple, Google or GitHub is optional.",
+    "Install Codync on the computer your agents run on and create a bot. Then pair your phone by scanning the code from the Mac menu bar, the Windows or Linux app, or codync-host pair. Signing in with Apple, Google or GitHub is optional.",
   ],
   [
     "Where does my data go?",

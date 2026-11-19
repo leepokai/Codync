@@ -98,6 +98,8 @@ test('Island Send during dictation sends one message with the typed text and the
   let botId: string | undefined
   try {
     await setPref(page, 'appLanguage', 'en')
+    const continueWithoutAccount = page.getByRole('button', { name: /^Continue without an account/ })
+    if (await continueWithoutAccount.isVisible()) await continueWithoutAccount.click()
     await api(page, 'setVoiceServer', { provider: 'openai', url: address })
     await api(page, 'setVoiceKey', { provider: 'openai', key: 'sk-e2e-local' })
     await setPref(page, 'dictationEngine', 'openai')

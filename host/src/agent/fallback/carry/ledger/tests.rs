@@ -351,3 +351,12 @@ fn a_budget_too_small_for_each_item_label_fails_the_handoff() {
     };
     assert!(render(&ledger, 20).is_err(), "no truncated or silently dropped item labels");
 }
+
+#[test]
+fn thread_memory_roots_use_parent_bot_folder() {
+    let cfg: crate::store::BotConfig =
+        serde_json::from_value(json!({"id": "thread-123", "name": "Thread", "threadOf": "parent-bot"})).unwrap();
+    let roots = memory_roots(&cfg);
+    assert!(roots.contains(&crate::chat::memory::files::folder(Some("parent-bot"))));
+    assert!(!roots.contains(&crate::chat::memory::files::folder(Some("thread-123"))));
+}

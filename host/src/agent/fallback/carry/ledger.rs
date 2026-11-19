@@ -327,6 +327,13 @@ fn report(hub: &crate::hub::Hub, outcome: &str, omitted: usize, unavailable: usi
     );
 }
 
+fn memory_roots(cfg: &crate::store::BotConfig) -> Vec<std::path::PathBuf> {
+    crate::chat::memory::files::layers(&cfg.as_owner())
+        .iter()
+        .map(|layer| crate::chat::memory::files::folder(layer.as_deref()))
+        .collect()
+}
+
 fn build_blocking(
     hub: &crate::hub::Hub,
     cfg: &crate::store::BotConfig,
@@ -342,10 +349,7 @@ fn build_blocking(
         ledger.omitted.push("older history not scanned (400-entry limit); search_history for earlier items".into());
     }
     let (entries, work) = scoped(scoped_entries, fresh, current);
-    let roots = crate::chat::memory::files::layers(cfg)
-        .iter()
-        .map(|layer| crate::chat::memory::files::folder(layer.as_deref()))
-        .collect::<Vec<_>>();
+    let roots = memory_roots(cfg);
     ledger.constraints = constraints(&entries, &mut ledger.omitted);
     ledger.references = references(&entries, &mut ledger.omitted);
     ledger.files = files::collect(&work, Path::new(&cfg.cwd), &roots, &mut ledger.omitted);

@@ -20,51 +20,72 @@ use std::collections::HashSet;
 /// Most fallbacks a bot has.
 pub const MAX_FALLBACKS: usize = 3;
 
-/// How many steps the bot's chain has, its own agent included.
-pub fn steps(cfg: &BotConfig) -> usize {
-    1 + cfg.fallbacks.len()
+/// The steps of `cfg`'s chain: its own agent and each saved fallback, with any other signed-in login profiles of an
+/// agent in `store` automatically tried right after that agent's configured step (keeping its model and options)
+/// before moving on to the next saved fallback.
+fn chain(store: &Store, cfg: &BotConfig) -> Vec<Fallback> {
+    let mut steps = Vec::with_capacity(1 + cfg.fallbacks.len());
+    let mut seen = HashSet::new();
+    let configured = std::iter::once(Fallback {
+        backend: cfg.backend.clone(),
+        command: cfg.command.clone(),
+        login_profile: cfg.login_profile.clone(),
+        model: cfg.model.clone(),
+        model_options: cfg.model_options.clone(),
+    })
+    .chain(cfg.fallbacks.iter().cloned());
+    for step in configured {
+        if seen.insert(step_login(&step)) {
+            steps.push(step.clone());
+        }
+        let custom = step.command.as_deref().is_some_and(|c| !c.trim().is_empty());
+        if !custom {
+            for id in crate::agent::login_profiles::signed_in_ids(store, &step.backend) {
+                let extra = Fallback { login_profile: Some(id), ..step.clone() };
+                if seen.insert(step_login(&extra)) {
+                    steps.push(extra);
+                }
+            }
+        }
+    }
+    steps
 }
 
-/// Step `step`'s fallback; `None` for the bot's own agent (and a step past the end).
-fn fallback_at(cfg: &BotConfig, step: usize) -> Option<&Fallback> {
-    step.checked_sub(1).and_then(|i| cfg.fallbacks.get(i))
-}
-
-/// The agent of step `step`.
-pub fn backend(cfg: &BotConfig, step: usize) -> &str {
-    fallback_at(cfg, step).map_or(&cfg.backend, |f| &f.backend)
+/// How many steps the bot's chain has, its own agent and any signed-in login profiles included.
+pub fn steps(store: &Store, cfg: &BotConfig) -> usize {
+    chain(store, cfg).len()
 }
 
 /// The bot as step `step` runs it: that step's agent and model, everything else the bot's.
-pub fn effective(cfg: &BotConfig, step: usize) -> BotConfig {
+pub fn effective(store: &Store, cfg: &BotConfig, step: usize) -> BotConfig {
     let mut out = cfg.clone();
-    if let Some(f) = fallback_at(cfg, step) {
-        out.backend.clone_from(&f.backend);
-        out.command.clone_from(&f.command);
-        out.login_profile.clone_from(&f.login_profile);
-        out.model.clone_from(&f.model);
-        out.model_options.clone_from(&f.model_options);
+    if let Some(f) = chain(store, cfg).into_iter().nth(step) {
+        out.backend = f.backend;
+        out.command = f.command;
+        out.login_profile = f.login_profile;
+        out.model = f.model;
+        out.model_options = f.model_options;
     }
     out
 }
 
 /// The first step, in order, whose login `passed` doesn't pass over and that isn't resting at `now`.
 pub fn first_step(store: &Store, cfg: &BotConfig, now: i64, passed: impl Fn(&str) -> bool) -> Option<usize> {
-    (0..steps(cfg)).find(|&s| {
-        let login = login(cfg, s);
-        !passed(&login) && rest::get(store, &login, now).is_none()
+    chain(store, cfg).iter().enumerate().find_map(|(s, f)| {
+        let login = step_login(f);
+        (!passed(&login) && rest::get(store, &login, now).is_none()).then_some(s)
     })
 }
 
 /// The bot as a new turn of its starts at `now`: on the first step whose login isn't resting (its own agent when
 /// every one is).
 pub fn starting(store: &Store, cfg: &BotConfig, now: i64) -> BotConfig {
-    effective(cfg, first_step(store, cfg, now, |_| false).unwrap_or(0))
+    effective(store, cfg, first_step(store, cfg, now, |_| false).unwrap_or(0))
 }
 
 /// The step that runs on login `login`, if the chain has it.
-pub fn step_of(cfg: &BotConfig, login: &str) -> Option<usize> {
-    (0..steps(cfg)).find(|&s| self::login(cfg, s) == login)
+pub fn step_of(store: &Store, cfg: &BotConfig, login: &str) -> Option<usize> {
+    chain(store, cfg).iter().position(|f| step_login(f) == login)
 }
 
 /// Drops fallbacks that repeat an earlier login (the bot's own included), as when the user makes a fallback the
@@ -79,8 +100,8 @@ fn step_login(f: &Fallback) -> String {
 }
 
 /// The login step `step` runs on (`login`): what tells the chain's steps apart, and whose usage a rest is about.
-pub fn login(cfg: &BotConfig, step: usize) -> String {
-    fallback_at(cfg, step).map_or_else(|| login::of(cfg), step_login)
+pub fn login(store: &Store, cfg: &BotConfig, step: usize) -> String {
+    chain(store, cfg).get(step).map_or_else(|| login::of(cfg), step_login)
 }
 
 /// For each agent of a list that came in order without what it can't show (a bot's own tools), the saved step it stands for: the n-th step of an agent is the n-th saved one of it.
@@ -91,11 +112,11 @@ pub fn saved_steps<'a>(saved: &'a [Fallback], agents: &[&str]) -> Vec<Option<&'a
 
 /// The agents of `cfg`'s chain that are resting at `now` (`resting` on the bot's wire shape).
 pub fn resting(store: &Store, cfg: &BotConfig, now: i64) -> Vec<Value> {
-    (0..steps(cfg))
-        .filter_map(|s| {
-            let r = rest::get(store, &login(cfg, s), now)?;
-            let on = fallback_at(cfg, s).map_or(cfg.login_profile.as_ref(), |f| f.login_profile.as_ref());
-            Some(json!({"agent": backend(cfg, s), "loginProfile": on, "until": r.until, "reason": r.reason}))
+    chain(store, cfg)
+        .into_iter()
+        .filter_map(|f| {
+            let r = rest::get(store, &step_login(&f), now)?;
+            Some(json!({"agent": f.backend, "loginProfile": f.login_profile, "until": r.until, "reason": r.reason}))
         })
         .collect()
 }
@@ -104,7 +125,7 @@ pub fn resting(store: &Store, cfg: &BotConfig, now: i64) -> Vec<Value> {
 pub fn tell_bots(hub: &Hub, rested: &str) {
     let Ok(rows) = hub.store.bots() else { return };
     for row in rows.iter().filter(|r| !r.deleted && !r.config.is_group()) {
-        if (0..steps(&row.config)).any(|s| login(&row.config, s) == rested) {
+        if chain(&hub.store, &row.config).iter().any(|f| step_login(f) == rested) {
             hub.emit_bot(&row.config.id);
         }
     }
@@ -180,6 +201,7 @@ mod tests {
 
     #[test]
     fn an_agent_appears_again_on_another_of_its_login_profiles() {
+        let store = Store::open(std::path::Path::new(":memory:")).expect("a store");
         let mut cfg = bot(&[("claude", None), ("claude", None), ("codex", None), ("claude", None)]);
         cfg.fallbacks[0].login_profile = Some("a1".into());
         cfg.fallbacks[1].login_profile = Some("a1".into());
@@ -189,10 +211,14 @@ mod tests {
         let steps: Vec<_> = cfg.fallbacks.iter().map(|f| (f.backend.as_str(), f.login_profile.as_deref())).collect();
         assert_eq!(steps, [("claude", Some("a1")), ("codex", None), ("claude", Some("a2"))]);
         check(&cfg).expect("each login once");
-        assert_eq!(effective(&cfg, 1).login_profile.as_deref(), Some("a1"), "the step runs on its login profile");
-        assert_eq!(effective(&cfg, 2).login_profile, None, "another agent runs on the computer's own login");
-        assert_eq!(step_of(&cfg, &login(&cfg, 3)), Some(3));
-        assert_eq!(step_of(&cfg, "claude"), Some(0), "the bot's own agent, on the computer's own login");
+        assert_eq!(
+            effective(&store, &cfg, 1).login_profile.as_deref(),
+            Some("a1"),
+            "the step runs on its login profile"
+        );
+        assert_eq!(effective(&store, &cfg, 2).login_profile, None, "another agent runs on the computer's own login");
+        assert_eq!(step_of(&store, &cfg, &login(&store, &cfg, 3)), Some(3));
+        assert_eq!(step_of(&store, &cfg, "claude"), Some(0), "the bot's own agent, on the computer's own login");
         // The bot's own agent on a login profile leaves the computer's own login free for a fallback.
         cfg.login_profile = Some("a1".into());
         tidy(&mut cfg);
@@ -214,6 +240,29 @@ mod tests {
     }
 
     #[test]
+    fn signed_in_login_profiles_of_the_same_agent_rotate_automatically_before_other_fallbacks() {
+        let store = Store::open(std::path::Path::new(":memory:")).expect("a store");
+        crate::agent::login_profiles::tests::insert(&store, &[("p1", "claude"), ("p2", "claude"), ("p3", "claude")]);
+        crate::agent::login_profiles::note_signed_in(&store, "p1", true);
+        crate::agent::login_profiles::note_signed_in(&store, "p2", true);
+        let mut cfg = bot(&[("codex", Some("gpt-5.5"))]);
+        cfg.login_profile = Some("p1".into());
+        let now = crate::store::now_ms();
+        assert_eq!(steps(&store, &cfg), 3, "p1, signed-in p2, and codex (signed-out p3 excluded)");
+        assert_eq!(starting(&store, &cfg, now).login_profile.as_deref(), Some("p1"));
+        rest::record(&store, &login::of(&cfg), Reason::UsageLimit, now, None);
+        let on_p2 = starting(&store, &cfg, now);
+        assert_eq!(
+            (on_p2.backend.as_str(), on_p2.login_profile.as_deref(), on_p2.model.as_deref()),
+            ("claude", Some("p2"), Some("opus")),
+            "automatically rotates to the next signed-in profile of the same agent with the same model"
+        );
+        rest::record(&store, &login::of(&on_p2), Reason::UsageLimit, now, None);
+        let on_codex = starting(&store, &cfg, now);
+        assert_eq!((on_codex.backend.as_str(), on_codex.model.as_deref()), ("codex", Some("gpt-5.5")));
+    }
+
+    #[test]
     fn a_list_sent_by_agent_alone_stands_for_the_saved_steps_in_order() {
         let mut cfg = bot(&[("claude", None), ("codex", None), ("claude", None)]);
         cfg.fallbacks[0].login_profile = Some("a1".into());
@@ -228,15 +277,16 @@ mod tests {
 
     #[test]
     fn a_step_runs_its_own_agent_and_model_with_the_bots_settings() {
+        let store = Store::open(std::path::Path::new(":memory:")).expect("a store");
         let cfg = bot(&[("codex", Some("gpt-5.5")), ("gemini", None)]);
-        assert_eq!(steps(&cfg), 3);
-        assert_eq!(effective(&cfg, 0).model.as_deref(), Some("opus"));
-        let codex = effective(&cfg, 1);
+        assert_eq!(steps(&store, &cfg), 3);
+        assert_eq!(effective(&store, &cfg, 0).model.as_deref(), Some("opus"));
+        let codex = effective(&store, &cfg, 1);
         assert_eq!((codex.backend.as_str(), codex.model.as_deref()), ("codex", Some("gpt-5.5")));
         assert_eq!(codex.id, "b");
-        assert_eq!(effective(&cfg, 2).model, None);
-        assert_eq!(step_of(&cfg, "gemini"), Some(2));
-        assert_eq!(backend(&cfg, 9), "claude", "a step past the end is the bot's own");
+        assert_eq!(effective(&store, &cfg, 2).model, None);
+        assert_eq!(step_of(&store, &cfg, "gemini"), Some(2));
+        assert_eq!(effective(&store, &cfg, 9).backend, "claude", "a step past the end is the bot's own");
     }
 
     #[test]

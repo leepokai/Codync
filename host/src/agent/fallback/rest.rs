@@ -76,6 +76,41 @@ pub fn reset_time(usage: &Usage, backend: &str, login_profile: Option<&str>, now
     windows.iter().filter(|w| w.percent >= 99.5).filter_map(|w| w.resets_at).filter(|t| *t > now).max()
 }
 
+/// Parses a relative reset duration from an agent's usage-limit message (`"Your limit will reset in 6 days, 12 hours."`
+/// or `"resets in 2h 30m"`), returning `now + duration` when one is found.
+pub fn parse_reset_in(text: &str, now: i64) -> Option<i64> {
+    let lower = text.to_ascii_lowercase();
+    let tail = lower.split_once("reset in ").or_else(|| lower.split_once("resets in "))?.1;
+    let clause = tail.split(['.', '\n', ';', ')']).next().unwrap_or(tail);
+    let mut total_ms: i64 = 0;
+    let mut pending_num: Option<i64> = None;
+    for raw in clause.split(|c: char| c.is_ascii_whitespace() || c == ',') {
+        let token = raw.trim();
+        if token.is_empty() || token == "and" {
+            continue;
+        }
+        if let Ok(n) = token.parse::<i64>() {
+            pending_num = Some(n);
+            continue;
+        }
+        let split_at = token.find(|c: char| !c.is_ascii_digit()).unwrap_or(0);
+        let (n, unit) = if split_at > 0 {
+            (token[..split_at].parse::<i64>().ok()?, &token[split_at..])
+        } else {
+            (pending_num.take()?, token)
+        };
+        let unit_ms = match unit {
+            "d" | "day" | "days" => 24 * 60 * MINUTE,
+            "h" | "hr" | "hrs" | "hour" | "hours" => 60 * MINUTE,
+            "m" | "min" | "mins" | "minute" | "minutes" => MINUTE,
+            "s" | "sec" | "secs" | "second" | "seconds" => 1_000,
+            _ => continue,
+        };
+        total_ms = total_ms.saturating_add(n.saturating_mul(unit_ms));
+    }
+    (total_ms > 0).then(|| now.saturating_add(total_ms))
+}
+
 /// Agent `backend`'s accounts on one login (`login_profile`'s, or the computer's own, which a command of its own
 /// runs on too) whose last rest was for being signed out.
 pub fn signed_out(store: &Store, backend: &str, login_profile: Option<&str>) -> Vec<String> {
@@ -167,5 +202,15 @@ mod tests {
         custom.backend = "codex".into();
         custom.command = None;
         assert_eq!(login::of(&custom), "codex");
+    }
+
+    #[test]
+    fn parses_relative_reset_duration_from_usage_limit_message() {
+        let now = 1_000_000;
+        let msg = "Usage Limit Reached\n\nYou have reached your current quota for this period. Your limit will reset in 6 days, 12 hours.";
+        assert_eq!(parse_reset_in(msg, now), Some(now + (6 * 24 + 12) * 60 * MINUTE));
+        assert_eq!(parse_reset_in("Limit resets in 2h 30m.", now), Some(now + 150 * MINUTE));
+        assert_eq!(parse_reset_in("Your limit will reset in 45 minutes", now), Some(now + 45 * MINUTE));
+        assert_eq!(parse_reset_in("No reset time mentioned", now), None);
     }
 }

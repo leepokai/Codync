@@ -36,8 +36,8 @@ fn logged(bot: &str, what: &str, result: anyhow::Result<()>) {
 
 /// The bot as the agent its main session was on when the host stopped runs it.
 pub(in crate::agent::bot) fn resume_step(hub: &Hub, base: &BotConfig) -> BotConfig {
-    let step = hub.store.kv_get(&on_key(&base.id)).and_then(|b| fallback::step_of(base, &b)).unwrap_or(0);
-    let cfg = fallback::effective(base, step);
+    let step = hub.store.kv_get(&on_key(&base.id)).and_then(|b| fallback::step_of(&hub.store, base, &b)).unwrap_or(0);
+    let cfg = fallback::effective(&hub.store, base, step);
     if step > 0 {
         hub.set_runtime(&base.id, |r| r.agent_step = Some(AgentStep::new(&cfg, step, None)));
     }
@@ -76,7 +76,7 @@ impl Actor {
             self.set_session(Some(&slot), None);
         }
         self.owe_recap();
-        self.cfg = fallback::effective(&self.base, target);
+        self.cfg = fallback::effective(&self.hub.store, &self.base, target);
         let key = parked_key(&bot, &fallback::login::of(&self.cfg));
         let parked = self.hub.store.kv_get(&key).filter(|s| !s.is_empty());
         logged(&bot, "take the agent's parked session", self.hub.store.kv_delete(&key));
@@ -105,14 +105,15 @@ impl Actor {
     /// After a settings change (`old` before it): forgets the parked sessions of agents whose step changed or left the
     /// chain.
     pub(super) fn forget_changed(&self, old: &BotConfig) {
-        for step in 0..fallback::steps(old) {
-            let login = fallback::login(old, step);
-            let same = fallback::step_of(&self.base, &login).is_some_and(|s| {
-                let (a, b) = (fallback::effective(old, step), fallback::effective(&self.base, s));
+        let store = &self.hub.store;
+        for step in 0..fallback::steps(store, old) {
+            let login = fallback::login(store, old, step);
+            let same = fallback::step_of(store, &self.base, &login).is_some_and(|s| {
+                let (a, b) = (fallback::effective(store, old, step), fallback::effective(store, &self.base, s));
                 (a.command, a.model, a.model_options) == (b.command, b.model, b.model_options)
             });
             if !same && login != fallback::login::of(&self.cfg) {
-                let forgot = self.hub.store.kv_delete(&parked_key(&self.base.id, &login));
+                let forgot = store.kv_delete(&parked_key(&self.base.id, &login));
                 logged(&self.base.id, "forget a parked session", forgot);
             }
         }
@@ -122,8 +123,9 @@ impl Actor {
     /// said before.
     pub(in crate::agent::bot) fn forget_parked(&mut self) {
         let bot = self.base.id.clone();
-        for step in 0..fallback::steps(&self.base) {
-            let forgot = self.hub.store.kv_delete(&parked_key(&bot, &fallback::login(&self.base, step)));
+        for step in 0..fallback::steps(&self.hub.store, &self.base) {
+            let forgot =
+                self.hub.store.kv_delete(&parked_key(&bot, &fallback::login(&self.hub.store, &self.base, step)));
             logged(&bot, "forget a parked session", forgot);
         }
         self.relay.recap = None;

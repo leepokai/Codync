@@ -1,52 +1,37 @@
 import CodyncKit
 import SwiftUI
 
-/// "+" on the Codync Cloud card: names another cloud computer and picks the provider it runs on. A provider without a
-/// key it takes opens that provider's key sheet to add one; back here, its row shows the saved key and it's picked. One
-/// with a key opens it, or removes it, from its row's `⋯`. At the account's limit it says so, and Create is off.
+/// "+" on the Codync Cloud card, three steps in one sheet: the provider (each with its region, and its key or what it
+/// costs), its key when it has none that works (`CloudKeyForm`), then the new computer's name. A provider with a key
+/// opens it, or removes it, from its row's `⋯`. At the account's limit it says so, and Create is off.
 struct NewCloudComputerSheet: View {
     let store: CloudMachineStore
     @Environment(\.dismissModal) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var step = Step.provider
     @State private var name = ""
-    @State private var picked: String?
     /// The provider whose key sheet is open.
     @State private var keyFor: CloudProvider?
 
-    private var selected: String? { store.provider(picked: picked) }
+    /// The provider a later step is for, by its id: read from the store, so a key saved meanwhile shows.
+    private enum Step: Equatable { case provider, key(String), name(String) }
 
     private var creating: Bool { store.working == .creating }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ModalHeader("New cloud computer") {
-                if creating {
-                    Spinner()
-                } else {
-                    IconButton("Create", systemImage: "checkmark", action: create)
-                        .disabled(selected == nil || store.working != nil || store.atLimit)
-                        .accessibilityIdentifier("createCloudComputer")
-                }
+        // One step at a time, swapped in place.
+        ZStack {
+            switch step {
+            case .provider: providerStep
+            case let .key(id): if let provider = listed(id) { keyStep(provider) }
+            case let .name(id): if let provider = listed(id) { nameStep(provider) }
             }
-            CardForm {
-                CardSection("Name") {
-                    TextField(L10n.tr("Name your cloud computer"), text: $name, prompt: Text(verbatim: store.suggestedName))
-                        .submitLabel(.done)
-                        .onSubmit(create)
-                        .accessibilityIdentifier("cloudComputerName")
-                }
-                CardSection("Provider") {
-                    ForEach(store.providers) { row($0) }
-                }
-                // A key removed from a row's `⋯` fails here, where it was asked.
-                if let error = store.error(at: .newComputer) ?? store.keyRemovalError ?? store.limitNote { ErrorText(error) }
-            }
-            .textFieldStyle(.plain)
         }
+        .frame(maxHeight: .infinity, alignment: .top)
         .background(Palette.background)
         .codyncSheet(item: $keyFor) { CloudKeySheet(store: store, provider: $0.provider) }
-        // A failure from an earlier opening is over, a row's key removal too.
+        // A row's key removal that failed in an earlier opening is over (a create's clears on the way to its step).
         .onAppear {
-            store.clearError(at: .newComputer)
             for provider in store.providers { store.clearError(at: .key(provider.provider)) }
         }
         .onChange(of: name) {
@@ -55,13 +40,89 @@ struct NewCloudComputerSheet: View {
         }
     }
 
-    /// Its logo on a tile, its name and its key; a checkmark on the picked one, and a `⋯` on one with a key it takes.
+    private func listed(_ id: String) -> CloudProvider? { store.providers.first { $0.provider == id } }
+
+    // MARK: - Steps
+
+    private var providerStep: some View {
+        VStack(spacing: 0) {
+            ModalHeader("New cloud computer")
+            CardForm {
+                CardSection("Provider") {
+                    ForEach(store.providers) { row($0) }
+                }
+                // A key removed from a row's `⋯` fails here, where it was asked.
+                if let error = store.keyRemovalError ?? store.limitNote { ErrorText(error) }
+            }
+        }
+    }
+
+    private func keyStep(_ provider: CloudProvider) -> some View {
+        VStack(spacing: 0) {
+            ModalHeader { backTitle(L10n.fill(L10n.tr("Connect {provider}"), ["provider": provider.name])) }
+            CloudKeyForm(store: store, provider: provider) { go(.name(provider.provider)) }
+        }
+    }
+
+    private func nameStep(_ provider: CloudProvider) -> some View {
+        VStack(spacing: 0) {
+            ModalHeader { backTitle(L10n.tr("New cloud computer")) } trailing: {
+                if creating {
+                    Spinner()
+                } else {
+                    IconButton("Create", systemImage: "checkmark") { create(on: provider) }
+                        .disabled(!provider.isReady || store.working != nil || store.atLimit)
+                        .accessibilityIdentifier("createCloudComputer")
+                }
+            }
+            CardForm {
+                CardSection("Name", footer: CloudHosting.runsOn(providerName: provider.name, region: provider.region)) {
+                    TextField(L10n.tr("Name your cloud computer"), text: $name, prompt: Text(verbatim: store.suggestedName))
+                        .submitLabel(.done)
+                        .onSubmit { create(on: provider) }
+                        .accessibilityIdentifier("cloudComputerName")
+                }
+                if let error = store.error(at: .newComputer) ?? store.limitNote { ErrorText(error) }
+            }
+            .textFieldStyle(.plain)
+        }
+    }
+
+    /// A later step's title, after the way back to the providers (off while a key saves or the computer is made).
+    private func backTitle(_ title: String) -> some View {
+        HStack(spacing: 4) {
+            BackButton { go(.provider) }
+                .disabled(store.working != nil)
+                // Its glyph near the sheet's edge, as the close button's is on the other side.
+                .padding(.leading, -12)
+            Text(verbatim: title)
+        }
+    }
+
+    // MARK: - Providers
+
+    /// Its logo on a tile, its name and detail, and a chevron; a `⋯` on one with a key it takes.
     private func row(_ provider: CloudProvider) -> some View {
         HStack(spacing: 4) {
-            pickButton(provider)
+            Button { go(provider.isReady ? .name(provider.provider) : .key(provider.provider)) } label: {
+                HStack(spacing: 12) {
+                    ProviderIcon(provider.provider)
+                        .frame(width: 36, height: 36)
+                        .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: provider.name).foregroundStyle(Palette.text).lineLimit(1)
+                        detail(provider).font(.caption).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(store.working != nil)
+            .accessibilityIdentifier("cloudProvider.\(provider.provider)")
             if store.working == .removingKey(provider.provider) {
-                // Where the `⋯` glyph sits, so the checkmark stays put.
-                Spinner().frame(width: 44).padding(.trailing, -12)
+                // Where the `⋯` glyph sits, so the chevron stays put.
+                Spinner().frame(width: 44)
             } else if provider.isReady {
                 DropdownMenu { menu(provider) } label: {
                     Image(systemName: "ellipsis")
@@ -73,10 +134,13 @@ struct NewCloudComputerSheet: View {
                 .accessibilityLabel(L10n.tr("More"))
                 .accessibilityIdentifier("cloudProviderKey.\(provider.provider)")
                 .disabled(store.working != nil)
-                // A 44 pt target in the row, its glyph near the card's edge (like a cloud computer's `⋯`).
+                // A 44 pt target in the row.
                 .padding(.vertical, -6)
-                .padding(.trailing, -12)
             }
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Palette.tertiary)
+                .accessibilityHidden(true)
         }
     }
 
@@ -95,55 +159,22 @@ struct NewCloudComputerSheet: View {
         return items
     }
 
-    private func pickButton(_ provider: CloudProvider) -> some View {
-        let isSelected = selected == provider.provider
-        return Button { tap(provider) } label: {
-            HStack(spacing: 12) {
-                ProviderIcon(provider.provider)
-                    .frame(width: 36, height: 36)
-                    .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: provider.name).foregroundStyle(Palette.text).lineLimit(1)
-                    detail(provider).font(.caption).fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 8)
-                if provider.isReady {
-                    Image(systemName: "checkmark")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Palette.text)
-                        .opacity(isSelected ? 1 : 0)
-                        .accessibilityHidden(true)
-                } else {
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(Palette.tertiary)
-                        .accessibilityHidden(true)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(creating)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityIdentifier("cloudProvider.\(provider.provider)")
-    }
-
-    /// Where it runs and the key's hint; what to fix while the provider turns the key down; or that it needs one.
+    /// Its detail, in the danger tone while the provider turns the key down.
     private func detail(_ provider: CloudProvider) -> Text {
-        if let problem = provider.credential?.problem {
-            return Text(L10n.tr(problem)).foregroundStyle(Palette.danger)
-        }
-        let key = provider.credential?.hint ?? L10n.tr(provider.offer == nil ? "Add a key first" : "Free sandbox available")
-        return Text(verbatim: "\(provider.region) · \(key)").foregroundStyle(Palette.secondary)
+        let detail = provider.detail
+        return Text(verbatim: detail.text).foregroundStyle(detail.isProblem ? Palette.danger : Palette.secondary)
     }
 
-    private func tap(_ provider: CloudProvider) {
-        Motion.animate { picked = provider.provider }
-        if !provider.isReady { keyFor = provider }
+    // MARK: - Actions
+
+    /// A create that failed was for the step left.
+    private func go(_ next: Step) {
+        store.clearError(at: .newComputer)
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { step = next }
     }
 
-    private func create() {
-        guard let provider = selected, store.working == nil, !store.atLimit else { return }
-        Task { if await store.create(on: provider, name: name) { dismiss() } }
+    private func create(on provider: CloudProvider) {
+        guard provider.isReady, store.working == nil, !store.atLimit else { return }
+        Task { if await store.create(on: provider.provider, name: name) { dismiss() } }
     }
 }

@@ -107,8 +107,9 @@ export const setState = (env: Env, id: string, state: Machine["state"], now: num
     .bind(state, now, id)
     .run();
 
-/** The host of `computerId` is back: a machine recorded `starting` (a wake) has booted, so `starting` always means on
- * its way up, which clients show as waking. */
+/** The host of `computerId` is back: a machine recorded `starting` (a wake) has booted, so the account list says
+ * `running`. A wake whose host never returns stays `starting`, so clients take waking only from the relay's
+ * `presence.waking`, never from `starting`. */
 export const booted = (env: Env, computerId: string, now: number) =>
   env.DB.prepare("UPDATE cloud_machines SET state = 'running', updated_at = ? WHERE computer_id = ? AND state = 'starting'").bind(now, computerId);
 

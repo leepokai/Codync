@@ -4,7 +4,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
-use super::super::app::{After, App, Confirm, ConfirmAct, Editor, Overlay};
+use super::super::app::{App, Confirm, ConfirmAct, Editor, Overlay};
 use super::when::{complete_zone, parse_when, when_text};
 use super::{DetailRow, DetailsPage, Page, Reply, RoutineField, RoutineForm, ctrl, newline, s};
 use crate::routines::local_zone;
@@ -211,24 +211,6 @@ impl App {
         f.saving = true;
         f.error = None;
         self.sheet("saveRoutine", body, Reply::RoutineSaved);
-    }
-
-    /// `F`: runs a failed routine run's work again: the picked notice's, else the newest in this chat.
-    pub(in crate::tui) fn retry_failed_run(&mut self) {
-        let Some(bot) = self.selected.clone() else { return };
-        let run = self
-            .lane(&bot)
-            .into_iter()
-            .filter(|e| e.retries() && self.pick.as_ref().is_none_or(|id| *id == e.id))
-            .max_by_key(|e| e.seq)
-            .map(|e| e.data["runId"].clone());
-        match run {
-            Some(run) => {
-                self.call("retryRoutineRun", json!({"botId": bot, "runId": run}), After::Nothing);
-                self.flash("Trying it again");
-            }
-            None => self.flash("No failed routine run to try again here"),
-        }
     }
 }
 

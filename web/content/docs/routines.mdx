@@ -69,7 +69,7 @@ For one more look at something in a conversation you're already having ("check t
 A run posts in the bot's chat: a line with the routine's name, such as "Routine · Morning summary", then the bot's reply, which is the result. The run's steps are in its thread (the bot's **Details**, under **Threads** while it runs and **Recent** after). Tap the routine line to open the routine.
 
 - A successful run sends you a notification with its reply.
-- If there's nothing to report and the instruction allows silence, the run finishes without a message.
+- If there's nothing to report and the instruction allows silence, the run finishes without a message: a reply that is `(pass)`, or whose last line ends with `(pass)` right after a finished sentence ("Nothing new. (pass)"), is not posted. Anything the bot wrote before it stays in the run's steps.
 - A run that fails leaves a "Routine could not finish" line and notifies you.
 - Replying to a result continues your normal conversation with the bot, with the result quoted.
 

@@ -108,13 +108,6 @@ public final class CloudMachineStore {
         return (machine.hosting.state.label, machine.hosting.state == .failed)
     }
 
-    /// The provider New cloud computer creates on: `picked` while its key works, else the first whose key does. One
-    /// picked before its key was added (or fixed) is chosen once it is.
-    public func provider(picked: String?) -> String? {
-        let ready = providers.filter(\.isReady)
-        return (ready.first { $0.provider == picked } ?? ready.first)?.provider
-    }
-
     /// A key can go unless a computer runs on that provider (the cloud needs it to put them to sleep).
     public func canRemoveKey(_ provider: String) -> Bool { !machines.contains { $0.hosting.provider == provider } }
 

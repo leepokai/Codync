@@ -385,6 +385,8 @@ export interface EntryData {
   agentSwitch?: AgentSwitch
   /** notice (error): the bot has no fallbacks and its agent ran out; offers to add one. */
   addFallback?: boolean
+  /** notice: a bot chain stopped at its handoff limit; Continue (`continueChain`) lets it go on, once. */
+  continueChain?: boolean
   heading?: string
   delegationId?: string
   sourceBotId?: string

@@ -210,7 +210,9 @@ impl Routines {
                 r.status = status;
                 r.finished_at = Some(now);
                 r.detail = detail;
-                r.result = text.filter(|t| !crate::chat::group::is_pass(t));
+                // A reply that ends in `(pass)` says nothing, even with a line before it (a quiet run that added a
+                // reason first): the text stays in the run's trace.
+                r.result = text.filter(|t| !crate::chat::group::ends_in_pass(t));
                 r.report_pending = r.result.is_some() || failed;
                 if failed {
                     withdrawn = retry::after_failure(s, i, safe, now);

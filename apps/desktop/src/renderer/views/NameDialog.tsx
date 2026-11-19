@@ -7,11 +7,13 @@ export interface Naming {
   title: string
   name: string
   save: (name: string) => void
+  /** Under the title: what the name is for. */
+  message?: string
 }
 
 /**
- * Asks for a name (a section's, a cloud computer's): `limit` keeps the field to what's kept, `clean` reads the typed
- * text as the name to save (null: nothing to save yet).
+ * Asks for a name (a section's, a computer's): `limit` keeps the field to what's kept, `clean` reads the typed text as
+ * the name to save (null: nothing to save yet).
  */
 export function NameDialog({ naming, placeholder, limit, clean, onClose }: {
   naming: Naming | null
@@ -30,13 +32,14 @@ export function NameDialog({ naming, placeholder, limit, clean, onClose }: {
   }
   const typed = clean(name)
   const save = () => {
-    if (naming && typed) naming.save(typed)
+    if (naming && typed !== null) naming.save(typed)
   }
   return (
-    <Dialog open={naming !== null} title={naming ? tr(naming.title) : ''} actions={[{ title: 'Save', disabled: !typed, action: save }]} onClose={onClose}>
+    <Dialog open={naming !== null} title={naming ? tr(naming.title) : ''} message={naming?.message ? tr(naming.message) : undefined}
+      actions={[{ title: 'Save', disabled: typed === null, action: save }]} onClose={onClose}>
       <DialogField value={name} placeholder={tr(placeholder)} label={tr(placeholder)} onChange={(text) => setName(limit(text))}
         onSubmit={() => {
-          if (!typed) return
+          if (typed === null) return
           onClose()
           save()
         }} />

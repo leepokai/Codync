@@ -1,7 +1,7 @@
-import { useState } from 'react'
-import { Button, CardSection, Disclosure, IconButton, Spinner } from '../../components/Controls'
+import { useEffect, useState } from 'react'
+import { Button, CardForm, CardSection, Disclosure, IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { ModalHeader } from '../../components/Overlay'
+import { ModalHeader, SheetPage } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import type { CloudCredential, CloudProvider, CloudProviderOffer } from '../../lib/cloud-computer'
@@ -10,30 +10,43 @@ import { useTr } from '../../lib/use-language'
 import type { CloudComputerModel } from '../../store/cloud-computer'
 
 /**
- * One provider's key (iOS `CloudKeySheet`), from New cloud computer or a cloud computer's `⋯`: the key to the user's own
- * account there, pasted once, checked and kept encrypted by the cloud, and shown afterwards only by its last four; while
- * the provider turns it down, what to fix shows under it. Saving one closes it (`done`).
+ * One provider's key (iOS `CloudKeySheet`), from a cloud computer's `⋯` or a provider's in New cloud computer: the same
+ * key content as New cloud computer's key step. Saving one closes it (`done`).
  */
 export function CloudKeySheet({ model, provider, done }: { model: CloudComputerModel; provider: string; done: () => void }) {
   const tr = useTr()
   const p = model.providers.find((x) => x.provider === provider)
   if (!p) return null
   return (
-    <VStack className="cloud-key-sheet">
-      <ModalHeader
-        icon="key.fill"
-        title={fill(tr('{provider} API key'), { provider: p.name })}
-        subtitle={tr('Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.')}
-      />
-      <VStack gap={20} className="cloud-key-body">
-        <CardSection>
-          <KeyRow provider={p} model={model} saved={done} />
-          {p.offer ? <OfferRow provider={p.provider} offer={p.offer} model={model} /> : null}
-          <SetupRow provider={p} />
-        </CardSection>
+    <SheetPage className="cloud-key-sheet">
+      <ModalHeader icon="key.fill" title={fill(tr('{provider} API key'), { provider: p.name })} />
+      <CardForm>
+        <CloudKeyContent model={model} provider={p} saved={done} />
         <ErrorText error={model.errorAt('card')} />
-      </VStack>
-    </VStack>
+      </CardForm>
+    </SheetPage>
+  )
+}
+
+/**
+ * A provider's key, in its own sheet and as New cloud computer's key step (iOS `CloudKeyForm`): how to make one on the
+ * provider's site (numbered, then its page), the key to the user's own account there (pasted once, checked and kept
+ * encrypted by the cloud, shown afterwards only by its last four, with what to fix while the provider turns it down),
+ * its free plan, and the command line way, folded away. `saved` once a key is kept.
+ */
+export function CloudKeyContent({ model, provider, saved }: { model: CloudComputerModel; provider: CloudProvider; saved: () => void }) {
+  // Left, its failure was seen: New cloud computer shows only a removal asked from a provider's own row.
+  useEffect(() => () => model.clearError(`key:${provider.provider}`), [model, provider.provider])
+  return (
+    <>
+      {/* Above the key: the last step says to paste it below. */}
+      <SetupSteps provider={provider} />
+      <CardSection footer="Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.">
+        <KeyRow provider={provider} model={model} saved={saved} />
+        {provider.offer ? <OfferRow provider={provider.provider} offer={provider.offer} model={model} /> : null}
+        <CommandsRow provider={provider} />
+      </CardSection>
+    </>
   )
 }
 
@@ -41,6 +54,32 @@ export function CloudKeySheet({ model, provider, done }: { model: CloudComputerM
 function ErrorText({ error }: { error: string | null }) {
   const tr = useTr()
   return error ? <Text size="caption" tone="danger">{tr(error)}</Text> : null
+}
+
+/** How to make the key on the provider's own site, numbered, and its page (an older cloud sends no steps, only the page). */
+function SetupSteps({ provider }: { provider: CloudProvider }) {
+  const tr = useTr()
+  const steps = provider.setup.steps ?? []
+  return (
+    <CardSection>
+      {steps.length ? (
+        <VStack gap={10}>
+          {steps.map((step, i) => (
+            <HStack key={step} gap={8} align="baseline">
+              <Text tone="tertiary" tabular className="cloud-step-number">{`${i + 1}.`}</Text>
+              <Text tone="text" grow>{tr(step)}</Text>
+            </HStack>
+          ))}
+        </VStack>
+      ) : null}
+      <HStack>
+        <button className="settings-link" onClick={() => window.codync.app.openExternal(provider.setup.page)}>
+          <Text size="footnote">{fill(tr('Open {provider}'), { provider: provider.name })}</Text>
+        </button>
+        <Spacer />
+      </HStack>
+    </CardSection>
+  )
 }
 
 function KeyRow({ provider, model, saved }: { provider: CloudProvider; model: CloudComputerModel; saved: () => void }) {
@@ -98,6 +137,7 @@ function KeyEntry({ provider, model, cancel, saved }: { provider: CloudProvider;
     <HStack gap={8} className="settings-row">
       <input
         type="password"
+        autoFocus
         aria-label={fill(tr('{provider} API key'), { provider: provider.name })}
         placeholder={provider.keyPrompt}
         value={key}
@@ -130,33 +170,25 @@ function OfferRow({ provider, offer, model }: { provider: string; offer: CloudPr
   )
 }
 
-/** How to make the key, folded away: the cloud's own steps, to copy, or the provider's page. */
-function SetupRow({ provider }: { provider: CloudProvider }) {
+/** The provider's CLI way to make the key, folded away: its commands, one a line, to copy. */
+function CommandsRow({ provider }: { provider: CloudProvider }) {
   const tr = useTr()
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   return (
-    <Disclosure expanded={open} onToggle={() => setOpen((o) => !o)} label={<Text tone="text">{tr('How to make a key')}</Text>}>
-      <VStack gap={10}>
-        <Text size="footnote" tone="secondary">{fill(tr('Make a key with only what Codync needs in your {provider} account, then paste it above.'), { provider: provider.name })}</Text>
-        <HStack gap={8} align="start" className="settings-commands">
-          <Text size="caption" mono grow className="settings-commands-text">{provider.setup.commands}</Text>
-          <IconButton
-            title={copied ? 'Copied' : 'Copy'}
-            icon={copied ? 'checkmark' : 'doc.on.doc'}
-            onClick={() => {
-              window.codync.app.copy(provider.setup.commands)
-              setCopied(true)
-            }}
-          />
-        </HStack>
-        <HStack>
-          <button className="settings-link" onClick={() => window.codync.app.openExternal(provider.setup.page)}>
-            <Text size="footnote">{fill(tr('Open {provider}'), { provider: provider.name })}</Text>
-          </button>
-          <Spacer />
-        </HStack>
-      </VStack>
+    <Disclosure expanded={open} onToggle={() => setOpen((o) => !o)} label={<Text tone="text">{tr('Use the command line instead')}</Text>}>
+      <HStack gap={8} align="start" className="settings-commands fade-in">
+        {/* Scrolled sideways rather than wrapped: wrapping breaks them into commands that don't exist. */}
+        <Text size="caption" mono grow className="settings-commands-text">{provider.setup.commands}</Text>
+        <IconButton
+          title={copied ? 'Copied' : 'Copy'}
+          icon={copied ? 'checkmark' : 'doc.on.doc'}
+          onClick={() => {
+            window.codync.app.copy(provider.setup.commands)
+            setCopied(true)
+          }}
+        />
+      </HStack>
     </Disclosure>
   )
 }

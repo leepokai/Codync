@@ -184,9 +184,12 @@ apply are reused; `{count} tasks running` goes.
 ## Analytics
 
 `work_added {outcome: added | elsewhere | invalid | full | hops | failed, after, source}`, `work_finished {outcome,
-start, forkFailed, minutes, error, source, worktree, kept, worktreeFailed}` (`source`: `bot`, `routine`, `request`), `work_steered {how, by: bot |
+agent, start, forkFailed, minutes, error, source, worktree, kept, worktreeFailed}` (`source`: `bot`, `routine`, `request`), `work_steered {how, by: bot |
 user}`, replacing the `task_*` events. Screen `task`
-stays: it is the item's thread view (a task's transcript before stage 11).
+stays: it is the item's thread view (a task's transcript before stage 11). A task's `turn_finished` carries `work`
+(its item's source), which is where an item's failure gets its reason (the agent's error, a sign-in, a rate limit);
+the box's own failures that should never happen (a box that won't save, a task that is gone) go to
+[error tracking](../features/analytics.md#error-tracking).
 
 ## As built (host, stage 1)
 

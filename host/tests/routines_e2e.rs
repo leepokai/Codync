@@ -8,6 +8,8 @@ mod common;
 
 #[path = "routines_e2e/follow_ups.rs"]
 mod follow_ups;
+#[path = "routines_e2e/quiet.rs"]
+mod quiet;
 #[path = "routines_e2e/timeout.rs"]
 mod timeout;
 
@@ -150,6 +152,16 @@ impl Host {
     async fn send(&self, bot: &str, text: &str) {
         self.call("send", json!({"botId":bot,"text":text,"clientNonce":uuid::Uuid::new_v4().to_string()})).await;
     }
+}
+
+/// A bot's chat history.
+async fn entries(host: &Host, bot: &str) -> Vec<Value> {
+    host.call("history", json!({"botId":bot})).await["entries"].as_array().unwrap().clone()
+}
+
+/// How many replies were posted in it.
+fn finals(entries: &[Value]) -> usize {
+    entries.iter().filter(|e| e["kind"] == "agent" && e["data"]["final"] == true).count()
 }
 
 #[tokio::test]

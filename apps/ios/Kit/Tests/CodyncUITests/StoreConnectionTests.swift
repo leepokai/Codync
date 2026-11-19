@@ -68,12 +68,12 @@ import Testing
     await fake.set(.hostOffline(lastSeen: nil, waking: true))
     #expect(await until { store.isWaking })
     #expect(store.isAsleep && store.connectionLabel == "Waking the computer…")
-    // Its provider starting it reads the same; asleep, it sleeps.
+    // The relay's word wins: the account list's `starting` (a wake whose host never came back) is offline; asleep, it sleeps.
     await fake.set(.hostOffline(lastSeen: nil))
     store.cloudHosting = CloudHosting(provider: "boat", providerName: "Boat", region: "EU", state: .starting)
     #expect(await until { store.connection == .computerOffline(lastSeen: nil) })
-    #expect(store.isWaking && store.connectionLabel == "Waking the computer…")
-    #expect(CloudMachineState.starting.offlineText == "Waking the computer…")
+    #expect(!store.isWaking && store.connectionLabel == "Offline")
+    #expect(CloudMachineState.starting.offlineText == nil)
     store.cloudHosting = CloudHosting(provider: "boat", providerName: "Boat", region: "EU", state: .stopped)
     #expect(!store.isWaking && store.connectionLabel == "Sleeping")
     #expect(CloudMachineState.stopped.offlineText == "Sleeping · wakes when you message")

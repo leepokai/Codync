@@ -90,6 +90,7 @@ impl Source {
 /// One piece of work in a bot's box.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
+#[expect(clippy::struct_excessive_bools, reason = "independent facts about an item")]
 pub(super) struct Item {
     pub id: String,
     pub title: String,
@@ -135,6 +136,10 @@ pub(super) struct Item {
     /// What kept it from finishing, with its report.
     #[serde(default)]
     pub failure: Option<Failure>,
+    /// The host couldn't give it to its task: `work_finished` says `dispatch` where `failure` says `Start`. Only on
+    /// the item as it ends, never saved.
+    #[serde(skip)]
+    pub undispatched: bool,
     /// How its task's session began, once known.
     #[serde(default)]
     pub start: Option<Start>,
@@ -183,6 +188,7 @@ impl Item {
             result: None,
             report: None,
             failure: None,
+            undispatched: false,
             start: None,
             fork_from: None,
             fork_failed: false,

@@ -23,7 +23,7 @@ async function forgetKeys(page: Page, offer: Offer) {
   for (const p of offer.providers ?? []) if (p.credential) await cloud(page, 'DELETE', `v1/cloud-credentials/${p.provider}`)
 }
 
-/** Computers, then "+": New cloud computer, its provider rows and the key sheets they open. */
+/** Computers, then "+": New cloud computer, its steps (provider, key, name), and the key sheets its rows' ⋯ open. */
 async function openNewComputer(page: Page) {
   await page.reload()
   await openGeneralSettings(page)
@@ -33,11 +33,13 @@ async function openNewComputer(page: Page) {
   // Keys are reached only through their provider: no row of their own.
   await expect(card.getByText('Cloud providers')).toHaveCount(0)
   await card.getByRole('button', { name: 'New cloud computer' }).click()
-  const newSheet = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'New cloud computer' }) })
+  const newSheet = page.getByRole('dialog').filter({ has: page.locator('.cloud-new-sheet') })
   const rowMenu = (name: string) => newSheet.locator('.cloud-provider-row', { hasText: name }).getByRole('button', { name: 'More' })
   return {
     newSheet,
-    providerRow: (name: string) => newSheet.locator('button.agent-picker-item', { hasText: name }),
+    /** The step's title. */
+    heading: (title: string) => newSheet.getByRole('heading', { name: title, exact: true }),
+    providerRow: (name: string) => newSheet.locator('button.cloud-provider-pick', { hasText: name }),
     rowMenu,
     /** Picks `item` in that provider's row's ⋯. */
     providerMenu: async (name: string, item: string) => {
@@ -45,6 +47,7 @@ async function openNewComputer(page: Page) {
       await page.getByRole('menuitem', { name: item }).click()
     },
     keySheet: (name: string) => page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: `${name} API key` }) }),
+    back: newSheet.getByRole('button', { name: 'Back', exact: true }),
     create: newSheet.getByRole('button', { name: 'Create', exact: true }),
   }
 }
@@ -62,54 +65,64 @@ test('Codync Cloud keeps a Boat key only once Boat takes it, from Boat in New cl
   const { browser, page } = await attach()
   try {
     await noComputers(page, 'boat')
-    const { newSheet, providerRow, providerMenu, keySheet, create } = await openNewComputer(page)
+    const { newSheet, heading, providerRow, providerMenu, keySheet, back, create } = await openNewComputer(page)
     const boatRow = providerRow('Boat')
 
-    // No key: every provider on its logo tile, without a ⋯, asks for one (InstaBox points to its free plan),
-    // and nothing can be created.
+    // No key: every provider on its logo tile with what it costs, and without a ⋯.
+    await expect(heading('New cloud computer')).toBeVisible()
     await expect(newSheet.locator('.cloud-provider-tile .agent-icon')).toHaveCount(2)
-    await expect(boatRow).toContainText('EU · Add a key first')
-    await expect(providerRow('InstaBox')).toContainText('US · Free sandbox available')
+    await expect(boatRow).toContainText('EU · From $20 a month')
+    await expect(providerRow('InstaBox')).toContainText('US · Free plan available')
     await expect(newSheet.getByRole('button', { name: 'More' })).toHaveCount(0)
-    await expect(newSheet.getByLabel('Name your cloud computer')).toHaveAttribute('placeholder', 'Cloud computer')
-    await expect(create).toBeDisabled()
 
-    // Boat's row opens Boat's key alone, with its own steps and no free plan.
+    // Boat's row walks on to Boat's key alone: its steps on its site first, no free plan, and its CLI folded away.
     await boatRow.click()
-    const sheet = keySheet('Boat')
-    const field = sheet.getByLabel('Boat API key')
-    const save = sheet.getByRole('button', { name: 'Save', exact: true })
-    await expect(sheet.getByLabel('InstaBox API key')).toHaveCount(0)
-    await expect(sheet.getByRole('button', { name: 'Get a free sandbox' })).toHaveCount(0)
-    await sheet.getByRole('button', { name: 'How to make a key' }).click()
-    await expect(sheet.getByText(/boat env new codync/)).toBeVisible()
+    await expect(heading('Connect Boat')).toBeVisible()
+    const field = newSheet.getByLabel('Boat API key')
+    const save = newSheet.getByRole('button', { name: 'Save', exact: true })
+    await expect(newSheet.getByLabel('InstaBox API key')).toHaveCount(0)
+    await expect(newSheet.getByText('Create an environment named codync and mark it safe for third parties.', { exact: true })).toBeVisible()
+    await expect(newSheet.getByRole('button', { name: 'Open Boat' })).toBeVisible()
+    await expect(newSheet.getByRole('button', { name: 'Get a free sandbox' })).toHaveCount(0)
+    await expect(newSheet.getByText(/boat env new codync/)).toHaveCount(0)
+    await newSheet.getByRole('button', { name: 'Use the command line instead' }).click()
+    await expect(newSheet.getByText(/boat env new codync/)).toBeVisible()
 
-    // Turned down: what to fix, under the key, and still no key.
+    // Turned down: what to fix, under the key, and still on the key.
     await field.fill('not-a-key')
     await save.click()
-    await expect(sheet.getByText("That doesn't look like an API key from this provider.", { exact: true })).toBeInViewport()
+    await expect(newSheet.getByText("That doesn't look like an API key from this provider.", { exact: true })).toBeInViewport()
     await field.fill('boat_e2e_revoked_key_0000')
     await save.click()
-    await expect(sheet.getByText(REFUSED)).toBeInViewport()
+    await expect(newSheet.getByText(REFUSED)).toBeInViewport()
+    await expect(heading('Connect Boat')).toBeVisible()
+    // Back: the refusal was seen there, and the providers don't repeat it.
+    await back.click()
+    await expect(newSheet.getByText(REFUSED)).toHaveCount(0)
+    await expect(boatRow).toContainText('EU · From $20 a month')
 
     const key = process.env.CODYNC_E2E_BOAT_KEY
     test.skip(!key, 'Set CODYNC_E2E_BOAT_KEY to a key the cloud’s Boat takes, to save, replace and remove one.')
     const hint = `${key!.slice(0, key!.indexOf('_') + 1)}…${key!.slice(-4)}`
 
-    // Kept: the sheet closes, and back in New cloud computer Boat is picked with only its hint.
+    // Kept: on to the name, on Boat; back, Boat's row shows only its hint, with its ⋯.
+    await boatRow.click()
     await field.fill(key!)
     await save.click()
-    await expect(sheet).toHaveCount(0, { timeout: 20_000 })
-    await expect(boatRow).toHaveAttribute('aria-pressed', 'true')
-    await expect(boatRow).toContainText(`EU · ${hint}`)
+    await expect(heading('New cloud computer')).toBeVisible({ timeout: 20_000 })
+    await expect(newSheet.getByLabel('Name your cloud computer')).toHaveAttribute('placeholder', 'Cloud computer')
+    await expect(newSheet.getByText('Runs on Boat · EU', { exact: true })).toBeVisible()
     await expect(create).toBeEnabled()
+    await back.click()
+    await expect(boatRow).toContainText(`EU · ${hint}`)
 
-    // Its row's ⋯ reopens it: a replacement Boat turns down leaves the saved key; Cancel goes back to it.
+    // Its row's ⋯ opens its key sheet: a replacement Boat turns down leaves the saved key; Cancel goes back to it.
     await providerMenu('Boat', 'Boat API key')
+    const sheet = keySheet('Boat')
     await expect(sheet.getByText(hint, { exact: true })).toBeVisible()
     await sheet.getByRole('button', { name: 'Replace key' }).click()
-    await field.fill('boat_e2e_revoked_key_0000')
-    await save.click()
+    await sheet.getByLabel('Boat API key').fill('boat_e2e_revoked_key_0000')
+    await sheet.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(sheet.getByText(REFUSED)).toBeInViewport()
     await sheet.getByRole('button', { name: 'Cancel', exact: true }).click()
     await expect(sheet.getByText(hint, { exact: true })).toBeVisible()
@@ -117,13 +130,14 @@ test('Codync Cloud keeps a Boat key only once Boat takes it, from Boat in New cl
     await sheet.getByRole('button', { name: 'Close' }).click()
     await expect(newSheet.getByText(REFUSED)).toHaveCount(0)
 
-    // Removed (no computer runs on it): back to pasting one, and nothing to create on.
+    // Removed (no computer runs on it): back to pasting one, and its row asks for a key again.
     await providerMenu('Boat', 'Boat API key')
     await sheet.getByRole('button', { name: 'Remove key' }).click()
-    await expect(field).toBeVisible()
+    await expect(sheet.getByLabel('Boat API key')).toBeVisible()
     await sheet.getByRole('button', { name: 'Close' }).click()
-    await expect(boatRow).toContainText('Add a key first')
-    await expect(create).toBeDisabled()
+    await expect(boatRow).toContainText('EU · From $20 a month')
+    await boatRow.click()
+    await expect(heading('Connect Boat')).toBeVisible()
   } finally {
     await page.reload() // Closes Settings, which would cover the next spec.
     await browser.close()
@@ -134,29 +148,31 @@ test('Codync Cloud offers InstaBox beside Boat, with its own key, steps and free
   const { browser, page } = await attach()
   try {
     await noComputers(page, 'instabox')
-    const { providerRow, rowMenu, providerMenu, keySheet, create } = await openNewComputer(page)
+    const { newSheet, heading, providerRow, rowMenu, providerMenu, back, create } = await openNewComputer(page)
     const row = providerRow('InstaBox')
     await row.click()
-    const sheet = keySheet('InstaBox')
-    const field = sheet.getByLabel('InstaBox API key')
-    await expect(sheet.getByLabel('Boat API key')).toHaveCount(0)
-    await expect(sheet.getByText("InstaBox's free plan includes one machine (4 vCPU, 8 GiB).", { exact: true })).toBeVisible()
-    await expect(sheet.getByRole('button', { name: 'Get a free sandbox' })).toBeVisible()
-    await sheet.getByRole('button', { name: 'How to make a key' }).click()
-    await expect(sheet.getByText(/instabox keys create --name codync --scope machines:read,machines:write,machines:delete/)).toBeVisible()
+    await expect(heading('Connect InstaBox')).toBeVisible()
+    const field = newSheet.getByLabel('InstaBox API key')
+    await expect(newSheet.getByLabel('Boat API key')).toHaveCount(0)
+    await expect(newSheet.getByText('Sign in, or sign up for the free plan.', { exact: true })).toBeVisible()
+    await expect(newSheet.getByRole('button', { name: 'Open InstaBox' })).toBeVisible()
+    await expect(newSheet.getByText("InstaBox's free plan includes one machine (4 vCPU, 8 GiB).", { exact: true })).toBeVisible()
+    await expect(newSheet.getByRole('button', { name: 'Get a free sandbox' })).toBeVisible()
+    await newSheet.getByRole('button', { name: 'Use the command line instead' }).click()
+    await expect(newSheet.getByText(/instabox keys create --name codync --scope machines:read,machines:write,machines:delete/)).toBeVisible()
 
     // Refusals are the first test's; an account may save 5 keys a minute (`CLOUD_KEY_LIMITER`).
     const key = process.env.CODYNC_E2E_INSTABOX_KEY
     test.skip(!key, 'Set CODYNC_E2E_INSTABOX_KEY to a key the cloud’s InstaBox takes, to save and remove one.')
     await field.fill(key!)
-    await sheet.getByRole('button', { name: 'Save', exact: true }).click()
-    await expect(sheet).toHaveCount(0, { timeout: 20_000 })
-    await expect(row).toHaveAttribute('aria-pressed', 'true')
-    await expect(row).toContainText(`US · ibk_…${key!.slice(-4)}`)
+    await newSheet.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(newSheet.getByText('Runs on InstaBox · US', { exact: true })).toBeVisible({ timeout: 20_000 })
     await expect(create).toBeEnabled()
+    await back.click()
+    await expect(row).toContainText(`US · ibk_…${key!.slice(-4)}`)
     // Its row's ⋯ removes it too, while no cloud computer runs there.
     await providerMenu('InstaBox', 'Remove key')
-    await expect(row).toContainText('US · Free sandbox available')
+    await expect(row).toContainText('US · Free plan available')
     await expect(rowMenu('InstaBox')).toHaveCount(0)
   } finally {
     await page.reload()

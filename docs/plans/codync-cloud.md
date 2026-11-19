@@ -138,9 +138,12 @@ Then it is sealed and replaces the earlier key. Each refusal says what to fix, i
 Boat came first; InstaBox (InsForge) is the second (owner, 2026-11-08: "不要直接在 UI 上面綁定死只有這一個", then
 "幫我支援一下這個 cloud 服務"). Nothing in the apps names a provider:
 
-- `GET /v1/cloud-computers` lists `providers`, each `{provider, name, region, keyPrompt, setup: {page, commands},
-  credential, offer?: {label, detail, url}}`, from `PROVIDERS` in `cloud-credentials.ts`. `offer` is the provider's own
-  free plan (InstaBox only; older clouds leave it out). A new provider shows up in every app with no release.
+- `GET /v1/cloud-computers` lists `providers`, each `{provider, name, region, plan, keyPrompt, setup: {page, steps,
+  commands}, credential, offer?: {label, detail, url}}`, from `PROVIDERS` in `cloud-credentials.ts`. `plan` is what it
+  costs and `setup.steps` how to make the key on the provider's site (older clouds leave both out); `offer` is the
+  provider's own free plan (InstaBox only). A new provider shows up in every app with no release. The apps' *New cloud
+  computer* walks three steps in one sheet: provider (where it runs, what it costs) → *Connect {provider}* (the steps,
+  the provider's page, the key; the commands folded under *Use the command line instead*) → name and Create.
 - Keys are per provider (`PUT/DELETE /v1/cloud-credentials/:provider`, one `cloud_credentials` row each).
   `POST /v1/cloud-computers {provider, name}` creates a computer on one the user gave a key; `provider` may be left
   out when there is only one.
@@ -151,16 +154,18 @@ Boat came first; InstaBox (InsForge) is the second (owner, 2026-11-08: "不要�
   host tells apps connected to it with a `name` event, the others read it in their next `hello`.
 - Apps: Computers → Codync Cloud lists the account's cloud computers (provider logo, name, provider · region · state,
   or what to fix in red while the provider turns its key down; a `⋯` menu with *Rename…*, *{provider} API key*,
-  *Delete snapshots*, *Delete cloud computer*). The card's **+** opens *New cloud computer*: a name (suggested "Cloud
-  computer", "Cloud computer 2", …) and every provider with its logo, where it runs and its key (or *Add a key first*).
-  A provider is reached only where it is picked (owner, 2026-11-09: no separate Cloud providers row; picking a provider
-  shows only that provider's options): a row without a working key, the `⋯` inside a row with one (*{provider} API key*,
-  and *Remove key* while no cloud computer runs there), or a computer's `⋯` opens *{provider} API key*, a sheet with just that provider: its key (last four, replace, remove) or a field to
-  paste one, the provider's free plan when it has one (InstaBox: *Get a free sandbox*, its pricing page; its row in
-  New cloud computer says *Free sandbox available* until it has a key), and *How to make a key* folded under it; saving one goes back to New cloud computer with it picked. A key
-  the provider turned down for its own sake (revoked, expired) leaves its row unpicked; one turned down for the plan or
-  the account still creates, which tries again. At the limit **+** still opens, with *Create* off and why, so every
-  provider's key stays in reach.
+  *Delete snapshots*, *Delete cloud computer*). The card's **+** opens *New cloud computer*, three steps in one sheet
+  (2026-11-19, replacing a name field over a provider list with a key sheet stacked on top): (1) every provider with its
+  logo, where it runs and what it costs (`plan`), or its key (last four) once it has one; (2) for one without a working
+  key, *Connect {provider}*: the steps on its site (`setup.steps`) with *Open {provider}*, the field to paste the key,
+  its free plan when it has one (InstaBox: *Get a free sandbox*, its pricing page) and the commands folded under *Use
+  the command line instead*; saving the key moves on; (3) the name (suggested "Cloud computer", "Cloud computer 2", …)
+  and Create. A provider is reached only where it is picked (owner, 2026-11-09: no separate Cloud providers row): the
+  `⋯` inside a row with a key (*{provider} API key*, and *Remove key* while no cloud computer runs there), or a
+  computer's `⋯`, opens *{provider} API key*, the same key content in its own sheet with the key's last four, replace
+  and remove. A key the provider turned down for its own sake (revoked, expired) sends its row to *Connect*; one turned
+  down for the plan or the account still creates, which tries again. At the limit **+** still opens, with *Create* off
+  and why, so every provider's key stays in reach.
 - The Worker speaks to providers only through a `Driver` (`cloud/machines/src/types.ts`; `drivers` in its index): the
   same verbs for each (`create`, `get`, `sleep`, `wake`, `destroy`, `checkKey`, `checkAdmin`, and readers that turn
   answers into `Machine`/`Outcome`), plus members present or not for what differs in kind, which the Worker decides
@@ -179,8 +184,9 @@ Boat came first; InstaBox (InsForge) is the second (owner, 2026-11-08: "不要�
     InstaBox also pauses a machine idle for 30 minutes on its own (a free machine can't turn that off): the next wake
     starts it, as after Codync's own sleep.
 - Adding a provider: a driver beside `boat.ts` and `instabox.ts`, registered in `drivers`, a `PROVIDERS` entry (name,
-  region, key prompt, how to make the key, its free plan (`offer`) if any, with `label` and `detail` added to every
-  language catalog) and its base URL override for tests in `sendWith`. No migration: no CHECK
+  region, `plan`, key prompt, how to make the key: `setup.steps` on its page, the last one "Copy the key and paste it
+  below.", and `setup.commands`; its free plan (`offer`) if any; every `plan`, step, `label` and `detail` sentence added
+  to every language catalog) and its base URL override for tests in `sendWith`. No migration: no CHECK
   names providers. `cloud/machines/test/` holds each driver's request and answer tests.
 
 ### What Codync can still do

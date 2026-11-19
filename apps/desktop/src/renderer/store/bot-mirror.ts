@@ -28,6 +28,8 @@ import { TaskTranscripts } from './task-transcripts'
 
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
+/** The first host the user names (`setComputerName`). */
+const COMPUTER_NAME_HOST = '2.50.0'
 
 export type Connection =
   | { kind: 'unpaired' }
@@ -179,10 +181,10 @@ export class BotMirror extends Observable {
     return this.connection.kind === 'computerOffline' && (this.isWaking || this.cloudHosting?.state === 'stopped' || this.cloudHosting?.state === 'stopping')
   }
 
-  /** The relay is waking this cloud computer (about 10 to 30 seconds), or its provider says it's starting: it's coming,
-   * not offline. */
+  /** The relay is waking this cloud computer (about 10 to 30 seconds): it's coming, not offline. Only the relay says so:
+   * the account list's `starting` stays after a wake whose host never came back. */
   get isWaking() {
-    return this.connection.kind === 'computerOffline' && (this.connection.waking === true || this.cloudHosting?.state === 'starting')
+    return this.connection.kind === 'computerOffline' && this.connection.waking === true
   }
 
   /** A Codync Cloud computer older than this app's `minHost`: the cloud updates it on its own (this app's `Codync-App` header asks for it). */
@@ -206,6 +208,12 @@ export class BotMirror extends Observable {
   /** The user picks the lead (`setLead`) and may delete it: an older host refuses both. */
   get hasLeadChoice() {
     return this.hostVersion !== null && !isBelow(this.hostVersion.version, LEAD_CHOICE_HOST)
+  }
+
+  /** The user names this computer here, on a host that takes it: a cloud computer is named in Codync Cloud. */
+  get canRename() {
+    return this.connection.kind === 'online' && this.hello?.device !== 'cloud'
+      && this.hostVersion !== null && !isBelow(this.hostVersion.version, COMPUTER_NAME_HOST)
   }
 
   /** What the update notice offers while this computer is behind this app. */

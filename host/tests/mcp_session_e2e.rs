@@ -6,7 +6,6 @@ mod common;
 
 use common::host::Host;
 use serde_json::json;
-use std::time::Duration;
 
 fn agent_requests(host: &Host, bot: &str, fixture: &str, method: &str) -> Vec<serde_json::Value> {
     host.log(bot, &format!("{fixture}.jsonl")).into_iter().filter(|r| r["method"] == method).collect()

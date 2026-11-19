@@ -532,6 +532,8 @@ export interface UsageLoginProfile {
   name: string
   windows: UsageWindow[]
   updatedAt: number
+  /** Since when its checks fail, which leaves `windows` from before. Absent while they work. */
+  failedAt?: number
 }
 
 export interface UsageProvider {
@@ -541,6 +543,8 @@ export interface UsageProvider {
   windows: UsageWindow[]
   source: string
   updatedAt: number
+  /** Since when the default login's checks fail, which leaves `windows` from before. Absent while they work. */
+  failedAt?: number
   /** The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it. */
   registry?: string
   /** What the default login is called, when the agent has login profiles to tell it from. */

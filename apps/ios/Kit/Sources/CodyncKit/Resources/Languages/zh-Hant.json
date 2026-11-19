@@ -1893,6 +1893,7 @@
   "Show usage for": "顯示這些服務的用量",
   "On by default for the agents your bots run.": "預設只開啟 bot 正在使用的 agent。",
   "No reading yet": "還沒有讀數",
+  "Out of date": "已過時",
   "Premium requests": "進階請求",
   "Balance": "餘額",
   "Credits": "額度",

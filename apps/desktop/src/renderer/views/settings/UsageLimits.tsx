@@ -7,7 +7,7 @@ import { prefs, usePref } from '../../lib/prefs'
 import { useResetLine, useTr } from '../../lib/use-language'
 import { ProviderMascot } from '../usage/ProviderMascot'
 import { UsageBar } from '../usage/UsageBar'
-import { logins, type UsageLogin } from '../usage/usage-logins'
+import { isOutOfDate, logins, type UsageLogin } from '../usage/usage-logins'
 import { providerTintCSS, resetDescription, windowTitle } from '../usage/usage-model'
 import { UsageChooser } from './UsageChooser'
 import './settings.css'
@@ -76,22 +76,28 @@ function ProviderLimits({ provider }: { provider: UsageProvider }) {
         <ProviderMascot provider={provider} size={18} style={style} />
         <Text size="body" weight="semibold" tone="text">{provider.name}</Text>
       </HStack>
-      {provider.loginProfiles?.length
-        ? logins(provider).map((login) => <LoginLimits key={login.id ?? ''} login={login} providerId={provider.id} />)
-        : provider.windows.map((w) => <WindowLimit key={w.id} window={w} providerId={provider.id} />)}
+      {logins(provider).map((login) => (
+        <LoginLimits key={login.id ?? ''} login={login} named={!!provider.loginProfiles?.length} providerId={provider.id} />
+      ))}
     </VStack>
   )
 }
 
-/** One login of an agent that has several: what it's called, then its limits. */
-function LoginLimits({ login, providerId }: { login: UsageLogin; providerId: string }) {
+/** A login's limits, marked when its last check failed; under its name when the agent has several logins. */
+function LoginLimits({ login, named, providerId }: { login: UsageLogin; named: boolean; providerId: string }) {
   const tr = useTr()
+  const limits = (
+    <>
+      {login.windows.map((w) => <WindowLimit key={w.id} window={w} providerId={providerId} />)}
+      {isOutOfDate(login) ? <Text tone="secondary">{tr('Out of date')}</Text> : null}
+    </>
+  )
+  if (!named) return limits
   return (
     <VStack gap={8} align="stretch" className="settings-usage-login">
       <Text tone="secondary" truncate>{login.name ?? tr('Default login profile')}</Text>
-      {login.windows.length
-        ? login.windows.map((w) => <WindowLimit key={w.id} window={w} providerId={providerId} />)
-        : <Text tone="secondary">{tr('No reading yet')}</Text>}
+      {limits}
+      {login.windows.length ? null : <Text tone="secondary">{tr('No reading yet')}</Text>}
     </VStack>
   )
 }

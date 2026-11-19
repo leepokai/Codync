@@ -12,11 +12,13 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 建立 Codync Cloud 雲端電腦改成在同一個畫面一步一步來：先選供應商（看得到在哪裡執行、要多少錢），再照著步驟到供應商網站建立金鑰並貼上，最後取名、建立。
 - 可以替自己的電腦取名：在「管理電腦」長按電腦的卡片，選「重新命名…」；留空就改回主機名稱。
 - Bot 之間互相交接到上限（連續 8 次）而停下時，聊天裡會出現一則附「繼續」按鈕的提示：點一下就會替你傳「Continue」給 Bot，讓它重新開始。
+- 用量檢查失敗時，「用量」會保留上次讀到的數字，並標示為「已過時」。
 
 ### en-US
 - Setting up a Codync Cloud computer now goes step by step in one sheet: pick a provider (where it runs, what it costs), follow the steps to make its key and paste it, then name it and create it.
 - Name your own computers: in Manage computers, touch and hold a computer's card, then Rename…; leave it empty to go back to the hostname.
 - When bots hand work to each other 8 times in a row and stop, the chat shows a note with a Continue button: one tap sends the bot "Continue" from you so it can go on.
+- When a usage check fails, Usage keeps the last numbers and marks them Out of date.
 
 ## 2.49.3
 ### zh-Hant

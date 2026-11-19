@@ -3,7 +3,8 @@
 # worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), Claude Code must show in usage, and LOGIN_PROFILE is
 # the id of a signed-in account login profile of Claude Code there. Nothing here signs in: a test marks a made-up
 # one signed in in the sandbox host's own store, as apps/desktop/e2e/usage-logins.spec.ts does. Without
-# LOGIN_PROFILE the flow does nothing.
+# LOGIN_PROFILE the flow does nothing. Checked again, that login profile's own check fails (nothing is signed in), so
+# its limits stay, marked Out of date (docs/features/usage-limits.md#a-check-that-fails).
 #   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags usage \
 #     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
 #     -e LOGIN_PROFILE=<login profile id> apps/maestro
@@ -34,3 +35,12 @@ tags:
       - assertVisible: "91%.*"
       - assertVisible: "40%.*"
       - takeScreenshot: usage-logins
+      - runScript:
+          file: usage-logins.js
+          env:
+            STEP: stale
+      - extendedWaitUntil:
+          visible: "Out of date"
+          timeout: 120000
+      - assertVisible: "91%.*"
+      - takeScreenshot: usage-logins-out-of-date

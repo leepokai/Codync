@@ -250,8 +250,8 @@ pub(super) fn unread_readers(hub: &Hub) -> Vec<&'static Reader> {
     let usage = hub.usage.locked();
     let read = |reader: &Reader| {
         usage.providers.iter().find(|provider| provider.id == reader.id).is_some_and(|provider| {
-            provider.updated_at != 0
-                && (reader.read_profile.is_none() || provider.login_profiles.iter().all(|row| row.updated_at != 0))
+            provider.checked.asked()
+                && (reader.read_profile.is_none() || provider.login_profiles.iter().all(|row| row.checked.asked()))
         })
     };
     wanted.into_iter().filter(|reader| !read(reader)).collect()
@@ -442,7 +442,7 @@ pub(super) mod tests {
         let claude = reader("claude").unwrap();
         hub.update_usage(|usage| usage.land(claude, "claude", Some("a1"), Reading::Unknown));
         assert_eq!(unread_readers(&hub).len(), 1, "listed for its profile, the default login is still unread");
-        hub.update_usage(|usage| usage.providers[0].login_profiles[0].updated_at = 0);
+        hub.update_usage(|usage| usage.providers[0].login_profiles[0].checked.failed_at = None);
         hub.update_usage(|usage| {
             usage.land(claude, "claude", None, Reading::All(vec![Window::new("w", "W", 1.0, None)]));
         });

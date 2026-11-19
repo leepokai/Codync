@@ -130,6 +130,8 @@ public struct UsageProvider: Codable, Hashable, Sendable, Identifiable {
     public var windows: [UsageWindow]
     public var source: String
     public var updatedAt: Int64
+    /// Since when the default login's checks fail, which leaves `windows` from before. Nil while they work.
+    public var failedAt: Int64? = nil
     /// The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it.
     public var registry: String? = nil
     /// What the default login is called, when the host knows. Only sent beside `loginProfiles`.
@@ -148,6 +150,7 @@ public extension UsageProvider {
         windows = try values.decode([UsageWindow].self, forKey: .windows)
         source = try values.decode(String.self, forKey: .source)
         updatedAt = try values.decode(Int64.self, forKey: .updatedAt)
+        failedAt = try values.decodeIfPresent(Int64.self, forKey: .failedAt)
         registry = try values.decodeIfPresent(String.self, forKey: .registry)
         defaultLoginProfile = try values.decodeIfPresent(String.self, forKey: .defaultLoginProfile)
         loginProfiles = try values.decodeIfPresent([UsageLoginProfile].self, forKey: .loginProfiles) ?? []
@@ -155,8 +158,8 @@ public extension UsageProvider {
 
     /// The agent's logins, the default one first. A single entry for an agent with one login.
     var logins: [UsageLogin] {
-        [UsageLogin(id: nil, name: defaultLoginProfile, windows: windows)]
-            + loginProfiles.map { UsageLogin(id: $0.id, name: $0.name, windows: $0.windows) }
+        [UsageLogin(id: nil, name: defaultLoginProfile, windows: windows, failedAt: failedAt)]
+            + loginProfiles.map { UsageLogin(id: $0.id, name: $0.name, windows: $0.windows, failedAt: $0.failedAt) }
     }
 
     /// The login closest to a plan limit, which is what a compact view shows: the default login when none has a
@@ -172,6 +175,11 @@ public struct UsageLogin: Identifiable, Hashable, Sendable {
     public var id: String?
     public var name: String?
     public var windows: [UsageWindow]
+    /// Since when its checks fail, which leaves `windows` from before. Nil while they work.
+    public var failedAt: Int64? = nil
+
+    /// Shown, but not current: its last check failed.
+    public var isOutOfDate: Bool { failedAt != nil && !windows.isEmpty }
 
     /// Plan windows. A note (today's tokens, a dollar balance) is not a limit.
     public var limits: [UsageWindow] { windows.filter { $0.text == nil } }
@@ -185,6 +193,8 @@ public struct UsageLoginProfile: Codable, Hashable, Sendable, Identifiable {
     public var name: String
     public var windows: [UsageWindow]
     public var updatedAt: Int64
+    /// Since when its checks fail, which leaves `windows` from before. Nil while they work.
+    public var failedAt: Int64? = nil
 }
 
 public struct UsageWindow: Codable, Hashable, Sendable, Identifiable {

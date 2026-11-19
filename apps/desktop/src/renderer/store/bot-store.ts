@@ -407,6 +407,11 @@ export class BotStore extends BotSync {
     if (runId) this.answer(entry, 'retry', (c) => c.call('retryRoutineRun', { botId: entry.botId, runId }))
   }
 
+  /** Continue on a chain stopped at its handoff limit: the bot gets "Continue" from the user; the notice's update drops the button. */
+  continueChain(entry: Entry) {
+    this.answer(entry, 'continue', (c) => c.call('continueChain', { entryId: entry.id }))
+  }
+
   /** The roster's "Mark as read": cards still waiting on the user stay counted until they're answered. */
   markAllRead(botId: string) {
     const bot = this.bots.get(botId)

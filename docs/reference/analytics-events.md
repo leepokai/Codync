@@ -125,6 +125,8 @@ host answers and sends it once the host is up.
 | `routine_deleted` | host | `deleteRoutine` | — |
 | `routine_run` | host | `runRoutine` | — |
 | `routine_retried` | host | `retryRoutineRun` (the retry button on a failed run's notice) | — |
+| `chain_limit_reached` | host | A bot chain stopped at its handoff limit and left the user its Continue notice, once a turn ([bot collaboration](../features/bot-collaboration.md#limits)) | `via` (`message`: `message_bot`, here or to another computer, `work`: `add_work`) |
+| `chain_continued` | host | `continueChain` (Continue on that notice) | — |
 | `routine_progress_saved` | host | A bot's `save_progress` finished ([progress note](../features/routines.md#progress-note)) | `outcome` (`saved`, `too_long`, `not_found`, why its text was refused: `hidden`, `prompt_link`, `instruction`, `secret`, `other`, or `failed`: the host couldn't save it), `tokens` (the note's estimated size, never its text) |
 | `follow_up_set` | host | A bot's `follow_up` finished ([follow-ups](../features/follow-ups.md)) | `outcome` (`set`, `invalid`: no wait or note, `elsewhere`: asked from a room or another bot's request, why the note's text was refused: `hidden`, `prompt_link`, `instruction`, `secret`, `other`, `limit`: ten waiting, `chain`: too many in a row, or `failed`: the host couldn't save it), `minutes`, `chain` (follow-ups in a row before this one) |
 | `follow_up_fired` | host | A follow-up's turn begins | `late` (`true` when over a minute past due: the computer was off or asleep) |

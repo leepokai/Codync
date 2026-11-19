@@ -130,7 +130,7 @@ pub(super) async fn message(
     check_request(hub, turn, message)?;
     let node = hub.network.slot(Some(&to.network))?.node;
     let from = hub.network.handle_of(&source.id).ok_or_else(|| anyhow!("this bot isn't on the network"))?;
-    let hops = hub.team.reserve_message_in(&source.id, turn)?;
+    let hops = super::reserve(hub, &source.id, turn)?;
     // ponytail: the slot covers sending only; the other computer bounds the work it takes on.
     let letter = Letter::new(from, to.address.clone(), message).hops(hops);
     let result = send(hub, &node, source, to, letter).await;

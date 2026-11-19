@@ -159,8 +159,10 @@ fn admit(hub: &Hub, bot: &str, args: &Value) -> Result<String, Refusal> {
     let (title, brief) = checked(text("title"), text("brief"))?;
     let hops = hub.tasks.hops(bot) + 1;
     if hops > MAX_HOPS {
-        let why =
-            anyhow!("too much work was added in a row without the user: tell the user where things stand and wait");
+        crate::chat::team::limit::stopped(hub, bot, bot, crate::chat::team::limit::Via::Work);
+        let why = anyhow!(
+            "too much work was added in a row without the user: the user has a Continue button in the chat; tell them where things stand and end your turn"
+        );
         return Err((Admission::Hops, why));
     }
     let item = Item::waiting(title, brief, users_words(hub, bot), text("after"), hops);
@@ -266,5 +268,29 @@ mod tests {
         }
         let (outcome, _) = checked(Some("t"), None).expect_err("no brief");
         assert_eq!(outcome, Admission::Invalid);
+    }
+
+    /// #386: work added too often in a row leaves the user one Continue notice a turn, as the handoff limit does.
+    #[tokio::test]
+    async fn work_past_the_limit_leaves_the_user_one_continue_notice() {
+        let dir = std::env::temp_dir().join(format!("codync-work-limit-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = crate::store::Store::open(&dir.join("t.db")).unwrap();
+        store
+            .save_bot(&serde_json::from_value(json!({"id": "bot", "name": "B", "backend": "claude"})).unwrap())
+            .unwrap();
+        let identity = crate::remote::identity::Identity::load_or_create(&dir).unwrap();
+        let hub = Hub::new(store, "test".into(), identity, "test".into(), 0);
+        hub.set_runtime("bot", |r| r.lane = Some(crate::store::Lane::main("bot")));
+        hub.tasks.answering("bot", MAX_HOPS);
+        for _ in 0..2 {
+            let (outcome, _) =
+                admit(&hub, "bot", &json!({"title": "Dig", "brief": "Look"})).expect_err("past the limit");
+            assert_eq!(outcome, Admission::Hops);
+        }
+        let notices = hub.store.history("bot", i64::MAX, 100).unwrap();
+        let continues = notices.iter().filter(|e| e.kind == "notice" && e.data["continueChain"] == true).count();
+        assert_eq!(continues, 1, "one notice a turn, however often the bot tries");
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

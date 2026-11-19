@@ -2228,5 +2228,6 @@
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "Créez une clé d'API nommée codync avec les autorisations machines:read, machines:write et machines:delete.",
   "Connect {provider}": "Connecter {provider}",
   "Use the command line instead": "Utiliser plutôt la ligne de commande",
-  "Leave it empty to use the hostname.": "Laissez vide pour utiliser le nom d’hôte."
+  "Leave it empty to use the hostname.": "Laissez vide pour utiliser le nom d’hôte.",
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Ce travail a avancé de 8 étapes d’affilée sans vous, le maximum possible. Touchez « Continuer » pour poursuivre."
 }

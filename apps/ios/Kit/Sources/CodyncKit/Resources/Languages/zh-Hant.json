@@ -2228,5 +2228,6 @@
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "建立一把名為 codync 的 API 金鑰，權限為 machines:read、machines:write 和 machines:delete。",
   "Connect {provider}": "連接 {provider}",
   "Use the command line instead": "改用命令列",
-  "Leave it empty to use the hostname.": "留空則使用主機名稱。"
+  "Leave it empty to use the hostname.": "留空則使用主機名稱。",
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "這項工作已在沒有你的情況下連續進行 8 步，達到上限。按「繼續」讓它接著進行。"
 }

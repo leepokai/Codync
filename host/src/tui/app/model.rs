@@ -227,6 +227,11 @@ impl Entry {
         self.kind == Kind::Notice && self.data["retry"] == true && self.data["runId"].is_string()
     }
 
+    /// A chain stopped at its handoff limit, whose notice lets it go on (`F`, `continueChain`).
+    pub fn continues(&self) -> bool {
+        self.kind == Kind::Notice && self.data["continueChain"] == true
+    }
+
     /// A notice for a bot-to-bot message or request (`chat::team`).
     pub fn is_bot_message(&self) -> bool {
         self.kind == Kind::Notice

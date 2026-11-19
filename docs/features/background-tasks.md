@@ -84,7 +84,8 @@ The decisions are one pure function (`dispatch::standings`), which the wire's `w
   outside the bot's own chat with the user (a room, another bot's request, a routine run: `add_work works only in
   your own chat with the user`), in a task, past 20 waiting items, when `after` names
   no item that is working or waiting, and for the ninth item added in a row with no message from the user (an item
-  added from a report's turn carries that report's hops). Stopping the turn that added an item drops it. Refused
+  added from a report's turn carries that report's hops; the user gets a Continue notice, as at the
+  [handoff limit](bot-collaboration.md#limits)). Stopping the turn that added an item drops it. Refused
   too in a turn a network rule holds to a ceiling, such as one that reads another computer's answer
   ([ceilings](codync-network.md#ceilings-auto-and-ask)): its work would run without it.
 - `steer_work {item, how, brief?, insteadOf?}`: `first` (a waiting item moves to the front), `now` (it cuts in),

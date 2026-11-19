@@ -159,6 +159,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         "deleteRoutine" => Event::RoutineDeleted,
         "runRoutine" => Event::RoutineRun,
         "retryRoutineRun" => Event::RoutineRetried,
+        "continueChain" => Event::ChainContinued,
         // ✕ on a waiting follow-up; the bot's own cancel and its Stop report from `routines::follow_up`.
         "cancelFollowUp" => {
             p.insert("by".into(), serde_json::json!(crate::routines::Cancelled::User));

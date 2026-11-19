@@ -38,7 +38,7 @@ const HELP: [(&str, &str, &str); 86] = [
     ("CHAT", "o", "last turn's steps"),
     ("CHAT", "c", "copy the last reply"),
     ("CHAT", "C", "open connection / login request"),
-    ("CHAT", "F", "try a failed routine run again"),
+    ("CHAT", "F", "try a failed routine run again, or continue a stopped bot chain"),
     ("CHAT", "r", "reply to a message"),
     ("CHAT", "v", "pick a message"),
     ("CHAT", "j k  ↵", "picking: move / reply"),

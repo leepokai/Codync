@@ -77,7 +77,7 @@ The team tools add no task scheduler or isolated worktrees. Give bots explicit f
 
 The host rejects messages to the bot itself, to hidden or deleted bots, and empty or oversized (over 32,000 bytes) ones. Up to 64 messages can be outstanding host-wide, with at most 16 from any one sender. Queued and running messages both count. A slot is freed when the recipient finishes, fails or cancels the request, or admission fails. Stopping, restarting or deleting the sender does not free slots for its already accepted messages.
 
-Bot request chains can make at most eight handoffs. A request turn messages no one, so a chain goes on only from reply turns: each reply carries the count into the sender's reply turn (the highest of the replies it takes), and finishing an earlier request does not reset it. This bounds repeated A → B → A messages even when few requests are outstanding. At the limit, the tool reports an error without queuing more work. A new user turn starts a fresh allowance.
+Bot request chains can make at most eight handoffs. A request turn messages no one, so a chain goes on only from reply turns: each reply carries the count into the sender's reply turn (the highest of the replies it takes), and finishing an earlier request does not reset it. This bounds repeated A → B → A messages even when few requests are outstanding. At the limit, the tool reports an error without queuing more work, and the turn leaves one info notice in the bot's chat (`continueChain: true`, its text the whole story for an older client). Its **Continue** button (TUI: `F`, or `F` on the picked notice) calls `continueChain {entryId}`, which clears the flag (the button goes, so it works once) and sends the bot "Continue" as the user's own message. A new user turn starts a fresh allowance, so that message, or any other, starts a new chain. `add_work`'s limit on work added in a row ([background tasks](background-tasks.md)) leaves the same notice. Further refusals in the same turn add no second notice; a Continue pressed while the turn still runs waits behind it like any message (`host/src/chat/team/limit.rs`).
 
 ## Team management
 
@@ -101,7 +101,7 @@ A bot made this way records its creator (`createdBy`, next to `createdAt`); clie
 - `host/src/chat/team.rs`: discovery, request lifetime, persisted notices, structured conversation data and the reply that goes back (`BotReply`, `reply_prompt`).
 - `host/src/store/entries.rs` (`bot_conversation`, `expire_pending`) and `host/src/api/bots.rs` (`botConversation`): the pair history and restart cleanup.
 - `host/src/tui/app/exchange.rs`, `manage/bot_chat.rs`, `view/bot_chat.rs`: the terminal client's row logic, keys and conversation sheet.
-- `host/src/chat/team/requests.rs`: admission, capacity and chain hop limit.
+- `host/src/chat/team/requests.rs`: admission, capacity and chain hop limit; `limit.rs`: the Continue notice and `continueChain`.
 - `host/src/agent/bot/` (`queue.rs`, `turn.rs`): queue boundaries, recipient execution, completion and the sender's reply turn.
 - `host/src/mcp.rs`: the authenticated local MCP → HTTP bridge.
 - `host/tests/team_e2e.rs`: a real host and MCP subprocess, with scripted ACP agents, covering discovery → message → recipient approval → reply turn in the sender's chat → client sync, and the hop limit. No paid provider calls.

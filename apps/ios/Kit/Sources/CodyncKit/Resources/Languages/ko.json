@@ -2228,5 +2228,6 @@
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "machines:read, machines:write, machines:delete 범위를 가진 codync라는 이름의 API 키를 만드세요.",
   "Connect {provider}": "{provider} 연결",
   "Use the command line instead": "대신 명령줄 사용",
-  "Leave it empty to use the hostname.": "비워 두면 호스트 이름을 사용합니다."
+  "Leave it empty to use the hostname.": "비워 두면 호스트 이름을 사용합니다.",
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "이 작업이 사용자 없이 8단계 연속 진행되어 한도에 도달했습니다. 계속하려면 \"계속\"을 누르세요."
 }

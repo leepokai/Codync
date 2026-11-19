@@ -283,6 +283,12 @@ extension BotStore {
         answer(entry, "handoff") { try await $0.keepConversation(entryId: entry.id) }
     }
 
+    /// Continue on a chain stopped at its handoff limit: the bot gets "Continue" from the user; the notice's update
+    /// drops the button.
+    public func continueChain(_ entry: Entry) {
+        answer(entry, "continue") { try await $0.continueChain(entryId: entry.id) }
+    }
+
     /// Runs a failed routine run's work again, from its notice; the notice's update drops the button.
     public func retryRoutineRun(_ entry: Entry) {
         guard let runId = entry.data.runId else { return }

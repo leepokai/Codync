@@ -2228,5 +2228,6 @@
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "machines:read、machines:write、machines:delete のスコープを持つ codync という名前の API キーを作成します。",
   "Connect {provider}": "{provider} に接続",
   "Use the command line instead": "代わりにコマンドラインを使う",
-  "Leave it empty to use the hostname.": "空欄にするとホスト名を使います。"
+  "Leave it empty to use the hostname.": "空欄にするとホスト名を使います。",
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "この作業はあなたを介さずに 8 ステップ続き、上限に達しました。「続ける」で先に進めます。"
 }

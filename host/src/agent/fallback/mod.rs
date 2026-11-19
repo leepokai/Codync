@@ -26,14 +26,18 @@ pub const MAX_FALLBACKS: usize = 3;
 fn chain(store: &Store, cfg: &BotConfig) -> Vec<Fallback> {
     let mut steps = Vec::with_capacity(1 + cfg.fallbacks.len());
     let mut seen = HashSet::new();
-    let configured = std::iter::once(Fallback {
+    let configured: Vec<Fallback> = std::iter::once(Fallback {
         backend: cfg.backend.clone(),
         command: cfg.command.clone(),
         login_profile: cfg.login_profile.clone(),
         model: cfg.model.clone(),
         model_options: cfg.model_options.clone(),
     })
-    .chain(cfg.fallbacks.iter().cloned());
+    .chain(cfg.fallbacks.iter().cloned())
+    .collect();
+    // Reserve every explicitly configured login so an earlier step's automatic rotation never replaces its model or
+    // options.
+    let explicit: HashSet<String> = configured.iter().map(step_login).collect();
     for step in configured {
         if seen.insert(step_login(&step)) {
             steps.push(step.clone());
@@ -42,7 +46,8 @@ fn chain(store: &Store, cfg: &BotConfig) -> Vec<Fallback> {
         if !custom {
             for id in crate::agent::login_profiles::signed_in_ids(store, &step.backend) {
                 let extra = Fallback { login_profile: Some(id), ..step.clone() };
-                if seen.insert(step_login(&extra)) {
+                let login = step_login(&extra);
+                if !explicit.contains(&login) && seen.insert(login) {
                     steps.push(extra);
                 }
             }
@@ -56,31 +61,58 @@ pub fn steps(store: &Store, cfg: &BotConfig) -> usize {
     chain(store, cfg).len()
 }
 
-/// The bot as step `step` runs it: that step's agent and model, everything else the bot's.
-pub fn effective(store: &Store, cfg: &BotConfig, step: usize) -> BotConfig {
+/// Applies `step` to `cfg`: that step's agent, login profile, command and model, everything else `cfg`'s.
+pub fn apply(cfg: &BotConfig, step: &Fallback) -> BotConfig {
     let mut out = cfg.clone();
-    if let Some(f) = chain(store, cfg).into_iter().nth(step) {
-        out.backend = f.backend;
-        out.command = f.command;
-        out.login_profile = f.login_profile;
-        out.model = f.model;
-        out.model_options = f.model_options;
-    }
+    out.backend.clone_from(&step.backend);
+    out.command.clone_from(&step.command);
+    out.login_profile.clone_from(&step.login_profile);
+    out.model.clone_from(&step.model);
+    out.model_options.clone_from(&step.model_options);
     out
 }
 
-/// The first step, in order, whose login `passed` doesn't pass over and that isn't resting at `now`.
-pub fn first_step(store: &Store, cfg: &BotConfig, now: i64, passed: impl Fn(&str) -> bool) -> Option<usize> {
-    chain(store, cfg).iter().enumerate().find_map(|(s, f)| {
+/// The bot as step `step` runs it: that step's agent and model, everything else the bot's.
+pub fn effective(store: &Store, cfg: &BotConfig, step: usize) -> BotConfig {
+    chain(store, cfg).into_iter().nth(step).map_or_else(|| cfg.clone(), |f| apply(cfg, &f))
+}
+
+/// A step chosen from one `chain` snapshot: its configuration and any signed-out logins before it.
+#[derive(Clone, Debug)]
+pub struct Picked {
+    pub cfg: BotConfig,
+    pub signed_out_before: Vec<crate::agent::login_profiles::Login>,
+}
+
+impl Picked {
+    /// The bot's own agent (step 0), with no preceding signed-out logins.
+    pub fn own(cfg: &BotConfig) -> Self {
+        Self { cfg: cfg.clone(), signed_out_before: Vec::new() }
+    }
+}
+
+/// The first step, in order, whose login `passed` doesn't pass over and that isn't resting at `now`, with any steps
+/// before it that rest because a bot found them signed out. Evaluated from one `chain` snapshot so concurrent
+/// profile changes cannot shift a selected index into another step.
+pub fn pick_step(store: &Store, cfg: &BotConfig, now: i64, passed: impl Fn(&str) -> bool) -> Option<Picked> {
+    let steps = chain(store, cfg);
+    let idx = steps.iter().position(|f| {
         let login = step_login(f);
-        (!passed(&login) && rest::get(store, &login, now).is_none()).then_some(s)
-    })
+        !passed(&login) && rest::get(store, &login, now).is_none()
+    })?;
+    let chosen = apply(cfg, &steps[idx]);
+    let signed_out_before = steps[..idx]
+        .iter()
+        .filter(|f| rest::get(store, &step_login(f), now).is_some_and(|r| r.reason == Reason::SignedOut))
+        .map(|f| crate::agent::login_profiles::Login::of(store, &apply(cfg, f)))
+        .collect();
+    Some(Picked { cfg: chosen, signed_out_before })
 }
 
 /// The bot as a new turn of its starts at `now`: on the first step whose login isn't resting (its own agent when
 /// every one is).
 pub fn starting(store: &Store, cfg: &BotConfig, now: i64) -> BotConfig {
-    effective(store, cfg, first_step(store, cfg, now, |_| false).unwrap_or(0))
+    pick_step(store, cfg, now, |_| false).map_or_else(|| cfg.clone(), |p| p.cfg)
 }
 
 /// The step that runs on login `login`, if the chain has it.
@@ -260,6 +292,36 @@ mod tests {
         rest::record(&store, &login::of(&on_p2), Reason::UsageLimit, now, None);
         let on_codex = starting(&store, &cfg, now);
         assert_eq!((on_codex.backend.as_str(), on_codex.model.as_deref()), ("codex", Some("gpt-5.5")));
+    }
+
+    #[test]
+    fn explicitly_saved_fallback_step_keeps_its_model_and_options_during_auto_rotation() {
+        let store = Store::open(std::path::Path::new(":memory:")).expect("a store");
+        crate::agent::login_profiles::tests::insert(&store, &[("p1", "claude"), ("p2", "claude"), ("p3", "claude")]);
+        for id in ["p1", "p2", "p3"] {
+            crate::agent::login_profiles::note_signed_in(&store, id, true);
+        }
+        let mut cfg = bot(&[("claude", Some("sonnet")), ("codex", Some("gpt-5.5"))]);
+        cfg.login_profile = Some("p1".into());
+        cfg.model_options.insert("effort".into(), "high".into());
+        cfg.fallbacks[0].login_profile = Some("p2".into());
+        cfg.fallbacks[0].model_options.insert("effort".into(), "low".into());
+
+        assert_eq!(steps(&store, &cfg), 4, "p1, auto-inserted p3, explicit p2, and codex");
+        let auto_p3 = effective(&store, &cfg, 1);
+        assert_eq!(
+            (auto_p3.backend.as_str(), auto_p3.login_profile.as_deref(), auto_p3.model.as_deref()),
+            ("claude", Some("p3"), Some("opus"))
+        );
+        assert_eq!(auto_p3.model_options.get("effort").map(String::as_str), Some("high"));
+
+        let saved_p2 = effective(&store, &cfg, 2);
+        assert_eq!(
+            (saved_p2.backend.as_str(), saved_p2.login_profile.as_deref(), saved_p2.model.as_deref()),
+            ("claude", Some("p2"), Some("sonnet")),
+            "explicit fallback keeps its own saved model instead of being overwritten by primary auto-rotation"
+        );
+        assert_eq!(saved_p2.model_options.get("effort").map(String::as_str), Some("low"));
     }
 
     #[test]

@@ -76,6 +76,18 @@ pub fn reset_time(usage: &Usage, backend: &str, login_profile: Option<&str>, now
     windows.iter().filter(|w| w.percent >= 99.5).filter_map(|w| w.resets_at).filter(|t| *t > now).max()
 }
 
+/// The later of a cached exhausted usage window's reset (`reset_time`) and a relative duration stated in the failure
+/// message (`parse_reset_in`), so a shorter cached window (such as 5h) never cuts off a longer refusal (such as 7d).
+pub fn reset_until(
+    usage: &Usage,
+    backend: &str,
+    login_profile: Option<&str>,
+    error_text: &str,
+    now: i64,
+) -> Option<i64> {
+    [reset_time(usage, backend, login_profile, now), parse_reset_in(error_text, now)].into_iter().flatten().max()
+}
+
 /// Parses a relative reset duration from an agent's usage-limit message (`"Your limit will reset in 6 days, 12 hours."`
 /// or `"resets in 2h 30m"`), returning `now + duration` when one is found.
 pub fn parse_reset_in(text: &str, now: i64) -> Option<i64> {
@@ -212,5 +224,49 @@ mod tests {
         assert_eq!(parse_reset_in("Limit resets in 2h 30m.", now), Some(now + 150 * MINUTE));
         assert_eq!(parse_reset_in("Your limit will reset in 45 minutes", now), Some(now + 45 * MINUTE));
         assert_eq!(parse_reset_in("No reset time mentioned", now), None);
+    }
+
+    #[test]
+    fn longer_refusal_reset_is_not_cut_off_by_shorter_cached_window() {
+        let now = 1_000_000;
+        let short_window = now + 20 * MINUTE;
+        let long_refusal = now + (6 * 24 + 12) * 60 * MINUTE;
+        let usage = Usage {
+            providers: vec![crate::usage::Provider {
+                id: "antigravity",
+                name: "Google Antigravity",
+                registry: None,
+                windows: vec![
+                    crate::usage::Window {
+                        id: "5h".into(),
+                        label: "5-hour".into(),
+                        percent: 100.0,
+                        resets_at: Some(short_window),
+                        resets_text: None,
+                        text: None,
+                    },
+                    crate::usage::Window {
+                        id: "7d".into(),
+                        label: "7-day".into(),
+                        percent: 35.0,
+                        resets_at: Some(now + 7 * 24 * 60 * MINUTE),
+                        resets_text: None,
+                        text: None,
+                    },
+                ],
+                source: "agent",
+                checked: crate::usage::Checked::default(),
+                default_login_profile: None,
+                login_profiles: Vec::new(),
+            }],
+            services: Vec::new(),
+        };
+        let msg = "Usage Limit Reached\n\nYou have reached your current quota for this period. Your limit will reset in 6 days, 12 hours.";
+        assert_eq!(reset_until(&usage, "antigravity", None, msg, now), Some(long_refusal));
+        assert_eq!(
+            reset_until(&usage, "antigravity", None, "Your limit will reset in 5 minutes.", now),
+            Some(short_window),
+            "still keeps the later cached reset when the refusal says a shorter duration"
+        );
     }
 }

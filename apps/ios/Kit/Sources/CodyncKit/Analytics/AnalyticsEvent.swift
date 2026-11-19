@@ -75,8 +75,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case shareSent(ShareSent)
 
     public enum Notifications: String, Sendable { case allowed, denied, notAsked = "not_asked" }
-    public enum OnboardingStep: String, Sendable { case welcome, choose, install, scan }
-    public enum OnboardingVia: String, Sendable { case paired, account, skipped }
+    public enum OnboardingStep: String, Sendable { case welcome, choose, install, scan, cloud }
+    public enum OnboardingVia: String, Sendable { case paired, account, cloud, skipped }
     public enum SignInProvider: String, Sendable { case apple, google, github }
     public enum SignInFailure: String, Sendable { case cancelled, verification, error }
     public enum MovedKeys: String, Sendable { case moved, rescan }

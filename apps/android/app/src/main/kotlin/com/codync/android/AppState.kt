@@ -32,6 +32,10 @@ data class AccountContext(
     val cloudSheets: Int = 0,
     /** Computers → Codync Cloud's card is on screen, showing its cloud computers' errors itself. */
     val cloudCardShown: Boolean = false,
+    /** First run: a cloud computer was made from the setup pages, which wait for it (`CloudStartView`) until it's reached. */
+    val startedCloud: Boolean = false,
+    /** Cloud computers the wait was left with Back: setup doesn't wait for them again (`CloudOffer.starting`). */
+    val passedCloud: Set<String> = emptySet(),
     /** The Codync cloud asked this app version to update (`426 appUpdateRequired`), with its reason. */
     val appFloor: String? = null,
     val tasks: Boolean = true,

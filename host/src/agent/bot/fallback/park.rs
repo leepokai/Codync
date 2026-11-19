@@ -34,28 +34,32 @@ fn logged(bot: &str, what: &str, result: anyhow::Result<()>) {
     }
 }
 
+/// Where the bot starts after a host restart: its active agent, its session id, and any handoff owed if the
+/// saved fallback login could no longer run and the primary took over.
+pub(in crate::agent::bot) struct Resumed {
+    pub cfg: BotConfig,
+    pub session_id: Option<String>,
+    pub recap: Option<(String, Option<String>)>,
+}
+
 /// The bot as the agent its main session was on when the host stopped runs it, along with that agent's session id.
-pub(in crate::agent::bot) fn resume_step(
-    hub: &Hub,
-    base: &BotConfig,
-    saved_session: Option<String>,
-) -> (BotConfig, Option<String>) {
+pub(in crate::agent::bot) fn resume_step(hub: &Hub, base: &BotConfig, saved_session: Option<String>) -> Resumed {
     let Some(saved_login) = hub.store.kv_get(&on_key(&base.id)) else {
-        return (base.clone(), saved_session);
+        return Resumed { cfg: base.clone(), session_id: saved_session, recap: None };
     };
     if let Some(step) = fallback::step_of(&hub.store, base, &saved_login) {
         let cfg = fallback::effective(&hub.store, base, step);
         if step > 0 {
             hub.set_runtime(&base.id, |r| r.agent_step = Some(AgentStep::new(&cfg, step, None)));
         }
-        return (cfg, saved_session);
+        return Resumed { cfg, session_id: saved_session, recap: None };
     }
     if let Some(cfg) = fallback::for_login(&hub.store, base, &saved_login) {
         hub.set_runtime(&base.id, |r| r.agent_step = Some(AgentStep::new(&cfg, 1, None)));
-        return (cfg, saved_session);
+        return Resumed { cfg, session_id: saved_session, recap: None };
     }
     // The saved fallback login can no longer run (such as a deleted profile): keep its session id off `base` and
-    // restore `base`'s own parked session instead.
+    // restore `base`'s own parked session instead, marking a catch-up or recap as owed.
     let key = parked_key(&base.id, &fallback::login::of(base));
     let parked = hub.store.kv_get(&key).filter(|s| !s.is_empty());
     logged(&base.id, "take the primary's parked session", hub.store.kv_delete(&key));
@@ -63,7 +67,8 @@ pub(in crate::agent::bot) fn resume_step(
     if let Err(error) = hub.store.set_session(&base.id, parked.as_deref()) {
         tracing::warn!(bot = %base.id, error = format!("{error:#}"), "couldn't restore the primary's session");
     }
-    (base.clone(), parked)
+    let recap = Some((fallback::login::backend_of(&saved_login).to_owned(), saved_session));
+    Resumed { cfg: base.clone(), session_id: parked, recap }
 }
 
 impl Actor {

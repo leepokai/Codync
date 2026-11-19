@@ -70,6 +70,12 @@ pub(super) struct Relay {
     pub(super) held: Option<Held>,
 }
 
+impl Relay {
+    pub(super) fn with_recap(recap: Option<(String, Option<String>)>) -> Self {
+        Self { recap, ..Self::default() }
+    }
+}
+
 /// The bot as it runs on `current`'s agent with `base`'s settings, also when that agent is no longer in its chain.
 pub(super) fn running(store: &crate::store::Store, base: &BotConfig, current: &BotConfig) -> BotConfig {
     match fallback::step_of(store, base, &fallback::login::of(current)) {
@@ -737,13 +743,14 @@ mod tests {
         crate::agent::login_profiles::note_signed_in(&store, "rs-1", false);
         let (mut actor, dir) = test_actor(store, base.clone());
         let saved = actor.hub.store.bot("b").ok().flatten().and_then(|b| b.session_id);
-        let (cfg, session_id) = resume_step(&actor.hub, &base, saved);
-        assert_eq!(fallback::login::of(&cfg), "claude#profile-rs-1");
-        assert_eq!(cfg.model.as_deref(), Some("opus"));
-        assert_eq!(session_id.as_deref(), Some("sid-rs1"));
+        let resumed = resume_step(&actor.hub, &base, saved);
+        assert_eq!(fallback::login::of(&resumed.cfg), "claude#profile-rs-1");
+        assert_eq!(resumed.cfg.model.as_deref(), Some("opus"));
+        assert_eq!(resumed.session_id.as_deref(), Some("sid-rs1"));
+        assert_eq!(resumed.recap, None);
 
-        actor.cfg = cfg;
-        actor.session_id = session_id;
+        actor.cfg = resumed.cfg;
+        actor.session_id = resumed.session_id;
         // Switching to codex parks sid-rs1 under rs-1, leaving primary's parked session intact.
         rest::record(&actor.hub.store, "claude", Reason::UsageLimit, now_ms(), None);
         let codex = actor.next_step(now_ms()).expect("codex step");
@@ -752,13 +759,31 @@ mod tests {
         assert_eq!(actor.hub.store.kv_get("fallback.session.b.claude").as_deref(), Some("sid-primary"));
         assert_eq!(actor.hub.store.kv_get("fallback.session.b.claude#profile-rs-1").as_deref(), Some("sid-rs1"));
 
-        // If a saved profile was deleted altogether, resume_step restores the primary's parked session onto base.
+        // If a saved profile was deleted altogether, resume_step restores the primary's parked session onto base
+        // and marks a catch-up as owed so the restored session hears what happened while away.
         actor.hub.store.kv_set("fallback.on.b", "claude#profile-deleted").expect("mark deleted");
+        actor.hub.store.kv_set("fallback.left.b.claude", "0").expect("mark left seq");
+        let main = Lane::main("b");
+        actor.hub.add_entry(&main, EntryKind::User, 1, &json!({"text": "what changed while away"})).expect("user");
+        actor
+            .hub
+            .add_entry(&main, EntryKind::Agent, 1, &json!({"text": "fallback finished the patch", "final": true}))
+            .expect("agent");
         actor.hub.store.set_session("b", Some("sid-deleted")).expect("save deleted session");
-        let (cfg, session_id) = resume_step(&actor.hub, &base, Some("sid-deleted".into()));
-        assert_eq!(fallback::login::of(&cfg), "claude");
-        assert_eq!(session_id.as_deref(), Some("sid-primary"));
+        let resumed = resume_step(&actor.hub, &base, Some("sid-deleted".into()));
+        assert_eq!(fallback::login::of(&resumed.cfg), "claude");
+        assert_eq!(resumed.session_id.as_deref(), Some("sid-primary"));
+        assert_eq!(resumed.recap, Some(("claude".into(), Some("sid-deleted".into()))));
         assert_eq!(actor.hub.store.bot("b").ok().flatten().and_then(|b| b.session_id).as_deref(), Some("sid-primary"));
+
+        actor.cfg = resumed.cfg;
+        actor.session_id = resumed.session_id;
+        actor.relay = Relay::with_recap(resumed.recap);
+        actor.session_fresh = false;
+        actor.carry_in();
+        let carried = actor.relay.carried.as_deref().expect("catch-up owed after deleted-profile recovery");
+        assert!(carried.contains("<catch_up>"), "{carried}");
+        assert!(carried.contains("fallback finished the patch"), "{carried}");
         std::fs::remove_dir_all(dir).expect("cleanup");
     }
 }

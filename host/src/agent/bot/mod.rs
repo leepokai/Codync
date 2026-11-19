@@ -80,7 +80,8 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     let (tx, rx) = mpsc::unbounded_channel();
     let saved_session = hub.store.bot(&base.id).ok().flatten().and_then(|b| b.session_id);
     // The agent its main session runs on: one of its fallbacks, if it was on one when the host stopped.
-    let (cfg, session_id) = fallback::resume_step(&hub, &base, saved_session);
+    let resumed = fallback::resume_step(&hub, &base, saved_session);
+    let (cfg, session_id) = (resumed.cfg, resumed.session_id);
     let interrupted = resumable(&hub.store, &cfg.id).then(|| Lane::main(&cfg.id));
     // A task's chat is its bot's own work, not the user's words: only the bot dreams, over its own chat.
     let dreamer =
@@ -150,7 +151,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         restart_after_turn: false,
         fast_support,
         idle_checked: Instant::now(),
-        relay: fallback::Relay::default(),
+        relay: fallback::Relay::with_recap(resumed.recap),
     };
     let task = tokio::spawn(actor.run(rx, interrupted));
     BotHandle { tx, task }

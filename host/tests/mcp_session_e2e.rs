@@ -9,14 +9,11 @@ use serde_json::json;
 use std::time::Duration;
 
 fn agent_requests(host: &Host, bot: &str, fixture: &str, method: &str) -> Vec<serde_json::Value> {
-    host.log(bot, &format!("{fixture}.jsonl"))
-        .into_iter()
-        .filter(|r| r["method"] == method)
-        .collect()
+    host.log(bot, &format!("{fixture}.jsonl")).into_iter().filter(|r| r["method"] == method).collect()
 }
 
 #[tokio::test]
-async fn mcp_layout_change_starts_a_fresh_session_instead_of_reusing_one() {
+async fn mcp_layout_change_reloads_servers_without_a_new_session() {
     if common::python_missing() {
         return;
     }
@@ -36,16 +33,10 @@ async fn mcp_layout_change_starts_a_fresh_session_instead_of_reusing_one() {
     host.call("updateBot", json!({"id": bot, "manageTeam": true})).await;
     host.reply(&bot, "three").await;
 
-    common::eventually("a fresh session is opened", Duration::from_secs(30), async || {
-        agent_requests(&host, &bot, "mcp", "session/new").len() == 2
-    })
-    .await;
-    let news = agent_requests(&host, &bot, "mcp", "session/new");
-    let second_new = news.last().unwrap();
-    assert!(
-        second_new["params"]["mcpServers"].as_array().is_some_and(|a| !a.is_empty()),
-        "a fresh session must carry Codync MCP servers"
-    );
+    assert_eq!(agent_requests(&host, &bot, "mcp", "session/new").len(), 1, "the chat keeps its session");
+    let loads = agent_requests(&host, &bot, "mcp", "session/load");
+    assert_eq!(loads.len(), 1, "the agent reloads with the new MCP servers");
+    assert!(loads[0]["params"]["mcpServers"].as_array().is_some_and(|a| !a.is_empty()));
 }
 
 #[tokio::test]

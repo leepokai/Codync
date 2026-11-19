@@ -147,8 +147,8 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         exit_tail: None,
         agent_error: None,
         restart_before_turn: false,
-        open_session_fresh: false,
         restart_after_turn: false,
+        mcp_layout_revision: 0,
         fast_support,
         idle_checked: Instant::now(),
         relay: fallback::Relay::default(),
@@ -228,6 +228,8 @@ pub(crate) struct Conn {
     usage: HashMap<String, (u64, u64)>,
     /// Codync's MCP servers each session knows by another name (`codex_names`), as it was created or loaded with.
     renamed: HashMap<String, codex_names::Renamed>,
+    /// Layout generation this process was started under (`Actor::mcp_layout_revision`).
+    mcp_layout_revision: u64,
     /// The login profile the process runs on, which isn't removed meanwhile.
     on_profile: Option<crate::agent::login_profiles::Running>,
 }
@@ -374,9 +376,9 @@ struct Actor {
     /// The agent's process is stale (its tools changed, or the grants or sign-in it started with are gone): a new one
     /// starts before the next turn, which reopens its session. An agent that can't reopen one keeps its process.
     restart_before_turn: bool,
-    /// Codync's MCP servers changed: the next turn must open a session anew, not reuse a loaded id (`session/load` may
-    /// not reattach bridges; leepokai/Codync#508).
-    open_session_fresh: bool,
+    /// Bumped when connectors, computer, team or bot memory layout changes, so an existing agent process reloads MCP
+    /// servers on `session/load` instead of skipping setup (leepokai/Codync#508).
+    mcp_layout_revision: u64,
     /// A change that restarts the agent (`restart_agent`) came during a turn: it restarts once the turn ends.
     restart_after_turn: bool,
     /// What the agent says about Fast mode; clients see it in the bot's runtime.

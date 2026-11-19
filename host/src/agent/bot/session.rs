@@ -171,13 +171,6 @@ impl Actor {
         {
             c.acp.kill().await;
         }
-        if std::mem::take(&mut self.open_session_fresh) {
-            tracing::info!(bot = %self.cfg.id, "Codync MCP servers changed; the next turn opens a fresh session");
-            for run_slot in self.run_slots() {
-                self.set_session(Some(&run_slot), None);
-            }
-            self.forget_session();
-        }
         let mut servers = self.mcp_servers()?;
         // pi gets its servers when it starts (`pi_tools`), so they take pi's names before that.
         let pi = self.cfg.backend == "pi";
@@ -213,6 +206,7 @@ impl Actor {
             .await?;
             conn.acp.hold(grants);
             conn.on_profile = on_profile;
+            conn.mcp_layout_revision = self.mcp_layout_revision;
             self.conn = Some(conn);
         }
         if self.conn.as_ref().is_some_and(|c| c.adapter == Adapter::Codex) {
@@ -231,8 +225,10 @@ impl Actor {
         if let Some(sid) = current {
             let prompt_current =
                 snapshot.as_ref().is_none_or(|s| self.applied_system.get(&sid).is_some_and(|t| *t == s.system));
-            // OpenCode can drop ACP-attached MCP while keeping the session (leepokai/Codync#508): re-send servers.
-            let reuse_loaded = self.cfg.backend != "opencode";
+            // OpenCode can drop ACP-attached MCP while keeping the session (leepokai/Codync#508): re-send servers. After
+            // a layout change, reload even when the process still holds the session id.
+            let mcp_current = conn.mcp_layout_revision == self.mcp_layout_revision;
+            let reuse_loaded = self.cfg.backend != "opencode" && mcp_current;
             if reuse_loaded && conn.loaded.contains_key(&sid) && prompt_current {
                 self.turn_session = Some(sid);
                 return Ok(());

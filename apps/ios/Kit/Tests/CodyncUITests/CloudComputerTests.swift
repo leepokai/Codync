@@ -192,11 +192,18 @@ private func machineJSON(_ id: String, _ name: String, provider: String = "boat"
     await store.refresh()
     #expect(store.isPreparing && store.machines.map(\.isPreparing) == [false, true])
     #expect(store.machines.map { store.status(of: $0).text } == ["Running", "Preparing your cloud computer…"])
+    // A first run waits for the one preparing, wherever it was made.
+    #expect(store.starting(started: false)?.id == "cm_1" && store.starting(started: false)?.start == .preparing)
+    // Left with Back, it isn't waited for again.
+    #expect(store.starting(started: false, passed: ["cm_1"]) == nil)
     PreparingStub.claimed.withLock { $0 = true }
     for _ in 0..<100 where store.isPreparing {
         try await Task.sleep(for: .milliseconds(20))
     }
     #expect(!store.isPreparing)
+    // In the account: only a first run that made it waits on, while this device is let in.
+    #expect(store.starting(started: false) == nil)
+    #expect(store.starting(started: true)?.id == "cm_1" && store.starting(started: true)?.start == .connecting)
     for _ in 0..<50 where !changed.withLock({ $0 }) {
         try await Task.sleep(for: .milliseconds(20))
     }
@@ -227,6 +234,8 @@ private final class FailedStub: CloudComputerStub {
     await store.refresh()
     #expect(store.machines.map(\.hosting.state) == [.failed] && !store.isPreparing)
     #expect(store.machines.map { store.status(of: $0).text } == ["Failed"] && store.status(of: store.machines[0]).isError)
+    // A first run waits on it only once it made it there, and then says it failed.
+    #expect(store.starting(started: false) == nil && store.starting(started: true)?.start == .failed)
     try await Task.sleep(for: .milliseconds(200))
     #expect(FailedStub.lookups.withLock { $0 } == 1)
 }

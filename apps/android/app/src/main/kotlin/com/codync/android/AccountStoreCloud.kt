@@ -116,6 +116,15 @@ fun AccountStore.createCloudComputer(provider: String, name: String, created: ()
     created()
 }
 
+/** First run: a cloud computer was made from the setup pages, so they wait for it until it's reached, which completes
+ * onboarding `via = cloud` (iOS `RootView.startedCloud`). */
+internal fun AccountStore.startedCloud() = mutableState.update { it.copy(startedCloud = true) }
+
+/** Back on that wait, whatever its stage: setup returns to its pages and stops waiting for [machine], which shows up by
+ * itself once it's ready (iOS `RootView.passedCloud`). */
+internal fun AccountStore.passCloud(machine: CloudMachine) =
+    mutableState.update { it.copy(startedCloud = false, passedCloud = it.passedCloud + machine.cloudComputerId) }
+
 /** Its new [name] (the cloud refuses an empty one); a computer this phone uses shows it before its host says so. */
 fun AccountStore.renameCloudComputer(id: String, name: String) = action(CloudMachineAction.Rename.key(id)) {
     val machine = tracked(AnalyticsEvent.CloudComputerRenamed(CloudRenameOutcome.Renamed), { AnalyticsEvent.CloudComputerRenamed(CloudRenameOutcome.Failed) }) {
@@ -199,7 +208,8 @@ internal val AccountContext.preparingCloud: Set<String>
 
 /**
  * Codync Cloud computers approve this phone by themselves: each one it can't use yet is asked once per app session,
- * through the same request and code exchange as a tap on "Ask for access" (iOS `askCloudComputers`).
+ * through the same request and code exchange as a tap on "Ask for access"; a request that failed or ended unapproved is
+ * asked again on the next refresh (iOS `askCloudComputers`).
  */
 internal fun AccountStore.askCloudComputers(computers: List<CloudComputer>) {
     for (computer in computers) {

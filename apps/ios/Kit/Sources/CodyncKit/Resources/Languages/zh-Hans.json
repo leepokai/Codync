@@ -2243,5 +2243,9 @@
   "On your Mac, click Codync in the menu bar, then Pair phone.": "在 Mac 上点菜单栏的 Codync，然后选配对手机。",
   "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "这项工作已在没有你的情况下连续进行 8 步，达到上限。点“继续”让它接着进行。",
   "Scan with the Codync app, or open on the phone:": "用 Codync App 扫描，或在手机上打开：",
-  "Scan with Codync Dev on your phone:": "用手机上的 Codync Dev 扫描："
+  "Scan with Codync Dev on your phone:": "用手机上的 Codync Dev 扫描：",
+  "Start a cloud computer": "创建一台云端电脑",
+  "No computer? Run one on your own cloud provider account.": "没有电脑？在你自己的云端供应商账户上开一台。",
+  "Starting your cloud computer": "正在启动你的云端电脑",
+  "About a minute. You can skip: it shows up on its own when it's ready.": "大约一分钟。可以先跳过：准备好后它会自己出现。"
 }

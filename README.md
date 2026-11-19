@@ -23,7 +23,7 @@ macOS: Apple Silicon + Intel (DMG) · Windows: x64 installer · Linux: AppImage 
 [![App Store](https://img.shields.io/badge/App_Store-iOS-0D96F6?logo=apple&logoColor=white)](https://apps.apple.com/app/codync/id6760984418)
 [![Homebrew](https://img.shields.io/badge/Homebrew-codync-FBB040?logo=homebrew&logoColor=white)](https://github.com/leepokai/homebrew-codync)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/KBAX3Qznxh)
-[![Telegram China](https://img.shields.io/badge/Telegram-China_community-26A5E4?logo=telegram&logoColor=white)](https://t.me/+e5egWrp5z4BlOWNl)
+[![Feishu China](https://img.shields.io/badge/Feishu-China_community-3370FF)](https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=49eq6f1e-ef72-40d8-aaf9-9864ee289ba3)
 [![Release](https://img.shields.io/github/v/release/leepokai/Codync?color=black)](https://github.com/leepokai/Codync/releases/latest)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 <br>
@@ -246,14 +246,14 @@ Clients and the host each name the oldest version of the other they still work w
 
 ## Community
 
-| Discord | Telegram · China community |
+| Discord | Feishu · China community |
 | --- | --- |
-| [Join Discord](https://discord.gg/KBAX3Qznxh) for questions, help and feedback. | [Join the Telegram group](https://t.me/+e5egWrp5z4BlOWNl), a community for Codync users in China to share tips, ask questions and give feedback. |
+| [Join Discord](https://discord.gg/KBAX3Qznxh) for questions, help and feedback. Can't reach Discord? [Join the Telegram group](https://t.me/+e5egWrp5z4BlOWNl) instead. | [Join the Feishu group](https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=49eq6f1e-ef72-40d8-aaf9-9864ee289ba3), a community for Codync users in China to share tips, ask questions and give feedback. |
 
 ## Contact
 
 - Email: [kevin@codync.dev](mailto:kevin@codync.dev)
-- Questions and bug reports: [GitHub Issues](https://github.com/leepokai/Codync/issues), [Discord](https://discord.gg/KBAX3Qznxh) or [Telegram (China)](https://t.me/+e5egWrp5z4BlOWNl)
+- Questions and bug reports: [GitHub Issues](https://github.com/leepokai/Codync/issues), [Discord](https://discord.gg/KBAX3Qznxh) ([Telegram](https://t.me/+e5egWrp5z4BlOWNl) if Discord is blocked) or [Feishu (China)](https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=49eq6f1e-ef72-40d8-aaf9-9864ee289ba3)
 - Security issues: report privately as described in [SECURITY.md](SECURITY.md) (GitHub private reporting or email)
 - Community rules: [Code of Conduct](CODE_OF_CONDUCT.md)
 

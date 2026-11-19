@@ -2219,5 +2219,7 @@
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "machines:read, machines:write, machines:delete 범위를 가진 codync라는 이름의 API 키를 만드세요.",
   "Connect {provider}": "{provider} 연결",
   "Use the command line instead": "대신 명령줄 사용",
-  "Leave it empty to use the hostname.": "비워 두면 호스트 이름을 사용합니다."
+  "Leave it empty to use the hostname.": "비워 두면 호스트 이름을 사용합니다.",
+  "Install MiMo Code (npm install -g @mimo-ai/cli) and run `mimo auth login` to sign in.": "MiMo Code (npm install -g @mimo-ai/cli)을 설치하고 `mimo auth login`을 실행해 로그인하세요.",
+  "Install TraeCode CLI (traecli) and sign in with `traecli login`.": "TraeCode CLI (traecli)를 설치하고 `traecli login`으로 로그인하세요."
 }

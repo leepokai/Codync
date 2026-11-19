@@ -37,7 +37,7 @@ mod proxied;
 pub use agent::authenticate;
 use agent::start;
 pub(crate) use agent::{Started, authenticate_account, start_with};
-pub use models::{InFlight, models, shared_models};
+pub use models::{InFlight, check_options, models, shared_models};
 pub(crate) use models::{model_config, model_ids};
 
 #[derive(Clone, Debug, Serialize)]

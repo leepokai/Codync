@@ -8,14 +8,19 @@ export interface UsageLogin {
   id: string | null
   name: string | null
   windows: UsageWindow[]
+  /** Since when its checks fail, which leaves `windows` from before. */
+  failedAt?: number
 }
 
 /** The agent's logins, the default one first. One, unnamed, when it has no login profiles. */
 export function logins(p: UsageProvider): UsageLogin[] {
   const profiles = p.loginProfiles ?? []
-  const own = { id: null, name: profiles.length ? (p.defaultLoginProfile ?? null) : null, windows: p.windows }
+  const own = { id: null, name: profiles.length ? (p.defaultLoginProfile ?? null) : null, windows: p.windows, failedAt: p.failedAt }
   return [own, ...profiles]
 }
+
+/** Shown, but not current: its last check failed. One with nothing read says "No reading yet" instead. */
+export const isOutOfDate = (l: UsageLogin) => l.failedAt != null && l.windows.length > 0
 
 const tightestOf = (windows: UsageWindow[]) =>
   windows.filter(isLimit).reduce<UsageWindow | null>((a, w) => (!a || w.percent > a.percent ? w : a), null)

@@ -1893,6 +1893,7 @@
   "Show usage for": "用量を表示するサービス",
   "On by default for the agents your bots run.": "ボットが使うエージェントはデフォルトでオンです。",
   "No reading yet": "まだ読み取れていません",
+  "Out of date": "最新ではありません",
   "Premium requests": "プレミアムリクエスト",
   "Balance": "残高",
   "Credits": "クレジット",

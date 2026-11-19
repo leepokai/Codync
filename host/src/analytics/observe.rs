@@ -204,6 +204,14 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("change".into(), (if rewrite { "update" } else { "new" }).into());
             Event::SkillWritten
         }
+        // A manager's `create_bot` / `update_bot`: the settings it passes, by name, never their values.
+        "manageCall" if matches!(b["name"].as_str(), Some("create_bot" | "update_bot")) => {
+            let tool = if b["name"] == "create_bot" { "create" } else { "update" };
+            p.insert("tool".into(), tool.into());
+            let passed = crate::chat::manage::arguments().iter().filter(|k| b["arguments"].get(k.as_str()).is_some());
+            p.insert("fields".into(), passed.cloned().collect::<Vec<_>>().into());
+            Event::TeamManaged
+        }
         // A bot's `publish_artifact`: a new artifact, or a new version of one (`artifact`); never its title.
         "chatCall" if b["name"] == "publish_artifact" => {
             let update = b["arguments"]["artifact"].as_str().is_some_and(|id| !id.is_empty());
@@ -380,43 +388,63 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
 /// `action`) as `network_failed` with `stage` `action`, a connector edit, a login profile, a voice server, a
-/// speech server and a message to an item's thread report their category and a credentials reset or a computer
-/// rename `other`, never the message; other failures report nothing.
+/// speech server, a team change and a message to an item's thread report their category and a credentials
+/// reset or a computer rename `other`, never the message; other failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
-    let category = match event {
+    match event {
         Event::NetworkJoined | Event::NetworkChanged => {
             p.insert("stage".into(), "action".into());
-            return Some((Event::NetworkFailed, p));
+            Some((Event::NetworkFailed, p))
         }
         Event::CredentialsReset | Event::ComputerRenamed => {
             p.insert("outcome".into(), "failed".into());
             p.insert("error".into(), "other".into());
-            return Some((event, p));
+            Some((event, p))
         }
         // `in_use`: removing a login profile bots still run on. `unsupported`: an account for an agent that keeps
         // one sign-in.
         Event::LoginProfileChanged => {
-            error.downcast_ref::<crate::agent::login_profiles::Refused>().map_or("other", |e| e.category)
+            let category =
+                error.downcast_ref::<crate::agent::login_profiles::Refused>().map_or("other", |e| e.category);
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
         }
         Event::ConnectorUpdated => {
-            error.downcast_ref::<crate::market::connector_update::EditFailed>().map_or("other", |e| e.category())
+            let category =
+                error.downcast_ref::<crate::market::connector_update::EditFailed>().map_or("other", |e| e.category());
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
         }
         // `read_only`: a routine's run or another bot's request. `not_started`, `gone`: no task to write to.
         // `text_only`: files, a quote or a call.
         Event::WorkMessaged => {
-            error.downcast_ref::<crate::chat::tasks::ThreadRefused>().map_or("other", |e| e.category)
+            let category = error.downcast_ref::<crate::chat::tasks::ThreadRefused>().map_or("other", |e| e.category);
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
+        }
+        Event::TeamManaged => {
+            let category = error.downcast_ref::<crate::chat::manage::Refused>().map_or("other", |e| e.category);
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
         }
         Event::SettingChanged if p.get("setting").and_then(Value::as_str) == Some(VOICE_SERVER) => {
-            error.downcast_ref::<crate::voice::ServerRefused>().map_or("other", |e| e.category)
+            let category = error.downcast_ref::<crate::voice::ServerRefused>().map_or("other", |e| e.category);
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
         }
         Event::SpeechServerLinked | Event::LocalDictationTranscribed => {
-            error.downcast_ref::<crate::voice::local::SpeechFailed>().map_or("other", |e| e.category())
+            let category = error.downcast_ref::<crate::voice::local::SpeechFailed>().map_or("other", |e| e.category());
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
         }
-        _ => return None,
-    };
-    p.insert("outcome".into(), "failed".into());
-    p.insert("error".into(), category.into());
-    Some((event, p))
+        _ => None,
+    }
 }
 
 /// The bot settings a patch changes, by name (never their values), sorted.

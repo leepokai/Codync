@@ -123,6 +123,8 @@ pub enum Event {
     SkillInstalled,
     SkillRemoved,
     SkillWritten,
+    /// A manager bot's `create_bot` or `update_bot`.
+    TeamManaged,
     /// A bot's `publish_artifact`.
     ArtifactPublished,
     /// A bot's `send_file` with text: a message that carries a voice note.
@@ -277,6 +279,7 @@ impl Event {
             Self::SkillInstalled => "skill_installed",
             Self::SkillRemoved => "skill_removed",
             Self::SkillWritten => "skill_written",
+            Self::TeamManaged => "team_managed",
             Self::ArtifactPublished => "artifact_published",
             Self::VoiceNoteSent => "voice_note_sent",
             Self::VoiceNotePlayed => "voice_note_played",

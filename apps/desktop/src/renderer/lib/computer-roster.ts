@@ -1,5 +1,6 @@
 import type { Bot } from '@shared/models'
 import type { Connection } from '../store/bot-store'
+import { counted } from '../../shared/fill.ts'
 
 type Ranked = Pick<Bot, 'pinned' | 'position' | 'lastAt'>
 
@@ -33,9 +34,6 @@ export function computerSections<C extends { id: string }, T extends { ref: { co
   for (const item of roster) byID.get(item.ref.computerId)?.items.push(item)
   return sections
 }
-
-/** Fills a translated phrase's `%d` placeholders in order. */
-export const counted = (text: string, ...counts: number[]) => counts.reduce((s, n) => s.replace('%d', String(n)), text)
 
 /** The roster header's line for the computers it shows; `waking`: one is a cloud computer on its way up (`isWaking`). */
 export function connectionSummary(connections: Connection[], waking: boolean, tr: (text: string) => string) {

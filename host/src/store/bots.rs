@@ -1,7 +1,7 @@
 //! The `bots` table: roster rows, sessions, read marks and unread counts.
 
 use super::entries::NOT_REMOVED;
-use super::model::{BotConfig, BotRow, EntryKind, LastMessage, TASK_GLOB, message_text};
+use super::model::{BotConfig, BotRow, EntryKind, LastMessage, message_text, thread_ids};
 use super::{Store, logged, next_rev};
 use crate::LockExt;
 use anyhow::Result;
@@ -55,14 +55,14 @@ const WAITING_CARD: &str = "(kind = 'permission' AND json_extract(data, '$.statu
 const UNSEEN: &str = "COALESCE(json_extract(data, '$.contentRev'), rev) > ?2";
 
 impl Store {
-    /// The roster's rows: bots and groups, deleted ones included. Task bots aren't among them (`task_bots`).
+    /// The roster's rows: bots and groups, deleted ones included. Thread bots aren't among them (`thread_bots`).
     pub fn bots(&self) -> Result<Vec<BotRow>> {
-        self.bots_where(&format!("id NOT GLOB '{TASK_GLOB}'"))
+        self.bots_where(&format!("NOT {}", thread_ids("id")))
     }
 
-    /// The task bots (`chat::tasks`), deleted ones left out.
-    pub fn task_bots(&self) -> Result<Vec<BotRow>> {
-        self.bots_where(&format!("id GLOB '{TASK_GLOB}' AND deleted = 0"))
+    /// The thread bots (`chat::work`), deleted ones left out.
+    pub fn thread_bots(&self) -> Result<Vec<BotRow>> {
+        self.bots_where(&format!("{} AND deleted = 0", thread_ids("id")))
     }
 
     fn bots_where(&self, condition: &str) -> Result<Vec<BotRow>> {
@@ -257,9 +257,9 @@ mod tests {
             harness_memory: false,
             compaction: codync_mem::compaction::Threshold::Early,
             auto_name: false,
-            task_of: None,
-            max_agents: 3,
-            task_worktrees: true,
+            thread_of: None,
+            max_threads: 3,
+            thread_worktrees: true,
             created_at: 0,
         };
         // Several at once: each with its own rev, in order.

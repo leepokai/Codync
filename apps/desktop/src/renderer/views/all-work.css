@@ -11,7 +11,7 @@
   opacity: 1;
   transform: none;
 }
-/* How many items are worked on, on the button's corner. */
+/* How many tasks are worked on, on the button's corner. */
 .all-work-count {
   position: absolute;
   top: -3px;

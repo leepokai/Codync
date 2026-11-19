@@ -11,7 +11,7 @@ use serde_json::{Map, Value, json};
 use std::sync::{Arc, Mutex};
 
 /// The notice's text, which older clients show without the button. A translation key, so the limits it names are
-/// held to it where they are set (`requests::MAX_REQUEST_HOPS`, `tasks::MAX_HOPS`).
+/// held to it where they are set (`requests::MAX_REQUEST_HOPS`, `work::MAX_HOPS`).
 const NOTICE: &str = "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.";
 
 /// Which limit stopped the chain; the `via` of `chain_limit_reached`.
@@ -20,7 +20,7 @@ const NOTICE: &str = "This work went on 8 steps in a row without you, the most i
 pub enum Via {
     /// `message_bot`, to a bot here or on another computer.
     Message,
-    /// `add_work`.
+    /// `add_task`.
     Work,
 }
 

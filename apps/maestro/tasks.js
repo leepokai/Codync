@@ -1,5 +1,5 @@
 // Makes the bot `tasks.yaml` opens and has it add an item to its box, on the host the phone is paired with (HOST_PORT
-// and HOST_TOKEN, passed with `-e`). Its agent is host/tests/fixtures/task_agent.py (TASK_AGENT, its full path): a
+// and HOST_TOKEN, passed with `-e`). Its agent is host/tests/fixtures/work_agent.py (TASK_AGENT, its full path): a
 // message `ADD <title>|<brief>` adds an item, whose task works until stopped when its brief says `HOLD:<name>` and
 // raises an approval card when it says PERMISSION. `ADD` sends another one and waits until the box has it and the
 // bot's own turn is over (a message sent during it would wait above the composer); `MAX` sets how many agents work at

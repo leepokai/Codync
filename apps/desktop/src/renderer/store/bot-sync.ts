@@ -16,7 +16,7 @@ const MISMATCH_RECHECK = 30_000
 /** The mismatch recheck while an update asked from here runs, so the notice leaves soon after. */
 const UPDATE_RECHECK = 5_000
 /** Raise when the app starts to need a field the rows it cached may lack. */
-const MIRROR_FORMAT = 1
+const MIRROR_FORMAT = 2
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const same = (a: Connection, b: Connection) => a.kind === b.kind && JSON.stringify(a) === JSON.stringify(b)
@@ -312,8 +312,8 @@ export class BotSync extends BotMirror {
         this.bump(event.entry.rev)
         this.acknowledgeVisible(event.entry.botId, event.entry)
         break
-      case 'taskEntry':
-        this.mergeTask(event.task, [event.entry])
+      case 'threadEntry':
+        this.mergeThread(event.thread, [event.entry])
         this.bump(event.entry.rev)
         break
       case 'usage':

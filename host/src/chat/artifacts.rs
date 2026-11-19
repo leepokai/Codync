@@ -163,10 +163,10 @@ fn write(dest: &Path, source: &Path) -> Result<(u64, String)> {
     Ok((u64::try_from(html.len())?, files::digest_hex(&Sha256::digest(&html))))
 }
 
-/// The `chat` server's artifact tools. A task's artifacts are its bot's; the card is posted by the actor that
-/// published it, the task's own, which puts it in the bot's chat.
+/// The `chat` server's artifact tools. A thread's artifacts are its bot's; the card is posted by the actor that
+/// published it, the thread's own, which puts it in the bot's chat.
 pub async fn call(hub: &Arc<Hub>, caller: &str, name: &str, args: &Value) -> Result<Value> {
-    let bot = &crate::chat::tasks::owner(&hub.store, caller);
+    let bot = &crate::chat::work::owner(&hub.store, caller);
     match name {
         "publish_artifact" => publish(hub, bot, caller, args).await,
         "list_artifacts" => {
@@ -198,7 +198,7 @@ async fn publish(hub: &Arc<Hub>, bot: &str, actor: &str, args: &Value) -> Result
         (None, None) => bail!("title is required for a new artifact"),
     };
     let id = existing.as_ref().map_or_else(|| uuid::Uuid::new_v4().to_string(), |artifact| artifact.id.clone());
-    // From the folder of the actor that publishes: a task's may be a worktree of its own.
+    // From the folder of the actor that publishes: a thread's may be a worktree of its own.
     let folder = hub.store.bot(actor)?.map_or_else(|| row.config.cwd.clone(), |actor| actor.config.cwd);
     let (dest, source) = (html_path(bot, &id)?, Path::new(&folder).join(source));
     let (size, sha256) = tokio::task::spawn_blocking(move || write(&dest, &source)).await??;

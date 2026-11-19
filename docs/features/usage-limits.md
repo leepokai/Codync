@@ -10,7 +10,7 @@ Every Usage screen can list the agents that can report on this computer, each wi
 - **A choice wins over the default:** `setUsageShown {id, shown}` saves `usage.shown.<id>` in the host's kv and answers with the new `usage`.
 - **One order per computer:** `setUsageOrder {ids}` saves `usage.order`, and the host sorts `services` and `providers` by it, so every Usage screen, the menu bar and the terminal UI follow. The notch island's list and the widgets' headline stay tightest first, and the widgets' other rows follow the order. An agent the order doesn't name follows the others in `READERS` order. The switches and the order live behind one button on each Usage screen; in the terminal, `J` and `K` move a row in the chooser.
 - **Reading follows the list:** an agent nobody runs or asked for is never started, and its saved login is never read. One that becomes wanted (a new bot's, one just turned on) is read right away instead of at the next five-minute poll, through `Hub::usage_wake`.
-- **Hidden isn't unread:** an agent a bot still runs keeps being read while hidden, because background work (`near_limit`) and fallbacks (`rest::reset_time`) go by its limits. `hub.usage` holds every reading; the apps get `Usage::visible()`.
+- **Hidden isn't unread:** an agent a bot still runs keeps being read while hidden, because work (`near_limit`) and fallbacks (`rest::reset_time`) go by its limits. `hub.usage` holds every reading; the apps get `Usage::visible()`.
 - **Listed:** wanted, holding a reading, its CLI installed (`backends::installed`), or something to read without the CLI (`Reader::found_without_cli`: Cursor's saved login, a JetBrains IDE's quota file).
 
 On the wire, `usage` gains `services: [{id, name, shown, registry?}]` next to `providers`, which leaves out the hidden agents. A host older than the chooser sends no `services`, and the apps then show no switches. A shown agent with no reading says **No reading yet**: signed out, or nothing to report. Providers and services carry the agent's ACP `registry` id when it has one, and clients draw its logo by `registry ?? id`.
@@ -43,7 +43,7 @@ first, each with its own windows. An agent on one login looks as it always did.
   accounts list with **No reading yet**.
 - **A row with nothing read** says **No reading yet**; so does the default login when only an account has numbers,
   and the agent's row in the chooser while none of its logins has any.
-- **What goes by them:** background work (`near_limit`) and a fallback's rest (`rest::reset_time`) go by the windows
+- **What goes by them:** work (`near_limit`) and a fallback's rest (`rest::reset_time`) go by the windows
   of the login the bot runs on (`Usage::windows`).
 - **One agent, one line:** the notch island, the widgets and the mascot's "nearly used up" show the login nearest a
   limit (`tightestLogin`), without its name. The Usage screens and the terminal UI's sheet show all.

@@ -24,7 +24,7 @@ import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
 import { loadIconCache, saveIconCache } from '../lib/icon-cache'
 import { trNow } from '../lib/l10n.ts'
-import { TaskTranscripts } from './task-transcripts'
+import { ThreadTranscripts } from './thread-transcripts'
 
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
@@ -88,7 +88,7 @@ export class BotMirror extends Observable {
   hostUpdate: HostUpdate | null = null
   bots = new Map<string, Bot>()
   entries = new Map<string, Entry[]>()
-  private taskTranscripts = new TaskTranscripts()
+  private threadTranscripts = new ThreadTranscripts()
   usage: Usage = { providers: [] }
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
@@ -334,19 +334,19 @@ export class BotMirror extends Observable {
     this.entries.set(e.botId, list)
   }
 
-  /** Holds a task's transcript from now until the returned function is called: its details are open. */
-  watchTask(taskId: string): () => void {
-    return this.taskTranscripts.watch(taskId)
+  /** Holds a thread's transcript from now until the returned function is called: its details are open. */
+  watchThread(threadId: string): () => void {
+    return this.threadTranscripts.watch(threadId)
   }
 
-  /** A watched task's transcript, oldest first. */
-  taskEntriesOf(taskId: string): Entry[] {
-    return this.taskTranscripts.of(taskId)
+  /** A watched thread's transcript, oldest first. */
+  threadEntriesOf(threadId: string): Entry[] {
+    return this.threadTranscripts.of(threadId)
   }
 
-  /** More of a task's transcript (fetched, or a live `taskEntry`). */
-  protected mergeTask(taskId: string, entries: Entry[]) {
-    this.taskTranscripts.merge(taskId, entries)
+  /** More of a thread's transcript (fetched, or a live `threadEntry`). */
+  protected mergeThread(threadId: string, entries: Entry[]) {
+    this.threadTranscripts.merge(threadId, entries)
   }
 
   setError(message: string | null) {

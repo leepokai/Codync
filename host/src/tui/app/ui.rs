@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use super::super::manage::{
     AgentSetup, AllWork, AnalyticsSheet, BotChatSheet, CutIn, DetailsPage, DevServersSheet, Fields, Gear, KeyImport,
-    Library, Market, MemorySheet, NetworkSheet, RoutineForm, SkillSheet, TaskSheet,
+    Library, Market, MemorySheet, NetworkSheet, RoutineForm, SkillSheet, ThreadSheet,
 };
 use super::{Editor, KofiSheet, Mark, WhatsNew};
 
@@ -122,10 +122,10 @@ pub enum ConfirmAct {
     ResetCredentials,
     /// Deletes them (`resetCredentials`).
     DeleteCredentials,
-    /// Stops one item of a bot's box.
+    /// Stops one task of a bot's box.
     StopWork {
         bot: String,
-        item: String,
+        task: String,
     },
 }
 
@@ -198,10 +198,10 @@ pub enum Field {
     Fallbacks,
     SelfFallbacks,
     Folder,
-    /// The most agents it runs at once; only on a host that sends `maxAgents`.
+    /// The most agents it runs at once; only on a host that sends `maxThreads`.
     MaxAgents,
-    /// A worktree per agent; only for a bot in a git repository, on a host that sends `taskWorktrees`.
-    TaskWorktrees,
+    /// A worktree per thread; only for a bot in a git repository, on a host that sends `threadWorktrees`.
+    ThreadWorktrees,
     Approvals,
     Compaction,
     Notify,
@@ -228,7 +228,7 @@ pub const FIELDS: [Field; 23] = [
     Field::Compaction,
     Field::Folder,
     Field::MaxAgents,
-    Field::TaskWorktrees,
+    Field::ThreadWorktrees,
     Field::Approvals,
     Field::Notify,
     Field::Computer,
@@ -264,9 +264,9 @@ pub struct Form {
     pub self_fallbacks: bool,
     pub cwd: String,
     /// The most agents it runs at once; `None`: the host has no event box.
-    pub max_agents: Option<u8>,
-    /// A worktree per agent; `None`: the host has no worktrees, or the bot's folder is in no git repository.
-    pub task_worktrees: Option<bool>,
+    pub max_threads: Option<u8>,
+    /// A worktree per thread; `None`: the host has no worktrees, or the bot's folder is in no git repository.
+    pub thread_worktrees: Option<bool>,
     /// Approvals: Codync approves what still asks, and the agent mode (`agent::modes`).
     pub auto: bool,
     pub mode: Option<String>,
@@ -383,9 +383,9 @@ pub enum Overlay {
     Memory(MemorySheet),
     /// A read-only conversation between two bots.
     BotChat(BotChatSheet),
-    /// The transcript of the task working an item, read-only.
-    Task(TaskSheet),
-    /// Which working item gives way to the one that cuts in.
+    /// The transcript of the thread working a task, read-only.
+    Thread(ThreadSheet),
+    /// Which working task gives way to the one that cuts in.
     CutIn(CutIn),
     /// Every bot's work on one page.
     AllWork(AllWork),

@@ -23,7 +23,7 @@ impl Fixture {
                 "id": id, "name": id, "backend": "fixture", "cwd": cwd,
                 "command": crate::shell::python(&agent),
                 "notify": false, "permission": "ask",
-                // They answer requests in their chat, whose queue these tests are about (the box: `tasks_e2e`).
+                // They answer requests in their chat, whose queue these tests are about (the box: `work_e2e`).
                 "manageTeam": true,
             }))
             .unwrap();

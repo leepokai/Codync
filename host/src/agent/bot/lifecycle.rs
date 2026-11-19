@@ -112,9 +112,9 @@ impl Actor {
     }
 
     /// The process is stale (the sign-in it started with was replaced, or a connector it runs was edited and its old
-    /// proxy refuses): the next turn starts a new one. An agent that can reopen its session goes on in it, so a task
+    /// proxy refuses): the next turn starts a new one. An agent that can reopen its session goes on in it, so a thread
     /// keeps its fork or brief and what it did; one that can't starts a new session, told the conversation so far as
-    /// after a move to another agent (a task's, the chat it comes from too). With no process (it quit, or couldn't
+    /// after a move to another agent (a thread's, the chat it comes from too). With no process (it quit, or couldn't
     /// start), the next turn starts one and reopens the session where it can, as after any exit.
     pub(super) fn restart_stale(&mut self) {
         let Some(conn) = &self.conn else { return };

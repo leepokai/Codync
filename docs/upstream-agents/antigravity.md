@@ -10,4 +10,4 @@ Rules: [README](README.md).
 
 ## Fork
 
-Checked 2026-11-15 for background tasks ([spikes](../archive/background-tasks-plan-2026-11-15.md#spikes)). `initialize` advertises no `sessionCapabilities.fork` (antigravity-acp 1.4.3, the build on this computer; the registry has 1.5.0; it has `list`, `resume`). `session/fork` answers an empty result (`{}`, no `sessionId`) rather than an error, so the capability is the only thing to go by, so a background task starts from a brief. Not a defect: the capability is optional.
+Checked 2026-11-15 for threads ([spikes](../archive/background-tasks-plan-2026-11-15.md#spikes)). `initialize` advertises no `sessionCapabilities.fork` (antigravity-acp 1.4.3, the build on this computer; the registry has 1.5.0; it has `list`, `resume`). `session/fork` answers an empty result (`{}`, no `sessionId`) rather than an error, so the capability is the only thing to go by, so a thread starts from a brief. Not a defect: the capability is optional.

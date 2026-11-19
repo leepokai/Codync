@@ -1,6 +1,6 @@
 //! Which bot's turn a change the scan finds in a memory folder is credited to: the turns running now, and the
 //! memory files their tool calls touched. The scan itself is `files`. A turn is its actor's: the bot's own, or
-//! one of its tasks' (`chat::tasks`), whose writes are the bot's, made in the task's session.
+//! one of its threads' (`chat::work`), whose writes are the bot's, made in the thread's session.
 
 use super::files::{self, SETTLE_MS};
 use crate::LockExt;
@@ -16,9 +16,9 @@ use std::sync::{Arc, Mutex};
 /// bot's, even one no tool call of it named (a shell command, say), once the turn ran a tool that can write files.
 #[derive(Clone, Debug)]
 pub(super) struct Turn {
-    /// Whose turn it is: the bot, or one of its tasks. Each has one turn at a time.
+    /// Whose turn it is: the bot, or one of its threads. Each has one turn at a time.
     actor: String,
-    /// The bot whose memory it writes: the actor, or a task's bot.
+    /// The bot whose memory it writes: the actor, or a thread's bot.
     bot: String,
     /// When it began, Unix ms; also its id.
     start: i64,
@@ -35,8 +35,8 @@ pub(super) struct Turn {
 // ponytail: in memory, so a host restart forgets turns; a change made just before one is then the computer's.
 static TURNS: Mutex<Vec<Turn>> = Mutex::new(Vec::new());
 
-/// `cfg` (a bot, or one of its tasks) is about to prompt its agent. A turn of it that never ended (a fallback took
-/// over) is this one now. `message` is `Runtime::message` of that turn: a task's has none, so a task only adds.
+/// `cfg` (a bot, or one of its threads) is about to prompt its agent. A turn of it that never ended (a fallback took
+/// over) is this one now. `message` is `Runtime::message` of that turn: a thread's has none, so a thread only adds.
 pub fn begin_turn(cfg: &BotConfig, session: &str, message: Option<String>) {
     let mut turns = TURNS.locked();
     turns.retain(|t| t.actor != cfg.id || t.ended.is_some());
@@ -56,7 +56,7 @@ pub fn drop_turn(actor: &str) {
     TURNS.locked().retain(|t| t.actor != actor || t.ended.is_some());
 }
 
-/// The running turn of `actor` (a bot, or one of its tasks): its session, and the user's message that started it
+/// The running turn of `actor` (a bot, or one of its threads): its session, and the user's message that started it
 /// when it is one the user started in the bot's own chat. What a memory tool call made in it is credited to.
 pub fn running(actor: &str) -> Option<(String, Option<String>)> {
     let turns = TURNS.locked();
@@ -74,7 +74,7 @@ fn wrote(actor: &str) -> Option<i64> {
 /// The tool call that last touched a memory file, and in which turn, so the scan credits the change to it.
 #[derive(Serialize, Deserialize)]
 struct Touch {
-    /// The turn's actor: the bot, or one of its tasks.
+    /// The turn's actor: the bot, or one of its threads.
     bot: String,
     /// The [`Turn::start`] of the turn it was made in.
     #[serde(default)]
@@ -98,7 +98,7 @@ pub fn touched(hub: &Hub, cfg: &BotConfig, tool: &serde_json::Value) {
         .chain(tool["diffs"].as_array())
         .flatten()
         .filter_map(|item| item["path"].as_str());
-    // A task's memory folders are its bot's.
+    // A thread's memory folders are its bot's.
     let folders: Vec<(PathBuf, Option<String>)> =
         files::layers(&cfg.as_owner()).into_iter().map(|layer| (files::folder(layer.as_deref()), layer)).collect();
     for path in paths {

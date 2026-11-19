@@ -86,17 +86,17 @@ pub enum Event {
     FollowUpFired,
     /// A follow-up was dropped before it began (`by`).
     FollowUpCancelled,
-    /// A bot's `add_work` ended (`outcome`).
+    /// A bot's `add_task` ended (`outcome`).
     WorkAdded,
-    /// An item of a bot's box ended (`outcome`), and how its task's session had begun.
+    /// A task of a bot's box ended (`outcome`), and how its thread's session had begun.
     WorkFinished,
-    /// An item was moved, cut in, replaced, stopped, dropped or tried again (`how`), by the bot or the user (`by`).
+    /// A task was moved, cut in, replaced, stopped, dropped or tried again (`how`), by the bot or the user (`by`).
     WorkSteered,
-    /// At host start, worktrees no item knew any more went, their work merged (`removed`).
+    /// At host start, worktrees no task knew any more went, their work merged (`removed`).
     WorktreesTidied,
-    /// An item's turn couldn't go on until the user signs in to its agent, so it waits for them (`agent`, `source`).
+    /// A task's turn couldn't go on until the user signs in to its agent, so it waits for them (`agent`, `source`).
     WorkNeedsSignIn,
-    /// The user wrote to an item's thread (`chat::tasks::thread`): whether it reopened the item, and whether it waits.
+    /// The user wrote to a task's thread (`chat::work::thread`): whether it reopened the task, and whether it waits.
     WorkMessaged,
     /// A bot's `start_dev_server` ended (`outcome`).
     DevServerStarted,

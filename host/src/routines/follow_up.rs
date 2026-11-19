@@ -1,6 +1,6 @@
 //! Follow-ups: a deadline a bot sets for itself ("look at the build again in 20 minutes"). When it is due the bot
 //! gets one turn in its own chat, in the conversation it set it from, and the follow-up is gone. A routine is the
-//! user's standing task and runs in a session of its own; a follow-up is the bot keeping its word once.
+//! user's standing work and runs in a session of its own; a follow-up is the bot keeping its word once.
 use super::kept::{self, Refused};
 use super::{EntryKind, Hub, Lane, LockExt, Result, Routines, Store, Value, agent_bot, bail, json, now_ms};
 use crate::agent::acp;
@@ -59,7 +59,7 @@ pub(super) struct Following {
 
 impl Routines {
     /// `follow_up`: `bot` gets a turn in its own chat in `minutes`, opened with its `note`. `caller`: the actor
-    /// whose running turn sets it (`bot`, or a task of its on a routine run).
+    /// whose running turn sets it (`bot`, or a thread of its on a routine run).
     pub fn follow_up(&self, hub: &Hub, bot: &str, caller: &str, args: &Value) -> Result<Value> {
         let minutes = args["minutes"].as_i64().unwrap_or_default();
         let note = args["note"].as_str().unwrap_or_default().trim();

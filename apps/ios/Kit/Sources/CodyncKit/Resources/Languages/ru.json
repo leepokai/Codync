@@ -546,6 +546,8 @@
   "Avatar": "Аватар",
   "Name": "Имя",
   "Workspace": "Рабочая папка",
+  "Each keeps its own folder": "У каждого своя папка",
+  "Members are asked to keep joint output in this folder.": "Участникам предложено хранить общие результаты в этой папке.",
   "Permissions": "Разрешения",
   "Ask me": "Спрашивать меня",
   "The agent decides what's safe and asks you about the rest.": "Агент сам решает, что безопасно, а об остальном спрашивает вас.",

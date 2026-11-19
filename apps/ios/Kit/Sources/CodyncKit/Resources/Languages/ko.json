@@ -546,6 +546,8 @@
   "Avatar": "아바타",
   "Name": "이름",
   "Workspace": "작업 공간",
+  "Each keeps its own folder": "각자 자신의 폴더 사용",
+  "Members are asked to keep joint output in this folder.": "멤버에게 공동 결과물을 이 폴더에 저장하도록 안내합니다.",
   "Permissions": "권한",
   "Ask me": "매번 확인",
   "The agent decides what's safe and asks you about the rest.": "에이전트가 안전한 작업은 스스로 판단하고, 나머지는 물어봅니다.",

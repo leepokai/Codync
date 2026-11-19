@@ -78,9 +78,15 @@ public struct BotRow: View {
         case .lastMessage where bot.status == "error":
             line(MessagePreview.text(bot.lastMessage ?? "Something went wrong"), color: Palette.danger)
         case .lastMessage:
-            line(MessagePreview.text(bot.lastMessage ?? (bot.isGroup ? "\(bot.members.count) bots" : "\(model.backendName(bot.backend)) · \(bot.folderName)")),
+            line(MessagePreview.text(bot.lastMessage ?? (bot.isGroup ? groupLine : "\(model.backendName(bot.backend)) · \(bot.folderName)")),
                  color: Palette.secondary)
         }
+    }
+
+    /// "3 bots", plus the team's folder when it has one.
+    private var groupLine: String {
+        let bots = bot.members.count == 1 ? "1 bot" : "\(bot.members.count) bots"
+        return bot.workspaceName.map { "\(bots) · \($0)" } ?? bots
     }
 
     private func working(_ text: String) -> some View {

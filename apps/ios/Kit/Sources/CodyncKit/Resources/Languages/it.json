@@ -1420,6 +1420,8 @@
   "Working": "Al lavoro",
   "Working…": "Al lavoro…",
   "Workspace": "Spazio di lavoro",
+  "Each keeps its own folder": "Ognuno tiene la propria cartella",
+  "Members are asked to keep joint output in this folder.": "Ai membri viene chiesto di conservare i risultati condivisi in questa cartella.",
   "Write instructions a bot can follow": "Scrivi istruzioni che un bot possa seguire",
   "Writing a reply…": "Scrittura risposta…",
   "Yesterday": "Ieri",

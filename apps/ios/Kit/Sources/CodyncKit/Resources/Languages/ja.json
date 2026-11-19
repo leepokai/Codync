@@ -546,6 +546,8 @@
   "Avatar": "アバター",
   "Name": "名前",
   "Workspace": "ワークスペース",
+  "Each keeps its own folder": "各メンバーが自分のフォルダーを使う",
+  "Members are asked to keep joint output in this folder.": "メンバーは共同の成果物をこのフォルダーに置くよう促されます。",
   "Permissions": "権限",
   "Ask me": "毎回確認",
   "The agent decides what's safe and asks you about the rest.": "安全な操作はエージェントが判断し、それ以外はあなたに確認します。",

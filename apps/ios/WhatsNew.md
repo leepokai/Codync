@@ -6,6 +6,13 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.50.1
+### zh-Hant
+- 配對說明改成「配對手機」，和電腦選單上的名稱一致：同一個碼 iPhone 和 Android 手機都能配。
+
+### en-US
+- The pairing instructions now say Pair phone, the name the computer's menu uses, since the same code pairs iPhone and Android phones.
+
 ## 2.50.0
 ### zh-Hant
 - 建立 Codync Cloud 雲端電腦改成在同一個畫面一步一步來：先選供應商（看得到在哪裡執行、要多少錢），再照著步驟到供應商網站建立金鑰並貼上，最後取名、建立。

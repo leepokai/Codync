@@ -9,7 +9,7 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
       {
         slug: "getting-started",
         title: "Getting started",
-        description: "Install Codync on your computer, pair your iPhone, create your first bot and send it a message.",
+        description: "Install Codync on your computer, pair your phone, create your first bot and send it a message.",
       },
     ],
   },

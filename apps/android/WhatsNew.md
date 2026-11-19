@@ -7,6 +7,13 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.50.1
+### zh-Hant
+- 配對說明改成「配對手機」，和電腦選單上的名稱一致：Mac 選單列原本的「配對 iPhone…」現在叫「配對手機…」。
+
+### en-US
+- The pairing instructions now say Pair phone, the name the computer's menu uses: the Mac menu bar's Pair iPhone… is now Pair phone….
+
 ## 2.50.0
 ### zh-Hant
 - 建立 Codync Cloud 雲端電腦改成在同一個畫面一步一步來：先選供應商（看得到在哪裡執行、要多少錢），再照著步驟到供應商網站建立金鑰並貼上，最後取名、建立。

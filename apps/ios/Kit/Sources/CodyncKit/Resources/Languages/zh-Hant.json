@@ -2219,5 +2219,7 @@
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "建立一把名為 codync 的 API 金鑰，權限為 machines:read、machines:write 和 machines:delete。",
   "Connect {provider}": "連接 {provider}",
   "Use the command line instead": "改用命令列",
-  "Leave it empty to use the hostname.": "留空則使用主機名稱。"
+  "Leave it empty to use the hostname.": "留空則使用主機名稱。",
+  "Install MiMo Code (npm install -g @mimo-ai/cli) and run `mimo auth login` to sign in.": "安裝 MiMo Code（npm install -g @mimo-ai/cli），然後執行 `mimo auth login` 登入。",
+  "Install TraeCode CLI (traecli) and sign in with `traecli login`.": "安裝 TraeCode CLI（traecli），然後用 `traecli login` 登入。"
 }

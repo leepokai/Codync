@@ -2219,5 +2219,7 @@
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "Créez une clé d'API nommée codync avec les autorisations machines:read, machines:write et machines:delete.",
   "Connect {provider}": "Connecter {provider}",
   "Use the command line instead": "Utiliser plutôt la ligne de commande",
-  "Leave it empty to use the hostname.": "Laissez vide pour utiliser le nom d’hôte."
+  "Leave it empty to use the hostname.": "Laissez vide pour utiliser le nom d’hôte.",
+  "Install MiMo Code (npm install -g @mimo-ai/cli) and run `mimo auth login` to sign in.": "Installez MiMo Code (npm install -g @mimo-ai/cli) et exécutez `mimo auth login` pour vous connecter.",
+  "Install TraeCode CLI (traecli) and sign in with `traecli login`.": "Installez TraeCode CLI (traecli) et connectez-vous avec `traecli login`."
 }

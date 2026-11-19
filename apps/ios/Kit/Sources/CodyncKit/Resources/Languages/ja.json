@@ -2219,5 +2219,7 @@
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "machines:read、machines:write、machines:delete のスコープを持つ codync という名前の API キーを作成します。",
   "Connect {provider}": "{provider} に接続",
   "Use the command line instead": "代わりにコマンドラインを使う",
-  "Leave it empty to use the hostname.": "空欄にするとホスト名を使います。"
+  "Leave it empty to use the hostname.": "空欄にするとホスト名を使います。",
+  "Install MiMo Code (npm install -g @mimo-ai/cli) and run `mimo auth login` to sign in.": "MiMo Code をインストールし (npm install -g @mimo-ai/cli)、`mimo auth login` を実行してサインインします。",
+  "Install TraeCode CLI (traecli) and sign in with `traecli login`.": "TraeCode CLI (traecli) をインストールし、`traecli login` でサインインします。"
 }

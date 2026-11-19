@@ -2219,5 +2219,7 @@
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "Создайте API-ключ с именем codync и правами machines:read, machines:write и machines:delete.",
   "Connect {provider}": "Подключить {provider}",
   "Use the command line instead": "Использовать командную строку",
-  "Leave it empty to use the hostname.": "Оставьте пустым, чтобы использовать имя хоста."
+  "Leave it empty to use the hostname.": "Оставьте пустым, чтобы использовать имя хоста.",
+  "Install MiMo Code (npm install -g @mimo-ai/cli) and run `mimo auth login` to sign in.": "Установите MiMo Code (npm install -g @mimo-ai/cli) и выполните `mimo auth login` для входа.",
+  "Install TraeCode CLI (traecli) and sign in with `traecli login`.": "Установите TraeCode CLI (traecli) и войдите через `traecli login`."
 }

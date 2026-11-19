@@ -331,6 +331,12 @@ fn exit_status(output: &str) -> Option<i32> {
 
 fn running(servers: &Value, routines: &Value, omitted: &mut Vec<String>) -> Vec<String> {
     let mut out = Vec::new();
+    running_servers(servers, &mut out, omitted);
+    running_routines(routines, &mut out, omitted);
+    out
+}
+
+fn running_servers(servers: &Value, out: &mut Vec<String>, omitted: &mut Vec<String>) {
     for server in servers
         .as_array()
         .into_iter()
@@ -350,8 +356,11 @@ fn running(servers: &Value, routines: &Value, omitted: &mut Vec<String>) -> Vec<
             clipped(server["name"].as_str().unwrap_or("unnamed"), FACT_CHARS),
             if ports.is_empty() { "unknown" } else { &ports }
         );
-        collect_line(&mut out, line, RUNNING, "dev server", omitted);
+        collect_line(out, line, RUNNING, "dev server", omitted);
     }
+}
+
+fn running_routines(routines: &Value, out: &mut Vec<String>, omitted: &mut Vec<String>) {
     let definitions = routines["routines"].as_array().into_iter().flatten().collect::<Vec<_>>();
     let mut seen = std::collections::HashSet::new();
     for run in routines["runs"]
@@ -371,9 +380,8 @@ fn running(servers: &Value, routines: &Value, omitted: &mut Vec<String>) -> Vec<
             .unwrap_or(id);
         let status = run["status"].as_str().unwrap_or("active");
         let line = format!("routine {} ({status})", clipped(name, FACT_CHARS));
-        collect_line(&mut out, line, RUNNING, "routine", omitted);
+        collect_line(out, line, RUNNING, "routine", omitted);
     }
-    out
 }
 
 fn collect_line(out: &mut Vec<String>, line: String, cap: usize, kind: &str, omitted: &mut Vec<String>) {
@@ -463,6 +471,13 @@ fn report(hub: &crate::hub::Hub, outcome: &str, omitted: usize, unavailable: usi
     );
 }
 
+fn memory_roots(cfg: &crate::store::BotConfig) -> Vec<std::path::PathBuf> {
+    crate::chat::memory::files::layers(&cfg.as_owner())
+        .iter()
+        .map(|layer| crate::chat::memory::files::folder(layer.as_deref()))
+        .collect()
+}
+
 fn build_blocking(
     hub: &crate::hub::Hub,
     cfg: &crate::store::BotConfig,
@@ -478,10 +493,7 @@ fn build_blocking(
         ledger.omitted.push("older history not scanned (400-entry limit); search_history for earlier items".into());
     }
     let (entries, work) = scoped(scoped_entries, fresh, current);
-    let roots = crate::chat::memory::files::layers(cfg)
-        .iter()
-        .map(|layer| crate::chat::memory::files::folder(layer.as_deref()))
-        .collect::<Vec<_>>();
+    let roots = memory_roots(cfg);
     ledger.constraints = constraints(&entries, &mut ledger.omitted);
     ledger.references = references(&entries, &mut ledger.omitted);
     ledger.files = files::collect(&work, Path::new(&cfg.cwd), &roots, &mut ledger.omitted);

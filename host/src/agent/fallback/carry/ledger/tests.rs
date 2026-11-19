@@ -409,3 +409,12 @@ fn relative_paths_and_dotfiles_keep_their_leading_period() {
     assert!(refs.contains(&"../host/Cargo.toml".to_owned()), "refs={refs:?}");
     assert!(refs.contains(&".env".to_owned()), "refs={refs:?}");
 }
+
+#[test]
+fn thread_memory_roots_use_parent_bot_folder() {
+    let cfg: crate::store::BotConfig =
+        serde_json::from_value(json!({"id": "thread-123", "name": "Thread", "threadOf": "parent-bot"})).unwrap();
+    let roots = memory_roots(&cfg);
+    assert!(roots.contains(&crate::chat::memory::files::folder(Some("parent-bot"))));
+    assert!(!roots.contains(&crate::chat::memory::files::folder(Some("thread-123"))));
+}

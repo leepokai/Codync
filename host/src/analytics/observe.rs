@@ -331,9 +331,11 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
                 p.insert(key.into(), answer[key].as_array().map_or(0, Vec::len).into());
             }
         }
-        // A room or a bot request gets no card (`card` says why).
+        // A room or a bot request gets no card (`card` says why); a quiet update refreshes the card it has.
         Event::ArtifactPublished => {
-            p.insert("card".into(), answer["card"].is_null().into());
+            let quiet = answer["quiet"] == true;
+            p.insert("card".into(), (answer["card"].is_null() && !quiet).into());
+            p.insert("quiet".into(), quiet.into());
         }
         Event::ConnectorUpdated => {
             p.insert("outcome".into(), if answer["verify"].is_null() { "saved" } else { "ready" }.into());

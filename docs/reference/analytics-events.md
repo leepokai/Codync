@@ -154,7 +154,7 @@ host answers and sends it once the host is up.
 | `skill_installed` | host | `installSkill` | `custom` |
 | `skill_removed` | host | `removeSkill` | — |
 | `skill_written` | host | A bot's `save_skill` (`chatCall`) | `change` (`new`/`update`) |
-| `artifact_published` | host | A bot's `publish_artifact` (`chatCall`) | `change` (`new`/`update`), `card` (whether its card went into the bot's chat), never its title |
+| `artifact_published` | host | A bot's `publish_artifact` (`chatCall`) | `change` (`new`/`update`), `card` (whether a new card went into the bot's chat), `quiet` (an update with `notify: false` that refreshed the artifact's existing card instead; never both true), never its title |
 | `voice_note_sent` | host | A bot's `send_file` with text (`chatCall`): a message that carries a voice note | never the file, its name or the text |
 | `bot_quoted` | host | A bot's `send_message` or `send_file` with `reply_to` (`chatCall`): `tool` (`message` \| `file`), `outcome` (`quoted`, or `unquoted` when the id couldn't be quoted). A voice note with a quote counts as `voice_note_sent` | never the id, the text or the quote |
 | `voice_note_played` | host `track` (desktop), iOS, Android | A voice note's play button starts it from its beginning (not a resume) | `outcome` (`played`/`failed`), `error` when failed (`load`: fetching or opening it; `playback`: starting it), never which note |

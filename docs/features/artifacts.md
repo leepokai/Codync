@@ -10,10 +10,12 @@ Asked to change an artifact, the bot publishes it again under the same id, and e
 
 The built-in `chat` MCP server has two tools (`host/src/chat/artifacts.rs`):
 
-- `publish_artifact {path, title?, artifact?}`: the HTML file (absolute or relative to the bot's working directory,
-  up to 5 MiB, inline CSS and JS, libraries from a CDN allowed). Without `artifact` it makes a new artifact and needs
-  a title; with `artifact` (an id) it replaces that artifact's HTML, and its title when given. The answer names the
-  artifact's id.
+- `publish_artifact {path, title?, artifact?, notify?}`: the HTML file (absolute or relative to the bot's working
+  directory, up to 5 MiB, inline CSS and JS, libraries from a CDN allowed). Without `artifact` it makes a new artifact
+  and needs a title; with `artifact` (an id) it replaces that artifact's HTML, and its title when given. The answer
+  names the artifact's id. `notify: false` (default `true`) makes an update quiet: no new card in the chat; the
+  artifact's newest card (`entryId`) takes the new title and `updatedAt` instead, and the answer has `quiet: true`.
+  A new artifact, or one without a card yet, gets its card as usual.
 - `list_artifacts {}`: the bot's artifacts, newest first, with each one's id, title, last publish time and the path of
   its current HTML. To make changes the bot edits a copy and publishes that: the stored file is the live one, checked
   against its size and SHA-256 on every read.
@@ -25,7 +27,8 @@ artifacts gets a one-line reminder of this with each message in the bot's own ch
 A publish in the bot's own chat, or in a routine run (whose lane is that chat, in the chat or in a task), also posts
 an artifact card there: a final `agent` entry with `{text: "Artifact: <title>", final: true, artifact: {id, title,
 updatedAt}}`. Older apps show the text. In a group chat or a request from another bot the artifact is saved and in the
-chat's Library, but no card is posted (`card` in the answer says so), and the bot mentions it in its reply.
+chat's Library, but no card is posted (`card` in the answer says so), and the bot mentions it in its reply. A quiet
+update refreshes the artifact's existing card from any chat and answers `quiet: true`, with no such hint.
 
 A message about an artifact is a reply to its card: `replyTo` carries the artifact id and quotes it under its current
 title (`replies::quote`), and the bot reads `[Codync: this is about your artifact "<title>" (id …). Its current HTML is
@@ -54,7 +57,7 @@ title (`replies::quote`), and the bot reads `[Codync: this is about your artifac
   (no rewind), and older apps ignore it.
 - Additive: no `minApp` change. The apps show the Library only when the host's `hello` version is 2.25.0 or later
   (an older host has no `library`); cards need no check, since only those hosts post them.
-- Analytics: `artifact_published {change, card}` and the `library` and `artifact` screens
+- Analytics: `artifact_published {change, card, quiet}` and the `library` and `artifact` screens
   ([analytics events](../reference/analytics-events.md)).
 
 ## Apps

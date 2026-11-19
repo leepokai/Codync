@@ -212,11 +212,14 @@ fn connectors_skills_and_agents() {
     let p = answered(event, p, &json!({"published": true})).expect("published");
     assert_eq!(
         (event, Value::Object(p)),
-        (Event::ArtifactPublished, json!({"change": "new", "card": true, "client": "local"}))
+        (Event::ArtifactPublished, json!({"change": "new", "card": true, "quiet": false, "client": "local"}))
     );
     let (event, p) = published(json!({"path": "r.html", "artifact": "a1"}));
     let p = answered(event, p, &json!({"published": true, "card": "not posted"})).expect("published");
     assert_eq!((p["change"].clone(), p["card"].clone()), (json!("update"), json!(false)), "a room's has no card");
+    let (event, p) = published(json!({"path": "r.html", "artifact": "a1", "notify": false}));
+    let p = answered(event, p, &json!({"published": true, "quiet": true})).expect("published");
+    assert_eq!((p["card"].clone(), p["quiet"].clone()), (json!(false), json!(true)), "a quiet update posts no card");
     assert_eq!(props("connectorSignIn", &json!({"id": "c"})).map(|(e, _)| e), Some(Event::ConnectorSigninStarted));
     let setup = props("agentSetup", &json!({"backend": "claude-acp", "step": "install"}));
     assert_eq!(setup, Some((Event::AgentSetupStarted, json!({"agent": "claude-acp", "client": "local"}))));

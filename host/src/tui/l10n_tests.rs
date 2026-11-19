@@ -250,7 +250,7 @@ fn host_schedule_sentences_match_their_catalog_templates() {
 #[test]
 fn event_box_words_read_in_traditional_chinese() {
     for (english, chinese) in [
-        ("In the background", "背景"),
+        ("Work", "工作"),
         ("Needs you", "需要你"),
         ("Threads", "Threads"),
         ("Event box", "Event Box"),
@@ -270,24 +270,24 @@ fn event_box_words_read_in_traditional_chinese() {
         ("First", "先做"),
         ("Cut in", "插隊"),
         ("Drop", "丟掉"),
-        ("Agents at once", "同時幾個 agent"),
+        ("Threads at once", "同時幾個 thread"),
         ("Work", "工作"),
-        ("Worktree per agent", "每個 agent 一個 worktree"),
+        ("Worktree per thread", "每個 thread 一個 worktree"),
         ("Git repository", "Git repository"),
         ("Not a git repository", "不是 git repository"),
         ("Git isn't installed on this computer", "這台電腦沒有安裝 git"),
         (
-            "Agents that work at once in this repository each get their own branch.",
-            "同時在這個 repository 工作的 agent 各有自己的分支。",
+            "Threads that work at once in this repository each get their own branch.",
+            "同時在這個 repository 工作的 thread 各有自己的分支。",
         ),
         ("Let \"{title}\" cut in", "讓「{title}」插隊"),
         (
-            "Every place is taken. Pick what gives way: its session closes and it starts again later.",
-            "名額滿了。選一個讓位：它的 session 會關掉，之後重新開始。",
+            "Every thread is busy. Pick the task that gives way: its thread closes and the task starts again later.",
+            "所有 thread 都在忙。選一個讓位的 task：它的 thread 會關掉，task 之後重新開始。",
         ),
-        ("Stop the background work?", "停止背景的工作？"),
+        ("Stop this task?", "停止這個 task？"),
         ("What it already changed stays.", "已經改的內容會留著。"),
-        ("Nothing in the background", "背景沒有在進行的事"),
+        ("No work", "沒有工作"),
         ("Done", "完成"),
         ("Failed", "失敗"),
         ("Stopped", "已停止"),
@@ -329,4 +329,19 @@ fn fallback_lines_read_in_traditional_chinese() {
     let line =
         fill(&translate_with(&key, &super::HANT), &[("to", "Codex"), ("own", "Kimi Code (Work while traveling)")]);
     assert_eq!(line, "正在使用 Codex，Kimi Code (Work while traveling) 已登出");
+}
+
+#[test]
+fn pairing_reads_pair_phone_like_the_other_apps() {
+    use crate::tui::app::{ACTIONS, Action};
+    let (label, _, _) =
+        ACTIONS.iter().find(|(_, _, action)| *action == Action::Pair).expect("the palette pairs a phone");
+    // The desktop tray and Settings › Computers use these same keys, so every client says the same words.
+    assert_eq!(*label, "Pair phone…");
+    assert_eq!(translate_with(label, &super::HANT), "配對手機…");
+    assert_eq!(translate_with("Pair phone", &super::HANT), "配對手機");
+    assert_eq!(
+        translate_with("Scan with the Codync app, or open on the phone:", &super::HANT),
+        "用 Codync App 掃描，或在手機上打開："
+    );
 }

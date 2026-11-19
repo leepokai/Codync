@@ -18,7 +18,7 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     /// The login profile it runs on; nil for the login the computer already has.
     public var loginProfile: String?
     public var cwd: String
-    /// Host-allocated personal workspace rather than a user-selected project.
+    /// The bot's own folder, which the host made and keeps versions of, rather than a project the user chose.
     public var managedWorkspace: Bool = false
     /// `ask` or `auto`: whether Codync asks about what the agent asks, or approves it.
     public var permission: String
@@ -95,15 +95,15 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var agentCommands: [AgentCommand] = []
     /// What it keeps running on the computer. Empty from an older host, and for a group.
     public var devServers: [DevServer] = []
-    /// Its box (`WorkItem.swift`): live and waiting items, then the ones ended in the last day. Empty from an
+    /// Its box (`WorkTask.swift`): live and waiting tasks, then the ones ended in the last day. Empty from an
     /// older host: the feature doesn't show.
-    public var work: [WorkItem] = []
-    /// The most agents that work its items at once (1 to 6). Nil from an older host: no setting to show.
-    public var maxAgents: Int?
-    /// Agents of its that work at once in one git repository each get a worktree. Nil from an older host: no
+    public var work: [WorkTask] = []
+    /// The most threads it runs at once (1 to 6). Nil from an older host: no setting to show.
+    public var maxThreads: Int?
+    /// Threads of its that work at once in one git repository each get a worktree. Nil from an older host: no
     /// setting to show.
-    public var taskWorktrees: Bool?
-    /// Its folder is in a git repository: where `taskWorktrees` matters.
+    public var threadWorktrees: Bool?
+    /// Its folder is in a git repository: where `threadWorktrees` matters.
     public var gitRepo: Bool = false
     /// Whether the computer has git. Nil from an older host: it reads as installed.
     public var gitInstalled: Bool?
@@ -126,7 +126,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var needsInput: Bool { status == "needsInput" }
     /// Its band in the list: pinned bots, then the rest. Dragging stays inside a band.
     public var band: Int { pinned ? 0 : 1 }
-    public var folderName: String { managedWorkspace ? "Personal workspace" : (cwd as NSString).lastPathComponent }
+    /// Where it works, as a list shows it: its own folder, or its project folder's name.
+    public var folderName: String { managedWorkspace ? L10n.tr("Own folder") : (cwd as NSString).lastPathComponent }
 }
 
 extension Bot {
@@ -186,9 +187,10 @@ extension Bot {
         resting = (try? c.decodeIfPresent([AgentRest].self, forKey: .resting)) ?? []
         agentCommands = (try? c.decodeIfPresent([AgentCommand].self, forKey: .agentCommands)) ?? []
         devServers = (try? c.decodeIfPresent([DevServer].self, forKey: .devServers)) ?? []
-        work = (try? c.decodeIfPresent(WorkList.self, forKey: .work))?.items ?? []
-        maxAgents = (try? c.decodeIfPresent(Int.self, forKey: .maxAgents)).map { min(max($0, Bot.maxAgentsRange.lowerBound), Bot.maxAgentsRange.upperBound) }
-        taskWorktrees = try? c.decodeIfPresent(Bool.self, forKey: .taskWorktrees)
+        work = (try? c.decodeIfPresent(WorkList.self, forKey: .work))?.tasks ?? []
+        // Hosts before 2.51.0 (`maxAgents`, `taskWorktrees`): goes when minHost reaches 2.51.0.
+        maxThreads = ((try? c.decodeIfPresent(Int.self, forKey: .maxThreads)) ?? OldHostWire.value(Int.self, "maxAgents", from: decoder)).map { min(max($0, Bot.maxThreadsRange.lowerBound), Bot.maxThreadsRange.upperBound) }
+        threadWorktrees = (try? c.decodeIfPresent(Bool.self, forKey: .threadWorktrees)) ?? OldHostWire.value(Bool.self, "taskWorktrees", from: decoder)
         gitRepo = (try? c.decodeIfPresent(Bool.self, forKey: .gitRepo)) ?? false
         gitInstalled = try? c.decodeIfPresent(Bool.self, forKey: .gitInstalled)
         outside = try? c.decodeIfPresent(Outside.self, forKey: .outside)

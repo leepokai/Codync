@@ -1,6 +1,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { fixtureCommand } from './fixture-command.ts'
 import { api, attach, setPref } from './sandbox.ts'
 
 // A scripted agent whose turn runs a search, a fetch and an edit and stays on them until it is stopped.
@@ -68,12 +69,12 @@ test('thinking orbs are halftone discs that animate, and hold still with Reduce 
     await setPref(page, 'showThinkingDetails', true)
     const busy = `Orb busy ${Date.now()}`
     const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-      name: busy, backend: 'custom', command: `python3 -X utf8 -u '${script}'`, connectors: [], skills: [], notify: false,
+      name: busy, backend: 'custom', command: fixtureCommand(script), connectors: [], skills: [], notify: false,
     })
     ids.push(bot.id)
     const waiting = `Orb waiting ${Date.now()}`
     const { bot: asker } = await api<{ bot: { id: string } }>(page, 'createBot', {
-      name: waiting, backend: 'custom', command: `python3 -X utf8 -u '${askAgent}'`, connectors: [], skills: [], notify: false, permission: 'ask',
+      name: waiting, backend: 'custom', command: fixtureCommand(askAgent), connectors: [], skills: [], notify: false, permission: 'ask',
     })
     ids.push(asker.id)
     await api(page, 'send', { botId: bot.id, text: 'go' })

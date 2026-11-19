@@ -4,7 +4,7 @@ import { Icon } from '../../components/Icon'
 import { ModalHeader, SheetPage } from '../../components/Overlay'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
-import { MarkdownText } from '../thread/Markdown'
+import { MarkdownText } from '../chat/Markdown'
 import { errorText, market } from './market-models'
 import { ErrorText } from './pieces'
 import { usePlugins } from './plugins'
@@ -50,7 +50,7 @@ export function SkillSheet({ skill }: { skill: SkillRef }) {
   }
 
   const trailing = added ? (
-    <span title="Added" aria-label="Added" className="skill-added">
+    <span title={tr('Added')} aria-label={tr('Added')} className="skill-added">
       <Icon name="checkmark" size={13} weight="semibold" />
     </span>
   ) : adding ? <Spinner /> : <IconButton title="Add" icon="plus" onClick={() => void add()} />

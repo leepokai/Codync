@@ -8,7 +8,7 @@ use crate::agent::fallback::Reason;
 
 use super::model::{Mark, Status};
 use super::tilde;
-use super::work::{self, WorkItem};
+use super::work::{self, WorkTask};
 
 /// The harness's own memory as the bot's Memory screen shows it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -96,17 +96,17 @@ pub struct Bot {
     pub members: Vec<String>,
     /// Where the running turn talks: a chat (`None` = its own).
     pub working_chat: Option<String>,
-    /// Its event box: the working items, then the waiting in the order they will be taken, then those ended in the
+    /// Its event box: the working tasks, then the waiting in the order they will be taken, then those ended in the
     /// last day. Its own `status` stays the chat's.
-    pub work: Vec<WorkItem>,
-    /// The most agents it runs at once; `None` from a host before the box.
-    pub max_agents: Option<u8>,
+    pub work: Vec<WorkTask>,
+    /// The most threads it runs at once; `None` from a host before the box.
+    pub max_threads: Option<u8>,
     /// How it stands outside its chat (`bot.outside.status`); `None` from a host before it.
     pub outside: Option<Status>,
-    /// A task that starts beside another in the same git repository gets a worktree of its own; `None` from a host
+    /// A thread that starts beside another in the same git repository gets a worktree of its own; `None` from a host
     /// before worktrees.
-    pub task_worktrees: Option<bool>,
-    /// Its folder is in a git repository: where `task_worktrees` matters.
+    pub thread_worktrees: Option<bool>,
+    /// Its folder is in a git repository: where `thread_worktrees` matters.
     pub git_repo: bool,
     /// The host can run git; true from a host that doesn't say.
     pub git_installed: bool,
@@ -203,7 +203,7 @@ impl Bot {
 
     /// Where it works, as the header shows it.
     pub fn folder(&self, home: &str) -> String {
-        if self.managed_workspace { "personal workspace".to_owned() } else { tilde(&self.cwd, home) }
+        if self.managed_workspace { "own folder".to_owned() } else { tilde(&self.cwd, home) }
     }
 
     pub(in crate::tui) fn parse(v: &Value) -> Option<Self> {
@@ -277,9 +277,9 @@ impl Bot {
             group: v["kind"] == "group",
             members: strs(&v["members"]),
             working_chat: v["workingChat"].as_str().map(str::to_owned),
-            work: WorkItem::list(&v["work"]),
-            max_agents: work::max_agents(&v["maxAgents"]),
-            task_worktrees: v["taskWorktrees"].as_bool(),
+            work: WorkTask::list(&v["work"]),
+            max_threads: work::max_threads(&v["maxThreads"]),
+            thread_worktrees: v["threadWorktrees"].as_bool(),
             git_repo: v["gitRepo"] == true,
             git_installed: v["gitInstalled"] != false,
         })
@@ -287,7 +287,7 @@ impl Bot {
 
     /// What Settings says under its folder; nothing from a host before worktrees, which doesn't tell.
     pub fn git_line(&self) -> Option<&'static str> {
-        self.task_worktrees?;
+        self.thread_worktrees?;
         Some(match (self.git_installed, self.git_repo) {
             (false, _) => "Git isn't installed on this computer",
             (true, true) => "Git repository",
@@ -326,7 +326,7 @@ impl Bot {
     }
 
     /// What its row in the roster shows: how it stands outside its chat, where its box counts too (it works while
-    /// an item works or waits, and needs you while one waits on a card). The chat's own on a host before `outside`.
+    /// a task works or waits, and needs you while one waits on a card). The chat's own on a host before `outside`.
     pub fn roster_mark(&self) -> Mark {
         self.mark_of(self.outside.unwrap_or(self.status))
     }

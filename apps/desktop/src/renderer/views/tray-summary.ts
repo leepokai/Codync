@@ -49,7 +49,7 @@ function canvasImage(key: string, width: number, height: number, draw: (ctx: Can
 
 function avatarIcon(bot: Bot) {
   const bitmap = iconBitmap(bot.customIcon)?.image
-  // The dot follows how the bot stands outside its chat: an item waiting on the user shows it too.
+  // The dot follows how the bot stands outside its chat: a task waiting on the user shows it too.
   const asks = outsideStatus(bot) === 'needsInput'
   const key = `bot|${asks}|${bot.customIcon?.dataUrl ?? ""}|${bot.customIcon?.tinted}|${bitmap?.complete}|${bot.id}|${bot.avatarShape}|${bot.avatarColor}|${bot.status}|${bot.unread > 0}`
   return canvasImage(key, 20, 20, (ctx) => {
@@ -72,7 +72,7 @@ function avatarIcon(bot: Bot) {
 
 /** A bot's line under its name in the tray menu and the notch island, in its roster row's order (`summaryLine`);
  * with nothing to say, where it works. */
-export const botDetail = (bot: Bot) => summaryLine(bot, tr) ?? folderName(bot)
+export const botDetail = (bot: Bot) => summaryLine(bot, tr) ?? folderName(bot, tr)
 
 /** One usage limit's bar in the provider's color: amber from 70%, red from 90%. */
 function barIcon(providerId: string, window: UsageWindow) {

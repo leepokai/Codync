@@ -25,9 +25,10 @@ impl Hub {
             v["memoryRev"] = self.store.memory_rev().into();
             v["devServers"] = self.dev_servers.wire(&cfg.id);
             // What the bot works on away from the chat, and what waits for it.
-            v["work"] = crate::chat::tasks::wire(self, cfg);
-            // Its folder is in a git repository: where `taskWorktrees` matters, and a client shows its switch.
-            v["gitRepo"] = crate::chat::tasks::in_repo(&cfg.cwd).into();
+            v["work"] = crate::chat::work::wire(self, cfg);
+            // Its folder is in a git repository. For a project folder (not `managedWorkspace`) that is where
+            // `threadWorktrees` matters, and a client shows its switch: the bot's own folder never gets worktrees.
+            v["gitRepo"] = crate::chat::work::in_repo(&cfg.cwd).into();
             // Whether the host can run git at all: without it a repository gets no worktrees either.
             v["gitInstalled"] = crate::git::installed().into();
         }
@@ -54,7 +55,7 @@ impl Hub {
             v["agentCommands"] = json!(crate::agent::bot::agent_commands(&self.store, cfg, agent));
             // How it stands to what shows it outside its chat (a Live Activity, an ongoing notification, a tray):
             // the chat's status with its work in the background, as the pushes say it.
-            let (status, started_at) = crate::chat::tasks::outside(self, cfg, &rt);
+            let (status, started_at) = crate::chat::work::outside(self, cfg, &rt);
             v["outside"] = json!({"status": status, "startedAt": started_at});
             v["agentStep"] = json!(rt.agent_step);
             v["resting"] = json!(crate::agent::fallback::resting(&self.store, cfg, crate::store::now_ms()));

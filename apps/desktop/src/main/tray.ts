@@ -97,7 +97,7 @@ export class Tray {
     items.push({ label: this.tr(status), enabled: false })
     items.push({ label: this.tr('Open {name}').replaceAll('{name}', app.getName()), icon: this.symbol('macwindow'), accelerator: 'CmdOrCtrl+O', click: () => this.deps.openChat() })
     if (state.kind === 'running') {
-      items.push({ label: this.tr('Pair iPhone…'), icon: this.symbol('qrcode'), enabled: s?.canPair ?? false, click: () => this.deps.openPairing() })
+      items.push({ label: this.tr('Pair phone…'), icon: this.symbol('qrcode'), enabled: s?.canPair ?? false, click: () => this.deps.openPairing() })
     }
     items.push({ type: 'separator' })
 
@@ -134,7 +134,7 @@ export class Tray {
               { label: this.tr(bot.detail), enabled: false },
               { label: this.tr('Open conversation'), click: () => send({ kind: 'openBot', ref: bot.ref }) },
             ]
-            if (bot.working) submenu.push({ label: this.tr('Stop task'), click: () => send({ kind: 'stopBot', ref: bot.ref }, false) })
+            if (bot.working) submenu.push({ label: this.tr('Stop'), click: () => send({ kind: 'stopBot', ref: bot.ref }, false) })
             items.push({ label: bot.name, icon: this.image(bot.avatar), submenu })
           }
         }

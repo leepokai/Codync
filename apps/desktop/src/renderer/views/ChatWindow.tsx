@@ -24,8 +24,8 @@ import { ExtensionsMovedTip } from './ExtensionsMovedTip'
 import { RailAccountNotice, SidebarFooter } from './SidebarFooter'
 import { UpdateBadge } from './UpdateButton'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
-import { ThreadView } from './thread/ThreadView'
-import { queueVoiceKey } from './thread/voice-shortcut-keys'
+import { ChatView } from './chat/ChatView'
+import { queueVoiceKey } from './chat/voice-shortcut-keys'
 import { NewBotView, NewGroupView } from './bots/NewBotView'
 import { ImportBotsSheet } from './bots/ImportBotsView'
 import { BotEditorView } from './bots/BotEditorView'
@@ -224,8 +224,8 @@ function ChatSplitView() {
   const openVoiceSettings = useCallback(() => setSettings('voice'), [])
   const [showAccount, setShowAccount] = useState(false)
   const [showWork, setShowWork] = useState(false)
-  // What the view of all work asked a bot's chat to show, and which asking it was: its Details, the card of `item`, or the thread of the item `thread`.
-  const [shownRequest, setShownRequest] = useState<{ ref: string; count: number; item?: string; thread?: string } | null>(null)
+  // What the view of all work asked a bot's chat to show, and which asking it was: its Details, the card of the task `task`, or the thread of the task `thread`.
+  const [shownRequest, setShownRequest] = useState<{ ref: string; count: number; task?: string; thread?: string } | null>(null)
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight })
   const newButton = useRef<HTMLButtonElement>(null)
   const railNewButton = useRef<HTMLButtonElement>(null)
@@ -253,8 +253,8 @@ function ChatSplitView() {
   const visibleRoster = roster.items
   const work = allWork(roster.ordered)
   const closeWork = useCallback(() => setShowWork(false), [])
-  /** From the view of all work: the bot's chat, at its Details, at the card of `item` or with the thread of `thread`. */
-  const showInChat = (ref: BotRef, show: { item?: string; thread?: string } = {}) => {
+  /** From the view of all work: the bot's chat, at its Details, at the card of the task `task` or with the thread of the task `thread`. */
+  const showInChat = (ref: BotRef, show: { task?: string; thread?: string } = {}) => {
     app.select(ref)
     setShownRequest((last) => ({ ref: refKey(ref), count: (last?.count ?? 0) + 1, ...show }))
     setShowWork(false)
@@ -374,7 +374,7 @@ function ChatSplitView() {
   if (selected && selectedStore && selectedBot) {
     detail = (
       <StoreContext.Provider value={selectedStore}>
-        <ThreadView key={refKey(selected)} botId={selected.botId} request={shownRequest?.ref === refKey(selected) ? shownRequest : null} />
+        <ChatView key={refKey(selected)} botId={selected.botId} request={shownRequest?.ref === refKey(selected) ? shownRequest : null} />
       </StoreContext.Provider>
     )
   } else if (!onlineStores.length && ssh.state.profiles.length) {
@@ -447,7 +447,7 @@ function ChatSplitView() {
             <IconButton title="Extensions" icon="square.grid.2x2" size={36} onClick={openMarketplace} />
             <UpdateBadge size={32} />
             <RailAccountNotice />
-            <button className={`rail-profile ${showAccount ? 'open' : ''}`} aria-label="Open account menu for Account" title="Account" onClick={() => setShowAccount((s) => !s)}>
+            <button className={`rail-profile ${showAccount ? 'open' : ''}`} aria-label={tr('Open account menu for Account')} title={tr('Account')} onClick={() => setShowAccount((s) => !s)}>
               <ProfileAvatar />
             </button>
           </div>
@@ -494,7 +494,7 @@ function ChatSplitView() {
         bots={work.bots}
         many={app.computers.length > 1}
         openDetails={(ref) => showInChat(ref)}
-        openCard={(ref, item) => showInChat(ref, { item })}
+        openCard={(ref, task) => showInChat(ref, { task })}
         openThread={(ref, thread) => showInChat(ref, { thread })}
         onClose={closeWork}
       />

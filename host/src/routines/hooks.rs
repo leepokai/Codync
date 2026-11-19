@@ -46,7 +46,7 @@ impl std::fmt::Display for Refused {
         match self {
             Self::Unauthorized => f.write_str("invalid webhook key or signature"),
             Self::Paused => f.write_str("routine is paused"),
-            Self::Busy => f.write_str("routine already has an active run"),
+            Self::Busy => f.write_str("routine already has a run queued or under way; try again later"),
             Self::Invalid(why) => f.write_str(why),
         }
     }

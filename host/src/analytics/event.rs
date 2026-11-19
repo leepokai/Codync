@@ -34,12 +34,15 @@ pub enum Event {
     BotUpdated,
     BotsReordered,
     SectionRenamed,
+    ComputerRenamed,
     BotDeleted,
     MessageSent,
     /// The user had a queued message handled now (`agent::bot::steer`).
     MessageSteered,
     /// The user sent one of the agent's own `/` commands (`agent::bot::commands`).
     AgentCommandSent,
+    /// A bot's new Codex session was put in Codex's own Codync section, or wasn't (`agent::bot::codex_section`).
+    CodexSessionFiled,
     QueuedMessageRemoved,
     TurnStopped,
     TurnFinished,
@@ -49,6 +52,10 @@ pub enum Event {
     HandoffCarried,
     /// A bot's agent stopped to give back what it held (`agent::bot::lifecycle`).
     AgentRetired,
+    /// A bot's own folder became a git repository that keeps its versions (`agent::versions`).
+    OwnFolderVersioned,
+    /// Saving a version of a bot's own folder failed (`stage`).
+    OwnFolderSaveFailed,
     /// Codync started summarizing a bot's chat (`agent::bot::compaction`).
     ContextCompacted,
     UsageReadFailed,
@@ -67,6 +74,10 @@ pub enum Event {
     RoutineDeleted,
     RoutineRun,
     RoutineRetried,
+    /// A bot chain stopped at its handoff limit and left the user a Continue notice (`via`: `chat::team::limit::Via`).
+    ChainLimitReached,
+    /// The user continued a chain stopped at the handoff limit (`continueChain`).
+    ChainContinued,
     /// A bot's `save_progress` ended (`outcome`).
     RoutineProgressSaved,
     /// A bot's `follow_up` ended (`outcome`).
@@ -75,15 +86,17 @@ pub enum Event {
     FollowUpFired,
     /// A follow-up was dropped before it began (`by`).
     FollowUpCancelled,
-    /// A bot's `add_work` ended (`outcome`).
+    /// A bot's `add_task` ended (`outcome`).
     WorkAdded,
-    /// An item of a bot's box ended (`outcome`), and how its task's session had begun.
+    /// A task of a bot's box ended (`outcome`), and how its thread's session had begun.
     WorkFinished,
-    /// An item was moved, cut in, replaced, stopped, dropped or tried again (`how`), by the bot or the user (`by`).
+    /// A task was moved, cut in, replaced, stopped, dropped or tried again (`how`), by the bot or the user (`by`).
     WorkSteered,
-    /// An item's turn couldn't go on until the user signs in to its agent, so it waits for them (`agent`, `source`).
+    /// At host start, worktrees no task knew any more went, their work merged (`removed`).
+    WorktreesTidied,
+    /// A task's turn couldn't go on until the user signs in to its agent, so it waits for them (`agent`, `source`).
     WorkNeedsSignIn,
-    /// The user wrote to an item's thread (`chat::tasks::thread`): whether it reopened the item, and whether it waits.
+    /// The user wrote to a task's thread (`chat::work::thread`): whether it reopened the task, and whether it waits.
     WorkMessaged,
     /// A bot's `start_dev_server` ended (`outcome`).
     DevServerStarted,
@@ -112,6 +125,8 @@ pub enum Event {
     SkillInstalled,
     SkillRemoved,
     SkillWritten,
+    /// A manager bot's `create_bot` or `update_bot`.
+    TeamManaged,
     /// A bot's `publish_artifact`.
     ArtifactPublished,
     /// A bot's `send_file` with text: a message that carries a voice note.
@@ -202,16 +217,20 @@ impl Event {
             Self::BotUpdated => "bot_updated",
             Self::BotsReordered => "bots_reordered",
             Self::SectionRenamed => "section_renamed",
+            Self::ComputerRenamed => "computer_renamed",
             Self::BotDeleted => "bot_deleted",
             Self::MessageSent => "message_sent",
             Self::MessageSteered => "message_steered",
             Self::AgentCommandSent => "agent_command_sent",
+            Self::CodexSessionFiled => "codex_session_filed",
             Self::QueuedMessageRemoved => "queued_message_removed",
             Self::TurnStopped => "turn_stopped",
             Self::TurnFinished => "turn_finished",
             Self::AgentFellBack => "agent_fell_back",
             Self::HandoffCarried => "handoff_carried",
             Self::AgentRetired => "agent_retired",
+            Self::OwnFolderVersioned => "own_folder_versioned",
+            Self::OwnFolderSaveFailed => "own_folder_save_failed",
             Self::ContextCompacted => "context_compacted",
             Self::UsageReadFailed => "usage_read_failed",
             Self::SessionReset => "session_reset",
@@ -227,6 +246,8 @@ impl Event {
             Self::RoutineDeleted => "routine_deleted",
             Self::RoutineRun => "routine_run",
             Self::RoutineRetried => "routine_retried",
+            Self::ChainLimitReached => "chain_limit_reached",
+            Self::ChainContinued => "chain_continued",
             Self::RoutineProgressSaved => "routine_progress_saved",
             Self::FollowUpSet => "follow_up_set",
             Self::FollowUpFired => "follow_up_fired",
@@ -234,6 +255,7 @@ impl Event {
             Self::WorkAdded => "work_added",
             Self::WorkFinished => "work_finished",
             Self::WorkSteered => "work_steered",
+            Self::WorktreesTidied => "worktrees_tidied",
             Self::WorkNeedsSignIn => "work_needs_sign_in",
             Self::WorkMessaged => "work_messaged",
             Self::DevServerStarted => "dev_server_started",
@@ -256,6 +278,7 @@ impl Event {
             Self::SkillInstalled => "skill_installed",
             Self::SkillRemoved => "skill_removed",
             Self::SkillWritten => "skill_written",
+            Self::TeamManaged => "team_managed",
             Self::ArtifactPublished => "artifact_published",
             Self::VoiceNoteSent => "voice_note_sent",
             Self::VoiceNotePlayed => "voice_note_played",

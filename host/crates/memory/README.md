@@ -83,7 +83,7 @@ It links the system SQLite. Where there is none (a fresh Ubuntu fails with `cann
 `libsqlite3-dev` or build SQLite in with the same `rusqlite`:
 
 ```sh
-cargo add rusqlite@0.40 --features bundled
+cargo add rusqlite@0.41 --features bundled
 ```
 
 ## Modules

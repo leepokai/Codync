@@ -1,14 +1,20 @@
-//! Error tracking: panics and uncaught client errors as `PostHog` `$exception` events, sent with
-//! usage analytics (same switch, same identity). Never content: an error's message is dropped
-//! (a panic keeps only a literal written in the code, or a known runtime panic's fixed start),
-//! and a file path keeps only what lies inside the code base. What is collected:
+//! Error tracking: panics, failures the host got past that should never happen, and uncaught client errors as
+//! `PostHog` `$exception` events, sent with usage analytics (same switch, same identity). Never content: an
+//! error's message is dropped (a panic keeps only a literal written in the code, or a known runtime panic's fixed
+//! start), and a file path keeps only what lies inside the code base. What is collected:
 //! docs/features/analytics.md.
 
 use super::{Event, Msg, capture};
+use crate::LockExt as _;
 use crate::hub::Hub;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use std::sync::Arc;
+use std::collections::BTreeSet;
+use std::panic::Location;
+use std::sync::{Arc, Mutex};
+
+/// The mechanism of a failure the host got past ([`unexpected`]).
+const HANDLED: &str = "handled";
 
 /// Frames kept per exception, the ones nearest the error.
 const MAX_FRAMES: usize = 50;
@@ -71,6 +77,24 @@ impl Report {
         Self { process, kind: "Panic".into(), mechanism: "panic".into(), value, frames }
     }
 
+    /// A failure the host got past, where it was noticed. `what` names it in both the type's place and the
+    /// frame's, so each failure is an issue of its own whatever line a release moves it to.
+    fn handled(what: &'static str, at: &Location<'_>) -> Self {
+        let frame = Frame {
+            function: what.into(),
+            file: Some(at.file().into()),
+            line: Some(at.line()),
+            column: Some(at.column()),
+        };
+        Self {
+            process: Process::Host,
+            kind: "HostError".into(),
+            mechanism: HANDLED.into(),
+            value: what.into(),
+            frames: vec![frame],
+        }
+    }
+
     /// The `$exception` properties (`PostHog`'s generic `custom` frames), with paths cut down.
     fn properties(self) -> Map<String, Value> {
         let lang = match self.process {
@@ -98,7 +122,7 @@ impl Report {
         let exception = json!({
             "type": token(&self.kind, "Error"),
             "value": clip(&self.value, 300),
-            "mechanism": {"type": token(&self.mechanism, "generic"), "handled": false, "synthetic": false},
+            "mechanism": {"type": token(&self.mechanism, "generic"), "handled": self.mechanism == HANDLED, "synthetic": false},
             "stacktrace": {"type": "raw", "frames": frames},
         });
         let level = if self.kind == "Panic" { "fatal" } else { "error" };
@@ -132,7 +156,37 @@ pub fn report_panics(hub: &Arc<Hub>) {
     }));
 }
 
-/// Captures what `report_panics` queued.
+/// Reports a failure the host got past but that should never happen (a box that won't save, a thread that is gone):
+/// `what` failed, a literal written in the code, and where it was noticed; never the error's text. Queued like a
+/// panic, so it is safe under any lock.
+// ponytail: once per place while the host runs, so a full disk isn't a flood; count them and send the count if how
+// often one computer hits a place ever matters.
+#[track_caller]
+pub fn unexpected(hub: &Hub, what: &'static str) {
+    let at = Location::caller();
+    if first_time(at) {
+        let _ = hub.analytics.tx.send(Msg::Report(Report::handled(what, at)));
+    }
+}
+
+/// Logs a failure the host got past and reports it ([`unexpected`]) under one name, so the log's line and the issue
+/// never drift apart: `host_error!(hub, "couldn't save a task's end", thread = %cfg.id)`, the fields as
+/// `tracing::error!` takes them. The place reported is the caller's.
+macro_rules! host_error {
+    ($hub:expr, $what:literal $(, $($fields:tt)+)?) => {{
+        tracing::error!($($($fields)+,)? $what);
+        $crate::analytics::errors::unexpected($hub, $what);
+    }};
+}
+pub(crate) use host_error;
+
+/// Whether nothing was reported from `at` since the host started.
+fn first_time(at: &'static Location<'static>) -> bool {
+    static SEEN: Mutex<BTreeSet<(&'static str, u32)>> = Mutex::new(BTreeSet::new());
+    SEEN.locked().insert((at.file(), at.line()))
+}
+
+/// Captures what `report_panics` and [`unexpected`] queued.
 pub(super) fn capture_report(hub: &Hub, report: Report) {
     capture(hub, Event::Exception, report.properties());
 }
@@ -225,6 +279,33 @@ mod tests {
     }
 
     #[test]
+    fn a_handled_failure_is_told_by_its_place_once() {
+        let at = Location::caller();
+        let p = Report::handled("couldn't save a task's end", at).properties();
+        let e = &p["$exception_list"][0];
+        assert_eq!((e["type"].as_str(), e["value"].as_str()), (Some("HostError"), Some("couldn't save a task's end")));
+        assert_eq!(e["mechanism"], json!({"type": "handled", "handled": true, "synthetic": false}));
+        let frame = &e["stacktrace"]["frames"][0];
+        assert_eq!((frame["filename"].as_str(), frame["lineno"].as_u64()), (Some(file!()), Some(u64::from(at.line()))));
+        assert_eq!((p["process"].as_str(), p["$exception_level"].as_str()), (Some("host"), Some("error")));
+        assert!(first_time(at) && !first_time(at), "a place reports once while the host runs");
+    }
+
+    #[test]
+    fn a_logged_failure_is_reported_from_where_it_was_logged() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let line = line!() + 1;
+        host_error!(&hub, "couldn't hand work to a thread", thread = "t1");
+        let mut rx = hub.analytics.rx.locked().take().expect("nothing read it yet");
+        let Ok(Msg::Report(report)) = rx.try_recv() else { panic!("nothing was reported") };
+        let at = &report.frames[0];
+        assert_eq!(
+            (report.value.as_str(), at.file.as_deref(), at.line),
+            ("couldn't hand work to a thread", Some(file!()), Some(line))
+        );
+    }
+
+    #[test]
     fn only_the_host_reports_its_own_panics() {
         assert!(Report::deserialize(&json!({"process": "host", "type": "Panic", "mechanism": "panic"})).is_ok());
         assert!(Report::deserialize(&json!({"process": "phone", "type": "Panic", "mechanism": "panic"})).is_err());
@@ -232,7 +313,7 @@ mod tests {
 
     #[test]
     fn a_panic_keeps_its_site_and_no_runtime_data() {
-        let caught = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let caught = Arc::new(Mutex::new(Vec::new()));
         let sink = caught.clone();
         let previous = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {

@@ -95,9 +95,9 @@ Codync/
 | Agent process, ACP, queue and session lifecycle | `host/src/agent/bot/` (`launch.rs`, `queue.rs`, `session.rs`, `steer.rs`, `turn.rs`, `updates.rs`; `codex_names.rs` / `pi_tools.rs` how Codex and pi get Codync's MCP servers), `acp.rs` (+ `acp/codebuddy.rs`, CodeBuddy's ACP extensions), `process.rs` (process-tree ownership; `process_unix.rs` on macOS and Linux, `process_windows.rs` on Windows) |
 | Compaction timing and rollover | `host/src/agent/bot/compaction.rs`, the handoff card in `host/src/chat/handoff.rs`; the rules in `codync-mem`'s `compaction.rs` |
 | Group room turns / bot-to-bot requests | `host/src/chat/group.rs` (+ `group/rooms.rs`) / `team.rs` |
-| Background tasks and the event box (items, the dispatcher, steering, a task's transcript) | `host/src/chat/tasks/` (`mod.rs` a task's turn end, the report, host start; `items.rs` the box and its wire shape; `dispatch.rs`; `steer.rs`; `tools.rs`; `prompts.rs`; `sources.rs` routine runs and bot requests as items; `thread.rs` the user's messages to an item's thread; `sweep.rs` the hourly look; `worktree.rs` a task's git worktree, git itself through `host/src/git.rs`), the fork in `host/src/agent/bot/session.rs`; desktop `apps/desktop/src/shared/work.ts`, `tasks.ts`, `src/renderer/views/thread/WorkCapsule.tsx`, `WorkTimeline.tsx`, `WorkRows.tsx` (the Threads and Event box rows, shared with the Work sheet), `WorkDialogs.tsx`, the item's thread in the inspector `WorkThread.tsx` + `WorkThreadTranscript.tsx` (its page's slide in `use-thread-page.ts`; its message box's field is `ComposerField.tsx`, the chat composer's), the where line `WorkWhere.tsx`, the git state under a bot's folder `src/renderer/views/bots/GitStateLine.tsx`, and the sheet of all bots' work `src/renderer/views/AllWorkView.tsx`; iPhone `apps/ios/Kit/Sources/CodyncKit/Models/WorkItem.swift`, `WorkThread.swift` (a thread's rules: who takes messages, the where line, the git state), `CodyncUI/Bots/WorkTimeline.swift`, `CodyncUI/Bots/GitStateRow.swift`, `CodyncUI/Bots/AllWorkView.swift` (all bots' work), `CodyncUI/Thread/WorkCapsule.swift`, `WorkThreadView.swift` (the item's thread, pushed inside the details sheet), `CodyncUI/Store/BotStore+Thread.swift`; Android `core/` `Work.kt`, `Tasks.kt` and `app/` `WorkCapsule.kt`, `WorkTimeline.kt`, `WorkRows.kt`, `WorkWords.kt`, `AppStoreWork.kt`, `AppStoreTasks.kt`, `WorkThreadView.kt` (the item's thread, pushed inside the details sheet), `AllWorkView.kt` (all bots' work); terminal `host/src/tui/app/work.rs`, `manage/work.rs`, `manage/tasks.rs` (an item's thread: its keys and composer), `view/work.rs`, `view/task.rs` (the thread page), `sheets/details_view.rs`, and the Work page `manage/all_work.rs` + `sheets/all_work_view.rs` |
+| Work: tasks, threads and the event box (the dispatcher, steering, a thread's transcript) | `host/src/chat/work/` (`mod.rs` a thread's turn end, the report, host start; `tasks.rs` the box and its wire shape; `dispatch.rs`; `steer.rs`; `tools.rs`; `prompts.rs`; `sources.rs` routine runs and bot requests as tasks; `thread.rs` the user's messages to a task's thread; `sweep.rs` the hourly look; `worktree.rs` a thread's git worktree, git itself through `host/src/git.rs`), the fork in `host/src/agent/bot/session.rs`; desktop `apps/desktop/src/shared/work.ts`, `threads.ts`, `src/renderer/views/chat/WorkCapsule.tsx`, `WorkTimeline.tsx`, `WorkRows.tsx` (the Threads and Event box rows, shared with the Work sheet), `WorkDialogs.tsx`, the task's thread in the inspector `WorkThread.tsx` + `WorkThreadTranscript.tsx` (its page's slide in `use-thread-page.ts`; its message box's field is `ComposerField.tsx`, the chat composer's), the where line `WorkWhere.tsx`, the git state under a bot's folder `src/renderer/views/bots/GitStateLine.tsx`, and the sheet of all bots' work `src/renderer/views/AllWorkView.tsx`; iPhone `apps/ios/Kit/Sources/CodyncKit/Models/WorkTask.swift`, `WorkThread.swift` (a thread's rules: who takes messages, the where line, the git state), `CodyncUI/Bots/WorkTimeline.swift`, `CodyncUI/Bots/GitStateRow.swift`, `CodyncUI/Bots/AllWorkView.swift` (all bots' work), `CodyncUI/Chat/WorkCapsule.swift`, `WorkThreadView.swift` (the task's thread, pushed inside the details sheet), `CodyncUI/Store/BotStore+Thread.swift`; Android `core/` `Work.kt`, `WorkThreads.kt` and `app/` `WorkCapsule.kt`, `WorkTimeline.kt`, `WorkRows.kt`, `WorkWords.kt`, `AppStoreWork.kt`, `AppStoreThreads.kt`, `WorkThreadView.kt` (the task's thread, pushed inside the details sheet), `AllWorkView.kt` (all bots' work); terminal `host/src/tui/app/work.rs`, `manage/work.rs`, `manage/threads.rs` (a task's thread: its keys and composer), `view/work.rs`, `view/thread.rs` (the thread page), `sheets/details_view.rs`, and the Work page `manage/all_work.rs` + `sheets/all_work_view.rs` |
 | Voice calls (the call, the voice's instructions and tools, transcripts, call lines) | `host/src/chat/calls/` (`mod.rs`, `context.rs`, `project.rs` the git state, `tools.rs`, `announce.rs` what the voice hears while the call lasts, `speech.rs` text as a voice says it); the user's messages it relays go through `host/src/chat/messages.rs` like typed ones; clients' `CallLink` (iPhone `CodyncUI/Call/CallLink.swift`, desktop `views/call/call-link.ts`, Android `core/Calls.kt` + `HostCallLink.kt`) and call rows (`CallRows`); the call on the iPhone's Lock Screen (`CodyncUI/Call/CallActivity.swift`, the Live Activity) and Android's call notification (`VoiceService.kt`) |
-| Dev servers (programs a bot keeps running) | `host/src/dev_servers/` (`run.rs` starting and stopping, `scan.rs` restoring and reading ports, `ports.rs`, `tools.rs` the bot's tools, `logs.rs`, `detected.rs` what a bot left running through its shell, `platform.rs`); desktop `views/thread/DevServersSection.tsx` (+ `src/shared/dev-servers.ts`); iPhone `CodyncUI/Bots/DevServersSection.swift`; Android `DevServersSection.kt`; terminal `host/src/tui/manage/dev_servers.rs` and `view/dev_servers.rs` |
+| Dev servers (programs a bot keeps running) | `host/src/dev_servers/` (`run.rs` starting and stopping, `scan.rs` restoring and reading ports, `ports.rs`, `tools.rs` the bot's tools, `logs.rs`, `detected.rs` what a bot left running through its shell, `platform.rs`); desktop `views/chat/DevServersSection.tsx` (+ `src/shared/dev-servers.ts`); iPhone `CodyncUI/Bots/DevServersSection.swift`; Android `DevServersSection.kt`; terminal `host/src/tui/manage/dev_servers.rs` and `view/dev_servers.rs` |
 | Team management (bots creating and changing bots) | `host/src/chat/manage.rs`, its approval card (`Cmd::Approve`) in `agent/bot/updates.rs` |
 | codync-network (your computers' network) | `host/crates/network` (the crate: roster, letters, reach, budgets, `rules.rs`; `node/endpoint.rs` for where a computer is), `host/src/network/` (one node per network in `mod.rs`, the saved networks in `saved.rs`, its bots' address names in `handles.rs`, the `network*` methods, `networkView` and the `network` event in `api.rs`), `host/src/network_cli.rs`; across-computer bot requests in `host/src/chat/team/remote.rs`; desktop `apps/desktop/src/renderer/views/settings/NetworkSection.tsx`, `NetworkCard.tsx`, `NetworkSheets.tsx`, `RuleSheet.tsx` and the bot editor's `views/bots/NetworkSwitches.tsx` (+ `store/network.ts`, `lib/network-copy.ts`, `src/shared/network.ts`); iPhone `apps/ios/Kit/Sources/CodyncUI/NetworkSheet.swift` (+ `CodyncKit/Models/Network.swift`); Android `NetworkSheet.kt`, `AppStoreNetwork.kt` (+ `core/Network.kt`); terminal `host/src/tui/manage/network.rs`, `network_setup.rs`, `network_rules.rs` and `view/network.rs`, `view/network_rules.rs` |
 | Prompt snapshots and memory | `host/src/chat/context.rs`, `memory/` (`api.rs` the apps' read-only view, `tools.rs` and `file_tools.rs` the MCP tools, `files.rs` the folders and scan, `turns.rs` which bot's turn a found change is credited to, `file_api.rs`, `dream.rs`, `import.rs`); the rules in `host/crates/memory` (`codync-mem`: files and facts in `files/`, dreaming in `dream/`, tombstones in `store.rs`, the old entries in `legacy.rs`); harnesses' own memory turned off in `host/src/agent/own_memory.rs` |
@@ -113,12 +113,12 @@ Codync/
 | Screen bridge and built-in MCP tools | `host/src/screen/`, `mcp.rs` |
 | Swift transport and cloud API | `apps/ios/Kit/Sources/CodyncKit/Client/` |
 | Account aggregation / one host mirror | `apps/ios/Kit/Sources/CodyncUI/Store/AccountStore.swift` / `BotStore.swift` (+ `BotStore+Connection`, `+Sync`, `+Sending`, `+Actions`, `+Plugins`, `+Cache`, `+Shortcuts`) |
-| iPhone chat, replies, composer and trace | `apps/ios/Kit/Sources/CodyncUI/Thread/` |
+| iPhone chat, replies, composer and trace | `apps/ios/Kit/Sources/CodyncUI/Chat/` |
 | Reusable iPhone UI chrome | `apps/ios/Kit/Sources/CodyncUI/Chrome.swift`, `Controls.swift`, `MenuItem.swift` (system menus: `MenuItem`, `.contextActions`, `DropdownMenu`), `Platform.swift` |
 | iOS navigation, pairing, account, settings, computer management | `apps/ios/Views/RootView.swift`, `BotListView.swift`, `ChooseComputerView.swift`, `PairingView.swift`, `AccountSwitcherView.swift`, `SettingsView.swift`, `ComputersView.swift`, `ComputerConnectionRows.swift` |
 | Apple account sessions / public environment config | `apps/ios/App/AccountSession.swift`, `apps/shared/Config/` |
 | Desktop local host / SSH lifecycle | `apps/desktop/src/main/host-controller.ts`, `ssh.ts` |
-| Desktop store, chat and controls | `apps/desktop/src/renderer/store/bot-store.ts` (actions; state in `bot-mirror.ts`, events stream in `bot-sync.ts`), `views/thread/`, `components/` |
+| Desktop store, chat and controls | `apps/desktop/src/renderer/store/bot-store.ts` (actions; state in `bot-mirror.ts`, events stream in `bot-sync.ts`), `views/chat/`, `components/` |
 | Cloud routes / authentication / relay | `cloud/src/index.ts`, `api.ts`, `routes/`, `auth.ts`, `relay.ts` |
 | Cloud assistants (the MCP connector at mcp.codync.dev) | `cloud/src/routes/assistant.ts` (MCP, OAuth metadata, routing to computers), `host-calls.ts` (the relay DO's calls to its host); `host/src/chat/team/assistant.rs` (the setting, the tools, the replies); the switch in desktop `apps/desktop/src/renderer/views/settings/ComputersView.tsx` (+ `store/cloud.ts`) and terminal `host/src/tui/manage/network.rs`; shown read-only in the iPhone and Android network sheets |
 | Push encryption / APNs delivery / decryption | `host/src/remote/push.rs`, `relay/src/`, `apps/ios/NotificationService/` |
@@ -139,19 +139,48 @@ Codync/
 
 ## Names
 
-| Term | Meaning |
-|---|---|
-| bot | What the user builds and talks to: one agent combined with a profile (name, avatar, instructions), working folder, memory, skills, routines and connectors. Never call a bot an agent. A group is also a roster entry with `kind: group` |
-| agent / backend | A coding harness Codync composes into bots (Claude Code, Codex, …) and its ACP adapter |
-| `agent@computer` | A codync-network address: whoever can take a letter there, whether a bot, a bare agent session (Claude Code, Codex) or a person at a terminal |
-| chat | Main, persistent conversation with a bot or group |
-| reply | A user message answering an earlier message of its chat, with that message's quote |
-| group | Chat with several bots and the user; no agent process of its own |
-| lane | Destination of a turn: a bot's own chat or a group's |
-| session | Harness-owned ACP model context; distinct from stored chat history |
-| trace | Full conversation, including intermediate/tool events |
-| computer / host | User-facing paired environment / the daemon that serves it |
-| cloud / relay | Account + E2E service / context-dependent transport or APNs Worker; always name the directory when ambiguous |
+One thing has one word: on screen, in the user manual, in what a bot is told, in code and on the wire. The
+"Never" column lists the words that word replaces; a new name for something here is a change to this table first.
+
+| Term | Meaning | Never |
+|---|---|---|
+| bot | What the user builds and talks to: one agent combined with a profile (name, avatar, instructions), working folder, memory, skills, routines and connectors. A group is also a roster entry with `kind: group` | agent, assistant |
+| lead bot | The bot the user reaches first: calls, Siri and shortcuts without a bot go to it, and it manages the others | lead agent |
+| agent | A coding tool Codync composes into bots (Claude Code, Codex, …) and its ACP adapter. Code that picks and starts one says `backend` | harness |
+| `agent@computer` | A codync-network address: whoever can take a letter there, whether a bot, a bare agent session (Claude Code, Codex) or a person at a terminal | |
+| chat | Main, persistent conversation with a bot or group | conversation, main chat, coordinator; `Thread*` in code |
+| turn | One message to a chat or a thread, up to the end of the bot's answer to it | task |
+| work | Everything a bot does away from its chat: its tasks and the threads that do them. Uncountable; the Work page and the capsule above the composer show it | background (as a noun), "a work" |
+| task | One piece of work, handled on its own: `title`, `brief`, where it came from, a status (`waiting`, `working`, `needsYou`, `done`, `failed`, `stopped`) and, once done, its report. It exists from the moment it is put in the event box | item, job; task for a turn of the chat |
+| thread | A session of the bot started to do tasks, away from the chat: its own agent process and transcript. It does one task at a time and may go on to the next; the user can write to it. A task that waits has no thread yet | task (the old code name), agent, session (on screen) |
+| event box | Where a bot's tasks wait until a thread takes them | box alone on screen, queue |
+| threads at once | How many threads one bot runs at the same time (`maxThreads`) | place, slot, agents at once |
+| brief | What a task's thread is told to do; written by the bot, a routine or another bot | prompt |
+| report | What a thread hands back when its task ends; the bot turns it into a message in the chat | result (the field inside a report keeps the name) |
+| reply | A user message answering an earlier message of its chat, with that message's quote | |
+| group | Chat with several bots and the user; no agent process of its own | group chat as a different thing, team |
+| section | A named part of the bot list | folder |
+| lane | Destination of a turn: a bot's own chat or a group's | |
+| session | Agent-owned ACP model context; distinct from stored chat history | conversation |
+| steps | What a bot thinks and which tools it calls inside one turn | thinking details |
+| trace | Full chat, steps included (on screen: Full conversation) | transcript for the same thing |
+| details | The panel beside a chat: details, library, memory, settings | |
+| library | A chat's artifacts and shared files | |
+| working folder | The folder a bot works in. A **project** is one the user picked; an **own folder** is the one Codync gives a bot without a project | workspace |
+| worktree | A git worktree a thread gets when another thread already works in the same repository | |
+| approval | A bot asks before it acts; shown as an approval card | permission (for one request) |
+| permission | A standing grant: a system one (screen recording) or a bot's permission setting | approval (for a setting) |
+| needs you | The state of a bot or task that waits on the user: an approval, a choice or a sign-in | needs input |
+| computer / host | User-facing paired environment / the daemon that serves it (on screen only where it is installed or repaired) | machine |
+| device | A phone or computer that connects to a computer | |
+| cloud / relay | Account + E2E service / context-dependent transport or APNs Worker; always name the directory when ambiguous | |
+| cloud computer | A computer started through Codync Cloud | |
+| call | Talking to a bot by voice | |
+| remote screen / computer use | A person looks at and controls a computer / a bot uses its apps. Computer access is the settings page for both | |
+| connector | An MCP server added to Codync; skills and connectors come from Extensions | MCP server (outside the paste-a-config screen), plugin |
+| routine / run | Work a bot does on a schedule or a webhook / one time it does it. A run is a task in the event box | scheduled task |
+| follow-up | A later turn a bot sets for itself, once | reminder |
+| login profile / account | One sign-in or API key of an agent / the user's Codync account | |
 
 Use lowercase repository folders; PascalCase folders inside Swift targets. Swift files follow their main type (`UpperCamelCase.swift`), Rust uses `snake_case.rs` (a folder module is `name/mod.rs`), TypeScript uses `kebab-case.ts`, and React components use `PascalCase.tsx`. Prefer one main type per file; small related view siblings can share a plural file such as `ChatRows.swift`.
 

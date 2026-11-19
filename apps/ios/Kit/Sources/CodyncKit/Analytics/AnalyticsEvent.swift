@@ -84,7 +84,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum AccessFailure: String, Sendable { case denied, expired, cancelled }
     public enum PromptSource: String, Sendable { case settings, widgets }
     public enum IconBadgeFailure: String, Sendable { case notAllowed = "not_allowed", other }
-    public enum Setting: String, Sendable { case push, liveActivities = "live_activities" }
+    public enum Setting: String, Sendable { case push, liveActivities = "live_activities", iconBadge = "icon_badge" }
     public enum Link: String, Sendable {
         case github, issues, appStore = "app_store", demo, tailscale, privacy, installCommand = "install_command", installLink = "install_link",
              whatsNewFilm = "whats_new_film", docs
@@ -126,7 +126,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum Screen: String, Sendable {
         case bots, state, chat, trace, botDetails = "bot_details", botComputer = "bot_computer", memory, routines, marketplace
         case settings, computers, usage, account, pairing, voiceSettings = "voice_settings", remoteScreen = "remote_screen"
-        case library, artifact, network, task, allWork = "all_work"
+        case library, artifact, network, thread, allWork = "all_work"
     }
 
     public enum NotificationKind: String, Sendable {
@@ -222,7 +222,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
                 // let in: another account's, one it can't confirm, or one its user declined.
                 case let .http(403, message): message.hasPrefix("This pairing code expired") ? .expired : .unauthorized
                 case .unauthorized, .http(401, _): .unauthorized
-                case .unreachable, .computerOffline: .unreachable
+                case .unreachable, .computerOffline, .computerWaking: .unreachable
                 case .http: .other
                 }
             case let url as URLError where url.code == .timedOut: self = .timeout

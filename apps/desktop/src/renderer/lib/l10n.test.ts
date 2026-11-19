@@ -53,13 +53,18 @@ test('known chrome becomes Chinese and everything else stays', () => {
     translate('Tip: double-tap the right ⌘ to talk from any app, then tap it once to send.', 'zh', false),
     '提示：连按两次右侧 ⌘，就能在任何应用里说话，再按一次就发送。',
   )
+  assert.equal(
+    translate('Tip: double-tap the left ⌘ to talk from any app, then tap it once to stop.', 'zh', false),
+    '提示：连按两次左侧 ⌘，就能在任何应用里说话，再按一次就停止。',
+  )
   assert.equal(translate('Theme', 'zh', false), '主题')
   assert.equal(translate('Only changes appearance on this device.', 'zh', false), '只改变这台设备的外观。')
   assert.equal(translate('Continue on this Mac', 'zh', false), '在这台 Mac 上继续')
   assert.equal(translate('Your coding agents,\nas teammates.', 'zh', false), '你的编程助手，\n像队友一样。')
   assert.equal(translate('Open {name}', 'zh', false).replaceAll('{name}', 'Codync Dev'), '打开 Codync Dev')
   assert.equal(translate('Quit {name}', 'zh', false).replaceAll('{name}', 'Codync Dev'), '退出 Codync Dev')
-  assert.equal(translate('Pair iPhone…', 'zh', false), '配对 iPhone…')
+  assert.equal(translate('Pair phone…', 'zh', false), '配对手机…')
+  assert.equal(translate('None yet. Pair a phone, or approve one from your account.', 'zh', false), '还没有。配对一台手机，或从账户里批准一台。')
   assert.equal(translate('Remote screen', 'zh', false), '远程屏幕')
   assert.equal(translate('Text Size', 'zh', false), '文字大小')
   assert.equal(translate('Restart host', 'zh', false), '重启 Host')

@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { fixtureCommand } from './fixture-command.ts'
 import { api, attach, sandbox, typeMessage } from './sandbox.ts'
 
 // An agent without session/close, like Cursor, whose every session holds a worker as an MCP server would
@@ -14,7 +15,7 @@ test('routine runs on an agent that cant close sessions restart it, and the chat
   let botId: string | undefined
   try {
     const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-      name, backend: 'custom', command: `python3 -X utf8 -u '${agent}' --no-close`, connectors: [], skills: [], notify: false,
+      name, backend: 'custom', command: `${fixtureCommand(agent)} --no-close`, connectors: [], skills: [], notify: false,
     })
     botId = bot.id
     await page.locator('.roster-row', { hasText: name }).click()

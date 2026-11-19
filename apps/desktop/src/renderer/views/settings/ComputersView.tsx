@@ -6,7 +6,7 @@ import { Icon } from '../../components/Icon'
 import { Dialog, ModalHeader, Sheet, useDismiss } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import { offlineCloudStatus, placementLine, type StatusLine } from '../../lib/cloud-computer'
+import { limitCloudName, offlineCloudStatus, placementLine, type StatusLine } from '../../lib/cloud-computer'
 import { useModel } from '../../lib/observable'
 import { useAccount } from '../../store/account'
 import { analytics } from '../../store/analytics'
@@ -23,6 +23,7 @@ import { useJoinRemoves, useLeaveRemoves } from '../use-join-removes'
 import { cloudStatusLine } from '../../lib/relay-copy'
 import { CodyncCloudSection } from './CodyncCloudSection'
 import { CodyncVersionRow } from './CodyncVersionRow'
+import { NameDialog, type Naming } from '../NameDialog'
 import { useTr } from '../../lib/use-language'
 import { errorText, liveClient, relativeDay, SectionHeader, statusText, thisMac } from './parts'
 import { RelayAddressRow, RelayTokenRow } from './RelayFields'
@@ -126,6 +127,7 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
   const [confirmUnclaim, setConfirmUnclaim] = useState(false)
   const [confirmAutoApproval, setConfirmAutoApproval] = useState(false)
   const [askAccount, setAskAccount] = useState(false)
+  const [naming, setNaming] = useState<Naming | null>(null)
   const cloud = store.cloud
   const owner = cloud?.owner ?? null
   const autoApproval = cloud?.approval === 'auto'
@@ -199,6 +201,11 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
                 {`${tr(overSSH ? 'Over SSH' : isMacLabel)} · ${tr(statusText(store))}`}
               </Text>
             </VStack>
+            {store.canRename ? (
+              <IconButton title="Computer name" icon="pencil" onClick={() => setNaming({
+                title: 'Computer name', name, message: 'Leave it empty to use the hostname.', save: (typed) => void store.setComputerName(typed),
+              })} />
+            ) : null}
             {overSSH ? (
               // This computer's voice settings are their own Settings page.
               <IconButton title="Voice chat" icon="waveform" selected={showVoice} disabled={!online} onClick={() => setShowVoice((s) => !s)} />
@@ -206,7 +213,7 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
             {store !== app.local && store.screen ? (
               <IconButton title="Screen" icon="display" disabled={!app.canOpenScreen(store)} onClick={() => app.openScreen(store.computer.id)} />
             ) : null}
-            <IconButton title="Pair iPhone" icon="qrcode" selected={showPairing} disabled={!online} onClick={() => setShowPairing((s) => !s)} />
+            <IconButton title="Pair phone" icon="qrcode" selected={showPairing} disabled={!online} onClick={() => setShowPairing((s) => !s)} />
           </div>,
           // Until the host gives its cloud status, there's no way to tell its relay or account.
           ...(cloud
@@ -286,13 +293,14 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
 
       {store === app.local ? <ResetSection store={store} /> : null}
 
+      <NameDialog naming={naming} placeholder="Name" limit={limitCloudName} clean={(typed) => typed.trim()} onClose={() => setNaming(null)} />
       <Sheet open={showVoice} onClose={() => setShowVoice(false)}>
         <StoreContext.Provider value={store}>
           <VoiceChatSettingsView />
         </StoreContext.Provider>
       </Sheet>
       <Sheet open={showPairing} onClose={() => setShowPairing(false)} width={340}>
-        <ModalHeader icon="qrcode" title={tr('Pair iPhone with {name}').replaceAll('{name}', name)} />
+        <ModalHeader icon="qrcode" title={tr('Pair phone with {name}').replaceAll('{name}', name)} />
         <PairingPanel store={store} />
       </Sheet>
       <Dialog
@@ -360,7 +368,7 @@ function accountComputerStatus(computer: CloudComputer, olderCopy: boolean): Sta
   return line(computer.lastSeenAt ? `Older copy · last seen ${relativeDay(new Date(computer.lastSeenAt))}` : 'Older copy')
 }
 
-/** "Pair iPhone" for a computer this app manages, through its store. */
+/** "Pair phone" for a computer this app manages, through its store. */
 function PairingPanel({ store }: { store: BotStore }) {
   useModel(store)
   const requestCode = useCallback(async () => {

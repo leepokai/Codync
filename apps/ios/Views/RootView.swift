@@ -106,8 +106,8 @@ struct RootView: View {
         }
     }
 
-    /// The system tab bar; every tab stays alive (scroll position, open thread) and the bar hides while a
-    /// thread is open.
+    /// The system tab bar; every tab stays alive (scroll position, open chat) and the bar hides while a
+    /// chat is open.
     private var tabs: some View {
         TabView(selection: Bindable(app).tab) {
             Tab(L10n.tr("Bots"), systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.bots) {
@@ -192,7 +192,7 @@ struct RootView: View {
         var id: String { "\(computerId)/\(request.id)" }
     }
 
-    /// Any computer's "open the screen" request (thread toolbar, computers list, `codync://screen`).
+    /// Any computer's "open the screen" request (chat toolbar, computers list, `codync://screen`).
     private var screenTarget: Binding<ScreenTarget?> {
         Binding(get: {
             accounts.computers.lazy.compactMap { c in
@@ -212,7 +212,7 @@ private struct ChatScreen: View {
 
     var body: some View {
         if let store = accounts.store(for: ref.computerId) {
-            ThreadView(botId: ref.botId)
+            ChatView(botId: ref.botId)
                 .environment(store)
         } else {
             VStack(spacing: 0) {

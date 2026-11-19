@@ -240,7 +240,7 @@ private enum class ComputerOS { Mac, Linux }
         verticalArrangement = Arrangement.spacedBy(24.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(tr("Scan the pairing code"), style = PAGE_TITLE, color = Palette.text)
-            Text(tr(if (os == ComputerOS.Mac) "On your Mac, click Codync in the menu bar, then Pair iPhone. The same code pairs this phone."
+            Text(tr(if (os == ComputerOS.Mac) "On your Mac, click Codync in the menu bar, then Pair phone. The same code pairs this phone."
                 else "On your computer, run this in a terminal:"), style = Type.body, color = Palette.secondary)
             if (os == ComputerOS.Linux) CommandBlock("codync-host pair")
         }

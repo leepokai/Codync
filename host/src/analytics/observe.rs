@@ -3,7 +3,7 @@
 
 use super::{Event, platform_of};
 use crate::api::devices::Caller;
-use crate::chat::tasks::Steer;
+use crate::chat::work::Steer;
 use crate::hub::Hub;
 use crate::store::BotConfig;
 use codync_mem::compaction::Threshold;
@@ -120,11 +120,17 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("removed".into(), b["to"].as_str().is_none_or(|t| t.trim().is_empty()).into());
             Event::SectionRenamed
         }
+        "setComputerName" => {
+            // Whether it went back to the hostname; never the name.
+            p.insert("removed".into(), b["name"].as_str().is_none_or(|n| n.trim().is_empty()).into());
+            p.insert("outcome".into(), "renamed".into());
+            Event::ComputerRenamed
+        }
         "deleteBot" => Event::BotDeleted,
-        // To an item's thread: what came of it is the answer's to say (`answered`). Never the text.
-        "send" if b["itemId"].is_string() => Event::WorkMessaged,
-        // Send now and Remove on a message that waits in an item's thread.
-        "steer" | "unqueue" if b["itemId"].is_string() => {
+        // To a task's thread: what came of it is the answer's to say (`answered`). Never the text.
+        "send" if b["taskId"].is_string() => Event::WorkMessaged,
+        // Send now and Remove on a message that waits in a task's thread.
+        "steer" | "unqueue" if b["taskId"].is_string() => {
             p.insert("how".into(), (if method == "steer" { "sendNow" } else { "remove" }).into());
             p.insert("by".into(), "user".into());
             Event::WorkSteered
@@ -153,6 +159,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         "deleteRoutine" => Event::RoutineDeleted,
         "runRoutine" => Event::RoutineRun,
         "retryRoutineRun" => Event::RoutineRetried,
+        "continueChain" => Event::ChainContinued,
         // ✕ on a waiting follow-up; the bot's own cancel and its Stop report from `routines::follow_up`.
         "cancelFollowUp" => {
             p.insert("by".into(), serde_json::json!(crate::routines::Cancelled::User));
@@ -196,6 +203,14 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             let rewrite = crate::chat::skills::rewritten_id(&b["arguments"]).is_some();
             p.insert("change".into(), (if rewrite { "update" } else { "new" }).into());
             Event::SkillWritten
+        }
+        // A manager's `create_bot` / `update_bot`: the settings it passes, by name, never their values.
+        "manageCall" if matches!(b["name"].as_str(), Some("create_bot" | "update_bot")) => {
+            let tool = if b["name"] == "create_bot" { "create" } else { "update" };
+            p.insert("tool".into(), tool.into());
+            let passed = crate::chat::manage::arguments().iter().filter(|k| b["arguments"].get(k.as_str()).is_some());
+            p.insert("fields".into(), passed.cloned().collect::<Vec<_>>().into());
+            Event::TeamManaged
         }
         // A bot's `publish_artifact`: a new artifact, or a new version of one (`artifact`); never its title.
         "chatCall" if b["name"] == "publish_artifact" => {
@@ -325,9 +340,11 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
                 p.insert(key.into(), answer[key].as_array().map_or(0, Vec::len).into());
             }
         }
-        // A room or a bot request gets no card (`card` says why).
+        // A room or a bot request gets no card (`card` says why); a quiet update refreshes the card it has.
         Event::ArtifactPublished => {
-            p.insert("card".into(), answer["card"].is_null().into());
+            let quiet = answer["quiet"] == true;
+            p.insert("card".into(), (answer["card"].is_null() && !quiet).into());
+            p.insert("quiet".into(), quiet.into());
         }
         Event::ConnectorUpdated => {
             p.insert("outcome".into(), if answer["verify"].is_null() { "saved" } else { "ready" }.into());
@@ -359,8 +376,8 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 }
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
-/// `action`) as `network_failed` with `stage` `action`, a connector edit, a login profile, a voice server and a
-/// message to an item's thread report their category and a credentials reset `other`, never the message; other
+/// `action`) as `network_failed` with `stage` `action`, a connector edit, a login profile, a voice server, a team
+/// change and a message to a task's thread report their category and a credentials reset or a computer rename `other`, never the message; other
 /// failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     match event {
@@ -368,7 +385,7 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
             p.insert("stage".into(), "action".into());
             Some((Event::NetworkFailed, p))
         }
-        Event::CredentialsReset => {
+        Event::CredentialsReset | Event::ComputerRenamed => {
             p.insert("outcome".into(), "failed".into());
             p.insert("error".into(), "other".into());
             Some((event, p))
@@ -389,10 +406,16 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
             p.insert("error".into(), category.into());
             Some((event, p))
         }
-        // `read_only`: a routine's run or another bot's request. `not_started`, `gone`: no task to write to.
+        // `read_only`: a routine's run or another bot's request. `not_started`, `gone`: no thread to write to.
         // `text_only`: files, a quote or a call.
         Event::WorkMessaged => {
-            let category = error.downcast_ref::<crate::chat::tasks::ThreadRefused>().map_or("other", |e| e.category);
+            let category = error.downcast_ref::<crate::chat::work::ThreadRefused>().map_or("other", |e| e.category);
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
+        }
+        Event::TeamManaged => {
+            let category = error.downcast_ref::<crate::chat::manage::Refused>().map_or("other", |e| e.category);
             p.insert("outcome".into(), "failed".into());
             p.insert("error".into(), category.into());
             Some((event, p))

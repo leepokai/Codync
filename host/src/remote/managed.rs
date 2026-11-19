@@ -17,7 +17,7 @@ use crate::hub::Hub;
 use crate::remote::cloud::{self, CloudError};
 use crate::store::Store;
 use crate::update;
-use anyhow::Result;
+use anyhow::{Result, bail};
 use reqwest::Method;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -33,6 +33,10 @@ const MANAGED: &str = "cloud_managed";
 /// Store key: the name its user gave it in the cloud (`set_name`).
 const NAME_KEY: &str = "cloud_name";
 const NAME: &str = "Codync Cloud";
+/// Store key: the name the user gave a computer of their own (`rename`); empty or unset, its hostname.
+const OWN_NAME_KEY: &str = "computer_name";
+/// The longest name the cloud takes, in UTF-16 units as it counts them.
+const NAME_LIMIT: usize = 64;
 /// No device, turn, run or setup terminal for this long.
 const IDLE: Duration = Duration::from_mins(10);
 /// Awake at least this long after starting, so a wake always gets its work done.
@@ -53,13 +57,35 @@ pub fn set_managed(store: &Store) -> Result<()> {
     store.kv_set(MANAGED, "1")
 }
 
-/// The name every app shows for this computer: a cloud computer's is the one its user gave it (its machine gets another
-/// hostname on each wake).
+/// The name every app shows for this computer: the one its user gave it, else its hostname (a cloud computer's machine
+/// gets another hostname on each wake, so it is Codync Cloud until named).
 pub fn computer_name(store: &Store) -> String {
+    let named = |key| store.kv_get(key).filter(|n| !n.trim().is_empty());
     if !is_managed(store) {
-        return crate::service::host_name();
+        return named(OWN_NAME_KEY).unwrap_or_else(crate::service::host_name);
     }
-    store.kv_get(NAME_KEY).filter(|n| !n.trim().is_empty()).unwrap_or_else(|| NAME.into())
+    named(NAME_KEY).unwrap_or_else(|| NAME.into())
+}
+
+/// `setComputerName`: the user's name for a computer of their own (a cloud computer is named in Codync Cloud); empty,
+/// its hostname again. Apps connected now hear it as a `name` event, the others in their next `hello`; the account's
+/// computer list once the cloud hears it again (`register`).
+pub fn rename(hub: &Arc<Hub>, name: &str) -> Result<()> {
+    if is_managed(&hub.store) {
+        bail!("A cloud computer is renamed in Codync Cloud.");
+    }
+    let name = name.trim();
+    let mut units = 0;
+    let end = name.char_indices().find(|&(_, c)| {
+        units += c.len_utf16();
+        units > NAME_LIMIT
+    });
+    let name = end.map_or(name, |(i, _)| name[..i].trim_end());
+    hub.store.kv_set(OWN_NAME_KEY, name)?;
+    let _ = hub.events.send(json!({"type": "name", "name": computer_name(&hub.store)}));
+    let hub = Arc::clone(hub);
+    tokio::spawn(async move { cloud::register_again(&hub).await });
+    Ok(())
 }
 
 /// The cloud's name for this cloud computer (its state's `name`): apps connected now hear it as a `name` event, the
@@ -379,6 +405,33 @@ mod tests {
         // Connected apps hear it once, when it changes.
         let heard: Vec<_> = std::iter::from_fn(|| events.try_recv().ok()).filter(|e| e["type"] == "name").collect();
         assert_eq!(heard, [json!({"type": "name", "name": "Lab"})]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Issue #431: two hosts on one machine (two Unix users) must be told apart, so the user names their own
+    /// computer too; an empty name falls back to the hostname.
+    #[tokio::test]
+    async fn the_user_names_a_computer_of_their_own() {
+        let (hub, dir) = temp_hub();
+        let mut events = hub.events.subscribe();
+        let caller = crate::api::devices::Caller::Local;
+        crate::api::dispatch(&hub, &caller, "setComputerName", json!({"name": " Work Mac "})).await.expect("rename");
+        assert_eq!(computer_name(&hub.store), "Work Mac");
+        crate::api::dispatch(&hub, &caller, "setComputerName", json!({"name": "  "})).await.expect("clear");
+        assert_eq!(computer_name(&hub.store), crate::service::host_name(), "an empty name is the hostname again");
+        let long = "é".repeat(NAME_LIMIT + 5);
+        crate::api::dispatch(&hub, &caller, "setComputerName", json!({"name": long})).await.expect("long");
+        assert_eq!(computer_name(&hub.store).encode_utf16().count(), NAME_LIMIT, "cut to what the cloud takes");
+        // Connected apps hear each name as it changes.
+        let heard: Vec<_> = std::iter::from_fn(|| events.try_recv().ok()).filter(|e| e["type"] == "name").collect();
+        assert_eq!(
+            heard[..2],
+            [json!({"type": "name", "name": "Work Mac"}), json!({"type": "name", "name": crate::service::host_name()})]
+        );
+        // A cloud computer is named in Codync Cloud, never here.
+        set_managed(&hub.store).expect("set");
+        assert!(crate::api::dispatch(&hub, &caller, "setComputerName", json!({"name": "Lab"})).await.is_err());
+        assert_eq!(computer_name(&hub.store), "Codync Cloud");
         let _ = std::fs::remove_dir_all(dir);
     }
 }

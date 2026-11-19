@@ -239,17 +239,17 @@ impl Actor {
         self.show_card(title, data, Answer::Codync(reply));
     }
 
-    /// An entry the user must see or act on, in the running turn: in its lane, or, from a task, where the user is,
-    /// its bot's chat, named by the item it works on.
+    /// An entry the user must see or act on, in the running turn: in its lane, or, from a thread, where the user is,
+    /// its bot's chat, named by the task it works on.
     pub(super) fn add_for_user(&self, kind: EntryKind, mut data: Value) -> Option<Entry> {
-        let Some(mark) = crate::chat::tasks::mark(&self.hub.store, &self.cfg) else {
+        let Some(mark) = crate::chat::work::mark(&self.hub.store, &self.cfg) else {
             return self.add(kind, self.turn.unwrap_or(0), data);
         };
         mark.apply(&mut data);
         self.hub.add_entry(&Lane::main(&mark.bot), kind, self.hub.store.max_turn(&mark.bot), &data)
     }
 
-    /// The chat `entry` is in, for an alert that opens it: the group, for a room turn; its bot's chat, for a task.
+    /// The chat `entry` is in, for an alert that opens it: the group, for a room turn; its bot's chat, for a thread.
     pub(super) fn chat_of(&self, entry: &Entry) -> BotConfig {
         self.hub.store.bot(&entry.bot_id).ok().flatten().map_or_else(|| self.cfg.clone(), |row| row.config)
     }
@@ -269,7 +269,7 @@ impl Actor {
         push::notify(
             &self.hub,
             &target,
-            (!self.cfg.is_task()).then_some(self.cfg.id.as_str()),
+            (!self.cfg.is_thread()).then_some(self.cfg.id.as_str()),
             &format!("{} needs you", self.cfg.name),
             title,
             AlertKind::NeedsInput,

@@ -7,14 +7,53 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.49.2
+## 2.51.0
 ### zh-Hant
-- 讀完聊天後，它的通知會自動消失，桌面圖示上的標記也會跟著消失。
-- Bot 在做事時旁邊的小圖示換成跟頭像同一種點陣：工作中、搜尋、等你回覆、連線和編輯檔案各有自己的動作，小尺寸也看得清楚。
+- Bot 離開聊天做的事現在有兩個清楚的名稱：一件工作叫 task，被啟動來做 task 的那段工作階段叫 thread。一個 thread 一次做一件 task，做完可以接下一件。
+- 聊天上方的「背景」那一行改名為「工作」，和「工作」頁同名。
+- thread 都在忙、要選一件讓位時，提示改成「所有 thread 都在忙」；停止一件工作時問的是「停止這個 task？」。
+- 配對說明改成「配對手機」，和電腦選單上的名稱一致：Mac 選單列原本的「配對 iPhone…」現在叫「配對手機…」。
 
 ### en-US
-- Reading a chat clears its notification, and the launcher badge with it.
-- The small icon beside a busy bot now uses the same dot grid as the avatars: working, searching, waiting for you, connecting and editing files each move their own way, and stay clear at small sizes.
+- A bot's work away from the chat has two names: a task is one piece of work, a thread the session that does tasks, one at a time.
+- The "In the background" line above the chat is now "Work".
+- Prompts say "Every thread is busy" and "Stop this task?".
+- Pairing instructions now say Pair phone, as the computer's menu does.
+
+## 2.50.0
+### zh-Hant
+- 建立 Codync Cloud 雲端電腦改成在同一個畫面一步一步來：先選供應商（看得到在哪裡執行、要多少錢），再照著步驟到供應商網站建立金鑰並貼上，最後取名、建立。
+- 可以替自己的電腦取名：在「管理電腦」長按電腦的卡片，選「重新命名…」；留空就改回主機名稱。
+- Bot 之間互相交接到上限（連續 8 次）而停下時，聊天裡會出現一則附「繼續」按鈕的提示：點一下就會替你傳「Continue」給 Bot，讓它重新開始。
+- 用量檢查失敗時，「用量」會保留上次讀到的數字，並標示為「已過時」。
+
+### en-US
+- Set up a Codync Cloud computer step by step in one sheet: pick a provider, make and paste its key, then name it.
+- Name your computers: in Manage computers, touch and hold a card, then Rename…
+- When bots stop after 8 handoffs in a row, a Continue button in the chat gets them going again.
+- When a usage check fails, Usage keeps the last numbers and marks them Out of date.
+
+## 2.49.3
+### zh-Hant
+- Bot 預設的工作區改名為「專屬資料夾」。
+- 電腦有安裝 Git 時，Codync 會在每一輪對話前後替 Bot 的專屬資料夾留一個版本：可以請 Bot 說明某一輪改了什麼，或把檔案還原。「設定」的「工作區」下方會顯示 Git repository。
+- 在專屬資料夾裡，Bot 的背景工作都在同一個資料夾進行，所以那裡不再顯示「每個 thread 一個 worktree」開關。
+- Bot 的背景工作現在一律叫 thread：「設定」裡改為「同時幾個 thread」和「每個 thread 一個 worktree」。
+- 需要更新時，更新卡片上的「立即更新」「更新 Codync」按鈕會跟著 App 語言顯示。
+- 讀完聊天後，它的通知會自動消失，桌面圖示上的標記也會跟著消失。
+- Bot 在做事時旁邊的小圖示換成跟頭像同一種點陣，每種狀態各有自己的動作。
+- 從睡眠中醒來的 Codync Cloud 雲端電腦會顯示「正在喚醒電腦…」，不再顯示離線。
+- 傳出第五則訊息後，Codync 可能會邀請你在 Google Play 評分；之後至少相隔 120 天。
+
+### en-US
+- A bot's default workspace is now Own folder.
+- With Git, Codync versions a bot's own folder each turn: ask what changed, or bring a file back.
+- Background work is now called a thread: Threads at once, Worktree per thread.
+- Update card buttons follow the app's language.
+- Reading a chat clears its notification and badge.
+- A busy bot's small icon uses the avatars' dot grid.
+- A waking Codync Cloud computer shows Waking the computer…
+- Codync may ask for a rating after your fifth message.
 
 ## 2.49.1
 ### zh-Hant

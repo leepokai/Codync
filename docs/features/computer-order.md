@@ -13,6 +13,17 @@ Alt+Up/Down on the heading; iOS exposes Move up/down accessibility actions.
 Filtering, folding and ordering are device-local preferences. The iPhone and each
 desktop installation keep their own order, even when signed in to the same account.
 
+## Display name
+
+The name every app shows for a computer is the host's (`computer_name` in `host/src/remote/managed.rs`), sent in
+`hello`, pairing, the account claim and `/v1/host/register`. It is the name the user gave it, else its hostname, so
+two hosts on one machine (two users) can be told apart. `setComputerName {name}` (Control scope) stores it, trimmed
+and cut to the cloud's 64 UTF-16 units; empty goes back to the hostname. Connected apps hear a `name` event, the
+others read it in their next `hello`, and the host registers again so the account's computer list has it. A cloud
+computer is named in Codync Cloud instead (the call refuses there). iPhone and Android: **Rename…** in the
+computer card's long-press menu in Computer management; desktop: the pencil on its card in Settings › Computers;
+terminal UI: **Computer name** in the command palette.
+
 ## Local persistence
 
 Desktop saves the order in localStorage, separately for each account and cloud

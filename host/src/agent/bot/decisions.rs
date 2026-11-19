@@ -52,8 +52,8 @@ impl Actor {
             Expiry::AskedAgain.capture(&self.hub);
         }
         self.close_seg();
-        // A task's card is answered by a press alone: what the user types in the chat is for the bot there.
-        let data = if self.cfg.is_task() { decision::pressed_only(data) } else { data };
+        // A thread's card is answered by a press alone: what the user types in the chat is for the bot there.
+        let data = if self.cfg.is_thread() { decision::pressed_only(data) } else { data };
         let Some(card) = self.add_for_user(EntryKind::Notice, data) else {
             let _ = reply.send(Err(anyhow!("couldn't save the card")));
             return;
@@ -63,7 +63,7 @@ impl Actor {
             r.status = BotStatus::NeedsInput;
             r.activity = format!("Asks: {question}");
         });
-        // Tapping it opens where the card is: its bot's chat, for a task.
+        // Tapping it opens where the card is: its bot's chat, for a thread.
         let chat = self.chat_of(&card);
         push::notify(&self.hub, &chat, None, &chat.name, &acp::truncate(question, 120), AlertKind::NeedsInput);
         analytics::capture(
@@ -76,11 +76,11 @@ impl Actor {
 
     pub(super) fn expire_abandoned_decisions(&mut self) {
         let now = Instant::now();
-        let task = self.cfg.is_task();
+        let thread = self.cfg.is_thread();
         let gone: Vec<_> = self
             .asked
             .iter()
-            .filter(|(_, a)| a.reply.is_closed() || (!task && now + RUN_OUT >= a.deadline))
+            .filter(|(_, a)| a.reply.is_closed() || (!thread && now + RUN_OUT >= a.deadline))
             .map(|(id, _)| id.clone())
             .collect();
         if gone.is_empty() {
@@ -91,8 +91,8 @@ impl Actor {
             // The call's own timeout drops it at its deadline; anything earlier is the agent cancelling.
             let timed_out = now >= asked.deadline;
             // A chat's card outlives its call, which is told so (here, or by its own timeout at the deadline); a
-            // task's ends with it (a press there has no next message to become).
-            if !task && (timed_out || !asked.reply.is_closed()) {
+            // thread's ends with it (a press there has no next message to become).
+            if !thread && (timed_out || !asked.reply.is_closed()) {
                 let _ = asked.reply.send(Ok(decision::left_open()));
                 self.open_card = Some(id);
                 continue;
@@ -129,8 +129,8 @@ impl Actor {
     pub(super) fn decided(&mut self, id: &str, wanted: &str, typed: Option<&Entry>) -> Result<Value> {
         self.expire_abandoned_decisions();
         let mut card = decision::pending_card(&self.hub.store, id)?;
-        // A task's card is in its bot's chat, numbered with that chat's turns.
-        let this_turn = self.cfg.is_task() || self.turn == Some(card.turn);
+        // A thread's card is in its bot's chat, numbered with that chat's turns.
+        let this_turn = self.cfg.is_thread() || self.turn == Some(card.turn);
         if !self.asked.contains_key(id) || self.stop_requested || !this_turn {
             decision::expire(&self.hub, id);
             return Err(anyhow!("that card expired: no live call is waiting"));

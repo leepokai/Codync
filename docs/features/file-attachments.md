@@ -5,7 +5,7 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
 - Composer: the **+** button left of the message box. iPhone: a menu with Photos (sent as JPEG) and
   Files (plus Paste when the clipboard has an image); desktop: an open panel. Files and images can
   also be dropped on the box or pasted: ⌘V / Ctrl+V on the desktop takes a copied image or file
-  (`apps/desktop/src/renderer/views/thread/Composer.tsx`); on the iPhone through Paste in the
+  (`apps/desktop/src/renderer/views/chat/Composer.tsx`); on the iPhone through Paste in the
   + menu.
   Other apps' share sheets send files to a bot too, on iPhone and Android ([share to a bot](share-to-bot.md)).
   HEIC/TIFF/BMP become JPEG (`OutgoingFile.prepared`, CodyncKit). Picked files show as chips above

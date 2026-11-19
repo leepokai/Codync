@@ -19,7 +19,7 @@ pub(super) struct Built {
     /// (line index, x offset, width, click)
     pub(super) buttons: Vec<(usize, u16, u16, Click)>,
     /// Each message's (entry id, first line, end line), for picking one to reply to; an answered card's too, which an
-    /// item's thread picks to show it here.
+    /// task's thread picks to show it here.
     pub(super) messages: Vec<(String, usize, usize)>,
     /// The lines (first, end) that hold what a message says, the text find in the conversation searches.
     pub(super) texts: Vec<(usize, usize)>,
@@ -203,7 +203,7 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 Span::styled(format!(" {name}"), name_style(color)),
                 Span::styled(format!(" {}", clock(e.created_at)), t.dim),
             ]));
-            // What a task shares through the chat (a file, a voice note, an artifact) says where it comes from.
+            // What a thread shares through the chat (a file, a voice note, an artifact) says where it comes from.
             if let Some(from) = background_line(e) {
                 out.lines
                     .push(Line::from(Span::styled(format!(" {}", truncate(&from, width.saturating_sub(2))), t.dim)));
@@ -252,7 +252,7 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 )));
             }
         }
-        // Pickable waiting too: Work's `↵` on an item that needs you picks its card, which brings it on screen.
+        // Pickable waiting too: Work's `↵` on a task that needs you picks its card, which brings it on screen.
         Kind::Permission => {
             gap(out);
             let from = out.lines.len();
@@ -314,6 +314,8 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 format!("{} · A adds a fallback", e.notice_text())
             } else if e.retries() {
                 format!("{} · F tries again", e.notice_text())
+            } else if e.continues() {
+                format!("{} · F continues", e.notice_text())
             } else {
                 e.notice_text()
             };
@@ -332,7 +334,7 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                     &[Span::raw("   ")],
                 )),
             }
-            // What a background task asks of the user here (a sign-in, a fallback) says where it comes from.
+            // What a background thread asks of the user here (a sign-in, a fallback) says where it comes from.
             if let Some(from) = background_line(e) {
                 out.lines
                     .push(Line::from(Span::styled(format!("   {}", truncate(&from, width.saturating_sub(4))), t.dim)));
@@ -349,7 +351,12 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                     ));
                 }
             }
-            if e.data["connectionRequest"].is_object() || e.unfolds() || e.retries() || e.adds_fallback() {
+            if e.data["connectionRequest"].is_object()
+                || e.unfolds()
+                || e.retries()
+                || e.continues()
+                || e.adds_fallback()
+            {
                 out.messages.push((e.id.clone(), from, out.lines.len()));
             }
         }

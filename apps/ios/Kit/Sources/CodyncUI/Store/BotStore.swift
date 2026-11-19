@@ -28,8 +28,9 @@ public final class BotStore {
         case unpaired
         case connecting
         case online
-        /// The relay says the computer isn't connected; messages can wait in its mailbox.
-        case computerOffline(lastSeen: Date?)
+        /// The relay says the computer isn't connected; messages can wait in its mailbox. `waking`: the relay is
+        /// starting it (a cloud computer asleep).
+        case computerOffline(lastSeen: Date?, waking: Bool = false)
         /// Can't reach the computer at all (no direct route, no relay), or it can't confirm this
         /// device's access for now.
         case offline(String)
@@ -72,8 +73,8 @@ public final class BotStore {
     public internal(set) var cloudHosting: CloudHosting?
     public internal(set) var bots: [String: Bot] = [:]
     public internal(set) var entries: [String: [Entry]] = [:]
-    /// Background tasks' transcripts as they come in, by task id: never part of a chat, and gone with the task.
-    public internal(set) var taskEntries: [String: [Entry]] = [:]
+    /// Threads' transcripts as they come in, by thread id: never part of a chat, and gone with the thread.
+    public internal(set) var threadEntries: [String: [Entry]] = [:]
     public internal(set) var usage: Usage
     /// The newest order still to send, and the task sending them (`setUsageOrder`).
     @ObservationIgnored var usageOrderWaiting: [String]?
@@ -101,11 +102,11 @@ public final class BotStore {
     /// A bot whose details its conversation should open (from the view of all bots' work), consumed by it.
     public internal(set) var detailsRequest: String?
 
-    /// An item whose card its bot's conversation should bring into view, consumed by it.
-    public internal(set) var cardRequest: (botId: String, item: WorkItem)?
+    /// A task whose card its bot's conversation should bring into view, consumed by it.
+    public internal(set) var cardRequest: (botId: String, task: WorkTask)?
 
-    /// An item whose thread its bot's conversation should open, in the bot's details; consumed by it.
-    public internal(set) var threadRequest: (botId: String, item: WorkItem)?
+    /// A task whose thread its bot's conversation should open, in the bot's details; consumed by it.
+    public internal(set) var threadRequest: (botId: String, task: WorkTask)?
 
     /// A Shortcuts request, consumed by the matching conversation.
     public internal(set) var voiceCallRequest: String?
@@ -248,10 +249,20 @@ public final class BotStore {
         if case .updateHost = mismatch { cloudHosting != nil } else { false }
     }
 
-    /// A Codync Cloud computer that's asleep: a connection or a message wakes it, so it isn't offline.
+    /// A Codync Cloud computer that's asleep, or on its way up: a connection or a message wakes it, so it isn't offline.
     public var isAsleep: Bool {
-        if case .computerOffline = connection { cloudHosting?.state.isAsleep == true } else { false }
+        if case .computerOffline = connection { isWaking || cloudHosting?.state.isAsleep == true } else { false }
     }
+
+    /// The relay is waking this cloud computer (about 10 to 30 seconds): it's coming, not offline. Only the relay says
+    /// so: the account list's `starting` stays after a wake whose host never came back.
+    public var isWaking: Bool {
+        if case .computerOffline(_, waking: true) = connection { true } else { false }
+    }
+
+    /// Can't be reached, and not because it's updating or asleep (or waking): messaging a sleeping cloud computer
+    /// wakes it (Android `AppState.unreachable`).
+    public var isUnreachable: Bool { isOffline && !isUpdating && !isAsleep }
 
         /// Roster order: the lead, pinned bots, then where the user dragged them, then most recent activity.
     public var roster: [Bot] {
@@ -296,6 +307,13 @@ public final class BotStore {
     }
 
     static let replyPartHost = "2.48.1"
+
+    /// From host 2.50.0 the user names their own computer (`setComputerName`); an older host has no such method.
+    public var supportsComputerName: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.computerNameHost) } ?? false
+    }
+
+    static let computerNameHost = "2.50.0"
 
     static let sectionsHost = "2.32.0"
 

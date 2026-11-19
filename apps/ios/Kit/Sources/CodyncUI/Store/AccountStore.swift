@@ -319,7 +319,7 @@ public final class AccountStore {
     /// When the account or, for a computer only paired here, the relay last saw it.
     private func lastSeen(_ store: BotStore) -> Int64? {
         if let seen = cloudComputers.first(where: { $0.computerId == store.computer.id })?.lastSeenAt { return seen }
-        guard case let .computerOffline(date?) = store.connection else { return nil }
+        guard case let .computerOffline(date?, _) = store.connection else { return nil }
         return Int64(date.timeIntervalSince1970 * 1000)
     }
 

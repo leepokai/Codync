@@ -5,6 +5,7 @@ import { undoOnFailure } from '../lib/undo-on-failure'
 import { BotMirror, type Connection } from './bot-mirror'
 import { Artifacts } from './artifacts'
 import type { CallCue } from '@shared/calls'
+import type { RelayAbsence } from '@shared/ipc'
 import { trNow } from '../lib/l10n.ts'
 
 const REFRESH_TIMEOUT = 20_000
@@ -15,10 +16,12 @@ const MISMATCH_RECHECK = 30_000
 /** The mismatch recheck while an update asked from here runs, so the notice leaves soon after. */
 const UPDATE_RECHECK = 5_000
 /** Raise when the app starts to need a field the rows it cached may lack. */
-const MIRROR_FORMAT = 1
+const MIRROR_FORMAT = 2
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const same = (a: Connection, b: Connection) => a.kind === b.kind && JSON.stringify(a) === JSON.stringify(b)
+/** A computer the relay says isn't connected. */
+const absent = (presence: RelayAbsence): Connection => ({ kind: 'computerOffline', lastSeen: null, waking: presence === 'waking' })
 
 /** Each chat's entries that `keep` accepts; chats left empty go. */
 function keptEntries(entries: Map<string, Entry[]>, keep: (e: Entry) => boolean) {
@@ -52,6 +55,7 @@ export class BotSync extends BotMirror {
   private heldDrop: Connection | null = null
   private dropTimer: ReturnType<typeof setTimeout> | null = null
   private closeEvents: (() => void) | null = null
+  private closePresence: (() => void) | null = null
   private eventsLoop = 0
   private paused = false
   private rewound = false
@@ -84,8 +88,10 @@ export class BotSync extends BotMirror {
     this.stopTransport()
     if (this.connection.kind !== 'online') this.setConnection({ kind: 'connecting' })
     const transport = this.makeTransport()
-    this.client = new HostClient(transport)
+    this.client = new HostClient(transport, this.hostVersion?.version)
     this.hostRoute = transport.route ?? null
+    // The relay says at once when the computer is away or on its way; a waiting call only says so when it gives up.
+    this.closePresence = transport.onPresence?.((p) => this.setConnection(p === 'online' ? { kind: 'connecting' } : absent(p))) ?? null
     this.runEvents(this.client)
   }
 
@@ -126,6 +132,8 @@ export class BotSync extends BotMirror {
     this.eventsLoop++
     this.closeEvents?.()
     this.closeEvents = null
+    this.closePresence?.()
+    this.closePresence = null
     if (this.dropTimer) clearTimeout(this.dropTimer)
     this.dropTimer = null
     this.heldDrop = null
@@ -221,7 +229,7 @@ export class BotSync extends BotMirror {
         if (!alive()) return
         const message = error instanceof Error ? error.message : String(error)
         this.finishRefresh?.(new Error(message))
-        this.setConnection(error instanceof HostError && error.offline ? { kind: 'computerOffline', lastSeen: null } : { kind: 'offline', message })
+        this.setConnection(error instanceof HostError && error.presence ? absent(error.presence) : { kind: 'offline', message })
         if (error instanceof HostError && error.status === 401) return
       }
       if (!alive()) return
@@ -304,8 +312,8 @@ export class BotSync extends BotMirror {
         this.bump(event.entry.rev)
         this.acknowledgeVisible(event.entry.botId, event.entry)
         break
-      case 'taskEntry':
-        this.mergeTask(event.task, [event.entry])
+      case 'threadEntry':
+        this.mergeThread(event.thread, [event.entry])
         this.bump(event.entry.rev)
         break
       case 'usage':
@@ -435,6 +443,8 @@ export class BotSync extends BotMirror {
           case 'unpaired':
             throw HostError.unreachable()
           case 'computerOffline':
+            // On its way: waited for, as a reconnect is.
+            if (this.isWaking) break
             // A cloud computer asleep wakes when this device connects: reconnect once and wait for it.
             if (this.cloudHosting && !retried) {
               retried = true
@@ -453,7 +463,7 @@ export class BotSync extends BotMirror {
         }
         await sleep(100)
       }
-      throw HostError.unreachable()
+      throw this.isWaking ? new HostError(0, trNow('Still waking the computer: try again in a moment.')) : HostError.unreachable()
     } finally {
       if (counted) {
         this.waiting--

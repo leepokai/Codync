@@ -27,9 +27,9 @@ import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
 
 /** Selection and expiry come from the host, including answers made on another device.
- *  The last row sends the user's own words as an ordinary message, which the host takes as the answer. A task's card
- *  says which item it comes from and has no row for own words: a typed message goes to the bot in the chat, and only
- *  a press answers the task. */
+ *  The last row sends the user's own words as an ordinary message, which the host takes as the answer. A thread's card
+ *  says which task it comes from and has no row for own words: a typed message goes to the bot in the chat, and only
+ *  a press answers the thread. */
 @Composable internal fun DecisionCard(entry: Entry, answering: Boolean, respond: (String) -> Unit, reply: (String) -> Unit) {
     val d = entry.data
     val pending = entry.decisionStatus == DecisionStatus.Pending
@@ -69,11 +69,11 @@ import com.kyant.shapes.RoundedRectangle
                     if (suggested == index) Text(tr("Suggested"), style = Type.caption, color = Palette.tertiary)
                 }
             }
-            if (!entry.fromTask) OwnAnswer(enabled = !answering, reply)
+            if (!entry.isFromThread) OwnAnswer(enabled = !answering, reply)
         } else Text(if (entry.decisionStatus == DecisionStatus.Answered) d.text("selected") ?: tr("Answered") else tr("No answer — the bot moved on"),
             Modifier.padding(horizontal = 8.dp).testTag("decision-outcome"), style = Type.caption.medium, color = Palette.secondary)
         // Last on the card, under the answers or the outcome, as on the iPhone.
-        TaskLine(entry, Modifier.padding(horizontal = 8.dp))
+        WorkThreadLine(entry, Modifier.padding(horizontal = 8.dp))
     }
 }
 

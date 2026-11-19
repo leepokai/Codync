@@ -68,6 +68,12 @@ class UsageTest {
         assertEquals(many, WireJson.decodeFromString<UsageProvider>(WireJson.encodeToString(many)))
     }
 
+    @Test fun `a login whose check failed is out of date unless it has nothing to show`() {
+        val provider = UsageReport.decode(WireJson.parseToJsonElement("""{"providers":[{"id":"claude","name":"Claude","windows":[{"id":"w","label":"Weekly","percent":10}],"updatedAt":1,
+            "failedAt":2,"loginProfiles":[{"id":"p1","name":"Work","windows":[],"updatedAt":0,"failedAt":2},{"id":"p2","name":"Side","windows":[{"id":"w","label":"Weekly","percent":5}],"updatedAt":1}]}]}""")).providers.single()
+        assertEquals(listOf(true, false, false), provider.logins.map { it.isOutOfDate })
+    }
+
     @Test fun `the login nearest a limit leads and a note never counts`() {
         val work = UsageLoginProfile("p1", "Work", listOf(UsageWindow("five_hour", "5-hour", 90.0), UsageWindow("seven_day", "Weekly", 40.0)))
         val provider = UsageProvider("claude", "Claude", listOf(UsageWindow("five_hour", "5-hour", 10.0)), loginProfiles = listOf(work))

@@ -1,10 +1,9 @@
-import { ANDROID_TEST, APP_STORE } from "../links";
+import { APP_STORE, GOOGLE_PLAY } from "../links";
 
 type Store = { href: string; icon: string; label: string; top: string; name: string };
 
 const APPLE: Store = { href: APP_STORE, icon: "/app-store-icon.svg", label: "Download on the App Store", top: "Download on the", name: "App Store" };
-// Android is in closed testing: the Google Play button opens the tester sign-up form.
-const GOOGLE: Store = { href: ANDROID_TEST, icon: "/google-play-icon.svg", label: "Join the Android test on Google Play", top: "Get it on", name: "Google Play" };
+const GOOGLE: Store = { href: GOOGLE_PLAY, icon: "/google-play-icon.svg", label: "Get it on Google Play", top: "Get it on", name: "Google Play" };
 
 // A store badge's "Download on the / App Store" lockup, sized like the other pill buttons.
 function StoreButton({ href, icon, label, top, name }: Store) {

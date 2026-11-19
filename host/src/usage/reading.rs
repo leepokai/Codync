@@ -48,6 +48,27 @@ impl Drop for Reading {
     }
 }
 
+/// Whether `agent` is being read now.
+pub(super) fn busy(agent: &str) -> bool {
+    READING.locked().contains(agent)
+}
+
+/// What a reader brings back.
+#[derive(Debug, PartialEq)]
+pub(super) enum Outcome {
+    Read(Vec<Window>),
+    /// Skipped on purpose (Copilot between its reads): what it last read stands.
+    Skipped,
+    /// It couldn't tell, or the agent was being read already ([`busy`]).
+    Failed,
+}
+
+impl From<Option<Vec<Window>>> for Outcome {
+    fn from(windows: Option<Vec<Window>>) -> Self {
+        windows.map_or(Self::Failed, Self::Read)
+    }
+}
+
 /// What `reading` finds, unless `agent` is being read already. `None`: no reading this time.
 pub(super) async fn guarded(
     hub: &Hub,

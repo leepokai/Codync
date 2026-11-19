@@ -3,7 +3,7 @@ import { CardForm, CardSection } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader } from '../../components/Overlay'
 import type { MemoryFile, MemoryFileDetail, MemoryFiles, MemoryStore } from '../../store/memory-store'
-import { relativeTime } from '../thread/chat-items'
+import { relativeTime } from '../chat/chat-items'
 import { useTr } from '../../lib/use-language'
 
 /** The note a sheet opens. */
@@ -43,7 +43,7 @@ export function MemoryFileSheet({ memory, target }: { memory: MemoryStore; targe
       {memory.error ? <CardSection><p role="alert" className="memory-error">{memory.error}</p></CardSection> : null}
       {detail
         ? <CardSection footer={detail.path}><pre className="memory-file-text">{detail.content ?? tr('Deleted.')}</pre></CardSection>
-        : <CardSection><p className="memory-muted">Loading…</p></CardSection>}
+        : <CardSection><p className="memory-muted">{tr('Loading…')}</p></CardSection>}
     </CardForm>
   </div>
 }

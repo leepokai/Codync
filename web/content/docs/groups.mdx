@@ -1,6 +1,6 @@
 A group chat puts several of your bots and you in one conversation. Each member answers in turn, reads what the others said, and does its work with its own agent, folder, tools and approval setting. Use a group when you want bots to discuss a problem, review each other's work, or split work while you watch.
 
-A group has no agent, folder or session of its own. It's a room for bots you already have.
+A group has no agent or session of its own; it's a room for bots you already have. It can share one folder with the whole team: see [A shared folder for the team](#a-shared-folder-for-the-team).
 
 ## Create a group
 
@@ -25,6 +25,16 @@ Open the group's settings to change it:
 In the editor you can rename the group, add or remove members, and fill in **What this group works on**. Every member reads that line, so use it to say what the room is for.
 
 **Delete group chat** removes the group and its conversation. Its bots stay. If you delete a bot, it leaves every group it was in.
+
+## A shared folder for the team
+
+In the group's settings, **Workspace** picks the project folder the team shares; with **Each keeps its own folder** (the default) members work exactly as before. This needs Codync 2.51.0 or newer on the computer.
+
+A shared folder is access, not relocation: a member keeps its own chat, session and folder — on its turns in the group it's told the team's folder and the rules for working there, and asked to keep joint output in it.
+
+- **Nothing moves.** Picking a workspace never copies, moves or deletes anything.
+- **The folder must exist.** If it's later renamed or removed, the room goes on anyway: members are told the folder is missing and keep working in their own until you fix it. If the **Workspace** row doesn't appear, the computer is older than 2.51.0.
+- **Conflicts are still yours to watch.** Members working the same folder can touch the same files, so Codync asks them to look before they write, change small things at a time, and say in the room before rewriting a file a teammate is working on.
 
 ## Who answers
 

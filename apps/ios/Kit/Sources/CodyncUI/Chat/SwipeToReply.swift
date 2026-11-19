@@ -75,12 +75,13 @@ private struct SwipeToReply: ViewModifier {
             .sensoryFeedback(.impact(weight: .light), trigger: travel >= ReplySwipe.threshold) { !$0 && $1 }
     }
 
-    private func release(replying: Bool) {
-        if replying, travel >= ReplySwipe.threshold {
+    private func release(distance: CGFloat, replying: Bool) {
+        if replying, distance >= ReplySwipe.threshold {
             Analytics.shared.capture(.replySwiped)
             reply()
         }
-        travel = ReplySwipe.shown(travel, gap: columnWidth - contentWidth + margin)
+        // The drag's final reach decides where the spring back starts, which can be past where the bubble showed.
+        travel = ReplySwipe.shown(distance, gap: columnWidth - contentWidth + margin)
         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { travel = 0 }
     }
 }
@@ -90,8 +91,8 @@ private struct SwipeToReply: ViewModifier {
 private struct SidewaysPan: UIGestureRecognizerRepresentable {
     let direction: ReplySwipe.Direction
     let moved: (CGFloat) -> Void
-    /// `replying`: the finger lifted (not a cancelled drag).
-    let released: (_ replying: Bool) -> Void
+    /// `distance`: the drag's final reach; `replying`: the finger lifted (not a cancelled drag).
+    let released: (_ distance: CGFloat, _ replying: Bool) -> Void
 
     func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
         let pan = UIPanGestureRecognizer()
@@ -108,10 +109,13 @@ private struct SidewaysPan: UIGestureRecognizerRepresentable {
     }
 
     func handleUIGestureRecognizerAction(_ pan: UIPanGestureRecognizer, context: Context) {
+        let distance = ReplySwipe.travel(pan.translation(in: pan.view).x, direction)
         switch pan.state {
-        case .changed: moved(ReplySwipe.travel(pan.translation(in: pan.view).x, direction))
-        case .ended: released(true)
-        case .cancelled, .failed: released(false)
+        case .began, .changed: moved(distance)
+        // The final reach matters as much as the last move: a quick swipe can cross the threshold in the move that
+        // begins the pan and lift without another.
+        case .ended: released(distance, true)
+        case .cancelled, .failed: released(distance, false)
         default: break
         }
     }

@@ -85,6 +85,19 @@ mod tests {
     }
 
     #[test]
+    fn a_new_model_keeps_only_the_options_sent_with_it() {
+        let stored: BotConfig = serde_json::from_value(
+            json!({"id": "a", "name": "a", "backend": "claude", "model": "opus", "modelOptions": {"effort": "low"}}),
+        )
+        .expect("a bot config");
+        let effort = |patch| patched(&stored, &patch).expect("a valid patch").model_options.get("effort").cloned();
+        assert_eq!(effort(json!({"model": "sonnet"})), None, "left out: the new model's defaults");
+        let sent = json!({"model": "sonnet", "modelOptions": {"effort": "medium"}});
+        assert_eq!(effort(sent).as_deref(), Some("medium"));
+        assert_eq!(effort(json!({"name": "b"})).as_deref(), Some("low"), "same model: kept");
+    }
+
+    #[test]
     fn another_agent_works_in_its_auto_mode_unless_the_patch_picks_one() {
         let stored: BotConfig =
             serde_json::from_value(json!({"id": "a", "name": "a", "backend": "claude", "cwd": "/tmp", "mode": "plan"}))

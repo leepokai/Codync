@@ -204,6 +204,14 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("change".into(), (if rewrite { "update" } else { "new" }).into());
             Event::SkillWritten
         }
+        // A manager's `create_bot` / `update_bot`: the settings it passes, by name, never their values.
+        "manageCall" if matches!(b["name"].as_str(), Some("create_bot" | "update_bot")) => {
+            let tool = if b["name"] == "create_bot" { "create" } else { "update" };
+            p.insert("tool".into(), tool.into());
+            let passed = crate::chat::manage::arguments().iter().filter(|k| b["arguments"].get(k.as_str()).is_some());
+            p.insert("fields".into(), passed.cloned().collect::<Vec<_>>().into());
+            Event::TeamManaged
+        }
         // A bot's `publish_artifact`: a new artifact, or a new version of one (`artifact`); never its title.
         "chatCall" if b["name"] == "publish_artifact" => {
             let update = b["arguments"]["artifact"].as_str().is_some_and(|id| !id.is_empty());
@@ -368,8 +376,8 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 }
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
-/// `action`) as `network_failed` with `stage` `action`, a connector edit, a login profile, a voice server and a
-/// message to an item's thread report their category and a credentials reset or a computer rename `other`, never the message; other
+/// `action`) as `network_failed` with `stage` `action`, a connector edit, a login profile, a voice server, a team
+/// change and a message to an item's thread report their category and a credentials reset or a computer rename `other`, never the message; other
 /// failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     match event {
@@ -402,6 +410,12 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
         // `text_only`: files, a quote or a call.
         Event::WorkMessaged => {
             let category = error.downcast_ref::<crate::chat::tasks::ThreadRefused>().map_or("other", |e| e.category);
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
+        }
+        Event::TeamManaged => {
+            let category = error.downcast_ref::<crate::chat::manage::Refused>().map_or("other", |e| e.category);
             p.insert("outcome".into(), "failed".into());
             p.insert("error".into(), category.into());
             Some((event, p))

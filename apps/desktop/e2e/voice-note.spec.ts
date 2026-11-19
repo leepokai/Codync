@@ -46,6 +46,9 @@ test('a failed voice note offers retry in the selected language', async () => {
     await player.click({ button: 'right' })
     await expect(page.getByRole('menuitem')).toHaveText(['Play', 'Download', 'Reply', 'Show what it did'])
     await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'More message actions' }).click()
+    await expect(page.getByRole('menuitem')).toHaveText(['Copy', 'Download', 'Show what it did'])
+    await page.keyboard.press('Escape')
   } finally {
     await setPref(page, 'appLanguage', 'en')
     if (botId) await api(page, 'deleteBot', { botId })
@@ -123,6 +126,43 @@ test('a click on the voice note plays or pauses it; only its bar seeks', async (
     await bar.click({ position: { x: box.width * 0.75, y: box.height / 2 } })
     await expect.poll(async () => Number(await bar.inputValue())).toBeGreaterThan(2)
     await expect(play).toBeVisible()
+  } finally {
+    if (botId) await api(page, 'deleteBot', { botId })
+    await browser.close()
+  }
+})
+
+test('a voice note sent on its own uses the same player, its name under the row', async () => {
+  const { browser, page } = await attach()
+  const name = `Voice file e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    await setPref(page, 'appLanguage', 'en')
+    const continueWithoutAccount = page.getByRole('button', { name: /^Continue without an account/ })
+    if (await continueWithoutAccount.isVisible()) await continueWithoutAccount.click()
+    const agent = resolve(__dirname, '../../../host/tests/fixtures/steer_agent.py')
+    const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
+      name, backend: 'custom', command: `${fixtureCommand(agent)} voice-file 0`,
+      connectors: [], skills: [], notify: false,
+    })
+    botId = bot.id
+    await page.locator('.roster-row', { hasText: name }).click()
+    await api(page, 'send', { botId, text: 'Send a voice note' })
+    const player = page.locator('.voice-note')
+    await expect(player).toContainText('note.wav')
+    await expect(player.locator('.file-card-detail')).toContainText(' / ')
+    await expect(player.locator('input.file-card-progress')).toBeVisible()
+    // No Download button on the row: it is in the message's menu, right-click or the ⋯ button.
+    await expect(player.getByTitle('Download')).toHaveCount(0)
+    await player.locator('.file-card-detail').click({ button: 'right' })
+    await expect(page.getByRole('menuitem', { name: 'Download' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'More message actions' }).click()
+    await expect(page.getByRole('menuitem')).toHaveText(['Copy', 'Download', 'Show what it did'])
+    await page.keyboard.press('Escape')
+    await player.getByTitle('Play').click()
+    await expect(player.getByTitle('Pause')).toBeVisible()
+    await player.getByTitle('Pause').click()
   } finally {
     if (botId) await api(page, 'deleteBot', { botId })
     await browser.close()

@@ -1,10 +1,10 @@
 """ACP agent whose turn waits: a steered message joins it, a cancel stops it, or it ends after `seconds`.
 
-Args: `steer|sends|voice|voice-wav|late|sends-late|limit|next|refuse|lingers|plain seconds [answer_delay]`. With `steer` it
+Args: `steer|sends|voice|voice-wav|voice-file|late|sends-late|limit|next|refuse|lingers|plain seconds [answer_delay]`. With `steer` it
 advertises `_session/steering` (top-level `_meta`, as Claude's and Codex's adapters do) and takes a steered message into
 its running turn; with `sends` it also calls `send_message` before it takes the message and again after, before its
 last text; with `voice` it sends a voice note (`send_file` with text) before it takes the message and ends with no more
-text (`voice-wav`: the same with four seconds of real, silent WAV a player can load); with `late` it ends that turn before answering; `sends-late` does both, calling `send_message` once; with `limit`
+text (`voice-wav`: the same with four seconds of real, silent WAV a player can load; `voice-file`: that WAV as a file of its own, without text); with `late` it ends that turn before answering; `sends-late` does both, calling `send_message` once; with `limit`
 that turn then fails the way Claude's adapter reports a usage limit; with `next` it advertises steering too but always
 answers that the message needs a turn of its own; with `refuse` it answers a steer with an error; with `lingers` it
 takes two seconds to wind down after a cancel. It answers a steer after `answer_delay` seconds, so a turn shorter than
@@ -70,13 +70,13 @@ def run(rid):
         with open("note.m4a", "wb") as note:
             note.write(b"\0\0\0\x18ftypM4A voice")
         chat_tool("send_file", {"path": "note.m4a", "text": "Listen before it joined"})
-    if MODE == "voice-wav":
+    if MODE in ("voice-wav", "voice-file"):
         with wave.open("note.wav", "wb") as note:
             note.setnchannels(1)
             note.setsampwidth(2)
             note.setframerate(8000)
             note.writeframes(b"\0\0" * 8000 * 4)
-        chat_tool("send_file", {"path": "note.wav", "text": "Listen before it joined"})
+        chat_tool("send_file", {"path": "note.wav", **({"text": "Listen before it joined"} if MODE == "voice-wav" else {})})
     wake.wait(SECONDS)
     turn["wake"] = None
     if MODE == "sends" and turn["steered"]:
@@ -90,7 +90,7 @@ def run(rid):
     if MODE == "limit":
         send({"id": rid, "error": LIMIT})
         return
-    if MODE not in ("voice", "voice-wav"):
+    if MODE not in ("voice", "voice-wav", "voice-file"):
         say("Got: " + turn["steered"] if turn["steered"] else "Done")
     send({"id": rid, "result": {"stopReason": "end_turn"}})
 

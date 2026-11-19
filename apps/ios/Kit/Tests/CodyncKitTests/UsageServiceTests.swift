@@ -105,4 +105,14 @@ import Testing
     @Test func anAgentWithNoLogoHasNoAsset() {
         #expect(UsageService(id: "hermes", name: "Hermes Agent", shown: true).provider.logoAsset == nil)
     }
+
+    @MainActor @Test func lockScreenUsageWidgetsSpeakOutOfDateAfterAFailedCheck() {
+        let weekly = UsageWindow(id: "w", label: "Weekly", percent: 91)
+        let staleProvider = UsageProvider(id: "claude", name: "Claude", windows: [weekly], source: "claude", updatedAt: 1, failedAt: 2)
+        let freshProvider = UsageProvider(id: "claude", name: "Claude", windows: [weekly], source: "claude", updatedAt: 1)
+        let outOfDate = L10n.tr("Out of date")
+        #expect(AccessoryWidgetCard(kind: .usage, family: .inline, usage: Usage(providers: [freshProvider])).spokenHeadline == "Claude 91%")
+        #expect(AccessoryWidgetCard(kind: .usage, family: .inline, usage: Usage(providers: [staleProvider])).spokenHeadline == "Claude 91% · \(outOfDate)")
+        #expect(AccessoryWidgetCard(kind: .usage, family: .circular, usage: Usage(providers: [staleProvider])).spokenHeadline == "Claude 91% · \(outOfDate)")
+    }
 }

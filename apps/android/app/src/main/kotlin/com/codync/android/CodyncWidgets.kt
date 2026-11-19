@@ -184,7 +184,7 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
                 Text("${(top.percent ?: 0.0).roundToInt()}", style = style(32f, color, FontWeight.Medium))
                 Text("%", GlanceModifier.padding(bottom = 4.dp), style = style(17f, color, FontWeight.Medium))
             }
-            Ticks(context, top.percent ?: 0.0, tint, 13.dp)
+            Ticks(context, top.percent ?: 0.0, tint, 13.dp, stale)
             Spacer(GlanceModifier.height(6.dp))
             Text(top.resetsShort()?.let { resetSpoken(it) } ?: phrase("Usage reported by your computer"), style = style(9f, secondary), maxLines = 1)
         } else {
@@ -208,7 +208,7 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
             Text("${(window.percent ?: 0.0).roundToInt()}%", style = style(13f, if (stale) secondary else if ((window.percent ?: 0.0) >= 90) danger else ink, FontWeight.Medium))
         }
         Spacer(GlanceModifier.height(3.dp))
-        Ticks(context, window.percent ?: 0.0, tint, 12.dp)
+        Ticks(context, window.percent ?: 0.0, tint, 12.dp, stale)
         window.resetsShort()?.let { Text(resetSpoken(it), GlanceModifier.fillMaxWidth(), style = TextStyle(secondary, 9.sp, textAlign = TextAlign.End), maxLines = 1) }
     }
 }
@@ -265,8 +265,8 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
             Text("${percent.roundToInt()}%", style = style(11f, secondary))
         }
         Spacer(GlanceModifier.height(4.dp))
-        // Grey until 70%, then amber (iOS `Palette.usageTint`); the ticks turn red from 90%.
-        Ticks(context, percent, if (limit.stale) secondary.getColor(context).toArgb() else if (percent >= 70) WARNING else ink.getColor(context).toArgb(), 10.dp)
+        // Grey until 70%, then amber (iOS `Palette.usageTint`); the ticks turn red from 90% unless stale.
+        Ticks(context, percent, if (percent >= 70) WARNING else ink.getColor(context).toArgb(), 10.dp, limit.stale)
     }
 }
 
@@ -287,19 +287,26 @@ private const val WARNING = 0xFFF0A030.toInt()
     return spokenReset(raw, language.usesChinese(systemChinese)) { translate(it, language, systemChinese, table) }
 }
 
-/** Fine, separated ticks (iOS `UsageTicks`), as a bitmap: widgets can't draw. */
-@Composable private fun Ticks(context: Context, percent: Double, tint: Int, height: Dp) {
-    val red = danger.getColor(context).toArgb()
-    val bitmap = remember(percent, tint, red) { ticks(percent, tint, red) }
-    Image(ImageProvider(bitmap), "${percent.roundToInt()} percent used", GlanceModifier.fillMaxWidth().height(height), contentScale = ContentScale.FillBounds)
+internal fun tickColor(percent: Double, tint: Int, red: Int, muted: Int, stale: Boolean): Int {
+    val value = if (percent.isFinite()) percent.coerceIn(0.0, 100.0) else 0.0
+    return if (stale) muted else if (value >= 90) red else tint
 }
 
-private fun ticks(percent: Double, tint: Int, red: Int): Bitmap {
+/** Fine, separated ticks (iOS `UsageTicks`), as a bitmap: widgets can't draw. */
+@Composable private fun Ticks(context: Context, percent: Double, tint: Int, height: Dp, stale: Boolean = false) {
+    val muted = secondary.getColor(context).toArgb()
+    val red = danger.getColor(context).toArgb()
+    val bitmap = remember(percent, tint, red, muted, stale) { ticks(percent, tint, red, muted, stale) }
+    val spoken = if (stale) "${percent.roundToInt()} percent used, out of date" else "${percent.roundToInt()} percent used"
+    Image(ImageProvider(bitmap), spoken, GlanceModifier.fillMaxWidth().height(height), contentScale = ContentScale.FillBounds)
+}
+
+private fun ticks(percent: Double, tint: Int, red: Int, muted: Int = tint, stale: Boolean = false): Bitmap {
     val count = 60; val unit = 8f; val gap = 3f
     val bitmap = Bitmap.createBitmap((count * (unit + gap)).toInt(), 26, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val value = if (percent.isFinite()) percent.coerceIn(0.0, 100.0) else 0.0
-    val color = if (value >= 90) red else tint
+    val color = tickColor(value, tint, red, muted, stale)
     val filled = (count * value / 100).roundToInt()
     val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     for (i in 0 until count) {

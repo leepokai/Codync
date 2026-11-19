@@ -32,23 +32,33 @@ public struct AccessoryWidgetCard: View {
         return top.map { "\($0.name) \(Int($0.window.percent.rounded()))%" } ?? "No usage yet"
     }
 
+    internal var spokenHeadline: String {
+        guard paired, kind == .usage, let top, top.stale else { return headline }
+        return "\(headline) · \(L10n.tr("Out of date"))"
+    }
+
     public var body: some View {
         Group {
             switch family {
             case .inline:
-                Label(headline, systemImage: kind == .bots ? "bubble.left.and.bubble.right" : "chart.bar")
+                Label(spokenHeadline, systemImage: kind == .bots ? "bubble.left.and.bubble.right" : (top?.stale == true ? "exclamationmark.triangle" : "chart.bar"))
                     .font(.caption).lineLimit(1)
             case .circular:
                 if !paired {
                     Image(systemName: "desktopcomputer").accessibilityLabel(headline)
                 } else if kind == .usage, let top {
                     Gauge(value: min(100, max(0, top.window.percent)), in: 0...100) {
-                        Text(top.name.prefix(2))
+                        if top.stale {
+                            Image(systemName: "exclamationmark.triangle")
+                        } else {
+                            Text(top.name.prefix(2))
+                        }
                     } currentValueLabel: {
                         Text(L10n.tr("\(Int(top.window.percent.rounded()))")).font(.system(size: 18, weight: .semibold))
                     }
                     .gaugeStyle(.accessoryCircularCapacity)
-                    .accessibilityLabel(headline)
+                    .opacity(top.stale ? 0.55 : 1)
+                    .accessibilityLabel(spokenHeadline)
                 } else {
                     VStack(spacing: 0) {
                         Text(kind == .bots ? "\(count)" : "—").font(.system(size: 24, weight: .semibold, design: .rounded))

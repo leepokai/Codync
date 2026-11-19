@@ -1,5 +1,5 @@
 {
-  "minApp": "2.49.0",
+  "minApp": "2.51.0",
   "shapes": {
     "event:bot": "object",
     "event:bot.bot": "object",

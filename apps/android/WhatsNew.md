@@ -7,12 +7,18 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.50.1
+## 2.51.0
 ### zh-Hant
+- Bot 離開聊天做的事現在有兩個清楚的名稱：一件工作叫 task，被啟動來做 task 的那段工作階段叫 thread。一個 thread 一次做一件 task，做完可以接下一件。
+- 聊天上方的「背景」那一行改名為「工作」，和「工作」頁同名。
+- thread 都在忙、要選一件讓位時，提示改成「所有 thread 都在忙」；停止一件工作時問的是「停止這個 task？」。
 - 配對說明改成「配對手機」，和電腦選單上的名稱一致：Mac 選單列原本的「配對 iPhone…」現在叫「配對手機…」。
 
 ### en-US
-- The pairing instructions now say Pair phone, the name the computer's menu uses: the Mac menu bar's Pair iPhone… is now Pair phone….
+- A bot's work away from the chat has two names: a task is one piece of work, a thread the session that does tasks, one at a time.
+- The "In the background" line above the chat is now "Work".
+- Prompts say "Every thread is busy" and "Stop this task?".
+- Pairing instructions now say Pair phone, as the computer's menu does.
 
 ## 2.50.0
 ### zh-Hant

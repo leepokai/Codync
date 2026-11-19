@@ -206,8 +206,10 @@ A Codync computer in the cloud that is there when the phone asks for it: bots ke
 laptop closed, routines fire on time, the iPhone, Android and desktop apps reach it exactly like a Mac at
 home. The user signs in to their own agents (Claude Code, Codex…) on it with their own subscriptions.
 
-Entry points: the welcome screen of a device with no computer ("Start a cloud computer"), and Computers
-→ add. One progress screen, then the bot list.
+Entry points: a phone's first-run setup, signed in ("Start a cloud computer" on the install page and on the
+choose page of an account that has computers; then one wait page, `CloudStartView`, until the computer is reached,
+then the bot list; its Back, in any stage, returns to the pages and stops waiting for that one), and Computers →
+Codync Cloud → +.
 
 ## Verified on a real InstaBox machine (2026-10-24, host 2.24.0)
 
@@ -727,8 +729,8 @@ changes nothing; with it set, every signed-in account has Codync Cloud (no allow
 2. **Launch on `main`**: done on 2026-11-09 with 2.43.1, the owner's call: migrations `0007`–`0009`, production's own
    `CLOUD_SECRET_KEYS` (every signed-in account has Codync Cloud at once), then `deploy:main`. A new cloud computer
    installs GitHub's latest release, so 2.43.1 once the release gate marks it latest; only 2.43.1 apps show Codync
-   Cloud. Planned before launch and still open: MFA required for accounts with a cloud computer, memory admission, the
-   welcome screen's "Start a cloud computer", and encryption at rest (Boat documents none for sandbox disks).
+   Cloud. Planned before launch and still open: MFA required for accounts with a cloud computer, memory admission, and
+   encryption at rest (Boat documents none for sandbox disks).
 
 The cloud picks a cloud computer's version on its own (the soft and hard updates), and its owner can also update
 it to the latest release from any device, like any computer (owner, 2026-10-31): *Update* on its Codync row

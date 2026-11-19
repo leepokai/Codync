@@ -158,7 +158,12 @@ fun AccountStore.requestAccess(target: CloudComputer, renew: Boolean = false) {
 
 private fun AccountStore.startAccess(target: CloudComputer, renew: Boolean) = action("access:" + target.computerId) {
     mutableState.update { it.copy(asking = it.asking + target.computerId) }
-    try { askForAccess(target, renew) } finally { mutableState.update { it.copy(asking = it.asking - target.computerId) } }
+    try { askForAccess(target, renew) }
+    catch (error: Exception) {
+        // Failed or ended unapproved: a cloud computer is asked again by itself on the next refresh.
+        if (error !is CancellationException) askedCloud.remove(target.computerId)
+        throw error
+    } finally { mutableState.update { it.copy(asking = it.asking - target.computerId) } }
 }
 
 private suspend fun AccountStore.askForAccess(target: CloudComputer, renew: Boolean) {
@@ -206,14 +211,15 @@ private suspend fun AccountStore.askForAccess(target: CloudComputer, renew: Bool
     } finally { mutableState.update { it.copy(access = it.access - ticket.computerId) } }
 }
 
-/** The approved computer joins this phone's computers (or replaces its older pairing), then connects. */
+/** The approved computer joins this phone's computers (or replaces its older pairing), then connects. A cloud computer
+ * started from the setup pages is let in this way too, by its host. */
 private suspend fun AccountStore.useApprovedComputer(computer: Computer, requestId: String) {
     // Approval is already confirmed by the cloud.
     mutableState.update { it.copy(approvedAccess = it.approvedAccess + (computer.id to requestId)) }
     transitions.withLock { addComputer(computer) }
     withContext(Dispatchers.IO) { local.completeSetup() }
     mutableState.update { it.copy(setupComplete = true) }
-    Analytics.completeOnboarding(OnboardingVia.Account)
+    Analytics.completeOnboarding(if (state.value.startedCloud) OnboardingVia.Cloud else OnboardingVia.Account)
     refreshCloud()
 }
 

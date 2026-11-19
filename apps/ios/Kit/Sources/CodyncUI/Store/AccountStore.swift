@@ -253,7 +253,8 @@ public final class AccountStore {
     }
 
     /// Codync Cloud computers approve this device by themselves: each one it can't use yet is asked once per
-    /// session, through the same request and code exchange as a tap on "Ask for access".
+    /// session, through the same request and code exchange as a tap on "Ask for access"; a request that failed or
+    /// ended unapproved is asked again on the next refresh.
     private func askCloudComputers() {
         for computer in cloudComputers where computer.cloud != nil && computer.access == "none" && stores[computer.computerId] == nil {
             let id = computer.computerId
@@ -263,6 +264,7 @@ public final class AccountStore {
                     try await self?.requestAccess(id)
                 } catch {
                     log.info("cloud computer access request failed: \(error.localizedDescription, privacy: .public)")
+                    self?.askedCloud.remove(id)
                 }
             }
         }
@@ -382,6 +384,8 @@ public final class AccountStore {
                 }
                 // Withdrawn by the account: the list shows what's left of it.
                 if reason == .cancelled { await refreshCloud() }
+                // A cloud computer is asked again by itself on the next refresh.
+                askedCloud.remove(ticket.computerId)
                 return
             }
         }

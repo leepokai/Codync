@@ -2230,5 +2230,9 @@
   "On your Mac, click Codync in the menu bar, then Pair phone.": "Sur votre Mac, cliquez sur Codync dans la barre des menus, puis sur Associer un téléphone.",
   "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Ce travail a avancé de 8 étapes d’affilée sans vous, le maximum possible. Touchez « Continuer » pour poursuivre.",
   "Scan with the Codync app, or open on the phone:": "Scannez avec l'app Codync, ou ouvrez sur le téléphone :",
-  "Scan with Codync Dev on your phone:": "Scannez avec Codync Dev sur votre téléphone :"
+  "Scan with Codync Dev on your phone:": "Scannez avec Codync Dev sur votre téléphone :",
+  "Start a cloud computer": "Démarrer un ordinateur cloud",
+  "No computer? Run one on your own cloud provider account.": "Pas d'ordinateur ? Lancez-en un sur votre propre compte chez un fournisseur cloud.",
+  "Starting your cloud computer": "Démarrage de votre ordinateur cloud",
+  "About a minute. You can skip: it shows up on its own when it's ready.": "Environ une minute. Vous pouvez ignorer : il apparaîtra tout seul une fois prêt."
 }

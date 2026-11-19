@@ -2230,5 +2230,9 @@
   "On your Mac, click Codync in the menu bar, then Pair phone.": "在 Mac 上點選單欄的 Codync，然後選配對手機。",
   "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "這項工作已在沒有你的情況下連續進行 8 步，達到上限。按「繼續」讓它接著進行。",
   "Scan with the Codync app, or open on the phone:": "用 Codync App 掃描，或在手機上打開：",
-  "Scan with Codync Dev on your phone:": "用手機上的 Codync Dev 掃描："
+  "Scan with Codync Dev on your phone:": "用手機上的 Codync Dev 掃描：",
+  "Start a cloud computer": "建立一臺雲端電腦",
+  "No computer? Run one on your own cloud provider account.": "沒有電腦？在你自己的雲端供應商賬戶上開一臺。",
+  "Starting your cloud computer": "正在啟動你的雲端電腦",
+  "About a minute. You can skip: it shows up on its own when it's ready.": "大約一分鐘。可以先跳過：準備好後它會自己出現。"
 }

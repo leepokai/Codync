@@ -71,6 +71,12 @@ public final class CloudMachineStore {
     /// One was created but isn't in the account yet: it's booting and installing the host (about ten seconds).
     public var isPreparing: Bool { machines.contains(where: \.isPreparing) }
 
+    /// The one a first run waits for: the newest still preparing that it didn't leave with Back (`passed`), else, once
+    /// `started` there, the newest.
+    public func starting(started: Bool, passed: Set<String> = []) -> CloudMachine? {
+        machines.last { $0.isPreparing && !passed.contains($0.id) } ?? (started ? machines.last : nil)
+    }
+
     /// The account has as many as it may: one has to go before another can be made.
     public var atLimit: Bool { machines.count >= limit }
 

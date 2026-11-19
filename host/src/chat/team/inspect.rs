@@ -174,7 +174,7 @@ async fn answer(hub: &Arc<Hub>, source: &BotConfig, actor: &str, target: &BotCon
         record_outcome(hub, tool, "declined", None, None);
         return Ok(declined());
     };
-    let owner = crate::chat::tasks::card_actor(waiting.card).to_owned();
+    let owner = crate::chat::work::card_actor(waiting.card).to_owned();
     let cmd = |reply| Cmd::AnswerPermission { entry_id: waiting.card.id.clone(), option_id, reply };
     let applied = send_confirmed(
         hub,
@@ -391,14 +391,14 @@ mod tests {
         hub.attach_bot_for_test(&cfg.id)
     }
 
-    fn add_pending_card(hub: &Hub, bot_id: &str, task_id: Option<&str>) -> Entry {
+    fn add_pending_card(hub: &Hub, bot_id: &str, thread_id: Option<&str>) -> Entry {
         let mut data = json!({
             "title": "Secret task action",
             "status": "pending",
             "options": [{"optionId": "allow", "name": "Allow", "kind": "allow_once"}],
         });
-        if let Some(task_id) = task_id {
-            data["task"] = json!({"id": task_id, "title": "Secret work"});
+        if let Some(thread_id) = thread_id {
+            data["thread"] = json!({"id": thread_id, "title": "Secret work"});
         }
         hub.add_entry(&Lane::main(bot_id), EntryKind::Permission, 1, &data).unwrap()
     }

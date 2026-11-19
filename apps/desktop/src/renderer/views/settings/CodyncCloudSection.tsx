@@ -57,11 +57,6 @@ export function CodyncCloudSection() {
     for (const p of model.providers) model.clearError(`key:${p.provider}`)
     setCreating(true)
   }
-  // Closed, its failure was seen: New cloud computer under it shows only a removal asked from its own row.
-  const closeKey = () => {
-    if (keyFor) model.clearError(`key:${keyFor}`)
-    setKeyFor(null)
-  }
   return (
     <>
       <CardSection
@@ -92,7 +87,7 @@ export function CodyncCloudSection() {
       <Sheet open={creating} onClose={() => setCreating(false)}>
         <NewCloudComputerSheet model={model} openKey={setKeyFor} />
       </Sheet>
-      <Sheet open={keyFor !== null} onClose={closeKey}>
+      <Sheet open={keyFor !== null} onClose={() => setKeyFor(null)}>
         {keyFor ? <CloudKeySheet model={model} provider={keyFor} done={() => setKeyFor(null)} /> : null}
       </Sheet>
       <Dialog

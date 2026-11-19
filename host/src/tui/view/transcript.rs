@@ -314,6 +314,8 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 format!("{} · A adds a fallback", e.notice_text())
             } else if e.retries() {
                 format!("{} · F tries again", e.notice_text())
+            } else if e.continues() {
+                format!("{} · F continues", e.notice_text())
             } else {
                 e.notice_text()
             };
@@ -349,7 +351,12 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                     ));
                 }
             }
-            if e.data["connectionRequest"].is_object() || e.unfolds() || e.retries() || e.adds_fallback() {
+            if e.data["connectionRequest"].is_object()
+                || e.unfolds()
+                || e.retries()
+                || e.continues()
+                || e.adds_fallback()
+            {
                 out.messages.push((e.id.clone(), from, out.lines.len()));
             }
         }

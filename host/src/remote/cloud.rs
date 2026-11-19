@@ -295,6 +295,15 @@ pub async fn register(hub: &Hub, cloud: &Address) -> Result<()> {
     Ok(())
 }
 
+/// Registers again on the cloud already chosen, so the account's computer list gets this computer's current name
+/// and icon.
+pub async fn register_again(hub: &Hub) {
+    let Some(address) = current(&hub.store) else { return };
+    if let Err(e) = register(hub, &address).await {
+        tracing::warn!(error = format!("{e:#}"), "couldn't give the account this computer's current name");
+    }
+}
+
 /// Short-lived media credentials, issued only after the host checks screen authorization.
 pub async fn screen_ice(hub: &Hub, device_key: &str) -> Result<crate::screen::IceConfig> {
     let value =

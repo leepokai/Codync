@@ -236,6 +236,19 @@ internal fun AppStore.reorder(ids: List<String>) =
 /** Whether a bot with a new message moves to the top of this computer's roster (iOS `autoOrder`); missing from older hosts. */
 internal fun autoOrder(hello: JsonObject?): Boolean? = hello?.get("autoOrder")?.jsonPrimitive?.booleanOrNull
 
+/** The user's name for this computer, empty for its hostname (iOS `setComputerName`); its `name` event shows it. */
+internal fun AppStore.setComputerName(name: String) = command("setComputerName", buildJsonObject { put("name", name) }, "computerName")
+
+/** The first host the user names (`setComputerName`). */
+private const val COMPUTER_NAME_HOST = "2.50.0"
+
+/** Whether the user names this computer here, on a host that takes it: a cloud computer is named in Codync Cloud (iOS `canRename`). */
+internal fun canRename(state: AppState): Boolean {
+    val hello = state.hello ?: return false
+    return state.connection is LinkState.Ready && hello.text("device") != "cloud" &&
+        hello.text("version")?.let { !AppVersion.isBelow(it, COMPUTER_NAME_HOST) } == true
+}
+
 /** Turns automatic roster order on or off, shown at once and put back if the computer refuses (iOS `setAutoOrder`). */
 internal fun AppStore.setAutoOrder(on: Boolean) {
     showAutoOrder(on)

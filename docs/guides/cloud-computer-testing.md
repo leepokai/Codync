@@ -117,9 +117,10 @@ Set `CODYNC_STACK_PORT` to keep the URL stable across runs. Ctrl-C deletes the m
 What to walk with the apps: Codync Cloud hidden on a cloud without `CLOUD_SECRET_KEYS` (`cloud:stack` with no provider
 key, or a worktree sandbox's own cloud); a key that isn't one, an admin key
 and a revoked key refused with what to fix; the test key (`BOAT_API_KEY_FILE`, or `INSTABOX_API_KEY_FILE` under
-InstaBox) pasted and shown as its hint; "+" → New cloud computer lists every provider with its logo (one without a
-working key opens that provider's key sheet, and is picked once its key is saved; a computer's `⋯` opens its
-provider's key too) → a name → create → "Preparing your cloud
+InstaBox) pasted and shown as its hint; "+" → New cloud computer lists every provider with its logo and plan → one without a
+working key goes to Connect {provider} (its steps, Open {provider}, paste the key, Use the command line instead) →
+saving moves on to the name → Back shows the key's hint and the row's `⋯` (its key, Remove key); a computer's `⋯`
+opens its provider's key sheet too → create → "Preparing your cloud
 computer…" → claimed, under that name → each app (desktop included) gets access by itself → chat with a bot on it, and create and
 set up bots there from each app; its screen from each app (phones: **Screen** in Manage computers and a chat's
 **Computer**; desktop: **Screen** on its sidebar heading) shows its Xfce desktop and takes clicks and typing, and a bot

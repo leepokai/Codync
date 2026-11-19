@@ -36,7 +36,10 @@ public struct CloudHosting: Codable, Hashable, Sendable {
     public var state: CloudMachineState
 
     /// "Runs on Boat · EU", translated: under the computer's name.
-    public var runsOn: String {
+    public var runsOn: String { Self.runsOn(providerName: providerName, region: region) }
+
+    /// "Runs on Boat · EU", translated: under a computer's name, or one New cloud computer is about to make.
+    public static func runsOn(providerName: String, region: String) -> String {
         L10n.tr("Runs on {provider} · {region}").replacingOccurrences(of: "{provider}", with: providerName)
             .replacingOccurrences(of: "{region}", with: region)
     }
@@ -54,10 +57,8 @@ public enum CloudMachineState: String, Codable, Sendable {
     /// Asleep or falling asleep: a connection or a message wakes it, so it isn't offline.
     public var isAsleep: Bool { self == .stopped || self == .stopping }
 
-    /// Its offline computer's line where only the account's list is known: asleep, or on its way up.
-    public var offlineText: String? {
-        if isAsleep { "Sleeping · wakes when you message" } else if self == .starting { "Waking the computer…" } else { nil }
-    }
+    /// Its offline computer's line where only the account's list is known: asleep.
+    public var offlineText: String? { isAsleep ? "Sleeping · wakes when you message" : nil }
 }
 
 /// One of the account's Codync Cloud computers (`GET` / `POST` / `PATCH /v1/cloud-computers`).
@@ -101,12 +102,14 @@ public struct CloudStatus: Decodable, Hashable, Sendable {
     public var providers: [CloudProvider]?
 }
 
-/// A provider the cloud can run the computer on, as it lists them: where it runs, how to make its key (worded by the
-/// cloud, so a new provider needs no app release) and the account's key for it.
+/// A provider the cloud can run the computer on, as it lists them: where it runs, what it costs, how to make its key
+/// (worded by the cloud, so a new provider needs no app release) and the account's key for it.
 public struct CloudProvider: Decodable, Hashable, Sendable, Identifiable {
     public var provider: String
     public var name: String
     public var region: String
+    /// What a computer there costs, in a phrase the app translates ("From $20 a month"); older clouds don't say.
+    public var plan: String?
     /// What its keys start with, for the field's placeholder (`boat_…`).
     public var keyPrompt: String
     public var setup: CloudKeySetup
@@ -118,6 +121,14 @@ public struct CloudProvider: Decodable, Hashable, Sendable, Identifiable {
     /// The account gave it a key that isn't turned down for its own sake: a computer can be made there (or tried again,
     /// when the provider said no for the plan or the account).
     public var isReady: Bool { credential.map { $0.blocking != true } ?? false }
+
+    /// The line under its name in New cloud computer, translated: what to fix while the provider turns the key down
+    /// (`isProblem`); else where it runs beside the key's hint, or without one what it costs (that it needs one, from
+    /// clouds that don't say).
+    public var detail: (text: String, isProblem: Bool) {
+        if let problem = credential?.problem { return (L10n.tr(problem), true) }
+        return ("\(region) · \(credential?.hint ?? L10n.tr(plan ?? "Add a key first"))", false)
+    }
 }
 
 /// A key the account gave a provider, as the cloud shows it: never the key itself.
@@ -137,9 +148,11 @@ public struct CloudProviderOffer: Decodable, Hashable, Sendable {
     public var url: URL
 }
 
-/// How the user makes a provider's key: commands to run, and the provider's page for doing it there instead.
+/// How the user makes a provider's key: steps on the provider's own page, or commands to run instead.
 public struct CloudKeySetup: Decodable, Hashable, Sendable {
     public var page: URL
+    /// Sentences the app translates, the last one always "Copy the key and paste it below."; older clouds send none.
+    public var steps: [String]?
     public var commands: String
 }
 

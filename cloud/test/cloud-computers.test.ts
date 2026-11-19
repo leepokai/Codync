@@ -1,7 +1,9 @@
 // Codync Cloud: cloud computers on Boat (stubbed), the host's self-claim from its ticket, sleep and wake.
+/// <reference types="vite/client" />
 
 import { runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PROVIDERS } from "../src/cloud-credentials";
 import { STOP_SETTLE_MS, type CloudMachineRow, type Wake } from "../src/cloud-machines";
 import { WakeEpisode, WAKING_SHOWN_MS } from "../src/relay-wake";
 import { WAKE_RETRY_MS } from "../src/relay-wire";
@@ -23,10 +25,12 @@ describe("cloud computers", () => {
       cloudComputers: [],
       available: true,
       providers: [
-        { provider: "boat", name: "Boat", region: "EU", keyPrompt: "boat_…", setup: { page: "https://boat.dev/dashboard" }, credential: null },
-        { provider: "instabox", name: "InstaBox", region: "US", keyPrompt: "ibk_…", setup: { page: "https://dashboard.instabox.sh/dashboard/api-keys" }, credential: null },
+        { provider: "boat", name: "Boat", region: "EU", plan: "From $20 a month", keyPrompt: "boat_…", setup: { page: "https://boat.dev/dashboard" }, credential: null },
+        { provider: "instabox", name: "InstaBox", region: "US", plan: "Free plan available", keyPrompt: "ibk_…", setup: { page: "https://dashboard.instabox.sh/dashboard/api-keys" }, credential: null },
       ],
     });
+    // Steps on the provider's site, ending at the key the app asks for.
+    for (const p of open.providers) expect(p.setup.steps.at(-1)).toBe("Copy the key and paste it below.");
     expect(open.providers[0].setup.commands).toContain("boat api-key create codync --env <id> --ttl never --actions sandbox.create,");
     expect(open.providers[1].setup.commands).toContain("instabox keys create --name codync --scope machines:read,machines:write,machines:delete");
     // Only a provider with a free plan offers one.
@@ -36,6 +40,13 @@ describe("cloud computers", () => {
       detail: "InstaBox's free plan includes one machine (4 vCPU, 8 GiB).",
       url: "https://instabox.sh/pricing",
     });
+  });
+
+  it("sends only sentences every app's catalogs translate", () => {
+    const catalogs = import.meta.glob<Record<string, string>>("../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/*.json", { eager: true, import: "default" });
+    const sentences = Object.values(PROVIDERS).flatMap((p) => [p.plan, ...p.setup.steps, ...(p.offer ? [p.offer.label, p.offer.detail] : [])]);
+    expect(Object.keys(catalogs)).not.toHaveLength(0);
+    for (const [path, catalog] of Object.entries(catalogs)) expect(sentences.filter((s) => !(s in catalog)), path).toEqual([]);
   });
 
   it("needs the user's own Boat key", async () => {
@@ -319,7 +330,7 @@ describe("sleep and wake", () => {
     expect((await second.nextT("presence")).waking).toBe(waking.waking);
     await hostSocket(host, [{ dk: ref.b64url(device.pub), grant: null }]);
     expect(await dev.nextT("presence")).toMatchObject({ online: true, waking: null });
-    // Booted: \`starting\` (which clients show as waking) is only ever on its way up.
+    // Booted: the account list's `starting` becomes `running` (clients take waking only from the relay's `presence.waking`).
     expect((await call("GET", "/v1/host/sleep", { key: host.sign })).body.state).toBe("running");
   });
 

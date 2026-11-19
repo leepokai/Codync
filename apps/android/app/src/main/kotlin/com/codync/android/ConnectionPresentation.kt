@@ -1,12 +1,15 @@
 package com.codync.android
 
 import com.codync.android.core.CloudComputer
+import com.codync.android.core.CloudPlacement
 import com.codync.android.core.Computer
 import com.codync.android.core.ConnectionRoute
+import com.codync.android.core.HostError
 import com.codync.android.core.HostRoute
 import com.codync.android.core.LinkState
 import com.codync.android.core.Pairing
 import com.codync.android.core.VersionMismatch
+import java.io.IOException
 
 // What the roster header, Computer management and the chat header say about the computer's link
 // (iOS `ComputerStatus`, `ConnectionSummary`, `BotStore.connectionLabel`).
@@ -22,17 +25,32 @@ internal val AppState.cloudUpdating: Boolean get() = mismatch is VersionMismatch
 
 private val AppState.updateWord get() = if (cloudUpdating) "Updating…" else "Needs update"
 
-/** Not reached: a sleeping cloud computer wakes when messaged (not an error); a failed one is. */
-internal val AppState.cloudUnreached: String? get() = cloud?.let { when {
-    it.asleep -> "Sleeping · wakes when you message"
-    it.failed -> "Cloud computer failed"
+/** An unreached cloud computer's line: a sleeping one wakes when messaged (not an error); a failed one is (iOS
+ * `CloudMachineState.offlineText`). */
+internal val CloudPlacement.offlineText: String? get() = when {
+    asleep -> "Sleeping · wakes when you message"
+    failed -> "Cloud computer failed"
     else -> null
-} }
+}
 
-/** The relay is waking this cloud computer (about 10 to 30 seconds), or its provider says it's starting: it's coming,
- * not offline (iOS `BotStore.isWaking`). */
-internal val AppState.isWaking: Boolean get() =
-    (connection as? LinkState.ComputerOffline)?.let { it.waking || cloud?.starting == true } == true
+/** The relay is waking this cloud computer (about 10 to 30 seconds): it's coming, not offline. Only the relay says so:
+ * the account list's `starting` stays after a wake whose host never came back. */
+private val LinkState?.waking get() = (this as? LinkState.ComputerOffline)?.waking == true
+
+/** The shown link is waking (iOS `BotStore.isWaking`). */
+internal val AppState.isWaking: Boolean get() = connection.waking
+
+/** Why an action can't wait out [link] (iOS `BotStore.ready`), or null while it can: a reconnect, or the relay waking a
+ * cloud computer, is waited out; a computer that's offline or turning this app away isn't. */
+internal fun cantWait(link: LinkState?): IOException? = when {
+    link is LinkState.ComputerOffline && !link.waking -> IOException("The computer is offline.")
+    link is LinkState.Failed && link.status in listOf(403, 426) -> HostError(requireNotNull(link.status), link.message)
+    else -> null
+}
+
+/** What an action shows when [link] didn't come up in time. */
+internal fun waitedTooLong(link: LinkState?) = IOException(if (link.waking) "Still waking the computer: try again in a moment."
+    else "Can't reach the computer. Check that it's on, then try again.")
 
 /** A Codync Cloud computer that's asleep, or on its way up: a connection or a message wakes it, so it isn't offline
  * (iOS `BotStore.isAsleep`). */
@@ -46,11 +64,11 @@ internal val AppState.unreachable: Boolean get() =
 internal fun statusText(state: AppState): String = if (state.isUpdating) "Updating…" else when (val link = state.connection) {
     is LinkState.Ready -> if (state.mismatch != null) state.updateWord else "Online"
     LinkState.Connecting -> "Connecting…"
-    is LinkState.ComputerOffline -> if (state.isWaking) "Waking the computer…" else state.cloudUnreached ?: link.lastSeenAt?.let { "Offline · seen ${RelativeTime.day(it)}" } ?: "Offline"
+    is LinkState.ComputerOffline -> if (state.isWaking) "Waking the computer…" else state.cloud?.offlineText ?: link.lastSeenAt?.let { "Offline · seen ${RelativeTime.day(it)}" } ?: "Offline"
     is LinkState.Failed -> when {
         link.unauthorized -> link.message
         state.mismatch != null -> "Needs update"
-        else -> state.cloudUnreached ?: "Can't reach"
+        else -> state.cloud?.offlineText ?: "Can't reach"
     }
 }
 

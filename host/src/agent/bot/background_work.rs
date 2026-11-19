@@ -6,7 +6,8 @@ use crate::agent::process::{self, JobProcess};
 /// Whether something the agent started runs detached, in a session of its own, like a dev server
 /// from its shell tool. Stopping the agent would orphan it and lose track of it, so the agent
 /// stays. MCP servers stay in the agent's session and don't count, even in a process group of
-/// their own (Codex starts each one in its own group). Unsure counts as busy.
+/// their own (Codex starts each one in its own group), and neither does a session the agent's
+/// own program or one of Codync's MCP servers leads (OpenCode 2.x, #515). Unsure counts as busy.
 // ponytail: a dev server keeps its agent (and memory) indefinitely; add a cap if that matters.
 #[cfg(unix)]
 pub(super) async fn background_work(acp: &Acp) -> bool {
@@ -16,12 +17,14 @@ pub(super) async fn background_work(acp: &Acp) -> bool {
 #[cfg(unix)]
 async fn detached_work(leader: Option<u32>) -> bool {
     let Some(leader) = leader else { return true };
+    let Ok(exe) = std::env::current_exe() else { return true };
+    let Some(host) = exe.file_name().and_then(|n| n.to_str()) else { return true };
     let listed = process::list_processes().await;
     let Ok(processes) = listed.inspect_err(|e| tracing::warn!(error = format!("{e:#}"), "couldn't list processes"))
     else {
         return true;
     };
-    detached_descendant(&processes, leader, process::session)
+    detached_descendant(&processes, leader, host, process::session)
 }
 
 /// Windows has no sessions to tell a dev server from an MCP server, and stopping the agent ends everything in its
@@ -52,11 +55,49 @@ fn runs_something_else(processes: &[JobProcess], own: &str) -> bool {
 }
 
 /// `processes`: what's on the computer; `session` finds a live process's session. One that exited since the listing
-/// holds nothing.
+/// holds nothing. In a session of its own, these are still the agent's: what runs the agent's own program and what it
+/// starts in that session, Codync's MCP servers and what they start (`host`: the host's program name), and a process
+/// the agent's program starts to lead a session of its own, without what that one starts. OpenCode 2.x starts its
+/// engine (`opencode serve --stdio`), each MCP server and its terminal daemon (`opencode-pty daemon`) that way (#515),
+/// and a dev server from its shell tool runs under that daemon, so it still counts.
+// ponytail: matched by program name, so an agent behind a launcher of another name (an npm shim) still keeps its
+// engine, a generic runtime (node, python) never exempts its own name, and what an MCP server from the user's own agent
+// config starts still holds the agent; match the launched program or the agent's config if one such shows up.
 #[cfg(any(unix, test))]
-fn detached_descendant(processes: &[JobProcess], leader: u32, session: impl Fn(u32) -> Option<i32>) -> bool {
+fn detached_descendant(
+    processes: &[JobProcess],
+    leader: u32,
+    host: &str,
+    session: impl Fn(u32) -> Option<i32>,
+) -> bool {
     let Some(own) = session(leader) else { return true };
-    process::descendants(processes, leader).iter().any(|p| session(p.pid).is_some_and(|sid| sid != own))
+    let agent = processes
+        .iter()
+        .find(|p| p.pid == leader)
+        .map(|p| process::program_name(&p.name))
+        .filter(|name| !is_runtime(name));
+    let runs_agent = |p: &JobProcess| agent.is_some_and(|agent| process::program_name(&p.name) == agent);
+    let descendants = process::descendants(processes, leader);
+    let codync = process::under_program(&descendants, host);
+    let find = |pid: u32| descendants.iter().find(|p| p.pid == pid);
+    let agents_own = |p: &JobProcess, sid: i32| {
+        let leads = u32::try_from(sid) == Ok(p.pid);
+        let started_by_agent = find(p.parent).is_some_and(runs_agent);
+        if leads {
+            runs_agent(p) || started_by_agent
+        } else {
+            u32::try_from(sid).ok().and_then(find).is_some_and(runs_agent)
+        }
+    };
+    descendants.iter().any(|p| session(p.pid).is_some_and(|sid| sid != own && !codync(p) && !agents_own(p, sid)))
+}
+
+/// A shell or an interpreter (`python3.12` too): as an agent's program it says nothing about what else running it is
+/// the agent's.
+#[cfg(any(unix, test))]
+fn is_runtime(program: &str) -> bool {
+    let program = program.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.');
+    ["node", "bun", "deno", "python", "ruby", "perl", "sh", "bash", "zsh", "dash", "fish"].contains(&program)
 }
 
 #[cfg(test)]
@@ -64,9 +105,15 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    /// (pid, parent) rows.
+    const HOST: &str = "codync-host";
+
+    fn process(pid: u32, parent: u32, name: &str) -> JobProcess {
+        JobProcess { pid, parent, name: name.to_owned() }
+    }
+
+    /// (pid, parent) rows, each its own program.
     fn rows(pairs: &[(u32, u32)]) -> Vec<JobProcess> {
-        pairs.iter().map(|&(pid, parent)| JobProcess { pid, parent, name: "x".into() }).collect()
+        pairs.iter().map(|&(pid, parent)| process(pid, parent, &format!("p{pid}"))).collect()
     }
 
     #[test]
@@ -75,22 +122,66 @@ mod tests {
         let sessions: HashMap<u32, i32> = [(10, 5), (11, 5), (12, 5), (20, 20), (21, 20), (30, 30)].into();
         let session = |pid| sessions.get(&pid).copied();
         let agent = [(10, 1), (11, 10), (12, 11), (40, 1)];
-        assert!(!detached_descendant(&rows(&agent), 10, session));
+        assert!(!detached_descendant(&rows(&agent), 10, HOST, session));
         // The shell tool runs `npm run dev` in a session of its own.
         let mut busy = agent.to_vec();
         busy.extend([(20, 11), (21, 20)]);
-        assert!(detached_descendant(&rows(&busy), 10, session));
+        assert!(detached_descendant(&rows(&busy), 10, HOST, session));
         // Someone else's process in another session isn't the agent's.
-        assert!(!detached_descendant(&rows(&[(10, 1), (30, 1)]), 10, session));
+        assert!(!detached_descendant(&rows(&[(10, 1), (30, 1)]), 10, HOST, session));
         // A child that exited since the listing holds nothing; an agent that can't be looked up is unsure.
-        assert!(!detached_descendant(&rows(&[(10, 1), (50, 10)]), 10, session));
-        assert!(detached_descendant(&rows(&agent), 99, session));
+        assert!(!detached_descendant(&rows(&[(10, 1), (50, 10)]), 10, HOST, session));
+        assert!(detached_descendant(&rows(&agent), 99, HOST, session));
+    }
+
+    /// #515: OpenCode 2.x (`opencode acp`) starts its engine, `opencode serve --stdio`, in a session of its own right
+    /// after `initialize`, and the engine starts each MCP server in a session of its own (seen with the registry build
+    /// 2.3.2 on macOS).
+    #[test]
+    fn opencodes_own_engine_isnt_background_work() {
+        let oc = "/Users/me/.codync/agents/opencode/opencode";
+        let host = "/Applications/Codync.app/Contents/Resources/codync-host";
+        // 10 `opencode acp` -> 11 `opencode serve --stdio` -> 12 `codync-host mcp chat` -> 13 a connector it starts.
+        let sessions: HashMap<u32, i32> = [(10, 10), (11, 11), (12, 12), (13, 12), (20, 20), (21, 20)].into();
+        let session = |pid| sessions.get(&pid).copied();
+        let idle = vec![process(10, 1, oc), process(11, 10, oc), process(12, 11, host), process(13, 12, "node")];
+        assert!(!detached_descendant(&idle, 10, HOST, session), "an idle OpenCode bot has no background work");
+        // A dev server its shell tool starts in a session of its own still holds it.
+        let mut busy = idle.clone();
+        busy.extend([process(20, 11, "/bin/zsh"), process(21, 20, "node")]);
+        assert!(detached_descendant(&busy, 10, HOST, session));
+    }
+
+    /// #515, seen end to end: once a bot has run a shell command, OpenCode 2.x keeps a terminal daemon
+    /// (`opencode-pty daemon`) in a session of its own, and an MCP server from the user's OpenCode config leads one too.
+    /// Neither holds the bot; a background command the shell tool starts runs under the daemon and does.
+    #[test]
+    fn opencodes_terminal_daemon_and_config_servers_arent_background_work() {
+        let oc = "/Users/me/.codync/agents/opencode/opencode";
+        let pty = "/Users/me/.cache/opencode/bin/opencode-pty/0.6.0/opencode-pty";
+        // 10 acp -> 11 engine -> 30 pty daemon, 40 the user's `cua-driver mcp`; 31 a server under the daemon.
+        let sessions: HashMap<u32, i32> = [(10, 10), (11, 11), (30, 30), (31, 30), (40, 40)].into();
+        let session = |pid| sessions.get(&pid).copied();
+        let idle = vec![process(10, 1, oc), process(11, 10, oc), process(30, 11, pty), process(40, 11, "cua-driver")];
+        assert!(!detached_descendant(&idle, 10, HOST, session), "an idle OpenCode bot that ran a shell command");
+        let mut busy = idle.clone();
+        busy.push(process(31, 30, "python3"));
+        assert!(detached_descendant(&busy, 10, HOST, session), "a background server from the shell tool");
+    }
+
+    /// A runtime's name tells nothing: a dev server `node` leads in a session of its own holds a `node` agent.
+    #[test]
+    fn a_runtime_agent_doesnt_exempt_its_runtime() {
+        let sessions: HashMap<u32, i32> = [(10, 10), (11, 11)].into();
+        let session = |pid| sessions.get(&pid).copied();
+        let agent = [process(10, 1, "/usr/local/bin/node"), process(11, 10, "node")];
+        assert!(detached_descendant(&agent, 10, HOST, session));
+        assert!(is_runtime("python3.12") && !is_runtime("opencode"));
     }
 
     #[test]
     fn on_windows_only_what_isnt_the_agent_or_codyncs_servers_holds_the_agent() {
         let own = "codync-host.exe";
-        let process = |pid, parent, name: &str| JobProcess { pid, parent, name: name.to_owned() };
         // cmd -> node (adapter) -> codex (engine) -> Codync's MCP servers, with a console window.
         let agent = vec![
             process(1, 900, "cmd.exe"),

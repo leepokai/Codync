@@ -3,7 +3,7 @@ import { ArtifactCard } from '../library/ArtifactCard'
 import { memo, useRef, useState } from 'react'
 import { groupBotReactions, isGroup, isReplyable, quoteOf, voiceNoteOf, type Bot, type Entry, type ReplyQuote, type SharedFile } from '@shared/models'
 import { BotAvatar } from '../../components/Avatar'
-import { Button, IconButton } from '../../components/Controls'
+import { Button, IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { AnchoredMenu, useContextMenu, type MenuItem, type ReactionPick } from '../../components/Menu'
 import { HStack, VStack } from '../../components/Stack'
@@ -293,8 +293,21 @@ export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: 
         </HStack>
       )
     default:
+      if (entry.data.continueChain) return <ContinueChainNotice entry={entry} text={text} />
       return <Text as="div" size="footnote" tone="secondary" className="chat-notice">{text}</Text>
   }
+}
+
+/** A chain stopped at its handoff limit, with Continue to let it go on. */
+function ContinueChainNotice({ entry, text }: { entry: Entry; text: string }) {
+  const tr = useTr()
+  const store = useLiveStore()
+  return (
+    <VStack gap={8} align="center">
+      <Text as="div" size="footnote" tone="secondary" className="chat-notice">{text}</Text>
+      {store.answering.has(entry.id) ? <Spinner size={14} /> : <Button kind="secondary" onClick={() => store.continueChain(entry)}>{tr('Continue')}</Button>}
+    </VStack>
+  )
 }
 
 /** A message's reactions: the user's (clicking one takes it back), then the bots', each emoji with the avatars of the

@@ -78,7 +78,9 @@ pub async fn run_ticket(hub: Arc<Hub>) {
             Ok(()) => {
                 tracing::info!(claim_id = ticket.claim_id, "claimed this computer for its Codync account");
                 remove(&path).await;
-                rename(&hub).await;
+                // The account keeps the icon the computer registered with, which may predate it knowing it is a
+                // cloud computer: registering again gives it a cloud computer's (the cloud keeps its user's name).
+                cloud::register_again(&hub).await;
                 // A first boot: this host started before it knew it was a cloud computer, and its keeper gets its key
                 // only now that the claim named it.
                 tokio::spawn(super::managed::on_start(hub));
@@ -118,15 +120,6 @@ async fn complete(hub: &Arc<Hub>, ticket: &Ticket) -> Result<()> {
         tracing::warn!(error = format!("{e:#}"), "couldn't take this cloud computer's name");
     }
     Ok(())
-}
-
-/// The account keeps the icon the computer registered with, which may predate it knowing it is a cloud computer:
-/// registering again gives it a cloud computer's (the cloud keeps the name its user gave the machine).
-async fn rename(hub: &Hub) {
-    let Some(address) = cloud::current(&hub.store) else { return };
-    if let Err(e) = cloud::register(hub, &address).await {
-        tracing::warn!(error = format!("{e:#}"), "couldn't give the account this cloud computer's name");
-    }
 }
 
 async fn remove(path: &PathBuf) {

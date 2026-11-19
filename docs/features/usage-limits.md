@@ -71,6 +71,8 @@ The Claude adapter passes the Agent SDK's `rate_limit_info` through whole, in `u
 
 On a computer where Claude runs on a `claude setup-token` token (`CLAUDE_CODE_OAUTH_TOKEN`), this is the only reading: that token only runs models, so `claude -p /usage` reports no plan limits. The limits then show after a bot's first turn, and only the windows the event lists.
 
+`claude -p /usage` itself always asks for the subscription's limits: Claude Code routed off it (a gateway's `ANTHROPIC_BASE_URL` with `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY`, or `CLAUDE_CODE_USE_BEDROCK` / `VERTEX` / `FOUNDRY`, in the environment or in its settings' `env`) answers it with token costs and no limits ([#372](https://github.com/leepokai/Codync/issues/372)). So the check passes `--settings` with those six variables blank (`usage/claude.rs`), which overrides both the environment and the user, project and local settings; the rest of the settings' `env`, a proxy for one, still applies, and a login profile keeps its `CLAUDE_CONFIG_DIR`. When the check still fails, the default login keeps its last windows and time, with nothing marking them stale.
+
 ### An agent's own slash command
 
 `usage/acp_read.rs` runs an ACP slash command that the adapter answers itself. Antigravity's `/usage` is one: its ACP server handles it with no LLM and asks Google with its own login, so the host never touches that login.

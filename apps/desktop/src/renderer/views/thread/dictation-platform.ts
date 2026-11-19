@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { HostClient } from '../../client/host-client'
 import { useModel } from '../../lib/observable'
+import { prefs } from '../../lib/prefs'
 import { useStoreRef } from '../../store/context'
 import { countVoiceUsage, micPCM16k, onDeviceUnavailableReason, transcribeOnHost, VoiceSettings, wav } from '../call/voice'
 import { configured, voiceStatus } from '../settings/voice-settings'
@@ -31,6 +32,7 @@ export function dictationPlatform(host: (() => Promise<HostClient>) | null = nul
     transcribe: async (provider, piece) => transcribeOnHost(await client(), provider, VoiceSettings.transcribeModel(provider), wav([piece])),
     count: countVoiceUsage,
     report,
+    shortcutTap: prefs.voiceShortcutTap.get,
   }
 }
 

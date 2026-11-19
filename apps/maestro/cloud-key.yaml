@@ -1,7 +1,8 @@
-# Computers → Codync Cloud → "+" (New cloud computer): every provider with what it needs and its logo, the suggested name,
-# and Create off without a usable key. Each provider's key is reached only through it: InstaBox's row (its free plan
-# without a key) opens only InstaBox's key sheet with its free plan and its own steps; Boat's opens Boat's, where a key Boat turns down shows what to fix, and a kept
-# one closes the sheet with Boat picked and its hint shown; Boat's row's ⋯ (More) offers its key and Remove key, which works.
+# Computers → Codync Cloud → "+" (New cloud computer), three steps in one sheet: every provider with where it runs and
+# what it costs; one without a key goes to Connect {provider} (its steps, its free plan when it has one, the commands
+# folded under Use the command line instead), where a key the provider turns down shows what to fix and a kept one moves
+# on to the name, with Create on; back on the providers, the row shows the key's hint and its ⋯ (More) offers Remove key,
+# which works.
 # Needs a cloud that offers Codync Cloud: dev-api offers it to every account, or, to stay off the shared dev or when the
 # branch changes cloud/, `npm run cloud:stack` in cloud/ with a provider key (docs/guides/cloud-computer-testing.md);
 # the phone signed in with `npm run phone-account` and pointed at it (iPhone:
@@ -67,7 +68,7 @@ env:
     element: "New cloud computer"
 - tapOn: "New cloud computer"
 - extendedWaitUntil:
-    visible: "Name your cloud computer"
+    visible: "Provider"
     timeout: 10000
 # Keys an earlier run left go first, each from its row's ⋯ (More; only a provider with a key has one).
 - repeat:
@@ -85,18 +86,11 @@ env:
           notVisible: "Remove key"
           timeout: 15000
 
-# Every provider asks for a key (InstaBox points to its free plan), the suggested name stands in for an empty one, and
-# nothing can be created yet.
+# Without keys, every provider says where it runs and what it costs.
 - extendedWaitUntil:
-    visible: ".*Add a key first"
+    visible: "EU · From \\$20 a month"
     timeout: 10000
-- assertVisible: ".*Free sandbox available"
-- assertVisible: "Boat.*"
-- assertVisible: "InstaBox.*"
-- assertVisible: "Cloud computer"
-- assertVisible:
-    text: "Create"
-    enabled: false
+- assertVisible: "US · Free plan available"
 - runFlow:
     when:
       platform: iOS
@@ -106,85 +100,71 @@ env:
       - assertVisible:
           id: "cloudProvider.instabox"
 
-# InstaBox's row opens InstaBox's key alone, with its free plan and its own steps (the command lines are one text; on
-# the iPhone they scroll sideways, wider than the screen, so the text is never all in view).
+# InstaBox: its steps, its free plan and its commands (one text that scrolls sideways on the iPhone, wider than the
+# screen, so it's never all in view), then back to the providers.
 - tapOn: "InstaBox.*"
 - extendedWaitUntil:
-    visible: "How to make a key"
+    visible: "Connect InstaBox"
     timeout: 10000
-- assertVisible: "InstaBox API key"
-- assertNotVisible: "Boat API key"
+- assertVisible: "Sign in, or sign up for the free plan."
+- assertVisible: "Open InstaBox"
 - assertVisible: "InstaBox's free plan includes one machine.*"
 - assertVisible: "Get a free sandbox"
-- tapOn: "How to make a key"
+- scrollUntilVisible:
+    element: "Use the command line instead"
+- tapOn: "Use the command line instead"
 - scrollUntilVisible:
     element: "(?s).*instabox keys create --name codync --scope machines:read,machines:write,machines:delete.*"
     visibilityPercentage: 25
 - assertVisible: "(?s).*# The key reaches every machine in this workspace.*"
-- tapOn: "Close"
+- tapOn: "Back"
 - extendedWaitUntil:
-    notVisible: "How to make a key"
+    visible: "Provider"
     timeout: 10000
 
-# Boat's row opens Boat's key alone. Turned down: what to fix. The field sits right above How to make a key, below the
-# sheet's title, which has the same words.
+# Boat: no free plan. Turned down: what to fix.
 - tapOn: "Boat.*"
 - extendedWaitUntil:
-    visible: "How to make a key"
+    visible: "Connect Boat"
     timeout: 10000
-- assertNotVisible: "InstaBox API key"
+- assertVisible: "Create an environment named codync and mark it safe for third parties."
 - assertNotVisible: "Get a free sandbox"
-- tapOn:
-    text: "(Boat API key|boat_…)"
-    above: "How to make a key"
+- tapOn: "(Boat API key|boat_…)"
 - inputText: ${REFUSED_KEY}
 - tapOn: "Save"
 - extendedWaitUntil:
     visible: "(This key wasn't accepted|The provider refused this key).*"
     timeout: 15000
 
-# Kept: the sheet closes and Boat is picked, with only its hint. The field still holds the refused key: on Android a
-# tap puts the caret where it lands, so a double tap selects the key (one word) before erasing.
+# Kept: on to the name, with Create on. The field still holds the refused key: on Android a tap puts the caret where it
+# lands, so a double tap selects the key (one word) before erasing.
 - runFlow:
     when:
       platform: iOS
     commands:
-      - tapOn:
-          text: "(Boat API key|boat_…)"
-          above: "How to make a key"
+      - tapOn: "(Boat API key|boat_…)"
 - runFlow:
     when:
       platform: Android
     commands:
-      - doubleTapOn:
-          text: "(Boat API key|boat_…)"
-          above: "How to make a key"
+      - doubleTapOn: "(Boat API key|boat_…)"
 - eraseText
 - inputText: ${BOAT_KEY}
 - tapOn: "Save"
 - extendedWaitUntil:
-    notVisible: "How to make a key"
+    visible: "Runs on Boat · EU"
     timeout: 15000
-- assertVisible: ${'.*' + BOAT_KEY.slice(0, BOAT_KEY.indexOf('_') + 1) + '…' + BOAT_KEY.slice(-4)}
+- assertVisible: "Cloud computer"
 - assertVisible:
     text: "Create"
     enabled: true
-- runFlow:
-    when:
-      platform: iOS
-    commands:
-      - assertVisible:
-          id: "cloudProvider.boat"
-          selected: true
-- runFlow:
-    when:
-      platform: Android
-    commands:
-      - assertVisible:
-          text: "Boat"
-          checked: true
 
-# Its row's ⋯ offers its key again and Remove key, which goes back to pasting one: nothing is left to create on.
+# Back on the providers, Boat shows only its key's hint; its ⋯ offers the key again and Remove key, which goes back to
+# what it costs.
+- tapOn: "Back"
+- extendedWaitUntil:
+    visible: ${'.*' + BOAT_KEY.slice(0, BOAT_KEY.indexOf('_') + 1) + '…' + BOAT_KEY.slice(-4)}
+    timeout: 10000
 - tapOn:
     text: "More"
     below: "Provider"
@@ -194,13 +174,10 @@ env:
 - assertVisible: "Boat API key"
 - tapOn: "Remove key"
 - extendedWaitUntil:
-    visible: ".*Add a key first"
+    visible: "EU · From \\$20 a month"
     timeout: 15000
 - assertNotVisible: "Remove key"
-- assertVisible:
-    text: "Create"
-    enabled: false
 - tapOn: "Close"
 - extendedWaitUntil:
-    notVisible: "Name your cloud computer"
+    notVisible: "Provider"
     timeout: 10000

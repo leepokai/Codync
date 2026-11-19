@@ -33,23 +33,34 @@ interface ProviderOffer {
 interface ProviderInfo {
   name: string;
   region: string;
+  /** What a computer there costs, beside its region where one is picked (the apps translate it). */
+  plan: string;
   keyPrompt: string;
-  setup: { page: string; commands: string };
+  /** How to make the key: `steps` on the provider's own `page` (the apps translate them), or `commands` instead. */
+  setup: { page: string; steps: string[]; commands: string };
   offer?: ProviderOffer;
 }
 
 /**
- * Every provider the apps offer, in this order, with what they show: where it runs, how to make the key, and its free
- * plan if it has one (worded here, so a new provider or new steps reach every app without a release). Boat limits a key
- * to an environment by its id, not its name (the name gets `api_key_sandbox_forbidden`).
+ * Every provider the apps offer, in this order, with what they show: where it runs, what it costs, how to make the key
+ * (on its site, or with its CLI), and its free plan if it has one (worded here, so a new provider or new steps reach
+ * every app without a release; their translations, in every app's language catalogs, need one). Boat limits a key to
+ * an environment by its id, not its name (the name gets `api_key_sandbox_forbidden`).
  */
 export const PROVIDERS: Record<Provider, ProviderInfo> = {
   boat: {
     name: "Boat",
     region: "EU",
+    // Boat has no free plan: a 7-day trial with a card, then $20 a month paid back as compute (docs/plans/codync-cloud.md).
+    plan: "From $20 a month",
     keyPrompt: "boat_…",
     setup: {
       page: "https://boat.dev/dashboard",
+      steps: [
+        "Create an environment named codync and mark it safe for third parties.",
+        "Create an API key for that environment that never expires, with the sandbox and snapshot actions.",
+        "Copy the key and paste it below.",
+      ],
       commands: [
         `boat env new ${GROUP}`,
         `boat env set ${GROUP} --safe-for-third-parties true`,
@@ -61,9 +72,15 @@ export const PROVIDERS: Record<Provider, ProviderInfo> = {
   instabox: {
     name: "InstaBox",
     region: "US",
+    plan: "Free plan available",
     keyPrompt: "ibk_…",
     setup: {
       page: "https://dashboard.instabox.sh/dashboard/api-keys",
+      steps: [
+        "Sign in, or sign up for the free plan.",
+        "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.",
+        "Copy the key and paste it below.",
+      ],
       commands: [
         "npm install -g instabox",
         "instabox login",

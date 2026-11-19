@@ -139,7 +139,10 @@ next turn. Either way a frequent schedule
 doesn't keep a set of MCP servers alive per run, except on Codex while another session
 is open: it keeps a closed session's until the agent stops. A successful run alerts with its
 reply through normal encrypted push delivery; a failed or interrupted one leaves a
-"Routine could not finish" notice. Returning `(pass)` or no text completes silently.
+"Routine could not finish" notice. Returning `(pass)` or no text completes silently, and so does a reply whose
+last non-blank line is `(pass)` or ends a sentence with it, as in "Doesn't qualify. (pass)" or "不符合條件。(pass)"
+(`chat::group::ends_in_pass`, routine turns only); the text before it stays in the run's steps. A status line such
+as "- lint (pass)" is still a report and is posted.
 Replying to a run's result goes to the bot's main session, with the result quoted. A test run can run a paused routine. Pausing or
 deleting cancels pending runs; work already running can finish. Deleting a bot
 cancels its pending work. Missed intervals coalesce rather than replaying a backlog.
@@ -287,7 +290,7 @@ rest run their routines in the box.
 checks real scheduled execution, webhook credentials, delivery deduplication,
 pause/delete/edit while queued, crash recovery in the same session, unsupported
 session recovery, hung-agent timeout, recurring work after failure, single-host
-ownership, silent completion, and the advertised routine MCP server (including key
+ownership, silent completion (a reply that ends with `(pass)`, in the box and the chat), and the advertised routine MCP server (including key
 rotation). `host/tests/routine_retry_e2e.rs` checks a webhook run that failed before
 acting waiting 1 minute with its event (and running at once on a test run), and one
 that acted waiting for `retryRoutineRun`, which reuses the event once.

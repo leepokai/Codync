@@ -25,8 +25,11 @@ import com.codync.android.core.CloudMachine
 import com.codync.android.core.CloudPlacement
 import com.codync.android.design.*
 
-/** "Runs on Boat · EU": under the computer's name. */
-@Composable internal fun CloudPlacement.runsOn(): String = tr("Runs on {provider} · {region}").replace("{provider}", providerName).replace("{region}", region)
+/** "Runs on Boat · EU": under the computer's name, or one New cloud computer is about to make. */
+@Composable internal fun runsOn(provider: String, region: String): String =
+    tr("Runs on {provider} · {region}").replace("{provider}", provider).replace("{region}", region)
+
+@Composable internal fun CloudPlacement.runsOn(): String = runsOn(providerName, region)
 
 private val CloudMachine.stateLabel: String get() = when {
     preparing -> "Preparing your cloud computer…"
@@ -40,9 +43,9 @@ private val CloudMachine.stateLabel: String get() = when {
 
 /**
  * Computers → Codync Cloud: the computers Codync runs for this account on the user's own provider accounts, each with its
- * menu (rename, its provider's key, delete its snapshots, delete it), and "+" for another on the provider picked in New
- * cloud computer, whose keys open from there too. Shown only to an account that has one or may create one (the feature
- * isn't public yet).
+ * menu (rename, its provider's key, delete its snapshots, delete it), and "+" for another (New cloud computer: provider,
+ * its key, name), whose saved keys open from there too. Shown only to an account that has one or may create one (the
+ * feature isn't public yet).
  */
 @Composable internal fun CloudSettings(state: AccountContext, store: AccountStore) {
     LaunchedEffect(state.generation) { store.refreshCloudMachines() }

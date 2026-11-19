@@ -48,6 +48,11 @@ impl Drop for Reading {
     }
 }
 
+/// Whether `agent` is being read now.
+pub(super) fn busy(agent: &str) -> bool {
+    READING.locked().contains(agent)
+}
+
 /// What `reading` finds, unless `agent` is being read already. `None`: no reading this time.
 pub(super) async fn guarded(
     hub: &Hub,

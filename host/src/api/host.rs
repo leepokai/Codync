@@ -297,6 +297,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             crate::analytics::errors::report(hub, &b)?;
             json!({})
         }
+        "setComputerName" => {
+            crate::remote::managed::rename(hub, b["name"].as_str().unwrap_or_default())?;
+            json!({"name": crate::remote::managed::computer_name(&hub.store)})
+        }
         "setAutoOrder" => {
             hub.set_auto_order(b["enabled"].as_bool().context("enabled must be a boolean")?)?;
             json!({"enabled": hub.auto_order()})

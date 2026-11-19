@@ -4,6 +4,7 @@ mod analytics;
 mod approvals;
 mod auto_order;
 mod bot;
+mod computer_name;
 mod credentials;
 mod editor;
 mod events;

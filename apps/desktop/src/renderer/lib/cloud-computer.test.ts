@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  actionMachine, canCreate, canRemoveKey, chosenProvider, cloudCreateOutcome, cloudDeleteOutcome, cloudKeyOutcome, errorPlace, isPreparing, justClaimed, machineActions,
-  limitCloudName, limitNote, machineStatus, offlineCloudStatus, placementLine, providerOption, suggestedName, type CloudMachine, type CloudProvider,
+  actionMachine, canCreate, canRemoveKey, cloudCreateOutcome, cloudDeleteOutcome, cloudKeyOutcome, errorPlace, isPreparing, isReady, justClaimed, machineActions,
+  limitCloudName, limitNote, machineStatus, offlineCloudStatus, placementLine, providerDetail, suggestedName, type CloudMachine, type CloudProvider,
 } from './cloud-computer.ts'
 
 const machine: CloudMachine = {
@@ -18,7 +18,7 @@ test('an offline cloud computer that sleeps is not offline, and one that failed 
   assert.deepEqual(offlineCloudStatus({ ...machine, state: 'stopped' }), { text: 'Sleeping · wakes when you message', error: false })
   assert.deepEqual(offlineCloudStatus({ ...machine, state: 'stopping' }), { text: 'Sleeping · wakes when you message', error: false })
   assert.deepEqual(offlineCloudStatus({ ...machine, state: 'failed' }), { text: 'Cloud computer failed', error: true })
-  assert.deepEqual(offlineCloudStatus({ ...machine, state: 'starting' }), { text: 'Waking the computer…', error: false })
+  assert.equal(offlineCloudStatus({ ...machine, state: 'starting' }), null)
   assert.equal(offlineCloudStatus({ ...machine, state: 'running' }), null)
   assert.equal(offlineCloudStatus(null), null)
   assert.equal(offlineCloudStatus(undefined), null)
@@ -122,32 +122,26 @@ test('a deletion or key removal the cloud turned down is refused, anything else 
   assert.equal(cloudDeleteOutcome(new TypeError('fetch failed')), 'failed')
 })
 
-test('New cloud computer lists every provider and starts on the first with a usable key', () => {
+test('New cloud computer lists every provider with its key, what to fix, or what it costs; a usable key goes straight to the name', () => {
   const boat: CloudProvider = {
-    provider: 'boat', name: 'Boat', region: 'EU', keyPrompt: 'boat_…',
-    setup: { page: 'https://boat.dev/dashboard', commands: 'boat env new codync' }, credential: null,
+    provider: 'boat', name: 'Boat', region: 'EU', plan: 'From $20 a month', keyPrompt: 'boat_…',
+    setup: { page: 'https://boat.dev/dashboard', steps: ['Copy the key and paste it below.'], commands: 'boat env new codync' }, credential: null,
   }
-  const instabox: CloudProvider = { ...boat, provider: 'instabox', name: 'InstaBox', region: 'US', credential: { hint: 'ibk_…0001', problem: null } }
+  const instabox: CloudProvider = { ...boat, provider: 'instabox', name: 'InstaBox', region: 'US', plan: 'Free plan available', credential: { hint: 'ibk_…0001', problem: null } }
   const refused = { ...boat, credential: { hint: 'boat_…9abc', problem: 'This key has expired. Make a new one.', blocking: true } }
   // The plan, not the key: what to fix shows, and Create tries again (a create that works clears it).
   const unpaid = { ...instabox, credential: { hint: 'ibk_…0001', problem: 'This account needs an active plan.', blocking: false } }
-  const tr = (t: string) => t
-  assert.deepEqual(providerOption(boat, tr), { usable: false, detail: { text: 'EU · Add a key first', error: false } })
-  const offered = { ...boat, offer: { label: 'Get a free sandbox', detail: 'A free plan.', url: 'https://example.com' } }
-  assert.deepEqual(providerOption(offered, tr), { usable: false, detail: { text: 'EU · Free sandbox available', error: false } })
-  assert.deepEqual(providerOption(instabox, tr), { usable: true, detail: { text: 'US · ibk_…0001', error: false } })
-  assert.deepEqual(providerOption(refused, tr), { usable: false, detail: { text: 'This key has expired. Make a new one.', error: true } })
-  assert.deepEqual(providerOption(unpaid, tr), { usable: true, detail: { text: 'This account needs an active plan.', error: true } })
-  assert.equal(chosenProvider([refused, unpaid], null), 'instabox')
-  assert.equal(chosenProvider([boat, instabox], null), 'instabox')
-  assert.equal(chosenProvider([refused, instabox], 'boat'), 'instabox')
-  assert.equal(chosenProvider([boat, refused], null), null)
-  const keyed = { ...boat, credential: { hint: 'boat_…9abc', problem: null } }
-  assert.equal(chosenProvider([keyed, instabox], null), 'boat')
-  assert.equal(chosenProvider([keyed, instabox], 'instabox'), 'instabox')
-  // Picked while it had no key: chosen once it has one.
-  assert.equal(chosenProvider([boat, instabox], 'boat'), 'instabox')
-  assert.equal(chosenProvider([keyed, instabox], 'boat'), 'boat')
+  const de = (t: string) => ({ 'From $20 a month': 'Ab 20 $ im Monat' })[t] ?? t
+  assert.deepEqual(providerDetail(boat, de), { text: 'EU · Ab 20 $ im Monat', error: false })
+  // An older cloud says nothing of the cost.
+  assert.deepEqual(providerDetail({ ...boat, plan: undefined }, de), { text: 'EU · Add a key first', error: false })
+  assert.deepEqual(providerDetail(instabox, de), { text: 'US · ibk_…0001', error: false })
+  assert.deepEqual(providerDetail(refused, de), { text: 'This key has expired. Make a new one.', error: true })
+  assert.deepEqual(providerDetail(unpaid, de), { text: 'This account needs an active plan.', error: true })
+  assert.equal(isReady(boat), false)
+  assert.equal(isReady(instabox), true)
+  assert.equal(isReady(refused), false)
+  assert.equal(isReady(unpaid), true)
 })
 
 test('Create is on while the account may have another and nothing else runs; at the limit it says why', () => {

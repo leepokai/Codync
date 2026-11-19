@@ -58,7 +58,7 @@ host answers and sends it once the host is up.
 | `join_offer_answered` | host `track` (desktop) | The ask to add a computer to the signed-in account ended | `outcome` (`added`/`kept_out`/`failed`) |
 | `cloud_key_saved` | iOS, Android, host `track` (desktop) | The user gave Codync Cloud the key to their own account with a cloud provider (never the key or its hint) | `outcome` (`saved`; `refused`: the cloud or the provider turned it down and the app said what to fix; `failed`: anything else), `provider` (the cloud's id for it: `boat`/`instabox`; the host reads one it doesn't know yet as `other`) |
 | `cloud_computer_created` | iOS, Android, host `track` (desktop) | The user created a Codync Cloud computer from *New cloud computer* | `outcome` (`created`; `refused`: the cloud said no with what to fix (the account's limit, or the provider turned down the key or the plan); `failed`: anything else), `provider` (`boat`/`instabox`; the host reads one it doesn't know yet as `other`) |
-| `cloud_offer_opened` | iOS, Android, host `track` (desktop) | The user opened a cloud provider's free plan from its key sheet (*Get a free sandbox*) | `provider` (`instabox`; the host reads one it doesn't know yet as `other`) |
+| `cloud_offer_opened` | iOS, Android, host `track` (desktop) | The user opened a cloud provider's free plan (*Get a free sandbox*) from *Connect {provider}* in *New cloud computer* or from its API key sheet | `provider` (`instabox`; the host reads one it doesn't know yet as `other`) |
 | `cloud_keeper_checked` | host (a Codync Cloud computer, once per start; on its first boot, once its claim lands) | The host checked the keeper that holds this cloud computer's secrets | `state` (`unlocked`; `locked`: still waiting for its key from the cloud; `missing`: no keeper on this machine), `sudo` (whether the agents' user could still use sudo, which would leave the secrets unprotected) |
 | `cloud_computer_renamed` | iOS, Android, host `track` (desktop) | The user renamed a Codync Cloud computer (never the name) | `outcome` (`renamed`/`failed`) |
 | `cloud_computer_deleted` | iOS, Android, host `track` (desktop) | The user deleted a Codync Cloud computer | `outcome` (`deleted`; `refused`: the cloud said no, `409`; `failed`), `provider` |
@@ -101,6 +101,7 @@ host answers and sends it once the host is up.
 | `bot_updated` | host | `updateBot` | `fields`: the settings that changed, as the bot config's own camelCase keys (`model`, `permission`, `pinned`, `section`, `modelOptions`, `fastMode`, …), never their values; when the edit changes `compaction`, also `compaction`: the kind picked (`early`/`nearLimit`/`off`/`tokens`, never the size) |
 | `bots_reordered` | host | `reorderBots` | — |
 | `section_renamed` | host | `renameSection` | `removed`: whether it removed the section (`to` empty or `null`); never the names |
+| `computer_renamed` | host | `setComputerName`: the user named a computer of their own | `removed`: whether it went back to the hostname (`name` empty); `outcome` (`renamed`/`failed`), `error` (`other`) when it failed; never the name |
 | `bot_deleted` | host | `deleteBot` | — |
 | `message_sent` | host | `send` to a chat (a resend counts once; one to an item's thread is `work_messaged`) | `kind`, `agent`, `reply` (whether it quotes a message), `replyPart` (whether it quotes a part the user selected in it), `attachments` (count) |
 | `message_steered` | host | *Send now* on a queued message (`steer`), once its outcome is known | `agent`, `how` (`joined` the running turn / `next` turn, the turn ended first / `interrupted` the user's turn / `moved_up` behind other work / `failed`, it waits) |
@@ -124,6 +125,8 @@ host answers and sends it once the host is up.
 | `routine_deleted` | host | `deleteRoutine` | — |
 | `routine_run` | host | `runRoutine` | — |
 | `routine_retried` | host | `retryRoutineRun` (the retry button on a failed run's notice) | — |
+| `chain_limit_reached` | host | A bot chain stopped at its handoff limit and left the user its Continue notice, once a turn ([bot collaboration](../features/bot-collaboration.md#limits)) | `via` (`message`: `message_bot`, here or to another computer, `work`: `add_work`) |
+| `chain_continued` | host | `continueChain` (Continue on that notice) | — |
 | `routine_progress_saved` | host | A bot's `save_progress` finished ([progress note](../features/routines.md#progress-note)) | `outcome` (`saved`, `too_long`, `not_found`, why its text was refused: `hidden`, `prompt_link`, `instruction`, `secret`, `other`, or `failed`: the host couldn't save it), `tokens` (the note's estimated size, never its text) |
 | `follow_up_set` | host | A bot's `follow_up` finished ([follow-ups](../features/follow-ups.md)) | `outcome` (`set`, `invalid`: no wait or note, `elsewhere`: asked from a room or another bot's request, why the note's text was refused: `hidden`, `prompt_link`, `instruction`, `secret`, `other`, `limit`: ten waiting, `chain`: too many in a row, or `failed`: the host couldn't save it), `minutes`, `chain` (follow-ups in a row before this one) |
 | `follow_up_fired` | host | A follow-up's turn begins | `late` (`true` when over a minute past due: the computer was off or asleep) |
@@ -153,7 +156,8 @@ host answers and sends it once the host is up.
 | `skill_installed` | host | `installSkill` | `custom` |
 | `skill_removed` | host | `removeSkill` | — |
 | `skill_written` | host | A bot's `save_skill` (`chatCall`) | `change` (`new`/`update`) |
-| `artifact_published` | host | A bot's `publish_artifact` (`chatCall`) | `change` (`new`/`update`), `card` (whether its card went into the bot's chat), never its title |
+| `team_managed` | host | A manager bot's `create_bot` or `update_bot` (`manageCall`) | `tool` (`create`/`update`), `fields`: the settings it passed by tool argument name (`name`, `model`, `modelOptions`, `routines`, …); when it failed `outcome` `failed` and `error` (`options`: a model setting the agent doesn't list; `catalog`: the agent's model list didn't load; `denied`: the approval card wasn't allowed in time; `other`); never their values or the bot |
+| `artifact_published` | host | A bot's `publish_artifact` (`chatCall`) | `change` (`new`/`update`), `card` (whether a new card went into the bot's chat), `quiet` (an update with `notify: false` that refreshed the artifact's existing card instead; never both true), never its title |
 | `voice_note_sent` | host | A bot's `send_file` with text (`chatCall`): a message that carries a voice note | never the file, its name or the text |
 | `bot_quoted` | host | A bot's `send_message` or `send_file` with `reply_to` (`chatCall`): `tool` (`message` \| `file`), `outcome` (`quoted`, or `unquoted` when the id couldn't be quoted). A voice note with a quote counts as `voice_note_sent` | never the id, the text or the quote |
 | `voice_note_played` | host `track` (desktop), iOS, Android | A voice note's play button starts it from its beginning (not a resume) | `outcome` (`played`/`failed`), `error` when failed (`load`: fetching or opening it; `playback`: starting it), never which note |

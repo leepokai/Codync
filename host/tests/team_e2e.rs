@@ -260,4 +260,13 @@ async fn message_ping_pong_stops_at_the_hop_limit_and_a_new_user_turn_can_delega
         assert_eq!(notices, chain * 8 * 2, "the ninth handoff must never be queued");
         previous_rev = sync["rev"].as_i64().unwrap();
     }
+    // Each stopped chain left the user one Continue notice, which sends `first` "Continue" as the user's message.
+    let sync = common::snapshot(&host.base, &host.token).await;
+    let entries = sync["entries"].as_array().unwrap();
+    let continues: Vec<_> = entries.iter().filter(|e| e["data"]["continueChain"] == true).collect();
+    assert_eq!(continues.len(), 2, "one notice a stopped chain");
+    let sent = host.call("continueChain", json!({"entryId": continues[1]["id"]})).await;
+    assert_eq!(sent["entry"]["kind"], "user");
+    assert_eq!(sent["entry"]["data"]["text"], "Continue");
+    host.wait_finished().await;
 }

@@ -212,11 +212,14 @@ fn connectors_skills_and_agents() {
     let p = answered(event, p, &json!({"published": true})).expect("published");
     assert_eq!(
         (event, Value::Object(p)),
-        (Event::ArtifactPublished, json!({"change": "new", "card": true, "client": "local"}))
+        (Event::ArtifactPublished, json!({"change": "new", "card": true, "quiet": false, "client": "local"}))
     );
     let (event, p) = published(json!({"path": "r.html", "artifact": "a1"}));
     let p = answered(event, p, &json!({"published": true, "card": "not posted"})).expect("published");
     assert_eq!((p["change"].clone(), p["card"].clone()), (json!("update"), json!(false)), "a room's has no card");
+    let (event, p) = published(json!({"path": "r.html", "artifact": "a1", "notify": false}));
+    let p = answered(event, p, &json!({"published": true, "quiet": true})).expect("published");
+    assert_eq!((p["card"].clone(), p["quiet"].clone()), (json!(false), json!(true)), "a quiet update posts no card");
     assert_eq!(props("connectorSignIn", &json!({"id": "c"})).map(|(e, _)| e), Some(Event::ConnectorSigninStarted));
     let setup = props("agentSetup", &json!({"backend": "claude-acp", "step": "install"}));
     assert_eq!(setup, Some((Event::AgentSetupStarted, json!({"agent": "claude-acp", "client": "local"}))));
@@ -293,6 +296,21 @@ fn a_bot_edit_names_the_settings_it_changes() {
         serde_json::from_value(json!({"id": "b1", "name": "Ada", "backend": "codex", "cwd": own})).unwrap();
     assert_eq!(changed_fields(&stored, &json!({"id": "b1", "cwd": "", "fastMode": true})), ["fastMode"]);
     assert_eq!(changed_fields(&stored, &json!({"id": "b1", "cwd": "/tmp"})), ["cwd"]);
+}
+
+#[test]
+fn a_computer_rename_reports_without_the_name() {
+    assert_eq!(
+        props("setComputerName", &json!({"name": "Work Mac"})),
+        Some((Event::ComputerRenamed, json!({"removed": false, "outcome": "renamed", "client": "local"})))
+    );
+    let (event, p) = observe(&Caller::Local, "setComputerName", &json!({"name": " "})).unwrap();
+    assert_eq!(p["removed"], true);
+    let failed = failed(event, p, &anyhow::anyhow!("A cloud computer is renamed in Codync Cloud."));
+    assert_eq!(
+        failed.map(|(_, p)| (p["outcome"].clone(), p["error"].clone())),
+        Some((json!("failed"), json!("other")))
+    );
 }
 
 #[test]
@@ -421,4 +439,25 @@ fn a_voice_server_that_wasnt_saved_reports_why_never_what_it_said() {
     };
     assert_eq!(reported(&refused), with("unreachable"));
     assert_eq!(reported(&anyhow::anyhow!("the vault is locked")), with("other"));
+}
+
+#[test]
+fn a_team_change_names_the_settings_it_passes_never_their_values() {
+    let arguments = json!({"botId": "b2", "name": "Secret", "modelOptions": {"effort": "low"}, "made_up": 1});
+    let b = json!({"botId": "b1", "name": "update_bot", "arguments": arguments});
+    assert_eq!(
+        props("manageCall", &b),
+        Some((Event::TeamManaged, json!({"tool": "update", "fields": ["modelOptions", "name"], "client": "local"})))
+    );
+    assert_eq!(props("manageCall", &json!({"name": "list_team", "arguments": {}})), None, "a read");
+}
+
+#[test]
+fn a_refused_team_change_reports_why_never_what_it_said() {
+    let b = json!({"name": "create_bot", "arguments": {"name": "Scout"}});
+    let (event, p) = observe(&Caller::Local, "manageCall", &b).unwrap();
+    let reported = |error: &anyhow::Error| failed(event, p.clone(), error).map(|(_, p)| p["error"].clone());
+    let denied = crate::chat::manage::Refused::error("denied", "the user didn't allow this change".into());
+    assert_eq!(reported(&denied), Some(json!("denied")));
+    assert_eq!(reported(&anyhow::anyhow!("nothing to change")), Some(json!("other")));
 }

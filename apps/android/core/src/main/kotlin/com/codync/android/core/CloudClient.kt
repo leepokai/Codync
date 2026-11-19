@@ -35,8 +35,6 @@ data class CloudComputer(val computerId: String, val name: String, val signKey: 
 data class CloudPlacement(val provider: String, val providerName: String, val region: String, val state: String) {
     /** Asleep, or going to sleep: it wakes when a device connects or a message arrives. */
     val asleep: Boolean get() = state == "stopped" || state == "stopping"
-    /** On its way up (a wake): it's coming, not offline. */
-    val starting: Boolean get() = state == "starting"
     val failed: Boolean get() = state == "failed"
 }
 
@@ -63,15 +61,11 @@ data class CloudMachine(val cloudComputerId: String,
 @Serializable
 data class CloudOffer(@SerialName("cloudComputers") val machines: List<CloudMachine> = emptyList(), val available: Boolean = false,
     val limit: Int = 3, val providers: List<CloudProvider> = emptyList()) {
-    /** The provider New cloud computer creates on: [picked] while its key works, else the first whose key does. One picked
-     * before its key was added (or fixed) is chosen once it is (iOS `CloudMachineStore.provider(picked:)`). */
-    fun chosenProvider(picked: String?): String? {
-        val usable = providers.filter { it.usable }
-        return (usable.firstOrNull { it.provider == picked } ?: usable.firstOrNull())?.provider
-    }
-
     /** A key can go unless a cloud computer runs on that provider (the cloud needs it to put them to sleep). */
     fun canRemoveKey(provider: String) = machines.none { it.provider == provider }
+
+    /** Why Create is off at the account's limit, for the app to translate (iOS `CloudMachineStore.limitNote`). */
+    fun limitNote(): String? = "You can have up to $limit cloud computers. Delete one to make another.".takeIf { machines.size >= limit }
 
     /** What a new computer is called when the user names it nothing: [base] while no computer has that name, else
      * [numbered] (`… {n}`) with the smallest free n from 2. The app passes both translated. */
@@ -86,8 +80,8 @@ data class CloudOffer(@SerialName("cloudComputers") val machines: List<CloudMach
 }
 
 /**
- * A provider the cloud can run the computer on, as it lists them: where it runs, how to make its key (worded by the
- * cloud, so a new provider needs no app release) and the account's key for it.
+ * A provider the cloud can run the computer on, as it lists them: where it runs, what it costs, how to make its key
+ * (worded by the cloud, so a new provider needs no app release) and the account's key for it.
  */
 @Serializable
 data class CloudProvider(val provider: String, val name: String, val region: String,
@@ -95,10 +89,18 @@ data class CloudProvider(val provider: String, val name: String, val region: Str
     val keyPrompt: String,
     val setup: CloudKeySetup, val credential: CloudCredential? = null,
     /** Its own free plan, if it has one (older clouds don't say). */
-    val offer: CloudProviderOffer? = null) {
+    val offer: CloudProviderOffer? = null,
+    /** What a computer there costs, in a sentence the app translates (`From $20 a month`; older clouds don't say). */
+    val plan: String? = null) {
     /** The account gave it a key that isn't turned down for its own sake: a computer can be made there (or tried again,
      * when the provider said no for the plan or the account). */
     val usable: Boolean get() = credential != null && !credential.blocking
+
+    /** The line under its name in New cloud computer, through [tr] (iOS `CloudProvider.detail`), and whether it's a
+     * problem: what to fix while the provider turns the key down; else where it runs beside the key's hint, or without
+     * one what it costs (that it needs one, from clouds that don't say). */
+    fun detail(tr: (String) -> String): Pair<String, Boolean> = credential?.problem?.let { tr(it) to true }
+        ?: ("$region · ${credential?.hint ?: tr(plan ?: "Add a key first")}" to false)
 }
 
 /** A provider's own free plan, in the cloud's words (the app translates [label] and [detail]), and its page. */
@@ -115,9 +117,10 @@ data class CloudCredential(
     /** The key itself was turned down (revoked, expired): nothing can be made with it until it's replaced. */
     val blocking: Boolean = false)
 
-/** How the user makes a provider's key: commands to run, or the provider's page. */
+/** How the user makes a provider's key: [steps] on the provider's [page] (sentences the app translates; older clouds
+ * send none), or [commands] to run instead. */
 @Serializable
-data class CloudKeySetup(val page: String, val commands: String)
+data class CloudKeySetup(val page: String, val commands: String, val steps: List<String> = emptyList())
 
 data class AccessTicket(val requestId: String, val expiresAt: Long, val code: String, val computerId: String, val signKey: String)
 

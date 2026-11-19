@@ -1,5 +1,5 @@
 import type { CodyncBridge, SpeechEvent } from '../../../shared/ipc.ts'
-import { VoiceKeyRouter, type VoiceKey } from '../../../shared/voice-shortcut.ts'
+import { VoiceKeyRouter, type VoiceKey, type VoiceTap } from '../../../shared/voice-shortcut.ts'
 import { Observable } from '../../lib/observable.ts'
 import type { VoiceProvider } from '../settings/voice-settings.ts'
 import { inOrder, joinDictated, MIN_SAMPLES, pieces } from './dictation-pieces.ts'
@@ -36,6 +36,8 @@ export interface DictationPlatform {
   count(seconds: number, provider: VoiceProvider): void
   /** Shows an error, every time (even the same one again). */
   report(message: string): void
+  /** What the voice input shortcut's tap after its double tap does (Settings → General). */
+  shortcutTap(): VoiceTap
 }
 
 /** Recording for a provider: what the microphone heard so far, and how to stop it. */
@@ -73,7 +75,7 @@ export class Dictation extends Observable {
   private done: (() => void) | null = null
   /** Bumped by each start, finish and cancel: a microphone or transcript arriving late for an earlier one is dropped. */
   private generation = 0
-  /** Started by the voice input shortcut's double tap: its next tap sends what's in the field. */
+  /** Started by the voice input shortcut's double tap: its next tap ends it (and sends, unless set to only stop). */
   private byShortcut = false
   private readonly keys = new VoiceKeyRouter()
   /** Changes the box's text. */
@@ -145,12 +147,13 @@ export class Dictation extends Observable {
   }
 
   /**
-   * A tap of the voice input shortcut: a tap after its double tap finishes and runs `send`. True
-   * when it's a double tap that should start: the caller shows its field, then `start(draft, true)`.
+   * A tap of the voice input shortcut: a tap after its double tap finishes and runs `send`, or only
+   * finishes (the words stay in the box) when set to stop. True when it's a double tap that should
+   * start: the caller shows its field, then `start(draft, true)`.
    */
   shortcutKey(key: VoiceKey, send: () => void): boolean {
     const action = this.keys.route(key, { byShortcut: this.byShortcut, busy: this.busy })
-    if (action === 'send') this.finish(send)
+    if (action === 'end') this.finish(this.platform.shortcutTap() === 'stop' ? undefined : send)
     return action === 'start'
   }
 

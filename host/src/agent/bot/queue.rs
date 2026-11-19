@@ -1,33 +1,32 @@
 //! Commands from clients and the queue of turns waiting for the bot.
 
+use super::sign_in::Held;
 use super::{
     Actor, CANCEL_GRACE, Cmd, Done, HostTurn, Inflight, NoticeStyle, Queued, RESUME_PROMPT, RoutineCompletion,
 };
-use crate::agent::login_profiles::Login;
 use crate::agent::own_memory;
 use crate::chat::memory;
-use crate::chat::tasks::{self, Failure, Outcome};
+use crate::chat::work::{self, Failure, Outcome};
 use crate::hub::BotStatus;
-use crate::market::agent_sign_in;
 use crate::store::{Lane, now_ms};
 use anyhow::{Result, anyhow};
 use codync_network::Access;
 use serde_json::json;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::sync::mpsc;
 
 impl Actor {
     pub(super) async fn on_cmd(&mut self, cmd: Cmd, done_tx: &mpsc::UnboundedSender<Done>) -> bool {
         match cmd {
-            Cmd::RefreshTools => {
-                self.tools_changed = true;
-            }
+            Cmd::RefreshTools => self.restart_stale(),
             Cmd::KeeperRestarted => self.keeper_restarted().await,
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
             Cmd::FollowUp(id) => self.enqueue(Queued::FollowUp(id), done_tx).await,
             Cmd::TaskReport(report) => self.enqueue(Queued::TaskReport(report), done_tx).await,
-            Cmd::Send { lane, entry_id, text } => {
-                if !self.try_decision_message(&lane, &entry_id) {
+            Cmd::Send { lane, entry_id, mut text } => {
+                // What the user writes to a thread waits behind the turn its card holds: only a press
+                // answers a thread's card, and a message neither answers nor ends it.
+                if self.cfg.is_thread() || !self.try_decision_message(&lane, &entry_id, &mut text) {
                     self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await;
                 }
             }
@@ -46,9 +45,9 @@ impl Actor {
                     self.cancel_turn().await;
                 }
             }
-            // An item in its box, so the chat stays free; a bot that needs its chat's tools for it takes it here.
-            Cmd::BotRequest(request) if tasks::boxed(&self.base) => {
-                tasks::add_request(&self.hub, &self.cfg.id, request);
+            // A task in its box, so the chat stays free; a bot that needs its chat's tools for it takes it here.
+            Cmd::BotRequest(request) if work::boxed(&self.base) => {
+                work::add_request(&self.hub, &self.cfg.id, request);
             }
             Cmd::BotRequest(request) => self.enqueue(Queued::BotRequest(request), done_tx).await,
             Cmd::BotReply(reply) => self.enqueue(Queued::BotReply(reply), done_tx).await,
@@ -59,7 +58,13 @@ impl Actor {
             Cmd::Ask { data, started_at, deadline, reply } => self.ask(data, started_at, deadline, reply),
             Cmd::Decision { entry_id, choice, reply } => {
                 if !reply.is_closed() {
-                    let answer = self.decided(&entry_id, &choice, None);
+                    // A call that just ran out leaves its card open: a press on it is the user's next message.
+                    self.expire_abandoned_decisions();
+                    let answer = if self.open_card.as_deref() == Some(&entry_id) {
+                        self.answer_open_card(&entry_id, &choice)
+                    } else {
+                        self.decided(&entry_id, &choice, None)
+                    };
                     let _ = reply.send(answer);
                 }
             }
@@ -93,8 +98,13 @@ impl Actor {
                 }
                 let _ = self.dreamer.send(memory::DreamEvent::Flush);
             }
-            Cmd::Reconfigure(base) => {
+            Cmd::Reconfigure(mut base) => {
+                // A thread's folder is its own (`enter_worktree`): its bot's changes (`work::fallbacks_changed`) keep it.
+                if self.cfg.is_thread() {
+                    base.cwd.clone_from(&self.base.cwd);
+                }
                 let old = std::mem::replace(&mut self.base, *base);
+                self.versions.ready(&self.hub, &self.base);
                 // On its own agent the bot takes the new one; on a fallback it keeps that agent (its step may have
                 // moved) until `settle_chain` moves it off one it no longer uses.
                 let cfg = if crate::agent::fallback::step_of(&old, &crate::agent::fallback::login::of(&self.cfg))
@@ -115,7 +125,7 @@ impl Actor {
                     || cfg.model != self.cfg.model
                     || cfg.model_options != self.cfg.model_options
                     || (memory_changed && !resumes);
-                self.tools_changed |= cfg.connectors != self.cfg.connectors
+                self.restart_before_turn |= cfg.connectors != self.cfg.connectors
                     || cfg.computer != self.cfg.computer
                     || cfg.manage_team != self.cfg.manage_team
                     || memory_changed;
@@ -176,7 +186,7 @@ impl Actor {
         for queued in std::mem::take(&mut self.queue) {
             match queued {
                 Queued::Group(turn) if turn.late => self.queue.push_back(Queued::Group(turn)),
-                // An item's report is news the user still wants.
+                // A task's report is news the user still wants.
                 Queued::TaskReport(report) => self.queue.push_back(Queued::TaskReport(report)),
                 Queued::User { entry_id, .. } => {
                     if let Some(mut e) = self.hub.store.entry(&entry_id) {
@@ -188,6 +198,15 @@ impl Actor {
             }
         }
         self.cancel_turn().await;
+        // A thread whose task waited for a sign-in has no turn to cancel: it no longer needs the user, and its box is
+        // looked over again (its task stopped or gave way, so the thread ends).
+        if self.turn.is_none() && self.cfg.is_thread() && self.hub.runtime(&self.id()).status == BotStatus::NeedsInput {
+            self.hub.set_runtime(&self.id(), |r| {
+                r.status = BotStatus::Idle;
+                r.activity.clear();
+            });
+            self.turn_over(Outcome::Stopped);
+        }
     }
 
     /// Stops the running turn only (queued ones stay).
@@ -299,11 +318,11 @@ impl Actor {
                     }
                     self.host_turn = Some(HostTurn::TaskReport);
                     let hops = reports.iter().map(|r| r.hops).max().unwrap_or(0);
-                    let prompt = tasks::report_prompt(&reports);
+                    let prompt = work::report_prompt(&reports);
                     self.reports = reports;
                     match self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
-                        // An item this turn adds carries the chain on.
-                        Ok(()) => self.hub.tasks.answering(&self.cfg.id, hops),
+                        // A task this turn adds carries the chain on.
+                        Ok(()) => self.hub.work.answering(&self.cfg.id, hops),
                         Err(e) => self.start_error(e, done_tx).await,
                     }
                     continue;
@@ -401,11 +420,11 @@ impl Actor {
         self.finish_routine(crate::routines::Status::Failed, Some(why), None);
         self.complete_request(Err(crate::chat::team::no_reply::not_started(format_args!("{e:#}"))), false);
         self.complete_group(Err(anyhow!("couldn't start: {e:#}")));
-        self.turn_over(Outcome::not_started(e));
         if !self.invite_sign_in(e) {
             // `{:#}` keeps the reason ("starting `npx …`: EACCES"), not just "agent process exited".
             self.failure_notice(e, &format!("Couldn't start the agent: {e:#}"), "start_failed");
         }
+        let goes_on = self.end_task(|| Outcome::not_started(e));
         // What the chain carried in (a recap, a takeover) was this turn's; the user's handoff waits for the next.
         self.relay.carried = None;
         self.turn = None;
@@ -415,72 +434,17 @@ impl Actor {
         if self.routine_completion.is_none() {
             self.set_inflight(false);
         }
+        let needs = goes_on.as_ref().and_then(Held::needs);
         self.hub.set_runtime(&self.id(), |r| {
-            r.status = BotStatus::Error;
-            r.activity = "Couldn't start".into();
+            r.status = if needs.is_some() { BotStatus::NeedsInput } else { BotStatus::Error };
+            r.activity = needs.unwrap_or_else(|| "Couldn't start".into());
             r.started_at = None;
             r.lane = None;
             r.message = None;
             r.session = None;
         });
+        self.wait_for_sign_in(goes_on.as_ref());
         self.hub.team.end_turn(&self.cfg.id);
-    }
-
-    /// When `e` asks for signing in: marks the harness signed out and puts a sign-in card in the
-    /// chat, which sends this turn's messages again once the user has signed in. Whether it did.
-    /// A process older than the turn may hold a sign-in replaced since: a new one tries its messages first.
-    pub(super) fn invite_sign_in(&mut self, e: &anyhow::Error) -> bool {
-        let backend = self.cfg.backend.clone();
-        if crate::agent::backends::harness(&backend).is_none() || !crate::agent::acp::needs_sign_in(e) {
-            return false;
-        }
-        // The process keeps the credentials it started with (Claude's revoked token): the next turn starts a new one.
-        self.restart_after_turn = true;
-        let held = self.held_for_sign_in().to_vec();
-        if self.process_predates_turn() && !held.is_empty() {
-            match agent_sign_in::send_again(&self.hub, &self.cfg.id, held.iter().map(String::as_str)) {
-                Ok(()) => return true,
-                Err(error) => tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't retry"),
-            }
-        }
-        let login = Login::of(&self.hub.store, &self.cfg);
-        self.note_signed_out(&login);
-        self.sign_in_card(&login, &held)
-    }
-
-    /// `login` refused the bot's prompt for auth: a login profile, or the computer's own login. Only that one
-    /// reads signed out, also over a check that still says signed in (`claude auth
-    /// status` with a revoked token).
-    pub(super) fn note_signed_out(&self, login: &Login) {
-        if let Some(profile) = &login.profile {
-            if crate::agent::login_profiles::note_signed_in(&self.hub.store, profile, false) {
-                // Signed out, it leaves the Usage screens.
-                crate::usage::login_profiles_changed(&self.hub);
-            }
-        } else {
-            crate::agent::backends::set_signed_in(&login.backend, Some(false));
-            crate::agent::backends::note_prompt_refused(&login.backend);
-        }
-    }
-
-    /// The agent's process was already running when this turn started.
-    fn process_predates_turn(&self) -> bool {
-        let (Some(conn), Some(started_at)) = (&self.conn, self.hub.runtime(&self.id()).started_at) else {
-            return false;
-        };
-        let turn_age = Duration::from_millis(u64::try_from(now_ms() - started_at).unwrap_or(0));
-        conn.started.elapsed() > turn_age
-    }
-
-    /// `login`'s sign-in card in the chat, holding `entries`. Whether it's there.
-    pub(super) fn sign_in_card(&self, login: &Login, entries: &[String]) -> bool {
-        let Some(h) = crate::agent::backends::harness(&login.backend) else { return false };
-        let invited = agent_sign_in::invite(&self.hub, &self.cfg.id, &self.lane, login, h.name, entries);
-        invited
-            .inspect_err(
-                |error| tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't ask to sign in"),
-            )
-            .is_ok()
     }
 
     /// The host-started turn is over; what it was, for the turn's end to act on. `answered`: the agent ended it
@@ -496,25 +460,25 @@ impl Actor {
     }
 
     /// The turn for the tasks' reports is over. Unanswered (stopped, failed, never started), they show in the chat
-    /// as they came, so what a task found isn't lost with the turn.
+    /// as they came, so what a thread found isn't lost with the turn.
     fn reports_over(&mut self, answered: bool) {
         let reports = std::mem::take(&mut self.reports);
         if !answered {
             for report in &reports {
-                self.notice(&tasks::report_notice(report), NoticeStyle::Info);
+                self.notice(&work::report_notice(report), NoticeStyle::Info);
             }
         }
-        let items: Vec<String> = reports.into_iter().map(|report| report.item).collect();
-        tasks::reported(&self.hub, &self.cfg.id, &items);
+        let tasks: Vec<String> = reports.into_iter().map(|report| report.task).collect();
+        work::reported(&self.hub, &self.cfg.id, &tasks);
     }
 
-    /// The turn is over, however it ended (or never began): a task's item says how and its bot gets the report;
-    /// the items a bot added in the turn may start.
+    /// The turn is over, however it ended (or never began): a thread's task says how and its bot gets the report;
+    /// the tasks a bot added in the turn may start.
     pub(super) fn turn_over(&mut self, outcome: Outcome) {
-        if self.cfg.is_task() {
-            tasks::finished(&self.hub, &self.cfg, outcome);
+        if self.cfg.is_thread() {
+            work::finished(&self.hub, &self.cfg, outcome);
         } else {
-            tasks::turn_over(&self.hub, &self.cfg.id, matches!(outcome, Outcome::Stopped));
+            work::turn_over(&self.hub, &self.cfg.id, matches!(outcome, Outcome::Stopped));
         }
     }
 
@@ -551,7 +515,7 @@ impl Actor {
         let Some(completion) = &self.routine_completion else {
             return true;
         };
-        let ran = crate::routines::Ran { timed_out: completion.timed_out, task: None };
+        let ran = crate::routines::Ran { timed_out: completion.timed_out, thread: None };
         match self.hub.routines.complete(
             &self.hub,
             &completion.id,
@@ -592,7 +556,7 @@ impl Actor {
                 Some("No saved agent session is available".into()),
                 None,
             );
-            self.turn_over(Outcome::Failed(Failure::Restart, tasks::CUT_OFF.into()));
+            self.turn_over(Outcome::Failed(Failure::Restart, work::CUT_OFF.into()));
             return;
         }
         let prompt = if self.active_routine.is_some() {

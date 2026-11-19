@@ -6,6 +6,7 @@ extension BotStore {
     /// One short line for a computer's connection, used next to its name.
     var statusText: String {
         if isUpdating { return "Updating…" }
+        if isWaking { return "Waking the computer…" }
         if isAsleep { return "Sleeping · wakes when you message" }
         return switch connection {
         case .online where isCloudUpdating: "Updating…"
@@ -13,7 +14,7 @@ extension BotStore {
         case .online: "Online"
         case .connecting: "Connecting…"
         case .computerOffline where cloudHosting?.state == .failed: "Cloud computer failed"
-        case let .computerOffline(lastSeen): lastSeen.map { "Offline · seen \(RelativeTime.day($0))" } ?? "Offline"
+        case let .computerOffline(lastSeen, _): lastSeen.map { "Offline · seen \(RelativeTime.day($0))" } ?? "Offline"
         case .offline: "Can't reach"
         case let .unauthorized(message): message
         case .unpaired: "Not paired"

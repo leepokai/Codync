@@ -60,8 +60,9 @@ can be traced from the events around it:
   on the iPhone and Android, both alike).
 - **Outcome**: how it ended, as `turn_finished` does: `outcome` (`done`, `failed`, …) and, for a
   failure, its category in `error`. Never the error's message.
-- **Errors**: failures that should never happen go to *Error tracking* below (`reportError` on
-  the host, desktop and terminal UI); crashes are already caught.
+- **Errors**: failures that should never happen go to *Error tracking* below (`host_error!` inside
+  the host, which logs one and reports it under the same name; `reportError` from the desktop and
+  terminal UI); crashes are already caught.
 - **Display preferences send nothing.** A device's own look (Settings › Appearance: theme, text
   size, usage icons, compact sidebar, agent logos; thinking details) has no outcome or failure to
   trace, so switching one is not an event.
@@ -115,7 +116,11 @@ builds PostHog frames itself (oldest first, the failing one last): generic `cust
 `apple` frames on the iPhone.
 
 - **Host** (`host/src/analytics/errors.rs`): its own panics (a panic hook queues them for the
-  analytics task), and `reportError`, loopback only, for the computer's apps. Process `host`.
+  analytics task), failures it got past that should never happen (`host_error!`: type
+  `HostError`, mechanism `handled`, what failed as a literal written in the code and the place that
+  noticed it; once per place while the host runs; so far the [work](work.md)
+  box: one that won't save, a thread that is gone, a result that can't be handed on), and `reportError`,
+  loopback only, for the computer's apps. Process `host`.
 - **Terminal UI**: its panics, through `reportError` from the panic hook. Process `tui`.
 - **Desktop** (`apps/desktop/src/main/error-reports.ts`, `shared/error-report.ts`): uncaught
   errors and rejections in the main process and every window, errors a view threw while
@@ -144,13 +149,16 @@ builds PostHog frames itself (oldest first, the failing one last): generic `cust
 What leaves the device: the error's type (`Panic`, `TypeError`, `EXC_BAD_ACCESS`), how it was
 caught, function names, and file names and line numbers inside Codync's code (on the iPhone,
 code addresses and binary UUIDs instead); an absolute path keeps only its file name. Never the
-error's message: only a panic message written as a literal in the code, an Electron crash reason
-or a signal name. Release host builds are stripped, so a
-host panic is its location only.
+error's message: only a panic message or a handled failure's name written as a literal in the
+code, the fixed start of a runtime panic whose rest carries data (`OS can't spawn worker thread`,
+`index out of bounds`), an Electron crash reason or a signal name. Release host builds are
+stripped, so a host panic is its location only.
 
 Alerts email the owner, from insights on the *Codync users* dashboard (production only): *Any
-crash or error in a day* (`$exception` > 0, checked daily) and *Failed agent turns over 15 in an
-hour* (`turn_finished` with `outcome = failed`, checked hourly; a normal hour has a few). A turn
+crash or error in a day* (`$exception` > 0, checked daily), *Failed agent turns over 15 in an
+hour* (`turn_finished` with `outcome = failed`, checked hourly; a normal hour has a few) and
+*Background work lost by the computer in a day* (`work_finished` with `error` `dispatch`, `lost` or
+`restart` > 0, checked daily: none of these is the user's setup). A turn
 that only needs the user to sign in or install the agent reports `needs_setup` and isn't counted;
 older hosts still report it as `failed` with `error` `sign_in`/`not_installed`. Error
 tracking's own issue alerts (new, reopened, spiking) need a Slack or Discord destination.
@@ -173,7 +181,7 @@ join an iPhone's `computer_paired` to the computer's events on `computer` in SQL
 | New user | First event of any kind in the period. A new computer also sends `host_started` with `first_run`. |
 | Onboarded | Desktop: `onboarding_completed`. Phones: `computer_paired` (or `onboarding_completed` with `via = skipped`, which is not onboarded). Funnels: [analytics events](../reference/analytics-events.md#funnels). |
 | Star rate | `star_prompt_answered` with `starred` ÷ all `star_prompt_answered`, per `ask`. |
-| Ko-fi rate | `kofi_invite_answered` with `opened` ÷ `kofi_invite_shown`, per `app` (the terminal UI sends only `kofi_invite_shown`: its link opens in the terminal). |
+| Ko-fi rate | `kofi_invite_answered` with `opened` ÷ `kofi_invite_shown`, per `app` and `ask` (the terminal UI sends only `kofi_invite_shown`: its link opens in the terminal). |
 | Activated | Sent ≥1 message from a phone (`message_sent`, `client = remote`) within 7 days of first seen. In the first week of data, 4 of 5 such users came back after 24 h and none of the 6 computer-only ones did. |
 | Successful turn rate | `turn_finished` with `outcome = done` ÷ all `turn_finished` with `source = user`, per agent and per `$os`. |
 | Frustration rate | (`turn_stopped` + `session_reset`) ÷ `message_sent`, per `$os`. |

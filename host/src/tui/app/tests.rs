@@ -8,7 +8,11 @@ async fn routines_keep_the_chat_draft_until_the_user_returns_to_chat() {
     let mut app = test_app();
     app.selected = Some("b".into());
     app.drafts.insert("b".into(), Editor::with("My unfinished message"));
-    app.overlays.push(Overlay::Details(DetailsPage { bot: "b".into(), items: Some(Vec::new()), ..Default::default() }));
+    app.overlays.push(Overlay::Details(DetailsPage {
+        bot: "b".into(),
+        routines: Some(Vec::new()),
+        ..Default::default()
+    }));
 
     app.on_key(KeyEvent::from(KeyCode::Char('c')));
     assert!(matches!(app.overlays.last(), Some(Overlay::Details(_))));
@@ -33,7 +37,7 @@ async fn a_follow_up_sits_above_the_routines_and_x_cancels_it() {
     app.selected = Some("b".into());
     app.overlays.push(Overlay::Details(DetailsPage {
         bot: "b".into(),
-        items: Some(vec![json!({"id": "r", "name": "Morning", "enabled": true, "triggers": []})]),
+        routines: Some(vec![json!({"id": "r", "name": "Morning", "enabled": true, "triggers": []})]),
         follow_ups: vec![json!({"id": "f", "botId": "b", "at": 0, "note": "Check the build"})],
         ..Default::default()
     }));
@@ -41,7 +45,7 @@ async fn a_follow_up_sits_above_the_routines_and_x_cancels_it() {
     // On the follow-up, a routine's keys leave it and the routine alone.
     app.on_key(KeyEvent::from(KeyCode::Char(' ')));
     assert_eq!(list(&app).follow_ups.len(), 1);
-    assert_eq!(list(&app).items.as_ref().unwrap()[0]["enabled"], true);
+    assert_eq!(list(&app).routines.as_ref().unwrap()[0]["enabled"], true);
 
     // x asks the host; the row stays until it answers, and a cancel that failed leaves it there.
     app.on_key(KeyEvent::from(KeyCode::Char('x')));
@@ -148,6 +152,15 @@ fn fuzzy_is_a_subsequence_match() {
     assert!(fuzzy("", &["anything"]));
     assert!(!fuzzy("xr", &["Rex"]));
     assert!(fuzzy("web", &["Rex", "~/mycode/web"]));
+}
+
+#[test]
+fn a_path_starts_at_home_only_inside_the_home_folder() {
+    assert_eq!(tilde("/Users/me/code", "/Users/me"), "~/code");
+    assert_eq!(tilde("/Users/me", "/Users/me/"), "~");
+    assert_eq!(tilde(r"C:\Users\me\code", r"C:\Users\me"), r"~\code");
+    assert_eq!(tilde("/Users/me2/x", "/Users/me"), "/Users/me2/x", "another folder that only starts the same");
+    assert_eq!(tilde("/srv/app", ""), "/srv/app");
 }
 
 #[tokio::test]

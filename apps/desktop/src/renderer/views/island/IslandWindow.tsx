@@ -117,14 +117,14 @@ function Header({ model, mode }: { model: IslandModel; mode: IslandMode }) {
             <Icon name={t.icon} size={13} scaled={false} />
           </button>
         ))}
-        <button className="island-tab" title="New bot" aria-label="New bot" onClick={() => model.newBot()}>
+        <button className="island-tab" title={tr('New bot')} aria-label={tr('New bot')} onClick={() => model.newBot()}>
           <Icon name="plus" size={13} weight="semibold" scaled={false} />
         </button>
       </div>
       <div className="island-tabs">
         {count ? <span className="island-count">{tr('{count} working').replaceAll('{count}', () => String(count))}</span> : null}
         <UsageMeter model={model} />
-        <button className="island-tab" title="Open Codync" aria-label="Open Codync" onClick={() => model.openApp()}>
+        <button className="island-tab" title={tr('Open Codync')} aria-label={tr('Open Codync')} onClick={() => model.openApp()}>
           <Icon name="arrow.up.right.square" size={13} scaled={false} />
         </button>
       </div>

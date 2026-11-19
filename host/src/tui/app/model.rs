@@ -227,11 +227,27 @@ impl Entry {
         self.kind == Kind::Notice && self.data["retry"] == true && self.data["runId"].is_string()
     }
 
+    /// A chain stopped at its handoff limit, whose notice lets it go on (`F`, `continueChain`).
+    pub fn continues(&self) -> bool {
+        self.kind == Kind::Notice && self.data["continueChain"] == true
+    }
+
     /// A notice for a bot-to-bot message or request (`chat::team`).
     pub fn is_bot_message(&self) -> bool {
         self.kind == Kind::Notice
             && self.data["botMessage"].is_object()
             && ["sourceBotId", "targetBotId", "text"].iter().all(|k| self.data["botMessage"][k].is_string())
+    }
+
+    /// A sign-in card an agent's turn waits on (a background thread's, in its bot's chat).
+    pub fn waits_for_sign_in(&self) -> bool {
+        let request = &self.data["connectionRequest"];
+        request["kind"] == "agent" && request["status"] == "pending"
+    }
+
+    /// A sign-in card that holds messages: signing in there is what sends them again.
+    pub fn holds_messages(&self) -> bool {
+        self.data["connectionRequest"]["entryIds"].as_array().is_some_and(|ids| !ids.is_empty())
     }
 
     pub fn pending(&self) -> bool {

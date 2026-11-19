@@ -7,6 +7,7 @@ mod park;
 
 pub(super) use park::resume_step;
 
+use super::sign_in::Held;
 use super::{Actor, Done, NoticeStyle};
 use crate::LockExt;
 use crate::agent::fallback::{self, Reason, carry, rest};
@@ -65,6 +66,8 @@ pub(super) struct Relay {
     line: Option<String>,
     /// What this attempt's agent hears first after the user's handoff (`carry_in`); this turn's only.
     pub(super) carried: Option<String>,
+    /// The turn's messages, held for a sign-in or sent again: a thread's task goes on past the turn (`task_goes_on`).
+    pub(super) held: Option<Held>,
 }
 
 /// The bot as it runs on `current`'s agent with `base`'s settings, also when that agent is no longer in its chain.
@@ -91,12 +94,8 @@ impl Actor {
     /// The first step, in order, whose agent this turn hasn't failed on and that isn't resting. A signed-out agent
     /// rests too: the sign-in state an app last checked can be stale.
     fn next_step(&self, now: i64) -> Option<usize> {
-        (0..fallback::steps(&self.base)).find(|&s| {
-            let login = fallback::login(&self.base, s);
-            !self.relay.tried.contains(&login)
-                && !self.relay.skipped.contains(&login)
-                && rest::get(&self.hub.store, &login, now).is_none()
-        })
+        let passed = |login: &str| self.relay.tried.iter().chain(&self.relay.skipped).any(|l| l == login);
+        fallback::first_step(&self.hub.store, &self.base, now, passed)
     }
 
     /// `start_turn`, once the turn has its lane and number: picks the agent. Not for hidden turns.
@@ -106,6 +105,7 @@ impl Actor {
             self.relay.failed.clear();
             self.relay.signed_out.clear();
             self.relay.stopped = None;
+            self.relay.held = None;
         }
         self.relay.exhausted = false;
         self.relay.line = None;
@@ -150,9 +150,9 @@ impl Actor {
         let mut carried = Vec::new();
         if self.slot().is_none()
             && let Some((agent, session)) = self.relay.recap.take()
-            && let Some(text) = self.recap(&agent, session.as_deref())
         {
-            carried.push(text);
+            carried.extend(self.chat_for_thread());
+            carried.extend(self.recap(&agent, session.as_deref()));
         }
         carried.extend(carry::takeover(&self.relay.failed));
         let text = (!carried.is_empty()).then(|| carried.join("\n\n"));
@@ -166,11 +166,29 @@ impl Actor {
         self.relay.carried = text;
     }
 
+    /// A thread's new session on another agent: the chat it comes from, which its first session had (by a fork, or
+    /// told), unless this session is its first and is told it already.
+    fn chat_for_thread(&self) -> Option<String> {
+        let new = self.cfg.is_thread() && self.session_fresh && self.handoff.is_none();
+        new.then(|| self.told_chat()).flatten()
+    }
+
+    /// What a thread from the chat is told of it in a new session: the chat so far. Not a routine's run.
+    pub(super) fn told_chat(&self) -> Option<String> {
+        let from_chat = crate::chat::work::from_chat(&self.task_source);
+        from_chat.then(|| crate::chat::work::chat_so_far(&self.hub.store, self.cfg.owner())).flatten()
+    }
+
     /// What the chat calls the agent `cfg` runs: its name, with the login profile it runs on ("Claude Code
     /// (Work)"), which is what tells two steps on one agent apart.
     fn called(&self, cfg: &BotConfig) -> String {
-        let agent = fallback::name(&cfg.backend);
-        match crate::agent::login_profiles::name_of(&self.hub.store, &cfg.backend, cfg.login_profile.as_deref()) {
+        self.named(&cfg.backend, cfg.login_profile.as_deref())
+    }
+
+    /// What the chat calls agent `backend` on `login_profile` (the computer's own login: none).
+    pub(super) fn named(&self, backend: &str, login_profile: Option<&str>) -> String {
+        let agent = fallback::name(backend);
+        match crate::agent::login_profiles::name_of(&self.hub.store, backend, login_profile) {
             Some(profile) => format!("{agent} ({profile})"),
             None => agent,
         }
@@ -220,6 +238,15 @@ impl Actor {
             self.hub.add_entry(&main, EntryKind::Notice, self.hub.store.max_turn(&self.base.id), &data)
         };
         entry.map(|e| e.id)
+    }
+
+    /// The main session is left (a move to another agent, or its agent starts again and can't reopen it): the next
+    /// one hears the conversation so far with this agent. A recap still owed is of an agent before it, which this one
+    /// never got to answer.
+    pub(super) fn owe_recap(&mut self) {
+        if self.relay.recap.is_none() {
+            self.relay.recap = Some((self.cfg.backend.clone(), self.session_id.clone()));
+        }
     }
 
     /// What the agent the main session just moved to should hear first: a catch-up when it resumed its own
@@ -374,8 +401,9 @@ impl Actor {
                 self.relay.exhausted = true;
                 // No agent answers the turn's messages: they go out again once the first one left signed out is
                 // signed in (the last agent's own card holds them only when there is none, `held_for_sign_in`).
-                if let Some(first) = self.relay.signed_out.first().filter(|_| !self.turn_entries.is_empty()) {
-                    self.sign_in_card(&first.clone(), &self.turn_entries);
+                if let Some(first) = self.relay.signed_out.first().filter(|_| !self.turn_entries.is_empty()).cloned() {
+                    let entries = self.turn_entries.clone();
+                    self.sign_in_card(&first, &entries);
                 }
                 return match start_error {
                     Some(e) => {
@@ -433,6 +461,7 @@ impl Actor {
         self.relay.retrying = false;
         self.relay.exhausted = false;
         self.relay.carried = None;
+        self.relay.held = None;
     }
 
     /// The failure notice: with a failure that moves on, a bot without fallbacks offers to add one, and a bot whose
@@ -450,6 +479,17 @@ impl Actor {
                 data["text"] = format!("{text}\n\n{}", self.chain_note()).into();
             }
             _ => {}
+        }
+        // A thread's offer to add a fallback is the user's to take, in its bot's chat; its own transcript keeps the
+        // failure.
+        // There it ends no turn of the bot's own: no `stopReason` (`codync-host send --wait` reads one as its end).
+        if self.cfg.is_thread()
+            && let Some(offer) = data.as_object_mut().and_then(|d| d.remove("addFallback"))
+        {
+            self.add_for_user(
+                EntryKind::Notice,
+                json!({"text": data["text"], "style": data["style"], "addFallback": offer}),
+            );
         }
         self.line(data);
     }

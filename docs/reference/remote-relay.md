@@ -345,7 +345,7 @@ epk, eprv = 新的 X25519 金鑰對（每則通知、每個 ticket 各自新產�
 ss   = X25519(eprv, pushKey)            ← 全零拒絕
 prk  = HKDF-Extract(salt = "codync/push/v1" ‖ cidRaw ‖ pushKey ‖ epk, ikm = ss)
 key  = HKDF-Expand(prk, "codync/push-key/v1", 32)
-ct   = ChaCha20-Poly1305(key, nonce = 12 × 0x00, plaintext = {"title","subtitle"?,"body"} JSON, aad = cidRaw)
+ct   = ChaCha20-Poly1305(key, nonce = 12 × 0x00, plaintext = {"title","subtitle"?,"body","from"?,"faces"?,"unread"?} JSON, aad = cidRaw)
 sealed = b64url(epk ‖ ct)
 ```
 送給 `relay/` 的 body：`alert` 為 Codync 與依 kind 選擇的通用說明句、`mutableContent: true`、`threadId = computerId:botId`、`category = done|needsInput|failed`、`data = {"botId","computerId","ctx":<SharedStore.Context.id>,"sealed"}`。Notification Service Extension 依 `ctx` 從共用 Keychain 取 push key、解開後替換 title／subtitle／body；解不開就保留通用文字。Live Activity 的 `contentState` 只含 `status` 與 `startedAt`（`activity` 固定為空字串），不含任何自由文字。向量 `push` 保留沒有 subtitle 的相容格式。通知呈現、票券更新、ActivityKit 時間與部署驗收見 [通知與 Live Activity 設計](../design/push-and-live-activity.md)。
@@ -427,7 +427,7 @@ DO → Device（除了 host 轉來的 channel 訊息 `welcome`/`reject`/`f` 之�
 
 | `t` | 欄位 |
 |---|---|
-| `presence` | `online`（bool）, `lastSeenAt`（ms 或 null）— 連線建立時送一次，之後狀態變化時送（含 host 被 replaced 時的 false→true） |
+| `presence` | `online`（bool）, `lastSeenAt`（ms 或 null）, `waking`（ms 或 null：中繼開始叫醒這台睡著的 Codync Cloud computer 的時間；online 時、叫不醒時、或叫醒超過 5 分鐘（`WAKING_SHOWN_MS`）後是 null）— 連線建立時送一次，之後狀態變化時送（含 host 被 replaced 時的 false→true；`waking` 變了也送） |
 | `mbox.delivered` | `nonce` |
 | `mbox.failed` | `nonce`, `code` |
 | `mbox.expired` | `nonce` |
@@ -438,7 +438,7 @@ Channel 訊息與 DO 訊息的 `t` 值不重疊：channel 只有 `hello`/`welcom
 ### 7.5 Client 連線策略（Apple 與整合測試共通）
 
 1. 平行對所有 `urls`（`http://h:p` → `ws://h:p/channel?v=1`，`https://h` → `wss://h/channel?v=1`）開 WebSocket 並握手；**1.5 秒**內第一個完成握手的勝出。
-2. 都失敗且有 `cloud` → 連 `{cloud}/v1/relay/device/{computerId}`。每次收到 `presence online:true` 就（重新）送 `hello`；`online:false` → 狀態 `computerOffline(lastSeen)`，保持 socket（可用 mailbox），等下一個 `online:true`。
+2. 都失敗且有 `cloud` → 連 `{cloud}/v1/relay/device/{computerId}`。每次收到 `presence online:true` 就（重新）送 `hello`；`online:false` → 狀態 `computerOffline(lastSeen)`，保持 socket（可用 mailbox），等下一個 `online:true`；帶 `waking` 時顯示 "Waking the computer…"，不算離線；只有中繼說了算（帳號清單的 `starting` 在 host 沒回來的喚醒後會一直留著）。
 3. 兩者都不可用 → `offline("Can't reach …")`，退避重試。
 4. App 回前景、網路路徑改變（`NWPathMonitor`）→ 重新跑 1–3（可能從中繼換回直連）；events 以當前 `rev` 重新訂閱。
 5. 每次 inner `hello` 成功後，把回應的 `urls`、`cloud`、`device`、`name`、`boxKey` 合併進持久化的 `Computer`（§3.3、§10）；帳號來源的 computer 因此在第一次中繼連線後也能試 LAN 直連。
@@ -446,7 +446,7 @@ Channel 訊息與 DO 訊息的 `t` 值不重疊：channel 只有 `hello`/`welcom
 ### 7.6 心跳、重連、限流
 
 - 心跳：host 與 device 每 30 秒送 `{"t":"ping"}`（中繼）；直連時 host 每 15 秒送 WebSocket Ping frame，client 45 秒沒收到任何資料視為斷線。
-- DO alarm：只要有 socket 或 mailbox 項目就每 60 秒一次：任何 socket（host 與 device）的 `ctx.getWebSocketAutoResponseTimestamp()` 超過 90 秒 → **退役**：attachment 記 `retired`，之後 DO 不再送任何東西給它；host 標記離線，device 通知 host `close` 該 link。退役的 socket 不立刻關：對已經連不到的 peer 呼叫 `close()` 會讓 DO 一直醒著（計 duration）到 TCP 放棄為止，放著不動則不會。它之後再說話（收到訊息、或 ping 時間晚於退役時間）就以記下的 code 關閉；若 DO 從退役起一直沒睡過（同一個 instance 還記得它），下一次 alarm 也關它，因為卡在它佇列裡的資料可能正是 DO 睡不著的原因，只有關掉才會釋放。清除過期 mailbox（通知 `mbox.expired`）與過期 nonces。
+- DO alarm：只要有 socket 或 mailbox 項目就每 60 秒一次：任何 socket（host 與 device）的 `ctx.getWebSocketAutoResponseTimestamp()` 超過 90 秒 → **退役**：attachment 記 `retired`，之後 DO 不再送任何東西給它；host 標記離線，device 通知 host `close` 該 link。退役的 socket 不立刻關：它的 peer 多半已經連不到，close 等不到回應。它之後再說話（收到訊息、或 ping 時間晚於退役時間）就以記下的 code 關閉；若 DO 從退役起一直沒睡過（同一個 instance 還記得它），下一次 alarm 也關它，因為卡在它佇列裡的資料可能正是 DO 睡不著的原因，只有關掉才會釋放。**DO 主動關的 socket 只關一次**（attachment 記 `retired.closed`）：實測對連不到的 peer 關一次不計費，重複關才會。再說話的 peer 可能在 alarm 看到它之前又不見了（睡眠中的筆電短暫醒來，送一次 ping 又睡回去），這時 close 等不到對方回應，若每次 alarm 都再呼叫一次 `close()`，DO 會一直醒著（計 duration）到連線死掉為止，約 15 分鐘。配對過期（`4410`）與撤銷（`4003`）的 socket 對方還在，所以退役後立刻關，同樣只關一次。清除過期 mailbox（通知 `mbox.expired`）與過期 nonces。
 - 重連退避：host 1 s 起倍增至 60 s、device 1 s 起倍增至 30 s，皆 full jitter；穩定 60 秒後重置。
 - `4100 paired` → 立即以一般模式重連（§4.1）。
 - 不重試的 close code：`4001 unauthorized`、`4003 revoked`、`4410 pairingExpired`（device 顯示需重新授權）；`4009 replaced` → host 等 5 分鐘再試並記錄 `error`（可能有人複製了 `identity.json`）；`4400 unsupportedVersion` → 顯示需要更新。
@@ -523,7 +523,7 @@ The route table below summarizes the contract. Executable schema and validation 
 - `DELETE /v1/access-requests/{id}` → `{}`（申請者取消 pending）
 - `GET /v1/computers/{id}/grants` → `{"grants":[{"grantId","deviceId","deviceName","platform","scopes","createdAt"}]}`
 - `DELETE /v1/computers/{id}/grants/{grantId}` → `{}`（`owner`）+ DO block + changed
-- `POST /v1/cloud-computers` `{"provider"?, "name"?}` → `{"cloudComputer":{"cloudComputerId","name","provider","providerName","region","state","computerId"|null,"backupAt"|null,"snapshots":bool,"createdAt"}}`（`snapshots`：供應商有沒有保存歷史或備份讓 *Delete snapshots* 刪；`false`（InstaBox）時 app 不顯示 *Delete snapshots*；舊的 cloud 不帶，視為 `true`）：用使用者自己在該供應商的 key，在他的帳號再建立一台雲端電腦（每帳號最多 3 台，可以分在不同供應商；超過 → `409 conflict`）；`name` 是使用者取的名字（去頭尾空白、最多 64 字，省略時為 "Cloud computer"），電腦在帳號裡、host 的 `hello` 都用這個名字；`provider` 只有一個供應商有 key 時可省略；每個登入的帳號都能用，只要 Worker 設了 `CLOUD_SECRET_KEYS`，否則 `403 forbidden`；不認得的 `provider` → `400`；還沒存任何 key、或有好幾把卻沒指定 → `409 conflict`；供應商拒絕這把 key（撤銷、過期、缺權限、沒有方案、機器數已達上限）→ `422 keyRefused`，訊息是要修什麼；供應商忙或連不上 → `503 providerUnavailable`。`GET` 回傳 `{"cloudComputers":[…]}`（同一物件，含供應商的即時狀態，舊的在前；連不上的供應商上的機器回傳上次記錄的狀態，其他機器照常列出）、`limit`（每帳號最多幾台）、`available`（這個帳號能不能建立；app 只在 `available` 或已有雲端電腦時顯示 Codync Cloud）與 `providers`（`available` 時才有，否則 `[]`）：每個供應商 `{"provider","name","region","keyPrompt","setup":{"page","commands"},"credential"}`，`setup` 是建立 key 的指令，由 Worker 措辭；`credential` 是 `{"hint":"boat_…9abc","problem"|null,"blocking":bool,"updatedAt"}` 或 `null`，永遠不含 key 本身；`problem` 是供應商拒絕這把 key 時要使用者修的事（不點名供應商，app 把它顯示在供應商名稱下），app 翻譯這句話；`blocking` 表示問題出在 key 本身（被拒、過期），只有換一把 key 才能解，app 這時不讓在該供應商上建立，其他問題（方案、帳號上限、環境、缺權限）仍可按 Create 重試，成功的寫入會清掉它。
+- `POST /v1/cloud-computers` `{"provider"?, "name"?}` → `{"cloudComputer":{"cloudComputerId","name","provider","providerName","region","state","computerId"|null,"backupAt"|null,"snapshots":bool,"createdAt"}}`（`snapshots`：供應商有沒有保存歷史或備份讓 *Delete snapshots* 刪；`false`（InstaBox）時 app 不顯示 *Delete snapshots*；舊的 cloud 不帶，視為 `true`）：用使用者自己在該供應商的 key，在他的帳號再建立一台雲端電腦（每帳號最多 3 台，可以分在不同供應商；超過 → `409 conflict`）；`name` 是使用者取的名字（去頭尾空白、最多 64 字，省略時為 "Cloud computer"），電腦在帳號裡、host 的 `hello` 都用這個名字；`provider` 只有一個供應商有 key 時可省略；每個登入的帳號都能用，只要 Worker 設了 `CLOUD_SECRET_KEYS`，否則 `403 forbidden`；不認得的 `provider` → `400`；還沒存任何 key、或有好幾把卻沒指定 → `409 conflict`；供應商拒絕這把 key（撤銷、過期、缺權限、沒有方案、機器數已達上限）→ `422 keyRefused`，訊息是要修什麼；供應商忙或連不上 → `503 providerUnavailable`。`GET` 回傳 `{"cloudComputers":[…]}`（同一物件，含供應商的即時狀態，舊的在前；連不上的供應商上的機器回傳上次記錄的狀態，其他機器照常列出）、`limit`（每帳號最多幾台）、`available`（這個帳號能不能建立；app 只在 `available` 或已有雲端電腦時顯示 Codync Cloud）與 `providers`（`available` 時才有，否則 `[]`）：每個供應商 `{"provider","name","region","plan","keyPrompt","setup":{"page","steps","commands"},"offer"?,"credential"}`，`plan` 是價格的一句話（"From $20 a month"、"Free plan available"），`setup.steps` 是在供應商網站 `page` 上建立 key 的步驟、`setup.commands` 是同樣事情的指令，都由 Worker 措辭、app 翻譯（舊的 cloud 沒有 `plan` 和 `steps`）；`credential` 是 `{"hint":"boat_…9abc","problem"|null,"blocking":bool,"updatedAt"}` 或 `null`，永遠不含 key 本身；`problem` 是供應商拒絕這把 key 時要使用者修的事（不點名供應商，app 把它顯示在供應商名稱下），app 翻譯這句話；`blocking` 表示問題出在 key 本身（被拒、過期），只有換一把 key 才能解，app 這時不讓在該供應商上建立，其他問題（方案、帳號上限、環境、缺權限）仍可按 Create 重試，成功的寫入會清掉它。
 - `PATCH /v1/cloud-computers/{cloudComputerId}` `{"name"}` → `{"cloudComputer":…}`：改名（空的 → `400`）；已 claim 的電腦在帳號裡一起改名，並通知 host（`cloud.changed`），host 從 `/v1/host/state` 的 `name` 拿到新名字，送 `{"type":"name","name"}` 事件給已連上的 app（它們把它寫進自己的 `hello`），其他 app 從下一次 `hello` 起看到。
 - `DELETE /v1/cloud-computers/{cloudComputerId}` → `{}`：刪除機器、所有快照與備份，並把電腦移出帳號；它 keeper 保險箱的鑰匙一起刪掉，留在別處的快照從此打不開。備份先刪（留下的備份永不過期）：刪不掉時請求失敗（供應商忙或連不上 → `503 providerUnavailable`；key 被拒 → `422 keyRefused`；其他 → `500`），電腦留在列表上，可以再刪一次。
 - `PUT /v1/cloud-credentials/:provider`（`boat`、`instabox`，其他 → `404`） `{"key"}` → `{"credential":…}`（同 `GET` 裡該供應商的 `credential`）：存下使用者自己在該供應商的 key（[bring your own cloud](../plans/codync-cloud.md#bring-your-own-cloud)），sealed 存進 D1、只寫不讀。每個登入的帳號都能存，只要 Worker 設了 `CLOUD_SECRET_KEYS`，否則 `403 forbidden`；每帳號每分鐘最多 5 次（`429 rateLimited`）。先跟供應商檢查：格式不對、供應商不接受、能管理整個帳號的 admin key（Boat：讀得到 webhooks；InstaBox：讀得到 workspace 的 invites）、已有這個供應商上的雲端電腦卻碰不到它（新 key 找不到電腦時，只有舊 key 也碰不到才收下）→ `422 keyRefused`，訊息是要修什麼；供應商忙或連不上（含 admin 檢查沒有明確答案）→ `503 providerUnavailable`，不存。

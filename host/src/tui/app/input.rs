@@ -52,6 +52,7 @@ impl App {
                 _ => None,
             },
             Overlay::Market(m) => Some(&mut m.query),
+            Overlay::Thread(s) if s.typing => Some(&mut s.draft),
             Overlay::Fields(f) => f.current().map(|i| &mut i.ed),
             Overlay::Routine(f) => Some(match f.field {
                 super::super::manage::RoutineField::Name => &mut f.name,
@@ -198,7 +199,7 @@ impl App {
             KeyCode::Char('u') if ctrl => self.scroll_focused(half),
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('C') => self.open_connection(),
-            KeyCode::Char('F') => self.retry_failed_run(),
+            KeyCode::Char('F') => self.retry_or_continue(),
             KeyCode::Char('I') if self.error.is_some() && self.bots.is_empty() => self.install_host(),
             KeyCode::Char('I') if self.bot().is_some_and(|b| b.lead) => self.overlays.push(Overlay::LeadAgent(0)),
             KeyCode::Char('?') => self.overlays.push(Overlay::Help(Editor::default())),
@@ -214,8 +215,13 @@ impl App {
             KeyCode::Char('J') => self.reorder_bot(1),
             KeyCode::Char(c @ '1'..='9') => {
                 let i = (c as usize) - ('1' as usize);
-                let pending =
-                    if roster_page { None } else { self.pending().map(|e| (e.id.clone(), e.answer_options())) };
+                // Only a card the bot waits on, or the picked one: a choice card left open by an idle bot keeps its
+                // F-keys, so 1–9 still jump to a bot.
+                let waits = self.bot().is_some_and(|b| b.status == Status::NeedsInput);
+                let pending = self
+                    .pending()
+                    .filter(|e| !roster_page && (waits || self.pick.as_ref() == Some(&e.id)))
+                    .map(|e| (e.id.clone(), e.answer_options()));
                 match pending {
                     Some((entry, opts)) if !opts.is_empty() => {
                         if let Some(option) = opts.get(i) {

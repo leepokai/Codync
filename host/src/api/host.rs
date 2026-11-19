@@ -36,6 +36,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         // The agents come back checked again: a sign-in that used a deleted key is gone.
         "resetCredentials" => {
             let removed = crate::market::vault::reset(hub.clone()).await?;
+            crate::agent::login_profiles::keys::forget_all(&hub.store)?;
             crate::market::agent_sign_in::refresh(hub).await;
             json!({"removed": removed, "backends": agents(hub)})
         }
@@ -295,6 +296,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "reportError" => {
             crate::analytics::errors::report(hub, &b)?;
             json!({})
+        }
+        "setComputerName" => {
+            crate::remote::managed::rename(hub, b["name"].as_str().unwrap_or_default())?;
+            json!({"name": crate::remote::managed::computer_name(&hub.store)})
         }
         "setAutoOrder" => {
             hub.set_auto_order(b["enabled"].as_bool().context("enabled must be a boolean")?)?;

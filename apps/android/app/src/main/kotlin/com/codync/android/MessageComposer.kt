@@ -36,6 +36,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -214,35 +216,68 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 for (file in files) ComposerAttachment(file) { store.removeDraftFile(draftKey, file) }
             }
-            Row(Modifier.padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // A hardware keyboard's Enter is a new line; Ctrl/Meta+Enter (⌘↩ on iOS) sends, and never stops or calls.
-                val sendKey = Modifier.onPreviewKeyEvent { e ->
-                    val ctrlEnter = e.type == KeyEventType.KeyDown && e.key == Key.Enter && (e.isCtrlPressed || e.isMetaPressed)
-                    if (ctrlEnter && trailing == Trailing.Send && canSend) send()
-                    ctrlEnter
-                }
-                BasicTextField(state = text, enabled = !queuing, modifier = Modifier.weight(1f).focusRequester(focus).contentReceiver(receiver).then(sendKey).padding(vertical = 10.dp),
-                    textStyle = Type.body.copy(color = Palette.text), cursorBrush = SolidColor(Palette.accent),
-                    lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 8),
-                    decorator = { input -> Box { if (text.text.isEmpty()) Text(placeholder, style = Type.body, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis); input() } })
+            ComposerInput(text, placeholder, trailing, canSend, enabled = !queuing, field = Modifier.focusRequester(focus).contentReceiver(receiver), accessory = {
                 Box(Modifier.padding(bottom = 4.dp)) {
                     DictationButton(dictation, state, store, 34.dp, { text.text.toString() }) { change ->
                         text.setTextAndPlaceCursorAtEnd(change(text.text.toString()))
                     }
                 }
-                TrailingButton(trailing, canSend, Modifier.padding(bottom = 4.dp)) {
-                    when (trailing) {
-                        Trailing.Interrupt -> onInterrupt?.invoke()
-                        Trailing.Stop -> store.command("stop", body("botId" to bot.id))
-                        // The call takes the microphone.
-                        Trailing.Call -> { dictation.stop(); onCall?.invoke() }
-                        Trailing.Send -> send()
-                    }
+            }) {
+                when (trailing) {
+                    Trailing.Interrupt -> onInterrupt?.invoke()
+                    Trailing.Stop -> store.command("stop", body("botId" to bot.id))
+                    // The call takes the microphone.
+                    Trailing.Call -> { dictation.stop(); onCall?.invoke() }
+                    Trailing.Send -> send()
                 }
             }
         }
     }
+    }
+}
+
+/**
+ * The chat's box with text alone (no files, no microphone), under a task's thread: [send] takes what was typed, only
+ * while the computer is there to take it. What is typed is saved as you type under [draftKey], as a chat's draft is.
+ * The messages waiting behind the thread's turn show on top as a chat's do ([queued], with [steer] and [remove]).
+ */
+@Composable internal fun ThreadComposer(state: AppState, store: AppStore, draftKey: String, queued: List<Entry>, steer: (Entry) -> Unit,
+    remove: (Entry) -> Unit, send: (String) -> Unit) {
+    val text = rememberTextFieldState(initialText = state.drafts[draftKey]?.text.orEmpty())
+    LaunchedEffect(text, draftKey) { snapshotFlow { text.text.toString() }.collect { store.editDraft(draftKey, it) } }
+    val placeholder = tr("Message this thread")
+    val canSend = text.text.isNotBlank() && state.actualConnection is LinkState.Ready
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        QueuedMessages(queued, state, store, Modifier.padding(horizontal = 16.dp), steer, remove)
+        Box(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 16.dp).glass(RoundedRectangle(24.dp))) {
+            ComposerInput(text, placeholder, Trailing.Send, canSend, field = Modifier.semantics { contentDescription = placeholder }) {
+                send(text.text.toString())
+                text.clearText()
+            }
+        }
+    }
+}
+
+/**
+ * A composer's text and its one [trailing] button, which runs [act]. [field]: what the text takes besides typing (focus,
+ * pasted files); [accessory]: what stands before the button (the microphone).
+ */
+@Composable private fun ComposerInput(text: TextFieldState, placeholder: String, trailing: Trailing, canSend: Boolean, enabled: Boolean = true,
+    field: Modifier = Modifier, accessory: @Composable () -> Unit = {}, act: () -> Unit) {
+    Row(Modifier.padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // A hardware keyboard's Enter is a new line; Ctrl/Meta+Enter (⌘↩ on iOS) sends, and never stops or calls.
+        val sendKey = Modifier.onPreviewKeyEvent { e ->
+            val ctrlEnter = e.type == KeyEventType.KeyDown && e.key == Key.Enter && (e.isCtrlPressed || e.isMetaPressed)
+            if (ctrlEnter && trailing == Trailing.Send && canSend) act()
+            ctrlEnter
+        }
+        BasicTextField(state = text, enabled = enabled, modifier = Modifier.weight(1f).then(field).then(sendKey).padding(vertical = 10.dp),
+            textStyle = Type.body.copy(color = Palette.text), cursorBrush = SolidColor(Palette.accent),
+            lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 8),
+            decorator = { input -> Box { if (text.text.isEmpty()) Text(placeholder, style = Type.body, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis); input() } })
+        accessory()
+        TrailingButton(trailing, canSend, Modifier.padding(bottom = 4.dp), act)
     }
 }
 

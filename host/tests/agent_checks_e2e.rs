@@ -64,7 +64,8 @@ async fn a_stopped_host_ends_the_checks_it_was_running() {
     .await;
     // Not `common::stop`, which gives up sooner than an agent gets to exit by itself.
     std::process::Command::new("kill").arg(host.id().to_string()).status().unwrap();
-    common::eventually("the host stopped", Duration::from_secs(20), async || host.try_wait().unwrap().is_some()).await;
+    // Agents that never exit hold the host's stop for its exit grace (10 s) and unwind (15 s), with room on a busy machine.
+    common::eventually("the host stopped", Duration::from_secs(40), async || host.try_wait().unwrap().is_some()).await;
     let lines = read();
     let pids: Vec<&str> = lines.lines().filter_map(|line| line.split_whitespace().next()).collect();
     common::eventually("the checks ended with the host", Duration::from_secs(5), async || {

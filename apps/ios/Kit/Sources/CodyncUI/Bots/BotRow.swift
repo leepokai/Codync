@@ -78,7 +78,7 @@ public struct BotRow: View {
         case .lastMessage where bot.status == "error":
             line(MessagePreview.text(bot.lastMessage ?? "Something went wrong"), color: Palette.danger)
         case .lastMessage:
-            line(MessagePreview.text(bot.lastMessage ?? (bot.isGroup ? "\(bot.members.count) bots" : "\(model.backendName(bot.backend)) · \(bot.managedWorkspace ? L10n.tr("Personal workspace") : bot.folderName)")),
+            line(MessagePreview.text(bot.lastMessage ?? (bot.isGroup ? "\(bot.members.count) bots" : "\(model.backendName(bot.backend)) · \(bot.folderName)")),
                  color: Palette.secondary)
         }
     }

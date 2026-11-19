@@ -44,8 +44,8 @@ whatever the automatic-download setting and restarts into it in the background a
 local host is idle, without the focus and input conditions, for as long as the request lasts
 (ten minutes). A staged update also installs when quitting. Manual installation can interrupt work.
 The release it finds is the one the release gate marked latest, so it always works with the
-iPhone app in the App Store
-([holding releases](../reference/compatibility.md#holding-releases-for-the-app-store)).
+phone apps in the App Store and on Google Play
+([holding releases](../reference/compatibility.md#holding-releases-for-the-stores)).
 
 Before replacement on macOS, Codync unregisters its screen helper and stops the host
 (`codync-host stop`), which runs from inside the app; on Linux the installed host keeps
@@ -115,8 +115,8 @@ or `brew reinstall leepokai/codync/codync-host`, then run `codync-host install`.
 saved bots, so it is not a complete application uninstall.
 
 Reinstalling gets the latest release, which can be older than what is installed while a
-newer release waits for App Review
-([holding releases](../reference/compatibility.md#holding-releases-for-the-app-store)); then
+newer release waits for a store's review (App Store or Google Play)
+([holding releases](../reference/compatibility.md#holding-releases-for-the-stores)); then
 download the installed version from its release page instead.
 
 After reinstalling, confirm the app version and that the computer reconnects.
@@ -142,9 +142,9 @@ not the rendering itself.
 
 The release workflow publishes `latest-mac.yml`, `latest.yml` and `latest-linux*.yml`
 after the app archives they point at. Installs read the release GitHub marks *latest*,
-which only the release gate sets: once every feed is up and the App Store has an iPhone
-app the release serves
-([holding releases](../reference/compatibility.md#holding-releases-for-the-app-store)).
+which only the release gate sets: once every feed is up and the App Store and Google Play have
+phone apps the release serves
+([holding releases](../reference/compatibility.md#holding-releases-for-the-stores)).
 `latest.yml` lists both Windows installers (x64 and ARM64), and electron-updater picks the
 one matching the installed app; it is published only after both Windows builds succeed, so a
 failed ARM64 build holds the whole release until it is re-run.

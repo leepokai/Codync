@@ -40,7 +40,7 @@ pub fn definitions() -> [Value; 2] {
     ]
 }
 
-/// `actor`: whose turn makes the call, `cfg` itself or one of its tasks.
+/// `actor`: whose turn makes the call, `cfg` itself or one of its threads.
 pub async fn call(hub: &Arc<Hub>, cfg: &BotConfig, actor: &str, name: &str, args: &Value) -> Result<Value> {
     let (hub, cfg, actor, name, args) = (hub.clone(), cfg.clone(), actor.to_owned(), name.to_owned(), args.clone());
     tokio::task::spawn_blocking(move || match name.as_str() {
@@ -119,7 +119,7 @@ fn edit(hub: &Hub, cfg: &BotConfig, actor: &str, args: &Value) -> Result<Value> 
     };
     let expected = before.as_deref().map(mf::hash);
     let cause = if after.is_some() { Cause::Edit } else { Cause::Delete };
-    // The write is its turn's: a task's is made in the task's session, and no user's message started it, so it
+    // The write is its turn's: a thread's is made in the thread's session, and no user's message started it, so it
     // only adds. With no turn running (a call from outside one), the actor's runtime says the same.
     let (session, message) = super::turns::running(actor).map_or_else(
         || {

@@ -66,15 +66,15 @@ import com.kyant.shapes.Capsule
 import kotlinx.coroutines.delay
 
 /**
- * One endless conversation with a bot or a group, as iOS `ThreadView`: only deliberate messages
+ * One endless conversation with a bot or a group, as iOS `ChatView`: only deliberate messages
  * show; tool calls and thinking live in "Full conversation". `editGroup` opens a group's editor (its details).
  */
 @Composable fun ChatScreen(state: AppState, store: AppStore, editGroup: (Bot) -> Unit) {
     val bot = state.bots.firstOrNull { it.id == state.selectedBot } ?: return
-    key(state.contextId, state.generation, bot.id) { ThreadView(bot, state, store, editGroup) }
+    key(state.contextId, state.generation, bot.id) { ChatView(bot, state, store, editGroup) }
 }
 
-@Composable private fun ThreadView(bot: Bot, state: AppState, store: AppStore, editGroup: (Bot) -> Unit) {
+@Composable private fun ChatView(bot: Bot, state: AppState, store: AppStore, editGroup: (Bot) -> Unit) {
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Chat))
     val context = LocalContext.current
     // The bot's details sheet and the page it opens on.
@@ -86,9 +86,9 @@ import kotlinx.coroutines.delay
     var peer by remember(bot.id) { mutableStateOf<String?>(null) }
     /** The voice call whose conversation is open (its line's entry id). */
     var callLine by remember(bot.id) { mutableStateOf<String?>(null) }
-    // The approval card a needs-you item's row in the details led to, or the message a tapped quote quotes (an entry id):
-    // brought into view once.
-    var revealed by remember(bot.id) { mutableStateOf<String?>(null) }
+    // The approval card a needs-you task's row in the details led to, or the message a tapped quote quotes (an entry id),
+    // and the find step it came at: brought into view once.
+    var revealed by remember(bot.id) { mutableStateOf<Pair<String, Int>?>(null) }
     var micDenied by remember { mutableStateOf(false) }
     var setupEntry by rememberSaveable { mutableStateOf<String?>(null) }
     var app by remember { mutableStateOf<ComposioApp?>(null) }
@@ -97,8 +97,8 @@ import kotlinx.coroutines.delay
     val startCall = rememberStartVoice(bot.id, state, store) { micDenied = true }
     // "Talk to Codync" asked for a call here: taken even during a call, so it can't start one after it.
     LaunchedEffect(state.callRequest) { if (store.takeCallRequest(bot.id) && state.voice == null) startCall() }
-    // A heading of the view of all bots' work asked for this bot's details.
-    LaunchedEffect(state.detailsRequest) { if (store.takeDetailsRequest(bot.id) && bot.kind != "group") details = DetailsRequest() }
+    // The view of all bots' work asked for this bot's details (a heading), or for one of its threads there (a row).
+    LaunchedEffect(state.detailsRequest) { store.takeDetailsRequest(bot.id)?.let { if (bot.kind != "group") details = it } }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var composerHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
@@ -114,14 +114,17 @@ import kotlinx.coroutines.delay
     // Find in the conversation: null while its bar is closed; each step bumps `findStep` to bring the match into view.
     var find by remember(bot.id) { mutableStateOf<ConversationFind?>(null) }
     var findStep by remember(bot.id) { mutableIntStateOf(0) }
-    val reveal = { id: String -> revealed = id; findStep++ }
-    // A needs-you row of the view of all bots' work asked for its card: brought into view once this chat holds it.
-    // ponytail: only among the rows the open chat has loaded; page back for it (iOS `card(for:in:)`) if a pending
-    // card is ever older than those.
-    val askedCard = state.cardRequest?.takeIf { it.first == bot.id }?.let { (_, item) -> pendingCard(state.entries.filter { it.botId == bot.id }, item) }
+    val reveal = { id: String -> findStep++; revealed = id to findStep }
+    // A needs-you row (the details', or the view of all bots' work) asked for its card: brought into view once this chat
+    // holds it, paged back for while the rows loaded don't (iOS `card(for:in:)`), again once a page the chat asked for
+    // itself lands.
+    val asked = state.cardRequest?.takeIf { it.first == bot.id }?.second
+    val askedCard = asked?.let { task -> pendingCard(state.entries.filter { it.botId == bot.id }, task) }
     LaunchedEffect(askedCard?.id) { if (askedCard != null && store.takeCardRequest(bot.id)) { details = null; reveal(askedCard.id) } }
+    LaunchedEffect(asked, historyKey(bot.id) in state.busy) { if (asked != null && askedCard == null) store.pageToCard(bot.id, asked) }
     val matches = find?.let { ConversationFind.matches(findable(chatState.chatItems(bot)), it.query) }.orEmpty()
-    val shown = find?.index(matches)?.let(matches::get)
+    // A card or quote brought into view since find's last step is what the chat shows, without find's match.
+    val shown = find?.index(matches)?.let(matches::get)?.takeIf { revealed?.second != findStep }
     // The first match found is held, so earlier messages with matches loading above don't move it.
     LaunchedEffect(find?.shown == null && matches.isNotEmpty()) { find = find?.pinned(matches) }
     /** `conversation_find_searched` once per text: whether it found anything, never the text. */
@@ -142,7 +145,7 @@ import kotlinx.coroutines.delay
         // Down to just above the header's bottom; the bottom one stops under Jump to latest.
         ScrollEdge(Edge.Top, top + 84.dp)
         ScrollEdge(Edge.Bottom, with(density) { composerHeight.toDp() } + 4.dp, Modifier.align(Alignment.BottomCenter))
-        ThreadHeader(bot, state, store, openFind) { if (bot.kind == "group") editGroup(bot) else details = DetailsRequest() }
+        ChatHeader(bot, state, store, openFind) { if (bot.kind == "group") editGroup(bot) else details = DetailsRequest() }
         // The call and the find bar float over the chat under the header, as on iOS; the chat stays readable and usable.
         Column(Modifier.padding(top = top + 54.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             AnimatedVisibility(state.voice != null,
@@ -176,7 +179,7 @@ import kotlinx.coroutines.delay
         Transcript(bot, chatState, store, connect, PaddingValues(start = 16.dp, end = 16.dp, top = top + 60.dp,
             bottom = with(density) { composerHeight.toDp() } + 8.dp), indicatorTop = top + 50.dp, openRoutine = openRoutine, reply = { reply(it, null) }, selectText = { selecting = it },
             addFallback = { details = DetailsRequest.fallbacks(it.id) }, openArtifact = { viewing = it }, openCall = { callLine = it },
-            found = shown?.id, revealed = revealed, findStep = findStep, openQuote = { reveal(it) }) { peer = it }
+            found = shown?.id, revealed = revealed?.first, findStep = findStep, openQuote = { reveal(it) }) { peer = it }
     }
     CodyncDialog("Microphone access is off", micDenied, { micDenied = false },
         message = "Allow the microphone in Android settings to talk to your bot.") {
@@ -188,7 +191,9 @@ import kotlinx.coroutines.delay
     }
     CodyncSheet(details, { details = null }) { request ->
         val shown = state.bots.firstOrNull { it.id == (request.botId ?: bot.id) }
-        if (shown != null) BotDetailsView(shown, request, state, store, openCard = { details = null; reveal(it.id) }) { viewing = it }
+        // A card is in this chat: another bot's details (a group member's) have none to go to.
+        if (shown != null) BotDetailsView(shown, request, state, store, openInChat = { details = null; reveal(it.id) },
+            openCard = { task: WorkTask -> details = null; store.openCard(bot.id, task) }.takeIf { shown.id == bot.id }) { viewing = it }
     }
     ArtifactLayer(viewing) { open ->
         state.bots.firstOrNull { it.id == open.botId }?.let { owner -> ArtifactViewer(open, owner, state, store) { viewing = null } }
@@ -201,7 +206,7 @@ import kotlinx.coroutines.delay
 }
 
 /** The glass back button, the title (tapping it opens the bot's details) and the connection under it. */
-@Composable private fun ThreadHeader(bot: Bot, state: AppState, store: AppStore, openFind: () -> Unit, openDetails: () -> Unit) {
+@Composable private fun ChatHeader(bot: Bot, state: AppState, store: AppStore, openFind: () -> Unit, openDetails: () -> Unit) {
     Box(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 6.dp).padding(horizontal = 16.dp).height(44.dp)) {
         val (source, pressed) = rememberPress()
         Box(Modifier.align(Alignment.CenterStart).size(44.dp).glass(Capsule(), pressed = pressed)

@@ -10,20 +10,18 @@ const WORK = 'E2E work'
 const OWN = 'E2E default'
 
 /**
- * Edit on the open bot's only fallback (#377): its sheet shows the step on `loginProfile`, the agent's default model
+ * The open bot's only fallback, opened in place (#377): it shows the step on `loginProfile`, the agent's default model
  * is picked and saved. Returns the chain the host has then, as [agent, login profile, model].
  */
 async function editFallbackModel(page: Page, botId: string, loginProfile: string) {
-  await page.locator('.details-panel .fallback-menu').click()
-  await page.getByRole('menuitem', { name: 'Edit' }).click()
-  const editing = page.locator('.sheet-page', { hasText: 'Edit fallback' })
-  await expect(editing.locator('.value-row', { hasText: 'Login profile' }).locator('.choice-picker')).toHaveText(loginProfile)
-  const model = editing.locator('.agent-picker-choice').nth(1)
-  await model.click()
-  await editing.locator('.agent-picker-item').first().click()
-  await expect(model).not.toHaveText('e2e-model')
-  await editing.getByRole('button', { name: 'Save', exact: true }).click()
-  await expect(editing).toHaveCount(0)
+  const step = page.locator('.details-panel .fallback-number').locator('..')
+  // The row stays open by its place (a step + just added still is), so it is opened only when it's closed.
+  const summary = step.locator('.agent-picker-summary')
+  if ((await summary.getAttribute('aria-expanded')) === 'false') await summary.click()
+  await expect(step.locator('.value-row', { hasText: 'Login profile' }).locator('.choice-picker')).toHaveText(loginProfile)
+  const model = step.locator('.agent-picker-choice').nth(1)
+  if ((await model.getAttribute('aria-expanded')) === 'false') await model.click()
+  await step.locator('.agent-picker-item').first().click()
   let chain: (string | null)[][] = []
   await expect.poll(async () => {
     const { bot } = await api<{ bot: { fallbacks: { backend: string; loginProfile?: string | null; model?: string | null }[] } }>(page, 'updateBot', { id: botId })
@@ -87,19 +85,17 @@ test('an agent gets another login profile, it signs in, a bot runs on it, and it
     await page.getByRole('button', { name: `${name}, view details` }).click()
     await page.locator('.details-panel').getByRole('tab', { name: 'Settings' }).click()
     // Its own row under the picker, shown without opening it.
-    const chosen = page.locator('.details-panel .value-row', { hasText: 'Login profile' }).locator('.choice-picker')
+    // The bot's own comes before any fallback's.
+    const chosen = page.locator('.details-panel .value-row', { hasText: 'Login profile' }).first().locator('.choice-picker')
     await expect(chosen).toHaveText(WORK)
 
-    // Add fallback offers the bot's own agent again, on a login the chain doesn't have: with the bot on the new
-    // login profile, that is the default one.
+    // + adds a step, open in place, that can be the bot's own agent again, on a login the chain doesn't have: with the
+    // bot on the new login profile, that is the default one.
     await page.locator('.details-panel').getByRole('button', { name: 'Add fallback' }).click()
-    const adding = page.locator('.sheet-page', { hasText: 'Add fallback' })
-    await expect(adding.locator('.agent-picker-summary')).toHaveCount(0) // the choices show at once
+    const adding = page.locator('.details-panel .fallback-number').locator('..')
     await adding.locator('.agent-picker-choice').first().click()
     await adding.locator('.agent-picker-item').filter({ hasText: new RegExp(`^${agent.name}$`) }).click()
     await expect(adding.locator('.value-row', { hasText: 'Login profile' }).locator('.choice-picker')).toHaveText(OWN)
-    await adding.getByRole('button', { name: 'Add', exact: true }).click()
-    await expect(page.locator('.details-panel').getByText(`${agent.name} · Default`)).toBeVisible()
     const saved = async () => (await api<{ bot: { fallbacks: { backend: string; loginProfile?: string | null }[] } }>(page, 'updateBot', { id: botId })).bot.fallbacks
     await expect.poll(async () => (await saved()).map((f) => [f.backend, f.loginProfile ?? null])).toEqual([[agent.id, null]])
 
@@ -114,10 +110,12 @@ test('an agent gets another login profile, it signs in, a bot runs on it, and it
       id: botId, loginProfile: null, fallbacks: [{ backend: agent.id, loginProfile: profileId, model: 'e2e-model', modelOptions: {} }],
     })
     expect(stepped.bot.fallbacks).toMatchObject([{ backend: agent.id, loginProfile: profileId }])
-    await expect(page.locator('.details-panel').getByText(`${agent.name} (${WORK}) · e2e-model`)).toBeVisible()
-    // Edit offers the step its own login again: another model, and it stays on its login profile.
+    const summary = page.locator('.details-panel .fallback-number').locator('..').locator('.agent-picker-summary')
+    await expect(summary).toContainText(`${agent.name} (${WORK})`)
+    await expect(summary).toContainText('e2e-model')
+    // Opened, the step keeps its own login: another model, and it stays on its login profile.
     expect(await editFallbackModel(page, botId, WORK)).toEqual([[agent.id, profileId, null]])
-    await expect(page.locator('.details-panel').getByText(`${agent.name} (${WORK}) · Default`)).toBeVisible()
+    await expect(summary).toContainText(`${agent.name} (${WORK})`)
     await expect(api(page, 'updateBot', {
       id: botId, fallbacks: [{ backend: agent.id, loginProfile: null, model: null, modelOptions: {} }], // without `loginProfile` the step keeps its saved one
     }).then((r) => (r as { bot: { fallbacks: unknown[] } }).bot.fallbacks)).resolves.toHaveLength(0) // the bot's own login again

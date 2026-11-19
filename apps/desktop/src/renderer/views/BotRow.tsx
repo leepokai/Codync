@@ -37,11 +37,11 @@ export const BotRow = memo(function BotRow({ bot, store, compact, usingComputer,
   )
 })
 
-/** The most pressing thing first: it needs you, what its chat does, how many items work and wait in the
- * background; otherwise the last message (Grok Bot row behavior). */
+/** The most pressing thing first: it needs you, what its chat does, how many tasks work and wait;
+ * otherwise the last message (Grok Bot row behavior). */
 function Preview({ bot, store }: { bot: Bot; store: BotStore }) {
   const tr = useTr()
-  const place = bot.managedWorkspace ? tr('Personal workspace') : folderName(bot)
+  const place = folderName(bot, tr)
   const line = rosterLine(bot, tr)
   if (line?.kind === 'needsYou') {
     return (

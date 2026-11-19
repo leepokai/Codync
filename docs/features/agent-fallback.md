@@ -65,7 +65,7 @@ Read from the ACP answer: the JSON-RPC code, the adapter's category (Claude's `d
 |---|---|---|
 | `usageLimit` | Claude: `rate_limit`/`billing_error` with the Agent SDK's usage-limit text ("You've hit your…"). Codex: `usageLimitExceeded` | Until the reset the agent reported (`usage` windows at 100%); unknown: 1 h |
 | `outOfCredits` | Claude `billing_error`, `account_on_hold` | 6 h |
-| `rateLimited`, `overloaded` | Claude `rate_limit`, `overloaded`, `server_error`; codex-acp `rateLimitExceeded`, `serverOverloaded` | 1, 5, 25, then 60 min for failures in a row |
+| `rateLimited`, `overloaded` | Claude `rate_limit`, `overloaded`, `server_error`; codex-acp `rateLimitExceeded`, `serverOverloaded`; pi's error starting with HTTP 429 or 5xx ([pi-acp](../upstream-agents/pi-acp.md)) | 1, 5, 25, then 60 min for failures in a row |
 | `signedOut` | ACP `-32000`, `authentication_failed`, CodeBuddy's `auth` category | Until it's signed in, looking again after 1 h; an agent Codync can't sign in to (no sign-in card): 10 min. The chat of each bot that moves past it gets the agent's sign-in card (holding no message: the fallback answers it), and signing in there brings the bot back |
 | `notStarting` | `FailureKind::NotSetUp`, `Timeout`, `Exited` | 5 min |
 | `modelMissing` | `model_not_found`, or the agent refusing the step's model (`FailureKind::NoModel`) | None: it's the bot's setup, not the agent's. The bot skips that step until its settings change |
@@ -161,6 +161,13 @@ command, its login profile, and its model options while the model stays. An agen
 login profile keeps them in order (the n-th step of an agent is the n-th saved one of it), and the notice names each
 step's login profile ("Fallbacks set: Claude Code (Work)").
 
+## Threads
+
+A bot's [threads](work.md#fallbacks-and-sign-in) run the same chain, and get a change to it at
+once. Their sign-in cards and offers to add a fallback go to the bot's chat, marked as the task's; a task whose
+agents can't take its turn until the user signs in waits for that (needs you) instead of failing, and goes on in
+the same thread once they have.
+
 ## Apps
 
 iPhone, Android, desktop and terminal show the same things, in the interface language (the banner is a catalog
@@ -172,12 +179,15 @@ traveling" stays whole; a rest line holds only a time, so the apps translate the
   (only a usage limit gives a reset time: another rest names its reason as the chat does, "Using Codex while Claude Code
   is signed out", and none says "… can't answer") with **Switch back** (a login on a login profile goes by it, "Claude Code (Work)", and when both are one agent so does the
   computer's own, "Claude Code (Default login profile)"); under Model and Fast mode, **Fallbacks** with an info button and
-  **+** (an Add fallback sheet with the Agent and Model pickers and, for an agent with login profiles, a Login profile picker:
-  it offers the logins the chain doesn't have yet, signed in, so the bot's own agent is offered on its other
-  login profiles and an agent with no login left is left out); a row per fallback with its
-  number, logo, "Agent · Model" ("Agent (login profile) · Model" on one), "Usage resets 3:00 PM" / "Resting until 3:00 PM" while resting, an **In use** chip,
-  and a ⋯ menu (Move up, Move down, Edit, Remove: Edit opens that sheet as Edit fallback, filled in with the step's agent, model, model options and login profile, its own login offered again even when it has signed out since, and saves the step in its place; picking another agent and then its own again brings those back); "No fallbacks yet."; a caption; and the "Let the bot change its
-  fallbacks" switch. The bot's own Agent row says when it resets.
+  **+** (adds a step at the end on the first installed agent with a login the chain doesn't have yet, signed in, and its
+  default model, open on its pickers); a row per fallback, edited in place with the same picker as the bot's own agent:
+  its number, the "Agent · Model" summary ("Agent (login profile) · Model" on one) that opens on the Agent and Model
+  pickers and, for an agent with login profiles, a Login profile picker (the agents and logins the rest of the chain
+  doesn't have, so the bot's own agent is offered on its other login profiles and an agent with no login left is left out;
+  the step's own login stays offered even when it has signed out since; another agent starts on its first free login and
+  default model, and the step's own agent picked again brings back its model, options and login), "Usage resets 3:00 PM" / "Resting until 3:00 PM" while resting, an **In use** chip, and a ⋯ menu (Move
+  up, Move down, Remove); "No fallbacks yet."; a caption; and the "Let the bot change its fallbacks" switch. No sheet
+  opens: every change goes into the form, which saves like the rest of it. The bot's own Agent row says when it resets.
 - **Chat**: one line where another agent took over ("Claude Code reached its usage limit (resets in 2 h). Codex carried
   on.") or the bot's own came back ("Back on Claude Code."); it unfolds to what the agent was told (past 8,000 bytes,
   its start and its end: the messages in the middle are in the chat). Moving past a

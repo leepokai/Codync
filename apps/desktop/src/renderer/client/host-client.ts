@@ -1,4 +1,4 @@
-import type { CallError } from '@shared/ipc'
+import type { CallError, RelayAbsence, RelayPresence } from '@shared/ipc'
 import {
   normalizeBot,
   normalizeScreen,
@@ -15,7 +15,8 @@ import {
 import type { Artifact, ArtifactChunk, LibraryItem } from '@shared/artifacts'
 import { parseCallCue, type CallCue } from '@shared/calls'
 import type { NetworkView } from '@shared/network'
-import { parseTaskEntry } from '@shared/tasks'
+import { fromOldAnswer, fromOldEvent, toHost } from '@shared/old-host'
+import { parseThreadEntry } from '@shared/threads'
 import { trNow } from '../lib/l10n.ts'
 
 /** How a client reaches a host API: loopback (the computer's own host or an SSH tunnel) or the relay (a cloud computer). */
@@ -25,8 +26,9 @@ export class HostError extends Error {
   constructor(
     readonly status: number,
     message: string,
-    /** The computer isn't connected to the relay: a cloud computer asleep (the connection wakes it), or one that's off. */
-    readonly offline = false,
+    /** The computer isn't connected to the relay (`RelayPresence`): asleep (the connection wakes a cloud computer) or
+     * off, or a cloud computer the relay is waking. */
+    readonly presence: RelayAbsence | null = null,
   ) {
     super(message)
   }
@@ -42,11 +44,13 @@ export class HostError extends Error {
 }
 
 export interface HostTransport {
-  /** How it reaches the host, shown in the thread header. */
+  /** How it reaches the host, shown in the chat header. */
   readonly route?: HostRoute
   call(method: string, body: unknown, timeoutMs: number): Promise<unknown>
   /** Each element is one event's JSON (what SSE puts after `data:`). */
   stream(path: string, onData: (line: string) => void, onEnd: (error: HostError | null) => void): () => void
+  /** Each presence the relay tells of the computer, through the relay only. */
+  onPresence?(cb: (presence: RelayPresence) => void): () => void
 }
 
 export class LoopbackTransport implements HostTransport {
@@ -93,9 +97,13 @@ export class ChannelTransport implements HostTransport {
   stream(path: string, onData: (line: string) => void, onEnd: (error: HostError | null) => void) {
     return window.codync.channel.stream(this.computerId, this.signKey, path, onData, (error) => onEnd(error ? channelError(error) : null))
   }
+
+  onPresence(cb: (presence: RelayPresence) => void) {
+    return window.codync.channel.onPresence((p) => p.computerId === this.computerId && cb(p.presence))
+  }
 }
 
-const channelError = (e: CallError) => new HostError(e.status ?? 0, e.message, e.offline === true)
+const channelError = (e: CallError) => new HostError(e.status ?? 0, e.message, e.presence ?? null)
 
 export type HostEvent =
   | { type: 'icons'; iconsRevision: number; icons: import('@shared/custom-icons').CustomIcons }
@@ -104,8 +112,8 @@ export type HostEvent =
   | { type: 'bot'; bot: Bot }
   | { type: 'botDeleted'; id: string; rev: number }
   | { type: 'entry'; entry: Entry }
-  /** One entry of a background task's transcript (never a chat's); the catch-up has none. */
-  | { type: 'taskEntry'; task: string; entry: Entry }
+  /** One entry of a thread's transcript (never a chat's); the catch-up has none. */
+  | { type: 'threadEntry'; thread: string; entry: Entry }
   | { type: 'usage'; usage: Usage }
   /** An artifact was published, updated or renamed (the catch-up replays it too). */
   | { type: 'artifact'; artifact: Artifact }
@@ -130,7 +138,8 @@ export type HostEvent =
 export function parseEvent(line: string): HostEvent | null {
   let raw: Record<string, unknown>
   try {
-    raw = JSON.parse(line) as Record<string, unknown>
+    // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
+    raw = fromOldEvent(JSON.parse(line) as Record<string, unknown>)
   } catch {
     return null
   }
@@ -160,8 +169,8 @@ export function parseEvent(line: string): HostEvent | null {
       if (!entry || typeof entry.id !== 'string' || typeof entry.botId !== 'string') return { type: 'undecodable', kind: 'entry' }
       return { type, entry: { ...entry, data: entry.data ?? {} } }
     }
-    case 'taskEntry': {
-      const parsed = parseTaskEntry(raw)
+    case 'threadEntry': {
+      const parsed = parseThreadEntry(raw)
       return parsed ? { type, ...parsed } : null
     }
     case 'usage':
@@ -215,10 +224,13 @@ export class HostClient {
     return this.call('renameArtifact', { botId, artifactId, title })
   }
 
-  constructor(readonly transport: HostTransport) {}
+  /** `hostVersion`: the host's version, once `hello` said it; a new connection to the same computer starts from the last one's. */
+  constructor(readonly transport: HostTransport, private hostVersion?: string) {}
 
   call<T>(method: string, body: unknown = {}, timeoutMs = 20_000): Promise<T> {
-    return this.transport.call(method, body, timeoutMs) as Promise<T>
+    // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
+    const [sent, sentBody] = toHost(this.hostVersion, method, body)
+    return this.transport.call(sent, sentBody, timeoutMs).then((answer) => fromOldAnswer(method, answer)) as Promise<T>
   }
 
   /** Catch-up since `since`, then live updates. */
@@ -231,7 +243,10 @@ export class HostClient {
   }
 
   hello() {
-    return this.call<Hello>('hello').then((h) => ({ ...h, backends: h.backends ?? [], screen: normalizeScreen(h.screen) ?? undefined }))
+    return this.call<Hello>('hello').then((h) => {
+      this.hostVersion = h.version
+      return { ...h, backends: h.backends ?? [], screen: normalizeScreen(h.screen) ?? undefined }
+    })
   }
 
   async history(botId: string, beforeSeq: number, limit = 100) {

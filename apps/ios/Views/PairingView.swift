@@ -265,7 +265,7 @@ private struct ScanPage: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(L10n.tr("Scan the pairing code")).pageTitle()
                     Text(os == .mac
-                         ? L10n.tr("On your Mac, click Codync in the menu bar, then Pair iPhone.")
+                         ? L10n.tr("On your Mac, click Codync in the menu bar, then Pair phone.")
                          : L10n.tr("On your computer, run this in a terminal:"))
                         .font(.body)
                         .foregroundStyle(Palette.secondary)

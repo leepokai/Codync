@@ -3,7 +3,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
-use super::{After, App, Focus, Item, Msg, TraceMode, Width, copy, group};
+use super::{After, App, Entry, Focus, Item, Msg, TraceMode, Width, copy, group};
 use crate::analytics::reported::Reported;
 
 impl App {
@@ -149,7 +149,12 @@ impl App {
             .into_iter()
             .filter_map(|item| match item {
                 Item::Entry(e)
-                    if e.is_message() || e.is_bot_message() || e.unfolds() || e.retries() || e.adds_fallback() =>
+                    if e.is_message()
+                        || e.is_bot_message()
+                        || e.unfolds()
+                        || e.retries()
+                        || e.continues()
+                        || e.adds_fallback() =>
                 {
                     Some((e.id.clone(), e.is_message()))
                 }
@@ -173,22 +178,26 @@ impl App {
     pub(super) fn pick_key(&mut self, k: KeyEvent) -> bool {
         let Some(id) = self.selected.clone() else { return false };
         let picked = self.pick.as_ref().and_then(|p| self.lane(&id).into_iter().find(|e| &e.id == p).cloned());
+        // A picked card waiting for an answer: its own keys answer it (`to_answer`).
+        if picked.as_ref().is_some_and(Entry::pending) && matches!(k.code, KeyCode::Char('1'..='9')) {
+            return false;
+        }
         match k.code {
             KeyCode::Char('j') | KeyCode::Down => self.step_pick(1),
             KeyCode::Char('k') | KeyCode::Up => self.step_pick(-1),
             KeyCode::Char('C') => self.open_connection(),
-            KeyCode::Char('F') => self.retry_failed_run(),
+            KeyCode::Char('F') => self.retry_or_continue(),
             KeyCode::Char('A') if picked.as_ref().is_some_and(|e| self.fallback_owner(&id, e).is_some()) => {
                 if let Some(e) = picked {
                     self.add_fallback(&id, &e);
                 }
             }
-            KeyCode::Enter if picked.as_ref().is_some_and(super::Entry::is_bot_message) => {
+            KeyCode::Enter if picked.as_ref().is_some_and(Entry::is_bot_message) => {
                 if let Some(e) = picked {
                     self.open_bot_chat(&e.id);
                 }
             }
-            KeyCode::Char('c') if picked.as_ref().is_some_and(super::Entry::is_bot_message) => {
+            KeyCode::Char('c') if picked.as_ref().is_some_and(Entry::is_bot_message) => {
                 if let Some(e) = picked {
                     let lane = self.lane(&id);
                     let grouped = group(&id, &lane).iter().any(|i| matches!(i, Item::Group(g) if g.first.id == e.id));
@@ -200,18 +209,18 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('r' | 'f' | '1'..='6') if picked.as_ref().is_some_and(super::Entry::is_bot_message) => {
+            KeyCode::Char('r' | 'f' | '1'..='6') if picked.as_ref().is_some_and(Entry::is_bot_message) => {
                 self.flash("Bot conversations are read-only");
             }
             KeyCode::Enter if picked.as_ref().is_some_and(|e| e.data["connectionRequest"]["status"] == "pending") => {
                 self.open_connection();
             }
             KeyCode::Char('o') if picked.as_ref().is_some_and(|e| e.artifact().is_some()) => {
-                if let Some(artifact) = picked.as_ref().and_then(super::Entry::artifact) {
+                if let Some(artifact) = picked.as_ref().and_then(Entry::artifact) {
                     self.fetch_artifact(&id, artifact, crate::tui::net::artifacts::ArtifactTo::Browser);
                 }
             }
-            KeyCode::Char('o') if picked.as_ref().is_some_and(super::Entry::unfolds) => {
+            KeyCode::Char('o') if picked.as_ref().is_some_and(Entry::unfolds) => {
                 if let Some(e) = picked
                     && !self.unfolded.remove(&e.id)
                 {
@@ -236,7 +245,7 @@ impl App {
             }
             // `q`: picks the message the picked one quotes, which brings it on screen (the apps' tap on a quote).
             // Never the quit it is outside picking: one press too many on a chain of quotes would close the app.
-            KeyCode::Char('q') => match picked.as_ref().and_then(super::Entry::quotes) {
+            KeyCode::Char('q') => match picked.as_ref().and_then(Entry::quotes) {
                 Some(quoted) => {
                     // ponytail: only among the loaded messages, as in the apps.
                     let found = self.lane(&id).iter().any(|e| e.id == quoted);
@@ -278,6 +287,28 @@ impl App {
             _ => return false,
         }
         true
+    }
+
+    /// `F`, on the picked notice, else the newest in this chat: runs a failed routine run's work again, or continues a
+    /// bot chain stopped at its handoff limit.
+    pub(super) fn retry_or_continue(&mut self) {
+        let Some(bot) = self.selected.clone() else { return };
+        let notice = self
+            .lane(&bot)
+            .into_iter()
+            .filter(|e| (e.retries() || e.continues()) && self.pick.as_ref().is_none_or(|id| *id == e.id))
+            .max_by_key(|e| e.seq);
+        match notice {
+            Some(e) if e.continues() => {
+                self.call("continueChain", json!({"entryId": e.id}), After::Nothing);
+                self.flash("Continuing…");
+            }
+            Some(e) => {
+                self.call("retryRoutineRun", json!({"botId": bot, "runId": e.data["runId"]}), After::Nothing);
+                self.flash("Trying it again");
+            }
+            None => self.flash("No failed routine run to try again here"),
+        }
     }
 
     /// Moves the selected bot one place up (-1) or down (+1) and saves the order, staying in its band

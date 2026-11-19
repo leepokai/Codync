@@ -7,8 +7,8 @@ import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { useScreenViewed } from '../../store/analytics'
 import { useStore } from '../../store/context'
-import { Composer } from '../thread/Composer'
-import { MacChatButton } from '../thread/MacChatButton'
+import { Composer } from '../chat/Composer'
+import { MacChatButton } from '../chat/MacChatButton'
 import { ArtifactFrame, artifactShareItems, renameArtifact, TitleField } from './ArtifactParts'
 
 /**
@@ -41,7 +41,7 @@ export function ArtifactView({ botId, artifactId, close }: { botId: string; arti
     }}>
       <div className="top-chrome">
         <div className="top-chrome-row">
-          <MacChatButton className="ringed" title={tr('Close artifact')} icon="xmark" direction={[-1, 0]} onClick={close} />
+          <MacChatButton className="ringed" title="Close artifact" icon="xmark" direction={[-1, 0]} onClick={close} />
           <Spacer />
           {artifact ? (
             <DropdownMenu className="mac-chat-button ringed artifact-share" title={tr('Share artifact')} items={() => artifactShareItems(store, artifact, setError)}>
@@ -68,7 +68,7 @@ export function ArtifactView({ botId, artifactId, close }: { botId: string; arti
       <div className="composer-dock">
         {error ? <Text as="div" size="caption" tone="danger" role="alert" className="artifact-error">{error}</Text> : null}
         {/* A message here replies to the artifact's card, so its bot knows which artifact (`chat::replies`); an artifact
-            published without one (a routine's) has nothing to reply to. */}
+            published without one (in a group chat or for another bot) has nothing to reply to. */}
         {artifact?.entryId ? <Composer botId={botId} about={artifact} /> : null}
       </div>
     </div>

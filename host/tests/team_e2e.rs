@@ -122,7 +122,7 @@ async fn a_bot_messages_another_and_relays_its_reply_to_the_user() {
     let host = Host::start().await;
     let lead = host.bot("lead").await;
     let reviewer = host.bot("reviewer").await;
-    // Answers in its chat, not in its box (`tasks_e2e` has that): these are about the chat's own queue and trace.
+    // Answers in its chat, not in its box (`work_e2e` has that): these are about the chat's own queue and trace.
     host.call("updateBot", json!({"id": reviewer, "manageTeam": true})).await;
     host.call("send", json!({"botId": lead, "text": format!("DELEGATE {reviewer}")})).await;
     let permission = host.wait_for(&reviewer, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
@@ -175,7 +175,7 @@ async fn a_bot_request_answers_the_sender_and_never_the_user() {
     let host = Host::start().await;
     let lead = host.bot("lead").await;
     let reviewer = host.bot("reviewer").await;
-    // Answers in its chat, not in its box (`tasks_e2e` has that): these are about the chat's own queue and trace.
+    // Answers in its chat, not in its box (`work_e2e` has that): these are about the chat's own queue and trace.
     host.call("updateBot", json!({"id": reviewer, "manageTeam": true})).await;
     host.call("send", json!({"botId": lead, "text": format!("DELEGATE_REPORT {reviewer}")})).await;
     host.wait_for(&lead, |e| e["kind"] == "agent" && e["data"]["text"] == "Relayed: Answer for the requesting bot")
@@ -199,7 +199,7 @@ async fn user_report_queued_behind_a_request_is_delivered_in_the_recipient_chat(
     let host = Host::start().await;
     let lead = host.bot("lead").await;
     let reviewer = host.bot("reviewer").await;
-    // Answers in its chat, not in its box (`tasks_e2e` has that): these are about the chat's own queue and trace.
+    // Answers in its chat, not in its box (`work_e2e` has that): these are about the chat's own queue and trace.
     host.call("updateBot", json!({"id": reviewer, "manageTeam": true})).await;
     host.call("send", json!({"botId": lead, "text": format!("DELEGATE {reviewer}")})).await;
     let permission = host.wait_for(&reviewer, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
@@ -260,4 +260,13 @@ async fn message_ping_pong_stops_at_the_hop_limit_and_a_new_user_turn_can_delega
         assert_eq!(notices, chain * 8 * 2, "the ninth handoff must never be queued");
         previous_rev = sync["rev"].as_i64().unwrap();
     }
+    // Each stopped chain left the user one Continue notice, which sends `first` "Continue" as the user's message.
+    let sync = common::snapshot(&host.base, &host.token).await;
+    let entries = sync["entries"].as_array().unwrap();
+    let continues: Vec<_> = entries.iter().filter(|e| e["data"]["continueChain"] == true).collect();
+    assert_eq!(continues.len(), 2, "one notice a stopped chain");
+    let sent = host.call("continueChain", json!({"entryId": continues[1]["id"]})).await;
+    assert_eq!(sent["entry"]["kind"], "user");
+    assert_eq!(sent["entry"]["data"]["text"], "Continue");
+    host.wait_finished().await;
 }

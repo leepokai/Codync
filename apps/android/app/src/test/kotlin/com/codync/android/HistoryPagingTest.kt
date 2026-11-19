@@ -2,6 +2,7 @@ package com.codync.android
 
 import com.codync.android.core.Entry
 import com.codync.android.core.WireJson
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -62,6 +63,18 @@ class HistoryPagingTest {
         // Leaving after a page that loaded asks nothing more.
         paging.left()
         assertFalse(paging.ask(settled = true, visible = true, loading = false, shown = 10, floor = 40))
+    }
+
+    @Test fun `opening an item's card pages back until the chat holds it, never past the end or five pages`() = runBlocking {
+        var pages = 0
+        pageUntil(found = { pages == 2 }, more = { true }) { pages++ }
+        assertEquals("found in the second page", 2, pages)
+        pages = 0
+        pageUntil(found = { false }, more = { pages < 1 }) { pages++ }
+        assertEquals("the chat's history ended", 1, pages)
+        pages = 0
+        pageUntil(found = { false }, more = { true }) { pages++ }
+        assertEquals("never found", 5, pages)
     }
 
     private fun row(seq: Long, kind: String) = Entry("e-$seq", seq, "a", rev = seq, kind = kind)

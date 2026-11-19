@@ -37,6 +37,7 @@ impl App {
             items.extend(
                 ACTIONS
                     .iter()
+                    .filter(|(_, _, a)| *a != Action::ResetCredentials || self.credentials_reset)
                     .filter(|(label, _, _)| {
                         let translated = super::super::l10n::tr(label);
                         fuzzy(q, &[label, translated.as_ref()])
@@ -63,6 +64,7 @@ impl App {
             Action::CheckUpdate => self.call("checkHostUpdate", json!({}), After::Update),
             Action::Analytics => self.toggle_analytics(),
             Action::AutoOrder => self.toggle_auto_order(),
+            Action::ComputerName => self.ask_computer_name(),
             Action::ResetCredentials => self.ask_reset_credentials(),
             Action::AboutAnalytics => self.overlays.push(Overlay::Analytics(AnalyticsSheet::default())),
             Action::Appearance(mode) => match super::super::appearance::select(mode) {
@@ -120,7 +122,7 @@ impl App {
                         ConfirmAct::DeleteCredentials => {
                             self.call("resetCredentials", json!({}), After::CredentialsReset);
                         }
-                        ConfirmAct::StopWork { bot, item } => self.stop_work(bot, item),
+                        ConfirmAct::StopWork { bot, task } => self.stop_work(bot, task),
                     }
                     None
                 }
@@ -133,7 +135,7 @@ impl App {
             Overlay::Group(g) => self.group_key(g, k),
             Overlay::Memory(m) => self.memory_key(m, k),
             Overlay::BotChat(c) => Self::bot_chat_key(c, k),
-            Overlay::Task(s) => self.task_key(s, k),
+            Overlay::Thread(s) => self.thread_key(s, k),
             Overlay::CutIn(c) => self.cut_in_key(c, k),
             Overlay::AllWork(p) => self.all_work_key(p, k),
             Overlay::DevServers(sheet) => self.dev_servers_key(sheet, k),
@@ -150,6 +152,7 @@ impl App {
             Overlay::Analytics(s) => s.key(k),
             Overlay::Network(n) => self.network_key(n, k),
             Overlay::WhatsNew(s) => s.key(k),
+            Overlay::Kofi(s) => s.key(k),
             // A phone that scanned the code waits for this computer to let it in.
             o @ Overlay::Pair(_)
                 if !self.pairing_requests.is_empty() && matches!(k.code, KeyCode::Char('y' | 'w' | 'n')) =>

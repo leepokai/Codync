@@ -13,7 +13,7 @@ Use JDK 21, Android SDK 37 and Build Tools 37.0.0. Set `JAVA_HOME` and
 
 ```sh
 cd apps/android
-./gradlew :core:test :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+./gradlew :core:test :design:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
 ./gradlew :app:assembleRelease
 adb install -r -d app/build/outputs/apk/debug/app-debug.apk
 ```
@@ -90,7 +90,9 @@ final replies, Markdown/code, permissions, reactions, quote replies (touch and h
 message, then Reply; Select Text there replies to the part of it you select), history and Full conversation. A bot's work away from
 its chat ([event box](../../docs/plans/event-box.md)) shows as one capsule above the composer; its text opens the bot's
 details, whose Details page lists its threads (the sessions running now), its event box (what waits), what it does
-later and what ended recently. A row there opens its task's own transcript, held in memory per task and never in the chat or the mirror.
+later and what ended recently. A row there pushes its task's thread inside the sheet
+(back returns to the details): where it works, what its thread did, and a text composer for the bot's own tasks, whose waiting messages
+offer Send now and Remove as a chat's do. The thread's transcript is held in memory per thread and never in the chat or the mirror.
 
 Text and private attachment drafts survive process death separately for each bot. Sends retain their nonce through durable queue commit and retry.
 Uncertain sends require explicit retry with the same ID. Text can wait in the

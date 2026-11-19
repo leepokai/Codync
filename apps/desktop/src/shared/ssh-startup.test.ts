@@ -5,6 +5,7 @@ import { isSSHConnecting, showsChat, sshSummary, sshStatusDetail } from './ssh-s
 import type { SSHProfile, SSHState, SSHStatus } from './ssh.ts'
 
 const profile: SSHProfile = { id: 'remote', host: 'remote', name: 'Remote', port: null, user: null, identityFile: null, remotePort: 19222, computerId: null }
+const en = (text: string) => text
 const state = (status?: SSHStatus): SSHState => ({ profiles: [profile], status: status ? { remote: status } : {}, attachments: [], needsLinger: [] })
 
 test('saved profiles keep connection status and management visible in every state', () => {
@@ -45,18 +46,29 @@ test('pending SSH rows distinguish idle, connected, retrying and terminal failur
 })
 
 test('summary separates active connection attempts from profiles needing attention', () => {
-  assert.equal(sshSummary([{ kind: 'failed', message: 'Permission denied' }, { kind: 'confirmHostKey', name: 'remote', fingerprints: [] }, { kind: 'idle' }]), '2 need attention · 1 not connected')
-  assert.equal(sshSummary([{ kind: 'connecting', step: 'Signing in…' }, { kind: 'retrying', message: 'Host unreachable' }, { kind: 'connected', localPort: 19333 }]), '2 connecting… · 1 opening…')
-  assert.equal(sshSummary([{ kind: 'notInstalled' }]), '1 needs attention')
-  assert.equal(sshSummary([]), '')
+  assert.equal(sshSummary([{ kind: 'failed', message: 'Permission denied' }, { kind: 'confirmHostKey', name: 'remote', fingerprints: [] }, { kind: 'idle' }], en), '2 need attention · 1 not connected')
+  assert.equal(sshSummary([{ kind: 'connecting', step: 'Signing in…' }, { kind: 'retrying', message: 'Host unreachable' }, { kind: 'connected', localPort: 19333 }], en), '2 connecting… · 1 opening…')
+  assert.equal(sshSummary([{ kind: 'notInstalled' }], en), '1 needs attention')
+  assert.equal(sshSummary([], en), '')
 })
 
 test('an install in progress counts as connecting and shows its step', () => {
   const installing: SSHStatus = { kind: 'installing', step: 'Starting codync-host…' }
   assert.equal(isSSHConnecting(installing), true)
   assert.equal(sshStatusDetail(installing), 'Starting codync-host…')
-  assert.equal(sshSummary([installing]), '1 connecting…')
+  assert.equal(sshSummary([installing], en), '1 connecting…')
   assert.equal(showsChat('notInstalled', 0, state(installing)), true)
   // A failed install leaves the computer not installed, so Install is offered again.
-  assert.equal(sshSummary([{ kind: 'notInstalled', failure: { output: 'error: download failed' } }]), '1 needs attention')
+  assert.equal(sshSummary([{ kind: 'notInstalled', failure: { output: 'error: download failed' } }], en), '1 needs attention')
+})
+
+test('every phrase of the summary goes through the catalogs (#517)', () => {
+  const tr = (text: string) => `‹${text}›`
+  const summary = sshSummary([
+    { kind: 'connecting', step: 'Signing in…' }, { kind: 'failed', message: 'Permission denied' },
+    { kind: 'connected', localPort: 19333 }, { kind: 'idle' },
+  ], tr)
+  const parts = summary.split(' · ')
+  assert.equal(parts.length, 4)
+  for (const part of parts) assert.match(part, /^‹.*›$/, `untranslated: ${part}`)
 })

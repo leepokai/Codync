@@ -176,12 +176,12 @@ pub(super) fn preview(b: &Bot) -> (String, Style) {
 
 fn preview_raw(b: &Bot) -> (String, Style) {
     let t = theme();
-    // The most pressing first: it needs the user (its chat, then an item of its box), what its chat does, how many
-    // items work and wait; else the row reads as usual.
+    // The most pressing first: it needs the user (its chat, then a task of its box), what its chat does, how many
+    // tasks work and wait; else the row reads as usual.
     let background = counts(&b.work);
     match b.mark() {
         Mark::Need => (
-            if b.activity.is_empty() { tr("Needs your approval").into_owned() } else { tr(&b.activity).into_owned() },
+            if b.activity.is_empty() { tr("Needs approval").into_owned() } else { tr(&b.activity).into_owned() },
             t.amber,
         ),
         _ if b.work.iter().any(|i| i.status == WorkStatus::NeedsYou) => (tr("Needs you").into_owned(), t.amber),
@@ -195,7 +195,7 @@ fn preview_raw(b: &Bot) -> (String, Style) {
             t.red,
         ),
         Mark::Unread => (b.last_message.clone(), t.text),
-        Mark::Idle if b.last_message.is_empty() => (tr("No messages yet").into_owned(), t.dim),
+        Mark::Idle if b.last_message.is_empty() => (tr("No messages yet.").into_owned(), t.dim),
         Mark::Idle => (b.last_message.clone(), t.secondary),
     }
 }
@@ -289,7 +289,7 @@ mod tests {
         let background = bot(serde_json::json!({"outside": {"status": "working", "startedAt": 5}}));
         assert_eq!((background.roster_mark(), background.mark()), (Mark::Work, Mark::Unread), "only its box works");
         let asked = bot(serde_json::json!({"status": "working", "outside": {"status": "needsInput"}}));
-        assert_eq!((asked.roster_mark(), asked.mark()), (Mark::Need, Mark::Work), "an item waits on a card");
+        assert_eq!((asked.roster_mark(), asked.mark()), (Mark::Need, Mark::Work), "a task waits on a card");
         assert_eq!(bot(serde_json::json!({"outside": {"status": "idle"}})).roster_mark(), Mark::Unread);
         let older = bot(serde_json::json!({"status": "needsInput"}));
         assert_eq!(older.roster_mark(), Mark::Need, "a host before `outside`: the chat's own status");
@@ -307,8 +307,8 @@ mod tests {
         assert_eq!(line("idle", &["working", "working", "waiting", "waiting", "waiting"]), "2 working · 3 waiting");
         assert_eq!(line("idle", &["working", "done"]), "1 working", "either part alone when the other is zero");
         assert_eq!(line("idle", &["waiting", "waiting", "failed"]), "2 waiting");
-        assert_eq!(line("needsInput", &["needsYou", "working"]), "Needs your approval", "the chat's own card first");
-        assert_eq!(line("idle", &["working", "needsYou", "waiting"]), "Needs you", "then an item that needs you");
+        assert_eq!(line("needsInput", &["needsYou", "working"]), "Needs approval", "the chat's own card first");
+        assert_eq!(line("idle", &["working", "needsYou", "waiting"]), "Needs you", "then a task that needs you");
         assert_eq!(line("working", &["working", "needsYou"]), "Needs you");
         assert_eq!(line("working", &["working", "waiting"]), "Working…", "then the chat's own activity");
         assert_eq!(line("idle", &["done", "stopped", "later"]), "On it.", "nothing live or waiting: the last message");

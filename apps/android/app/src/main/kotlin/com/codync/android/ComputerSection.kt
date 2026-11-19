@@ -46,7 +46,7 @@ import com.codync.android.design.*
     val turn by animateFloatAsState(if (folded) -90f else 0f, Motion.layout(), label = "Chevron")
     val link = state.connection
     val status = if (stale) computerStatusText(state, true) else statusText(state)
-    val offline = (link is LinkState.ComputerOffline || link is LinkState.Failed) && !state.isUpdating
+    val offline = state.unreachable
     Column(modifier.fillMaxWidth().padding(top = 22.dp, bottom = 2.dp)) {
         Row(Modifier.fillMaxWidth().contextActions(onClick = toggle, reorder = drag) { emptyList() }
             .clearAndSetSemantics {

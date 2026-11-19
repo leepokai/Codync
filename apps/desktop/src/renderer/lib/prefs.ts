@@ -1,7 +1,8 @@
 import type { AppLanguage } from './l10n'
 import { useSyncExternalStore } from 'react'
 import type { StarAsk } from './star-ask'
-import type { KofiInvite } from './kofi-invite'
+import type { ActiveDays, KofiAsk } from './kofi-ask'
+import type { VoiceTap } from '../../shared/voice-shortcut'
 
 /** A stored value, or the fallback when it's missing, unreadable or of another kind (a `null` where a string
  * belongs crashed the chat window). A `null` fallback takes any value. */
@@ -83,10 +84,14 @@ export const prefs = {
   starAsk: pref<StarAsk>('githubStarAsk', { kind: 'never' }),
   /** Prompts this computer delivered, voice calls aside; they bring the second star ask. */
   promptsSent: pref('promptsSent', 0),
-  kofiInvite: pref<KofiInvite>('kofiInvite', { kind: 'never' }),
+  /** Days this computer sent a prompt on, voice calls and threads included; they bring the Ko-fi invitation. */
+  activeDays: pref<ActiveDays>('activeDays', { count: 0, last: '' }),
+  kofiAsk: pref<KofiAsk>('kofiAsk', { asked: 0, day: 0 }),
   appLanguage: pref<AppLanguage>('appLanguage', 'system'),
   /** The working pill unfolds the turn's thinking and steps; off keeps the chat to its messages. */
   thinkingDetails: pref('showThinkingDetails', false),
+  /** The voice input shortcut's tap after its double tap: sends, or stops and keeps the words in the box. */
+  voiceShortcutTap: pref<VoiceTap>('voiceShortcutTap', 'send'),
   extensionsMovedTipSeen: pref('extensionsMovedTipSeen', false),
   /** The version this device last opened on, for What's new; `null` before it ever recorded one. */
   whatsNewSeen: pref<string | null>('whatsNewSeen', null),

@@ -102,6 +102,11 @@ private fun parseTemplate(template: String): List<Piece>? {
 }
 
 private val localizableSlots = setOf("{hint}", "{error}", "{setup}", "{kind}", "{when}", "{status}", "{reason}", "{shortcut}", "{changes}")
+/** Slots that only ever hold a number, so free text ("…the host service isn't installed") never fills "{count} installed". */
+private val numericSlots = setOf("{count}", "{unread}", "{cap}")
+private val number = Regex("[\\d,.]+")
+/** A version slot holds only a version ("2.47.0", "2.47.0-dev"), so "You have reached your limit." never fills "You have {version}.". */
+private val versionShape = Regex("\\d+(\\.\\d+)*(-[\\w.]+)?")
 private val placeholder = Regex("\\{[A-Za-z0-9]+\\}")
 
 private fun fill(text: String, pieces: List<Piece>, phrase: String, phrases: Map<String, String>, depth: Int): String? {
@@ -118,7 +123,10 @@ private fun fill(text: String, pieces: List<Piece>, phrase: String, phrases: Map
         val next = pieces.getOrNull(index + 1)?.literal
         val end = if (next == null) text.length else text.indexOf(next, pos)
         if (end < 0 || end == pos) return null
-        caps[token] = text.substring(pos, end)
+        val value = text.substring(pos, end)
+        if (token in numericSlots && !number.matches(value)) return null
+        if (token == "{version}" && !versionShape.matches(value)) return null
+        caps[token] = value
         pos = end
     }
     if (pos != text.length) return null

@@ -103,13 +103,11 @@ fn model_error(model: &str, e: &anyhow::Error) -> anyhow::Error {
     acp::Failure::error(acp::FailureKind::NoModel, format!("Couldn't select model {model}: {e:#}"))
 }
 
-/// Cursor names a model variant `grok-4.7[reasoning_effort=high,fast=true]`. When the agent
-/// lists plain models instead, the bracket becomes options of the plain model.
+/// A Cursor model variant ([`auth::cursor_variant`](crate::agent::auth::cursor_variant)): when the agent lists plain
+/// models instead, the bracket becomes options of the plain model.
 fn split_variant<'a>(res: &Value, model: &'a str) -> (&'a str, Vec<(&'a str, &'a str)>) {
     let listed = |id: &str| crate::agent::auth::model_ids(res).iter().any(|m| m == id);
-    if let Some((name, params)) = model.strip_suffix(']').and_then(|m| m.split_once('['))
-        && let Some(params) =
-            params.split(',').filter(|p| !p.is_empty()).map(|p| p.split_once('=')).collect::<Option<Vec<_>>>()
+    if let Some((name, params)) = crate::agent::auth::cursor_variant(model)
         && !listed(model)
         && listed(name)
     {
@@ -225,6 +223,7 @@ pub(crate) async fn start_agent(
         // Claude's, Codex's and omp's adapters say so in the top-level `_meta`.
         steering: init["_meta"]["steering"]["supported"] == true,
         fork: init["agentCapabilities"]["sessionCapabilities"]["fork"].is_object(),
+        delete: init["agentCapabilities"]["sessionCapabilities"]["delete"].is_object(),
     };
     Ok(Conn {
         acp,
@@ -243,6 +242,7 @@ pub(crate) async fn start_agent(
         usage: HashMap::new(),
         renamed: HashMap::new(),
         on_profile: None,
+        codex_home: None,
     })
 }
 

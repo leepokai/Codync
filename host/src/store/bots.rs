@@ -1,7 +1,7 @@
 //! The `bots` table: roster rows, sessions, read marks and unread counts.
 
 use super::entries::NOT_REMOVED;
-use super::model::{BotConfig, BotRow, EntryKind, LastMessage, TASK_GLOB, message_text};
+use super::model::{BotConfig, BotRow, EntryKind, LastMessage, message_text, thread_ids};
 use super::{Store, logged, next_rev};
 use crate::LockExt;
 use anyhow::Result;
@@ -55,14 +55,14 @@ const WAITING_CARD: &str = "(kind = 'permission' AND json_extract(data, '$.statu
 const UNSEEN: &str = "COALESCE(json_extract(data, '$.contentRev'), rev) > ?2";
 
 impl Store {
-    /// The roster's rows: bots and groups, deleted ones included. Task bots aren't among them (`task_bots`).
+    /// The roster's rows: bots and groups, deleted ones included. Thread bots aren't among them (`thread_bots`).
     pub fn bots(&self) -> Result<Vec<BotRow>> {
-        self.bots_where(&format!("id NOT GLOB '{TASK_GLOB}'"))
+        self.bots_where(&format!("NOT {}", thread_ids("id")))
     }
 
-    /// The task bots (`chat::tasks`), deleted ones left out.
-    pub fn task_bots(&self) -> Result<Vec<BotRow>> {
-        self.bots_where(&format!("id GLOB '{TASK_GLOB}' AND deleted = 0"))
+    /// The thread bots (`chat::work`), deleted ones left out.
+    pub fn thread_bots(&self) -> Result<Vec<BotRow>> {
+        self.bots_where(&format!("{} AND deleted = 0", thread_ids("id")))
     }
 
     fn bots_where(&self, condition: &str) -> Result<Vec<BotRow>> {
@@ -171,6 +171,18 @@ impl Store {
         logged("unread", badge).unwrap_or_default()
     }
 
+    /// Unread across the roster the phones show (no deleted or hidden bots): the app icon's badge.
+    pub fn total_unread(&self) -> i64 {
+        let rows = self.bots().unwrap_or_else(|error| {
+            tracing::warn!(error = format!("{error:#}"), "couldn't list bots for the unread total");
+            Vec::new()
+        });
+        rows.iter()
+            .filter(|b| !b.deleted && !b.config.hidden)
+            .map(|b| self.badge(&b.config.id, b.read_rev).unread)
+            .sum()
+    }
+
     /// Newest chat-visible line for the roster preview, with its author
     /// (`None` for the user; a group reply names the bot that wrote it). A voice call's messages show only behind
     /// its line, so they aren't it.
@@ -245,9 +257,9 @@ mod tests {
             harness_memory: false,
             compaction: codync_mem::compaction::Threshold::Early,
             auto_name: false,
-            task_of: None,
-            max_agents: 3,
-            task_worktrees: true,
+            thread_of: None,
+            max_threads: 3,
+            thread_worktrees: true,
             created_at: 0,
         };
         // Several at once: each with its own rev, in order.
@@ -265,6 +277,10 @@ mod tests {
         assert_eq!(s.badge("b1", 0).unread, 0, "narration is not unread");
         let a2 = s.update_entry(&a.id, &serde_json::json!({"text": "yo!", "final": true})).unwrap().unwrap();
         assert_eq!(s.badge("b1", 0).unread, 1);
+        assert_eq!(s.total_unread(), 1);
+        s.save_bot(&BotConfig { hidden: true, ..cfg.clone() }).unwrap();
+        assert_eq!(s.total_unread(), 0, "a hidden bot isn't on the phone's roster");
+        s.save_bot(&cfg).unwrap();
         assert_eq!(s.entries_since(a2.rev - 1, 500).unwrap().len(), 1);
         assert_eq!(s.entries_since(0, 1).unwrap().len(), 1, "fresh sync is capped per bot");
         assert_eq!(s.last_message("b1").unwrap().text, "yo!");
@@ -285,6 +301,7 @@ mod tests {
         let card = s.insert_entry(&Lane::main("b1"), EntryKind::Permission, 3, &pending).unwrap();
         let waiting = Badge { unread: 1, waiting: 1 };
         assert_eq!((s.badge("b1", r), waiting.unseen()), (waiting, 0), "nothing to read, still waiting");
+        assert_eq!(s.total_unread(), 1, "a waiting card counts on the app icon too");
         let r = s.mark_read("b1").unwrap();
         assert_eq!(s.badge("b1", r), waiting, "read, still waiting");
         s.update_entry(&card.id, &serde_json::json!({"status": "answered"})).unwrap();
@@ -306,7 +323,10 @@ mod tests {
             s.kv_set(k, "1").unwrap();
         }
         s.kv_set("context.window.b10", "1").unwrap();
+        s.insert_entry(&Lane::main("b1"), EntryKind::Agent, 3, &reply).unwrap();
+        assert_eq!(s.total_unread(), 1);
         s.delete_bot("b1").unwrap();
+        assert_eq!(s.total_unread(), 0, "a deleted bot isn't on the phone's roster");
         assert_eq!((s.kv_get("fallback.session.b1.codex"), s.kv_get("fallback.on.b1")), (None, None));
         assert!(compaction.iter().all(|k| s.kv_get(k).is_none()), "its compaction records");
         assert!(s.kv_get("context.window.b10").is_some(), "another bot's window");

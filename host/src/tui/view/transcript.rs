@@ -4,8 +4,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use super::super::app::{App, Bot, Click, Entry, Exchange, Item, KOFI_URL, Kind, Outcome, Status, group};
-use super::super::l10n::tr;
+use super::super::app::{App, Bot, Click, Entry, Exchange, Item, Kind, Outcome, Status, group};
 use super::super::md::{self, truncate, width as w};
 use super::buffer::u;
 use super::chat::with_bg;
@@ -19,7 +18,8 @@ pub(super) struct Built {
     pub(super) lines: Vec<Line<'static>>,
     /// (line index, x offset, width, click)
     pub(super) buttons: Vec<(usize, u16, u16, Click)>,
-    /// Each message's (entry id, first line, end line), for picking one to reply to.
+    /// Each message's (entry id, first line, end line), for picking one to reply to; an answered card's too, which an
+    /// task's thread picks to show it here.
     pub(super) messages: Vec<(String, usize, usize)>,
     /// The lines (first, end) that hold what a message says, the text find in the conversation searches.
     pub(super) texts: Vec<(usize, usize)>,
@@ -81,9 +81,6 @@ pub(super) fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
         match item {
             Item::Entry(e) => {
                 entry_lines(&mut out, app, b, e, &info, width);
-                if app.kofi_at() == Some(e.id.as_str()) {
-                    kofi_lines(&mut out, width);
-                }
             }
             Item::Group(g) => {
                 let from = out.lines.len();
@@ -108,23 +105,6 @@ pub(super) fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
         out.lines.push(Line::from(line));
     }
     out
-}
-
-/// The Ko-fi invitation under its reply: one quiet sentence and the link (the terminal makes it clickable).
-fn kofi_lines(out: &mut Built, width: usize) {
-    let t = theme();
-    let text = tr("Codync is free and made by one person. If it helps you, you can support it on Ko-fi.");
-    gap(out);
-    out.lines.extend(md::wrap(
-        &[Span::styled(text.into_owned(), t.dim)],
-        width.saturating_sub(1),
-        &[Span::raw("   ")],
-        &[Span::raw("   ")],
-    ));
-    out.lines.push(Line::from(vec![
-        Span::raw("   "),
-        Span::styled(KOFI_URL, t.secondary.add_modifier(Modifier::UNDERLINED)),
-    ]));
 }
 
 /// An empty chat: who this is and how it works.
@@ -223,7 +203,7 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 Span::styled(format!(" {name}"), name_style(color)),
                 Span::styled(format!(" {}", clock(e.created_at)), t.dim),
             ]));
-            // What a task shares through the chat (a file, a voice note, an artifact) says where it comes from.
+            // What a thread shares through the chat (a file, a voice note, an artifact) says where it comes from.
             if let Some(from) = background_line(e) {
                 out.lines
                     .push(Line::from(Span::styled(format!(" {}", truncate(&from, width.saturating_sub(2))), t.dim)));
@@ -272,23 +252,28 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 )));
             }
         }
+        // Pickable waiting too: Work's `↵` on a task that needs you picks its card, which brings it on screen.
         Kind::Permission => {
             gap(out);
+            let from = out.lines.len();
             if e.pending() {
                 // A card in a group is its asking bot's.
                 permission_card(out, app, e, author.unwrap_or(b), width);
             } else {
                 decided_line(out, e);
             }
+            out.messages.push((e.id.clone(), from, out.lines.len()));
         }
         // A choice card is laid out like an approval card, the bot asking one of its own options.
         Kind::Decision => {
             gap(out);
+            let from = out.lines.len();
             if e.pending() {
                 decision_card(out, app, e, author.unwrap_or(b), width);
             } else {
                 chosen_line(out, e);
             }
+            out.messages.push((e.id.clone(), from, out.lines.len()));
         }
         // Of memory and context, only a fresh conversation gets a line: memory lives in the bot's memory settings, a
         // summary keeps the same conversation going, and a kept handoff changed nothing.
@@ -329,6 +314,8 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 format!("{} · A adds a fallback", e.notice_text())
             } else if e.retries() {
                 format!("{} · F tries again", e.notice_text())
+            } else if e.continues() {
+                format!("{} · F continues", e.notice_text())
             } else {
                 e.notice_text()
             };
@@ -347,6 +334,11 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                     &[Span::raw("   ")],
                 )),
             }
+            // What a background thread asks of the user here (a sign-in, a fallback) says where it comes from.
+            if let Some(from) = background_line(e) {
+                out.lines
+                    .push(Line::from(Span::styled(format!("   {}", truncate(&from, width.saturating_sub(4))), t.dim)));
+            }
             let folded = unfoldable(e);
             if app.unfolded.contains(&e.id) {
                 let full = folded.map_or_else(|| call_lines(app, b, e), |f| vec![f.to_owned()]);
@@ -359,7 +351,12 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                     ));
                 }
             }
-            if e.data["connectionRequest"].is_object() || e.unfolds() || e.retries() || e.adds_fallback() {
+            if e.data["connectionRequest"].is_object()
+                || e.unfolds()
+                || e.retries()
+                || e.continues()
+                || e.adds_fallback()
+            {
                 out.messages.push((e.id.clone(), from, out.lines.len()));
             }
         }

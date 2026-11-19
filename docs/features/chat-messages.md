@@ -8,11 +8,11 @@ When the user should pick among a few ways forward, a bot sends a card instead o
 
 The card is a `notice` entry with optional additive data: `decision: true`, `question`, `choices` (strings), `recommended` (an index or null), `status` `pending`/`answered`/`expired`, and `selected`. `text` always holds the full question, numbered choices and suggestion. It does not reuse permission `options`, whose elements remain objects for older phone decoders. Older clients already render notices. Any plain typed message answers the waiting card: an exact option, its one-based number, or else the user's own words. Exact labels take priority, including numeric labels. Messages with attachments or a quote, `/` commands (skills and agent commands, which must reach the agent) and speech from a call are ordinary messages and expire the waiting card; a call's own transcript can still name an option or its number. The card's own-words row sends an ordinary message, so it needs no host method and degrades to a plain message on an older host.
 
-The bot shows as needing the user and sends the usual response-needed notification. The call waits up to 270 seconds, with a 290-second budget through the chat MCP HTTP bridge. A card expires when its call stops waiting, its turn ends, the user stops, or the host restarts. Successful answers and expiry clear the waiting state unless a permission card still waits.
+The bot shows as needing the user and sends the usual response-needed notification. The call waits up to 270 seconds (Codex drops an MCP call at 300 s, [codex-acp](../upstream-agents/codex-acp.md)), with a 290-second budget through the chat MCP HTTP bridge. When that runs out the call returns `{answered: false, note}` and the card stays `pending` as the actor's open card (one per chat, in memory): a later press marks it answered and posts the choice as the user's next message (`from: decision`, `decisionId`, `replyTo` quoting the question), a new turn; the user's next message answers it under the typed rules above (it goes to the bot as their next message, with `decisionId`, `decisionChoice` and the same `replyTo`, plus a `[Selected: …]` line when they typed an option or its number), or expires it when it's something else. A press in the last second before the deadline already counts as late, so it never races the call's own timer. A new card or a host restart expires it; a task's card still expires at the deadline (the call gets an error), since a press there has no next message to become. A live card expires when its turn ends, the user stops, the agent cancels its call, or the host restarts. Successful answers and expiry clear the waiting state unless a permission card still waits.
 
 MCP clients can cancel a pending call with `notifications/cancelled` and its exact JSON-RPC `requestId` on the same server process. The bridge aborts that request; closing the HTTP wait drops the choice receiver, which the actor's periodic cleanup expires. Unknown, completed, or differently typed IDs are ignored. Closing the MCP process's stdin ends that process and its pending requests. Neither path is a command to stop the bot or choose a default. Cancellation that arrives after an answer was delivered does not undo it. `decision_cancellation_e2e` checks these transport and card-state expectations through actual stdio and HTTP, separately from the 270-second deadline tests.
 
-A press (`respondDecision {entryId, option}`, the option's full text) answers the live call with `{choice}`; the user's own words answer it with `{choice, custom: true}`. The actor records exactly one user message in the same turn (`from: decision`); it never queues another turn. Text replies reuse their existing user entry. API success requires delivery to the live waiter, so a stale card cannot claim success. Room turns, routines, bot requests and other injected turns ask in a message instead. The actor reports `decision_asked` after publication and `decision_answered` after delivery. Terminal keys F1–F12 reach all choices; keys 1–9 also select the first nine by position.
+A press (`respondDecision {entryId, option}`, the option's full text) answers the live call with `{choice}`; the user's own words answer it with `{choice, custom: true}`. The actor records exactly one user message in the same turn (`from: decision`); it never queues another turn (except for the open card above). Text replies reuse their existing user entry. API success requires delivery to the live waiter or the open card's message, so a stale card cannot claim success. Room turns, routines, bot requests and other injected turns ask in a message instead. The actor reports `decision_asked` after publication and `decision_answered` after delivery. Terminal keys F1–F12 reach all choices; keys 1–9 also select the first nine by position while the bot waits on the card (or the card is picked), and otherwise jump to a bot, so an open card never takes a jump key.
 
 ## Markdown links
 
@@ -80,13 +80,13 @@ it has no pointer tooltip or link-opening action.
   user's own chips; it isn't tappable, and a bot that was deleted drops out. The terminal UI lists
   `❤️ Ann, Ben` after the user's reactions.
 
-## Background tasks in the chat
+## Threads in the chat
 
-A [background task](background-tasks.md)'s own transcript never enters the chat. Three things of it do:
+A [thread](work.md)'s own transcript never enters the chat. Three things of it do:
 
-- **Its approval cards**: a permission entry in the bot's chat with `data.task = {id, title}` (the title is its
-  item's) and `data.item`, the item's id, shown with the line
-  `In the background · <title>` and answered like any card (`respondPermission` reaches the task's actor).
+- **Its approval cards**: a permission entry in the bot's chat with `data.thread = {id, title}` (the title is its
+  task's) and `data.task`, the task's id, shown with the line
+  `Work · <title>` and answered like any card (`respondPermission` reaches the thread's actor).
 - **Its report**: a host-started turn (`HostTurn::TaskReport`) whose reply is the bot's ordinary message. The prompt
   is `from: host`, shows no bubble, and isn't the user's words to memory.
 - **A report the bot didn't answer** (its turn was stopped, failed or never started): an info notice,
@@ -129,7 +129,7 @@ once the turn ends, its last message's `↳ N steps` line counts them the same w
 
 - A message arriving while the list follows the newest pops in: 0.24 s,
   `cubic-bezier(.23, 1, .32, 1)`, from 12 pt lower at 94 % scale (iPhone: `ConversationLayout` in
-  `ConversationList.swift`; desktop: `.row-in` in `thread.css`; reduced motion: a 0.12 s fade).
+  `ConversationList.swift`; desktop: `.row-in` in `chat.css`; reduced motion: a 0.12 s fade).
 - The list stays pinned to the bottom while the reader is there; scrolling up releases it and the
   round "Jump to latest" button brings it back. Sending always returns to the bottom.
 - Opening or closing the phone keyboard keeps a bottom-following chat on its latest message;

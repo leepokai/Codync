@@ -1,0 +1,134 @@
+/* The approval card in the chat, and the command and diff boxes it shares with the trace. */
+.permission-card {
+  width: fit-content;
+  max-width: min(100%, 420px);
+  padding: 16px;
+  background: var(--bubble-agent);
+  border-radius: var(--radius-xl);
+}
+.permission-card-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+.permission-card-title {
+  overflow-wrap: anywhere;
+}
+.permission-card-details {
+  padding-top: 6px;
+}
+.permission-card-options {
+  background: var(--background);
+  border-radius: 14px;
+  margin-top: 4px;
+}
+.permission-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 46px;
+  padding: 0 14px;
+}
+/* The other answers while one is on its way. */
+.permission-option.dimmed {
+  opacity: 0.4;
+}
+.permission-option-label {
+  flex: 1;
+}
+
+/* A choice card: the question, a numbered row per option and one for the user's own words, then what was picked. */
+.permission-card.decision-card {
+  width: 100%;
+}
+.decision-card-question {
+  white-space: pre-wrap;
+}
+.decision-card-question-box {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  transition: max-height var(--layout);
+}
+.decision-card-more {
+  flex: none;
+}
+/* The rows' fill reaches past the question's edge so their numbers line up under it. */
+.decision-options {
+  margin-inline: -8px;
+}
+.decision-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 8px;
+  border-radius: var(--radius-s);
+  text-align: start;
+  transition: background var(--hover), opacity var(--fade);
+}
+button.decision-option:hover:not(:disabled),
+.decision-own:focus-within {
+  background: var(--field);
+}
+/* The other answers while one is on its way. */
+.decision-option.dimmed {
+  opacity: 0.4;
+}
+/* An option can be 200 characters with no spaces, and an own answer longer: they wrap inside the card instead of widening it. */
+.decision-option-label {
+  flex: 1;
+}
+.decision-option-label,
+.decision-outcome {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.decision-badge {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-xs);
+  background: var(--field);
+}
+.decision-own input {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-body);
+}
+
+.code-box {
+  background: var(--code-background);
+  border-radius: 8px;
+  overflow: auto;
+  max-height: 240px;
+}
+.code-box.diff-box {
+  max-height: 260px;
+}
+.code-box-text {
+  margin: 0;
+  padding: 8px;
+  font-family: var(--mono);
+  font-size: calc(10px * var(--scale));
+  color: var(--text);
+  width: max-content;
+}
+.diff-header {
+  font-family: var(--mono);
+  font-size: var(--text-caption);
+  color: var(--secondary);
+}
+.diff-line {
+  white-space: pre;
+}
+
+/* Under a message a thread put in the chat (ThreadLine): which task it comes from. */
+.message > .thread-line {
+  padding: 3px 2px 0;
+}

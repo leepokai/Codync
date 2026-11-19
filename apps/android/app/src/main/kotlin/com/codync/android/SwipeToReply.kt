@@ -35,7 +35,7 @@ import kotlin.math.abs
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-/** The arithmetic of a sideways pull on a message bubble (iMessage; iOS `Thread/SwipeToReply.swift`). */
+/** The arithmetic of a sideways pull on a message bubble (iMessage; iOS `Chat/SwipeToReply.swift`). */
 internal object ReplySwipe {
     /** The pull that opens a reply, dp. */
     const val THRESHOLD_DP = 64f

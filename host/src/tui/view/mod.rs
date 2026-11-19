@@ -17,6 +17,7 @@ mod fallbacks;
 mod forms;
 mod goto;
 mod help;
+mod kofi;
 mod lead_agent;
 mod network;
 mod network_rules;
@@ -28,6 +29,7 @@ mod queue;
 mod roster;
 mod skill;
 mod style;
+mod thread;
 mod time;
 mod trace;
 mod transcript;
@@ -202,8 +204,8 @@ fn status_line(buf: &mut Buffer, r: Rect, app: &mut App) {
     }
 }
 
-/// The status line's keys outside typing: `E` for the page of every bot's work, with how many items are worked on,
-/// only while some bot has a live or waiting item.
+/// The status line's keys outside typing: `E` for the page of every bot's work, with how many tasks are worked on,
+/// only while some bot has a live or waiting task.
 fn nav_hint(app: &App) -> String {
     if !app.any_work() {
         return "? keys".into();
@@ -255,7 +257,7 @@ mod tests {
     use serde_json::json;
 
     #[tokio::test]
-    async fn e_shows_only_while_some_bot_has_live_or_waiting_items() {
+    async fn e_shows_only_while_some_bot_has_live_or_waiting_tasks() {
         let mut app = test_app();
         let area = Rect::new(0, 0, 130, 44);
         let keys = |app: &App| screen(area, |buf| help::help(buf, area, &Editor::default(), app.any_work())).join("\n");
@@ -265,13 +267,13 @@ mod tests {
         };
         bot(&mut app, &["done", "failed"]);
         assert_eq!(nav_hint(&app), "? keys");
-        assert!(!keys(&app).contains("work: every bot's items"));
+        assert!(!keys(&app).contains("work: every bot's tasks"));
         assert!(keys(&app).contains("rename / remove section"), "the section's key stays");
 
         bot(&mut app, &["waiting"]);
         assert_eq!(nav_hint(&app), "E Work · ? keys", "nothing worked on yet: no count");
         bot(&mut app, &["working", "needsYou", "waiting"]);
-        assert_eq!(nav_hint(&app), "E Work 1 · ? keys", "how many items are worked on");
-        assert!(keys(&app).contains("work: every bot's items"));
+        assert_eq!(nav_hint(&app), "E Work 1 · ? keys", "how many tasks are worked on");
+        assert!(keys(&app).contains("work: every bot's tasks"));
     }
 }

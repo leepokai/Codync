@@ -28,27 +28,8 @@ async fn moves_old_memory_into_files_once() {
     let mut host = Host::start().await;
     let a = host.bot("Memory A", "auto").await;
     let b = host.bot("Memory B", "auto").await;
-    let (legacy, engram) =
-        (host.home.join("bots").join(&a).join("memory"), host.home.join("bots").join(&b).join("engram"));
     host.restart(|home| {
-        // Markdown from before Engram for A; an Engram database for B.
-        std::fs::create_dir_all(legacy.join("log")).unwrap();
-        std::fs::write(legacy.join("profile.md"), "- (2026-01-01) 偏好繁體中文\n- (2026-01-02) Lives in Taipei\n")
-            .unwrap();
-        std::fs::write(legacy.join("log/2026-02.md"), "- (2026-02-02) Shipped Codync\n").unwrap();
-        std::fs::create_dir_all(&engram).unwrap();
-        let db = rusqlite::Connection::open(engram.join("engram.db")).unwrap();
-        db.execute_batch(
-            "CREATE TABLE observations (id INTEGER PRIMARY KEY, content TEXT, scope TEXT, pinned INTEGER,
-                created_at TEXT, type TEXT, deleted_at TEXT);
-             INSERT INTO observations (content, scope, pinned, created_at, type, deleted_at) VALUES
-                ('Has a daughter named Mei', 'personal', 1, '2026-03-01 10:00:00', 'learning', NULL),
-                ('[note] Uses vim keybindings', 'project', 0, '2026-03-02 10:00:00', 'discovery', NULL),
-                ('A forgotten fact', 'personal', 0, '2026-03-03 10:00:00', 'learning', '2026-03-04 10:00:00'),
-                ('What one session did', 'project', 0, '2026-03-05 10:00:00', 'session_summary', NULL);",
-        )
-        .unwrap();
-        // And the memory entries of 2.18 to 2.20, as an older host left them.
+        // The memory entries of 2.18 to 2.20, as an older host left them.
         let db = rusqlite::Connection::open(home.join("codync.db")).unwrap();
         db.execute_batch(&format!(
             "CREATE TABLE memory_entries (id INTEGER PRIMARY KEY AUTOINCREMENT, bot TEXT, state TEXT NOT NULL,
@@ -66,24 +47,21 @@ async fn moves_old_memory_into_files_once() {
     .await;
 
     let view = host.memory(&a).await;
-    assert_eq!(texts(&view["bot"]), ["Lives in Taipei", "偏好繁體中文", "Shipped Codync"]);
-    assert_eq!(view["bot"]["entries"][0]["author"], "imported");
-    assert!(!legacy.exists(), "the old files go once moved");
+    assert_eq!(texts(&view["bot"]), Vec::<String>::new());
     assert_eq!(view["shared"], true, "a bot in its own workspace uses the shared layer");
     assert_eq!(texts(&view["yours"]), ["Time zone is Asia/Taipei"]);
     assert_eq!(view["yours"]["entries"][0]["author"], "user");
 
     let view = host.memory(&b).await;
-    assert_eq!(texts(&view["bot"]), ["Reviews PRs on Fridays", "Has a daughter named Mei", "Uses vim keybindings"]);
+    assert_eq!(texts(&view["bot"]), ["Reviews PRs on Fridays"]);
     let moved = &view["bot"]["entries"][0];
     assert_eq!((&moved["author"], &moved["evidence"]), (&json!("dream"), &json!(["msg-1"])), "who wrote it moves too");
     let earlier = std::fs::read_to_string(host.memory_folder(Some(&b)).join("earlier.md")).unwrap();
     assert!(earlier.contains("- Worked at Acme"), "archived entries stay searchable in a note: {earlier}");
-    assert!(!engram.exists());
 
     host.restart(|_| {}).await;
-    assert_eq!(texts(&host.memory(&a).await["bot"]).len(), 3, "nothing moves twice");
-    assert_eq!(texts(&host.memory(&b).await["bot"]).len(), 3);
+    assert_eq!(texts(&host.memory(&a).await["yours"]).len(), 1, "nothing moves twice");
+    assert_eq!(texts(&host.memory(&b).await["bot"]).len(), 1);
 }
 
 #[tokio::test]
@@ -211,7 +189,9 @@ async fn dreaming_keeps_only_what_the_user_typed() {
     host.call("newSession", json!({"botId": bot})).await;
     let view = loop {
         let view = host.memory(&bot).await;
-        if view["dreams"][0]["files"].as_array().is_some_and(|f| !f.is_empty()) {
+        // Waits for its added lines, logged with MEMORY.md's origins, not its files: the note is logged before MEMORY.md
+        // is written (#375).
+        if view["dreams"][0]["added"].as_array().is_some_and(|a| !a.is_empty()) {
             break view;
         }
         assert!(Instant::now() < deadline, "dreaming didn't run: {view}");
@@ -223,6 +203,9 @@ async fn dreaming_keeps_only_what_the_user_typed() {
     assert_eq!(entry["evidence"], json!([message]), "it cites the message it learned from");
     assert!(!view.to_string().contains("durian"), "pasted text isn't the user's own words");
     assert_eq!(view["dreams"][0]["added"][0]["text"], "Prefers concise Traditional Chinese explanations");
+    // The review's session is deleted, or it would show in the harness's own history (Codex, ChatGPT: #346).
+    let log = std::fs::read_to_string(host.home.join("background/dreams.log")).unwrap();
+    assert!(log.contains("dream\ndeleted "), "{log}");
 
     // The bot can go from a memory to the message it came from, and page back through the chat.
     let found = host.tool(&bot, "search_memory", json!({"query": "concise"})).await;
@@ -249,6 +232,20 @@ async fn dreaming_keeps_only_what_the_user_typed() {
             .await
             .contains("unknown method")
     );
+}
+
+#[tokio::test]
+async fn a_failed_dream_still_deletes_its_session() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Failing", "memory_agent.py", "failing").await;
+    host.reply(&bot, "Please always explain things to me concisely in Traditional Chinese.").await;
+    host.call("newSession", json!({"botId": bot})).await;
+    let log = host.home.join("background/dreams.log");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !std::fs::read_to_string(&log).unwrap_or_default().contains("dream\ndeleted ") {
+        assert!(Instant::now() < deadline, "the failed dream's session wasn't deleted");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 #[tokio::test]

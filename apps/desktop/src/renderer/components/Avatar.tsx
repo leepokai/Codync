@@ -196,18 +196,14 @@ export function drawCharacter(
   const ly = 0.55
   const lz = Math.cos(yaw) * 0.5 + 0.6 // never fully behind
   const ll = Math.hypot(lx, ly, lz)
-  const mouthCenter = Math.floor(cells / 2)
-  const closedEyeRow = eyeRowsAll[eyeRowsAll.length - 1]!
+  const centerCol = Math.floor(cells / 2)
+  const lowerEyeRow = eyeRowsAll[eyeRowsAll.length - 1]!
+  // Open eyes whose outer corners droop, like a sad face.
+  const isFailedEye = (d: Dot) => eyeColumns.some((col) => (d.col === col && eyeRowsAll.includes(d.row))
+    || (d.row === lowerEyeRow && d.col === col + Math.sign(col - centerCol)))
   for (const d of dots) {
-    // Closed eyes droop away from the nose, like a disappointed face.
-    const isEye = mood === 'failed'
-      ? eyeColumns.some((col) => Math.abs(d.col - col) <= 1
-        && d.row === closedEyeRow - (Math.abs(d.col - mouthCenter) < Math.abs(col - mouthCenter) ? 1 : 0))
-      : eyeCols.includes(d.col) && eyeRows.includes(d.row)
+    const isEye = mood === 'failed' ? isFailedEye(d) : eyeCols.includes(d.col) && eyeRows.includes(d.row)
     if (isEye) continue
-    // A downturned mouth, cut out of the same dot grid as the eyes.
-    const mouthOffset = Math.abs(d.col - mouthCenter)
-    if (mood === 'failed' && mouthOffset <= 1 && d.row === Math.floor(cells * 0.65) + mouthOffset) continue
     const u = (d.x - half) / half
     const v = (half - d.y) / half
     const z = Math.sqrt(Math.max(0.2, 1 - u * u - v * v))
@@ -231,7 +227,7 @@ export function drawCharacter(
   }
 }
 
-/** A bot's face, as it stands outside its chat: its items at work and their cards count (iPhone `Bot.mood`). */
+/** A bot's face, as it stands outside its chat: its tasks at work and their cards count (iPhone `Bot.mood`). */
 export function moodOf(bot: Bot, animated = true): Mood {
   if (!animated) return 'idle'
   const status = outsideStatus(bot)

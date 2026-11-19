@@ -14,7 +14,6 @@ import {
   withoutRemoved,
 } from '@shared/models'
 import type { NetworkView, RecoveryCode } from '@shared/network'
-import { mergeTaskEntries } from '@shared/tasks'
 import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
 import type { CloudPlacement } from '../lib/cloud-computer'
 import { rosterOrder } from '../lib/computer-roster'
@@ -23,17 +22,22 @@ import { Observable } from '../lib/observable'
 import { hostHasSections } from '../lib/roster-sections'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
+import { fromOldBot, fromOldEntry } from '@shared/old-host'
 import { loadIconCache, saveIconCache } from '../lib/icon-cache'
 import { trNow } from '../lib/l10n.ts'
+import { ThreadTranscripts } from './thread-transcripts'
 
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
+/** The first host the user names (`setComputerName`). */
+const COMPUTER_NAME_HOST = '2.50.0'
 
 export type Connection =
   | { kind: 'unpaired' }
   | { kind: 'connecting' }
   | { kind: 'online' }
-  | { kind: 'computerOffline'; lastSeen: number | null }
+  /** `waking`: the relay is starting it (a cloud computer asleep). */
+  | { kind: 'computerOffline'; lastSeen: number | null; waking?: boolean }
   | { kind: 'offline'; message: string }
   | { kind: 'unauthorized'; message: string }
 
@@ -85,8 +89,7 @@ export class BotMirror extends Observable {
   hostUpdate: HostUpdate | null = null
   bots = new Map<string, Bot>()
   entries = new Map<string, Entry[]>()
-  /** Background tasks' transcripts by task id, held only while a task's details are open (`watchTask`). */
-  private taskTranscripts = new Map<string, Entry[]>()
+  private threadTranscripts = new ThreadTranscripts()
   usage: Usage = { providers: [] }
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
@@ -174,9 +177,15 @@ export class BotMirror extends Observable {
     this.changed()
   }
 
-  /** A Codync Cloud computer that's asleep: a connection or a message wakes it, so it isn't offline. */
+  /** A Codync Cloud computer that's asleep, or on its way up: a connection or a message wakes it, so it isn't offline. */
   get isAsleep() {
-    return this.connection.kind === 'computerOffline' && (this.cloudHosting?.state === 'stopped' || this.cloudHosting?.state === 'stopping')
+    return this.connection.kind === 'computerOffline' && (this.isWaking || this.cloudHosting?.state === 'stopped' || this.cloudHosting?.state === 'stopping')
+  }
+
+  /** The relay is waking this cloud computer (about 10 to 30 seconds): it's coming, not offline. Only the relay says so:
+   * the account list's `starting` stays after a wake whose host never came back. */
+  get isWaking() {
+    return this.connection.kind === 'computerOffline' && this.connection.waking === true
   }
 
   /** A Codync Cloud computer older than this app's `minHost`: the cloud updates it on its own (this app's `Codync-App` header asks for it). */
@@ -200,6 +209,12 @@ export class BotMirror extends Observable {
   /** The user picks the lead (`setLead`) and may delete it: an older host refuses both. */
   get hasLeadChoice() {
     return this.hostVersion !== null && !isBelow(this.hostVersion.version, LEAD_CHOICE_HOST)
+  }
+
+  /** The user names this computer here, on a host that takes it: a cloud computer is named in Codync Cloud. */
+  get canRename() {
+    return this.connection.kind === 'online' && this.hello?.device !== 'cloud'
+      && this.hostVersion !== null && !isBelow(this.hostVersion.version, COMPUTER_NAME_HOST)
   }
 
   /** What the update notice offers while this computer is behind this app. */
@@ -270,6 +285,7 @@ export class BotMirror extends Observable {
   }
 
   get connectionLabel() {
+    if (this.isWaking) return 'Waking the computer…'
     if (this.isAsleep) return 'Sleeping'
     switch (this.shownConnection.kind) {
       case 'online':
@@ -319,23 +335,19 @@ export class BotMirror extends Observable {
     this.entries.set(e.botId, list)
   }
 
-  /** Holds a task's transcript from now until the returned function is called: its details are open. */
-  watchTask(taskId: string): () => void {
-    if (!this.taskTranscripts.has(taskId)) this.taskTranscripts.set(taskId, [])
-    return () => {
-      this.taskTranscripts.delete(taskId)
-    }
+  /** Holds a thread's transcript from now until the returned function is called: its details are open. */
+  watchThread(threadId: string): () => void {
+    return this.threadTranscripts.watch(threadId)
   }
 
-  /** A watched task's transcript, oldest first. */
-  taskEntriesOf(taskId: string): Entry[] {
-    return this.taskTranscripts.get(taskId) ?? []
+  /** A watched thread's transcript, oldest first. */
+  threadEntriesOf(threadId: string): Entry[] {
+    return this.threadTranscripts.of(threadId)
   }
 
-  /** More of a task's transcript (fetched, or a live `taskEntry`); dropped when nobody watches the task. */
-  protected mergeTask(taskId: string, entries: Entry[]) {
-    const held = this.taskTranscripts.get(taskId)
-    if (held) this.taskTranscripts.set(taskId, mergeTaskEntries(held, entries))
+  /** More of a thread's transcript (fetched, or a live `threadEntry`). */
+  protected mergeThread(threadId: string, entries: Entry[]) {
+    this.threadTranscripts.merge(threadId, entries)
   }
 
   setError(message: string | null) {
@@ -370,10 +382,11 @@ export class BotMirror extends Observable {
       this.cacheStamp = cache.stamp ?? ''
       this.hostId = cache.hostId ?? null
       this.rev = cache.rev
-      // A copy cached by an older app lacks the fields added since.
-      this.bots = new Map(cache.bots.map((b) => [b.id, normalizeBot(b)]))
+      // A copy cached by an older app lacks the fields added since. One from before 2.51.0 has the old names
+      // (hosts before 2.51.0: `fromOld…` goes when MIN_HOST reaches 2.51.0).
+      this.bots = new Map(cache.bots.map((b) => [b.id, normalizeBot(fromOldBot(b) as Bot)]))
       const grouped = new Map<string, Entry[]>()
-      for (const e of cache.entries) grouped.set(e.botId, [...(grouped.get(e.botId) ?? []), e])
+      for (const e of cache.entries.map(fromOldEntry)) grouped.set(e.botId, [...(grouped.get(e.botId) ?? []), e])
       this.entries = grouped
     } catch {}
   }

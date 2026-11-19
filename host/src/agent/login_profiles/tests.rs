@@ -276,14 +276,14 @@ fn an_account_is_in_use_by_a_bot_on_it_and_by_one_that_falls_back_to_it() {
 }
 
 #[test]
-fn an_account_is_in_use_by_a_task_that_works_on_it() {
+fn an_account_is_in_use_by_a_thread_that_works_on_it() {
     let store = store_with(&[("a1", "claude"), ("a2", "claude")]);
     let save = |cfg: Value| store.save_bot(&serde_json::from_value(cfg).expect("bot")).expect("saved");
-    // The bot moved to another account since its task started.
+    // The bot moved to another account since its thread started.
     save(json!({"id": "own", "name": "Own", "backend": "claude", "loginProfile": "a1"}));
-    save(json!({"id": "task-1", "name": "Own", "backend": "claude", "loginProfile": "a2", "taskOf": "own"}));
-    save(json!({"id": "task-2", "name": "Own", "backend": "claude", "loginProfile": "gone", "taskOf": "own"}));
-    crate::chat::tasks::put_working_for_test(&store, "own", "task-1");
-    assert_eq!(users(&store, "a2").expect("bots"), ["Own"], "its agent runs on it until its item ends");
-    assert_eq!(users(&store, "gone").expect("bots"), Vec::<String>::new(), "a task that ended holds nothing");
+    save(json!({"id": "thread-1", "name": "Own", "backend": "claude", "loginProfile": "a2", "threadOf": "own"}));
+    save(json!({"id": "thread-2", "name": "Own", "backend": "claude", "loginProfile": "gone", "threadOf": "own"}));
+    crate::chat::work::put_working_for_test(&store, "own", "thread-1");
+    assert_eq!(users(&store, "a2").expect("bots"), ["Own"], "its agent runs on it until its task ends");
+    assert_eq!(users(&store, "gone").expect("bots"), Vec::<String>::new(), "a thread that ended holds nothing");
 }

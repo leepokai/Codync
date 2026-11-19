@@ -10,7 +10,7 @@ import { useStore } from '../../store/context'
 import { useScreenViewed } from '../../store/analytics'
 import { MemoryStore, authorLabel, type MemoryEntry } from '../../store/memory-store'
 import { FormSheet } from '../marketplace/pieces'
-import { relativeTime } from '../thread/chat-items'
+import { relativeTime } from '../chat/chat-items'
 import { MemoryInfoSheet, dreamsInfo, harnessInfo } from './MemoryInfoSheet'
 import { type FileTarget, MemoryFileSheet, fileRows } from './MemoryFiles'
 import './memory.css'
@@ -52,7 +52,7 @@ export function MemoryCard({ botId }: { botId: string }) {
       }} />
       <CardSection>
         {memory.error && <p role="alert" className="memory-error">{tr(memory.error)}</p>}
-        {!view && !memory.error && <p className="memory-muted">Loading memory…</p>}
+        {!view && !memory.error && <p className="memory-muted">{tr('Loading memory…')}</p>}
         {view && bot && section === 'yours' && <Switch on={bot.sharedMemory} onChange={(on) => host.setSharedMemory(bot, on)}>
           Use what your bots share
         </Switch>}

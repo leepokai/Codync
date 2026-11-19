@@ -31,6 +31,8 @@ public struct ComputerSelection: Equatable, Sendable {
 
 struct ConnectionSummary {
     let connections: [BotStore.Connection]
+    /// One of them is a cloud computer on its way up (`BotStore.isWaking`).
+    var waking = false
 
     var text: String {
         guard !connections.isEmpty else { return "Computers" }
@@ -38,6 +40,7 @@ struct ConnectionSummary {
         if online == connections.count { return "\(online) connected" }
         if online > 0 { return "\(online)/\(connections.count) connected" }
         if connections.contains(.connecting) { return "Connecting…" }
+        if waking { return "Waking the computer…" }
         if connections.allSatisfy({ if case .unauthorized = $0 { true } else { false } }) { return "No access" }
         if connections.allSatisfy({ $0 == .unpaired }) { return "Not paired" }
         return "\(connections.count) offline"

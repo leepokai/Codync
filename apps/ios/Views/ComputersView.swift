@@ -160,6 +160,8 @@ private struct ComputerRows: View {
     let remove: () -> Void
     @Environment(AccountStore.self) private var accounts
     @State private var coloring = false
+    @State private var renaming = false
+    @State private var newName = ""
     @State private var voiceSettings = false
     @State private var networkSheet = false
 
@@ -213,7 +215,7 @@ private struct ComputerRows: View {
             }
             if let hosting = store.cloudHosting { CloudHostingLine(hosting) }
             connectionDetail
-            if store.isOffline, !store.isUpdating, !store.isAsleep, let ask {
+            if store.isUnreachable, let ask {
                 Button(accounts.pendingAccess[store.computer.id] == nil ? "Ask for access" : "Show code", action: ask)
                     .buttonStyle(.secondary)
             }
@@ -223,6 +225,12 @@ private struct ComputerRows: View {
             var items = [
                 MenuItem("Color", icon: "paintpalette") { coloring = true },
             ]
+            if store.canRename {
+                items.append(MenuItem("Rename…", icon: "pencil") {
+                    newName = store.hostName
+                    renaming = true
+                })
+            }
             if store.connection == .online {
                 items.append(MenuItem("Extensions", icon: "square.grid.2x2", action: openMarketplace))
                 items.append(MenuItem("Voice chat", icon: "waveform") { voiceSettings = true })
@@ -240,6 +248,14 @@ private struct ComputerRows: View {
                 items.append(MenuItem("Remove", icon: "trash", destructive: true, divider: revoke == nil, action: remove))
             }
             return items
+        }
+        .codyncDialog("Computer name", isPresented: $renaming, message: "Leave it empty to use the hostname.",
+                      field: DialogField("Name", text: $newName)) {
+            [DialogAction("Save") { store.setComputerName(newName.trimmingCharacters(in: .whitespacesAndNewlines)) }]
+        }
+        .onChange(of: newName) {
+            let limited = CloudMachineStore.limited(newName)
+            if limited != newName { newName = limited }
         }
         .codyncSheet(isPresented: $voiceSettings) { VoiceChatSettingsView().environment(store) }
         .codyncSheet(isPresented: $networkSheet) { NetworkSheet().environment(store) }
@@ -259,7 +275,7 @@ private struct ComputerRows: View {
 
     private var connectionDetail: some View {
         Text(L10n.tr(detail)).font(.footnote)
-            .foregroundStyle(store.isOffline && !store.isUpdating && !store.isAsleep ? Palette.warning : Palette.secondary)
+            .foregroundStyle(store.isUnreachable ? Palette.warning : Palette.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
 

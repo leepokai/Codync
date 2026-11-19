@@ -491,11 +491,11 @@ private func writeStaleCache(for computer: Computer, in storage: SharedStore.Con
 /// An update of the app or the host catches up from the cache's rev while the mirror format and the host's store
 /// schema (its version, on a host that sends none) stay; a change of either fetches everything again.
 @MainActor @Test(arguments: [
-    ("1:schema 8", #""schema":8,"#, Int64(77)),
-    ("1:schema 8", #""schema":9,"#, Int64(0)),
-    ("1:3.0.0", "", Int64(77)),
-    ("1:2.9.0", "", Int64(0)),
-    ("0:schema 8", #""schema":8,"#, Int64(0)),
+    ("2:schema 8", #""schema":8,"#, Int64(77)),
+    ("2:schema 8", #""schema":9,"#, Int64(0)),
+    ("2:3.0.0", "", Int64(77)),
+    ("2:2.9.0", "", Int64(0)),
+    ("1:schema 8", #""schema":8,"#, Int64(0)),
 ])
 func anUpdateKeepsTheCursorUnderTheSameSyncStamp(stamp: String, schema: String, since: Int64) async throws {
     let (storage, suite) = context()
@@ -563,7 +563,7 @@ func anUpdateKeepsTheCursorUnderTheSameSyncStamp(stamp: String, schema: String, 
     // A host before 2.32.0 doesn't say how long its catch-up is: the held entries go at its hello.
     await fake.emit(#"{"type":"hello","hostId":"h1","rev":80}"#)
     #expect(await until { store.chat("b1").map(\.id) == ["local-unsent"] })
-    #expect(try savedStamp() == "1:3.0.0")
+    #expect(try savedStamp() == "2:3.0.0")
 }
 
 /// An unreadable event fetches everything again; the stream it ended doesn't finish that refetch.

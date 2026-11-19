@@ -98,4 +98,40 @@ class WorkingIndicatorTest {
         compose.waitForIdle()
         compose.runOnIdle { assertEquals(place, list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset) }
     }
+
+    /** The keyboard or a taller composer raises the bottom padding: the end stays in view, a reader scrolled up stays put. */
+    @Test fun bottomPaddingKeepsTheEndButNotAReaderScrolledUp() {
+        compose.mainClock.autoAdvance = false
+        val bottom = mutableStateOf(0.dp)
+        lateinit var list: LazyListState
+        compose.setContent {
+            Hosted {
+                list = rememberLazyListState()
+                rememberFollowing(list, "message", 1, working = false, bottom = bottom.value)
+                LazyColumn(Modifier.size(320.dp).testTag("conversation"), state = list, contentPadding = PaddingValues(bottom = bottom.value)) {
+                    items(30) { Box(Modifier.height(48.dp)) { Text("Message $it") } }
+                }
+            }
+        }
+        compose.mainClock.advanceTimeBy(1000)
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertFalse(list.canScrollForward)
+            bottom.value = 300.dp
+        }
+        // One frame: the end is asked for in the composition that reads the new padding, with no glide to wait for.
+        compose.mainClock.advanceTimeByFrame()
+        compose.runOnIdle { assertFalse(list.canScrollForward) }
+        compose.onNodeWithTag("conversation").performTouchInput { swipeDown() }
+        compose.mainClock.advanceTimeBy(1000)
+        compose.waitForIdle()
+        var place = 0 to 0
+        compose.runOnIdle {
+            place = list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset
+            bottom.value = 0.dp
+        }
+        compose.mainClock.advanceTimeBy(1000)
+        compose.waitForIdle()
+        compose.runOnIdle { assertEquals(place, list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset) }
+    }
 }

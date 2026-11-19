@@ -41,11 +41,11 @@ test('the left command works the same way, and the right one then does nothing',
   assert.deepEqual(feed([down(10), up(10.08)], new CommandTaps('leftCommand')), [null, null])
 })
 
-test('a double tap starts dictation, the next tap sends, and the double tap that ends on it starts nothing', () => {
+test('a double tap starts dictation, the next tap ends it, and the double tap that ends on it starts nothing', () => {
   const keys = new VoiceKeyRouter()
   const idle = { byShortcut: false, busy: false }
   assert.equal(keys.route('double', idle), 'start')
-  assert.equal(keys.route('tap', { byShortcut: true, busy: true }), 'send')
+  assert.equal(keys.route('tap', { byShortcut: true, busy: true }), 'end')
   assert.equal(keys.route('double', idle), null)
   assert.equal(keys.route('double', idle), 'start')
   // A tap with no shortcut start (the mic, or after the send) does nothing; nor does a double tap while busy.

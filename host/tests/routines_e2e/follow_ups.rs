@@ -28,14 +28,6 @@ async fn follow_up(host: &Host, bot: &str, note: &str) -> Value {
     host.call("routineCall", json!({"botId":bot,"name":"follow_up","arguments":{"minutes":1,"note":note}})).await
 }
 
-async fn entries(host: &Host, bot: &str) -> Vec<Value> {
-    host.call("history", json!({"botId":bot})).await["entries"].as_array().unwrap().clone()
-}
-
-fn finals(entries: &[Value]) -> usize {
-    entries.iter().filter(|e| e["kind"] == "agent" && e["data"]["final"] == true).count()
-}
-
 fn notices(entries: &[Value]) -> Vec<&str> {
     entries.iter().filter(|e| e["kind"] == "notice").filter_map(|e| e["data"]["text"].as_str()).collect()
 }

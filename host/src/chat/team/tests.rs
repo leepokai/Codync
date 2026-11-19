@@ -23,7 +23,7 @@ impl Fixture {
                 "id": id, "name": id, "backend": "fixture", "cwd": cwd,
                 "command": crate::shell::python(&agent),
                 "notify": false, "permission": "ask",
-                // They answer requests in their chat, whose queue these tests are about (the box: `tasks_e2e`).
+                // They answer requests in their chat, whose queue these tests are about (the box: `work_e2e`).
                 "manageTeam": true,
             }))
             .unwrap();
@@ -419,6 +419,33 @@ async fn failed_message_admission_never_executes_or_leaks_capacity() {
     assert_eq!(f.prompts().len(), 0);
     assert!(f.hub.store.history("a", i64::MAX, 100).unwrap().iter().all(|e| e.data["status"] == "cancelled"));
     drop(db);
+    f.shutdown().await;
+}
+
+/// #386: a chain stopped by the handoff limit leaves the user one notice in the stopped bot's chat, whose Continue
+/// sends the bot "Continue" as the user (a fresh chain), once.
+#[tokio::test]
+async fn hop_limit_refusal_leaves_the_user_a_notice() {
+    let f = Fixture::new();
+    // 8: the handoff limit (`requests::MAX_REQUEST_HOPS`).
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    let continues = || {
+        let history = f.hub.store.history("a", i64::MAX, 100).unwrap();
+        history.into_iter().filter(|e| e.kind == "notice" && !e.data["continueChain"].is_null()).collect::<Vec<_>>()
+    };
+    for _ in 0..2 {
+        assert!(f.message("one more handoff").unwrap_err().to_string().contains("hop limit"));
+    }
+    let notices = continues();
+    assert_eq!(notices.len(), 1, "one notice a turn, however often the bot tries");
+    let press = |id: &str| {
+        crate::api::dispatch(&f.hub, &crate::api::devices::Caller::Local, "continueChain", json!({"entryId": id}))
+    };
+    let sent = press(&notices[0].id).await.unwrap();
+    assert_eq!(sent["entry"]["data"]["text"], "Continue");
+    assert_eq!(sent["entry"]["kind"], "user", "the user's own message, which starts a fresh chain");
+    assert_eq!(continues()[0].data["continueChain"], false, "the button goes");
+    assert!(press(&notices[0].id).await.is_err(), "and works once");
     f.shutdown().await;
 }
 

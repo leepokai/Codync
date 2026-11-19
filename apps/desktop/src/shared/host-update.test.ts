@@ -96,6 +96,18 @@ test('an uninstalled host does not acquire a restart marker', async () => {
   assert.equal(f.prefs.get('hostRestartAfterAppUpdate'), false)
 })
 
+test('win32: a running host whose Run entry was dropped is not installed again', async () => {
+  const f = hostUpdateFixture({ platform: 'win32', installed: false })
+  await f.host.refresh()
+  assert.deepEqual(f.calls, [], 'reinstalling would stop the running host')
+  f.behavior.reachable = false
+  const installing = f.host.refresh()
+  await settle()
+  assert.deepEqual(f.calls, [['install', '--port', '19222']])
+  await f.tick(1000)
+  await installing
+})
+
 test('idle detection distinguishes working, offline and idle hosts', async () => {
   const f = hostUpdateFixture()
   assert.equal(await f.host.isIdleForUpdate(), true)
@@ -103,6 +115,16 @@ test('idle detection distinguishes working, offline and idle hosts', async () =>
   assert.equal(await f.host.isIdleForUpdate(), false)
   f.behavior.reachable = false
   assert.equal(await f.host.isIdleForUpdate(), false)
+})
+
+test('win32: a working host whose Run entry was dropped holds the update', async () => {
+  const f = hostUpdateFixture({ platform: 'win32', installed: false })
+  f.behavior.busy = true
+  assert.equal(await f.host.isIdleForUpdate(), false)
+  f.behavior.busy = false
+  assert.equal(await f.host.isIdleForUpdate(), true)
+  f.behavior.reachable = false
+  assert.equal(await f.host.isIdleForUpdate(), true, 'no service and no host: nothing to interrupt')
 })
 
 

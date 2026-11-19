@@ -21,12 +21,15 @@ Self-hosted computers keep today's rules ([compatibility](../reference/compatibi
 
 Two existing rules make *latest* safe for every app a user can install:
 
-- **`minApp`**: the release gate gives a release the *latest* mark only when the App Store's iPhone app meets its
-  `MIN_APP`. So an iPhone told to update can always do it right away; the App Store already has that version.
-- **`minHost`**: a floor never exceeds the release that ships it, so an app's `minHost` is at most its own version.
-  The desktop app updates from *latest*, and the App Store's iPhone version V is itself a release the gate can mark,
-  so *latest* ≥ V. Every app's `minHost` is at most *latest*: a host on *latest* satisfies every app, phone or
-  desktop.
+- **`minApp`**: the release gate gives a release the *latest* mark only when the App Store's iPhone app and Google
+  Play's Android app both meet its `MIN_APP`. So a phone told to update can always do it right away; its store
+  already has that version.
+- **`minHost`**: a floor never exceeds the release that ships it, so an app's `minHost` is at most its own version,
+  and it never rises to a release the gate holds
+  ([raising `minHost`](../reference/compatibility.md#changing-what-crosses-the-wire)). The desktop app updates from *latest*, and
+  a phone app's own release is *latest* before its store publishes it unless the gate holds it, where its `minHost`
+  stays at an earlier *latest*. Every app's `minHost` is at most *latest*: a host on *latest* satisfies every app,
+  phone or desktop.
 
 The only gap is timing: right after *latest* moves, an app can update before the cloud host does (see the next
 section).
@@ -78,7 +81,7 @@ For a security hole or a critical bug, an operator sets `HOST_FLOOR` (a version 
   `426 upgradeRequired`. Hosts from this design start an update check as soon as they're refused; older ones get it
   from their daily check.
 - **Apps**: an app fix ships the normal way. Raise `MIN_APP` in the fixed release and ask App Review to expedite
-  it. The gate holds that release until the App Store has the fixed app, then cloud hosts take it and old apps get
+  it. The gate holds that release until the App Store and Google Play have the fixed apps, then cloud hosts take it and old apps get
   *Update this app*. No Worker-side app check is needed.
 - Tell affected users by push and email.
 
@@ -102,7 +105,6 @@ For a security hole or a critical bug, an operator sets `HOST_FLOOR` (a version 
 | `codync-cloud` | `exec(id, argv)` (Boat runs commands over its API; the scoped key needs the exec action) |
 | iPhone, Android, desktop | On a cloud computer the *Update Codync on <computer>* state calls `installHostUpdate { atLeast: <its minHost> }` itself and reads *Your cloud computer is updating*, with *Update now* (`force`) while bots work (the cloud flag comes with the provider name in `/v1/computers`). The terminal UI runs on the host and is unaffected |
 | Android | *Update this app* opens Google Play's in-app update (immediate) instead of text, before Android goes public |
-| Release gate | Also require Google Play's version ≥ `MIN_APP` before Android goes public (today it reads only the App Store) |
 
 ## Dropped from the earlier plan
 

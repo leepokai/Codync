@@ -714,4 +714,51 @@ mod tests {
         assert_eq!(step.step, 1);
         std::fs::remove_dir_all(dir).expect("cleanup");
     }
+
+    #[tokio::test]
+    async fn resume_step_keeps_signed_out_auto_profile_and_protects_primary_parked_session() {
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("a store");
+        crate::agent::login_profiles::tests::insert(&store, &[("rs-1", "claude")]);
+        crate::agent::login_profiles::note_signed_in(&store, "rs-1", true);
+        let base: BotConfig = serde_json::from_value(json!({
+            "id": "b",
+            "name": "B",
+            "backend": "claude",
+            "model": "opus",
+            "fallbacks": [{"backend": "codex"}],
+        }))
+        .expect("bot");
+        store.save_bot(&base).expect("save bot");
+        store.set_session("b", Some("sid-rs1")).expect("save rs1 session");
+        store.kv_set("fallback.on.b", "claude#profile-rs-1").expect("mark on rs1");
+        store.kv_set("fallback.session.b.claude", "sid-primary").expect("park primary");
+
+        // Another bot marks rs-1 signed out while host is down/restarting.
+        crate::agent::login_profiles::note_signed_in(&store, "rs-1", false);
+        let (mut actor, dir) = test_actor(store, base.clone());
+        let saved = actor.hub.store.bot("b").ok().flatten().and_then(|b| b.session_id);
+        let (cfg, session_id) = resume_step(&actor.hub, &base, saved);
+        assert_eq!(fallback::login::of(&cfg), "claude#profile-rs-1");
+        assert_eq!(cfg.model.as_deref(), Some("opus"));
+        assert_eq!(session_id.as_deref(), Some("sid-rs1"));
+
+        actor.cfg = cfg;
+        actor.session_id = session_id;
+        // Switching to codex parks sid-rs1 under rs-1, leaving primary's parked session intact.
+        rest::record(&actor.hub.store, "claude", Reason::UsageLimit, now_ms(), None);
+        let codex = actor.next_step(now_ms()).expect("codex step");
+        assert_eq!(codex.cfg.backend, "codex");
+        actor.switch_to(codex.cfg).await;
+        assert_eq!(actor.hub.store.kv_get("fallback.session.b.claude").as_deref(), Some("sid-primary"));
+        assert_eq!(actor.hub.store.kv_get("fallback.session.b.claude#profile-rs-1").as_deref(), Some("sid-rs1"));
+
+        // If a saved profile was deleted altogether, resume_step restores the primary's parked session onto base.
+        actor.hub.store.kv_set("fallback.on.b", "claude#profile-deleted").expect("mark deleted");
+        actor.hub.store.set_session("b", Some("sid-deleted")).expect("save deleted session");
+        let (cfg, session_id) = resume_step(&actor.hub, &base, Some("sid-deleted".into()));
+        assert_eq!(fallback::login::of(&cfg), "claude");
+        assert_eq!(session_id.as_deref(), Some("sid-primary"));
+        assert_eq!(actor.hub.store.bot("b").ok().flatten().and_then(|b| b.session_id).as_deref(), Some("sid-primary"));
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
 }

@@ -34,14 +34,36 @@ fn logged(bot: &str, what: &str, result: anyhow::Result<()>) {
     }
 }
 
-/// The bot as the agent its main session was on when the host stopped runs it.
-pub(in crate::agent::bot) fn resume_step(hub: &Hub, base: &BotConfig) -> BotConfig {
-    let step = hub.store.kv_get(&on_key(&base.id)).and_then(|b| fallback::step_of(&hub.store, base, &b)).unwrap_or(0);
-    let cfg = fallback::effective(&hub.store, base, step);
-    if step > 0 {
-        hub.set_runtime(&base.id, |r| r.agent_step = Some(AgentStep::new(&cfg, step, None)));
+/// The bot as the agent its main session was on when the host stopped runs it, along with that agent's session id.
+pub(in crate::agent::bot) fn resume_step(
+    hub: &Hub,
+    base: &BotConfig,
+    saved_session: Option<String>,
+) -> (BotConfig, Option<String>) {
+    let Some(saved_login) = hub.store.kv_get(&on_key(&base.id)) else {
+        return (base.clone(), saved_session);
+    };
+    if let Some(step) = fallback::step_of(&hub.store, base, &saved_login) {
+        let cfg = fallback::effective(&hub.store, base, step);
+        if step > 0 {
+            hub.set_runtime(&base.id, |r| r.agent_step = Some(AgentStep::new(&cfg, step, None)));
+        }
+        return (cfg, saved_session);
     }
-    cfg
+    if let Some(cfg) = fallback::for_login(&hub.store, base, &saved_login) {
+        hub.set_runtime(&base.id, |r| r.agent_step = Some(AgentStep::new(&cfg, 1, None)));
+        return (cfg, saved_session);
+    }
+    // The saved fallback login can no longer run (such as a deleted profile): keep its session id off `base` and
+    // restore `base`'s own parked session instead.
+    let key = parked_key(&base.id, &fallback::login::of(base));
+    let parked = hub.store.kv_get(&key).filter(|s| !s.is_empty());
+    logged(&base.id, "take the primary's parked session", hub.store.kv_delete(&key));
+    logged(&base.id, "clear the missing fallback's agent mark", hub.store.kv_delete(&on_key(&base.id)));
+    if let Err(error) = hub.store.set_session(&base.id, parked.as_deref()) {
+        tracing::warn!(bot = %base.id, error = format!("{error:#}"), "couldn't restore the primary's session");
+    }
+    (base.clone(), parked)
 }
 
 impl Actor {

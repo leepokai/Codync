@@ -120,6 +120,47 @@ pub fn step_of(store: &Store, cfg: &BotConfig, login: &str) -> Option<usize> {
     chain(store, cfg).iter().position(|f| step_login(f) == login)
 }
 
+/// Restores `cfg` on `target_login`, even when an automatically added profile left the active chain (e.g. signed out).
+/// Returns `None` when `target_login` refers to a deleted profile or an unknown custom command.
+pub fn for_login(store: &Store, cfg: &BotConfig, target_login: &str) -> Option<BotConfig> {
+    if let Some(step) = step_of(store, cfg, target_login) {
+        return Some(effective(store, cfg, step));
+    }
+    let backend = login::backend_of(target_login);
+    let custom_of = |command: Option<&str>| command.is_some_and(|c| !c.trim().is_empty());
+    let (model, model_options) = if cfg.backend == backend && !custom_of(cfg.command.as_deref()) {
+        (cfg.model.clone(), cfg.model_options.clone())
+    } else if let Some(saved) = cfg.fallbacks.iter().find(|f| f.backend == backend && !custom_of(f.command.as_deref()))
+    {
+        (saved.model.clone(), saved.model_options.clone())
+    } else {
+        (None, std::collections::BTreeMap::new())
+    };
+    if let Some(profile_id) = login::login_profile(target_login) {
+        let profile = crate::agent::login_profiles::find(store, profile_id).ok()?;
+        if profile.account.agent != crate::agent::backends::agent_id(backend) {
+            return None;
+        }
+        return Some(apply(
+            cfg,
+            &Fallback {
+                backend: backend.to_owned(),
+                command: None,
+                login_profile: Some(profile_id.to_owned()),
+                model,
+                model_options,
+            },
+        ));
+    }
+    if !target_login.contains('#') && crate::agent::backends::is_known(target_login) {
+        return Some(apply(
+            cfg,
+            &Fallback { backend: target_login.to_owned(), command: None, login_profile: None, model, model_options },
+        ));
+    }
+    None
+}
+
 /// Drops fallbacks that repeat an earlier login (the bot's own included), as when the user makes a fallback the
 /// bot's own agent. The same agent on another of its login profiles is another login.
 pub fn tidy(cfg: &mut BotConfig) {

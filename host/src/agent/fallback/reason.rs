@@ -61,16 +61,23 @@ const USAGE_LIMIT_TEXT: [&str; 14] = [
     "usage limit",
 ];
 
-/// Whether `text` is a usage-limit message from the agent.
+const QUOTA_REFUSAL_BANNERS: [&str; 2] = ["Usage Limit Reached", "You have reached your current quota"];
+
+/// Whether `text` is a usage-limit error message from an agent.
 pub fn is_usage_limit(text: &str) -> bool {
     USAGE_LIMIT_TEXT.iter().any(|t| text.contains(t))
+}
+
+fn is_quota_refusal_banner(text: &str) -> bool {
+    let trimmed = text.trim_start();
+    QUOTA_REFUSAL_BANNERS.iter().any(|banner| trimmed.starts_with(banner))
 }
 
 /// An error when `done` is an ACP `refusal` whose streamed message `last_text` is a usage-limit notice
 /// (`antigravity-acp` streams `"Usage Limit Reached\n\nYou have reached your current quota…"` and answers
 /// `stopReason: "refusal"` instead of a JSON-RPC error).
 pub fn usage_limit_refusal(done: &anyhow::Result<serde_json::Value>, last_text: Option<&str>) -> Option<anyhow::Error> {
-    let text = last_text.filter(|t| is_usage_limit(t))?;
+    let text = last_text.filter(|t| is_quota_refusal_banner(t))?;
     let refused = done.as_ref().is_ok_and(|v| v["stopReason"] == "refusal");
     refused.then(|| {
         RpcError {
@@ -152,7 +159,16 @@ mod tests {
         let agy_text = "Usage Limit Reached\n\nYou have reached your current quota for this period. Your limit will reset in 6 days, 12 hours.";
         let err = usage_limit_refusal(&refusal, Some(agy_text)).expect("usage limit refusal becomes an error");
         assert_eq!(of(&err), Some(Reason::UsageLimit));
+        let quota_only = "You have reached your current quota for this period.";
+        assert_eq!(
+            of(&usage_limit_refusal(&refusal, Some(quota_only)).expect("quota banner")),
+            Some(Reason::UsageLimit)
+        );
         assert!(usage_limit_refusal(&refusal, Some("I cannot help with that request.")).is_none());
+        assert!(
+            usage_limit_refusal(&refusal, Some("I can't help bypass a usage limit.")).is_none(),
+            "ordinary refusals mentioning usage limit must not rest the login"
+        );
     }
 
     #[test]

@@ -97,9 +97,9 @@ Downloads use bounded memory and check size and SHA-256 before save/export.
 
 An image file (by extension) up to 20 MB also shows inline above its card on iPhone,
 Android and desktop, tap/click for full size. A sound file (`mp3`, `m4a`, `wav`, `aac`, a
-voice note) up to 20 MB gets a play/pause button in place of its icon: the host stamps it
-`playsInChat` on the file's metadata (`SharedFile::plays_in_chat`, the one rule; the clients
-only read the flag, and a file without it, from an older host, stays a plain card). For either the
+voice note) up to 20 MB plays in the voice-note player below instead of a file card: the host
+stamps it `playsInChat` on the file's metadata (`SharedFile::plays_in_chat`, the one rule; the
+clients only read the flag, and a file without it, from an older host, stays a plain card). For either the
 client reads the whole file into memory through the same `readFile` chunks, checks size
 and SHA-256, and keeps it — on desktop in the sent-attachment cache under its file id (the
 most recently read 64 MiB; older files are read again when shown), on the phones in the
@@ -119,7 +119,9 @@ time over a progress bar, the elapsed half written in the
 length's shape (`00:05 / 12:00`, `0:00:05 / 1:02:00`) so the caption keeps one width and the
 bar's end stays put as it plays. The play glyph is the outline in every state: on desktop
 hover lays a soft round chip behind it (press deepens it), on the phones a press does, and
-the bar keeps the row's gap to the glyph and to the clock. Tapping or dragging the bar
+the bar keeps the row's gap to the glyph and to the clock. Download is in the message's menu,
+not a button on the row; a sound sent on its own is that row in a bubble of its own with the
+file's name under it. Tapping or dragging the bar
 (clicking on desktop) moves the sound there, playing or paused, or before the first play
 (the preloaded length shows the move and it then starts there); its touch area runs past the
 4 pt bar without taking layout (on desktop only to the thumb's 12 px height, so a click

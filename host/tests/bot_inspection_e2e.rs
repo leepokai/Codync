@@ -384,10 +384,10 @@ async fn mcp_answers_a_workers_background_task_approval_card() {
     let host = Host::start().await;
     let lead = fixture(&host, "Lead").await;
     let worker = fixture(&host, "Worker").await;
-    host.reply(&worker, r#"CHAT add_work {"title":"Inspect build","brief":"PERMISSION inspect task change"}"#).await;
+    host.reply(&worker, r#"CHAT add_task {"title":"Inspect build","brief":"PERMISSION inspect task change"}"#).await;
 
     let original = wait(&host, &worker, |e| {
-        e["kind"] == "permission" && e["data"]["status"] == "pending" && e["data"]["task"]["id"].is_string()
+        e["kind"] == "permission" && e["data"]["status"] == "pending" && e["data"]["thread"]["id"].is_string()
     })
     .await;
     let status = read(&host, &lead, "bot_status", json!({"botId": worker})).await;
@@ -436,7 +436,10 @@ async fn routine_run_asks_confirmation_and_answers_workers_approval_while_lead_c
         e["kind"] == "permission" && e["data"]["status"] == "pending" && e["data"]["title"] == "Answer an approval"
     })
     .await;
-    assert!(card["data"]["task"]["id"].is_string(), "routine confirmation card belongs to the routine task: {card}");
+    assert!(
+        card["data"]["thread"]["id"].is_string(),
+        "routine confirmation card belongs to the routine thread: {card}"
+    );
 
     host.call("respondPermission", json!({"entryId": card["id"], "optionId": "allow"})).await;
     wait(&host, &worker, |e| e["id"] == original["id"] && e["data"]["status"] == "answered").await;

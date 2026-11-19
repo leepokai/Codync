@@ -30,7 +30,7 @@ pub fn status(hub: &Hub, cfg: &BotConfig, recent: &[Entry]) -> Value {
         }
     }
     // What it works on away from the chat, and what waits.
-    if let Some(lines) = crate::chat::tasks::lines(hub, cfg, "Its").filter(|_| !cfg.is_group()) {
+    if let Some(lines) = crate::chat::work::lines(hub, cfg, "Its").filter(|_| !cfg.is_group()) {
         out["background"] = lines.into();
     }
     out
@@ -88,7 +88,7 @@ pub fn waiting(recent: &[Entry]) -> Option<Waiting<'_>> {
         recent.iter().rev().find(|e| e.kind == EntryKind::Permission.as_str() && e.data["status"] == "pending")?;
     let request = card.data["title"].as_str().or_else(|| card.data["command"].as_str()).unwrap_or_default();
     let options = card.data["options"].as_array().into_iter().flatten().filter_map(option_name).collect();
-    let work = card.data["task"]["title"].as_str().filter(|title| !title.is_empty());
+    let work = card.data["thread"]["title"].as_str().filter(|title| !title.is_empty());
     Some(Waiting { card, request, options, work })
 }
 

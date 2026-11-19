@@ -17,8 +17,8 @@ import { WorkWhere } from './WorkWhere'
 import './composer.css'
 import './work.css'
 
-/** How long `Path copied` stands in for the where line. */
-const COPIED_MS = 1600
+/** How long `Path copied` (and a copied code block's check mark) holds before reverting. */
+export const COPIED_MS = 1600
 
 /**
  * The thread of one item, in the inspector in place of Details: its title, status, time and where it works, the

@@ -75,11 +75,13 @@ export const copies = new CopyRequests()
 /** The picture write the clipboard is busy with, settled either way: text waits for it, so a picture can't land over newer text. */
 let writing: Promise<unknown> = Promise.resolve()
 
-/** Text (a message, a picture's name) on the clipboard, overtaking a picture copy still converting or being written so it can't land over it. */
-export async function copyText(text: string, write: (text: string) => void = (text) => window.codync.app.copy(text)) {
+/** Text (a message, a picture's name) on the clipboard, overtaking a picture copy still converting or being written so it can't land over it; reports whether this copy won. */
+export async function copyText(text: string, write: (text: string) => void = (text) => window.codync.app.copy(text)): Promise<boolean> {
   const request = copies.start()
   await writing
-  if (copies.isLatest(request)) write(text)
+  if (!copies.isLatest(request)) return false
+  write(text)
+  return true
 }
 
 /** The picture on the clipboard, unless `stillWanted` says a newer copy took its place while it was converting. */

@@ -10,10 +10,12 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 ### zh-Hant
 - 建立 Codync Cloud 雲端電腦改成在同一個畫面一步一步來：先選供應商（看得到在哪裡執行、要多少錢），再照著步驟到供應商網站建立金鑰並貼上，最後取名、建立。
 - 可以替自己的電腦取名：在「管理電腦」長按電腦的卡片，選「重新命名…」。所有 App 都會顯示這個名稱，同一台機器上的兩個帳號也分得出來；留空就改回主機名稱。
+- 程式碼區塊右上角多了複製鍵：點一下就把程式碼放進剪貼簿，不帶外框與語言標記。
 
 ### en-US
 - Setting up a Codync Cloud computer now goes step by step in one sheet: pick a provider (where it runs, what it costs), follow the steps to make its key and paste it, then name it and create it.
 - Name your own computers: in Manage computers, touch and hold a computer's card, then Rename…. Every app shows that name, so two accounts on one machine are easy to tell apart; leave it empty to go back to the hostname.
+- A code block now has a copy button in its corner: a tap copies the code without its fences or language tag.
 
 ## 2.49.3
 ### zh-Hant

@@ -5,9 +5,9 @@ use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use super::super::app::{App, Click, Editor, Entry, Mark, SlashAction, Status, match_ranges};
+use super::super::app::{App, Click, Editor, Entry, Exchange, Mark, SlashAction, Status, match_ranges};
 use super::super::l10n::tr;
-use super::super::md::{truncate, width as w};
+use super::super::md::{last_code_block, truncate, width as w};
 use super::buffer::{fill, hline, put, put_line, restyle, rput, u};
 use super::queue::queue_band;
 use super::set_cursor;
@@ -141,7 +141,19 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
                 "j k pick · ↵ reply · 1–6 react · f save files · c copy"
             };
             let quoted = picked.is_some_and(|e| e.quotes().is_some());
-            format!("{keys}{} · esc", if quoted { " · q quoted message" } else { "" })
+            let has_code = picked.is_some_and(|e| {
+                !e.pending()
+                    && if e.is_bot_message() {
+                        Exchange::of(&b.id, e).is_some_and(|x| last_code_block(&x.text).is_some())
+                    } else {
+                        last_code_block(e.text()).is_some()
+                    }
+            });
+            format!(
+                "{keys}{}{} · esc",
+                if has_code { " · y copy code" } else { "" },
+                if quoted { " · q quoted message" } else { "" }
+            )
         } else if app.reply.is_some() {
             tr("Reply…").into_owned()
         } else if b.group {

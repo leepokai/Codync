@@ -89,6 +89,8 @@ pub enum Reported {
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<ImageFailure>,
     },
+    /// A fenced code block's copy button (or TUI `y` while picking) put its code on the clipboard.
+    CodeBlockCopied,
     /// Find in a conversation opened (desktop ⌘F, terminal `/` or ^f).
     ConversationFindOpened,
     ConversationFindSearched {
@@ -600,6 +602,8 @@ mod tests {
                     "outcome": "failed", "error": "transfer"}),
                 Event::ImagePreviewAction,
             ),
+            (json!({"event": "code_block_copied", "app": "desktop"}), Event::CodeBlockCopied),
+            (json!({"event": "code_block_copied", "app": "tui"}), Event::CodeBlockCopied),
             (json!({"event": "conversation_find_opened", "app": "desktop"}), Event::ConversationFindOpened),
             (
                 json!({"event": "conversation_find_searched", "app": "desktop", "found": true}),

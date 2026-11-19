@@ -265,6 +265,32 @@ pub fn render(text: &str, width: usize, indent: usize) -> Vec<Line<'static>> {
     out
 }
 
+/// Fenced code blocks in `text`, without their opening or closing fence lines or language tags.
+pub fn code_blocks(text: &str) -> Vec<String> {
+    let mut blocks = vec![];
+    let mut current: Option<Vec<&str>> = None;
+    for raw in text.lines() {
+        if raw.trim_start().starts_with("```") {
+            if let Some(lines) = current.take() {
+                blocks.push(lines.join("\n"));
+            } else {
+                current = Some(vec![]);
+            }
+        } else if let Some(lines) = &mut current {
+            lines.push(raw);
+        }
+    }
+    if let Some(lines) = current {
+        blocks.push(lines.join("\n"));
+    }
+    blocks
+}
+
+/// The last fenced code block in `text`, without its fences or language tag.
+pub fn last_code_block(text: &str) -> Option<String> {
+    code_blocks(text).pop()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -308,5 +334,14 @@ mod tests {
         assert_eq!(truncate_path("~/code/app", 20), "~/code/app");
         assert_eq!(truncate_path("/a/a-very-long-last-name", 10), "…/a-very-…");
         assert_eq!(truncate_path("no-separator-at-all", 8), "no-sepa…");
+    }
+
+    #[test]
+    fn extracts_fenced_code_blocks_without_fences_or_language_tag() {
+        let md = "First:\n\n```sh\necho one\n```\n\nSecond:\n\n  ```rust\n\tfn main() {}\n```\n";
+        assert_eq!(code_blocks(md), ["echo one", "\tfn main() {}"]);
+        assert_eq!(last_code_block(md).as_deref(), Some("\tfn main() {}"));
+        assert_eq!(last_code_block("plain text with `inline`").as_deref(), None);
+        assert_eq!(last_code_block("```py\nprint(1)").as_deref(), Some("print(1)"));
     }
 }

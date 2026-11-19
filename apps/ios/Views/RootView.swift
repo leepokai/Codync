@@ -100,6 +100,8 @@ struct RootView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .transition(.opacity)
         } else if let machine = cloudStart {
+            // In the account, not on this iPhone yet: a lookup or request the network lost is asked again while it waits.
+            let reaching = machine.start == .connecting ? machine.computerId : nil
             CloudStartView(machine: machine, back: {
                 animateSetup {
                     startedCloud = false
@@ -108,6 +110,7 @@ struct RootView: View {
             }, skip: { completeOnboarding(via: .skipped) }) {
                 AccountSwitcherButton()
             }
+            .task(id: reaching) { if let reaching { await accounts.reachCloudComputer(reaching) } }
             .transition(.opacity)
         } else if !pairingNew && !askableComputers.isEmpty {
             ChooseComputerView(computers: askableComputers, ask: { asking = $0 },

@@ -33,6 +33,7 @@ function setup(over: Partial<DictationPlatform> = {}) {
     transcribe: (_, piece) => new Promise((answer, fail) => pending.push({ piece, answer, fail })),
     count: (seconds) => void log.push(`count ${seconds}`),
     report: (message) => void log.push(`report ${message}`),
+    shortcutTap: () => 'send',
     ...over,
   }
   let box = 'Fix the bug'
@@ -78,6 +79,22 @@ test('a finish without a send keeps the send already waiting for the last on-dev
   s.say({ type: 'stopped' })
   assert.equal(sent, true)
   assert.equal(s.box(), 'Fix the bug today')
+})
+
+test("the voice input shortcut's tap sends, or set to stop, only stops and keeps the words in the box (#385)", () => {
+  for (const tap of ['send', 'stop'] as const) {
+    const s = setup({ shortcutTap: () => tap })
+    let sent = false
+    const send = () => void (sent = true)
+    assert.equal(s.dictation.shortcutKey('double', send), true)
+    s.dictation.start(s.box(), true)
+    s.say({ type: 'final', text: 'in the parser' })
+    assert.equal(s.dictation.shortcutKey('tap', send), false)
+    s.say({ type: 'stopped' })
+    assert.equal(s.dictation.busy, false)
+    assert.equal(s.box(), 'Fix the bug in the parser')
+    assert.equal(sent, tap === 'send', tap)
+  }
 })
 
 test('cancel drops words still on their way', () => {

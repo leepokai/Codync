@@ -4,7 +4,7 @@ import {
 } from '@shared/island'
 import { VOICE_SHORTCUT_KEYS, type VoiceKey, type VoiceShortcut } from '@shared/voice-shortcut'
 import { Observable } from '../../lib/observable'
-import { pref } from '../../lib/prefs'
+import { pref, prefs } from '../../lib/prefs'
 import { Dictation } from '../thread/dictation'
 import { dictationPlatform } from '../thread/dictation-platform'
 
@@ -112,7 +112,10 @@ export class IslandModel extends Observable {
   /** How to talk from any app, under the message field until the shortcut is first used. */
   get voiceTip() {
     const key = VOICE_SHORTCUT_KEYS[this.shortcut]
-    return key && !voiceShortcutUsed.get() ? `Tip: double-tap ${key} to talk from any app, then tap it once to send.` : null
+    if (!key || voiceShortcutUsed.get()) return null
+    return prefs.voiceShortcutTap.get() === 'stop'
+      ? `Tip: double-tap ${key} to talk from any app, then tap it once to stop.`
+      : `Tip: double-tap ${key} to talk from any app, then tap it once to send.`
   }
 
   /** A click on the closed island opens it and keeps it open. */
@@ -207,7 +210,7 @@ export class IslandModel extends Observable {
     this.keyboard = false
   }
 
-  /** A double tap opens the message field and listens; the next tap sends what was said once the last words are in. */
+  /** A double tap opens the message field and listens; the next tap sends what was said once the last words are in, or only stops. */
   private voiceKey(key: VoiceKey) {
     if (!this.dictation.shortcutKey(key, () => this.send())) return
     voiceShortcutUsed.set(true)

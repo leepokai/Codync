@@ -1,6 +1,6 @@
 # Android parity and acceptance
 
-Status: **in development, merged into `dev`** (#151, #152, #154, #155), on Google Play internal testing, not public yet. The
+Status: **in development, merged into `dev`** (#151, #152, #154, #155), sent to Google Play's production review on 2026-11-19 (2.49.1, 177 countries and the rest of the world). The
 Android app is a 1:1 port of the iPhone app: each screen
 is built from its iOS source (`apps/ios/Views`, `apps/ios/Kit/Sources/CodyncUI`) with the
 Android `design` module (see the [Android README](../../apps/android/README.md)). Product
@@ -29,12 +29,12 @@ emulator against a real host; device acceptance is listed separately.
 | Live updates | Android 16 Live updates (`ProgressStyle`), the status bar chip on Android 16 QPR1 (API 36.1); it follows how the bot stands outside its chat (`bot.outside`, `TaskFeed.kt`), so it stays while background work runs, and shows the roster's line (`Needs you`, the chat's activity, `2 working · 3 waiting`) while the app runs | Background updates need FCM in the deployment |
 | Version check | `VersionMismatch.MIN_HOST`, the host's `minApp`, the update card in the roster and in place of the composer (Update Codync opens Google Play; greyed out while Play doesn't have the version yet), the newer-release reminder (`AppUpdates.kt`, Play's in-app update info) | Set `MIN_HOST` to the first release that ships Android support when it's cut |
 | Remote screen | Ported: viewer from Computers, the chat header (watch a bot, then take over) and `codync-dev://screen`; WebRTC H.264, trackpad and direct touch, long-press drag, two-finger scroll, pinch zoom streaming the visible region, keyboard with IME and modifier keys, clipboard, displays, take over/hand back, Rotate, trickle ICE that keeps the video through a channel reconnect, idle pause (after 5 minutes untouched, tap to continue) | Pinch, IME composition and a hardware keyboard on a device; TURN relay path and renewal; idle pause on a live picture (touches and keys restarting the count, Take over kept on continuing) |
-| Analytics | Ported: PostHog feature events with the Settings switch (and its sheet), crash reports sent on the next launch; Rate on Google Play and Report an issue | The rating invitation, with the Play release |
-| Packaging | Debug, R8 release signed with the Play upload key, `versionCode` from the version, Firebase (`codync-auth`) and private configuration, `Submit Android` to Google Play (internal testing since 2.24.0) | Production access (closed test), see [Before a Play release](#before-a-play-release) |
+| Analytics | Ported: PostHog feature events with the Settings switch (and its sheet), crash reports sent on the next launch; the rating invitation (Play's in-app review, the iPhone's policy), Rate on Google Play and Report an issue | Play's review window on an install from Google Play |
+| Packaging | Debug, R8 release signed with the Play upload key, `versionCode` from the version, Firebase (`codync-auth`) and private configuration, `Submit Android` to Google Play (production since 2.49.1) | See [Before a Play release](#before-a-play-release) |
 
 ## Gates before merge into dev
 
-- [x] `./gradlew :core:test :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease :app:lintDebug` passes (CI and the pre-commit hook run it).
+- [x] `./gradlew :core:test :design:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease :app:lintDebug` passes (CI and the pre-commit hook run it).
 - [x] Every screen above walked through on an API 36 emulator against a disposable host, in light and dark mode, side by side with the iOS simulator.
 - [x] Live update and its status bar chip on an API 36.1 emulator.
 - [x] `AppStore.kt` split by responsibility (clean-code size rule), undecodable events stop after one rewind and show *Update this app*, timeouts surface as errors.
@@ -66,7 +66,7 @@ device acceptance, and the account flows on main (they were walked on dev; main 
 | Remote screen: Chinese IME composition, a hardware keyboard, the TURN relay path and its credential renewal | `ScreenKeys.kt`, `ScreenSession.kt`, `ScreenView.kt` | A computer it's safe to type into, and a signed-in host for the relay; viewing, trackpad and pinch zoom are verified |
 | On-device voice with a live microphone | `PlatformSpeech.kt`, `LocalVoiceAudio.kt` | A phone; on the emulator the recognizer was fed the speech fixture |
 | Camera QR pairing (focus and 1080p frames), launcher widget refresh, foldables, TalkBack end to end | `QrViewfinder.kt`, `CodyncWidgets.kt` | Physical devices; portrait lock with the rotating screen viewer, 130% text and TalkBack's Move up/down were checked on the emulator |
-| Update info from Google Play itself | `AppUpdates.kt` | An install from Google Play (a debug build gets none); `AppUpdatesTest` drives the update reminder and *Update Codync* through Play's `FakeAppUpdateManager` |
+| Google Play's review window, and update info from Google Play itself | `AppUpdates.kt`, `ReviewPrompt.kt` | An install from Google Play (a debug build gets neither); the review policy has `ReviewTest` and the ask `ReviewPromptTest`, and `AppUpdatesTest` drives the update reminder and *Update Codync* through Play's `FakeAppUpdateManager` |
 
 ### Different from the iPhone on purpose or by platform
 
@@ -107,11 +107,8 @@ description) and the App Store screenshot deck's Android twin (`marketing/app-st
 Android tab: the same captions over Android captures, *Follow along in the status bar* in place of
 the Dynamic Island) with its feature graphic, per language.
 
-- [ ] Closed test: the account is personal, so production access needs a closed test (track
-  `alpha`) with at least 12 testers opted in for 14 days in a row, then the application in
-  Play Console. Set the repository variable `PLAY_TRACK=alpha` once it runs, then run
-  `Submit Android` by hand with the current version and `alpha` (it moves the version Play
-  already has there) or promote it in Play Console.
+- [x] Closed test (track `alpha`, 12 testers for 14 days) and the production access it earns:
+  granted in November 2026.
 - [x] Account deletion inside the app: *Delete account* in the account sheet (2.35.0) deletes the
   Clerk user, whose webhook removes the rest. The web address Play asks for is
   `codync.dev/delete-account`.
@@ -127,16 +124,17 @@ the Dynamic Island) with its feature graphic, per language.
 - [ ] Push on a device with the official Firebase configuration (credentials verified with a
   dry-run send; no device delivery yet).
 - [ ] Set `MIN_HOST` to the first release that ships Android support.
-- [ ] Host release gating for Android: like iPhones and the App Store, a release that raises
-  `minApp` must wait while paired Android phones can't get that version from Play
-  ([compatibility](../reference/compatibility.md)).
+- [x] Host release gating for Android: the release gate also waits for the version on Google
+  Play's listing, as soon as the app has one
+  ([holding releases](../reference/compatibility.md#holding-releases-for-the-stores)).
 - [ ] Move the default push relay URL into `apps/shared/Config/{dev,main}.plist` (iOS reads
   them as `AccountConfig.plist`), so the Android build stops parsing the iOS kit's
   `SharedStore.swift` and iPhone-only edits there stop counting as Android changes.
 - [x] *Rate on Google Play* and *Report an issue* in the Settings tab, since 2026-10-31.
-- [ ] The rating invitation through Play's in-app review API, with the iPhone's policy
-  ([review invitation](../features/ios-review-invitation.md)): left out until the app is on Google Play.
-- [ ] *Release to production* permission for `codync-play`, then `PLAY_TRACK=production`.
+- [x] The rating invitation through Play's in-app review API, with the iPhone's policy
+  ([review invitation](../features/review-invitation.md)), since the app is on Google Play.
+- [x] *Release to production* permission for `codync-play`, `PLAY_TRACK=production`, the production
+  track's countries and the app's trader declaration with `codync.dev/terms` (2026-11-19).
 
 ## Shared deployment
 

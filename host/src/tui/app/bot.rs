@@ -203,7 +203,7 @@ impl Bot {
 
     /// Where it works, as the header shows it.
     pub fn folder(&self, home: &str) -> String {
-        if self.managed_workspace { "personal workspace".to_owned() } else { tilde(&self.cwd, home) }
+        if self.managed_workspace { "own folder".to_owned() } else { tilde(&self.cwd, home) }
     }
 
     pub(in crate::tui) fn parse(v: &Value) -> Option<Self> {

@@ -18,6 +18,8 @@ mod search_path;
 mod sign_in;
 mod workbuddy;
 pub use catalog::HARNESSES;
+#[cfg(all(test, unix))]
+pub(crate) use search_path::TestSearchPath;
 pub use search_path::{hydrate_path, on_path, which};
 pub use sign_in::{
     SignInCheck, agent_checks_off, apply_prompt_refusal, clear_prompt_refused, cli_signed_in, note_prompt_refused,
@@ -225,13 +227,6 @@ pub fn launch_candidates(id: &str) -> anyhow::Result<Vec<registry::Candidate>> {
         ));
     }
     Ok(out)
-}
-
-/// Starting `id` would first install a new registry build, which removes the one before it.
-pub fn update_pending(id: &str) -> bool {
-    launch_candidates(id).is_ok_and(|candidates| {
-        matches!(candidates.first(), Some(registry::Candidate::Build(agent)) if registry::update_pending(agent))
-    })
 }
 
 /// The registry build that *is* the harness's CLI (same npm package), so it can

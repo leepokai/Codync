@@ -81,6 +81,7 @@ struct CodyncApp: App {
                     app.accounts.setActive(phase != .background)
                     // Back in the app: a computer may have joined the account meanwhile.
                     if phase == .active {
+                        app.showIconBadge()
                         Task { await app.accounts.refreshCloud() }
                         Task { await updates.refresh() }
                     }
@@ -324,6 +325,14 @@ final class AppStore {
         }
     }
 
+    /// The app icon's badge from the active context's snapshot: on every roster change, back in the app (an
+    /// alert may have set it while away) and when its Settings switch flips.
+    func showIconBadge() { Self.showIconBadge(accounts) }
+
+    private static func showIconBadge(_ accounts: AccountStore) {
+        IconBadge.show(IconBadge.settled(behind: accounts.computersBehind, in: accounts.storage))
+    }
+
     private static func makeAccounts(_ storage: SharedStore.Context, session: AccountSession) -> (AccountStore, CloudClient?) {
         let identity = storage.accountID == nil ? nil : try? DeviceIdentity.load(context: storage)
         let cloud = session.cloudClient(for: storage.accountID, identity: identity)
@@ -338,7 +347,7 @@ final class AppStore {
             if storage.id == SharedStore.activeContext.id {
                 storage.bots = roster.map { BotSnapshot(computerId: $0.ref.computerId, bot: $0.bot) }
                 BotsWidgetFeed.update(roster, scope: storage.id)
-                IconBadge.show(IconBadge.settled(behind: accounts?.computersBehind ?? [], in: storage))
+                if let accounts { showIconBadge(accounts) }
             }
             if roster.isEmpty {
                 LiveActivities.shared.endAll()
@@ -383,6 +392,12 @@ final class AppStore {
         accounts.setNotifications(id, on)
         if let store = accounts.store(for: id) { PushRegistrar.shared.syncDevice(with: store) }
         Analytics.shared.capture(.settingChanged(.push, on: on))
+    }
+
+    func setIconBadge(_ on: Bool) {
+        SharedStore.defaults.set(on, forKey: IconBadge.enabledKey)
+        showIconBadge()
+        Analytics.shared.capture(.settingChanged(.iconBadge, on: on))
     }
 }
 

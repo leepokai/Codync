@@ -1,4 +1,4 @@
-import type { CallError } from '@shared/ipc'
+import type { CallError, RelayAbsence, RelayPresence } from '@shared/ipc'
 import {
   normalizeBot,
   normalizeScreen,
@@ -25,8 +25,9 @@ export class HostError extends Error {
   constructor(
     readonly status: number,
     message: string,
-    /** The computer isn't connected to the relay: a cloud computer asleep (the connection wakes it), or one that's off. */
-    readonly offline = false,
+    /** The computer isn't connected to the relay (`RelayPresence`): asleep (the connection wakes a cloud computer) or
+     * off, or a cloud computer the relay is waking. */
+    readonly presence: RelayAbsence | null = null,
   ) {
     super(message)
   }
@@ -47,6 +48,8 @@ export interface HostTransport {
   call(method: string, body: unknown, timeoutMs: number): Promise<unknown>
   /** Each element is one event's JSON (what SSE puts after `data:`). */
   stream(path: string, onData: (line: string) => void, onEnd: (error: HostError | null) => void): () => void
+  /** Each presence the relay tells of the computer, through the relay only. */
+  onPresence?(cb: (presence: RelayPresence) => void): () => void
 }
 
 export class LoopbackTransport implements HostTransport {
@@ -93,9 +96,13 @@ export class ChannelTransport implements HostTransport {
   stream(path: string, onData: (line: string) => void, onEnd: (error: HostError | null) => void) {
     return window.codync.channel.stream(this.computerId, this.signKey, path, onData, (error) => onEnd(error ? channelError(error) : null))
   }
+
+  onPresence(cb: (presence: RelayPresence) => void) {
+    return window.codync.channel.onPresence((p) => p.computerId === this.computerId && cb(p.presence))
+  }
 }
 
-const channelError = (e: CallError) => new HostError(e.status ?? 0, e.message, e.offline === true)
+const channelError = (e: CallError) => new HostError(e.status ?? 0, e.message, e.presence ?? null)
 
 export type HostEvent =
   | { type: 'icons'; iconsRevision: number; icons: import('@shared/custom-icons').CustomIcons }

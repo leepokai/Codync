@@ -11,9 +11,9 @@ extension BotStore {
         connection == .online && heldDrop == nil && eventsTask != nil && !retired ? client : nil
     }
 
-    /// The client once the link is up. A reconnect in progress is waited out (headers show it,
-    /// see `shownConnection`), and an unreachable computer gets one fresh attempt first. A computer
-    /// that is off or refusing this device throws at once; so does a reconnect that outlasts `deadline`.
+    /// The client once the link is up. A reconnect in progress, or a cloud computer the relay is waking, is waited
+    /// out (headers show it, see `shownConnection`), and an unreachable computer gets one fresh attempt first. A
+    /// computer that is off or refusing this device throws at once; so does a wait that outlasts `deadline`.
     func ready(until deadline: ContinuousClock.Instant = .now + BotStore.actionPatience) async throws -> HostClient {
         var counted = false
         var retried = false
@@ -22,13 +22,14 @@ extension BotStore {
             if let live { return live }
             switch connection {
             case .online, .connecting: break
+            case .computerOffline where isWaking: break
             case .offline where !retried:
                 // The link retries on a backoff of up to 30 s: with someone waiting, try now.
                 retried = true
                 restartStream()
             case .offline, .unpaired: throw HostError.unreachable
             // The relay reports when it comes back, so there is no attempt of ours to wait for.
-            case let .computerOffline(lastSeen): throw HostError.computerOffline(lastSeen: lastSeen)
+            case let .computerOffline(lastSeen, _): throw HostError.computerOffline(lastSeen: lastSeen)
             case let .unauthorized(message): throw HostError.unauthorized(message)
             }
             guard ContinuousClock.now < deadline else { break }
@@ -38,7 +39,7 @@ extension BotStore {
             }
             try await Task.sleep(for: .milliseconds(100))
         }
-        throw HostError.unreachable
+        throw isWaking ? HostError.computerWaking : HostError.unreachable
     }
 
     /// Runs `op` once the link is up. With `replay`, only for calls the computer can safely get
@@ -282,6 +283,12 @@ extension BotStore {
         answer(entry, "handoff") { try await $0.keepConversation(entryId: entry.id) }
     }
 
+    /// Continue on a chain stopped at its handoff limit: the bot gets "Continue" from the user; the notice's update
+    /// drops the button.
+    public func continueChain(_ entry: Entry) {
+        answer(entry, "continue") { try await $0.continueChain(entryId: entry.id) }
+    }
+
     /// Runs a failed routine run's work again, from its notice; the notice's update drops the button.
     public func retryRoutineRun(_ entry: Entry) {
         guard let runId = entry.data.runId else { return }
@@ -319,6 +326,16 @@ extension BotStore {
     public func setAutoOrder(_ on: Bool) {
         hello?.autoOrder = on
         Task { await attempt(replay: true, undo: { self.hello?.autoOrder = !on }) { try await $0.setAutoOrder(on) } }
+    }
+
+    /// Whether the user names this computer here, on a host that takes it: a cloud computer is named in Codync Cloud.
+    public var canRename: Bool {
+        connection == .online && supportsComputerName && hello.map { $0.device != "cloud" } == true
+    }
+
+    /// The user's name for this computer, empty for its hostname.
+    public func setComputerName(_ name: String) {
+        Task { await attempt { self.hello?.name = try await $0.setComputerName(name) } }
     }
 
     /// One place up (-1) or down (+1) among the bots it moves with (`isRosterPeer`: its band and, below the top, its section; VoiceOver).

@@ -81,7 +81,7 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
             [about.into_owned(), sizes].join(" ")
         }
         Field::TaskWorktrees => {
-            tr("Agents that work at once in this repository each get their own branch.").into_owned()
+            tr("Threads that work at once in this repository each get their own branch.").into_owned()
         }
         Field::Team => {
             tr("Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.").into_owned()
@@ -111,7 +111,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         put(buf, inner.x + 1, inner.y + 9, 16, COLORS[f.color], t.secondary.patch(t.panel));
         put(buf, inner.x + 1, inner.y + 10, 16, SHAPES[f.shape], t.dim.patch(t.panel));
     }
-    let label_w = 19u16;
+    let label_w = 20u16;
     let vx = fx + label_w;
     let vw = inner.right().saturating_sub(vx);
     let mut y = inner.y + 1;
@@ -138,8 +138,8 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::Fallbacks => "Fallbacks",
             Field::SelfFallbacks => "Bot edits",
             Field::Folder => "Workspace",
-            Field::MaxAgents => "Agents at once",
-            Field::TaskWorktrees => "Worktree per agent",
+            Field::MaxAgents => "Threads at once",
+            Field::TaskWorktrees => "Worktree per thread",
             Field::Approvals => "Approvals",
             Field::Compaction => "Summarize",
             Field::Notify => "Notify",
@@ -301,11 +301,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     &format!(
                         "{}  ▸",
                         truncate(
-                            &if f.cwd.is_empty() {
-                                tr("Personal workspace").into_owned()
-                            } else {
-                                tilde(&f.cwd, &app.home)
-                            },
+                            &if f.cwd.is_empty() { tr("Own folder").into_owned() } else { tilde(&f.cwd, &app.home) },
                             usize::from(vw.saturating_sub(4))
                         )
                     ),
@@ -421,7 +417,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     let x = put(buf, inner.x, by, 14, save, t.btn_primary) + 1;
     put(buf, x, by, 12, " esc Cancel ", t.text.patch(t.btn).add_modifier(Modifier::BOLD));
     let hint = match f.current() {
-        Field::Folder => "↵ project folder · backspace personal · tab next field",
+        Field::Folder => "↵ project folder · backspace own folder · tab next field",
         Field::Connectors => "←→ move · space toggle · tab next",
         Field::ModelOptions => "←→ move · space change · tab next",
         Field::Skills => "←→ move · space toggle · i details · tab next",
@@ -508,7 +504,7 @@ pub(super) fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm)
         put_line(buf, inner.x + 2, y, 2, &avatar(app, b));
         put(buf, inner.x + 5, y, inner.width / 2, &b.name, if sel { t.bold } else { t.text }.patch(base));
         let folder = if b.managed_workspace {
-            "personal".to_owned()
+            "own folder".to_owned()
         } else {
             std::path::Path::new(&b.cwd).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default()
         };

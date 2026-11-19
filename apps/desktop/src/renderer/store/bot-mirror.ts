@@ -29,12 +29,15 @@ import { TaskTranscripts } from './task-transcripts'
 
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
+/** The first host the user names (`setComputerName`). */
+const COMPUTER_NAME_HOST = '2.50.0'
 
 export type Connection =
   | { kind: 'unpaired' }
   | { kind: 'connecting' }
   | { kind: 'online' }
-  | { kind: 'computerOffline'; lastSeen: number | null }
+  /** `waking`: the relay is starting it (a cloud computer asleep). */
+  | { kind: 'computerOffline'; lastSeen: number | null; waking?: boolean }
   | { kind: 'offline'; message: string }
   | { kind: 'unauthorized'; message: string }
 
@@ -184,9 +187,15 @@ export class BotMirror extends Observable {
     this.changed()
   }
 
-  /** A Codync Cloud computer that's asleep: a connection or a message wakes it, so it isn't offline. */
+  /** A Codync Cloud computer that's asleep, or on its way up: a connection or a message wakes it, so it isn't offline. */
   get isAsleep() {
-    return this.connection.kind === 'computerOffline' && (this.cloudHosting?.state === 'stopped' || this.cloudHosting?.state === 'stopping')
+    return this.connection.kind === 'computerOffline' && (this.isWaking || this.cloudHosting?.state === 'stopped' || this.cloudHosting?.state === 'stopping')
+  }
+
+  /** The relay is waking this cloud computer (about 10 to 30 seconds): it's coming, not offline. Only the relay says so:
+   * the account list's `starting` stays after a wake whose host never came back. */
+  get isWaking() {
+    return this.connection.kind === 'computerOffline' && this.connection.waking === true
   }
 
   /** A Codync Cloud computer older than this app's `minHost`: the cloud updates it on its own (this app's `Codync-App` header asks for it). */
@@ -210,6 +219,12 @@ export class BotMirror extends Observable {
   /** The user picks the lead (`setLead`) and may delete it: an older host refuses both. */
   get hasLeadChoice() {
     return this.hostVersion !== null && !isBelow(this.hostVersion.version, LEAD_CHOICE_HOST)
+  }
+
+  /** The user names this computer here, on a host that takes it: a cloud computer is named in Codync Cloud. */
+  get canRename() {
+    return this.connection.kind === 'online' && this.hello?.device !== 'cloud'
+      && this.hostVersion !== null && !isBelow(this.hostVersion.version, COMPUTER_NAME_HOST)
   }
 
   /** What the update notice offers while this computer is behind this app. */
@@ -280,6 +295,7 @@ export class BotMirror extends Observable {
   }
 
   get connectionLabel() {
+    if (this.isWaking) return 'Waking the computer…'
     if (this.isAsleep) return 'Sleeping'
     switch (this.shownConnection.kind) {
       case 'online':

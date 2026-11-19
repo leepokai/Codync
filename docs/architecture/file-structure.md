@@ -146,6 +146,7 @@ Codync/
 | agent / backend | A coding harness Codync composes into bots (Claude Code, Codex, …) and its ACP adapter |
 | `agent@computer` | A codync-network address: whoever can take a letter there, whether a bot, a bare agent session (Claude Code, Codex) or a person at a terminal |
 | chat | Main, persistent conversation with a bot or group |
+| thread | One piece of work a bot does away from its chat, in another session of the same bot: waiting in the event box, working, or ended. The only word for it on screen and in the user manual (never task, item or agent). Code and the wire still say `task` (the session) and `item` (its entry in the box) until they are renamed |
 | reply | A user message answering an earlier message of its chat, with that message's quote |
 | group | Chat with several bots and the user; no agent process of its own |
 | lane | Destination of a turn: a bot's own chat or a group's |

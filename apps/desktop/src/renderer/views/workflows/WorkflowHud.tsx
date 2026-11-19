@@ -130,7 +130,7 @@ export function WorkflowHud({ title, selectedId, workflows, enabled, graph, step
       ) : null}
       {scripted && !previewLabel ? (
         <HStack gap={8} className="workflow-banner">
-          <Text size="caption" grow>This workflow decides its steps when it runs.</Text>
+          <Text size="caption" grow>{tr('This workflow decides its steps when it runs.')}</Text>
         </HStack>
       ) : null}
       {previewLabel ? (

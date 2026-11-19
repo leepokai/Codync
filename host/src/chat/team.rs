@@ -18,6 +18,7 @@ use std::sync::Arc;
 pub mod assistant;
 mod ceilings;
 mod directory;
+pub mod limit;
 pub mod remote;
 mod requests;
 pub use ceilings::Ceilings;
@@ -470,13 +471,23 @@ fn check_request(hub: &Hub, turn: &str, message: &str) -> Result<()> {
     Ok(())
 }
 
+/// Takes one of `source`'s places for a message from `turn`'s running turn; a chain stopped at the hop limit leaves
+/// the user a notice to continue it.
+fn reserve(hub: &Hub, source: &str, turn: &str) -> Result<u8> {
+    hub.team.reserve_message_in(source, turn).inspect_err(|_| {
+        if hub.team.at_hop_limit(turn) {
+            limit::stopped(hub, source, turn, limit::Via::Message);
+        }
+    })
+}
+
 fn message_bot(hub: &Arc<Hub>, source: &BotConfig, turn: &str, to: &str, message: &str) -> Result<Value> {
     check_request(hub, turn, message)?;
     if source.id == to {
         bail!("a bot cannot message itself");
     }
     let target = visible_bot(hub, to)?;
-    let hops = hub.team.reserve_message_in(&source.id, turn)?;
+    let hops = reserve(hub, &source.id, turn)?;
     let id = uuid::Uuid::new_v4().to_string();
     // From here on the lifetime gives the reservation back, also when a notice can't be saved.
     let mut lifetime = MessageLifetime::new(hub, &id, message, Back::Local { sender: source.id.clone() }, &target.name);

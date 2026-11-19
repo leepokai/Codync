@@ -36,7 +36,7 @@ export function PageRail({ open, workflowsOpen, onToggle, accountOpen, onAccount
       </RailTip>
       <UpdateBadge size={32} />
       <RailAccountNotice />
-      <button className={`rail-profile ${accountOpen ? 'open' : ''}`} aria-label="Open account menu for Account" title="Account" onClick={onAccount}>
+      <button className={`rail-profile ${accountOpen ? 'open' : ''}`} aria-label={tr('Open account menu for Account')} title={tr('Account')} onClick={onAccount}>
         <ProfileAvatar />
       </button>
     </nav>

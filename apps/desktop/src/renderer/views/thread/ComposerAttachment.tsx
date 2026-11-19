@@ -5,6 +5,7 @@ import { Text } from '../../components/Text'
 import type { OutgoingFile } from '../../store/outgoing-files'
 import { attachmentSymbol } from './Attachments'
 import { useTr } from '../../lib/use-language'
+import { fill } from '@shared/fill'
 
 /**
  * A local attachment, shown before it is sent: images as a whole-image thumbnail with the
@@ -24,9 +25,9 @@ export function ComposerAttachment({ file, remove }: { file: OutgoingFile; remov
 
   if (url && !broken) {
     return (
-      <span className="attachment-tile" aria-label={tr('Image attachment: {name}').replaceAll('{name}', () => file.name)} title={file.name}>
+      <span className="attachment-tile" aria-label={fill(tr('Image attachment: {name}'), { name: file.name })} title={file.name}>
         <img src={url} alt="" onError={() => setBroken(true)} />
-        <button className="press attachment-remove" aria-label={`Remove ${file.name}`} title="Remove" onClick={remove}>
+        <button className="press attachment-remove" aria-label={fill(tr('Remove {name}'), { name: file.name })} title={tr('Remove')} onClick={remove}>
           <Icon name="xmark" size={11} weight="bold" color="#fff" />
         </button>
       </span>
@@ -36,7 +37,7 @@ export function ComposerAttachment({ file, remove }: { file: OutgoingFile; remov
     <span className="file-chip">
       <Icon name={attachmentSymbol(file.name)} size={10} color="var(--secondary)" />
       <Text size="footnote" tone="text" truncate className="file-chip-name">{file.name}</Text>
-      <button className="file-chip-remove" aria-label={`Remove ${file.name}`} title="Remove" onClick={remove}>
+      <button className="file-chip-remove" aria-label={fill(tr('Remove {name}'), { name: file.name })} title={tr('Remove')} onClick={remove}>
         <Icon name="xmark" size={10} weight="bold" color="var(--secondary)" />
       </button>
     </span>

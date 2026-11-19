@@ -296,10 +296,8 @@ private final class FleetStub: CloudComputerStub {
     #expect(store.machines.map(\.name) == ["Cloud computer", "Cloud computer 3"])
     #expect(store.machines.map(\.snapshots) == [true, false])
     #expect(!store.canRemoveKey("boat") && !store.canRemoveKey("instabox") && store.canRemoveKey("nimbus"))
+    // A computer can be made where the key works: InstaBox's is refused, Nimbus has none yet.
     #expect(store.providers.map(\.isReady) == [true, false, false])
-    // New cloud computer creates where the key works: InstaBox's is refused, Nimbus has none yet (picked, it's chosen
-    // once it has one).
-    #expect(store.provider(picked: nil) == "boat" && store.provider(picked: "instabox") == "boat" && store.provider(picked: "nimbus") == "boat")
     #expect(store.suggestedName == "Cloud computer 2" && !store.atLimit && store.limitNote == nil)
 
     #expect(await store.create(on: "boat", name: "  "))
@@ -344,6 +342,33 @@ private final class FleetStub: CloudComputerStub {
     #expect(try provider(#"{"hint":"boat_…9abc","problem":"This account needs an active plan.","blocking":false}"#).isReady)
     #expect(try !provider(#"{"hint":"boat_…9abc","problem":"This key has expired. Make a new one.","blocking":true}"#).isReady)
     #expect(try !provider("null").isReady)
+}
+
+/// A provider says what a computer there costs and how to make its key on its own site, both translated; older clouds
+/// say neither, and New cloud computer falls back to asking for a key and to the command line.
+@Test func cloudProviderSaysItsPlanAndKeySteps() throws {
+    let decode = { (json: String) in try JSONDecoder().decode(CloudProvider.self, from: Data(json.utf8)) }
+    let instabox = try decode(#"{"provider":"instabox","name":"InstaBox","region":"US","plan":"Free plan available","keyPrompt":"ibk_…","#
+        + #""setup":{"page":"https://dashboard.instabox.sh/dashboard/api-keys","steps":["Sign in, or sign up for the free plan.","#
+        + #""Copy the key and paste it below."],"commands":"instabox login"}}"#)
+    #expect(instabox.plan == "Free plan available" && instabox.setup.commands == "instabox login")
+    #expect(instabox.setup.steps == ["Sign in, or sign up for the free plan.", "Copy the key and paste it below."])
+    let older = try decode(#"{"provider":"boat","name":"Boat","region":"EU","keyPrompt":"boat_…","setup":{"page":"https://boat.dev","commands":"boat env new codync"}}"#)
+    #expect(older.plan == nil && older.setup.steps == nil && older.setup.commands == "boat env new codync")
+    // Under its name: what it costs, or that it needs a key from a cloud that doesn't say; then the key's hint, or what
+    // to fix while the provider turns it down.
+    #expect(instabox.detail.text == "US · Free plan available" && !instabox.detail.isProblem)
+    #expect(older.detail.text == "EU · Add a key first" && !older.detail.isProblem)
+    var keyed = older
+    keyed.credential = CloudCredential(hint: "boat_…9abc")
+    #expect(keyed.detail.text == "EU · boat_…9abc" && !keyed.detail.isProblem)
+    keyed.credential?.problem = "This account needs an active plan."
+    #expect(keyed.detail.text == "This account needs an active plan." && keyed.detail.isProblem)
+    #expect(CloudHosting.runsOn(providerName: "Boat", region: "EU") == "Runs on Boat · EU")
+    // The cloud's words are in the catalogs.
+    for phrase in ["Free plan available", "From $20 a month", "Copy the key and paste it below.", "Connect {provider}", "Use the command line instead"] {
+        #expect(L10n.tr(phrase, preference: .zhHant) != phrase)
+    }
 }
 
 /// A name stops where the cloud's 64 UTF-16 units do, without splitting a character.

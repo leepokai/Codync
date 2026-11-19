@@ -6,12 +6,41 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.49.2
+## 2.50.0
 ### zh-Hant
-- 主畫面的 Codync 圖示會顯示未讀數量，和 App 內各聊天的未讀數相加一致，讀完就會消失。
+- 建立 Codync Cloud 雲端電腦改成在同一個畫面一步一步來：先選供應商（看得到在哪裡執行、要多少錢），再照著步驟到供應商網站建立金鑰並貼上，最後取名、建立。
+- 可以替自己的電腦取名：在「管理電腦」長按電腦的卡片，選「重新命名…」。所有 App 都會顯示這個名稱，同一台機器上的兩個帳號也分得出來；留空就改回主機名稱。
+- Bot 之間互相交接到上限（連續 8 次）而停下時，聊天裡會出現一則附「繼續」按鈕的提示：點一下就會替你傳「Continue」給 Bot，讓它重新開始。
+- 用量檢查失敗時，「用量」會保留上次讀到的數字，並標示為「已過時」。
 
 ### en-US
-- The Codync icon on the Home Screen shows your unread count, the same number your chats' badges add up to, and clears as you read them.
+- Setting up a Codync Cloud computer now goes step by step in one sheet: pick a provider (where it runs, what it costs), follow the steps to make its key and paste it, then name it and create it.
+- Name your own computers: in Manage computers, touch and hold a computer's card, then Rename…. Every app shows that name, so two accounts on one machine are easy to tell apart; leave it empty to go back to the hostname.
+- When bots hand work to each other 8 times in a row and stop, the chat shows a note with a Continue button: one tap sends the bot "Continue" from you so it can go on.
+- When a usage check fails, Usage keeps the last numbers and marks them Out of date.
+
+## 2.49.3
+### zh-Hant
+- Bot 預設的工作區改名為「專屬資料夾」。
+- 電腦有安裝 Git 時，Codync 會在每一輪對話前後替 Bot 的專屬資料夾留一個版本：可以請 Bot 說明某一輪改了什麼，或把檔案還原成之前的樣子。「設定」的「工作區」下方會顯示 Git repository。
+- 在專屬資料夾裡，Bot 的背景工作都在同一個資料夾進行，所以那裡不再顯示「每個 thread 一個 worktree」開關。
+- Bot 在背景做的每件工作現在一律叫 thread：「設定」裡的「同時幾個 agent」改名為「同時幾個 thread」，「每個 agent 一個 worktree」改名為「每個 thread 一個 worktree」。
+- 主畫面的 Codync 圖示可以顯示未讀數量，和 App 內各聊天的未讀數相加一致，讀完、或打開 App 時就會更新。預設關閉，可在「設定」→「通知」開啟「在 App 圖示上顯示未讀數」。
+- Bot 在做事時旁邊的小圖示換成跟頭像同一種點陣：工作中、搜尋、等你回覆、連線和編輯檔案各有自己的動作，小尺寸也看得清楚。
+- 動態島上工作中的 Bot 臉和旁邊的小圖示，點陣現在會對齊，不再錯位。
+- 需要更新時，更新卡片上的「立即更新」「更新 Codync」和「更新」按鈕會跟著 App 語言顯示。
+- 從睡眠中醒來的 Codync Cloud 雲端電腦會顯示「正在喚醒電腦…」，不再顯示離線或連不上；這段時間傳的文字訊息會等它醒來再送出。
+
+### en-US
+- A bot's default workspace is now called Own folder.
+- With Git installed, Codync keeps a version of a bot's own folder before and after each turn: ask the bot what a turn changed, or to bring a file back as it was. Settings show Git repository under Workspace.
+- In its own folder, a bot's threads all work in that one folder, so Settings no longer show Worktree per thread there.
+- Each piece of work a bot does in the background is now called a thread everywhere: in Settings, Agents at once is now Threads at once, and Worktree per agent is now Worktree per thread.
+- The Codync icon on the Home Screen can show your unread count, the same number your chats' badges add up to; it updates as you read them and whenever you open the app. It's off by default: turn on Unread count on app icon in Settings → Notifications.
+- The small icon beside a busy bot now uses the same dot grid as the avatars: working, searching, waiting for you, connecting and editing files each move their own way, and stay clear at small sizes.
+- In the Dynamic Island, a working bot's face and the icon beside it now draw their dots lined up instead of shifted.
+- The buttons on the update cards (Update now, Update Codync, Update) now show in the app's language.
+- A Codync Cloud computer waking from sleep now shows Waking the computer… instead of offline or can't reach; a text message you send meanwhile goes out once it's up.
 
 ## 2.49.1
 ### zh-Hant

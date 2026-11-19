@@ -95,34 +95,46 @@ couldn't get the matching side yet.
   `Submit Android` ship any release whose `MIN_APP` is above their store's version, even
   without app changes), add a row to the floor history, and re-record
   the wire shape snapshot. That release isn't offered (downloads, updaters, Homebrew) until
-  the App Store has the iPhone app (next section), so nobody is asked for an update that
+  the App Store has the iPhone app and Google Play the Android app (next section), so nobody is asked for an update that
   isn't there yet.
 - **Raise `minHost`** when the client's core flows need something older hosts lack. Hosts
   update without review, so this only asks the person to update the computer. An optional
-  feature that needs a newer host hides its control instead.
+  feature that needs a newer host hides its control instead. A client's `minHost` never rises to
+  a release the gate holds ([below](#holding-releases-for-the-stores)): not in the release that
+  raises `MIN_APP`, nor in one published while an earlier raise still waits for a store. Each
+  store publishes its app the moment its own review passes, so the faster store's phones would
+  ask for a host no updater can see until the slower review ends. There, raise `minHost` only to
+  a release that is already *latest*, or in the next release once the gate has caught up.
 - Floors never exceed the release that ships them (unit tests in both crates check this).
 - The encrypted channel's handshake version (`v` in its `hello`, rejected with
   `unsupportedVersion`, close code 4400) is separate: the host must keep accepting every `v`
   a supported client sends.
 
-### Holding releases for the App Store
+### Holding releases for the stores
 
-A release that raises `minApp` would lock out paired iPhones until App Review passes, and a
-computer set up from it would lock out the iPhone it pairs with. So what anyone can get
-follows the App Store:
+A release that raises `minApp` would lock out paired phones until their store's review passes, and a
+computer set up from it would lock out the phone it pairs with. So what anyone can get
+follows the App Store and Google Play:
 
 - **Release gate** (`tools/release-gate.py`, run by `.github/workflows/release-gate.yml` after
   each release, and every 5 minutes while a newer release waits or the Homebrew tap trails the
   latest one, dispatched by the cloud Worker's cron: `cloud/src/release-gate.ts`, token
   `RELEASE_GATE_TOKEN`): releases are published without GitHub's *latest* mark. The gate marks
-  the newest fully uploaded release whose `MIN_APP` the App Store's iPhone version meets
-  (`itunes.apple.com/lookup?id=6760984418`, with a query string of its own each time: Apple's CDN
-  keeps the bare URL for up to a day after a release) and points the Homebrew tap (cask and formula) at
-  it. The website's download links (`releases/latest/download/…`), `packaging/install.sh`,
+  the newest fully uploaded release whose `MIN_APP` both stores' versions meet: the App Store's
+  iPhone version (`itunes.apple.com/lookup?id=6760984418`, with a query string of its own each time:
+  Apple's CDN keeps the bare URL for up to a day after a release) and Google Play's Android version,
+  and points the Homebrew tap (cask and formula) at it. Google Play's version is read from the app's
+  public listing page (`play.google.com/store/apps/details?id=com.pokai.Codync.android`, the version
+  in the page's data before the target and minimum SDK): Play has no lookup like Apple's, and its
+  publishing API lists a release from the moment it is sent for review, so only the listing says
+  what people can install. While the app has no listing (404) Google Play holds nothing; a listing
+  without a readable version fails the run (red, the mark stays) rather than guess. The website's
+  download links (`releases/latest/download/…`), `packaging/install.sh`,
   electron-updater and `codync-host update` all read the latest release, so none of them sees
   a release that waits. Every release after a raise waits with it, desktop-only ones too, until
-  App Review passes; within 5 minutes the gate then offers the newest. The new iPhone app asks for
-  its own host at once, so the wait has to be short. The gate itself reads the App Store from
+  both reviews pass; within 5 minutes the gate then offers the newest. One store's phones can
+  run the new app while the release still waits for the other store, which is why a client's
+  `minHost` never rises to a held release (above). The gate itself reads the App Store from
   GitHub's runners (Apple answers Workers with 403). The cron replaced the workflow's hourly GitHub
   schedule, which GitHub ran late or not at all: on 2026-10-20 iPhone 2.20.1 reached the App Store
   at 09:49 UTC while the next scheduled run came at 11:43, so for two hours every phone that

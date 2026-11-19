@@ -263,7 +263,7 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
         val active = channel
         if (active?.state?.value is LinkState.ComputerOffline && send.files.isEmpty()) {
             savePending(send.copy(status = SendStatus.Waiting))
-            try { active.enqueue(send); return }
+            try { active.enqueue(send); ReviewPrompt.promptSent(application, send); return }
             catch (error: IOException) {
                 if (error.message != "hostOnline") throw error
                 // Relay presence can lag; use the same nonce after the channel becomes ready.
@@ -287,6 +287,8 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
         val entry = Entry.decode(result.jsonObject.getValue("entry").jsonObject)
         withContext(Dispatchers.IO) { requireNotNull(database).receive(listOf(entry)) }
         refresh()
+        // Only once it arrived, so a resend counts once.
+        ReviewPrompt.promptSent(application, send)
         val bot = state.value.bots.firstOrNull { it.id == send.botId }
         if (bot != null && PushPreferences.tasks(application) && application.getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled()) {
             val watch = withContext(Dispatchers.IO) { feed.start(bot) }
@@ -358,6 +360,9 @@ internal fun withRemovals(entries: List<Entry>, pending: Map<String, Long>): Lis
 
 /** Carries on with the bot's current conversation instead of the handoff. */
 internal fun AppStore.keepConversation(entry: Entry) = command("keepConversation", body("entryId" to entry.id), "handoff:" + entry.id)
+
+/** Continue on a chain stopped at its handoff limit: the bot gets "Continue" from the user; the notice's update drops the button. */
+internal fun AppStore.continueChain(entry: Entry) = command("continueChain", body("entryId" to entry.id), "continue:" + entry.id)
 
 /** Saves the user's version of a handoff that hasn't been sent; whether it did (its error shows). */
 internal suspend fun AppStore.editHandoff(entry: Entry, text: String): Boolean = try {

@@ -19,6 +19,7 @@
 mod background_work;
 mod cmd;
 mod codex_names;
+mod codex_section;
 mod commands;
 mod compaction;
 mod decisions;
@@ -89,6 +90,8 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     let fast_support = FastModeSupport::from_stored(hub.store.kv_get(&fast_mode::stored_key(&cfg.id)).as_deref());
     let support = fast_support.clone();
     hub.set_runtime(&cfg.id, |r| r.fast_mode = support);
+    let mut versions = crate::agent::versions::Saves::default();
+    versions.ready(&hub, &base);
     let actor = Actor {
         hub,
         base,
@@ -105,6 +108,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         routine_timed_out: false,
         routine_completion: None,
         session_fresh: false,
+        unfiled: codex_section::Unfiled::default(),
         profile_resend: HashSet::new(),
         compacting: None,
         raw_prompt: false,
@@ -113,6 +117,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         applied_system: HashMap::new(),
         dreamer,
         turn_text: None,
+        versions,
         turn_entries: Vec::new(),
         turn_call: None,
         turn_memory_revision: String::new(),
@@ -220,12 +225,15 @@ pub(crate) struct Conn {
     mode_set: HashSet<String>,
     /// The agent reports compactions (`compaction_update`); until it does, a fall in usage stands in for them.
     reports_compaction: bool,
-    /// Each session's context use and window size at its last `usage_update`.
+    /// Each session's context use and window size at its last `usage_update` that reported use (a stream's
+    /// provisional zero is skipped, see `record_usage`).
     usage: HashMap<String, (u64, u64)>,
     /// Codync's MCP servers each session knows by another name (`codex_names`), as it was created or loaded with.
     renamed: HashMap<String, codex_names::Renamed>,
     /// The login profile the process runs on, which isn't removed meanwhile.
     on_profile: Option<crate::agent::login_profiles::Running>,
+    /// The `CODEX_HOME` the process started with, when it isn't Codex's own default.
+    codex_home: Option<String>,
 }
 
 impl Conn {
@@ -292,6 +300,8 @@ struct Actor {
     routine_completion: Option<RoutineCompletion>,
     /// True until the first prompt of a new ACP session has been sent.
     session_fresh: bool,
+    /// The new Codex sessions that aren't in Codex's Codync section yet.
+    unfiled: codex_section::Unfiled,
     /// Sessions that compacted away the `<bot-profile>` their first message carried; their next prompt carries
     /// a fresh one.
     profile_resend: HashSet<String>,
@@ -308,6 +318,8 @@ struct Actor {
     dreamer: mpsc::UnboundedSender<memory::DreamEvent>,
     /// The user's words for this turn (None for a hidden turn or one not from the user); feeds memory.
     turn_text: Option<String>,
+    /// The versions its turns save in the bot's own folder (`agent::versions`).
+    versions: crate::agent::versions::Saves,
     /// The user messages this turn answers (none when it isn't the user's).
     turn_entries: Vec<String>,
     /// The voice call this turn answers while it lasts: its replies carry it (`chat::calls`).

@@ -15,6 +15,7 @@ import { errorText, type RoutineScheduleDraft, type RoutineSchedulePreview } fro
 import { currentZone } from '../routines/time-zones'
 
 export function WorkflowFields({ node, readOnly, onChange }: { node: Node; readOnly: boolean; onChange: (node: Node) => void }) {
+  const tr = useTr()
   const patch = (fields: Node['fields'], schedule?: Node['schedule']) => {
     if (readOnly) return
     onChange({ ...node, fields: { ...node.fields, ...fields }, ...(schedule !== undefined ? { schedule } : {}) })
@@ -50,7 +51,7 @@ export function WorkflowFields({ node, readOnly, onChange }: { node: Node; readO
         </VStack>
       )
     default:
-      return <Text size="caption" tone="secondary">Update Codync on this computer to edit this workflow.</Text>
+      return <Text size="caption" tone="secondary">{tr('Update Codync on this computer to edit this workflow.')}</Text>
   }
 }
 
@@ -220,6 +221,7 @@ function WebhookFields({ node }: { node: Node }) {
 }
 
 function AgentFields({ node, readOnly, patch }: { node: Node; readOnly: boolean; patch: (fields: Node['fields']) => void }) {
+  const tr = useTr()
   const store = useStore()
   const bots = [...store.bots.values()].filter((bot) => !isGroup(bot))
   const botId = fieldString(node.fields, 'botId')
@@ -236,7 +238,7 @@ function AgentFields({ node, readOnly, patch }: { node: Node; readOnly: boolean;
         />
         {model ? <Text className="workflow-model" size="caption" truncate title={model}>{model}</Text> : null}
       </HStack>
-      {!bot ? <Text size="caption" tone="secondary">Choose a bot</Text> : null}
+      {!bot ? <Text size="caption" tone="secondary">{tr('Choose a bot')}</Text> : null}
     </VStack>
   )
 }

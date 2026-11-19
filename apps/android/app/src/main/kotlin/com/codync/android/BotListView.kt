@@ -410,7 +410,7 @@ private fun Bot.movesWith(other: Bot) = band == other.band && (pinned || section
         bot.status == "error" -> Text(messagePreview(bot.lastMessage ?: "Something went wrong"), style = Type.subheadline, color = Palette.danger,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         else -> Text(messagePreview(bot.lastMessage ?: if (bot.kind == "group") "${bot.members.size} bots"
-            else "${backendName(state, bot.backend)} · ${if (bot.managedWorkspace) tr("Personal workspace") else bot.cwd.trimEnd('/').substringAfterLast('/')}"),
+            else "${backendName(state, bot.backend)} · ${if (bot.managedWorkspace) tr("Own folder") else bot.cwd.trimEnd('/').substringAfterLast('/')}"),
             style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

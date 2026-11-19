@@ -20,6 +20,7 @@ import { AgentsPanel, ConnectorsPanel, MarketPanel, SkillsPanel } from './Market
 import { AppLogo, ExtensionTabs, FormSheet, ItemGrid, ItemRow, MarketSection, ScreenHeader, ServiceLogo, SkillGlyph, SlideStack } from './pieces'
 import { usePlugins } from './plugins'
 import { useTr } from '../../lib/use-language'
+import { fill } from '@shared/fill'
 
 /**
  * Extensions for the bots on one computer (the store in context): Agents, Connectors
@@ -333,10 +334,11 @@ function EmptyState({ icon, title, detail }: { icon: string; title: string; deta
 }
 
 function RemoveButton({ title, onClick }: { title: string; onClick: () => void }) {
+  const tr = useTr()
   return (
     <button
-      title="Remove"
-      aria-label={`Remove ${title}`}
+      title={tr('Remove')}
+      aria-label={fill(tr('Remove {name}'), { name: title })}
       className="market-remove"
       onClick={(e) => {
         e.stopPropagation()

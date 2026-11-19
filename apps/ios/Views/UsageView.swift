@@ -136,17 +136,13 @@ private struct ProviderLimits: View {
                 Mascot(provider: provider)
                 Text(provider.name).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
             }
-            if provider.loginProfiles.isEmpty {
-                windows(provider.windows)
-            } else {
-                ForEach(provider.logins) { login in
+            ForEach(provider.logins) { login in
+                if !provider.loginProfiles.isEmpty {
                     quiet(login.name ?? L10n.tr("Default login profile"))
-                    if login.windows.isEmpty {
-                        quiet(L10n.tr("No reading yet"))
-                    } else {
-                        windows(login.windows)
-                    }
+                    if login.windows.isEmpty { quiet(L10n.tr("No reading yet")) }
                 }
+                windows(login.windows)
+                if login.isOutOfDate { quiet(L10n.tr("Out of date")) }
             }
         }
     }

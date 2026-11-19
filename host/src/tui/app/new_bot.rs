@@ -54,7 +54,7 @@ impl App {
 }
 
 impl NewBot {
-    /// A personal workspace, notifications on. The agent, approvals, connectors and skills are left unset: the
+    /// Its own folder, notifications on. The agent, approvals, connectors and skills are left unset: the
     /// host picks the agent, its Auto mode and every installed plugin.
     fn body(&self) -> Value {
         json!({

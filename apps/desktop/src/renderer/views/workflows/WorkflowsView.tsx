@@ -359,7 +359,7 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
         <div className="workflow-empty">
           <VStack gap={8} align="center">
             {notice ? <Text tone="secondary">{notice}</Text> : null}
-            {store.workflows.length === 0 ? <Text weight="semibold">No workflows yet</Text> : null}
+            {store.workflows.length === 0 ? <Text weight="semibold">{tr('No workflows yet')}</Text> : null}
             {store.workflows.length === 0 ? <Button onClick={() => void create()}>New workflow</Button> : null}
           </VStack>
         </div>
@@ -382,7 +382,7 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
         </div>
       ) : null}
       <Dialog open={renaming} title="Rename" actions={[{ title: 'Rename', action: () => void rename() }]} onClose={() => setRenaming(false)}>
-        <input className="workflow-input" data-autofocus aria-label="Name" value={name} onChange={(event) => setName(event.target.value)} />
+        <input className="workflow-input" data-autofocus aria-label={tr('Name')} value={name} onChange={(event) => setName(event.target.value)} />
       </Dialog>
       <Dialog open={confirmDelete} title="Delete workflow" actions={[{ title: 'Delete workflow', destructive: true, action: () => void remove() }]} onClose={() => setConfirmDelete(false)} />
       <Dialog open={scriptOpen} cardClassName="workflow-script-dialog" title={tr('Script')} actions={[{ title: 'Save', action: () => void saveScript() }]} onClose={() => setScriptOpen(false)}>

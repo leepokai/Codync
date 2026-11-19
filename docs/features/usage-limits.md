@@ -15,6 +15,10 @@ Every Usage screen can list the agents that can report on this computer, each wi
 
 On the wire, `usage` gains `services: [{id, name, shown, registry?}]` next to `providers`, which leaves out the hidden agents. A host older than the chooser sends no `services`, and the apps then show no switches. A shown agent with no reading says **No reading yet**: signed out, or nothing to report. Providers and services carry the agent's ACP `registry` id when it has one, and clients draw its logo by `registry ?? id`.
 
+### A check that fails
+
+A check that fails (a reader's `None`, a login profile's `Reading::Unknown`) keeps the login's windows and its `updatedAt`, and sets `failedAt`, the first failure since the last reading, on the provider (the default login) or its `loginProfiles` row (`Usage::land`, `Checked`). A probe doesn't mark default-login windows another source wrote (Claude's rate-limit event or status line, which a `/usage` with no plan limits can't read). The next reading clears it; a check that keeps failing changes nothing, so it sends no event. A failed check counts as asked, so it isn't read again before the poll (`services::unread_readers`). Every Usage screen (phones, desktop Settings, the terminal UI) puts a quiet **Out of date** under a login with windows and a `failedAt`; one with no windows still says **No reading yet**. The widgets, the menu bar and the notch island don't mark it. An older app ignores the field. A reading skipped because the same agent is already being read lands nothing: that reading lands instead (`reading::busy`); so does one Copilot's reader skips on purpose between its reads, every 30 minutes (`Outcome::Skipped`). A status-line or rate-limit reading, which brings only some windows, clears the mark too, and on a marked login drops the windows it didn't bring: they date from before the failure and nothing would mark them any more (`Checked::land`).
+
 `usage` with `refresh: true` answers within a minute with what has landed by then; a slower reader (a first download) carries on and lands through `usage` events. Every change goes through `Hub::update_usage`, under the lock, so a reading landing during a sync isn't written over.
 
 Adding an agent is one row in `READERS` (`usage/services.rs`). The reader's `id` is the harness id, so a bot's `backend` finds it (`backends::harness_of`, which also answers to the registry id).
@@ -24,7 +28,7 @@ Adding an agent is one row in `READERS` (`usage/services.rs`). The reader's `id`
 An agent with signed-in [account login profiles](login-profiles.md) lists every login under its name, the default one
 first, each with its own windows. An agent on one login looks as it always did.
 
-- **On the wire:** a provider's `windows` stay the default login's. `loginProfiles: [{id, name, windows, updatedAt}]`
+- **On the wire:** a provider's `windows` stay the default login's. `loginProfiles: [{id, name, windows, updatedAt, failedAt?}]`
   holds the accounts, and `defaultLoginProfile` what the default login is called beside them (the user's name for it,
   or who it signs in). Both are absent while the agent has one login, so an older app shows the default login as before.
 - **Which rows:** `services::sync` lists the signed-in accounts of each agent that gets read
@@ -65,6 +69,14 @@ first, each with its own windows. An agent on one login looks as it always did.
 
 The readers checked only against source fail closed: anything unexpected is no reading, never a wrong number. Check one against a real login when a computer has it.
 
+### Claude's rate-limit event
+
+The Claude adapter passes the Agent SDK's `rate_limit_info` through whole, in `usage_update._meta["_claude/rateLimit"]`. Its own `utilization` comes only with a warning or a refusal. A limit that is merely `allowed` has it in `unifiedWindows` (`five_hour`, `seven_day`, `seven_day_overage_included`), which the host reads too; the limit the event is about wins over its entry there. Claude Code marks that field internal and the SDK's types leave it out, so it can go away: an event without it reads as before. `seven_day_overage_included` reads into the `/usage` report's **Weekly · Fable** row (`seven_day_fable`): Claude Code's own name for that kind is "Fable limit", and the event names no model, so the name is fixed in the host.
+
+On a computer where Claude runs on a `claude setup-token` token (`CLAUDE_CODE_OAUTH_TOKEN`), this is the only reading: that token only runs models, so `claude -p /usage` reports no plan limits. The limits then show after a bot's first turn, and only the windows the event lists.
+
+`claude -p /usage` itself always asks for the subscription's limits: Claude Code routed off it (a gateway's `ANTHROPIC_BASE_URL` with `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY`, or `CLAUDE_CODE_USE_BEDROCK` / `VERTEX` / `FOUNDRY`, in the environment or in its settings' `env`) answers it with token costs and no limits ([#372](https://github.com/leepokai/Codync/issues/372)). So the check passes `--settings` with those six variables blank (`usage/claude.rs`), which overrides both the environment and the user, project and local settings; the rest of the settings' `env`, a proxy for one, still applies, and a login profile keeps its `CLAUDE_CONFIG_DIR`. When the check still fails, the login keeps its last windows and time and is marked **Out of date** (see [A check that fails](#a-check-that-fails)).
+
 ### An agent's own slash command
 
 `usage/acp_read.rs` runs an ACP slash command that the adapter answers itself. Antigravity's `/usage` is one: its ACP server handles it with no LLM and asks Google with its own login, so the host never touches that login.
@@ -72,7 +84,7 @@ The readers checked only against source fail closed: anything unexpected is no r
 - **Only when advertised.** The command is sent only after the session lists it in `available_commands_update`. Sent to an agent that doesn't know it, it would reach the model and spend the plan it was meant to read.
 - **One session per agent,** resumed for every reading (`usage.session.<id>` in the host's kv): each new Antigravity session leaves a conversation database behind, about 400 KB.
 - **Never a browser.** A signed-out Antigravity starts its browser sign-in as soon as a session opens, and it would do so at every poll. The reading runs with `BROWSER=true`, which its Python honors, then gives up after 30 seconds. Windows has no such command, so there it needs a saved login file first.
-- **A bot's build is left alone.** Installing a new registry build removes the one before it, so while a bot here runs that agent and its current version isn't installed, readings wait for that bot's next start to bring it (`backends::update_pending`). Installs run one at a time and check again once they get their turn.
+- **One install at a time.** A reading and a sign-in check can start the same registry agent at once: its installs run one at a time and check again once they get their turn.
 - **A download isn't cut short.** No timeout wraps a reader's start, or a slow connection would start over at every poll. The handshake has its own.
 
 The report is Markdown meant for people, so an update can change it; `parse` is how that surfaces.

@@ -122,11 +122,12 @@ function parentNumbers(graph: Graph, id: string, numbers: Map<string, number>) {
 }
 
 function Ports({ node }: { node: Node }) {
+  const tr = useTr()
   const [ins, outs] = ports(node.kind)
   return (
     <>
       {ins.map((type) => (
-        <button key={`in-${type}`} type="button" className="workflow-port in" data-port="in" data-node={node.id} aria-label="Input">
+        <button key={`in-${type}`} type="button" className="workflow-port in" data-port="in" data-node={node.id} aria-label={tr('Input')}>
           <Icon name="arrow.right" size={12} weight="semibold" />
         </button>
       ))}
@@ -137,7 +138,7 @@ function Ports({ node }: { node: Node }) {
           </button>
         ))
         : (
-          <button key={`out-${type}`} type="button" className="workflow-port out" data-port="out" data-node={node.id} aria-label="Output">
+          <button key={`out-${type}`} type="button" className="workflow-port out" data-port="out" data-node={node.id} aria-label={tr('Output')}>
             <Icon name="arrow.right" size={12} weight="semibold" />
           </button>
         ))}
@@ -185,8 +186,8 @@ function StepResult({ kind, step, now, onRetry, onDecide, onStop }: {
       </HStack>
     )
   }
-  if (step.status === 'skipped') return <Text size="caption" tone="secondary">Skipped</Text>
-  if (step.status === 'stopped') return <Text size="caption" tone="secondary">Stopped</Text>
+  if (step.status === 'skipped') return <Text size="caption" tone="secondary">{tr('Skipped')}</Text>
+  if (step.status === 'stopped') return <Text size="caption" tone="secondary">{tr('Stopped')}</Text>
   if (step.output && kind === 'output') return <OutputDone text={step.output} />
   if (step.output) return <Text size="caption" lines={4}>{step.output}</Text>
   return null

@@ -8,13 +8,13 @@ use crate::store::Store;
 use serde_json::{Value, json};
 use std::time::Duration;
 
-use super::reading::UsageReadStage;
+use super::reading::{self, UsageReadStage};
 use super::{Window, acp_read, iso_ms};
 
 const READ_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub(super) async fn collect(hub: &Hub) -> Option<Vec<Window>> {
-    acp_read::guarded(hub, "grok", read(&hub.store)).await
+    reading::guarded(hub, "grok", read(&hub.store)).await
 }
 
 async fn read(store: &Store) -> Result<Vec<Window>, UsageReadStage> {

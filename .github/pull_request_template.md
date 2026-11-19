@@ -6,7 +6,7 @@
 
 <!--
 Required, and checked by CI (the "PR validation" check fails until this is filled in).
-Tick every box. When one doesn't apply, tick it anyway and add "N/A: <why>" after it.
+Keep every item and tick its box. When one doesn't apply, tick it anyway and add "N/A: <why>" after it.
 A PR merges once CI passes and Greptile's confidence score on its latest commit is 4/5 or more.
 For a feature, reaching that score is part of the PR.
 -->

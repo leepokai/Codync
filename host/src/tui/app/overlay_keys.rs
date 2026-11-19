@@ -64,6 +64,7 @@ impl App {
             Action::CheckUpdate => self.call("checkHostUpdate", json!({}), After::Update),
             Action::Analytics => self.toggle_analytics(),
             Action::AutoOrder => self.toggle_auto_order(),
+            Action::ComputerName => self.ask_computer_name(),
             Action::ResetCredentials => self.ask_reset_credentials(),
             Action::AboutAnalytics => self.overlays.push(Overlay::Analytics(AnalyticsSheet::default())),
             Action::Appearance(mode) => match super::super::appearance::select(mode) {
@@ -161,6 +162,7 @@ impl App {
             Overlay::Analytics(s) => s.key(k),
             Overlay::Network(n) => self.network_key(n, k),
             Overlay::WhatsNew(s) => s.key(k),
+            Overlay::Kofi(s) => s.key(k),
             // A phone that scanned the code waits for this computer to let it in.
             o @ Overlay::Pair(_)
                 if !self.pairing_requests.is_empty() && matches!(k.code, KeyCode::Char('y' | 'w' | 'n')) =>

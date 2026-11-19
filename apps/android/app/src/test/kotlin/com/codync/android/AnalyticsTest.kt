@@ -35,6 +35,11 @@ class AnalyticsTest {
         assertEquals("""{"outcome":"queued","files":0,"text":true,"recent":true}""", json(AnalyticsEvent.ShareSent(ShareOutcome.Queued, 0, true, true)))
         assertEquals("""{"outcome":"failed","error":"read","files":2,"text":false,"recent":false}""",
             json(AnalyticsEvent.ShareSent(ShareOutcome.Failed, 2, false, false, ShareError.Read)))
+        assertEquals("review_requested", AnalyticsEvent.ReviewRequested(5).name)
+        assertEquals("""{"prompts":5,"policy":"v2"}""", json(AnalyticsEvent.ReviewRequested(5)))
+        assertEquals("review_request_failed", AnalyticsEvent.ReviewRequestFailed(ReviewFailure.NoPlayStore).name)
+        assertEquals("""{"error":"no_play_store"}""", json(AnalyticsEvent.ReviewRequestFailed(ReviewFailure.NoPlayStore)))
+        assertEquals(ReviewFailure.Other, ReviewFailure.of(IOException("no review")))
         assertEquals("""{"link":"install_link"}""", json(AnalyticsEvent.LinkOpened(OutboundLink.InstallLink)))
         assertEquals("""{"step":"choose"}""", json(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.Choose)))
         assertEquals("""{"action":"copy_image","from":"menu","outcome":"done"}""",

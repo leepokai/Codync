@@ -95,6 +95,7 @@ class MainActivity : ComponentActivity() {
                             isAppearanceLightNavigationBars = !darkBars
                         }
                     }
+                    ReviewInvitationEffect()
                     var launching by remember { mutableStateOf(true) }
                     CodyncTheme(dark = dark) { OverlayRoot { CodyncApp(state, computers, accounts, launching)
                         // Held while sign-in restores too: signed out, the app is only the welcome.

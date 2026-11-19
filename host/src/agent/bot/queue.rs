@@ -106,6 +106,7 @@ impl Actor {
                     base.cwd.clone_from(&self.base.cwd);
                 }
                 let old = std::mem::replace(&mut self.base, *base);
+                self.versions.ready(&self.hub, &self.base);
                 // On its own agent the bot takes the new one; on a fallback it keeps that agent (its step may have
                 // moved) until `settle_chain` moves it off one it no longer uses.
                 let cfg = if crate::agent::fallback::step_of(&old, &crate::agent::fallback::login::of(&self.cfg))

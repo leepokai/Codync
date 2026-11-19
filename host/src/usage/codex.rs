@@ -1,6 +1,7 @@
 //! Current Codex plan windows, read through the CLI's account API without a model turn.
 
 use crate::agent::acp::Acp;
+use crate::agent::codex_app;
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -12,7 +13,7 @@ const READ_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// `env` points it at a login profile's folder; empty for the default login.
 pub(super) async fn collect(env: Vec<(String, String)>) -> Option<Vec<Window>> {
-    let reading = read_live(move || start_codex(&env), READ_TIMEOUT).await;
+    let reading = read_live(move || codex_app::start(&env), READ_TIMEOUT).await;
     // A failed sign-in or an unavailable CLI must not leave an expired snapshot on screen.
     match reading {
         Ok(windows) => Some(windows.unwrap_or_default()),
@@ -23,38 +24,15 @@ pub(super) async fn collect(env: Vec<(String, String)>) -> Option<Vec<Window>> {
     }
 }
 
-fn start_codex(env: &[(String, String)]) -> Result<Option<Arc<Acp>>> {
-    let Some(bin) = super::command::program("codex") else { return Ok(None) };
-    let home = dirs::home_dir().context("locating the host user's home directory")?;
-    let command = format!("{} app-server", crate::shell::quote(&bin.to_string_lossy()));
-    let (client, _events) = Acp::spawn(&command, &home.to_string_lossy(), env)?;
-    Ok(Some(client))
-}
-
 async fn read_live(
     start: impl FnOnce() -> Result<Option<Arc<Acp>>> + Send + 'static,
     timeout: Duration,
 ) -> Result<Option<Vec<Window>>> {
-    // Lookup and process creation can block; the transport's async reads stay on the runtime.
-    let started = tokio::task::spawn_blocking(start).await;
-    let client = started.context("joining Codex usage startup")?.context("starting Codex usage probe")?;
-    let Some(client) = client else { return Ok(None) };
-    let result = tokio::time::timeout(timeout, read_limits(&client)).await;
-    client.kill().await;
-    let response = result.with_context(|| format!("Codex usage read exceeded {}ms", timeout.as_millis()))??;
-    Ok(Some(parse(&response, crate::store::now_ms())))
+    let limits = codex_app::session(start, timeout, read_limits).await?;
+    Ok(limits.map(|limits| parse(&limits, crate::store::now_ms())))
 }
 
 async fn read_limits(client: &Acp) -> Result<Value> {
-    let initialized = client
-        .request(
-            "initialize",
-            json!({"clientInfo": {"name": "codync", "title": "Codync", "version": env!("CARGO_PKG_VERSION")}}),
-        )
-        .await;
-    initialized.context("initializing Codex usage probe")?;
-    let notified = client.notify("initialized", json!({})).await;
-    notified.context("announcing Codex usage initialization")?;
     let limits = client.request("account/rateLimits/read", json!({})).await;
     limits.context("reading Codex account rate limits")
 }
@@ -128,18 +106,8 @@ mod tests {
         assert_eq!(parse(&json!({"rateLimits": {"primary": {"resetsAt": 300}}}), 200_000), Vec::new());
     }
 
-    fn fixture_start(mode: &str) -> impl FnOnce() -> Result<Option<Arc<Acp>>> + Send + 'static {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let script = root.join("tests/fixtures/codex_usage.py");
-        let command = format!("{} {}", crate::shell::python(&script), crate::shell::quote(mode));
-        move || {
-            let (client, _events) = Acp::spawn(&command, &root.to_string_lossy(), &[])?;
-            Ok(Some(client))
-        }
-    }
-
     async fn fixture(mode: &str, timeout: Duration) -> Result<Option<Vec<Window>>> {
-        let result = read_live(fixture_start(mode), timeout).await;
+        let result = read_live(codex_app::fixture("codex_usage.py", mode), timeout).await;
         crate::agent::acp::stopped().await;
         result
     }
@@ -170,7 +138,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn slow_startup_does_not_stall_other_host_work() {
         let (release, waiting) = std::sync::mpsc::channel();
-        let start = fixture_start("ready");
+        let start = codex_app::fixture("codex_usage.py", "ready");
         let probe = read_live(
             move || {
                 waiting.recv_timeout(Duration::from_secs(5)).context("async work could not release startup")?;
@@ -195,13 +163,13 @@ mod tests {
         )
         .await;
         let error = result.unwrap_err();
-        assert!(format!("{error:#}").contains("starting Codex usage probe: probe denied"));
+        assert!(format!("{error:#}").contains("starting Codex: probe denied"));
     }
 
     #[tokio::test]
     async fn protocol_errors_identify_the_failed_handshake() {
         let result = fixture("bad-handshake", Duration::from_secs(10)).await;
         let error = result.unwrap_err();
-        assert!(format!("{error:#}").contains("initializing Codex usage probe: initialize rejected"));
+        assert!(format!("{error:#}").contains("initializing Codex: initialize rejected"));
     }
 }

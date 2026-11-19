@@ -56,7 +56,7 @@ function islandBot(store: BotStore, bot: Bot, ref: string, name: string): Island
     status: outsideStatus(bot),
     chat: bot.status,
     backend: store.backendName(bot.backend),
-    folder: folderName(bot),
+    folder: folderName(bot, trNow),
     detail: botDetail(bot),
     steps: isWorking(bot)
       ? entries.filter((e) => e.kind === 'tool').slice(-STEPS).map((e) => ({ title: e.data.title || trNow('Use a tool'), kind: e.data.toolKind ?? 'other' }))

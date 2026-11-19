@@ -74,7 +74,7 @@ import Testing
 /// 10 frames each, in points of a 20 pt face) for tools/timer-fonts.py:
 /// `TEST_RUNNER_CODYNC_FRAMES_FILE=<file.json> xcodebuild test … -only-testing:'CodyncKitTests/exportBotFrames()'`.
 /// Each font is one layer: `Ink` every dot of the bot, `Tint` its lit dots (in its color),
-/// `Ghost` the orb's faint orbit trails, `Dot` its moving dots.
+/// `Ghost` the orb's resting grain, `Dot` its inked dots (a font has no per-dot opacity).
 @MainActor @Test func exportBotFrames() throws {
     guard let file = ProcessInfo.processInfo.environment["CODYNC_FRAMES_FILE"] else { return }
     func dots(_ list: [(x: Double, y: Double, r: Double)]) -> [[String: Double]] {
@@ -89,8 +89,8 @@ import Testing
         }
     }
     let orb = ThinkingOrbGeometry.workingLoop(size: 20)
-    fonts["CodyncOrb-Ghost"] = orb.map { f in dots(f.dots.filter { $0.alpha < 1 }.map { ($0.x, $0.y, $0.radius) }) }
-    fonts["CodyncOrb-Dot"] = orb.map { f in dots(f.dots.filter { $0.alpha >= 1 }.map { ($0.x, $0.y, $0.radius) }) }
+    fonts["CodyncOrb-Ghost"] = orb.map { f in dots(f.filter { $0.alpha < 0.6 }.map { ($0.x, $0.y, $0.radius) }) }
+    fonts["CodyncOrb-Dot"] = orb.map { f in dots(f.filter { $0.alpha >= 0.6 }.map { ($0.x, $0.y, $0.radius) }) }
     let data = try JSONSerialization.data(withJSONObject: ["size": 20, "fonts": fonts], options: [.sortedKeys])
     try data.write(to: URL(fileURLWithPath: file))
 }

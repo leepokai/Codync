@@ -4,6 +4,7 @@ mod analytics;
 mod approvals;
 mod auto_order;
 mod bot;
+mod computer_name;
 mod credentials;
 mod editor;
 mod events;
@@ -35,6 +36,7 @@ pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};
 pub use editor::Editor;
 pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group, rows};
 pub use find::{Find, match_ranges};
+pub use kofi::KofiSheet;
 pub(in crate::tui) use kofi::URL as KOFI_URL;
 pub use model::{After, Entry, Kind, Mark, Msg, Status};
 pub use queue::Queued;
@@ -181,7 +183,6 @@ pub struct App {
     pub credentials_reset: bool,
     /// What usage analytics has reported this run (`app_opened`, `screen_viewed`).
     seen: analytics::Seen,
-    kofi: kofi::Invite,
 }
 
 impl App {
@@ -258,7 +259,6 @@ impl App {
             workflows: false,
             credentials_reset: false,
             seen: analytics::Seen::default(),
-            kofi: kofi::Invite::load(),
         }
     }
 

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { join, resolve } from 'node:path'
+import { fixtureCommand } from './fixture-command.ts'
 import { api, attach, typeMessage } from './sandbox.ts'
 
 // Lists `review` and `compact` right after session/new, answers every prompt with `ok` (host/tests/fixtures/commands_agent.py).
@@ -15,7 +16,7 @@ test('the / list shows the agent\'s own commands, and one goes to the agent as t
   const { skill } = await api<{ skill: { id: string } }>(page, 'installSkill', { name: `Own skill ${Date.now()}`, description: 'A Codync skill', instructions: 'Say hi.' })
   try {
     const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-      name, backend: 'custom', command: `python3 -X utf8 -u '${agent}'`, connectors: [], skills: [skill.id], notify: false,
+      name, backend: 'custom', command: fixtureCommand(agent), connectors: [], skills: [skill.id], notify: false,
     })
     botId = bot.id
     await page.locator('.roster-row', { hasText: name }).click()

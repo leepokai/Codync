@@ -96,7 +96,6 @@ impl App {
                             self.reload_details(&bot);
                         }
                     }
-                    self.kofi_reply(&bot, &e);
                     self.entries.entry(bot).or_default().insert(e.seq, e);
                 }
             }
@@ -398,7 +397,7 @@ impl App {
                 }
                 // The stream may already hold a newer copy (its delivery status).
                 if let Some((bot, e)) = Entry::parse(&value["entry"]) {
-                    self.kofi_sent(&bot, &e);
+                    super::kofi::sent();
                     self.entries.entry(bot).or_default().entry(e.seq).or_insert(e);
                 }
                 self.flash("Sent");

@@ -3,7 +3,7 @@ import { ArtifactCard } from '../library/ArtifactCard'
 import { memo, useRef, useState } from 'react'
 import { groupBotReactions, isGroup, isReplyable, quoteOf, voiceNoteOf, type Bot, type Entry, type ReplyQuote, type SharedFile } from '@shared/models'
 import { BotAvatar } from '../../components/Avatar'
-import { Button, IconButton } from '../../components/Controls'
+import { Button, IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { AnchoredMenu, useContextMenu, type MenuItem, type ReactionPick } from '../../components/Menu'
 import { HStack, VStack } from '../../components/Stack'
@@ -11,6 +11,7 @@ import { Text } from '../../components/Text'
 import { messagePreview } from '../../lib/message-preview'
 import { useTr } from '../../lib/use-language'
 import { analytics } from '../../store/analytics'
+import { fill } from '@shared/fill'
 import { avatarColor } from '../../lib/theme'
 import { useStore as useLiveStore, useStoreRef as useStore } from '../../store/context'
 import { QUICK_REACTIONS, type BotStore } from '../../store/bot-store'
@@ -292,14 +293,28 @@ export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: 
         </HStack>
       )
     default:
+      if (entry.data.continueChain) return <ContinueChainNotice entry={entry} text={text} />
       return <Text as="div" size="footnote" tone="secondary" className="chat-notice">{text}</Text>
   }
+}
+
+/** A chain stopped at its handoff limit, with Continue to let it go on. */
+function ContinueChainNotice({ entry, text }: { entry: Entry; text: string }) {
+  const tr = useTr()
+  const store = useLiveStore()
+  return (
+    <VStack gap={8} align="center">
+      <Text as="div" size="footnote" tone="secondary" className="chat-notice">{text}</Text>
+      {store.answering.has(entry.id) ? <Spinner size={14} /> : <Button kind="secondary" onClick={() => store.continueChain(entry)}>{tr('Continue')}</Button>}
+    </VStack>
+  )
 }
 
 /** A message's reactions: the user's (clicking one takes it back), then the bots', each emoji with the avatars of the
  * bots that chose it. */
 export function ReactionsRow({ entry }: { entry: Entry }) {
   const store = useStore()
+  const tr = useTr()
   const mine = entry.data.reactions ?? []
   const theirs = groupBotReactions(entry.data.botReactions ?? [])
     .map(({ emoji, bots }) => ({ emoji, bots: bots.map((id) => store.bots.get(id)).filter((b): b is Bot => !!b) }))
@@ -308,7 +323,7 @@ export function ReactionsRow({ entry }: { entry: Entry }) {
   return (
     <HStack align="stretch" gap={4}>
       {mine.map((emoji) => (
-        <button key={emoji} className="press reaction-chip" title={`Remove ${emoji}`} aria-label={`Remove reaction ${emoji}`} onClick={() => store.react(entry, emoji)}>
+        <button key={emoji} className="press reaction-chip" title={fill(tr('Remove {emoji}'), { emoji })} aria-label={fill(tr('Remove reaction {emoji}'), { emoji })} onClick={() => store.react(entry, emoji)}>
           <Text size="body">{emoji}</Text>
         </button>
       ))}
@@ -341,17 +356,18 @@ function MessageActions({ visible, className, reactions, reply, trace, copy }: {
   /** What its Copy is (`copyItems`). */
   copy: MenuItem[]
 }) {
+  const tr = useTr()
   const [menu, setMenu] = useState<'reactions' | 'more' | null>(null)
   const smile = useRef<HTMLButtonElement>(null)
   const more = useRef<HTMLButtonElement>(null)
   const shown = visible || menu !== null
   return (
     <div className={`message-actions ${className} ${shown ? 'shown' : ''}`} aria-hidden={!shown}>
-      <button ref={smile} className="message-action" title="Add reaction" aria-label="Add reaction" onClick={() => setMenu('reactions')}>
+      <button ref={smile} className="message-action" title={tr('Add reaction')} aria-label={tr('Add reaction')} onClick={() => setMenu('reactions')}>
         <Icon name="face.smiling" size={14} />
       </button>
       {reply ? <IconButton title="Reply" icon="arrowshape.turn.up.left" size={26} onClick={reply} /> : null}
-      <button ref={more} className="message-action" title="More message actions" aria-label="More message actions" onClick={() => setMenu('more')}>
+      <button ref={more} className="message-action" title={tr('More message actions')} aria-label={tr('More message actions')} onClick={() => setMenu('more')}>
         <Icon name="ellipsis" size={14} />
       </button>
       <AnchoredMenu open={menu === 'reactions'} onClose={() => setMenu(null)} anchor={smile} items={() => []} reactions={reactions} />

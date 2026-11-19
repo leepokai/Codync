@@ -90,7 +90,14 @@ def prompt(request, stop):
         with routine_tools() as (_, call):
             call("follow_up", {"minutes": 5, "note": again[1]})
     log("finished", sid, text)
-    reply = "(pass)" if "SILENT" in text else "Routine completed successfully."
+    if "TRAILING_PASS" in text:
+        # #506: the model writes a line first, then the pass, in one message.
+        reply = "Product newsletter, doesn't qualify. (pass)"
+    elif "MENTIONS_PASS" in text:
+        # The word in a sentence is not a pass: an ordinary answer must still be posted.
+        reply = "I'll pass this to the release bot."
+    else:
+        reply = "(pass)" if "SILENT" in text else "Routine completed successfully."
     send({"method": "session/update", "params": {"sessionId": sid, "update": {
         "sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}}}})
     send({"id": request["id"], "result": {"stopReason": "end_turn"}})

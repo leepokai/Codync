@@ -24,7 +24,7 @@ import { errorText } from '../lib/error-text'
 import { latestOnly } from '../lib/latest-only'
 import { trNow } from '../lib/l10n.ts'
 import { prefs } from '../lib/prefs'
-import { noteFirstPrompt } from '../lib/use-kofi-invite'
+import { noteActiveDay } from '../lib/use-kofi-ask'
 import { updatePayload } from './bot-draft'
 import { FileDownloads } from './file-downloads'
 import { BotSections } from './bot-sections'
@@ -108,10 +108,8 @@ export class BotStore extends BotSync {
         this.upsert(e)
         this.changed()
         // Only once it arrived, so a resend counts once.
-        if (!call) {
-          noteFirstPrompt(botId, e.createdAt)
-          prefs.promptsSent.set(prefs.promptsSent.get() + 1)
-        }
+        noteActiveDay()
+        if (!call) prefs.promptsSent.set(prefs.promptsSent.get() + 1)
       } catch (error) {
         if (this.outgoingFiles.has(nonce)) this.lastError = `Couldn't send the files: ${error instanceof Error ? error.message : error}`
         this.markLocal(nonce, botId, 'failed')
@@ -257,6 +255,16 @@ export class BotStore extends BotSync {
     }
   }
 
+  /** The user's name for this computer, empty for its hostname (a cloud computer is named in Codync Cloud). */
+  async setComputerName(name: string) {
+    try {
+      const res = await (await this.ready()).call<{ name: string }>('setComputerName', { name })
+      this.setHostName(res.name)
+    } catch (e) {
+      this.setError(errorText(e))
+    }
+  }
+
   /** Deletes the credentials saved on this computer, for one whose key is gone; agents' own sign-ins stay. */
   async resetCredentials() {
     try {
@@ -357,7 +365,10 @@ export class BotStore extends BotSync {
     show(local)
     // Safe to repeat: the computer answers a nonce it already has with the same entry.
     void this.withLink((c) => c.call<{ entry: Entry }>('send', { ...thread, text: trimmed, clientNonce: nonce }), true).then(
-      (res) => show({ ...res.entry, data: res.entry.data ?? {} }),
+      (res) => {
+        noteActiveDay()
+        show({ ...res.entry, data: res.entry.data ?? {} })
+      },
       (error: unknown) => {
         this.lastError = errorText(error)
         // Unless the computer's copy came in on the events stream after all.
@@ -394,6 +405,11 @@ export class BotStore extends BotSync {
   retryRoutineRun(entry: Entry) {
     const runId = entry.data.runId
     if (runId) this.answer(entry, 'retry', (c) => c.call('retryRoutineRun', { botId: entry.botId, runId }))
+  }
+
+  /** Continue on a chain stopped at its handoff limit: the bot gets "Continue" from the user; the notice's update drops the button. */
+  continueChain(entry: Entry) {
+    this.answer(entry, 'continue', (c) => c.call('continueChain', { entryId: entry.id }))
   }
 
   /** The roster's "Mark as read": cards still waiting on the user stay counted until they're answered. */

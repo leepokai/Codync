@@ -17,6 +17,8 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var agentSwitch: AgentSwitch?
     /// notice (error): the bot has no fallbacks and its agent ran out of usage or was rate limited: offer to add one.
     public var addFallback: Bool?
+    /// notice: a bot chain stopped at its handoff limit; Continue (`continueChain`) lets it go on, once.
+    public var continueChain: Bool?
     public var text: String?
     public var final: Bool?
     /// user: queued | sent | cancelled | failed, and before the computer has it: sending | waiting (in the relay) | held (on this phone) | delivering · tool: pending | in_progress | completed | failed · permission: pending | answered | cancelled | expired

@@ -254,11 +254,10 @@ public final class BotStore {
         if case .computerOffline = connection { isWaking || cloudHosting?.state.isAsleep == true } else { false }
     }
 
-    /// The relay is waking this cloud computer (about 10 to 30 seconds), or its provider says it's starting: it's
-    /// coming, not offline.
+    /// The relay is waking this cloud computer (about 10 to 30 seconds): it's coming, not offline. Only the relay says
+    /// so: the account list's `starting` stays after a wake whose host never came back.
     public var isWaking: Bool {
-        guard case let .computerOffline(_, waking) = connection else { return false }
-        return waking || cloudHosting?.state == .starting
+        if case .computerOffline(_, waking: true) = connection { true } else { false }
     }
 
     /// Can't be reached, and not because it's updating or asleep (or waking): messaging a sleeping cloud computer
@@ -308,6 +307,13 @@ public final class BotStore {
     }
 
     static let replyPartHost = "2.48.1"
+
+    /// From host 2.50.0 the user names their own computer (`setComputerName`); an older host has no such method.
+    public var supportsComputerName: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.computerNameHost) } ?? false
+    }
+
+    static let computerNameHost = "2.50.0"
 
     static let sectionsHost = "2.32.0"
 

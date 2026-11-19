@@ -53,6 +53,10 @@ test('known chrome becomes Chinese and everything else stays', () => {
     translate('Tip: double-tap the right ⌘ to talk from any app, then tap it once to send.', 'zh', false),
     '提示：连按两次右侧 ⌘，就能在任何应用里说话，再按一次就发送。',
   )
+  assert.equal(
+    translate('Tip: double-tap the left ⌘ to talk from any app, then tap it once to stop.', 'zh', false),
+    '提示：连按两次左侧 ⌘，就能在任何应用里说话，再按一次就停止。',
+  )
   assert.equal(translate('Theme', 'zh', false), '主题')
   assert.equal(translate('Only changes appearance on this device.', 'zh', false), '只改变这台设备的外观。')
   assert.equal(translate('Continue on this Mac', 'zh', false), '在这台 Mac 上继续')

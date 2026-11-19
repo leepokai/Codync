@@ -138,13 +138,13 @@ static TEST_LOCK: Mutex<()> = Mutex::new(());
 /// Holds the search path on `dir` until dropped, one test at a time.
 #[cfg(test)]
 #[must_use]
-pub(super) struct TestSearchPath {
+pub(crate) struct TestSearchPath {
     _lock: std::sync::MutexGuard<'static, ()>,
 }
 
 #[cfg(test)]
 impl TestSearchPath {
-    pub(super) fn set(dir: PathBuf) -> Self {
+    pub(crate) fn set(dir: PathBuf) -> Self {
         let lock = TEST_LOCK.locked();
         *SEARCH_PATH.locked() = vec![dir];
         Self { _lock: lock }

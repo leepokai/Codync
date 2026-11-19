@@ -68,6 +68,8 @@ struct ChatRow: View {
                 HandoffCardRow(entry: entry, card: card).padding(.top, 10)
             } else if let change = entry.data.agentSwitch {
                 AgentSwitchRow(entry: entry, change: change).padding(.top, 10)
+            } else if entry.data.continueChain == true {
+                ContinueChainRow(entry: entry).padding(.top, 10)
             } else if entry.data.call != nil, let openCall {
                 CallLineRow(entry: entry, open: openCall).padding(.top, 6)
             } else {
@@ -309,6 +311,27 @@ struct NoticeRow: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
         }
+    }
+}
+
+/// A chain stopped at its handoff limit, with Continue to let it go on.
+struct ContinueChainRow: View {
+    let entry: Entry
+    @Environment(BotStore.self) private var model
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(L10n.tr(entry.data.text ?? ""))
+                .font(.footnote)
+                .foregroundStyle(Palette.secondary)
+                .multilineTextAlignment(.center)
+            if model.answering[entry.id] != nil {
+                Spinner(size: 14)
+            } else {
+                Button(L10n.tr("Continue")) { model.continueChain(entry) }.buttonStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 

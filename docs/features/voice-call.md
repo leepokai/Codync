@@ -154,8 +154,9 @@ twice or the left ⌘ twice; `voiceShortcut` in `host-prefs.json`). From any app
 double tap of that key starts dictation into the [notch island](notch-island.md)'s message field
 while the island is on, else into the chat window's composer (when no chat is open, the lead, or the top bot where
 no computer has one).
-One more tap stops it and sends what was said once the last words are in; the pill's stop leaves
-the words in the field unsent, and an error leaves nothing for the tap to send.
+One more tap stops it and sends what was said once the last words are in, or, with *Tap again to:
+Stop without sending* (`voiceShortcutTap`, a renderer pref), only stops it and leaves the words in the
+field; the pill's stop always leaves them unsent, and an error leaves nothing for the tap to send.
 Double-tapping to stop counts as that one tap, not a new start. While a call is on (any engine),
 the shortcut does nothing: the call has the microphone.
 

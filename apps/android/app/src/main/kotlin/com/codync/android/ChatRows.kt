@@ -163,7 +163,7 @@ internal fun findable(items: List<ChatItem>): List<Pair<String, String>> =
         } else Box(Modifier.padding(top = 10.dp)) {
             // In a group, the member whose agent failed.
             val owner = state.bots.firstOrNull { it.id == (entry.data.text("author") ?: entry.botId) && it.kind != "group" }
-            NoticeRow(entry, owner?.let { { addFallback(it) } })
+            NoticeRow(entry, owner?.let { { addFallback(it) } }, continuing = "continue:" + entry.id in state.busy) { store.continueChain(entry) }
         }
     }
 }
@@ -408,8 +408,9 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
     }
 }
 
-/** A line from the computer. `addFallback`, on a failure the bot's fallbacks could have carried, opens them. */
-@Composable private fun NoticeRow(entry: Entry, addFallback: (() -> Unit)?) {
+/** A line from the computer. `addFallback`, on a failure the bot's fallbacks could have carried, opens them; `continueChain`, on a
+ *  chain stopped at its handoff limit, lets it go on. */
+@Composable private fun NoticeRow(entry: Entry, addFallback: (() -> Unit)?, continuing: Boolean, continueChain: () -> Unit) {
     val text = tr(entry.text)
     val length = callLength(entry)
     when {
@@ -428,6 +429,11 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
             }
         }
         "agentSwitch" in entry.data -> AgentSwitchLine(text, (entry.data["agentSwitch"] as? JsonObject)?.text("carried"))
+        entry.data["continueChain"]?.jsonPrimitive?.booleanOrNull == true -> Column(Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(tr(text), style = Type.footnote, color = Palette.secondary, textAlign = TextAlign.Center)
+            if (continuing) Spinner(14.dp) else SecondaryButton("Continue", action = continueChain)
+        }
         else -> Text(tr(text), Modifier.fillMaxWidth(), style = Type.footnote, color = Palette.secondary, textAlign = TextAlign.Center)
     }
 }

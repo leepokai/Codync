@@ -51,6 +51,7 @@ use std::sync::{Arc, Mutex};
 
 /// Items added in a row with no message of the user's in between (a report's turn adding the next).
 const MAX_HOPS: u8 = 8;
+const _: () = assert!(MAX_HOPS == 8, "chat::team::limit::NOTICE and its translations say 8");
 /// Items a box holds waiting at most.
 const MAX_WAITING: usize = 20;
 /// An ended item, and a task's transcript with its last item, are kept this long.

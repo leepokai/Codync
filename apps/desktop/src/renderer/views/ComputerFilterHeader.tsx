@@ -1,3 +1,4 @@
+import { counted } from '@shared/fill'
 import { sshSummary, sshStatusDetail } from '@shared/ssh-startup'
 import { DropdownMenu } from '../components/Controls'
 import { ComputerBadge } from './ComputerBadge'
@@ -6,7 +7,7 @@ import type { MenuItem } from '../components/Menu'
 import { Text } from '../components/Text'
 import { useApp } from '../store/context'
 import { useSSH } from './settings/ssh-model'
-import { connectionSummary, counted } from '../lib/computer-roster'
+import { connectionSummary } from '../lib/computer-roster'
 import { useTr } from '../lib/use-language'
 
 /** An empty exclusion list means all computers, including newly paired ones. */
@@ -34,7 +35,7 @@ export function ComputerFilterHeader({ hidden, setHidden, manage, compact = fals
   const app = useApp()
   const ssh = useSSH()
   const pending = ssh.state.profiles.filter((p) => !ssh.state.attachments.some((a) => a.profileId === p.id))
-  const pendingSummary = sshSummary(pending.map((p) => ssh.status(p.id)))
+  const pendingSummary = sshSummary(pending.map((p) => ssh.status(p.id)), tr)
   const selection = computerSelection(app.computers.map((c) => c.id), hidden)
   const stores = selection.shown.map((id) => app.store(id)).filter((s) => !!s)
   const online = stores.filter((s) => s.shownConnection.kind === 'online').length

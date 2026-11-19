@@ -43,9 +43,13 @@ export interface CloudProvider {
   provider: string
   name: string
   region: string
+  /** What a computer there costs, in a sentence the app translates (older clouds don't say). */
+  plan?: string
   /** What its keys start with, for the field's placeholder (`boat_…`). */
   keyPrompt: string
-  setup: { page: string; commands: string }
+  /** How to make its key: `steps` on its own `page`, each a sentence the app translates (older clouds send none), or
+   * `commands` with its CLI instead. */
+  setup: { page: string; steps?: string[]; commands: string }
   credential: CloudCredential | null
   /** Its own free plan, if it has one (older clouds don't say). */
   offer?: CloudProviderOffer
@@ -71,15 +75,14 @@ export interface StatusLine {
   error: boolean
 }
 
-/** "Runs on Boat · EU", through `tr`: under the computer's name. */
-export const placementLine = (p: CloudPlacement, tr: (text: string) => string) =>
+/** "Runs on Boat · EU", through `tr`: under the computer's name, and under the name of a new one. */
+export const placementLine = (p: Pick<CloudPlacement, 'providerName' | 'region'>, tr: (text: string) => string) =>
   tr('Runs on {provider} · {region}').replace('{provider}', p.providerName).replace('{region}', p.region)
 
-/** An offline cloud computer that sleeps, or is starting, isn't offline, and one that failed is an error; null: plain offline. */
+/** An offline cloud computer that sleeps isn't offline, and one that failed is an error; null: plain offline. */
 export function offlineCloudStatus(cloud: CloudPlacement | null | undefined): StatusLine | null {
   if (!cloud) return null
   if (cloud.state === 'stopped' || cloud.state === 'stopping') return { text: 'Sleeping · wakes when you message', error: false }
-  if (cloud.state === 'starting') return { text: 'Waking the computer…', error: false }
   if (cloud.state === 'failed') return { text: 'Cloud computer failed', error: true }
   return null
 }
@@ -156,7 +159,7 @@ export const cloudDeleteOutcome = (error: unknown): 'refused' | 'failed' =>
   error instanceof Error && 'status' in error && error.status === 409 ? 'refused' : 'failed'
 
 /** A key whose own fault it isn't when the provider says no: a computer can be made there (or tried again). */
-const usable = (p: CloudProvider) => p.credential !== null && !p.credential.blocking
+export const isReady = (p: CloudProvider) => p.credential !== null && !p.credential.blocking
 
 /** Create is on: the account may have them, nothing else runs, and there's room for another. */
 export const canCreate = (available: boolean, busy: boolean, count: number, limit: number) => available && !busy && count < limit
@@ -165,17 +168,9 @@ export const canCreate = (available: boolean, busy: boolean, count: number, limi
 export const limitNote = (count: number, limit: number) =>
   count >= limit ? `You can have up to ${limit} cloud computers. Delete one to make another.` : null
 
-/** A provider's row in New cloud computer: whether a computer can be made there and the line under its name (what to
- * fix, in the danger tone; without a key, that it has a free plan when it does). */
-export function providerOption(p: CloudProvider, tr: (text: string) => string): { usable: boolean; detail: StatusLine } {
-  if (p.credential?.problem) return { usable: usable(p), detail: { text: tr(p.credential.problem), error: true } }
-  const missing = tr(p.offer ? 'Free sandbox available' : 'Add a key first')
-  return { usable: usable(p), detail: { text: `${p.region} · ${p.credential?.hint ?? missing}`, error: false } }
-}
-
-/** The provider New cloud computer creates on: the one picked while its key is usable, else the first usable one. One
- * picked before its key was added (or fixed) is chosen once it is. */
-export function chosenProvider(providers: CloudProvider[], picked: string | null) {
-  const options = providers.filter(usable)
-  return (options.find((p) => p.provider === picked) ?? options[0])?.provider ?? null
+/** The line under a provider's name in New cloud computer: what to fix, in the danger tone; else where it runs beside
+ * its key, or without one what it costs. */
+export function providerDetail(p: CloudProvider, tr: (text: string) => string): StatusLine {
+  if (p.credential?.problem) return { text: tr(p.credential.problem), error: true }
+  return { text: `${p.region} · ${p.credential?.hint ?? tr(p.plan || 'Add a key first')}`, error: false }
 }

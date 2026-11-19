@@ -64,48 +64,57 @@ class CloudSettingsTest {
         snapshot("preparing")
     }
 
-    private val setup = CloudKeySetup("https://boat.dev/dashboard", "boat env new codync")
+    private val setup = CloudKeySetup("https://boat.dev/dashboard", "boat env new codync",
+        listOf("Create an environment named codync and mark it safe for third parties.", "Copy the key and paste it below."))
     private fun boat(key: CloudCredential? = null) = CloudProvider("boat", "Boat", "EU", "boat_…", setup, key)
 
     @Test fun aProviderKeyComesFirst() {
         compose.setContent { Hosted { ComputersView(fixture(CloudOffer(emptyList(), available = true, providers = listOf(boat()))), emptyList(), viewModel(), {}, {}, {}) } }
         compose.onNodeWithContentDescription("New cloud computer").performScrollTo().performClick()
+        // An older cloud names no plan.
         compose.onNodeWithText("EU · Add a key first").assertIsDisplayed()
         // Only a usable key has its row's ⋯.
         compose.onNodeWithTag("cloudProviderKey.boat").assertDoesNotExist()
         compose.onNodeWithContentDescription("Boat").performClick()
-        // Only that provider's key.
-        compose.onNodeWithText("Boat API key").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Boat API key").assertIsDisplayed()
-        compose.onNodeWithText("How to make a key").assertIsDisplayed().performClick()
-        compose.onNodeWithText("boat env new codync").assertIsDisplayed()
+        // Its steps on Boat's site, then only that provider's key.
+        compose.onNodeWithText("Connect Boat").assertIsDisplayed()
+        compose.onNodeWithText("Create an environment named codync and mark it safe for third parties.").assertIsDisplayed()
         compose.onNodeWithText("Open Boat").assertExists()
+        compose.onNodeWithContentDescription("Boat API key").assertIsDisplayed()
+        compose.onNodeWithText("Use the command line instead").performScrollTo().performClick()
+        compose.onNodeWithText("boat env new codync").assertExists()
         // Boat has no free plan.
         compose.onNodeWithText("Get a free sandbox").assertDoesNotExist()
-        snapshot("key-sheet")
+        snapshot("key-step")
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText("EU · Add a key first").assertIsDisplayed()
     }
 
-    @Test fun plusOffersEveryProviderAndAKeyToAddFirst() {
+    @Test fun plusOffersEveryProviderWhatItCostsAndANameLast() {
         val key = CloudCredential("boat_…9abc")
         val free = CloudProviderOffer("Get a free sandbox", "InstaBox's free plan includes one machine (4 vCPU, 8 GiB).", "https://instabox.sh/pricing")
-        val instabox = CloudProvider("instabox", "InstaBox", "US", "ibk_…", setup, offer = free)
+        val instabox = CloudProvider("instabox", "InstaBox", "US", "ibk_…", setup, offer = free, plan = "Free plan available")
         val offer = CloudOffer(listOf(machine("stopped")), available = true, providers = listOf(boat(key), instabox))
         compose.setContent { Hosted { ComputersView(fixture(offer), emptyList(), viewModel(), {}, {}, {}) } }
         compose.onNodeWithContentDescription("New cloud computer").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Name your cloud computer").assertIsDisplayed()
-        compose.onNodeWithText("Cloud computer 2", useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithContentDescription("Boat").assertIsSelected()
         compose.onNodeWithText("EU · boat_…9abc").assertIsDisplayed()
-        // Without a key, InstaBox points to its free plan.
-        compose.onNodeWithText("US · Free sandbox available").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Create").assertIsEnabled()
+        // Without a key, InstaBox says what it costs.
+        compose.onNodeWithText("US · Free plan available").assertIsDisplayed()
         compose.onNodeWithTag("cloudProviderKey.instabox").assertDoesNotExist()
         snapshot("new")
+        // Boat has a key: straight to the name.
+        compose.onNodeWithContentDescription("Boat").performClick()
+        compose.onNodeWithContentDescription("Name your cloud computer").assertIsDisplayed()
+        compose.onNodeWithText("Cloud computer 2", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("Runs on Boat · EU").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Create").assertIsEnabled()
+        snapshot("name")
+        compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithContentDescription("InstaBox").performClick()
-        compose.onNodeWithText("InstaBox API key").assertIsDisplayed()
-        compose.onNodeWithText("InstaBox's free plan includes one machine (4 vCPU, 8 GiB).").assertIsDisplayed()
-        compose.onNodeWithText("Get a free sandbox").assertIsDisplayed()
-        compose.onNodeWithText("How to make a key").assertExists()
+        compose.onNodeWithText("Connect InstaBox").assertIsDisplayed()
+        compose.onNodeWithText("InstaBox's free plan includes one machine (4 vCPU, 8 GiB).").assertExists()
+        compose.onNodeWithText("Get a free sandbox").assertExists()
+        compose.onNodeWithText("Use the command line instead").assertExists()
         compose.onNodeWithText("Boat API key").assertDoesNotExist()
     }
 
@@ -141,10 +150,13 @@ class CloudSettingsTest {
         val offer = CloudOffer(emptyList(), available = true, providers = listOf(boat(expired)))
         compose.setContent { Hosted { ComputersView(fixture(offer), emptyList(), viewModel(), {}, {}, {}) } }
         compose.onNodeWithContentDescription("New cloud computer").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Create").assertIsNotEnabled()
         compose.onNodeWithTag("cloudProviderKey.boat").assertDoesNotExist()
         compose.onNodeWithContentDescription("Boat").performClick()
-        compose.onNodeWithText("Boat API key").assertIsDisplayed()
+        // Its key there, to replace.
+        compose.onNodeWithText("Connect Boat").assertIsDisplayed()
+        compose.onNodeWithText("boat_…9abc").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Replace key").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Create").assertDoesNotExist()
     }
 
     @Test fun aPlanTheProviderTurnsDownCanBeTriedAgain() {
@@ -152,7 +164,7 @@ class CloudSettingsTest {
         compose.setContent { Hosted { ComputersView(fixture(CloudOffer(emptyList(), available = true, providers = listOf(boat(unpaid)))), emptyList(), viewModel(), {}, {}, {}) } }
         compose.onNodeWithContentDescription("New cloud computer").performScrollTo().performClick()
         compose.onNodeWithText("This account needs an active plan.").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Boat").assertIsSelected()
+        compose.onNodeWithContentDescription("Boat").performClick()
         compose.onNodeWithContentDescription("Create").assertIsEnabled()
     }
 
@@ -162,7 +174,9 @@ class CloudSettingsTest {
         compose.setContent { Hosted { ComputersView(fixture(CloudOffer(three, true, limit = 3, providers = listOf(boat(CloudCredential("boat_…9abc")), instabox))), emptyList(), viewModel(), {}, {}, {}) } }
         compose.onNodeWithContentDescription("New cloud computer").performScrollTo().performClick()
         compose.onNodeWithText("You can have up to 3 cloud computers. Delete one to make another.").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Boat").performClick()
         compose.onNodeWithContentDescription("Create").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Back").performClick()
         // A key no computer uses can still be replaced or removed.
         compose.onNodeWithTag("cloudProviderKey.instabox").performClick()
         compose.onNodeWithText("Remove key").assertIsDisplayed()

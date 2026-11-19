@@ -34,6 +34,7 @@ pub enum Event {
     BotUpdated,
     BotsReordered,
     SectionRenamed,
+    ComputerRenamed,
     BotDeleted,
     MessageSent,
     /// The user had a queued message handled now (`agent::bot::steer`).
@@ -71,6 +72,10 @@ pub enum Event {
     RoutineDeleted,
     RoutineRun,
     RoutineRetried,
+    /// A bot chain stopped at its handoff limit and left the user a Continue notice (`via`: `chat::team::limit::Via`).
+    ChainLimitReached,
+    /// The user continued a chain stopped at the handoff limit (`continueChain`).
+    ChainContinued,
     /// A bot's `save_progress` ended (`outcome`).
     RoutineProgressSaved,
     /// A bot's `follow_up` ended (`outcome`).
@@ -212,6 +217,7 @@ impl Event {
             Self::BotUpdated => "bot_updated",
             Self::BotsReordered => "bots_reordered",
             Self::SectionRenamed => "section_renamed",
+            Self::ComputerRenamed => "computer_renamed",
             Self::BotDeleted => "bot_deleted",
             Self::MessageSent => "message_sent",
             Self::MessageSteered => "message_steered",
@@ -239,6 +245,8 @@ impl Event {
             Self::RoutineDeleted => "routine_deleted",
             Self::RoutineRun => "routine_run",
             Self::RoutineRetried => "routine_retried",
+            Self::ChainLimitReached => "chain_limit_reached",
+            Self::ChainContinued => "chain_continued",
             Self::RoutineProgressSaved => "routine_progress_saved",
             Self::FollowUpSet => "follow_up_set",
             Self::FollowUpFired => "follow_up_fired",

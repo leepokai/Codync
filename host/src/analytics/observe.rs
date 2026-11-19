@@ -120,6 +120,12 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("removed".into(), b["to"].as_str().is_none_or(|t| t.trim().is_empty()).into());
             Event::SectionRenamed
         }
+        "setComputerName" => {
+            // Whether it went back to the hostname; never the name.
+            p.insert("removed".into(), b["name"].as_str().is_none_or(|n| n.trim().is_empty()).into());
+            p.insert("outcome".into(), "renamed".into());
+            Event::ComputerRenamed
+        }
         "deleteBot" => Event::BotDeleted,
         // To an item's thread: what came of it is the answer's to say (`answered`). Never the text.
         "send" if b["itemId"].is_string() => Event::WorkMessaged,
@@ -153,6 +159,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         "deleteRoutine" => Event::RoutineDeleted,
         "runRoutine" => Event::RoutineRun,
         "retryRoutineRun" => Event::RoutineRetried,
+        "continueChain" => Event::ChainContinued,
         // ✕ on a waiting follow-up; the bot's own cancel and its Stop report from `routines::follow_up`.
         "cancelFollowUp" => {
             p.insert("by".into(), serde_json::json!(crate::routines::Cancelled::User));
@@ -328,9 +335,11 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
                 p.insert(key.into(), answer[key].as_array().map_or(0, Vec::len).into());
             }
         }
-        // A room or a bot request gets no card (`card` says why).
+        // A room or a bot request gets no card (`card` says why); a quiet update refreshes the card it has.
         Event::ArtifactPublished => {
-            p.insert("card".into(), answer["card"].is_null().into());
+            let quiet = answer["quiet"] == true;
+            p.insert("card".into(), (answer["card"].is_null() && !quiet).into());
+            p.insert("quiet".into(), quiet.into());
         }
         Event::ConnectorUpdated => {
             p.insert("outcome".into(), if answer["verify"].is_null() { "saved" } else { "ready" }.into());
@@ -371,15 +380,15 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
 /// `action`) as `network_failed` with `stage` `action`, a connector edit, a login profile, a voice server, a
-/// speech server and a message to an item's thread report their category and a credentials reset `other`, never
-/// the message; other failures report nothing.
+/// speech server and a message to an item's thread report their category and a credentials reset or a computer
+/// rename `other`, never the message; other failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     let category = match event {
         Event::NetworkJoined | Event::NetworkChanged => {
             p.insert("stage".into(), "action".into());
             return Some((Event::NetworkFailed, p));
         }
-        Event::CredentialsReset => {
+        Event::CredentialsReset | Event::ComputerRenamed => {
             p.insert("outcome".into(), "failed".into());
             p.insert("error".into(), "other".into());
             return Some((event, p));

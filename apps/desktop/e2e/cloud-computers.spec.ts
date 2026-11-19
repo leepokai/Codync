@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { attach, openGeneralSettings } from './sandbox.ts'
 
 // Computers → Codync Cloud with real machines: "+" → New cloud computer lists every provider with its logo; one without
-// a key opens only its own key sheet and comes back picked once the key is saved; a named computer on InstaBox and one on
+// a key asks for only its own key next and goes on to the name once it's saved; a named computer on InstaBox and one on
 // Boat claim themselves under their names; a computer's `⋯` opens its provider's key (kept while the computer exists),
 // *Rename…* reaches the card, the sidebar and the account; a refused replacement keeps the saved key; a third computer
 // fills the account, where Create says why it's off; all three are deleted after asking by name; then the keys go
@@ -36,9 +36,9 @@ test('Codync Cloud runs named cloud computers on Boat and InstaBox side by side'
     await page.getByRole('dialog').getByRole('button', { name: 'Computers', exact: true }).click()
 
     const section = page.locator('section.card-section').filter({ has: page.getByRole('heading', { name: 'Codync Cloud' }) })
-    const newSheet = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'New cloud computer' }) })
+    const newSheet = page.getByRole('dialog').filter({ has: page.locator('.cloud-new-sheet') })
     const keySheet = (name: string) => page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: `${name} API key` }) })
-    const providerRow = (name: string) => newSheet.locator('button.agent-picker-item', { hasText: name })
+    const providerRow = (name: string) => newSheet.locator('button.cloud-provider-pick', { hasText: name })
     const rowMenu = (name: string) => newSheet.locator('.cloud-provider-row', { hasText: name }).getByRole('button', { name: 'More' })
     const nameField = newSheet.getByLabel('Name your cloud computer')
     const create = newSheet.getByRole('button', { name: 'Create', exact: true })
@@ -50,11 +50,11 @@ test('Codync Cloud runs named cloud computers on Boat and InstaBox side by side'
       await page.getByRole('menuitem', { name: item }).click()
     }
     const hint = (key: string) => `${key.slice(0, key.indexOf('_') + 1)}…${key.slice(-4)}`
-    /** Saves `key` in the open key sheet, which closes once the cloud keeps it. */
-    const saveKey = async (name: string, key: string) => {
-      await keySheet(name).getByLabel(`${name} API key`).fill(key)
-      await keySheet(name).getByRole('button', { name: 'Save', exact: true }).click()
-      await expect(keySheet(name)).toHaveCount(0, { timeout: 20_000 })
+    /** Saves `key` on New cloud computer's key step, which goes on to the name once the cloud keeps it. */
+    const saveKey = async (name: string, key: string, region: string) => {
+      await newSheet.getByLabel(`${name} API key`).fill(key)
+      await newSheet.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(newSheet.getByText(`Runs on ${name} · ${region}`, { exact: true })).toBeVisible({ timeout: 20_000 })
     }
     /** Created from the open New cloud computer sheet: it closes, and the row prepares, then joins the account. */
     const createAndClaim = async (name: string, line: string) => {
@@ -66,21 +66,18 @@ test('Codync Cloud runs named cloud computers on Boat and InstaBox side by side'
       await expect(sidebar(name)).toBeVisible({ timeout: 120_000 })
     }
 
-    // No Cloud providers row: "+" lists every provider on its logo tile, and InstaBox without a key opens only its key.
+    // No Cloud providers row: "+" lists every provider on its logo tile, and InstaBox without a key asks for only its key.
     await expect(section).toBeVisible()
     await expect(section.getByText('Cloud providers')).toHaveCount(0)
     await section.getByRole('button', { name: 'New cloud computer' }).click()
     await expect(newSheet.locator('.cloud-provider-tile .agent-icon')).toHaveCount(2)
-    await expect(providerRow('Boat')).toContainText('Add a key first')
-    await expect(nameField).toHaveAttribute('placeholder', 'Cloud computer')
-    await expect(create).toBeDisabled()
+    await expect(providerRow('Boat')).toContainText('From $20 a month')
     await providerRow('InstaBox').click()
-    await expect(keySheet('InstaBox').getByLabel('Boat API key')).toHaveCount(0)
-    await saveKey('InstaBox', instaboxKey!)
+    await expect(newSheet.getByLabel('Boat API key')).toHaveCount(0)
+    await saveKey('InstaBox', instaboxKey!, 'US')
 
-    // Back with InstaBox picked: named Research, it claims itself under that name.
-    await expect(providerRow('InstaBox')).toHaveAttribute('aria-pressed', 'true')
-    await expect(providerRow('InstaBox')).toContainText(hint(instaboxKey!))
+    // On to the name: Research, it claims itself under that name.
+    await expect(nameField).toHaveAttribute('placeholder', 'Cloud computer')
     await nameField.fill('Research')
     await createAndClaim('Research', 'InstaBox · US')
     expect(await accountNames(page)).not.toContain('Codync Cloud')
@@ -98,9 +95,9 @@ test('Codync Cloud runs named cloud computers on Boat and InstaBox side by side'
 
     // A Boat key from Boat's row, and a computer there with the suggested name beside Research, both with their logos.
     await section.getByRole('button', { name: 'New cloud computer' }).click()
+    await expect(providerRow('InstaBox')).toContainText(hint(instaboxKey!))
     await providerRow('Boat').click()
-    await saveKey('Boat', boatKey!)
-    await expect(providerRow('Boat')).toHaveAttribute('aria-pressed', 'true')
+    await saveKey('Boat', boatKey!, 'EU')
     await expect(nameField).toHaveAttribute('placeholder', 'Cloud computer')
     await create.click()
     await expect(newSheet).toHaveCount(0, { timeout: 60_000 })
@@ -124,9 +121,8 @@ test('Codync Cloud runs named cloud computers on Boat and InstaBox side by side'
     await expect(sidebar('Lab 2')).toBeVisible({ timeout: 60_000 })
     await expect(sidebar('Research')).toHaveCount(0)
 
-    // "+": both keys usable, each with its row's ⋯, and the next free name.
+    // "+": both keys usable, each with its row's ⋯.
     await section.getByRole('button', { name: 'New cloud computer' }).click()
-    await expect(nameField).toHaveAttribute('placeholder', 'Cloud computer 2')
     await expect(rowMenu('InstaBox')).toBeVisible()
     // Boat's ⋯ has no Remove key while a computer runs there, and opens Boat's key alone; a replacement Boat turns down
     // shows what to fix there and keeps the saved key, and once it's closed New cloud computer doesn't repeat it.
@@ -144,15 +140,20 @@ test('Codync Cloud runs named cloud computers on Boat and InstaBox side by side'
     await boat.getByRole('button', { name: 'Close' }).click()
     await expect(newSheet.getByText(/^(This key wasn't accepted|The provider refused this key)/)).toHaveCount(0)
 
-    // A third, named Third on InstaBox: then the account is full, and Create says why while the keys stay in reach.
+    // A third on InstaBox, whose usable key goes straight to the next free name: Third. Then the account is full, and
+    // the sheet says why while the keys stay in reach, and Create is off.
     await providerRow('InstaBox').click()
+    await expect(nameField).toHaveAttribute('placeholder', 'Cloud computer 2')
     await nameField.fill('Third')
     await createAndClaim('Third', 'InstaBox · US')
+    const full = newSheet.getByText('You can have up to 3 cloud computers. Delete one to make another.', { exact: true })
     await section.getByRole('button', { name: 'New cloud computer' }).click()
-    await expect(newSheet.getByText('You can have up to 3 cloud computers. Delete one to make another.', { exact: true })).toBeVisible()
-    await expect(create).toBeDisabled()
+    await expect(full).toBeVisible()
     await expect(rowMenu('Boat')).toBeEnabled()
-    await newSheet.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await providerRow('Boat').click()
+    await expect(full).toBeVisible()
+    await expect(create).toBeDisabled()
+    await newSheet.getByRole('button', { name: 'Close' }).click()
 
     // Deleted after asking by name: gone from the card, the sidebar and the account.
     for (const name of ['Lab 2', 'Cloud computer', 'Third']) {
@@ -166,12 +167,12 @@ test('Codync Cloud runs named cloud computers on Boat and InstaBox side by side'
 
     // With no computer left, each key goes from its row's ⋯ in New cloud computer.
     await section.getByRole('button', { name: 'New cloud computer' }).click()
-    for (const [name, keyless] of [['Boat', 'Add a key first'], ['InstaBox', 'Free sandbox available']]) {
+    for (const [name, keyless] of [['Boat', 'From $20 a month'], ['InstaBox', 'Free plan available']]) {
       await rowMenu(name).click()
       await page.getByRole('menuitem', { name: 'Remove key' }).click()
       await expect(providerRow(name)).toContainText(keyless)
     }
-    await expect(create).toBeDisabled()
+    await expect(newSheet.getByRole('button', { name: 'More' })).toHaveCount(0)
   } finally {
     // Whatever a failure left: the machines, then the keys.
     const left = ((await cloud(page, 'GET', 'v1/cloud-computers')).value as Offer | undefined)?.cloudComputers ?? []

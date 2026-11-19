@@ -30,7 +30,7 @@ export function useSubmitAfterRender(submit: () => void) {
 
 /**
  * The voice input shortcut in the composer: a double tap dictates into it, the next tap sends
- * what was said once the last words are in (`send`, from `useSubmitAfterRender`).
+ * what was said once the last words are in (`send`, from `useSubmitAfterRender`), or only stops.
  */
 export function useVoiceShortcut(dictation: Dictation, draft: string, send: () => void, focus: () => void) {
   const latest = useRef({ draft, focus })

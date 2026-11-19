@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { fastModeRefusal, fastModeShown } from '@shared/fast-mode'
 import { restLine, restOf, withBackend } from '@shared/fallbacks'
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
-import { MAX_AGENTS } from '@shared/work'
+import { MAX_THREADS } from '@shared/work'
 import { AgentIcon } from '../../components/AgentIcon'
 import { CharacterAvatar } from '../../components/Avatar'
 import { CardSection, DropdownMenu, IconButton, Pill, Spinner, Stepper, ValueRow } from '../../components/Controls'
@@ -227,23 +227,23 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
               </DropdownMenu>
             </ValueRow>
             {/* Of the saved folder, from a host that says (one with worktrees). */}
-            {saved && saved.taskWorktrees !== null ? <GitStateLine bot={saved} /> : null}
+            {saved && saved.threadWorktrees !== null ? <GitStateLine bot={saved} /> : null}
           </VStack>
           <ApprovalRow draft={draft} catalog={models.catalog} onChange={onChange} />
           {/* Only from a host that has the box (its bots say). */}
-          {saved && saved.maxAgents !== null ? (
+          {saved && saved.maxThreads !== null ? (
             <ValueRow label="Threads at once">
-              <Stepper label="Threads at once" value={draft.maxAgents ?? saved.maxAgents} min={1} max={MAX_AGENTS} onChange={(count) => set('maxAgents', count)} />
+              <Stepper label="Threads at once" value={draft.maxThreads ?? saved.maxThreads} min={1} max={MAX_THREADS} onChange={(count) => set('maxThreads', count)} />
             </ValueRow>
           ) : null}
           {/* Only where it matters (a project folder in a git repository: a bot's own folder keeps all its work in
               one place), from a host that has it. */}
-          {saved?.gitRepo && !saved.managedWorkspace && saved.taskWorktrees !== null ? (
+          {saved?.gitRepo && !saved.managedWorkspace && saved.threadWorktrees !== null ? (
             <SwitchRow
               title="Worktree per thread"
               detail="Threads that work at once in this repository each get their own branch."
-              on={draft.taskWorktrees ?? saved.taskWorktrees}
-              onChange={(on) => set('taskWorktrees', on)}
+              on={draft.threadWorktrees ?? saved.threadWorktrees}
+              onChange={(on) => set('threadWorktrees', on)}
             />
           ) : null}
         </CardSection>

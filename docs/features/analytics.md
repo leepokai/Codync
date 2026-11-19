@@ -118,8 +118,8 @@ builds PostHog frames itself (oldest first, the failing one last): generic `cust
 - **Host** (`host/src/analytics/errors.rs`): its own panics (a panic hook queues them for the
   analytics task), failures it got past that should never happen (`host_error!`: type
   `HostError`, mechanism `handled`, what failed as a literal written in the code and the place that
-  noticed it; once per place while the host runs; so far the [background tasks](background-tasks.md)
-  box: one that won't save, a task that is gone, a result that can't be handed on), and `reportError`,
+  noticed it; once per place while the host runs; so far the [work](work.md)
+  box: one that won't save, a thread that is gone, a result that can't be handed on), and `reportError`,
   loopback only, for the computer's apps. Process `host`.
 - **Terminal UI**: its panics, through `reportError` from the panic hook. Process `tui`.
 - **Desktop** (`apps/desktop/src/main/error-reports.ts`, `shared/error-report.ts`): uncaught

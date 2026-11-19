@@ -2,6 +2,7 @@ package com.codync.android
 
 import com.codync.android.core.Entry
 import com.codync.android.core.WireJson
+import com.codync.android.core.threadNamed
 
 /**
  * How much of each chat [MirrorDatabase.snapshot] loads. A resident chat (open or recently opened) keeps its
@@ -49,7 +50,8 @@ internal fun newestWindow(newestFirst: Sequence<String>, target: Int, budget: Lo
     while (shown < target && bytes < budget && rows.hasNext()) {
         val text = rows.next()
         bytes += text.length
-        val entry = WireJson.decodeFromString<Entry>(text)
+        // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0 (rows an earlier app saved from one).
+        val entry = WireJson.decodeFromString<Entry>(text).threadNamed()
         decoded += entry
         if (entry.isChat) shown++
     }

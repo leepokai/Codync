@@ -1,6 +1,6 @@
 //! A routine whose answer ends in a parting `(pass)` says nothing; one that only mentions
 //! the word still posts. Both runs are real host turns over ACP, as #506 happened, and both
-//! places a run happens are covered: an item in the box and a turn in the chat.
+//! places a run happens are covered: a task in the box and a turn in the chat.
 
 use super::*;
 
@@ -33,9 +33,9 @@ async fn a_routine_that_ends_in_a_pass_posts_nothing_and_one_that_mentions_it_po
     quiet_then_loud(&host, &bot, "quiet").await;
 }
 
-/// The other place a run happens: a bot that manages the team has no box (`chat::tasks::boxed` is
+/// The other place a run happens: a bot that manages the team has no box (`chat::work::boxed` is
 /// false), so its run is a turn in its chat and `active_routine` is what tells the rule it is a
-/// routine. `stable_bot` above covers the box, whose task is the `Source::Routine` half.
+/// routine. `stable_bot` above covers the box, whose thread is the `Source::Routine` half.
 #[tokio::test]
 async fn a_chat_routine_that_ends_in_a_pass_says_nothing_and_one_that_mentions_it_posts() {
     let host = Host::start().await;

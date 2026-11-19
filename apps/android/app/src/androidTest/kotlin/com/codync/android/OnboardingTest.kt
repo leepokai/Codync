@@ -158,7 +158,7 @@ class OnboardingTest {
     @Test fun macPairingPointsToTheMenuBarApp() {
         compose.setContent { Hosted { PairingView(AccountContext(loading = false), viewModel()) } }
         compose.onNodeWithText("Continue").performClick()
-        compose.onNodeWithText("On your Mac, click Codync in the menu bar, then Pair iPhone. The same code pairs this phone.").assertIsDisplayed()
+        compose.onNodeWithText("On your Mac, click Codync in the menu bar, then Pair phone. The same code pairs this phone.").assertIsDisplayed()
         compose.onNodeWithText("codync-host pair").assertDoesNotExist()
     }
 }

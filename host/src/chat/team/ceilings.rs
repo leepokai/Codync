@@ -33,7 +33,7 @@ const UNDER_CEILING: [&str; 17] = [
     "read_memory",
 ];
 
-/// Each bot's ceiling, keyed by the bot whose turn runs (a task's own id for a task); a bot under none has no entry.
+/// Each bot's ceiling, keyed by the bot whose turn runs (a thread's own id for a thread); a bot under none has no entry.
 #[derive(Default)]
 pub struct Ceilings(Mutex<HashMap<String, Access>>);
 

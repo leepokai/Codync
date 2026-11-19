@@ -441,7 +441,7 @@ fn save_routines(hub: &Arc<Hub>, bot: &str, routines: &[Value]) -> Vec<Value> {
         })
         .collect();
     // One saved as paused cancels its waiting runs: those leave `bot`'s box.
-    crate::chat::tasks::routines_changed(hub, bot);
+    crate::chat::work::routines_changed(hub, bot);
     saved
 }
 

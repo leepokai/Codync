@@ -172,10 +172,10 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             is MirrorEvent.EntryChanged -> { writeEntry(db, event.entry, live = true); bump(db, event.entry.rev) }
             is MirrorEvent.Usage -> setMeta(db, "usage", event.value.toString())
             is MirrorEvent.Screen -> setMeta(db, "screen", event.value.toString())
-            // Artifacts, the network, the name and a task's transcript live in memory (`AppStore.receiveArtifacts`, `receiveNetwork`,
-            // `setHostName`, `receiveTasks`).
+            // Artifacts, the network, the name and a thread's transcript live in memory (`AppStore.receiveArtifacts`, `receiveNetwork`,
+            // `setHostName`, `receiveThreads`).
             MirrorEvent.Resync, MirrorEvent.Ignored, is MirrorEvent.ArtifactChanged, is MirrorEvent.Call, is MirrorEvent.Network,
-            is MirrorEvent.Name, is MirrorEvent.AutoOrder, is MirrorEvent.TaskEntryChanged -> Unit
+            is MirrorEvent.Name, is MirrorEvent.AutoOrder, is MirrorEvent.ThreadEntryChanged -> Unit
         }
     }
 

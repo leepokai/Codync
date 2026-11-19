@@ -32,7 +32,7 @@ async fn an_agent_that_only_resumes_keeps_its_conversation_and_gives_sessions_ba
     assert!(resumed[0]["params"]["mcpServers"].as_array().is_some_and(|s| !s.is_empty()), "{resumed:?}");
 
     // A routine run's session is spent when the run is; its MCP servers shouldn't stay until the agent stops.
-    // That is a run in the chat's own agent process; one in the bot's box ends with its task's process.
+    // That is a run in the chat's own agent process; one in the bot's box ends with its thread's process.
     host.works_in_chat(&bot).await;
     // Changing the bot restarted its agent; its conversation is open again before the run, so the run's session
     // isn't the only one (an agent holding nothing else is stopped instead of asked to close).

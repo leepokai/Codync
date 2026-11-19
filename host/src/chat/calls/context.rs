@@ -229,7 +229,7 @@ fn work(hub: &Hub, cfg: &BotConfig, recent: &[Entry]) -> String {
     {
         lines.push(format!("Last failure: {}", spoken(failure.data["text"].as_str().unwrap_or_default(), 300)));
     }
-    lines.extend(crate::chat::tasks::lines(hub, cfg, "Its").filter(|_| !cfg.is_group()));
+    lines.extend(crate::chat::work::lines(hub, cfg, "Its").filter(|_| !cfg.is_group()));
     lines.join("\n")
 }
 
@@ -359,9 +359,9 @@ pub(crate) mod tests {
             harness_memory: false,
             compaction: codync_mem::compaction::Threshold::Early,
             auto_name: false,
-            task_of: None,
-            max_agents: 3,
-            task_worktrees: true,
+            thread_of: None,
+            max_threads: 3,
+            thread_worktrees: true,
             lead: false,
             created_at: 0,
         }

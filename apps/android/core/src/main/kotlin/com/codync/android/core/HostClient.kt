@@ -1,13 +1,16 @@
 package com.codync.android.core
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class Bot(
     val id: String,
@@ -91,15 +94,19 @@ data class Bot(
     val agentCommands: List<AgentCommand> = emptyList(),
     /** What it keeps running on the computer. Empty from an older host, and for a group. */
     val devServers: List<DevServer> = emptyList(),
-    /** Its box ([WorkItem]): every live or waiting item in dispatch order, then the ones ended in the last day. Empty from a host before the box, and for a group. */
+    /** Its box ([WorkTask]): every live or waiting task in dispatch order, then the ones ended in the last day. Empty from a host before the box, and for a group. */
     @Serializable(with = WorkSerializer::class)
-    val work: List<WorkItem> = emptyList(),
-    /** The most agents it runs at once; null from a host before the box. */
-    @Serializable(with = MaxAgentsSerializer::class)
-    val maxAgents: Int? = null,
-    /** A task that starts while another of its tasks works in the same repository gets a git worktree of its own; null from an older host. */
-    val taskWorktrees: Boolean? = null,
-    /** Its folder is in a git repository: where [taskWorktrees] matters. */
+    val work: List<WorkTask> = emptyList(),
+    /** The most threads it runs at once; null from a host before the box. */
+    // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
+    @JsonNames("maxAgents")
+    @Serializable(with = MaxThreadsSerializer::class)
+    val maxThreads: Int? = null,
+    /** A thread that starts while another of its threads works in the same repository gets a git worktree of its own; null from an older host. */
+    // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
+    @JsonNames("taskWorktrees")
+    val threadWorktrees: Boolean? = null,
+    /** Its folder is in a git repository: where [threadWorktrees] matters. */
     val gitRepo: Boolean = false,
     /** Git is on the computer; null from an older host, which is counted as having it ([gitState]). */
     val gitInstalled: Boolean? = null,

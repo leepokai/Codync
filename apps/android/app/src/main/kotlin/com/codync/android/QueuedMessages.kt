@@ -47,7 +47,7 @@ internal val AppState.supportsQueueActions: Boolean
 
 /**
  * The user's messages waiting behind the bot's work, as iOS `QueuedMessages`: each one line, sent now into the running
- * turn ([steer]) or taken back ([remove]): the chat's own unless said (a thread's go by its item).
+ * turn ([steer]) or taken back ([remove]): the chat's own unless said (a thread's go by its task).
  */
 @Composable internal fun QueuedMessages(entries: List<Entry>, state: AppState, store: AppStore, modifier: Modifier = Modifier,
     steer: (Entry) -> Unit = { store.steer(it) }, remove: (Entry) -> Unit = { store.unqueue(it) }) {

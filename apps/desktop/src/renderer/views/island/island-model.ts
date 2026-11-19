@@ -7,8 +7,8 @@ import { VOICE_SHORTCUT_KEYS, type VoiceKey, type VoiceShortcut } from '@shared/
 import { HostClient, HostError, type HostTransport } from '../../client/host-client'
 import { Observable } from '../../lib/observable'
 import { pref, prefs } from '../../lib/prefs'
-import { Dictation } from '../thread/dictation'
-import { dictationPlatform } from '../thread/dictation-platform'
+import { Dictation } from '../chat/dictation'
+import { dictationPlatform } from '../chat/dictation-platform'
 
 /**
  * The island has no connection of its own: a call reaches the host of the computer `ref`'s bot is

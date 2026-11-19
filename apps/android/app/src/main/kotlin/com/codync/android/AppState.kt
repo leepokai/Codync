@@ -96,10 +96,10 @@ data class AppState(
     val selectedBot: String? = null,
     /** A call to start in this bot's chat once it shows ("Talk to Codync"). */
     val callRequest: String? = null,
-    /** A bot whose details open over its chat once it shows, at the thread of the item named (null: its Details page): a heading or a row of the view of all bots' work. */
+    /** A bot whose details open over its chat once it shows, at the thread of the task named (null: its Details page): a heading or a row of the view of all bots' work. */
     val detailsRequest: Pair<String, String?>? = null,
-    /** A bot and the item of its whose card its chat brings into view once it holds it (a needs-you row of the view of all bots' work). */
-    val cardRequest: Pair<String, WorkItem>? = null,
+    /** A bot and the task of its whose card its chat brings into view once it holds it (a needs-you row of the view of all bots' work). */
+    val cardRequest: Pair<String, WorkTask>? = null,
     val trace: Boolean = false,
     val busy: Set<String> = emptySet(),
     /** Chats that page back no further, and why: their earlier row is dropped. */
@@ -109,9 +109,9 @@ data class AppState(
     val artifacts: ArtifactCache = ArtifactCache(),
     /** Each chat's Library as last fetched, by chat ID (its artifacts as `artifacts` has them). */
     val library: Map<String, List<LibraryItem>> = emptyMap(),
-    /** The transcripts of the background tasks whose details are open, by task id; never part of [entries]. */
-    val taskEntries: Map<String, List<Entry>> = emptyMap(),
-    /** The user's messages to a thread on their way or refused, by item id, until the thread's transcript has them; in memory only, like the transcript. */
+    /** The transcripts of the threads that are open, by thread id; never part of [entries]. */
+    val threadEntries: Map<String, List<Entry>> = emptyMap(),
+    /** The user's messages to a thread on their way or refused, by task id, until the thread's transcript has them; in memory only, like the transcript. */
     val threadSends: Map<String, List<PendingSend>> = emptyMap(),
     val plugins: PluginListing? = null,
     val voice: VoiceCallViewState? = null,

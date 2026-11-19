@@ -156,7 +156,7 @@ pub fn report_panics(hub: &Arc<Hub>) {
     }));
 }
 
-/// Reports a failure the host got past but that should never happen (a box that won't save, a task that is gone):
+/// Reports a failure the host got past but that should never happen (a box that won't save, a thread that is gone):
 /// `what` failed, a literal written in the code, and where it was noticed; never the error's text. Queued like a
 /// panic, so it is safe under any lock.
 // ponytail: once per place while the host runs, so a full disk isn't a flood; count them and send the count if how
@@ -170,7 +170,7 @@ pub fn unexpected(hub: &Hub, what: &'static str) {
 }
 
 /// Logs a failure the host got past and reports it ([`unexpected`]) under one name, so the log's line and the issue
-/// never drift apart: `host_error!(hub, "couldn't save an item's end", task = %cfg.id)`, the fields as
+/// never drift apart: `host_error!(hub, "couldn't save a task's end", thread = %cfg.id)`, the fields as
 /// `tracing::error!` takes them. The place reported is the caller's.
 macro_rules! host_error {
     ($hub:expr, $what:literal $(, $($fields:tt)+)?) => {{
@@ -281,9 +281,9 @@ mod tests {
     #[test]
     fn a_handled_failure_is_told_by_its_place_once() {
         let at = Location::caller();
-        let p = Report::handled("couldn't save an item's end", at).properties();
+        let p = Report::handled("couldn't save a task's end", at).properties();
         let e = &p["$exception_list"][0];
-        assert_eq!((e["type"].as_str(), e["value"].as_str()), (Some("HostError"), Some("couldn't save an item's end")));
+        assert_eq!((e["type"].as_str(), e["value"].as_str()), (Some("HostError"), Some("couldn't save a task's end")));
         assert_eq!(e["mechanism"], json!({"type": "handled", "handled": true, "synthetic": false}));
         let frame = &e["stacktrace"]["frames"][0];
         assert_eq!((frame["filename"].as_str(), frame["lineno"].as_u64()), (Some(file!()), Some(u64::from(at.line()))));
@@ -295,13 +295,13 @@ mod tests {
     fn a_logged_failure_is_reported_from_where_it_was_logged() {
         let hub = crate::chat::calls::context::tests::hub();
         let line = line!() + 1;
-        host_error!(&hub, "couldn't hand work to a task", task = "t1");
+        host_error!(&hub, "couldn't hand work to a thread", thread = "t1");
         let mut rx = hub.analytics.rx.locked().take().expect("nothing read it yet");
         let Ok(Msg::Report(report)) = rx.try_recv() else { panic!("nothing was reported") };
         let at = &report.frames[0];
         assert_eq!(
             (report.value.as_str(), at.file.as_deref(), at.line),
-            ("couldn't hand work to a task", Some(file!()), Some(line))
+            ("couldn't hand work to a thread", Some(file!()), Some(line))
         );
     }
 

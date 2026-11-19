@@ -3,7 +3,7 @@
 
 use super::{Event, platform_of};
 use crate::api::devices::Caller;
-use crate::chat::tasks::Steer;
+use crate::chat::work::Steer;
 use crate::hub::Hub;
 use crate::store::BotConfig;
 use codync_mem::compaction::Threshold;
@@ -127,10 +127,10 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             Event::ComputerRenamed
         }
         "deleteBot" => Event::BotDeleted,
-        // To an item's thread: what came of it is the answer's to say (`answered`). Never the text.
-        "send" if b["itemId"].is_string() => Event::WorkMessaged,
-        // Send now and Remove on a message that waits in an item's thread.
-        "steer" | "unqueue" if b["itemId"].is_string() => {
+        // To a task's thread: what came of it is the answer's to say (`answered`). Never the text.
+        "send" if b["taskId"].is_string() => Event::WorkMessaged,
+        // Send now and Remove on a message that waits in a task's thread.
+        "steer" | "unqueue" if b["taskId"].is_string() => {
             p.insert("how".into(), (if method == "steer" { "sendNow" } else { "remove" }).into());
             p.insert("by".into(), "user".into());
             Event::WorkSteered
@@ -388,7 +388,7 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
 /// `action`) as `network_failed` with `stage` `action`, a connector edit, a login profile, a voice server, a
-/// speech server, a team change and a message to an item's thread report their category and a credentials
+/// speech server, a team change and a message to a task's thread report their category and a credentials
 /// reset or a computer rename `other`, never the message; other failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     match event {
@@ -417,10 +417,10 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
             p.insert("error".into(), category.into());
             Some((event, p))
         }
-        // `read_only`: a routine's run or another bot's request. `not_started`, `gone`: no task to write to.
+        // `read_only`: a routine's run or another bot's request. `not_started`, `gone`: no thread to write to.
         // `text_only`: files, a quote or a call.
         Event::WorkMessaged => {
-            let category = error.downcast_ref::<crate::chat::tasks::ThreadRefused>().map_or("other", |e| e.category);
+            let category = error.downcast_ref::<crate::chat::work::ThreadRefused>().map_or("other", |e| e.category);
             p.insert("outcome".into(), "failed".into());
             p.insert("error".into(), category.into());
             Some((event, p))

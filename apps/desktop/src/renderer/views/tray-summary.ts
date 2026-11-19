@@ -49,7 +49,7 @@ function canvasImage(key: string, width: number, height: number, draw: (ctx: Can
 
 function avatarIcon(bot: Bot) {
   const bitmap = iconBitmap(bot.customIcon)?.image
-  // The dot follows how the bot stands outside its chat: an item waiting on the user shows it too.
+  // The dot follows how the bot stands outside its chat: a task waiting on the user shows it too.
   const asks = outsideStatus(bot) === 'needsInput'
   const key = `bot|${asks}|${bot.customIcon?.dataUrl ?? ""}|${bot.customIcon?.tinted}|${bitmap?.complete}|${bot.id}|${bot.avatarShape}|${bot.avatarColor}|${bot.status}|${bot.unread > 0}`
   return canvasImage(key, 20, 20, (ctx) => {

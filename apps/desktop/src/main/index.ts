@@ -127,7 +127,7 @@ function openPairing() {
     height: 420,
     useContentSize: true,
     resizable: false,
-    title: 'Pair iPhone',
+    title: 'Pair phone',
     show: false,
     backgroundColor: background(),
     webPreferences: webPreferences(join(__dirname, '../preload/index.js')),

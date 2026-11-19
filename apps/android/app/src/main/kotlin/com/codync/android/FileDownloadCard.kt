@@ -72,7 +72,7 @@ import kotlinx.coroutines.delay
             onClick(label = translate(if (view != null) "View" else if (busy) "Cancel download" else "Download")) { (view ?: save)(); true }
         }.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (file.showsAsImage) SharedImage(file, entry.id, 720, state, store, Modifier.sizeIn(maxHeight = 280.dp)
-            .clip(RoundedRectangle(10.dp)).plainButton { viewing = true }.semantics { contentDescription = file.name })
+            .clip(RoundedRectangle(10.dp)).plainButton { viewing = true })
         FileRow(file, download, caption, save)
     }
 
@@ -87,8 +87,7 @@ import kotlinx.coroutines.delay
             Text(file.name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(caption, style = Type.caption2, color = Palette.secondary)
         }
-        Box(Modifier.size(48.dp).plainButton(action = save),
-            contentAlignment = Alignment.Center) {
+        Box(Modifier.size(48.dp).plainButton(action = save), contentAlignment = Alignment.Center) {
             Symbol(if (download is FileDownloadState.Downloading) "xmark" else "arrow.down.to.line", size = 20.dp, tint = Palette.text)
         }
     }

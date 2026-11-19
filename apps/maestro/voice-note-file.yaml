@@ -43,8 +43,9 @@ onFlowComplete:
     visible: "note.wav, 0:00 / 0:04.*"
     timeout: 20000
 # The row is one element, "<file name>, <clock>" — not the file card's "<file name>, <size>": that label, and a
-# separate Download row or button, are what the old card read ("note.wav, 62.6 kB").
-- assertNotVisible: "note.wav, [0-9.]+ *(bytes|B|kB|KB|MB|GB)"
+# separate Download row or button, are what the old card read ("note.wav, 62.6 kB"). The space before the unit is
+# a non-breaking one where the platform's formatter uses it (iOS's ByteCountFormatter does).
+- assertNotVisible: 'note.wav,[  ]*[0-9.]+[  ]*(bytes|B|kB|KB|MB|GB)'
 - assertNotVisible: "^Download .*"
 # The message's menu carries Download, after Copy, as it does for a voice note inside a message; its own text is
 # only the computer's fallback (the file's name and size), so it offers no Select Text.

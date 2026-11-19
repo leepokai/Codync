@@ -82,12 +82,18 @@
   outline: 2px solid var(--secondary);
   outline-offset: 2px;
 }
-/* A message's voice note, at the top of its bubble: no card of its own, the text follows under it. The row keeps the
-   text bubble's padding: the play glyph sits on the text's edge, its button's hover chip inside the bubble. */
+/* A voice note's player. Inside a message it opens the bubble (no card of its own, the text follows under it) and
+   keeps the bubble's padding, the play glyph on the text's edge; sent on its own it is a bubble of its own with the
+   file's name under the row. */
 .voice-note {
   min-width: 220px;
   margin-bottom: 8px;
   border-radius: var(--radius-m);
+}
+.voice-note.bubble {
+  margin-bottom: 0;
+  max-width: 380px;
+  border-radius: var(--radius-l);
 }
 .voice-note:focus-visible {
   outline: 2px solid var(--secondary);

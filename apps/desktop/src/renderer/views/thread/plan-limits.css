@@ -1,0 +1,57 @@
+/* The plan limits above the message box. */
+.plan-limits {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  padding: 0 16px 6px;
+  font-size: 12px;
+  color: var(--secondary);
+  font-variant-numeric: tabular-nums;
+}
+.plan-limit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  --limit: var(--accent);
+}
+.plan-limit.warn {
+  --limit: var(--warning);
+}
+.plan-limit.over {
+  --limit: var(--danger);
+}
+.plan-limit-title {
+  color: var(--tertiary);
+}
+.plan-limit-value {
+  color: var(--limit);
+  font-weight: 600;
+}
+.plan-limit-bar {
+  position: relative;
+  display: inline-block;
+  width: 64px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--separator, rgba(128, 128, 128, 0.25));
+}
+.plan-limit-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: var(--limit);
+}
+.plan-limit-pace {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--secondary);
+}
+.plan-limit-reset,
+.plan-limit-day {
+  color: var(--tertiary);
+}

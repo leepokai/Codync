@@ -37,6 +37,7 @@ import { BotEditorView } from '../bots/BotEditorView'
 import { FormSheet } from '../marketplace/pieces'
 import { CallView } from '../call/CallView'
 import { MacChatButton } from './MacChatButton'
+import { PlanLimits } from './PlanLimits'
 import { ArtifactView } from '../library/ArtifactView'
 import './thread.css'
 import './composer.css'
@@ -242,6 +243,7 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
             // The artifact over the chat has its own box (two would both take the voice shortcut).
             <>
               <WorkCapsule botId={botId} open={openWork} />
+              <PlanLimits botId={botId} />
               <QueuedMessages botId={botId} />
               <Composer
                 botId={botId}

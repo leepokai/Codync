@@ -1,4 +1,4 @@
-//! When Codync's MCP layout changes, the host opens a fresh session so bridges are sent again (leepokai/Codync#508).
+//! MCP layout changes and OpenCode per-turn `session/load` with `mcpServers` (leepokai/Codync#508).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 

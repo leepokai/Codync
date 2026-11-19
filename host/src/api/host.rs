@@ -79,6 +79,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "name": crate::remote::managed::computer_name(&hub.store),
                 "version": env!("CARGO_PKG_VERSION"),
                 "minApp": crate::compat::MIN_APP,
+                // Groups can carry a shared workspace folder (docs/features/group-workspace.md). Older hosts
+                // send no flag, and a client's group editor hides the option there (patching it would be lost).
+                "groupWorkspace": true,
                 // What a client's copy of the conversation was synced under; it holds across versions.
                 "schema": crate::store::SCHEMA,
                 // Whether `installHostUpdate` can update this computer, from here or a phone.

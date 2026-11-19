@@ -94,6 +94,8 @@ pub struct Bot {
     /// A group chat: several bots and the user, no agent of its own.
     pub group: bool,
     pub members: Vec<String>,
+    /// A group's shared workspace folder; `None` for none (or a host before group workspaces).
+    pub workspace: Option<String>,
     /// Where the running turn talks: a chat (`None` = its own).
     pub working_chat: Option<String>,
     /// Its event box: the working tasks, then the waiting in the order they will be taken, then those ended in the
@@ -276,6 +278,7 @@ impl Bot {
             last_at: v["lastAt"].as_i64().unwrap_or(0),
             group: v["kind"] == "group",
             members: strs(&v["members"]),
+            workspace: v["workspace"].as_str().map(str::to_owned),
             working_chat: v["workingChat"].as_str().map(str::to_owned),
             work: WorkTask::list(&v["work"]),
             max_threads: work::max_threads(&v["maxThreads"]),

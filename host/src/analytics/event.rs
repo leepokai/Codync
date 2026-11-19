@@ -56,6 +56,8 @@ pub enum Event {
     OwnFolderVersioned,
     /// Saving a version of a bot's own folder failed (`stage`).
     OwnFolderSaveFailed,
+    /// A group's shared workspace folder wasn't there when members were prompted (`chat::group`).
+    GroupWorkspaceUnavailable,
     /// Codync started summarizing a bot's chat (`agent::bot::compaction`).
     ContextCompacted,
     UsageReadFailed,
@@ -231,6 +233,7 @@ impl Event {
             Self::AgentRetired => "agent_retired",
             Self::OwnFolderVersioned => "own_folder_versioned",
             Self::OwnFolderSaveFailed => "own_folder_save_failed",
+            Self::GroupWorkspaceUnavailable => "group_workspace_unavailable",
             Self::ContextCompacted => "context_compacted",
             Self::UsageReadFailed => "usage_read_failed",
             Self::SessionReset => "session_reset",

@@ -232,6 +232,7 @@
     "hello.computerId": "string",
     "hello.credentialsReset": "bool",
     "hello.device": "string",
+    "hello.groupWorkspace": "bool",
     "hello.home": "string",
     "hello.hostId": "string",
     "hello.icons": "object",

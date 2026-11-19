@@ -63,8 +63,16 @@ pub(super) fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::super
                 put_line(buf, inner.x + 2, y, 2, &avatar(app, b));
                 put(buf, inner.x + 5, y, 10, &b.name, t.bold.patch(base));
                 put(buf, inner.x + 16, y, 10, if b.group { "group" } else { &b.backend }, t.secondary.patch(base));
-                let cwd =
-                    if b.group { format!("{} bots", b.members.len()) } else { truncate(&b.folder(&app.home), 18) };
+                let cwd = if b.group {
+                    let bots =
+                        if b.members.len() == 1 { "1 bot".to_owned() } else { format!("{} bots", b.members.len()) };
+                    match b.workspace.as_deref().map(std::path::Path::new).and_then(std::path::Path::file_name) {
+                        Some(folder) => format!("{bots} · {}", folder.to_string_lossy()),
+                        None => bots,
+                    }
+                } else {
+                    truncate(&b.folder(&app.home), 18)
+                };
                 put(buf, inner.x + 27, y, 19, &cwd, t.secondary.patch(base));
                 let (pv, ps) = preview(b);
                 let room = inner.width.saturating_sub(47);

@@ -107,4 +107,20 @@ mod tests {
         assert_eq!(mode(json!({"backend": "codex", "mode": "read-only"})).as_deref(), Some("read-only"));
         assert_eq!(mode(json!({"name": "b"})).as_deref(), Some("plan"));
     }
+
+    #[test]
+    fn a_group_workspace_is_set_kept_or_cleared_by_the_patch() {
+        let stored: BotConfig = serde_json::from_value(
+            json!({"id": "g", "kind": "group", "name": "Crew", "members": ["a"], "workspace": "/old/team"}),
+        )
+        .expect("a group config");
+        let workspace = |patch| patched(&stored, &patch).expect("a valid patch").workspace;
+        assert_eq!(
+            workspace(json!({"id": "g", "workspace": "/new/team"})).as_deref(),
+            Some("/new/team"),
+            "a path sets it"
+        );
+        assert_eq!(workspace(json!({"id": "g", "workspace": null})), None, "null clears it");
+        assert_eq!(workspace(json!({"id": "g", "name": "Renamed"})).as_deref(), Some("/old/team"), "left out: kept");
+    }
 }

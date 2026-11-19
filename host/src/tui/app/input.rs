@@ -43,7 +43,7 @@ impl App {
             Overlay::Group(g) => match g.field {
                 GroupField::Name => Some(&mut g.name),
                 GroupField::About => Some(&mut g.about),
-                GroupField::Bots => None,
+                GroupField::Folder | GroupField::Bots => None,
             },
             Overlay::Form(f) => match f.current() {
                 Field::Name => Some(&mut f.name),

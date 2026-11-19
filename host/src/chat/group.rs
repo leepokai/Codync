@@ -14,6 +14,7 @@
 //! ([`rooms`]).
 
 mod rooms;
+mod workspace;
 
 use crate::agent::bot::{Cmd, NoticeStyle};
 use crate::hub::{BotStatus, Hub};
@@ -26,6 +27,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::oneshot;
+pub use workspace::{Workspaces, folders};
 
 const MAX_ROUNDS: usize = 3;
 /// A member's turn that runs longer counts as a pass (a test shortens it: `Rooms::set_member_timeout`).
@@ -402,6 +404,10 @@ fn member_prompt(hub: &Hub, group: &BotConfig, members: &[BotConfig], me: &BotCo
          nothing to add, a reaction and \"{PASS}\" agrees without a message."
     ));
     out.push(String::new());
+    if let Some(section) = workspace::section(hub, group) {
+        out.push(section);
+        out.push(String::new());
+    }
 
     let seen = hub.store.last_spoke(lane, &me.id);
     let mut lines: Vec<String> = vec![];

@@ -308,6 +308,17 @@ pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Opti
                     let picked = Threshold::deserialize(&b["compaction"]).unwrap_or_default();
                     p.insert("compaction".into(), picked.kind().into());
                 }
+                // A team's shared folder as a state, never its path.
+                if fields.iter().any(|f| f == "workspace") {
+                    let had = row.config.workspace.is_some();
+                    let has = b.get("workspace").and_then(Value::as_str).is_some_and(|w| !w.is_empty());
+                    let state = match (had, has) {
+                        (false, true) => "set",
+                        (true, false) => "cleared",
+                        _ => "changed",
+                    };
+                    p.insert("workspace".into(), state.into());
+                }
                 p.insert("fields".into(), fields.into());
             }
         }

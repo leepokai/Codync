@@ -64,15 +64,18 @@ impl Actor {
         slots
     }
 
-    /// What every session request carries: the folder and MCP servers, and the memory folders for an agent that
-    /// takes folders besides its own.
+    /// What every session request carries: the folder and MCP servers, and the folders besides its own an agent
+    /// may work in when it takes them: the memory folders, then the workspaces of the bot's groups.
     fn session_params(&self, servers: &Value, session: Option<&str>) -> Value {
         let mut params = json!({"cwd": self.cfg.cwd, "mcpServers": servers});
         if let Some(sid) = session {
             params["sessionId"] = sid.into();
         }
         if self.conn.as_ref().is_some_and(|c| c.sessions.additional_directories) {
-            params["additionalDirectories"] = json!(memory::files::folders(&self.cfg.as_owner()));
+            let mut folders: Vec<String> =
+                memory::files::folders(&self.cfg.as_owner()).iter().map(|f| f.to_string_lossy().into_owned()).collect();
+            folders.extend(crate::chat::group::folders(&self.hub.store, self.cfg.owner()));
+            params["additionalDirectories"] = json!(folders);
         }
         params
     }

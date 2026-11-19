@@ -1,6 +1,6 @@
 //! Creating, changing and deleting bots.
 
-use super::{Hub, patch, sections, validate};
+use super::{Hub, patch, sections, validate_with};
 use crate::LockExt;
 use crate::agent::bot::Cmd;
 use crate::store::BotConfig;
@@ -11,7 +11,7 @@ use std::sync::Arc;
 impl Hub {
     /// Makes `cfg` ready to save. Called under `emit_lock`, with the save: its login profile can't be removed in
     /// between (`login_profiles::remove`).
-    fn settle_config(&self, cfg: &mut BotConfig) -> Result<()> {
+    fn settle_config(&self, cfg: &mut BotConfig, workspace_checked: bool) -> Result<()> {
         crate::agent::login_profiles::settle(&self.store, cfg)?;
         crate::agent::fallback::tidy(cfg);
         cfg.section = sections::normalize_section(cfg.section.as_deref())?;
@@ -19,7 +19,7 @@ impl Hub {
         // stalls every bot's events until it answers. Upgrade: build and validate outside the lock from a
         // snapshot, then save under it only if the stored config is unchanged (compare the serialized configs,
         // not rev), else retry.
-        validate(cfg)?;
+        validate_with(cfg, workspace_checked)?;
         crate::agent::workspace::prepare(cfg)
     }
 
@@ -41,7 +41,7 @@ impl Hub {
         }
         {
             let _g = self.emit_lock.locked();
-            self.settle_config(&mut cfg)?;
+            self.settle_config(&mut cfg, true)?;
             self.store.save_bot(&cfg)?;
         }
         crate::network::publish(self);
@@ -64,7 +64,9 @@ impl Hub {
             if cfg.is_group() {
                 cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
             }
-            self.settle_config(&mut cfg)?;
+            // A folder gone since it was saved doesn't block a rename or a member change.
+            let workspace_checked = cfg.workspace != row.config.workspace;
+            self.settle_config(&mut cfg, workspace_checked)?;
             crate::agent::own_memory::settle(&mut cfg, &row.config, patch);
             self.store.save_bot(&cfg)?;
             (row.config, cfg)
@@ -78,6 +80,14 @@ impl Hub {
                 crate::chat::work::fallbacks_changed(self, &cfg);
             }
             self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
+        } else if cfg.workspace != before.workspace || cfg.members != before.members {
+            // A session carries `additionalDirectories` when it opens: a new team folder (or a new roster, which
+            // decides whose folders it gets) reaches members by starting their agent again before its next turn.
+            let members: std::collections::BTreeSet<&str> =
+                before.members.iter().chain(cfg.members.iter()).map(String::as_str).collect();
+            for member in members {
+                let _ = self.send_cmd(member, Cmd::RefreshTools);
+            }
         }
         self.emit_bot(&id);
         crate::usage::bots_changed(self);

@@ -447,9 +447,16 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
 pub(super) fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm) {
     let t = theme();
     let bots = app.group_candidates(&g.members);
-    // A new group gets its About afterwards, in the editor.
+    // A new group gets its About afterwards, in the editor; a folder takes a host with group workspaces.
     let about = g.group_id.is_some();
-    let top = if about { 4 } else { 2 };
+    let folder = about && app.group_workspace;
+    let top = if folder {
+        6
+    } else if about {
+        4
+    } else {
+        2
+    };
     let r = centered(area, 74, u(bots.len() + 8).saturating_add(top).max(16));
     let title = tr(if about { "Group chat" } else { "New group chat" });
     let inner = frame_box(buf, r, t.text, t.panel, Some((title.as_ref(), t.text)));
@@ -478,6 +485,24 @@ pub(super) fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm)
             "What this group works on (optional)",
             g.field == GroupField::About,
             false,
+        );
+    }
+    if folder {
+        put(buf, inner.x, inner.y + 4, 8, tr("Workspace").as_ref(), label(g.field == GroupField::Folder));
+        let current = if g.workspace.is_empty() {
+            tr("Each keeps its own folder").to_string()
+        } else {
+            std::path::Path::new(&g.workspace)
+                .file_name()
+                .map_or_else(|| g.workspace.clone(), |f| f.to_string_lossy().into_owned())
+        };
+        put(
+            buf,
+            inner.x + 8,
+            inner.y + 4,
+            inner.width.saturating_sub(8),
+            &current,
+            if g.field == GroupField::Folder { t.bold } else { t.dim.patch(t.panel) },
         );
     }
     put(buf, inner.x, inner.y + top, inner.width, &format!("Bots · {}", g.members.len()), label(on_bots));
@@ -536,7 +561,13 @@ pub(super) fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm)
         buf,
         inner.right(),
         by,
-        if on_bots { "↑↓ move · space pick · tab name" } else { "tab next field" },
+        if on_bots {
+            "↑↓ move · space pick · tab name"
+        } else if g.field == GroupField::Folder {
+            "↵ choose · ⌫ clear"
+        } else {
+            "tab next field"
+        },
         t.dim.patch(t.panel),
     );
 }

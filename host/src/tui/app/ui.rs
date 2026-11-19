@@ -311,24 +311,29 @@ impl Form {
 pub enum GroupField {
     Name,
     About,
+    /// The team's shared folder; only when the host has group workspaces and the group already exists.
+    Folder,
     Bots,
 }
 
 impl GroupField {
-    /// The field after this one; a new group has no About (it is written afterwards, in the editor).
-    pub(super) fn next(self, about: bool) -> Self {
+    /// The field after this one; a new group has no About (it is written afterwards, in the editor), and Folder
+    /// comes only where the host keeps a group workspace.
+    pub(super) fn next(self, about: bool, folder: bool) -> Self {
         match self {
             Self::Name if about => Self::About,
-            Self::Name | Self::About => Self::Bots,
+            Self::About if folder => Self::Folder,
+            Self::Name | Self::About | Self::Folder => Self::Bots,
             Self::Bots => Self::Name,
         }
     }
 
-    pub(super) fn prev(self, about: bool) -> Self {
+    pub(super) fn prev(self, about: bool, folder: bool) -> Self {
         match self {
             Self::Name => Self::Bots,
-            Self::Bots if about => Self::About,
-            Self::About | Self::Bots => Self::Name,
+            Self::Bots if folder => Self::Folder,
+            Self::Bots | Self::Folder if about => Self::About,
+            Self::About | Self::Bots | Self::Folder => Self::Name,
         }
     }
 }
@@ -341,6 +346,8 @@ pub struct GroupForm {
     /// What the group is for; sent as `description`, shown to its members. Edited only:
     /// a new group starts without one.
     pub about: Editor,
+    /// The team's shared workspace folder; `""` for none. A new group gets one afterwards, in the editor.
+    pub workspace: String,
     /// Picked bot ids, in the order they were picked.
     pub members: Vec<String>,
     pub field: GroupField,

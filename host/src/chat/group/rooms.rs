@@ -54,14 +54,14 @@ impl Room {
 
 /// Room turns per group (keyed by its lane's chat).
 pub struct Rooms {
-    rooms: Mutex<HashMap<String, Room>>,
+    by_group: Mutex<HashMap<String, Room>>,
     /// How long the room waits on a member: [`MEMBER_TIMEOUT`].
     member_timeout: Mutex<Duration>,
 }
 
 impl Default for Rooms {
     fn default() -> Self {
-        Self { rooms: Mutex::default(), member_timeout: Mutex::new(MEMBER_TIMEOUT) }
+        Self { by_group: Mutex::default(), member_timeout: Mutex::new(MEMBER_TIMEOUT) }
     }
 }
 
@@ -69,7 +69,7 @@ impl Rooms {
     /// The user wrote in `lane`: its room turn, which ends the one running there. Marked running before it is
     /// spawned, so a late answer landing meanwhile waits for it instead of replacing it.
     pub(super) fn start(&self, lane: &Lane) -> Turn {
-        let mut rooms = self.rooms.locked();
+        let mut rooms = self.by_group.locked();
         let room = rooms.entry(lane.chat.clone()).or_default();
         room.pending = None;
         room.late_turns = 0;
@@ -79,7 +79,7 @@ impl Rooms {
     /// A member's answer that @-mentions someone landed at `seq` after its room turn stopped waiting: the late
     /// room turn to run now, or `None` when one runs (it follows the answer up as it ends) or none is allowed.
     pub(super) fn late(&self, lane: &Lane, seq: i64) -> Option<Turn> {
-        let mut rooms = self.rooms.locked();
+        let mut rooms = self.by_group.locked();
         let room = rooms.entry(lane.chat.clone()).or_default();
         room.pending = Some(room.pending.map_or(seq, |p| p.min(seq)));
         if room.running.is_some() {
@@ -90,7 +90,7 @@ impl Rooms {
 
     /// `epoch`'s room turn ended: the late room turn that follows up what landed meanwhile, if any.
     pub(super) fn ended(&self, lane: &Lane, epoch: u64) -> Option<Turn> {
-        let mut rooms = self.rooms.locked();
+        let mut rooms = self.by_group.locked();
         let room = rooms.get_mut(&lane.chat)?;
         if room.running != Some(epoch) {
             return None;
@@ -100,13 +100,13 @@ impl Rooms {
     }
 
     pub fn current(&self, lane: &Lane, epoch: u64) -> bool {
-        self.rooms.locked().get(&lane.chat).is_some_and(|room| room.epoch == epoch)
+        self.by_group.locked().get(&lane.chat).is_some_and(|room| room.epoch == epoch)
     }
 
     /// Stop in `group`: ends its room turn, and late answers start none until the user writes again. `false`
     /// when no room turn ever ran there.
     pub(super) fn stop(&self, group: &str) -> bool {
-        let mut rooms = self.rooms.locked();
+        let mut rooms = self.by_group.locked();
         let Some(room) = rooms.get_mut(group) else { return false };
         room.epoch += 1;
         room.pending = None;
@@ -126,13 +126,13 @@ impl Rooms {
     /// A room turn is running in `lane`'s group.
     #[cfg(test)]
     pub(super) fn running(&self, lane: &Lane) -> bool {
-        self.rooms.locked().get(&lane.chat).is_some_and(|room| room.running.is_some())
+        self.by_group.locked().get(&lane.chat).is_some_and(|room| room.running.is_some())
     }
 
     /// A late answer in `lane`'s group waits for the running room turn to end.
     #[cfg(test)]
     pub(super) fn pending(&self, lane: &Lane) -> bool {
-        self.rooms.locked().get(&lane.chat).is_some_and(|room| room.pending.is_some())
+        self.by_group.locked().get(&lane.chat).is_some_and(|room| room.pending.is_some())
     }
 }
 

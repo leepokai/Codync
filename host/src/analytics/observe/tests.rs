@@ -296,6 +296,36 @@ fn a_bot_edit_names_the_settings_it_changes() {
         serde_json::from_value(json!({"id": "b1", "name": "Ada", "backend": "codex", "cwd": own})).unwrap();
     assert_eq!(changed_fields(&stored, &json!({"id": "b1", "cwd": "", "fastMode": true})), ["fastMode"]);
     assert_eq!(changed_fields(&stored, &json!({"id": "b1", "cwd": "/tmp"})), ["cwd"]);
+
+    // A group's shared folder (a group never carries a cwd).
+    let stored: BotConfig =
+        serde_json::from_value(json!({"id": "g", "kind": "group", "name": "Crew", "members": ["a"]})).unwrap();
+    assert_eq!(changed_fields(&stored, &json!({"id": "g", "workspace": "/tmp/team"})), ["workspace"]);
+}
+
+fn save_group_with_workspace(hub: &Hub) {
+    let cfg: BotConfig = serde_json::from_value(
+        json!({"id": "g", "kind": "group", "name": "Crew", "members": ["a"], "workspace": "/tmp/team"}),
+    )
+    .unwrap();
+    hub.store.save_bot(&cfg).unwrap();
+}
+
+#[test]
+fn a_group_workspace_edit_reports_the_state_never_the_path() {
+    let (hub, _dir) = temp_hub();
+    let group: BotConfig =
+        serde_json::from_value(json!({"id": "g", "kind": "group", "name": "Crew", "members": ["a"]})).unwrap();
+    hub.store.save_bot(&group).unwrap();
+    let props = |b: &Value| observe_call(&hub, &Caller::Local, "updateBot", b).map(|(_, p)| p["workspace"].clone());
+
+    let json = |v: Value| json!({"id": "g", "workspace": v});
+    assert_eq!(props(&json(json!("/tmp/team"))), Some(json!("set")));
+    save_group_with_workspace(&hub);
+    assert_eq!(props(&json(json!("/tmp/elsewhere"))), Some(json!("changed")));
+    assert_eq!(props(&json(Value::Null)), Some(json!("cleared")));
+    let pathless = observe_call(&hub, &Caller::Local, "updateBot", &json(json!("/tmp/team"))).expect("tracked").1;
+    assert!(!serde_json::to_string(&pathless).unwrap().contains("/tmp/team"), "never the path");
 }
 
 #[test]

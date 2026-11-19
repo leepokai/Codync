@@ -28,6 +28,7 @@ mod sections;
 mod sync;
 mod validate;
 pub(crate) use validate::validate;
+pub(crate) use validate::validate_with;
 
 /// What a bot is doing right now (wire values: `idle` / `working` / `needsInput` / `error`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -92,6 +93,8 @@ pub struct Hub {
     pub ceilings: crate::chat::team::Ceilings,
     pub work: crate::chat::work::Work,
     pub groups: crate::chat::group::Rooms,
+    /// A group's shared folder: the room's lines about it, and the once-per-breakage notice when it's gone.
+    pub group_workspaces: crate::chat::group::Workspaces,
     /// The user's other computers (codync-network), once this one is in a network.
     pub network: crate::network::Network,
     /// Requests this computer's bots sent to bots on the other computers, until they're answered.
@@ -164,6 +167,7 @@ impl Hub {
             ceilings: crate::chat::team::Ceilings::default(),
             work: crate::chat::work::Work::default(),
             groups: crate::chat::group::Rooms::default(),
+            group_workspaces: crate::chat::group::Workspaces::default(),
             network: crate::network::Network::default(),
             waiting: crate::chat::team::remote::Waiting::default(),
             assistant: crate::chat::team::assistant::Replies::default(),

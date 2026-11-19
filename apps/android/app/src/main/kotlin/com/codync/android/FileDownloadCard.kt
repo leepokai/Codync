@@ -87,8 +87,7 @@ import kotlinx.coroutines.delay
             Text(file.name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(caption, style = Type.caption2, color = Palette.secondary)
         }
-        Box(Modifier.size(48.dp).plainButton(action = save)
-            .semantics { contentDescription = (if (download is FileDownloadState.Downloading) "Cancel download " else "Download ") + file.name },
+        Box(Modifier.size(48.dp).plainButton(action = save),
             contentAlignment = Alignment.Center) {
             Symbol(if (download is FileDownloadState.Downloading) "xmark" else "arrow.down.to.line", size = 20.dp, tint = Palette.text)
         }

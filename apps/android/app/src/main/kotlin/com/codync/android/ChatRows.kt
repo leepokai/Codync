@@ -325,7 +325,8 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
         .contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() },
             preview = { VoiceNoteMessage(entry.text, file, player, download, save, attachment, selectable = true) },
-            items = { menu.textItems(textCopyItem(context, entry.text), listOf(downloadItem)) })) {
+            items = if (attachment) { { menu.items(listOf(textCopyItem(context, entry.text), downloadItem)) } }
+                else { { menu.textItems(textCopyItem(context, entry.text), listOf(downloadItem)) } })) {
         VoiceNoteMessage(entry.text, file, player, download, save, attachment, selectable = false)
     }
 }
@@ -346,6 +347,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     Column(Modifier.background(Palette.bubbleAgent).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val failed = audio.phase == AudioPhase.Failed
+        val downloadFailed = download is FileDownloadState.Failed
         Row(Modifier.fillMaxWidth().clearAndSetSemantics {
             contentDescription = "${translate(if (attachment) file.name else "Voice note")}, $caption"
             audioSeek(audio)
@@ -360,7 +362,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
             // Steady digits, so the bar's end doesn't move as the clock runs. A failure's text fills the bar's
             // slot and centres in it, the row's 12 dp gap on both sides of the text.
             Text(caption, style = Type.caption2.copy(fontFeatureSettings = "tnum"),
-                color = if (failed) Palette.danger else Palette.secondary,
+                color = if (failed || downloadFailed) Palette.danger else Palette.secondary,
                 textAlign = if (failed) TextAlign.Center else null,
                 modifier = if (failed) Modifier.weight(1f).padding(end = 12.dp) else Modifier)
         }

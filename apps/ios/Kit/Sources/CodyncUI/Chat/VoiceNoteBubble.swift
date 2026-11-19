@@ -40,12 +40,13 @@ struct VoiceNoteBubble<Below: View>: View {
         }
     }
 
-    /// The play/pause button, the progress bar and its clock on one row; a failed play or download puts its error
-    /// in the bar's place. Download is in the message's menu.
+    /// The play/pause button, the progress bar and its clock on one row; a failed play puts its error in the bar's
+    /// place, a failed download only colours the clock's caption. Download is in the message's menu.
     private var player: some View {
         let download = model.fileDownloads.states[file.id]
         let caption = FileDownloadCard.detail(download, play: audio.state, elapsed: audio.elapsed, duration: audio.duration, size: file.size)
-        let failed = if case .failed = download { true } else { audio.state == .failed }
+        let failed = audio.state == .failed
+        let downloadFailed = if case .failed = download { true } else { false }
         // The 44 pt hit area overflows the 24 pt glyph, so the glyph lines up with the text under it.
         // A note that can't play hides the bar and puts the error in its place.
         return HStack(spacing: 12) {
@@ -53,7 +54,7 @@ struct VoiceNoteBubble<Below: View>: View {
             if !failed, let duration = audio.duration { AudioProgress(elapsed: audio.elapsed, duration: duration, seek: audio.seek) }
             // Steady digits, so the bar's end doesn't move as the clock runs. A failure's text fills the bar's
             // slot and centres in it, the row's 12 pt gap on both sides of the text.
-            Text(caption).font(.caption2.monospacedDigit()).foregroundStyle(failed ? Palette.danger : Palette.secondary)
+            Text(caption).font(.caption2.monospacedDigit()).foregroundStyle(failed || downloadFailed ? Palette.danger : Palette.secondary)
                 .frame(maxWidth: failed ? .infinity : nil, alignment: failed ? .center : .leading)
                 .padding(.trailing, failed ? 12 : 0)
         }

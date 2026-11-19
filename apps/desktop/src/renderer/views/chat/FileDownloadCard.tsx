@@ -38,7 +38,7 @@ export function VoiceNotePlayer({ entry, file, menu, named = false }: { entry: E
           <AudioIcon snapshot={snapshot} toggle={toggle} />
           {stop.playFailed ? <Text as="div" size="caption2" tone="danger" className="file-card-detail voice-note-error" grow>{stop.detail}</Text> : <>
             <AudioProgress snapshot={snapshot} seek={seek} />
-            <Text as="div" size="caption2" tone="secondary" className="file-card-detail">{stop.detail}</Text>
+            <Text as="div" size="caption2" tone={stop.failed ? 'danger' : 'secondary'} className="file-card-detail">{stop.detail}</Text>
           </>}
         </HStack>
         {named ? <Text as="div" size="subheadline" weight="semibold" truncate title={file.name}>{file.name}</Text> : null}

@@ -42,11 +42,15 @@ onFlowComplete:
 - extendedWaitUntil:
     visible: "note.wav, 0:00 / 0:04.*"
     timeout: 20000
-# Unlike a file card, the row has no Download button: the player is play, the bar and the clock.
-- assertNotVisible: "Download note.wav"
-# The message's menu carries Download, after Copy, as it does for a voice note inside a message.
+# The row is one element, "<file name>, <clock>" — not the file card's "<file name>, <size>": that label, and a
+# separate Download row or button, are what the old card read ("note.wav, 62.6 kB").
+- assertNotVisible: "note.wav, [0-9.]+ *(bytes|B|kB|KB|MB|GB)"
+- assertNotVisible: "^Download .*"
+# The message's menu carries Download, after Copy, as it does for a voice note inside a message; its own text is
+# only the computer's fallback (the file's name and size), so it offers no Select Text.
 - longPressOn:
     text: "note.wav, .*"
 - extendedWaitUntil:
     visible: "Download"
     timeout: 5000
+- assertNotVisible: "Select Text"

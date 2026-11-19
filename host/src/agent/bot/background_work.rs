@@ -1,7 +1,56 @@
-//! Whether an agent still runs something that stopping it would end, which keeps it running when it's idle.
+//! Whether an agent still runs something that stopping it would end, which keeps it running when it's idle, and
+//! whether it still runs Codync's MCP servers.
 
 use crate::agent::acp::Acp;
 use crate::agent::process::{self, JobProcess};
+
+/// Whether one of Codync's MCP servers (`codync-host mcp`) still runs under the agent. OpenCode 2.x drops them from a
+/// live session once it has been idle a while (#508). Unsure counts as running.
+#[cfg(unix)]
+pub(super) async fn codync_servers_run(acp: &Acp) -> bool {
+    let Some(leader) = acp.pid() else { return true };
+    match process::list_processes().await {
+        Ok(processes) => runs_host(&process::descendants(&processes, leader), host_program().as_deref()),
+        Err(error) => {
+            tracing::warn!(error = format!("{error:#}"), "couldn't list processes");
+            true
+        }
+    }
+}
+
+#[cfg(windows)]
+pub(super) async fn codync_servers_run(acp: &Acp) -> bool {
+    match acp.job_processes().await {
+        Ok(processes) => runs_host(&processes, host_program().as_deref()),
+        Err(error) => {
+            tracing::warn!(error = format!("{error:#}"), "couldn't list the agent's processes");
+            true
+        }
+    }
+}
+
+/// Whether `processes` hold one running the host's own program (`host`; unknown counts as running).
+fn runs_host(processes: &[JobProcess], host: Option<&str>) -> bool {
+    host.is_none_or(|host| processes.iter().any(|p| process::program_name(&p.name).eq_ignore_ascii_case(host)))
+}
+
+fn host_program() -> Option<String> {
+    std::env::current_exe().ok()?.file_name()?.to_str().map(str::to_owned)
+}
+
+/// Whether stopping an agent that dropped Codync's MCP servers (#508) would end work it runs detached, so it stays.
+/// Windows can't tell: once the servers are gone, the agent's own engine or an MCP server from the user's config looks
+/// like a dev server there ([`runs_something_else`]), so the agent starts again regardless.
+#[cfg(unix)]
+pub(super) async fn holds_restart(acp: &Acp) -> bool {
+    background_work(acp).await
+}
+
+#[cfg(windows)]
+#[allow(clippy::unused_async, reason = "the Unix one awaits")]
+pub(super) async fn holds_restart(_acp: &Acp) -> bool {
+    false
+}
 
 /// Whether something the agent started runs detached, in a session of its own, like a dev server
 /// from its shell tool. Stopping the agent would orphan it and lose track of it, so the agent
@@ -17,24 +66,22 @@ pub(super) async fn background_work(acp: &Acp) -> bool {
 #[cfg(unix)]
 async fn detached_work(leader: Option<u32>) -> bool {
     let Some(leader) = leader else { return true };
-    let Ok(exe) = std::env::current_exe() else { return true };
-    let Some(host) = exe.file_name().and_then(|n| n.to_str()) else { return true };
+    let Some(host) = host_program() else { return true };
     let listed = process::list_processes().await;
     let Ok(processes) = listed.inspect_err(|e| tracing::warn!(error = format!("{e:#}"), "couldn't list processes"))
     else {
         return true;
     };
-    detached_descendant(&processes, leader, host, process::session)
+    detached_descendant(&processes, leader, &host, process::session)
 }
 
 /// Windows has no sessions to tell a dev server from an MCP server, and stopping the agent ends everything in its
 /// job there, so the job's processes are judged by what they are ([`runs_something_else`]). Unsure counts as busy.
 #[cfg(windows)]
 pub(super) async fn background_work(acp: &Acp) -> bool {
-    let Ok(exe) = std::env::current_exe() else { return true };
-    let Some(own) = exe.file_name().and_then(|n| n.to_str()) else { return true };
+    let Some(own) = host_program() else { return true };
     match acp.job_processes().await {
-        Ok(processes) => runs_something_else(&processes, own),
+        Ok(processes) => runs_something_else(&processes, &own),
         Err(error) => {
             tracing::warn!(error = format!("{error:#}"), "couldn't list the agent's processes");
             true
@@ -177,6 +224,22 @@ mod tests {
         let agent = [process(10, 1, "/usr/local/bin/node"), process(11, 10, "node")];
         assert!(detached_descendant(&agent, 10, HOST, session));
         assert!(is_runtime("python3.12") && !is_runtime("opencode"));
+    }
+
+    /// #508: OpenCode 2.x evicts a directory's services after `experimental.location_idle_timeout` and takes the MCP
+    /// servers a session was opened with along; the engine and the user's own servers come back without them.
+    #[test]
+    fn opencode_that_dropped_codyncs_servers_is_seen() {
+        let oc = "/Users/me/.codync/agents/opencode/opencode";
+        let host = "/Applications/Codync.app/Contents/Resources/codync-host";
+        // 11 `opencode serve --stdio` under 10 `opencode acp`, with Codync's servers and the user's own.
+        let mut tree = vec![process(11, 10, oc), process(40, 11, "cua-driver")];
+        let evicted = tree.clone();
+        tree.extend([process(12, 11, host), process(13, 11, host)]);
+        assert!(runs_host(&tree, Some(HOST)));
+        assert!(!runs_host(&evicted, Some(HOST)), "after the eviction only the user's own server runs");
+        assert!(runs_host(&[process(5, 4, "CODYNC-HOST.EXE")], Some("codync-host.exe")), "Windows names");
+        assert!(runs_host(&evicted, None), "unsure counts as running");
     }
 
     #[test]

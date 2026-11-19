@@ -201,6 +201,18 @@ pub(crate) enum Adapter {
     Other,
 }
 
+/// Whether a turn checks that Codync's MCP servers still run under the agent: OpenCode 2.x drops them from its
+/// sessions once it has been idle a while (#508, `Actor::servers_dropped`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum ServerWatch {
+    /// The agent keeps them.
+    Off,
+    /// Not seen under this process yet, so their absence says nothing: they may run elsewhere, or never have started.
+    Unseen,
+    /// Seen running under it: once none does, the agent dropped them.
+    Seen,
+}
+
 #[allow(clippy::struct_excessive_bools, reason = "independent facts about the agent process")]
 pub(crate) struct Conn {
     pub(crate) acp: Arc<Acp>,
@@ -209,6 +221,7 @@ pub(crate) struct Conn {
     pub(crate) adapter: Adapter,
     /// An OpenCode older than 2, which never ends a turn its model refused: `start_first` keeps it as a last resort.
     superseded: bool,
+    servers: ServerWatch,
     /// Sessions already created or loaded in this process, and when each was last used.
     loaded: HashMap<String, Instant>,
     /// A finished routine run's session it couldn't close is still open, with its MCP servers (`release_spent`).

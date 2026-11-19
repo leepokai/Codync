@@ -65,6 +65,8 @@ pub enum Event {
     DecisionExpired,
     /// The user's choice was saved but its tool call had already stopped waiting.
     DecisionFailed,
+    /// An agent's own question (`elicitation/create`) got its reply (`action`; why it was declined: `reason`).
+    ElicitationReplied,
     ReactionAdded,
     HandoffAnswered,
     RoutineSaved,
@@ -230,6 +232,7 @@ impl Event {
             Self::DecisionAnswered => "decision_answered",
             Self::DecisionExpired => "decision_expired",
             Self::DecisionFailed => "decision_failed",
+            Self::ElicitationReplied => "elicitation_replied",
             Self::ReactionAdded => "reaction_added",
             Self::HandoffAnswered => "handoff_answered",
             Self::RoutineSaved => "routine_saved",

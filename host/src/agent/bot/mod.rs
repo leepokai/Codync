@@ -22,6 +22,7 @@ mod codex_names;
 mod commands;
 mod compaction;
 mod decisions;
+mod elicitations;
 mod fallback;
 mod fast_mode;
 mod files;
@@ -356,7 +357,7 @@ struct Actor {
     files: files::FileShares,
     /// permission entry id -> who waits for the answer
     perms: HashMap<String, updates::Answer>,
-    /// Decision card id -> the live tool call waiting for this turn's choice.
+    /// Decision card id -> the live tool call or agent question (`elicitations`) waiting for this turn's choice.
     asked: HashMap<String, decisions::Asked>,
     /// The chat's choice card whose call stopped waiting: the user's press or next message still answers it.
     open_card: Option<String>,

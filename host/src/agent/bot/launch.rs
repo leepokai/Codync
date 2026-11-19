@@ -186,12 +186,14 @@ pub(crate) async fn start_agent(
             json!({
                 "protocolVersion": 1,
                 // `session.compaction`: tell us when the agent summarizes its context.
+                // `elicitation`: the agent's own questions come as forms the user answers on a card.
                 // `parameterizedModelPicker`: Cursor lists plain models with their options
                 // (effort, fast…) instead of one fixed variant each; model discovery asks the same.
                 "clientCapabilities": {
                     "fs": {"readTextFile": false, "writeTextFile": false},
                     "terminal": false,
                     "session": {"compaction": {}},
+                    "elicitation": crate::agent::elicitation::capability(),
                     "_meta": {"parameterizedModelPicker": true},
                 },
                 "clientInfo": {"name": "codync", "title": "Codync", "version": env!("CARGO_PKG_VERSION")},

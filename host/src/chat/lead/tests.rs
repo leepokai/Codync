@@ -137,6 +137,7 @@ async fn check_ins_wait_while_the_plan_is_nearly_used_up() {
             }],
             source: "agent",
             updated_at: 0,
+            failed_at: None,
             default_login_profile: None,
             login_profiles: Vec::new(),
         }],

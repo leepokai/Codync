@@ -2228,5 +2228,7 @@
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "Crea una clave de API llamada codync con los permisos machines:read, machines:write y machines:delete.",
   "Connect {provider}": "Conectar {provider}",
   "Use the command line instead": "Usar la línea de comandos",
-  "Leave it empty to use the hostname.": "Déjalo vacío para usar el nombre de host."
+  "Leave it empty to use the hostname.": "Déjalo vacío para usar el nombre de host.",
+  "Out of date": "Desactualizado",
+  "Out of date · check failed {when}": "Desactualizado · falló {when}"
 }

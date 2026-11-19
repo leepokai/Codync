@@ -291,6 +291,19 @@
   width: 28px;
   display: flex;
 }
+.island-meter-stale .island-meter-bar,
+.island-meter-stale .island-meter-value,
+.island-usage-row.stale {
+  opacity: 0.58;
+}
+.island-usage-stale {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--warning);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .island-usage {
   flex: 1;
   min-width: 0;

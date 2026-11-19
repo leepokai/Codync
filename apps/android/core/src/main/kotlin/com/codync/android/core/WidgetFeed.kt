@@ -21,11 +21,15 @@ import kotlinx.serialization.Serializable
 enum class WidgetKind { Provider, Usage, Bots, Team }
 
 /** A limit in the Usage limits widget, named with its provider. */
-data class ProviderLimit(val provider: String, val window: UsageWindow)
+data class ProviderLimit(val provider: String, val window: UsageWindow, val stale: Boolean = false)
 
 /** Every provider's limits for the Usage limits widget: the tightest first (its headline), then the rest in report order. */
 fun usageLimits(report: UsageReport): List<ProviderLimit> {
-    val all = report.providers.flatMap { provider -> provider.limits.map { ProviderLimit(provider.name, it) } }
+    val all = report.providers.flatMap { provider ->
+        val login = provider.tightestLogin
+        val stale = login.failedAt != null && login.windows.isNotEmpty()
+        login.limits.map { ProviderLimit(provider.name, it, stale) }
+    }
     val top = all.withIndex().maxByOrNull { it.value.window.reportedPercent ?: -1.0 } ?: return emptyList()
     return listOf(top.value) + all.filterIndexed { index, _ -> index != top.index }
 }

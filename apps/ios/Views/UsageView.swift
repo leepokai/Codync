@@ -131,28 +131,49 @@ private struct ProviderLimits: View {
     let provider: UsageProvider
 
     var body: some View {
+        let singleStale = provider.loginProfiles.isEmpty && !provider.windows.isEmpty ? provider.failedAt : nil
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Mascot(provider: provider)
                 Text(provider.name).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
+                if let singleStale {
+                    Spacer(minLength: 4)
+                    staleBadge(singleStale)
+                }
             }
             if provider.loginProfiles.isEmpty {
-                windows(provider.windows)
+                windows(provider.windows, stale: singleStale != nil)
             } else {
                 ForEach(provider.logins) { login in
-                    quiet(login.name ?? L10n.tr("Default login profile"))
+                    let stale = !login.windows.isEmpty ? login.failedAt : nil
+                    HStack(spacing: 8) {
+                        quiet(login.name ?? L10n.tr("Default login profile"))
+                        if let stale {
+                            Spacer(minLength: 4)
+                            staleBadge(stale)
+                        }
+                    }
                     if login.windows.isEmpty {
                         quiet(L10n.tr("No reading yet"))
                     } else {
-                        windows(login.windows)
+                        windows(login.windows, stale: stale != nil)
                     }
                 }
             }
         }
     }
 
-    private func windows(_ windows: [UsageWindow]) -> some View {
+    private func windows(_ windows: [UsageWindow], stale: Bool) -> some View {
         ForEach(windows) { WindowLimit(window: $0, tint: provider.widgetTint) }
+            .opacity(stale ? 0.58 : 1)
+    }
+
+    private func staleBadge(_ failedAt: Int64) -> some View {
+        let when = RelativeTime.day(Date(milliseconds: failedAt))
+        return Text(L10n.fill(L10n.tr("Out of date · check failed {when}"), ["when": when]))
+            .font(.caption)
+            .foregroundStyle(Palette.attention)
+            .lineLimit(1)
     }
 
     private func quiet(_ text: String) -> some View {

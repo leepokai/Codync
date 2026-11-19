@@ -19,9 +19,12 @@ public struct AccessoryWidgetCard: View {
     private var working: Int { bots.filter { $0.isBusyOutside && !$0.needsYouOutside }.count }
     private var count: Int { needs > 0 ? needs : working > 0 ? working : bots.count }
     private var botLabel: String { needs > 0 ? (needs == 1 ? "needs you" : "need you") : working > 0 ? "working" : (bots.count == 1 ? "bot" : "bots") }
-    private var top: (name: String, window: UsageWindow)? {
-        usage.providers.flatMap { p in p.limits.map { (name: p.name, window: $0) } }
-            .max { $0.window.percent < $1.window.percent }
+    private var top: (name: String, window: UsageWindow, stale: Bool)? {
+        usage.providers.flatMap { p in
+            let login = p.tightestLogin
+            let stale = login.failedAt != nil && !login.windows.isEmpty
+            return login.limits.map { (name: p.name, window: $0, stale: stale) }
+        }.max { $0.window.percent < $1.window.percent }
     }
     private var headline: String {
         guard paired else { return "Connect a computer" }
@@ -29,23 +32,33 @@ public struct AccessoryWidgetCard: View {
         return top.map { "\($0.name) \(Int($0.window.percent.rounded()))%" } ?? "No usage yet"
     }
 
+    internal var spokenHeadline: String {
+        guard paired, kind == .usage, let top, top.stale else { return headline }
+        return "\(headline) · \(L10n.tr("Out of date"))"
+    }
+
     public var body: some View {
         Group {
             switch family {
             case .inline:
-                Label(headline, systemImage: kind == .bots ? "bubble.left.and.bubble.right" : "chart.bar")
+                Label(spokenHeadline, systemImage: kind == .bots ? "bubble.left.and.bubble.right" : (top?.stale == true ? "exclamationmark.triangle" : "chart.bar"))
                     .font(.caption).lineLimit(1)
             case .circular:
                 if !paired {
                     Image(systemName: "desktopcomputer").accessibilityLabel(headline)
                 } else if kind == .usage, let top {
                     Gauge(value: min(100, max(0, top.window.percent)), in: 0...100) {
-                        Text(top.name.prefix(2))
+                        if top.stale {
+                            Image(systemName: "exclamationmark.triangle")
+                        } else {
+                            Text(top.name.prefix(2))
+                        }
                     } currentValueLabel: {
                         Text(L10n.tr("\(Int(top.window.percent.rounded()))")).font(.system(size: 18, weight: .semibold))
                     }
                     .gaugeStyle(.accessoryCircularCapacity)
-                    .accessibilityLabel(headline)
+                    .opacity(top.stale ? 0.55 : 1)
+                    .accessibilityLabel(spokenHeadline)
                 } else {
                     VStack(spacing: 0) {
                         Text(kind == .bots ? "\(count)" : "—").font(.system(size: 24, weight: .semibold, design: .rounded))
@@ -63,7 +76,9 @@ public struct AccessoryWidgetCard: View {
                         }
                     } else if paired, let top {
                         Text(L10n.tr(top.window.title)).font(.system(size: 10)).lineLimit(1)
-                        if let reset = top.window.resetsShort() {
+                        if top.stale {
+                            Text(L10n.tr("Out of date")).font(.system(size: 9)).lineLimit(1)
+                        } else if let reset = top.window.resetsShort() {
                             Text(L10n.resetLine(reset)).font(.system(size: 9)).lineLimit(1)
                         }
                     }

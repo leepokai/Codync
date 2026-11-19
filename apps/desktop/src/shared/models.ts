@@ -530,6 +530,8 @@ export interface UsageLoginProfile {
   name: string
   windows: UsageWindow[]
   updatedAt: number
+  /** Epoch ms when the latest check failed while keeping these older windows. */
+  failedAt?: number | null
 }
 
 export interface UsageProvider {
@@ -539,6 +541,8 @@ export interface UsageProvider {
   windows: UsageWindow[]
   source: string
   updatedAt: number
+  /** Epoch ms when the latest check failed while keeping the default login's older windows. */
+  failedAt?: number | null
   /** The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it. */
   registry?: string
   /** What the default login is called, when the agent has login profiles to tell it from. */

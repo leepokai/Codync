@@ -81,4 +81,13 @@ class UsageTest {
         assertNull(unread.tightestLogin.id)
         assertNull(unread.tightest)
     }
+
+    @Test fun `a failed reading decodes failedAt on default and profile logins`() {
+        val provider = UsageReport.decode(WireJson.parseToJsonElement("""{"providers":[{"id":"claude","name":"Claude","windows":[{"id":"five_hour","label":"5-hour","percent":10}],"source":"claude","updatedAt":1,"failedAt":1234,
+            "defaultLoginProfile":"me@example.com","loginProfiles":[{"id":"p1","name":"Work","windows":[{"id":"five_hour","label":"5-hour","percent":90}],"updatedAt":1,"failedAt":5678},
+            {"id":"p2","name":"Fresh","windows":[{"id":"five_hour","label":"5-hour","percent":5}],"updatedAt":1}]}]}""")).providers.single()
+        assertEquals(1234L, provider.failedAt)
+        assertEquals(listOf(1234L, 5678L, null), provider.logins.map { it.failedAt })
+        assertEquals(5678L, provider.tightestLogin.failedAt)
+    }
 }

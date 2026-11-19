@@ -2228,5 +2228,7 @@
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "Создайте API-ключ с именем codync и правами machines:read, machines:write и machines:delete.",
   "Connect {provider}": "Подключить {provider}",
   "Use the command line instead": "Использовать командную строку",
-  "Leave it empty to use the hostname.": "Оставьте пустым, чтобы использовать имя хоста."
+  "Leave it empty to use the hostname.": "Оставьте пустым, чтобы использовать имя хоста.",
+  "Out of date": "Устарело",
+  "Out of date · check failed {when}": "Устарело · ошибка проверки {when}"
 }

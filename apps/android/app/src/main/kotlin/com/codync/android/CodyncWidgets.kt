@@ -161,6 +161,8 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
 
 @Composable private fun ProviderCard(context: Context, provider: UsageProvider, layout: ProviderLayout) {
     val tint = gaugeTint(context, provider.id)
+    val login = provider.tightestLogin
+    val stale = login.failedAt != null && login.windows.isNotEmpty()
     val top = provider.tightest
     Column(GlanceModifier.fillMaxSize()) {
         Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -171,41 +173,42 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
                 highlight = if (provider.id == "claude") 0xFFD97757.toInt() else null)
             Spacer(GlanceModifier.width(7.dp))
             Text(provider.name, GlanceModifier.defaultWeight(), style = style(13f, ink, FontWeight.Medium), maxLines = 1)
-            if (layout != ProviderLayout.Small) Text(phrase("Usage"), style = style(10f, secondary, FontWeight.Medium))
+            if (stale) Text(phrase("Out of date"), style = style(if (layout == ProviderLayout.Small) 9f else 10f, attention, FontWeight.Medium), maxLines = 1)
+            else if (layout != ProviderLayout.Small) Text(phrase("Usage"), style = style(10f, secondary, FontWeight.Medium))
         }
         if (layout == ProviderLayout.Small && top != null) {
             Spacer(GlanceModifier.defaultWeight())
             Text(phrase(top.title), style = style(11f, secondary), maxLines = 1)
             Row(verticalAlignment = Alignment.Bottom) {
-                val color = if ((top.percent ?: 0.0) >= 90) danger else ink
+                val color = if (stale) secondary else if ((top.percent ?: 0.0) >= 90) danger else ink
                 Text("${(top.percent ?: 0.0).roundToInt()}", style = style(32f, color, FontWeight.Medium))
                 Text("%", GlanceModifier.padding(bottom = 4.dp), style = style(17f, color, FontWeight.Medium))
             }
-            Ticks(context, top.percent ?: 0.0, tint, 13.dp)
+            Ticks(context, top.percent ?: 0.0, tint, 13.dp, stale)
             Spacer(GlanceModifier.height(6.dp))
             Text(top.resetsShort()?.let { resetSpoken(it) } ?: phrase("Usage reported by your computer"), style = style(9f, secondary), maxLines = 1)
         } else {
             Spacer(GlanceModifier.height(8.dp))
             if (layout == ProviderLayout.Large && top != null) {
                 Row(GlanceModifier.padding(vertical = 4.dp), verticalAlignment = Alignment.Bottom) {
-                    Text("${(top.percent ?: 0.0).roundToInt()}%", style = style(36f, if ((top.percent ?: 0.0) >= 90) danger else ink, FontWeight.Medium))
+                    Text("${(top.percent ?: 0.0).roundToInt()}%", style = style(36f, if (stale) secondary else if ((top.percent ?: 0.0) >= 90) danger else ink, FontWeight.Medium))
                     Spacer(GlanceModifier.width(8.dp))
                     Text("${phrase(top.title)} · ${phrase("highest usage")}", GlanceModifier.padding(bottom = 6.dp), style = style(11f, secondary), maxLines = 2)
                 }
             }
-            for (window in provider.limits.take(if (layout == ProviderLayout.Large) 4 else 2)) WindowRow(context, window, tint)
+            for (window in provider.limits.take(if (layout == ProviderLayout.Large) 4 else 2)) WindowRow(context, window, tint, stale)
         }
     }
 }
 
-@Composable private fun WindowRow(context: Context, window: UsageWindow, tint: Int) {
+@Composable private fun WindowRow(context: Context, window: UsageWindow, tint: Int, stale: Boolean = false) {
     Column(GlanceModifier.fillMaxWidth().padding(bottom = 6.dp)) {
         Row(GlanceModifier.fillMaxWidth()) {
             Text(phrase(window.title), GlanceModifier.defaultWeight(), style = style(11f, secondary, FontWeight.Medium), maxLines = 1)
-            Text("${(window.percent ?: 0.0).roundToInt()}%", style = style(13f, if ((window.percent ?: 0.0) >= 90) danger else ink, FontWeight.Medium))
+            Text("${(window.percent ?: 0.0).roundToInt()}%", style = style(13f, if (stale) secondary else if ((window.percent ?: 0.0) >= 90) danger else ink, FontWeight.Medium))
         }
         Spacer(GlanceModifier.height(3.dp))
-        Ticks(context, window.percent ?: 0.0, tint, 12.dp)
+        Ticks(context, window.percent ?: 0.0, tint, 12.dp, stale)
         window.resetsShort()?.let { Text(resetSpoken(it), GlanceModifier.fillMaxWidth(), style = TextStyle(secondary, 9.sp, textAlign = TextAlign.End), maxLines = 1) }
     }
 }
@@ -247,8 +250,9 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
     val percent = limit.window.percent ?: 0.0
     Column {
         Text("${limit.provider} · ${phrase(limit.window.title)}", style = style(12f, secondary), maxLines = 1)
-        Text("${percent.roundToInt()}%", style = style(34f, if (percent >= 90) danger else ink, FontWeight.Medium), maxLines = 1)
-        Text(limit.window.resetsShort()?.let { resetSpoken(it) } ?: " ", style = style(11f, tertiary), maxLines = 1)
+        Text("${percent.roundToInt()}%", style = style(34f, if (limit.stale) secondary else if (percent >= 90) danger else ink, FontWeight.Medium), maxLines = 1)
+        if (limit.stale) Text(phrase("Out of date"), style = style(11f, attention), maxLines = 1)
+        else Text(limit.window.resetsShort()?.let { resetSpoken(it) } ?: " ", style = style(11f, tertiary), maxLines = 1)
     }
 }
 
@@ -256,12 +260,13 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
     val percent = limit.window.percent ?: 0.0
     Column(GlanceModifier.fillMaxWidth()) {
         Row(GlanceModifier.fillMaxWidth()) {
-            Text("${limit.provider} ${phrase(limit.window.title)}", GlanceModifier.defaultWeight(), style = style(11f, secondary), maxLines = 1)
+            val label = if (limit.stale) "${limit.provider} ${phrase(limit.window.title)} · ${phrase("Out of date")}" else "${limit.provider} ${phrase(limit.window.title)}"
+            Text(label, GlanceModifier.defaultWeight(), style = style(11f, if (limit.stale) attention else secondary), maxLines = 1)
             Text("${percent.roundToInt()}%", style = style(11f, secondary))
         }
         Spacer(GlanceModifier.height(4.dp))
-        // Grey until 70%, then amber (iOS `Palette.usageTint`); the ticks turn red from 90%.
-        Ticks(context, percent, if (percent >= 70) WARNING else ink.getColor(context).toArgb(), 10.dp)
+        // Grey until 70%, then amber (iOS `Palette.usageTint`); the ticks turn red from 90% unless stale.
+        Ticks(context, percent, if (percent >= 70) WARNING else ink.getColor(context).toArgb(), 10.dp, limit.stale)
     }
 }
 
@@ -282,19 +287,26 @@ private const val WARNING = 0xFFF0A030.toInt()
     return spokenReset(raw, language.usesChinese(systemChinese)) { translate(it, language, systemChinese, table) }
 }
 
-/** Fine, separated ticks (iOS `UsageTicks`), as a bitmap: widgets can't draw. */
-@Composable private fun Ticks(context: Context, percent: Double, tint: Int, height: Dp) {
-    val red = danger.getColor(context).toArgb()
-    val bitmap = remember(percent, tint, red) { ticks(percent, tint, red) }
-    Image(ImageProvider(bitmap), "${percent.roundToInt()} percent used", GlanceModifier.fillMaxWidth().height(height), contentScale = ContentScale.FillBounds)
+internal fun tickColor(percent: Double, tint: Int, red: Int, muted: Int, stale: Boolean): Int {
+    val value = if (percent.isFinite()) percent.coerceIn(0.0, 100.0) else 0.0
+    return if (stale) muted else if (value >= 90) red else tint
 }
 
-private fun ticks(percent: Double, tint: Int, red: Int): Bitmap {
+/** Fine, separated ticks (iOS `UsageTicks`), as a bitmap: widgets can't draw. */
+@Composable private fun Ticks(context: Context, percent: Double, tint: Int, height: Dp, stale: Boolean = false) {
+    val muted = secondary.getColor(context).toArgb()
+    val red = danger.getColor(context).toArgb()
+    val bitmap = remember(percent, tint, red, muted, stale) { ticks(percent, tint, red, muted, stale) }
+    val spoken = if (stale) "${percent.roundToInt()} percent used, out of date" else "${percent.roundToInt()} percent used"
+    Image(ImageProvider(bitmap), spoken, GlanceModifier.fillMaxWidth().height(height), contentScale = ContentScale.FillBounds)
+}
+
+private fun ticks(percent: Double, tint: Int, red: Int, muted: Int = tint, stale: Boolean = false): Bitmap {
     val count = 60; val unit = 8f; val gap = 3f
     val bitmap = Bitmap.createBitmap((count * (unit + gap)).toInt(), 26, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val value = if (percent.isFinite()) percent.coerceIn(0.0, 100.0) else 0.0
-    val color = if (value >= 90) red else tint
+    val color = tickColor(value, tint, red, muted, stale)
     val filled = (count * value / 100).roundToInt()
     val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     for (i in 0 until count) {

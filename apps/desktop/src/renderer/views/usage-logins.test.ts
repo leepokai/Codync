@@ -25,3 +25,15 @@ test('the login nearest its limit stands for the agent', () => {
   assert.equal(tightest(p)?.percent, 90, 'a note never counts')
   assert.equal(tightestLogin(provider([note], { loginProfiles: [{ id: 'b', name: 'Side', windows: [], updatedAt: 0 }] })).id, null)
 })
+
+test('each login carries its own failedAt timestamp', () => {
+  const p = provider([limit(20)], {
+    failedAt: 1000,
+    loginProfiles: [
+      { id: 'a', name: 'Work', windows: [limit(80)], updatedAt: 1, failedAt: 2000 },
+      { id: 'b', name: 'Side', windows: [limit(10)], updatedAt: 1 },
+    ],
+  })
+  assert.deepEqual(logins(p).map((l) => l.failedAt ?? null), [1000, 2000, null])
+  assert.equal(tightestLogin(p).failedAt, 2000)
+})

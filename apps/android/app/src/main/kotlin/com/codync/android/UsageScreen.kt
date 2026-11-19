@@ -24,6 +24,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
@@ -96,28 +97,39 @@ import kotlin.math.roundToInt
     }
 }
 
+@Composable private fun staleText(failedAt: Long): String {
+    val whenText = RelativeTime.day(failedAt, yesterday = tr("Yesterday"))
+    return tr("Out of date · check failed {when}").replace("{when}", whenText)
+}
+
 @Composable private fun ProviderLimits(provider: UsageProvider) {
     val tint = provider.widgetTint()
+    val logins = provider.logins
+    val singleStale = if (logins.size == 1 && provider.windows.isNotEmpty()) provider.failedAt else null
     Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ProviderMascot(provider, 20.dp)
-            Text(provider.name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(provider.name, Modifier.weight(1f, fill = false), style = Type.subheadline.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (singleStale != null) Text(staleText(singleStale), Modifier.weight(1f), style = Type.caption, color = Palette.attention, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
         }
-        val logins = provider.logins
         for (login in logins) key(login.id.orEmpty()) {
+            val stale = if (logins.size > 1 && login.windows.isNotEmpty()) login.failedAt else singleStale
             if (logins.size > 1) {
-                Text(login.name ?: tr("Default login profile"), style = Type.footnote, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(login.name ?: tr("Default login profile"), Modifier.weight(1f, fill = false), style = Type.footnote, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (stale != null) Text(staleText(stale), Modifier.weight(1f), style = Type.caption, color = Palette.attention, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
+                }
                 if (login.windows.isEmpty()) Text(tr("No reading yet"), style = Type.subheadline, color = Palette.secondary, maxLines = 1)
             }
-            for (window in login.windows) key(window.id) { WindowLimit(window, tint) }
+            for (window in login.windows) key(window.id) { WindowLimit(window, tint, stale != null) }
         }
     }
 }
 
 /** A limit's name and when it resets, how much is used, and under them the bar; or the note an agent gives instead. */
-@Composable private fun WindowLimit(window: UsageWindow, tint: Color) {
+@Composable private fun WindowLimit(window: UsageWindow, tint: Color, stale: Boolean = false) {
     val note = window.text?.takeIf { it.isNotBlank() }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(if (stale) Modifier.alpha(0.58f) else Modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (note != null) {
                 Text(tr(window.title), style = Type.subheadline, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)

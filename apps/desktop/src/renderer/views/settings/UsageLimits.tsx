@@ -9,6 +9,7 @@ import { ProviderMascot } from '../usage/ProviderMascot'
 import { UsageBar } from '../usage/UsageBar'
 import { logins, type UsageLogin } from '../usage/usage-logins'
 import { providerTintCSS, resetDescription, windowTitle } from '../usage/usage-model'
+import { relativeTime } from '../thread/chat-items'
 import { UsageChooser } from './UsageChooser'
 import './settings.css'
 
@@ -68,17 +69,34 @@ function UsageLimits({ usage }: { usage: Usage }) {
   )
 }
 
+function StaleReading({ failedAt }: { failedAt: number }) {
+  const tr = useTr()
+  const when = relativeTime.day(failedAt, tr)
+  return (
+    <Text size="caption" tone="attention" className="settings-usage-stale" truncate>
+      {tr('Out of date · check failed {when}').replaceAll('{when}', () => when)}
+    </Text>
+  )
+}
+
 function ProviderLimits({ provider }: { provider: UsageProvider }) {
   const [style] = usePref(prefs.usageIconStyle)
+  const staleAt = !provider.loginProfiles?.length && provider.windows.length > 0 ? (provider.failedAt ?? null) : null
   return (
     <VStack gap={12} className="settings-usage-provider">
       <HStack gap={8}>
         <ProviderMascot provider={provider} size={18} style={style} />
         <Text size="body" weight="semibold" tone="text">{provider.name}</Text>
+        {staleAt != null ? (
+          <>
+            <Spacer />
+            <StaleReading failedAt={staleAt} />
+          </>
+        ) : null}
       </HStack>
       {provider.loginProfiles?.length
         ? logins(provider).map((login) => <LoginLimits key={login.id ?? ''} login={login} providerId={provider.id} />)
-        : provider.windows.map((w) => <WindowLimit key={w.id} window={w} providerId={provider.id} />)}
+        : provider.windows.map((w) => <WindowLimit key={w.id} window={w} providerId={provider.id} stale={staleAt != null} />)}
     </VStack>
   )
 }
@@ -86,22 +104,31 @@ function ProviderLimits({ provider }: { provider: UsageProvider }) {
 /** One login of an agent that has several: what it's called, then its limits. */
 function LoginLimits({ login, providerId }: { login: UsageLogin; providerId: string }) {
   const tr = useTr()
+  const staleAt = login.windows.length > 0 ? (login.failedAt ?? null) : null
   return (
     <VStack gap={8} align="stretch" className="settings-usage-login">
-      <Text tone="secondary" truncate>{login.name ?? tr('Default login profile')}</Text>
+      <HStack gap={8}>
+        <Text tone="secondary" truncate>{login.name ?? tr('Default login profile')}</Text>
+        {staleAt != null ? (
+          <>
+            <Spacer />
+            <StaleReading failedAt={staleAt} />
+          </>
+        ) : null}
+      </HStack>
       {login.windows.length
-        ? login.windows.map((w) => <WindowLimit key={w.id} window={w} providerId={providerId} />)
+        ? login.windows.map((w) => <WindowLimit key={w.id} window={w} providerId={providerId} stale={staleAt != null} />)
         : <Text tone="secondary">{tr('No reading yet')}</Text>}
     </VStack>
   )
 }
 
 /** A limit's name and when it resets, how much is used, and under them the bar; or the note an agent gives instead. */
-function WindowLimit({ window: w, providerId }: { window: UsageWindow; providerId: string }) {
+function WindowLimit({ window: w, providerId, stale = false }: { window: UsageWindow; providerId: string; stale?: boolean }) {
   const resetLine = useResetLine()
   const tr = useTr()
   return (
-    <VStack gap={6} align="stretch">
+    <VStack gap={6} align="stretch" className={stale ? 'settings-usage-stale-windows' : undefined}>
       <HStack gap={8}>
         <Text tone="text" truncate>{tr(windowTitle(w))}</Text>
         {w.text ? (

@@ -71,7 +71,7 @@ The Claude adapter passes the Agent SDK's `rate_limit_info` through whole, in `u
 
 On a computer where Claude runs on a `claude setup-token` token (`CLAUDE_CODE_OAUTH_TOKEN`), this is the only reading: that token only runs models, so `claude -p /usage` reports no plan limits. The limits then show after a bot's first turn, and only the windows the event lists.
 
-`claude -p /usage` itself always asks for the subscription's limits: Claude Code routed off it (a gateway's `ANTHROPIC_BASE_URL` with `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY`, or `CLAUDE_CODE_USE_BEDROCK` / `VERTEX` / `FOUNDRY`, in the environment or in its settings' `env`) answers it with token costs and no limits ([#372](https://github.com/leepokai/Codync/issues/372)). So the check passes `--settings` with those six variables blank (`usage/claude.rs`), which overrides both the environment and the user, project and local settings; the rest of the settings' `env`, a proxy for one, still applies, and a login profile keeps its `CLAUDE_CONFIG_DIR`. When the check still fails, the default login keeps its last windows and time, with nothing marking them stale.
+`claude -p /usage` itself always asks for the subscription's limits: Claude Code routed off it (a gateway's `ANTHROPIC_BASE_URL` with `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY`, or `CLAUDE_CODE_USE_BEDROCK` / `VERTEX` / `FOUNDRY`, in the environment or in its settings' `env`) answers it with token costs and no limits ([#372](https://github.com/leepokai/Codync/issues/372)). So the check passes `--settings` with those six variables blank (`usage/claude.rs`), which overrides both the environment and the user, project and local settings; the rest of the settings' `env`, a proxy for one, still applies, and a login profile keeps its `CLAUDE_CONFIG_DIR`. When the check still fails while holding an earlier snapshot, the login keeps its last windows and `updatedAt` and sets `failedAt` to when the check failed, so clients show it as out of date until a fresh reading clears `failedAt`.
 
 ### An agent's own slash command
 
@@ -88,6 +88,8 @@ The report is Markdown meant for people, so an update can change it; `parse` is 
 ### Failures
 
 `usage_read_failed` reports once per failing run, with the stage, for the readers that start the agent's server (Antigravity, Grok Build, Copilot) or read a CLI's JSON report (Hermes, Auggie, Kilo): a format change shows up as `parse`, which is the only way to learn of one in a reader never run against a login. Nothing printed, or a CLI's words for being signed out, isn't a failure. A document that says there's nothing to read is an empty reading, which removes the row, as Kilo's balance of 0 does: the CLI prints that when its own balance request fails, so it's neither a claim that the account is empty nor a reason to keep an old balance.
+
+When a check fails while a provider or login profile already holds windows (`Probe::Failed` → `Reading::Failed`), the host keeps the last `windows` and `updatedAt` and records `failedAt` (epoch ms, omitted when fresh) instead of leaving stale numbers unmarked. Skipped checks (an overlapping poll or Copilot's 30-minute cooldown) leave `failedAt` untouched (`Probe::Skip`). The Usage screens (desktop, iOS, Android, terminal UI) label that provider or login **Out of date · check failed {when}** and dim its bars; compact surfaces (widgets, the notch island, the menu bar) mark it **Out of date**. The next successful reading clears `failedAt`.
 
 ### Copilot's log files
 

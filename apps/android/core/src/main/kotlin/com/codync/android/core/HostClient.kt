@@ -17,6 +17,8 @@ data class Bot(
     val name: String = "",
     val kind: String = "agent",
     val members: List<String> = emptyList(),
+    /** A group's shared workspace folder (docs/features/group-workspace.md); null for none (or an older host). */
+    val workspace: String? = null,
     val description: String = "",
     val avatarColor: String = "blue",
     val avatarShape: String = "blob",
@@ -115,6 +117,9 @@ data class Bot(
     val outside: Outside? = null,
     val customIcon: CustomIcon? = null,
 ) {
+    /** A group's shared folder's name, when it has one (both separators: a Windows host's folders). */
+    val workspaceName: String? get() = workspace?.split('/', '\\')?.lastOrNull { it.isNotEmpty() }
+
     /** The messages in the badge the user hasn't read: what `markRead` clears (waiting cards stay counted). */
     val unseen: Int get() = unread - waiting
 

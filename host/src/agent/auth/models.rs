@@ -198,6 +198,13 @@ fn model_options(options: &Value, model: &str) -> Vec<Value> {
     entry.and_then(|m| m["configOptions"].as_array()).into_iter().flatten().filter_map(parse_select_option).collect()
 }
 
+/// Cursor names a model variant `grok-4.7[reasoning_effort=high,fast=true]`: the model and its settings.
+pub(crate) fn cursor_variant(model: &str) -> Option<(&str, Vec<(&str, &str)>)> {
+    let (name, params) = model.strip_suffix(']')?.split_once('[')?;
+    let params = params.split(',').filter(|p| !p.is_empty()).map(|p| p.split_once('=')).collect::<Option<_>>()?;
+    Some((name, params))
+}
+
 /// Checks that `options` (option id → value) are ones `model` (none: the agent's current default) lists in `catalog`
 /// ([`models`]), as a client's model settings offer them: only reasoning and Cursor's per-model options, never a mode.
 pub fn check_options<'a>(
@@ -206,7 +213,10 @@ pub fn check_options<'a>(
     options: impl IntoIterator<Item = (&'a str, &'a str)>,
 ) -> Result<()> {
     let model = model.or_else(|| catalog["currentModelId"].as_str()).unwrap_or_default();
-    let entry = catalog["models"].as_array().into_iter().flatten().find(|m| m["id"] == model);
+    // A saved Cursor model carries its settings; the list names the bare model.
+    let bare = cursor_variant(model).map_or(model, |(name, _)| name);
+    let models = catalog["models"].as_array().map_or(&[][..], Vec::as_slice);
+    let entry = models.iter().find(|m| m["id"] == model).or_else(|| models.iter().find(|m| m["id"] == bare));
     let Some(entry) = entry else {
         bail!("model {model} isn't in the agent's model list, so its settings can't be checked")
     };
@@ -312,6 +322,8 @@ mod tests {
         );
         assert!(check(Some("gpt"), "effort", "low").unwrap_err().contains("isn't in the agent's model list"));
         assert!(check_options(&catalog, Some("gpt"), []).is_err(), "an unknown model");
+        // A saved Cursor model carries its settings; the list has the bare one.
+        assert!(check(Some("opus[effort=low,fast=true]"), "effort", "high").is_ok(), "a saved Cursor model");
     }
 
     #[test]

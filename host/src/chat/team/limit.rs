@@ -5,7 +5,7 @@ use crate::LockExt;
 use crate::analytics::{self, Event};
 use crate::hub::Hub;
 use crate::store::{EntryKind, Lane};
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use std::sync::{Arc, Mutex};
@@ -42,17 +42,22 @@ pub fn continue_chain(hub: &Arc<Hub>, entry_id: &str) -> Result<Value> {
     // Two clients pressing at once: only the call that clears the flag posts.
     // ponytail: one host-wide lock; presses are rare and the critical section is one read and one write.
     static PRESS: Mutex<()> = Mutex::new(());
-    let row = {
-        let _press = PRESS.locked();
-        let mut notice = hub
-            .store
-            .entry(entry_id)
-            .filter(|e| e.kind == "notice" && e.data["continueChain"] == true)
-            .ok_or_else(|| anyhow!("that chain was already continued"))?;
-        let row = hub.store.bot(&notice.bot_id)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
-        notice.data["continueChain"] = false.into();
-        hub.set_entry(entry_id, &notice.data).ok_or_else(|| anyhow!("couldn't save the notice"))?;
-        row
-    };
-    Ok(json!({"entry": crate::chat::messages::post(hub, &row.config, json!({"text": "Continue"}))?}))
+    let _press = PRESS.locked();
+    let mut notice = hub
+        .store
+        .entry(entry_id)
+        .filter(|e| e.kind == "notice" && e.data["continueChain"] == true)
+        .ok_or_else(|| anyhow!("that chain was already continued"))?;
+    let row = hub.store.bot(&notice.bot_id)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+    // Refused before anything is saved, so pressing again doesn't stack undelivered messages.
+    if !row.config.is_group() && !hub.has_actor(&row.config.id) {
+        bail!("that bot isn't running");
+    }
+    // The button goes only once the message is in: a message that couldn't be saved leaves it to press again.
+    let entry = crate::chat::messages::post(hub, &row.config, json!({"text": "Continue"}))?;
+    notice.data["continueChain"] = false.into();
+    if hub.set_entry(entry_id, &notice.data).is_none() {
+        tracing::warn!(entry = entry_id, "couldn't take the Continue button off its notice");
+    }
+    Ok(json!({"entry": entry}))
 }

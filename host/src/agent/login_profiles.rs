@@ -460,6 +460,17 @@ pub async fn check(store: &Store, id: &str) -> Result<Profile> {
     })
 }
 
+/// The ids of `backend`'s signed-in login profiles, in the order they were added (excluding profiles being removed).
+pub fn signed_in_ids(store: &Store, backend: &str) -> Vec<String> {
+    let agent = agent_id(backend);
+    let removing = REMOVING.locked().clone();
+    all(store)
+        .into_iter()
+        .filter(|p| p.account.agent == agent && p.account.signed_in && !removing.iter().any(|id| id == &p.account.id))
+        .map(|p| p.account.id)
+        .collect()
+}
+
 /// What the Usage screens list under agent `id`: what its default login is called, and its signed-in account
 /// profiles by id and name. An API key has no plan to read, and a signed-out account nothing to ask.
 pub fn usage_rows(store: &Store, id: &str) -> (Option<String>, Vec<(String, String)>) {

@@ -120,8 +120,10 @@ by every slot (its keyring names them by server, not by home).
 - **A fallback step names its own login profile** (`fallbacks[].loginProfile`), or none for the default one. A login profile belongs
   to one agent. The chain has each login once, so an agent comes again only on another of its login profiles: Claude Code
   → Claude Code on a second login profile → Codex. Steps, parked sessions and rests go by login
-  (`fallback::login`: the agent, or `<agent>#profile-<id>`). Moving on when a login profile runs out is account
-  rotation, which a provider's terms may not allow: it is the user's to set up, and nothing does it unasked.
+  (`fallback::login`: the agent, or `<agent>#profile-<id>`). Right after any configured step on an agent (except a custom
+  command), signed-in login profiles of that agent (accounts and API keys) not already explicitly configured elsewhere in
+  the chain are automatically added to the effective chain with that step's model and options; explicitly saved fallback
+  steps always keep their own model and options.
 - **A login profile's saved keys stay out.** A process on a login profile starts without the login keys saved for the agent
   (Claude Code: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`; Codex: `OPENAI_API_KEY`,
   `CODEX_API_KEY`), the address saved with one, and a cloud computer's proxied ones: the agent prefers a key, and

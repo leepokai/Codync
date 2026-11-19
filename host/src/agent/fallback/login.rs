@@ -35,6 +35,6 @@ pub(super) fn login_profile(login: &str) -> Option<&str> {
 }
 
 /// The agent `login` runs.
-pub(super) fn backend_of(login: &str) -> &str {
+pub fn backend_of(login: &str) -> &str {
     login.split_once('#').map_or(login, |(backend, _)| backend)
 }

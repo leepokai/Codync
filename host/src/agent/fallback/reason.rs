@@ -41,11 +41,14 @@ impl Reason {
     }
 }
 
-/// How Claude's adapter words a usage limit (the Agent SDK's `USAGE_LIMIT_ERROR_PREFIXES`); it reports it as a
-/// `rate_limit` or `billing_error` with this text in the message.
-const USAGE_LIMIT_TEXT: [&str; 12] = [
+/// How Claude's adapter words a usage limit (the Agent SDK's `USAGE_LIMIT_ERROR_PREFIXES`) and how Antigravity words
+/// a quota limit; Claude reports it as a `rate_limit` or `billing_error` with this text in the message, while
+/// Antigravity streams the message and answers `stopReason: "refusal"` (`usage_limit_refusal`).
+const USAGE_LIMIT_TEXT: [&str; 14] = [
     "You've hit your",
     "You've reached your",
+    "You have reached your current quota",
+    "Usage Limit Reached",
     "You're out of usage credits",
     "Your org is out of usage",
     "Your seat type doesn't include usage credits",
@@ -57,6 +60,34 @@ const USAGE_LIMIT_TEXT: [&str; 12] = [
     "Your seat type doesn't include extra usage",
     "usage limit",
 ];
+
+const QUOTA_REFUSAL_BANNERS: [&str; 2] = ["Usage Limit Reached", "You have reached your current quota"];
+
+/// Whether `text` is a usage-limit error message from an agent.
+pub fn is_usage_limit(text: &str) -> bool {
+    USAGE_LIMIT_TEXT.iter().any(|t| text.contains(t))
+}
+
+fn is_quota_refusal_banner(text: &str) -> bool {
+    let trimmed = text.trim_start();
+    QUOTA_REFUSAL_BANNERS.iter().any(|banner| trimmed.starts_with(banner))
+}
+
+/// An error when `done` is an ACP `refusal` whose streamed message `last_text` is a usage-limit notice
+/// (`antigravity-acp` streams `"Usage Limit Reached\n\nYou have reached your current quota…"` and answers
+/// `stopReason: "refusal"` instead of a JSON-RPC error).
+pub fn usage_limit_refusal(done: &anyhow::Result<serde_json::Value>, last_text: Option<&str>) -> Option<anyhow::Error> {
+    let text = last_text.filter(|t| is_quota_refusal_banner(t))?;
+    let refused = done.as_ref().is_ok_and(|v| v["stopReason"] == "refusal");
+    refused.then(|| {
+        RpcError {
+            code: crate::agent::acp::INTERNAL_ERROR,
+            message: text.trim().to_owned(),
+            kind: Some("usage_limit_exceeded".into()),
+        }
+        .into()
+    })
+}
 
 /// Why `error` moves the bot on, or `None` when it shouldn't (a stop, a refusal, a bug in the request).
 pub fn of(error: &anyhow::Error) -> Option<Reason> {
@@ -80,7 +111,7 @@ pub fn of_rpc(r: &RpcError) -> Option<Reason> {
     if r.code == AUTH_REQUIRED {
         return Some(Reason::SignedOut);
     }
-    let usage_text = USAGE_LIMIT_TEXT.iter().any(|t| r.message.contains(t));
+    let usage_text = is_usage_limit(&r.message);
     // Claude's adapter sends the Agent SDK's assistant error (`rate_limit`…); codex-acp its `codexErrorInfo`
     // (`usage_limit_exceeded`…); CodeBuddy its `category` (`auth`…).
     Some(match r.kind.as_deref() {
@@ -111,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn claude_and_codex_usage_limits_move_on() {
+    fn claude_codex_and_antigravity_usage_limits_move_on() {
         let claude =
             rpc(-32603, "Internal error: You've hit your limit · resets 3pm (Asia/Taipei)", Some("rate_limit"));
         assert_eq!(of(&claude), Some(Reason::UsageLimit));
@@ -123,6 +154,20 @@ mod tests {
         assert_eq!(
             of(&rpc(-32603, "Internal error: credit balance too low", Some("billing_error"))),
             Some(Reason::OutOfCredits)
+        );
+        let refusal = Ok(serde_json::json!({"stopReason": "refusal"}));
+        let agy_text = "Usage Limit Reached\n\nYou have reached your current quota for this period. Your limit will reset in 6 days, 12 hours.";
+        let err = usage_limit_refusal(&refusal, Some(agy_text)).expect("usage limit refusal becomes an error");
+        assert_eq!(of(&err), Some(Reason::UsageLimit));
+        let quota_only = "You have reached your current quota for this period.";
+        assert_eq!(
+            of(&usage_limit_refusal(&refusal, Some(quota_only)).expect("quota banner")),
+            Some(Reason::UsageLimit)
+        );
+        assert!(usage_limit_refusal(&refusal, Some("I cannot help with that request.")).is_none());
+        assert!(
+            usage_limit_refusal(&refusal, Some("I can't help bypass a usage limit.")).is_none(),
+            "ordinary refusals mentioning usage limit must not rest the login"
         );
     }
 

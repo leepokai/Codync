@@ -556,3 +556,68 @@ async fn a_turn_pi_ended_in_an_error_says_so() {
     let notice = wait_for(&host, &bot, "error notice", |e| e["data"]["style"] == "error").await;
     assert!(notice["data"]["text"].as_str().unwrap().contains("upstream busy"), "{notice}");
 }
+
+/// Antigravity streams `"Usage Limit Reached\n\nYou have reached your current quota…"` and answers `stopReason:
+/// "refusal"`. The turn moves on to the next agent and rests the exhausted login for the stated reset duration.
+#[tokio::test]
+async fn a_usage_limit_refusal_moves_on_and_rests_until_the_stated_reset() {
+    let host = Host::start().await;
+    let bot = json!({
+        "name": "Agy", "backend": "antigravity", "command": agent("primary"), "connectors": [],
+        "notify": false, "fallbacks": [{"backend": "codex", "command": agent("standin")}],
+    });
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    std::fs::write(folder.join("primary.quotalimit"), "").unwrap();
+
+    host.reply(&bot, "Ship the patch").await;
+    let reply = wait_for(&host, &bot, "fallback reply", |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
+    assert_eq!(reply["data"]["text"], "standin answered");
+    let line = wait_for(&host, &bot, "switch line", |e| e["data"]["agentSwitch"].is_object()).await;
+    assert_eq!(line["data"]["agentSwitch"]["reason"], "usageLimit");
+    let resets_at = line["data"]["agentSwitch"]["resetsAt"].as_i64().expect("resetsAt parsed from banner");
+    let text = line["data"]["text"].as_str().unwrap();
+    assert!(
+        text.contains("Google Antigravity reached its usage limit") && text.contains("Codex carried on."),
+        "{text}"
+    );
+    let on = bot_value(&host, &bot).await;
+    let until = on["resting"][0]["until"].as_i64().unwrap();
+    assert_eq!(until, resets_at);
+    // 6 days 12 hours is 156 hours (> 150 hours from now, well past the 1-hour unknown-reset default).
+    let now =
+        i64::try_from(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()).unwrap();
+    assert!(until - now > 150 * 3600 * 1000, "rests for the parsed 6d 12h duration: {until} vs {now}");
+    // The quota refusal banner itself is not told to the fallback as partial work done.
+    let prompt = last_prompt(&host, &bot, "standin");
+    assert!(!prompt.contains("Usage Limit Reached"), "{prompt}");
+}
+
+#[tokio::test]
+async fn new_session_forgets_parked_sessions_of_removed_fallbacks() {
+    let host = Host::start().await;
+    let bot =
+        json!({"name": "Relay", "backend": "custom", "command": agent("primary"), "connectors": [], "notify": false});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    let fallbacks = json!([{"backend": "codex", "command": agent("standin")}]);
+    host.call("updateBot", json!({"id": bot, "fallbacks": fallbacks})).await;
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    std::fs::write(folder.join("primary.limit"), "").unwrap();
+
+    host.reply(&bot, "First").await;
+    wait_for(&host, &bot, "first fallback reply", |e| e["data"]["text"] == "standin answered").await;
+
+    std::fs::remove_file(folder.join("primary.limit")).unwrap();
+    host.call("switchBack", json!({"botId": bot})).await;
+    wait_for(&host, &bot, "back line", |e| e["data"]["text"] == "Back on Custom command.").await;
+
+    host.call("updateBot", json!({"id": bot, "fallbacks": []})).await;
+    host.call("newSession", json!({"botId": bot})).await;
+    host.call("updateBot", json!({"id": bot, "fallbacks": fallbacks})).await;
+
+    std::fs::write(folder.join("primary.limit"), "").unwrap();
+    host.reply(&bot, "Second").await;
+    let standin = host.log(&bot, "standin.jsonl");
+    assert_eq!(standin.iter().filter(|r| r["method"] == "session/new").count(), 2, "must start a fresh session");
+    assert_eq!(standin.iter().filter(|r| r["method"] == "session/load").count(), 0, "must not resume parked session");
+}

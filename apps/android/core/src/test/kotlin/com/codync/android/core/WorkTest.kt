@@ -73,12 +73,12 @@ class WorkTest {
         assertEquals(listOf("d", "e"), sections.box.map { it.id })
         assertEquals(listOf("f", "g", "h"), sections.recent.map { it.id })
         // Three run of four: one place is free.
-        assertEquals(1 to 4, sections.free to sections.places)
+        assertEquals(1 to 4, sections.free to sections.atOnce)
         // More running than the ceiling (it was just lowered): none free, and the heading says what is true, `3 / 2`.
-        assertEquals(0 to 2, workSections(work, 2).let { it.free to it.places })
+        assertEquals(0 to 2, workSections(work, 2).let { it.free to it.atOnce })
         // A host that sends no ceiling counts as three.
         assertEquals(WorkSections(emptyList(), 3, emptyList(), emptyList()), workSections(emptyList(), null))
-        assertEquals(0 to 3, workSections(work, null).let { it.free to it.places })
+        assertEquals(0 to 3, workSections(work, null).let { it.free to it.atOnce })
     }
 
     @Test fun `only the tasks a thread has are live`() {
@@ -235,7 +235,7 @@ class WorkTest {
     }
 
     @Test fun `a thread's draft goes with its bot`() {
-        assertEquals("b/task/i", threadDraftKey("b", "i"))
+        assertEquals("b/item/i", threadDraftKey("b", "i"))
         assertTrue(threadDraftKey("b", "i").startsWith("b/"))
     }
 

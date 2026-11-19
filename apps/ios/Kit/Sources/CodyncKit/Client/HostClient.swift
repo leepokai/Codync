@@ -56,7 +56,8 @@ struct BotUpdate: Encodable {
 
 public struct HostClient: Sendable {
     public let transport: any HostTransport
-    /// The host's version once its hello said it: which names calls go out under (`HostClient+OldHosts.swift`).
+    /// The host's version once its hello said it: which name a thread's transcript is asked for under
+    /// (`HostClient+OldHosts.swift`).
     public var hostVersion: String?
 
     public init(transport: any HostTransport) {
@@ -67,9 +68,8 @@ public struct HostClient: Sendable {
     static let encoder = JSONEncoder()
 
     public func call<T: Decodable>(_ method: String, _ body: some Encodable = Empty(), timeout: TimeInterval = 20) async throws -> T {
-        var request = (method: method, body: try Self.encoder.encode(body))
         // Hosts before 2.51.0: goes when minHost reaches 2.51.0.
-        if !speaksThreads { request = OldHostWire.request(method, request.body) }
+        let request = OldHostWire.request(method, try Self.encoder.encode(body), speaksThreads: speaksThreads)
         let data = try await transport.call(request.method, body: request.body, timeout: timeout)
         return try Self.decoder.decode(T.self, from: data)
     }

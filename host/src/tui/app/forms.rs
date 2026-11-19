@@ -161,7 +161,7 @@ impl App {
                         | Field::LoginProfile
                         | Field::Fast
                         | Field::SelfFallbacks
-                        | Field::MaxAgents
+                        | Field::MaxThreads
                         | Field::ThreadWorktrees
                         | Field::Approvals
                         | Field::Compaction
@@ -200,7 +200,7 @@ impl App {
                     Field::Fast => f.fast = !f.fast,
                     Field::SelfFallbacks => f.self_fallbacks = !f.self_fallbacks,
                     Field::ThreadWorktrees => f.thread_worktrees = f.thread_worktrees.map(|on| !on),
-                    Field::MaxAgents if !space => {
+                    Field::MaxThreads if !space => {
                         let step = |n: u8| if d < 0 { n.saturating_sub(1) } else { n + 1 };
                         f.max_threads = f.max_threads.map(|n| step(n).clamp(1, MAX_THREADS));
                     }
@@ -500,13 +500,13 @@ mod tests {
     #[tokio::test]
     async fn threads_at_once_steps_from_one_to_six_on_a_host_that_has_the_box() {
         let mut app = test_app();
-        let at = FIELDS.iter().position(|x| *x == Field::MaxAgents).expect("an agents field");
+        let at = FIELDS.iter().position(|x| *x == Field::MaxThreads).expect("a threads field");
         let bot = json!({"id": "b", "name": "B", "backend": "claude", "maxThreads": 5});
         app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
         app.selected = Some("b".into());
         app.edit_bot();
         let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
-        assert!(app.field_shown(&f, Field::MaxAgents));
+        assert!(app.field_shown(&f, Field::MaxThreads));
         f.field = at;
         let f = press(&mut app, f, [KeyCode::Right, KeyCode::Right, KeyCode::Right]);
         assert_eq!(f.changes(), json!({"maxThreads": 6}), "six at most");

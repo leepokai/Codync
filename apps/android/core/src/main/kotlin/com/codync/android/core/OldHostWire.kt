@@ -6,7 +6,7 @@ import kotlinx.serialization.json.JsonObject
 // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
 //
 // Such a host says `item` for a task and `task` for a thread. This file is the only place that knows those names:
-// what goes out is renamed for it ([hostCallFor]), and what comes in is read in either shape with no version check
+// what goes out carries both names ([hostCallFor]), and what comes in is read in either shape with no version check
 // ([oldWorkRow], [threadOfEntryEvent], [threadNamed]; `Bot`'s `@JsonNames`), so the store, the models and the
 // screens know only task and thread.
 
@@ -22,19 +22,23 @@ fun speaksThreads(hostVersion: String?): Boolean = hostVersion == null || !AppVe
 /** The calls that name a task by `taskId` (`itemId` before). */
 private val TASK_CALLS = setOf("send", "steer", "unqueue", "workFirst", "workCutIn", "dropWork", "stopWork", "retryWork")
 
-/** [method] and [body] as the host at [hostVersion] takes them: unchanged for one that speaks threads. */
+/**
+ * [method] and [body] as either host takes them. What names a task or a bot's thread settings carries both names
+ * whatever [hostVersion] says, so a version that is missing or left from the last link never sends a thread's
+ * message to the chat: each host reads the name it knows and ignores the other. Only `threadEntries` goes by the
+ * version: a wrong guess there is a read that fails.
+ */
 fun hostCallFor(hostVersion: String?, method: String, body: JsonObject): Pair<String, JsonObject> = when {
-    speaksThreads(hostVersion) -> method to body
-    method == "threadEntries" -> "taskEntries" to body.renamed("threadId" to "taskId")
-    method in TASK_CALLS -> method to body.renamed("taskId" to "itemId")
-    method == "updateBot" || method == "createBot" -> method to body.renamed("maxThreads" to "maxAgents", "threadWorktrees" to "taskWorktrees")
+    method == "threadEntries" ->
+        if (speaksThreads(hostVersion)) method to body else "taskEntries" to JsonObject(body - "threadId" + body.oldNames("threadId" to "taskId"))
+    method in TASK_CALLS -> method to JsonObject(body + body.oldNames("taskId" to "itemId"))
+    method == "updateBot" || method == "createBot" -> method to JsonObject(body + body.oldNames("maxThreads" to "maxAgents", "threadWorktrees" to "taskWorktrees"))
     else -> method to body
 }
 
-private fun JsonObject.renamed(vararg names: Pair<String, String>): JsonObject {
-    val old = names.toMap()
-    return JsonObject(entries.associate { (key, value) -> (old[key] ?: key) to value })
-}
+/** What this holds under each new name, under its old one. */
+private fun JsonObject.oldNames(vararg names: Pair<String, String>): Map<String, JsonElement> =
+    names.mapNotNull { (new, old) -> this[new]?.let { old to it } }.toMap()
 
 /** A row of `bot.work` with its thread under `thread`: an old host sends it as `task`. */
 internal fun Map<String, JsonElement>.oldWorkRow(): Map<String, JsonElement> =

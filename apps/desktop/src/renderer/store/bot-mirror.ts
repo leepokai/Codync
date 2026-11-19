@@ -22,6 +22,7 @@ import { Observable } from '../lib/observable'
 import { hostHasSections } from '../lib/roster-sections'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
+import { fromOldBot, fromOldEntry } from '@shared/old-host'
 import { loadIconCache, saveIconCache } from '../lib/icon-cache'
 import { trNow } from '../lib/l10n.ts'
 import { ThreadTranscripts } from './thread-transcripts'
@@ -381,10 +382,11 @@ export class BotMirror extends Observable {
       this.cacheStamp = cache.stamp ?? ''
       this.hostId = cache.hostId ?? null
       this.rev = cache.rev
-      // A copy cached by an older app lacks the fields added since.
-      this.bots = new Map(cache.bots.map((b) => [b.id, normalizeBot(b)]))
+      // A copy cached by an older app lacks the fields added since. One from before 2.51.0 has the old names
+      // (hosts before 2.51.0: `fromOld…` goes when MIN_HOST reaches 2.51.0).
+      this.bots = new Map(cache.bots.map((b) => [b.id, normalizeBot(fromOldBot(b) as Bot)]))
       const grouped = new Map<string, Entry[]>()
-      for (const e of cache.entries) grouped.set(e.botId, [...(grouped.get(e.botId) ?? []), e])
+      for (const e of cache.entries.map(fromOldEntry)) grouped.set(e.botId, [...(grouped.get(e.botId) ?? []), e])
       this.entries = grouped
     } catch {}
   }

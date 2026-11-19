@@ -33,7 +33,7 @@ impl App {
     pub(in crate::tui) fn field_shown(&self, f: &Form, field: Field) -> bool {
         match field {
             Field::LoginProfile => self.login_profiles(&f.backend).is_some(),
-            Field::MaxAgents => f.max_threads.is_some(),
+            Field::MaxThreads => f.max_threads.is_some(),
             Field::ThreadWorktrees => f.thread_worktrees.is_some(),
             _ => true,
         }

@@ -15,7 +15,7 @@ import {
 import type { Artifact, ArtifactChunk, LibraryItem } from '@shared/artifacts'
 import { parseCallCue, type CallCue } from '@shared/calls'
 import type { NetworkView } from '@shared/network'
-import { fromOldAnswer, fromOldEvent, speaksThreads, toOldHost } from '@shared/old-host'
+import { fromOldAnswer, fromOldEvent, toHost } from '@shared/old-host'
 import { parseThreadEntry } from '@shared/threads'
 import { trNow } from '../lib/l10n.ts'
 
@@ -224,14 +224,12 @@ export class HostClient {
     return this.call('renameArtifact', { botId, artifactId, title })
   }
 
-  /** The host's version, once `hello` said it. */
-  private hostVersion: string | undefined
-
-  constructor(readonly transport: HostTransport) {}
+  /** `hostVersion`: the host's version, once `hello` said it; a new connection to the same computer starts from the last one's. */
+  constructor(readonly transport: HostTransport, private hostVersion?: string) {}
 
   call<T>(method: string, body: unknown = {}, timeoutMs = 20_000): Promise<T> {
     // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
-    const [sent, sentBody] = speaksThreads(this.hostVersion) ? [method, body] : toOldHost(method, body)
+    const [sent, sentBody] = toHost(this.hostVersion, method, body)
     return this.transport.call(sent, sentBody, timeoutMs).then((answer) => fromOldAnswer(method, answer)) as Promise<T>
   }
 

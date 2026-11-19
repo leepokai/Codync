@@ -11,8 +11,8 @@ public extension HostClient {
     /// The first host that says thread and task.
     static let threadsHost = "2.51.0"
 
-    /// Whether calls go out under the new names. A host whose version isn't known yet (no hello) or doesn't read
-    /// gets the new names: nothing that names a task or a thread is sent before its hello.
+    /// Whether a thread's transcript is asked for under its new name. A host whose version isn't known yet (no
+    /// hello) or doesn't read counts as new.
     var speaksThreads: Bool {
         hostVersion.map { !AppVersion.isBelow($0, Self.threadsHost) } ?? true
     }
@@ -23,25 +23,30 @@ enum OldHostWire {
     private static let taskMethods: Set<String> = ["send", "steer", "unqueue", "workFirst", "workCutIn", "dropWork", "stopWork", "retryWork"]
     private static let botMethods: Set<String> = ["createBot", "updateBot"]
 
-    /// A call as an older host takes it: its method and body under the old names. One that names no task or
-    /// thread goes as it is.
-    static func request(_ method: String, _ body: Data) -> (method: String, body: Data) {
-        let renames: [String: String]
-        var sent = method
+    /// A call as either host takes it: its method and body. What names a task or a bot's thread settings carries
+    /// both names whatever the host's version, so a version that is missing or left from the last connection never
+    /// sends a thread's message to the chat: each host reads the name it knows and ignores the other. Only
+    /// `threadEntries` goes by the version (`speaksThreads`): a wrong guess there is a read that fails. A call that
+    /// names no task or thread goes as it is.
+    static func request(_ method: String, _ body: Data, speaksThreads: Bool) -> (method: String, body: Data) {
+        let oldNames: [String: String]
+        let transcript = method == "threadEntries"
         if taskMethods.contains(method) {
-            renames = ["taskId": "itemId"]
+            oldNames = ["taskId": "itemId"]
         } else if botMethods.contains(method) {
-            renames = ["maxThreads": "maxAgents", "threadWorktrees": "taskWorktrees"]
-        } else if method == "threadEntries" {
+            oldNames = ["maxThreads": "maxAgents", "threadWorktrees": "taskWorktrees"]
+        } else if transcript, !speaksThreads {
             // Its answer's `task` in place of `thread` isn't read: only `entries` is.
-            renames = ["threadId": "taskId"]
-            sent = "taskEntries"
+            oldNames = ["threadId": "taskId"]
         } else {
             return (method, body)
         }
+        let sent = transcript ? "taskEntries" : method
         guard var fields = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return (sent, body) }
-        for (new, old) in renames {
-            if let value = fields.removeValue(forKey: new) { fields[old] = value }
+        for (new, old) in oldNames {
+            guard let value = fields[new] else { continue }
+            fields[old] = value
+            if transcript { fields[new] = nil }
         }
         return (sent, (try? JSONSerialization.data(withJSONObject: fields)) ?? body)
     }

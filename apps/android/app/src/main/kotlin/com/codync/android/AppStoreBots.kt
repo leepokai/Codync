@@ -127,10 +127,12 @@ suspend fun AppStore.devServerLogs(botId: String, id: String): String =
 /** A host call for the screens that keep their own state (memory): waits for the connection first. */
 internal suspend fun AppStore.hostCall(method: String, body: JsonObject, timeoutMillis: Long = 240_000): JsonElement = callHost(method, body, timeoutMillis)
 
-/** Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0. The call in the names the connected host speaks ([hostCallFor]). */
+/** Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0. The call in the names either host takes ([hostCallFor]). */
 internal suspend fun AppStore.callHost(method: String, body: JsonObject, timeoutMillis: Long = 20_000): JsonElement {
-    val (named, renamed) = hostCallFor(state.value.hello?.text("version"), method, body)
-    return ready().call(named, renamed, timeoutMillis)
+    val active = ready()
+    // Read once the link is ready: a reconnect waited out above may have reached an updated host.
+    val (named, sent) = hostCallFor(state.value.hello?.text("version"), method, body)
+    return active.call(named, sent, timeoutMillis)
 }
 internal suspend fun AppStore.hostFiles(): HostFiles = HostFiles(ready())
 

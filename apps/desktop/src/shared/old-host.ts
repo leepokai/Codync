@@ -2,7 +2,8 @@
 //
 // Such a host says `item` for a task and `task` for a thread. `HostClient` passes what it sends and receives through
 // here, so the stores, models and views know only the names of today. What comes in is read by its shape, in either
-// form; what goes out is renamed only for a host that `speaksThreads` says is older.
+// form; what goes out names a task and a bot's thread settings both ways, and only a thread's transcript is asked
+// for by the host's version (`speaksThreads`).
 
 import { isBelow } from './compat.ts'
 import type { Entry } from './models'
@@ -26,15 +27,24 @@ function renamed(fields: Fields, from: string, to: string): Fields {
   return { ...rest, [to]: value }
 }
 
+/** `fields` with what `name` holds also under `old`: each host reads the name it knows and ignores the other. */
+function also(fields: Fields, name: string, old: string): Fields {
+  return name in fields ? { ...fields, [old]: fields[name] } : fields
+}
+
 /** The methods that name a task. */
 const NAMES_TASK = new Set(['send', 'steer', 'unqueue', 'workFirst', 'workCutIn', 'dropWork', 'stopWork', 'retryWork'])
 
-/** A call as an older host takes it: its method and body. */
-export function toOldHost(method: string, body: unknown): [string, unknown] {
+/**
+ * A call as either host takes it: its method and body. What names a task or a bot's thread settings carries both
+ * names whatever `hostVersion` says, so a version that is missing or left from the last connection never sends a
+ * thread's message to the chat. Only `threadEntries` goes by the version: a wrong guess there is a read that fails.
+ */
+export function toHost(hostVersion: string | undefined, method: string, body: unknown): [string, unknown] {
   if (!isFields(body)) return [method, body]
-  if (method === 'threadEntries') return ['taskEntries', renamed(body, 'threadId', 'taskId')]
-  if (NAMES_TASK.has(method)) return [method, renamed(body, 'taskId', 'itemId')]
-  if (method === 'updateBot' || method === 'createBot') return [method, renamed(renamed(body, 'maxThreads', 'maxAgents'), 'threadWorktrees', 'taskWorktrees')]
+  if (method === 'threadEntries') return speaksThreads(hostVersion) ? [method, body] : ['taskEntries', renamed(body, 'threadId', 'taskId')]
+  if (NAMES_TASK.has(method)) return [method, also(body, 'taskId', 'itemId')]
+  if (method === 'updateBot' || method === 'createBot') return [method, also(also(body, 'maxThreads', 'maxAgents'), 'threadWorktrees', 'taskWorktrees')]
   return [method, body]
 }
 

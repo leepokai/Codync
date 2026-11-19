@@ -28,7 +28,7 @@ private let thread = WorkThread(botId: "b1", taskId: "i1", threadId: "thread-1")
     #expect(store.threadEntries["thread-1"]?.first?.data.status == "sending")
     // The computer's copy takes its place.
     #expect(await until { store.threadEntries["thread-1"]?.map(\.id) == ["e1"] })
-    #expect(await fake.bodies["send"] == ["botId": "b1", "taskId": "i1", "text": "Also the docs", "clientNonce": "n1"])
+    #expect(await fake.bodies["send"] == ["botId": "b1", "taskId": "i1", "itemId": "i1", "text": "Also the docs", "clientNonce": "n1"])
     #expect(store.entries.isEmpty)
 }
 
@@ -41,12 +41,12 @@ private let thread = WorkThread(botId: "b1", taskId: "i1", threadId: "thread-1")
     let queued = try #require(store.threadEntries["thread-1"]?.first)
 
     store.steer(queued, in: thread)
-    #expect(await until { await fake.bodies["steer"] == ["botId": "b1", "taskId": "i1", "entryId": "q1"] })
+    #expect(await until { await fake.bodies["steer"] == ["botId": "b1", "taskId": "i1", "itemId": "i1", "entryId": "q1"] })
     #expect(await until { store.answering["q1"] == nil })
 
     store.unqueue(queued, in: thread)
     #expect(store.threadEntries["thread-1"]?.threadTranscript.rest.isEmpty == true)
-    #expect(await until { await fake.bodies["unqueue"] == ["botId": "b1", "taskId": "i1", "entryId": "q1"] })
+    #expect(await until { await fake.bodies["unqueue"] == ["botId": "b1", "taskId": "i1", "itemId": "i1", "entryId": "q1"] })
     // A refusal puts it back.
     await fake.refuse("unqueue", "It was sent already")
     var other = queued
@@ -98,31 +98,33 @@ private let thread = WorkThread(botId: "b1", taskId: "i1", threadId: "thread-1")
 }
 
 /// Hosts before 2.51.0: goes when minHost reaches 2.51.0.
-/// A host before 2.51.0 is called under its own names (`itemId`, `taskEntries`, `maxAgents`); a newer one, or one
-/// whose version isn't known yet, under the new ones.
-@Test func aHostBeforeThreadsIsCalledUnderItsOldNames() async throws {
+/// What names a task or a bot's thread settings goes out under both names (`taskId` and `itemId`, `maxThreads` and
+/// `maxAgents`) whatever the host's version, so one not known yet or left from the last connection never sends a
+/// thread's message to the chat. Only a thread's transcript is asked for by the version (`taskEntries` before).
+@Test func aTaskIsNamedForEitherHostAndATranscriptAskedForByItsVersion() async throws {
     let fake = FakeRemote(.ready(.direct))
     var client = HostClient(transport: fake)
     #expect(client.speaksThreads)
+    for version in [nil, "2.50.3", HostClient.threadsHost] {
+        client.hostVersion = version
+        try await client.steer(botId: "b1", entryId: "q1", taskId: "i1")
+        #expect(await fake.bodies["steer"] == ["botId": "b1", "taskId": "i1", "itemId": "i1", "entryId": "q1"])
+        try await client.stopWork(botId: "b1", taskId: "i1")
+        #expect(await fake.bodies["stopWork"] == ["botId": "b1", "taskId": "i1", "itemId": "i1"])
+
+        let update = OldHostWire.request("updateBot", Data(#"{"id":"b1","maxThreads":2,"threadWorktrees":false}"#.utf8), speaksThreads: client.speaksThreads)
+        let fields = try #require(JSONSerialization.jsonObject(with: update.body) as? [String: Any])
+        #expect(update.method == "updateBot")
+        #expect(fields["maxAgents"] as? Int == 2 && fields["taskWorktrees"] as? Bool == false)
+        #expect(fields["maxThreads"] as? Int == 2 && fields["threadWorktrees"] as? Bool == false)
+        // A call that names no task or thread goes as it is.
+        #expect(OldHostWire.request("markRead", Data("{}".utf8), speaksThreads: client.speaksThreads).body == Data("{}".utf8))
+    }
+
+    _ = try? await client.threadEntries(botId: "b1", threadId: "thread-1")
+    #expect(await fake.bodies["threadEntries"] == ["botId": "b1", "threadId": "thread-1"])
     client.hostVersion = "2.50.3"
     #expect(!client.speaksThreads)
-    try await client.steer(botId: "b1", entryId: "q1", taskId: "i1")
-    #expect(await fake.bodies["steer"] == ["botId": "b1", "itemId": "i1", "entryId": "q1"])
-    try await client.stopWork(botId: "b1", taskId: "i1")
-    #expect(await fake.bodies["stopWork"] == ["botId": "b1", "itemId": "i1"])
     _ = try? await client.threadEntries(botId: "b1", threadId: "task-1")
     #expect(await fake.bodies["taskEntries"] == ["botId": "b1", "taskId": "task-1"])
-    #expect(await fake.bodies["threadEntries"] == nil)
-
-    let update = OldHostWire.request("updateBot", Data(#"{"id":"b1","maxThreads":2,"threadWorktrees":false}"#.utf8))
-    let fields = try #require(JSONSerialization.jsonObject(with: update.body) as? [String: Any])
-    #expect(update.method == "updateBot")
-    #expect(fields["maxAgents"] as? Int == 2 && fields["taskWorktrees"] as? Bool == false)
-    #expect(fields["maxThreads"] == nil && fields["threadWorktrees"] == nil)
-    // A call that names no task or thread goes as it is.
-    #expect(OldHostWire.request("markRead", Data("{}".utf8)).method == "markRead")
-
-    client.hostVersion = HostClient.threadsHost
-    try await client.steer(botId: "b1", entryId: "q1", taskId: "i1")
-    #expect(await fake.bodies["steer"] == ["botId": "b1", "taskId": "i1", "entryId": "q1"])
 }

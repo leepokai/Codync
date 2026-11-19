@@ -160,19 +160,19 @@ data class WorkSections(
     /** The agent sessions that run now: tasks that need the user, then the working ones. */
     val threads: List<WorkTask>,
     /** The most the bot runs at once: the Threads heading's `2 / 3` is how many run of this (`2 / 1` right after it was lowered). */
-    val places: Int,
+    val atOnce: Int,
     /** What waits for a thread, in the order it will be taken. */
     val box: List<WorkTask>,
     /** Tasks that ended in the last day, newest first. */
     val recent: List<WorkTask>,
 ) {
     /** The threads the bot could still start: the ceiling less the ones that run. */
-    val free: Int get() = maxOf(0, places - threads.size)
+    val free: Int get() = maxOf(0, atOnce - threads.size)
 }
 
 fun workSections(work: List<WorkTask>, maxThreads: Int?): WorkSections {
     val threads = work.filter { it.status == WorkStatus.NeedsYou } + work.filter { it.status == WorkStatus.Working }
-    return WorkSections(threads, places = maxThreads ?: DEFAULT_MAX_THREADS,
+    return WorkSections(threads, atOnce = maxThreads ?: DEFAULT_MAX_THREADS,
         box = work.filter { it.status == WorkStatus.Waiting }, recent = work.filter { it.status.ended })
 }
 
@@ -233,8 +233,12 @@ fun homeRelative(path: String, home: String): String {
     return if (rest.isEmpty() || rest[0] == '/' || rest[0] == '\\') "~$rest" else path
 }
 
-/** The key of the draft the user writes to [botId]'s task [taskId] in its thread (iOS `WorkThread.draftKey`): under the bot's, so it goes with the bot. */
-fun threadDraftKey(botId: String, taskId: String) = "$botId/task/$taskId"
+/**
+ * The key of the draft the user writes to [botId]'s task [taskId] in its thread (iOS `WorkThread.draftKey`): under the
+ * bot's, so it goes with the bot. `item` is what a task was called when drafts were first kept: the key stays, so a
+ * draft written before 2.51.0 is still there.
+ */
+fun threadDraftKey(botId: String, taskId: String) = "$botId/item/$taskId"
 
 /** Whether a bot's folder is in a git repository, as Settings > Workspace says it: a phrase to look up. */
 enum class GitState(val title: String) {

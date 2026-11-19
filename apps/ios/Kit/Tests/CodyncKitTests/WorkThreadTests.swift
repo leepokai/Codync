@@ -19,7 +19,7 @@ private func entry(_ id: String, seq: Int64, kind: String = "agent", data: Strin
         #expect(work.map(\.readOnlyLine) == [nil, "Read only: a routine's run", "Read only: another bot's request", nil])
         #expect(work[0].folder == "/Users/kai/site")
         #expect(work[0].workThread(of: "b1") == WorkThread(botId: "b1", taskId: "a", threadId: "thread-1"))
-        #expect(work[0].workThread(of: "b1")?.draftKey == "b1/task/a")
+        #expect(work[0].workThread(of: "b1")?.draftKey == "b1/item/a")
         // No thread took it: nothing to write to.
         #expect(work[3].workThread(of: "b1") == nil)
     }

@@ -15,21 +15,35 @@ fn rename(map: &mut Map<String, Value>, old: &str, new: &str) {
     }
 }
 
-/// A call as the host of `version` takes it: the old method and argument names for one before 2.51.0. A version
-/// not known yet (no `hello` so far) counts as this client's own.
-pub fn outgoing(version: &str, method: &'static str, mut body: Value) -> (&'static str, Value) {
-    if crate::compat::at_least(version, RENAMED_IN) {
-        return (method, body);
+/// `new`'s value also under `old`: each host reads the name it knows and ignores the other.
+fn also(map: &mut Map<String, Value>, new: &str, old: &str) {
+    if let Some(value) = map.get(new).cloned() {
+        map.insert(old.to_owned(), value);
     }
+}
+
+/// The calls that name a task by `taskId` (`itemId` before).
+const TASK_CALLS: [&str; 8] =
+    ["send", "steer", "unqueue", "workFirst", "workCutIn", "dropWork", "stopWork", "retryWork"];
+
+/// A call as either host takes it. What names a task or a bot's thread settings carries both names whatever
+/// `version` says, so a version that is missing or left from the last connection never sends a thread's message
+/// to the chat. Only `threadEntries` goes by `version` (unknown counts as this client's own): a wrong guess there
+/// is a read that fails.
+pub fn outgoing(version: &str, method: &'static str, mut body: Value) -> (&'static str, Value) {
     let Some(args) = body.as_object_mut() else { return (method, body) };
     if method == "threadEntries" {
+        if crate::compat::at_least(version, RENAMED_IN) {
+            return (method, body);
+        }
         rename(args, "threadId", "taskId");
         return ("taskEntries", body);
     }
-    rename(args, "taskId", "itemId");
-    if method == "updateBot" {
-        rename(args, "maxThreads", "maxAgents");
-        rename(args, "threadWorktrees", "taskWorktrees");
+    if TASK_CALLS.contains(&method) {
+        also(args, "taskId", "itemId");
+    } else if method == "updateBot" || method == "createBot" {
+        also(args, "maxThreads", "maxAgents");
+        also(args, "threadWorktrees", "taskWorktrees");
     }
     (method, body)
 }
@@ -37,42 +51,38 @@ pub fn outgoing(version: &str, method: &'static str, mut body: Value) -> (&'stat
 /// An event or an answer as this client reads it, whichever host sent it. By shape, not by version: the first
 /// events can arrive before `hello` says which host this is, and a host from 2.51.0 sends none of the old shapes.
 pub fn incoming(v: &mut Value) {
-    if let Some(top) = v.as_object_mut() {
-        if top.get("type").and_then(Value::as_str) == Some("taskEntry") {
-            top.insert("type".into(), "threadEntry".into());
-            rename(top, "task", "thread");
-        } else if top.get("task").is_some_and(Value::is_object) && top.get("entries").is_some_and(Value::is_array) {
-            // `taskEntries`' answer.
-            rename(top, "task", "thread");
-        }
+    let Some(top) = v.as_object_mut() else { return };
+    if top.get("type").and_then(Value::as_str) == Some("taskEntry") {
+        top.insert("type".into(), "threadEntry".into());
+        rename(top, "task", "thread");
+    } else if top.get("task").is_some_and(Value::is_object) && top.get("entries").is_some_and(Value::is_array) {
+        // `taskEntries`' answer.
+        rename(top, "task", "thread");
     }
-    walk(v);
+    for (one, many, read) in [("bot", "bots", bot as fn(&mut Value)), ("entry", "entries", entry)] {
+        top.get_mut(one).into_iter().for_each(read);
+        top.get_mut(many).and_then(Value::as_array_mut).into_iter().flatten().for_each(read);
+    }
 }
 
-fn walk(v: &mut Value) {
-    match v {
-        Value::Object(map) => {
-            // A bot.
-            rename(map, "maxAgents", "maxThreads");
-            rename(map, "taskWorktrees", "threadWorktrees");
-            if let Some(Value::Array(work)) = map.get_mut("work") {
-                for task in work.iter_mut().filter_map(Value::as_object_mut) {
-                    rename(task, "task", "thread");
-                }
-            }
-            // An entry a thread put in its bot's chat: `data.task {id, title}` was the thread, `data.item` the task.
-            if map.contains_key("kind")
-                && let Some(Value::Object(data)) = map.get_mut("data")
-                && data.get("task").is_some_and(Value::is_object)
-            {
-                rename(data, "task", "thread");
-                let task = data.remove("item").unwrap_or(Value::Null);
-                data.insert("task".into(), task);
-            }
-            map.values_mut().for_each(walk);
-        }
-        Value::Array(list) => list.iter_mut().for_each(walk),
-        _ => {}
+fn bot(v: &mut Value) {
+    let Some(bot) = v.as_object_mut() else { return };
+    rename(bot, "maxAgents", "maxThreads");
+    rename(bot, "taskWorktrees", "threadWorktrees");
+    let work = bot.get_mut("work").and_then(Value::as_array_mut).into_iter().flatten();
+    for task in work.filter_map(Value::as_object_mut) {
+        rename(task, "task", "thread");
+    }
+}
+
+/// An entry a thread put in its bot's chat: `data.task {id, title}` was the thread, `data.item` the task.
+fn entry(v: &mut Value) {
+    if let Some(Value::Object(data)) = v.get_mut("data")
+        && data.get("task").is_some_and(Value::is_object)
+    {
+        rename(data, "task", "thread");
+        let task = data.remove("item").unwrap_or(Value::Null);
+        data.insert("task".into(), task);
     }
 }
 
@@ -82,26 +92,37 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn a_host_before_the_rename_is_called_by_the_old_names() {
-        let old = |method, body| outgoing("2.50.0", method, body);
-        assert_eq!(
-            old("threadEntries", json!({"botId": "b", "threadId": "task-1"})),
-            ("taskEntries", json!({"botId": "b", "taskId": "task-1"}))
-        );
-        for method in ["send", "steer", "unqueue", "workFirst", "workCutIn", "dropWork", "stopWork", "retryWork"] {
-            assert_eq!(
-                old(method, json!({"botId": "b", "taskId": "i1"})),
-                (method, json!({"botId": "b", "itemId": "i1"}))
-            );
+    fn a_call_names_a_task_and_a_bots_threads_for_either_host() {
+        // Whatever the version, the last connection's included: both names go.
+        for version in ["2.50.0", "2.51.0", "2.52.1-dev", ""] {
+            for method in TASK_CALLS {
+                assert_eq!(
+                    outgoing(version, method, json!({"botId": "b", "taskId": "i1"})),
+                    (method, json!({"botId": "b", "taskId": "i1", "itemId": "i1"})),
+                    "{version}"
+                );
+            }
+            for method in ["updateBot", "createBot"] {
+                assert_eq!(
+                    outgoing(version, method, json!({"id": "b", "maxThreads": 2, "threadWorktrees": false})),
+                    (
+                        method,
+                        json!({"id": "b", "maxThreads": 2, "threadWorktrees": false,
+                            "maxAgents": 2, "taskWorktrees": false})
+                    ),
+                    "{version}"
+                );
+            }
+            // A message to the chat names no task and gains nothing.
+            let chat = json!({"botId": "b", "text": "hi"});
+            assert_eq!(outgoing(version, "send", chat.clone()), ("send", chat));
         }
         assert_eq!(
-            old("updateBot", json!({"id": "b", "maxThreads": 2, "threadWorktrees": false})),
-            ("updateBot", json!({"id": "b", "maxAgents": 2, "taskWorktrees": false}))
+            outgoing("2.50.0", "threadEntries", json!({"botId": "b", "threadId": "task-1"})),
+            ("taskEntries", json!({"botId": "b", "taskId": "task-1"}))
         );
-        // A host from 2.51.0, or one that hasn't said its version yet, gets the call as written.
+        // A host from 2.51.0, or one that hasn't said its version yet, reads a thread as written.
         for version in ["2.51.0", "2.52.1-dev", ""] {
-            let body = json!({"botId": "b", "taskId": "i1", "maxThreads": 2});
-            assert_eq!(outgoing(version, "stopWork", body.clone()), ("stopWork", body), "{version}");
             let body = json!({"botId": "b", "threadId": "thread-1"});
             assert_eq!(outgoing(version, "threadEntries", body.clone()), ("threadEntries", body), "{version}");
         }
@@ -143,6 +164,11 @@ mod tests {
             json!({"thread": {"id": "task-1", "title": "Fix login"}, "entries": [said]}),
             "taskEntries' answer"
         );
+
+        // What the host only passes through stays as it is, at any depth.
+        let tool = json!({"type": "entry", "entry": {"id": "t", "kind": "tool",
+            "data": {"detail": {"kind": "x", "maxAgents": 1, "data": {"task": {"id": "1"}}}}}});
+        assert_eq!(read(tool.clone()), tool);
 
         // What a host from 2.51.0 sends stays as it is.
         for new in [json!({"type": "bot", "bot": bot}), json!({"type": "entry", "entry": card})] {

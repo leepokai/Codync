@@ -99,7 +99,7 @@ pub struct Bot {
     /// Its event box: the working tasks, then the waiting in the order they will be taken, then those ended in the
     /// last day. Its own `status` stays the chat's.
     pub work: Vec<WorkTask>,
-    /// The most agents it runs at once; `None` from a host before the box.
+    /// The most threads it runs at once; `None` from a host before the box.
     pub max_threads: Option<u8>,
     /// How it stands outside its chat (`bot.outside.status`); `None` from a host before it.
     pub outside: Option<Status>,

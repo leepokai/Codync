@@ -138,7 +138,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::Fallbacks => "Fallbacks",
             Field::SelfFallbacks => "Bot edits",
             Field::Folder => "Workspace",
-            Field::MaxAgents => "Threads at once",
+            Field::MaxThreads => "Threads at once",
             Field::ThreadWorktrees => "Worktree per thread",
             Field::Approvals => "Approvals",
             Field::Compaction => "Summarize",
@@ -315,7 +315,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     put(buf, vx, y + 1, vw, &tr(line), t.dim.patch(t.panel));
                 }
             }
-            Field::MaxAgents => {
+            Field::MaxThreads => {
                 let n = f.max_threads.unwrap_or_default();
                 put(buf, vx, y, vw, &format!("‹ {n} ›"), t.text.patch(base));
             }
@@ -427,7 +427,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         Field::Fallbacks => "←→ pick · space add / model · a agent · c login profile · [ ] move · x remove",
         Field::Fast
         | Field::SelfFallbacks
-        | Field::MaxAgents
+        | Field::MaxThreads
         | Field::ThreadWorktrees
         | Field::Color
         | Field::Shape

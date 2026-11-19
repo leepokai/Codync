@@ -13,8 +13,10 @@ public struct WorkThread: Hashable, Sendable {
         self.threadId = threadId
     }
 
-    /// Where the composer keeps what is typed for it, apart from the bot's chat and gone with the bot.
-    public var draftKey: String { "\(botId)/task/\(taskId)" }
+    /// Where the composer keeps what is typed for it, apart from the bot's chat and gone with the bot. `item` is
+    /// what a task was called when drafts were first kept: the key stays, so a draft written before 2.51.0 is
+    /// still there.
+    public var draftKey: String { "\(botId)/item/\(taskId)" }
 }
 
 /// Where a task's thread works, in one quiet line: its branch when it has a worktree of its own, else its folder.

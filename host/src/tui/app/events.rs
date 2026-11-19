@@ -18,6 +18,10 @@ impl App {
         match m {
             Msg::Online(on) => {
                 self.online = on;
+                if !on {
+                    // The next connection may reach another host: nothing goes by this one's version.
+                    self.host_version.clear();
+                }
                 if !on && self.error.is_none() && self.bots.is_empty() {
                     // Say why instead of spinning on "Connecting…".
                     self.call("hello", json!({}), After::Hello);
@@ -37,8 +41,6 @@ impl App {
             Msg::Connected { since } => {
                 self.stream_since = since;
                 self.floors.clear();
-                // A thread's entries aren't in the catch-up: the open transcripts ask for what they missed.
-                self.reload_thread_details();
             }
             // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
             Msg::Event(mut v) => {
@@ -270,6 +272,9 @@ impl App {
                 self.auto_order = v["autoOrder"].as_bool();
                 self.credentials_reset = v["credentialsReset"].as_bool().unwrap_or(false);
                 self.screen = v["screen"].clone();
+                // A thread's entries aren't in a connection's catch-up: the open transcripts ask for what they
+                // missed, now that the host's version says which name `threadEntries` goes by.
+                self.reload_thread_details();
             }
             After::Analytics => self.analytics_set(&v),
             After::AutoOrder => self.auto_order_set(&v),
@@ -533,5 +538,13 @@ mod tests {
         assert!(app.bots["b"].fast_refusal().is_some_and(|why| why.contains("requires extra usage")));
         app.upsert_bot(&json!({"id":"g", "kind":"group", "fastModeSupport":"offered"}));
         assert!(!app.bots["g"].fast_shown());
+    }
+
+    #[tokio::test]
+    async fn a_dropped_connection_forgets_the_hosts_version() {
+        let mut app = test_app();
+        app.host_version = "2.50.1".into();
+        app.on_msg(Msg::Online(false));
+        assert!(app.host_version.is_empty(), "the host that answers next may be another build");
     }
 }

@@ -84,8 +84,9 @@ import kotlinx.coroutines.launch
     var loaded by remember(threadId) { mutableStateOf(threadId == null) }
     var error by remember(threadId) { mutableStateOf<String?>(null) }
     var attempt by remember(threadId) { mutableIntStateOf(0) }
-    // Read again when the link comes back (its catch-up carries no thread entries) and when the thread's turn ends (its last rows).
-    LaunchedEffect(threadId, attempt, state.actualConnection is LinkState.Ready, live) {
+    // Read again when the link comes back (its catch-up carries no thread entries), when its hello says another host
+    // version (the transcript is asked for by it) and when the thread's turn ends (its last rows).
+    LaunchedEffect(threadId, attempt, state.actualConnection is LinkState.Ready, state.hello?.text("version"), live) {
         if (threadId == null) return@LaunchedEffect
         try { store.loadThread(bot.id, threadId); loaded = true; error = null }
         catch (cancelled: CancellationException) { throw cancelled }

@@ -1,4 +1,4 @@
-A bot runs on one agent, such as Claude Code. When that agent can't answer, because its usage ran out, it's rate limited or overloaded, it's signed out, or it won't start, the bot can carry on with the next agent in its list. The new agent continues the same turn in the same chat, with the bot's memory, workspace and tools. The bot goes back to its own agent once that one recovers.
+A bot runs on one agent, such as Claude Code. When that agent can't answer, because its usage ran out, it's rate limited or overloaded, it's signed out, or it won't start, the bot can carry on with the next agent in its list. The new agent continues the same turn in the same chat, with the bot's memory, working folder and tools. The bot goes back to its own agent once that one recovers.
 
 Each fallback is another **agent** (for example Claude Code, then Codex, then Gemini CLI). To fall back between one agent's own models, set that in the agent itself (for example Claude Code's `fallbackModel`).
 

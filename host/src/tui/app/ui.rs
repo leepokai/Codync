@@ -198,8 +198,8 @@ pub enum Field {
     Fallbacks,
     SelfFallbacks,
     Folder,
-    /// The most agents it runs at once; only on a host that sends `maxThreads`.
-    MaxAgents,
+    /// The most threads it runs at once; only on a host that sends `maxThreads`.
+    MaxThreads,
     /// A worktree per thread; only for a bot in a git repository, on a host that sends `threadWorktrees`.
     ThreadWorktrees,
     Approvals,
@@ -227,7 +227,7 @@ pub const FIELDS: [Field; 23] = [
     Field::SelfFallbacks,
     Field::Compaction,
     Field::Folder,
-    Field::MaxAgents,
+    Field::MaxThreads,
     Field::ThreadWorktrees,
     Field::Approvals,
     Field::Notify,
@@ -263,7 +263,7 @@ pub struct Form {
     pub fallbacks: Vec<crate::store::Fallback>,
     pub self_fallbacks: bool,
     pub cwd: String,
-    /// The most agents it runs at once; `None`: the host has no event box.
+    /// The most threads it runs at once; `None`: the host has no event box.
     pub max_threads: Option<u8>,
     /// A worktree per thread; `None`: the host has no worktrees, or the bot's folder is in no git repository.
     pub thread_worktrees: Option<bool>,

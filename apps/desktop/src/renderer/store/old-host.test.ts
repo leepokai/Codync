@@ -53,7 +53,7 @@ async function callAll(client: InstanceType<typeof HostClient>) {
   await client.call('send', { botId: 'b', text: 'to the chat' })
 }
 
-test('the first host that says task and thread is 2.51.0; one not known yet counts as older', () => {
+test('the first host that says task and thread is 2.51.0; one not known yet counts as new', () => {
   assert.equal(speaksThreads('2.51.0'), true)
   assert.equal(speaksThreads('2.52.3'), true)
   assert.equal(speaksThreads('2.50.9'), false)
@@ -61,35 +61,42 @@ test('the first host that says task and thread is 2.51.0; one not known yet coun
   assert.equal(speaksThreads(undefined), true)
 })
 
-test('an older host is sent its own names: itemId, taskEntries, maxAgents and taskWorktrees', async () => {
+/** What `callAll` sends, with a thread's transcript asked for as `transcript`. */
+const sentWith = (transcript: [string, unknown]) => [
+  ['send', { botId: 'b', taskId: 't1', itemId: 't1', text: 'hi', clientNonce: 'n' }],
+  ['steer', { botId: 'b', taskId: 't1', itemId: 't1', entryId: 'e' }],
+  ['unqueue', { botId: 'b', taskId: 't1', itemId: 't1', entryId: 'e' }],
+  ['workFirst', { botId: 'b', taskId: 't1', itemId: 't1' }],
+  ['workCutIn', { botId: 'b', taskId: 't1', itemId: 't1', insteadOf: 't2' }],
+  ['dropWork', { botId: 'b', taskId: 't1', itemId: 't1' }],
+  ['stopWork', { botId: 'b', taskId: 't1', itemId: 't1' }],
+  ['stopWork', { botId: 'b' }],
+  ['retryWork', { botId: 'b', taskId: 't1', itemId: 't1' }],
+  transcript,
+  ['updateBot', { id: 'b', maxThreads: 2, threadWorktrees: false, maxAgents: 2, taskWorktrees: false }],
+  ['send', { botId: 'b', text: 'to the chat' }],
+]
+
+test('a task and a bot\'s thread settings go under both names; an older host is asked for taskEntries', async () => {
   const { client, sent } = await clientOf('2.50.0')
   await callAll(client)
-  assert.deepEqual(sent, [
-    ['send', { botId: 'b', itemId: 't1', text: 'hi', clientNonce: 'n' }],
-    ['steer', { botId: 'b', itemId: 't1', entryId: 'e' }],
-    ['unqueue', { botId: 'b', itemId: 't1', entryId: 'e' }],
-    ['workFirst', { botId: 'b', itemId: 't1' }],
-    ['workCutIn', { botId: 'b', itemId: 't1', insteadOf: 't2' }],
-    ['dropWork', { botId: 'b', itemId: 't1' }],
-    ['stopWork', { botId: 'b', itemId: 't1' }],
-    ['stopWork', { botId: 'b' }],
-    ['retryWork', { botId: 'b', itemId: 't1' }],
-    ['taskEntries', { botId: 'b', taskId: 'task-1' }],
-    ['updateBot', { id: 'b', maxAgents: 2, taskWorktrees: false }],
-    ['send', { botId: 'b', text: 'to the chat' }],
-  ])
+  assert.deepEqual(sent, sentWith(['taskEntries', { botId: 'b', taskId: 'task-1' }]))
 })
 
-test('a host from 2.51.0 is sent the names of today', async () => {
+test('a host from 2.51.0 is asked for threadEntries', async () => {
   const { client, sent } = await clientOf('2.51.0')
   await callAll(client)
-  assert.deepEqual(sent.slice(0, 2), [
-    ['send', { botId: 'b', taskId: 't1', text: 'hi', clientNonce: 'n' }],
-    ['steer', { botId: 'b', taskId: 't1', entryId: 'e' }],
-  ])
-  assert.deepEqual(sent.slice(-3, -1), [
-    ['threadEntries', { botId: 'b', threadId: 'task-1' }],
-    ['updateBot', { id: 'b', maxThreads: 2, threadWorktrees: false }],
+  assert.deepEqual(sent, sentWith(['threadEntries', { botId: 'b', threadId: 'task-1' }]))
+})
+
+test('before hello, a call to a task still reaches it on either host; a new connection starts from the known version', async () => {
+  const sent: [string, unknown][] = []
+  const transport: HostTransport = { call: async (method, body) => { sent.push([method, body]); return {} }, stream: () => () => {} }
+  await new HostClient(transport).call('stopWork', { botId: 'b', taskId: 't1' })
+  await new HostClient(transport, '2.50.1').call('threadEntries', { botId: 'b', threadId: 'task-1' })
+  assert.deepEqual(sent, [
+    ['stopWork', { botId: 'b', taskId: 't1', itemId: 't1' }],
+    ['taskEntries', { botId: 'b', taskId: 'task-1' }],
   ])
 })
 

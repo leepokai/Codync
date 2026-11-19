@@ -468,9 +468,9 @@ A thread's id is opaque: a client never tests its prefix.
 Until host schema 9 a task was called an item and a thread a task, in the database as on the wire. The wire has no
 aliases: the host sends and takes only the new names. What it had stored is read as follows.
 
-- **Bot config**: `threadOf`, `maxThreads` and `threadWorktrees` also read a row that says `taskOf`, `maxAgents` and
-  `taskWorktrees` (serde aliases in `store/model.rs`); the row is saved under the new names the next time it is
-  written.
+- **Bot config**: schema 9 (`migrate_9` in `store/schema.rs`) renames `taskOf`, `maxAgents` and `taskWorktrees` to
+  `threadOf`, `maxThreads` and `threadWorktrees` in each stored `bots.config`, once at startup. After that nothing
+  reads the old names, not even `updateBot`.
 - **The box** (kv `work.<bot>`): a task's `thread` also reads `task`, and a kept report's `task` also reads `item`
   (`work/tasks.rs`, `Report` in `work/mod.rs`); the box is saved under the new names at its next change.
 - **Entries a thread put in its bot's chat**: schema 9 (`migrate_9` in `store/schema.rs`) rewrites each stored entry

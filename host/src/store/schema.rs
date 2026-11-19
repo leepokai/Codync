@@ -177,7 +177,7 @@ fn migrate_9(c: &Connection) -> Result<()> {
         "BEGIN;
          UPDATE entries SET data = json_remove(
              json_set(data, '$.thread', json_extract(data, '$.task'), '$.task', json_extract(data, '$.item')), '$.item')
-           WHERE json_type(data, '$.task') = 'object';
+           WHERE json_valid(data) AND json_type(data, '$.task') = 'object';
          UPDATE bots SET config = json_remove(json_set(config, '$.threadOf', json_extract(config, '$.taskOf')), '$.taskOf')
            WHERE json_valid(config) AND json_type(config, '$.taskOf') = 'text';
          UPDATE bots SET config = json_remove(json_set(config, '$.maxThreads', json_extract(config, '$.maxAgents')), '$.maxAgents')
@@ -289,14 +289,19 @@ mod tests {
                  INSERT INTO entries(id, bot_id, rev, kind, turn, data, created_at, updated_at) VALUES
                    ('card', 'b', 1, 'permission', 1, '{\"status\":\"pending\",\"author\":\"b\",\"task\":{\"id\":\"task-1\",\"title\":\"Fix login\"},\"item\":\"i1\"}', 0, 0),
                    ('file', 'b', 2, 'agent', 1, '{\"files\":[],\"task\":{\"id\":\"task-1\",\"title\":\"Fix login\"},\"item\":null}', 0, 0),
-                   ('own', 'b', 3, 'agent', 1, '{\"text\":\"hi\",\"final\":true}', 0, 0);
+                   ('own', 'b', 3, 'agent', 1, '{\"text\":\"hi\",\"final\":true}', 0, 0),
+                   ('cut', 'b', 4, 'agent', 1, '{\"task\":{\"id\":', 0, 0);
                  INSERT INTO bots(id, rev, config) VALUES
                    ('b', 1, '{\"id\":\"b\",\"name\":\"B\",\"backend\":\"claude\",\"maxAgents\":2,\"taskWorktrees\":true}'),
                    ('task-1', 2, '{\"id\":\"task-1\",\"name\":\"B\",\"backend\":\"claude\",\"taskOf\":\"b\",\"maxAgents\":5,\"taskWorktrees\":false}');",
             )
             .unwrap();
         }
+        // `cut` isn't JSON: the store still opens, and the row stays as it was.
         let s = Store::open(&db).unwrap();
+        let cut: String =
+            s.db.lock().unwrap().query_row("SELECT data FROM entries WHERE id = 'cut'", [], |r| r.get(0)).unwrap();
+        assert_eq!(cut, "{\"task\":{\"id\":");
         let thread = s.bot("task-1").unwrap().expect("the thread bot").config;
         assert_eq!((thread.thread_of.as_deref(), thread.max_threads, thread.thread_worktrees), (Some("b"), 5, false));
         assert!(s.thread_bots().unwrap().iter().any(|row| row.config.id == "task-1"), "known by the id it had");

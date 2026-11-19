@@ -20,21 +20,26 @@ class OldHostWireTest {
         assertTrue(speaksThreads("soon"))
     }
 
-    @Test fun `what goes out to an older host says item and task`() {
-        fun old(method: String, body: String) = hostCallFor("2.50.0", method, json(body))
-        for (method in listOf("send", "steer", "unqueue", "workFirst", "dropWork", "stopWork", "retryWork"))
-            assertEquals(method to json("""{"botId":"b","itemId":"w1"}"""), old(method, """{"botId":"b","taskId":"w1"}"""))
-        assertEquals("workCutIn" to json("""{"botId":"b","itemId":"w1","insteadOf":"w2"}"""), old("workCutIn", """{"botId":"b","taskId":"w1","insteadOf":"w2"}"""))
-        assertEquals("taskEntries" to json("""{"botId":"b","taskId":"task-1"}"""), old("threadEntries", """{"botId":"b","threadId":"task-1"}"""))
-        assertEquals("updateBot" to json("""{"id":"b","maxAgents":4,"taskWorktrees":false}"""), old("updateBot", """{"id":"b","maxThreads":4,"threadWorktrees":false}"""))
-        // A message to the chat, and any other call, goes as it is.
-        assertEquals("send" to json("""{"botId":"b","text":"hi"}"""), old("send", """{"botId":"b","text":"hi"}"""))
-        assertEquals("routines" to json("""{"botId":"b"}"""), old("routines", """{"botId":"b"}"""))
-        // A current host, or one not yet known, gets the new names untouched.
-        for (version in listOf("2.51.0", null)) {
-            assertEquals("send" to json("""{"botId":"b","taskId":"w1"}"""), hostCallFor(version, "send", json("""{"botId":"b","taskId":"w1"}""")))
-            assertEquals("threadEntries" to json("""{"threadId":"t"}"""), hostCallFor(version, "threadEntries", json("""{"threadId":"t"}""")))
+    @Test fun `what names a task or a bot's threads goes out under both names, whatever the host's version`() {
+        // An old version left from the last link, a current one and none yet: a thread's message never goes to the chat.
+        for (version in listOf("2.50.1", "2.51.0", null)) {
+            fun sent(method: String, body: String) = hostCallFor(version, method, json(body))
+            for (method in listOf("send", "steer", "unqueue", "workFirst", "dropWork", "stopWork", "retryWork"))
+                assertEquals(method to json("""{"botId":"b","taskId":"w1","itemId":"w1"}"""), sent(method, """{"botId":"b","taskId":"w1"}"""))
+            assertEquals("workCutIn" to json("""{"botId":"b","taskId":"w1","insteadOf":"w2","itemId":"w1"}"""), sent("workCutIn", """{"botId":"b","taskId":"w1","insteadOf":"w2"}"""))
+            for (method in listOf("updateBot", "createBot"))
+                assertEquals(method to json("""{"id":"b","maxThreads":4,"threadWorktrees":false,"maxAgents":4,"taskWorktrees":false}"""),
+                    sent(method, """{"id":"b","maxThreads":4,"threadWorktrees":false}"""))
+            // A message to the chat, and any other call, goes as it is.
+            assertEquals("send" to json("""{"botId":"b","text":"hi"}"""), sent("send", """{"botId":"b","text":"hi"}"""))
+            assertEquals("routines" to json("""{"botId":"b"}"""), sent("routines", """{"botId":"b"}"""))
         }
+    }
+
+    @Test fun `a thread's transcript is asked for by the host's version`() {
+        val asked = json("""{"botId":"b","threadId":"task-1"}""")
+        assertEquals("taskEntries" to json("""{"botId":"b","taskId":"task-1"}"""), hostCallFor("2.50.0", "threadEntries", asked))
+        for (version in listOf("2.51.0", null)) assertEquals("threadEntries" to asked, hostCallFor(version, "threadEntries", asked))
     }
 
     @Test fun `what comes in from an older host reads as tasks and threads`() {

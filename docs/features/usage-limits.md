@@ -4,7 +4,7 @@ What the apps show about plan limits, read on the host (`host/src/usage/`) from 
 
 ## Which agents show
 
-Every Usage screen can list the agents that can report on this computer, each with a switch, behind the button beside the computer's name: desktop **Settings > Usage**, the phones' **State > Usage limits**, and the terminal UI's `U` then `s`. The choice is per computer and lives on its host, so every app, widget, the menu bar and the notch island follow it.
+Every Usage screen can list the agents that can report on this computer, each with a switch, behind the button beside the computer's name: the desktop's **Usage** page, the phones' **State > Usage limits**, and the terminal UI's `U` then `s`. The choice is per computer and lives on its host, so every app, widget, the menu bar and the notch island follow it.
 
 - **Default:** an agent shows when a bot on this computer runs it, as its own agent or a fallback. Being installed or signed in isn't enough: a Cursor app that's signed in stays off until a bot uses Cursor or the user turns it on.
 - **A choice wins over the default:** `setUsageShown {id, shown}` saves `usage.shown.<id>` in the host's kv and answers with the new `usage`.

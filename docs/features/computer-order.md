@@ -21,7 +21,7 @@ two hosts on one machine (two users) can be told apart. `setComputerName {name}`
 and cut to the cloud's 64 UTF-16 units; empty goes back to the hostname. Connected apps hear a `name` event, the
 others read it in their next `hello`, and the host registers again so the account's computer list has it. A cloud
 computer is named in Codync Cloud instead (the call refuses there). iPhone and Android: **Rename…** in the
-computer card's long-press menu in Computer management; desktop: the pencil on its card in Settings › Computers;
+computer card's long-press menu in Computer management; desktop: the pencil on its card on the Computers page;
 terminal UI: **Computer name** in the command palette.
 
 ## Local persistence

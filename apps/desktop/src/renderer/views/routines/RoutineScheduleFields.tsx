@@ -3,7 +3,7 @@ import { CardSection, ChipChoice, ChoicePicker } from '../../components/Controls
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { TimeZonePicker } from './TimeZonePicker'
-import { compiledCron, repeatChoice, repeatChoices, scheduleCaption, type RepeatChoice, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
+import { compiledCron, repeatChoice, repeatChoices, type RepeatChoice, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
 import './routines.css'
 import { useIntlLocale, useTr } from '../../lib/use-language'
 
@@ -120,14 +120,6 @@ function SchedulePreview({ preview, error }: { preview: RoutineSchedulePreview |
               {tr('Next {when}').replaceAll('{when}', () => new Date(nextRunAt).toLocaleString(dateLocale, { dateStyle: 'medium', timeStyle: 'short' }))}
             </Text>
           ) : null}
-          <HStack gap={8} wrap>
-            <Text size="callout" weight="medium" tone="text">{scheduleCaption(preview.draft, tr)}</Text>
-            {preview.nextRunAt ? (
-              <Text size="callout" tone="secondary">
-                {tr('Next {when}').replace('{when}', new Date(preview.nextRunAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }))}
-              </Text>
-            ) : null}
-          </HStack>
           {preview.warning ? <Text size="callout" tone="secondary">{preview.warning}</Text> : null}
         </>
       ) : null}

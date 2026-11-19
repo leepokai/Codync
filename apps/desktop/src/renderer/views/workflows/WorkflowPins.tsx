@@ -10,10 +10,8 @@ import { pinWorkflow, workflowPins } from './pins'
 import { summaryLine } from './workflow'
 
 /** Pinned workflows above this computer's bots. The pin list is on this device only. */
-export function WorkflowPins({ store, compact, activeId, onOpen }: {
+export function WorkflowPins({ store, onOpen }: {
   store: BotStore
-  compact: boolean
-  activeId: string | null
   onOpen: (id: string) => void
 }) {
   useModel(store)
@@ -31,22 +29,20 @@ export function WorkflowPins({ store, compact, activeId, onOpen }: {
         <button
           key={id}
           type="button"
-          className={`roster-row workflow-pin ${compact ? 'compact' : ''} ${activeId === id ? 'selected' : ''}`}
+          className="roster-row workflow-pin"
           onClick={() => onOpen(id)}
           onContextMenu={(event) => {
             event.preventDefault()
             setMenu({ id, x: event.clientX, y: event.clientY })
           }}
         >
-          <HStack gap={compact ? 0 : 10} justify={compact ? 'center' : 'flex-start'}>
+          <HStack gap={10}>
             <Icon name="flowchart" size={18} />
-            {compact ? null : (
-              <VStack gap={2}>
-                <Text size="body" weight="medium" truncate>{summary.title}</Text>
-                <Text size="caption" tone="tertiary" mono truncate>{summary.id.slice(0, 8)}</Text>
-                {summaryLine(summary) ? <Text size="callout" tone="secondary" truncate>{summaryLine(summary)}</Text> : null}
-              </VStack>
-            )}
+            <VStack gap={2}>
+              <Text size="body" weight="medium" truncate>{summary.title}</Text>
+              <Text size="caption" tone="tertiary" mono truncate>{summary.id.slice(0, 8)}</Text>
+              {summaryLine(summary) ? <Text size="callout" tone="secondary" truncate>{summaryLine(summary)}</Text> : null}
+            </VStack>
           </HStack>
         </button>
       ))}

@@ -57,30 +57,64 @@ export function TaskLine({ entry }: { entry: Entry }) {
   return task ? <Text as="div" size="caption" tone="tertiary" truncate className="task-line">{tr('In the background')} · {task.title}</Text> : null
 }
 
-/** Approval card in Grok Bot's choice-card style: what the agent wants, where it runs, the answers. */
+/** The symbol of what the agent wants, by the tool's kind: it tells one card from the next down a chat. */
+const kindIcon = (toolKind?: string) => {
+  switch (toolKind) {
+    case 'execute':
+      return 'terminal'
+    case 'edit':
+    case 'delete':
+    case 'move':
+      return 'pencil'
+    case 'fetch':
+      return 'globe'
+    case 'read':
+    case 'search':
+      return 'doc.text'
+    default:
+      return 'wrench.and.screwdriver'
+  }
+}
+
+/**
+ * An approval in the chat. While it waits: what the agent wants and where it runs, the request itself in a well, its
+ * details on demand, then the answers in a row (allowing first, refusing last and quiet). Once it is settled it folds
+ * to one line, the request and how it ended, which opens to the same card without the answers.
+ */
 export function PermissionCard({ entry, hostName, answering, respond }: { entry: Entry; hostName: string; answering: string | null; respond: (option: string | null) => void }) {
   const tr = useTr()
   const [expanded, setExpanded] = useState(false)
+  const [open, setOpen] = useState(false)
   const d = entry.data
   const pending = d.status === 'pending'
   const hasDetail = !!d.command || !!d.detail || !!d.diffs?.length
   const options = sortedOptions(d.options ?? [])
   const cwd = d.cwd ? ` · ${d.cwd.split('/').filter(Boolean).pop() ?? d.cwd}` : ''
+  if (!pending && !open) {
+    return (
+      <div className="agent-inset">
+        <button className="permission-card settled press" aria-expanded={false} onClick={() => setOpen(true)}>
+          <Icon name={kindIcon(d.toolKind)} size={12} color="var(--tertiary)" />
+          <Text size="subheadline" mono tone="secondary" truncate grow>{d.title ?? ''}</Text>
+          <Text size="caption" weight="medium" tone="tertiary" className="permission-card-outcome">{outcome(entry)}</Text>
+        </button>
+      </div>
+    )
+  }
   return (
-    // The item's row on the bot's Details finds its card by this.
     <div className="agent-inset">
-      <VStack gap={10} className="permission-card">
-        <HStack gap={8}>
-          <Text size="headline" tone="text">{permissionHeadline(d.toolKind)}</Text>
-          {pending ? <span className="permission-card-dot" /> : null}
+      <VStack gap={12} className="permission-card">
+        <HStack gap={10} align="start">
+          <span className="permission-card-kind"><Icon name={kindIcon(d.toolKind)} size={13} weight="medium" color="var(--secondary)" /></span>
+          <VStack gap={2} grow>
+            <Text size="headline" tone="text">{permissionHeadline(d.toolKind)}</Text>
+            <Text size="caption" tone="tertiary">{fill(tr('Runs on {name}{path}'), { name: hostName, path: cwd })}</Text>
+          </VStack>
+          {pending ? null : <Text size="caption" weight="medium" tone="secondary" className="permission-card-outcome">{outcome(entry)}</Text>}
         </HStack>
-        <Text as="div" size="subheadline" mono tone="secondary" lines={expanded ? undefined : 3} className="selectable permission-card-title">
+        <Text as="div" size="subheadline" mono tone="text" lines={expanded ? undefined : 3} className="selectable permission-card-title permission-card-request">
           {d.title ?? ''}
         </Text>
-        <HStack gap={6}>
-          <Icon name="desktopcomputer" size={10} color="var(--tertiary)" />
-          <Text size="caption" tone="tertiary">{fill(tr('Runs on {name}{path}'), { name: hostName, path: cwd })}</Text>
-        </HStack>
         <TaskLine entry={entry} />
         {hasDetail ? (
           <Disclosure expanded={expanded} onToggle={() => setExpanded((e) => !e)} label={<Text size="caption" weight="medium" tone="secondary">{tr(`Details`)}</Text>}>
@@ -93,23 +127,19 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
         ) : null}
         {pending ? (
           <div className="permission-card-options">
-            {options.map((o, i) => (
-              <div key={o.optionId}>
-                {i > 0 ? <div className="thread-hairline" /> : null}
-                <button
-                  className={answering === null || answering === o.optionId ? 'permission-option' : 'permission-option dimmed'}
-                  disabled={answering !== null}
-                  onClick={() => respond(o.optionId)}
-                >
-                  <Text size="body" weight={o.kind === 'allow_once' ? 'semibold' : 'regular'} tone={o.kind.startsWith('allow') ? 'text' : 'danger'} className="permission-option-label">{optionLabel(o)}</Text>
-                  {answering === o.optionId ? <Spinner size={14} /> : null}
-                </button>
-              </div>
+            {options.map((o) => (
+              <button
+                key={o.optionId}
+                className={`permission-option ${o.kind.startsWith('reject') ? 'refuses' : `styled-button ${o.kind === 'allow_once' ? 'primary' : 'secondary'}`} ${answering === null || answering === o.optionId ? '' : 'dimmed'}`}
+                disabled={answering !== null}
+                onClick={() => respond(o.optionId)}
+              >
+                <span className="permission-option-label">{optionLabel(o)}</span>
+                {answering === o.optionId ? <Spinner size={12} /> : null}
+              </button>
             ))}
           </div>
-        ) : (
-          <Text as="div" size="caption" weight="medium" tone="secondary">{outcome(entry)}</Text>
-        )}
+        ) : null}
       </VStack>
     </div>
   )

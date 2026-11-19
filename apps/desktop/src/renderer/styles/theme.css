@@ -4,6 +4,8 @@
   color-scheme: light dark;
   --background: #ffffff;
   --surface: #f4f4f4;
+  /* The window's bar and rail: a step off the list column beside them, in either theme. */
+  --window-chrome: color-mix(in srgb, var(--surface), var(--text) 5%);
   --bubble-agent: #f0f0f0;
   --bubble-user: #e2e2e2;
   --border: #e6e6e6;

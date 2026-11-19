@@ -505,7 +505,6 @@
   "The host isn't responding. See the log for details.": "Der Host antwortet nicht. Details findest du im Protokoll.",
   "Restart the manually started development host in its terminal.": "Starte den manuell gestarteten Entwicklungs-Host in seinem Terminal neu.",
   "Another build of the host is running, not this app's. Try again to replace it.": "Ein anderer Host-Build läuft statt dem dieser App. Versuche es erneut, um ihn zu ersetzen.",
-  "Your computer is ready": "Dein Computer ist bereit",
   "Work in your apps with a bot, or access your screen from your phone. You choose which bots can use this computer.": "Arbeite mit einem Bot in deinen Apps oder greife vom Telefon auf deinen Bildschirm zu. Du wählst, welche Bots diesen Computer verwenden dürfen.",
   "Let a bot work in your apps. You choose which bots can use this computer.": "Lass einen Bot in deinen Apps arbeiten. Du wählst, welche Bots diesen Computer verwenden dürfen.",
   "Waiting for your computer": "Warten auf deinen Computer",
@@ -2371,5 +2370,16 @@
   "Connect {provider}": "{provider} verbinden",
   "Use the command line instead": "Stattdessen die Kommandozeile verwenden",
   "Leave it empty to use the hostname.": "Leer lassen, um den Hostnamen zu verwenden.",
-  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Diese Arbeit lief 8 Schritte am Stück ohne dich, so viele wie möglich. Mit „Weiter“ geht es weiter."
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Diese Arbeit lief 8 Schritte am Stück ohne dich, so viele wie möglich. Mit „Weiter“ geht es weiter.",
+  "Close {name}": "{name} schließen",
+  "Open a view": "Ansicht öffnen",
+  "Group by computer": "Nach Computer gruppieren",
+  "Sort by status": "Nach Status sortieren",
+  "Maximize panel": "Bereich maximieren",
+  "Split panel": "Bereich teilen",
+  "Browser": "Browser",
+  "Web address": "Webadresse",
+  "Enter an address to preview a page here": "Adresse eingeben, um hier eine Seite anzuzeigen",
+  "That is not a web address": "Das ist keine Webadresse",
+  "Forward": "Vorwärts"
 }

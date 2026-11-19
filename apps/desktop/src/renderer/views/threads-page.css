@@ -1,0 +1,35 @@
+/* The Threads page (ThreadsPage.tsx): every bot's work by status in the list column, a thread beside it. */
+.thread-group + .thread-group {
+  margin-top: 12px;
+}
+.thread-group-heading {
+  padding: 6px 10px 4px;
+}
+.thread-row {
+  border-radius: var(--radius-m);
+  transition: background-color var(--hover);
+}
+.thread-row:hover {
+  background: var(--bubble-agent);
+}
+.thread-row.selected {
+  background: var(--roster-selected);
+}
+.thread-row + .thread-row {
+  margin-top: 2px;
+}
+/* The list is narrower than a bot's Details: the row's own inset is enough. */
+.thread-row .work-row {
+  padding-right: 4px;
+}
+.thread-row .work-row-open {
+  padding-left: 10px;
+}
+.thread-detail {
+  position: relative;
+  height: 100%;
+}
+/* The list's header takes the first 54 points; the thread's header lines up with it. */
+.thread-detail .work-thread-header {
+  padding-left: 16px;
+}

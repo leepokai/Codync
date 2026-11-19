@@ -169,6 +169,13 @@ pub enum Event {
     /// An important release's highlights were on screen (docs/features/whats-new.md; desktop and terminal UI here,
     /// phones send their own).
     WhatsNewShown,
+    /// The desktop's details panel was split into two panes or joined, and took the conversation's place or gave
+    /// it back; a page was opened in its Browser tab.
+    PanelSplit,
+    PanelMaximized,
+    PreviewOpened,
+    /// Group by computer or Sort by status was switched on the desktop's Bots or Threads list.
+    ListLayoutChanged,
     /// A Codync Cloud computer's host started: how its keeper stood, and whether its agents could still use sudo.
     CloudKeeperChecked,
     /// A Codync Cloud computer's host, idle long enough, asked the cloud to put it to sleep (`remote::managed`).
@@ -302,6 +309,10 @@ impl Event {
             Self::KofiInviteShown => "kofi_invite_shown",
             Self::KofiInviteAnswered => "kofi_invite_answered",
             Self::WhatsNewShown => "whats_new_shown",
+            Self::PanelSplit => "panel_split",
+            Self::PanelMaximized => "panel_maximized",
+            Self::PreviewOpened => "preview_opened",
+            Self::ListLayoutChanged => "list_layout_changed",
             Self::CloudKeeperChecked => "cloud_keeper_checked",
             Self::CloudSleepAsked => "cloud_sleep_asked",
             Self::JoinFromPhoneAnswered => "join_from_phone_answered",

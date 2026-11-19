@@ -505,7 +505,6 @@
   "The host isn't responding. See the log for details.": "ホストが応答していません。詳細についてはログを参照してください。",
   "Restart the manually started development host in its terminal.": "ターミナルで手動で起動した開発ホストを再起動します。",
   "Another build of the host is running, not this app's. Try again to replace it.": "このアプリではなく、ホストの別のビルドが実行されています。もう一度交換してみてください。",
-  "Your computer is ready": "コンピューターの準備ができました",
   "Work in your apps with a bot, or access your screen from your phone. You choose which bots can use this computer.": "ボットを使用してアプリで作業するか、携帯電話から画面にアクセスします。このコンピューターを使用できるボットを選択します。",
   "Let a bot work in your apps. You choose which bots can use this computer.": "アプリ内でボットを動作させましょう。このコンピューターを使用できるボットを選択します。",
   "Waiting for your computer": "コンピューターを待っています",
@@ -2371,5 +2370,16 @@
   "Connect {provider}": "{provider} に接続",
   "Use the command line instead": "代わりにコマンドラインを使う",
   "Leave it empty to use the hostname.": "空欄にするとホスト名を使います。",
-  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "この作業はあなたを介さずに 8 ステップ続き、上限に達しました。「続ける」で先に進めます。"
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "この作業はあなたを介さずに 8 ステップ続き、上限に達しました。「続ける」で先に進めます。",
+  "Close {name}": "{name}を閉じる",
+  "Open a view": "ビューを開く",
+  "Group by computer": "コンピュータごとにまとめる",
+  "Sort by status": "状態順に並べる",
+  "Maximize panel": "パネルを最大化",
+  "Split panel": "パネルを分割",
+  "Browser": "ブラウザ",
+  "Web address": "ウェブアドレス",
+  "Enter an address to preview a page here": "アドレスを入力すると、ここにページを表示します",
+  "That is not a web address": "ウェブアドレスではありません",
+  "Forward": "進む"
 }

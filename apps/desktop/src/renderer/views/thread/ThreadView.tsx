@@ -1,15 +1,16 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { draftOf, isGroup, isWorking, isWorkingIn, type Bot, type BotDraft, type Entry, type ReplyQuote } from '@shared/models'
 import { BotAvatar, GroupAvatar } from '../../components/Avatar'
 import { Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Sheet, usePresence } from '../../components/Overlay'
-import { HStack, IconSlot, Spacer } from '../../components/Stack'
+import { HStack, IconSlot } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { prefs, usePref } from '../../lib/prefs'
 import { connectedThrough } from '../../lib/relay-copy'
 import { useTr } from '../../lib/use-language'
-import { useScreenViewed } from '../../store/analytics'
+import { analytics, useScreenViewed } from '../../store/analytics'
 import { useStore } from '../../store/context'
 import { UpdateNeededCard } from '../UpdateNeededCard'
 import { buildChat, rowIn, useArrivals, type ChatItem } from './chat-items'
@@ -27,7 +28,10 @@ import { WorkCapsule } from './WorkCapsule'
 import { fill } from '@shared/fill'
 import { outsideQueue } from './queued-messages'
 import { ChatSidePanel } from './ChatSidePanel'
-import { DetailsPanel, type DetailsTab } from './DetailsPanel'
+import { WindowBarSlots } from '../WindowBar'
+import { AgentIcon } from '../../components/AgentIcon'
+import { IconButton } from '../../components/Controls'
+import { DetailsPanel, showPanelView, type DetailsTab } from './DetailsPanel'
 import { TraceView } from './TraceView'
 import { workingSteps } from './trace-turns'
 import { useReading } from './reading'
@@ -47,10 +51,10 @@ const WIDE = 740
 /**
  * One endless conversation with a bot or a group chat. Only deliberate messages show here; tool
  * calls and thinking live in the "Full conversation" sheet. Replying to a message quotes it in the composer.
- * `request` is what something outside asks it to show, counted per asking: the card of `item`, the thread of the
- * item `thread`, else the bot's Details.
+ * `request` is what the Threads page asks it to show, counted per asking: the card an item waits on, or one of its
+ * entries.
  */
-export const ThreadView = memo(function ThreadView({ botId, request = null }: { botId: string; request?: { count: number; item?: string; thread?: string } | null }) {
+export const ThreadView = memo(function ThreadView({ botId, request = null }: { botId: string; request?: ({ count: number } & Reveal) | null }) {
   const tr = useTr()
   const store = useStore()
   const bot = store.bots.get(botId) ?? null
@@ -63,7 +67,8 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
   const [editingGroup, setEditingGroup] = useState(false)
   const [templateDraft, setTemplateDraft] = useState<BotDraft | null>(null)
   const [showSettings, setShowSettings] = useState(false)
-  const [detailsTab, setDetailsTab] = useState<DetailsTab>('details')
+  // The docked panel covers the conversation.
+  const [panelFilled, setPanelFilled] = useState(false)
   // The item whose thread the inspector shows in place of its pages.
   const [threadItem, setThreadItem] = useState<string | null>(null)
   const closeThread = useCallback(() => setThreadItem(null), [])
@@ -110,6 +115,7 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
   }, [])
 
   const panelOpen = wide && showSettings
+  const bar = useContext(WindowBarSlots)
   squeezeBelow.current = panelOpen ? Math.max(360, detailsWidth) : 0
   // The side panel's edge drags its width, leaving the conversation at least 380 wide.
   const panelWidth = (w: number) => Math.min(Math.max(360, w), width.current - 380)
@@ -124,7 +130,7 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
   const devServers = devServerSummary(bot?.devServers ?? [])
   // The title's port leads to its row, whichever page the inspector was left on.
   const openFromTitle = useCallback(() => {
-    if (devServers.kind !== 'none') setDetailsTab('details')
+    if (devServers.kind !== 'none') showPanelView('details')
     toggleDetails()
   }, [devServers.kind, toggleDetails])
 
@@ -143,7 +149,7 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
   }, [])
 
   const showDetails = useCallback((tab: DetailsTab) => {
-    setDetailsTab(tab)
+    showPanelView(tab)
     setThreadItem(null)
     setShowSettings(true)
     if (!wide) setCompactDetails(true)
@@ -170,12 +176,11 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
     setCompactDetails(false)
     setReveal({ entryId })
   }, [])
-  // The view of all bots' work asks for the same, each time: a bot's heading for its Details, a row for its card.
+  // The Threads page asks for the same, each time: a row for its card, a thread's line for the entry it names.
   useEffect(() => {
     if (!request) return
-    if (request.item) return openCard(request.item)
-    showDetails('details')
-    if (request.thread) setThreadItem(request.thread)
+    setCompactDetails(false)
+    setReveal(request)
   }, [request?.count])
   const member = editingMember ? store.bots.get(editingMember) : undefined
 
@@ -184,8 +189,11 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
       key={routineRequest}
       botId={botId}
       routineId={routineId}
-      tab={detailsTab}
-      setTab={setDetailsTab}
+      maximized={panelFilled}
+      maximize={wide ? () => setPanelFilled((on) => {
+        analytics.track({ event: 'panel_maximized', on: !on })
+        return !on
+      }) : null}
       thread={threadItem}
       openThread={setThreadItem}
       closeThread={closeThread}
@@ -210,13 +218,10 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
       <div className="conversation">
         <div className="top-chrome">
           <TopFade />
-          <div className="top-chrome-row">
-            <Spacer />
-            {(!showSettings || !wide) && !compactDetails ? (
-              <MacChatButton className="ringed" title="Conversation details" icon="chevron.left.2" direction={[-1, 0]} onClick={toggleDetails} />
-            ) : null}
-          </div>
-          {/* The call bar takes the pill's place; its frosted glass would show the name blurred. */}
+          {/* The window's bar holds the bot, what runs it and the panel's toggle; nothing while another page covers
+              the conversation. */}
+          {bar.end ? createPortal(<IconButton title="Conversation details" icon="sidebar.right" size={28} onClick={toggleDetails} />, bar.end) : null}
+          {bar.title ? createPortal(<>
           <button className={`title-pill ${calling ? 'hidden-by-call' : ''}`} inert={calling} onClick={openFromTitle} aria-label={tr('{name}, view details').replaceAll('{name}', () => bot?.name ?? tr('Conversation'))} title={tr('View conversation details')}>
             <HStack as="span" gap={7}>
               {bot ? isGroup(bot) ? <GroupAvatar members={store.members(bot)} size={22} /> : <BotAvatar bot={bot} size={22} /> : null}
@@ -229,6 +234,13 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
             </HStack>
             {store.shownConnection.kind !== 'online' || store.mismatch ? <ConnectionSubtitle /> : null}
           </button>
+          {bot && !isGroup(bot) ? (
+            <button className="window-bar-agent" title={tr('Agent')} onClick={() => presentAgent(botId)}>
+              <AgentIcon registry={store.agentRegistry(bot.backend)} size={13} />
+              <Text size="body" tone="secondary" truncate>{store.backendName(bot.backend)}{bot.model ? ` · ${bot.model}` : ''}</Text>
+            </button>
+          ) : null}
+          </>, bar.title) : null}
         </div>
         {/* An update card takes the composer's place, so there's nothing to reply with. */}
         <Transcript botId={botId} reveal={reveal} openTrace={openTrace} onReply={store.mismatch ? undefined : setReplyTo} openRoutine={presentRoutine} openAgent={presentAgent} openBotChat={setBotChat} openArtifact={openArtifact} openCall={setCallLine} />
@@ -262,6 +274,7 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
       </div>
       <ChatSidePanel
         open={panelOpen}
+        filled={panelFilled}
         width={panelWidth(detailsWidth)}
         min={360}
         max={width.current - 380}
@@ -342,7 +355,7 @@ function startOf(list: ChatItem[], first: string | null) {
 }
 
 /** Where the chat is brought to: an item's card (`itemId`), or an entry (`entryId`). */
-type Reveal = { itemId: string } | { entryId: string }
+export type Reveal = { itemId: string } | { entryId: string }
 
 const Transcript = memo(function Transcript({ botId, reveal, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact, openCall }: { botId: string; reveal: Reveal | null; openTrace: () => void; onReply?: (quote: ReplyQuote) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
   const store = useStore()

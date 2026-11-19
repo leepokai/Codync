@@ -1443,7 +1443,6 @@
   "Your coding agents,\nas teammates.": "I tuoi agenti di coding,\ncome compagni di squadra.",
   "Your coding agents, as teammates.": "I tuoi agenti di coding, come compagni di squadra.",
   "Your computer": "Il tuo computer",
-  "Your computer is ready": "Il tuo computer è pronto",
   "Your computer reads plan limits from the agents your bots run and the ones you turn on.": "Il tuo computer legge i limiti del piano dagli agenti usati dai tuoi bot e da quelli che attivi.",
   "Your launcher couldn't add it. Add it from the Home Screen instead.": "Il launcher non è riuscito ad aggiungerlo. Aggiungilo dalla schermata Home.",
   "Your lead agent is your first point of contact. It follows your goals and unfinished tasks, suggests useful next steps, and coordinates work with your other bots. The lead Codync sets up has a Check in routine that runs twice a day by default; you can change or pause it in Routines.": "Il tuo agente principale è il tuo primo punto di contatto. Segue i tuoi obiettivi e le attività incompiute, suggerisce i prossimi passi utili e coordina il lavoro con gli altri bot. L'agente principale configurato da Codync ha una routine Check in che viene eseguita due volte al giorno per impostazione predefinita; puoi modificarla o metterla in pausa in Routine.",
@@ -2371,5 +2370,16 @@
   "Connect {provider}": "Collega {provider}",
   "Use the command line instead": "Usa invece la riga di comando",
   "Leave it empty to use the hostname.": "Lascia vuoto per usare il nome host.",
-  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Questo lavoro è andato avanti per 8 passaggi di fila senza di te, il massimo possibile. Tocca «Continua» per proseguire."
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Questo lavoro è andato avanti per 8 passaggi di fila senza di te, il massimo possibile. Tocca «Continua» per proseguire.",
+  "Close {name}": "Chiudi {name}",
+  "Open a view": "Apri una vista",
+  "Group by computer": "Raggruppa per computer",
+  "Sort by status": "Ordina per stato",
+  "Maximize panel": "Ingrandisci pannello",
+  "Split panel": "Dividi pannello",
+  "Browser": "Browser",
+  "Web address": "Indirizzo web",
+  "Enter an address to preview a page here": "Inserisci un indirizzo per vedere una pagina qui",
+  "That is not a web address": "Non è un indirizzo web",
+  "Forward": "Avanti"
 }

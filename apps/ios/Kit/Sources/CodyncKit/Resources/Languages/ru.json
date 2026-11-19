@@ -504,7 +504,6 @@
   "The host isn't responding. See the log for details.": "Хост не отвечает. Подробности в журнале.",
   "Restart the manually started development host in its terminal.": "Перезапустите хост разработки, запущенный вручную, в его терминале.",
   "Another build of the host is running, not this app's. Try again to replace it.": "Запущена другая сборка хоста, не этого приложения. Попробуйте ещё раз, чтобы заменить её.",
-  "Your computer is ready": "Ваш компьютер готов",
   "Work in your apps with a bot, or access your screen from your phone. You choose which bots can use this computer.": "Работайте в своих приложениях с ботом или откройте доступ к экрану с телефона. Вы выбираете, каким ботам можно пользоваться этим компьютером.",
   "Let a bot work in your apps. You choose which bots can use this computer.": "Позвольте боту работать в ваших приложениях. Вы выбираете, каким ботам можно пользоваться этим компьютером.",
   "Waiting for your computer": "Ждём ваш компьютер",
@@ -2371,5 +2370,16 @@
   "Connect {provider}": "Подключить {provider}",
   "Use the command line instead": "Использовать командную строку",
   "Leave it empty to use the hostname.": "Оставьте пустым, чтобы использовать имя хоста.",
-  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Эта работа прошла 8 шагов подряд без вас — это предел. Нажмите «Продолжить», чтобы продолжить."
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Эта работа прошла 8 шагов подряд без вас — это предел. Нажмите «Продолжить», чтобы продолжить.",
+  "Close {name}": "Закрыть {name}",
+  "Open a view": "Открыть вид",
+  "Group by computer": "Группировать по компьютерам",
+  "Sort by status": "Сортировать по статусу",
+  "Maximize panel": "Развернуть панель",
+  "Split panel": "Разделить панель",
+  "Browser": "Браузер",
+  "Web address": "Веб-адрес",
+  "Enter an address to preview a page here": "Введите адрес, чтобы показать страницу здесь",
+  "That is not a web address": "Это не веб-адрес",
+  "Forward": "Вперёд"
 }

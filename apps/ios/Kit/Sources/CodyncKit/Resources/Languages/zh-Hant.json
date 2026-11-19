@@ -505,7 +505,6 @@
   "The host isn't responding. See the log for details.": "Host 沒有響應。詳情見日誌。",
   "Restart the manually started development host in its terminal.": "請在終端裡重啟手動啟動的開發版 Host。",
   "Another build of the host is running, not this app's. Try again to replace it.": "正在執行的是另一個版本的 Host，不是這個應用自帶的。再試一次即可換上。",
-  "Your computer is ready": "這臺電腦已就緒",
   "Work in your apps with a bot, or access your screen from your phone. You choose which bots can use this computer.": "讓 Bot 在你的應用裡工作，或從手機檢視螢幕。哪些 Bot 能用這臺電腦，由你決定。",
   "Let a bot work in your apps. You choose which bots can use this computer.": "讓 Bot 在你的應用裡工作。哪些 Bot 能用這臺電腦，由你決定。",
   "Waiting for your computer": "等待你的電腦",
@@ -2371,5 +2370,16 @@
   "Connect {provider}": "連接 {provider}",
   "Use the command line instead": "改用命令列",
   "Leave it empty to use the hostname.": "留空則使用主機名稱。",
-  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "這項工作已在沒有你的情況下連續進行 8 步，達到上限。按「繼續」讓它接著進行。"
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "這項工作已在沒有你的情況下連續進行 8 步，達到上限。按「繼續」讓它接著進行。",
+  "Close {name}": "關閉 {name}",
+  "Open a view": "開啟檢視",
+  "Group by computer": "依電腦分組",
+  "Sort by status": "依狀態排序",
+  "Maximize panel": "最大化面板",
+  "Split panel": "分割面板",
+  "Browser": "瀏覽器",
+  "Web address": "網址",
+  "Enter an address to preview a page here": "輸入網址即可在這裡預覽頁面",
+  "That is not a web address": "這不是網址",
+  "Forward": "前進"
 }

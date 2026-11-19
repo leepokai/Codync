@@ -90,6 +90,10 @@
   max-width: 100%;
   min-width: 0;
 }
+/* Its lines start at the leading edge, so each needs the row's width as its own limit to end with an ellipsis. */
+.work-row-open .truncate {
+  max-width: 100%;
+}
 .work-row-source {
   display: flex;
   flex: none;

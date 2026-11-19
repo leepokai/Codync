@@ -64,7 +64,7 @@ test('the compact details sheet scrolls from the keyboard and keeps its clicks',
 
     // The sheet has no window drag band, and its top strip now reaches the tabs.
     expect(await sheet.locator('.details-drag').evaluate((el) => getComputedStyle(el).display)).toBe('none')
-    expect(await sheet.locator('.details-identity').evaluate((el) => getComputedStyle(el).paddingTop)).toBe('20px')
+    await expect(sheet.locator('.details-who')).toHaveText(name)
     const onTab = await sheet.evaluate((panel) => {
       const scroller = panel.querySelector('.details-scroll') as HTMLElement
       const tab = panel.querySelector('[role="tab"]') as HTMLElement
@@ -82,7 +82,7 @@ test('the compact details sheet scrolls from the keyboard and keeps its clicks',
     await expect(docked).toBeVisible()
     expect(await docked.locator('.details-drag').evaluate((el) => getComputedStyle(el).display)).toBe('block')
     expect(await docked.locator('.details-drag').evaluate((el) => getComputedStyle(el).height)).toBe('54px')
-    expect(await docked.locator('.details-identity').evaluate((el) => getComputedStyle(el).paddingTop)).toBe('58px')
+    await expect(docked.locator('.details-who')).toHaveText(name)
     expect(await maskOf(docked.locator('.details-scroll'))).toBe('none')
   } finally {
     await cdp.send('Emulation.clearDeviceMetricsOverride')

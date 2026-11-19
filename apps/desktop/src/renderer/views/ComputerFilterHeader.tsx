@@ -4,7 +4,6 @@ import { DropdownMenu } from '../components/Controls'
 import { ComputerBadge } from './ComputerBadge'
 import { Icon } from '../components/Icon'
 import type { MenuItem } from '../components/Menu'
-import { Text } from '../components/Text'
 import { useApp } from '../store/context'
 import { useSSH } from './settings/ssh-model'
 import { connectionSummary } from '../lib/computer-roster'
@@ -29,8 +28,8 @@ export function computerSelection(all: string[], hidden: string) {
   }
 }
 
-/** The roster's connection summary, with details and filters on demand. */
-export function ComputerFilterHeader({ hidden, setHidden, manage, compact = false }: { hidden: string; setHidden: (v: string) => void; manage: () => void; compact?: boolean }) {
+/** The list's filter button: its menu holds the list's own choices (`options`: how it is grouped and sorted), then which computers show, with each one's connection; its tip is the connection summary. */
+export function ComputerFilterHeader({ hidden, setHidden, manage, options = [] }: { hidden: string; setHidden: (v: string) => void; manage: () => void; options?: MenuItem[] }) {
   const tr = useTr()
   const app = useApp()
   const ssh = useSSH()
@@ -41,7 +40,7 @@ export function ComputerFilterHeader({ hidden, setHidden, manage, compact = fals
   const online = stores.filter((s) => s.shownConnection.kind === 'online').length
   const text = pendingSummary ? `${online ? `${counted(tr('%d connected'), online)} · ` : ''}${pendingSummary}` : connectionSummary(stores.map((s) => s.shownConnection), stores.some((s) => s.isWaking), tr)
   const items = (): MenuItem[] => {
-    const list: MenuItem[] = [{ title: 'All computers', icon: 'desktopcomputer', selected: selection.shown.length === app.computers.length, keepsOpen: true, action: () => setHidden('') }]
+    const list: MenuItem[] = [...options, { title: 'All computers', icon: 'desktopcomputer', divider: options.length > 0, selected: selection.shown.length === app.computers.length, keepsOpen: true, action: () => setHidden('') }]
     for (const c of app.computers) {
       const store = app.store(c.id)
       list.push({ title: store?.hostName ?? c.name, verbatim: true, detail: store?.connectionLabel,
@@ -59,10 +58,11 @@ export function ComputerFilterHeader({ hidden, setHidden, manage, compact = fals
     list.push({ title: 'Manage computers', icon: 'desktopcomputer', action: manage })
     return list
   }
+  // Marked while some computer is filtered out.
+  const filtered = selection.shown.length < app.computers.length
   return (
-    <DropdownMenu items={items} title={text} className={`computer-filter ${compact ? 'computer-filter-action' : ''}`}>
-      {compact ? <Icon name="desktopcomputer" size={12} weight="medium" /> : <Text truncate aria-label={tr('Computers, {filter}. Filter conversations').replaceAll('{filter}', () => text)}>{text}</Text>}
-      <Icon name="chevron.down" size={8} weight="semibold" />
+    <DropdownMenu items={items} title={text} className={`computer-filter ${filtered ? 'on' : ''}`}>
+      <Icon name="line.3.horizontal.decrease" size={14} weight="medium" />
     </DropdownMenu>
   )
 }

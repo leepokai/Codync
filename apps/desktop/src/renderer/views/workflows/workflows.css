@@ -26,8 +26,9 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background-color: var(--background);
-  background-image: radial-gradient(circle, rgba(var(--text-rgb), 0.28) 1px, transparent 1px);
+  /* The quieter surface, so each node reads as a card on it. */
+  background-color: var(--surface);
+  background-image: radial-gradient(circle, rgba(var(--text-rgb), 0.16) 1px, transparent 1px);
   background-position: var(--workflow-x) var(--workflow-y);
   background-size: var(--workflow-grid) var(--workflow-grid);
   outline: none;
@@ -80,10 +81,11 @@
   left: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 16px;
+  gap: 10px;
+  padding: 14px;
   background: var(--sheet);
   border-radius: var(--radius-l);
+  box-shadow: 0 1px 2px rgba(var(--text-rgb), 0.06), 0 10px 24px -14px rgba(var(--text-rgb), 0.22);
   color: var(--text);
 }
 
@@ -102,7 +104,14 @@
 
 .workflow-node.selected { box-shadow: 0 0 0 1.5px var(--text); }
 
-.workflow-run { width: 100%; }
+/* A node's own run: quiet at its end, the workflow's Run stays the one filled button (the bar above the canvas). */
+.workflow-node .workflow-run {
+  align-self: flex-end;
+  min-height: calc(28px * var(--scale));
+  background: var(--field);
+  color: var(--text);
+  font-weight: 500;
+}
 
 .workflow-agent-row {
   width: 100%;
@@ -160,10 +169,23 @@
   min-width: 0;
   max-width: 100%;
 }
-.workflow-node .card-section-rows { overflow: hidden; }
+/* The node is the card: its form sits on it without a panel of its own, labels over their fields at the leading edge. */
+.workflow-node .card-section-rows {
+  overflow: hidden;
+  background: none;
+  border-radius: 0;
+}
+.workflow-node .card-row { padding: 10px 0; }
+.workflow-node .hairline.inset { margin-inline: 0; }
+.workflow-node .schedule-input,
+.workflow-node .chip-choice.on {
+  background: var(--field);
+  box-shadow: none;
+}
 .workflow-node .labeled-row {
   flex-direction: column;
-  align-items: flex-start;
+  /* Over the row's own centering (set on the element). */
+  align-items: flex-start !important;
   gap: 6px;
   width: 100%;
 }

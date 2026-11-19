@@ -8,6 +8,7 @@ export type Screen =
   | 'trace'
   | 'bot_details'
   | 'bot_computer'
+  | 'bot_browser'
   | 'memory'
   | 'routines'
   | 'marketplace'
@@ -96,6 +97,10 @@ export type AnalyticsEvent =
   | { event: 'kofi_invite_shown'; ask: number }
   | { event: 'kofi_invite_answered'; ask: number; opened: boolean }
   | { event: 'whats_new_shown' }
+  | { event: 'panel_split'; on: boolean }
+  | { event: 'panel_maximized'; on: boolean }
+  | { event: 'preview_opened'; from: 'address' | 'dev_server' }
+  | { event: 'list_layout_changed'; list: 'bots' | 'threads'; option: 'computer' | 'status'; on: boolean }
 
 /** `track`'s body: the event with its properties, from the desktop app. */
 export const trackBody = (event: AnalyticsEvent) => ({ ...event, app: 'desktop' as const })

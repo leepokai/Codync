@@ -11,7 +11,6 @@ import './computer-roster.css'
 
 interface Props {
   store: BotStore
-  compact: boolean
   collapsed: boolean
   previous?: string
   next?: string
@@ -29,7 +28,7 @@ interface Props {
   children: ReactNode
 }
 
-export function ComputerRosterSection({ store, compact, collapsed, previous, next, lifted, drag, toggle, move, openExtensions, openScreen, openWorkflows, children }: Props) {
+export function ComputerRosterSection({ store, collapsed, previous, next, lifted, drag, toggle, move, openExtensions, openScreen, openWorkflows, children }: Props) {
   const tr = useTr()
   const section = useRef<HTMLElement>(null)
   const id = store.computer.id
@@ -48,11 +47,11 @@ export function ComputerRosterSection({ store, compact, collapsed, previous, nex
             const target = event.key === 'ArrowUp' ? previous : next
             if (target) move(id, target)
           }}>
-          <ComputerHeadingLabel store={store} compact={compact} collapsed={collapsed} />
+          <ComputerHeadingLabel store={store} collapsed={collapsed} />
         </button>
-        {openScreen && !compact ? <IconButton className="computer-roster-action" title="Screen" icon="display" size={24} onClick={openScreen} /> : null}
-        {openWorkflows && !compact ? <IconButton className="computer-roster-action" title="Workflows" icon="flowchart" size={24} onClick={openWorkflows} /> : null}
-        {openExtensions && !compact ? <IconButton className="computer-roster-action" title="Extensions" icon="square.grid.2x2" size={24} onClick={openExtensions} /> : null}
+        {openScreen ? <IconButton className="computer-roster-action" title="Screen" icon="display" size={24} onClick={openScreen} /> : null}
+        {openWorkflows ? <IconButton className="computer-roster-action" title="Workflows" icon="flowchart" size={24} onClick={openWorkflows} /> : null}
+        {openExtensions ? <IconButton className="computer-roster-action" title="Extensions" icon="square.grid.2x2" size={24} onClick={openExtensions} /> : null}
       </div>
       <div className={`computer-roster-content ${collapsed ? 'collapsed' : ''}`} inert={collapsed} aria-hidden={collapsed}>
         <div>{children}</div>
@@ -62,17 +61,15 @@ export function ComputerRosterSection({ store, compact, collapsed, previous, nex
 }
 
 /** A heading's badge, name, connection and fold chevron; also its lifted copy while dragged. */
-export function ComputerHeadingLabel({ store, compact, collapsed }: { store: BotStore; compact: boolean; collapsed: boolean }) {
+export function ComputerHeadingLabel({ store, collapsed }: { store: BotStore; collapsed: boolean }) {
   const tr = useTr()
   return (
     <>
       <ComputerBadge computer={store.computer} size={20} />
-      {!compact ? (
-        <span className="computer-roster-label">
-          <strong>{store.hostName}</strong>
-          <span className={`computer-roster-status ${store.isOffline && !store.isUpdating && !store.isAsleep ? 'warning' : ''}`}>{tr(store.connectionLabel)}</span>
-        </span>
-      ) : null}
+      <span className="computer-roster-label">
+        <strong>{store.hostName}</strong>
+        <span className={`computer-roster-status ${store.isOffline && !store.isUpdating && !store.isAsleep ? 'warning' : ''}`}>{tr(store.connectionLabel)}</span>
+      </span>
       <span className={`computer-roster-chevron ${collapsed ? 'collapsed' : ''}`}><Icon name="chevron.down" size={9} /></span>
     </>
   )

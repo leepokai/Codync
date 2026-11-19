@@ -504,7 +504,6 @@
   "The host isn't responding. See the log for details.": "O host não está respondendo. Veja os detalhes no log.",
   "Restart the manually started development host in its terminal.": "Reinicie, no terminal, o host de desenvolvimento que foi iniciado manualmente.",
   "Another build of the host is running, not this app's. Try again to replace it.": "Outra versão do host está em execução, não a deste aplicativo. Tente novamente para substituí-la.",
-  "Your computer is ready": "Seu computador está pronto",
   "Work in your apps with a bot, or access your screen from your phone. You choose which bots can use this computer.": "Trabalhe nos seus aplicativos com um bot ou acesse sua tela pelo celular. Você escolhe quais bots podem usar este computador.",
   "Let a bot work in your apps. You choose which bots can use this computer.": "Deixe um bot trabalhar nos seus aplicativos. Você escolhe quais bots podem usar este computador.",
   "Waiting for your computer": "Aguardando seu computador",
@@ -2371,5 +2370,16 @@
   "Connect {provider}": "Conectar {provider}",
   "Use the command line instead": "Usar a linha de comando",
   "Leave it empty to use the hostname.": "Deixe vazio para usar o nome do host.",
-  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Este trabalho avançou 8 etapas seguidas sem você, o máximo possível. Toque em \"Continuar\" para seguir."
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Este trabalho avançou 8 etapas seguidas sem você, o máximo possível. Toque em \"Continuar\" para seguir.",
+  "Close {name}": "Fechar {name}",
+  "Open a view": "Abrir uma visualização",
+  "Group by computer": "Agrupar por computador",
+  "Sort by status": "Ordenar por status",
+  "Maximize panel": "Maximizar painel",
+  "Split panel": "Dividir painel",
+  "Browser": "Navegador",
+  "Web address": "Endereço da web",
+  "Enter an address to preview a page here": "Digite um endereço para ver uma página aqui",
+  "That is not a web address": "Isso não é um endereço da web",
+  "Forward": "Avançar"
 }

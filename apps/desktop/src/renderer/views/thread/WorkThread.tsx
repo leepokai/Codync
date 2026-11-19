@@ -23,10 +23,10 @@ const COPIED_MS = 1600
 /**
  * The thread of one item, in the inspector in place of Details: its title, status, time and where it works, the
  * task's transcript, and a box to write to it (the bot's own items; a routine's run or another bot's request says it
- * is read only). `close` goes back to Details; Escape does too while the panel has the keyboard. `showInChat` brings an
- * entry of the bot's chat into view beside it.
+ * is read only). `close` goes back to Details; Escape does too while the panel has the keyboard. The Threads page
+ * shows it beside its list and gives none. `showInChat` brings an entry of the bot's chat into view.
  */
-export function WorkThread({ botId, item, openArtifact, showInChat, close }: { botId: string; item: WorkItem; openArtifact: (artifactId: string) => void; showInChat: (entryId: string) => void; close: () => void }) {
+export function WorkThread({ botId, item, openArtifact, showInChat, close }: { botId: string; item: WorkItem; openArtifact: (artifactId: string) => void; showInChat: (entryId: string) => void; close?: () => void }) {
   const tr = useTr()
   const store = useStore()
   const taskId = item.task ?? ''
@@ -47,13 +47,13 @@ export function WorkThread({ botId, item, openArtifact, showInChat, close }: { b
       className="work-thread"
       data-work-thread={item.id}
       onKeyDown={(e) => {
-        if (e.key !== 'Escape' || e.defaultPrevented || e.nativeEvent.isComposing) return
+        if (!close || e.key !== 'Escape' || e.defaultPrevented || e.nativeEvent.isComposing) return
         e.stopPropagation()
         close()
       }}
     >
       <HStack gap={8} className="work-thread-header">
-        <IconButton buttonRef={back} title="Back to details" icon="chevron.left" onClick={close} />
+        {close ? <IconButton buttonRef={back} title="Back to details" icon="chevron.left" onClick={close} /> : null}
         <VStack gap={2} grow shrink>
           <Text as="div" size="body" weight="semibold" tone="text" truncate title={item.title}>{item.title}</Text>
           <HStack gap={8} className="work-thread-meta">

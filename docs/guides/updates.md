@@ -174,7 +174,7 @@ require a local connection, including an SSH tunnel.
 
 `installHostUpdate` is also open to paired devices: it's what a client's **Update now**
 calls when a computer is too old for it, and what **Update** on the computer's Codync row
-calls: in the phones' Computer management, and in the desktop's Settings > Computers for SSH
+calls: in the phones' Computer management, and on the desktop's Computers page for SSH
 computers (and this computer on Linux; on macOS and Windows this computer's Codync is the app,
 on its Updates page). That row compares `hello.version` with `hello.latestVersion`, the latest
 release `update::release_watch` looks up at start and every 6 hours (a failed lookup is tried

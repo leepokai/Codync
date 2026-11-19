@@ -1,26 +1,24 @@
 /* The reference uses lightly outlined circular actions, not bare toolbar glyphs. */
-.sidebar:not(.compact) .sidebar-header {
+.sidebar-header {
   position: absolute;
   z-index: 3;
   inset: 0 0 auto;
   isolation: isolate;
 }
-.sidebar:not(.compact) {
-  timeline-scope: --roster;
-}
-.sidebar:not(.compact) .roster {
+.roster {
   padding-top: 54px;
   scroll-padding-top: 54px;
+  padding-bottom: 14px;
   scroll-timeline: --roster block;
 }
 /* The fade comes in as the roster scrolls under the header; at rest it stays off the first row. */
-.sidebar:not(.compact) .sidebar-header::before {
+.sidebar-header::before {
   content: '';
   position: absolute;
   z-index: -1;
   inset: 0 0 -18px;
   pointer-events: none;
-  background: linear-gradient(to bottom, var(--background) 50%, transparent);
+  background: linear-gradient(to bottom, var(--surface) 50%, transparent);
   backdrop-filter: blur(16px);
   -webkit-mask-image: linear-gradient(to bottom, black 65%, transparent);
   mask-image: linear-gradient(to bottom, black 65%, transparent);
@@ -43,29 +41,25 @@
   background: rgba(var(--text-rgb), 0.05);
 }
 @media (prefers-reduced-transparency: reduce) {
-  .sidebar:not(.compact) .sidebar-header::before { backdrop-filter: none; }
+  .sidebar-header::before { backdrop-filter: none; }
 }
 
 /* The roster's computer summary and filter (ComputerFilterHeader). */
 .computer-filter {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  padding: 6px 0;
-  font-size: var(--text-callout);
-  font-weight: 500;
-  color: var(--secondary);
-}
-.computer-filter-action {
-  height: 32px;
-  padding: 0 9px;
-  justify-content: center;
   flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
   border: 1px solid var(--chrome-stroke);
-  border-radius: var(--radius-pill);
+  border-radius: 50%;
+  color: var(--text);
   transition: background-color var(--hover);
 }
-.computer-filter-action:hover {
+.computer-filter:hover {
   background: rgba(var(--text-rgb), 0.05);
+}
+/* Some computer is filtered out. */
+.computer-filter.on {
+  background: rgba(var(--text-rgb), 0.12);
 }

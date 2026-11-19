@@ -505,7 +505,6 @@
   "The host isn't responding. See the log for details.": "호스트가 응답하지 않습니다. 자세한 내용은 로그를 참조하세요.",
   "Restart the manually started development host in its terminal.": "터미널에서 수동으로 시작된 개발 호스트를 다시 시작합니다.",
   "Another build of the host is running, not this app's. Try again to replace it.": "이 앱이 아닌 다른 호스트 빌드가 실행 중입니다. 다시 교체해 보세요.",
-  "Your computer is ready": "컴퓨터가 준비되었습니다",
   "Work in your apps with a bot, or access your screen from your phone. You choose which bots can use this computer.": "봇을 사용하여 앱에서 작업하거나 휴대폰에서 화면에 액세스하세요. 이 컴퓨터를 사용할 수 있는 봇을 선택합니다.",
   "Let a bot work in your apps. You choose which bots can use this computer.": "앱에서 봇이 작동하도록 하세요. 이 컴퓨터를 사용할 수 있는 봇을 선택합니다.",
   "Waiting for your computer": "컴퓨터를 기다리는 중",
@@ -2371,5 +2370,16 @@
   "Connect {provider}": "{provider} 연결",
   "Use the command line instead": "대신 명령줄 사용",
   "Leave it empty to use the hostname.": "비워 두면 호스트 이름을 사용합니다.",
-  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "이 작업이 사용자 없이 8단계 연속 진행되어 한도에 도달했습니다. 계속하려면 \"계속\"을 누르세요."
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "이 작업이 사용자 없이 8단계 연속 진행되어 한도에 도달했습니다. 계속하려면 \"계속\"을 누르세요.",
+  "Close {name}": "{name} 닫기",
+  "Open a view": "보기 열기",
+  "Group by computer": "컴퓨터별로 묶기",
+  "Sort by status": "상태순으로 정렬",
+  "Maximize panel": "패널 최대화",
+  "Split panel": "패널 분할",
+  "Browser": "브라우저",
+  "Web address": "웹 주소",
+  "Enter an address to preview a page here": "주소를 입력하면 여기에 페이지가 표시됩니다",
+  "That is not a web address": "웹 주소가 아닙니다",
+  "Forward": "앞으로"
 }

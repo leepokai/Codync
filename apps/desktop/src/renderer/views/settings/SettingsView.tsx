@@ -5,7 +5,6 @@ import { islandLabel } from '@shared/island'
 import { VOICE_SHORTCUTS, VOICE_TAPS, type VoiceShortcut } from '@shared/voice-shortcut'
 import { Button, CardForm, CardSection, ChoicePicker, IconButton, ProgressBar, Switch, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { useDismiss } from '../../components/Overlay'
 import { HStack, IconSlot, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
@@ -13,7 +12,7 @@ import { appLanguages, languageTitle } from '../../lib/l10n'
 import { useTr } from '../../lib/use-language'
 import { DEFAULT_TEXT_SIZE, prefs, TEXT_SIZES, usePref } from '../../lib/prefs'
 import { useAccount } from '../../store/account'
-import { useScreenViewed } from '../../store/analytics'
+import { openLink, useScreenViewed } from '../../store/analytics'
 import { StoreContext, useApp } from '../../store/context'
 import { SwitchRow } from '../bots/parts'
 import { ComputerBadge } from '../ComputerBadge'
@@ -28,13 +27,14 @@ import { FormSheet } from '../marketplace/pieces'
 import { AnalyticsSheet } from './AnalyticsSheet'
 import { HiddenBotsSection } from './HiddenBotsSection'
 
-/** The chat window's Settings: pages in a sidebar, ChatGPT's settings layout. */
+/** The chat window's settings pages. Computers, Network and Usage are each an entry of the window's rail; the rest
+ * are the Settings entry's, listed in its sidebar (ChatGPT's settings layout). */
 export type SettingsPage = 'general' | 'computers' | 'network' | 'access' | 'voice' | 'usage' | 'updates'
 
 const thisComputer = isMac ? 'This Mac' : 'This computer'
-const pages: { id: SettingsPage; title: string; label?: string; group: string; icon: string }[] = [
+const pages: { id: SettingsPage; title: string; group: string; icon: string }[] = [
   { id: 'general', title: 'General', group: 'Personal', icon: 'gearshape' },
-  { id: 'computers', title: 'Computers & devices', label: 'Computers', group: thisComputer, icon: 'desktopcomputer' },
+  { id: 'computers', title: 'Computers & devices', group: thisComputer, icon: 'desktopcomputer' },
   { id: 'network', title: 'Network', group: thisComputer, icon: 'codync.network' },
   { id: 'access', title: 'Computer access', group: thisComputer, icon: 'hand.raised' },
   { id: 'voice', title: 'Voice chat', group: 'Personal', icon: 'waveform' },
@@ -45,34 +45,34 @@ const pages: { id: SettingsPage; title: string; label?: string; group: string; i
 /** Each page as `screen_viewed` names it; Computer access and Voice chat report themselves. */
 const pageScreens: Record<SettingsPage, Screen | null> = { general: 'settings', updates: 'settings', computers: 'computers', network: 'settings', usage: 'usage', access: null, voice: null }
 
-/** `page` is the window's: a command (the menu bar's network rows) can turn the open sheet to another page. */
+/** The pages with an entry of their own in the window's rail: each shows alone, without the sidebar. */
+const OWN_ENTRY: readonly SettingsPage[] = ['computers', 'network', 'usage']
+
+/** One settings page under its title; `setPage` turns the Settings entry's sidebar to another of its pages. */
 export function SettingsView({ page, setPage }: { page: SettingsPage; setPage: (page: SettingsPage) => void }) {
-  const app = useApp()
-  const dismiss = useDismiss()
   const tr = useTr()
   const current = pages.find((p) => p.id === page)!
+  const listed = pages.filter((p) => !OWN_ENTRY.includes(p.id))
   useScreenViewed(pageScreens[page])
   return (
     <div className="settings">
-      <nav className="settings-sidebar">
-        {['Personal', thisComputer].map((group) => (
-          <Fragment key={group}>
-            <div className="settings-group">{tr(group)}</div>
-            {pages.filter((p) => p.group === group).map((item) => (
-              <button key={item.id} className={`settings-item ${item.id === page ? 'selected' : ''}`} aria-current={item.id === page ? 'page' : undefined} onClick={() => setPage(item.id)}>
-                <IconSlot width={18} tone="secondary">
-                  <Icon name={item.icon} size={13} />
-                </IconSlot>
-                <Text truncate grow>{tr(item.label ?? item.title)}</Text>
-                {item.id === 'computers' && app.approvals.length > 0 ? (
-                  <Text size="caption" weight="semibold" tone="secondary">{app.approvals.length}</Text>
-                ) : null}
-              </button>
-            ))}
-          </Fragment>
-        ))}
-      </nav>
-      <div className="settings-divider" />
+      {OWN_ENTRY.includes(page) ? null : (
+        <nav className="settings-sidebar">
+          {['Personal', thisComputer].map((group) => (
+            <Fragment key={group}>
+              <div className="settings-group">{tr(group)}</div>
+              {listed.filter((p) => p.group === group).map((item) => (
+                <button key={item.id} className={`settings-item ${item.id === page ? 'selected' : ''}`} aria-current={item.id === page ? 'page' : undefined} onClick={() => setPage(item.id)}>
+                  <IconSlot width={18} tone="secondary">
+                    <Icon name={item.icon} size={13} />
+                  </IconSlot>
+                  <Text truncate grow>{tr(item.title)}</Text>
+                </button>
+              ))}
+            </Fragment>
+          ))}
+        </nav>
+      )}
       <div className="settings-main">
         <HStack gap={12} className="settings-title">
           <Icon name={current.icon} size={30} weight="medium" />
@@ -82,9 +82,6 @@ export function SettingsView({ page, setPage }: { page: SettingsPage; setPage: (
           <PageContent page={page} />
         </div>
       </div>
-      <span className="settings-close no-drag">
-        <IconButton title="Close" icon="xmark" onClick={(event) => { event.stopPropagation(); dismiss() }} />
-      </span>
     </div>
   )
 }
@@ -131,7 +128,6 @@ function GeneralSettings() {
   const [language, setLanguage] = usePref(prefs.appLanguage)
   const systemLanguage = typeof navigator === 'undefined' ? 'en' : navigator.language
   const [usageIconStyle, setUsageIconStyle] = usePref(prefs.usageIconStyle)
-  const [compact, setCompact] = usePref(prefs.sidebarCompact)
   const [agentLogos, setAgentLogos] = usePref(prefs.agentLogos)
   const [thinkingDetails, setThinkingDetails] = usePref(prefs.thinkingDetails)
   const [voiceTap, setVoiceTap] = usePref(prefs.voiceShortcutTap)
@@ -191,9 +187,6 @@ function GeneralSettings() {
         <ValueRow label="Usage icons">
           <ChoicePicker selection={usageIconStyle} options={[{ id: 'character', label: 'Character' }, { id: 'original', label: 'Original' }]} onChange={setUsageIconStyle} />
         </ValueRow>
-        <Switch on={compact} onChange={setCompact}>
-          Compact sidebar
-        </Switch>
         <SwitchRow title="Show agent logos" detail="Marks each bot with its agent's logo when your bots use more than one agent." on={agentLogos} onChange={setAgentLogos} />
       </CardSection>
       <CardSection
@@ -245,6 +238,13 @@ function GeneralSettings() {
       </CardSection>
       <PrivacySettings />
       <HiddenBotsSection />
+      <CardSection title="Support">
+        <HStack gap={8} wrap>
+          <Button kind="secondary" onClick={() => openLink('https://github.com/leepokai/codync#readme', 'docs')}>Help & documentation</Button>
+          <Button kind="secondary" onClick={() => openLink('https://github.com/leepokai/codync/issues', 'issues')}>Report an issue</Button>
+          <Button kind="secondary" onClick={() => openLink('https://apps.apple.com/app/id6760984418', 'app_store')}>Get Codync for mobile</Button>
+        </HStack>
+      </CardSection>
     </CardForm>
   )
 }

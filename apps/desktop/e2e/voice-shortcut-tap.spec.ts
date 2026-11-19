@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { api, attach, echoBot, openGeneralSettings, pick, setPref } from './sandbox.ts'
+import { api, attach, echoBot, openGeneralSettings, openPage, pick, setPref } from './sandbox.ts'
 
 // The voice input shortcut's tap after its double tap (#385): Settings → General picks Send or Stop without
 // sending, and on Stop the words stay in the composer. The ⌘ key watcher lives in the main process, so the taps go
@@ -57,7 +57,7 @@ test('Tap again to: Stop without sending keeps the words in the box, Send sends 
     await pick(page, 'Send', 'Stop without sending')
     await expect(shortcutRow).toContainText('tap the key once more to stop without sending.')
     expect(await page.evaluate(() => localStorage.getItem('voiceShortcutTap'))).toBe('"stop"')
-    await page.locator('.settings-close button').click()
+    await openPage(page, 'Bots')
 
     await api(page, 'setVoiceServer', { provider: 'openai', url: address })
     await api(page, 'setVoiceKey', { provider: 'openai', key: 'sk-e2e-local' })

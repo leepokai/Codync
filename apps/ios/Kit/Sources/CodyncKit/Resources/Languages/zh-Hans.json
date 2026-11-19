@@ -505,7 +505,6 @@
   "The host isn't responding. See the log for details.": "Host 没有响应。详情见日志。",
   "Restart the manually started development host in its terminal.": "请在终端里重启手动启动的开发版 Host。",
   "Another build of the host is running, not this app's. Try again to replace it.": "正在运行的是另一个版本的 Host，不是这个应用自带的。再试一次即可换上。",
-  "Your computer is ready": "这台电脑已就绪",
   "Work in your apps with a bot, or access your screen from your phone. You choose which bots can use this computer.": "让 Bot 在你的应用里工作，或从手机查看屏幕。哪些 Bot 能用这台电脑，由你决定。",
   "Let a bot work in your apps. You choose which bots can use this computer.": "让 Bot 在你的应用里工作。哪些 Bot 能用这台电脑，由你决定。",
   "Waiting for your computer": "等待你的电脑",
@@ -2371,5 +2370,16 @@
   "Connect {provider}": "连接 {provider}",
   "Use the command line instead": "改用命令行",
   "Leave it empty to use the hostname.": "留空则使用主机名。",
-  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "这项工作已在没有你的情况下连续进行 8 步，达到上限。点“继续”让它接着进行。"
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "这项工作已在没有你的情况下连续进行 8 步，达到上限。点“继续”让它接着进行。",
+  "Close {name}": "关闭 {name}",
+  "Open a view": "打开视图",
+  "Group by computer": "按电脑分组",
+  "Sort by status": "按状态排序",
+  "Maximize panel": "最大化面板",
+  "Split panel": "拆分面板",
+  "Browser": "浏览器",
+  "Web address": "网址",
+  "Enter an address to preview a page here": "输入网址即可在这里预览页面",
+  "That is not a web address": "这不是网址",
+  "Forward": "前进"
 }

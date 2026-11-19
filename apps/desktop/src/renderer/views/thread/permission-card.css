@@ -1,42 +1,79 @@
 /* The approval card in the chat, and the command and diff boxes it shares with the trace. */
 .permission-card {
   width: fit-content;
+  min-width: min(100%, 300px);
   max-width: min(100%, 420px);
-  padding: 16px;
+  padding: 14px;
   background: var(--bubble-agent);
   border-radius: var(--radius-xl);
 }
-.permission-card-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--warning);
+/* A settled approval: one line, the request and how it ended; a click opens the card again. */
+.permission-card.settled {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-l);
+  text-align: left;
+}
+.permission-card-outcome {
+  flex: none;
+}
+/* What kind of thing is asked, in a tile beside the headline. */
+.permission-card-kind {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-s);
+  background: var(--field);
 }
 .permission-card-title {
   overflow-wrap: anywhere;
 }
+/* The request itself, in a well. */
+.permission-card-request {
+  padding: 8px 10px;
+  border-radius: var(--radius-s);
+  background: var(--background);
+}
 .permission-card-details {
   padding-top: 6px;
 }
+/* The answers in a row: allowing leads, refusing is quiet words at the far end. */
 .permission-card-options {
-  background: var(--background);
-  border-radius: 14px;
-  margin-top: 4px;
-}
-.permission-option {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  min-height: 46px;
-  padding: 0 14px;
+}
+.permission-card .styled-button.secondary {
+  background: var(--background);
+}
+.permission-option.refuses {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: calc(30px * var(--scale));
+  margin-left: auto;
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  color: var(--danger);
+  font-size: var(--text-body);
+  font-weight: 500;
+  transition: background-color var(--hover);
+}
+.permission-option.refuses + .permission-option.refuses {
+  margin-left: 0;
+}
+.permission-option.refuses:hover:not(:disabled) {
+  background: rgba(var(--text-rgb), 0.06);
 }
 /* The other answers while one is on its way. */
 .permission-option.dimmed {
   opacity: 0.4;
-}
-.permission-option-label {
-  flex: 1;
 }
 
 /* A choice card: the question, a numbered row per option and one for the user's own words, then what was picked. */

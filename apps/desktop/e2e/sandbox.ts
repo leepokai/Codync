@@ -68,6 +68,8 @@ export async function attach(): Promise<{ browser: Browser; page: Page }> {
     const notNow = sheet.getByRole('button', { name: 'Not now' })
     if (await notNow.isVisible()) await notNow.click()
   }
+  // A spec starts on the Bots page, whichever page the last one left open (on Bots itself the entry would fold the list).
+  await page.evaluate(() => document.querySelector<HTMLElement>('.nav-rail [data-page="bots"]:not([aria-current])')?.click())
   return { browser, page }
 }
 
@@ -125,9 +127,17 @@ export async function loginProfilesOf(page: Page, id: string) {
   return (await agents(page)).find((b) => b.id === id)?.loginProfiles ?? []
 }
 
+/** Opens one of the window's pages from its rail (Settings is the account's avatar). */
+export async function openPage(page: Page, name: 'Bots' | 'Threads' | 'Computers' | 'Network' | 'Extensions' | 'Usage' | 'Settings') {
+  await page.locator('.nav-rail').getByRole('button', { name, exact: true }).click()
+}
+
+/** The page a rail entry other than Bots and Threads shows. */
+export const appPage = (page: Page) => page.locator('.app-page')
+
 /** Opens the agent's sheet from Extensions. */
 export async function openAgentSheet(page: Page, name: string) {
-  await page.getByRole('button', { name: /Extensions/ }).click()
+  await openPage(page, 'Extensions')
   await page.locator('.agent-grid').getByText(name, { exact: true }).click()
 }
 
@@ -158,10 +168,10 @@ export async function typeMessage(page: Page, text: string) {
   await box.press('Enter')
 }
 
-/** Opens Settings from the account panel, on its General page. */
+/** Opens Settings from the rail, on its General page. */
 export async function openGeneralSettings(page: Page) {
-  await page.locator('.sidebar-account').click()
-  await page.locator('.account-panel').getByText('Settings', { exact: true }).click()
+  await openPage(page, 'Settings')
+  await page.locator('.settings-item', { hasText: 'General' }).click()
 }
 
 /** Settings › Voice chat. */

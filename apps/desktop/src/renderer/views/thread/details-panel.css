@@ -1,5 +1,6 @@
-/* The inspector beside a conversation, laid out like Grok Bot's: actions in the corner, the bot
-   centered on top, page tabs under it, and one scroll for all of it. */
+/* The panel beside a conversation: the bot and the corner actions in the top band, then one pane or two stacked,
+   each with its views as tabs, a scroll for the view shown and a chooser (every view of the bot) when no tab shows.
+   A group has no panes: its avatar centered on top, then its bots. */
 .details-panel {
   position: relative;
   height: 100%;
@@ -49,12 +50,151 @@
   -webkit-app-region: no-drag;
 }
 
+/* Whose panel it is, in the top band beside the corner buttons; the band under it still moves the window. */
+.details-who {
+  position: absolute;
+  top: 15px;
+  left: 14px;
+  /* Clear of the four corner buttons. */
+  right: 176px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+/* Under the band: one pane, or two sharing the height. */
+.details-panes {
+  position: absolute;
+  inset: 54px 0 0;
+  display: flex;
+  flex-direction: column;
+}
+.panel-pane {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.panel-pane + .panel-pane {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+/* A pane's views as tabs, each with its close button; more than fit scroll sideways, `+` stays at the end. */
+.panel-tabs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px 8px;
+}
+.panel-tabs-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+}
+.panel-tab {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: calc(26px * var(--scale));
+  border-radius: var(--radius-s);
+  color: var(--secondary);
+  transition: background-color var(--hover), color var(--hover);
+}
+.panel-tab:hover {
+  color: var(--text);
+}
+.panel-tab.on {
+  background: var(--chat-button);
+  color: var(--text);
+}
+.panel-tab-pick {
+  height: 100%;
+  padding: 0 0 0 9px;
+  font-size: var(--text-body);
+  white-space: nowrap;
+}
+.panel-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 100%;
+  border-radius: var(--radius-s);
+  color: var(--tertiary);
+  transition: color var(--hover);
+}
+.panel-tab-close:hover {
+  color: var(--text);
+}
+
 .details-scroll {
   height: 100%;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   padding-bottom: 24px;
+}
+/* In a pane the view takes what the tabs leave; a web page fills it to the edges. */
+.panel-pane > .details-scroll {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+.panel-pane > .details-scroll.flush {
+  padding-bottom: 0;
+  overflow: hidden;
+}
+.panel-pane > .details-scroll:focus {
+  outline: none;
+}
+/* The chooser: every view of the bot in the middle of the pane, its key at the end of each row. */
+.panel-chooser {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  max-width: 300px;
+  margin: auto;
+  padding: 12px;
+}
+.panel-chooser-title {
+  padding: 0 10px 10px;
+  text-align: center;
+}
+.panel-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: calc(34px * var(--scale));
+  padding: 0 10px;
+  border-radius: var(--radius-s);
+  text-align: left;
+  transition: background-color var(--hover);
+}
+.panel-choice:hover {
+  background: rgba(var(--text-rgb), 0.06);
+}
+/* The symbols differ in width: one column keeps the names in line. */
+.panel-choice-icon {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  width: 22px;
+}
+.panel-key {
+  flex: none;
+  min-width: 20px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(var(--text-rgb), 0.08);
+  color: var(--secondary);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-caption);
+  text-align: center;
 }
 
 .details-identity {
@@ -106,7 +246,7 @@
   display: flex;
   flex-direction: column;
   gap: 28px;
-  padding: 20px 16px 0;
+  padding: 12px 16px 0;
 }
 .details-section {
   display: flex;

@@ -70,6 +70,10 @@ host answers and sends it once the host is up.
 | `kofi_invite_shown` | host `track` (desktop, TUI) | A Ko-fi invitation sheet appeared on this device, at 3, 30 or 90 active days (the phones don't show it: store rules on external tip links) | `ask` (1–3; older clients leave it out) |
 | `kofi_invite_answered` | host `track` (desktop) | A Ko-fi invitation was opened, which ends them on this device, or put off with *Not now* (the terminal UI only shows the link) | `ask`, `opened` |
 | `whats_new_shown` | host `track` (desktop, TUI), iOS, Android | The What's new window is on screen after an update to a release with an announcement ([What's new](../features/whats-new.md)); `app_version` says which | — |
+| `panel_split` | host `track` (desktop) | The details panel was split into two panes, or joined back | `on` |
+| `panel_maximized` | host `track` (desktop) | The details panel took the conversation's place, or was restored | `on` |
+| `preview_opened` | host `track` (desktop) | A page was opened in the details panel's Browser tab | `from` (`address`: typed; `dev_server`: one of the bot's dev servers) |
+| `list_layout_changed` | host `track` (desktop) | Group by computer or Sort by status was switched on a list | `list` (`bots`, `threads`), `option` (`computer`, `status`), `on` |
 | `computer_found_on_network` | iOS, Android | A phone reached a computer in no account at an address it found on the local network | — |
 | `pairing_code_created` | host (`pairing`) | A pairing QR code is made (desktop, terminal UI, `codync-host pair`), including each new one an open pairing screen makes when its code expires: count persons, not events | `client` |
 | `pairing_failed` | iOS, Android | A pairing attempt fails | `reason` (`not_pairing_link`/`outdated_host`/`invalid`/`expired`/`unauthorized`/`unreachable`/`timeout`/`upgrade_required`/`other`) |
@@ -191,6 +195,7 @@ host answers and sends it once the host is up.
 | `trace` | full conversation | full conversation | full trace |
 | `bot_details` | bot details | details panel | settings page |
 | `bot_computer` | the Computer tab in bot details | the details panel's Computer tab | Computer page |
+| `bot_browser` | — | the details panel's Browser tab | — |
 | `memory` | bot memory (Android: the Memory tab in bot details) | memory tab | memory overlay |
 | `routines` | routines (iPhone: a routine's editor, the list being part of bot details) | a routine's editor | the bot's Details page (its work, follow-ups and routines) |
 | `marketplace` | extensions | extensions | marketplace overlay |
@@ -207,7 +212,7 @@ host answers and sends it once the host is up.
 | `artifact` | an artifact's viewer | an artifact's viewer | — (opens in the browser) |
 | `network` | network sheet (Network on a computer's card in Manage computers) | — (part of `computers`) | network sheet |
 | `task` | an item's thread: its task's transcript and the composer, pushed inside the bot's details sheet from the item's row | an item's thread, in the inspector's panel in place of Details | a task's transcript page with its composer, opened from an item's row |
-| `all_work` | the Work sheet: every bot's work, from the bot list's Work button | the Work sheet, from the roster header's Work button | the Work page (`E` from the roster) |
+| `all_work` | the Work sheet: every bot's work, from the bot list's Work button | the Threads page of the window's rail | the Work page (`E` from the roster) |
 
 ## Funnels
 

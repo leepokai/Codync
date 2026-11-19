@@ -14,7 +14,7 @@ test('tooltips and accessible names read in the app language', async () => {
     await page.locator('.roster-row', { hasText: name }).click()
 
     await expect(page.locator('.computer-filter').first()).toHaveAttribute('title', /台已连接$/)
-    await expect(page.locator('.top-chrome-row .mac-chat-button')).toHaveAttribute('title', '对话详情')
+    await expect(page.locator('.window-bar-end .icon-button')).toHaveAttribute('title', '对话详情')
 
     await typeMessage(page, 'hello')
     await page.locator('.bubble.user', { hasText: 'hello' }).click({ button: 'right' })
@@ -30,7 +30,7 @@ test('tooltips and accessible names read in the app language', async () => {
     })
     await expect(page.locator('.file-chip-remove')).toHaveAttribute('aria-label', '移除 note.txt')
 
-    await page.locator('.top-chrome-row .mac-chat-button').click()
+    await page.locator('.window-bar-end .icon-button').click()
     const actions = page.locator('.details-actions .mac-chat-button')
     await expect(actions).toHaveCount(2)
     expect(await actions.evaluateAll((buttons) => buttons.map((b) => [b.getAttribute('title'), b.getAttribute('aria-label')]))).toEqual([['创建模板', '创建模板'], ['关闭详情', '关闭详情']])

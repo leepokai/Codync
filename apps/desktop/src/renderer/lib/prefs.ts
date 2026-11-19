@@ -1,3 +1,4 @@
+import { DEFAULT_PANEL, type PanelLayout } from '../../shared/panel-layout.ts'
 import type { AppLanguage } from './l10n'
 import { useSyncExternalStore } from 'react'
 import type { StarAsk } from './star-ask'
@@ -65,11 +66,18 @@ export function stepTextSize(size: number, up: boolean) {
 
 export const prefs = {
   textSize: pref('conversationFontSize', DEFAULT_TEXT_SIZE),
-  sidebarCompact: pref('sidebarCompact', false),
-  /** The bot list stays closed until the agents icon on the rail is clicked. */
-  agentsOpen: pref('agentsSidebarOpen', false),
+  /** How the Bots list and the Threads list are laid out: under their computer's heading, and by status. */
+  botsByComputer: pref('botsByComputer', true),
+  botsByStatus: pref('botsByStatus', false),
+  threadsByComputer: pref('threadsByComputer', false),
+  threadsByStatus: pref('threadsByStatus', true),
+  /** The list beside the rail (the bots, the threads) is folded away. */
+  listHidden: pref('listHidden', false),
   sidebarWidth: pref('desktopSidebarWidth', 266),
   detailsPanelWidth: pref('detailsPanelWidth', 400),
+  /** The panel beside a conversation: its panes, their tabs and the one each shows, the same for every bot. Read
+   * through `panelLayout`, which makes what is stored safe to draw. */
+  panelLayout: pref<PanelLayout>('panelLayout', DEFAULT_PANEL),
   hiddenComputers: pref('hiddenComputers', ''),
   computerOrder: pref<string[]>('computerOrder', []),
   collapsedComputers: pref<string[]>('collapsedComputerSections', []),
@@ -94,7 +102,6 @@ export const prefs = {
   thinkingDetails: pref('showThinkingDetails', false),
   /** The voice input shortcut's tap after its double tap: sends, or stops and keeps the words in the box. */
   voiceShortcutTap: pref<VoiceTap>('voiceShortcutTap', 'send'),
-  extensionsMovedTipSeen: pref('extensionsMovedTipSeen', false),
   /** The version this device last opened on, for What's new; `null` before it ever recorded one. */
   whatsNewSeen: pref<string | null>('whatsNewSeen', null),
 }

@@ -40,16 +40,14 @@ interface Lift {
   seq: number
 }
 
-export function BotRoster({ roster, compact, onContext, onSectionContext, openExtensions, openWorkflows, workflowComputerId }: {
+export function BotRoster({ roster, onContext, onSectionContext, openExtensions, openWorkflows }: {
   roster: ReturnType<typeof useComputerRoster>
-  compact: boolean
   onContext: (bot: Bot, store: BotStore, x: number, y: number) => void
   onSectionContext: (section: string, store: BotStore, x: number, y: number) => void
   /** A computer's own Extensions, from its heading. */
   openExtensions: (computerId: string) => void
   /** Opens that computer's workflows, optionally on one pinned workflow. */
   openWorkflows: (computerId: string, workflowId?: string) => void
-  workflowComputerId: string | null
 }) {
   const app = useApp()
   const selected = app.selection
@@ -203,7 +201,6 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
       <RosterRow
         key={key}
         hovered={hovered === key || held}
-        compact={compact}
         label={many ? `${name}, on ${item.store.hostName}` : name}
         title={many ? `${item.bot.name} · ${item.store.hostName}` : item.bot.name}
         selected={isSelected}
@@ -214,7 +211,7 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
         lifted={held && lift !== null}
         drag={pointerDrag({ start: (from) => liftRow(item, siblings, from), over: dragOver, drop, cancel: endDrag })}
       >
-        <RosterBotRow item={item} compact={compact} agent={agent} />
+        <RosterBotRow item={item} agent={agent} />
       </RosterRow>
     )
   }
@@ -222,17 +219,15 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
   const sectionOrder = sectionDrag ? sectionDrag.ids.flatMap((id) => roster.sections.find((s) => s.computer.id === id) ?? []) : roster.sections
   const sections = sectionOrder.map(({ computer, store, items }) => {
     const index = roster.sections.findIndex((s) => s.computer.id === computer.id)
-    const notice = store.mismatch && !compact ? <StoreContext.Provider value={store}><UpdateNeededCard /></StoreContext.Provider> : null
-    const pins = canOpenWorkflows(store)
-      ? <WorkflowPins store={store} compact={compact} activeId={workflowComputerId === computer.id ? store.workflowSession?.id ?? null : null} onOpen={(id) => openWorkflows(computer.id, id)} />
-      : null
-    const rows = <SectionRoster computerId={computer.id} items={ordered(computer.id, items)} compact={compact}
+    const notice = store.mismatch ? <StoreContext.Provider value={store}><UpdateNeededCard /></StoreContext.Provider> : null
+    const pins = canOpenWorkflows(store) ? <WorkflowPins store={store} onOpen={(id) => openWorkflows(computer.id, id)} /> : null
+    const rows = <SectionRoster computerId={computer.id} items={ordered(computer.id, items)}
       folded={roster.folded} order={roster.sectionOrders[computer.id] ?? []}
       save={(names) => roster.orderSections(computer.id, names)} toggle={roster.toggleFold}
       onContext={(name, x, y) => onSectionContext(name, store, x, y)} row={(item) => row(item, items)} />
     if (!roster.grouped) return <div key={computer.id}>{pins}{notice}{rows}</div>
     return (
-      <ComputerRosterSection key={computer.id} store={store} compact={compact}
+      <ComputerRosterSection key={computer.id} store={store}
         openExtensions={store.shownConnection.kind === 'online' && !store.mismatch ? () => openExtensions(computer.id) : undefined}
         openScreen={app.canOpenScreen(store) ? () => app.openScreen(computer.id) : undefined}
         openWorkflows={canOpenWorkflows(store) ? () => openWorkflows(computer.id) : undefined}
@@ -245,26 +240,26 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
         {pins}
         {notice}
         {rows}
-        {!items.length && !store.mismatch && !compact ? <div className="computer-roster-empty">{store.shownConnection.kind === 'online' ? 'No bots yet' : store.connectionLabel}</div> : null}
+        {!items.length && !store.mismatch ? <div className="computer-roster-empty">{store.shownConnection.kind === 'online' ? 'No bots yet' : store.connectionLabel}</div> : null}
       </ComputerRosterSection>
     )
   })
   return (
     <>
-      {compact ? null : <AppFloorCard />}
+      <AppFloorCard />
       {sections}
-      {lift ? <RosterGhost key={lift.seq} lift={lift} ghost={ghost} compact={compact} logos={agentLogos} /> : null}
+      {lift ? <RosterGhost key={lift.seq} lift={lift} ghost={ghost} logos={agentLogos} /> : null}
     </>
   )
 }
 
 /** The lifted row or heading under the pointer (iOS's lifted cell): a smaller, translucent copy that follows it. */
-function RosterGhost({ lift, ghost, compact, logos }: { lift: Lift; ghost: RefObject<HTMLDivElement | null>; compact: boolean; logos: boolean }) {
-  const card = 'item' in lift.held ? `roster-row ${compact ? 'compact' : ''}` : 'computer-roster-toggle'
+function RosterGhost({ lift, ghost, logos }: { lift: Lift; ghost: RefObject<HTMLDivElement | null>; logos: boolean }) {
+  const card = 'item' in lift.held ? 'roster-row' : 'computer-roster-toggle'
   return createPortal(
     <div ref={ghost} className="roster-ghost" style={{ width: lift.width, translate: ghostTranslate(lift.at, lift.grab) }}>
       <div className={`${card} roster-ghost-card`} style={{ transformOrigin: `${lift.grab.x}px ${lift.grab.y}px` }}>
-        {'item' in lift.held ? <RosterBotRow item={lift.held.item} compact={compact} agent={logoAgent(lift.held.item, logos)} /> : <ComputerHeadingLabel store={lift.held.store} compact={compact} collapsed />}
+        {'item' in lift.held ? <RosterBotRow item={lift.held.item} agent={logoAgent(lift.held.item, logos)} /> : <ComputerHeadingLabel store={lift.held.store} collapsed />}
       </div>
     </div>,
     document.body,
@@ -276,16 +271,15 @@ function logoAgent(item: RosterItem, logos: boolean): string | null {
   return logos && !isGroup(item.bot) && item.store.mixesAgents ? runningAgent(item.bot) : null
 }
 
-function RosterBotRow({ item, compact, agent }: { item: RosterItem; compact: boolean; agent: string | null }) {
-  return <BotRow bot={item.bot} store={item.store} compact={compact} usingComputer={item.store.screen?.agentBot === item.bot.id} members={isGroup(item.bot) ? item.store.members(item.bot) : noMembers} agent={agent} />
+function RosterBotRow({ item, agent }: { item: RosterItem; agent: string | null }) {
+  return <BotRow bot={item.bot} store={item.store} usingComputer={item.store.screen?.agentBot === item.bot.id} members={isGroup(item.bot) ? item.store.members(item.bot) : noMembers} agent={agent} />
 }
 
 /** One roster button: drags to reorder, and slides when the others move. */
-function RosterRow({ hovered, lifted, compact, label, title, selected, dragKey, onHover, onClick, onContext, drag, children }: {
+function RosterRow({ hovered, lifted, label, title, selected, dragKey, onHover, onClick, onContext, drag, children }: {
   hovered: boolean
   /** Its copy is under the pointer: the row keeps its slot empty. */
   lifted: boolean
-  compact: boolean
   label: string
   title: string
   selected: boolean
@@ -301,7 +295,7 @@ function RosterRow({ hovered, lifted, compact, label, title, selected, dragKey, 
   return (
     <button
       ref={ref}
-      className={`roster-row ${compact ? 'compact' : ''} ${hovered ? 'hovered' : ''} ${selected ? 'selected' : ''} ${lifted ? 'lifted' : ''}`}
+      className={`roster-row ${hovered ? 'hovered' : ''} ${selected ? 'selected' : ''} ${lifted ? 'lifted' : ''}`}
       aria-label={label}
       aria-current={selected || undefined}
       title={title}

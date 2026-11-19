@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import type { Backend } from '@shared/models'
-import { Button, IconButton, Spinner } from '../../components/Controls'
+import { Button, ChoicePicker, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { Dialog, SheetPage, useDismiss } from '../../components/Overlay'
+import { Dialog, SheetPage } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import { useScreenViewed } from '../../store/analytics'
+import type { ComputerChoice } from '../bots/NewBotView'
 import { ComputerBadge } from '../ComputerBadge'
 import { AgentSheet } from './AgentSheet'
 import { CredentialsView } from './CredentialsView'
@@ -26,14 +27,13 @@ import { fill } from '@shared/fill'
  * Extensions for the bots on one computer (the store in context): Agents, Connectors
  * and Skills, one at a time. Each list scrolls; the connectors load more from the registry as
  * their end comes into view (`ConnectorCatalog`). Installing happens on that computer; each bot
- * turns connectors and skills on in its settings. Each computer has its own, opened
- * from its heading in the sidebar.
+ * turns connectors and skills on in its settings. Each computer has its own: the heading names it, and with
+ * several online (`computer`) picks another's.
  */
-export function MarketplaceView() {
+export function MarketplaceView({ computer }: { computer: ComputerChoice | null }) {
   const store = useStore()
   const tr = useTr()
   const plugins = usePlugins(store)
-  const dismiss = useDismiss()
   useScreenViewed('marketplace')
   const [search, setSearch] = useState('')
   const [catalog] = useState(() => new ConnectorCatalog<MarketConnector>(
@@ -103,7 +103,11 @@ export function MarketplaceView() {
         <ComputerBadge computer={store.computer} size={32} />
         <VStack shrink className="market-heading-titles">
           <Text size="title" weight="semibold" tone="text">{tr(`Extensions`)}</Text>
-          <Text size="subheadline" tone="secondary" truncate>{store.hostName}</Text>
+          {computer ? (
+            <ChoicePicker selection={computer.selection} options={computer.options} onChange={computer.onChange} />
+          ) : (
+            <Text size="subheadline" tone="secondary" truncate>{store.hostName}</Text>
+          )}
         </VStack>
       </HStack>
       <Spacer />
@@ -195,10 +199,6 @@ export function MarketplaceView() {
             />
           )}
         </MarketPanel>
-      </div>
-      {/* Dismissing slides the sheet away; clearing the caller's state would cut it off. */}
-      <div className="market-close no-drag">
-        <IconButton title="Close" icon="xmark" onClick={(event) => { event.stopPropagation(); dismiss() }} />
       </div>
     </div>
   )

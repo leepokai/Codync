@@ -2,7 +2,7 @@ import { test, expect, type Locator, type Page } from '@playwright/test'
 import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fixtureCommand } from './fixture-command.ts'
-import { api, attach, sandbox, taskAgent, taskBot, typeMessage } from './sandbox.ts'
+import { api, attach, openPage, sandbox, taskAgent, taskBot, typeMessage } from './sandbox.ts'
 
 /** The prompts of the task working item `title`, as the scripted agent logged them in the bot's folder. */
 const taskPrompts = (botId: string, title: string) =>
@@ -530,61 +530,40 @@ test('a working row stops once asked, and a stopped item tries again', async () 
   }
 })
 
-test("one view lists every bot's work, with the same rows and actions, and leads to a bot's Details and threads", async () => {
+test("the Threads page lists every bot's work by status, and shows a thread beside the list", async () => {
   const { browser, page } = await attach()
   const name = `Work all e2e ${Date.now()}`
   let botId: string | undefined
   try {
-    // Shown only while some bot has live or waiting items.
-    const button = page.locator('.sidebar-header').getByRole('button', { name: 'Work', exact: true })
-    const others = await button.count()
+    const count = page.locator('.nav-rail').getByRole('button', { name: 'Threads', exact: true }).locator('.nav-rail-count')
+    const others = await count.count()
     botId = await openBot(page, name, 1)
     await addWork(page, botId, 'Long job', HOLD)
     await addWork(page, botId, 'Next job', HOLD)
-    await expect(button).toBeVisible()
-    // The button counts what is worked on, on every bot.
-    if (!others) await expect(page.locator('.sidebar-header .all-work-count')).toHaveText('1')
+    // The rail counts what is worked on, on every bot.
+    if (!others) await expect(count).toHaveText('1')
 
-    await button.click()
-    const sheet = page.getByRole('dialog').filter({ has: page.locator('.all-work-list') })
-    await expect(sheet).toContainText('Work')
-    const group = sheet.locator(`[data-all-work-bot="${name}"]`)
-    // The bot's threads, then its box: no titles, no free places, nothing that ended.
-    await expect(group.locator('.work-row')).toHaveText([/Long job/, /^1Next job.*Next up/])
-    await expect(group.locator('.work-row.free')).toHaveCount(0)
-    await expect(sheet.locator('.details-section-title')).toHaveCount(0)
+    await openPage(page, 'Threads')
+    const list = page.locator('aside.sidebar')
+    const group = (status: string) => list.getByRole('region', { name: status, exact: true })
+    const thread = (status: string, title: string) => group(status).locator(`[data-thread-row="${title}"]`)
+    // One list by status, each row naming its bot.
+    await expect(thread('Working', 'Long job')).toContainText(name)
+    await expect(thread('Waiting', 'Next job')).toContainText('Next up')
 
-    // The same actions as on the bot's Details.
-    await expect(group.getByRole('button', { name: 'Cut in' })).toBeVisible()
-    await hoverAction(group.locator('.work-row', { hasText: 'Next job' }), 'Drop')
-    await expect(group.locator('.work-row')).toHaveText([/Long job/])
-    expect(await statuses(page, botId)).toEqual({ 'Long job': 'working' })
+    // A row of an item a task has shows its thread beside the list.
+    await thread('Working', 'Long job').locator('.work-row-open').click()
+    const header = page.locator('.thread-detail .work-thread-header')
+    await expect(header).toContainText('Long job')
 
-    // The heading opens that bot's Details.
-    await group.locator('.all-work-bot').click()
-    await expect(sheet).toHaveCount(0)
-    const details = page.locator('.details-panel')
-    await expect(details.getByRole('tab', { name: 'Details', exact: true })).toHaveAttribute('aria-selected', 'true')
-    await expect(row(details, 'Threads', 'Long job')).toHaveAttribute('data-work-status', 'working')
-
-    // A row of an item a task has opens that bot's chat with the thread in its inspector.
-    await button.click()
-    await group.locator('.work-row', { hasText: 'Long job' }).locator('.work-row-open').click()
-    await expect(sheet).toHaveCount(0)
-    await expect(threadPanel(details).locator('.work-thread-header')).toContainText('Long job')
-    await closeThread(details)
-
-    // The view closes by itself when the last item ends, and its button goes with it.
-    await button.click()
-    await expect(sheet).toBeVisible()
-    await api(page, 'stopWork', { botId })
-    if (!others) {
-      await expect(sheet).toHaveCount(0)
-      await expect(button).toHaveCount(0)
-    } else {
-      await expect(group).toHaveCount(0)
-    }
+    // What ends moves to Recent, and its thread stays open.
+    await header.getByRole('button', { name: 'Stop', exact: true }).click()
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Stop', exact: true }).click()
+    await expect(thread('Recent', 'Long job')).toBeVisible()
+    await expect(group('Working').locator('[data-thread-row="Long job"]')).toHaveCount(0)
+    await expect(header).toContainText('Long job')
   } finally {
+    await openPage(page, 'Bots').catch(() => {})
     await cleanUp(page, botId)
     await browser.close()
   }

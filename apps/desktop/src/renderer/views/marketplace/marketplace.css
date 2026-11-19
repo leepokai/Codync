@@ -15,12 +15,6 @@
   max-width: 860px;
   margin: 0 auto;
 }
-.market-close {
-  position: absolute;
-  z-index: 2;
-  top: 8px;
-  right: 8px;
-}
 .market-installed-body {
   flex: 1;
   min-height: 0;

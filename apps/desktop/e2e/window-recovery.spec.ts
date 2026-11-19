@@ -5,7 +5,7 @@ import { attach } from './sandbox.ts'
 async function showsTheApp(): Promise<boolean> {
   const { browser, page } = await attach()
   try {
-    return await page.locator('.sidebar-account').waitFor({ timeout: 2000 }).then(() => true, () => false)
+    return await page.locator('.nav-rail').waitFor({ timeout: 2000 }).then(() => true, () => false)
   } finally {
     await browser.close()
   }

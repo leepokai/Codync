@@ -505,7 +505,6 @@
   "The host isn't responding. See the log for details.": "El host no responde. Consulta el registro para más detalles.",
   "Restart the manually started development host in its terminal.": "Reinicia el host de desarrollo iniciado manualmente desde su terminal.",
   "Another build of the host is running, not this app's. Try again to replace it.": "Está ejecutándose otra versión del host, no la de esta app. Inténtalo de nuevo para reemplazarla.",
-  "Your computer is ready": "Tu computadora está lista",
   "Work in your apps with a bot, or access your screen from your phone. You choose which bots can use this computer.": "Trabaja en tus apps con un bot o accede a la pantalla desde tu teléfono. Tú eliges qué bots pueden usar esta computadora.",
   "Let a bot work in your apps. You choose which bots can use this computer.": "Deja que un bot trabaje en tus apps. Tú eliges qué bots pueden usar esta computadora.",
   "Waiting for your computer": "Esperando tu computadora",
@@ -2371,5 +2370,16 @@
   "Connect {provider}": "Conectar {provider}",
   "Use the command line instead": "Usar la línea de comandos",
   "Leave it empty to use the hostname.": "Déjalo vacío para usar el nombre de host.",
-  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Este trabajo avanzó 8 pasos seguidos sin ti, el máximo posible. Pulsa «Continuar» para seguir."
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Este trabajo avanzó 8 pasos seguidos sin ti, el máximo posible. Pulsa «Continuar» para seguir.",
+  "Close {name}": "Cerrar {name}",
+  "Open a view": "Abrir una vista",
+  "Group by computer": "Agrupar por computadora",
+  "Sort by status": "Ordenar por estado",
+  "Maximize panel": "Maximizar panel",
+  "Split panel": "Dividir panel",
+  "Browser": "Navegador",
+  "Web address": "Dirección web",
+  "Enter an address to preview a page here": "Escribe una dirección para ver una página aquí",
+  "That is not a web address": "Eso no es una dirección web",
+  "Forward": "Adelante"
 }

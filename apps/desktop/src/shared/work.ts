@@ -96,14 +96,42 @@ export const normalizeMaxAgents = (raw: unknown): number | null =>
 /** A task has it: working, or waiting on the user's approval. */
 export const isLive = (item: WorkItem) => item.status === 'working' || item.status === 'needsYou'
 
-/** Still in the box's hands: a task has it, or it waits for one. */
-export const isOpen = (item: WorkItem) => isLive(item) || item.status === 'waiting'
+const THREAD_GROUPS: { title: string; has: (status: WorkStatus) => boolean }[] = [
+  { title: 'Needs you', has: (s) => s === 'needsYou' },
+  { title: 'Working', has: (s) => s === 'working' },
+  { title: 'Waiting', has: (s) => s === 'waiting' },
+  { title: 'Recent', has: (s) => s === 'done' || s === 'failed' || s === 'stopped' },
+]
 
-/** All bots' work in one view: the bots of `roster` (as its rows are on screen) that have a live or waiting item, in that order, and how many
- * items are worked on in all (the count on the view's button). */
-export function allWork<T extends { bot: { work: WorkItem[] } }>(roster: T[]): { bots: T[]; working: number } {
-  const bots = roster.filter((r) => r.bot.work.some(isOpen))
-  return { bots, working: bots.reduce((sum, r) => sum + r.bot.work.filter((i) => i.status === 'working').length, 0) }
+const statusRank = (status: WorkStatus) => THREAD_GROUPS.findIndex((g) => g.has(status))
+
+/** One heading of the Threads page and the items under it. `named`: the title is a computer's name, shown as it is. */
+export interface ThreadGroup<T> {
+  title: string
+  named: boolean
+  rows: { of: T; item: WorkItem }[]
+}
+
+/** All bots' work as one list (the Threads page), the bots of `roster` in the order its rows are on screen. `byStatus`
+ * alone: a heading a status (what needs the user, what works, what waits, then what ended in the last day). With
+ * `computerOf` (grouped by computer): a heading a computer, its items by status under it when `byStatus`. With neither:
+ * one group without a title. A group with no item is left out. `working` is how many items are worked on in all (the
+ * count on the rail's Threads). */
+export function allThreads<T extends { bot: { work: WorkItem[] } }>(roster: T[], byStatus = true, computerOf?: (of: T) => string): { groups: ThreadGroup<T>[]; working: number } {
+  const rows = roster.flatMap((of) => of.bot.work.map((item) => ({ of, item })))
+  const sorted = (list: typeof rows) => (byStatus ? [...list].sort((a, b) => statusRank(a.item.status) - statusRank(b.item.status)) : list)
+  const groups: ThreadGroup<T>[] = computerOf
+    ? [...new Set(rows.map((r) => computerOf(r.of)))].map((title) => ({ title, named: true, rows: sorted(rows.filter((r) => computerOf(r.of) === title)) }))
+    : byStatus
+      ? THREAD_GROUPS.map(({ title, has }) => ({ title, named: false, rows: rows.filter((r) => has(r.item.status)) }))
+      : [{ title: '', named: false, rows }]
+  return { groups: groups.filter((g) => g.rows.length > 0), working: rows.filter((r) => r.item.status === 'working').length }
+}
+
+/** Where a bot stands in a list sorted by status: it needs the user, it works, it has work in the background, the rest. */
+export function rosterRank(bot: { status: string; activity: string; work: WorkItem[] }): number {
+  const kind = rosterLine(bot, (text) => text)?.kind
+  return kind === 'needsYou' ? 0 : kind === 'working' ? 1 : kind === 'background' ? 2 : 3
 }
 
 /** How a bot stands outside its chat, as the host says it (`bot.outside`); null from a host before it. */

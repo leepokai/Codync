@@ -83,7 +83,6 @@
 .modal-content::after,
 .dialog-card::after,
 .anchored-panel::after,
-.account-panel::after,
 .action-menu::after,
 .composer-menu::after {
   content: '';

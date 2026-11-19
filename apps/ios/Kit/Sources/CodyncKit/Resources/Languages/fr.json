@@ -505,7 +505,6 @@
   "The host isn't responding. See the log for details.": "L’hôte ne répond pas. Consultez le journal pour plus de détails.",
   "Restart the manually started development host in its terminal.": "Redémarrez l’hôte de développement lancé manuellement dans son terminal.",
   "Another build of the host is running, not this app's. Try again to replace it.": "Une autre version de l’hôte est en cours d’exécution, pas celle de cette app. Réessayez pour la remplacer.",
-  "Your computer is ready": "Votre ordinateur est prêt",
   "Work in your apps with a bot, or access your screen from your phone. You choose which bots can use this computer.": "Travaillez dans vos apps avec un bot ou accédez à votre écran depuis votre téléphone. Vous choisissez les bots autorisés à utiliser cet ordinateur.",
   "Let a bot work in your apps. You choose which bots can use this computer.": "Laissez un bot travailler dans vos apps. Vous choisissez les bots autorisés à utiliser cet ordinateur.",
   "Waiting for your computer": "En attente de votre ordinateur",
@@ -2371,5 +2370,16 @@
   "Connect {provider}": "Connecter {provider}",
   "Use the command line instead": "Utiliser plutôt la ligne de commande",
   "Leave it empty to use the hostname.": "Laissez vide pour utiliser le nom d’hôte.",
-  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Ce travail a avancé de 8 étapes d’affilée sans vous, le maximum possible. Touchez « Continuer » pour poursuivre."
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Ce travail a avancé de 8 étapes d’affilée sans vous, le maximum possible. Touchez « Continuer » pour poursuivre.",
+  "Close {name}": "Fermer {name}",
+  "Open a view": "Ouvrir une vue",
+  "Group by computer": "Grouper par ordinateur",
+  "Sort by status": "Trier par état",
+  "Maximize panel": "Agrandir le panneau",
+  "Split panel": "Diviser le panneau",
+  "Browser": "Navigateur",
+  "Web address": "Adresse web",
+  "Enter an address to preview a page here": "Saisissez une adresse pour afficher une page ici",
+  "That is not a web address": "Ce n’est pas une adresse web",
+  "Forward": "Suivant"
 }

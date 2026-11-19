@@ -132,58 +132,58 @@ impl Recap<'_> {
     pub fn text(&self) -> anyhow::Result<String> {
         // The manifest owns its collection-stage labels while it is rendered; this list names sections
         // dropped from the whole recap, and takes those labels over when the whole manifest is dropped.
-        let omitted = Vec::new();
+        let mut omitted = Vec::new();
         let Some(budget) = self.room else { return self.render(None, &omitted) };
         let mut candidate = Self { ..*self };
-        let mut omitted = omitted;
+        candidate.fit_budget(budget, &mut omitted)
+    }
+
+    fn fit_budget(&mut self, budget: usize, omitted: &mut Vec<String>) -> anyhow::Result<String> {
         let mut messages = budget;
         let mut refused = None;
         loop {
-            match candidate.render(Some(messages), &omitted) {
+            match self.render(Some(messages), omitted) {
                 Ok(text) if text.len() <= budget => return Ok(text),
-                Ok(text) => {
-                    if messages > 0 {
-                        messages = messages.saturating_sub(text.len() - budget);
-                        continue;
-                    }
-                }
-                // The labels don't fit beside the messages: give them the whole allowance before dropping a section.
+                Ok(text) if messages > 0 => messages = messages.saturating_sub(text.len() - budget),
+                Ok(_) => self.shed_for_budget(budget, omitted, &mut messages, &mut refused)?,
                 Err(error) => {
+                    // Labels don't fit beside the messages: give them the whole allowance before dropping a section.
                     refused = Some(error);
                     if messages > 0 {
                         messages = 0;
-                        continue;
-                    }
-                    // The labels fit nowhere beside the other sections: follow the same rule and name one away.
-                    if drop_largest(&mut candidate, &mut omitted) {
+                    } else if drop_largest(self, omitted) {
                         messages = budget;
-                        continue;
+                    } else {
+                        self.shed_for_budget(budget, omitted, &mut messages, &mut refused)?;
                     }
                 }
             }
-            // The manifest is what this handoff adds, so its items are named only after every other section is gone.
-            let Some(manifest) = candidate.manifest.take() else {
-                if drop_largest(&mut candidate, &mut omitted) {
-                    messages = budget;
-                    continue;
-                }
-                if let Some(error) = refused {
-                    return Err(error);
-                }
-                anyhow::bail!(
-                    "the target's {budget}-byte handoff allowance cannot hold its omission notice; no prompt was sent"
-                );
-            };
-            omitted.extend(manifest.omitted.iter().cloned());
-            for (index, label) in manifest.labels().into_iter().enumerate() {
-                omitted.push(format!(
-                    "context manifest item #{} ({} B; context budget; search_history): {label}",
-                    index + 1,
-                    label.len(),
-                ));
-            }
-            messages = budget;
         }
+    }
+
+    fn shed_for_budget(
+        &mut self,
+        budget: usize,
+        omitted: &mut Vec<String>,
+        messages: &mut usize,
+        refused: &mut Option<anyhow::Error>,
+    ) -> anyhow::Result<()> {
+        // The manifest is what this handoff adds, so its items are named only after every other section is gone.
+        if let Some(manifest) = self.manifest.take() {
+            push_manifest_omissions(manifest, omitted);
+            *messages = budget;
+            return Ok(());
+        }
+        if drop_largest(self, omitted) {
+            *messages = budget;
+            return Ok(());
+        }
+        if let Some(error) = refused.take() {
+            return Err(error);
+        }
+        anyhow::bail!(
+            "the target's {budget}-byte handoff allowance cannot hold its omission notice; no prompt was sent"
+        );
     }
 
     fn render(&self, allowance: Option<usize>, omitted: &[String]) -> anyhow::Result<String> {
@@ -283,6 +283,17 @@ fn drop_largest(candidate: &mut Recap<'_>, omitted: &mut Vec<String>) -> bool {
     };
     omitted.push(format!("{name} ({bytes} bytes; context budget; search_history)"));
     true
+}
+
+fn push_manifest_omissions(manifest: &ledger::Ledger, omitted: &mut Vec<String>) {
+    omitted.extend(manifest.omitted.iter().cloned());
+    for (index, label) in manifest.labels().into_iter().enumerate() {
+        omitted.push(format!(
+            "context manifest item #{} ({} B; context budget; search_history): {label}",
+            index + 1,
+            label.len(),
+        ));
+    }
 }
 
 #[cfg(test)]

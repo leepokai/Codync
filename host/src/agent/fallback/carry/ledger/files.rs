@@ -157,6 +157,14 @@ fn inspect_inner(
     if Instant::now() >= deadline {
         return Err("hash skipped: time limit");
     }
+    let (mut reader, before) = open_regular(&path)?;
+    let (read, sha) = hash_checked(&mut reader, &before, deadline)?;
+    file.bytes = Some(read);
+    file.sha256 = Some(sha);
+    Ok(())
+}
+
+fn open_regular(path: &Path) -> Result<(std::fs::File, std::fs::Metadata), &'static str> {
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
     // A replaced FIFO must not block open, even after the initial regular-file check.
@@ -165,11 +173,19 @@ fn inspect_inner(
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
-    let mut reader = options.open(&path).map_err(|_| "file unavailable")?;
+    let reader = options.open(path).map_err(|_| "file unavailable")?;
     let before = reader.metadata().map_err(|_| "file unavailable")?;
     if !before.is_file() {
         return Err("not a regular file");
     }
+    Ok((reader, before))
+}
+
+fn hash_checked(
+    reader: &mut std::fs::File,
+    before: &std::fs::Metadata,
+    deadline: Instant,
+) -> Result<(u64, String), &'static str> {
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 64 * 1024];
     let mut read = 0u64;
@@ -191,13 +207,11 @@ fn inspect_inner(
     if read != before.len() || before.len() != after.len() || before.modified().ok() != after.modified().ok() {
         return Err("file changed while hashing");
     }
-    file.bytes = Some(read);
     let mut sha = String::with_capacity(64);
     for byte in hasher.finalize() {
         write!(&mut sha, "{byte:02x}").map_err(|_| "hash formatting failed")?;
     }
-    file.sha256 = Some(sha);
-    Ok(())
+    Ok((read, sha))
 }
 
 #[cfg(test)]

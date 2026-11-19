@@ -57,6 +57,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     /// Something done in the full-size viewer, or a picture copied from a message's menu; at most one `zoom` per opening.
     /// A download is reported when it ends, not when it starts.
     case imagePreviewAction(ImageAction, from: ImageFrom, outcome: ImageOutcome = .done)
+    /// A fenced code block's copy button put its code on the clipboard; never the code.
+    case codeBlockCopied
     case reviewRequested(prompts: Int)
     case reviewLinkOpened
     /// The What's new window is on screen after an update (docs/features/whats-new.md).
@@ -269,6 +271,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .remoteScreenPaused: "remote_screen_paused"
         case .imagePreviewOpened: "image_preview_opened"
         case .imagePreviewAction: "image_preview_action"
+        case .codeBlockCopied: "code_block_copied"
         case .reviewRequested: "review_requested"
         case .reviewLinkOpened: "review_link_opened"
         case .whatsNewShown: "whats_new_shown"
@@ -293,7 +296,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .signInStarted(provider), let .signedIn(provider): return ["provider": .string(provider.rawValue)]
         case let .signInFailed(provider, reason): return ["provider": .string(provider.rawValue), "reason": .string(reason.rawValue)]
         case .signedOut, .accessRequested, .continuedWithoutAccount, .computerFoundOnNetwork, .addToAccountAsked,
-             .addToAccountCompleted, .imagePreviewOpened, .whatsNewShown, .conversationFindOpened: return [:]
+             .addToAccountCompleted, .imagePreviewOpened, .whatsNewShown, .conversationFindOpened, .codeBlockCopied: return [:]
         case let .conversationFindSearched(found), let .quoteOpened(found): return ["found": .bool(found)]
         case let .addToAccountFailed(reason): return ["reason": .string(reason.rawValue)]
         case let .imagePreviewAction(action, from, outcome):

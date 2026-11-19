@@ -197,4 +197,26 @@ class MessageActionsMenuTest {
         compose.onNodeWithText("Copy").assertIsDisplayed()
         assertEquals(1, urls.size)
     }
+
+    @Test fun copyCodeButtonWorksInsideAgentBubble() {
+        val bot = Bot("code-copy-preview", "Scout")
+        val code = "const answer = 42\nconsole.log(answer)"
+        val text = "Here it is:\n\n```js\n$code\n```"
+        val entry = Entry("reply", 1, bot.id, rev = 1, kind = "agent", data = buildJsonObject { put("text", text); put("final", true) })
+        val state = AppState(previewComputer, loading = false, selectedBot = bot.id, bots = listOf(bot),
+            connection = LinkState.Ready(HostRoute.Direct), historyEnd = mapOf(bot.id to HistoryEnd.Complete), entries = listOf(entry))
+        compose.setContent { Hosted { ChatScreen(state, store, {}) } }
+        val clipboard = InstrumentationRegistry.getInstrumentation().targetContext.getSystemService(ClipboardManager::class.java)
+        compose.runOnUiThread { clipboard.clearPrimaryClip() }
+        compose.onNodeWithContentDescription("Copy code").assertIsDisplayed().performTouchInput { click() }
+        compose.runOnIdle { assertEquals(code, clipboard.primaryClip?.getItemAt(0)?.text?.toString()) }
+        compose.runOnUiThread { clipboard.clearPrimaryClip() }
+        val copied = compose.onNodeWithContentDescription("Copied")
+        copied.assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(code, clipboard.primaryClip?.getItemAt(0)?.text?.toString()) }
+        copied.performTouchInput { longClick() }
+        compose.onNodeWithText("Reply").assertIsDisplayed()
+        back()
+        compose.runOnUiThread { clipboard.clearPrimaryClip() }
+    }
 }

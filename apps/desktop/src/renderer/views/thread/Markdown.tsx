@@ -3,6 +3,7 @@ import { parseMarkdown, type Block } from './markdown-blocks.ts'
 import { Hairline } from '../../components/Controls'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { CodeBlock } from './CodeBlock'
 import './markdown.css'
 
 // The Mac's Markdown for messages: the blocks from `markdown-blocks.ts`, with inline styling like
@@ -92,11 +93,7 @@ const MarkdownBlock = memo(function MarkdownBlock({ block }: { block: Block }) {
     case 'quote':
       return <div className="md-text md-spaced md-body md-quote">{inline(block.text)}</div>
     case 'code':
-      return (
-        <div className="md-code">
-          <pre className="md-code-text">{block.text}</pre>
-        </div>
-      )
+      return <CodeBlock text={block.text} />
   }
 }, (a, b) => JSON.stringify(a.block) === JSON.stringify(b.block))
 

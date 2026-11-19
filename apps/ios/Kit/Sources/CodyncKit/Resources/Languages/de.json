@@ -2224,5 +2224,8 @@
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "Erstelle einen API-Schlüssel namens codync mit den Berechtigungen machines:read, machines:write und machines:delete.",
   "Connect {provider}": "{provider} verbinden",
   "Use the command line instead": "Stattdessen die Kommandozeile verwenden",
-  "Leave it empty to use the hostname.": "Leer lassen, um den Hostnamen zu verwenden."
+  "Leave it empty to use the hostname.": "Leer lassen, um den Hostnamen zu verwenden.",
+  "Copy code": "Code kopieren",
+  "Copied code": "Code kopiert",
+  "No code block to copy": "Kein Codeblock zum Kopieren"
 }

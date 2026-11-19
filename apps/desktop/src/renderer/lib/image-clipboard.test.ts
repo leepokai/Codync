@@ -71,3 +71,28 @@ test('Copy name clicked while a picture is still being written lands after it, n
     Reflect.deleteProperty(globalThis, 'ClipboardItem')
   }
 })
+
+test('copyText reports false when overtaken by a newer copy while waiting', async () => {
+  const landed: string[] = []
+  let finishWrite = () => {}
+  const write = () => new Promise<void>((done) => { finishWrite = () => { landed.push('picture'); done() } })
+  Object.defineProperty(globalThis, 'ClipboardItem', { value: class {}, configurable: true })
+  const navigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+  Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { write } }, configurable: true })
+  try {
+    const request = copies.start()
+    const picture = copyImage(PNG, () => copies.isLatest(request))
+    await new Promise((done) => setTimeout(done))
+    const first = copyText('first', (text) => landed.push(text))
+    const second = copyText('second', (text) => landed.push(text))
+    finishWrite()
+    const [, firstWon, secondWon] = await Promise.all([picture, first, second])
+    assert.equal(firstWon, false)
+    assert.equal(secondWon, true)
+    assert.deepEqual(landed, ['picture', 'second'])
+  } finally {
+    if (navigator) Object.defineProperty(globalThis, 'navigator', navigator)
+    else Reflect.deleteProperty(globalThis, 'navigator')
+    Reflect.deleteProperty(globalThis, 'ClipboardItem')
+  }
+})

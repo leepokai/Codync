@@ -2224,5 +2224,8 @@
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "machines:read, machines:write, machines:delete 범위를 가진 codync라는 이름의 API 키를 만드세요.",
   "Connect {provider}": "{provider} 연결",
   "Use the command line instead": "대신 명령줄 사용",
-  "Leave it empty to use the hostname.": "비워 두면 호스트 이름을 사용합니다."
+  "Leave it empty to use the hostname.": "비워 두면 호스트 이름을 사용합니다.",
+  "Copy code": "코드 복사",
+  "Copied code": "코드를 복사했습니다",
+  "No code block to copy": "복사할 코드 블록이 없습니다"
 }

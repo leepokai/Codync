@@ -78,6 +78,66 @@ fn a_turn_without_tools_does_not_claim_an_older_turns_files() {
 }
 
 #[test]
+fn a_queued_followup_does_not_hide_the_current_turns_work() {
+    let entries = vec![
+        entry(1, 1, EntryKind::User, json!({"text": "Fix tests", "status": "sent"})),
+        read(2, 1, "src/lib.rs"),
+        entry(3, 1, EntryKind::Tool, json!({"title": "cargo test", "toolKind": "execute", "status": "failed"})),
+        entry(4, 2, EntryKind::User, json!({"text": "Also check logs", "status": "queued"})),
+    ];
+    let (_, work) = scoped(entries, 0, &[]);
+    assert!(!work.is_empty() && work.iter().all(|e| e.turn == 1), "queued follow-up turn must not win: {work:?}");
+    assert_eq!(commands(&work, &mut Vec::new()).len(), 1);
+    let dir = Temp::new();
+    assert_eq!(files::collect(&work, dir.path(), &[], &mut Vec::new()).len(), 1);
+}
+
+#[test]
+fn read_and_search_outputs_mentioning_exit_codes_are_not_commands() {
+    let tool = |seq, data| entry(seq, 1, EntryKind::Tool, data);
+    let entries = [
+        tool(
+            1,
+            json!({
+                "title": "Read app.log", "toolKind": "read", "status": "completed", "output": "last line: exit code: 1"
+            }),
+        ),
+        tool(
+            2,
+            json!({
+                "title": "Search exit status",
+                "toolKind": "search",
+                "status": "completed",
+                "output": "Process exited with code 2",
+            }),
+        ),
+        tool(
+            3,
+            json!({
+                "title": "Inspect output", "toolKind": "other", "status": "completed", "output": "exit status 1"
+            }),
+        ),
+        tool(4, json!({"title": "cargo check", "toolKind": "execute", "status": "failed", "output": "exit code: 3"})),
+        tool(
+            5,
+            json!({
+                "title": "npm test",
+                "toolKind": "other",
+                "command": "npm test",
+                "status": "failed",
+                "output": "exit code: 4",
+            }),
+        ),
+    ];
+    let found = commands(&entries, &mut Vec::new());
+    assert_eq!(found.len(), 2);
+    assert_eq!(found[0].line, "npm test");
+    assert_eq!(found[0].status, Some(4));
+    assert_eq!(found[1].line, "cargo check");
+    assert_eq!(found[1].status, Some(3));
+}
+
+#[test]
 fn only_the_user_supplies_constraints_and_references() {
     let entries = [
         entry(1, 1, EntryKind::User, json!({"text": "不要改 src/a.rs https://example.com #409"})),

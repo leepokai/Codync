@@ -168,13 +168,18 @@ fn references(entries: &[Entry], omitted: &mut Vec<String>) -> Vec<String> {
     out
 }
 
+fn is_command_tool(entry: &Entry) -> bool {
+    matches!(entry.data["toolKind"].as_str(), Some("execute" | "terminal"))
+        || entry.data["command"].as_str().is_some_and(|cmd| !cmd.trim().is_empty())
+}
+
 fn commands(entries: &[Entry], omitted: &mut Vec<String>) -> Vec<Command> {
     let mut out = Vec::new();
     for e in entries.iter().rev().filter(|e| e.kind == EntryKind::Tool.as_str()) {
-        let output = e.data["output"].as_str().unwrap_or_default();
-        if !matches!(e.data["toolKind"].as_str(), Some("execute" | "terminal")) && exit_status(output).is_none() {
+        if !is_command_tool(e) {
             continue;
         }
+        let output = e.data["output"].as_str().unwrap_or_default();
         let Some(line) = e.data["title"].as_str().map(str::trim).filter(|s| !s.is_empty()) else { continue };
         if out.len() < COMMANDS {
             out.push(Command {
@@ -257,13 +262,21 @@ fn waiting(entries: &[Entry], omitted: &mut Vec<String>) -> Vec<String> {
     out
 }
 
-/// The new message is already in the prompt; current tools win, otherwise use the last answered turn.
+fn is_queued_user(entry: &Entry) -> bool {
+    entry.kind == EntryKind::User.as_str() && entry.data["status"] == "queued"
+}
+
+/// The new message is already in the prompt; current tools win, otherwise use the last started turn.
 fn scoped(mut entries: Vec<Entry>, fresh: i64, current: &[String]) -> (Vec<Entry>, Vec<Entry>) {
     entries.retain(|e| e.seq > fresh);
     let turn = entries
         .iter()
         .rev()
-        .find(|e| !current.contains(&e.id) && matches!(e.kind.as_str(), "user" | "agent" | "tool" | "permission"))
+        .find(|e| {
+            !current.contains(&e.id)
+                && !is_queued_user(e)
+                && matches!(e.kind.as_str(), "user" | "agent" | "tool" | "permission")
+        })
         .map(|e| e.turn);
     let work = entries.iter().filter(|e| Some(e.turn) == turn).cloned().collect();
     (entries, work)

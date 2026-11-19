@@ -17,6 +17,11 @@ public struct ProviderWidgetCard: View {
         self.iconStyle = iconStyle
     }
 
+    private var isStale: Bool {
+        let login = provider.tightestLogin
+        return !login.windows.isEmpty && login.failedAt != nil
+    }
+
     public var body: some View {
         VStack(alignment: .leading, spacing: layout == .small ? 6 : 8) {
             HStack(spacing: 7) {
@@ -26,7 +31,12 @@ public struct ProviderWidgetCard: View {
                     .foregroundStyle(Palette.text)
                     .lineLimit(1)
                 Spacer(minLength: 0)
-                if layout != .small {
+                if isStale {
+                    Text(L10n.tr("Out of date"))
+                        .font(.system(size: layout == .small ? 9 : 10, weight: .medium))
+                        .foregroundStyle(Palette.attention)
+                        .lineLimit(1)
+                } else if layout != .small {
                     Text(L10n.tr("Usage"))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Palette.secondary)
@@ -45,8 +55,10 @@ public struct ProviderWidgetCard: View {
                     .monospacedDigit()
                     .foregroundStyle(window.percent >= 90 ? Palette.danger : Palette.text)
                     .minimumScaleFactor(0.7)
+                    .opacity(isStale ? 0.6 : 1)
                 }
                 UsageTicks(percent: window.percent, tint: provider.widgetTint, height: 13)
+                    .opacity(isStale ? 0.6 : 1)
                 Text(window.resetsShort(now: date).map(L10n.resetLine) ?? L10n.tr("Usage reported by your computer"))
                     .font(.system(size: 9)).foregroundStyle(Palette.secondary)
                     .lineLimit(1)
@@ -57,6 +69,7 @@ public struct ProviderWidgetCard: View {
                             .font(.system(size: 36, weight: .semibold, design: .rounded)).monospacedDigit()
                             .contentTransition(.numericText(value: top.percent))
                             .foregroundStyle(top.percent >= 90 ? Palette.danger : Palette.text)
+                            .opacity(isStale ? 0.6 : 1)
                         Text("\(L10n.tr(top.title)) · \(L10n.tr("highest usage"))").font(.system(size: 11)).foregroundStyle(Palette.secondary)
                             .lineLimit(2)
                     }
@@ -75,8 +88,10 @@ public struct ProviderWidgetCard: View {
                                 .monospacedDigit()
                                 .contentTransition(.numericText(value: window.percent))
                                 .foregroundStyle(window.percent >= 90 ? Palette.danger : Palette.text)
+                                .opacity(isStale ? 0.6 : 1)
                         }
                         UsageTicks(percent: window.percent, tint: provider.widgetTint, height: 12)
+                            .opacity(isStale ? 0.6 : 1)
                         if let reset = window.resetsShort(now: date) {
                             Text(L10n.resetLine(reset)).font(.system(size: 9)).foregroundStyle(Palette.secondary)
                                 .lineLimit(1).frame(maxWidth: .infinity, alignment: .trailing)

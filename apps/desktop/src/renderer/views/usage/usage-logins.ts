@@ -8,13 +8,27 @@ export interface UsageLogin {
   id: string | null
   name: string | null
   windows: UsageWindow[]
+  failedAt?: number | null
 }
 
 /** The agent's logins, the default one first. One, unnamed, when it has no login profiles. */
 export function logins(p: UsageProvider): UsageLogin[] {
   const profiles = p.loginProfiles ?? []
-  const own = { id: null, name: profiles.length ? (p.defaultLoginProfile ?? null) : null, windows: p.windows }
-  return [own, ...profiles]
+  const own: UsageLogin = {
+    id: null,
+    name: profiles.length ? (p.defaultLoginProfile ?? null) : null,
+    windows: p.windows,
+    ...(p.failedAt != null ? { failedAt: p.failedAt } : {}),
+  }
+  return [
+    own,
+    ...profiles.map((profile): UsageLogin => ({
+      id: profile.id,
+      name: profile.name,
+      windows: profile.windows,
+      ...(profile.failedAt != null ? { failedAt: profile.failedAt } : {}),
+    })),
+  ]
 }
 
 const tightestOf = (windows: UsageWindow[]) =>

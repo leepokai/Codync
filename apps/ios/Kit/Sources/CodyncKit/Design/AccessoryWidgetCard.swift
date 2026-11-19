@@ -19,9 +19,12 @@ public struct AccessoryWidgetCard: View {
     private var working: Int { bots.filter { $0.isBusyOutside && !$0.needsYouOutside }.count }
     private var count: Int { needs > 0 ? needs : working > 0 ? working : bots.count }
     private var botLabel: String { needs > 0 ? (needs == 1 ? "needs you" : "need you") : working > 0 ? "working" : (bots.count == 1 ? "bot" : "bots") }
-    private var top: (name: String, window: UsageWindow)? {
-        usage.providers.flatMap { p in p.limits.map { (name: p.name, window: $0) } }
-            .max { $0.window.percent < $1.window.percent }
+    private var top: (name: String, window: UsageWindow, stale: Bool)? {
+        usage.providers.flatMap { p in
+            let login = p.tightestLogin
+            let stale = login.failedAt != nil && !login.windows.isEmpty
+            return login.limits.map { (name: p.name, window: $0, stale: stale) }
+        }.max { $0.window.percent < $1.window.percent }
     }
     private var headline: String {
         guard paired else { return "Connect a computer" }
@@ -63,7 +66,9 @@ public struct AccessoryWidgetCard: View {
                         }
                     } else if paired, let top {
                         Text(L10n.tr(top.window.title)).font(.system(size: 10)).lineLimit(1)
-                        if let reset = top.window.resetsShort() {
+                        if top.stale {
+                            Text(L10n.tr("Out of date")).font(.system(size: 9)).lineLimit(1)
+                        } else if let reset = top.window.resetsShort() {
                             Text(L10n.resetLine(reset)).font(.system(size: 9)).lineLimit(1)
                         }
                     }

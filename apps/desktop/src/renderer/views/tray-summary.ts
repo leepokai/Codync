@@ -153,15 +153,21 @@ function usageLine(w: UsageWindow) {
 
 /** An agent's limits for the menu, login by login: one with nothing read says so. */
 function usageAgent(p: UsageProvider, iconStyle: 'character' | 'original'): TrayUsageAgent {
+  const list = logins(p)
+  const singleStale = !p.loginProfiles?.length && p.windows.length > 0 && p.failedAt != null
   return {
-    name: p.name,
+    name: singleStale ? `${p.name} · ${tr('Out of date')}` : p.name,
     icon: canvasImage(`mascot|${p.id}|${iconStyle}|${nearlyUsedUp(p)}`, 16, 16, (ctx) => drawMascot(ctx, p, 16, iconStyle, isDark())),
-    logins: logins(p).map((login) => ({
-      name: login.name ?? tr('Default login profile'),
-      lines: login.windows.length
-        ? login.windows.map((w) => ({ title: usageLine(w), bar: w.text ? null : barIcon(p.id, w) }))
-        : [{ title: tr('No reading yet'), bar: null }],
-    })),
+    logins: list.map((login) => {
+      const base = login.name ?? tr('Default login profile')
+      const stale = list.length > 1 && login.windows.length > 0 && login.failedAt != null
+      return {
+        name: stale ? `${base} · ${tr('Out of date')}` : base,
+        lines: login.windows.length
+          ? login.windows.map((w) => ({ title: usageLine(w), bar: w.text ? null : barIcon(p.id, w) }))
+          : [{ title: tr('No reading yet'), bar: null }],
+      }
+    }),
   }
 }
 

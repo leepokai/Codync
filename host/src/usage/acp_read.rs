@@ -14,8 +14,8 @@ use serde_json::{Value, json};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use super::Window;
 use super::reading::{self, UsageReadStage};
+use super::{Probe, Window};
 
 /// A signed-out agent waits here for a sign-in that never comes.
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
@@ -37,13 +37,13 @@ pub(super) async fn start(store: &Store, backend: &str) -> Result<Started, Usage
     })
 }
 
-/// What `backend` answers to its `command`, through `parse`. `None`: no reading this time.
+/// What `backend` answers to its `command`, through `parse`.
 pub(super) async fn command_reading(
     hub: &Hub,
     backend: &str,
     command: &str,
     parse: fn(&str) -> Option<Vec<Window>>,
-) -> Option<Vec<Window>> {
+) -> Probe {
     reading::guarded(hub, backend, async {
         let text = ask(&hub.store, backend, command).await?;
         parse(&text).ok_or(UsageReadStage::Parse)

@@ -72,6 +72,25 @@ pub struct Usage {
     pub services: Vec<Service>,
 }
 
+/// How a usage probe finished.
+#[derive(Debug, PartialEq)]
+pub(super) enum Probe {
+    Reading(Vec<Window>),
+    /// The check failed or returned no limits: keep any earlier reading marked stale.
+    Failed,
+    /// Skipped (another check is already running, or Copilot is within its cooldown): leave what is shown alone.
+    Skip,
+}
+
+impl From<Option<Vec<Window>>> for Probe {
+    fn from(windows: Option<Vec<Window>>) -> Self {
+        match windows {
+            Some(windows) => Self::Reading(windows),
+            None => Self::Failed,
+        }
+    }
+}
+
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Provider {
@@ -86,6 +105,9 @@ pub struct Provider {
     /// or a short phrase for the other agents.
     pub source: &'static str,
     pub updated_at: i64,
+    /// When the last usage check failed while keeping earlier windows. Cleared when a reading lands.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed_at: Option<i64>,
     /// What the default login is called, while the agent has login profiles to tell it from.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_login_profile: Option<String>,
@@ -104,6 +126,9 @@ pub struct LoginReading {
     pub windows: Vec<Window>,
     /// Zero until its first reading comes back.
     pub updated_at: i64,
+    /// When the last usage check failed while keeping earlier windows. Cleared when a reading lands.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed_at: Option<i64>,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -167,7 +192,13 @@ impl Usage {
         let row = |(id, name): (String, String)| {
             let kept = old.iter().find(|row| row.id == id);
             let windows = kept.map(|row| row.windows.clone()).unwrap_or_default();
-            LoginReading { windows, updated_at: kept.map_or(0, |row| row.updated_at), id, name }
+            LoginReading {
+                windows,
+                updated_at: kept.map_or(0, |row| row.updated_at),
+                failed_at: kept.and_then(|row| row.failed_at),
+                id,
+                name,
+            }
         };
         provider.login_profiles = rows.into_iter().map(row).collect();
         provider.default_login_profile = default.filter(|_| !provider.login_profiles.is_empty());
@@ -191,19 +222,40 @@ impl Usage {
     }
 
     /// A reading of `reader`'s agent lands: on login profile `profile`'s row (dropped when the row is gone), or on
-    /// the default login. An agent left with no windows and no rows is removed.
+    /// the default login. A failed check keeps existing windows and their `updated_at`, recording when it failed.
+    /// An agent left with no windows and no rows is removed.
     fn land(&mut self, reader: &Reader, source: &'static str, profile: Option<&str>, reading: Reading) {
-        let provider = self.provider(reader, source);
         let now = crate::store::now_ms();
-        match profile {
-            None => {
-                reading.onto(&mut provider.windows);
-                (provider.source, provider.updated_at) = (source, now);
+        match (profile, reading) {
+            (None, Reading::Failed) => {
+                if let Some(provider) = self.providers.iter_mut().find(|p| p.id == reader.id)
+                    && !provider.windows.is_empty()
+                {
+                    provider.failed_at = Some(now);
+                }
             }
-            Some(profile) => {
-                if let Some(row) = provider.login_profiles.iter_mut().find(|l| l.id == profile) {
+            (Some(profile), Reading::Failed) => {
+                if let Some(provider) = self.providers.iter_mut().find(|p| p.id == reader.id)
+                    && let Some(row) = provider.login_profiles.iter_mut().find(|l| l.id == profile)
+                {
+                    if row.windows.is_empty() {
+                        row.updated_at = now;
+                    } else {
+                        row.failed_at = Some(now);
+                    }
+                }
+            }
+            (None, reading) => {
+                let provider = self.provider(reader, source);
+                reading.onto(&mut provider.windows);
+                (provider.source, provider.updated_at, provider.failed_at) = (source, now, None);
+            }
+            (Some(profile), reading) => {
+                if let Some(provider) = self.providers.iter_mut().find(|p| p.id == reader.id)
+                    && let Some(row) = provider.login_profiles.iter_mut().find(|l| l.id == profile)
+                {
                     reading.onto(&mut row.windows);
-                    row.updated_at = now;
+                    (row.updated_at, row.failed_at) = (now, None);
                 }
             }
         }
@@ -217,8 +269,8 @@ enum Reading {
     Some(Vec<Window>),
     /// A probe's full reading: windows it no longer reports are dropped.
     All(Vec<Window>),
-    /// The probe couldn't tell: what's shown stays.
-    Unknown,
+    /// The check failed or couldn't tell: what's shown stays, marked out of date when windows exist.
+    Failed,
 }
 
 impl Reading {
@@ -229,7 +281,7 @@ impl Reading {
                 windows.extend(new);
             }
             Self::All(new) => *windows = new,
-            Self::Unknown => {}
+            Self::Failed => {}
         }
         windows.sort_by(|a, b| a.id.cmp(&b.id));
     }
@@ -244,6 +296,7 @@ impl Provider {
             windows,
             source,
             updated_at: crate::store::now_ms(),
+            failed_at: None,
             default_login_profile: None,
             login_profiles: Vec::new(),
         }
@@ -299,18 +352,25 @@ async fn read(hub: &Hub, readers: Vec<&'static Reader>) {
     let mut readings: FuturesUnordered<BoxFuture<'_, ()>> = FuturesUnordered::new();
     for reader in readers {
         readings.push(Box::pin(async move {
-            if let Some(windows) = (reader.read)(hub).await {
-                hub.update_usage(|usage| usage.land(reader, reader.source, None, Reading::All(windows)));
-            }
+            apply_probe(hub, reader, None, (reader.read)(hub).await);
         }));
         for profile in listed_profiles(hub, reader) {
             readings.push(Box::pin(async move {
-                let reading = read_profile(hub, reader, &profile).await.map_or(Reading::Unknown, Reading::All);
-                hub.update_usage(|usage| usage.land(reader, reader.source, Some(&profile), reading));
+                let probe = read_profile(hub, reader, &profile).await;
+                apply_probe(hub, reader, Some(&profile), probe);
             }));
         }
     }
     while readings.next().await.is_some() {}
+}
+
+fn apply_probe(hub: &Hub, reader: &'static Reader, profile: Option<&str>, probe: Probe) {
+    let reading = match probe {
+        Probe::Reading(windows) => Reading::All(windows),
+        Probe::Failed => Reading::Failed,
+        Probe::Skip => return,
+    };
+    hub.update_usage(|usage| usage.land(reader, reader.source, profile, reading));
 }
 
 /// The login profiles listed under `reader`'s agent, when it can read one.
@@ -323,11 +383,11 @@ fn listed_profiles(hub: &Hub, reader: &Reader) -> Vec<String> {
     rows.unwrap_or_default().iter().map(|row| row.id.clone()).collect()
 }
 
-/// `profile`'s windows, read by its agent's own CLI pointed at the profile's folder. `None`: it couldn't tell.
-async fn read_profile(hub: &Hub, reader: &Reader, profile: &str) -> Option<Vec<Window>> {
+/// `profile`'s windows, read by its agent's own CLI pointed at the profile's folder.
+async fn read_profile(hub: &Hub, reader: &Reader, profile: &str) -> Probe {
     use crate::agent::login_profiles;
     use anyhow::Context;
-    let read = reader.read_profile?;
+    let Some(read) = reader.read_profile else { return Probe::Skip };
     let ready = || {
         // Held while the CLI runs, so the profile isn't removed under it.
         let running = login_profiles::hold(&hub.store, reader.id, Some(profile))?.context("another agent's profile")?;
@@ -337,7 +397,7 @@ async fn read_profile(hub: &Hub, reader: &Reader, profile: &str) -> Option<Vec<W
         Ok((_running, env)) => read(env).await,
         Err(error) => {
             tracing::debug!(agent = reader.id, error = format!("{error:#}"), "couldn't read a login profile's usage");
-            None
+            Probe::Failed
         }
     }
 }
@@ -428,12 +488,13 @@ mod tests {
             Some("work"),
             Reading::Some(vec![Window::new("five_hour", "5-hour", 5.0, None)]),
         );
-        land(&mut u, "claude", "claude", Some("side"), Reading::Unknown);
+        land(&mut u, "claude", "claude", Some("side"), Reading::Failed);
         let percents = |windows: &[Window]| windows.iter().map(|w| w.percent).collect::<Vec<_>>();
         assert_eq!(percents(u.windows("claude-acp", None).unwrap()), [10.0], "by its registry id too");
         assert_eq!(percents(u.windows("claude", Some("work")).unwrap()), [5.0, 90.0]);
         assert_eq!(u.windows("claude", Some("side")).unwrap(), []);
         assert_ne!(u.providers[0].login_profiles[1].updated_at, 0, "asked, so it isn't read again right away");
+        assert_eq!(u.providers[0].login_profiles[1].failed_at, None, "no old numbers to mark stale");
         assert_eq!(u.windows("claude", Some("gone")), None);
 
         // One renamed and one removed: the one that stays keeps its reading.
@@ -443,6 +504,79 @@ mod tests {
         // With the last one gone, the default login is the agent's only one again.
         u.list_login_profiles(reader("claude"), Some("me@example.com".into()), Vec::new());
         assert_eq!((u.providers[0].default_login_profile.as_deref(), u.providers[0].windows.len()), (None, 1));
+    }
+
+    #[test]
+    fn a_failed_reading_keeps_the_last_windows_and_marks_when_it_failed() {
+        let mut u = Usage::default();
+        // A failure with no reading yet adds nothing.
+        land(&mut u, "claude", "claude", None, Reading::Failed);
+        assert_eq!(u.providers, []);
+
+        let first = vec![Window::new("five_hour", "5-hour", 42.0, None)];
+        land(&mut u, "claude", "claude", None, Reading::All(first));
+        u.providers[0].updated_at = 1_700_000_000_000;
+
+        land(&mut u, "claude", "claude", None, Reading::Failed);
+        let c = &u.providers[0];
+        assert_eq!(c.windows.len(), 1);
+        assert!((c.windows[0].percent - 42.0).abs() < f64::EPSILON);
+        assert_eq!(c.updated_at, 1_700_000_000_000, "updatedAt stays when the numbers came from");
+        assert!(c.failed_at.is_some());
+        let wire = serde_json::to_value(&u).unwrap();
+        assert_eq!(wire["providers"][0]["updatedAt"], 1_700_000_000_000_i64);
+        assert_eq!(wire["providers"][0]["failedAt"], c.failed_at.unwrap());
+
+        // A subsequent fresh reading clears failedAt.
+        land(&mut u, "claude", "statusline", None, Reading::Some(vec![Window::new("five_hour", "5-hour", 44.0, None)]));
+        assert_eq!(u.providers[0].failed_at, None);
+        let wire = serde_json::to_value(&u).unwrap();
+        assert!(wire["providers"][0].get("failedAt").is_none());
+    }
+
+    #[test]
+    fn a_failed_profile_reading_keeps_its_time_and_survives_listing() {
+        let mut u = Usage::default();
+        u.list_login_profiles(reader("claude"), None, vec![("work".to_owned(), "Work".to_owned())]);
+        land(
+            &mut u,
+            "claude",
+            "claude",
+            Some("work"),
+            Reading::All(vec![Window::new("five_hour", "5-hour", 61.0, None)]),
+        );
+        u.providers[0].login_profiles[0].updated_at = 1_700_000_000_000;
+
+        land(&mut u, "claude", "claude", Some("work"), Reading::Failed);
+        let work = &u.providers[0].login_profiles[0];
+        assert_eq!(work.updated_at, 1_700_000_000_000);
+        let failed = work.failed_at.expect("recorded when the profile check failed");
+
+        u.list_login_profiles(reader("claude"), None, vec![("work".to_owned(), "Day job".to_owned())]);
+        assert_eq!(u.providers[0].login_profiles[0].failed_at, Some(failed));
+
+        land(
+            &mut u,
+            "claude",
+            "claude",
+            Some("work"),
+            Reading::All(vec![Window::new("five_hour", "5-hour", 65.0, None)]),
+        );
+        assert_eq!(u.providers[0].login_profiles[0].failed_at, None);
+    }
+
+    #[test]
+    fn a_skipped_probe_leaves_existing_status_untouched() {
+        let hub = services::tests::hub();
+        let claude = reader("claude");
+        apply_probe(&hub, claude, None, Probe::Reading(vec![Window::new("five_hour", "5-hour", 20.0, None)]));
+        apply_probe(&hub, claude, None, Probe::Skip);
+        assert_eq!(hub.usage.locked().providers[0].failed_at, None);
+
+        apply_probe(&hub, claude, None, Probe::Failed);
+        let failed = hub.usage.locked().providers[0].failed_at.expect("failed_at set");
+        apply_probe(&hub, claude, None, Probe::Skip);
+        assert_eq!(hub.usage.locked().providers[0].failed_at, Some(failed), "skip leaves failed_at alone");
     }
 
     #[test]

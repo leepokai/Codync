@@ -2228,5 +2228,7 @@
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "Crea una chiave API chiamata codync con i permessi machines:read, machines:write e machines:delete.",
   "Connect {provider}": "Collega {provider}",
   "Use the command line instead": "Usa invece la riga di comando",
-  "Leave it empty to use the hostname.": "Lascia vuoto per usare il nome host."
+  "Leave it empty to use the hostname.": "Lascia vuoto per usare il nome host.",
+  "Out of date": "Non aggiornato",
+  "Out of date · check failed {when}": "Non aggiornato · controllo fallito {when}"
 }

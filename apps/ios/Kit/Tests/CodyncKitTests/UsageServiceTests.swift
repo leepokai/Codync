@@ -62,6 +62,19 @@ import Testing
         #expect(provider.tightest?.percent == 90)
     }
 
+    @Test func aFailedReadingDecodesFailedAtOnDefaultAndProfileLogins() throws {
+        let json = #"""
+        {"id":"claude","name":"Claude","windows":[{"id":"w","label":"Weekly","percent":10}],"source":"claude","updatedAt":1,"failedAt":1234,
+         "defaultLoginProfile":"me@example.com",
+         "loginProfiles":[{"id":"work","name":"Work","windows":[{"id":"w","label":"Weekly","percent":90}],"updatedAt":1,"failedAt":5678},
+                          {"id":"fresh","name":"Fresh","windows":[{"id":"w","label":"Weekly","percent":5}],"updatedAt":1}]}
+        """#
+        let provider = try JSONDecoder().decode(UsageProvider.self, from: Data(json.utf8))
+        #expect(provider.failedAt == 1234)
+        #expect(provider.logins.map(\.failedAt) == [1234, 5678, nil])
+        #expect(provider.tightestLogin.failedAt == 5678)
+    }
+
     @Test func aNoteNeverMakesALoginTheTightest() {
         let window = { (percent: Double, text: String?) in UsageWindow(id: "w", label: "Weekly", percent: percent, text: text) }
         let note = UsageLoginProfile(id: "key", name: "Key", windows: [window(100, "$4.20")], updatedAt: 0)

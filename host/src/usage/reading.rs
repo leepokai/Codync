@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use std::future::Future;
 use std::sync::Mutex;
 
-use super::Window;
+use super::{Probe, Window};
 
 /// Where reading an agent's usage stopped (`usage_read_failed`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -48,16 +48,18 @@ impl Drop for Reading {
     }
 }
 
-/// What `reading` finds, unless `agent` is being read already. `None`: no reading this time.
+/// What `reading` finds, unless `agent` is being read already (`Probe::Skip`).
 pub(super) async fn guarded(
     hub: &Hub,
     agent: &str,
     reading: impl Future<Output = Result<Vec<Window>, UsageReadStage>>,
-) -> Option<Vec<Window>> {
-    let _reading = Reading::start(agent)?;
+) -> Probe {
+    let Some(_reading) = Reading::start(agent) else {
+        return Probe::Skip;
+    };
     let outcome = reading.await;
     report(hub, agent, &outcome);
-    outcome.ok()
+    outcome.map_or(Probe::Failed, Probe::Reading)
 }
 
 /// How a reading ended, for usage analytics: a failure once, not on every poll.

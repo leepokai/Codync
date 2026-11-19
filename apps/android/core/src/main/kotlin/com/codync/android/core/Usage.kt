@@ -32,6 +32,8 @@ import java.util.Locale
 
 @Serializable data class UsageProvider(val id: String, val name: String, val windows: List<UsageWindow> = emptyList(),
     val source: String = "", val updatedAt: Long? = null,
+    /** Epoch ms when the latest check failed while keeping the default login's older windows. */
+    val failedAt: Long? = null,
     /** The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it. */
     val registry: String? = null,
     /** What the default login is called, when the host knows; only sent beside [loginProfiles]. */
@@ -39,7 +41,7 @@ import java.util.Locale
     /** The agent's other logins, each with its own reading. Empty for an agent with one login. */
     val loginProfiles: List<UsageLoginProfile> = emptyList()) {
     /** The agent's logins, the default first ([windows] are its reading); one when it has no login profiles. */
-    val logins: List<UsageLogin> get() = listOf(UsageLogin(null, defaultLoginProfile, windows)) + loginProfiles.map { UsageLogin(it.id, it.name, it.windows) }
+    val logins: List<UsageLogin> get() = listOf(UsageLogin(null, defaultLoginProfile, windows, failedAt)) + loginProfiles.map { UsageLogin(it.id, it.name, it.windows, it.failedAt) }
     /** The login nearest a limit, which the widgets and summaries show; the default when none has a limit. */
     val tightestLogin: UsageLogin get() = logins.maxBy { it.tightest?.percent ?: -1.0 }
     val limits: List<UsageWindow> get() = tightestLogin.limits
@@ -47,10 +49,10 @@ import java.util.Locale
 }
 
 /** A login profile's reading; no [windows] until the host has read it. */
-@Serializable data class UsageLoginProfile(val id: String, val name: String, val windows: List<UsageWindow> = emptyList(), val updatedAt: Long? = null)
+@Serializable data class UsageLoginProfile(val id: String, val name: String, val windows: List<UsageWindow> = emptyList(), val updatedAt: Long? = null, val failedAt: Long? = null)
 
 /** One of an agent's logins and what it has used. The default login has no [id], and a [name] only when the host knows it. */
-data class UsageLogin(val id: String?, val name: String?, val windows: List<UsageWindow>) {
+data class UsageLogin(val id: String?, val name: String?, val windows: List<UsageWindow>, val failedAt: Long? = null) {
     /** The plan windows: a note (a window with text) is never a limit. */
     val limits: List<UsageWindow> get() = windows.filter { it.text.isNullOrBlank() }
     val tightest: UsageWindow? get() = limits.filter { it.percent?.isFinite() == true }.maxByOrNull { requireNotNull(it.percent) }

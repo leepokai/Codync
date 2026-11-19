@@ -150,6 +150,13 @@
 .settings-usage-provider {
   padding: 14px 16px;
 }
+.settings-usage-stale {
+  text-align: right;
+  min-width: 0;
+}
+.settings-usage-stale-windows {
+  opacity: 0.58;
+}
 .settings-usage-note {
   text-align: right;
 }

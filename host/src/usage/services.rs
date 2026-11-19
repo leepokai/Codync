@@ -6,8 +6,8 @@
 //! being read, because background work and fallbacks go by its limits.
 
 use super::{
-    Window, amp, antigravity, auggie, claude, codex, copilot, cursor, grok, hermes, junie, kilo, kimi, kiro, omp,
-    opencode, vibe,
+    Probe, Window, amp, antigravity, auggie, claude, codex, copilot, cursor, grok, hermes, junie, kilo, kimi, kiro,
+    omp, opencode, vibe,
 };
 use crate::LockExt;
 use crate::agent::{backends, login_profiles};
@@ -29,7 +29,7 @@ pub struct Service {
     pub shown: bool,
 }
 
-type ReadProfile = fn(Vec<(String, String)>) -> BoxFuture<'static, Option<Vec<Window>>>;
+type ReadProfile = fn(Vec<(String, String)>) -> BoxFuture<'static, Probe>;
 
 pub(super) struct Reader {
     pub(super) id: &'static str,
@@ -37,14 +37,14 @@ pub(super) struct Reader {
     pub(super) source: &'static str,
     /// Something to read without the agent's CLI: an app's saved login or quota file.
     pub(super) found_without_cli: Option<fn() -> bool>,
-    pub(super) read: for<'a> fn(&'a Hub) -> BoxFuture<'a, Option<Vec<Window>>>,
+    pub(super) read: for<'a> fn(&'a Hub) -> BoxFuture<'a, Probe>,
     /// The same reading for a login profile, given the variables that point the agent's CLI at the profile's
     /// folder. Without one, the agent's login profiles list with no reading.
     pub(super) read_profile: Option<ReadProfile>,
 }
 
-fn blocking(read: fn() -> Option<Vec<Window>>) -> BoxFuture<'static, Option<Vec<Window>>> {
-    Box::pin(async move { tokio::task::spawn_blocking(read).await.ok().flatten() })
+fn blocking(read: fn() -> Option<Vec<Window>>) -> BoxFuture<'static, Probe> {
+    Box::pin(async move { tokio::task::spawn_blocking(read).await.ok().flatten().into() })
 }
 
 /// Every agent the host can read, in the order the chooser lists them.
@@ -54,16 +54,16 @@ pub(super) const READERS: &[Reader] = &[
         name: "Claude",
         source: "claude",
         found_without_cli: None,
-        read: |_| Box::pin(claude::collect(Vec::new())),
-        read_profile: Some(|env| Box::pin(claude::collect(env))),
+        read: |_| Box::pin(async { claude::collect(Vec::new()).await.into() }),
+        read_profile: Some(|env| Box::pin(async move { claude::collect(env).await.into() })),
     },
     Reader {
         id: "codex",
         name: "Codex",
         source: "Codex CLI",
         found_without_cli: None,
-        read: |_| Box::pin(codex::collect(Vec::new())),
-        read_profile: Some(|env| Box::pin(codex::collect(env))),
+        read: |_| Box::pin(async { codex::collect(Vec::new()).await.into() }),
+        read_profile: Some(|env| Box::pin(async move { codex::collect(env).await.into() })),
     },
     Reader {
         id: "antigravity",
@@ -78,7 +78,7 @@ pub(super) const READERS: &[Reader] = &[
         name: "Cursor",
         source: "Cursor",
         found_without_cli: Some(cursor::login_saved),
-        read: |_| Box::pin(cursor::collect()),
+        read: |_| Box::pin(async { cursor::collect().await.into() }),
         read_profile: None,
     },
     Reader {
@@ -102,7 +102,7 @@ pub(super) const READERS: &[Reader] = &[
         name: "Amp",
         source: "amp usage",
         found_without_cli: None,
-        read: |_| Box::pin(amp::collect()),
+        read: |_| Box::pin(async { amp::collect().await.into() }),
         read_profile: None,
     },
     Reader {
@@ -110,7 +110,7 @@ pub(super) const READERS: &[Reader] = &[
         name: "Auggie",
         source: "auggie account status",
         found_without_cli: None,
-        read: |hub| Box::pin(auggie::collect(hub)),
+        read: |hub| Box::pin(async move { auggie::collect(hub).await.into() }),
         read_profile: None,
     },
     Reader {
@@ -118,7 +118,7 @@ pub(super) const READERS: &[Reader] = &[
         name: "Hermes Agent",
         source: "hermes usage",
         found_without_cli: None,
-        read: |hub| Box::pin(hermes::collect(hub)),
+        read: |hub| Box::pin(async move { hermes::collect(hub).await.into() }),
         read_profile: None,
     },
     Reader {
@@ -134,7 +134,7 @@ pub(super) const READERS: &[Reader] = &[
         name: "Kilo",
         source: "kilo profile",
         found_without_cli: None,
-        read: |hub| Box::pin(kilo::collect(hub)),
+        read: |hub| Box::pin(async move { kilo::collect(hub).await.into() }),
         read_profile: None,
     },
     Reader {
@@ -150,7 +150,7 @@ pub(super) const READERS: &[Reader] = &[
         name: "Kiro CLI",
         source: "kiro-cli",
         found_without_cli: None,
-        read: |_| Box::pin(kiro::collect()),
+        read: |_| Box::pin(async { kiro::collect().await.into() }),
         read_profile: None,
     },
     Reader {
@@ -166,7 +166,7 @@ pub(super) const READERS: &[Reader] = &[
         name: "oh-my-pi",
         source: "omp usage",
         found_without_cli: None,
-        read: |_| Box::pin(omp::collect()),
+        read: |_| Box::pin(async { omp::collect().await.into() }),
         read_profile: None,
     },
     Reader {
@@ -440,14 +440,14 @@ pub(super) mod tests {
         };
         assert_eq!(rows(&hub), ["a1"], "Codex isn't wanted here, so its profile isn't read");
         let claude = reader("claude").unwrap();
-        hub.update_usage(|usage| usage.land(claude, "claude", Some("a1"), Reading::Unknown));
+        hub.update_usage(|usage| usage.land(claude, "claude", Some("a1"), Reading::Failed));
         assert_eq!(unread_readers(&hub).len(), 1, "listed for its profile, the default login is still unread");
         hub.update_usage(|usage| usage.providers[0].login_profiles[0].updated_at = 0);
         hub.update_usage(|usage| {
             usage.land(claude, "claude", None, Reading::All(vec![Window::new("w", "W", 1.0, None)]));
         });
         assert_eq!(unread_readers(&hub).len(), 1, "the profile is still unread");
-        hub.update_usage(|usage| usage.land(claude, "claude", Some("a1"), Reading::Unknown));
+        hub.update_usage(|usage| usage.land(claude, "claude", Some("a1"), Reading::Failed));
         assert!(unread_readers(&hub).is_empty());
         login_profiles::note_signed_in(&hub.store, "a1", false);
         sync(&hub);

@@ -5,7 +5,7 @@ use ratatui::layout::Rect;
 use serde_json::Value;
 
 use super::super::app::App;
-use super::super::l10n::tr;
+use super::super::l10n::{fill, tr};
 use super::super::md::truncate;
 use super::buffer::{centered, frame_box, put, rput, u};
 use super::filled;
@@ -14,12 +14,44 @@ use super::time::{DAYS, MONTHS, clock, local, month_day, now_ms};
 
 /// One line of the sheet's list.
 enum Line<'a> {
-    Provider(&'a str),
+    Provider {
+        name: &'a str,
+        failed_at: Option<i64>,
+    },
     /// A login of an agent that has several, by what it's called: the default login may have no name.
-    Login(Option<&'a str>),
-    Window(&'a Value),
+    Login {
+        name: Option<&'a str>,
+        failed_at: Option<i64>,
+    },
+    Window {
+        win: &'a Value,
+        stale: bool,
+    },
     NoReading,
     Gap,
+}
+
+fn stale_at(entry: &Value, windows: &[Value]) -> Option<i64> {
+    (!windows.is_empty()).then(|| entry["failedAt"].as_i64()).flatten()
+}
+
+fn stale_when(ms: i64) -> String {
+    let (day, _) = local(ms);
+    let (today, _) = local(now_ms());
+    if day == today {
+        clock(ms)
+    } else if today - day == 1 {
+        tr("Yesterday").into_owned()
+    } else if today - day > 1 && today - day < 7 {
+        DAYS[usize::try_from(day.rem_euclid(7)).unwrap_or(0)].into()
+    } else {
+        let (m, d) = month_day(day);
+        format!("{} {d}", MONTHS[m])
+    }
+}
+
+fn stale_note(ms: i64) -> String {
+    fill(tr("Out of date · check failed {when}").as_ref(), &[("when", &stale_when(ms))])
 }
 
 /// Each provider's name, its windows and a gap. One with login profiles lists each login's windows under its name,
@@ -27,15 +59,26 @@ enum Line<'a> {
 fn lines(providers: &[Value]) -> Vec<Line<'_>> {
     let mut lines = Vec::new();
     for p in providers {
-        lines.push(Line::Provider(p["name"].as_str().unwrap_or_default()));
-        match p["loginProfiles"].as_array().filter(|profiles| !profiles.is_empty()) {
-            None => lines.extend(windows(p).iter().map(Line::Window)),
+        let profiles = p["loginProfiles"].as_array().filter(|profiles| !profiles.is_empty());
+        let name = p["name"].as_str().unwrap_or_default();
+        match profiles {
+            None => {
+                let win_list = windows(p);
+                let failed_at = stale_at(p, win_list);
+                lines.push(Line::Provider { name, failed_at });
+                lines.extend(win_list.iter().map(|win| Line::Window { win, stale: failed_at.is_some() }));
+            }
             Some(profiles) => {
+                lines.push(Line::Provider { name, failed_at: None });
                 let default = p["defaultLoginProfile"].as_str();
-                let named = profiles.iter().map(|l| (l["name"].as_str(), windows(l)));
-                for (name, windows) in std::iter::once((default, windows(p))).chain(named) {
-                    lines.push(Line::Login(name));
-                    lines.extend(windows.iter().map(Line::Window));
+                let first = (default, windows(p), stale_at(p, windows(p)));
+                let named = profiles.iter().map(|l| {
+                    let w = windows(l);
+                    (l["name"].as_str(), w, stale_at(l, w))
+                });
+                for (name, windows, failed_at) in std::iter::once(first).chain(named) {
+                    lines.push(Line::Login { name, failed_at });
+                    lines.extend(windows.iter().map(|win| Line::Window { win, stale: failed_at.is_some() }));
                     if windows.is_empty() {
                         lines.push(Line::NoReading);
                     }
@@ -90,14 +133,29 @@ pub(super) fn usage(buf: &mut Buffer, area: Rect, app: &App, scroll: usize) {
     let scroll = scroll.min(lines.len().saturating_sub(fits));
     for (y, line) in (top..).zip(lines.iter().skip(scroll).take(fits)) {
         match line {
-            Line::Provider(name) => {
-                put(buf, inner.x, y, inner.width, name, t.bold.patch(t.panel));
+            Line::Provider { name, failed_at } => {
+                let end = put(buf, inner.x, y, inner.width, name, t.bold.patch(t.panel));
+                if let Some(ms) = failed_at {
+                    let room = usize::from(inner.right().saturating_sub(end + 2));
+                    if room > 0 {
+                        let note = truncate(&stale_note(*ms), room);
+                        rput(buf, inner.right(), y, &note, t.amber.patch(t.panel));
+                    }
+                }
             }
-            Line::Login(name) => {
+            Line::Login { name, failed_at } => {
                 let name = name.map_or_else(|| tr("Default login profile"), std::borrow::Cow::Borrowed);
-                put(buf, inner.x + 1, y, inner.width.saturating_sub(1), name.as_ref(), t.secondary.patch(t.panel));
+                let end =
+                    put(buf, inner.x + 1, y, inner.width.saturating_sub(1), name.as_ref(), t.secondary.patch(t.panel));
+                if let Some(ms) = failed_at {
+                    let room = usize::from(inner.right().saturating_sub(end + 2));
+                    if room > 0 {
+                        let note = truncate(&stale_note(*ms), room);
+                        rput(buf, inner.right(), y, &note, t.amber.patch(t.panel));
+                    }
+                }
             }
-            Line::Window(win) => window(buf, inner, y, win),
+            Line::Window { win, stale } => window(buf, inner, y, win, *stale),
             Line::NoReading => {
                 put(
                     buf,
@@ -152,30 +210,32 @@ pub(super) fn usage_chooser(buf: &mut Buffer, area: Rect, app: &App, row: usize)
 }
 
 /// One limit: its label, a bar with the percent and when it resets; or its note.
-fn window(buf: &mut Buffer, inner: Rect, y: u16, win: &Value) {
+fn window(buf: &mut Buffer, inner: Rect, y: u16, win: &Value, stale: bool) {
     let t = theme();
     let label = truncate(win["label"].as_str().unwrap_or_default(), 18);
-    put(buf, inner.x + 2, y, 18, &label, t.secondary.patch(t.panel));
+    let label_style = if stale { t.dim } else { t.secondary }.patch(t.panel);
+    let value_style = if stale { t.dim } else { t.text }.patch(t.panel);
+    put(buf, inner.x + 2, y, 18, &label, label_style);
     if let Some(text) = win["text"].as_str().filter(|text| !text.is_empty()) {
-        put(buf, inner.x + 21, y, inner.width.saturating_sub(23), &truncate(text, 40), t.text.patch(t.panel));
+        put(buf, inner.x + 21, y, inner.width.saturating_sub(23), &truncate(text, 40), value_style);
         return;
     }
     let pct = win["percent"].as_f64().unwrap_or(0.0).clamp(0.0, 100.0);
     let on = filled(pct, 16);
     // At most 16 columns each, and never past the sheet's edge on a narrow terminal.
     let room_from = |x: u16| inner.right().saturating_sub(x).min(16);
-    let mut x = put(
-        buf,
-        inner.x + 21,
-        y,
-        room_from(inner.x + 21),
-        &"▰".repeat(on.min(16)),
-        if pct >= 80.0 { t.amber } else { t.text }.patch(t.panel),
-    );
+    let bar_style = if stale {
+        t.dim
+    } else if pct >= 80.0 {
+        t.amber
+    } else {
+        t.text
+    };
+    let mut x = put(buf, inner.x + 21, y, room_from(inner.x + 21), &"▰".repeat(on.min(16)), bar_style.patch(t.panel));
     x = put(buf, x, y, room_from(x), &"▱".repeat(16 - on.min(16)), t.line.patch(t.panel));
     // Said as used: a bare percent reads as what's left.
     let used = tr("{percent}% used").replace("{percent}", &format!("{pct:.0}"));
-    let end = put(buf, x + 1, y, room_from(x + 1), &used, t.text.patch(t.panel));
+    let end = put(buf, x + 1, y, room_from(x + 1), &used, value_style);
     let reset = win["resetsAt"]
         .as_i64()
         .map(|ms| format!("resets {}", when_future(ms)))
@@ -256,6 +316,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_failed_reading_marks_that_agent_or_login_out_of_date() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(Client::new("http://127.0.0.1:1", None), tx, String::new());
+        let failed = super::now_ms();
+        let when = super::clock(failed);
+        app.usage = json!({"providers": [
+            {"id": "codex", "name": "Codex", "failedAt": failed, "windows": [{"label": "Weekly", "percent": 40}]},
+            {"id": "claude", "name": "Claude", "windows": [{"label": "Weekly", "percent": 10}],
+             "loginProfiles": [
+                 {"id": "a", "name": "Work", "failedAt": failed, "windows": [{"label": "Weekly", "percent": 90}]},
+                 {"id": "b", "name": "Side", "windows": []},
+             ]},
+        ]});
+        let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+        let mut buf = ratatui::buffer::Buffer::empty(area);
+        super::usage(&mut buf, area, &app, 0);
+        let text: String = buf.content().iter().map(ratatui::buffer::Cell::symbol).collect();
+        let expected = format!("Out of date · check failed {when}");
+        assert_eq!(text.matches(&expected).count(), 2, "{text}");
+    }
+
+    #[tokio::test]
     async fn five_providers_scroll_on_a_small_terminal() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let mut app = App::new(Client::new("http://127.0.0.1:1", None), tx, String::new());
@@ -274,7 +356,7 @@ mod tests {
         // The bar ends at column 37 and "42% used" needs 8 more: a 44-column sheet cuts the reading.
         let inner = Rect::new(0, 0, 44, 1);
         let win = json!({"label": "5h", "percent": 42, "resetsText": "Sep 26 at 11:59am"});
-        super::window(&mut buf, inner, 0, &win);
+        super::window(&mut buf, inner, 0, &win, false);
         let row: String = (0..60).map(|x| buf[(x, 0)].symbol().to_owned()).collect();
         assert!(row[row.char_indices().nth(38).unwrap().0..].starts_with("42% us"), "{row}");
         assert!(!row.contains('…'), "no reset squeezed onto the reading: {row}");

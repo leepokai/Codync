@@ -20,11 +20,12 @@ function Mascot({ provider, size }: { provider: UsageProvider; size: number }) {
 }
 
 /** The limit closest to running out, across providers. */
-function tightestOverall(usage: UsageProvider[]): { provider: UsageProvider; window: UsageWindow } | null {
-  let best: { provider: UsageProvider; window: UsageWindow } | null = null
+function tightestOverall(usage: UsageProvider[]): { provider: UsageProvider; window: UsageWindow; stale: boolean } | null {
+  let best: { provider: UsageProvider; window: UsageWindow; stale: boolean } | null = null
   for (const provider of usage) {
+    const login = tightestLogin(provider)
     const window = tightest(provider)
-    if (window && (!best || window.percent > best.window.percent)) best = { provider, window }
+    if (window && (!best || window.percent > best.window.percent)) best = { provider, window, stale: login.failedAt != null }
   }
   return best
 }
@@ -35,16 +36,17 @@ export function UsageMeter({ model }: { model: IslandModel }) {
   const line = useResetLine()
   const top = tightestOverall(model.summary.usage)
   if (!top) return null
-  const { provider, window } = top
+  const { provider, window, stale } = top
   const title = tr(windowTitle(window))
   const reset = resetDescription(window)
   const spoken = reset ? line(reset) : ''
   const used = usedText(window.percent, tr)
+  const staleTag = stale ? ` · ${tr('Out of date')}` : ''
   return (
     <button
-      className="island-meter"
-      title={`${provider.name} · ${title} · ${used}${spoken ? ` · ${spoken}` : ''}`}
-      aria-label={`${tr('Usage')}: ${provider.name} ${title} ${used}`}
+      className={`island-meter${stale ? ' island-meter-stale' : ''}`}
+      title={`${provider.name} · ${title} · ${used}${spoken ? ` · ${spoken}` : ''}${staleTag}`}
+      aria-label={`${tr('Usage')}: ${provider.name} ${title} ${used}${staleTag}`}
       onClick={() => model.setTab('usage')}
     >
       <Mascot provider={provider} size={15} />
@@ -76,28 +78,33 @@ export function UsageView({ model }: { model: IslandModel }) {
   }
   return (
     <div className="island-row-cards">
-      {usage.slice(0, 2).map((provider) => (
-        <div key={provider.id} className="island-card island-usage">
-          <div className="island-agent">
-            <Mascot provider={provider} size={20} />
-            <span className="island-agent-name">{provider.name}</span>
-          </div>
-          {tightestLogin(provider).windows.slice(0, 3).map((w) => (
-            <div key={w.id} className="island-usage-row">
-              <span className="island-usage-title">{tr(windowTitle(w))}</span>
-              {w.text ? (
-                <span className="island-usage-note">{w.text}</span>
-              ) : (
-                <>
-                  <UsageBar percent={w.percent} tint={providerTintCSS(provider.id)} />
-                  <span className="island-usage-value">{windowReading(w, tr)}</span>
-                  <span className="island-usage-reset">{line(resetDescription(w) ?? '')}</span>
-                </>
-              )}
+      {usage.slice(0, 2).map((provider) => {
+        const login = tightestLogin(provider)
+        const stale = login.failedAt != null && login.windows.length > 0
+        return (
+          <div key={provider.id} className="island-card island-usage">
+            <div className="island-agent">
+              <Mascot provider={provider} size={20} />
+              <span className="island-agent-name">{provider.name}</span>
+              {stale ? <span className="island-usage-stale">{tr('Out of date')}</span> : null}
             </div>
-          ))}
-        </div>
-      ))}
+            {login.windows.slice(0, 3).map((w) => (
+              <div key={w.id} className={`island-usage-row${stale ? ' stale' : ''}`}>
+                <span className="island-usage-title">{tr(windowTitle(w))}</span>
+                {w.text ? (
+                  <span className="island-usage-note">{w.text}</span>
+                ) : (
+                  <>
+                    <UsageBar percent={w.percent} tint={providerTintCSS(provider.id)} />
+                    <span className="island-usage-value">{windowReading(w, tr)}</span>
+                    <span className="island-usage-reset">{line(resetDescription(w) ?? '')}</span>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      })}
     </div>
   )
 }

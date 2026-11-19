@@ -23,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -158,16 +159,19 @@ internal fun until(at: Long, now: Long): String {
 /** One provider's limits: the tightest in a small widget, two windows in medium, four and a summary in large. */
 @Composable internal fun ProviderWidgetCard(provider: UsageProvider, layout: ProviderLayout) {
     val tint = provider.widgetTint()
+    val login = provider.tightestLogin
+    val stale = login.failedAt != null && login.windows.isNotEmpty()
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(if (layout == ProviderLayout.Small) 6.dp else 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             ProviderMascot(provider, 22.dp)
             Text(provider.name, Modifier.weight(1f), style = Type.system(13f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (layout != ProviderLayout.Small) Text(tr("Usage"), style = Type.system(10f).medium, color = Palette.secondary)
+            if (stale) Text(tr("Out of date"), style = Type.system(if (layout == ProviderLayout.Small) 9f else 10f).medium, color = Palette.attention, maxLines = 1)
+            else if (layout != ProviderLayout.Small) Text(tr("Usage"), style = Type.system(10f).medium, color = Palette.secondary)
         }
         val top = provider.tightest
         if (layout == ProviderLayout.Small && top != null) {
             Spacer(Modifier.weight(1f))
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(if (stale) Modifier.alpha(0.6f) else Modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(tr(top.title), style = Type.system(11f), color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Row(verticalAlignment = Alignment.Bottom) {
                     val ink = if ((top.percent ?: 0.0) >= 90) Palette.danger else Palette.text
@@ -175,13 +179,13 @@ internal fun until(at: Long, now: Long): String {
                     Text("%", Modifier.padding(bottom = 4.dp), style = Type.system(17f).medium, color = ink)
                 }
             }
-            UsageTicks(top.percent ?: 0.0, tint, 13.dp)
+            Box(if (stale) Modifier.alpha(0.6f) else Modifier) { UsageTicks(top.percent ?: 0.0, tint, 13.dp) }
             val reset = top.resetsShort()
             Text(if (reset == null) tr("Usage reported by your computer") else resetLine(reset), style = Type.system(9f), color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         } else {
             if (layout == ProviderLayout.Large && top != null) Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("${(top.percent ?: 0.0).roundToInt()}%", style = Type.system(36f).semibold.monospacedDigit,
+                Text("${(top.percent ?: 0.0).roundToInt()}%", if (stale) Modifier.alpha(0.6f) else Modifier, style = Type.system(36f).semibold.monospacedDigit,
                     color = if ((top.percent ?: 0.0) >= 90) Palette.danger else Palette.text)
                 Text("${tr(top.title)} · ${tr("highest usage")}", Modifier.padding(bottom = 6.dp), style = Type.system(11f), color = Palette.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
@@ -189,10 +193,10 @@ internal fun until(at: Long, now: Long): String {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(tr(window.title), Modifier.weight(1f), style = Type.system(11f).medium, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${(window.percent ?: 0.0).roundToInt()}%", style = Type.system(13f).semibold.monospacedDigit,
+                        Text("${(window.percent ?: 0.0).roundToInt()}%", if (stale) Modifier.alpha(0.6f) else Modifier, style = Type.system(13f).semibold.monospacedDigit,
                             color = if ((window.percent ?: 0.0) >= 90) Palette.danger else Palette.text)
                     }
-                    UsageTicks(window.percent ?: 0.0, tint, 12.dp)
+                    Box(if (stale) Modifier.alpha(0.6f) else Modifier) { UsageTicks(window.percent ?: 0.0, tint, 12.dp) }
                     val reset = window.resetsShort()
                     if (reset != null) Text(resetLine(reset), Modifier.fillMaxWidth(), style = Type.system(9f), color = Palette.secondary,
                         maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
@@ -220,10 +224,13 @@ internal fun until(at: Long, now: Long): String {
 @Composable private fun LimitHero(limit: ProviderLimit) {
     val percent = limit.window.percent ?: 0.0
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text("${limit.provider} · ${limit.window.label}", style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text("${percent.roundToInt()}%", style = Type.system(34f).semibold.monospacedDigit, color = if (percent >= 90) Palette.danger else Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        val reset = limit.window.resetsShort()
-        Text(if (reset == null) " " else resetLine(reset), style = Type.caption2, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text("${limit.provider} · ${tr(limit.window.title)}", style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text("${percent.roundToInt()}%", if (limit.stale) Modifier.alpha(0.6f) else Modifier, style = Type.system(34f).semibold.monospacedDigit, color = if (percent >= 90) Palette.danger else Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (limit.stale) Text(tr("Out of date"), style = Type.caption2, color = Palette.attention, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        else {
+            val reset = limit.window.resetsShort()
+            Text(if (reset == null) " " else resetLine(reset), style = Type.caption2, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
@@ -231,10 +238,11 @@ internal fun until(at: Long, now: Long): String {
     val percent = limit.window.percent ?: 0.0
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row {
-            Text("${limit.provider} ${limit.window.label}", Modifier.weight(1f), style = Type.caption2, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val label = if (limit.stale) "${limit.provider} ${tr(limit.window.title)} · ${tr("Out of date")}" else "${limit.provider} ${tr(limit.window.title)}"
+            Text(label, Modifier.weight(1f), style = Type.caption2, color = if (limit.stale) Palette.attention else Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${percent.roundToInt()}%", style = Type.caption2.monospacedDigit, color = Palette.secondary)
         }
-        UsageTicks(percent, usageTint(percent), 10.dp)
+        Box(if (limit.stale) Modifier.alpha(0.6f) else Modifier) { UsageTicks(percent, usageTint(percent), 10.dp) }
     }
 }
 

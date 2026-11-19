@@ -9,11 +9,11 @@ use serde_json::{Value, json};
 use std::time::Duration;
 
 use super::reading::{self, UsageReadStage};
-use super::{Window, acp_read, iso_ms};
+use super::{Probe, Window, acp_read, iso_ms};
 
 const READ_TIMEOUT: Duration = Duration::from_secs(20);
 
-pub(super) async fn collect(hub: &Hub) -> Option<Vec<Window>> {
+pub(super) async fn collect(hub: &Hub) -> Probe {
     reading::guarded(hub, "grok", read(&hub.store)).await
 }
 

@@ -14,7 +14,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWr
 use tokio::process::{ChildStdin, ChildStdout};
 
 use super::reading::{self, UsageReadStage};
-use super::{Window, iso_ms};
+use super::{Probe, Window, iso_ms};
 
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 /// ponytail: each start leaves an empty log file in `~/.copilot/logs`, even with `--log-level none`,
@@ -37,22 +37,28 @@ impl LastRead {
         now.duration_since(self.at) >= wait
     }
 
-    /// What a read between server starts lands. The reading held stands, with its own time; one
-    /// that was dropped (the agent turned off and on again) comes back from here.
-    fn between_starts(&self, held: bool) -> Option<Vec<Window>> {
-        if held { None } else { self.windows.clone() }
+    /// What a read between server starts lands. The reading (or failure) held stands, with its own time;
+    /// one that was dropped (the agent turned off and on again) comes back from here.
+    fn between_starts(&self, held: bool) -> Probe {
+        if held { Probe::Skip } else { Probe::from(self.windows.clone()) }
     }
 }
 
-pub(super) async fn collect(hub: &Hub) -> Option<Vec<Window>> {
+pub(super) async fn collect(hub: &Hub) -> Probe {
     let now = Instant::now();
     if let Some(last) = LAST_READ.locked().as_ref().filter(|last| !last.due(now)) {
         return last.between_starts(hub.usage.locked().providers.iter().any(|provider| provider.id == "copilot"));
     }
-    let bin = super::command::program("copilot")?;
-    let windows = reading::guarded(hub, "copilot", read(&bin)).await;
-    *LAST_READ.locked() = Some(LastRead { at: now, windows: windows.clone() });
-    windows
+    let Some(bin) = super::command::program("copilot") else { return Probe::Failed };
+    let probe = reading::guarded(hub, "copilot", read(&bin)).await;
+    if !matches!(probe, Probe::Skip) {
+        let windows = match &probe {
+            Probe::Reading(windows) => Some(windows.clone()),
+            _ => None,
+        };
+        *LAST_READ.locked() = Some(LastRead { at: now, windows });
+    }
+    probe
 }
 
 async fn read(bin: &Path) -> Result<Vec<Window>, UsageReadStage> {
@@ -212,11 +218,11 @@ mod tests {
 
     #[test]
     fn a_reading_turned_off_and_on_again_comes_back_without_a_new_start() {
-        let windows = parse(&reply(), NOW);
-        let last = LastRead { at: Instant::now(), windows: windows.clone() };
-        assert_eq!(last.between_starts(false), windows, "the Usage screen has its bars again");
-        assert_eq!(last.between_starts(true), None, "a reading held keeps the time it was made");
-        assert_eq!(LastRead { at: Instant::now(), windows: None }.between_starts(false), None);
+        let windows = parse(&reply(), NOW).unwrap();
+        let last = LastRead { at: Instant::now(), windows: Some(windows.clone()) };
+        assert_eq!(last.between_starts(false), Probe::Reading(windows), "the Usage screen has its bars again");
+        assert_eq!(last.between_starts(true), Probe::Skip, "a reading held keeps the time it was made");
+        assert_eq!(LastRead { at: Instant::now(), windows: None }.between_starts(false), Probe::Failed);
     }
 
     #[tokio::test]

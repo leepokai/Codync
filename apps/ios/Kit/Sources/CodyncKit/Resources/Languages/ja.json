@@ -2228,5 +2228,7 @@
   "Create an API key named codync with the machines:read, machines:write and machines:delete scopes.": "machines:read、machines:write、machines:delete のスコープを持つ codync という名前の API キーを作成します。",
   "Connect {provider}": "{provider} に接続",
   "Use the command line instead": "代わりにコマンドラインを使う",
-  "Leave it empty to use the hostname.": "空欄にするとホスト名を使います。"
+  "Leave it empty to use the hostname.": "空欄にするとホスト名を使います。",
+  "Out of date": "古いデータ",
+  "Out of date · check failed {when}": "古いデータ · {when} に確認失敗"
 }

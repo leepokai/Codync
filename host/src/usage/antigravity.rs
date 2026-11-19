@@ -5,23 +5,25 @@ use crate::hub::Hub;
 use serde_json::Value;
 use std::time::Duration;
 
-use super::Window;
+use super::{Probe, Window};
 
 const BODY: &str =
     r#"{"metadata":{"ideName":"antigravity","extensionName":"antigravity","ideVersion":"unknown","locale":"en"}}"#;
 
 /// The running app answers without a download, until a bot has brought the ACP server here.
-pub(super) async fn collect(hub: &Hub) -> Option<Vec<Window>> {
+pub(super) async fn collect(hub: &Hub) -> Probe {
     let server_here = crate::service::data_dir().join("agents/antigravity-acp").is_dir();
     if !server_here && let Some(windows) = from_language_server().await {
-        return Some(windows);
+        return Probe::Reading(windows);
     }
-    if signed_in_or_unknown()
-        && let Some(windows) = super::acp_read::command_reading(hub, "antigravity", "usage", parse_report).await
-    {
-        return Some(windows);
+    if signed_in_or_unknown() {
+        match super::acp_read::command_reading(hub, "antigravity", "usage", parse_report).await {
+            Probe::Reading(windows) => return Probe::Reading(windows),
+            Probe::Skip => return Probe::Skip,
+            Probe::Failed => {}
+        }
     }
-    if server_here { from_language_server().await } else { None }
+    if server_here { Probe::from(from_language_server().await) } else { Probe::Failed }
 }
 
 /// Windows has no command `BROWSER` could name to keep the signed-out adapter from opening a

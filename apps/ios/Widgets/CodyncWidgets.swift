@@ -374,12 +374,16 @@ struct UsageWidgetView: View {
     let entry: UsageEntry
     @Environment(\.widgetFamily) private var family
 
-    private var windows: [(provider: String, window: UsageWindow)] {
-        entry.usage.providers.flatMap { p in p.limits.map { (p.name, $0) } }
+    private var windows: [(provider: String, window: UsageWindow, stale: Bool)] {
+        entry.usage.providers.flatMap { p in
+            let login = p.tightestLogin
+            let stale = login.failedAt != nil && !login.windows.isEmpty
+            return login.limits.map { (p.name, $0, stale) }
+        }
     }
 
-    private var tightest: (provider: String, window: UsageWindow)? { windows.max { $0.window.percent < $1.window.percent } }
-    private var rest: [(provider: String, window: UsageWindow)] {
+    private var tightest: (provider: String, window: UsageWindow, stale: Bool)? { windows.max { $0.window.percent < $1.window.percent } }
+    private var rest: [(provider: String, window: UsageWindow, stale: Bool)] {
         windows.filter { $0.window.id != tightest?.window.id || $0.provider != tightest?.provider }
     }
 
@@ -417,7 +421,7 @@ struct UsageWidgetView: View {
         }
     }
 
-    private func hero(_ item: (provider: String, window: UsageWindow)) -> some View {
+    private func hero(_ item: (provider: String, window: UsageWindow, stale: Bool)) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("\(item.provider) · \(L10n.tr(item.window.title))").font(.caption).foregroundStyle(Palette.secondary).lineLimit(1)
             Text(percent(item.window))
@@ -425,20 +429,26 @@ struct UsageWidgetView: View {
                 .monospacedDigit()
                 .foregroundStyle(item.window.percent >= 90 ? Palette.danger : Palette.text)
                 .minimumScaleFactor(0.7)
-            resetLine(item.window).font(.caption2).foregroundStyle(Palette.tertiary).lineLimit(1)
+                .opacity(item.stale ? 0.6 : 1)
+            if item.stale {
+                Text(L10n.tr("Out of date")).font(.caption2).foregroundStyle(Palette.attention).lineLimit(1)
+            } else {
+                resetLine(item.window).font(.caption2).foregroundStyle(Palette.tertiary).lineLimit(1)
+            }
         }
     }
 
-    private func bar(_ item: (provider: String, window: UsageWindow)) -> some View {
+    private func bar(_ item: (provider: String, window: UsageWindow, stale: Bool)) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("\(item.provider) \(L10n.tr(item.window.title))").lineLimit(1)
+                Text(item.stale ? "\(item.provider) \(L10n.tr(item.window.title)) · \(L10n.tr("Out of date"))" : "\(item.provider) \(L10n.tr(item.window.title))").lineLimit(1)
                 Spacer(minLength: 4)
                 Text(percent(item.window)).monospacedDigit()
             }
             .font(.caption2)
-            .foregroundStyle(Palette.secondary)
+            .foregroundStyle(item.stale ? Palette.attention : Palette.secondary)
             UsageTicks(percent: item.window.percent, tint: Palette.usageTint(item.window.percent), height: 10)
+                .opacity(item.stale ? 0.6 : 1)
         }
     }
 

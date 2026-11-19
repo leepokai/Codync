@@ -1,6 +1,7 @@
 package com.codync.android.core
 
-// A thread is the agent session working one of a bot's tasks (`Work.kt`); its transcript is read from the task's details.
+// A thread is where one of a bot's tasks is worked, with its own session (`Work.kt`); its transcript is read from the
+// task's details.
 
 /**
  * The thread transcripts being read, by thread id, with [events]' entries laid over. Only a thread that is open

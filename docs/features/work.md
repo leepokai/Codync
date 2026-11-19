@@ -1,7 +1,7 @@
 # Work: tasks and threads
 
-A bot puts long work in its **event box** as **tasks**. **Threads** take them: other sessions of the same bot that work away
-from the chat, so the chat keeps answering. The chat shows only messages and what needs the user (a thread's approval
+A bot puts long work in its **event box** as **tasks**. **Threads** of the same bot take them: away
+from the chat, each with its own agent process and session, so the chat keeps answering. The chat shows only messages and what needs the user (a thread's approval
 and choice cards, the sign-in card its agent needs, its offer to add a fallback, the files and artifacts it shares);
 the work shows as one capsule above the composer, and each
 task's report comes back as the bot's own message. A run of one of the bot's routines and another bot's request are

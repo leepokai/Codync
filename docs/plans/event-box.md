@@ -12,7 +12,7 @@ threads take tasks from it. The owner's decisions are marked *(owner)*.
 - **Coordinator**: the bot's main conversation. It talks to the user, decides what is worth a task, and tells the
   user what came of it.
 - **Task**: one piece of work in the box: a title, a brief, the user's own words, a status.
-- **Thread**: a session of the bot working tasks, one at a time: a thread bot
+- **Thread**: where the bot works tasks away from the chat, one at a time, with a session of its own: a thread bot
   ([work](../features/work.md)). A task names the thread that has it.
 - **Box**: the bot's tasks. It is the source of truth: a thread that dies leaves its task there.
 
@@ -131,7 +131,7 @@ the time, as today. It opens Details. Its Stop (one task working) asks once, the
 
 | Section | Rows |
 | --- | --- |
-| **Threads** | *(owner: the running sessions and the box are told apart.)* The agent sessions that run now. The heading carries `2 / 3`: how many run, of the most allowed. Tasks that need you first (the attention mark, what the card asks; opens the chat at the card), then working tasks (a moving dot, the thread's activity, elapsed time). Both kinds of row have Stop. A working row opens its thread (stage 11; the thread's transcript before it) and says where it works. A thread the bot may still start is one faint row, `Free`, so the ceiling is visible. |
+| **Threads** | *(owner: the running threads and the box are told apart.)* The threads that run now. The heading carries `2 / 3`: how many run, of the most allowed. Tasks that need you first (the attention mark, what the card asks; opens the chat at the card), then working tasks (a moving dot, the thread's activity, elapsed time). Both kinds of row have Stop. A working row opens its thread (stage 11; the thread's transcript before it) and says where it works. A thread the bot may still start is one faint row, `Free`, so the ceiling is visible. |
 | **Event box** | What waits for a thread, numbered 1, 2, 3 in the order it will be taken, with why it waits. The heading carries how many. **First** on every row but the first; **Cut in** on the first row when every thread of the bot is busy (not on a row that follows unfinished work or waits for usage), which asks which working task gives way; **Drop**. Left out when nothing waits. |
 | **Later** | Follow-ups the bot set (the dashed card, as today). |
 | **Routines** | As today, with **+**. |

@@ -152,7 +152,7 @@ One thing has one word: on screen, in the user manual, in what a bot is told, in
 | turn | One message to a chat or a thread, up to the end of the bot's answer to it | task |
 | work | Everything a bot does away from its chat: its tasks and the threads that do them. Uncountable; the Work page and the capsule above the composer show it | background (as a noun), "a work" |
 | task | One piece of work, handled on its own: `title`, `brief`, where it came from, a status (`waiting`, `working`, `needsYou`, `done`, `failed`, `stopped`) and, once done, its report. It exists from the moment it is put in the event box | item, job; task for a turn of the chat |
-| thread | A session of the bot started to do tasks, away from the chat: its own agent process and transcript. It does one task at a time and may go on to the next; the user can write to it. A task that waits has no thread yet | task (the old code name), agent, session (on screen) |
+| thread | Where the bot does tasks away from the chat, started for them. Like the chat, it has its own agent process, session and transcript. It does one task at a time and may go on to the next; the user can write to it. A task that waits has no thread yet | task (the old code name), agent, session |
 | event box | Where a bot's tasks wait until a thread takes them | box alone on screen, queue |
 | threads at once | How many threads one bot runs at the same time (`maxThreads`) | place, slot, agents at once |
 | brief | What a task's thread is told to do; written by the bot, a routine or another bot | prompt |
@@ -161,7 +161,7 @@ One thing has one word: on screen, in the user manual, in what a bot is told, in
 | group | Chat with several bots and the user; no agent process of its own | group chat as a different thing, team |
 | section | A named part of the bot list | folder |
 | lane | Destination of a turn: a bot's own chat or a group's | |
-| session | Agent-owned ACP model context; distinct from stored chat history | conversation |
+| session | What the agent remembers right now of a chat or a thread: its ACP context. Each chat and thread has one at a time and keeps going when it gets a new one ([when](../features/context-and-memory.md#transcript-context-and-memory)); its transcript stays. A routine run in the chat gets one of its own; a group has none. Codex's own word for a session is thread | conversation, thread |
 | steps | What a bot thinks and which tools it calls inside one turn | thinking details |
 | trace | Full chat, steps included (on screen: Full conversation) | transcript for the same thing |
 | details | The panel beside a chat: details, library, memory, settings | |

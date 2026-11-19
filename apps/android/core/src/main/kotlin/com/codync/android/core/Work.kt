@@ -20,7 +20,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlin.math.roundToInt
 
 // The event box: what a bot works on away from its chat is a task in its box, and a bounded number of its threads
-// take tasks from it. A thread is the agent session working a task (`WorkThreads.kt` reads its transcript).
+// take tasks from it. A thread is where a task is worked, with its own session (`WorkThreads.kt` reads its transcript).
 
 /** The six words for work, the same on the wire and in every client. */
 @Serializable
@@ -157,7 +157,7 @@ fun <T> allWork(roster: List<T>, work: (T) -> List<WorkTask>): AllWork<T> {
 
 /** The Details timeline's sections of tasks, each in the order its rows show. */
 data class WorkSections(
-    /** The agent sessions that run now: tasks that need the user, then the working ones. */
+    /** The threads that run now: tasks that need the user, then the working ones. */
     val threads: List<WorkTask>,
     /** The most the bot runs at once: the Threads heading's `2 / 3` is how many run of this (`2 / 1` right after it was lowered). */
     val atOnce: Int,

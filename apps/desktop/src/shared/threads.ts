@@ -1,4 +1,4 @@
-// A thread (host/src/chat/work/): the agent session that works a task of a bot's box (`work.ts`). Its own
+// A thread (host/src/chat/work/): where a task of a bot's box is worked, with its own session (`work.ts`). Its own
 // transcript is read from the task's details and never enters a chat.
 
 import type { Entry } from './models'

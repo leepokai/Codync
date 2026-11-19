@@ -1,6 +1,6 @@
 // The event box (host/src/chat/work/): what a bot works on away from its chat is a task in its box, and a bounded
 // number of its threads take tasks from it. The chat shows one capsule above the composer; the bot's Details lists
-// the tasks. A thread is the agent session working a task (`threads.ts` reads its transcript).
+// the tasks. A thread is where a task is worked, with its own session (`threads.ts` reads its transcript).
 
 import { fill } from './fill.ts'
 import type { Entry } from './models'
@@ -133,7 +133,7 @@ export function worksOutside(bot: { status: string; outside: OutsideStatus | nul
 
 /** The Details timeline's sections of tasks, each in the order its rows show. */
 export interface WorkSections {
-  /** Threads, the agent sessions that run now: tasks that need the user, then the working ones. */
+  /** The threads that run now: tasks that need the user, then the working ones. */
   threads: WorkTask[]
   /** The most threads allowed (the heading's `2 / 3`; `2 / 1` right after the ceiling was lowered). */
   atOnce: number

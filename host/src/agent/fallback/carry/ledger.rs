@@ -1,6 +1,8 @@
 //! Mechanical handoff: the current conversation and the context manifest, gathered by rule (no model call).
 //! Extends the handover-ledger design in leepokai/Codync PR #417. Codync 2.11.0 and earlier were MIT licensed;
 //! the current project is Apache-2.0 (see LICENSE and NOTICE).
+//! The Context Manifest concept was informed by rlaope/oh-my-hermes, Copyright (c) 2026
+//! oh-my-hermes contributors, under the MIT License.
 mod files;
 mod render;
 use crate::store::{Entry, EntryKind, message_text};

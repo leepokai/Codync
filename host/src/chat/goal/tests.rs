@@ -1,5 +1,5 @@
 use super::*;
-use crate::usage::{LoginReading, Provider, Window};
+use crate::usage::{Checked, LoginReading, Provider, Window};
 
 fn hub() -> std::sync::Arc<Hub> {
     let dir = std::env::temp_dir().join(format!("codync-goal-{}", uuid::Uuid::new_v4()));
@@ -100,7 +100,7 @@ fn plan_usage_reserves_headroom() {
         name: "Claude",
         registry: None,
         source: "agent",
-        updated_at: now_ms(),
+        checked: Checked { updated_at: now_ms(), failed_at: None },
         default_login_profile: None,
         login_profiles: Vec::new(),
         windows: vec![Window {
@@ -134,13 +134,13 @@ fn a_goal_checks_the_login_profile_it_will_run_on() {
         name: "Claude",
         registry: None,
         source: "agent",
-        updated_at: now_ms(),
+        checked: Checked { updated_at: now_ms(), failed_at: None },
         default_login_profile: Some("Default".into()),
         login_profiles: vec![LoginReading {
             id: "work".into(),
             name: "Work".into(),
             windows: vec![window(10.0)],
-            updated_at: now_ms(),
+            checked: Checked { updated_at: now_ms(), failed_at: None },
         }],
         windows: vec![window(90.0)],
     });

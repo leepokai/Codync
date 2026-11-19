@@ -206,6 +206,8 @@ impl Actor {
             .await?;
             conn.acp.hold(grants);
             conn.on_profile = on_profile;
+            conn.codex_home =
+                env.iter().find(|(key, home)| key == "CODEX_HOME" && !home.is_empty()).map(|(_, home)| home.clone());
             self.conn = Some(conn);
         }
         if self.conn.as_ref().is_some_and(|c| c.adapter == Adapter::Codex) {
@@ -338,6 +340,7 @@ impl Actor {
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone(), Instant::now());
         conn.renamed.insert(sid.clone(), renamed);
+        self.unfiled.opened(conn.adapter, &sid);
         let options = select_model(&conn.acp, res, &sid, &self.cfg).await?;
         self.note_options(&sid, &options, Listing::Session);
         self.set_session(slot, Some(&sid));

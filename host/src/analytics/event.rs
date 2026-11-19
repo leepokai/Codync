@@ -41,6 +41,8 @@ pub enum Event {
     MessageSteered,
     /// The user sent one of the agent's own `/` commands (`agent::bot::commands`).
     AgentCommandSent,
+    /// A bot's new Codex session was put in Codex's own Codync section, or wasn't (`agent::bot::codex_section`).
+    CodexSessionFiled,
     QueuedMessageRemoved,
     TurnStopped,
     TurnFinished,
@@ -220,6 +222,7 @@ impl Event {
             Self::MessageSent => "message_sent",
             Self::MessageSteered => "message_steered",
             Self::AgentCommandSent => "agent_command_sent",
+            Self::CodexSessionFiled => "codex_session_filed",
             Self::QueuedMessageRemoved => "queued_message_removed",
             Self::TurnStopped => "turn_stopped",
             Self::TurnFinished => "turn_finished",

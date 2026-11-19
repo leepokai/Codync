@@ -19,6 +19,7 @@
 mod background_work;
 mod cmd;
 mod codex_names;
+mod codex_section;
 mod commands;
 mod compaction;
 mod decisions;
@@ -106,6 +107,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         routine_timed_out: false,
         routine_completion: None,
         session_fresh: false,
+        unfiled: codex_section::Unfiled::default(),
         profile_resend: HashSet::new(),
         compacting: None,
         raw_prompt: false,
@@ -229,6 +231,8 @@ pub(crate) struct Conn {
     renamed: HashMap<String, codex_names::Renamed>,
     /// The login profile the process runs on, which isn't removed meanwhile.
     on_profile: Option<crate::agent::login_profiles::Running>,
+    /// The `CODEX_HOME` the process started with, when it isn't Codex's own default.
+    codex_home: Option<String>,
 }
 
 impl Conn {
@@ -294,6 +298,8 @@ struct Actor {
     routine_completion: Option<RoutineCompletion>,
     /// True until the first prompt of a new ACP session has been sent.
     session_fresh: bool,
+    /// The new Codex sessions that aren't in Codex's Codync section yet.
+    unfiled: codex_section::Unfiled,
     /// Sessions that compacted away the `<bot-profile>` their first message carried; their next prompt carries
     /// a fresh one.
     profile_resend: HashSet<String>,

@@ -26,6 +26,8 @@ let posts = 0
 let holdPost: Promise<void> | null = null
 /** When set, the next status poll waits for it, then fails as an unreachable cloud would. */
 let failGet: Promise<void> | null = null
+/** When set, the next reveal POST waits for it, then fails as an unreachable cloud would. */
+let failReveal: Promise<void> | null = null
 const cloudRequest = async (_account: unknown, method: string, path: string, body: unknown) => {
   calls.push(`${method} ${path}`)
   if (path.endsWith('/access-requests')) {
@@ -37,6 +39,10 @@ const cloudRequest = async (_account: unknown, method: string, path: string, bod
     return { ok: false, error: { status: 0, code: 'unreachable', message: 'offline' } }
   }
   if (method === 'GET') return { ok: true, value: polls.length > 1 ? polls.shift()! : polls[0]! }
+  if (method === 'POST' && failReveal) {
+    await failReveal
+    return { ok: false, error: { status: 0, code: 'unreachable', message: 'offline' } }
+  }
   return { ok: true, value: {} }
 }
 
@@ -100,6 +106,22 @@ test('cancelling while a status poll is out still withdraws the request when tha
   failGet = null
   assert.equal(await ending(asking), 'cancelled')
   assert.deepEqual(steps(), ['POST computers/studio/access-requests', 'GET access-requests/r1', 'DELETE access-requests/r1'])
+})
+
+test('cancelling while the reveal is out still withdraws the request when that reveal fails', async () => {
+  calls.length = sent.length = 0
+  posts = 0
+  polls = [{ status: 'pending', hostNonce }]
+  const held = deferred()
+  failReveal = held.promise
+  const asking = requestAccess()
+  for (let i = 0; i < 100 && !calls.at(-1)?.endsWith('/reveal'); i++) await settle()
+  handlers.get('cloud:cancelAccess')!({}, 'studio')
+  held.resolve()
+  failReveal = null
+  assert.equal(await ending(asking), 'cancelled')
+  assert.deepEqual(steps(), ['POST computers/studio/access-requests', 'GET access-requests/r1', 'POST access-requests/r1/reveal', 'DELETE access-requests/r1'])
+  assert.equal(sent.length, 0)
 })
 
 test('asking again waits for the withdrawn request to be gone, so the computer keeps the new one', async () => {

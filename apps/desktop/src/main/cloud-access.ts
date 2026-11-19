@@ -39,10 +39,13 @@ async function requestAccess(account: AccountService, computer: AccessComputer, 
   const answered = await wait((s) => !!s.hostNonce)
   if (answered?.ok && answered.value.status === 'pending') {
     const revealed = await cloudRequest(account, 'POST', `v1/access-requests/${requestId}/reveal`, { nonce: b64url(nD) }, true)
-    if (!revealed.ok) return revealed
-    onCode(sasCode(unb64url(computer.signKey), deviceKey, nD, unb64url(answered.value.hostNonce!)))
-    const decided = await wait(() => false)
-    if (decided) return decided.ok ? { ok: true, value: { status: decided.value.status } } : decided
+    // Like the failed-poll path: a reveal that failed after the request was withdrawn still takes it back below.
+    if (!revealed.ok && !signal.aborted) return revealed
+    if (revealed.ok) {
+      onCode(sasCode(unb64url(computer.signKey), deviceKey, nD, unb64url(answered.value.hostNonce!)))
+      const decided = await wait(() => false)
+      if (decided) return decided.ok ? { ok: true, value: { status: decided.value.status } } : decided
+    }
   } else if (answered) {
     return answered.ok ? { ok: true, value: { status: answered.value.status } } : answered
   }

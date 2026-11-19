@@ -246,7 +246,7 @@ export function Message({ model }: { model: IslandModel }) {
                 <Icon name="mic" size={12} weight="medium" scaled={false} />
               </button>
             )}
-            <button type="submit" className="island-send" aria-label={tr('Send')} title={tr('Send')} disabled={!model.draft.trim()}>
+            <button type="submit" className="island-send" aria-label={tr('Send')} title={tr('Send')} disabled={!model.draft.trim() && !model.dictation.busy}>
               <Icon name="arrow.up" size={12} weight="bold" scaled={false} />
             </button>
           </form>

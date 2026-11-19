@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { folderName, isGroup, type Bot } from '@shared/models'
+import { folderBaseName, folderName, isGroup, type Bot } from '@shared/models'
 import { rosterLine } from '@shared/work'
 import { AvatarWithStatus } from '../components/Avatar'
 import { Icon } from '../components/Icon'
@@ -61,5 +61,7 @@ function Preview({ bot, store }: { bot: Bot; store: BotStore }) {
   }
   if (line) return <Text size="callout" tone="secondary" truncate>{line.text}</Text>
   if (bot.status === 'error') return <Text size="callout" tone="danger" truncate>{messagePreview(bot.lastMessage ?? tr(`Something went wrong`))}</Text>
-  return <Text size="callout" tone="secondary" truncate>{messagePreview(bot.lastMessage ?? (isGroup(bot) ? `${bot.members.length} bots` : `${store.backendName(bot.backend)} · ${place}`))}</Text>
+  const groupLine = [bot.members.length === 1 ? '1 bot' : `${bot.members.length} bots`, bot.workspace ? folderBaseName(bot.workspace) : null]
+    .filter(Boolean).join(' · ')
+  return <Text size="callout" tone="secondary" truncate>{messagePreview(bot.lastMessage ?? (isGroup(bot) ? groupLine : `${store.backendName(bot.backend)} · ${place}`))}</Text>
 }

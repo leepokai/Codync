@@ -14,6 +14,8 @@ export interface Bot {
   /** `agent`, or `group`: several bots and the user in one chat. */
   kind: string
   members: string[]
+  /** A group's shared workspace folder (`group-workspace.md`); absent for none (or an older host). */
+  workspace?: string | null
   name: string
   description: string
   avatarColor: string
@@ -124,6 +126,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     id: raw.id,
     kind: raw.kind ?? 'agent',
     members: raw.members ?? [],
+    workspace: raw.workspace ?? null,
     name: raw.name ?? 'Bot',
     description: raw.description ?? '',
     avatarColor: raw.avatarColor ?? 'blue',
@@ -237,6 +240,8 @@ export const isWorkingIn = (b: Bot, chat: string) => isWorking(b) && (b.workingC
 /** Where the bot works, as a list shows it: its own folder, or its project folder's name. */
 export const folderName = (b: Bot, tr: (text: string) => string) =>
   b.managedWorkspace ? tr('Own folder') : (b.cwd.split('/').filter(Boolean).pop() ?? b.cwd)
+/** The last part of a folder path, as a list shows it (both separators: a Windows host's folders). */
+export const folderBaseName = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path
 
 export interface FileDiff {
   path: string
@@ -681,6 +686,8 @@ export interface Hello {
   autoOrder?: boolean
   /** `resetCredentials` can be used on this computer (absent from older hosts, false on a Codync Cloud computer). */
   credentialsReset?: boolean
+  /** Groups can carry a shared workspace folder; absent from hosts that predate them (editors keep it hidden). */
+  groupWorkspace?: boolean
 }
 
 export interface PairingInfo {
@@ -883,4 +890,6 @@ export interface GroupDraft {
   description: string
   members: string[]
   pinned?: boolean
+  /** Omitted: the saved one stays. A path sets it, null clears it (sent as `null`). */
+  workspace?: string | null
 }

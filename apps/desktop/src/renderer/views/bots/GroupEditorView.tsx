@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import { isGroup, type Bot } from '@shared/models'
 import { BotAvatar, GroupAvatar } from '../../components/Avatar'
-import { IconButton, Spinner } from '../../components/Controls'
+import { CardSection, DropdownMenu, IconButton, Pill, Spinner, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { Dialog, ModalHeader, SheetPage, useDismiss } from '../../components/Overlay'
+import { Dialog, ModalHeader, Sheet, SheetPage, useDismiss } from '../../components/Overlay'
 import { VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
-import { errorText } from './drafts'
+import { errorText, lastPathComponent } from './drafts'
 import { AutoTextArea } from './parts'
+import { FolderPicker } from './FolderPicker'
 import './bots.css'
 import { useTr } from '../../lib/use-language'
 import { fill } from '@shared/fill'
@@ -25,8 +26,10 @@ export function GroupEditorView({ group }: { group: Bot }) {
   const [name, setName] = useState(group.name)
   const [about, setAbout] = useState(group.description)
   const [members, setMembers] = useState<string[]>(group.members)
+  const [workspace, setWorkspace] = useState(group.workspace ?? null)
   const [query, setQuery] = useState('')
   const [adding, setAdding] = useState(false)
+  const [pickingFolder, setPickingFolder] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<Bot | null>(null)
@@ -49,7 +52,16 @@ export function GroupEditorView({ group }: { group: Bot }) {
     setSaving(true)
     setError(null)
     store
-      .updateGroup({ id: group.id, kind: 'group', name: name.trim() || defaultName, description: about.trim(), members, pinned: current?.pinned })
+      .updateGroup({
+        id: group.id,
+        kind: 'group',
+        name: name.trim() || defaultName,
+        description: about.trim(),
+        members,
+        pinned: current?.pinned,
+        // Omitted when untouched: the saved folder stays; a cleared one goes as `null`.
+        ...(workspace === (current?.workspace ?? null) ? {} : { workspace }),
+      })
       .then(dismiss)
       .catch((e: unknown) => setError(errorText(e)))
       .finally(() => setSaving(false))
@@ -65,6 +77,29 @@ export function GroupEditorView({ group }: { group: Bot }) {
             <input className="group-name" value={name} placeholder={defaultName} aria-label={tr('Name')} onChange={(e) => setName(e.target.value)} />
             <AutoTextArea className="group-about" value={about} placeholder="What this group works on" minRows={1} maxRows={4} onChange={setAbout} />
           </div>
+          {store.hello?.groupWorkspace === true ? (
+            <CardSection title="Workspace">
+              <ValueRow
+                label="Workspace"
+                detail={workspace ? tr('Members are asked to keep joint output in this folder.') : tr('Each keeps its own folder')}
+              >
+                <DropdownMenu
+                  title={workspace ?? undefined}
+                  items={() => [
+                    { title: tr('Each keeps its own folder'), selected: workspace === null, action: () => setWorkspace(null) },
+                    { title: tr('Choose project folder…'), selected: workspace !== null, action: () => setPickingFolder(true) },
+                  ]}
+                >
+                  <Pill outlined className="workspace-pill">
+                    <Text truncate className="workspace-pill-label">
+                      {workspace ? lastPathComponent(workspace) : tr('Each keeps its own folder')}
+                    </Text>
+                    <Icon name="chevron.down" size={10} weight="semibold" color="var(--secondary)" />
+                  </Pill>
+                </DropdownMenu>
+              </ValueRow>
+            </CardSection>
+          ) : null}
           <VStack>
             <div className="group-section-title">{tr('Members')}</div>
             {picked.map((bot) => (
@@ -114,6 +149,15 @@ export function GroupEditorView({ group }: { group: Bot }) {
         </div>
       </div>
       <DeleteBotDialog bot={confirmDelete} onClose={() => setConfirmDelete(null)} onDeleted={dismiss} />
+      <Sheet open={pickingFolder} onClose={() => setPickingFolder(false)} width={460} height={520}>
+        <FolderPicker
+          start={workspace ?? store.hello?.home ?? null}
+          onPick={(path) => {
+            setWorkspace(path)
+            setPickingFolder(false)
+          }}
+        />
+      </Sheet>
     </SheetPage>
   )
 }

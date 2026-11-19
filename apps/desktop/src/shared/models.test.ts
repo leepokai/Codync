@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { loginProfileChoices, draftOf, isChat, isReplyable, normalizeBot, quoteOf, voiceNoteOf, type Backend, type Entry, type SharedFile } from './models.ts'
+import { folderBaseName, loginProfileChoices, draftOf, isChat, isReplyable, normalizeBot, quoteOf, voiceNoteOf, type Backend, type Entry, type SharedFile } from './models.ts'
+
+test('a group keeps its shared folder, and its name is the last part of the path', () => {
+  const group = normalizeBot({ id: 'g', kind: 'group', members: ['a'], workspace: '/tmp/team' })
+  assert.equal(group.workspace, '/tmp/team')
+  assert.equal(folderBaseName(group.workspace!), 'team')
+  assert.equal(normalizeBot({ id: 'g', kind: 'group' }).workspace, null, 'an older host sends none')
+})
 
 test('a bot keeps its login profile through the settings draft, and picks among the signed-in ones', () => {
   assert.equal(draftOf(normalizeBot({ id: 'b', backend: 'claude', loginProfile: 'a2' })).loginProfile, 'a2')

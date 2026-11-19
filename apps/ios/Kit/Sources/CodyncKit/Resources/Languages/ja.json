@@ -792,6 +792,11 @@
   "%d connected": "%d が接続されました",
   "%d/%d connected": "%d/%d が接続されました",
   "%d offline": "%d オフライン",
+  "%d connecting…": "%d 台が接続中…",
+  "%d needs attention": "%d 台に対応が必要",
+  "%d need attention": "%d 台に対応が必要",
+  "%d opening…": "%d 台を開いています…",
+  "%d not connected": "%d 台が未接続",
   "Use what your bots share": "ボットが共有しているものを使用する",
   "Provider usage": "プロバイダーの使用状況",
   "Team": "チーム",
@@ -1253,6 +1258,10 @@
   "Right ⌘ twice": "右⌘を2回",
   "Left ⌘ twice": "左⌘を2回",
   "Tip: double-tap {shortcut} to talk from any app, then tap it once to send.": "ヒント: {shortcut} をダブルタップして任意のアプリから通話し、一度タップして送信します。",
+  "Talk to a bot from any app, then tap the key once more to stop without sending.": "任意のアプリからボットに話しかけ、キーをもう一度タップすると送信せずに停止します。",
+  "Tip: double-tap {shortcut} to talk from any app, then tap it once to stop.": "ヒント: {shortcut} をダブルタップして任意のアプリから話し、一度タップして停止します。",
+  "Tap again to": "もう一度タップで",
+  "Stop without sending": "送信せずに停止",
   "the right ⌘": "右⌘",
   "the left ⌘": "左⌘",
   "{name} (not installed)": "{name} (未インストール)",
@@ -1879,6 +1888,7 @@
   "Show usage for": "用量を表示するサービス",
   "On by default for the agents your bots run.": "ボットが使うエージェントはデフォルトでオンです。",
   "No reading yet": "まだ読み取れていません",
+  "Out of date": "最新ではありません",
   "Premium requests": "プレミアムリクエスト",
   "Balance": "残高",
   "Credits": "クレジット",
@@ -2219,5 +2229,6 @@
   "Pair phone with {name}": "スマートフォンと {name} をペアリングする",
   "Pair phone": "スマートフォンをペアリング",
   "On your Mac, click Codync in the menu bar, then Pair phone. The same code pairs this phone.": "Mac で、メニュー バーの Codync をクリックし、スマートフォンをペアリングします。同じコードでこの電話をペアリングします。",
-  "On your Mac, click Codync in the menu bar, then Pair phone.": "Mac で、メニュー バーの Codync をクリックし、スマートフォンをペアリングします。"
+  "On your Mac, click Codync in the menu bar, then Pair phone.": "Mac で、メニュー バーの Codync をクリックし、スマートフォンをペアリングします。",
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "この作業はあなたを介さずに 8 ステップ続き、上限に達しました。「続ける」で先に進めます。"
 }

@@ -72,6 +72,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             None,
             true,
         )?,
+        "continueChain" => crate::chat::team::limit::continue_chain(hub, str_arg(&b, "entryId")?)?,
         "retryRoutineRun" => hub.routines.retry(hub, str_arg(&b, "botId")?, str_arg(&b, "runId")?)?,
         "routineWebhook" => hub.routines.credentials(
             hub,

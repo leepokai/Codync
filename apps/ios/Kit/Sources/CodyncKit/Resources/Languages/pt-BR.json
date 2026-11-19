@@ -792,6 +792,11 @@
   "%d connected": "%d conectados",
   "%d/%d connected": "%d/%d conectados",
   "%d offline": "%d offline",
+  "%d connecting…": "%d conectando…",
+  "%d needs attention": "%d precisa de atenção",
+  "%d need attention": "%d precisam de atenção",
+  "%d opening…": "%d abrindo…",
+  "%d not connected": "%d não conectados",
   "Use what your bots share": "Use o que seus bots compartilham",
   "Provider usage": "Uso do provedor",
   "Team": "Equipe",
@@ -1253,6 +1258,10 @@
   "Right ⌘ twice": "⌘ direito duas vezes",
   "Left ⌘ twice": "⌘ esquerdo duas vezes",
   "Tip: double-tap {shortcut} to talk from any app, then tap it once to send.": "Dica: pressione {shortcut} duas vezes para falar a partir de qualquer aplicativo e depois uma vez para enviar.",
+  "Talk to a bot from any app, then tap the key once more to stop without sending.": "Fale com um bot a partir de qualquer aplicativo e depois pressione a tecla mais uma vez para parar sem enviar.",
+  "Tip: double-tap {shortcut} to talk from any app, then tap it once to stop.": "Dica: pressione {shortcut} duas vezes para falar a partir de qualquer aplicativo e depois uma vez para parar.",
+  "Tap again to": "Pressionar de novo para",
+  "Stop without sending": "Parar sem enviar",
   "the right ⌘": "o ⌘ direito",
   "the left ⌘": "o ⌘ esquerdo",
   "{name} (not installed)": "{name} (não instalado)",
@@ -1879,6 +1888,7 @@
   "Show usage for": "Mostrar uso de",
   "On by default for the agents your bots run.": "Ativado por padrão para os agentes que seus bots usam.",
   "No reading yet": "Ainda sem leitura",
+  "Out of date": "Desatualizado",
   "Premium requests": "Solicitações premium",
   "Balance": "Saldo",
   "Credits": "Créditos",
@@ -2219,5 +2229,6 @@
   "Pair phone with {name}": "Parear celular com {name}",
   "Pair phone": "Parear celular",
   "On your Mac, click Codync in the menu bar, then Pair phone. The same code pairs this phone.": "No Mac, clique em Codync na barra de menus e depois em Parear celular. O mesmo código pareia este celular.",
-  "On your Mac, click Codync in the menu bar, then Pair phone.": "No Mac, clique em Codync na barra de menus e depois em Parear celular."
+  "On your Mac, click Codync in the menu bar, then Pair phone.": "No Mac, clique em Codync na barra de menus e depois em Parear celular.",
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Este trabalho avançou 8 etapas seguidas sem você, o máximo possível. Toque em \"Continuar\" para seguir."
 }

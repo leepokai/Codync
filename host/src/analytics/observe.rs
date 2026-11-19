@@ -159,6 +159,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         "deleteRoutine" => Event::RoutineDeleted,
         "runRoutine" => Event::RoutineRun,
         "retryRoutineRun" => Event::RoutineRetried,
+        "continueChain" => Event::ChainContinued,
         // ✕ on a waiting follow-up; the bot's own cancel and its Stop report from `routines::follow_up`.
         "cancelFollowUp" => {
             p.insert("by".into(), serde_json::json!(crate::routines::Cancelled::User));
@@ -202,6 +203,14 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             let rewrite = crate::chat::skills::rewritten_id(&b["arguments"]).is_some();
             p.insert("change".into(), (if rewrite { "update" } else { "new" }).into());
             Event::SkillWritten
+        }
+        // A manager's `create_bot` / `update_bot`: the settings it passes, by name, never their values.
+        "manageCall" if matches!(b["name"].as_str(), Some("create_bot" | "update_bot")) => {
+            let tool = if b["name"] == "create_bot" { "create" } else { "update" };
+            p.insert("tool".into(), tool.into());
+            let passed = crate::chat::manage::arguments().iter().filter(|k| b["arguments"].get(k.as_str()).is_some());
+            p.insert("fields".into(), passed.cloned().collect::<Vec<_>>().into());
+            Event::TeamManaged
         }
         // A bot's `publish_artifact`: a new artifact, or a new version of one (`artifact`); never its title.
         "chatCall" if b["name"] == "publish_artifact" => {
@@ -331,9 +340,11 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
                 p.insert(key.into(), answer[key].as_array().map_or(0, Vec::len).into());
             }
         }
-        // A room or a bot request gets no card (`card` says why).
+        // A room or a bot request gets no card (`card` says why); a quiet update refreshes the card it has.
         Event::ArtifactPublished => {
-            p.insert("card".into(), answer["card"].is_null().into());
+            let quiet = answer["quiet"] == true;
+            p.insert("card".into(), (answer["card"].is_null() && !quiet).into());
+            p.insert("quiet".into(), quiet.into());
         }
         Event::ConnectorUpdated => {
             p.insert("outcome".into(), if answer["verify"].is_null() { "saved" } else { "ready" }.into());
@@ -365,8 +376,8 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 }
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
-/// `action`) as `network_failed` with `stage` `action`, a connector edit, a login profile, a voice server and a
-/// message to an item's thread report their category and a credentials reset or a computer rename `other`, never the message; other
+/// `action`) as `network_failed` with `stage` `action`, a connector edit, a login profile, a voice server, a team
+/// change and a message to an item's thread report their category and a credentials reset or a computer rename `other`, never the message; other
 /// failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     match event {
@@ -399,6 +410,12 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
         // `text_only`: files, a quote or a call.
         Event::WorkMessaged => {
             let category = error.downcast_ref::<crate::chat::tasks::ThreadRefused>().map_or("other", |e| e.category);
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
+        }
+        Event::TeamManaged => {
+            let category = error.downcast_ref::<crate::chat::manage::Refused>().map_or("other", |e| e.category);
             p.insert("outcome".into(), "failed".into());
             p.insert("error".into(), category.into());
             Some((event, p))

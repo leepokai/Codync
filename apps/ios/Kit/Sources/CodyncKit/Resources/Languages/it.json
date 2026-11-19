@@ -3,6 +3,11 @@
   " Sections: {list}": " Sezioni: {list}",
   "%d connected": "%d connessi",
   "%d offline": "%d offline",
+  "%d connecting…": "%d in connessione…",
+  "%d needs attention": "%d richiede attenzione",
+  "%d need attention": "%d richiedono attenzione",
+  "%d opening…": "%d in apertura…",
+  "%d not connected": "%d non connessi",
   "%d/%d connected": "%d/%d connessi",
   "1 bot": "1 bot",
   "1 s": "1 s",
@@ -1554,6 +1559,10 @@
   "Tool": "Strumento",
   "Turn {turn}": "Turno {turn}",
   "Tip: double-tap {shortcut} to talk from any app, then tap it once to send.": "Suggerimento: premi due volte {shortcut} per parlare da qualsiasi app, poi premilo una volta per inviare.",
+  "Talk to a bot from any app, then tap the key once more to stop without sending.": "Parla con un bot da qualsiasi app, poi premi di nuovo il tasto per fermarti senza inviare.",
+  "Tip: double-tap {shortcut} to talk from any app, then tap it once to stop.": "Suggerimento: premi due volte {shortcut} per parlare da qualsiasi app, poi premilo una volta per fermarti.",
+  "Tap again to": "Premi di nuovo per",
+  "Stop without sending": "Fermare senza inviare",
   "the Codync cloud refused ({status} {reason}): {hint}": "il cloud Codync ha rifiutato ({status} {reason}): {hint}",
   "Show agent logos": "Mostra i logo degli agenti",
   "Marks each bot with its agent's logo when your bots use more than one agent.": "Contrassegna ogni bot con il logo del suo agente quando i tuoi bot usano più di un agente.",
@@ -1879,6 +1888,7 @@
   "Show usage for": "Mostra l'utilizzo di",
   "On by default for the agents your bots run.": "Attivo di default per gli agenti usati dai tuoi bot.",
   "No reading yet": "Ancora nessun dato",
+  "Out of date": "Non aggiornato",
   "Premium requests": "Richieste premium",
   "Balance": "Saldo",
   "Credits": "Crediti",
@@ -2219,5 +2229,6 @@
   "Pair phone with {name}": "Associa telefono a {name}",
   "Pair phone": "Associa telefono",
   "On your Mac, click Codync in the menu bar, then Pair phone. The same code pairs this phone.": "Sul tuo Mac, fai clic su Codync nella barra dei menu, poi su Associa telefono. Lo stesso codice associa questo telefono.",
-  "On your Mac, click Codync in the menu bar, then Pair phone.": "Sul tuo Mac, fai clic su Codync nella barra dei menu, poi su Associa telefono."
+  "On your Mac, click Codync in the menu bar, then Pair phone.": "Sul tuo Mac, fai clic su Codync nella barra dei menu, poi su Associa telefono.",
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "Questo lavoro è andato avanti per 8 passaggi di fila senza di te, il massimo possibile. Tocca «Continua» per proseguire."
 }

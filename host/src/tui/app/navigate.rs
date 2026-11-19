@@ -149,7 +149,12 @@ impl App {
             .into_iter()
             .filter_map(|item| match item {
                 Item::Entry(e)
-                    if e.is_message() || e.is_bot_message() || e.unfolds() || e.retries() || e.adds_fallback() =>
+                    if e.is_message()
+                        || e.is_bot_message()
+                        || e.unfolds()
+                        || e.retries()
+                        || e.continues()
+                        || e.adds_fallback() =>
                 {
                     Some((e.id.clone(), e.is_message()))
                 }
@@ -181,7 +186,7 @@ impl App {
             KeyCode::Char('j') | KeyCode::Down => self.step_pick(1),
             KeyCode::Char('k') | KeyCode::Up => self.step_pick(-1),
             KeyCode::Char('C') => self.open_connection(),
-            KeyCode::Char('F') => self.retry_failed_run(),
+            KeyCode::Char('F') => self.retry_or_continue(),
             KeyCode::Char('A') if picked.as_ref().is_some_and(|e| self.fallback_owner(&id, e).is_some()) => {
                 if let Some(e) = picked {
                     self.add_fallback(&id, &e);
@@ -282,6 +287,28 @@ impl App {
             _ => return false,
         }
         true
+    }
+
+    /// `F`, on the picked notice, else the newest in this chat: runs a failed routine run's work again, or continues a
+    /// bot chain stopped at its handoff limit.
+    pub(super) fn retry_or_continue(&mut self) {
+        let Some(bot) = self.selected.clone() else { return };
+        let notice = self
+            .lane(&bot)
+            .into_iter()
+            .filter(|e| (e.retries() || e.continues()) && self.pick.as_ref().is_none_or(|id| *id == e.id))
+            .max_by_key(|e| e.seq);
+        match notice {
+            Some(e) if e.continues() => {
+                self.call("continueChain", json!({"entryId": e.id}), After::Nothing);
+                self.flash("Continuing…");
+            }
+            Some(e) => {
+                self.call("retryRoutineRun", json!({"botId": bot, "runId": e.data["runId"]}), After::Nothing);
+                self.flash("Trying it again");
+            }
+            None => self.flash("No failed routine run to try again here"),
+        }
     }
 
     /// Moves the selected bot one place up (-1) or down (+1) and saves the order, staying in its band

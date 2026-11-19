@@ -125,6 +125,8 @@ host answers and sends it once the host is up.
 | `routine_deleted` | host | `deleteRoutine` | — |
 | `routine_run` | host | `runRoutine` | — |
 | `routine_retried` | host | `retryRoutineRun` (the retry button on a failed run's notice) | — |
+| `chain_limit_reached` | host | A bot chain stopped at its handoff limit and left the user its Continue notice, once a turn ([bot collaboration](../features/bot-collaboration.md#limits)) | `via` (`message`: `message_bot`, here or to another computer, `work`: `add_work`) |
+| `chain_continued` | host | `continueChain` (Continue on that notice) | — |
 | `routine_progress_saved` | host | A bot's `save_progress` finished ([progress note](../features/routines.md#progress-note)) | `outcome` (`saved`, `too_long`, `not_found`, why its text was refused: `hidden`, `prompt_link`, `instruction`, `secret`, `other`, or `failed`: the host couldn't save it), `tokens` (the note's estimated size, never its text) |
 | `follow_up_set` | host | A bot's `follow_up` finished ([follow-ups](../features/follow-ups.md)) | `outcome` (`set`, `invalid`: no wait or note, `elsewhere`: asked from a room or another bot's request, why the note's text was refused: `hidden`, `prompt_link`, `instruction`, `secret`, `other`, `limit`: ten waiting, `chain`: too many in a row, or `failed`: the host couldn't save it), `minutes`, `chain` (follow-ups in a row before this one) |
 | `follow_up_fired` | host | A follow-up's turn begins | `late` (`true` when over a minute past due: the computer was off or asleep) |
@@ -154,7 +156,8 @@ host answers and sends it once the host is up.
 | `skill_installed` | host | `installSkill` | `custom` |
 | `skill_removed` | host | `removeSkill` | — |
 | `skill_written` | host | A bot's `save_skill` (`chatCall`) | `change` (`new`/`update`) |
-| `artifact_published` | host | A bot's `publish_artifact` (`chatCall`) | `change` (`new`/`update`), `card` (whether its card went into the bot's chat), never its title |
+| `team_managed` | host | A manager bot's `create_bot` or `update_bot` (`manageCall`) | `tool` (`create`/`update`), `fields`: the settings it passed by tool argument name (`name`, `model`, `modelOptions`, `routines`, …); when it failed `outcome` `failed` and `error` (`options`: a model setting the agent doesn't list; `catalog`: the agent's model list didn't load; `denied`: the approval card wasn't allowed in time; `other`); never their values or the bot |
+| `artifact_published` | host | A bot's `publish_artifact` (`chatCall`) | `change` (`new`/`update`), `card` (whether a new card went into the bot's chat), `quiet` (an update with `notify: false` that refreshed the artifact's existing card instead; never both true), never its title |
 | `voice_note_sent` | host | A bot's `send_file` with text (`chatCall`): a message that carries a voice note | never the file, its name or the text |
 | `bot_quoted` | host | A bot's `send_message` or `send_file` with `reply_to` (`chatCall`): `tool` (`message` \| `file`), `outcome` (`quoted`, or `unquoted` when the id couldn't be quoted). A voice note with a quote counts as `voice_note_sent` | never the id, the text or the quote |
 | `voice_note_played` | host `track` (desktop), iOS, Android | A voice note's play button starts it from its beginning (not a resume) | `outcome` (`played`/`failed`), `error` when failed (`load`: fetching or opening it; `playback`: starting it), never which note |

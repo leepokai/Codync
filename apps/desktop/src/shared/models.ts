@@ -385,6 +385,8 @@ export interface EntryData {
   agentSwitch?: AgentSwitch
   /** notice (error): the bot has no fallbacks and its agent ran out; offers to add one. */
   addFallback?: boolean
+  /** notice: a bot chain stopped at its handoff limit; Continue (`continueChain`) lets it go on, once. */
+  continueChain?: boolean
   heading?: string
   delegationId?: string
   sourceBotId?: string
@@ -530,6 +532,8 @@ export interface UsageLoginProfile {
   name: string
   windows: UsageWindow[]
   updatedAt: number
+  /** Since when its checks fail, which leaves `windows` from before. Absent while they work. */
+  failedAt?: number
 }
 
 export interface UsageProvider {
@@ -539,6 +543,8 @@ export interface UsageProvider {
   windows: UsageWindow[]
   source: string
   updatedAt: number
+  /** Since when the default login's checks fail, which leaves `windows` from before. Absent while they work. */
+  failedAt?: number
   /** The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it. */
   registry?: string
   /** What the default login is called, when the agent has login profiles to tell it from. */

@@ -792,6 +792,11 @@
   "%d connected": "%d 臺已連線",
   "%d/%d connected": "%d/%d 臺已連線",
   "%d offline": "%d 臺離線",
+  "%d connecting…": "%d 臺正在連線…",
+  "%d needs attention": "%d 臺需要處理",
+  "%d need attention": "%d 臺需要處理",
+  "%d opening…": "%d 臺正在開啟…",
+  "%d not connected": "%d 臺未連線",
   "Use what your bots share": "使用 Bot 共享的內容",
   "Provider usage": "服務用量",
   "Team": "團隊",
@@ -1253,6 +1258,10 @@
   "Right ⌘ twice": "右 ⌘ 兩次",
   "Left ⌘ twice": "左 ⌘ 兩次",
   "Tip: double-tap {shortcut} to talk from any app, then tap it once to send.": "提示：連按兩次{shortcut}，就能在任何應用裡說話，再按一次就傳送。",
+  "Talk to a bot from any app, then tap the key once more to stop without sending.": "在任何應用裡對 Bot 說話，再按一次這個鍵就停止，不傳送。",
+  "Tip: double-tap {shortcut} to talk from any app, then tap it once to stop.": "提示：連按兩次{shortcut}，就能在任何應用裡說話，再按一次就停止。",
+  "Tap again to": "再按一次",
+  "Stop without sending": "停止，不傳送",
   "the right ⌘": "右側 ⌘",
   "the left ⌘": "左側 ⌘",
   "{name} (not installed)": "{name}（未安裝）",
@@ -1879,6 +1888,7 @@
   "Show usage for": "顯示這些服務的用量",
   "On by default for the agents your bots run.": "預設只開啟 bot 正在使用的 agent。",
   "No reading yet": "還沒有讀數",
+  "Out of date": "已過時",
   "Premium requests": "進階請求",
   "Balance": "餘額",
   "Credits": "額度",
@@ -2219,5 +2229,6 @@
   "Pair phone with {name}": "讓手機與 {name} 配對",
   "Pair phone": "配對手機",
   "On your Mac, click Codync in the menu bar, then Pair phone. The same code pairs this phone.": "在 Mac 上點選單欄的 Codync，然後選配對手機。同一個碼也能配這臺手機。",
-  "On your Mac, click Codync in the menu bar, then Pair phone.": "在 Mac 上點選單欄的 Codync，然後選配對手機。"
+  "On your Mac, click Codync in the menu bar, then Pair phone.": "在 Mac 上點選單欄的 Codync，然後選配對手機。",
+  "This work went on 8 steps in a row without you, the most it can. Continue to let it go on.": "這項工作已在沒有你的情況下連續進行 8 步，達到上限。按「繼續」讓它接著進行。"
 }

@@ -110,6 +110,7 @@ import kotlin.math.roundToInt
                 if (login.windows.isEmpty()) Text(tr("No reading yet"), style = Type.subheadline, color = Palette.secondary, maxLines = 1)
             }
             for (window in login.windows) key(window.id) { WindowLimit(window, tint) }
+            if (login.isOutOfDate) Text(tr("Out of date"), style = Type.subheadline, color = Palette.secondary, maxLines = 1)
         }
     }
 }

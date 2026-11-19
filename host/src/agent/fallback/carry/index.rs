@@ -1,11 +1,11 @@
-﻿//! The handover ledger: an index of what the agents before left behind, read by rule from the chat's tool calls (no
+//! The handover ledger: an index of what the agents before left behind, read by rule from the chat's tool calls (no
 //! model call): the files they changed, the commands they ran, the dev servers still running. Paths and command
 //! lines only, never contents: the next agent opens a file or the history for those. What the user asked for isn't
 //! here: standing rules reach every session through the bot's memory, and the handoff repeats the user's own
 //! messages. Design: `docs/features/agent-fallback.md`.
 
-use codync_agent::acp::truncate;
 use crate::store::Entry;
+use codync_agent::acp::truncate;
 
 /// Files, commands and dev servers a ledger lists at most; the rest is counted.
 const FILES: usize = 10;

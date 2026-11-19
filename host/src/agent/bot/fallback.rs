@@ -317,11 +317,8 @@ impl Actor {
         let fresh = self.fresh();
         let Some(entries) = self.main_messages(fresh) else { return Ok(None) };
         let said = carry::said(&entries);
-        if said.is_empty() {
-            return Ok(None);
-        }
         // The open plan and the ledger, as far back as the messages read.
-        let oldest = entries.first().map_or(0, |e| e.seq).max(fresh);
+        let oldest = entries.first().map_or(fresh, |e| e.seq).max(fresh);
         let from = fallback::name(from);
         let summary = from_session.and_then(|s| self.hub.store.kv_get(&crate::chat::handoff::summary_key(bot, s)));
         let plan = self
@@ -331,7 +328,16 @@ impl Actor {
             .map(|e| crate::chat::handoff::plan_text(&e.data));
         let index = self.ledger(oldest);
         let current = self.relay.attempt.as_ref().map(|a| a.entries.clone()).unwrap_or_default();
+        // A first-turn failure has no prior answered message, yet its files, commands, or refusals still matter.
         let manifest = carry::ledger::build(self.hub.clone(), self.cfg.clone(), fresh, current).await;
+        if said.is_empty()
+            && manifest.rows_len() + manifest.omitted.len() == 0
+            && summary.is_none()
+            && plan.is_none()
+            && index.is_none()
+        {
+            return Ok(None);
+        }
         let recap = carry::Recap {
             from: &from,
             summary: summary.as_deref(),
@@ -343,7 +349,8 @@ impl Actor {
             room,
             catching_up: false,
         };
-        recap.text().map(Some)
+        let text = recap.text()?;
+        Ok((!text.is_empty()).then_some(text))
     }
 
     /// The ledger of what agents did in the main chat after `after`, before this turn (`carry::ledger`).

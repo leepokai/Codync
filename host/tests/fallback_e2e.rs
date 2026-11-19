@@ -195,6 +195,26 @@ async fn a_resumed_session_bounds_its_catch_up_and_discloses_each_manifest_item(
 }
 
 #[tokio::test]
+async fn a_first_turn_handoff_still_carries_the_context_manifest() {
+    let host = Host::start().await;
+    let bot = json!({
+        "name": "FirstTurn", "backend": "custom", "command": agent("primary"), "connectors": [],
+        "notify": false, "fallbacks": [{"backend": "codex", "command": agent("standin")}],
+    });
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    std::fs::write(folder.join("ledger-files.json"), serde_json::to_vec(&["first_turn.txt"]).unwrap()).unwrap();
+    std::fs::write(folder.join("primary.limit"), "").unwrap();
+
+    host.reply(&bot, "Fix the first-turn build").await;
+
+    let prompt = last_prompt(&host, &bot, "standin");
+    assert!(prompt.contains("<ledger>") && prompt.contains("first_turn.txt"), "{prompt}");
+    assert!(prompt.contains("5 B") && prompt.contains("sha256 "), "{prompt}");
+    assert!(prompt.contains("synthetic-test") && prompt.contains("exit 3"), "{prompt}");
+}
+
+#[tokio::test]
 async fn the_next_agent_carries_the_turn_on_and_the_bot_goes_back() {
     let host = Host::start().await;
     let bot =

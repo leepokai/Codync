@@ -468,6 +468,13 @@ impl Requests {
         remembered
     }
 
+    /// Puts a consumed reset back: the turn that spent it failed to start, so the approval was never used.
+    pub fn restore_dropped_wake(&self, actor: &str) {
+        if let Some(entry) = self.0.locked().actors.get_mut(actor) {
+            entry.carry_reset = true;
+        }
+    }
+
     /// Closes the lift. The chain is unchanged, and another notice waits for a user message.
     pub fn deny(&self, refusal: u64) -> Result<()> {
         let mut state = self.0.locked();
@@ -1063,5 +1070,30 @@ mod tests {
         assert!(requests.take_dropped_wake("a"));
         requests.user_message_started("a");
         assert!(!requests.dropped_wake("a"));
+    }
+
+    #[test]
+    fn a_carry_spent_by_a_failed_start_is_restored() {
+        let requests = Requests::default();
+        let refusal = requests.open_lift("sender", "a", 0).unwrap();
+        requests.approve(refusal).unwrap();
+        assert!(requests.take_grant_for_chat_start("a", 0, Some(refusal)));
+        assert!(requests.dropped_wake("a"));
+        // The wake's turn spent the carry, then failed to start: the approval is not lost.
+        assert!(requests.take_dropped_wake("a"));
+        assert!(!requests.dropped_wake("a"));
+        requests.restore_dropped_wake("a");
+        assert!(requests.dropped_wake("a"));
+        // The restored carry still owns the refusal: no new lift opens until a reply spends it.
+        assert!(requests.open_lift("sender", "a", 0).is_none());
+        assert!(requests.take_dropped_wake("a"));
+        assert!(!requests.dropped_wake("a"));
+    }
+
+    #[test]
+    fn a_restored_carry_on_an_unknown_actor_is_a_no_op() {
+        let requests = Requests::default();
+        requests.restore_dropped_wake("nobody");
+        assert!(!requests.dropped_wake("nobody"));
     }
 }

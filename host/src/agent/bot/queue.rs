@@ -365,7 +365,8 @@ impl Actor {
                     } else {
                         // The grant, the carry and the hop-0 reply are settled under the one lock, before this
                         // turn can fail to start: `take_grant_for_chat_start` consumed the grant and recorded
-                        // the carry, and the turn below replaces the carry with the live hop-0 turn.
+                        // the carry, and the turn below replaces the carry with the live hop-0 turn. A start
+                        // that still fails puts the carry back (`start_failed`).
                         let generation = self.hub.team.generation(&self.cfg.id);
                         if !self.hub.team.take_grant_for_chat_start(&self.cfg.id, generation, Some(refusal_id)) {
                             tracing::info!(bot = %self.cfg.id, refusal_id, "hop-limit approval wake dropped");
@@ -378,8 +379,8 @@ impl Actor {
                     if let Err(e) = self.start_turn(main.clone(), &[], &text, false, done_tx).await {
                         self.start_error(e, done_tx).await;
                     }
-                    // start_turn spent the carry when the turn began (it starts at hop 0). A start that failed
-                    // leaves the carry standing, so the next reply still begins at 0.
+                    // start_turn spent the carry when the turn was committed (it starts at hop 0). A start that
+                    // failed put the carry back (`start_failed`), so the next reply still begins at 0.
                     continue;
                 }
                 Some(Queued::FollowUp(_)) => {
@@ -476,6 +477,11 @@ impl Actor {
         self.relay.carried = None;
         self.turn = None;
         self.reply_hops = None;
+        // A turn that spent the carried reset and still failed to start never used the approval: put it back,
+        // so the next reply still begins at 0.
+        if std::mem::take(&mut self.spent_carry) {
+            self.hub.team.restore_dropped_wake(&self.cfg.id);
+        }
         self.end_host_turn(false);
         memory::turns::drop_turn(&self.cfg.id);
         if self.routine_completion.is_none() {

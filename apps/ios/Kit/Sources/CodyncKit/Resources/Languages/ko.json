@@ -2234,5 +2234,6 @@
   "Start a cloud computer": "클라우드 컴퓨터 시작하기",
   "No computer? Run one on your own cloud provider account.": "컴퓨터가 없나요? 내 클라우드 제공업체 계정에서 하나 실행하세요.",
   "Starting your cloud computer": "클라우드 컴퓨터를 시작하는 중",
-  "About a minute. You can skip: it shows up on its own when it's ready.": "1분 정도 걸립니다. 건너뛰어도 준비되면 자동으로 나타납니다."
+  "About a minute. You can skip: it shows up on its own when it's ready.": "1분 정도 걸립니다. 건너뛰어도 준비되면 자동으로 나타납니다.",
+  "Alerts you when a bot is done, needs you or hits an error, unless its chat is open. A phone with Codync gets the same alerts, so this starts off.": "봇이 완료되거나, 응답이 필요하거나, 오류가 나면 알려 줍니다(해당 채팅을 열어 둔 경우 제외). 휴대폰의 Codync도 같은 알림을 받으므로 기본적으로 꺼져 있습니다."
 }

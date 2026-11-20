@@ -126,7 +126,8 @@ builds PostHog frames itself (oldest first, the failing one last): generic `cust
   errors and rejections in the main process and every window, errors a view threw while
   rendering (mechanism `react`: the chat and pairing windows show *Something went wrong* with
   *Try again* instead of going blank), and windows or helpers that crashed (`RendererGone`,
-  `GPUGone`, … with Electron's reason), through `reportError`. A window whose page crashed loads
+  `GPUGone`, … with Electron's reason) and system notifications the system failed to show
+  (`NotificationFailed`, `main/notifications.ts`), through `reportError`. A window whose page crashed loads
   it again (`renderer-recovery.ts`), at most twice in a row before it has stayed up a minute, and
   says what came of it (`window_recovery`). Not
   reported: error events that carry no error (the ResizeObserver loop notice), and helpers that

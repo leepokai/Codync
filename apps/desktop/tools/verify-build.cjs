@@ -16,9 +16,20 @@ function peArch(file) {
 module.exports = async (context) => {
   if (context.electronPlatformName === 'win32') {
     // tools/native-host.mjs builds the host for the machine it runs on, which a cross-arch package wouldn't match.
-    const host = peArch(join(context.packager.projectDir, 'build/native/codync-host.exe'))
     const target = Arch[context.arch]
-    if (host !== target) throw new Error(`Packaging the Windows ${target} app with a host built for ${host}; package it on Windows ${target}.`)
+    for (const executable of ['codync-host.exe', 'codync-browser-native-host.exe']) {
+      const built = peArch(join(context.packager.projectDir, 'build/native', executable))
+      if (built !== target) {
+        throw new Error(`Packaging the Windows ${target} app with ${executable} built for ${built}; package it on Windows ${target}.`)
+      }
+    }
+    const extension = JSON.parse(readFileSync(join(context.packager.projectDir, '../browser-extension/manifest.json'), 'utf8'))
+    if (extension.manifest_version !== 3 || extension.version !== '0.1.0') {
+      throw new Error('The bundled Codync Browser extension is not the expected Manifest V3 release')
+    }
+    if (!extension.permissions?.includes('nativeMessaging') || !extension.permissions?.includes('debugger')) {
+      throw new Error('The bundled Codync Browser extension is missing its native bridge or browser control permission')
+    }
   }
   const expected = context.packager.appInfo.id === 'com.pokai.Codync.dev' ? 'dev' : 'main'
   const config = JSON.parse(readFileSync(join(context.packager.projectDir, 'resources/account-config.json'), 'utf8'))

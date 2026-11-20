@@ -67,6 +67,8 @@ pub enum Event {
     DecisionExpired,
     /// The user's choice was saved but its tool call had already stopped waiting.
     DecisionFailed,
+    /// One computer-use browser tool call, with its fixed action and outcome.
+    BrowserAction,
     ReactionAdded,
     HandoffAnswered,
     RoutineSaved,
@@ -243,6 +245,7 @@ impl Event {
             Self::DecisionAnswered => "decision_answered",
             Self::DecisionExpired => "decision_expired",
             Self::DecisionFailed => "decision_failed",
+            Self::BrowserAction => "browser_action",
             Self::ReactionAdded => "reaction_added",
             Self::HandoffAnswered => "handoff_answered",
             Self::RoutineSaved => "routine_saved",

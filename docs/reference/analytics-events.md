@@ -179,6 +179,7 @@ host answers and sends it once the host is up.
 | `decision_answered` | host | The actor delivered a choice to its live waiter, or the open card took one after its call ran out, once | `via`: `button`, `text` (a typed option or its number), `custom` (the user's own words) or `late` (the open card, by a press or the next message); never which option or the words |
 | `decision_expired` | host | A choice card stopped waiting unanswered, once per card | `reason`: `timeout` (a thread's card only), `asked_again` (a new card replaced the open one), `cancelled` (the agent cancelled its call), `stopped`, `turn_ended`, `other_message` (the user sent files, a quote, a `/` command or call speech instead) or `restart`; never the question or its options |
 | `decision_failed` | host | The user's choice was saved but its call had already stopped waiting, so the bot never got it | none |
+| `browser_action` | host | One `browser_*` computer tool call finishes | `action` (`start`/`navigate`/`click`/`type`/`screenshot`/`stop`/`other`), `outcome` (`success`/`failed`), `duration_ms`; on failure `error` (`extension_offline`/`extension_disconnected`/`extension_timeout`/`stale_target`/`operation`), never a URL, selector, page text or typed value |
 
 ## Screens
 

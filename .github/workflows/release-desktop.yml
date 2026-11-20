@@ -8,7 +8,7 @@ on:
     tags: ["v*"]
   pull_request:
     # The desktop tests also check the iPhone, Android and terminal tr() phrases against the catalogs (#488).
-    paths: ["apps/desktop/**", "apps/ios/**/*.swift", "apps/ios/Kit/Sources/CodyncKit/Resources/Languages/**", "apps/android/app/src/main/**/*.kt", "host/src/tui/**", ".github/workflows/release-desktop.yml"]
+    paths: ["apps/browser-extension/**", "apps/desktop/**", "apps/ios/**/*.swift", "apps/ios/Kit/Sources/CodyncKit/Resources/Languages/**", "apps/android/app/src/main/**/*.kt", "host/src/tui/**", ".github/workflows/release-desktop.yml"]
   workflow_dispatch:
     inputs:
       windows_only:
@@ -50,7 +50,7 @@ jobs:
             exit 0
           fi
           git fetch --no-tags --depth=1 origin "$BASE_SHA"
-          if git diff --name-only FETCH_HEAD HEAD | grep -Eq '^(apps/desktop/(package(-lock)?\.json|electron-builder[^/]*|electron\.vite\.config\.ts|tools/|src/main/|src/preload/|src/shared/|resources/|native/)|apps/shared/Config/|apps/screen-macos/|packaging/|\.github/workflows/release-desktop\.yml)'; then
+          if git diff --name-only FETCH_HEAD HEAD | grep -Eq '^(apps/browser-extension/|apps/desktop/(package(-lock)?\.json|electron-builder[^/]*|electron\.vite\.config\.ts|tools/|src/main/|src/preload/|src/shared/|resources/|native/)|apps/shared/Config/|apps/screen-macos/|packaging/|\.github/workflows/release-desktop\.yml)'; then
             echo package=true >> "$GITHUB_OUTPUT"
           else
             echo package=false >> "$GITHUB_OUTPUT"
@@ -234,7 +234,7 @@ jobs:
         working-directory: ${{ env.CODYNC_INSTALLED_RESOURCES }}
         run: |
           node -e "const { peArch } = require(process.argv[1]); for (const exe of process.argv.slice(2)) if (peArch(exe) !== '${{ matrix.arch }}') throw new Error('Wrong installed architecture: ' + exe)" \
-            "$GITHUB_WORKSPACE/apps/desktop/tools/verify-build.cjs" ../Codync.exe codync-host.exe codync-hostw.exe
+            "$GITHUB_WORKSPACE/apps/desktop/tools/verify-build.cjs" ../Codync.exe codync-host.exe codync-hostw.exe codync-browser-native-host.exe
       - name: Smoke test the bundled host
         working-directory: ${{ env.CODYNC_INSTALLED_RESOURCES }}
         run: |

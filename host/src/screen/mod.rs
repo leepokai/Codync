@@ -32,6 +32,9 @@
 //! (`input-fast` unordered for moves, `input` reliable): `move`, `click`, `drag`, `scroll`,
 //! `text`, `key` in display points, plus `down`/`up` for touch drags and `clipboard {text}`.
 
+mod browser;
+mod browser_extension;
+mod browser_headless;
 mod computer;
 mod cua;
 mod helper;
@@ -151,6 +154,7 @@ pub struct Screen {
     /// Sessions that ended, until `watch_viewer` reports them.
     ended: Mutex<HashMap<String, EndedViewer>>,
     driver: cua::Driver,
+    browsers: browser::Browsers,
     #[cfg_attr(windows, expect(dead_code, reason = "Windows has no screen helper yet"))]
     next_link: AtomicU64,
     #[cfg_attr(windows, expect(dead_code, reason = "Windows has no screen helper yet"))]
@@ -169,6 +173,7 @@ impl Screen {
             sessions: Mutex::default(),
             ended: Mutex::default(),
             driver: cua::Driver::default(),
+            browsers: browser::Browsers::default(),
             next_link: AtomicU64::new(1),
             helper_generation,
         }
@@ -212,6 +217,36 @@ impl Screen {
 
     fn emit(&self) {
         let _ = self.events.send(json!({"type": "screen", "screen": self.state()}));
+    }
+
+    pub(super) fn user_control(&self) -> bool {
+        self.control.locked().user.is_some()
+    }
+
+    pub(super) async fn browser(
+        &self,
+        hub: &Arc<crate::hub::Hub>,
+        bot: &str,
+        name: &str,
+        args: Value,
+    ) -> Result<Value> {
+        self.browsers.call(hub, bot, name, args).await
+    }
+
+    pub(crate) async fn cancel_browsers(&self, bot: &str) {
+        self.browsers.cancel_bot(bot).await;
+    }
+
+    pub(crate) async fn shutdown_browsers(&self) {
+        self.browsers.shutdown().await;
+    }
+
+    pub(crate) async fn serve_browser_extension(
+        &self,
+        hub: &Arc<crate::hub::Hub>,
+        socket: axum::extract::ws::WebSocket,
+    ) -> Result<()> {
+        self.browsers.serve_extension(&hub.host_id, socket).await
     }
 
     fn link(&self) -> Result<Arc<Link>> {

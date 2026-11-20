@@ -36,10 +36,14 @@ linux:
 win:
   artifactName: codync-dev-windows-${arch}.${ext}
   extraResources:
+    - from: ../browser-extension
+      to: browser-extension
     - from: build/native/codync-host.exe
       to: codync-host.exe
     - from: build/native/codync-dev-hostw.exe
       to: codync-dev-hostw.exe
+    - from: build/native/codync-browser-native-host.exe
+      to: codync-browser-native-host.exe
     - from: build/native/cua-driver.exe
       to: cua-driver.exe
     - from: build/native/cua-driver-uia.exe

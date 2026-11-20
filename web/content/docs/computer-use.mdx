@@ -105,7 +105,22 @@ With Use the computer on, the bot gets tools to:
 
 On macOS, Windows, and Linux with X11 or Sway, the bot works on apps in the background: your pointer and the app in front stay yours. On macOS, windows on another Space can't be worked on in the background; the bot is told so and can act in the foreground instead.
 
-Bots don't get tools to bring an app to the front, quit apps, read your clipboard, or drive a browser through its automation interface.
+On Windows, Codync Browser lets a bot use a dedicated foreground tab in a separate Codync profile
+while your existing browser tabs, cookies and sign-ins stay out of reach. The extension is bundled
+with Codync; enable it once from the browser's extension page, and its first connection opens the
+dedicated profile. A bot can open an HTTP or HTTPS page in that tab, navigate, click, enter text and
+return a screenshot to the same chat. It cannot select one of your existing tabs, and a missing,
+ordinary-profile or disconnected extension fails without switching browsers or computers. Release
+and development builds use separate native-host registrations, so installing one does not overwrite
+the other. The popup shows the bridge status. Remove the extension from the browser if you no longer
+want it, then run that build's native browser helper with `--uninstall-native-messaging` if you also
+want to remove its Chrome and Edge registration.
+
+Send the task from the same chat on your phone. It reaches the computer already selected for that
+chat, and the working steps and screenshot appear there as ordinary chat rows; iPhone and Android
+both show the PNG with the existing image preview.
+
+Bots don't get tools to bring an app to the front, quit apps, or read your clipboard.
 
 ### The rules
 

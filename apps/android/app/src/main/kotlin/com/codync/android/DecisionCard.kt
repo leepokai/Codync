@@ -69,7 +69,7 @@ import com.kyant.shapes.RoundedRectangle
                     if (suggested == index) Text(tr("Suggested"), style = Type.caption, color = Palette.tertiary)
                 }
             }
-            if (!entry.isFromThread) OwnAnswer(enabled = !answering, reply)
+            if (entry.takesOwnWords) OwnAnswer(enabled = !answering, reply)
         } else Text(if (entry.decisionStatus == DecisionStatus.Answered) d.text("selected") ?: tr("Answered") else tr("No answer — the bot moved on"),
             Modifier.padding(horizontal = 8.dp).testTag("decision-outcome"), style = Type.caption.medium, color = Palette.secondary)
         // Last on the card, under the answers or the outcome, as on the iPhone.

@@ -198,6 +198,13 @@ class WorkWordsTest {
         assertTrue(choice("c").isFromThread)
         assertTrue(card("t", thread = "thread-1").isFromThread)
         assertFalse(card("chat").isFromThread)
+        // Own words answer the chat's card unless only an option does (an agent's own question).
+        fun decision(ownWords: Boolean?) = Entry("d", 1, "b", 1, "notice", data = buildJsonObject {
+            put("decision", true); ownWords?.let { put("ownWords", it) }
+        })
+        assertTrue(decision(null).takesOwnWords)
+        assertFalse(decision(false).takesOwnWords)
+        assertFalse(choice("c").takesOwnWords)
     }
 
     @Test fun `a needs-you row says what its card asks`() {

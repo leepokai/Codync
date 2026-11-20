@@ -21,7 +21,7 @@ pub enum Refused {
     /// Unknown routine or wrong key: told apart nowhere, so ids can't be probed.
     Unauthorized,
     Paused,
-    /// The routine is already running; the sender (or the cloud queue) tries again later.
+    /// The routine's run has started, or its queue is full; the sender (or the cloud queue) tries again later.
     Busy,
     Invalid(String),
 }
@@ -46,7 +46,7 @@ impl std::fmt::Display for Refused {
         match self {
             Self::Unauthorized => f.write_str("invalid webhook key or signature"),
             Self::Paused => f.write_str("routine is paused"),
-            Self::Busy => f.write_str("routine already has a run queued or under way; try again later"),
+            Self::Busy => write!(f, "routine has a run under way or {} queued; try again later", super::MAX_QUEUED),
             Self::Invalid(why) => f.write_str(why),
         }
     }

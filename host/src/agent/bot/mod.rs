@@ -424,7 +424,26 @@ impl Actor {
                 inc => self.on_incoming(Some(inc)).await,
             }
         }
+        self.flush(true);
         let done = pi_tools::turn_result(done, self.agent_error.take());
+        let last_words = self
+            .last_text
+            .as_ref()
+            .and_then(|id| self.hub.store.entry(id))
+            .and_then(|e| e.data["text"].as_str().map(str::to_owned));
+        let done = match crate::agent::fallback::reason::usage_limit_refusal(
+            &self.cfg.backend,
+            &done,
+            last_words.as_deref(),
+        ) {
+            Some(error) => {
+                // The streamed quota-limit banner is the error itself, not partial work to carry into the next agent.
+                self.last_text = None;
+                self.seg = Seg::None;
+                Err(error)
+            }
+            None => done,
+        };
         if let Err(error) = &done
             && self.fall_back(error, done_tx).await
         {

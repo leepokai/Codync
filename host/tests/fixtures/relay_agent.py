@@ -76,6 +76,14 @@ for line in sys.stdin:
             update(sid, {"sessionUpdate": "usage_update", "used": 7611, "size": 128000})
             update(sid, {"sessionUpdate": "session_info_update", "_meta": {"piAcp": {"queueDepth": 0, "running": False}}})
             send({"id": message["id"], "result": {"stopReason": "end_turn"}})
+        elif os.path.exists(f"{NAME}.quotalimit"):
+            with open(f"{NAME}.quotalimit", encoding="utf-8") as f:
+                banner = f.read().strip() or (
+                    "Usage Limit Reached\n\n"
+                    "You have reached your current quota for this period. Your limit will reset in 6 days, 12 hours."
+                )
+            update(sid, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": banner}})
+            send({"id": message["id"], "result": {"stopReason": "refusal"}})
         elif os.path.exists(f"{NAME}.limit"):
             diff = {"type": "diff", "path": "a.txt", "oldText": "", "newText": "the edit's own text\n"}
             tool = {"toolCallId": "t1", "title": "Edit a.txt", "kind": "edit", "status": "completed", "content": [diff]}

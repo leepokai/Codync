@@ -187,9 +187,11 @@ impl Actor {
         self.files.cancel();
         // The turn is committed: spend a carried reset now, once, for the hop-0 admission planned above. From
         // here the turn runs (or its end paths clean up), so the carry cannot outlive its turn. If the start
-        // still fails after this point, `start_failed` puts the carry back: the approval was not used.
-        self.spent_carry = wake_turn || reply_carry;
-        if self.spent_carry {
+        // still fails before the prompt is sent, `start_failed` puts the carry back: the approval was not
+        // used. The flag is sticky: a fallback retry re-enters `start_turn` with the carry already gone and
+        // must not unmark it. It clears once the agent hears the prompt.
+        self.spent_carry = wake_turn || reply_carry || self.spent_carry;
+        if wake_turn || reply_carry {
             self.hub.team.take_dropped_wake(&self.cfg.id);
             self.reply_hops = Some(0);
         }
@@ -252,6 +254,11 @@ impl Actor {
             );
             self.turn_over(Outcome::Failed(Failure::Restart, work::CUT_OFF.into()));
             self.turn = None;
+            // This hidden turn spent a carried reset to begin at hop 0, then failed to start: the approval
+            // was never used, so the carry goes back for the next reply.
+            if std::mem::take(&mut self.spent_carry) {
+                self.hub.team.restore_dropped_wake(&self.cfg.id);
+            }
             self.end_host_turn(false);
             if self.routine_completion.is_none() {
                 self.set_inflight(false);
@@ -322,7 +329,8 @@ impl Actor {
         memory::turns::begin_turn(&self.cfg, &sid, asked);
         // Written before this returns, so a Stop right after is sent after the prompt.
         let answer = acp.send("session/prompt", params).await?;
-        // The agent heard the prompt: the spent carry is used. A later start failure is another turn's.
+        // The agent heard the prompt: the turn reached the model, so the spent carry is used. Any failure from
+        // here is the turn's own end, not a failed start.
         self.spent_carry = false;
         if !self.turn_memory_revision.is_empty()
             && let Err(error) =

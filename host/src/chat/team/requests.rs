@@ -326,6 +326,27 @@ impl Requests {
         Ok(())
     }
 
+    /// The clarification wake was never queued. Clears `asked` so the lead can ask again, the same way an
+    /// unsent explanation or answer is cleared for a retry.
+    pub fn abort_unsent_ask(&self, refusal: u64) -> bool {
+        let mut state = self.0.locked();
+        let Ok(owner) = state.actor_of(refusal) else { return false };
+        let aborted = {
+            let Some(lift) = state.actors.get_mut(&owner).and_then(|entry| entry.lift.as_mut()) else {
+                return false;
+            };
+            if lift.id != refusal || !lift.asked {
+                return false;
+            }
+            lift.asked = false;
+            true
+        };
+        if state.audit.last().is_some_and(|row| matches!(row.kind, AuditKind::Ask) && row.refusal == refusal) {
+            state.audit.pop();
+        }
+        aborted
+    }
+
     /// The blocked actor's answer, once, and only after [`Requests::ask`]. Returns the stored text, which is what
     /// the lead receives.
     pub fn answer(&self, actor: &str, refusal: u64, text: &str) -> Result<String> {
@@ -469,10 +490,16 @@ impl Requests {
     }
 
     /// Puts a consumed reset back: the turn that spent it failed to start, so the approval was never used.
+    /// Skipped when a newer lift or grant took the refusal over in the gap (its own wake carries the reset):
+    /// restoring alongside would let one approval reset twice.
     pub fn restore_dropped_wake(&self, actor: &str) {
-        if let Some(entry) = self.0.locked().actors.get_mut(actor) {
-            entry.carry_reset = true;
+        let mut state = self.0.locked();
+        let Some(entry) = state.actors.get_mut(actor) else { return };
+        if entry.grant.is_some() || entry.lift.is_some() {
+            tracing::info!(actor, "carried reset not restored: a newer approval owns the refusal");
+            return;
         }
+        entry.carry_reset = true;
     }
 
     /// Closes the lift. The chain is unchanged, and another notice waits for a user message.
@@ -485,6 +512,20 @@ impl Requests {
         }
         state.record(AuditKind::Deny, refusal, &owner);
         Ok(())
+    }
+
+    /// The lift's notice was never delivered. Closes the lift without a denial, so a later send can open a new
+    /// one: the chain was never judged, and the refusal must not sit open forever.
+    pub fn abort_unsent_notice(&self, actor: &str, refusal: u64) {
+        let mut state = self.0.locked();
+        if let Some(entry) = state.actors.get_mut(actor)
+            && entry.lift.as_ref().is_some_and(|lift| lift.id == refusal)
+        {
+            entry.lift = None;
+        }
+        if state.audit.last().is_some_and(|row| matches!(row.kind, AuditKind::Notice) && row.refusal == refusal) {
+            state.audit.pop();
+        }
     }
 
     #[cfg(test)]
@@ -1095,5 +1136,26 @@ mod tests {
         let requests = Requests::default();
         requests.restore_dropped_wake("nobody");
         assert!(!requests.dropped_wake("nobody"));
+    }
+
+    #[test]
+    fn a_restore_skips_a_newer_approval_and_leaves_it_sole_owner() {
+        let requests = Requests::default();
+        let refusal = requests.open_lift("sender", "a", 0).unwrap();
+        requests.approve(refusal).unwrap();
+        assert!(requests.take_grant_for_chat_start("a", 0, Some(refusal)));
+        // The wake's turn spent the carry, then failed to start. In the gap a new refusal reached the limit,
+        // the lift opened and the lead approved: a grant now owns the refusal.
+        assert!(requests.take_dropped_wake("a"));
+        let refusal = requests.open_lift("sender", "a", 0).unwrap();
+        requests.approve(refusal).unwrap();
+        // The late restore must not add a carry on top: the newer grant's wake applies the one reset.
+        requests.restore_dropped_wake("a");
+        assert!(!requests.dropped_wake("a"));
+        assert!(requests.take_grant_for_chat_start("a", 0, Some(refusal)));
+        assert!(requests.dropped_wake("a"));
+        // Exactly one reset: spending it leaves nothing, and no second grant exists.
+        assert!(requests.take_dropped_wake("a"));
+        assert!(!requests.dropped_wake("a"));
     }
 }

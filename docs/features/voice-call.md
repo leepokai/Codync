@@ -14,7 +14,7 @@ way open with a sentence or two, read aloud like any reply and part of the call 
 
 - `apps/ios/Kit/Sources/CodyncUI/Call/` (iPhone) and `apps/desktop/src/renderer/views/call/` (desktop): `CallView` (the call bar) over a `VoiceEngine`; `OnDeviceEngine` is the default audio loop. On the Mac the desktop app runs speech recognition in `codync-speech` (`apps/desktop/native/speech-macos/`, driven by `apps/desktop/src/main/speech.ts`).
 - Android: `CallBar` (`apps/android/app/.../VoiceControls.kt`) over the same `VoiceEngine` set, ported into `apps/android/core` (`VoiceEngine.kt`, `CloudSpeechEngine.kt`, `GeminiLiveEngine.kt`, `OpenAIRealtimeEngine.kt`, `Calls.kt`) with the phone's audio in the app (`VoiceAudioPorts.kt`, `WebRtcPeer.kt`). On device is `VoiceSession` (`LocalVoiceAudio.kt`): the call's language (Voice chat settings → Language, the phone's by default) is heard by Android's on-device recognizer on Android 13+, fed the call's own microphone (`PlatformSpeech.kt`; Android asks before downloading a language), with the bundled Vosk model for English where Android has none; each reply is read by an installed offline voice for the language it's written in, and a reply with no installed voice stays in chat with a notice; `VoiceService` (a microphone foreground service) holds audio focus and the Bluetooth/wired route for the call. Settings keys match the iPhone's (`callEngine`, `callMode.<provider>`, …).
-- UI follows Grok Bot: a floating capsule over the top of the chat (`ThreadView` overlay), and the
+- UI follows Grok Bot: a floating capsule over the top of the chat (`ChatView` overlay), and the
   chat stays readable and usable underneath. Left to right: the bot's avatar (pulses while
   speaking; tap it to interrupt), a dotted level line (your voice while listening, a ripple while
   the bot speaks, a slow breath while it works, a still row otherwise, always in the text color so a dark bot's line
@@ -57,7 +57,7 @@ The composer's mic (beside send / call, as in Grok Bot) types what you say into 
 same on-device recognizer and the call's language setting; nothing is sent until you send it.
 Words appear as they're recognized, after what's already typed. On-device `SFSpeechRecognizer`
 (iOS 18+, macOS 15+) starts its transcript over after a pause of a second or two without a final
-result; `SpeechSegments` (iOS `Call/OnDeviceSpeech.swift`, desktop `views/thread/speech-segments.ts`,
+result; `SpeechSegments` (iOS `Call/OnDeviceSpeech.swift`, desktop `views/chat/speech-segments.ts`,
 used by dictation and the on-device call) keeps each segment and puts the next after it. A segment
 ends on a final result or on recognition metadata on a result that isn't final (the desktop speech
 helper sends it as `ends`); without either, a result a second or more after the last one starts a
@@ -89,7 +89,7 @@ Starting a call or switching chats drops a dictation still recording or transcri
 recording's length counts toward the provider's minutes this month. The island's mic stays
 on-device (its window doesn't reach the host).
 
-- Desktop (`views/thread/dictation.ts`, the model, tested with a stub platform; the helper,
+- Desktop (`views/chat/dictation.ts`, the model, tested with a stub platform; the helper,
   microphone and host wired in `dictation-platform.ts`; pieces in `dictation-pieces.ts`; menu in
   `DictationEngineMenu.tsx`): on-device speech is the speech helper, macOS only. Linux and Windows
   show the mic too, for a provider; **On device** is hidden and old dictation selections use OpenAI. An unpackaged `npm run dev` can't use the helper: macOS stops it because the dev
@@ -120,8 +120,9 @@ twice or the left ⌘ twice; `voiceShortcut` in `host-prefs.json`). From any app
 double tap of that key starts dictation into the [notch island](notch-island.md)'s message field
 while the island is on, else into the chat window's composer (when no chat is open, the lead, or the top bot where
 no computer has one).
-One more tap stops it and sends what was said once the last words are in; the pill's stop leaves
-the words in the field unsent, and an error leaves nothing for the tap to send.
+One more tap stops it and sends what was said once the last words are in, or, with *Tap again to:
+Stop without sending* (`voiceShortcutTap`, a renderer pref), only stops it and leaves the words in the
+field; the pill's stop always leaves them unsent, and an error leaves nothing for the tap to send.
 Double-tapping to stop counts as that one tap, not a new start. While a call is on (any engine),
 the shortcut does nothing: the call has the microphone.
 
@@ -133,10 +134,10 @@ the shortcut does nothing: the call has the microphone.
   and no key pressed or click meanwhile is a tap; a second tap starting within 0.4 s of the first,
   with no key pressed or click since the first, is a double tap. ⌘C, ⌘V and ⌘-clicks with the
   same key are neither.
-- The renderer side is `Dictation.shortcutKey` (`views/thread/dictation.ts`), shared by the
+- The renderer side is `Dictation.shortcutKey` (`views/chat/dictation.ts`), shared by the
   composer and the island's model; `VoiceKeyRouter` (`shared/voice-shortcut.ts`) decides whether
   a tap starts, sends or does nothing. The chat window queues taps for its composer in
-  `views/thread/voice-shortcut-keys.ts`.
+  `views/chat/voice-shortcut-keys.ts`.
 - macOS only: Windows and Linux have no ⌘ or on-device speech, and a modifier-only shortcut
   there would need a native keyboard hook. The iPhone, Android and the terminal UI have no global
   keyboard shortcut.
@@ -342,7 +343,7 @@ carries audio and talks to these methods:
   descriptions, when the bot uses it), this bot (name, description, harness and model, folder and project,
   permission mode, connectors, skills, computer use, routines; a group's members), what the bot remembers (its
   `MEMORY.md` and notes index), the project now (git branch, changed files, the last three commits; outside a
-  repository, or without the command line tools on macOS, nothing), current work (status, activity, its [work in the background](background-tasks.md): what is working, waiting or needs
+  repository, or without the command line tools on macOS, nothing), current work (status, activity, its [work](work.md): what is working, waiting or needs
   the user, a pending
   approval and its options, queued messages, the last failure), the conversation (the last 20 chat messages in
   spoken form and the titles and gist of the last three calls), the other bots on this computer, files and
@@ -350,8 +351,8 @@ carries audio and talks to these methods:
   switched mid-call), this call so far (its newest lines). **All of it goes to the voice provider, on the user's own
   key.**
 - **`callTool`** `{callId, name, arguments, lines}` → `{result}` runs the voice's tool calls on the host
-  (`calls::tools`): `send_to_bot(text)`, `bot_status()` (a group's: its busy member's; a bot's includes its work in the background), `recent_messages(count)`,
-  `answer_approval(option)` (only after the user said which; matched by option name or id), `stop_bot()` (the bot's turn and every item of its box),
+  (`calls::tools`): `send_to_bot(text)`, `bot_status()` (a group's: its busy member's; a bot's includes its work), `recent_messages(count)`,
+  `answer_approval(option)` (only after the user said which; matched by option name or id), `stop_bot()` (the bot's turn and every task of its box),
   `search_memory(query)`. A failure is the tool's answer. The engines hold replies while a tool runs, so the model
   gets each result first.
 - **The user's own words:** `send_to_bot` attaches what the user said since the bot last heard from the call, word
@@ -398,12 +399,12 @@ carries audio and talks to these methods:
   finishes during it is), an approval card waiting, a choice card waiting (`request_decision`: "Mika asks the
   user to choose: … (options: …)"), a failure notice, and the bot's activity line while it works:
   at most one progress line every 15 s, only when it changed, and "<bot> is still working" after 45 s with nothing
-  said. [Work in the background](background-tasks.md) joins in: each item at work is a progress line of its own
-  when what its task does changed (`Mika, in the background on "Fix login": Running tests`, the chat's own turn
-  first, each said once per change, within the same 15 s), the "still working" names the item when only the box
-  works, and an approval or choice card a task raised in the chat names its item (`Mika needs the user's approval
-  for "Fix login" in the background: …`); a task's choice card adds that it takes a press in the chat, since what
-  the user says goes to the bot there. `bot_status` names the item with a pending approval (`approval.work`). It sends each as a `call` event `{call, owner, kind: reply | notice | progress, text, seq}`, worded for the
+  said. [Work](work.md) joins in: each task at work is a progress line of its own
+  when what its thread does changed (`Mika, in the background on "Fix login": Running tests`, the chat's own turn
+  first, each said once per change, within the same 15 s), the "still working" names the task when only the box
+  works, and an approval or choice card a thread raised in the chat names its task (`Mika needs the user's approval
+  for "Fix login" in the background: …`); a thread's choice card adds that it takes a press in the chat, since what
+  the user says goes to the bot there. `bot_status` names the task with a pending approval (`approval.work`). It sends each as a `call` event `{call, owner, kind: reply | notice | progress, text, seq}`, worded for the
   call's mode as `startCall` last gave it: a realtime voice gets replies shortened for speech, approvals with their
   options ("Mika needs the user's approval: … (options: …)") and progress; an on-device or speech-to-text call gets
   replies as written (its engine shortens them), approvals for the listener ("Mika needs your approval in the chat:
@@ -518,8 +519,8 @@ Host tests (`chat::calls`) cover a call's flow (start, lines, `send_to_bot` with
 end), the voice's instructions (the relay role and the bot's name first, each section present and within its cap,
 OpenAI's smaller share), transcript checks and dreaming over a call. `chat::calls::announce` tests cover what the
 voice hears: new replies, approvals and failures said once, a reply unfinished when the call began, a group's
-member named, the wording per call mode, progress rate-limited with a "still working" after a silence, work in the
-background in the progress and its cards naming their item, a choice card said, and the
+member named, the wording per call mode, progress rate-limited with a "still working" after a silence, a bot's tasks in
+the progress and their threads' cards naming their task, a choice card said, and the
 replies and notices kept for the device holding the call; `api::events` tests check that only that device gets
 them, and `calls_e2e` that an on-device call hears its approval and reply. `StoreTests` (iPhone) hand each cue to
 the call once, also when a reconnect replays it after an engine switch; the desktop tests parse cues

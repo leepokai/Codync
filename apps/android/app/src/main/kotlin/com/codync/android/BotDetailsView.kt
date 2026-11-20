@@ -32,7 +32,7 @@ import com.codync.android.core.Bot
 import com.codync.android.core.BotDraft
 import com.codync.android.core.Entry
 import com.codync.android.core.LinkState
-import com.codync.android.core.WorkItem
+import com.codync.android.core.WorkTask
 import com.codync.android.core.hasLibrary
 import com.codync.android.design.*
 import java.io.IOException
@@ -46,31 +46,31 @@ internal enum class DetailsTab(val title: String) {
 /**
  * What to open the details sheet on (iOS `DetailsRequest`): a page (Details, the bot's timeline, unless said), a routine's
  * editor on the Details page, another bot's details than the chat's (a group member's, from its notice), or the thread
- * of one of the bot's items ([itemId]) pushed over the Details page.
+ * of one of the bot's tasks ([taskId]) pushed over the Details page.
  */
 internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val routineId: String? = null, val botId: String? = null,
-    val itemId: String? = null) {
+    val taskId: String? = null) {
     companion object {
         /** [botId]'s fallbacks, from a failure they could have carried: the Agent section of its Settings page. */
         fun fallbacks(botId: String) = DetailsRequest(DetailsTab.Settings, botId = botId)
     }
 }
 
-/** The sheet's pages: the details, and the thread of one of the bot's items pushed over them. */
+/** The sheet's pages: the details, and the thread of one of the bot's tasks pushed over them. */
 private sealed interface DetailsPage {
     data object Root : DetailsPage
-    data class Thread(val itemId: String) : DetailsPage
+    data class Thread(val taskId: String) : DetailsPage
 }
 
 /**
  * A bot's details (iOS `BotDetailsView`): who it is, then what it does (Details), its computer, library, memory and how it
- * is set up (Settings). Settings save as you edit. A row of an item a task has or had pushes its thread inside the sheet
- * ([WorkThreadView]); back returns to the details. `openInChat`: the chat at what a thread's task put there; `openCard`:
- * the chat at the card an item that needs you waits on (null where that chat isn't under the details: its thread
+ * is set up (Settings). Settings save as you edit. A row of a task a thread has or had pushes its thread inside the sheet
+ * ([WorkThreadView]); back returns to the details. `openInChat`: the chat at what a thread put there; `openCard`:
+ * the chat at the card a task that needs you waits on (null where that chat isn't under the details: its thread
  * opens). `openArtifact`: an artifact picked in the Library, for the chat's viewer.
  */
 @Composable internal fun BotDetailsView(bot: Bot, request: DetailsRequest, state: AppState, store: AppStore, openInChat: (Entry) -> Unit,
-    openCard: ((WorkItem) -> Unit)?, openArtifact: (OpenArtifact) -> Unit) {
+    openCard: ((WorkTask) -> Unit)?, openArtifact: (OpenArtifact) -> Unit) {
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.BotDetails))
     val dismiss = LocalDismissModal.current
     var tab by remember(request) { mutableStateOf(request.tab) }
@@ -93,11 +93,11 @@ private sealed interface DetailsPage {
         store.saveSettings(draft) { error -> if (shown.value) saveError = error else error?.let { store.showError(IOException(it)) } }
     }
     val tabs = listOfNotNull(DetailsTab.Details, DetailsTab.Computer, DetailsTab.Library.takeIf { hasLibrary(state.hello?.text("version")) }, DetailsTab.Memory, DetailsTab.Settings)
-    // The item whose thread is pushed over the details; the system back (and its gesture) returns to them.
-    var thread by remember(request) { mutableStateOf(request.itemId) }
-    NavStack(listOfNotNull(DetailsPage.Root, thread?.let(DetailsPage::Thread)), key = { (it as? DetailsPage.Thread)?.itemId.orEmpty() }, pop = { thread = null }) { page ->
+    // The task whose thread is pushed over the details; the system back (and its gesture) returns to them.
+    var thread by remember(request) { mutableStateOf(request.taskId) }
+    NavStack(listOfNotNull(DetailsPage.Root, thread?.let(DetailsPage::Thread)), key = { (it as? DetailsPage.Thread)?.taskId.orEmpty() }, pop = { thread = null }) { page ->
         when (page) {
-            is DetailsPage.Thread -> WorkThreadView(bot, page.itemId, state, store, openInChat = openInChat) { thread = null }
+            is DetailsPage.Thread -> WorkThreadView(bot, page.taskId, state, store, openInChat = openInChat) { thread = null }
             DetailsPage.Root -> Box(Modifier.fillMaxSize().background(Palette.background)) {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally) {

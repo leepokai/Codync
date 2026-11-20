@@ -236,7 +236,7 @@ final class LiveActivities {
                 Task.detached { await Self.find(ref)?.update(.init(state: state, staleDate: staleDate)) }
                 return
             }
-            // The call's own activity can't take the computer's updates: the task gets one that can, in its place.
+            // The call's own activity can't take the computer's updates: the bot's work gets one that can, in its place.
             let id = current.id
             Task.detached {
                 for activity in Activity<BotActivityAttributes>.activities where activity.id == id {
@@ -320,7 +320,7 @@ final class LiveActivities {
         // line is already visible in the app: shown while this phone is connected; APNs payloads carry no text.
         var state = CallActivity.withCall(.init(outside: bot), botId: ref.botId)
         state.customIconRevision = (bot.customIcon?.filename ?? "default") + (bot.customIcon?.tinted == true ? ":tint" : ":color")
-        // A call with the bot keeps its activity up after the task.
+        // A call with the bot keeps its activity up after the work.
         let working = bot.isBusyOutside || CallActivity.isLive(botId: ref.botId)
         Task.detached { await Self.apply(ref, state: state, end: !working) }
     }

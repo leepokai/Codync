@@ -1,6 +1,6 @@
 use super::*;
 use crate::remote::identity::Identity;
-use crate::usage::{Provider, Usage, Window};
+use crate::usage::{Checked, Provider, Usage, Window};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -136,7 +136,7 @@ async fn check_ins_wait_while_the_plan_is_nearly_used_up() {
                 text: None,
             }],
             source: "agent",
-            updated_at: 0,
+            checked: Checked::default(),
             default_login_profile: None,
             login_profiles: Vec::new(),
         }],

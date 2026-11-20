@@ -18,7 +18,8 @@ enum Line<'a> {
     /// A login of an agent that has several, by what it's called: the default login may have no name.
     Login(Option<&'a str>),
     Window(&'a Value),
-    NoReading,
+    /// A quiet line under a login: **No reading yet**, or **Out of date** when its last check failed.
+    Note(&'static str),
     Gap,
 }
 
@@ -29,15 +30,14 @@ fn lines(providers: &[Value]) -> Vec<Line<'_>> {
     for p in providers {
         lines.push(Line::Provider(p["name"].as_str().unwrap_or_default()));
         match p["loginProfiles"].as_array().filter(|profiles| !profiles.is_empty()) {
-            None => lines.extend(windows(p).iter().map(Line::Window)),
+            None => login(&mut lines, p),
             Some(profiles) => {
-                let default = p["defaultLoginProfile"].as_str();
-                let named = profiles.iter().map(|l| (l["name"].as_str(), windows(l)));
-                for (name, windows) in std::iter::once((default, windows(p))).chain(named) {
+                let named = profiles.iter().map(|l| (l["name"].as_str(), l));
+                for (name, l) in std::iter::once((p["defaultLoginProfile"].as_str(), p)).chain(named) {
                     lines.push(Line::Login(name));
-                    lines.extend(windows.iter().map(Line::Window));
-                    if windows.is_empty() {
-                        lines.push(Line::NoReading);
+                    login(&mut lines, l);
+                    if windows(l).is_empty() {
+                        lines.push(Line::Note("No reading yet"));
                     }
                 }
             }
@@ -45,6 +45,15 @@ fn lines(providers: &[Value]) -> Vec<Line<'_>> {
         lines.push(Line::Gap);
     }
     lines
+}
+
+/// A login's windows, marked **Out of date** when its last check failed (`failedAt`).
+fn login<'a>(lines: &mut Vec<Line<'a>>, login: &'a Value) {
+    let windows = windows(login);
+    lines.extend(windows.iter().map(Line::Window));
+    if !windows.is_empty() && login["failedAt"].is_i64() {
+        lines.push(Line::Note("Out of date"));
+    }
 }
 
 fn windows(of: &Value) -> &[Value] {
@@ -98,15 +107,8 @@ pub(super) fn usage(buf: &mut Buffer, area: Rect, app: &App, scroll: usize) {
                 put(buf, inner.x + 1, y, inner.width.saturating_sub(1), name.as_ref(), t.secondary.patch(t.panel));
             }
             Line::Window(win) => window(buf, inner, y, win),
-            Line::NoReading => {
-                put(
-                    buf,
-                    inner.x + 2,
-                    y,
-                    inner.width.saturating_sub(2),
-                    tr("No reading yet").as_ref(),
-                    t.dim.patch(t.panel),
-                );
+            Line::Note(note) => {
+                put(buf, inner.x + 2, y, inner.width.saturating_sub(2), tr(note).as_ref(), t.dim.patch(t.panel));
             }
             Line::Gap => {}
         }
@@ -253,6 +255,27 @@ mod tests {
         let at = |what: &str| text.find(what).unwrap_or_else(|| panic!("{what} in {text}"));
         assert!(at("Default login profile") < at("10% used") && at("10% used") < at("Work"), "{text}");
         assert!(at("Work") < at("90% used") && at("90% used") < at("Side") && at("Side") < at("No reading yet"));
+        assert!(!text.contains("Out of date"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_login_whose_check_failed_is_marked_out_of_date() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(Client::new("http://127.0.0.1:1", None), tx, String::new());
+        app.usage = json!({"providers": [
+            {"id": "claude", "name": "Claude", "windows": [{"label": "Weekly", "percent": 10}], "failedAt": 2},
+            {"id": "codex", "name": "Codex", "windows": [{"label": "Weekly", "percent": 20}],
+             "loginProfiles": [{"id": "a", "name": "Work", "windows": [{"label": "Weekly", "percent": 90}], "failedAt": 2}]},
+        ]});
+        let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+        let mut buf = ratatui::buffer::Buffer::empty(area);
+        super::usage(&mut buf, area, &app, 0);
+        let text: String = buf.content().iter().map(ratatui::buffer::Cell::symbol).collect();
+        let first = text.find("Out of date").unwrap_or_else(|| panic!("{text}"));
+        let last = text.rfind("Out of date").unwrap_or_default();
+        assert!(text.find("10% used") < Some(first) && Some(first) < text.find("Codex"), "{text}");
+        assert!(text.find("20% used") < text.find("Work") && text.find("90% used") < Some(last), "{text}");
+        assert_ne!(first, last, "{text}");
     }
 
     #[tokio::test]

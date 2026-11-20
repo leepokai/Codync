@@ -18,3 +18,10 @@ public struct BotMessage: Codable, Hashable, Sendable {
         self.peerName = peerName
     }
 }
+
+extension HostClient {
+    /// Continue on a bot chain stopped at its handoff limit: the bot gets "Continue" from the user, once.
+    public func continueChain(entryId: String) async throws {
+        let _: Empty = try await call("continueChain", ["entryId": entryId])
+    }
+}

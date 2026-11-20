@@ -232,8 +232,8 @@ meet in the same rules:
   file, once that turn ran a tool that can write files (an edit, delete, move or command), so a shell command meets
   the same rules. Any other change (an editor on the computer) is recorded as the computer's, unchecked: the user
   owns their computer. The opening shows such a line only once it passes the checks.
-- A turn is its actor's (`memory::turns`): the bot's, or one of its [tasks'](../features/background-tasks.md#memory).
-  A task's writes, by `edit_memory` or its own tools, are its own turn's: credited to its bot, made in the task's
+- A turn is its actor's (`memory::turns`): the bot's, or one of its [threads'](../features/work.md#memory).
+  A thread's writes, by `edit_memory` or its own tools, are its own turn's: credited to its bot, made in the thread's
   session, and under the rule of a turn the user didn't start, whatever the chat does meanwhile.
 
 Host writes (`edit_memory`, dreaming, the one-time moves) are compare-and-swap on the content's hash, through a
@@ -253,7 +253,7 @@ model's judgment.
   changes around it. The list catches known attack wording only; a planted fact in plain words passes, bounded by
   the turn rule below, the provenance the bot can't set, and dreaming's review.
 - **Who asked.** In a turn the user started in the bot's own chat, the bot may add, change and take out lines.
-  In any other turn (routines, webhooks, rooms, other bots, a message the host wrote in the user's place, a task
+  In any other turn (routines, webhooks, rooms, other bots, a message the host wrote in the user's place, a thread
   working in the background) it may only add lines. That keeps a routine or another bot that read a planted instruction from wiping memory; a bot
   told by a page the user had it read in their own turn still can.
 - **Forgetting.** When a change in the user's own turn takes a fact out of a layer, and no other file of the layer

@@ -175,9 +175,26 @@ pub enum Reported {
         opened: bool,
     },
     WhatsNewShown,
+    DesktopNotificationsSet {
+        on: bool,
+    },
+    DesktopNotificationOpened {
+        kind: AlertKind,
+    },
 }
 
 // Value lists. A value a newer client adds arrives as `other` instead of being refused.
+
+/// Which alert a desktop notification showed (`remote::push::AlertKind`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertKind {
+    Done,
+    NeedsInput,
+    Failed,
+    #[serde(other)]
+    Other,
+}
 
 /// What came of a desktop window whose page crashed: it loaded again, or crashed too often and stays down.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -309,8 +326,8 @@ pub enum Screen {
     Library,
     Artifact,
     Network,
-    /// A background task's details.
-    Task,
+    /// A background thread's details.
+    Thread,
     /// Every bot's work on one page.
     AllWork,
     #[serde(other)]
@@ -628,6 +645,14 @@ mod tests {
                 Event::KofiInviteAnswered,
             ),
             (json!({"event": "whats_new_shown", "app": "tui"}), Event::WhatsNewShown),
+            (
+                json!({"event": "desktop_notifications_set", "app": "desktop", "on": true}),
+                Event::DesktopNotificationsSet,
+            ),
+            (
+                json!({"event": "desktop_notification_opened", "app": "desktop", "kind": "needs_input"}),
+                Event::DesktopNotificationOpened,
+            ),
             (
                 json!({"event": "join_offer_answered", "app": "desktop", "outcome": "kept_out"}),
                 Event::JoinOfferAnswered,

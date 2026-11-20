@@ -8,4 +8,4 @@ Rules: [README](README.md).
 
 ## Fork
 
-Checked 2026-11-15 for background tasks ([spikes](../archive/background-tasks-plan-2026-11-15.md#spikes)). omp 18.14.0 (`omp acp`, model `deepseek/deepseek-v4-pro`) advertises `sessionCapabilities.fork: {}`, which the host reads (`host/src/agent/bot/launch.rs`). `session/fork` from a second process, right after the first one's turn and while it still held the session, returned a new session that knew the chat; the original never saw what the fork was told after. No history is replayed. The fork's first turn read 12,416 of 12,482 input tokens from the cache.
+Checked 2026-11-15 for threads ([spikes](../archive/background-tasks-plan-2026-11-15.md#spikes)). omp 18.14.0 (`omp acp`, model `deepseek/deepseek-v4-pro`) advertises `sessionCapabilities.fork: {}`, which the host reads (`host/src/agent/bot/launch.rs`). `session/fork` from a second process, right after the first one's turn and while it still held the session, returned a new session that knew the chat; the original never saw what the fork was told after. No history is replayed. The fork's first turn read 12,416 of 12,482 input tokens from the cache.

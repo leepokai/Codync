@@ -140,14 +140,14 @@ function syncOverStaleCache(stamp = 'older/2.0.0', hello: object = {}) {
 }
 
 test('an app update keeps the cursor of a copy synced under the same host schema', async () => {
-  const { store, nextStream } = syncOverStaleCache('1:schema 8', { version: '2.30.0', schema: 8 })
+  const { store, nextStream } = syncOverStaleCache('2:schema 8', { version: '2.30.0', schema: 8 })
   store.start()
   assert.match((await nextStream()).path, /since=77&/)
   store.retire()
 })
 
 test('a host that sends no schema keeps the cursor only within its version', async () => {
-  for (const [stamp, since] of [['1:2.29.0', 77], ['1:2.28.0', 0]] as const) {
+  for (const [stamp, since] of [['2:2.29.0', 77], ['2:2.28.0', 0]] as const) {
     const { store, nextStream } = syncOverStaleCache(stamp)
     store.start()
     assert.match((await nextStream()).path, new RegExp(`since=${since}&`), stamp)
@@ -156,7 +156,7 @@ test('a host that sends no schema keeps the cursor only within its version', asy
 })
 
 test('a new host schema refetches', async () => {
-  const { store, nextStream } = syncOverStaleCache('1:schema 8', { schema: 9 })
+  const { store, nextStream } = syncOverStaleCache('2:schema 8', { schema: 9 })
   store.start()
   assert.match((await nextStream()).path, /since=0&/)
   store.retire()
@@ -192,7 +192,7 @@ test('a refetch the link cut short starts over', async () => {
   assert.deepEqual(ids(), ['gone', 'kept', 'local-x'])
   second.send({ type: 'hello', hostId: 'h1', rev: 80 })
   assert.deepEqual(ids(), ['local-x'], "a host that doesn't say how long its catch-up is: the held entries go at its hello")
-  assert.equal(savedStamp(), '1:2.29.0')
+  assert.equal(savedStamp(), '2:2.29.0')
   store.retire()
 })
 

@@ -1,11 +1,14 @@
 import CodyncKit
 import SwiftUI
 
-/// "+" on the Codync Cloud card, three steps in one sheet: the provider (each with its region, and its key or what it
-/// costs), its key when it has none that works (`CloudKeyForm`), then the new computer's name. A provider with a key
-/// opens it, or removes it, from its row's `⋯`. At the account's limit it says so, and Create is off.
-struct NewCloudComputerSheet: View {
+/// "+" on the Codync Cloud card, or Start a cloud computer on the first-run pages: three steps in one sheet, the provider
+/// (each with its region, and its key or what it costs), its key when it has none that works (`CloudKeyForm`), then the
+/// new computer's name. A provider with a key opens it, or removes it, from its row's `⋯`. At the account's limit it
+/// says so, and Create is off.
+public struct NewCloudComputerSheet: View {
     let store: CloudMachineStore
+    /// The cloud made it; the sheet closes after.
+    var created: () -> Void = {}
     @Environment(\.dismissModal) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var step = Step.provider
@@ -18,7 +21,12 @@ struct NewCloudComputerSheet: View {
 
     private var creating: Bool { store.working == .creating }
 
-    var body: some View {
+    public init(store: CloudMachineStore, created: @escaping () -> Void = {}) {
+        self.store = store
+        self.created = created
+    }
+
+    public var body: some View {
         // One step at a time, swapped in place.
         ZStack {
             switch step {
@@ -175,6 +183,10 @@ struct NewCloudComputerSheet: View {
 
     private func create(on provider: CloudProvider) {
         guard provider.isReady, store.working == nil, !store.atLimit else { return }
-        Task { if await store.create(on: provider.provider, name: name) { dismiss() } }
+        Task {
+            guard await store.create(on: provider.provider, name: name) else { return }
+            created()
+            dismiss()
+        }
     }
 }

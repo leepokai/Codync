@@ -32,7 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.AllWork
 import com.codync.android.core.Bot
-import com.codync.android.core.WorkItem
+import com.codync.android.core.WorkTask
 import com.codync.android.core.allWork
 import com.codync.android.core.fill
 import com.codync.android.core.workSections
@@ -43,7 +43,7 @@ import com.kyant.shapes.Capsule
 internal class WorkingBot(val state: AppState, val bot: Bot)
 
 /**
- * The bots of the computers the roster shows ([shown], in its order) that have a live or waiting item, each computer's
+ * The bots of the computers the roster shows ([shown], in its order) that have a live or waiting task, each computer's
  * in the order its roster shows them (pinned, then section by section as [sectionOrder] has that computer's), a
  * folded section's or computer's included.
  */
@@ -51,8 +51,8 @@ internal fun allWork(shown: List<AppState>, sectionOrder: (AppState) -> List<Str
     allWork(shown.flatMap { state -> shownBots(roster(state.bots), sectionOrder(state)).map { WorkingBot(state, it) } }) { it.bot.work }
 
 /**
- * Opens the view of all bots' work: in the roster's header only while some bot has a live or waiting item, with how
- * many items are worked on (no number at none).
+ * Opens the view of all bots' work: in the roster's header only while some bot has a live or waiting task, with how
+ * many tasks are worked on (no number at none).
  */
 @Composable internal fun AllWorkButton(shown: Boolean, working: Int, open: () -> Unit) {
     AnimatedVisibility(shown, enter = fadeIn(Motion.fade()) + scaleIn(Motion.layout()), exit = fadeOut(Motion.fade()) + scaleOut(Motion.layout())) {
@@ -73,10 +73,10 @@ internal fun allWork(shown: List<AppState>, sectionOrder: (AppState) -> List<Str
 }
 
 /**
- * Every bot that has live or waiting items, in one sheet (the desktop's `AllWorkSheet`): the bot as a heading, which
+ * Every bot that has live or waiting tasks, in one sheet (the desktop's `AllWorkSheet`): the bot as a heading, which
  * opens its details ([openDetails]), over the rows its details have for them, with the same actions. A row that needs
- * the user opens the bot's chat at its card ([openCard]); any other row of an item a task has opens the bot's details at
- * its thread. It closes when the last item ends. [grouped]: several computers show, so a heading also names the bot's computer.
+ * the user opens the bot's chat at its card ([openCard]); any other row of a task a thread has opens the bot's details at
+ * its thread. It closes when the last task ends. [grouped]: several computers show, so a heading also names the bot's computer.
  */
 @Composable internal fun AllWorkSheet(open: Boolean, bots: List<WorkingBot>, grouped: Boolean, accounts: AccountStore, close: () -> Unit) {
     LaunchedEffect(open, bots.isEmpty()) { if (open && bots.isEmpty()) close() }
@@ -96,10 +96,10 @@ internal fun allWork(shown: List<AppState>, sectionOrder: (AppState) -> List<Str
 }
 
 /** One bot: its heading, then one card of its threads' rows and its event box's numbered rows. */
-@Composable private fun BotWork(working: WorkingBot, store: AppStore, grouped: Boolean, openDetails: () -> Unit, openCard: (WorkItem) -> Unit,
-    openThread: (WorkItem) -> Unit) {
+@Composable private fun BotWork(working: WorkingBot, store: AppStore, grouped: Boolean, openDetails: () -> Unit, openCard: (WorkTask) -> Unit,
+    openThread: (WorkTask) -> Unit) {
     val (state, bot) = working.state to working.bot
-    val work = workSections(bot.work, bot.maxAgents)
+    val work = workSections(bot.work, bot.maxThreads)
     val label = fill(tr("{name}, view details"), "name" to bot.name)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.plainButton(action = openDetails).clearAndSetSemantics { contentDescription = label }, verticalAlignment = Alignment.CenterVertically,

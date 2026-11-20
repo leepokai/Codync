@@ -122,9 +122,9 @@ extension BotStore {
 
     /// Sends a queued message now: into the bot's running turn when its agent can take it, else as its next turn. It
     /// leaves the queue once the computer says so.
-    /// `thread`: the item's thread the message waits in, not a chat.
+    /// `thread`: the task's thread the message waits in, not a chat.
     public func steer(_ entry: Entry, in thread: WorkThread? = nil) {
-        answer(entry, "steer") { try await $0.steer(botId: thread?.botId ?? entry.botId, entryId: entry.id, itemId: thread?.itemId) }
+        answer(entry, "steer") { try await $0.steer(botId: thread?.botId ?? entry.botId, entryId: entry.id, taskId: thread?.taskId) }
     }
 
     /// Takes back a queued message, which never goes out: gone at once, back if the computer refuses.
@@ -133,7 +133,7 @@ extension BotStore {
             if let thread {
                 var taken = entry
                 taken.data.removed = removed
-                Motion.animate { self.putTaskEntry(taken, task: thread.task) }
+                Motion.animate { self.putThreadEntry(taken, thread: thread.threadId) }
                 return
             }
             guard let i = self.entries[entry.botId]?.firstIndex(where: { $0.id == entry.id }) else { return }
@@ -142,7 +142,7 @@ extension BotStore {
         mark(true)
         Task {
             await attempt(undo: { mark(nil) }) {
-                try await $0.unqueue(botId: thread?.botId ?? entry.botId, entryId: entry.id, itemId: thread?.itemId)
+                try await $0.unqueue(botId: thread?.botId ?? entry.botId, entryId: entry.id, taskId: thread?.taskId)
             }
         }
     }
@@ -283,6 +283,12 @@ extension BotStore {
         answer(entry, "handoff") { try await $0.keepConversation(entryId: entry.id) }
     }
 
+    /// Continue on a chain stopped at its handoff limit: the bot gets "Continue" from the user; the notice's update
+    /// drops the button.
+    public func continueChain(_ entry: Entry) {
+        answer(entry, "continue") { try await $0.continueChain(entryId: entry.id) }
+    }
+
     /// Runs a failed routine run's work again, from its notice; the notice's update drops the button.
     public func retryRoutineRun(_ entry: Entry) {
         guard let runId = entry.data.runId else { return }
@@ -414,9 +420,9 @@ extension BotStore {
         try await ready().callEntries(botId: botId, call: call)
     }
 
-    /// A task's transcript, for its item's details. Never `upsert`ed: a task's entries stay out of chats.
-    public func fetchTaskEntries(_ botId: String, task: String) async throws -> [Entry] {
-        try await withLink(replay: true) { try await $0.taskEntries(botId: botId, taskId: task) }
+    /// A thread's transcript, for its page in the details. Never `upsert`ed: a thread's entries stay out of chats.
+    public func fetchThreadEntries(_ botId: String, thread: String) async throws -> [Entry] {
+        try await withLink(replay: true) { try await $0.threadEntries(botId: botId, threadId: thread) }
     }
 
     /// Has the bot's conversation open its details once it is on screen.
@@ -429,50 +435,50 @@ extension BotStore {
         return true
     }
 
-    /// Has the bot's conversation show the card `item` waits on once it is on screen.
-    public func requestCard(of botId: String, item: WorkItem) { cardRequest = (botId, item) }
+    /// Has the bot's conversation show the card `task` waits on once it is on screen.
+    public func requestCard(of botId: String, task: WorkTask) { cardRequest = (botId, task) }
 
     /// Consumed once, including when the conversation was already on screen.
-    func takeCardRequest(for botId: String) -> WorkItem? {
+    func takeCardRequest(for botId: String) -> WorkTask? {
         guard let request = cardRequest, request.botId == botId else { return nil }
         cardRequest = nil
-        return request.item
+        return request.task
     }
 
-    /// The card in the bot's chat that `item` waits on, read from the computer when this device doesn't hold it
+    /// The card in the bot's chat that `task` waits on, read from the computer when this device doesn't hold it
     /// yet: up to five pages of earlier messages. Nil when it isn't there.
-    public func card(for item: WorkItem, in botId: String) async -> Entry? {
+    public func card(for task: WorkTask, in botId: String) async -> Entry? {
         for _ in 0..<5 {
-            if let card = chat(botId).card(for: item) { return card }
+            if let card = chat(botId).card(for: task) { return card }
             guard canLoadOlder(botId) else { return nil }
             await loadOlder(botId)
         }
-        return chat(botId).card(for: item)
+        return chat(botId).card(for: task)
     }
 
-    /// Stops one working item of the bot's, or all of them (nil).
-    public func stopWork(_ botId: String, item: String?) {
-        perform(replay: true) { try await $0.stopWork(botId: botId, itemId: item) }
+    /// Stops one working task of the bot's, or all of them (nil).
+    public func stopWork(_ botId: String, task: String?) {
+        perform(replay: true) { try await $0.stopWork(botId: botId, taskId: task) }
     }
 
-    /// A waiting item moves to the front of the box.
-    public func workFirst(_ botId: String, item: String) {
-        perform(replay: true) { try await $0.work("workFirst", botId: botId, itemId: item) }
+    /// A waiting task moves to the front of the box.
+    public func workFirst(_ botId: String, task: String) {
+        perform(replay: true) { try await $0.work("workFirst", botId: botId, taskId: task) }
     }
 
-    /// A waiting item, or one that ended, leaves the box.
-    public func dropWork(_ botId: String, item: String) {
-        perform(replay: true) { try await $0.work("dropWork", botId: botId, itemId: item) }
+    /// A waiting task, or one that ended, leaves the box.
+    public func dropWork(_ botId: String, task: String) {
+        perform(replay: true) { try await $0.work("dropWork", botId: botId, taskId: task) }
     }
 
-    /// A stopped or failed item waits again, last.
-    public func retryWork(_ botId: String, item: String) {
-        perform { try await $0.work("retryWork", botId: botId, itemId: item) }
+    /// A stopped or failed task waits again, last.
+    public func retryWork(_ botId: String, task: String) {
+        perform { try await $0.work("retryWork", botId: botId, taskId: task) }
     }
 
-    /// Starts a waiting item now in the place of the working item `insteadOf`.
-    public func workCutIn(_ botId: String, item: String, insteadOf: String) {
-        perform { try await $0.workCutIn(botId: botId, itemId: item, insteadOf: insteadOf) }
+    /// Starts a waiting task now in the place of the working task `insteadOf`.
+    public func workCutIn(_ botId: String, task: String, insteadOf: String) {
+        perform { try await $0.workCutIn(botId: botId, taskId: task, insteadOf: insteadOf) }
     }
 
     /// The bot-to-bot notices between a chat and a peer. Never `upsert`ed: old notices in the

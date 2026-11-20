@@ -47,7 +47,7 @@ impl Actor {
             return Err(Declined::Session);
         }
         // A thread's card takes presses only, so a question only typed words answer can't wait there.
-        if !self.can_ask() || (form.free_text() && self.cfg.is_task()) {
+        if !self.can_ask() || (form.free_text() && self.cfg.is_thread()) {
             return Err(Declined::Elsewhere);
         }
         if !self.asked.is_empty() {

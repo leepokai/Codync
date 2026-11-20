@@ -161,12 +161,12 @@ command, its login profile, and its model options while the model stays. An agen
 login profile keeps them in order (the n-th step of an agent is the n-th saved one of it), and the notice names each
 step's login profile ("Fallbacks set: Claude Code (Work)").
 
-## Background tasks
+## Threads
 
-A bot's [background tasks](background-tasks.md#fallbacks-and-sign-in) run the same chain, and get a change to it at
-once. Their sign-in cards and offers to add a fallback go to the bot's chat, marked as the item's; an item whose
+A bot's [threads](work.md#fallbacks-and-sign-in) run the same chain, and get a change to it at
+once. Their sign-in cards and offers to add a fallback go to the bot's chat, marked as the task's; a task whose
 agents can't take its turn until the user signs in waits for that (needs you) instead of failing, and goes on in
-the same task once they have.
+the same thread once they have.
 
 ## Apps
 

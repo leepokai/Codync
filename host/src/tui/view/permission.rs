@@ -63,8 +63,8 @@ fn option_keys(opts: &[(String, String, String)]) -> Vec<String> {
 }
 
 /// A bot's choice card (`request_decision`): the bot's name heads it, its question in bold, then a button per option
-/// (the suggested one marked) and a pointer to the message box for the user's own words. A task's card says where it
-/// comes from and has no such pointer: a typed message is for the bot in the chat, and only a pick answers the task.
+/// (the suggested one marked) and a pointer to the message box for the user's own words. A thread's card says where it
+/// comes from and has no such pointer: a typed message is for the bot in the chat, and only a pick answers the thread.
 pub(super) fn decision_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, width: usize) {
     let t = theme();
     let answering = app.answering.get(&e.id);
@@ -155,11 +155,11 @@ pub(super) fn chosen_line(out: &mut Built, e: &Entry) {
     ]));
 }
 
-/// Where what a background task posts in the chat (a card, a file, an artifact) comes from: `In the background ·
-/// <its item's title>`; none for the chat's own.
+/// Where what a background thread posts in the chat (a card, a file, an artifact) comes from: `Work ·
+/// <its task's title>`; none for the chat's own.
 pub(super) fn background_line(e: &Entry) -> Option<String> {
-    let task = e.data["task"]["title"].as_str()?;
-    Some(format!("{} · {task}", tr("In the background")))
+    let thread = e.data["thread"]["title"].as_str()?;
+    Some(format!("{} · {thread}", tr("Work")))
 }
 
 pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, width: usize) {
@@ -313,7 +313,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_tasks_card_says_it_comes_from_the_background() {
+    async fn a_threads_card_says_it_comes_from_the_background() {
         use serde_json::json;
         let app = crate::tui::app::test_app();
         let bot = Bot::parse(&json!({"id": "a", "name": "Ada"})).expect("a bot with an id parses");
@@ -325,15 +325,15 @@ mod tests {
             out.lines.iter().map(ToString::to_string).collect::<Vec<_>>()
         };
         let own = card(json!({"status": "pending", "title": "Run tests", "options": []}));
-        let task = card(json!({"status": "pending", "title": "Run tests", "options": [],
-            "task": {"id": "task-1", "title": "Fix login"}}));
-        assert_eq!(task.len(), own.len() + 1);
-        assert!(task[1].contains("In the background · Fix login"), "{task:?}");
-        assert!(!own.iter().any(|l| l.contains("In the background")));
+        let thread = card(json!({"status": "pending", "title": "Run tests", "options": [],
+            "thread": {"id": "thread-1", "title": "Fix login"}}));
+        assert_eq!(thread.len(), own.len() + 1);
+        assert!(thread[1].contains("Work · Fix login"), "{thread:?}");
+        assert!(!own.iter().any(|l| l.contains("Work")));
     }
 
     #[tokio::test]
-    async fn a_tasks_choice_card_says_where_it_comes_from_and_takes_no_typed_answer() {
+    async fn a_threads_choice_card_says_where_it_comes_from_and_takes_no_typed_answer() {
         use serde_json::json;
         let app = crate::tui::app::test_app();
         let bot = Bot::parse(&json!({"id": "a", "name": "Ada"})).expect("a bot with an id parses");
@@ -348,13 +348,13 @@ mod tests {
             (out.lines.iter().map(ToString::to_string).collect::<Vec<_>>(), out.buttons.len())
         };
         let (own, own_buttons) = card(json!({}));
-        let (task, task_buttons) = card(json!({"task": {"id": "task-1", "title": "Fix login"}, "item": "i"}));
+        let (thread, thread_buttons) = card(json!({"thread": {"id": "thread-1", "title": "Fix login"}, "task": "i"}));
         assert!(own.iter().any(|l| l.contains("↓ Something else")), "{own:?}");
-        assert!(!own.iter().any(|l| l.contains("In the background")));
-        assert!(task[1].contains("In the background · Fix login"), "{task:?}");
-        assert!(task[2].contains("Squash or merge?"), "{task:?}");
-        assert!(!task.iter().any(|l| l.contains("Something else")), "only a pick answers a task's card");
-        assert_eq!((own_buttons, task_buttons), (2, 2), "the options are pressed as on any card");
+        assert!(!own.iter().any(|l| l.contains("Work")));
+        assert!(thread[1].contains("Work · Fix login"), "{thread:?}");
+        assert!(thread[2].contains("Squash or merge?"), "{thread:?}");
+        assert!(!thread.iter().any(|l| l.contains("Something else")), "only a pick answers a thread's card");
+        assert_eq!((own_buttons, thread_buttons), (2, 2), "the options are pressed as on any card");
     }
 
     #[test]

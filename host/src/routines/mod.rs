@@ -108,7 +108,7 @@ pub struct Run {
     /// This failed run can be retried by the user, so it keeps its event until then.
     #[serde(default)]
     pub retryable: bool,
-    /// It is an item in its bot's box (`chat::tasks`), which says where it stands, not a turn in the chat.
+    /// It is a task in its bot's box (`chat::work`), which says where it stands, not a turn in the chat.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub boxed: bool,
 }
@@ -183,7 +183,7 @@ impl Routines {
         for run in &mut state.runs {
             match run.status {
                 Status::Starting => run.status = Status::Pending,
-                // A run in the box is its task's to resume (`chat::tasks::restore`).
+                // A run in the box is its thread's to resume (`chat::work::restore`).
                 Status::Running | Status::Recovering if !run.boxed => {
                     run.status = Status::Recovering;
                     run.finished_at = None;
@@ -509,7 +509,7 @@ pub fn notice_id(run_id: &str) -> String {
     format!("routine-{run_id}")
 }
 
-/// The reply of a run that worked in the box, which the host posts for it (`chat::tasks`).
+/// The reply of a run that worked in the box, which the host posts for it (`chat::work`).
 pub fn reply_id(run_id: &str) -> String {
     format!("routine-reply-{run_id}")
 }

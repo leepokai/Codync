@@ -5,7 +5,7 @@ steered by the bot with four task tools. Before any release it became a queue of
 ([the event box](../plans/event-box.md)), which replaced those tools, the `stopTask` method, the bot's `tasks` list,
 the `task_*` analytics events and the limits by bot and by computer. **Current:**
 [the event box](../plans/event-box.md) (the design and what is left) and
-[background tasks](../features/background-tasks.md) (what is built). What stays here is the reasoning that still
+[background tasks](../features/work.md) (what is built). What stays here is the reasoning that still
 holds: why a task is a bot of its own, fork or brief, the report, and the spikes.
 
 ## Decisions made with the owner

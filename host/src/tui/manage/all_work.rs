@@ -1,10 +1,10 @@
-//! Every bot's work on one page (`E` from the roster): each bot that has a live or waiting item, in the roster's
+//! Every bot's work on one page (`E` from the roster): each bot that has a live or waiting task, in the roster's
 //! order, with its Threads rows and its numbered Event box rows under its name. The rows and their keys are the
 //! Details page's (`work.rs`).
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use super::super::app::{App, Bot, Overlay, Sections, WorkItem, can_cut_in};
+use super::super::app::{App, Bot, Overlay, Sections, WorkTask, can_cut_in};
 use super::{DetailRow, WorkAct};
 
 /// The page of every bot's work.
@@ -12,7 +12,7 @@ use super::{DetailRow, WorkAct};
 pub struct AllWork {
     /// The row the cursor was last on: where it stays when its row is gone.
     pub cursor: usize,
-    /// That row's id (a bot's or an item's): rows come and go with no key pressed, and the cursor stays on its row.
+    /// That row's id (a bot's or a task's): rows come and go with no key pressed, and the cursor stays on its row.
     pub on: Option<String>,
 }
 
@@ -20,22 +20,22 @@ pub struct AllWork {
 pub enum AllWorkRow<'a> {
     /// A bot's name: opens its Details.
     Bot(&'a Bot),
-    /// One of that bot's items, as on its Details page.
-    Item(&'a Bot, DetailRow<'a>),
+    /// One of that bot's tasks, as on its Details page.
+    Task(&'a Bot, DetailRow<'a>),
 }
 
 impl AllWorkRow<'_> {
     fn id(&self) -> &str {
         match self {
             Self::Bot(bot) => &bot.id,
-            Self::Item(_, row) => row.id(),
+            Self::Task(_, row) => row.id(),
         }
     }
 }
 
-/// Whether `bot` has an item a task has or that waits for one: the bots the page lists.
+/// Whether `bot` has a task a thread has or that waits for one: the bots the page lists.
 fn has_work(bot: &Bot) -> bool {
-    bot.work.iter().any(WorkItem::open)
+    bot.work.iter().any(WorkTask::open)
 }
 
 impl AllWork {
@@ -45,9 +45,9 @@ impl AllWork {
         for &bot in roster.iter().filter(|b| has_work(b)) {
             let Sections { threads, waiting, .. } = Sections::of(&bot.work);
             out.push(AllWorkRow::Bot(bot));
-            out.extend(threads.into_iter().map(|item| AllWorkRow::Item(bot, DetailRow::Thread(item))));
+            out.extend(threads.into_iter().map(|task| AllWorkRow::Task(bot, DetailRow::Thread(task))));
             let numbered = waiting.into_iter().enumerate();
-            out.extend(numbered.map(|(i, item)| AllWorkRow::Item(bot, DetailRow::Waiting(i + 1, item))));
+            out.extend(numbered.map(|(i, task)| AllWorkRow::Task(bot, DetailRow::Waiting(i + 1, task))));
         }
         out
     }
@@ -60,7 +60,7 @@ impl AllWork {
 }
 
 impl App {
-    /// Whether any bot of the roster has a live or waiting item: while one does, `E` is offered.
+    /// Whether any bot of the roster has a live or waiting task: while one does, `E` is offered.
     pub(in crate::tui) fn any_work(&self) -> bool {
         self.bots.values().any(|b| !b.hidden && has_work(b))
     }
@@ -70,7 +70,7 @@ impl App {
         if self.any_work() {
             self.overlays.push(Overlay::AllWork(AllWork::default()));
         } else {
-            self.flash("Nothing in the background");
+            self.flash("No work");
         }
     }
 
@@ -105,12 +105,12 @@ impl App {
                 self.open_details();
                 None
             }
-            Some(AllWorkRow::Item(bot, row)) => {
-                let full = can_cut_in(&bot.work, bot.max_agents);
-                let found = WorkAct::of(k.code, row, full).zip(row.item().cloned());
-                let Some((act, item)) = found else { return Some(Overlay::AllWork(p)) };
+            Some(AllWorkRow::Task(bot, row)) => {
+                let full = can_cut_in(&bot.work, bot.max_threads);
+                let found = WorkAct::of(k.code, row, full).zip(row.task().cloned());
+                let Some((act, task)) = found else { return Some(Overlay::AllWork(p)) };
                 let bot = bot.id.clone();
-                self.work_act(&bot, act, &item, Overlay::AllWork(p))
+                self.work_act(&bot, act, &task, Overlay::AllWork(p))
             }
             _ => Some(Overlay::AllWork(p)),
         }
@@ -124,13 +124,13 @@ mod tests {
     use super::*;
     use serde_json::{Value, json};
 
-    /// Bot `id` at roster place `position` with these items (id, status).
-    fn bot(app: &mut App, id: &str, position: i64, items: &[(&str, &str)]) {
-        let work: Vec<Value> = items
+    /// Bot `id` at roster place `position` with these tasks (id, status).
+    fn bot(app: &mut App, id: &str, position: i64, tasks: &[(&str, &str)]) {
+        let work: Vec<Value> = tasks
             .iter()
-            .map(|(item, status)| json!({"id": item, "title": item, "status": status, "task": format!("task-{item}")}))
+            .map(|(task, status)| json!({"id": task, "title": task, "status": status, "thread": format!("thread-{task}")}))
             .collect();
-        let bot = json!({"id": id, "name": id.to_uppercase(), "position": position, "work": work, "maxAgents": 1});
+        let bot = json!({"id": id, "name": id.to_uppercase(), "position": position, "work": work, "maxThreads": 1});
         app.on_msg(Msg::Event(json!({"type": "bot", "bot": bot})));
     }
 
@@ -139,8 +139,8 @@ mod tests {
         rows.iter()
             .map(|row| match row {
                 AllWorkRow::Bot(bot) => bot.name.clone(),
-                AllWorkRow::Item(_, DetailRow::Waiting(place, item)) => format!("{place}:{}", item.id),
-                AllWorkRow::Item(_, row) => row.id().to_owned(),
+                AllWorkRow::Task(_, DetailRow::Waiting(place, task)) => format!("{place}:{}", task.id),
+                AllWorkRow::Task(_, row) => row.id().to_owned(),
             })
             .collect()
     }
@@ -162,10 +162,10 @@ mod tests {
         bot(&mut app, "c", 3, &[("c1", "waiting"), ("c2", "waiting")]);
         bot(&mut app, "a", 1, &[("a1", "working"), ("a2", "needsYou"), ("a3", "waiting"), ("a4", "done")]);
         bot(&mut app, "b", 2, &[("b1", "done"), ("b2", "failed")]);
-        assert_eq!(listed(&app), ["A", "a2", "a1", "1:a3", "C", "1:c1", "2:c2"], "no idle bot, no ended item");
+        assert_eq!(listed(&app), ["A", "a2", "a1", "1:a3", "C", "1:c1", "2:c2"], "no idle bot, no ended task");
         assert!(app.any_work());
 
-        // `E` opens it only while some bot has such items, and it closes when the last one is over.
+        // `E` opens it only while some bot has such tasks, and it closes when the last one is over.
         key(&mut app, 'E');
         assert_eq!(on_row(&app), "a", "on the first bot");
         bot(&mut app, "a", 1, &[("a4", "done")]);
@@ -175,7 +175,7 @@ mod tests {
         assert!(!app.any_work());
         key(&mut app, 'E');
         assert!(app.overlays.is_empty());
-        assert_eq!(app.hint.take().map(|(text, _)| text).as_deref(), Some("Nothing in the background"));
+        assert_eq!(app.hint.take().map(|(text, _)| text).as_deref(), Some("No work"));
     }
 
     #[tokio::test]
@@ -190,18 +190,18 @@ mod tests {
         // A thread: its transcript, and X asks before it stops, of the row's own bot.
         key(&mut app, 'j');
         enter(&mut app);
-        assert!(matches!(app.overlays.pop(), Some(Overlay::Task(s)) if s.bot == "a" && s.task == "task-a1"));
+        assert!(matches!(app.overlays.pop(), Some(Overlay::Thread(s)) if s.bot == "a" && s.thread == "thread-a1"));
         key(&mut app, 'X');
         assert!(matches!(
             app.overlays.pop(),
-            Some(Overlay::Confirm(Confirm { act: ConfirmAct::StopWork { bot, item }, .. })) if bot == "a" && item == "a1"
+            Some(Overlay::Confirm(Confirm { act: ConfirmAct::StopWork { bot, task }, .. })) if bot == "a" && task == "a1"
         ));
         // The first in line cuts in (the bot's one place is taken); the next moves first or is dropped.
         key(&mut app, 'j');
         key(&mut app, 'F');
         assert!(matches!(app.overlays.last(), Some(Overlay::AllWork(_))), "the first is first already");
         key(&mut app, 'C');
-        assert!(matches!(app.overlays.pop(), Some(Overlay::CutIn(c)) if c.bot == "a" && c.item == "a3"));
+        assert!(matches!(app.overlays.pop(), Some(Overlay::CutIn(c)) if c.bot == "a" && c.task == "a3"));
         key(&mut app, 'j');
         for c in ['C', 'F', 'D', 'A'] {
             key(&mut app, c);

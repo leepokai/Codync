@@ -61,11 +61,11 @@ async fn an_artifact_card_is_one_line_with_its_newest_title() {
 }
 
 #[tokio::test]
-async fn what_a_task_shares_in_the_chat_says_it_comes_from_the_background() {
+async fn what_a_thread_shares_in_the_chat_says_it_comes_from_the_background() {
     use crate::tui::app::Msg;
     use serde_json::json;
     let mut app = app_with_bots();
-    let task = json!({"id": "task-1", "title": "Fix login"});
+    let thread = json!({"id": "thread-1", "title": "Fix login"});
     let shared = [
         ("file", json!({"files": [{"id": "f", "name": "report.pdf", "size": 2048, "sha256": "hash"}]})),
         (
@@ -75,15 +75,15 @@ async fn what_a_task_shares_in_the_chat_says_it_comes_from_the_background() {
         ("card", json!({"artifact": {"id": "p", "title": "Weekly report", "updatedAt": 1}})),
     ];
     for (seq, (id, more)) in (1..).zip(&shared) {
-        // Each once from a task and once from the chat itself.
-        for (from_task, id) in [(true, format!("task-{id}")), (false, format!("own-{id}"))] {
+        // Each once from a thread and once from the chat itself.
+        for (from_thread, id) in [(true, format!("thread-{id}")), (false, format!("own-{id}"))] {
             let mut data = json!({"author": "a", "text": "Said aloud.", "final": true});
             data.as_object_mut().unwrap().extend(more.as_object().cloned().unwrap());
-            if from_task {
-                data["task"] = task.clone();
-                data["item"] = "i".into();
+            if from_thread {
+                data["thread"] = thread.clone();
+                data["task"] = "i".into();
             }
-            let seq = seq * 2 + i64::from(from_task);
+            let seq = seq * 2 + i64::from(from_thread);
             app.on_msg(Msg::Event(
                 json!({"type": "entry", "entry": {"id": id, "botId": "a", "seq": seq, "kind": "agent",
                 "turn": seq, "data": data}}),
@@ -92,8 +92,8 @@ async fn what_a_task_shares_in_the_chat_says_it_comes_from_the_background() {
     }
     let chat = build_chat(&app, &app.bots["a"], 80);
     let lines: Vec<_> = chat.lines.iter().map(ToString::to_string).collect();
-    let from: Vec<usize> = (0..lines.len()).filter(|i| lines[*i] == " In the background · Fix login").collect();
-    assert_eq!(from.len(), 3, "the task's three, none of the chat's own: {lines:?}");
+    let from: Vec<usize> = (0..lines.len()).filter(|i| lines[*i] == " Work · Fix login").collect();
+    assert_eq!(from.len(), 3, "the thread's three, none of the chat's own: {lines:?}");
     let under = |at: usize, text: &str| lines[at + 1].contains(text);
     assert!(
         lines.iter().filter(|l| l.contains("report.pdf")).count() == 2

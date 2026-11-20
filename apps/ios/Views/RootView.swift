@@ -17,6 +17,12 @@ struct RootView: View {
     @State private var pairingNew = false
     /// The account computer the choice page is asking for access.
     @State private var asking: CloudComputer?
+    /// New cloud computer, opened from the first-run pages.
+    @State private var startsCloud = false
+    /// A cloud computer was made there: setup waits for it (`CloudStartView`) until it's reached.
+    @State private var startedCloud = false
+    /// Cloud computers the wait was left with Back: setup doesn't wait for them again.
+    @State private var passedCloud: Set<String> = []
 
     /// The open bot, as a NavigationStack path.
     private var path: Binding<[BotReference]> {
@@ -43,10 +49,12 @@ struct RootView: View {
         .onChange(of: account.isSignedIn) { _, signedIn in
             if signedIn { withoutAccount = false }
         }
+        // A cloud computer made here belongs to that account: another one's newest isn't waited for.
+        .onChange(of: accounts.accountId) { startedCloud = false }
         .onChange(of: accounts.computers.isEmpty, initial: true) { _, empty in
             // Reaching a computer (paired, or approved through the account) or explicitly skipping completes
             // setup. Keep this device-level milestone across account changes and unpairing.
-            if !empty { completeOnboarding(via: accounts.approvedAccess.isEmpty ? .paired : .account) }
+            if !empty { completeOnboarding(via: startedCloud ? .cloud : accounts.approvedAccess.isEmpty ? .paired : .account) }
         }
         .codyncDialog("Something went wrong", isPresented: errorShown, message: errorMessage, cancel: "OK", inPlace: true) { [] }
         .codyncOverlay(isPresented: Binding(get: { screenTarget.wrappedValue != nil }, set: { if !$0 { screenTarget.wrappedValue = nil } })) { close in
@@ -57,6 +65,10 @@ struct RootView: View {
             }
         }
         .codyncSheet(isPresented: Bindable(app).showComputers) { ComputersView() }
+        // Here, not on the setup pages: the wait for the new computer replaces them as the sheet closes.
+        .codyncSheet(isPresented: $startsCloud) {
+            if let store = accounts.cloudMachine { NewCloudComputerSheet(store: store) { animateSetup { startedCloud = true } } }
+        }
         // Here, not on the choice page: approval replaces that page while this sheet says so.
         .codyncSheet(item: $asking) { computer in
             AccessRequestView(computer: computer, pending: accounts.pendingAccess[computer.computerId])
@@ -71,8 +83,14 @@ struct RootView: View {
     }
 
     /// First run, until a computer is reached or setup is skipped.
-    @ViewBuilder
     private var setup: some View {
+        setupPage
+            // Whether Codync Cloud is open to this account, and a cloud computer still preparing from before.
+            .task(id: account.isSignedIn ? accounts.accountId : nil) { if account.isSignedIn { await accounts.cloudMachine?.refresh() } }
+    }
+
+    @ViewBuilder
+    private var setupPage: some View {
         if !welcomed && !account.isSignedIn && !withoutAccount {
             WelcomeView { animateSetup { welcomed = true } }
                 .transition(.move(edge: .leading).combined(with: .opacity))
@@ -81,14 +99,28 @@ struct RootView: View {
             Spinner(size: 28)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .transition(.opacity)
+        } else if let machine = cloudStart {
+            // In the account, not on this iPhone yet: a lookup or request the network lost is asked again while it waits.
+            let reaching = machine.start == .connecting ? machine.computerId : nil
+            CloudStartView(machine: machine, back: {
+                animateSetup {
+                    startedCloud = false
+                    passedCloud.insert(machine.id)
+                }
+            }, skip: { completeOnboarding(via: .skipped) }) {
+                AccountSwitcherButton()
+            }
+            .task(id: reaching) { if let reaching { await accounts.reachCloudComputer(reaching) } }
+            .transition(.opacity)
         } else if !pairingNew && !askableComputers.isEmpty {
             ChooseComputerView(computers: askableComputers, ask: { asking = $0 },
-                               pairNew: { animateSetup { pairingNew = true } }, skip: { completeOnboarding(via: .skipped) }) {
+                               pairNew: { animateSetup { pairingNew = true } }, skip: { completeOnboarding(via: .skipped) },
+                               startCloud: startCloud) {
                 AccountSwitcherButton()
             }
             .transition(.move(edge: .leading).combined(with: .opacity))
         } else {
-            PairingView(onSkip: { completeOnboarding(via: .skipped) }, onContinue: { pairingNew = true }) {
+            PairingView(onSkip: { completeOnboarding(via: .skipped) }, onContinue: { pairingNew = true }, startCloud: startCloud) {
                 if !askableComputers.isEmpty {
                     BackButton { animateSetup { pairingNew = false } }
                 } else if account.isSignedIn {
@@ -106,8 +138,8 @@ struct RootView: View {
         }
     }
 
-    /// The system tab bar; every tab stays alive (scroll position, open thread) and the bar hides while a
-    /// thread is open.
+    /// The system tab bar; every tab stays alive (scroll position, open chat) and the bar hides while a
+    /// chat is open.
     private var tabs: some View {
         TabView(selection: Bindable(app).tab) {
             Tab(L10n.tr("Bots"), systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.bots) {
@@ -156,6 +188,17 @@ struct RootView: View {
         account.isConfigured && !account.isSignedIn && !withoutAccount && (account.isReady || accounts.accountId == nil)
     }
 
+    /// The cloud computer setup waits for: one still preparing (made here, or on another device) and not left with Back,
+    /// or the one made here.
+    private var cloudStart: CloudMachine? {
+        account.isSignedIn ? accounts.cloudMachine?.starting(started: startedCloud, passed: passedCloud) : nil
+    }
+
+    /// Opens New cloud computer from the setup pages, while Codync Cloud is open to the account.
+    private var startCloud: (() -> Void)? {
+        account.isSignedIn && accounts.cloudMachine?.available == true ? { startsCloud = true } : nil
+    }
+
     /// What the choice page offers: an older copy of a computer doesn't count as one more.
     private var askableComputers: [CloudComputer] {
         accounts.cloudComputers.filter { !accounts.isOlderCopy($0) }
@@ -192,7 +235,7 @@ struct RootView: View {
         var id: String { "\(computerId)/\(request.id)" }
     }
 
-    /// Any computer's "open the screen" request (thread toolbar, computers list, `codync://screen`).
+    /// Any computer's "open the screen" request (chat toolbar, computers list, `codync://screen`).
     private var screenTarget: Binding<ScreenTarget?> {
         Binding(get: {
             accounts.computers.lazy.compactMap { c in
@@ -212,7 +255,7 @@ private struct ChatScreen: View {
 
     var body: some View {
         if let store = accounts.store(for: ref.computerId) {
-            ThreadView(botId: ref.botId)
+            ChatView(botId: ref.botId)
                 .environment(store)
         } else {
             VStack(spacing: 0) {

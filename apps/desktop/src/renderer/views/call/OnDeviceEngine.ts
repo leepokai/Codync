@@ -1,7 +1,7 @@
 import type { SpeechEvent } from '@shared/ipc'
 import { onDeviceUnavailableReason, spokenText, VoiceEngine, VoiceSettings, type VoiceFailureKind } from './voice'
 import { trNow } from '../../lib/l10n.ts'
-import { SpeechSegments } from '../thread/speech-segments.ts'
+import { SpeechSegments } from '../chat/speech-segments.ts'
 
 /**
  * The reply's language from its script, for picking a voice (replies may be English while the

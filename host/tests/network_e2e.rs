@@ -371,9 +371,9 @@ async fn a_rule_at_ask_holds_a_bot_that_approves_by_itself_to_asking() {
     let told = prompts.lines().last().unwrap();
     assert!(told.contains("a computer the user trusts less than this one"), "{told}");
 
-    // A task of the reviewer answers it: only reading and answering the user are left to that task.
-    let task = card["data"]["task"]["id"].as_str().expect("a task's card").to_owned();
-    let tool = |name: &str, arguments: Value| json!({"botId": task, "name": name, "arguments": arguments});
+    // A thread of the reviewer answers it: only reading and answering the user are left to that thread.
+    let thread = card["data"]["thread"]["id"].as_str().expect("a thread's card").to_owned();
+    let tool = |name: &str, arguments: Value| json!({"botId": thread, "name": name, "arguments": arguments});
     let command = format!("{} -c \"import time; time.sleep(300)\"", common::python());
     let server = desk.refused("chatCall", tool("start_dev_server", json!({"command": command}))).await;
     assert!(server.contains("start_dev_server isn't available in this turn"), "{server}");
@@ -382,7 +382,7 @@ async fn a_rule_at_ask_holds_a_bot_that_approves_by_itself_to_asking() {
     desk.call("respondPermission", json!({"entryId": card["id"], "optionId": "allow"})).await;
     laptop.wait_for(&lead, relayed("Relayed: reply: PERMISSION second")).await;
 
-    // The user's own message runs in the chat as the bot is set: only the task's session was held.
+    // The user's own message runs in the chat as the bot is set: only the thread's session was held.
     desk.call("send", json!({"botId": reviewer, "text": "PERMISSION mine"})).await;
     desk.wait_for(&reviewer, relayed("reply: PERMISSION mine")).await;
     assert_eq!(switched(&desk, "Reviewer"), ["default"]);
@@ -399,9 +399,9 @@ async fn a_rule_at_ask_holds_a_bot_that_approves_by_itself_to_asking() {
     let told = prompts.lines().last().unwrap();
     assert!(told.contains("these are bot replies") && told.contains("a computer the user trusts less"), "{told}");
     // The ceiling stands past that turn's end: background work would run without it.
-    let work = json!({"botId": lead, "name": "add_work", "arguments": {"title": "More", "brief": "More"}});
+    let work = json!({"botId": lead, "name": "add_task", "arguments": {"title": "More", "brief": "More"}});
     let refused = laptop.refused("chatCall", work).await;
-    assert!(refused.contains("add_work isn't available in this turn"), "{refused}");
+    assert!(refused.contains("add_task isn't available in this turn"), "{refused}");
 
     // That turn messages no one: the answer's text can't travel on to a bot that isn't held to the ceiling.
     std::fs::write(desk.home.join("Reviewer/handoff.json"), r#"{"target":"lead@laptop"}"#).unwrap();

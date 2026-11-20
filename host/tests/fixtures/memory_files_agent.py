@@ -31,7 +31,7 @@ for line in sys.stdin:
                   "agentCapabilities": {"sessionCapabilities": {"systemPrompt": {}, "additionalDirectories": {}}}}
     elif method == "session/new":
         sessions += 1
-        # Unique across the bot's processes, as a real agent's ids are: a task has an agent process of its own.
+        # Unique across the bot's processes, as a real agent's ids are: a thread has an agent process of its own.
         result = {"sessionId": f"s{os.getpid()}-{sessions}"}
     elif method == "session/prompt":
         session = params["sessionId"]

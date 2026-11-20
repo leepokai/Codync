@@ -62,6 +62,17 @@ import Testing
         #expect(provider.tightest?.percent == 90)
     }
 
+    @Test func aLoginWhoseCheckFailedIsOutOfDate() throws {
+        let json = #"""
+        {"id":"claude","name":"Claude","windows":[{"id":"w","label":"Weekly","percent":10}],"source":"claude","updatedAt":1,
+         "failedAt":2,"loginProfiles":[{"id":"work","name":"Work","windows":[],"updatedAt":0,"failedAt":2},
+                                       {"id":"ok","name":"OK","windows":[{"id":"w","label":"Weekly","percent":5}],"updatedAt":1}]}
+        """#
+        let provider = try JSONDecoder().decode(UsageProvider.self, from: Data(json.utf8))
+        // One with nothing read says "No reading yet" instead.
+        #expect(provider.logins.map(\.isOutOfDate) == [true, false, false])
+    }
+
     @Test func aNoteNeverMakesALoginTheTightest() {
         let window = { (percent: Double, text: String?) in UsageWindow(id: "w", label: "Weekly", percent: percent, text: text) }
         let note = UsageLoginProfile(id: "key", name: "Key", windows: [window(100, "$4.20")], updatedAt: 0)

@@ -88,13 +88,13 @@ it has no pointer tooltip or link-opening action.
   user's own chips; it isn't tappable, and a bot that was deleted drops out. The terminal UI lists
   `❤️ Ann, Ben` after the user's reactions.
 
-## Background tasks in the chat
+## Threads in the chat
 
-A [background task](background-tasks.md)'s own transcript never enters the chat. Three things of it do:
+A [thread](work.md)'s own transcript never enters the chat. Three things of it do:
 
-- **Its approval cards**: a permission entry in the bot's chat with `data.task = {id, title}` (the title is its
-  item's) and `data.item`, the item's id, shown with the line
-  `In the background · <title>` and answered like any card (`respondPermission` reaches the task's actor).
+- **Its approval cards**: a permission entry in the bot's chat with `data.thread = {id, title}` (the title is its
+  task's) and `data.task`, the task's id, shown with the line
+  `Work · <title>` and answered like any card (`respondPermission` reaches the thread's actor).
 - **Its report**: a host-started turn (`HostTurn::TaskReport`) whose reply is the bot's ordinary message. The prompt
   is `from: host`, shows no bubble, and isn't the user's words to memory.
 - **A report the bot didn't answer** (its turn was stopped, failed or never started): an info notice,
@@ -137,7 +137,7 @@ once the turn ends, its last message's `↳ N steps` line counts them the same w
 
 - A message arriving while the list follows the newest pops in: 0.24 s,
   `cubic-bezier(.23, 1, .32, 1)`, from 12 pt lower at 94 % scale (iPhone: `ConversationLayout` in
-  `ConversationList.swift`; desktop: `.row-in` in `thread.css`; reduced motion: a 0.12 s fade).
+  `ConversationList.swift`; desktop: `.row-in` in `chat.css`; reduced motion: a 0.12 s fade).
 - The list stays pinned to the bottom while the reader is there; scrolling up releases it and the
   round "Jump to latest" button brings it back. Sending always returns to the bottom.
 - Opening or closing the phone keyboard keeps a bottom-following chat on its latest message;

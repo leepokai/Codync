@@ -45,7 +45,7 @@ extension BotStore {
     static func artifactDraftKey(_ artifact: Artifact) -> String { "\(artifact.botId)/artifact/\(artifact.id)" }
 
     /// Transfer to the outbox now; an eventual acknowledgement must not erase a newer draft.
-    /// `draft`: whose draft it is (the chat's when nil). `replyTo`: the chat message it quotes. `thread`: the item's
+    /// `draft`: whose draft it is (the chat's when nil). `replyTo`: the chat message it quotes. `thread`: the task's
     /// thread it goes to instead of the chat, as text alone.
     @discardableResult
     func sendComposerDraft(to botId: String, draft key: String? = nil, replyTo: ReplyQuote? = nil,
@@ -315,7 +315,7 @@ extension BotStore {
     }
 
     public func discard(_ entry: Entry, in thread: WorkThread? = nil) {
-        if let thread { return dropTaskEntry(entry.id, task: thread.task) }
+        if let thread { return dropThreadEntry(entry.id, thread: thread.threadId) }
         if let nonce = entry.data.clientNonce { outgoingFiles[nonce] = nil }
         entries[entry.botId]?.removeAll { $0.id == entry.id }
         scheduleSave()

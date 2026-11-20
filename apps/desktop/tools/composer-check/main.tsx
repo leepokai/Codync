@@ -1,13 +1,13 @@
 import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ChatSidePanel } from '../../src/renderer/views/thread/ChatSidePanel'
-import { Composer } from '../../src/renderer/views/thread/Composer'
+import { ChatSidePanel } from '../../src/renderer/views/chat/ChatSidePanel'
+import { Composer } from '../../src/renderer/views/chat/Composer'
 import { StoreContext } from '../../src/renderer/store/context'
 import { BotStore } from '../../src/renderer/store/bot-store'
 import { normalizeBot, type Entry } from '../../src/shared/models'
 import '../../src/renderer/styles/theme.css'
-import '../../src/renderer/views/thread/thread.css'
-import '../../src/renderer/views/thread/chat-controls.css'
+import '../../src/renderer/views/chat/chat.css'
+import '../../src/renderer/views/chat/chat-controls.css'
 
 // Actual store and component, with no connection to the user's host or account.
 const store = new BotStore({ id: 'composer-check', name: 'Fixture', signKey: '', urls: [] }, true,

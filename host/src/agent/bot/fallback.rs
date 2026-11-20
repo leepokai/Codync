@@ -66,7 +66,7 @@ pub(super) struct Relay {
     line: Option<String>,
     /// What this attempt's agent hears first after the user's handoff (`carry_in`); this turn's only.
     pub(super) carried: Option<String>,
-    /// The turn's messages, held for a sign-in or sent again: a task's item goes on past the turn (`item_goes_on`).
+    /// The turn's messages, held for a sign-in or sent again: a thread's task goes on past the turn (`task_goes_on`).
     pub(super) held: Option<Held>,
 }
 
@@ -151,7 +151,7 @@ impl Actor {
         if self.slot().is_none()
             && let Some((agent, session)) = self.relay.recap.take()
         {
-            carried.extend(self.chat_for_task());
+            carried.extend(self.chat_for_thread());
             carried.extend(self.recap(&agent, session.as_deref()));
         }
         carried.extend(carry::takeover(&self.relay.failed));
@@ -166,17 +166,17 @@ impl Actor {
         self.relay.carried = text;
     }
 
-    /// A task's new session on another agent: the chat it comes from, which its first session had (by a fork, or
+    /// A thread's new session on another agent: the chat it comes from, which its first session had (by a fork, or
     /// told), unless this session is its first and is told it already.
-    fn chat_for_task(&self) -> Option<String> {
-        let new = self.cfg.is_task() && self.session_fresh && self.handoff.is_none();
+    fn chat_for_thread(&self) -> Option<String> {
+        let new = self.cfg.is_thread() && self.session_fresh && self.handoff.is_none();
         new.then(|| self.told_chat()).flatten()
     }
 
-    /// What a task from the chat is told of it in a new session: the chat so far. Not a routine's run.
+    /// What a thread from the chat is told of it in a new session: the chat so far. Not a routine's run.
     pub(super) fn told_chat(&self) -> Option<String> {
-        let from_chat = crate::chat::tasks::from_chat(&self.task_source);
-        from_chat.then(|| crate::chat::tasks::chat_so_far(&self.hub.store, self.cfg.owner())).flatten()
+        let from_chat = crate::chat::work::from_chat(&self.task_source);
+        from_chat.then(|| crate::chat::work::chat_so_far(&self.hub.store, self.cfg.owner())).flatten()
     }
 
     /// What the chat calls the agent `cfg` runs: its name, with the login profile it runs on ("Claude Code
@@ -480,10 +480,10 @@ impl Actor {
             }
             _ => {}
         }
-        // A task's offer to add a fallback is the user's to take, in its bot's chat; its own transcript keeps the
+        // A thread's offer to add a fallback is the user's to take, in its bot's chat; its own transcript keeps the
         // failure.
         // There it ends no turn of the bot's own: no `stopReason` (`codync-host send --wait` reads one as its end).
-        if self.cfg.is_task()
+        if self.cfg.is_thread()
             && let Some(offer) = data.as_object_mut().and_then(|d| d.remove("addFallback"))
         {
             self.add_for_user(

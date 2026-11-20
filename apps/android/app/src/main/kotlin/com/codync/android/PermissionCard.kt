@@ -43,20 +43,21 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Under what a task put in the chat (its approval or choice card, a file, a voice note, an artifact): that it comes
- * from the background, and which item. Nothing for the chat's own.
+ * Under what a thread put in the chat (its approval or choice card, a file, a voice note, an artifact): that it comes
+ * from the bot's work, and which task. Nothing for the chat's own.
  */
-@Composable internal fun TaskLine(entry: Entry, modifier: Modifier = Modifier) {
-    val title = (entry.data["task"] as? JsonObject)?.let { (it["title"] as? JsonPrimitive)?.contentOrNull }?.takeIf(String::isNotEmpty) ?: return
+@Composable internal fun WorkThreadLine(entry: Entry, modifier: Modifier = Modifier) {
+    val title = (entry.data["thread"] as? JsonObject)?.let { (it["title"] as? JsonPrimitive)?.contentOrNull }?.takeIf(String::isNotEmpty) ?: return
     // A clock leads it, as the computer leads "Runs on" (iOS `Label(…, systemImage: "clock")`).
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Symbol("clock", size = 14.dp, tint = Palette.tertiary)
-        Text(tr("In the background") + " · " + title, style = Type.caption, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(tr("Work") + " · " + title, style = Type.caption, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
-/** One of the bot's tasks put [this] in the chat. */
-internal val Entry.fromTask: Boolean get() = data["task"] is JsonObject
+/** One of the bot's threads put [this] in the chat (iOS `EntryData.isFromThread`): it names its thread's task, by title or by id. */
+internal val Entry.isFromThread: Boolean
+    get() = !((data["thread"] as? JsonObject)?.get("title") as? JsonPrimitive)?.contentOrNull.isNullOrEmpty() || !(data["task"] as? JsonPrimitive)?.contentOrNull.isNullOrEmpty()
 
 /** Approval card in Grok Bot's choice-card style: what the agent wants, where it runs, and the answers as rows. */
 @Composable internal fun PermissionCard(entry: Entry, hostName: String, answering: Boolean, respond: (String?) -> Unit) {
@@ -86,7 +87,7 @@ internal val Entry.fromTask: Boolean get() = data["task"] is JsonObject
             Text(tr("Runs on {name}{path}").replace("{name}", hostName).replace("{path}", path),
                 style = Type.caption, color = Palette.tertiary)
         }
-        TaskLine(entry)
+        WorkThreadLine(entry)
         if (hasDetail) Disclosure(expanded, { expanded = !expanded }, label = {
             Text(tr("Details"), style = Type.caption.medium, color = Palette.secondary)
         }) {

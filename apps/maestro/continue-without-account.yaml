@@ -23,6 +23,8 @@ tags:
 - tapOn: "Continue without an account"
 # The install page first; the line is on the scan page, under its sign-in buttons.
 - tapOn: "Continue"
+# The scan page names the desktop's menu item, which pairs iPhone and Android alike.
+- assertVisible: "On your Mac, click Codync in the menu bar, then Pair phone\\..*"
 - scrollUntilVisible:
     element: "Connects on Wi-Fi or over Tailscale\\. End-to-end encrypted\\."
     direction: DOWN

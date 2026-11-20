@@ -11,16 +11,21 @@ use std::sync::Mutex;
 /// The shared workspaces of the groups `bot` belongs to (tasks pass their owner), for its sessions'
 /// `additionalDirectories`. A folder that is gone is left out: an agent refuses to open a session on a folder it
 /// can't see, and the room tells the member the folder is missing instead.
-pub fn folders(store: &Store, bot: &str) -> Vec<String> {
+pub async fn folders(store: &Store, bot: &str) -> Vec<String> {
     match store.bots() {
         Ok(rows) => {
-            let mut folders: Vec<String> = rows
+            let candidates: Vec<String> = rows
                 .into_iter()
                 .filter(|row| !row.deleted && row.config.is_group())
                 .filter(|row| row.config.members.iter().any(|member| member == bot))
                 .filter_map(|row| row.config.workspace)
-                .filter(|workspace| Path::new(workspace).is_dir())
                 .collect();
+            let mut folders = Vec::with_capacity(candidates.len());
+            for workspace in candidates {
+                if exists(&workspace).await {
+                    folders.push(workspace);
+                }
+            }
             folders.sort();
             folders.dedup();
             folders
@@ -32,12 +37,19 @@ pub fn folders(store: &Store, bot: &str) -> Vec<String> {
     }
 }
 
+/// Whether `workspace` is a folder right now. The probe is blocking (a slow network mount must not hold an async
+/// worker), so it runs off the runtime.
+async fn exists(workspace: &str) -> bool {
+    let path = Path::new(workspace).to_owned();
+    tokio::task::spawn_blocking(move || path.is_dir()).await.unwrap_or(false)
+}
+
 /// What a member's turn says about the room's shared folder; `None` for a group without one.
-pub fn section(hub: &Hub, group: &BotConfig) -> Option<String> {
+pub async fn section(hub: &Hub, group: &BotConfig) -> Option<String> {
     let workspace = group.workspace.as_deref()?;
     // Keyed by folder too: switching the folder starts a fresh breakage count.
     let latch = format!("{}\u{0}{workspace}", group.id);
-    let text = if Path::new(workspace).is_dir() {
+    let text = if exists(workspace).await {
         hub.group_workspaces.present(&latch);
         format!(
             "The team shares the folder {workspace}. Keep joint output there (your own folder is for work \
@@ -89,8 +101,8 @@ mod tests {
         dir
     }
 
-    #[test]
-    fn folders_follow_membership_and_skip_what_is_gone() {
+    #[tokio::test]
+    async fn folders_follow_membership_and_skip_what_is_gone() {
         let store = Store::open(Path::new(":memory:")).unwrap();
         let save =
             |body: serde_json::Value| store.save_bot(&serde_json::from_value::<BotConfig>(body).unwrap()).unwrap();
@@ -103,18 +115,22 @@ mod tests {
         store.delete_bot("g3").unwrap();
         let mut sorted = [one.clone(), two.clone()];
         sorted.sort();
-        assert_eq!(folders(&store, "a"), [one.to_string_lossy().into_owned()], "its own groups only, deleted ones out");
         assert_eq!(
-            folders(&store, "b"),
+            folders(&store, "a").await,
+            [one.to_string_lossy().into_owned()],
+            "its own groups only, deleted ones out"
+        );
+        assert_eq!(
+            folders(&store, "b").await,
             sorted.iter().map(|d| d.to_string_lossy().into_owned()).collect::<Vec<_>>(),
             "union of a member's groups, sorted"
         );
-        assert_eq!(folders(&store, "nobody"), Vec::<String>::new());
+        assert_eq!(folders(&store, "nobody").await, Vec::<String>::new());
 
         // A saved folder that is gone isn't handed to a session at all.
         save(json!({"id": "g4", "kind": "group", "name": "four", "members": ["a"], "workspace": gone}));
         std::fs::remove_dir_all(&gone).unwrap();
-        assert_eq!(folders(&store, "a"), [one.to_string_lossy().into_owned()]);
+        assert_eq!(folders(&store, "a").await, [one.to_string_lossy().into_owned()]);
 
         for dir in [one, two] {
             std::fs::remove_dir_all(dir).ok();

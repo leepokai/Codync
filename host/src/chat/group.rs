@@ -143,7 +143,7 @@ async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, turn: &Turn, asked: &m
             if later.contains(&member.id) {
                 continue;
             }
-            let (prompt, shown) = ask(hub, &group, &members, member, lane)?;
+            let (prompt, shown) = ask(hub, &group, &members, member, lane).await?;
             asked.insert(member.id.clone(), shown);
             let (reply, answer) = oneshot::channel();
             let busy = busy_elsewhere(hub, &member.id, lane);
@@ -243,11 +243,11 @@ fn busy_elsewhere(hub: &Hub, member: &str, lane: &Lane) -> bool {
 
 /// A member's room turn starts: it shows the room as it is now, not as it was when the turn was queued (it may
 /// have waited behind another turn of the member's).
-pub fn refresh(hub: &Hub, turn: &mut GroupTurn, me: &str) -> Result<()> {
+pub async fn refresh(hub: &Hub, turn: &mut GroupTurn, me: &str) -> Result<()> {
     let group = group(hub, &turn.lane.chat)?;
     let members = members(hub, &group);
     let me = members.iter().find(|m| m.id == me).ok_or_else(|| anyhow!("no longer in the group"))?;
-    (turn.prompt, turn.shown) = ask(hub, &group, &members, me, &turn.lane)?;
+    (turn.prompt, turn.shown) = ask(hub, &group, &members, me, &turn.lane).await?;
     turn.answers = answers(&since_last_user_message(hub, &turn.lane)?);
     Ok(())
 }
@@ -257,9 +257,15 @@ fn group(hub: &Hub, id: &str) -> Result<BotConfig> {
 }
 
 /// `me`'s prompt for a turn in the room, and the newest message it shows (its `seq`).
-fn ask(hub: &Hub, group: &BotConfig, members: &[BotConfig], me: &BotConfig, lane: &Lane) -> Result<(String, i64)> {
+async fn ask(
+    hub: &Hub,
+    group: &BotConfig,
+    members: &[BotConfig],
+    me: &BotConfig,
+    lane: &Lane,
+) -> Result<(String, i64)> {
     let shown = hub.store.messages_after(lane, 0, 1)?.last().map_or(0, |e| e.seq);
-    Ok((member_prompt(hub, group, members, me, lane)?, shown))
+    Ok((member_prompt(hub, group, members, me, lane).await?, shown))
 }
 
 fn members(hub: &Hub, group: &BotConfig) -> Vec<BotConfig> {
@@ -375,7 +381,13 @@ fn mentions(text: &str, handle: &str) -> bool {
         .any(|(i, _)| lower[i + needle.len()..].chars().next().is_none_or(|c| !(c.is_ascii_alphanumeric() || c == '_')))
 }
 
-fn member_prompt(hub: &Hub, group: &BotConfig, members: &[BotConfig], me: &BotConfig, lane: &Lane) -> Result<String> {
+async fn member_prompt(
+    hub: &Hub,
+    group: &BotConfig,
+    members: &[BotConfig],
+    me: &BotConfig,
+    lane: &Lane,
+) -> Result<String> {
     let peers: Vec<&BotConfig> = members.iter().filter(|m| m.id != me.id).collect();
     let peer_names = if peers.is_empty() {
         "just the user".to_owned()
@@ -404,7 +416,7 @@ fn member_prompt(hub: &Hub, group: &BotConfig, members: &[BotConfig], me: &BotCo
          nothing to add, a reaction and \"{PASS}\" agrees without a message."
     ));
     out.push(String::new());
-    if let Some(section) = workspace::section(hub, group) {
+    if let Some(section) = workspace::section(hub, group).await {
         out.push(section);
         out.push(String::new());
     }

@@ -15,10 +15,10 @@ impl Hub {
         crate::agent::login_profiles::settle(&self.store, cfg)?;
         crate::agent::fallback::tidy(cfg);
         cfg.section = sections::normalize_section(cfg.section.as_deref())?;
-        // ponytail: validated under the lock, so a workspace folder on a hung network share (its `is_dir`)
-        // stalls every bot's events until it answers. Upgrade: build and validate outside the lock from a
-        // snapshot, then save under it only if the stored config is unchanged (compare the serialized configs,
-        // not rev), else retry.
+        // ponytail: validated under the lock, so a workspace folder on a hung network share (a bot's `cwd` or a
+        // group's shared folder, both an `is_dir` here) stalls every bot's events until it answers. Upgrade: build
+        // and validate outside the lock from a snapshot, then save under it only if the stored config is unchanged
+        // (compare the serialized configs, not rev), else retry.
         validate_with(cfg, workspace_checked)?;
         crate::agent::workspace::prepare(cfg)
     }
@@ -48,6 +48,10 @@ impl Hub {
         if !cfg.is_group() {
             self.spawn_bot(cfg.clone());
             crate::market::agent_sign_in::ask_before_first_message(self, &cfg);
+        } else if cfg.workspace.is_some() {
+            // A session carries `additionalDirectories` when it opens: a new team folder reaches members that
+            // already had a session by starting their agent again before its next turn.
+            self.refresh_members(&cfg.id, cfg.members.iter().map(String::as_str));
         }
         self.emit_bot(&cfg.id);
         crate::usage::bots_changed(self);
@@ -85,9 +89,7 @@ impl Hub {
             // decides whose folders it gets) reaches members by starting their agent again before its next turn.
             let members: std::collections::BTreeSet<&str> =
                 before.members.iter().chain(cfg.members.iter()).map(String::as_str).collect();
-            for member in members {
-                let _ = self.send_cmd(member, Cmd::RefreshTools);
-            }
+            self.refresh_members(&cfg.id, members);
         }
         self.emit_bot(&id);
         crate::usage::bots_changed(self);
@@ -95,6 +97,13 @@ impl Hub {
     }
 
     pub fn delete_bot(&self, id: &str) -> Result<()> {
+        // A group's members lose its shared folder when it goes: their next session must not keep it.
+        let shared = self
+            .store
+            .bot(id)?
+            .map(|row| row.config)
+            .filter(|cfg| cfg.is_group() && cfg.workspace.is_some())
+            .map(|cfg| cfg.members);
         // Its threads go first: they are the bot's own work. Its box goes below.
         for thread in crate::chat::work::of(&self.store, id) {
             self.delete_bot(&thread.id)?;
@@ -131,7 +140,21 @@ impl Hub {
                 }
             }
         });
+        if let Some(members) = shared {
+            self.refresh_members(id, members.iter().map(String::as_str));
+        }
         crate::usage::bots_changed(self);
         self.leave_groups(id)
+    }
+
+    /// Starts each member's agent again before its next turn, so a changed set of shared folders (a group's
+    /// workspace or roster, a group that went) reaches the sessions that already opened. A member deleted meanwhile
+    /// has no actor left: there is nothing to refresh, and the store already holds what its next start reads.
+    fn refresh_members<'a>(&self, group: &str, members: impl IntoIterator<Item = &'a str>) {
+        for member in members {
+            if let Err(error) = self.send_cmd(member, Cmd::RefreshTools) {
+                tracing::warn!(group, member, error = format!("{error:#}"), "couldn't refresh a group member");
+            }
+        }
     }
 }

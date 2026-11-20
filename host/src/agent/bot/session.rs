@@ -66,7 +66,7 @@ impl Actor {
 
     /// What every session request carries: the folder and MCP servers, and the folders besides its own an agent
     /// may work in when it takes them: the memory folders, then the workspaces of the bot's groups.
-    fn session_params(&self, servers: &Value, session: Option<&str>) -> Value {
+    async fn session_params(&self, servers: &Value, session: Option<&str>) -> Value {
         let mut params = json!({"cwd": self.cfg.cwd, "mcpServers": servers});
         if let Some(sid) = session {
             params["sessionId"] = sid.into();
@@ -74,7 +74,7 @@ impl Actor {
         if self.conn.as_ref().is_some_and(|c| c.sessions.additional_directories) {
             let mut folders: Vec<String> =
                 memory::files::folders(&self.cfg.as_owner()).iter().map(|f| f.to_string_lossy().into_owned()).collect();
-            folders.extend(crate::chat::group::folders(&self.hub.store, self.cfg.owner()));
+            folders.extend(crate::chat::group::folders(&self.hub.store, self.cfg.owner()).await);
             params["additionalDirectories"] = json!(folders);
         }
         params
@@ -244,7 +244,7 @@ impl Actor {
                 return Box::pin(self.ensure_session(slot)).await;
             };
             self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Resuming session…".into());
-            let mut params = self.session_params(&servers, Some(&sid));
+            let mut params = self.session_params(&servers, Some(&sid)).await;
             if let Some(s) = &snapshot {
                 params["_meta"] = claude_meta(&self.cfg, &s.system);
             }
@@ -322,7 +322,7 @@ impl Actor {
             })
             .await?
         };
-        let mut params = self.session_params(&servers, None);
+        let mut params = self.session_params(&servers, None).await;
         self.instruct(&mut params, instructions, &system);
         let res = self.session_request("session/new", params).await?;
         let sid = self.adopt_opened(&res, slot, renamed).await?;
@@ -381,7 +381,7 @@ impl Actor {
             let (hub, owner, source) = (self.hub.clone(), owner.clone(), source.clone());
             tokio::task::spawn_blocking(move || context::resolve(&hub.store, &owner, &source)).await??
         };
-        let mut params = self.session_params(servers, Some(&source));
+        let mut params = self.session_params(servers, Some(&source)).await;
         self.instruct(&mut params, instructions, &parent.system);
         self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Picking up from the chat…".into());
         let res = self.session_request("session/fork", params).await?;

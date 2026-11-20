@@ -1,25 +1,12 @@
 import { test, expect, type Locator } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { fixtureCommand } from './fixture-command.ts'
-import { api, attach, setPref } from './sandbox.ts'
+import { api, attach, setPref, toolCallAgent } from './sandbox.ts'
 
 // A scripted agent whose turn runs one long command and stays on it, so the chat's working pill shows it
 // as its activity (a tool call's title).
 const longActivity = 'cd "/Users/example/.codync/bots/0bcd2c28-ac38-4db8-b932-4ec2da5be7a3/workspace/uploads/628f8428-a7bd-48b1-8cfc-806332468f68"'
-const longAgent = `import json,sys
-def send(m): sys.stdout.write(json.dumps(m)+"\\n"); sys.stdout.flush()
-def upd(u): send({"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":u}})
-turn=[None]
-for line in sys.stdin:
-    m=json.loads(line)
-    meth=m.get("method")
-    if meth=="initialize": send({"jsonrpc":"2.0","id":m["id"],"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":False}}})
-    elif meth=="session/new": send({"jsonrpc":"2.0","id":m["id"],"result":{"sessionId":"s1"}})
-    elif meth=="session/prompt":
-        turn[0]=m["id"]
-        upd({"sessionUpdate":"tool_call","toolCallId":"t0","title":${JSON.stringify(longActivity)},"kind":"execute","status":"in_progress"})
-    elif meth=="session/cancel" and turn[0] is not None: send({"jsonrpc":"2.0","id":turn[0],"result":{"stopReason":"cancelled"}})
-`
+const longAgent = toolCallAgent([{ kind: 'execute', title: longActivity }])
 
 /** Whether the pill's activity line ends inside the pill, is ellipsized, and leaves nothing painted outside. */
 const fits = (pill: Locator) =>

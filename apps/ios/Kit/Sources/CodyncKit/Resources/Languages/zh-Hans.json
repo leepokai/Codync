@@ -2234,5 +2234,6 @@
   "Start a cloud computer": "创建一台云端电脑",
   "No computer? Run one on your own cloud provider account.": "没有电脑？在你自己的云端供应商账户上开一台。",
   "Starting your cloud computer": "正在启动你的云端电脑",
-  "About a minute. You can skip: it shows up on its own when it's ready.": "大约一分钟。可以先跳过：准备好后它会自己出现。"
+  "About a minute. You can skip: it shows up on its own when it's ready.": "大约一分钟。可以先跳过：准备好后它会自己出现。",
+  "Alerts you when a bot is done, needs you or hits an error, unless its chat is open. A phone with Codync gets the same alerts, so this starts off.": "Bot 完成、需要你或出错时通知你（正在看它的聊天时除外）。手机上的 Codync 也会收到同样的通知，所以默认关闭。"
 }

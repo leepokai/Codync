@@ -2234,5 +2234,6 @@
   "Start a cloud computer": "Запустить облачный компьютер",
   "No computer? Run one on your own cloud provider account.": "Нет компьютера? Запустите его в своём аккаунте у облачного провайдера.",
   "Starting your cloud computer": "Запускаем ваш облачный компьютер",
-  "About a minute. You can skip: it shows up on its own when it's ready.": "Около минуты. Можно пропустить: он появится сам, когда будет готов."
+  "About a minute. You can skip: it shows up on its own when it's ready.": "Около минуты. Можно пропустить: он появится сам, когда будет готов.",
+  "Alerts you when a bot is done, needs you or hits an error, unless its chat is open. A phone with Codync gets the same alerts, so this starts off.": "Сообщает, когда бот закончил, ждёт вас или столкнулся с ошибкой, если его чат не открыт. Телефон с Codync получает те же уведомления, поэтому по умолчанию это выключено."
 }

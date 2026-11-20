@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { alertAnalyticsKind } from '@shared/alerts'
 import type { WindowCommand } from '@shared/ipc'
 import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startup'
 import { detailMinWidth, sidebarMinWidth } from '@shared/chat-layout'
@@ -15,7 +16,7 @@ import { prefs, stepTextSize, usePref, DEFAULT_TEXT_SIZE } from '../lib/prefs'
 import { limitSectionName, sectionName } from '../lib/roster-sections'
 import { useApp, StoreContext } from '../store/context'
 import { analytics } from '../store/analytics'
-import { refKey, sameRef, parseRef, type BotRef } from '../store/app-model'
+import { refKey, sameRef, parseRef, type AppModel, type BotRef } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
 import { AllWorkButton, AllWorkSheet } from './AllWorkView'
@@ -62,6 +63,12 @@ import './sidebar-header.css'
 import { useTr } from '../lib/use-language'
 
 
+/** Opens the bot the tray or a notification names (`computerId/botId`). */
+function openRef(app: AppModel, key: string) {
+  const ref = parseRef(key)
+  if (ref) app.select(ref)
+}
+
 /** Native desktop chat: roster on the left, the conversation on the right (Grok Bot's desktop layout). */
 export function ChatWindow() {
   const tr = useTr()
@@ -98,11 +105,11 @@ export function ChatWindow() {
             return prefs.textSize.set(c.up === null ? DEFAULT_TEXT_SIZE : stepTextSize(prefs.textSize.get(), c.up))
           case 'setUsageIconStyle':
             return prefs.usageIconStyle.set(c.style)
-          case 'openBot': {
-            const ref = parseRef(c.ref)
-            if (ref) app.select(ref)
-            return
-          }
+          case 'openBot':
+            return openRef(app, c.ref)
+          case 'openAlert':
+            analytics.track({ event: 'desktop_notification_opened', kind: alertAnalyticsKind(c.alert) })
+            return openRef(app, c.ref)
           case 'stopBot': {
             const ref = parseRef(c.ref)
             const store = ref && app.store(ref.computerId)

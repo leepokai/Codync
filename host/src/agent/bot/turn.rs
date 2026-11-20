@@ -154,12 +154,17 @@ impl Actor {
         self.cancel_deadline = None;
         // A hop-limit control turn is still a chat at hop 0. reply_hops stays as it is.
         // A carried reset is spent by the turn that starts at hop 0 on it - the approval wake's own turn, or a
-        // reply. The take happens AFTER the session and prompt are ready (see the take below, just before relay),
-        // so a failed start leaves the carry standing for the next reply; until then the turn only plans the hop-0
-        // admission. A task report or other host turn takes neither.
+        // reply turn (the one arm that sets reply_hops). A turn with reply_hops unset - a request, a room turn, a
+        // routine, a compaction - is not a reply and must not spend it. The take happens AFTER the session and
+        // prompt are ready (see the take below, just before relay), so a failed start leaves the carry standing
+        // for the next reply; until then the turn only plans the hop-0 admission. A task report or other host
+        // turn takes neither.
         let carried = self.hub.team.dropped_wake(&self.cfg.id);
+        // Only a turn that carries hops is a spender: the approval wake's own (hop 0, set by the queue) or a
+        // reply (its hops from the reply). A routine run, a room turn or another bot's request has no reply_hops
+        // and must never spend the carry.
         let wake_turn = carried && self.reply_hops == Some(0);
-        let reply_carry = carried && self.reply_hops.is_none_or(|hops| hops > 0) && self.host_turn.is_none();
+        let reply_carry = carried && self.reply_hops.is_some_and(|hops| hops > 0) && self.host_turn.is_none();
         // A control turn, the wake's own turn and a carried reply all begin at hop 0.
         let team_turn = if self.in_request() {
             crate::chat::team::Turn::Request
@@ -182,8 +187,10 @@ impl Actor {
         self.files.summary = None;
         self.files.cancel();
         // The turn is committed: spend a carried reset now, once, for the hop-0 admission planned above. From
-        // here the turn runs (or its end paths clean up), so the carry cannot outlive its turn.
-        if wake_turn || reply_carry {
+        // here the turn runs (or its end paths clean up), so the carry cannot outlive its turn. If the start
+        // still fails after this point, `start_failed` puts the carry back: the approval was not used.
+        self.spent_carry = wake_turn || reply_carry;
+        if self.spent_carry {
             self.hub.team.take_dropped_wake(&self.cfg.id);
             self.reply_hops = Some(0);
         }
@@ -304,6 +311,8 @@ impl Actor {
         memory::turns::begin_turn(&self.cfg, &sid, asked);
         // Written before this returns, so a Stop right after is sent after the prompt.
         let answer = acp.session(&sid).prompt(prompt).await?;
+        // The agent heard the prompt: the spent carry is used. A later start failure is another turn's.
+        self.spent_carry = false;
         if !self.turn_memory_revision.is_empty()
             && let Err(error) =
                 memory::mark_announced(&self.hub.store, self.cfg.owner(), &sid, &self.turn_memory_revision)

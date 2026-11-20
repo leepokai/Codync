@@ -155,10 +155,10 @@ impl Actor {
         // A hop-limit control turn is still a chat at hop 0. reply_hops stays as it is.
         // A carried reset is spent by the turn that starts at hop 0 on it - the approval wake's own turn, or a
         // reply turn (the one arm that sets reply_hops). A turn with reply_hops unset - a request, a room turn, a
-        // routine, a compaction - is not a reply and must not spend it. The take happens AFTER the session and
-        // prompt are ready (see the take below, just before relay), so a failed start leaves the carry standing
-        // for the next reply; until then the turn only plans the hop-0 admission. A task report or other host
-        // turn takes neither.
+        // routine, a compaction - is not a reply and must not spend it. The take happens at this turn's commit
+        // point (the take below, just before the prompt goes out), so a failed start before the prompt puts the
+        // carry back (`start_failed`, or the hidden-turn path) for the next reply; until then the turn only plans
+        // the hop-0 admission. A task report or other host turn takes neither.
         let carried = self.hub.team.dropped_wake(&self.cfg.id);
         // Only a turn that carries hops is a spender: the approval wake's own (hop 0, set by the queue) or a
         // reply (its hops from the reply). A routine run, a room turn or another bot's request has no reply_hops

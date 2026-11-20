@@ -501,12 +501,11 @@ impl Actor {
             r.session = None;
         });
         self.wait_for_sign_in(goes_on.as_ref());
+        // Capture before the teardown clears it: only the failed clarification turn itself (it set `control`)
+        // frees the ask. A later unrelated failed start must not refund an ask whose prompt was delivered.
+        let was_control = self.hub.team.in_control(&self.cfg.id);
         self.hub.team.end_turn_in_control(&self.cfg.id);
-        // A clarification wake that never started its turn must not strand `asked`: the lead may ask again.
-        // One that did start and is still queued behind this failure keeps its `asked` until it runs or is
-        // dropped (Stop's arm), so an undelivered question never blocks the lift forever but a delivered one
-        // is not asked twice.
-        if !self.queue.iter().any(|q| matches!(q, Queued::HopLift { control: true, .. })) {
+        if was_control {
             self.hub.team.abandon_open_ask(&self.cfg.id);
         }
     }

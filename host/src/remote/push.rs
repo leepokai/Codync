@@ -104,10 +104,15 @@ fn faces(hub: &Hub, bot: &BotConfig, from: Option<&str>) -> Vec<Value> {
         .collect()
 }
 
+/// An alert's title and body as a phone's push and a desktop notification show them: cut to fit.
+fn alert_text(title: &str, body: &str) -> (String, String) {
+    (crate::agent::acp::truncate(title, 80), crate::agent::acp::truncate(body, 400))
+}
+
 /// What an alert seals for the phone: its text, the faces to draw and the unread total for the app icon.
 fn sealed_alert(hub: &Hub, bot: &BotConfig, from: Option<&str>, title: &str, subtitle: &str, body: &str) -> Value {
-    let mut secret = json!({"title": crate::agent::acp::truncate(title, 80), "subtitle": subtitle,
-        "body": crate::agent::acp::truncate(body, 400)});
+    let (title, body) = alert_text(title, body);
+    let mut secret = json!({"title": title, "subtitle": subtitle, "body": body});
     if let Some(from) = from.filter(|f| *f != bot.id) {
         secret["from"] = from.into();
     }
@@ -117,13 +122,21 @@ fn sealed_alert(hub: &Hub, bot: &BotConfig, from: Option<&str>, title: &str, sub
     secret
 }
 
+/// The `alert` event: what a desktop app shows as a system notification, the same text a phone's push opens to.
+fn alert_event(bot: &BotConfig, title: &str, body: &str, kind: AlertKind) -> Value {
+    let (title, body) = alert_text(title, body);
+    json!({"type": "alert", "alert": {"botId": bot.id, "kind": kind, "title": title, "body": body}})
+}
+
 /// `bot` is the chat the alert opens; `from` is the member bot speaking when that chat is a group.
 pub fn notify(hub: &Hub, bot: &BotConfig, from: Option<&str>, title: &str, body: &str, kind: AlertKind) {
     purge_dead_tickets(hub);
-    if bot.notify == Some(false) || bot.hidden || hub.phone_connected() {
+    if bot.notify == Some(false) || bot.hidden || throttled((bot.id.clone(), kind), Duration::from_secs(5)) {
         return;
     }
-    if throttled((bot.id.clone(), kind), Duration::from_secs(5)) {
+    // Live only (no rev, so no catch-up replays it): a desktop app shows it if its user turned that on.
+    let _ = hub.events.send(alert_event(bot, title, body, kind));
+    if hub.phone_connected() {
         return;
     }
     let Some(relay) = relay_url(hub) else { return };

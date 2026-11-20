@@ -197,7 +197,7 @@ impl Live {
 
 /// An agent that was started, and the programs it runs under.
 struct Agent {
-    /// Whose list what it leaves running shows in: a task's agent, its bot's.
+    /// Whose list what it leaves running shows in: a thread's agent, its bot's.
     bot: String,
     acp: Weak<Acp>,
     programs: Vec<String>,
@@ -207,7 +207,7 @@ struct Agent {
 pub struct DevServers {
     live: Mutex<HashMap<String, Live>>,
     detected: Mutex<HashMap<String, Vec<Detected>>>,
-    /// By the bot or task whose agent it is; in one order from scan to scan, so a list several agents share is too.
+    /// By the bot or thread whose agent it is; in one order from scan to scan, so a list several agents share is too.
     agents: Mutex<BTreeMap<String, Agent>>,
     /// Wakes the port scan for a server that just started.
     wake: Notify,

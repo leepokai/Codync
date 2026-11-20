@@ -32,7 +32,7 @@ iPhone and the desktop app show local image attachments as thumbnails above the 
 with a remove button in the upper-right corner. The entire image fits inside the
 preview; its original data remains the attachment sent to the host. On iPhone,
 ImageIO creates display-sized thumbnails off the main actor; the desktop app
-(`views/thread/ComposerAttachment.tsx`) lets the browser decode the image. Invalid image data falls
+(`views/chat/ComposerAttachment.tsx`) lets the browser decode the image. Invalid image data falls
 back to the filename chip, as do non-image files. Multiple attachments scroll
 horizontally and remain removable individually.
 
@@ -54,7 +54,7 @@ placeholder reads "Reply…", and leaving the chat cancels the reply. See
 
 While the bot works anywhere (its own chat, a room, a routine), the user's queued messages leave the transcript and
 wait above the box, oldest first, one line each: the desktop's tray tucked under the composer's top edge
-(`views/thread/QueuedMessages.tsx`), the phones' card past the + button (`Thread/QueuedMessages.swift`,
+(`views/chat/QueuedMessages.tsx`), the phones' card past the + button (`Chat/QueuedMessages.swift`,
 `QueuedMessages.kt`), the terminal's band over its input (`view/queue.rs`). An idle bot takes the next message at once,
 so the chat keeps showing that one.
 

@@ -1,12 +1,12 @@
 import { test, expect, type CDPSession, type Locator } from '@playwright/test'
 import { api, attach, echoBot, setPref } from './sandbox.ts'
 
-// The compact details sheet is a card over the chat below 740 px of thread width (ThreadView's WIDE).
+// The compact details sheet is a card over the chat below 740 px of chat width (ChatView's WIDE).
 // The viewport is emulated at 760x500 / 1200x760 here, so this checks layout, focus and hit testing,
 // not the OS window's own bounds or its native hit test.
 async function setViewport(cdp: CDPSession, width: number, height: number) {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false })
-  await new Promise((done) => setTimeout(done, 250)) // the app measures the thread with a ResizeObserver, then re-renders
+  await new Promise((done) => setTimeout(done, 250)) // the app measures the chat with a ResizeObserver, then re-renders
 }
 
 const maskOf = (el: Locator) => el.evaluate((node) => {
@@ -43,7 +43,7 @@ test('the compact details sheet scrolls from the keyboard and keeps its clicks',
     await page.locator('.roster-row', { hasText: name }).first().click()
     await setViewport(cdp, 760, 500)
 
-    // The title pill opens the sheet while the thread is narrow (ThreadView's toggleDetails).
+    // The title pill opens the sheet while the chat is narrow (ChatView's toggleDetails).
     await page.locator('.title-pill').click()
     const sheet = page.locator('.modal-content > .details-panel')
     await expect(sheet).toBeVisible()
@@ -74,7 +74,7 @@ test('the compact details sheet scrolls from the keyboard and keeps its clicks',
     })
     expect(onTab).toBe(true)
 
-    // A wider thread dismisses the sheet and hands the panel back to its dock, with the band it needs there.
+    // A wider chat dismisses the sheet and hands the panel back to its dock, with the band it needs there.
     await setViewport(cdp, 1200, 760)
     await expect(page.locator('.modal-content > .details-panel')).toHaveCount(0)
     await page.locator('.title-pill').click()

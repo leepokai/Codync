@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { canSteer } from '../src/renderer/views/thread/queued-messages.ts'
+import { canSteer } from '../src/renderer/views/chat/queued-messages.ts'
 import { api, attach, steerBot, typeMessage } from './sandbox.ts'
 
 type History = { entries: { kind: string; data: { text?: string; status?: string } }[] }

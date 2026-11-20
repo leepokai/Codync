@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { alertAnalyticsKind } from '@shared/alerts'
 import type { WindowCommand } from '@shared/ipc'
 import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startup'
 import { detailMinWidth, sidebarMinWidth } from '@shared/chat-layout'
@@ -15,7 +16,7 @@ import { prefs, stepTextSize, usePref, DEFAULT_TEXT_SIZE } from '../lib/prefs'
 import { limitSectionName, sectionName } from '../lib/roster-sections'
 import { useApp, StoreContext } from '../store/context'
 import { analytics } from '../store/analytics'
-import { refKey, sameRef, parseRef, type BotRef } from '../store/app-model'
+import { refKey, sameRef, parseRef, type AppModel, type BotRef } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
 import { AllWorkButton, AllWorkSheet } from './AllWorkView'
@@ -24,8 +25,8 @@ import { ExtensionsMovedTip } from './ExtensionsMovedTip'
 import { RailAccountNotice, SidebarFooter } from './SidebarFooter'
 import { UpdateBadge } from './UpdateButton'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
-import { ThreadView } from './thread/ThreadView'
-import { queueVoiceKey } from './thread/voice-shortcut-keys'
+import { ChatView } from './chat/ChatView'
+import { queueVoiceKey } from './chat/voice-shortcut-keys'
 import { NewBotView, NewGroupView } from './bots/NewBotView'
 import { ImportBotsSheet } from './bots/ImportBotsView'
 import { BotEditorView } from './bots/BotEditorView'
@@ -61,6 +62,12 @@ import './chat-window.css'
 import './sidebar-header.css'
 import { useTr } from '../lib/use-language'
 
+
+/** Opens the bot the tray or a notification names (`computerId/botId`). */
+function openRef(app: AppModel, key: string) {
+  const ref = parseRef(key)
+  if (ref) app.select(ref)
+}
 
 /** Native desktop chat: roster on the left, the conversation on the right (Grok Bot's desktop layout). */
 export function ChatWindow() {
@@ -98,11 +105,11 @@ export function ChatWindow() {
             return prefs.textSize.set(c.up === null ? DEFAULT_TEXT_SIZE : stepTextSize(prefs.textSize.get(), c.up))
           case 'setUsageIconStyle':
             return prefs.usageIconStyle.set(c.style)
-          case 'openBot': {
-            const ref = parseRef(c.ref)
-            if (ref) app.select(ref)
-            return
-          }
+          case 'openBot':
+            return openRef(app, c.ref)
+          case 'openAlert':
+            analytics.track({ event: 'desktop_notification_opened', kind: alertAnalyticsKind(c.alert) })
+            return openRef(app, c.ref)
           case 'stopBot': {
             const ref = parseRef(c.ref)
             const store = ref && app.store(ref.computerId)
@@ -224,8 +231,8 @@ function ChatSplitView() {
   const openVoiceSettings = useCallback(() => setSettings('voice'), [])
   const [showAccount, setShowAccount] = useState(false)
   const [showWork, setShowWork] = useState(false)
-  // What the view of all work asked a bot's chat to show, and which asking it was: its Details, the card of `item`, or the thread of the item `thread`.
-  const [shownRequest, setShownRequest] = useState<{ ref: string; count: number; item?: string; thread?: string } | null>(null)
+  // What the view of all work asked a bot's chat to show, and which asking it was: its Details, the card of the task `task`, or the thread of the task `thread`.
+  const [shownRequest, setShownRequest] = useState<{ ref: string; count: number; task?: string; thread?: string } | null>(null)
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight })
   const newButton = useRef<HTMLButtonElement>(null)
   const railNewButton = useRef<HTMLButtonElement>(null)
@@ -253,8 +260,8 @@ function ChatSplitView() {
   const visibleRoster = roster.items
   const work = allWork(roster.ordered)
   const closeWork = useCallback(() => setShowWork(false), [])
-  /** From the view of all work: the bot's chat, at its Details, at the card of `item` or with the thread of `thread`. */
-  const showInChat = (ref: BotRef, show: { item?: string; thread?: string } = {}) => {
+  /** From the view of all work: the bot's chat, at its Details, at the card of the task `task` or with the thread of the task `thread`. */
+  const showInChat = (ref: BotRef, show: { task?: string; thread?: string } = {}) => {
     app.select(ref)
     setShownRequest((last) => ({ ref: refKey(ref), count: (last?.count ?? 0) + 1, ...show }))
     setShowWork(false)
@@ -374,7 +381,7 @@ function ChatSplitView() {
   if (selected && selectedStore && selectedBot) {
     detail = (
       <StoreContext.Provider value={selectedStore}>
-        <ThreadView key={refKey(selected)} botId={selected.botId} request={shownRequest?.ref === refKey(selected) ? shownRequest : null} />
+        <ChatView key={refKey(selected)} botId={selected.botId} request={shownRequest?.ref === refKey(selected) ? shownRequest : null} />
       </StoreContext.Provider>
     )
   } else if (!onlineStores.length && ssh.state.profiles.length) {
@@ -494,7 +501,7 @@ function ChatSplitView() {
         bots={work.bots}
         many={app.computers.length > 1}
         openDetails={(ref) => showInChat(ref)}
-        openCard={(ref, item) => showInChat(ref, { item })}
+        openCard={(ref, task) => showInChat(ref, { task })}
         openThread={(ref, thread) => showInChat(ref, { thread })}
         onClose={closeWork}
       />

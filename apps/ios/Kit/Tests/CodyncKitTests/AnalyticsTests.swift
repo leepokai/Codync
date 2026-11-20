@@ -94,6 +94,8 @@ import Testing
     #expect(try json(.linkOpened(.installCommand)) == #"{"link":"install_command"}"#)
     #expect(try json(.linkOpened(.installLink)) == #"{"link":"install_link"}"#)
     #expect(try json(.onboardingStepViewed(.choose)) == #"{"step":"choose"}"#)
+    #expect(try json(.onboardingStepViewed(.cloud)) == #"{"step":"cloud"}"#)
+    #expect(try json(.onboardingCompleted(via: .cloud)) == #"{"via":"cloud"}"#)
     #expect(try json(.signedOutPairingsMoved(computers: 2, keys: .rescan)) == #"{"computers":2,"keys":"rescan"}"#)
     #expect(try json(.cloudKeySaved(.refused, provider: "instabox")) == #"{"outcome":"refused","provider":"instabox"}"#)
     #expect(try json(.cloudOfferOpened(provider: "instabox")) == #"{"provider":"instabox"}"#)

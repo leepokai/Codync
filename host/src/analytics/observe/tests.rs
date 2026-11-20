@@ -440,3 +440,24 @@ fn a_voice_server_that_wasnt_saved_reports_why_never_what_it_said() {
     assert_eq!(reported(&refused), with("unreachable"));
     assert_eq!(reported(&anyhow::anyhow!("the vault is locked")), with("other"));
 }
+
+#[test]
+fn a_team_change_names_the_settings_it_passes_never_their_values() {
+    let arguments = json!({"botId": "b2", "name": "Secret", "modelOptions": {"effort": "low"}, "made_up": 1});
+    let b = json!({"botId": "b1", "name": "update_bot", "arguments": arguments});
+    assert_eq!(
+        props("manageCall", &b),
+        Some((Event::TeamManaged, json!({"tool": "update", "fields": ["modelOptions", "name"], "client": "local"})))
+    );
+    assert_eq!(props("manageCall", &json!({"name": "list_team", "arguments": {}})), None, "a read");
+}
+
+#[test]
+fn a_refused_team_change_reports_why_never_what_it_said() {
+    let b = json!({"name": "create_bot", "arguments": {"name": "Scout"}});
+    let (event, p) = observe(&Caller::Local, "manageCall", &b).unwrap();
+    let reported = |error: &anyhow::Error| failed(event, p.clone(), error).map(|(_, p)| p["error"].clone());
+    let denied = crate::chat::manage::Refused::error("denied", "the user didn't allow this change".into());
+    assert_eq!(reported(&denied), Some(json!("denied")));
+    assert_eq!(reported(&anyhow::anyhow!("nothing to change")), Some(json!("other")));
+}

@@ -39,14 +39,14 @@ pub struct TurnEnd<'a> {
     pub stop_reason: &'a str,
     pub failure: Option<&'a anyhow::Error>,
     pub source: TurnSource,
-    /// Where the item a task works came from (`chat::tasks::Source::kind`), as the turn began: the item may have
-    /// ended since (a Stop, a run past its limit). Told only of a task's turn.
+    /// Where the task a thread works came from (`chat::work::Source::kind`), as the turn began: the task may have
+    /// ended since (a Stop, a run past its limit). Told only of a thread's turn.
     pub work: &'static str,
     pub ms: i64,
 }
 
 /// `turn_finished`: the bot's agent, how the turn ended, why it failed, how long it ran, the ceiling a network
-/// rule held it to and, for a task's turn, where its item came from; never its text or the error's.
+/// rule held it to and, for a thread's turn, where its task came from; never its text or the error's.
 pub fn turn_finished(hub: &Hub, bot: &BotConfig, turn: TurnEnd<'_>) {
     let TurnEnd { outcome, stop_reason, failure, source, work, ms } = turn;
     let failure = failure.map(failure_kind);
@@ -71,8 +71,8 @@ pub fn turn_finished(hub: &Hub, bot: &BotConfig, turn: TurnEnd<'_>) {
     if access.is_ceiling() {
         p["ceiling"] = access.word().into();
     }
-    // A task's turn: where the item it works came from, so the work a bot gave away is told from its chat.
-    if bot.is_task() {
+    // A thread's turn: where the task it works came from, so the work a bot gave away is told from its chat.
+    if bot.is_thread() {
         p["work"] = work.into();
     }
     if let Some((kind, rpc)) = failure {
@@ -141,6 +141,9 @@ pub enum Retired {
     RoutineFinished,
     /// A routine run ended and the agent couldn't close its session, which holds MCP servers (Cursor can't close one).
     SessionNotClosed,
+    /// The agent dropped Codync's MCP servers from a live session (OpenCode 2.x after an idle while, #508), so it
+    /// started again and reopened the session with them.
+    ServersLost,
 }
 
 /// `agent_retired`: a bot's `agent` stopped to give back its processes, and why.
@@ -285,13 +288,13 @@ mod tests {
     }
 
     #[test]
-    fn a_tasks_turn_says_where_its_item_came_from() {
+    fn a_threads_turn_says_where_its_task_came_from() {
         use crate::LockExt as _;
         use crate::chat::calls::context::tests::{bot, hub};
         let hub = hub();
         let own = bot("b1", "Ada", "/tmp");
-        let task = BotConfig { id: "task-1".into(), task_of: Some("b1".into()), ..own.clone() };
-        // Its box holds no item at work any more: a run the user stopped has ended by the time its turn does.
+        let thread = BotConfig { id: "thread-1".into(), thread_of: Some("b1".into()), ..own.clone() };
+        // Its box holds no task at work any more: a run the user stopped has ended by the time its turn does.
         let turn = TurnEnd {
             outcome: TurnOutcome::Stopped,
             stop_reason: "cancelled",
@@ -300,7 +303,7 @@ mod tests {
             work: "routine",
             ms: 0,
         };
-        for cfg in [&own, &task] {
+        for cfg in [&own, &thread] {
             turn_finished(&hub, cfg, turn);
         }
         let mut rx = hub.analytics.rx.locked().take().expect("nothing read it yet");

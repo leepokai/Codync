@@ -1,28 +1,28 @@
 import CodyncKit
 import SwiftUI
 
-/// Every bot that has live or waiting items, in one sheet: the bot as a heading, which opens its details, over the
+/// Every bot that has live or waiting tasks, in one sheet: the bot as a heading, which opens its details, over the
 /// rows its details have for them, with the same actions. A row that needs the user opens the bot's chat, where its
-/// card waits; any other row of an item a task has opens the bot's details on its thread. It closes when the last
-/// item ends.
+/// card waits; any other row of a task a thread has opens the bot's details on its thread. It closes when the last
+/// task ends.
 public struct AllWorkView: View {
     let bots: [RosterItem]
     /// Several computers: a heading also names the bot's computer.
     let many: Bool
     let store: (RosterItem) -> BotStore?
     let openDetails: (RosterItem) -> Void
-    /// The bot's chat, at the card `item` waits on.
-    let openChat: (RosterItem, WorkItem) -> Void
-    /// The bot's details, on the thread of `item`.
-    let openThread: (RosterItem, WorkItem) -> Void
+    /// The bot's chat, at the card `task` waits on.
+    let openChat: (RosterItem, WorkTask) -> Void
+    /// The bot's details, on the thread of `task`.
+    let openThread: (RosterItem, WorkTask) -> Void
     @Environment(\.dismissModal) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Where a tap leads, once the sheet is gone: another sheet can't open while this one slides away.
     @State private var leaving: (() -> Void)?
 
     public init(bots: [RosterItem], many: Bool, store: @escaping (RosterItem) -> BotStore?,
-                openDetails: @escaping (RosterItem) -> Void, openChat: @escaping (RosterItem, WorkItem) -> Void,
-                openThread: @escaping (RosterItem, WorkItem) -> Void) {
+                openDetails: @escaping (RosterItem) -> Void, openChat: @escaping (RosterItem, WorkTask) -> Void,
+                openThread: @escaping (RosterItem, WorkTask) -> Void) {
         self.bots = bots
         self.many = many
         self.store = store
@@ -40,8 +40,8 @@ public struct AllWorkView: View {
                         if let store = store(row) {
                             VStack(alignment: .leading, spacing: 8) {
                                 heading(row, members: store.members(of: row.bot))
-                                WorkTimeline(plain: row.bot, openCard: { item in leave(to: { openChat(row, item) }) },
-                                             openThread: { item in leave(to: { openThread(row, item) }) })
+                                WorkTimeline(plain: row.bot, openCard: { task in leave(to: { openChat(row, task) }) },
+                                             openThread: { task in leave(to: { openThread(row, task) }) })
                             }
                             .environment(store)
                             .transition(.opacity)

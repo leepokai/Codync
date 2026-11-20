@@ -122,7 +122,7 @@ impl App {
                         ConfirmAct::DeleteCredentials => {
                             self.call("resetCredentials", json!({}), After::CredentialsReset);
                         }
-                        ConfirmAct::StopWork { bot, item } => self.stop_work(bot, item),
+                        ConfirmAct::StopWork { bot, task } => self.stop_work(bot, task),
                     }
                     None
                 }
@@ -135,7 +135,7 @@ impl App {
             Overlay::Group(g) => self.group_key(g, k),
             Overlay::Memory(m) => self.memory_key(m, k),
             Overlay::BotChat(c) => Self::bot_chat_key(c, k),
-            Overlay::Task(s) => self.task_key(s, k),
+            Overlay::Thread(s) => self.thread_key(s, k),
             Overlay::CutIn(c) => self.cut_in_key(c, k),
             Overlay::AllWork(p) => self.all_work_key(p, k),
             Overlay::DevServers(sheet) => self.dev_servers_key(sheet, k),

@@ -72,10 +72,10 @@ pub fn tools() -> Vec<Value> {
     ]
 }
 
-/// `caller`: the bot whose agent calls. A task's servers are its bot's: the user sees and stops them there, and
+/// `caller`: the bot whose agent calls. A thread's servers are its bot's: the user sees and stops them there, and
 /// they count toward its limit.
 pub async fn call(hub: &Arc<Hub>, caller: &str, name: &str, args: &Value) -> Result<Value> {
-    let bot = &crate::chat::tasks::owner(&hub.store, caller);
+    let bot = &crate::chat::work::owner(&hub.store, caller);
     match name {
         START => start(hub, caller, bot, args).await,
         "list_dev_servers" => Ok(json!({"servers": hub.dev_servers.wire(bot)})),
@@ -141,7 +141,8 @@ async fn start(hub: &Arc<Hub>, caller: &str, bot: &str, args: &Value) -> Result<
 /// Under Ask, waits on the approval card with the command and folder.
 async fn ask(hub: &Hub, cfg: &BotConfig, command: &str, folder: &str) -> Result<()> {
     let detail = format!("{command}\n{folder}");
-    let answered = crate::chat::manage::approve(hub, cfg, "Start a dev server".to_owned(), detail).await;
+    let deadline = Instant::now() + crate::chat::manage::APPROVAL_TIMEOUT;
+    let answered = crate::chat::manage::approve(hub, cfg, "Start a dev server".to_owned(), detail, deadline).await;
     if answered.is_err() {
         report(hub, Event::DevServerStarted, "outcome", "refused");
     }

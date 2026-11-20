@@ -43,6 +43,12 @@ test('a chain stopped at the handoff limit leaves a notice whose Continue sends 
     await expect(transcript.locator('.bubble.user', { hasText: /^Continue$/ })).toHaveCount(1)
     await expect(transcript.getByRole('button', { name: 'Continue', exact: true })).toHaveCount(0)
     await expect(notice).toBeVisible()
+    // A second press, from a client that still showed the button, is refused and sends nothing.
+    const { entries } = await api<{ entries: { id: string; data: { continueChain?: boolean } }[] }>(page, 'history', { botId: first.id, limit: 100 })
+    const pressed = entries.find((e) => e.data.continueChain === false)
+    expect(pressed).toBeDefined()
+    await expect(api(page, 'continueChain', { entryId: pressed?.id })).rejects.toThrow()
+    await expect(transcript.locator('.bubble.user', { hasText: /^Continue$/ })).toHaveCount(1)
   } finally {
     for (const botId of bots) {
       await api(page, 'stop', { botId }).catch(() => {})

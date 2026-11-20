@@ -94,3 +94,43 @@ test('Settings > Usage lists each login of an agent with login profiles, with it
     await browser.close()
   }
 })
+
+test('Settings > Usage marks a login whose check failed as out of date, until the next reading', async () => {
+  test.setTimeout(150_000) // The refresh runs the computer's Claude Code on each login.
+  const { browser, page } = await attach()
+  const service = (await api<Usage>(page, 'usage', {})).services.find((s) => s.id === 'claude')
+  test.skip(!service, 'Needs Claude Code installed on this computer.')
+  if (!service) return
+  let profile: string | undefined
+  try {
+    await api(page, 'setUsageShown', { id: 'claude', shown: true })
+    const added = await api<{ loginProfile: { id: string } }>(page, 'addLoginProfile', { backend: 'claude', kind: 'account' })
+    profile = added.loginProfile.id
+    markSignedIn(profile)
+    await api(page, 'renameLoginProfile', { backend: 'claude', loginProfile: profile, name: 'Work' })
+    await openUsage(page)
+    const work = page.locator('.settings-usage-login', { hasText: 'Work' })
+    // Wait out the new row's own first check, so the reading below is the last word.
+    await expect(() => api(page, 'usage', { refresh: true })).toPass({ timeout: 90_000 })
+    await statusline(profile, 77, 40)
+    await expect(work).toContainText('77%')
+    await expect(work).not.toContainText('Out of date')
+
+    // The empty login profile's own check fails: its numbers stay, marked.
+    const row = async () =>
+      (await api<{ providers: { id: string; loginProfiles?: { id: string; failedAt?: number }[] }[] }>(page, 'usage', { refresh: true }))
+        .providers.find((p) => p.id === 'claude')?.loginProfiles?.find((l) => l.id === profile)
+    await expect.poll(async () => (await row())?.failedAt, { timeout: 90_000 }).toBeTruthy()
+    await expect(work).toContainText('77%')
+    await expect(work).toContainText('Out of date')
+
+    await statusline(profile, 78, 40)
+    await expect(work).toContainText('78%')
+    await expect(work).not.toContainText('Out of date')
+  } finally {
+    if (profile) await expect(() => api(page, 'removeLoginProfile', { loginProfile: profile })).toPass({ timeout: 20_000 }).catch(() => {})
+    await api(page, 'setUsageShown', { id: 'claude', shown: service.shown }).catch(() => {})
+    await page.reload().catch(() => {}) // Closes Settings, which would cover the next spec's window.
+    await browser.close()
+  }
+})

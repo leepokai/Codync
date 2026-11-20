@@ -40,6 +40,8 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var question: String?
     public var choices: [String]?
     public var recommended: Int?
+    /// decision: `false` when only an option answers it (an agent's own question); missing: own words answer it too.
+    public var ownWords: Bool?
     public var selected: String?
     public var command: String?
     public var detail: String?
@@ -80,10 +82,10 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var transcript: [CallLine]?
     /// agent: an artifact card, the bot's artifact as published then (the newest version shows).
     public var artifact: ArtifactRef?
-    /// permission: the background task that asks (`WorkItem.swift`); the card sits in its bot's chat.
+    /// A card or message a thread put in its bot's chat: the thread (`WorkTask.swift`), with the title of its task.
+    public var thread: ThreadRef?
+    /// The task that thread works on.
     public var task: TaskRef?
-    /// permission: the item that task works on.
-    public var item: ItemRef?
 
     public init(text: String? = nil, status: String? = nil, clientNonce: String? = nil) {
         self.text = text
@@ -199,9 +201,12 @@ public enum DecisionStatus: String, Sendable {
 }
 
 public extension EntryData {
-    /// A background task put it in the chat (a card, a file, a voice note, an artifact): its line names the task,
+    /// A thread put it in the chat (a card, a file, a voice note, an artifact): its line names the thread's task,
     /// and typing in the chat doesn't answer it.
-    var isFromTask: Bool { !(task?.title.isEmpty ?? true) || !(item?.id.isEmpty ?? true) }
+    var isFromThread: Bool { !(thread?.title.isEmpty ?? true) || !(task?.id.isEmpty ?? true) }
+
+    /// A choice card takes the user's own words: not a thread's, nor one only an option answers.
+    var takesOwnWords: Bool { !isFromThread && ownWords != false }
 
     /// A choice card's status; nil for a value this app doesn't know.
     var decisionStatus: DecisionStatus? { status.flatMap(DecisionStatus.init(rawValue:)) }

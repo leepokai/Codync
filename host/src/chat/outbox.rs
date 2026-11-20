@@ -137,8 +137,8 @@ async fn send_file(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
         Some(value) => Some(message_text(value.as_str().ok_or_else(|| anyhow!("text must be a string"))?)?),
         None => None,
     };
-    // A task's file shows in its bot's chat (`Actor::add_for_user`), so that is the chat it quotes from.
-    let (quote, sent) = reply_quote(hub, &crate::chat::tasks::owner(&hub.store, bot), args);
+    // A thread's file shows in its bot's chat (`Actor::add_for_user`), so that is the chat it quotes from.
+    let (quote, sent) = reply_quote(hub, &crate::chat::work::owner(&hub.store, bot), args);
     let guard = CancelCopy(Arc::new(std::sync::atomic::AtomicBool::new(false)));
     let (reply, delivered) = oneshot::channel();
     hub.send_cmd(bot, Cmd::SendFile { path: path.to_owned(), name, text, quote, cancelled: guard.0.clone(), reply })?;

@@ -127,9 +127,9 @@ class BotEditorTest {
     }
 
     @Test fun worktreePerThreadShowsOnlyForAProjectInAGitRepository() {
-        val project = Bot("fixture", cwd = "/home/Project", gitRepo = true, taskWorktrees = true)
+        val project = Bot("fixture", cwd = "/home/Project", gitRepo = true, threadWorktrees = true)
         var saved by mutableStateOf(project)
-        compose.setContent { Hosted { BotEditor(fixture().copy(bots = listOf(saved)), scout.copy(taskWorktrees = true), store) } }
+        compose.setContent { Hosted { BotEditor(fixture().copy(bots = listOf(saved)), scout.copy(threadWorktrees = true), store) } }
         toggle("Worktree per thread").performScrollTo().assertIsOn()
         // The bot's own folder is a repository too, where all its work stays: no switch there.
         saved = project.copy(cwd = "/data/bots/fixture/workspace", managedWorkspace = true)

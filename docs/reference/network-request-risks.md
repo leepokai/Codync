@@ -20,7 +20,7 @@ Under Auto and Ask the host also enforces, whatever the request says
 - Codync approves nothing by itself, even for a bot set to Approve automatically.
 - The agent is put in a mode no freer than the level, and back in the bot's own mode afterwards.
 - The bot can only read and answer you with Codync's own tools: no message to another bot, no follow-up, routine,
-  background work, dev server, team change, and no change to its instructions, skills, fallbacks or memory. So the
+  task, dev server, team change, and no change to its instructions, skills, fallbacks or memory. So the
   text can't travel on to a bot, or a later turn, that isn't held to the level.
 - An agent that can't be held to a level (it lists no modes) doesn't take the request.
 
@@ -35,7 +35,7 @@ These hold at every level but Deny.
   (Claude's Manual reads without a card). A request can have the bot read anything its agent can read, in its folder
   and outside it (a `.env`, an SSH key, its memory, your conversation with it), and put it in the reply that goes back
   to the sender. This is the largest risk: Ask stops changes, not leaks.
-- **Your conversation with the bot.** The request runs in a background task that starts as a copy of the bot's
+- **Your conversation with the bot.** The request runs in a thread that starts as a copy of the bot's
   conversation where its agent can, so it sees what you said there. An answer to the bot's own request, and a
   request to a bot with computer use or Manage the team on, runs in the bot's chat itself: its text stays in that
   session afterwards, and a later turn of yours can act on what it planted, without the level.

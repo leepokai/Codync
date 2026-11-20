@@ -227,19 +227,21 @@ impl Actor {
         if let Some(sid) = current {
             let prompt_current =
                 snapshot.as_ref().is_none_or(|s| self.applied_system.get(&sid).is_some_and(|t| *t == s.system));
-            // A layout change re-sends the servers on the same session (leepokai/Codync#508): each session remembers
-            // the layout it was opened with, so one reopened after a change is current from then on. OpenCode reopens
-            // the session with its servers every turn. Otherwise the session is reused unless the agent dropped the
-            // servers, which starts the agent again.
-            let layout_current = conn.layout.get(&sid) == Some(&self.mcp_layout_revision);
-            let reuse_loaded = self.cfg.backend != "opencode" && layout_current;
-            if reuse_loaded && conn.loaded.contains_key(&sid) && prompt_current {
-                if !self.servers_dropped().await {
+            if conn.loaded.contains_key(&sid) && prompt_current {
+                // Lost servers come first, whatever the backend: the agent starts again to get them back (unless
+                // detached work holds it).
+                if self.servers_dropped().await {
+                    self.retire(Retired::ServersLost).await;
+                    return Box::pin(self.ensure_session(slot)).await;
+                }
+                // A layout change re-sends the servers on the same session (leepokai/Codync#508): each session
+                // remembers the layout it was opened with, so one reopened after a change is current from then on.
+                // OpenCode reopens the session with its servers every turn, so it never reuses one.
+                let layout_current = conn.layout.get(&sid) == Some(&self.mcp_layout_revision);
+                if layout_current && self.cfg.backend != "opencode" {
                     self.turn_session = Some(sid);
                     return Ok(());
                 }
-                self.retire(Retired::ServersLost).await;
-                return Box::pin(self.ensure_session(slot)).await;
             }
             let Some(reopen) = conn.sessions.reopen else {
                 tracing::info!(bot = %self.cfg.id, "the agent can't resume sessions; starting a fresh one");

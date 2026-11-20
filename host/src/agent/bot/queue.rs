@@ -525,6 +525,8 @@ impl Actor {
         });
         self.wait_for_sign_in(goes_on.as_ref());
         self.hub.team.end_turn_in_control(&self.cfg.id);
+        // A clarification wake that never started its turn must not strand `asked`: the lead may ask again.
+        self.hub.team.abandon_open_ask(&self.cfg.id);
     }
 
     /// The host-started turn is over; what it was, for the turn's end to act on. `answered`: the agent ended it

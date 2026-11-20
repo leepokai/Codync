@@ -321,6 +321,7 @@ impl Actor {
         // The agent heard the prompt: the turn reached the model, so the spent carry is used. Any failure from
         // here is the turn's own end, not a failed start.
         self.spent_carry = false;
+        self.hub.team.wake_delivered(&self.cfg.id);
         if !self.turn_memory_revision.is_empty()
             && let Err(error) =
                 memory::mark_announced(&self.hub.store, self.cfg.owner(), &sid, &self.turn_memory_revision)

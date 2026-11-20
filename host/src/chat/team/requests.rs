@@ -86,6 +86,11 @@ struct ActorState {
     /// A granted reset whose wake did not start a turn. The next reply begins at hop 0. This is not a pending
     /// grant: a reply must not take a grant that still has its wake.
     carry_reset: bool,
+    /// The carry was consumed by a turn that has not yet delivered its prompt, at this generation: while set,
+    /// no new lift may open (a delayed refusal must not take the refusal over), and the turn's failure will
+    /// restore the carry. Cleared when the prompt is sent, a user message starts, or the carry is restored. A
+    /// restore only applies at its own generation: a user message voids the failed turn's approval.
+    pending_restore: Option<u64>,
 }
 
 /// The one open notice for an actor.
@@ -232,6 +237,17 @@ impl Requests {
             actor.control = false;
         }
     }
+
+    /// A clarification wake that queued but whose turn failed to start: the question never reached the bot,
+    /// so the lead may ask again.
+    pub fn abandon_open_ask(&self, actor: &str) {
+        if let Some(entry) = self.0.locked().actors.get_mut(actor)
+            && let Some(lift) = entry.lift.as_mut()
+            && lift.asked
+        {
+            lift.asked = false;
+        }
+    }
     /// `limit` is the handoffs one chain may use, from 8 through 32. Anything else leaves the current limit.
     /// Nothing outside tests calls this yet, so a running host stays at [`MAX_REQUEST_HOPS`].
     #[cfg_attr(not(test), allow(dead_code))]
@@ -253,14 +269,20 @@ impl Requests {
     /// still unspent, or `generation` is not the actor's current one. The caller delivers a notice only for `Some`.
     pub fn open_lift(&self, sender: &str, actor: &str, generation: u64) -> Option<u64> {
         let mut state = self.0.locked();
-        let (current, open, denied, granted, carried) = match state.actors.get(actor) {
-            Some(entry) => {
-                (entry.generation, entry.lift.is_some(), entry.denied, entry.grant.is_some(), entry.carry_reset)
-            }
-            None => (0, false, false, false, false),
+        let (current, open, denied, granted, carried, pending_restore) = match state.actors.get(actor) {
+            Some(entry) => (
+                entry.generation,
+                entry.lift.is_some(),
+                entry.denied,
+                entry.grant.is_some(),
+                entry.carry_reset,
+                entry.pending_restore.is_some(),
+            ),
+            None => (0, false, false, false, false, false),
         };
-        // A pending grant or a remembered reset still owns the last refusal. A new one must not overwrite it.
-        if current != generation || open || denied || granted || carried {
+        // A pending grant, a remembered reset, or a turn that consumed one but has not delivered its prompt yet
+        // still owns the last refusal. A new one must not overwrite it.
+        if current != generation || open || denied || granted || carried || pending_restore {
             return None;
         }
         let id = state.next_refusal;
@@ -287,6 +309,8 @@ impl Requests {
         entry.lift = None;
         entry.grant = None;
         entry.carry_reset = false;
+        // The user took over: a failed turn's approval is void, and nothing waits to be restored.
+        entry.pending_restore = None;
     }
 
     /// The blocked actor's explanation, once, for its own open lift. Returns the stored text, which is what the
@@ -488,23 +512,39 @@ impl Requests {
         self.0.locked().actors.get(actor).is_some_and(|entry| entry.carry_reset)
     }
 
-    /// Consumes a remembered reset once the reply turn that uses it has started.
+    /// Consumes a remembered reset once the reply turn that uses it has started. The consumption is pending
+    /// until the turn's prompt is sent, at this generation: no new lift may open in between.
     pub fn take_dropped_wake(&self, actor: &str) -> bool {
         let mut state = self.0.locked();
         let Some(entry) = state.actors.get_mut(actor) else { return false };
         let remembered = entry.carry_reset;
         entry.carry_reset = false;
+        if remembered {
+            entry.pending_restore = Some(entry.generation);
+        }
         remembered
     }
 
+    /// The turn that consumed a carry delivered its prompt: the reset is used, nothing waits to be restored.
+    pub fn wake_delivered(&self, actor: &str) {
+        if let Some(entry) = self.0.locked().actors.get_mut(actor) {
+            entry.pending_restore = None;
+        }
+    }
+
     /// Puts a consumed reset back: the turn that spent it failed to start, so the approval was never used.
-    /// Skipped when a newer lift or grant took the refusal over in the gap (its own wake carries the reset):
-    /// restoring alongside would let one approval reset twice.
+    /// Applies only at the generation the carry was consumed at — a user message since voids the approval —
+    /// and only when no newer approval or denial took the refusal over: restoring alongside would let one
+    /// approval reset twice, and past a denial would restart the chain the lead closed.
     pub fn restore_dropped_wake(&self, actor: &str) {
         let mut state = self.0.locked();
         let Some(entry) = state.actors.get_mut(actor) else { return };
-        if entry.grant.is_some() || entry.lift.is_some() {
-            tracing::info!(actor, "carried reset not restored: a newer approval owns the refusal");
+        if entry.pending_restore.is_none_or(|generation| generation != entry.generation) {
+            return;
+        }
+        entry.pending_restore = None;
+        if entry.grant.is_some() || entry.lift.is_some() || entry.denied {
+            tracing::info!(actor, "carried reset not restored: a newer approval or denial owns the refusal");
             return;
         }
         entry.carry_reset = true;
@@ -876,8 +916,10 @@ mod tests {
             requests.approve(refusal).unwrap();
             assert!(matches!(requests.0.locked().active.get("a"), Some(&Turn::Chat(MAX_REQUEST_HOPS))));
             assert!(requests.take_grant_for_chat_start("a", 0, Some(refusal)));
-            // Taking the grant records a carry until the wake's turn starts; spend it here.
+            // Taking the grant records a carry until the wake's turn starts; the wake then delivers its
+            // prompt and spends it.
             assert!(requests.take_dropped_wake("a"));
+            requests.wake_delivered("a");
         }
         requests.start_turn("a", Turn::Chat(requests.hop_limit()));
         let refusal = requests.open_lift("sender", "a", 0).unwrap();
@@ -1046,9 +1088,11 @@ mod tests {
         for _ in 0..3 {
             let id = requests.open_lift("sender", "a", 0).unwrap();
             requests.approve(id).unwrap();
-            // Taking the grant records a carry until the wake's turn starts; spend it here.
+            // Taking the grant records a carry until the wake's turn starts; the wake then delivers its
+            // prompt and spends it.
             assert!(requests.take_grant_for_chat_start("a", 0, Some(id)));
             assert!(requests.take_dropped_wake("a"));
+            requests.wake_delivered("a");
         }
         let blocked = requests.open_lift("sender", "a", 0).unwrap();
         assert!(requests.approve(blocked).unwrap_err().to_string().contains("hop reset limit (3)"));
@@ -1107,6 +1151,7 @@ mod tests {
         // The remembered reset still owns the refusal: a new lift waits until the reply spends the carry.
         assert!(requests.open_lift("sender", "a", 0).is_none());
         assert!(requests.take_dropped_wake("a"));
+        requests.wake_delivered("a");
         assert!(!requests.dropped_wake("a"));
 
         // A wake whose grant was converted by Stop carries too, and a user message drops it.
@@ -1147,23 +1192,61 @@ mod tests {
     }
 
     #[test]
-    fn a_restore_skips_a_newer_approval_and_leaves_it_sole_owner() {
+    fn a_restore_skips_a_stale_generation_after_a_user_message() {
         let requests = Requests::default();
         let refusal = requests.open_lift("sender", "a", 0).unwrap();
         requests.approve(refusal).unwrap();
         assert!(requests.take_grant_for_chat_start("a", 0, Some(refusal)));
-        // The wake's turn spent the carry, then failed to start. In the gap a new refusal reached the limit,
-        // the lift opened and the lead approved: a grant now owns the refusal.
+        // The wake's turn spent the carry, then failed to start. Before the failure is noticed, a user
+        // message starts a new chain: the old approval is void.
         assert!(requests.take_dropped_wake("a"));
+        requests.user_message_started("a");
+        requests.restore_dropped_wake("a");
+        assert!(!requests.dropped_wake("a"), "a stale restore must not hand the new chain a free reset");
+        // The new chain earns its own notice.
+        assert!(requests.open_lift("sender", "a", 1).is_some());
+    }
+
+    #[test]
+    fn a_consumed_carry_blocks_a_new_lift_until_delivered_or_restored() {
+        let requests = Requests::default();
         let refusal = requests.open_lift("sender", "a", 0).unwrap();
         requests.approve(refusal).unwrap();
-        // The late restore must not add a carry on top: the newer grant's wake applies the one reset.
-        requests.restore_dropped_wake("a");
-        assert!(!requests.dropped_wake("a"));
         assert!(requests.take_grant_for_chat_start("a", 0, Some(refusal)));
-        assert!(requests.dropped_wake("a"));
-        // Exactly one reset: spending it leaves nothing, and no second grant exists.
+        // The wake's turn consumed the carry: until its prompt is sent (or it fails and restores), a delayed
+        // same-generation refusal must not open a new lift.
         assert!(requests.take_dropped_wake("a"));
-        assert!(!requests.dropped_wake("a"));
+        assert!(requests.open_lift("sender", "a", 0).is_none(), "the pending restore owns the refusal");
+        // Failed start: the carry comes back, and the new lift is still refused.
+        requests.restore_dropped_wake("a");
+        assert!(requests.dropped_wake("a"));
+        assert!(requests.open_lift("sender", "a", 0).is_none());
+        // The wake's turn delivers its prompt instead: the reset is used and a new refusal may open.
+        requests.take_dropped_wake("a");
+        requests.wake_delivered("a");
+        assert!(requests.open_lift("sender", "a", 0).is_some());
+    }
+
+    #[test]
+    fn a_restore_applies_again_at_the_same_generation_after_a_second_failure() {
+        let requests = Requests::default();
+        let refusal = requests.open_lift("sender", "a", 0).unwrap();
+        requests.approve(refusal).unwrap();
+        assert!(requests.take_grant_for_chat_start("a", 0, Some(refusal)));
+        assert!(requests.take_dropped_wake("a"));
+        // The wake's turn failed twice (the second through a fallback retry): the first restore put the carry
+        // back, the turn spent it again, and the second restore applies again at the same generation.
+        requests.restore_dropped_wake("a");
+        assert!(requests.dropped_wake("a"));
+        assert!(requests.take_dropped_wake("a"));
+        requests.restore_dropped_wake("a");
+        assert!(requests.dropped_wake("a"));
+        // The reply finally starts and delivers its prompt: the reset is used, nothing waits, and a new
+        // refusal (another chain at the limit) may open its own lift again.
+        assert!(requests.take_dropped_wake("a"));
+        requests.wake_delivered("a");
+        requests.restore_dropped_wake("a");
+        assert!(!requests.dropped_wake("a"), "a delivered wake must not carry a reset");
+        assert!(requests.open_lift("sender", "a", 0).is_some());
     }
 }

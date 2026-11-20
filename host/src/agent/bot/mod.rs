@@ -480,7 +480,7 @@ impl Actor {
             }
         }
         self.files.cancel();
-        self.hub.team.end_turn(&self.cfg.id);
+        self.hub.team.end_turn_in_control(&self.cfg.id);
         self.complete_request(Err(anyhow!("recipient shut down")), true);
         self.complete_group(Err(anyhow!("bot shut down")));
         // Its cards may sit in another chat (a group's, a thread's parent's), which outlives it.

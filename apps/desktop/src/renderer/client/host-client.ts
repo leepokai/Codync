@@ -12,6 +12,7 @@ import {
   type ScreenState,
   type Usage,
 } from '@shared/models'
+import { parseAlert, type HostAlert } from '@shared/alerts'
 import type { Artifact, ArtifactChunk, LibraryItem } from '@shared/artifacts'
 import { parseCallCue, type CallCue } from '@shared/calls'
 import type { NetworkView } from '@shared/network'
@@ -110,6 +111,8 @@ export type HostEvent =
   /** `network` is null from hosts before the network view. `catchUp` events follow before the live ones (null from hosts before 2.32.0). */
   | { type: 'hello'; hostId: string; rev: number; usage: Usage; screen: ScreenState | null; network: NetworkView | null; icons?: import('@shared/custom-icons').CustomIcons; catchUp: number | null }
   | { type: 'bot'; bot: Bot }
+  /** Live only: a bot is done, needs you or failed (never replayed in a catch-up). */
+  | { type: 'alert'; alert: HostAlert }
   | { type: 'botDeleted'; id: string; rev: number }
   | { type: 'entry'; entry: Entry }
   /** One entry of a thread's transcript (never a chat's); the catch-up has none. */
@@ -198,6 +201,10 @@ export function parseEvent(line: string): HostEvent | null {
     case 'call': {
       const cue = parseCallCue(raw)
       return cue ? { type, cue } : null
+    }
+    case 'alert': {
+      const alert = parseAlert(raw.alert)
+      return alert ? { type, alert } : null
     }
     case 'resync':
       return { type }

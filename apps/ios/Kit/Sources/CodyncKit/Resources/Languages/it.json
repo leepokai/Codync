@@ -2234,5 +2234,6 @@
   "Start a cloud computer": "Avvia un computer cloud",
   "No computer? Run one on your own cloud provider account.": "Nessun computer? Avviane uno sul tuo account presso un provider cloud.",
   "Starting your cloud computer": "Avvio del computer cloud",
-  "About a minute. You can skip: it shows up on its own when it's ready.": "Circa un minuto. Puoi saltare: comparirà da solo quando è pronto."
+  "About a minute. You can skip: it shows up on its own when it's ready.": "Circa un minuto. Puoi saltare: comparirà da solo quando è pronto.",
+  "Alerts you when a bot is done, needs you or hits an error, unless its chat is open. A phone with Codync gets the same alerts, so this starts off.": "Ti avvisa quando un bot ha finito, ha bisogno di te o incontra un errore, a meno che la sua chat sia aperta. Un telefono con Codync riceve gli stessi avvisi, quindi all'inizio è disattivato."
 }

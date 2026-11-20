@@ -243,8 +243,8 @@ pub(crate) struct Conn {
     usage: HashMap<String, (u64, u64)>,
     /// Codync's MCP servers each session knows by another name (`codex_names`), as it was created or loaded with.
     renamed: HashMap<String, codex_names::Renamed>,
-    /// Layout generation this process was started under (`Actor::mcp_layout_revision`).
-    mcp_layout_revision: u64,
+    /// Layout generation each session was created or loaded with its MCP servers under (`Actor::mcp_layout_revision`).
+    layout: HashMap<String, u64>,
     /// The login profile the process runs on, which isn't removed meanwhile.
     on_profile: Option<crate::agent::login_profiles::Running>,
     /// The `CODEX_HOME` the process started with, when it isn't Codex's own default.

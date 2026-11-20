@@ -243,7 +243,7 @@ pub(crate) async fn start_agent(
         usage: HashMap::new(),
         renamed: HashMap::new(),
         on_profile: None,
-        mcp_layout_revision: 0,
+        layout: HashMap::new(),
         codex_home: None,
     })
 }

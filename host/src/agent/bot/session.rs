@@ -207,7 +207,6 @@ impl Actor {
             .await?;
             conn.acp.hold(grants);
             conn.on_profile = on_profile;
-            conn.mcp_layout_revision = self.mcp_layout_revision;
             conn.codex_home =
                 env.iter().find(|(key, home)| key == "CODEX_HOME" && !home.is_empty()).map(|(_, home)| home.clone());
             self.conn = Some(conn);
@@ -228,10 +227,13 @@ impl Actor {
         if let Some(sid) = current {
             let prompt_current =
                 snapshot.as_ref().is_none_or(|s| self.applied_system.get(&sid).is_some_and(|t| *t == s.system));
-            // A layout change re-sends the servers on the same session (leepokai/Codync#508). Otherwise the
-            // session is reused unless the agent dropped the servers, which starts the agent again.
-            let layout_current = conn.mcp_layout_revision == self.mcp_layout_revision;
-            if conn.loaded.contains_key(&sid) && prompt_current && layout_current {
+            // A layout change re-sends the servers on the same session (leepokai/Codync#508): each session remembers
+            // the layout it was opened with, so one reopened after a change is current from then on. OpenCode reopens
+            // the session with its servers every turn. Otherwise the session is reused unless the agent dropped the
+            // servers, which starts the agent again.
+            let layout_current = conn.layout.get(&sid) == Some(&self.mcp_layout_revision);
+            let reuse_loaded = self.cfg.backend != "opencode" && layout_current;
+            if reuse_loaded && conn.loaded.contains_key(&sid) && prompt_current {
                 if !self.servers_dropped().await {
                     self.turn_session = Some(sid);
                     return Ok(());
@@ -252,6 +254,7 @@ impl Actor {
             if instructions == Instructions::SystemPrompt {
                 params["systemPrompt"] = system_prompt(&self.snapshot(&sid).await?.system);
             }
+            let layout = self.mcp_layout_revision;
             let res = self.session_request(reopen, params).await;
             let Some(conn) = self.conn.as_mut() else { return res.map(drop) };
             let about_agent = drop_replay(conn).await;
@@ -277,6 +280,7 @@ impl Actor {
                         res
                     };
                     conn.loaded.insert(sid.clone(), Instant::now());
+                    conn.layout.insert(sid.clone(), layout);
                     conn.renamed.insert(sid.clone(), renamed);
                     watch_servers(conn).await;
                     self.note_options(&sid, &res, Listing::Session);
@@ -349,6 +353,7 @@ impl Actor {
         let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone(), Instant::now());
+        conn.layout.insert(sid.clone(), self.mcp_layout_revision);
         conn.renamed.insert(sid.clone(), renamed);
         watch_servers(conn).await;
         self.unfiled.opened(conn.adapter, &sid);

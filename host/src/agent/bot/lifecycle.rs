@@ -198,6 +198,7 @@ impl Actor {
             Ok(_) => {
                 tracing::info!(bot = %self.cfg.id, session = sid, "closed a session");
                 conn.loaded.remove(sid);
+                conn.layout.remove(sid);
                 conn.fast_options.remove(sid);
                 conn.modes.remove(sid);
                 conn.mode_set.remove(sid);

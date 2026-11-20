@@ -152,8 +152,19 @@ impl Actor {
         self.stop_requested = false;
         self.stopped_for_message = false;
         self.cancel_deadline = None;
+        // A hop-limit control turn is still a chat at hop 0. reply_hops stays as it is.
+        // A carried reset is spent by the turn that starts at hop 0 on it - the approval wake's own turn, or a
+        // reply. The take happens AFTER the session and prompt are ready (see the take below, just before relay),
+        // so a failed start leaves the carry standing for the next reply; until then the turn only plans the hop-0
+        // admission. A task report or other host turn takes neither.
+        let carried = self.hub.team.dropped_wake(&self.cfg.id);
+        let wake_turn = carried && self.reply_hops == Some(0);
+        let reply_carry = carried && self.reply_hops.is_none_or(|hops| hops > 0) && self.host_turn.is_none();
+        // A control turn, the wake's own turn and a carried reply all begin at hop 0.
         let team_turn = if self.in_request() {
             crate::chat::team::Turn::Request
+        } else if self.hub.team.in_control(&self.cfg.id) || wake_turn || reply_carry {
+            crate::chat::team::Turn::Chat(0)
         } else {
             crate::chat::team::Turn::Chat(self.reply_hops.unwrap_or(0))
         };
@@ -170,6 +181,12 @@ impl Actor {
         self.unheard.clear();
         self.files.summary = None;
         self.files.cancel();
+        // The turn is committed: spend a carried reset now, once, for the hop-0 admission planned above. From
+        // here the turn runs (or its end paths clean up), so the carry cannot outlive its turn.
+        if wake_turn || reply_carry {
+            self.hub.team.take_dropped_wake(&self.cfg.id);
+            self.reply_hops = Some(0);
+        }
         if hidden {
             self.hidden_turn();
         } else {
@@ -224,7 +241,7 @@ impl Actor {
             if self.routine_completion.is_none() {
                 self.set_inflight(false);
             }
-            self.hub.team.end_turn(&self.cfg.id);
+            self.hub.team.end_turn_in_control(&self.cfg.id);
             self.hub.set_runtime(&self.id(), |r| {
                 r.status = BotStatus::Idle;
                 r.activity = String::new();
@@ -511,7 +528,7 @@ impl Actor {
             r.session = None;
         });
         self.wait_for_sign_in(goes_on.as_ref());
-        self.hub.team.end_turn(&self.cfg.id);
+        self.hub.team.end_turn_in_control(&self.cfg.id);
         // A room turn's news comes from the group once the room is done (see `group`).
         let more = self.queue.iter().any(|q| matches!(q, Queued::User { .. }));
         // It held back its only answer, a reaction: it said nothing, so there is nothing to tell either.

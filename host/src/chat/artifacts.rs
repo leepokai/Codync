@@ -65,13 +65,14 @@ pub fn tools() -> [Value; 2] {
     [
         json!({
             "name": "publish_artifact",
-            "description": "Publish an Artifact: one self-contained HTML file (up to 5 MiB) the user opens from a card in your chat and from its Library. Without artifact, it creates a new artifact (title required). With artifact (an id from an earlier publish or list_artifacts), it replaces that artifact's HTML, and its title when given. Paths are absolute or relative to your working directory.",
+            "description": "Publish an Artifact: one self-contained HTML file (up to 5 MiB) the user opens from a card in your chat and from its Library. Without artifact, it creates a new artifact (title required). With artifact (an id from an earlier publish or list_artifacts), it replaces that artifact's HTML, and its title when given; notify: false refreshes its existing card instead of posting a new one in your chat. Paths are absolute or relative to your working directory.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "The HTML file."},
                     "title": {"type": "string", "description": "The artifact's title, as the user should see it."},
                     "artifact": {"type": "string", "description": "The id of the artifact to update."},
+                    "notify": {"type": "boolean", "description": "With artifact: false updates it quietly, without a new card in your chat (default true)."},
                 },
                 "required": ["path"],
             },
@@ -162,10 +163,10 @@ fn write(dest: &Path, source: &Path) -> Result<(u64, String)> {
     Ok((u64::try_from(html.len())?, files::digest_hex(&Sha256::digest(&html))))
 }
 
-/// The `chat` server's artifact tools. A task's artifacts are its bot's; the card is posted by the actor that
-/// published it, the task's own, which puts it in the bot's chat.
+/// The `chat` server's artifact tools. A thread's artifacts are its bot's; the card is posted by the actor that
+/// published it, the thread's own, which puts it in the bot's chat.
 pub async fn call(hub: &Arc<Hub>, caller: &str, name: &str, args: &Value) -> Result<Value> {
-    let bot = &crate::chat::tasks::owner(&hub.store, caller);
+    let bot = &crate::chat::work::owner(&hub.store, caller);
     match name {
         "publish_artifact" => publish(hub, bot, caller, args).await,
         "list_artifacts" => {
@@ -197,7 +198,7 @@ async fn publish(hub: &Arc<Hub>, bot: &str, actor: &str, args: &Value) -> Result
         (None, None) => bail!("title is required for a new artifact"),
     };
     let id = existing.as_ref().map_or_else(|| uuid::Uuid::new_v4().to_string(), |artifact| artifact.id.clone());
-    // From the folder of the actor that publishes: a task's may be a worktree of its own.
+    // From the folder of the actor that publishes: a thread's may be a worktree of its own.
     let folder = hub.store.bot(actor)?.map_or_else(|| row.config.cwd.clone(), |actor| actor.config.cwd);
     let (dest, source) = (html_path(bot, &id)?, Path::new(&folder).join(source));
     let (size, sha256) = tokio::task::spawn_blocking(move || write(&dest, &source)).await??;
@@ -216,6 +217,12 @@ async fn publish(hub: &Arc<Hub>, bot: &str, actor: &str, args: &Value) -> Result
     // Saved before its card goes out, so an app opening the card finds it.
     put(hub, &mut artifact)?;
     let mut answer = json!({"published": true, "artifact": {"id": artifact.id, "title": artifact.title}});
+    // A quiet update (#387) refreshes the card it already has; a new artifact, or one without a card, gets one.
+    if args["notify"] == false && artifact.entry_id.is_some() {
+        refresh_card(hub, &artifact);
+        answer["quiet"] = true.into();
+        return Ok(answer);
+    }
     let (reply, posted) = oneshot::channel();
     hub.send_cmd(actor, Cmd::PostArtifact { data: artifact.card_entry(), reply })?;
     let posted = tokio::time::timeout(Duration::from_secs(10), posted)
@@ -253,26 +260,28 @@ pub async fn api(hub: &Arc<Hub>, method: &str, b: &Value) -> Result<Value> {
         "renameArtifact" => {
             artifact.title = title(b["title"].as_str().unwrap_or_default())?;
             put(hub, &mut artifact)?;
-            retitle_card(hub, &artifact);
+            refresh_card(hub, &artifact);
             Ok(json!({"artifact": artifact}))
         }
         _ => bail!("unknown artifact method: {method}"),
     }
 }
 
-/// The artifact's newest card takes the new title too: older apps and a cache that never saw the rename show the card's.
-fn retitle_card(hub: &Hub, artifact: &Artifact) {
+/// The artifact's newest card takes its current title and publish time: older apps and a cache that never saw the
+/// rename or the quiet update show the card's.
+fn refresh_card(hub: &Hub, artifact: &Artifact) {
     let Some(id) = artifact.entry_id.as_deref() else { return };
-    let retitled = hub.edit_entry(id, |card| {
+    let refreshed = hub.edit_entry(id, |card| {
         if card.data["artifact"]["id"] != artifact.id.as_str() {
             return Ok(false);
         }
         card.data["text"] = card_text(&artifact.title).into();
         card.data["artifact"]["title"] = artifact.title.clone().into();
+        card.data["artifact"]["updatedAt"] = artifact.updated_at.into();
         Ok(true)
     });
-    if let Err(e) = retitled {
-        tracing::info!(artifact = artifact.id, error = format!("{e:#}"), "couldn't retitle the artifact's card");
+    if let Err(e) = refreshed {
+        tracing::info!(artifact = artifact.id, error = format!("{e:#}"), "couldn't refresh the artifact's card");
     }
 }
 

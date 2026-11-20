@@ -28,7 +28,7 @@ The recipient's tool calls and thinking are in its own **Full conversation**.
 Bots never wait on each other. When one bot messages another:
 
 1. **The request is queued and the sender goes on at once.** It can finish its turn or keep working.
-2. **The recipient does the work** away from its chat, as a [thread](/docs/conversations#threads): its chat stays free, and the request waits for a free place like its other background work. A recipient with [computer use](/docs/computer-use) or **Manage the team** on does it in its chat instead, one thing at a time.
+2. **The recipient does the work** away from its chat, as a [task](/docs/conversations#work): its chat stays free, and the request waits for a free thread like its other tasks. A recipient with [computer use](/docs/computer-use) or **Manage the team** on does it in its chat instead, one thing at a time.
 3. **The answer goes back to the sender**, not to you. It shows in the conversation sheet and in the thread's steps in the recipient's **Details**, but not as a message in the recipient's chat.
 4. **The sender takes the answer as a new turn of its own** and replies to you in its chat, with the usual "done" notification. Answers that arrive while the sender is busy are taken together in one turn. A request that failed comes back the same way, so the sender can tell you.
 
@@ -48,8 +48,8 @@ In a [group chat](/docs/groups), members don't message each other this way; they
 ## Stopping, limits and restarts
 
 - **Stopping the sender** doesn't cancel what it already sent, but drops answers still waiting for it. Deleting the sender drops its answers too. The rows in both chats still show how each exchange ended.
-- **Stopping a request** in the recipient's **Details** (or all of its background work), dropping one that waits, or deleting the recipient cancels it, which may leave partial changes. **Stop** in the recipient's chat stops only the chat.
-- **Limits:** a bot can have up to 16 messages queued or running at once, and the computer up to 64 in all. To keep bots from passing work around forever, a chain of requests stops after eight handoffs. Your next message starts a fresh allowance.
+- **Stopping a request** in the recipient's **Details** (or all of its work), dropping one that waits, or deleting the recipient cancels it, which may leave partial changes. **Stop** in the recipient's chat stops only the chat.
+- **Limits:** a bot can have up to 16 messages queued or running at once, and the computer up to 64 in all. To keep bots from passing work around forever, a chain of requests stops after eight handoffs. The bot's chat then shows a note with a **Continue** button (**F** in the terminal UI): it sends the bot "Continue" from you and starts a new chain. Any message of yours starts a fresh allowance too.
 - **Restarts:** if the host restarts while requests are pending, they're marked as failed and not run again. Check what the bots already did before you ask again. An answer still waiting for a busy sender is lost on a restart, but stays readable in the conversation sheet.
 
 ## Bots on your other computers
@@ -76,7 +76,7 @@ While a computer is in several networks, addresses name the network: `reviewer@d
 
 Prefer the command line? `codync-host network` does the same: `create [name] --network home`, `invite`, `join '<invite>' [name]`, `peers`, `promote <computer>`, `remove <computer> [--cascade]`, `recover <code>` and `leave`, each with `--network <name>` when the computer is in several. On a Mac where you installed the app from the disk image rather than with Homebrew, `codync-host` is inside the app: `/Applications/Codync.app/Contents/Resources/codync-host`.
 
-Once your computers are in the network, nothing else changes for your bots. A bot lists the bots on your other computers along with its own, as `name@computer` (for example `reviewer@desk`), and asks them the same way. The request runs as that bot's background work on its computer, with that computer's approvals, and the answer comes back to the sender. The rows in the chats name the bot and its computer, for example "Messaged Reviewer on desk".
+Once your computers are in the network, nothing else changes for your bots. A bot lists the bots on your other computers along with its own, as `name@computer` (for example `reviewer@desk`), and asks them the same way. The request runs as a task of that bot on its computer, with that computer's approvals, and the answer comes back to the sender. The rows in the chats name the bot and its computer, for example "Messaged Reviewer on desk".
 
 - **Away computers:** a request to a computer that's asleep waits up to a day and goes out when it's back.
 - **Limits:** besides the limits below, each computer accepts a burst of 5 messages between the same two bots, then one every 2 minutes, and refuses the same words twice within 10 minutes.
@@ -87,7 +87,7 @@ Once your computers are in the network, nothing else changes for your bots. A bo
 Each computer decides for itself who may message its bots; the senders can't get around it.
 
 - **Offered to the network**, in each bot's settings: turn it off and your other computers don't list that bot, and can't message it. It can still message bots there and get their replies. On by default.
-- **Who may message bots here**, under each network on the desktop (or `w` in the terminal UI's network sheet): rules such as "Deny: any bot on server → any bot here" or "Allow: Lead on laptop → Reviewer". The first rule that matches decides, and a computer no rule matches gets **Auto**. The computers that were already in a network when Codync started doing this keep **Allow**: each gets its own Allow rule, which you can change or remove. A rule is one of four levels: **Allow** runs the request as the bot is set; **Auto** lets the bot do by itself only what its agent judges safe and asks you about the rest; **Ask** makes every change and command wait for your approval, even on a bot that approves automatically; **Deny** refuses the message. Auto and Ask never let a bot work more freely than it is set, they also apply to the answers a bot here gets from that computer, and a bot whose agent can't work that carefully doesn't take the request. While a bot works on such a message it can only read and answer you: it can't message another bot, set a follow-up, start background work or a dev server, or change its routines, name, instructions, skills, fallbacks, memory or the team, so the text can't travel on to a bot or a later turn that isn't held to the level. Use Ask or Deny for a computer other people can run code on, such as a cloud computer. No level but Deny stops a bot from reading a file and putting what it read in its reply: keep secrets out of the folders of bots other computers can reach, or turn **Offered to the network** off for those bots. A refused bot is told why, and its request ends failed. The answer to a request a bot here sent still gets in, from the computer it asked. Phones show the rules but don't change them.
+- **Who may message bots here**, under each network on the desktop (or `w` in the terminal UI's network sheet): rules such as "Deny: any bot on server → any bot here" or "Allow: Lead on laptop → Reviewer". The first rule that matches decides, and a computer no rule matches gets **Auto**. The computers that were already in a network when Codync started doing this keep **Allow**: each gets its own Allow rule, which you can change or remove. A rule is one of four levels: **Allow** runs the request as the bot is set; **Auto** lets the bot do by itself only what its agent judges safe and asks you about the rest; **Ask** makes every change and command wait for your approval, even on a bot that approves automatically; **Deny** refuses the message. Auto and Ask never let a bot work more freely than it is set, they also apply to the answers a bot here gets from that computer, and a bot whose agent can't work that carefully doesn't take the request. While a bot works on such a message it can only read and answer you: it can't message another bot, set a follow-up, add a task, start a dev server, or change its routines, name, instructions, skills, fallbacks, memory or the team, so the text can't travel on to a bot or a later turn that isn't held to the level. Use Ask or Deny for a computer other people can run code on, such as a cloud computer. No level but Deny stops a bot from reading a file and putting what it read in its reply: keep secrets out of the folders of bots other computers can reach, or turn **Offered to the network** off for those bots. A refused bot is told why, and its request ends failed. The answer to a request a bot here sent still gets in, from the computer it asked. Phones show the rules but don't change them.
 
 ### Agents that aren't Codync bots
 
@@ -114,8 +114,8 @@ A bot with **Manage the team** on can set up the team for you: list your bots, c
 ### What a manager can do
 
 - **List the team:** every bot with its setup and routines, including hidden bots and the manager itself.
-- **Create bots** with a name, standing instructions, agent, model, fallbacks, avatar, project folder and routines. A new bot gets the manager's approval setting, connectors and skills, so it can't do more than the manager. It can manage the team too. It never gets computer use. Without a chosen avatar it gets a random one.
-- **Change any bot**, itself included: name, standing instructions, model, [fallbacks](/docs/agent-fallbacks), avatar, whether it's hidden from your bot list, and its [routines](/docs/routines) (add new ones or replace existing ones). Changing a bot's model clears that bot's model settings, such as effort. A manager that changes its own model gets the new one after its current turn.
+- **Create bots** with a name, standing instructions, agent, model and model settings such as effort, fallbacks, avatar, project folder and routines. A new bot gets the manager's approval setting, connectors and skills, so it can't do more than the manager. It can manage the team too. It never gets computer use. Without a chosen avatar it gets a random one.
+- **Change any bot**, itself included: name, standing instructions, model and model settings such as effort, [fallbacks](/docs/agent-fallbacks), avatar, whether it's hidden from your bot list, and its [routines](/docs/routines) (add new ones or replace existing ones). A model setting has to be one the bot's model offers, the same choices its settings show you. Changing a bot's model clears that bot's model settings unless the manager sets new ones in the same change. A manager that changes its own model gets the new one after its current turn.
 
 Bots stop creating bots once 20 bots made by bots exist (deleted ones don't count). Past that, the manager asks you.
 
@@ -139,7 +139,7 @@ A manager can't:
 
 - delete bots,
 - turn **Manage the team** on or off,
-- change an existing bot's agent, folder, approval setting, connectors, skills, computer use or model settings such as effort.
+- change an existing bot's agent, folder, approval setting, connectors, skills or computer use.
 
 ### Routines of other bots
 

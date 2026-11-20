@@ -45,7 +45,7 @@ impl Inflight {
 }
 
 /// Whether `bot`'s actor resumes a turn when it starts: the previous host process never finished one (crash, update,
-/// restart), and it isn't stale: an hour-old task is more likely unwanted than awaited (gawkbot's rule).
+/// restart), and it isn't stale: an hour-old turn is more likely unwanted than awaited (gawkbot's rule).
 pub(crate) fn resumable(store: &Store, bot: &str) -> bool {
     Inflight::load(store, bot).is_some_and(|turn| now_ms() - turn.started < STALE_RESUME_MS)
 }

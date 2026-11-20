@@ -8,7 +8,7 @@ If an agent's login stops working (for example, signing in somewhere else revoke
 
 On desktop, open **Settings > Usage** to see the limits reported by your connected computers. On the phones it's **State > Usage limits**, and in the terminal UI press `U`. The host refreshes usage every five minutes, and GitHub Copilot's every 30.
 
-Usage shows the agents your bots run. The button beside the computer's name opens a list of every agent that can report on that computer: use its switches to turn on one no bot uses yet or hide one you don't want to see, and drag an agent by its handle to change the order Usage lists them in. In the terminal UI, press `s` on the usage sheet to open that list, and `J` or `K` to move an agent. The choices belong to the computer: your other devices follow them. An agent that's on but has nothing to read says **No reading yet**, which usually means it's signed out.
+Usage shows the agents your bots run. The button beside the computer's name opens a list of every agent that can report on that computer: use its switches to turn on one no bot uses yet or hide one you don't want to see, and drag an agent by its handle to change the order Usage lists them in. In the terminal UI, press `s` on the usage sheet to open that list, and `J` or `K` to move an agent. The choices belong to the computer: your other devices follow them. An agent that's on but has nothing to read says **No reading yet**, which usually means it's signed out. When a check fails, Usage keeps the last numbers it read and marks them **Out of date** until the next check works.
 
 An agent signed in to more than one account lists each [login profile](#login-profiles) under its name, the default one first, with that account's own limits. Claude Code and Codex accounts report theirs; other agents' accounts say **No reading yet**. In the menu bar or tray menu, an agent with more than one account is a single row that opens every account's limits, and with more than one computer each computer opens its own agents. The notch island and the widgets show the account nearest its limit.
 
@@ -145,7 +145,7 @@ In the bot's settings, under **Agent**:
 - **Reasoning effort:** expand the Agent row to see the selected model’s supported levels. **Default** shows the agent’s reported level; selecting it removes this bot’s override. Each bot keeps its own choice across sessions, including when its model is Default, without changing the shared CLI settings. Available levels come from the agent, so they can differ by model.
 - **Fast mode:** a switch shown when the agent offers it for the model. Claude Code and Codex do. You can also type `/fast` in the chat.
 
-On desktop and iPhone, the collapsed Agent row summarizes the harness, model, effort and Fast mode. Expand it to access all settings. Click the harness or model to search; selecting a model closes only the search list. The refresh control is beside the search field. In the terminal, use the Agent, Model and model-option fields with the keyboard.
+On desktop and iPhone, the collapsed Agent row summarizes the agent, model, effort and Fast mode. Expand it to access all settings. Click the agent or model to search; selecting a model closes only the search list. The refresh control is beside the search field. In the terminal, use the Agent, Model and model-option fields with the keyboard.
 
 Changing the model or its options starts a new agent session; the chat history stays. Switching the bot to a different agent starts it on that agent's default model.
 

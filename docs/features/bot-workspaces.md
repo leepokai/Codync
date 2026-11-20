@@ -33,7 +33,7 @@ A bot's own folder is a git repository of its own, so what each turn did can be 
 - **Skipped**, not forced, while git is at work there: `index.lock`, a merge, cherry-pick or rebase in progress (the bot's own git use). Each skip is logged and counted (`stage: busy`).
 - **Without git** nothing changes: no repository, no versions; the git line in Settings says git isn't installed.
 - The bot is told in its instructions (`chat::context`) that its folder keeps versions in git, so it can show or bring back an earlier file when the user asks. There is no restore UI.
-- Tasks of a bot in its own folder never get worktrees (`taskWorktrees` is ignored there, and the clients hide its switch): the bot's work stays in one folder, and overwritten files can be brought back from a version.
+- Threads of a bot in its own folder never get worktrees (`threadWorktrees` is ignored there, and the clients hide its switch): the bot's work stays in one folder, and overwritten files can be brought back from a version.
 - Events: `own_folder_versioned` when a folder becomes a repository, `own_folder_save_failed` with its `stage` (`init`/`busy`/`look`/`add`/`commit`).
 
 ## Workspace picker

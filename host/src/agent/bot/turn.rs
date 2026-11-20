@@ -6,8 +6,8 @@ use crate::agent::acp::{self, Incoming};
 use crate::analytics::{self, TurnEnd, TurnOutcome, TurnSource};
 use crate::chat::context::{self, Snapshot};
 use crate::chat::memory;
-use crate::chat::tasks::{self, Failure, Outcome, Source};
 use crate::chat::team::no_reply;
+use crate::chat::work::{self, Failure, Outcome, Source};
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{BotConfig, EntryKind, Lane, now_ms};
@@ -35,7 +35,7 @@ impl Actor {
         let remind_files = !snapshot.system.contains("send_file");
         let remind_artifacts = !snapshot.system.contains("publish_artifact");
         let remind_follow_ups = !snapshot.system.contains("follow_up");
-        let briefed_on_tasks = snapshot.system.contains("add_work");
+        let briefed_on_threads = snapshot.system.contains("add_task");
         let mut prompt = text.to_owned();
         // The user's handoff first, then what the fallback chain carries in.
         for first in [self.relay.carried.take(), self.handoff.take()].into_iter().flatten() {
@@ -72,21 +72,21 @@ impl Actor {
             prompt.push_str("\n\n[Codync: send_file(path, name?) shares any regular file up to 100 MiB as a downloadable card. Use it instead of sending a local path.]");
         }
         if remind_artifacts && own_chat {
-            prompt.push_str("\n\n[Codync: for a report, plan, tracker or dashboard the user will come back to, write one self-contained HTML file and publish_artifact(path, title) instead of a long message. To change it, edit a copy of its HTML (list_artifacts) and publish_artifact(path, artifact: its id).]");
+            prompt.push_str("\n\n[Codync: for a report, plan, tracker or dashboard the user will come back to, write one self-contained HTML file and publish_artifact(path, title) instead of a long message. To change it, edit a copy of its HTML (list_artifacts) and publish_artifact(path, artifact: its id); notify: false skips a new card in the chat.]");
         }
         if remind_follow_ups && own_chat {
             prompt = format!("{prompt}\n\n[Codync: {}]", crate::routines::BRIEF);
         }
         let known = crate::agent::backends::harness(&self.cfg.backend).is_some();
-        let own_box = own_chat && !self.cfg.is_task();
-        if let Some(about) = tasks::reminder(briefed_on_tasks, known).filter(|_| own_box) {
+        let own_box = own_chat && !self.cfg.is_thread();
+        if let Some(about) = work::reminder(briefed_on_threads, known).filter(|_| own_box) {
             prompt = format!("{prompt}\n\n[Codync: {about}]");
         }
         // Its box, so it can say what it is doing and place more work without asking. Where `EACH_TURN` goes: a
         // custom command gets the message as written.
         if own_box
             && known
-            && let Some(lines) = tasks::lines(&self.hub, &self.cfg, "Your")
+            && let Some(lines) = work::lines(&self.hub, &self.cfg, "Your")
         {
             prompt = format!("{prompt}\n\n[Codync: {lines}]");
         }
@@ -102,12 +102,12 @@ impl Actor {
         hidden: bool,
         done_tx: &mpsc::UnboundedSender<Done>,
     ) -> Result<()> {
-        self.task_source = tasks::source_of(&self.hub.store, &self.cfg);
-        if self.cfg.is_task() {
-            // Another computer's request holds the task's turn to its ceiling, as it holds a turn in the chat.
-            self.hub.ceilings.set(&self.cfg.id, tasks::access_of(&self.hub, &self.cfg));
-            // A run worked as a task: its session's setup ends by the routine's time limit too, where the box's
-            // timer (`tasks::sources::watch`) only reaches a turn that began. Any other item has none.
+        self.task_source = work::source_of(&self.hub.store, &self.cfg);
+        if self.cfg.is_thread() {
+            // Another computer's request holds the thread's turn to its ceiling, as it holds a turn in the chat.
+            self.hub.ceilings.set(&self.cfg.id, work::access_of(&self.hub, &self.cfg));
+            // A run worked as a thread: its session's setup ends by the routine's time limit too, where the box's
+            // timer (`work::sources::watch`) only reaches a turn that began. Any other task has none.
             self.routine_deadline = match &self.task_source {
                 Source::Routine { run, .. } => Some(Instant::now() + self.hub.routines.timeout(run)),
                 _ => None,
@@ -202,7 +202,7 @@ impl Actor {
             r.message = message;
         });
 
-        // A new task that works beside another in one repository does so in a worktree of its own.
+        // A new thread that works beside another in one repository does so in a worktree of its own.
         let text = &self.enter_worktree(text).await;
         // Memory files changed since (in an editor, say) reach the opening or the next notice.
         let (hub, cfg) = (self.hub.clone(), self.cfg.as_owner());
@@ -226,7 +226,7 @@ impl Actor {
                 Some("The agent could not reload this run's saved session".into()),
                 None,
             );
-            self.turn_over(Outcome::Failed(Failure::Restart, tasks::CUT_OFF.into()));
+            self.turn_over(Outcome::Failed(Failure::Restart, work::CUT_OFF.into()));
             self.turn = None;
             self.end_host_turn(false);
             if self.routine_completion.is_none() {
@@ -271,9 +271,9 @@ impl Actor {
             // So does a recap: a command goes without it, and it waits in `relay.recap` for the next message.
             self.carry_in();
         }
-        // What the user wrote to a task's thread says so, after the work itself where the session doesn't hold it.
+        // What the user wrote to a thread says so, after the work itself where the session doesn't hold it.
         let text =
-            &if written.is_empty() || agent_command { text.to_owned() } else { tasks::in_thread(text, picked_up) };
+            &if written.is_empty() || agent_command { text.to_owned() } else { work::in_thread(text, picked_up) };
         let prompt = if std::mem::take(&mut self.raw_prompt) || agent_command {
             text.to_owned()
         } else {
@@ -291,10 +291,10 @@ impl Actor {
         }
         // The bot's own folder is saved as it is, so what this turn changes there is a version of its own.
         self.versions.before(&self.hub, &self.cfg, text).await;
-        // From here what changes in its memory folders is the bot's, however it changed them: a task's too, as
-        // its own turn's, in its own session. A task only adds to memory, also in a turn the user's message to its
+        // From here what changes in its memory folders is the bot's, however it changed them: a thread's too, as
+        // its own turn's, in its own session. A thread only adds to memory, also in a turn the user's message to its
         // thread started: what the user wants forgotten, the bot does in the chat.
-        let asked = self.hub.runtime(&self.cfg.id).message.filter(|_| !self.cfg.is_task());
+        let asked = self.hub.runtime(&self.cfg.id).message.filter(|_| !self.cfg.is_thread());
         memory::turns::begin_turn(&self.cfg, &sid, asked);
         // Written before this returns, so a Stop right after is sent after the prompt.
         let answer = acp.send("session/prompt", params).await?;
@@ -311,39 +311,39 @@ impl Actor {
         Ok(())
     }
 
-    /// The user's own messages among `entry_ids`, when this is a task: what they wrote to its thread. Not what
-    /// the host wrote there (an item, as the task is told it).
+    /// The user's own messages among `entry_ids`, when this is a thread: what they wrote to its thread. Not what
+    /// the host wrote there (a task, as the thread is told it).
     fn written_to_thread(&self, entry_ids: &[String]) -> Vec<String> {
-        if !self.cfg.is_task() {
+        if !self.cfg.is_thread() {
             return Vec::new();
         }
         let entries = entry_ids.iter().filter_map(|id| self.hub.store.entry(id)).filter(|e| e.data["from"] != "host");
         entries.filter_map(|e| e.data["text"].as_str().map(str::to_owned)).collect()
     }
 
-    /// A task's turn for what the user wrote to its thread (`written`) begins: its item keeps their words for its
+    /// A thread's turn for what the user wrote to its thread (`written`) begins: its task keeps their words for its
     /// report. What goes before the message: the work itself, when the session that did it couldn't be picked up
     /// and this one is new.
     fn hear_thread(&mut self, written: &[String]) -> Option<String> {
         if written.is_empty() {
             return None;
         }
-        let picked_up = self.session_fresh.then(|| tasks::picked_up(&self.hub.store, &self.cfg)).flatten();
-        tasks::heard(&self.hub, &self.cfg, written);
+        let picked_up = self.session_fresh.then(|| work::picked_up(&self.hub.store, &self.cfg)).flatten();
+        work::heard(&self.hub, &self.cfg, written);
         picked_up
     }
 
-    /// A task's first turn: when its item gets a git worktree (`tasks::worktree`), the task works there from here,
+    /// A thread's first turn: when its task gets a git worktree (`work::worktree`), the thread works there from here,
     /// and `text` says so. Otherwise `text` as it is.
     async fn enter_worktree(&mut self, text: &str) -> String {
-        if !self.cfg.is_task() {
+        if !self.cfg.is_thread() {
             return text.to_owned();
         }
-        let Some(worktree) = tasks::enter_worktree(&self.hub, &self.cfg).await else { return text.to_owned() };
+        let Some(worktree) = work::enter_worktree(&self.hub, &self.cfg).await else { return text.to_owned() };
         self.base.cwd.clone_from(&worktree.cwd);
         self.cfg.cwd.clone_from(&worktree.cwd);
         // Its row too: a host restart resumes it there, and its dev servers and artifacts start from it. Only its
-        // folder: its bot's fallbacks may have reached the row meanwhile (`tasks::fallbacks_changed`).
+        // folder: its bot's fallbacks may have reached the row meanwhile (`work::fallbacks_changed`).
         let saved = {
             let _g = crate::LockExt::locked(&self.hub.emit_lock);
             self.hub.store.bot(&self.cfg.id).and_then(|row| {
@@ -352,7 +352,7 @@ impl Actor {
             })
         };
         if let Err(error) = saved {
-            tracing::warn!(task = %self.cfg.id, error = format!("{error:#}"), "couldn't save a task's worktree folder");
+            tracing::warn!(thread = %self.cfg.id, error = format!("{error:#}"), "couldn't save a thread's worktree folder");
         }
         format!("{text}\n\n{}", worktree.brief())
     }
@@ -391,7 +391,7 @@ impl Actor {
         {
             let text = e.data["text"].as_str().map(str::to_owned);
             // A pass stays in the trace: neither a room nor the user sees it (a bot request's reply goes back as it
-            // is, from a task too). A routine's pass may follow a line of text — in its chat or in the box — and the
+            // is, from a thread too). A routine's pass may follow a line of text — in its chat or in the box — and the
             // run still says nothing.
             let pass: fn(&str) -> bool =
                 if self.in_routine() { crate::chat::group::ends_in_pass } else { crate::chat::group::is_pass };
@@ -467,7 +467,7 @@ impl Actor {
         } else {
             Ok(final_text.clone())
         });
-        let goes_on = self.end_item(|| {
+        let goes_on = self.end_task(|| {
             if stopped {
                 Outcome::Stopped
             } else if let Some(error) = done.as_ref().err() {
@@ -494,6 +494,9 @@ impl Actor {
             && let Err(error) = context::mark_prompted(&self.hub.store, self.cfg.owner(), &sent)
         {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the delivered instructions");
+        }
+        if done.is_ok() {
+            self.file_codex_session();
         }
         if let (Some(user), Some(agent), "end_turn") = (self.turn_text.take(), &final_text, stop_reason.as_str()) {
             let turn = crate::chat::naming::Turn { user, agent: agent.clone() };
@@ -595,23 +598,23 @@ impl Actor {
         analytics::turn_finished(&self.hub, &self.cfg, TurnEnd { outcome, stop_reason, failure, source, work, ms });
     }
 
-    /// The turn is a routine's run: in the chat, or a task's whose item is one.
+    /// The turn is a routine's run: in the chat, or a thread's whose task is one.
     pub(super) fn in_routine(&self) -> bool {
         self.active_routine.is_some() || matches!(self.task_source, Source::Routine { .. })
     }
 
-    /// The turn answers another bot's request: in the chat, or a task's whose item is one.
+    /// The turn answers another bot's request: in the chat, or a thread's whose task is one.
     pub(super) fn in_request(&self) -> bool {
         self.active_request.is_some() || matches!(self.task_source, Source::Request { .. })
     }
 
-    /// The turn is the bot's own (a task on the bot's own work counts): not a room's, a routine's run or another
+    /// The turn is the bot's own (a thread on the bot's own work counts): not a room's, a routine's run or another
     /// bot's request.
     pub(super) fn in_own_chat(&self) -> bool {
         self.active_group.is_none() && !self.in_routine() && !self.in_request()
     }
 
-    /// What started the turn that is starting or running. A task's turn is what its item came from.
+    /// What started the turn that is starting or running. A thread's turn is what its task came from.
     pub(super) fn source(&self) -> TurnSource {
         if self.in_routine() {
             TurnSource::Routine
@@ -640,7 +643,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_finished_tasks_alert() {
+    fn only_finished_threads_alert() {
         assert_eq!(turn_alert(false, "end_turn", false), Some(AlertKind::Done));
         assert_eq!(turn_alert(false, "end_turn", true), None, "next message queued, or a reaction held back");
         assert_eq!(turn_alert(false, "cancelled", false), None);

@@ -26,8 +26,8 @@ pub(crate) fn validate(cfg: &BotConfig) -> Result<()> {
     if cfg.mode.as_deref().is_some_and(|m| m.trim().is_empty() || m.len() > 64) {
         bail!("mode must be one of the agent's mode ids, or null for its default");
     }
-    if !(1..=crate::store::MAX_AGENTS).contains(&cfg.max_agents) {
-        bail!("maxAgents is 1 to {}", crate::store::MAX_AGENTS);
+    if !(1..=crate::store::MAX_THREADS).contains(&cfg.max_threads) {
+        bail!("maxThreads is 1 to {}", crate::store::MAX_THREADS);
     }
     cfg.compaction.check().map_err(anyhow::Error::msg)?;
     crate::agent::fallback::check(cfg)

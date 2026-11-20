@@ -309,8 +309,8 @@ pub enum Screen {
     Library,
     Artifact,
     Network,
-    /// A background task's details.
-    Task,
+    /// A background thread's details.
+    Thread,
     /// Every bot's work on one page.
     AllWork,
     #[serde(other)]

@@ -54,7 +54,7 @@ export function PairingCode({ name, cloud, requestCode, renew = 0 }: { name: str
           </div>
           <Text as="div" size="caption" tone="secondary" className="pairing-note">
             {/* In no account there's no relay: the note below says what reaches it. */}
-            {cloud?.canJoinAccount ? tr('Scan with the Codync app or the iPhone Camera.') : tr(`Scan with the Codync app or the iPhone Camera. No Tailscale or open ports needed: your iPhone connects directly on the same Wi-Fi, and through the encrypted relay anywhere else.`)}
+            {cloud?.canJoinAccount ? tr("Scan with the Codync app or your phone's camera.") : tr(`Scan with the Codync app or your phone's camera. No Tailscale or open ports needed: your phone connects directly on the same Wi-Fi, and through the encrypted relay anywhere else.`)}
           </Text>
           {cloud?.canJoinAccount ? (
             <Text as="div" size="caption" tone="attention" className="pairing-note">
@@ -65,7 +65,7 @@ export function PairingCode({ name, cloud, requestCode, renew = 0 }: { name: str
             <Text as="div" size="caption" tone="attention" className="pairing-note">
               {code.info.urls.length === 0
                 ? tr(`No network address found and “Reach from anywhere” is off. Connect to Wi-Fi or turn it on.`)
-                : tr('“Reach from anywhere” is off, so the iPhone only reaches {name} on the same network.').replaceAll('{name}', () => name)}
+                : tr('“Reach from anywhere” is off, so the phone only reaches {name} on the same network.').replaceAll('{name}', () => name)}
             </Text>
           ) : null}
           <HStack gap={4}>

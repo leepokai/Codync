@@ -23,7 +23,7 @@ impl Fixture {
                 "id": id, "name": id, "backend": "fixture", "cwd": cwd,
                 "command": crate::shell::python(&agent),
                 "notify": false, "permission": "ask",
-                // They answer requests in their chat, whose queue these tests are about (the box: `tasks_e2e`).
+                // They answer requests in their chat, whose queue these tests are about (the box: `work_e2e`).
                 "manageTeam": true,
             }))
             .unwrap();
@@ -419,6 +419,64 @@ async fn failed_message_admission_never_executes_or_leaks_capacity() {
     assert_eq!(f.prompts().len(), 0);
     assert!(f.hub.store.history("a", i64::MAX, 100).unwrap().iter().all(|e| e.data["status"] == "cancelled"));
     drop(db);
+    f.shutdown().await;
+}
+
+/// #386: a chain stopped by the handoff limit leaves the user one notice in the stopped bot's chat, whose Continue
+/// sends the bot "Continue" as the user (a fresh chain), once.
+#[tokio::test]
+async fn hop_limit_refusal_leaves_the_user_a_notice() {
+    let f = Fixture::new();
+    // 8: the handoff limit (`requests::MAX_REQUEST_HOPS`).
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    let continues = || {
+        let history = f.hub.store.history("a", i64::MAX, 100).unwrap();
+        history.into_iter().filter(|e| e.kind == "notice" && !e.data["continueChain"].is_null()).collect::<Vec<_>>()
+    };
+    for _ in 0..2 {
+        assert!(f.message("one more handoff").unwrap_err().to_string().contains("hop limit"));
+    }
+    let notices = continues();
+    assert_eq!(notices.len(), 1, "one notice a turn, however often the bot tries");
+    let press = |id: &str| {
+        crate::api::dispatch(&f.hub, &crate::api::devices::Caller::Local, "continueChain", json!({"entryId": id}))
+    };
+    let sent = || {
+        let history = f.hub.store.history("a", i64::MAX, 100).unwrap();
+        history.iter().filter(|e| e.kind == "user" && e.data["text"] == "Continue").count()
+    };
+    // A second stopped turn's notice, for the bot whose actor is gone below.
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    assert!(f.message("one more handoff").is_err());
+    let notices = continues();
+    assert_eq!(notices.len(), 2);
+    // A notice that couldn't be updated refuses the press, and a Continue that couldn't be saved puts the button back:
+    // neither sends anything.
+    let db = rusqlite::Connection::open(f.dir.join("test.db")).unwrap();
+    for trigger in
+        ["BEFORE UPDATE ON entries WHEN OLD.kind = 'notice'", "BEFORE INSERT ON entries WHEN NEW.kind = 'user'"]
+    {
+        db.execute_batch(&format!(
+            "CREATE TRIGGER reject_continue {trigger} BEGIN SELECT RAISE(ABORT, 'fixture save failure'); END;"
+        ))
+        .unwrap();
+        assert!(press(&notices[0].id).await.is_err());
+        db.execute_batch("DROP TRIGGER reject_continue;").unwrap();
+        assert_eq!(continues()[0].data["continueChain"], true, "the button stays to press again");
+        assert_eq!(sent(), 0);
+    }
+    drop(db);
+    let entry = press(&notices[0].id).await.unwrap();
+    assert_eq!(entry["entry"]["data"]["text"], "Continue");
+    assert_eq!(entry["entry"]["kind"], "user", "the user's own message, which starts a fresh chain");
+    assert_eq!(continues()[0].data["continueChain"], false, "the button goes");
+    assert!(press(&notices[0].id).await.is_err(), "and works once");
+    // The hub still lists the bot, but its actor is gone: the saved Continue stays the only one, its button off.
+    drop(f.hub.attach_bot_for_test("a"));
+    assert!(press(&notices[1].id).await.is_err());
+    assert_eq!(continues()[1].data["continueChain"], false, "a saved message never brings the button back");
+    assert!(press(&notices[1].id).await.is_err());
+    assert_eq!(sent(), 2, "one for each notice");
     f.shutdown().await;
 }
 

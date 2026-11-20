@@ -139,7 +139,7 @@ import Testing
     }
     let items = ChatItem.build([entry(1, "user", "find the plan"), entry(2, "agent", "planning", final: false),
                                 entry(3, "agent", "The plan, and the Plan", final: true), entry(4, "notice", "plan saved")])
-    let found = ThreadView.findable(items)
+    let found = ChatView.findable(items)
     #expect(found.map(\.text) == ["find the plan", "The plan, and the Plan"])
     #expect(ConversationFind.matches(in: found, query: "plan").count == 3)
 }

@@ -48,8 +48,7 @@ internal data class OpenArtifact(val botId: String, val id: String, val title: S
 @Composable internal fun ArtifactLayer(open: OpenArtifact?, content: @Composable (OpenArtifact) -> Unit) {
     val visible = remember { MutableTransitionState(false) }
     visible.targetState = open != null
-    var last by remember { mutableStateOf(open) }
-    if (open != null) last = open
+    val last = lastOf(open)
     if (!visible.currentState && !visible.targetState) return
     Overlay {
         AnimatedVisibility(visible, enter = slideInVertically(Motion.layoutOffset) { it } + fadeIn(Motion.fade()),

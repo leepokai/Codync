@@ -1,7 +1,7 @@
 //! The agent process: which commands start it, the ACP handshake, the bot's model, and how its instructions are
 //! attached to a session request.
 
-use super::{Adapter, Conn, SessionCaps};
+use super::{Adapter, Conn, ServerWatch, SessionCaps};
 use crate::agent::acp::{self, Acp};
 use crate::agent::backends;
 use crate::agent::registry::{Candidate, Cmd};
@@ -103,13 +103,11 @@ fn model_error(model: &str, e: &anyhow::Error) -> anyhow::Error {
     acp::Failure::error(acp::FailureKind::NoModel, format!("Couldn't select model {model}: {e:#}"))
 }
 
-/// Cursor names a model variant `grok-4.7[reasoning_effort=high,fast=true]`. When the agent
-/// lists plain models instead, the bracket becomes options of the plain model.
+/// A Cursor model variant ([`auth::cursor_variant`](crate::agent::auth::cursor_variant)): when the agent lists plain
+/// models instead, the bracket becomes options of the plain model.
 fn split_variant<'a>(res: &Value, model: &'a str) -> (&'a str, Vec<(&'a str, &'a str)>) {
     let listed = |id: &str| crate::agent::auth::model_ids(res).iter().any(|m| m == id);
-    if let Some((name, params)) = model.strip_suffix(']').and_then(|m| m.split_once('['))
-        && let Some(params) =
-            params.split(',').filter(|p| !p.is_empty()).map(|p| p.split_once('=')).collect::<Option<Vec<_>>>()
+    if let Some((name, params)) = crate::agent::auth::cursor_variant(model)
         && !listed(model)
         && listed(name)
     {
@@ -233,6 +231,7 @@ pub(crate) async fn start_agent(
         sessions,
         adapter: adapter(&init),
         superseded: superseded(&init),
+        servers: if drops_servers(&init) { ServerWatch::Unseen } else { ServerWatch::Off },
         loaded: HashMap::new(),
         spent: false,
         started: Instant::now(),
@@ -244,6 +243,7 @@ pub(crate) async fn start_agent(
         usage: HashMap::new(),
         renamed: HashMap::new(),
         on_profile: None,
+        codex_home: None,
     })
 }
 
@@ -267,6 +267,11 @@ fn superseded(init: &Value) -> bool {
             .is_some_and(|v| v.major < 2)
 }
 
+/// OpenCode 2.x drops the MCP servers a session was opened with once it has been idle a while (#508).
+fn drops_servers(init: &Value) -> bool {
+    init["agentInfo"]["name"] == "OpenCode" && !superseded(init)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,6 +284,8 @@ mod tests {
         assert!(!superseded(&init("OpenCode", "dev")));
         assert!(!superseded(&init("Kilo", "1.0.0")));
         assert!(!superseded(&json!({})));
+        assert!(drops_servers(&init("OpenCode", "2.3.2")) && !drops_servers(&init("OpenCode", "1.19.5")));
+        assert!(!drops_servers(&init("Kilo", "2.0.0")));
     }
 
     #[tokio::test]

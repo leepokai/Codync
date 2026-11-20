@@ -38,8 +38,8 @@ class ReadingTest {
         // A question stays while the bot waits on it, and goes once answered.
         assertEquals(emptyList<String>(), readChats(listOf(changed("question", 0, "needsInput")), alerts))
         assertEquals(listOf("question"), readChats(listOf(changed("question", 0, "working")), alerts))
-        val taskAsking = Bot("question", unread = 0, status = "idle", outside = Outside(status = "needsInput"))
-        assertEquals(emptyList<String>(), readChats(listOf(MirrorEvent.BotChanged(taskAsking)), alerts))
+        val threadAsking = Bot("question", unread = 0, status = "idle", outside = Outside(status = "needsInput"))
+        assertEquals(emptyList<String>(), readChats(listOf(MirrorEvent.BotChanged(threadAsking)), alerts))
         // A failure never counted unread; a chat with no alert has nothing to clear.
         assertEquals(emptyList<String>(), readChats(listOf(changed("failure", 0), changed("none", 0)), alerts))
     }

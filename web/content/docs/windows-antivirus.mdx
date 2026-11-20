@@ -43,7 +43,7 @@ Everything is installed for your Windows user only. Nothing needs administrator 
 The names differ from one product to the next, but the steps are the same three:
 
 1. **Restore anything it removed.** Open the product's quarantine or history, find the Codync files listed above and restore them. If a file is gone and can't be restored, install Codync again after the next step.
-2. **Trust Codync's programs.** Add `%LOCALAPPDATA%\Programs\codync-desktop` (the app, the host and its helpers) and `.codync\agents` in your user folder (the agents Codync installed) to the product's exclusions, trusted list or allow list. Paste a path into the File Explorer address bar to open the folder and see its full path. Leave the rest of `.codync` scanned: it holds your bots' workspaces and the files you send them, which your security software should keep checking.
+2. **Trust Codync's programs.** Add `%LOCALAPPDATA%\Programs\codync-desktop` (the app, the host and its helpers) and `.codync\agents` in your user folder (the agents Codync installed) to the product's exclusions, trusted list or allow list. Paste a path into the File Explorer address bar to open the folder and see its full path. Leave the rest of `.codync` scanned: it holds your bots' own folders and the files you send them, which your security software should keep checking.
 3. **Allow the startup item.** If the product manages startup items, find the one that runs `codync-hostw.exe` and allow it. Products that ask before a program adds a startup item usually have a list of blocked items where you can change the answer.
 
 Then open Codync and choose **Try again**, or quit Codync from the tray menu and open it again.

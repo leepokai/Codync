@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, ChildStdout};
 
-use super::reading::{self, UsageReadStage};
+use super::reading::{self, Outcome, UsageReadStage};
 use super::{Window, iso_ms};
 
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
@@ -37,22 +37,25 @@ impl LastRead {
         now.duration_since(self.at) >= wait
     }
 
-    /// What a read between server starts lands. The reading held stands, with its own time; one
+    /// What a read between server starts lands. The reading held stands, with its own time, so it's skipped; one
     /// that was dropped (the agent turned off and on again) comes back from here.
-    fn between_starts(&self, held: bool) -> Option<Vec<Window>> {
-        if held { None } else { self.windows.clone() }
+    fn between_starts(&self, held: bool) -> Outcome {
+        match &self.windows {
+            Some(_) if held => Outcome::Skipped,
+            windows => windows.clone().into(),
+        }
     }
 }
 
-pub(super) async fn collect(hub: &Hub) -> Option<Vec<Window>> {
+pub(super) async fn collect(hub: &Hub) -> Outcome {
     let now = Instant::now();
     if let Some(last) = LAST_READ.locked().as_ref().filter(|last| !last.due(now)) {
         return last.between_starts(hub.usage.locked().providers.iter().any(|provider| provider.id == "copilot"));
     }
-    let bin = super::command::program("copilot")?;
+    let Some(bin) = super::command::program("copilot") else { return Outcome::Failed };
     let windows = reading::guarded(hub, "copilot", read(&bin)).await;
     *LAST_READ.locked() = Some(LastRead { at: now, windows: windows.clone() });
-    windows
+    windows.into()
 }
 
 async fn read(bin: &Path) -> Result<Vec<Window>, UsageReadStage> {
@@ -214,9 +217,27 @@ mod tests {
     fn a_reading_turned_off_and_on_again_comes_back_without_a_new_start() {
         let windows = parse(&reply(), NOW);
         let last = LastRead { at: Instant::now(), windows: windows.clone() };
-        assert_eq!(last.between_starts(false), windows, "the Usage screen has its bars again");
-        assert_eq!(last.between_starts(true), None, "a reading held keeps the time it was made");
-        assert_eq!(LastRead { at: Instant::now(), windows: None }.between_starts(false), None);
+        assert_eq!(last.between_starts(false), windows.into(), "the Usage screen has its bars again");
+        assert_eq!(last.between_starts(true), Outcome::Skipped, "a reading held keeps the time it was made");
+        assert_eq!(LastRead { at: Instant::now(), windows: None }.between_starts(false), Outcome::Failed);
+    }
+
+    /// Greptile on #516: between reads Copilot's reader skips on purpose, which mustn't land as a failure and mark
+    /// its numbers out of date.
+    #[tokio::test]
+    async fn waiting_between_reads_isnt_a_failure() {
+        let hub = super::super::services::tests::hub();
+        let windows = parse(&reply(), NOW).unwrap();
+        let provider = super::super::Provider::new("copilot", "Copilot", "copilot", windows.clone());
+        hub.usage.locked().providers.push(provider);
+        *LAST_READ.locked() = Some(LastRead { at: Instant::now(), windows: Some(windows.clone()) });
+        let reader = super::super::services::reader("copilot").unwrap();
+        super::super::read(&hub, vec![reader]).await;
+        *LAST_READ.locked() = None;
+        let usage = hub.usage.locked();
+        let copilot = usage.providers.iter().find(|provider| provider.id == "copilot").unwrap();
+        assert_eq!(copilot.checked.failed_at, None, "a skip, not a failure");
+        assert_eq!(copilot.windows, windows, "what it read stands");
     }
 
     #[tokio::test]

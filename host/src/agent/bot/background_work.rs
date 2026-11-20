@@ -139,10 +139,11 @@ fn detached_descendant(
     descendants.iter().any(|p| session(p.pid).is_some_and(|sid| sid != own && !codync(p) && !agents_own(p, sid)))
 }
 
-/// A shell or an interpreter (`python3.12` too): as an agent's program it says nothing about what else running it is
-/// the agent's.
+/// A shell or an interpreter (`python3.12` too, and `Python`, as macOS names a framework build's process): as an
+/// agent's program it says nothing about what else running it is the agent's.
 #[cfg(any(unix, test))]
 fn is_runtime(program: &str) -> bool {
+    let program = program.to_ascii_lowercase();
     let program = program.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.');
     ["node", "bun", "deno", "python", "ruby", "perl", "sh", "bash", "zsh", "dash", "fish"].contains(&program)
 }
@@ -224,6 +225,11 @@ mod tests {
         let agent = [process(10, 1, "/usr/local/bin/node"), process(11, 10, "node")];
         assert!(detached_descendant(&agent, 10, HOST, session));
         assert!(is_runtime("python3.12") && !is_runtime("opencode"));
+        // A framework Python on macOS runs as `…/Python.app/Contents/MacOS/Python`.
+        let framework =
+            "/opt/homebrew/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python";
+        let agent = [process(10, 1, framework), process(11, 10, framework)];
+        assert!(detached_descendant(&agent, 10, HOST, session));
     }
 
     /// #508: OpenCode 2.x evicts a directory's services after `experimental.location_idle_timeout` and takes the MCP

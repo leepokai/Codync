@@ -36,8 +36,10 @@ impl Actor {
         tracing::info!(bot = %self.id(), reason = ?why, "declined the agent's question");
         let reply = elicitation::decline();
         elicitation::report(&self.hub, &reply, Some(why));
-        if let Some(conn) = &self.conn {
-            let _ = conn.acp.respond(rpc_id, reply).await;
+        if let Some(conn) = &self.conn
+            && let Err(error) = conn.acp.respond(rpc_id, reply).await
+        {
+            tracing::warn!(error = format!("{error:#}"), "couldn't decline the agent's question");
         }
     }
 

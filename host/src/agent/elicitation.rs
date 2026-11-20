@@ -35,7 +35,11 @@ impl Form {
         if params["mode"] != "form" {
             return Err(Declined::Mode);
         }
-        let message = params["message"].as_str().map(str::trim).filter(|m| !m.is_empty()).ok_or(Declined::Message)?;
+        let message = params["message"]
+            .as_str()
+            .map(str::trim)
+            .filter(|m| !m.is_empty() && m.chars().count() <= decision::MAX_QUESTION)
+            .ok_or(Declined::Message)?;
         let properties = params["requestedSchema"]["properties"].as_object();
         let Some((key, field)) = properties.filter(|p| p.len() == 1).and_then(|p| p.iter().next()) else {
             return Err(Declined::Fields);
@@ -142,7 +146,7 @@ pub enum Declined {
     Elsewhere,
     /// Another choice card already waits for the user: one question at a time.
     Busy,
-    /// No question to show.
+    /// No question to show, or one longer than a card asks (`decision::MAX_QUESTION`).
     Message,
     /// No field, or several: a card asks one thing.
     Fields,
@@ -254,6 +258,11 @@ mod tests {
         let mut silent = ask(&json!({"type": "string"}));
         silent["message"] = " ".into();
         assert_eq!(Form::parse(&silent).unwrap_err(), Declined::Message);
+        let mut long = ask(&json!({"type": "string"}));
+        long["message"] = "a".repeat(decision::MAX_QUESTION + 1).into();
+        assert_eq!(Form::parse(&long).unwrap_err(), Declined::Message, "a card asks what request_decision would");
+        long["message"] = "a".repeat(decision::MAX_QUESTION).into();
+        assert!(Form::parse(&long).is_ok());
         assert!(Form::parse(&ask(&json!({"type": "string", "minLength": 1}))).is_ok(), "not empty is what a card asks");
         assert_eq!(decline(), json!({"action": "decline"}));
     }

@@ -59,6 +59,11 @@ import kotlinx.serialization.json.jsonPrimitive
 internal val Entry.isFromThread: Boolean
     get() = !((data["thread"] as? JsonObject)?.get("title") as? JsonPrimitive)?.contentOrNull.isNullOrEmpty() || !(data["task"] as? JsonPrimitive)?.contentOrNull.isNullOrEmpty()
 
+/** A choice card takes the user's own words (iOS `EntryData.takesOwnWords`): not a thread's, nor one only an option
+ *  answers (`ownWords: false`, an agent's own question). */
+internal val Entry.takesOwnWords: Boolean
+    get() = !isFromThread && (data["ownWords"] as? JsonPrimitive)?.booleanOrNull != false
+
 /** Approval card in Grok Bot's choice-card style: what the agent wants, where it runs, and the answers as rows. */
 @Composable internal fun PermissionCard(entry: Entry, hostName: String, answering: Boolean, respond: (String?) -> Unit) {
     val d = entry.data

@@ -21,6 +21,7 @@ pub(super) struct Asked {
     /// When the asking call stops waiting; none for the agent's own question (`elicitations`), which waits until it is
     /// answered or its turn ends.
     deadline: Option<Instant>,
+    asker: Asker,
 }
 
 impl Actor {
@@ -88,7 +89,7 @@ impl Actor {
             Event::DecisionAsked,
             Map::from_iter([("options".into(), decision::choices(&card).len().into()), ("asker".into(), json!(asker))]),
         );
-        self.asked.insert(card.id, Asked { reply, deadline });
+        self.asked.insert(card.id, Asked { reply, deadline, asker });
     }
 
     pub(super) fn expire_abandoned_decisions(&mut self) {
@@ -109,7 +110,7 @@ impl Actor {
             let timed_out = asked.deadline.is_some_and(|d| now >= d);
             // A chat's card outlives its call, which is told so (here, or by its own timeout at the deadline); a
             // thread's ends with it (a press there has no next message to become), and so does the agent's own question.
-            if !thread && asked.deadline.is_some() && (timed_out || !asked.reply.is_closed()) {
+            if !thread && asked.asker == Asker::Tool && (timed_out || !asked.reply.is_closed()) {
                 let _ = asked.reply.send(Ok(decision::left_open()));
                 self.open_card = Some(id);
                 continue;

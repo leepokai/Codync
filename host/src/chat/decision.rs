@@ -14,6 +14,8 @@ use std::time::{Duration, Instant};
 pub const TOOL: &str = "request_decision";
 pub(crate) const WAIT: Duration = Duration::from_secs(270);
 const MAX_OPTIONS: usize = 12;
+/// The longest question a card asks, in characters.
+pub(crate) const MAX_QUESTION: usize = 2000;
 
 pub const INSTRUCTIONS: &str = "When the user should pick among a few ways forward, use request_decision(question, \
 options, recommended?) instead of repeating the question in a message. One card waits at a time. The user's \
@@ -48,8 +50,8 @@ pub fn tool() -> Value {
         "name": TOOL,
         "description": "Ask the user to choose on a card in your own chat. Their choice returns to this call and is recorded as their reply; when they write their own answer instead, it comes back with custom: true. Ask one question at a time; do not repeat it in a message. Older clients can reply with the full option or its number.",
         "inputSchema": {"type": "object", "properties": {
-            "question": {"type": "string", "minLength": 1, "maxLength": 2000},
-            "options": {"type": "array", "minItems": 2, "maxItems": 12,
+            "question": {"type": "string", "minLength": 1, "maxLength": MAX_QUESTION},
+            "options": {"type": "array", "minItems": 2, "maxItems": MAX_OPTIONS,
                 "items": {"type": "string", "minLength": 1, "maxLength": 200}},
             "recommended": {"type": "string", "description": "Optional suggested option, exactly as written in options. Never selected automatically."}
         }, "required": ["question", "options"]},
@@ -59,7 +61,10 @@ pub fn tool() -> Value {
 
 fn card_data(args: &Value) -> Result<Value> {
     let question = args["question"].as_str().unwrap_or_default().trim();
-    ensure!(!question.is_empty() && question.chars().count() <= 2000, "question must have 1 to 2000 characters");
+    ensure!(
+        !question.is_empty() && question.chars().count() <= MAX_QUESTION,
+        "question must have 1 to {MAX_QUESTION} characters"
+    );
     let raw = args["options"].as_array().ok_or_else(|| anyhow!("options must be an array of strings"))?;
     let choices = options(raw.iter().map(Value::as_str))?;
     let recommended = match args.get("recommended").filter(|v| !v.is_null()) {
@@ -76,7 +81,7 @@ fn card_data(args: &Value) -> Result<Value> {
 
 /// A card's options, checked: 2 to 12 different strings of 1 to 200 characters (`None`: not a string).
 pub(crate) fn options<'a>(raw: impl ExactSizeIterator<Item = Option<&'a str>>) -> Result<Vec<String>> {
-    ensure!((2..=MAX_OPTIONS).contains(&raw.len()), "options must hold 2 to 12 different choices");
+    ensure!((2..=MAX_OPTIONS).contains(&raw.len()), "options must hold 2 to {MAX_OPTIONS} different choices");
     let mut choices = Vec::new();
     for value in raw {
         let choice = value.ok_or_else(|| anyhow!("each option must be a string"))?.trim();
@@ -110,9 +115,9 @@ impl Answers {
         }
     }
 
-    /// What `card` takes; a card without the field takes own words, as every card did before it.
-    pub fn of(card: &Entry) -> Self {
-        if card.data["ownWords"] == false { Self::OptionsOnly } else { Self::OptionsOrOwnWords }
+    /// What a card with `data` takes; a card without the field takes own words, as every card did before it.
+    pub fn of(data: &Value) -> Self {
+        if data["ownWords"] == false { Self::OptionsOnly } else { Self::OptionsOrOwnWords }
     }
 }
 
@@ -227,7 +232,7 @@ fn answer(choices: &[String], answers: Answers, wanted: &str, typed: bool) -> Op
 
 /// `answer` on `card`, with its options and what else it takes.
 pub fn answer_card(card: &Entry, wanted: &str, typed: bool) -> Option<(String, Via)> {
-    answer(&choices(card), Answers::of(card), wanted, typed)
+    answer(&choices(card), Answers::of(&card.data), wanted, typed)
 }
 
 pub async fn ask(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {

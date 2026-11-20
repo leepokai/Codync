@@ -50,7 +50,8 @@ pub use ui::{
 };
 pub use whats_new::WhatsNew;
 pub use work::{
-    Background, MAX_AGENTS, Sections, Source, WorkItem, WorkStatus, can_cut_in, counts, places, shared_line, word,
+    Background, MAX_THREADS, Sections, Source, WorkStatus, WorkTask, can_cut_in, counts, shared_line, threads_at_once,
+    word,
 };
 
 use crate::tui::l10n::tr;
@@ -148,8 +149,8 @@ pub struct App {
     pub section_order: Vec<String>,
     /// Voice calls' own messages, by call id (`callEntries`): the chat loaded here may not reach back to them.
     pub call_entries: HashMap<String, Vec<Entry>>,
-    /// Background tasks' own transcripts, by task id (`taskEntry` events, `taskEntries`): never part of a chat.
-    pub task_entries: super::manage::TaskEntries,
+    /// Background threads' own transcripts, by thread id (`threadEntry` events, `threadEntries`): never part of a chat.
+    pub thread_entries: super::manage::ThreadEntries,
     pub market: (Vec<Toggle>, Vec<Toggle>),
     /// Installed connectors and skills as the host lists them.
     pub plugins: (Vec<Value>, Vec<Value>),
@@ -238,7 +239,7 @@ impl App {
             folded: HashSet::new(),
             section_order: Vec::new(),
             call_entries: HashMap::new(),
-            task_entries: super::manage::TaskEntries::default(),
+            thread_entries: super::manage::ThreadEntries::default(),
             market: (vec![], vec![]),
             plugins: (vec![], vec![]),
             models: HashMap::new(),
@@ -260,6 +261,8 @@ impl App {
     }
 
     pub fn call(&self, method: &'static str, body: Value, after: After) {
+        // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
+        let (method, body) = super::net::old_host::outgoing(&self.host_version, method, body);
         self.client.spawn_call(method, body, after, self.tx.clone());
     }
 
@@ -308,18 +311,18 @@ impl App {
     }
 
     /// The selected chat's pending card that `wanted` takes and the keys answer: the picked one (Work's `↵` on an
-    /// item that needs you picks its card), else the newest.
+    /// task that needs you picks its card), else the newest.
     fn to_answer(&self, wanted: impl Fn(&Entry) -> bool) -> Option<&Entry> {
         let id = self.selected.as_ref()?;
         let cards: Vec<&Entry> = self.lane(id).into_iter().filter(|e| e.pending() && wanted(e)).collect();
         cards.iter().find(|e| self.pick.as_ref() == Some(&e.id)).or(cards.last()).copied()
     }
 
-    /// The card `item` waits on in `bot`'s chat (an approval, a choice, a sign-in): the newest one, or, when that is a
-    /// sign-in and another (the agent the turn left signed out, while its fallback was too) holds the item's message,
+    /// The card `task` waits on in `bot`'s chat (an approval, a choice, a sign-in): the newest one, or, when that is a
+    /// sign-in and another (the agent the turn left signed out, while its fallback was too) holds the task's message,
     /// that one, whose sign-in sends it again.
-    pub fn card_of(&self, bot: &str, item: &WorkItem) -> Option<&Entry> {
-        let waits = |e: &&Entry| (e.pending() || e.waits_for_sign_in()) && e.data["item"] == item.id.as_str();
+    pub fn card_of(&self, bot: &str, task: &WorkTask) -> Option<&Entry> {
+        let waits = |e: &&Entry| (e.pending() || e.waits_for_sign_in()) && e.data["task"] == task.id.as_str();
         let cards: Vec<&Entry> = self.lane(bot).into_iter().filter(waits).collect();
         let newest = *cards.last()?;
         if !newest.waits_for_sign_in() {
@@ -375,7 +378,7 @@ impl App {
             || self.hint.is_some()
             || !self.online
             || !self.answering.is_empty()
-            // A working item's time runs while its bot's chat is idle.
+            // A working task's time runs while its bot's chat is idle.
             || self.bots.values().any(|b| b.status == Status::Working || b.work.iter().any(|i| i.status.live()))
     }
 

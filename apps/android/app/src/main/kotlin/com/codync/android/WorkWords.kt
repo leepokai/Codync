@@ -2,7 +2,7 @@ package com.codync.android
 
 import com.codync.android.core.Bot
 import com.codync.android.core.SourceKind
-import com.codync.android.core.WorkItem
+import com.codync.android.core.WorkTask
 import com.codync.android.core.WorkStatus
 import com.codync.android.core.WaitKind
 import com.codync.android.core.fill
@@ -13,26 +13,26 @@ import com.codync.android.core.fill
 private fun counted(text: String, count: Int, tr: (String) -> String) = fill(tr(text), "count" to "$count")
 
 /** `2 working · 3 waiting`, a part left out at none; empty with neither. */
-internal fun workCounts(work: List<WorkItem>, tr: (String) -> String): String {
+internal fun workCounts(work: List<WorkTask>, tr: (String) -> String): String {
     val working = work.count { it.status == WorkStatus.Working }
     val waiting = work.count { it.status == WorkStatus.Waiting }
     return listOfNotNull(counted("{count} working", working, tr).takeIf { working > 0 }, counted("{count} waiting", waiting, tr).takeIf { waiting > 0 })
         .joinToString(" · ")
 }
 
-/** What the capsule says after `In the background ·`. */
+/** What the capsule says after `Work ·`. */
 internal data class CapsuleLabel(
-    /** Its mark, as an item's: one needs the user, else one works, else they all wait. */
+    /** Its mark, as a task's: one needs the user, else one works, else they all wait. */
     val mark: WorkStatus,
     val text: String,
-    /** When the one working item started: the capsule's time. Null when it counts items instead. */
+    /** When the one working task started: the capsule's time. Null when it counts tasks instead. */
     val since: Long?,
-    /** The one item a task has, which the capsule's Stop stops; null with none or several. */
-    val stops: WorkItem?,
+    /** The one task a thread has, which the capsule's Stop stops; null with none or several. */
+    val stops: WorkTask?,
 )
 
-/** The capsule while any item is live or waiting; null otherwise. */
-internal fun capsuleLabel(work: List<WorkItem>, tr: (String) -> String): CapsuleLabel? {
+/** The capsule while any task is live or waiting; null otherwise. */
+internal fun capsuleLabel(work: List<WorkTask>, tr: (String) -> String): CapsuleLabel? {
     val live = work.filter { it.status.live }
     val waiting = work.count { it.status == WorkStatus.Waiting }
     if (live.isEmpty() && waiting == 0) return null
@@ -53,7 +53,7 @@ internal data class BotLine(val kind: BotLineKind, val text: String)
 
 /**
  * A roster row's line while something goes on, the most pressing thing first (iOS `Bot.rosterLine`): the chat or one
- * of its items needs the user, what its chat does, how many items work and wait (either part alone when the other is none). Null when the row reads as
+ * of its tasks needs the user, what its chat does, how many tasks work and wait (either part alone when the other is none). Null when the row reads as
  * usual (its last message).
  */
 internal fun botLine(bot: Bot, tr: (String) -> String): BotLine? {
@@ -71,8 +71,8 @@ internal fun botLine(bot: Bot, tr: (String) -> String): BotLine? {
 }
 
 /**
- * A bot's line outside the chat (the ongoing notification), in the roster row's order: `Needs you` when an item waits
- * on the user, else the chat's own activity, else how many items work and wait; empty when there is none to say (its
+ * A bot's line outside the chat (the ongoing notification), in the roster row's order: `Needs you` when a task waits
+ * on the user, else the chat's own activity, else how many tasks work and wait; empty when there is none to say (its
  * status then).
  */
 internal fun outsideLine(bot: Bot, tr: (String) -> String): String = when {
@@ -81,10 +81,10 @@ internal fun outsideLine(bot: Bot, tr: (String) -> String): String = when {
     else -> workCounts(bot.work, tr)
 }
 
-/** Why a waiting item waits. */
-internal fun waitText(item: WorkItem, tr: (String) -> String): String {
-    if (item.cutIn) return tr("Was cut in on; starts again")
-    val wait = item.wait ?: return tr(WorkStatus.Waiting.title)
+/** Why a waiting task waits. */
+internal fun waitText(task: WorkTask, tr: (String) -> String): String {
+    if (task.cutIn) return tr("Was cut in on; starts again")
+    val wait = task.wait ?: return tr(WorkStatus.Waiting.title)
     return when (wait.kind) {
         WaitKind.Next -> tr("Next up")
         WaitKind.Behind -> counted("{count} ahead", wait.ahead, tr)
@@ -95,18 +95,18 @@ internal fun waitText(item: WorkItem, tr: (String) -> String): String {
 
 /**
  * Why a thread that takes no message has no composer: a routine's run and another bot's request have an owner already.
- * Null for the bot's own item (it takes messages, or has no thread to write to yet): nothing to say.
+ * Null for the bot's own task (it takes messages, or has no thread to write to yet): nothing to say.
  */
-internal fun readOnlyLine(item: WorkItem): String? = when (item.source?.kind) {
+internal fun readOnlyLine(task: WorkTask): String? = when (task.source?.kind) {
     SourceKind.Routine -> "Read only: a routine's run"
     SourceKind.Request -> "Read only: another bot's request"
     null -> null
 }
 
-/** An item's second line: why it waits, what its task does, or how it ended (a failed or stopped one says why). */
-internal fun itemLine(item: WorkItem, tr: (String) -> String): String = when (item.status) {
-    WorkStatus.Waiting -> waitText(item, tr)
-    WorkStatus.Working -> tr(item.activity.ifEmpty { item.status.title })
-    WorkStatus.Failed, WorkStatus.Stopped -> item.result.ifEmpty { tr(item.status.title) }
-    WorkStatus.NeedsYou, WorkStatus.Done -> tr(item.status.title)
+/** A task's second line: why it waits, what its thread does, or how it ended (a failed or stopped one says why). */
+internal fun taskLine(task: WorkTask, tr: (String) -> String): String = when (task.status) {
+    WorkStatus.Waiting -> waitText(task, tr)
+    WorkStatus.Working -> tr(task.activity.ifEmpty { task.status.title })
+    WorkStatus.Failed, WorkStatus.Stopped -> task.result.ifEmpty { tr(task.status.title) }
+    WorkStatus.NeedsYou, WorkStatus.Done -> tr(task.status.title)
 }

@@ -304,7 +304,7 @@ pub struct Writer<'a> {
     /// A bot's write: the user's message that started the turn, when it was one the user started in the bot's own
     /// chat. Only then may it change or take out what memory says.
     pub message: Option<&'a str>,
-    /// A bot's write: the session it was made in (the chat's, or a task's own), which therefore knows the change.
+    /// A bot's write: the session it was made in (the chat's, or a thread's own), which therefore knows the change.
     pub session: Option<&'a str>,
 }
 

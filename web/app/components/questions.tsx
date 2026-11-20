@@ -1,7 +1,7 @@
-import { DiscordLogo, Plus, TelegramLogo } from "@phosphor-icons/react/ssr";
+import { ChatsCircle, DiscordLogo, Plus, TelegramLogo } from "@phosphor-icons/react/ssr";
 import Reveal from "./reveal";
 import SectionHeader from "./section-header";
-import { CHINA_COMMUNITY, DISCORD } from "../links";
+import { CHINA_COMMUNITY, DISCORD, TELEGRAM } from "../links";
 
 const questions: [string, string][] = [
   [
@@ -18,7 +18,7 @@ const questions: [string, string][] = [
   ],
   [
     "How do I start?",
-    "Install Codync on the computer your agents run on and create a bot. Then pair your iPhone by scanning the code from the Mac menu bar, the Windows or Linux app, or codync-host pair. Signing in with Apple, Google or GitHub is optional.",
+    "Install Codync on the computer your agents run on and create a bot. Then pair your phone by scanning the code from the Mac menu bar, the Windows or Linux app, or codync-host pair. Signing in with Apple, Google or GitHub is optional.",
   ],
   [
     "Where does my data go?",
@@ -78,9 +78,13 @@ export default function Questions() {
               <DiscordLogo size={20} aria-hidden="true" />
               <span className="underline underline-offset-4">Ask on Discord</span>
             </a>
-            <a href={CHINA_COMMUNITY} className="inline-flex items-center gap-2 hover:text-white" lang="zh-CN">
+            <a href={TELEGRAM} className="inline-flex items-center gap-2 hover:text-white">
               <TelegramLogo size={20} aria-hidden="true" />
-              <span className="underline underline-offset-4">Telegram 中国用户交流群</span>
+              <span className="underline underline-offset-4">Discord blocked? Telegram</span>
+            </a>
+            <a href={CHINA_COMMUNITY} className="inline-flex items-center gap-2 hover:text-white" lang="zh-CN">
+              <ChatsCircle size={20} aria-hidden="true" />
+              <span className="underline underline-offset-4">飞书中国用户交流群</span>
             </a>
           </div>
         </Reveal>

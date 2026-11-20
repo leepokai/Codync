@@ -148,8 +148,8 @@ when the agent's sign-in check, run in the background as the bot is created, fin
 it signed out. When a [fallback agent](agent-fallback.md) takes the turn over, or a bot skips
 an agent another bot found signed out, the card comes anyway, holding no message (the fallback
 answers it). A bot keeps one such card per login in each chat; messages that fail later join it. A
-[background task](background-tasks.md#fallbacks-and-sign-in)'s card goes to its bot's chat, one per login for each
-task, marked as its item's. Each held message goes out again to the chat it was written in. The
+[thread](work.md#fallbacks-and-sign-in)'s card goes to its bot's chat, one per login for each
+thread, marked as its task's. Each held message goes out again to the chat it was written in. The
 card's Sign in opens the agent's sign-in sheet from Extensions. As soon as a sign-in
 check (`agentAuth`, `agentAuthenticate`, `setAgentEnv`, `setLoginProfileKeys` for a card on an API key
 [login profile](login-profiles.md), connectorRequestFinish on the
@@ -157,7 +157,7 @@ card, a new bot's check, or the re-check at host start and `refreshBackends`) fi
 the agent signed in, or a turn of the agent finishes (signed in outside Codync),
 every pending card for it completes, its messages go out again and bots that moved on to a
 fallback while it was signed out come back on their next message;
-a chat's message older than 24 hours isn't sent again (a task's goes as long as its item still works). The card
+a chat's message older than 24 hours isn't sent again (a thread's goes as long as its task still works). The card
 itself doesn't expire.
 
 MCP connection requests and runtime secret retrieval are loopback-only. Authorized

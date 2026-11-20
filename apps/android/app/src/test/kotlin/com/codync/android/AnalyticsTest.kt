@@ -42,6 +42,8 @@ class AnalyticsTest {
         assertEquals(ReviewFailure.Other, ReviewFailure.of(IOException("no review")))
         assertEquals("""{"link":"install_link"}""", json(AnalyticsEvent.LinkOpened(OutboundLink.InstallLink)))
         assertEquals("""{"step":"choose"}""", json(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.Choose)))
+        assertEquals("""{"step":"cloud"}""", json(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.Cloud)))
+        assertEquals("""{"via":"cloud"}""", json(AnalyticsEvent.OnboardingCompleted(OnboardingVia.Cloud)))
         assertEquals("""{"action":"copy_image","from":"menu","outcome":"done"}""",
             json(AnalyticsEvent.ImagePreviewAction(ImageAction.CopyImage, ImageFrom.Menu)))
         assertEquals("""{"action":"zoom","from":"viewer","outcome":"done"}""", json(AnalyticsEvent.ImagePreviewAction(ImageAction.Zoom, ImageFrom.Viewer)))

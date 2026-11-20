@@ -1,7 +1,7 @@
 import type { ArtifactCard } from './artifacts'
 import type { CallLine } from './calls'
 import { normalizeDevServer, type DevServer } from './dev-servers.ts'
-import { normalizeMaxAgents, normalizeOutside, normalizeWork, type OutsideStatus, type WorkItem } from './work.ts'
+import { normalizeMaxThreads, normalizeOutside, normalizeWork, type OutsideStatus, type WorkTask } from './work.ts'
 
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
@@ -91,15 +91,15 @@ export interface Bot {
   activity: string
   startedAt?: number | null
   workingChat?: string | null
-  /** Its box (`work.ts`): the live and waiting items in dispatch order, then those ended in the last day; none from
+  /** Its box (`work.ts`): the live and waiting tasks in dispatch order, then those ended in the last day; none from
    * a host before the box. */
-  work: WorkItem[]
-  /** The most agents it runs at once, 1 to 6; null from a host before the box. */
-  maxAgents: number | null
-  /** A task that starts while another of the bot's works in the same git repository gets a worktree of its own;
+  work: WorkTask[]
+  /** The most threads it runs at once, 1 to 6; null from a host before the box. */
+  maxThreads: number | null
+  /** A thread that starts while another of the bot's works in the same git repository gets a worktree of its own;
    * null from a host before worktrees. */
-  taskWorktrees: boolean | null
-  /** The bot's folder is in a git repository: where `taskWorktrees` matters. */
+  threadWorktrees: boolean | null
+  /** The bot's folder is in a git repository: where `threadWorktrees` matters. */
   gitRepo: boolean
   /** Git is on the bot's computer; a host that doesn't say counts as having it. */
   gitInstalled: boolean
@@ -174,8 +174,8 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     startedAt: raw.startedAt ?? null,
     workingChat: raw.workingChat ?? null,
     work: normalizeWork(raw.work),
-    maxAgents: normalizeMaxAgents(raw.maxAgents),
-    taskWorktrees: raw.taskWorktrees ?? null,
+    maxThreads: normalizeMaxThreads(raw.maxThreads),
+    threadWorktrees: raw.threadWorktrees ?? null,
     gitRepo: raw.gitRepo ?? false,
     gitInstalled: raw.gitInstalled ?? true,
     outside: normalizeOutside(raw.outside),
@@ -447,12 +447,12 @@ export interface EntryData {
    * messages only in the call's conversation. */
   call?: string
   /** user: `voice` when a call's voice wrote it for the user (`send_to_bot`), `host` when the host did (what a
-   * background task was told). */
+   * thread was told). */
   from?: string
-  /** The background task this chat entry comes from (its approval card). */
-  task?: { id: string; title: string }
-  /** The item of the bot's box that task works on. */
-  item?: string
+  /** The thread this chat entry comes from (its approval card): its id, and the title of the task it works on. */
+  thread?: { id: string; title: string }
+  /** The task of the bot's box that thread works on: its id. */
+  task?: string | null
   /** notice: what was said on a realtime call, oldest first. */
   transcript?: CallLine[]
 }
@@ -837,10 +837,10 @@ export interface BotDraft {
   harnessMemory?: boolean
   /** Left out where the bot has none: the host keeps what it has. */
   compaction?: CompactionThreshold
-  /** The most agents at once, 1 to 6; left out for a host before the box. */
-  maxAgents?: number
+  /** The most threads at once, 1 to 6; left out for a host before the box. */
+  maxThreads?: number
   /** Left out for a host before worktrees. */
-  taskWorktrees?: boolean
+  threadWorktrees?: boolean
 }
 
 export function draftOf(bot: Bot): BotDraft {
@@ -871,8 +871,8 @@ export function draftOf(bot: Bot): BotDraft {
     offeredToNetwork: bot.offeredToNetwork ?? undefined,
     reachableByAssistants: bot.reachableByAssistants ?? undefined,
     compaction: bot.compaction ?? undefined,
-    maxAgents: bot.maxAgents ?? undefined,
-    taskWorktrees: bot.taskWorktrees ?? undefined,
+    maxThreads: bot.maxThreads ?? undefined,
+    threadWorktrees: bot.threadWorktrees ?? undefined,
   }
 }
 

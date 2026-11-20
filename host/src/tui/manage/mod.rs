@@ -26,7 +26,7 @@ mod replies;
 mod routines;
 mod scroll;
 mod skill;
-mod tasks;
+mod threads;
 mod when;
 mod work;
 
@@ -45,7 +45,7 @@ pub use network_setup::{CONNECTORS, Setup, SetupField};
 pub use pages::Page;
 pub use scroll::Scroll;
 pub use skill::SkillSheet;
-pub use tasks::{Fetched, TaskEntries, TaskSheet};
+pub use threads::{Fetched, ThreadEntries, ThreadSheet};
 pub use when::complete_zone;
 pub use work::{CutIn, DetailRow, DetailSection, WorkAct, giving_way};
 
@@ -85,9 +85,9 @@ pub enum Reply {
     },
     /// A voice call's own messages, by call id.
     CallEntries(String),
-    /// A task's transcript (`taskEntries`), by task id.
-    TaskEntries(String),
-    /// `send` to an item's thread (the item's id; its task may change meanwhile): its draft leaves the composer once
+    /// A thread's transcript (`threadEntries`), by thread id.
+    ThreadEntries(String),
+    /// `send` to a task's thread (the task's id; its thread may change meanwhile): its draft leaves the composer once
     /// the host has the message.
     ThreadSent(String),
     /// A registry page: the search it lists and the cursor it was asked at (`None`: the first page).
@@ -142,12 +142,12 @@ pub struct Library {
     pub cursor: usize,
 }
 
-/// A bot's Details page: what it does. Its items come from the bot (`work.rs` lays out the rows); the routines and
+/// A bot's Details page: what it does. Its tasks come from the bot (`work.rs` lays out the rows); the routines and
 /// follow-ups are loaded here.
 #[derive(Default)]
 pub struct DetailsPage {
     pub bot: String,
-    pub items: Option<Vec<Value>>,
+    pub routines: Option<Vec<Value>>,
     /// The bot's runs, newest first.
     pub runs: Vec<Value>,
     /// The follow-ups the bot set for itself that still wait.

@@ -1,23 +1,25 @@
 import Foundation
 
-/// An item's thread as a message is addressed to it: the bot and its item (what the host is told), and the task
-/// whose transcript holds the thread's entries. The rules here read the same on Android and the desktop.
+/// A task's thread as a message is addressed to it: the bot and its task (what the host is told), and the id of
+/// the thread, whose transcript holds its entries. The rules here read the same on Android and the desktop.
 public struct WorkThread: Hashable, Sendable {
     public var botId: String
-    public var itemId: String
-    public var task: String
+    public var taskId: String
+    public var threadId: String
 
-    public init(botId: String, itemId: String, task: String) {
+    public init(botId: String, taskId: String, threadId: String) {
         self.botId = botId
-        self.itemId = itemId
-        self.task = task
+        self.taskId = taskId
+        self.threadId = threadId
     }
 
-    /// Where the composer keeps what is typed for it, apart from the bot's chat and gone with the bot.
-    public var draftKey: String { "\(botId)/item/\(itemId)" }
+    /// Where the composer keeps what is typed for it, apart from the bot's chat and gone with the bot. `item` is
+    /// what a task was called when drafts were first kept: the key stays, so a draft written before 2.51.0 is
+    /// still there.
+    public var draftKey: String { "\(botId)/item/\(taskId)" }
 }
 
-/// Where an item's task works, in one quiet line: its branch when it has a worktree of its own, else its folder.
+/// Where a task's thread works, in one quiet line: its branch when it has a worktree of its own, else its folder.
 public struct WhereLine: Equatable, Sendable {
     public enum Kind: Sendable {
         case folder, branch
@@ -42,9 +44,9 @@ public struct WhereLine: Equatable, Sendable {
     }
 }
 
-public extension WorkItem {
+public extension WorkTask {
     /// Why its thread is only read (a phrase to look up): a routine's run and another bot's request have an owner
-    /// for their result already. Nil for the bot's own item.
+    /// for their result already. Nil for the bot's own task.
     var readOnlyLine: String? {
         switch source?.kind {
         case .routine: "Read only: a routine's run"
@@ -53,7 +55,7 @@ public extension WorkItem {
         }
     }
 
-    /// Nil before a task took it. A host that names no folder still shows a worktree's branch. `home`: the
+    /// Nil before a thread took it. A host that names no folder still shows a worktree's branch. `home`: the
     /// computer's home folder, which a folder shows as `~`.
     func whereLine(home: String) -> WhereLine? {
         let path = [folder, worktree?.path].compactMap(\.self).first { !$0.isEmpty }
@@ -61,9 +63,9 @@ public extension WorkItem {
         return path.map { WhereLine(kind: .folder, text: WhereLine.homeRelative($0, home: home), path: $0) }
     }
 
-    /// Its thread, once a task has it.
-    func thread(of botId: String) -> WorkThread? {
-        task.map { WorkThread(botId: botId, itemId: id, task: $0) }
+    /// Its thread, once one has it.
+    func workThread(of botId: String) -> WorkThread? {
+        thread.map { WorkThread(botId: botId, taskId: id, threadId: $0) }
     }
 }
 
@@ -89,18 +91,18 @@ public extension Bot {
 }
 
 public extension Entry {
-    /// What a task was told (its item): the host wrote it, the user didn't type it.
-    var isToldToTask: Bool { kind == "user" && data.from == "host" }
+    /// What a thread was told (its task, or what came later): the host wrote it, the user didn't type it.
+    var isToldToThread: Bool { kind == "user" && data.from == "host" }
 
-    /// A task's entry its thread shows as the chat's message bubble: a final reply. What it says on the way is a
+    /// An entry a thread shows as the chat's message bubble: a final reply. What it says on the way is a
     /// step.
     var isThreadMessage: Bool { kind == "agent" && data.final == true }
 
     /// The id of a message shown before the computer has it, by the nonce it was sent with.
     static func localId(_ nonce: String) -> String { "local-\(nonce)" }
 
-    /// What this entry of the bot's chat, which a task put there (a card, its agent's sign-in card, a file, a voice
-    /// note, an artifact), says in that task's thread: one line with a symbol, where the entry itself stays in the
+    /// What this entry of the bot's chat, which a thread put there (a card, its agent's sign-in card, a file, a voice
+    /// note, an artifact), says in that thread: one line with a symbol, where the entry itself stays in the
     /// chat, which the line opens. Nil for anything else. `tr` looks a phrase up.
     func sharedLine(_ tr: (String) -> String = { L10n.tr($0) }) -> SharedLine? {
         func line(_ symbol: String, _ key: String, _ values: [String: String] = [:]) -> SharedLine {
@@ -144,32 +146,32 @@ public extension Entry {
     }
 }
 
-/// One quiet line of a thread for what its task put in the bot's chat (`Entry.sharedLine`).
+/// One quiet line of a thread for what it put in the bot's chat (`Entry.sharedLine`).
 public struct SharedLine: Equatable, Sendable {
     public var symbol: String
     public var text: String
 }
 
-/// A thread's transcript in two parts: what the host first told its task (folded on top), and everything else in
-/// order. What the host told it later (an item picked up again) stays where it happened.
-public struct ThreadEntries: Equatable, Sendable {
+/// A thread's transcript in two parts: what the host first told it (folded on top), and everything else in
+/// order. What the host told it later (a task picked up again) stays where it happened.
+public struct ThreadTranscript: Equatable, Sendable {
     public var told: Entry?
     public var rest: [Entry]
 }
 
 public extension Array where Element == Entry {
     /// A message the user took back is in neither part.
-    var threadEntries: ThreadEntries {
+    var threadTranscript: ThreadTranscript {
         let shown = filter { $0.data.removed != true }
-        let told = shown.first(where: \.isToldToTask)
-        return ThreadEntries(told: told, rest: shown.filter { $0.id != told?.id })
+        let told = shown.first(where: \.isToldToThread)
+        return ThreadTranscript(told: told, rest: shown.filter { $0.id != told?.id })
     }
 
-    /// A thread's entries with what its task `task` put in the bot's `chat` (a file, a voice note, an artifact, a
+    /// A thread's entries with what the thread `thread` put in the bot's `chat` (a file, a voice note, an artifact, a
     /// card, answered or not; each a `sharedLine`) where it came (`createdAt`), each kept in its order; at the same
-    /// moment the task's own first.
-    func sharing(_ chat: [Entry], of task: String) -> [Entry] {
-        var shared = chat.filter { $0.data.task?.id == task }[...]
+    /// moment the thread's own first.
+    func sharing(_ chat: [Entry], of thread: String) -> [Entry] {
+        var shared = chat.filter { $0.data.thread?.id == thread }[...]
         var out: [Entry] = []
         for e in self {
             while let next = shared.first, next.createdAt < e.createdAt { out.append(shared.removeFirst()) }

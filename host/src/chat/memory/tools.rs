@@ -60,7 +60,7 @@ pub fn tools() -> Value {
     tools
 }
 
-/// A memory tool call of `bot_id`: a bot, or one of its tasks, which reads and writes its bot's memory.
+/// A memory tool call of `bot_id`: a bot, or one of its threads, which reads and writes its bot's memory.
 pub async fn call(hub: &Arc<Hub>, bot_id: &str, name: &str, args: &Value) -> Result<Value> {
     let actor = hub.store.bot(bot_id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?.config;
     let cfg = actor.as_owner();

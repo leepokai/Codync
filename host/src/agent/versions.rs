@@ -70,7 +70,7 @@ impl Stage {
     }
 }
 
-/// The versions one bot or task saves in its bot's own folder, in the order it asks for them: what a turn did is
+/// The versions one bot or thread saves in its bot's own folder, in the order it asks for them: what a turn did is
 /// never saved under the next turn's name.
 #[derive(Default)]
 pub struct Saves {
@@ -159,7 +159,7 @@ pub fn kept(dir: &Path) -> bool {
     dir.join(".git").join(MARK).exists()
 }
 
-/// One save at a time in a folder (a bot's turns and its tasks' share it), and none waits for another folder's.
+/// One save at a time in a folder (a bot's turns and its threads' share it), and none waits for another folder's.
 fn lock(dir: &Path) -> Arc<tokio::sync::Mutex<()>> {
     static FOLDERS: LazyLock<Mutex<HashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>>> = LazyLock::new(Mutex::default);
     FOLDERS.locked().entry(dir.to_owned()).or_default().clone()

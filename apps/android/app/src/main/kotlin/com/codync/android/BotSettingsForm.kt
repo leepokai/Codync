@@ -28,7 +28,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import com.codync.android.core.LinkState
-import com.codync.android.core.MAX_AGENTS
+import com.codync.android.core.MAX_THREADS
 import com.codync.android.core.login
 import com.codync.android.core.restOf
 import com.codync.android.core.ScreenState
@@ -161,7 +161,7 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
     }
 }
 
-/** Where the bot works, how many of its agents work at once and what it may do there without asking. */
+/** Where the bot works, how many of its threads work at once and what it may do there without asking. */
 private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, modelReload: Int,
     chooseFolder: () -> Unit) {
     row {
@@ -185,21 +185,21 @@ private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft
         }
     }
     // Only from a host that has the box (its bots say).
-    draft.maxAgents?.let { count ->
-        row { ValueRow("Threads at once") { Stepper(count, 1..MAX_AGENTS, { change(draft.copy(maxAgents = it)) }) } }
+    draft.maxThreads?.let { count ->
+        row { ValueRow("Threads at once") { Stepper(count, 1..MAX_THREADS, { change(draft.copy(maxThreads = it)) }) } }
     }
     // Only where it matters (a project folder in a git repository: a bot's own folder keeps all its work in one
     // place) and the host has it.
-    draft.taskWorktrees?.takeIf { state.bots.firstOrNull { it.id == draft.id }?.let { it.gitRepo && !it.managedWorkspace } == true }?.let { on ->
+    draft.threadWorktrees?.takeIf { state.bots.firstOrNull { it.id == draft.id }?.let { it.gitRepo && !it.managedWorkspace } == true }?.let { on ->
         row {
             SwitchRow("Worktree per thread", "Threads that work at once in this repository each get their own branch.", on,
-                { change(draft.copy(taskWorktrees = it)) })
+                { change(draft.copy(threadWorktrees = it)) })
         }
     }
     row { ApprovalRow(state, store::agentModels, draft, change, modelReload) }
 }
 
-/** Under the folder: whether it is a git repository, and the manual's page on what agents working at once do with and without git. */
+/** Under the folder: whether it is a git repository, and the manual's page on what threads working at once do with and without git. */
 @Composable private fun GitLine(git: GitState) {
     val uri = LocalUriHandler.current
     Row(Modifier.semantics { testTagsAsResourceId = true }.testTag("git-state"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {

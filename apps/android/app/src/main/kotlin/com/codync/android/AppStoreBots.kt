@@ -12,7 +12,7 @@ import kotlinx.serialization.json.*
 fun AppStore.command(method: String, body: JsonObject = JsonObject(emptyMap()), key: String = method, onFailure: () -> Unit = {},
     onSuccess: () -> Unit = {}) {
     val started = action(key) {
-        val response = try { ready().call(method, body) }
+        val response = try { callHost(method, body) }
             catch (error: CancellationException) { throw error }
             catch (error: Exception) { onFailure(); throw error }
         receiveReply(response)
@@ -62,8 +62,7 @@ private fun AppStore.moveSections(ids: List<String>, section: String?, method: S
 private fun AppStore.showSectionMoves() = mutableState.update { it.copy(bots = withMoves(mirrorBots, pendingSectionMoves)) }
 
 fun AppStore.saveBot(draft: BotDraft, onSaved: () -> Unit) = action("editor") {
-    val active = ready()
-    val result = active.call(if (draft.id == null) "createBot" else "updateBot", draft.body())
+    val result = callHost(if (draft.id == null) "createBot" else "updateBot", draft.body())
     val bot = HostClient.decode(result.jsonObject.getValue("bot").jsonObject)
     withContext(Dispatchers.IO) { requireNotNull(database).receive(bot) }
     refresh()
@@ -75,7 +74,7 @@ fun AppStore.saveBot(draft: BotDraft, onSaved: () -> Unit) = action("editor") {
 /** A saved bot's settings from its details, saved as they're edited; [done] gets the error, or null once it took. */
 fun AppStore.saveSettings(draft: BotDraft, done: (String?) -> Unit) = action("settings:" + draft.id) {
     try {
-        receiveReply(ready().call("updateBot", draft.body()))
+        receiveReply(callHost("updateBot", draft.body()))
         done(null)
     } catch (cancelled: CancellationException) { throw cancelled }
     catch (error: Exception) { done(error.message ?: "Couldn't save the changes.") }
@@ -126,7 +125,15 @@ suspend fun AppStore.devServerLogs(botId: String, id: String): String =
     hostQuery("devServerLogs", body("botId" to botId, "id" to id)).jsonObject["text"]?.jsonPrimitive?.content.orEmpty()
 
 /** A host call for the screens that keep their own state (memory): waits for the connection first. */
-internal suspend fun AppStore.hostCall(method: String, body: JsonObject, timeoutMillis: Long = 240_000): JsonElement = ready().call(method, body, timeoutMillis)
+internal suspend fun AppStore.hostCall(method: String, body: JsonObject, timeoutMillis: Long = 240_000): JsonElement = callHost(method, body, timeoutMillis)
+
+/** Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0. The call in the names either host takes ([hostCallFor]). */
+internal suspend fun AppStore.callHost(method: String, body: JsonObject, timeoutMillis: Long = 20_000): JsonElement {
+    val active = ready()
+    // Read once the link is ready: a reconnect waited out above may have reached an updated host.
+    val (named, sent) = hostCallFor(state.value.hello?.text("version"), method, body)
+    return active.call(named, sent, timeoutMillis)
+}
 internal suspend fun AppStore.hostFiles(): HostFiles = HostFiles(ready())
 
 fun AppStore.loadRoutines(botId: String) = action("routines:$botId") { receiveRoutines(botId) }

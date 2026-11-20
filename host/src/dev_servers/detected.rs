@@ -155,7 +155,7 @@ pub async fn scan(hub: &Hub, agents: &[RunningAgent], listening: &[Listening], m
             };
         }
         if !servers.is_empty() {
-            // A bot's agent and its tasks' agents share one list.
+            // A bot's agent and its threads' agents share one list.
             found.entry(agent.bot.clone()).or_default().extend(servers);
         }
     }

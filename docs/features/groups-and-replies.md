@@ -122,7 +122,7 @@ chat (the user's, its own, an artifact card), built into `data.replyTo` by the s
 the note that leads every user message in its own chat, `[Codync: message <id>]`
 (`prompt::of_entry`; left out of a message that is the agent's own `/command`, which only runs
 while it starts the prompt, and of what the host wrote, a task's brief), and from `search_history`.
-A [background task](background-tasks.md)'s file shows in its bot's chat, so its `send_file` quotes
+A [thread](work.md)'s file shows in its bot's chat, so its `send_file` quotes
 a message of that chat. An id it can't quote (unknown, deleted, another
 chat's, not a message) doesn't fail the send: the message goes out unquoted and the tool's
 answer carries a `warning`. Group room turns have no `send_message`, so they don't quote.

@@ -62,7 +62,7 @@ impl App {
             Overlay::Computer(_) => Some(Screen::BotComputer),
             Overlay::Market(_) => Some(Screen::Marketplace),
             Overlay::Help(_) => Some(Screen::Help),
-            Overlay::Task(_) => Some(Screen::Task),
+            Overlay::Thread(_) => Some(Screen::Thread),
             Overlay::AllWork(_) => Some(Screen::AllWork),
             Overlay::Form(_) => Some(Screen::BotDetails),
             Overlay::Group(g) if g.group_id.is_some() => Some(Screen::BotDetails),
@@ -113,9 +113,13 @@ mod tests {
         app.report_screen();
         assert_eq!(app.seen.screen, Some(Screen::BotComputer));
         app.overlays.pop();
-        app.overlays.push(Overlay::Task(crate::tui::manage::TaskSheet::new("b".into(), "i".into(), "task-1".into())));
+        app.overlays.push(Overlay::Thread(crate::tui::manage::ThreadSheet::new(
+            "b".into(),
+            "i".into(),
+            "thread-1".into(),
+        )));
         app.report_screen();
-        assert_eq!(app.seen.screen, Some(Screen::Task), "a task's transcript");
+        assert_eq!(app.seen.screen, Some(Screen::Thread), "a thread's transcript");
         app.overlays.pop();
         app.overlays.push(Overlay::AllWork(crate::tui::manage::AllWork::default()));
         app.report_screen();

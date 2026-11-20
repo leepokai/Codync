@@ -8,4 +8,4 @@ Rules: [README](README.md).
 
 ## Fork
 
-Checked 2026-11-15 for background tasks ([spikes](../archive/background-tasks-plan-2026-11-15.md#spikes)). `initialize` advertises no `sessionCapabilities.fork` (deepseek-harness-acp 0.0.1 in dsh 0.2.1-rc.5, `dsh --profile acp`; it has `close`, `list`, `resume`), and `session/fork` answers `-32601 "Method not found": session/fork`, so a background task starts from a brief. Not a defect: the capability is optional.
+Checked 2026-11-15 for threads ([spikes](../archive/background-tasks-plan-2026-11-15.md#spikes)). `initialize` advertises no `sessionCapabilities.fork` (deepseek-harness-acp 0.0.1 in dsh 0.2.1-rc.5, `dsh --profile acp`; it has `close`, `list`, `resume`), and `session/fork` answers `-32601 "Method not found": session/fork`, so a thread starts from a brief. Not a defect: the capability is optional.

@@ -349,10 +349,11 @@ async fn read(hub: &Hub, readers: Vec<&'static Reader>) {
     for reader in readers {
         readings.push(Box::pin(async move {
             let reading = match (reader.read)(hub).await {
-                Some(windows) => Reading::All(windows),
-                // Skipped while the agent is being read already: that reading lands instead.
-                None if reading::busy(reader.id) => return,
-                None => Reading::Unknown,
+                reading::Outcome::Read(windows) => Reading::All(windows),
+                // Skipped while the agent is being read already, whose reading lands instead, or on purpose.
+                reading::Outcome::Skipped => return,
+                reading::Outcome::Failed if reading::busy(reader.id) => return,
+                reading::Outcome::Failed => Reading::Unknown,
             };
             hub.update_usage(|usage| usage.land(reader, reader.source, None, reading));
         }));

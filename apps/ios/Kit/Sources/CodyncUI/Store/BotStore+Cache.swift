@@ -13,7 +13,7 @@ extension BotStore {
     }
 
     /// Raise when the app starts to need a field the rows it cached may lack.
-    static let mirrorFormat = 1
+    static let mirrorFormat = 2
 
     /// The mirror format and the host's store schema (its version on a host that sends none): updates of the app
     /// or the host that keep both keep the copy and its cursor.

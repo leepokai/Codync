@@ -237,7 +237,7 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
 }
 
 /**
- * The chat's box with text alone (no files, no microphone), under an item's thread: [send] takes what was typed, only
+ * The chat's box with text alone (no files, no microphone), under a task's thread: [send] takes what was typed, only
  * while the computer is there to take it. What is typed is saved as you type under [draftKey], as a chat's draft is.
  * The messages waiting behind the thread's turn show on top as a chat's do ([queued], with [steer] and [remove]).
  */

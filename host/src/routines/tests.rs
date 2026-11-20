@@ -94,15 +94,15 @@ fn a_delivery_while_a_retry_waits_is_queued() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_routine_run_cannot_add_work_to_the_bots_box() {
+async fn a_routine_run_cannot_add_task_to_the_bots_box() {
     let dir = std::env::temp_dir().join(format!("codync-routine-work-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let store = Store::open(&dir.join("t.db")).unwrap();
     store.save_bot(&serde_json::from_value(json!({"id": "bot", "name": "B", "backend": "claude"})).unwrap()).unwrap();
     let identity = crate::remote::identity::Identity::load_or_create(&dir).unwrap();
     let hub = Hub::new(store, "test".into(), identity, "test".into(), 0);
-    let add = || crate::chat::tasks::call(&hub, "bot", "add_work", &json!({"title": "Dig", "brief": "Look into it"}));
-    let refusal = "add_work works only in your own chat with the user: its report comes back there";
+    let add = || crate::chat::work::call(&hub, "bot", "add_task", &json!({"title": "Dig", "brief": "Look into it"}));
+    let refusal = "add_task works only in your own chat with the user: its report comes back there";
     assert_eq!(add().unwrap_err().to_string(), refusal, "no turn runs in its chat");
 
     // A turn runs in its own chat (so nothing starts before it ends).

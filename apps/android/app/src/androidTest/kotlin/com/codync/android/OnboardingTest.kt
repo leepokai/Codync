@@ -7,6 +7,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.CloudComputer
+import com.codync.android.core.CloudMachine
+import com.codync.android.core.CloudOffer
 import com.codync.android.core.Computer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -119,6 +121,68 @@ class OnboardingTest {
         assertTrue(skipped)
     }
 
+    private val preparing = CloudMachine("cm_1", "Cloud computer", "boat", "Boat", "EU", "starting")
+
+    /** [context] with Codync Cloud open to the account (or not, [available]) and its cloud computers. */
+    private fun withCloud(context: AccountContext, vararg machines: CloudMachine, available: Boolean = true) =
+        context.copy(cloudOffer = CloudOffer(machines.toList(), available))
+
+    @Test fun codyncCloudOpenToTheAccountOffersACloudComputerOnInstallAndChoose() {
+        val desk = CloudComputer("account-computer", "Desk", "account-key", online = true)
+        val context = mutableStateOf(withCloud(signedIn()))
+        compose.setContent { Hosted { CodyncApp(context.value, emptyMap(), viewModel()) } }
+        compose.onNodeWithText("Install Codync\non your computer").assertIsDisplayed()
+        compose.onNodeWithText("Start a cloud computer").performScrollTo().assertIsDisplayed()
+        compose.runOnUiThread { context.value = withCloud(signedIn(desk)) }
+        compose.onNodeWithText("Connect a computer").assertIsDisplayed()
+        compose.onNodeWithText("Start a cloud computer").performScrollTo().assertIsDisplayed()
+        compose.runOnUiThread { context.value = withCloud(signedIn(desk), available = false) }
+        compose.onNodeWithText("Connect a computer").assertIsDisplayed()
+        compose.onNodeWithText("Start a cloud computer").assertDoesNotExist()
+    }
+
+    @Test fun pairingAnotherComputerFromTheAccountHasNoCloudComputerRow() {
+        compose.setContent { Hosted { CodyncApp(withCloud(signedIn()), emptyMap(), viewModel()) } }
+        compose.onNodeWithContentDescription("Switch account").performClick()
+        compose.onNodeWithText("Scan a computer's code").performClick()
+        // The install page under the sheets and the sheet's own: only the first-run page offers a cloud computer.
+        compose.onAllNodesWithContentDescription("Step 1 of 2").assertCountEquals(2)
+        compose.onAllNodesWithText("Start a cloud computer").assertCountEquals(1)
+    }
+
+    @Test fun aCloudComputerStillPreparingTakesOverSetupUntilItIsLeftWithBack() {
+        val context = mutableStateOf(withCloud(signedIn(), preparing))
+        compose.setContent { Hosted { CodyncApp(context.value, emptyMap(), viewModel()) } }
+        compose.onNodeWithText("Starting your cloud computer").assertIsDisplayed()
+        compose.onNodeWithText("Cloud computer · Runs on Boat · EU").assertIsDisplayed()
+        compose.onNodeWithText("Preparing your cloud computer…").assertIsDisplayed()
+        compose.onNodeWithText("Back").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Install Codync\non your computer").assertDoesNotExist()
+        // What its Back leaves (`passCloud`): setup goes on from the install page.
+        compose.runOnUiThread { context.value = context.value.copy(passedCloud = setOf("cm_1")) }
+        compose.onNodeWithText("Install Codync\non your computer").assertIsDisplayed()
+        compose.onNodeWithText("Starting your cloud computer").assertDoesNotExist()
+    }
+
+    @Test fun aCloudComputerStartedHereThatFailedSaysSo() {
+        val context = mutableStateOf(withCloud(signedIn(), preparing.copy(state = "failed")))
+        compose.setContent { Hosted { CodyncApp(context.value, emptyMap(), viewModel()) } }
+        // One that failed elsewhere isn't waited for.
+        compose.onNodeWithText("Install Codync\non your computer").assertIsDisplayed()
+        compose.runOnUiThread { context.value = context.value.copy(startedCloud = true) }
+        compose.onNodeWithText("Cloud computer failed").assertIsDisplayed()
+        compose.onNodeWithText("Preparing your cloud computer…").assertDoesNotExist()
+    }
+
+    @Test fun theWaitPageLeavesWithBackOrSkip() {
+        var back = false
+        var skipped = false
+        compose.setContent { Hosted { CloudStartView(preparing.copy(state = "failed"), { back = true }, { skipped = true }) {} } }
+        compose.onNodeWithText("Back").performScrollTo().performClick()
+        compose.onNodeWithText("Skip").performClick()
+        assertTrue(back && skipped)
+    }
+
     @Test fun installStepsFollowTheComputerAndScanKeepsTheChoice() {
         var skipped = false
         compose.setContent { Hosted { PairingView(AccountContext(loading = false), viewModel(), onSkip = { skipped = true }) } }
@@ -158,7 +222,7 @@ class OnboardingTest {
     @Test fun macPairingPointsToTheMenuBarApp() {
         compose.setContent { Hosted { PairingView(AccountContext(loading = false), viewModel()) } }
         compose.onNodeWithText("Continue").performClick()
-        compose.onNodeWithText("On your Mac, click Codync in the menu bar, then Pair iPhone. The same code pairs this phone.").assertIsDisplayed()
+        compose.onNodeWithText("On your Mac, click Codync in the menu bar, then Pair phone. The same code pairs this phone.").assertIsDisplayed()
         compose.onNodeWithText("codync-host pair").assertDoesNotExist()
     }
 }

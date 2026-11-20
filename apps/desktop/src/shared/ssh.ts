@@ -24,6 +24,15 @@ export type RemoteShell = 'posix' | 'cmd' | 'powershell'
 /** Whether the computer behind a profile answered as a Windows shell (it has no host-only installer). */
 export const isWindowsShell = (shell: RemoteShell | undefined) => shell === 'cmd' || shell === 'powershell'
 
+/** A catalog phrase the renderer translates, its `{key}` values, and what ssh printed, shown as written. */
+export interface SSHMessage {
+  phrase: string
+  values?: Record<string, string>
+  detail?: string
+}
+
+export const sshMessage = (phrase: string, values?: Record<string, string>, detail?: string): SSHMessage => ({ phrase, values, detail })
+
 export type SSHStatus =
   | { kind: 'idle' }
   | { kind: 'connecting'; step: string }
@@ -31,9 +40,9 @@ export type SSHStatus =
   | { kind: 'confirmHostKey'; name: string; fingerprints: string[] }
   | { kind: 'connected'; localPort: number }
   /** A retry is scheduled. */
-  | { kind: 'retrying'; message: string }
+  | { kind: 'retrying'; message: SSHMessage }
   /** Needs the user (settings, the remote side, or a security problem); nothing retries. */
-  | { kind: 'failed'; message: string }
+  | { kind: 'failed'; message: SSHMessage }
   /**
    * No codync-host there; `failure` is the last Install that didn't finish, with the last lines it printed,
    * and `shell` the remote shell, which decides whether Codync can install the host itself.

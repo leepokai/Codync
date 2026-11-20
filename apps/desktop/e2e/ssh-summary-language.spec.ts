@@ -58,8 +58,10 @@ test('each SSH profile row in the roster dropdown shows its status detail in the
     await page.evaluate((id) => window.codync.ssh.connect(id), id)
     await expect(header).toHaveAttribute('title', /1 台(正在连接…|需要处理)$/)
     await header.click()
-    await expect(row.locator('.menu-detail')).not.toContainText(/Not connected|Reading SSH settings|Reading the host key|Signing in|Opening the tunnel|Retrying…/)
+    await expect(row.locator('.menu-detail')).not.toContainText(/Not connected|Reading SSH settings|Reading the host key|Signing in|Opening the tunnel|Retrying…|Can't reach|couldn't/)
     await expect(row.locator('.menu-detail')).toContainText(/正在/)
+    // Nothing answers at TEST-NET-1, so the host key scan gives up and the row retries with a translated reason.
+    await expect(row.locator('.menu-detail')).toHaveText('无法连接到 192.0.2.1:22。 正在重试…', { timeout: 20_000 })
   } finally {
     await page.keyboard.press('Escape').catch(() => {})
     await page.evaluate((id) => { window.codync.ssh.disconnect(id); window.codync.ssh.remove(id) }, id)

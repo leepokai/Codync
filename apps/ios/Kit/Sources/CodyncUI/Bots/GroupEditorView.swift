@@ -82,8 +82,7 @@ public struct GroupEditorView: View {
                                     ]
                                 } label: {
                                     HStack(spacing: 6) {
-                                        Text(workspace.map { ($0 as NSString).lastPathComponent }
-                                              ?? L10n.tr("Each keeps its own folder")).lineLimit(1)
+                                        Text(workspace?.folderBaseName ?? L10n.tr("Each keeps its own folder")).lineLimit(1)
                                         Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(Palette.secondary)
                                     }
                                     .foregroundStyle(Palette.text)

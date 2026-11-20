@@ -29,6 +29,12 @@ import Testing
     #expect(older.groupWorkspace == nil, "older hosts: editors keep the option hidden")
 }
 
+@Test func aFolderNameReadsBothSeparators() {
+    #expect("/tmp/team".folderBaseName == "team")
+    #expect(#"C:\Users\me\team"#.folderBaseName == "team", "a Windows host's folder")
+    #expect("/tmp/team/".folderBaseName == "team")
+}
+
 @Test func aGroupDraftSendsAFolderAClearOrNothing() throws {
     let body = { (configure: (inout GroupDraft) -> Void) -> [String: Any] in
         var draft = GroupDraft(name: "Crew", members: ["a"])

@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.Bot
 import com.codync.android.core.GroupDraft
+import com.codync.android.core.folderName
 import com.codync.android.design.*
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -88,7 +89,7 @@ import kotlinx.serialization.json.jsonPrimitive
                             ) }, label = "Workspace") {
                                 Row(Modifier.outline().pill(androidx.compose.ui.graphics.Color.Transparent), verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text(draft.workspace?.trimEnd('/')?.substringAfterLast('/')?.ifEmpty { "/" } ?: tr("Each keeps its own folder"),
+                                    Text(draft.workspace?.let(::folderName) ?: tr("Each keeps its own folder"),
                                         style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Symbol("chevron.down", size = 13.dp, tint = Palette.secondary)
                                 }

@@ -122,12 +122,7 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
 
     public var isGroup: Bool { kind == "group" }
     /// A group's shared folder's name, when it has one (both separators: a Windows host's folders).
-    public var workspaceName: String? {
-        workspace.flatMap { path in
-            let name = path.split(whereSeparator: { $0 == "/" || $0 == "\\" }).last.map(String.init)
-            return name?.isEmpty == false ? name : path
-        }
-    }
+    public var workspaceName: String? { workspace?.folderBaseName }
     public var isWorking: Bool { status == "working" || status == "needsInput" }
     /// Working right now in this chat (not in a group it's in, or the reverse).
     public func isWorking(in chat: String) -> Bool {
@@ -138,6 +133,14 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var band: Int { pinned ? 0 : 1 }
     /// Where it works, as a list shows it: its own folder, or its project folder's name.
     public var folderName: String { managedWorkspace ? L10n.tr("Own folder") : (cwd as NSString).lastPathComponent }
+}
+
+public extension String {
+    /// The last part of a folder path, both separators (a Windows host's folders).
+    var folderBaseName: String {
+        let name = split(whereSeparator: { $0 == "/" || $0 == "\\" }).last.map(String.init)
+        return name?.isEmpty == false ? name! : self
+    }
 }
 
 extension Bot {

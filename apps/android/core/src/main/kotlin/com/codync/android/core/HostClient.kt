@@ -118,7 +118,7 @@ data class Bot(
     val customIcon: CustomIcon? = null,
 ) {
     /** A group's shared folder's name, when it has one (both separators: a Windows host's folders). */
-    val workspaceName: String? get() = workspace?.split('/', '\\')?.lastOrNull { it.isNotEmpty() }
+    val workspaceName: String? get() = workspace?.let(::folderName)
 
     /** The messages in the badge the user hasn't read: what `markRead` clears (waiting cards stay counted). */
     val unseen: Int get() = unread - waiting

@@ -35,6 +35,12 @@ class ManagementTest {
         assertEquals("/tmp/team", repost.getValue("workspace").jsonPrimitive.content)
     }
 
+    @Test fun `a folder name reads both separators`() {
+        assertEquals("team", folderName("/tmp/team"))
+        assertEquals("team", folderName("C:\\Users\\me\\team"))
+        assertEquals("team", folderName("/tmp/team/"))
+    }
+
     @Test fun `unavailable members and nested groups cannot silently change a saved roster`() {
         for (members in listOf(emptyList(), listOf("missing"), listOf("nested"), listOf("deleted"))) {
             assertFails<IllegalArgumentException> { GroupDraft(members = members).body(listOf(

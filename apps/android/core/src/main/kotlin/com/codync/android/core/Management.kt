@@ -2,6 +2,9 @@ package com.codync.android.core
 
 import kotlinx.serialization.json.*
 
+/** The last part of a folder path, both separators (a Windows host's folders). */
+fun folderName(path: String): String = path.split('/', '\\').lastOrNull { it.isNotEmpty() } ?: path
+
 /** A group uses the existing bot endpoints; it never owns an agent. It may carry a shared workspace folder. */
 data class GroupDraft(
     val id: String? = null,

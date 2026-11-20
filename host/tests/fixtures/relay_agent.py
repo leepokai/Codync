@@ -82,7 +82,10 @@ for line in sys.stdin:
                     "Usage Limit Reached\n\n"
                     "You have reached your current quota for this period. Your limit will reset in 6 days, 12 hours."
                 )
-            update(sid, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": banner}})
+            mid = max(1, len(banner) // 2)
+            for chunk in (banner[:mid], banner[mid:]):
+                if chunk:
+                    update(sid, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": chunk}})
             send({"id": message["id"], "result": {"stopReason": "refusal"}})
         elif os.path.exists(f"{NAME}.limit"):
             diff = {"type": "diff", "path": "a.txt", "oldText": "", "newText": "the edit's own text\n"}

@@ -208,26 +208,26 @@ struct BotSettingsForm: View {
                     .help(draft.cwd.isEmpty ? "A persistent workspace allocated for this bot" : draft.cwd)
                 }
                 // From a host that says, for any folder (one Codync made too).
-                if let bot, bot.taskWorktrees != nil {
+                if let bot, bot.threadWorktrees != nil {
                     GitStateRow(state: bot.gitState)
                 }
                 ApprovalPicker(draft: $draft, reload: modelReload)
                 // Only from a host with a box (its bots say).
-                if let agents = draft.maxAgents {
+                if let threads = draft.maxThreads {
                     ValueRow("Threads at once") {
                         HStack(spacing: 10) {
-                            Text(verbatim: "\(agents)").monospacedDigit().foregroundStyle(Palette.text)
-                            Stepper(L10n.tr("Threads at once"), value: Binding(get: { agents }, set: { draft.maxAgents = $0 }),
-                                    in: Bot.maxAgentsRange)
+                            Text(verbatim: "\(threads)").monospacedDigit().foregroundStyle(Palette.text)
+                            Stepper(L10n.tr("Threads at once"), value: Binding(get: { threads }, set: { draft.maxThreads = $0 }),
+                                    in: Bot.maxThreadsRange)
                                 .labelsHidden()
                         }
                     }
                 }
                 // Only in a project folder in a git repository (a bot's own folder keeps all its work in one place),
                 // from a host that has the setting.
-                if bot?.gitRepo == true, bot?.managedWorkspace == false, let worktrees = draft.taskWorktrees {
+                if bot?.gitRepo == true, bot?.managedWorkspace == false, let worktrees = draft.threadWorktrees {
                     SwitchRow("Worktree per thread", detail: "Threads that work at once in this repository each get their own branch.",
-                              isOn: Binding(get: { worktrees }, set: { draft.taskWorktrees = $0 }))
+                              isOn: Binding(get: { worktrees }, set: { draft.threadWorktrees = $0 }))
                 }
             }
 

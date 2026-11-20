@@ -10,7 +10,7 @@ use crate::{
         bot::Cmd,
         login_profiles::{self, Login},
     },
-    chat::tasks::ItemMark,
+    chat::work::TaskMark,
     hub::Hub,
     store::{BotConfig, EntryKind, Lane, now_ms},
 };
@@ -83,19 +83,19 @@ pub async fn refresh(hub: &Hub) {
 
 /// `bot`'s turn failed because `login` needs signing in: a card in `lane` asks the user to, and `entries` (the messages
 /// it couldn't answer) go out again once they have, each to the chat it was written in. A bot keeps one such card per
-/// login in each chat; messages that fail later join it. A background task's card is in its bot's chat, marked as its
-/// item's (`item`), and kept apart from the bot's own.
+/// login in each chat; messages that fail later join it. A background thread's card is in its bot's chat, marked as its
+/// task's (`task`), and kept apart from the bot's own.
 pub fn invite(
     hub: &Hub,
     bot: &str,
     lane: &Lane,
     login: &Login,
     entries: &[String],
-    item: Option<&ItemMark>,
+    task: Option<&TaskMark>,
 ) -> Result<()> {
     // A routine's, a room's or another bot's turn has no message of the user's to send again.
     let text = if entries.is_empty() { NEEDED } else { HOLDING };
-    invite_saying(hub, bot, lane, login, entries, item, text)
+    invite_saying(hub, bot, lane, login, entries, task, text)
 }
 
 /// The card, saying `text` when it's new. Its title names the agent.
@@ -105,7 +105,7 @@ fn invite_saying(
     lane: &Lane,
     login: &Login,
     entries: &[String],
-    item: Option<&ItemMark>,
+    task: Option<&TaskMark>,
     text: &str,
 ) -> Result<()> {
     let _guard = SIGN_IN.locked();
@@ -116,7 +116,7 @@ fn invite_saying(
         card.bot_id == lane.chat
             && request["botId"] == bot
             && request["loginProfile"].as_str() == login.profile.as_deref()
-            && card.data["task"]["id"].as_str() == item.map(ItemMark::task)
+            && card.data["thread"]["id"].as_str() == task.map(TaskMark::thread)
     };
     if let Some(card) = hub.store.pending_sign_ins(backend)?.into_iter().find(mine) {
         let mut data = card.data.clone();
@@ -131,9 +131,9 @@ fn invite_saying(
             data["text"] = HOLDING.into();
             data["connectionRequest"]["entryIds"] = Value::Array(ids);
         }
-        // A task's card is the item's it works on now (the next item joins the task).
-        if let Some(item) = item {
-            item.apply(&mut data);
+        // A thread's card is the task's it works on now (the next task joins the thread).
+        if let Some(task) = task {
+            task.apply(&mut data);
         }
         if data != card.data {
             hub.set_entry(&card.id, &data).ok_or_else(|| anyhow!("Could not update the sign-in request"))?;
@@ -148,8 +148,8 @@ fn invite_saying(
         request["loginProfile"] = profile.as_str().into();
     }
     let mut data = json!({"text": text, "connectionRequest": request});
-    if let Some(item) = item {
-        item.apply(&mut data);
+    if let Some(task) = task {
+        task.apply(&mut data);
     }
     hub.add_entry(lane, EntryKind::Notice, hub.store.max_turn(bot), &data)
         .ok_or_else(|| anyhow!("Could not save the sign-in request"))?;
@@ -255,14 +255,14 @@ pub async fn sign_in_account(hub: &Hub, id: &str) -> Result<Value> {
 }
 
 /// The messages `ids` that couldn't be answered go out again, each to the chat it was written in: a bot's own, or
-/// a background task's (its item's message, while the task still works on that item, however long it waited). A
+/// a background thread's (its task's message, while the thread still works on that task, however long it waited). A
 /// bot's own message older than a day doesn't, and nor does one whose chat is gone.
 pub fn send_again<'a>(hub: &Hub, ids: impl IntoIterator<Item = &'a str>) -> Result<()> {
     for mut entry in ids.into_iter().filter_map(|id| hub.store.entry(id)) {
         let Some(bot) = hub.store.bot(&entry.bot_id)?.filter(|b| !b.deleted) else { continue };
-        let goes = if bot.config.is_task() {
-            // A task whose item was stopped, or went back to the box, has nothing to answer it in.
-            crate::chat::tasks::card_item(&hub.store, &bot.config).is_some()
+        let goes = if bot.config.is_thread() {
+            // A thread whose task was stopped, or went back to the box, has nothing to answer it in.
+            crate::chat::work::card_task(&hub.store, &bot.config).is_some()
         } else {
             now_ms() - entry.created_at <= MAX_AGE
         };
@@ -412,28 +412,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_tasks_message_goes_out_again_while_its_item_works_and_one_card_doesnt_hold_up_the_next() {
+    async fn a_threads_message_goes_out_again_while_its_task_works_and_one_card_doesnt_hold_up_the_next() {
         let (hub, dir) = fixture();
-        // Two tasks of `bot`, neither running: `task-1` still works on its item, `task-2`'s item ended.
-        for task in ["task-1", "task-2"] {
-            let cfg = json!({"id": task, "name": "bot", "backend": "fixture-task", "cwd": dir, "taskOf": "bot"});
+        // Two threads of `bot`, neither running: `thread-1` still works on its task, `thread-2`'s task ended.
+        for thread in ["thread-1", "thread-2"] {
+            let cfg = json!({"id": thread, "name": "bot", "backend": "fixture-thread", "cwd": dir, "threadOf": "bot"});
             hub.store.save_bot(&serde_json::from_value(cfg).unwrap()).unwrap();
         }
-        crate::chat::tasks::put_working_for_test(&hub.store, "bot", "task-1");
+        crate::chat::work::put_working_for_test(&hub.store, "bot", "thread-1");
         let held = |chat: &str, text: &str| {
             let lane = Lane::main(chat);
             let sent = message(&hub, &lane, text);
-            invite(&hub, chat, &lane, &own("fixture-task"), std::slice::from_ref(&sent), None).unwrap();
+            invite(&hub, chat, &lane, &own("fixture-thread"), std::slice::from_ref(&sent), None).unwrap();
             sent
         };
-        let (waited, stopped) = (held("task-1", "waited"), held("task-2", "stopped"));
+        let (waited, stopped) = (held("thread-1", "waited"), held("thread-2", "stopped"));
         held("bot", "own-7");
         hub.store.backdate_entry(&waited, now_ms() - MAX_AGE - 1);
-        agent_signed_in(&hub, "fixture-task").unwrap();
+        agent_signed_in(&hub, "fixture-thread").unwrap();
         let status = |id: &str| hub.store.entry(id).unwrap().data["status"].clone();
-        assert_eq!(status(&waited), "queued", "an item waits for its sign-in however long");
-        assert_eq!(status(&stopped), "sent", "a task whose item ended has nothing to answer it in");
-        // `task-1` has no actor to take its message: the bot's own card still sends.
+        assert_eq!(status(&waited), "queued", "a task waits for its sign-in however long");
+        assert_eq!(status(&stopped), "sent", "a thread whose task ended has nothing to answer it in");
+        // `thread-1` has no actor to take its message: the bot's own card still sends.
         let prompts = dir.join("prompts.jsonl");
         until("the bot's message to go out again", || {
             std::fs::read_to_string(&prompts).is_ok_and(|p| p.contains("own-7"))

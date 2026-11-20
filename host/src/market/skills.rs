@@ -419,7 +419,7 @@ pub fn skills_brief(store: &crate::store::Store, enabled: &[String]) -> Option<S
             format!("- {}: {} (read {} before using it)", s.name, s.description, s.dir().join("SKILL.md").display())
         })
         .collect();
-    (!lines.is_empty()).then(|| format!("Skills you can use when they fit the task:\n{}", lines.join("\n")))
+    (!lines.is_empty()).then(|| format!("Skills you can use when they fit the request:\n{}", lines.join("\n")))
 }
 
 #[cfg(test)]

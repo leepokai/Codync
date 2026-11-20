@@ -6,7 +6,7 @@ import os
 private let log = Logger(subsystem: "com.pokai.Codync", category: "Call")
 
 /// The bot's Live Activity while this phone is on a call with it: the call's state and length, and the bot's latest
-/// progress from the computer. Uses the bot's activity if one is up (a task it was given), else starts one for the call.
+/// progress from the computer. Uses the bot's activity if one is up (a turn or work under way), else starts one for the call.
 /// The call's fields live here: every update of the activity merges them in (`withCall`), and they go back on after
 /// the computer's pushes, which replace its state without them.
 @MainActor
@@ -111,7 +111,7 @@ public final class CallActivity {
     }
 
     /// A call is over on `activity`: one whose bot has nothing left to show ends (at once with `dismissNow`), and one
-    /// with a task under way goes on without the call.
+    /// with work under way goes on without the call.
     public nonisolated static func callEnded(on activity: Activity<BotActivityAttributes>, dismissNow: Bool) async {
         let state = merge(activity.content.state, call: nil, since: nil)
         if ["idle", "completed", "error"].contains(state.status) {

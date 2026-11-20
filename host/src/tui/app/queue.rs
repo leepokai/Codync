@@ -48,7 +48,7 @@ impl App {
         self.on_queued(Queued::Remove, json!({"botId": bot}), last);
     }
 
-    /// `act` on the queued message `id` of the chat or thread `to` names (`botId`, and an `itemId` for a thread).
+    /// `act` on the queued message `id` of the chat or thread `to` names (`botId`, and a `taskId` for a thread).
     pub(in crate::tui) fn on_queued(&mut self, act: Queued, mut to: Value, id: Option<String>) {
         let Some(id) = id else {
             self.flash("No message waiting");

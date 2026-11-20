@@ -144,8 +144,9 @@ suspend fun AccountStore.refreshRoster() {
 /**
  * Asks [target] for access; the code arrives in `access`, where it must match the one the computer shows.
  * Asking again while it runs joins it; [renew] revokes this phone's earlier grant and asks anew (iOS `requestAccess`).
+ * [quiet] is the ask nobody tapped for ([askCloudComputers]): where the next refresh mends its failure, no dialog says so.
  */
-fun AccountStore.requestAccess(target: CloudComputer, renew: Boolean = false) {
+fun AccountStore.requestAccess(target: CloudComputer, renew: Boolean = false, quiet: Boolean = false) {
     val key = "access:" + target.computerId
     if (renew) {
         action("renewAccess:" + target.computerId) {
@@ -153,26 +154,39 @@ fun AccountStore.requestAccess(target: CloudComputer, renew: Boolean = false) {
             actions[key]?.cancelAndJoin()
             startAccess(target, renew = true)
         }
-    } else startAccess(target, renew = false)
+    } else startAccess(target, renew = false, quiet)
 }
 
-private fun AccountStore.startAccess(target: CloudComputer, renew: Boolean) = action("access:" + target.computerId) {
+private fun AccountStore.startAccess(target: CloudComputer, renew: Boolean, quiet: Boolean = false) = action("access:" + target.computerId) {
     mutableState.update { it.copy(asking = it.asking + target.computerId) }
-    try { askForAccess(target, renew) } finally { mutableState.update { it.copy(asking = it.asking - target.computerId) } }
+    try { askForAccess(target, renew, quiet) }
+    catch (error: Exception) {
+        // Failed or ended unapproved: a cloud computer is asked again by itself on the next refresh.
+        if (error !is CancellationException) askedCloud.remove(target.computerId)
+        throw error
+    } finally { mutableState.update { it.copy(asking = it.asking - target.computerId) } }
 }
 
-private suspend fun AccountStore.askForAccess(target: CloudComputer, renew: Boolean) {
+private suspend fun AccountStore.askForAccess(target: CloudComputer, renew: Boolean, quiet: Boolean) {
     val client = requireNotNull(cloud) { "Sign in to reach your account." }
     if (renew) client.revokeAccess(target.computerId)
-    val ticket = client.requestAccess(target.computerId, target.signKey)
+    val ticket = try { client.requestAccess(target.computerId, target.signKey) }
+    catch (error: IOException) {
+        if (!quiet || (error is CloudError && !error.isTransient)) throw error
+        // A dropped connection or a busy cloud: the next refresh asks again, as on iOS, which only logs it too.
+        android.util.Log.i("Codync", "Cloud computer access request failed: ${error.message}")
+        askedCloud.remove(target.computerId)
+        return
+    }
     Analytics.capture(AnalyticsEvent.AccessRequested)
     mutableState.update { it.copy(access = it.access + (ticket.computerId to ticket)) }
     try {
         while (currentCoroutineContext().isActive) {
             if (System.currentTimeMillis() >= ticket.expiresAt) throw CloudError(410, "requestExpired")
             delay(2_000)
+            // A dropped connection or a busy cloud is asked again until the request expires (iOS too).
             val status = try { client.accessStatus(ticket.requestId) }
-            catch (error: CloudError) { if (error.isTransient) continue else throw error }
+            catch (error: IOException) { if (error is CloudError && !error.isTransient) throw error else continue }
             require(status.requestId == ticket.requestId && (status.computerId == null || status.computerId == ticket.computerId)) { "Invalid access response" }
             when (status.state) {
                 "pending" -> continue
@@ -206,14 +220,15 @@ private suspend fun AccountStore.askForAccess(target: CloudComputer, renew: Bool
     } finally { mutableState.update { it.copy(access = it.access - ticket.computerId) } }
 }
 
-/** The approved computer joins this phone's computers (or replaces its older pairing), then connects. */
+/** The approved computer joins this phone's computers (or replaces its older pairing), then connects. A cloud computer
+ * started from the setup pages is let in this way too, by its host. */
 private suspend fun AccountStore.useApprovedComputer(computer: Computer, requestId: String) {
     // Approval is already confirmed by the cloud.
     mutableState.update { it.copy(approvedAccess = it.approvedAccess + (computer.id to requestId)) }
     transitions.withLock { addComputer(computer) }
     withContext(Dispatchers.IO) { local.completeSetup() }
     mutableState.update { it.copy(setupComplete = true) }
-    Analytics.completeOnboarding(OnboardingVia.Account)
+    Analytics.completeOnboarding(if (state.value.startedCloud) OnboardingVia.Cloud else OnboardingVia.Account)
     refreshCloud()
 }
 

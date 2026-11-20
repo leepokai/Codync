@@ -77,7 +77,7 @@ can be traced from the events around it:
   `clientNonce`) is not counted again. Bot actors report `turn_finished`, `agent_fell_back` (a turn moved on to the bot's next
   agent: the agent and why, see [agent fallbacks](agent-fallback.md)), `handoff_carried` (what the agent taking over
   was told first, by size) and `agent_retired` (an agent stopped between
-  turns to give back its processes, and why), the phone channel
+  turns to give back its processes, or because it dropped Codync's MCP servers, and why), the phone channel
   reports pairing and daily phone connections, and the host reports its own start. Each event
   carries its own `timestamp` and `uuid` (a resent batch counts once) and the computer's key
   (`computer`, a hash of its id); batches go to `/batch/` every 30 s and once more when the
@@ -118,8 +118,8 @@ builds PostHog frames itself (oldest first, the failing one last): generic `cust
 - **Host** (`host/src/analytics/errors.rs`): its own panics (a panic hook queues them for the
   analytics task), failures it got past that should never happen (`host_error!`: type
   `HostError`, mechanism `handled`, what failed as a literal written in the code and the place that
-  noticed it; once per place while the host runs; so far the [background tasks](background-tasks.md)
-  box: one that won't save, a task that is gone, a result that can't be handed on), and `reportError`,
+  noticed it; once per place while the host runs; so far the [work](work.md)
+  box: one that won't save, a thread that is gone, a result that can't be handed on), and `reportError`,
   loopback only, for the computer's apps. Process `host`.
 - **Terminal UI**: its panics, through `reportError` from the panic hook. Process `tui`.
 - **Desktop** (`apps/desktop/src/main/error-reports.ts`, `shared/error-report.ts`): uncaught

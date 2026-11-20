@@ -1,4 +1,4 @@
-//! A bot's event box as the host sends it (`docs/features/background-tasks.md`): its items, how they fall into the
+//! A bot's event box as the host sends it (`docs/features/work.md`): its tasks, how they fall into the
 //! Details page's sections, and the lines that say what they do.
 
 use serde::Deserialize;
@@ -7,10 +7,10 @@ use serde_json::Value;
 use super::super::l10n::{fill, tr};
 use super::model::{Entry, Kind};
 use crate::chat::decision;
-pub use crate::chat::tasks::Status as WorkStatus;
-use crate::chat::tasks::Wait;
-use crate::store::DEFAULT_AGENTS;
-pub use crate::store::MAX_AGENTS;
+pub use crate::chat::work::Status as WorkStatus;
+use crate::chat::work::Wait;
+use crate::store::DEFAULT_THREADS;
+pub use crate::store::MAX_THREADS;
 
 /// The status in a word (a catalog phrase).
 pub fn word(status: WorkStatus) -> &'static str {
@@ -24,7 +24,7 @@ pub fn word(status: WorkStatus) -> &'static str {
     }
 }
 
-/// Where an item came from when the bot didn't add it itself.
+/// Where a task came from when the bot didn't add it itself.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Source {
     /// A run of one of the bot's routines.
@@ -35,34 +35,34 @@ pub enum Source {
 
 /// One piece of work in a bot's box (`bot.work`).
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct WorkItem {
+pub struct WorkTask {
     pub id: String,
     pub title: String,
     pub status: WorkStatus,
-    /// What its task is doing now; empty until it says.
+    /// What its thread is doing now; empty until it says.
     pub activity: String,
-    /// The task that has or had it: whose transcript its row opens.
-    pub task: Option<String>,
-    /// Why it waits; none on an item that doesn't, or for a reason this terminal doesn't know.
+    /// The thread that has or had it: whose transcript its row opens.
+    pub thread: Option<String>,
+    /// Why it waits; none on a task that doesn't, or for a reason this terminal doesn't know.
     pub wait: Option<Wait>,
-    /// It gave way to another item once, and starts again from its brief.
+    /// It gave way to another task once, and starts again from its brief.
     pub cut_in: bool,
     pub started_at: Option<i64>,
     pub ended_at: Option<i64>,
-    /// What its task reported, or why it failed.
+    /// What its thread reported, or why it failed.
     pub result: String,
     /// None for one the bot added, or from a source this terminal doesn't know.
     pub source: Option<Source>,
-    /// The branch of the git worktree its task works in, while there is one.
+    /// The branch of the git worktree its thread works in, while there is one.
     pub branch: Option<String>,
-    /// Where its task works; none before a task took it, and from a host that doesn't say.
+    /// Where its thread works; none before a thread took it, and from a host that doesn't say.
     pub folder: Option<String>,
-    /// The user may write to its thread: the bot's own work, whose task is still there.
+    /// The user may write to its thread: the bot's own work, whose thread is still there.
     pub talk: bool,
 }
 
-impl WorkItem {
-    /// An item with an id and a status this terminal knows; any other is left out.
+impl WorkTask {
+    /// A task with an id and a status this terminal knows; any other is left out.
     fn parse(v: &Value) -> Option<Self> {
         let text = |key: &str| v[key].as_str().unwrap_or_default().to_owned();
         Some(Self {
@@ -70,7 +70,7 @@ impl WorkItem {
             title: text("title"),
             status: WorkStatus::deserialize(&v["status"]).ok()?,
             activity: text("activity"),
-            task: v["task"].as_str().map(str::to_owned),
+            thread: v["thread"].as_str().map(str::to_owned),
             wait: Wait::deserialize(&v["wait"]).ok(),
             cut_in: v["cutIn"] == true,
             started_at: v["startedAt"].as_i64(),
@@ -92,7 +92,7 @@ impl WorkItem {
         v.as_array().into_iter().flatten().filter_map(Self::parse).collect()
     }
 
-    /// Why a waiting item waits.
+    /// Why a waiting task waits.
     fn wait_text(&self) -> String {
         if self.cut_in {
             return tr("Was cut in on; starts again").into_owned();
@@ -106,7 +106,7 @@ impl WorkItem {
         }
     }
 
-    /// What its row says after the title: why it waits, what its task does, or how it ended (a failed or stopped one
+    /// What its row says after the title: why it waits, what its thread does, or how it ended (a failed or stopped one
     /// says why).
     pub fn line(&self) -> String {
         match self.status {
@@ -117,41 +117,41 @@ impl WorkItem {
         }
     }
 
-    /// Still in the box's hands: a task has it, or it waits for one.
+    /// Still in the box's hands: a thread has it, or it waits for one.
     pub fn open(&self) -> bool {
         self.status.live() || self.status == WorkStatus::Waiting
     }
 
-    /// Try again is offered on an item that failed or was stopped, unless another bot asked for it: that bot has
-    /// its answer already. A routine's item runs the routine again.
+    /// Try again is offered on a task that failed or was stopped, unless another bot asked for it: that bot has
+    /// its answer already. A routine's task runs the routine again.
     pub fn can_retry(&self) -> bool {
         matches!(self.status, WorkStatus::Failed | WorkStatus::Stopped)
             && !matches!(self.source, Some(Source::Request(_)))
     }
 
-    /// A task has it and it may give way to an item that cuts in: only work the bot added. A routine's run or
+    /// A thread has it and it may give way to a task that cuts in: only work the bot added. A routine's run or
     /// another bot's request is stopped, never set aside.
     pub fn gives_way(&self) -> bool {
         self.status.live() && self.source.is_none()
     }
 }
 
-/// A bot's `maxAgents`, within 1 to 6; none from a host before the box.
-pub(in crate::tui) fn max_agents(v: &Value) -> Option<u8> {
-    v.as_u64().map(|n| u8::try_from(n.clamp(1, u64::from(MAX_AGENTS))).unwrap_or(MAX_AGENTS))
+/// A bot's `maxThreads`, within 1 to 6; none from a host before the box.
+pub(in crate::tui) fn max_threads(v: &Value) -> Option<u8> {
+    v.as_u64().map(|n| u8::try_from(n.clamp(1, u64::from(MAX_THREADS))).unwrap_or(MAX_THREADS))
 }
 
-/// How many agents a bot with this `maxAgents` may run at once.
-pub fn places(max_agents: Option<u8>) -> usize {
-    usize::from(max_agents.unwrap_or(DEFAULT_AGENTS))
+/// How many threads a bot with this `maxThreads` may run at once.
+pub fn threads_at_once(max_threads: Option<u8>) -> usize {
+    usize::from(max_threads.unwrap_or(DEFAULT_THREADS))
 }
 
-fn count(work: &[WorkItem], status: WorkStatus) -> usize {
+fn count(work: &[WorkTask], status: WorkStatus) -> usize {
     work.iter().filter(|i| i.status == status).count()
 }
 
 /// `2 working · 3 waiting`, a part left out at none; empty with neither.
-pub fn counts(work: &[WorkItem]) -> String {
+pub fn counts(work: &[WorkTask]) -> String {
     let part = |phrase: &str, status| {
         let n = count(work, status);
         (n > 0).then(|| fill(&tr(phrase), &[("count", &n.to_string())]))
@@ -160,27 +160,27 @@ pub fn counts(work: &[WorkItem]) -> String {
     parts.into_iter().flatten().collect::<Vec<_>>().join(" · ")
 }
 
-/// Every place is taken, so the item first in line can only start now if a task gives way, and one may. Not one
-/// that follows unfinished work or waits for usage: a freed place wouldn't start it.
-pub fn can_cut_in(work: &[WorkItem], max_agents: Option<u8>) -> bool {
+/// Every thread is busy, so the task first in line can only start now if a thread gives way, and one may. Not one
+/// that follows unfinished work or waits for usage: a freed thread wouldn't start it.
+pub fn can_cut_in(work: &[WorkTask], max_threads: Option<u8>) -> bool {
     let first = work.iter().find(|i| i.status == WorkStatus::Waiting);
     first.is_some_and(|first| !matches!(first.wait, Some(Wait::After | Wait::Usage)))
-        && work.iter().any(WorkItem::gives_way)
-        && work.iter().filter(|i| i.status.live()).count() >= places(max_agents)
+        && work.iter().any(WorkTask::gives_way)
+        && work.iter().filter(|i| i.status.live()).count() >= threads_at_once(max_threads)
 }
 
-/// The Details page's sections of items, each in the order its rows show.
+/// The Details page's sections of tasks, each in the order its rows show.
 pub struct Sections<'a> {
-    /// The agent sessions that run now: items that need the user, then the working ones.
-    pub threads: Vec<&'a WorkItem>,
+    /// The threads that run now: tasks that need the user, then the working ones.
+    pub threads: Vec<&'a WorkTask>,
     /// What waits for a thread, in the order it will be taken.
-    pub waiting: Vec<&'a WorkItem>,
-    /// Items that ended in the last day, newest first.
-    pub recent: Vec<&'a WorkItem>,
+    pub waiting: Vec<&'a WorkTask>,
+    /// Tasks that ended in the last day, newest first.
+    pub recent: Vec<&'a WorkTask>,
 }
 
 impl<'a> Sections<'a> {
-    pub fn of(work: &'a [WorkItem]) -> Self {
+    pub fn of(work: &'a [WorkTask]) -> Self {
         let of = |status| work.iter().filter(move |i| i.status == status);
         Self {
             threads: of(WorkStatus::NeedsYou).chain(of(WorkStatus::Working)).collect(),
@@ -190,21 +190,21 @@ impl<'a> Sections<'a> {
     }
 }
 
-/// A bot's live and waiting items in one line: what the line over the composer says after `In the background`.
+/// A bot's live and waiting tasks in one line: what the line over the composer says after `Work`.
 #[derive(PartialEq, Eq, Debug)]
 pub struct Background {
     pub what: String,
-    /// When the one working item began; none when the line counts items.
+    /// When the one working task began; none when the line counts tasks.
     pub since: Option<i64>,
     pub needs_you: bool,
-    /// The one item a task has, which `X` stops; none with no such item or several.
+    /// The one task a thread has, which `X` stops; none with no such task or several.
     pub stops: Option<String>,
 }
 
 impl Background {
     /// None while nothing is live or waiting.
-    pub fn of(work: &[WorkItem]) -> Option<Self> {
-        let live: Vec<&WorkItem> = work.iter().filter(|i| i.status.live()).collect();
+    pub fn of(work: &[WorkTask]) -> Option<Self> {
+        let live: Vec<&WorkTask> = work.iter().filter(|i| i.status.live()).collect();
         let waiting = count(work, WorkStatus::Waiting);
         if live.is_empty() && waiting == 0 {
             return None;
@@ -227,8 +227,8 @@ impl Background {
     }
 }
 
-/// What the chat entry `e` a task put in the bot's chat (a card, its agent's sign-in card, a file, a voice note, an
-/// artifact) says in that task's thread: one dim line, its mark and its words, where the entry itself stays in the
+/// What the chat entry `e` a thread put in the bot's chat (a card, its agent's sign-in card, a file, a voice note, an
+/// artifact) says in that thread: one dim line, its mark and its words, where the entry itself stays in the
 /// chat, which `↵` on the line opens. None for anything else. The apps' `sharedLine`.
 pub fn shared_line(e: &Entry) -> Option<(&'static str, String)> {
     let line = |mark, key: &str, values: &[(&str, &str)]| Some((mark, fill(&tr(key), values)));
@@ -291,54 +291,57 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// An item `id` in `status`, titled `Fix login`.
-    fn item(id: &str, status: &str) -> Value {
-        json!({"id": id, "title": "Fix login", "status": status, "task": format!("task-{id}"), "wait": null})
+    /// A task `id` in `status`, titled `Fix login`.
+    fn task(id: &str, status: &str) -> Value {
+        json!({"id": id, "title": "Fix login", "status": status, "thread": format!("thread-{id}"), "wait": null})
     }
 
-    fn work(statuses: &[&str]) -> Vec<WorkItem> {
-        let items = statuses.iter().enumerate().map(|(i, status)| item(&i.to_string(), status)).collect();
-        WorkItem::list(&Value::Array(items))
+    fn work(statuses: &[&str]) -> Vec<WorkTask> {
+        let tasks = statuses.iter().enumerate().map(|(i, status)| task(&i.to_string(), status)).collect();
+        WorkTask::list(&Value::Array(tasks))
     }
 
     #[test]
-    fn work_and_max_agents_parse_and_an_unknown_status_is_left_out() {
-        assert!(WorkItem::list(&Value::Null).is_empty(), "a host from before the box");
-        let listed = WorkItem::list(&json!([
+    fn work_and_max_threads_parse_and_an_unknown_status_is_left_out() {
+        assert!(WorkTask::list(&Value::Null).is_empty(), "a host from before the box");
+        let listed = WorkTask::list(&json!([
             {"title": "no id", "status": "working"},
             {"id": "later", "title": "A status of a newer host", "status": "paused"},
-            {"id": "a", "title": "Fix login", "status": "needsYou", "activity": "Editing", "task": "task-1",
+            {"id": "a", "title": "Fix login", "status": "needsYou", "activity": "Editing", "thread": "thread-1",
                 "wait": null, "cutIn": false, "createdAt": 1, "startedAt": 5, "endedAt": null, "result": ""},
-            {"id": "b", "status": "waiting", "task": null, "wait": {"kind": "behind", "ahead": 2}, "cutIn": true},
-            {"id": "c", "status": "failed", "task": "task-2", "startedAt": 5, "endedAt": 9, "result": "it could not start"},
+            {"id": "b", "status": "waiting", "thread": null, "wait": {"kind": "behind", "ahead": 2}, "cutIn": true},
+            {"id": "c", "status": "failed", "thread": "thread-2", "startedAt": 5, "endedAt": 9, "result": "it could not start"},
         ]));
         assert_eq!(listed.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(), ["a", "b", "c"]);
-        let [a, b, c] = &listed[..] else { panic!("three items") };
+        let [a, b, c] = &listed[..] else { panic!("three tasks") };
         assert_eq!(
-            (a.status, a.task.as_deref(), a.wait, a.started_at),
-            (WorkStatus::NeedsYou, Some("task-1"), None, Some(5))
+            (a.status, a.thread.as_deref(), a.wait, a.started_at),
+            (WorkStatus::NeedsYou, Some("thread-1"), None, Some(5))
         );
         assert_eq!(
-            (b.status, b.task.as_deref(), b.wait, b.cut_in),
+            (b.status, b.thread.as_deref(), b.wait, b.cut_in),
             (WorkStatus::Waiting, None, Some(Wait::Behind { ahead: 2 }), true)
         );
         assert_eq!((c.status, c.ended_at, c.result.as_str()), (WorkStatus::Failed, Some(9), "it could not start"));
         assert!(a.status.live() && !b.status.live() && c.status.ended());
 
-        assert_eq!(max_agents(&Value::Null), None);
-        assert_eq!((max_agents(&json!(2)), max_agents(&json!(0)), max_agents(&json!(9))), (Some(2), Some(1), Some(6)));
-        assert_eq!((places(None), places(Some(1))), (3, 1), "no maxAgents from the host counts 3");
+        assert_eq!(max_threads(&Value::Null), None);
+        assert_eq!(
+            (max_threads(&json!(2)), max_threads(&json!(0)), max_threads(&json!(9))),
+            (Some(2), Some(1), Some(6))
+        );
+        assert_eq!((threads_at_once(None), threads_at_once(Some(1))), (3, 1), "no maxThreads from the host counts 3");
         let three = work(&["working", "needsYou", "working", "waiting"]);
         assert!(can_cut_in(&three, None) && !can_cut_in(&three, Some(4)) && can_cut_in(&three[1..], Some(2)));
         assert!(!can_cut_in(&three[..3], None), "nothing waits");
     }
 
     #[test]
-    fn a_source_and_a_worktree_parse_and_set_what_an_item_may_do() {
+    fn a_source_and_a_worktree_parse_and_set_what_a_task_may_do() {
         let with = |status: &str, more: Value| {
-            let mut v = item("a", status);
+            let mut v = task("a", status);
             v.as_object_mut().expect("an object").extend(more.as_object().cloned().unwrap_or_default());
-            WorkItem::parse(&v).expect("an item")
+            WorkTask::parse(&v).expect("a task")
         };
         let source = |source: Value| with("working", json!({"source": source})).source;
         assert_eq!(source(json!({"kind": "routine", "id": "r1"})), Some(Source::Routine));
@@ -356,23 +359,23 @@ mod tests {
         let routine = json!({"source": {"kind": "routine", "id": "r1"}});
         let request = json!({"source": {"kind": "request", "id": "mika"}});
         let retries = |status: &str, more: &Value| with(status, more.clone()).can_retry();
-        assert!(retries("failed", &Value::Null) && retries("stopped", &routine), "a routine's item runs it again");
+        assert!(retries("failed", &Value::Null) && retries("stopped", &routine), "a routine's task runs it again");
         assert!(!retries("failed", &request) && !retries("stopped", &request), "the asking bot has its answer");
         assert!(!retries("done", &Value::Null) && !retries("working", &Value::Null));
         let gives = |status: &str, more: &Value| with(status, more.clone()).gives_way();
         assert!(gives("working", &Value::Null) && gives("needsYou", &Value::Null));
         assert!(!gives("working", &routine) && !gives("needsYou", &request) && !gives("waiting", &Value::Null));
 
-        // Cutting in needs every place taken, an item that gives way, and a first in line a freed place would start.
-        let boxed = |items: Vec<Value>| WorkItem::list(&Value::Array(items));
-        let own = || item("w", "working");
+        // Cutting in needs every thread busy, a task that gives way, and a first in line a freed thread would start.
+        let boxed = |tasks: Vec<Value>| WorkTask::list(&Value::Array(tasks));
+        let own = || task("w", "working");
         let run = || {
-            let mut v = item("r", "working");
+            let mut v = task("r", "working");
             v["source"] = json!({"kind": "routine", "id": "r1"});
             v
         };
         let waits = |kind: &str| {
-            let mut v = item("q", "waiting");
+            let mut v = task("q", "waiting");
             v["wait"] = json!({"kind": kind});
             v
         };
@@ -381,17 +384,17 @@ mod tests {
         assert!(can_cut_in(&boxed(vec![run(), own(), waits("next")]), Some(2)));
         assert!(!can_cut_in(&boxed(vec![own(), waits("after")]), Some(1)), "it follows unfinished work");
         assert!(!can_cut_in(&boxed(vec![own(), waits("usage")]), Some(1)), "it waits for usage");
-        assert!(!can_cut_in(&boxed(vec![own(), waits("next")]), Some(2)), "a place is free");
+        assert!(!can_cut_in(&boxed(vec![own(), waits("next")]), Some(2)), "a thread is free");
         assert!(boxed(vec![waits("next")])[0].open() && !with("done", Value::Null).open());
     }
 
     #[test]
-    fn a_waiting_item_says_why_it_waits() {
+    fn a_waiting_task_says_why_it_waits() {
         let waits = |wait: Value, cut_in: bool| {
-            let mut v = item("a", "waiting");
+            let mut v = task("a", "waiting");
             v["wait"] = wait;
             v["cutIn"] = cut_in.into();
-            WorkItem::parse(&v).expect("an item").line()
+            WorkTask::parse(&v).expect("a task").line()
         };
         assert_eq!(waits(json!({"kind": "next"}), false), "Next up");
         assert_eq!(waits(json!({"kind": "behind", "ahead": 3}), false), "3 ahead");
@@ -402,9 +405,9 @@ mod tests {
         assert_eq!(waits(json!({"kind": "next"}), true), "Was cut in on; starts again");
 
         let ended = |status: &str, result: &str| {
-            let mut v = item("a", status);
+            let mut v = task("a", status);
             v["result"] = result.into();
-            WorkItem::parse(&v).expect("an item").line()
+            WorkTask::parse(&v).expect("a task").line()
         };
         assert_eq!(ended("failed", "it could not start"), "it could not start");
         assert_eq!((ended("stopped", ""), ended("done", "All fixed.")), ("Stopped".to_owned(), "Done".to_owned()));
@@ -431,19 +434,19 @@ mod tests {
             Some(("Needs you · 2 working · 1 waiting".into(), true))
         );
 
-        let mut one = item("a", "working");
+        let mut one = task("a", "working");
         one["activity"] = "Reading files".into();
         one["startedAt"] = 5.into();
-        let alone = Background::of(&WorkItem::list(&json!([one, item("old", "done")]))).expect("one working item");
+        let alone = Background::of(&WorkTask::list(&json!([one, task("old", "done")]))).expect("one working task");
         assert_eq!((alone.what.as_str(), alone.since, alone.stops.as_deref()), ("Reading files", Some(5), Some("a")));
         let stops = |statuses: &[&str]| Background::of(&work(statuses)).and_then(|b| b.stops);
-        assert_eq!(stops(&["waiting", "needsYou"]).as_deref(), Some("1"), "the one item a task has");
+        assert_eq!(stops(&["waiting", "needsYou"]).as_deref(), Some("1"), "the one task a thread has");
         assert_eq!((stops(&["working", "working"]), stops(&["waiting"])), (None, None), "several, or none");
         assert_eq!(Background::of(&work(&["working", "waiting"])).and_then(|b| b.since), None, "counted: no time");
     }
 
     #[test]
-    fn what_a_task_put_in_the_chat_is_one_line_of_its_thread() {
+    fn what_a_thread_put_in_the_chat_is_one_line_of_its_thread() {
         let line = |kind: &str, data: Value| {
             let e = Entry::parse(&json!({"id": "c", "botId": "b", "seq": 1, "kind": kind, "turn": 1, "data": data}));
             shared_line(&e.expect("an entry").1)
@@ -473,7 +476,7 @@ mod tests {
         assert_eq!(text(sign_in("agent", "pending")).as_deref(), Some("◆ Needs Kimi Code sign-in"));
         assert_eq!(text(sign_in("agent", "ready")).as_deref(), Some("✓ Signed in"));
         assert_eq!(text(sign_in("agent", "cancelled")).as_deref(), Some("× Cancelled"));
-        assert_eq!(sign_in("oauth", "pending"), None, "a connector's card is not a task's");
+        assert_eq!(sign_in("oauth", "pending"), None, "a connector's card is not a thread's");
         let file = json!({"id": "f", "name": "log.txt", "size": 3});
         assert_eq!(
             text(line("agent", json!({"final": true, "files": [file]}))).as_deref(),
@@ -491,7 +494,7 @@ mod tests {
     fn the_sections_put_what_needs_you_first_and_keep_the_hosts_order() {
         let listed = work(&["working", "needsYou", "waiting", "done", "waiting", "stopped"]);
         let sections = Sections::of(&listed);
-        let ids = |items: &[&WorkItem]| items.iter().map(|i| i.id.clone()).collect::<Vec<_>>().join(" ");
+        let ids = |tasks: &[&WorkTask]| tasks.iter().map(|i| i.id.clone()).collect::<Vec<_>>().join(" ");
         assert_eq!(
             (ids(&sections.threads), ids(&sections.waiting), ids(&sections.recent)),
             ("1 0".into(), "2 4".into(), "3 5".into())

@@ -71,7 +71,7 @@ impl Host {
         self.bot_fixture(name, "routine_agent.py").await
     }
 
-    /// A bot that takes its routine runs as turns in its chat, not as items in its box: one that manages the team.
+    /// A bot that takes its routine runs as turns in its chat, not as tasks in its box: one that manages the team.
     async fn chat_run_bot(&self, name: &str) -> String {
         let bot = self.stable_bot(name).await;
         self.call("updateBot", json!({"id": bot, "manageTeam": true})).await;
@@ -357,9 +357,9 @@ async fn an_agent_started_for_a_run_stops_when_the_run_ends() {
     host.wait_event("only-runs", "finished", "LATER").await;
     let events = host.agent_events("only-runs");
     let count = |event: &str| events.iter().filter(|e| e["event"] == event).count();
-    // The run's agent was its task's, started for the run; the message started the chat's own. On Windows this
+    // The run's agent was its thread's, started for the run; the message started the chat's own. On Windows this
     // fixture has no MCP server of Codync's, so its job can't be told from a dev server (see `background_work`): the
-    // task's agent counts as busy, and the run's session closes before it stops.
+    // thread's agent counts as busy, and the run's session closes before it stops.
     assert_eq!((count("initialize"), count("closed")), if cfg!(windows) { (2, 1) } else { (2, 0) });
 }
 

@@ -74,10 +74,12 @@ private enum class ComputerOS { Mac, Linux }
 
 /**
  * Pair with a computer running codync-host, one thing per page: install it, then scan its code
- * (iOS `PairingView`). In a sheet it has a close button and closes once paired.
+ * (iOS `PairingView`). In a sheet it has a close button and closes once paired. [startCloud] is the first run's other way,
+ * on the install page: New cloud computer (null while Codync Cloud isn't open to this account, and when pairing another
+ * computer later: Computers has the Codync Cloud card).
  */
 @Composable internal fun PairingView(state: AccountContext, store: AccountStore, inModal: Boolean = false, onSkip: () -> Unit = {},
-    onContinue: () -> Unit = {}, leading: @Composable RowScope.() -> Unit = {}) {
+    onContinue: () -> Unit = {}, startCloud: (() -> Unit)? = null, leading: @Composable RowScope.() -> Unit = {}) {
     var step by rememberSaveable { mutableStateOf(Step.Install) }
     var os by rememberSaveable { mutableStateOf(ComputerOS.Mac) }
     val dismiss = LocalDismissModal.current
@@ -98,23 +100,25 @@ private enum class ComputerOS { Mac, Linux }
                 (slideOutHorizontally(Motion.spring(0.45f)) { if (forward) -it else it } + fadeOut(Motion.spring(0.45f)))
         }, label = "Pairing step") { shown ->
             when (shown) {
-                Step.Install -> InstallPage(os, { os = it }, state.account.current?.address) {
+                Step.Install -> InstallPage(os, { os = it }, state.account.current?.address, startCloud) {
                     onContinue(); step = Step.Scan
                 }
                 Step.Scan -> ScanPage(state, store, os) { if (inModal) dismiss() }
             }
         }
         AnimatedVisibility(step == Step.Scan, enter = fadeIn(Motion.fade()), exit = fadeOut(Motion.fade())) {
-            Box(Modifier.padding(horizontal = 24.dp).padding(bottom = 12.dp)) {
-                WideButton("Skip", primary = false) { if (inModal) dismiss() else onSkip() }
-            }
+            SkipSetupButton { if (inModal) dismiss() else onSkip() }
         }
     }
 }
 
+/** Past the setup pages without a computer, at the foot of the page (iOS `SkipSetupButton`). */
+@Composable internal fun SkipSetupButton(action: () -> Unit) =
+    Box(Modifier.padding(horizontal = 24.dp).padding(bottom = 12.dp)) { WideButton("Skip", primary = false, action = action) }
+
 // MARK: - Install
 
-@Composable private fun InstallPage(os: ComputerOS, choose: (ComputerOS) -> Unit, email: String?, next: () -> Unit) {
+@Composable private fun InstallPage(os: ComputerOS, choose: (ComputerOS) -> Unit, email: String?, startCloud: (() -> Unit)?, next: () -> Unit) {
     val (linkCopied, copyLink) = rememberCopy(WEBSITE_LINK, OutboundLink.InstallLink)
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 16.dp),
@@ -128,6 +132,7 @@ private enum class ComputerOS { Mac, Linux }
                 Text(tr("Install Codync\non your computer"), style = PAGE_TITLE, color = Palette.text)
                 Text(tr("Your bots run there. This phone is how you talk to them."), style = Type.body, color = Palette.secondary)
             }
+            if (startCloud != null) StartCloudButton(startCloud)
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Hint("Open the website on your computer to download Codync")
                 SecondaryButton(copyLink, Modifier.fillMaxWidth()) {
@@ -240,7 +245,7 @@ private enum class ComputerOS { Mac, Linux }
         verticalArrangement = Arrangement.spacedBy(24.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(tr("Scan the pairing code"), style = PAGE_TITLE, color = Palette.text)
-            Text(tr(if (os == ComputerOS.Mac) "On your Mac, click Codync in the menu bar, then Pair iPhone. The same code pairs this phone."
+            Text(tr(if (os == ComputerOS.Mac) "On your Mac, click Codync in the menu bar, then Pair phone. The same code pairs this phone."
                 else "On your computer, run this in a terminal:"), style = Type.body, color = Palette.secondary)
             if (os == ComputerOS.Linux) CommandBlock("codync-host pair")
         }

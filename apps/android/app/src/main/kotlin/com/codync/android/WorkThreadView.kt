@@ -42,7 +42,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.platform.testTag
-import com.codync.android.core.isToldByHost
+import com.codync.android.core.isToldToThread
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,11 +50,11 @@ import com.codync.android.core.Bot
 import com.codync.android.core.Entry
 import com.codync.android.core.LinkState
 import com.codync.android.core.WhereLine
-import com.codync.android.core.WorkItem
+import com.codync.android.core.WorkTask
 import com.codync.android.core.sharedLine
 import com.codync.android.core.sharing
 import com.codync.android.core.threadDraftKey
-import com.codync.android.core.threadEntries
+import com.codync.android.core.threadTranscript
 import com.codync.android.core.whereLine
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
@@ -63,54 +63,55 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * The thread of [bot]'s item [itemId] (iOS `WorkThreadView`), pushed over the bot's details: its header (title, status,
- * time, where it works, Stop), what its task did, with one quiet line where it put something in the bot's chat (a card,
- * a file), oldest first and following the newest, and a composer for the items that take the user's messages. The
- * transcript is fetched as the page opens and kept current from the computer's events (`AppStore.loadTask`). [back]
- * returns to the details; [openInChat] closes them and shows the chat at an entry the task put there.
+ * The thread of [bot]'s task [taskId] (iOS `WorkThreadView`), pushed over the bot's details: its header (title, status,
+ * time, where it works, Stop), what it did, with one quiet line where it put something in the bot's chat (a card,
+ * a file), oldest first and following the newest, and a composer for the tasks that take the user's messages. The
+ * transcript is fetched as the page opens and kept current from the computer's events (`AppStore.loadThread`). [back]
+ * returns to the details; [openInChat] closes them and shows the chat at an entry the thread put there.
  */
-@Composable internal fun WorkThreadView(bot: Bot, itemId: String, state: AppState, store: AppStore, openInChat: (Entry) -> Unit,
+@Composable internal fun WorkThreadView(bot: Bot, taskId: String, state: AppState, store: AppStore, openInChat: (Entry) -> Unit,
     back: () -> Unit) {
-    AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Task))
-    // The item as it is now, kept as last seen once it leaves the box.
-    var work by remember(itemId) { mutableStateOf<WorkItem?>(null) }
-    bot.work.firstOrNull { it.id == itemId }?.let { if (it != work) work = it }
-    val item = work
-    // An item already gone from the box when its thread is asked for has nothing to show.
-    LaunchedEffect(item == null) { if (item == null) back() }
-    if (item == null) return
-    val taskId = item.task
-    val live = item.status.live
-    var loaded by remember(taskId) { mutableStateOf(taskId == null) }
-    var error by remember(taskId) { mutableStateOf<String?>(null) }
-    var attempt by remember(taskId) { mutableIntStateOf(0) }
-    // Read again when the link comes back (its catch-up carries no task entries) and when the task's turn ends (its last rows).
-    LaunchedEffect(taskId, attempt, state.actualConnection is LinkState.Ready, live) {
-        if (taskId == null) return@LaunchedEffect
-        try { store.loadTask(bot.id, taskId); loaded = true; error = null }
+    AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Thread))
+    // The task as it is now, kept as last seen once it leaves the box.
+    var work by remember(taskId) { mutableStateOf<WorkTask?>(null) }
+    bot.work.firstOrNull { it.id == taskId }?.let { if (it != work) work = it }
+    val task = work
+    // A task already gone from the box when its thread is asked for has nothing to show.
+    LaunchedEffect(task == null) { if (task == null) back() }
+    if (task == null) return
+    val threadId = task.thread
+    val live = task.status.live
+    var loaded by remember(threadId) { mutableStateOf(threadId == null) }
+    var error by remember(threadId) { mutableStateOf<String?>(null) }
+    var attempt by remember(threadId) { mutableIntStateOf(0) }
+    // Read again when the link comes back (its catch-up carries no thread entries), when its hello says another host
+    // version (the transcript is asked for by it) and when the thread's turn ends (its last rows).
+    LaunchedEffect(threadId, attempt, state.actualConnection is LinkState.Ready, state.hello?.text("version"), live) {
+        if (threadId == null) return@LaunchedEffect
+        try { store.loadThread(bot.id, threadId); loaded = true; error = null }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { error = failure.message ?: "Couldn't complete the action." }
     }
-    DisposableEffect(taskId) { onDispose { taskId?.let { store.closeTask(it) } } }
-    val all = state.taskEntries[taskId].orEmpty()
-    val thread = threadEntries(all)
+    DisposableEffect(threadId) { onDispose { threadId?.let { store.closeThread(it) } } }
+    val all = state.threadEntries[threadId].orEmpty()
+    val thread = threadTranscript(all)
     // As in a chat: while the thread's turn runs, what the user wrote waits over the composer, not among the rows.
     val queued = queuedMessages(thread.rest, live)
     val own = if (live) thread.rest.filterNot(Entry::isQueued) else thread.rest
-    val rows = if (taskId == null) own else sharing(own, state.entries.filter { it.botId == bot.id && !it.isRemoved }, taskId)
-    val sends = state.threadSends[itemId].orEmpty().filter { send -> all.none { it.clientNonce == send.nonce } }
+    val rows = if (threadId == null) own else sharing(own, state.entries.filter { it.botId == bot.id && !it.isRemoved }, threadId)
+    val sends = state.threadSends[taskId].orEmpty().filter { send -> all.none { it.clientNonce == send.nonce } }
     val running = runningTurn(all, live)
     val list = rememberLazyListState()
     var confirming by remember { mutableStateOf(false) }
     var composerHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
     Column(Modifier.fillMaxSize().background(Palette.background).semantics { testTagsAsResourceId = true }) {
-        ThreadHeader(item, state.home, stopping = workKey(bot.id) in state.busy, back) { confirming = true }
+        ThreadHeader(task, state.home, stopping = workKey(bot.id) in state.busy, back) { confirming = true }
         GlassStage(Modifier.weight(1f).fillMaxWidth(), chrome = {
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { composerHeight = it.height }) {
-                val readOnly = readOnlyLine(item)
-                if (item.talk) ThreadComposer(state, store, threadDraftKey(bot.id, itemId), queued, steer = { store.steerThread(bot.id, itemId, it) },
-                    remove = { store.unqueueThread(bot.id, itemId, it) }) { store.sendToThread(bot.id, itemId, it) }
+                val readOnly = readOnlyLine(task)
+                if (task.talk) ThreadComposer(state, store, threadDraftKey(bot.id, taskId), queued, steer = { store.steerThread(bot.id, taskId, it) },
+                    remove = { store.unqueueThread(bot.id, taskId, it) }) { store.sendToThread(bot.id, taskId, it) }
                 else if (readOnly != null) Text(tr(readOnly), Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
                     style = Type.footnote, color = Palette.tertiary, textAlign = TextAlign.Center)
             }
@@ -130,36 +131,36 @@ import kotlinx.coroutines.launch
                     else Box(Modifier.padding(top = 10.dp)) { ThreadRow(entry, unfolded = entry.turn == running) }
                 }
                 items(sends, key = { "send-" + it.nonce }) { send ->
-                    PendingBubble(send, groupStart = true, state, store, retry = { store.deliverToThread(itemId, send) },
-                        discard = { store.discardThreadSend(itemId, send.nonce) })
+                    PendingBubble(send, groupStart = true, state, store, retry = { store.deliverToThread(taskId, send) },
+                        discard = { store.discardThreadSend(taskId, send.nonce) })
                 }
             }
         }
     }
-    StopWorkDialog(confirming, { confirming = false }) { store.stopWork(bot.id, itemId) }
+    StopWorkDialog(confirming, { confirming = false }) { store.stopWork(bot.id, taskId) }
 }
 
 /**
- * Back to the details, the item's title over one quiet line (its status and how long its task has run, then where it
- * works), and Stop while a task has it.
+ * Back to the details, the task's title over one quiet line (its status and how long its thread has run, then where it
+ * works), and Stop while a thread has it.
  */
-@Composable private fun ThreadHeader(item: WorkItem, home: String, stopping: Boolean, back: () -> Unit, stop: () -> Unit) {
+@Composable private fun ThreadHeader(task: WorkTask, home: String, stopping: Boolean, back: () -> Unit, stop: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 12.dp, top = 12.dp, bottom = 6.dp).heightIn(min = 44.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         IconButton("Back to details", "chevron.left", action = back)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(item.title, Modifier.semantics { heading() }, style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(task.title, Modifier.semantics { heading() }, style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(Modifier.testTag("thread-status").semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     // The word beside it says the same.
-                    Box(Modifier.clearAndSetSemantics {}) { WorkMark(item.status) }
-                    Text(tr(item.status.title), style = Type.footnote, color = Palette.secondary, maxLines = 1)
-                    WorkElapsed(item)
+                    Box(Modifier.clearAndSetSemantics {}) { WorkMark(task.status) }
+                    Text(tr(task.status.title), style = Type.footnote, color = Palette.secondary, maxLines = 1)
+                    WorkElapsed(task)
                 }
-                whereLine(item, home)?.let { WherePath(it, Modifier.weight(1f, fill = false)) }
+                whereLine(task, home)?.let { WherePath(it, Modifier.weight(1f, fill = false)) }
             }
         }
-        if (item.status.live) IconButton("Stop", "stop.fill", enabled = !stopping, action = stop)
+        if (task.status.live) IconButton("Stop", "stop.fill", enabled = !stopping, action = stop)
     }
 }
 
@@ -178,7 +179,7 @@ import kotlinx.coroutines.launch
     }.semantics { liveRegion = LiveRegionMode.Polite }, text = if (copied) tr("Path copied") else where.text)
 }
 
-/** What the host told the task first (the item's prompt), folded on top of its thread. */
+/** What the host told the thread first (the task's prompt), folded on top of its thread. */
 @Composable private fun Told(told: String) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     Disclosure(expanded, { expanded = !expanded }, Modifier.fillMaxWidth(), label = {
@@ -192,18 +193,18 @@ import kotlinx.coroutines.launch
 }
 
 /**
- * A row of a thread: the user's messages and the task's replies as the chat's bubbles, a step between them as the chat's
- * working steps show it, and what the host told the task later (a session that starts again) as a quiet quote, never a
+ * A row of a thread: the user's messages and the thread's replies as the chat's bubbles, a step between them as the chat's
+ * working steps show it, and what the host told the thread later (a session that starts again) as a quiet quote, never a
  * message of the user's.
  */
 @Composable private fun ThreadRow(entry: Entry, unfolded: Boolean) {
-    if (entry.isToldByHost) SelectionContainer {
+    if (entry.isToldToThread) SelectionContainer {
         Text("“${entry.text}”", Modifier.padding(horizontal = 4.dp), style = Type.subheadline, color = Palette.secondary)
     } else if (entry.kind == "user" || entry.kind == "agent" && entry.isChat) PlainMessageRow(entry)
     else Box(Modifier.padding(horizontal = 4.dp)) { TraceRow(entry, unfolded) }
 }
 
-/** What the task put in the bot's chat, as one quiet line ([sharedLine]); a tap shows it in the chat. */
+/** What the thread put in the bot's chat, as one quiet line ([sharedLine]); a tap shows it in the chat. */
 @Composable private fun SharedRow(entry: Entry, open: () -> Unit) {
     val line = sharedLine(entry, translator()) ?: return
     val show = tr("Show in the chat")

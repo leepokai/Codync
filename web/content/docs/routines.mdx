@@ -1,4 +1,4 @@
-A routine is a task a bot does on its own: on a schedule, at a set time, or whenever another service sends it a webhook. Use one for a morning summary, a nightly check of a repository, or a review each time a pull request opens.
+A routine is work a bot does on its own: on a schedule, at a set time, or whenever another service sends it a webhook. Use one for a morning summary, a nightly check of a repository, or a review each time a pull request opens.
 
 Each routine belongs to one bot and runs on your computer, with that bot's agent, folder, tools and approval setting. Its results show up in the bot's chat.
 
@@ -24,7 +24,7 @@ Tell the bot what you want, in its chat:
 
 Type your request directly in the chat. To set up a routine by hand, use **+** in the routine list (`n` in the terminal UI).
 
-The bot saves it with Codync's built-in routine tools; your system's cron isn't involved. It asks only about what's missing or unclear, such as the time zone. It checks that the tools, sign-ins and files the task needs are there, looks at its existing routines so it doesn't make a duplicate, then saves and tells you what it saved: the schedule, time zone, next run and whether it's on. A "Created routine" line appears in the chat; tap it to open the routine.
+The bot saves it with Codync's built-in routine tools; your system's cron isn't involved. It asks only about what's missing or unclear, such as the time zone. It checks that the tools, sign-ins and files the routine needs are there, looks at its existing routines so it doesn't make a duplicate, then saves and tells you what it saved: the schedule, time zone, next run and whether it's on. A "Created routine" line appears in the chat; tap it to open the routine.
 
 Ask the bot for what the iPhone and desktop editors don't offer: a one-time run, an interval, events from GitHub, or several triggers on one routine.
 
@@ -60,7 +60,7 @@ For one more look at something in a conversation you're already having ("check t
 
 ## Test, pause, delete
 
-- **Test run** (the play button in the editor; `r` in the terminal UI's list) runs the routine now. It does the real task, side effects included, and works on a paused routine. If a retry is waiting, Test run runs it now. The bot doesn't test a routine it just created unless you ask it to.
+- **Test run** (the play button in the editor; `r` in the terminal UI's list) runs the routine now. It does the real work, side effects included, and works on a paused routine. If a retry is waiting, Test run runs it now. The bot doesn't test a routine it just created unless you ask it to.
 - **Pause** with the routine's switch (space in the terminal UI). A paused routine has no next run and refuses webhook deliveries. Pausing cancels runs that haven't started; a run already under way can finish.
 - **Delete** with the trash button (`x` in the terminal UI). It cancels pending runs. What the routine already posted stays in the chat.
 
@@ -77,8 +77,8 @@ The routine list also shows what each routine is doing, such as Queued, Running,
 
 ### How a run works
 
-- **Away from the chat.** A run is a [thread](/docs/conversations#threads) of the bot: another session of the bot does it, so the chat stays free and you can keep writing to the bot while a routine runs. That session is a new one each time and doesn't see your conversation with the bot: it knows the bot's instructions, its memory and the routine's own prompt, and what a routine carries from one run to the next is its [progress note](#progress-from-one-run-to-the-next). When the run ends, its session and the agent started for it stop.
-- **Its turn in the box.** A run waits for a free place like the bot's other background work (**Threads at once** in the bot's **Settings**), so several routines of one bot can run side by side. In the bot's **Details** you can stop a run, drop one that waits, and try a failed one again. **Stop** in the chat doesn't stop a run.
+- **Away from the chat.** A run is a [task](/docs/conversations#work) of the bot: a thread of the bot does it, so the chat stays free and you can keep writing to the bot while a routine runs. The thread's session is a new one each time and doesn't see your conversation with the bot: it knows the bot's instructions, its memory and the routine's own prompt, and what a routine carries from one run to the next is its [progress note](#progress-from-one-run-to-the-next). When the run ends, its session and the agent started for it stop.
+- **Its turn in the event box.** A run waits for a free thread like the bot's other tasks (**Threads at once** in the bot's **Settings**), so several routines of one bot can run side by side. In the bot's **Details** you can stop a run, drop one that waits, and try a failed one again. **Stop** in the chat doesn't stop a run.
 - **In the chat instead.** A bot with [computer use](/docs/computer-use) or **Manage the team** on runs its routines in its chat, one at a time, each in a fresh session that doesn't see your conversation; a message you send during a run waits until the run ends, and the run's steps are in **Full conversation**.
 - **No backlog.** Runs that came due while the host couldn't run them don't pile up. The routine runs once, then keeps its schedule.
 - **Approvals.** Unless the bot's **Permissions** are **Approve automatically**, a run that needs approval waits for you on a card in the chat, within its timeout.
@@ -117,6 +117,7 @@ Codync doesn't register the webhook with the other service. You (or the bot, wit
 - **GitHub:** set the Payload URL to the routine's URL, the content type to `application/json`, and the secret to the key. GitHub's test ping succeeds without running the routine. Each delivery reaches the routine with its event (such as `pull_request.opened`), repository and sender, so the bot can set up an event trigger for just the events you want.
 - **Other services:** an event trigger can also match a JSON delivery by its `source` and `event` fields. Codync recognizes GitHub's deliveries by itself; for other senders, the JSON they post has to carry those fields.
 - A delivery that arrives twice with the same delivery ID runs once. Bodies can be up to 64 KB.
+- A routine takes one delivery at a time. While a run is under way, or queued because its bot is busy, a new delivery is refused (`409`). The local URL leaves trying again to the sender; deliveries to the public URL are kept by the Codync cloud and tried again, after 30 seconds and then at doubling waits up to 15 minutes, for up to 72 hours. The sender has already been told its delivery was accepted, so it doesn't see a delivery that runs late or expires.
 - Replacing the key stops the old one at once. Senders using it stop working until they get the new key.
 
 The run's prompt tells the bot that the delivery's contents are untrusted data to read, and that it shouldn't follow them as instructions. Still, keep secrets out of routine instructions and payloads.

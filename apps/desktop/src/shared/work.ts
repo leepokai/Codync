@@ -1,10 +1,10 @@
-// The event box (host/src/chat/tasks/): what a bot works on away from its chat is an item in its box, and a bounded
-// number of its agents take items from it. The chat shows one capsule above the composer; the bot's Details lists
-// the items. A task is the agent session working an item (`tasks.ts` reads its transcript).
+// The event box (host/src/chat/work/): what a bot works on away from its chat is a task in its box, and a bounded
+// number of its threads take tasks from it. The chat shows one capsule above the composer; the bot's Details lists
+// the tasks. A thread is where a task is worked, with its own session (`threads.ts` reads its transcript).
 
 import { fill } from './fill.ts'
 import type { Entry } from './models'
-import { isTold } from './tasks.ts'
+import { isTold } from './threads.ts'
 
 /** The six words for work, the same on the wire and in every client. */
 export type WorkStatus = 'waiting' | 'working' | 'needsYou' | 'done' | 'failed' | 'stopped'
@@ -12,19 +12,19 @@ export type WorkStatus = 'waiting' | 'working' | 'needsYou' | 'done' | 'failed' 
 const STATUSES: readonly string[] = ['waiting', 'working', 'needsYou', 'done', 'failed', 'stopped'] satisfies WorkStatus[]
 const WAITS: readonly string[] = ['next', 'behind', 'after', 'usage'] satisfies WorkWait['kind'][]
 
-/** The most agents a bot may run at once. */
-export const MAX_AGENTS = 6
+/** The most threads a bot may run at once. */
+export const MAX_THREADS = 6
 /** How many a bot runs at once unless the user changed it: what a client counts with when the host names none. */
-export const DEFAULT_AGENTS = 3
+export const DEFAULT_THREADS = 3
 
-/** Why an item waits: a place to come free, items ahead of it, the item it follows, or the agent's usage limit. */
+/** Why a task waits: a thread to come free, tasks ahead of it, the task it follows, or the agent's usage limit. */
 export interface WorkWait {
   kind: 'next' | 'behind' | 'after' | 'usage'
   /** `behind`: how many are ahead. */
   ahead: number
 }
 
-/** Where an item came from when the bot didn't add it itself: a run of the routine `id`, or a request from the bot
+/** Where a task came from when the bot didn't add it itself: a run of the routine `id`, or a request from the bot
  * `id` (null when the asking bot isn't one of this computer's). */
 export interface WorkSource {
   kind: 'routine' | 'request'
@@ -32,78 +32,78 @@ export interface WorkSource {
 }
 
 /** One piece of work in a bot's box (`bot.work`). */
-export interface WorkItem {
+export interface WorkTask {
   id: string
   title: string
   status: WorkStatus
-  /** What its task is doing now; empty until it says. */
+  /** What its thread is doing now; empty until it says. */
   activity: string
-  /** The task that has or had it; null for one no task has taken. */
-  task: string | null
+  /** The thread that has or had it; null for one no thread has taken. */
+  thread: string | null
   wait: WorkWait | null
-  /** It gave way to another item once, and starts again from its brief. */
+  /** It gave way to another task once, and starts again from its brief. */
   cutIn: boolean
   createdAt: number
   startedAt: number | null
   endedAt: number | null
-  /** What its task reported, or why it failed. */
+  /** What its thread reported, or why it failed. */
   result: string
   /** Null for one the bot added. */
   source: WorkSource | null
-  /** The git worktree its task works in, while there is one: its branch and folder. */
+  /** The git worktree its thread works in, while there is one: its branch and folder. */
   worktree: { branch: string; path: string } | null
-  /** The folder its task works in (the worktree's, for one in a worktree); null until a task took it. */
+  /** The folder its thread works in (the worktree's, for one in a worktree); null until a thread took it. */
   folder: string | null
-  /** Its thread takes the user's messages, as the host says: the bot's own item whose task still exists. */
+  /** Its thread takes the user's messages, as the host says: the bot's own task whose thread still exists. */
   talk: boolean
 }
 
 type Translate = (text: string) => string
-type Raw = Partial<Omit<WorkItem, 'wait' | 'source' | 'worktree'>> & { worktree?: { branch?: string; path?: string } | null } & { wait?: Partial<WorkWait> | null; source?: { kind?: string; id?: string | null } | null }
+type Raw = Partial<Omit<WorkTask, 'wait' | 'source' | 'worktree'>> & { worktree?: { branch?: string; path?: string } | null } & { wait?: Partial<WorkWait> | null; source?: { kind?: string; id?: string | null } | null }
 
-/** `bot.work`; a host from before the box sends none, and the feature doesn't show. An item in a status this app
+/** `bot.work`; a host from before the box sends none, and the feature doesn't show. A task in a status this app
  * doesn't know is left out. */
-export function normalizeWork(raw: unknown): WorkItem[] {
+export function normalizeWork(raw: unknown): WorkTask[] {
   if (!Array.isArray(raw)) return []
-  return (raw as (Raw | null)[]).flatMap((i) =>
-    i && typeof i.id === 'string' && STATUSES.includes(i.status ?? '')
+  return (raw as (Raw | null)[]).flatMap((t) =>
+    t && typeof t.id === 'string' && STATUSES.includes(t.status ?? '')
       ? [{
-          id: i.id,
-          title: i.title ?? '',
-          status: i.status as WorkStatus,
-          activity: i.activity ?? '',
-          task: i.task ?? null,
-          wait: i.wait && WAITS.includes(i.wait.kind ?? '') ? { kind: i.wait.kind as WorkWait['kind'], ahead: i.wait.ahead ?? 1 } : null,
-          cutIn: i.cutIn ?? false,
-          createdAt: i.createdAt ?? 0,
-          startedAt: i.startedAt ?? null,
-          endedAt: i.endedAt ?? null,
-          result: i.result ?? '',
+          id: t.id,
+          title: t.title ?? '',
+          status: t.status as WorkStatus,
+          activity: t.activity ?? '',
+          thread: t.thread ?? null,
+          wait: t.wait && WAITS.includes(t.wait.kind ?? '') ? { kind: t.wait.kind as WorkWait['kind'], ahead: t.wait.ahead ?? 1 } : null,
+          cutIn: t.cutIn ?? false,
+          createdAt: t.createdAt ?? 0,
+          startedAt: t.startedAt ?? null,
+          endedAt: t.endedAt ?? null,
+          result: t.result ?? '',
           // A source this app doesn't know reads as the bot's own.
-          worktree: i.worktree?.branch ? { branch: i.worktree.branch, path: i.worktree.path ?? '' } : null,
-          source: i.source?.kind === 'routine' || i.source?.kind === 'request' ? { kind: i.source.kind, id: i.source.id ?? null } : null,
-          folder: i.folder || null,
-          talk: i.talk ?? false,
+          worktree: t.worktree?.branch ? { branch: t.worktree.branch, path: t.worktree.path ?? '' } : null,
+          source: t.source?.kind === 'routine' || t.source?.kind === 'request' ? { kind: t.source.kind, id: t.source.id ?? null } : null,
+          folder: t.folder || null,
+          talk: t.talk ?? false,
         }]
       : [],
   )
 }
 
-/** `bot.maxAgents`, within 1 to 6; null from a host before the box. */
-export const normalizeMaxAgents = (raw: unknown): number | null =>
-  typeof raw === 'number' ? Math.min(MAX_AGENTS, Math.max(1, Math.round(raw))) : null
+/** `bot.maxThreads`, within 1 to 6; null from a host before the box. */
+export const normalizeMaxThreads = (raw: unknown): number | null =>
+  typeof raw === 'number' ? Math.min(MAX_THREADS, Math.max(1, Math.round(raw))) : null
 
-/** A task has it: working, or waiting on the user's approval. */
-export const isLive = (item: WorkItem) => item.status === 'working' || item.status === 'needsYou'
+/** A thread has it: working, or waiting on the user's approval. */
+export const isLive = (task: WorkTask) => task.status === 'working' || task.status === 'needsYou'
 
-/** Still in the box's hands: a task has it, or it waits for one. */
-export const isOpen = (item: WorkItem) => isLive(item) || item.status === 'waiting'
+/** Still in the box's hands: a thread has it, or it waits for one. */
+export const isOpen = (task: WorkTask) => isLive(task) || task.status === 'waiting'
 
-/** All bots' work in one view: the bots of `roster` (as its rows are on screen) that have a live or waiting item, in that order, and how many
- * items are worked on in all (the count on the view's button). */
-export function allWork<T extends { bot: { work: WorkItem[] } }>(roster: T[]): { bots: T[]; working: number } {
+/** All bots' work in one view: the bots of `roster` (as its rows are on screen) that have a live or waiting task, in that order, and how many
+ * tasks are worked on in all (the count on the view's button). */
+export function allWork<T extends { bot: { work: WorkTask[] } }>(roster: T[]): { bots: T[]; working: number } {
   const bots = roster.filter((r) => r.bot.work.some(isOpen))
-  return { bots, working: bots.reduce((sum, r) => sum + r.bot.work.filter((i) => i.status === 'working').length, 0) }
+  return { bots, working: bots.reduce((sum, r) => sum + r.bot.work.filter((t) => t.status === 'working').length, 0) }
 }
 
 /** How a bot stands outside its chat, as the host says it (`bot.outside`); null from a host before it. */
@@ -119,7 +119,7 @@ export const normalizeOutside = (raw: unknown): OutsideStatus | null => {
 }
 
 /** The status a bot has for what shows it outside its chat (its avatar, the tray, the notch island): it needs the
- * user while its chat or one of its items does, it works while its chat or its box does, else the chat's own status.
+ * user while its chat or one of its tasks does, it works while its chat or its box does, else the chat's own status.
  * The host's word (`bot.outside`); the chat's own status from a host before it, as on every client. */
 export function outsideStatus(bot: { status: string; outside: OutsideStatus | null }): string {
   return bot.outside?.status ?? bot.status
@@ -131,60 +131,60 @@ export function worksOutside(bot: { status: string; outside: OutsideStatus | nul
   return status === 'working' || status === 'needsInput'
 }
 
-/** The Details timeline's sections of items, each in the order its rows show. */
+/** The Details timeline's sections of tasks, each in the order its rows show. */
 export interface WorkSections {
-  /** Threads, the agent sessions that run now: items that need the user, then the working ones. */
-  threads: WorkItem[]
+  /** The threads that run now: tasks that need the user, then the working ones. */
+  threads: WorkTask[]
   /** The most threads allowed (the heading's `2 / 3`; `2 / 1` right after the ceiling was lowered). */
-  places: number
-  /** The places not in use, a `Free` row each. */
+  atOnce: number
+  /** The threads not in use, a `Free` row each. */
   free: number
-  /** The event box, what waits for a thread: waiting items in the order they will be taken. */
-  box: WorkItem[]
-  /** Items that ended in the last day, newest first. */
-  recent: WorkItem[]
+  /** The event box, what waits for a thread: waiting tasks in the order they will be taken. */
+  box: WorkTask[]
+  /** Tasks that ended in the last day, newest first. */
+  recent: WorkTask[]
 }
 
-export function workSections(work: WorkItem[], maxAgents: number | null): WorkSections {
-  const of = (status: WorkStatus) => work.filter((i) => i.status === status)
+export function workSections(work: WorkTask[], maxThreads: number | null): WorkSections {
+  const of = (status: WorkStatus) => work.filter((t) => t.status === status)
   const threads = [...of('needsYou'), ...of('working')]
-  const places = maxAgents ?? DEFAULT_AGENTS
+  const atOnce = maxThreads ?? DEFAULT_THREADS
   return {
     threads,
-    places,
-    free: Math.max(0, places - threads.length),
+    atOnce,
+    free: Math.max(0, atOnce - threads.length),
     box: of('waiting'),
-    recent: work.filter((i) => i.status === 'done' || i.status === 'failed' || i.status === 'stopped'),
+    recent: work.filter((t) => t.status === 'done' || t.status === 'failed' || t.status === 'stopped'),
   }
 }
 
 const counted = (text: string, count: number, tr: Translate) => tr(text).replaceAll('{count}', () => String(count))
 
 /** `2 working · 3 waiting`, a part left out at none; empty with neither. */
-export function workCounts(work: WorkItem[], tr: Translate): string {
-  const working = work.filter((i) => i.status === 'working').length
-  const waiting = work.filter((i) => i.status === 'waiting').length
+export function workCounts(work: WorkTask[], tr: Translate): string {
+  const working = work.filter((t) => t.status === 'working').length
+  const waiting = work.filter((t) => t.status === 'waiting').length
   return [working ? counted('{count} working', working, tr) : '', waiting ? counted('{count} waiting', waiting, tr) : ''].filter(Boolean).join(' · ')
 }
 
-/** What the capsule says after `In the background ·`. */
+/** What the capsule says after `Work ·`. */
 export interface CapsuleLabel {
-  /** What leads it: an item waits on the user (the text starts with that), some item works, or all of them wait. */
+  /** What leads it: a task waits on the user (the text starts with that), some task works, or all of them wait. */
   mark: 'needsYou' | 'working' | 'waiting'
   text: string
-  /** When the one working item started: the capsule's time. Null when it counts items instead. */
+  /** When the one working task started: the capsule's time. Null when it counts tasks instead. */
   since: number | null
-  /** The one item a task has, which the capsule's Stop stops; null with none or several. */
-  stops: WorkItem | null
+  /** The one task a thread has, which the capsule's Stop stops; null with none or several. */
+  stops: WorkTask | null
 }
 
-/** The capsule while any item is live or waiting; null otherwise. */
-export function capsuleLabel(work: WorkItem[], tr: Translate): CapsuleLabel | null {
+/** The capsule while any task is live or waiting; null otherwise. */
+export function capsuleLabel(work: WorkTask[], tr: Translate): CapsuleLabel | null {
   const live = work.filter(isLive)
-  const waiting = work.filter((i) => i.status === 'waiting')
+  const waiting = work.filter((t) => t.status === 'waiting')
   if (live.length + waiting.length === 0) return null
   const stops = live.length === 1 ? live[0]! : null
-  if (live.some((i) => i.status === 'needsYou')) {
+  if (live.some((t) => t.status === 'needsYou')) {
     return { mark: 'needsYou', text: [tr('Needs you'), workCounts(work, tr)].filter(Boolean).join(' · '), since: null, stops }
   }
   if (stops && waiting.length === 0) return { mark: 'working', text: stops.activity ? tr(stops.activity) : stops.title, since: stops.startedAt, stops }
@@ -192,28 +192,28 @@ export function capsuleLabel(work: WorkItem[], tr: Translate): CapsuleLabel | nu
 }
 
 /** A roster row's line while something goes on, the most pressing first: it needs the user, what its chat does, how
- * many items work and wait. Null when the row reads as usual (its last message). */
+ * many tasks work and wait. Null when the row reads as usual (its last message). */
 export interface RosterLine {
-  kind: 'needsYou' | 'working' | 'background'
+  kind: 'needsYou' | 'working' | 'work'
   text: string
 }
 
-export function rosterLine(bot: { status: string; activity: string; work: WorkItem[] }, tr: Translate): RosterLine | null {
+export function rosterLine(bot: { status: string; activity: string; work: WorkTask[] }, tr: Translate): RosterLine | null {
   if (bot.status === 'needsInput') return { kind: 'needsYou', text: tr(bot.activity || 'Needs approval') }
-  if (bot.work.some((i) => i.status === 'needsYou')) return { kind: 'needsYou', text: tr('Needs you') }
+  if (bot.work.some((t) => t.status === 'needsYou')) return { kind: 'needsYou', text: tr('Needs you') }
   if (bot.status === 'working') return { kind: 'working', text: tr(bot.activity || 'Working…') }
   const counts = workCounts(bot.work, tr)
-  return counts ? { kind: 'background', text: counts } : null
+  return counts ? { kind: 'work', text: counts } : null
 }
 
 /** A bot's line outside the chat window (the tray menu, the notch island), in the roster row's order: it needs the
- * user, what its chat does, how many items work and wait, then its last message. Null with none of them. */
-export function summaryLine(bot: { status: string; activity: string; work: WorkItem[]; lastMessage?: string | null }, tr: Translate): string | null {
+ * user, what its chat does, how many tasks work and wait, then its last message. Null with none of them. */
+export function summaryLine(bot: { status: string; activity: string; work: WorkTask[]; lastMessage?: string | null }, tr: Translate): string | null {
   if (bot.status === 'needsInput') return tr('Needs your response')
   return rosterLine(bot, tr)?.text ?? bot.lastMessage ?? null
 }
 
-/** An item's status in a word. */
+/** A task's status in a word. */
 export function workStatusWord(status: WorkStatus): string {
   switch (status) {
     case 'waiting':
@@ -231,14 +231,14 @@ export function workStatusWord(status: WorkStatus): string {
   }
 }
 
-/** Why a waiting item waits. */
-export function waitText(item: WorkItem, tr: Translate): string {
-  if (item.cutIn) return tr('Was cut in on; starts again')
-  switch (item.wait?.kind) {
+/** Why a waiting task waits. */
+export function waitText(task: WorkTask, tr: Translate): string {
+  if (task.cutIn) return tr('Was cut in on; starts again')
+  switch (task.wait?.kind) {
     case 'next':
       return tr('Next up')
     case 'behind':
-      return counted('{count} ahead', item.wait.ahead, tr)
+      return counted('{count} ahead', task.wait.ahead, tr)
     case 'after':
       return tr('Follows what it works on')
     case 'usage':
@@ -248,38 +248,38 @@ export function waitText(item: WorkItem, tr: Translate): string {
   }
 }
 
-/** An item's second line: why it waits, what its task does, or how it ended (a failed or stopped one says why). */
-export function itemLine(item: WorkItem, tr: Translate): string {
-  switch (item.status) {
+/** A task's second line: why it waits, what its thread does, or how it ended (a failed or stopped one says why). */
+export function taskLine(task: WorkTask, tr: Translate): string {
+  switch (task.status) {
     case 'waiting':
-      return waitText(item, tr)
+      return waitText(task, tr)
     case 'working':
-      return tr(item.activity || 'Working')
+      return tr(task.activity || 'Working')
     case 'failed':
     case 'stopped':
-      return item.result || tr(workStatusWord(item.status))
+      return task.result || tr(workStatusWord(task.status))
     default:
-      return tr(workStatusWord(item.status))
+      return tr(workStatusWord(task.status))
   }
 }
 
-/** Try again is offered on an item that failed or was stopped, unless another bot asked for it: that bot has its
- * answer already. A routine's item runs the routine again. */
-export const canRetry = (item: WorkItem) => (item.status === 'failed' || item.status === 'stopped') && item.source?.kind !== 'request'
+/** Try again is offered on a task that failed or was stopped, unless another bot asked for it: that bot has its
+ * answer already. A routine's task runs the routine again. */
+export const canRetry = (task: WorkTask) => (task.status === 'failed' || task.status === 'stopped') && task.source?.kind !== 'request'
 
-/** A task has it and it may give way to an item that cuts in: only work the bot added. A routine's run or another
+/** A thread has it and it may give way to a task that cuts in: only work the bot added. A routine's run or another
  * bot's request is stopped, never set aside. */
-export const givesWay = (item: WorkItem) => isLive(item) && item.source === null
+export const givesWay = (task: WorkTask) => isLive(task) && task.source === null
 
-/** Every place is taken, so the item first in line can only start now if a task gives way, and one may. Not one that
- * follows unfinished work or waits for usage: a freed place wouldn't start it. */
-export function canCutIn(work: WorkItem[], maxAgents: number | null): boolean {
-  const first = work.find((i) => i.status === 'waiting')
+/** Every thread is busy, so the task first in line can only start now if a thread gives way, and one may. Not one that
+ * follows unfinished work or waits for usage: a freed thread wouldn't start it. */
+export function canCutIn(work: WorkTask[], maxThreads: number | null): boolean {
+  const first = work.find((t) => t.status === 'waiting')
   const held = first?.wait?.kind === 'after' || first?.wait?.kind === 'usage'
-  return !!first && !held && work.some(givesWay) && work.filter(isLive).length >= (maxAgents ?? DEFAULT_AGENTS)
+  return !!first && !held && work.some(givesWay) && work.filter(isLive).length >= (maxThreads ?? DEFAULT_THREADS)
 }
 
-/** A card of a task's waiting in the chat for the user: an approval, a choice, or a sign-in its agent needs. */
+/** A card of a thread's waiting in the chat for the user: an approval, a choice, or a sign-in its agent needs. */
 function isPendingCard(e: Entry): boolean {
   const request = e.data.connectionRequest
   if (request) return request.kind === 'agent' && request.status === 'pending'
@@ -292,43 +292,43 @@ function holdsMessages(e: Entry): boolean {
   return Array.isArray(held) && held.length > 0
 }
 
-/** The card each item that needs the user waits on in the chat, by item id: its task's newest pending one, or, when
- * that is a sign-in and another (the agent the turn left signed out, while its fallback was too) holds the item's
+/** The card each task that needs the user waits on in the chat, by task id: its thread's newest pending one, or, when
+ * that is a sign-in and another (the agent the turn left signed out, while its fallback was too) holds the task's
  * message, that one, whose sign-in sends it again. */
 export function pendingCards(entries: Entry[]): Map<string, Entry> {
   const newest = new Map<string, Entry>()
   const holding = new Map<string, Entry>()
   for (const e of entries) {
-    const item = e.data.item
-    if (!item || !isPendingCard(e)) continue
-    newest.set(item, e)
-    if (holdsMessages(e)) holding.set(item, e)
+    const task = e.data.task
+    if (!task || !isPendingCard(e)) continue
+    newest.set(task, e)
+    if (holdsMessages(e)) holding.set(task, e)
   }
-  return new Map([...newest].map(([item, e]) => [item, (e.data.connectionRequest && holding.get(item)) || e]))
+  return new Map([...newest].map(([task, e]) => [task, (e.data.connectionRequest && holding.get(task)) || e]))
 }
 
-/** What each item that needs the user is asked, by item id: what its card waiting in the chat (`pendingCards`) says
+/** What each task that needs the user is asked, by task id: what its card waiting in the chat (`pendingCards`) says
  * (an approval's title, a choice's question, which agent to sign in to). */
 export function pendingAsks(entries: Entry[], tr: Translate): Map<string, string> {
   const ask = (e: Entry) => {
     const request = e.data.connectionRequest
     return request ? fill(tr('Needs {agent} sign-in'), { agent: String(request.title ?? '') }) : (e.data.title ?? e.data.question ?? '')
   }
-  return new Map([...pendingCards(entries)].map(([item, e]) => [item, ask(e)]))
+  return new Map([...pendingCards(entries)].map(([task, e]) => [task, ask(e)]))
 }
 
-/** A task's entry its thread shows as the chat's message bubble: a final reply (text, a file, an artifact card), as
+/** An entry of a thread that it shows as the chat's message bubble: a final reply (text, a file, an artifact card), as
  * the chat tells them apart. What it says on the way is a step. */
 export const isThreadMessage = (e: Entry) => e.kind === 'agent' && e.data.final === true
 
-/** One quiet line of a thread for what its task put in the bot's chat. */
+/** One quiet line of a thread for what it put in the bot's chat. */
 export interface SharedLine {
   symbol: string
   text: string
 }
 
-/** What the chat entry `e` a task put in the bot's chat (a card, its agent's sign-in card, a file, a voice note, an
- * artifact) says in that task's thread: one line with a symbol, where the entry itself stays in the chat, which the
+/** What the chat entry `e` a thread put in the bot's chat (a card, its agent's sign-in card, a file, a voice note, an
+ * artifact) says in that thread: one line with a symbol, where the entry itself stays in the chat, which the
  * line opens. Null for anything else. */
 export function sharedLine(e: Entry, tr: Translate): SharedLine | null {
   const d = e.data
@@ -362,10 +362,10 @@ export function sharedLine(e: Entry, tr: Translate): SharedLine | null {
 }
 
 /** Why a thread that takes no message is read only, as a catalog key: its result has an owner already. Null for an
- * item that takes messages, and for the bot's own (nothing to explain). */
-export function readOnlyReason(item: Pick<WorkItem, 'talk' | 'source'>): string | null {
-  if (item.talk) return null
-  switch (item.source?.kind) {
+ * task that takes messages, and for the bot's own (nothing to explain). */
+export function readOnlyReason(task: Pick<WorkTask, 'talk' | 'source'>): string | null {
+  if (task.talk) return null
+  switch (task.source?.kind) {
     case 'routine':
       return "Read only: a routine's run"
     case 'request':
@@ -375,21 +375,21 @@ export function readOnlyReason(item: Pick<WorkItem, 'talk' | 'source'>): string 
   }
 }
 
-/** Where an item's task works, in one quiet line. */
+/** Where a task's thread works, in one quiet line. */
 export interface WhereLine {
   kind: 'folder' | 'branch'
   text: string
 }
 
-/** The branch when the item has a worktree of its own, else its folder with the home folder as `~`. Null for an item
- * no task has taken. */
-export function whereLine(item: Pick<WorkItem, 'folder' | 'worktree'>, home: string): WhereLine | null {
-  if (item.worktree) return { kind: 'branch', text: item.worktree.branch }
-  return item.folder ? { kind: 'folder', text: homeRelative(item.folder, home) } : null
+/** The branch when the task has a worktree of its own, else its folder with the home folder as `~`. Null for a task
+ * no thread has taken. */
+export function whereLine(task: Pick<WorkTask, 'folder' | 'worktree'>, home: string): WhereLine | null {
+  if (task.worktree) return { kind: 'branch', text: task.worktree.branch }
+  return task.folder ? { kind: 'folder', text: homeRelative(task.folder, home) } : null
 }
 
-/** The full path the where line copies: the task's folder, or its worktree's from a host that names no folder. */
-export const wherePath = (item: Pick<WorkItem, 'folder' | 'worktree'>): string | null => item.folder ?? (item.worktree?.path || null)
+/** The full path the where line copies: the thread's folder, or its worktree's from a host that names no folder. */
+export const wherePath = (task: Pick<WorkTask, 'folder' | 'worktree'>): string | null => task.folder ?? (task.worktree?.path || null)
 
 /** `path` with the home folder as `~`, on either kind of separator; unchanged outside the home folder or without one. */
 function homeRelative(path: string, home: string): string {
@@ -407,13 +407,13 @@ export function gitState(bot: { gitRepo: boolean; gitInstalled: boolean }): GitS
   return bot.gitRepo ? 'repo' : 'none'
 }
 
-/** A thread's transcript as its panel shows it: what the host told the task first (`told`, folded at the top), then
- * the rest in order, without the messages the user took back. What the task `taskId` put in the bot's `chat` (a
+/** A thread's transcript as its panel shows it: what the host told the thread first (`told`, folded at the top), then
+ * the rest in order, without the messages the user took back. What the thread `threadId` put in the bot's `chat` (a
  * file, a voice note, an artifact, a card, answered or not) joins the rest where it came, each a `sharedLine`. */
-export function threadEntries(entries: Entry[], chat: Entry[] = [], taskId = ''): { told: Entry | null; rest: Entry[] } {
+export function threadEntries(entries: Entry[], chat: Entry[] = [], threadId = ''): { told: Entry | null; rest: Entry[] } {
   const shown = entries.filter((e) => !e.data.removed)
   const told = shown.find(isTold) ?? null
-  const shared = chat.filter((e) => e.data.task?.id === taskId && !e.data.removed)
+  const shared = chat.filter((e) => e.data.thread?.id === threadId && !e.data.removed)
   return { told, rest: byTime(shown.filter((e) => e !== told), shared) }
 }
 

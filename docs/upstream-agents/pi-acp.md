@@ -12,4 +12,4 @@ Upstream: [svkozak/pi-acp](https://github.com/svkozak/pi-acp). Rules: [README](R
 
 ## Fork
 
-Checked 2026-11-15 for background tasks ([spikes](../archive/background-tasks-plan-2026-11-15.md#spikes)). `initialize` advertises no `sessionCapabilities.fork` (pi-acp 0.0.34 on pi 1.4.0; it has `list`, `delete`), and `session/fork` answers `-32601 "Method not found": session/fork`, so a background task starts from a brief. Not a defect: the capability is optional.
+Checked 2026-11-15 for threads ([spikes](../archive/background-tasks-plan-2026-11-15.md#spikes)). `initialize` advertises no `sessionCapabilities.fork` (pi-acp 0.0.34 on pi 1.4.0; it has `list`, `delete`), and `session/fork` answers `-32601 "Method not found": session/fork`, so a thread starts from a brief. Not a defect: the capability is optional.

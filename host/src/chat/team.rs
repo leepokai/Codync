@@ -609,7 +609,10 @@ fn hop_notice_to_lead(
     introduction: &str,
     text: &str,
 ) -> Result<()> {
-    let Some(lead) = local_lead(hub) else { return Ok(()) };
+    // No lead (deleted mid-lift): nothing was delivered, so the caller's once-only state must not be spent.
+    let Some(lead) = local_lead(hub) else {
+        bail!("this computer has no lead bot to judge hop-limit refusal {refusal}")
+    };
     let id = uuid::Uuid::new_v4().to_string();
     let prompt = format!(
         "{introduction} Refusal {refusal}. Blocked bot: {}. Use only the hop-limit tools. Do not use message_bot.\n{text}",

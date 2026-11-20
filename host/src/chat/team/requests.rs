@@ -240,6 +240,18 @@ impl Requests {
             lift.asked = false;
         }
     }
+
+    /// A queued clarification wake was dropped without running (a Stop): the question never reached the bot,
+    /// so the lead may ask again.
+    pub fn abandon_open_ask_by_refusal(&self, refusal: u64) {
+        let mut state = self.0.locked();
+        if let Some(lift) = state.actors.values_mut().find_map(|entry| entry.lift.as_mut())
+            && lift.id == refusal
+            && lift.asked
+        {
+            lift.asked = false;
+        }
+    }
     /// `limit` is the handoffs one chain may use, from 8 through 32. Anything else leaves the current limit.
     /// Nothing outside tests calls this yet, so a running host stays at [`MAX_REQUEST_HOPS`].
     #[cfg_attr(not(test), allow(dead_code))]

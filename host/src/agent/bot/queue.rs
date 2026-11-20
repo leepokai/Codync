@@ -199,10 +199,14 @@ impl Actor {
                     }
                 }
                 // The approval wake will not run. Take its grant and remember hop 0 for the next reply under the
-                // one lock, so no lift can open in the gap between the grant and the carry. A clarification wake
-                // has no grant.
+                // one lock, so no lift can open in the gap between the grant and the carry. A dropped
+                // clarification wake likewise frees the once-only `asked`: the lead may ask again. In both
+                // cases a user message drops the lift anyway; this only covers Stop landing while it sits.
                 Queued::HopLift { refusal_id, control: false, .. } => {
                     self.hub.team.drop_wake_grant(&self.cfg.id, refusal_id);
+                }
+                Queued::HopLift { refusal_id, control: true, .. } => {
+                    self.hub.team.abandon_open_ask_by_refusal(refusal_id);
                 }
                 _ => {}
             }
@@ -499,7 +503,12 @@ impl Actor {
         self.wait_for_sign_in(goes_on.as_ref());
         self.hub.team.end_turn_in_control(&self.cfg.id);
         // A clarification wake that never started its turn must not strand `asked`: the lead may ask again.
-        self.hub.team.abandon_open_ask(&self.cfg.id);
+        // One that did start and is still queued behind this failure keeps its `asked` until it runs or is
+        // dropped (Stop's arm), so an undelivered question never blocks the lift forever but a delivered one
+        // is not asked twice.
+        if !self.queue.iter().any(|q| matches!(q, Queued::HopLift { control: true, .. })) {
+            self.hub.team.abandon_open_ask(&self.cfg.id);
+        }
     }
 
     /// The host-started turn is over; what it was, for the turn's end to act on. `answered`: the agent ended it

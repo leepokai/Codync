@@ -14,8 +14,6 @@ one. To read or search across apps with several accounts, run the read tool once
 writes (sending, replying, creating, deleting) runs once, on the account the user meant; if that isn't clear, \
 ask which one.";
 
-// MARK: tools for bots
-
 /// MCP tools of the built-in `composio` server.
 pub fn tools() -> Value {
     json!([
@@ -87,26 +85,30 @@ pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<
     if apps.is_empty() {
         bail!("No connected apps are turned on for this bot.");
     }
-    let app_of = |toolkit: &str| apps.iter().find(|a| a.toolkit.eq_ignore_ascii_case(toolkit));
     match name {
         "list_apps" => Ok(json!(
             apps.iter().map(|a| json!({"slug": a.toolkit, "name": a.name, "account": a.id})).collect::<Vec<_>>()
         )),
         "search_tools" => {
             let query = args["query"].as_str().unwrap_or_default();
-            let targets: Vec<&Connection> = match args["app"].as_str().filter(|s| !s.is_empty()) {
-                Some(app) => {
-                    vec![app_of(app).ok_or_else(|| anyhow!("`{app}` isn't one of your apps (see list_apps)"))?]
+            // One search per toolkit, not per account: accounts of one app share its tools.
+            let mut toolkits: Vec<&str> = vec![];
+            match args["app"].as_str().filter(|s| !s.is_empty()) {
+                Some(app) => toolkits.push(&pick(&apps, app, None)?.toolkit),
+                None => {
+                    for a in &apps {
+                        if !toolkits.iter().any(|t| t.eq_ignore_ascii_case(&a.toolkit)) {
+                            toolkits.push(&a.toolkit);
+                        }
+                    }
                 }
-                None => apps.iter().collect(),
-            };
+            }
             let mut found = vec![];
-            for app in targets.iter().take(8) {
-                let v =
-                    get(&api, "/tools", &[("toolkit_slug", &app.toolkit), ("query", query), ("limit", "8")]).await?;
+            for toolkit in toolkits.into_iter().take(8) {
+                let v = get(&api, "/tools", &[("toolkit_slug", toolkit), ("query", query), ("limit", "8")]).await?;
                 for t in v["items"].as_array().into_iter().flatten() {
                     found.push(json!({
-                        "slug": t["slug"], "name": t["name"], "app": app.toolkit,
+                        "slug": t["slug"], "name": t["name"], "app": toolkit,
                         "description": t["description"].as_str().map(|d| crate::agent::acp::truncate(d, 300)),
                     }));
                 }
@@ -117,7 +119,7 @@ pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<
             let slug = checked_slug(args["slug"].as_str().unwrap_or_default())?;
             let t = tool(&api, slug).await?;
             let toolkit = text(&t["toolkit"]["slug"]).unwrap_or_default();
-            app_of(&toolkit).ok_or_else(|| anyhow!("{slug} belongs to an app this bot can't use"))?;
+            pick(&apps, &toolkit, None).map_err(|e| anyhow!("{slug}: {e}"))?;
             Ok(
                 json!({"slug": t["slug"], "name": t["name"], "description": t["description"], "input_parameters": t["input_parameters"]}),
             )
@@ -150,7 +152,9 @@ fn pick<'a>(apps: &'a [Connection], toolkit: &str, account: Option<&str>) -> Res
         Some(id) => apps.iter().filter(of_toolkit).find(|a| a.id == id).ok_or_else(|| {
             anyhow!("account `{id}` isn't a connected {toolkit} account this bot can use (see list_apps)")
         }),
-        None => apps.iter().find(of_toolkit).ok_or_else(|| anyhow!("belongs to an app this bot can't use")),
+        None => {
+            apps.iter().find(of_toolkit).ok_or_else(|| anyhow!("`{toolkit}` isn't one of your apps (see list_apps)"))
+        }
     }
 }
 
@@ -175,5 +179,22 @@ mod tests {
         assert!(pick(&apps, "gmail", Some("ca_3")).is_err(), "an account of another app");
         assert!(pick(&apps, "gmail", Some("ca_9")).is_err(), "an unknown account");
         assert!(pick(&apps, "notion", None).is_err(), "an app the bot can't use");
+    }
+
+    #[tokio::test]
+    async fn list_apps_tells_two_accounts_of_one_app_apart() {
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let config = super::super::Config {
+            key: "k".into(),
+            user_id: "u".into(),
+            connections: vec![conn("ca_1", "gmail"), conn("ca_2", "gmail")],
+        };
+        super::super::save(&store, &config).unwrap();
+        let bot = json!({"id": "b", "name": "Ben", "backend": "claude", "cwd": std::env::temp_dir(), "connectors": ["composio-gmail"]});
+        store.save_bot(&serde_json::from_value::<crate::store::BotConfig>(bot).unwrap()).unwrap();
+        let apps = call(&store, "b", "list_apps", &json!({})).await.unwrap();
+        let accounts: Vec<&str> = apps.as_array().unwrap().iter().filter_map(|a| a["account"].as_str()).collect();
+        assert_eq!(accounts, ["ca_1", "ca_2"]);
+        assert!(tools()[3]["inputSchema"]["properties"]["account"].is_object(), "execute takes an account");
     }
 }

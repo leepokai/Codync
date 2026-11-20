@@ -169,9 +169,9 @@ host checks the run's turn (its thread's, for a run in the box) for a tool call 
   "Trying again in N minutes." with no alert; the routines list shows "Retrying at …"
   (TUI: `retry <when>`). A scheduled fire or a test run while it waits runs it at once,
   and a scheduled run that fails while the next fire is already queued has that fire
-  as its retry ("Trying again now."). A waiting retry doesn't make the routine busy
-  (deliveries queue as usual) and the bot's Stop leaves it; pausing or deleting the
-  routine cancels it. A paused routine (unless it was a test run) isn't retried
+  as its retry ("Trying again now."). A waiting retry doesn't block a delivery (it
+  counts toward the 16 queued; deliveries due earlier run first) and the bot's Stop
+  leaves it; pausing or deleting the routine cancels it. A paused routine (unless it was a test run) isn't retried
   automatically.
 - **It acted, hit its time limit (it could hold the bot that long again; this includes an
   agent whose session setup ran past it), or the three
@@ -181,8 +181,8 @@ host checks the run's turn (its thread's, for a run in the box) for a tool call 
   work again with that event, also for a paused test run, and takes the button off.
   Only a routine's latest such failure keeps its event (an older one's button goes),
   so failed webhook payloads can't pile up; deleting the routine (or its bot) drops the
-  event and the button. Retrying while the routine has an active run is refused
-  (busy); a paused routine is refused until it's resumed.
+  event and the button. Retrying while a run of the routine is under way, or
+  16 wait, is refused (busy); a paused routine is refused until it's resumed.
 
 Each run has a timeout (default one hour, configurable from 1 to 86400 seconds).
 A hung agent is terminated so subsequent work can proceed (a run in the box: its thread is stopped, and its process
@@ -228,9 +228,12 @@ the same checks (`host/src/routines/hooks.rs`); the protocol is
 - **Delivery**: `X-Delivery-Id`, `X-GitHub-Delivery` or `Idempotency-Key`
   deduplicates retries against retained run records. Bodies are limited to 64 KB.
   A paused routine refuses (`409`); a non-matching event is accepted and ignored.
-  While the routine has a run under way or queued (a retry waiting for its time
-  doesn't count), the local endpoint answers `409` and the cloud
-  queue retries later (30 s doubling to 15 min).
+  A delivery while the routine's other runs are only queued (its bot is busy, or a
+  retry waits for its time) is queued as its own run; each runs once, in arrival
+  order, one at a time (a run in the box waits while another of its routine runs).
+  The bot's Stop leaves queued deliveries, since the sender was already answered.
+  While a run of the routine has started, or `MAX_QUEUED` (16) runs of it wait, the local endpoint answers `409` and the cloud queue retries later
+  (30 s doubling to 15 min, for up to 72 h).
 - **Offline**: the cloud keeps public deliveries for up to 72 hours and hands them
   over one at a time once the host is back; the host acknowledges each.
 - **Trust**: deliveries are not end-to-end encrypted. The cloud terminates HTTPS,

@@ -88,6 +88,12 @@ impl Routines {
         self.state.locked().runs.iter().any(|r| r.id == id && r.status == Status::Pending)
     }
 
+    /// Whether run `id` waits for another run of its routine that has started: a thread doesn't take it yet.
+    pub fn waits_its_turn(&self, id: &str) -> bool {
+        let s = self.state.locked();
+        s.runs.iter().find(|r| r.id == id).is_some_and(|run| super::started(&s, &run.routine_id))
+    }
+
     /// Run `run` waits in its bot's box from here (`chat::work`), not in the bot's queue.
     pub fn put_in_box(&self, hub: &Arc<Hub>, run: &Run) -> Result<()> {
         let name = self.state.locked().routines.iter().find(|r| r.id == run.routine_id).map(|r| r.name.clone());
@@ -230,11 +236,13 @@ impl Routines {
 
     /// The bot's Stop: cancels the runs queued behind its turn. A retry waiting for later isn't queued yet, so
     /// it stays (pausing or deleting the routine cancels it); so does a run in the box, which the box's own Stop
-    /// stops.
+    /// stops, and a webhook delivery, which its sender was already told was taken.
     pub fn cancel_queued(&self, store: &Store, bot: &str) -> Result<()> {
         let now = now_ms();
         self.change(store, |s| {
-            let queued = |r: &&mut Run| r.bot_id == bot && !r.boxed && r.status == Status::Pending && !r.waiting(now);
+            let queued = |r: &&mut Run| {
+                r.bot_id == bot && !r.boxed && r.status == Status::Pending && !r.waiting(now) && r.delivery_id.is_none()
+            };
             for r in s.runs.iter_mut().filter(queued) {
                 cancel_run(r);
             }
@@ -502,7 +510,8 @@ mod tests {
             .change(&store, |s| {
                 let mut retry = new_run(&routine, Value::Null, None);
                 retry.not_before = Some(now_ms() + 60_000);
-                s.runs.extend([new_run(&routine, Value::Null, None), retry]);
+                let delivery = new_run(&routine, Value::Null, Some("d1".into()));
+                s.runs.extend([new_run(&routine, Value::Null, None), retry, delivery]);
                 s.routines.push(routine);
                 Ok(())
             })
@@ -510,5 +519,6 @@ mod tests {
         routines.cancel_queued(&store, "bot").unwrap();
         let state = routines.state.locked();
         assert!(state.runs[0].status == Status::Cancelled && state.runs[1].status == Status::Pending);
+        assert!(state.runs[2].status == Status::Pending, "a webhook delivery its sender was told was taken stays");
     }
 }

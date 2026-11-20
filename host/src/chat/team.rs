@@ -670,16 +670,18 @@ fn ask_hop_clarification(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Re
     }
     hub.team.ask(refusal)?;
     let shown = truncate(question, 400);
-    hub.send_cmd(
-        &actor,
-        Cmd::HopLift {
-            text: format!(
-                "The lead asked for more about hop-limit refusal {refusal}. Answer with answer_hop_clarification. Do not use message_bot.\n{shown}"
-            ),
-            refusal_id: refusal,
-            control: true,
-        },
-    )?;
+    let wake = Cmd::HopLift {
+        text: format!(
+            "The lead asked for more about hop-limit refusal {refusal}. Answer with answer_hop_clarification. Do not use message_bot.\n{shown}"
+        ),
+        refusal_id: refusal,
+        control: true,
+    };
+    if let Err(error) = hub.send_cmd(&actor, wake) {
+        // The wake was never queued: the ask did not happen, so the lead can ask again.
+        hub.team.abort_unsent_ask(refusal);
+        return Err(error);
+    }
     tracing::info!(lead = %source.id, refusal, "hop-limit clarification asked");
     Ok(json!({ "refusal": refusal, "status": "asked" }))
 }
@@ -770,15 +772,25 @@ pub(super) fn on_hop_limit(
         "Hop limit reached. Refusal {refusal}. Blocked bot: {}. It tried to message {target_name}. Use only the hop-limit tools. Do not use message_bot.\nRefused text:\n{shown}",
         source.name
     );
-    let mut lifetime = MessageLifetime::new(hub, &id, &shown, Back::Lift, &lead.name);
-    let exchange = Exchange { request: &id, source: &source.id, target: &lead.id, text: &shown, peer_name: None };
-    lifetime.entries.push(exchange.notice(
-        hub,
-        &lead.id,
-        &format!("Hop limit refusal {refusal} from {}.", source.name),
-        true,
-    )?);
-    lifetime.deliver(&lead.id, 0, Access::Allow, prompt)?;
+    let notice = (|| -> Result<()> {
+        let mut lifetime = MessageLifetime::new(hub, &id, &shown, Back::Lift, &lead.name);
+        let exchange = Exchange { request: &id, source: &source.id, target: &lead.id, text: &shown, peer_name: None };
+        lifetime.entries.push(exchange.notice(
+            hub,
+            &lead.id,
+            &format!("Hop limit refusal {refusal} from {}.", source.name),
+            true,
+        )?);
+        lifetime.deliver(&lead.id, 0, Access::Allow, prompt)
+    })();
+    if let Err(delivery) = notice {
+        // The lift never reached the lead: close it so a later send can open a fresh notice instead of sitting
+        // open with no refusal the tool results name. The lift is keyed by the actor whose turn was blocked
+        // (`turn`, the caller of `reserve`), not the sender; they differ when a thread acts for its bot.
+        let actor = hub.team.lift_actor(refusal).unwrap_or_else(|_| source.id.clone());
+        hub.team.abort_unsent_notice(&actor, refusal);
+        return Err(delivery);
+    }
     tracing::info!(actor = %turn, refusal, "hop-limit notice queued");
     bail!("bot request hop limit ({}) reached; the lead was notified (refusal {refusal})", hub.team.hop_limit())
 }

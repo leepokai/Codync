@@ -1,4 +1,4 @@
-Connectors give your bots tools. Each one is an MCP server: GitHub, Linear, Notion, a database, or anything else that speaks the Model Context Protocol. Skills are written instructions a bot follows for a kind of task, such as a release checklist or a house style for reports.
+Connectors give your bots tools. Each one is an MCP server: GitHub, Linear, Notion, a database, or anything else that speaks the Model Context Protocol. Skills are written instructions a bot follows for a kind of work, such as a release checklist or a house style for reports.
 
 You add both in **Extensions**. They install on the computer, so every bot on that computer can use them, and each bot can turn any of them off.
 
@@ -31,12 +31,16 @@ If the check fails because a key was wrong, type the correct key in the same she
 
 Some hosted connectors ask you to sign in with your account on that service. The sign-in page opens right after you add it:
 
-- On the iPhone, it opens in the system sign-in sheet.
+- On the iPhone, it opens in the system sign-in sheet; on Android, in your browser. A few services accept a sign-in only from the computer; for those, the phone says so, and you sign in from the desktop app or the terminal on the computer instead.
 - In the desktop app, it opens in your browser on the computer.
 
-The tokens stay on the computer and are refreshed when they expire. Until someone signs in, bots don't get the connector, and your library shows a **Sign in** button for it.
+The tokens stay on the computer and are refreshed when they expire. If the service can't be reached for a refresh, the connector stays signed in and Codync tries again on its next use; you only need to sign in again when the service ends the sign-in. Until someone signs in, bots don't get the connector, and your library shows a **Sign in** button for it.
 
-Some services don't offer this kind of sign-in (GitHub is one). For those, add the server as a custom connector with its URL and a token header.
+GitHub signs in with a short code instead. Codync shows the code; press **Copy and open**, paste the code on the GitHub page that opens, and authorize Codync. The connector is ready as soon as GitHub confirms. In the terminal, the code is copied and shown at the bottom while GitHub's page opens, or next to the page's address when the terminal can't open a browser.
+
+If you added GitHub earlier with a personal access token, your library shows **Sign in instead of using a saved token** next to it. Sign in there and Codync switches the connector over and deletes the saved token, so it no longer stops working when the token expires. If one of your GitHub organizations restricts OAuth app access, an owner of that organization approves Codync first (on GitHub, in the organization's third-party access settings); until then bots can't see that organization's repositories, so keep the token if you need them.
+
+A few services don't offer any sign-in Codync can use. For those, add the server as a custom connector with its URL and a token header.
 
 ## Add a custom connector
 
@@ -44,9 +48,9 @@ In the **Connectors** section, choose **Custom connector**, above the registry l
 
 - **Command:** a command line that starts an MCP server. It runs on the computer in the bot's project folder, and quotes work like in a shell. Put keys under **Environment**, one `KEY=value` per line.
 - **URL:** a hosted MCP server. Add headers under **Headers**, one `Name: value` per line, or leave them empty if the service has you sign in.
-- **Config:** paste an MCP config from a README or another app (Claude, Cursor, VS Code), such as an `mcpServers` block. Every server in it is added.
+- **Config:** paste an MCP config from a README or another app (Claude, Cursor, VS Code), such as an `mcpServers` block. Every server in it is added. If one isn't valid, for example its `args` aren't all text, none are, and the error names that server.
 
-Everything you enter is saved on that computer only.
+Everything you enter is saved on that computer only. A command or URL can't reuse the name of a connector you already have: Codync names that connector and changes nothing, so you can sign in to it or remove it in your library, or choose another name. Pasting a config still adds every entry.
 
 ## Apps through Composio
 
@@ -71,8 +75,9 @@ The cards themselves hold no credentials. You can answer them in the iPhone app,
 - Your phone sends values to the computer over its end-to-end encrypted connection. Lists in the apps show only whether a value is set.
 - Bots reach connectors through Codync on the computer, which adds the saved values when the connector runs, so the values aren't handed to the agent. This isn't a sandbox: programs running as your user on that computer, including the agent's own shell commands, aren't kept away from them.
 - Credentials don't sync between computers. A copy of Codync's data moved to another machine can't decrypt them, so back up the system keychain along with it.
+- If they can't be read anymore (bots say *the key to this computer's saved credentials is missing*, as after moving to a new computer without the old keychain), open Codync's **Settings → Computers** on that computer and, under **Reset** at the bottom, choose **Reset** next to **Saved credentials** and confirm twice, or run **Reset saved credentials…** from the terminal app's command palette. It deletes the keys, connectors, connected apps, voice keys and saved logins Codync kept there; enter them again afterwards. Agents signed in on their own stay signed in.
 
-**Extensions → Credentials** shows where values are stored, lets you replace a connection's saved values (they stay hidden), and connects 1Password: paste a service account token and use `op://vault/item/field` references in any credential field. Give that service account access to one dedicated vault only. The 1Password CLI must be installed on the computer.
+**Extensions → Credentials** shows where values are stored, lets you replace a connection's saved values (they stay hidden; bots that use the connection switch to the new values on their next turn and carry on with the conversation), and connects 1Password: paste a service account token and use `op://vault/item/field` references in any credential field. Give that service account access to one dedicated vault only. The 1Password CLI must be installed on the computer.
 
 ## Turn connectors and skills on or off per bot
 
@@ -90,15 +95,15 @@ What that agent already brings is on its own page, not the bot's. Open **Extensi
 
 ## Skills
 
-A skill is a folder with a `SKILL.md` file: a name, a line saying when to use it, and the instructions. A bot with a skill on is told its name, its description and where its instructions are, so it can read them when a task calls for it.
+A skill is a folder with a `SKILL.md` file: a name, a line saying when to use it, and the instructions. A bot with a skill on is told its name, its description and where its instructions are, so it can read them when the work calls for it.
 
 - **Install one:** the **Skills** section of Extensions lists Anthropic's published skills. Press **Add**. Click any skill to read its instructions first.
 - **Write your own:** in the **Skills** section, choose **Your own skill**, above the list, and fill in **Name**, **When to use it** and **Instructions**.
-- **Let a bot write one:** ask a bot to save how it did something as a skill. A bot may also save one on its own after working out a task you're likely to want again. The chat shows "Saved the skill …" or "Updated the skill …". A skill a bot writes is on for that bot only; turn it on for other bots in their settings. A bot can change only the skills it wrote, and you can remove any skill from your library.
+- **Let a bot write one:** ask a bot to save how it did something as a skill. A bot may also save one on its own after working out something you're likely to want again. The chat shows "Saved the skill …" or "Updated the skill …". A skill a bot writes is on for that bot only; turn it on for other bots in their settings. A bot can change only the skills it wrote, and you can remove any skill from your library.
 
 ### Use a skill with a slash command
 
-Type `/` at the start of a message to see that bot's commands: built-in ones first (such as `/fast` for [Fast mode](/docs/agents), when the bot's agent offers it), then the skills the bot has on. Picking a skill fills in `/<skill id>`; write the rest of your message and send it. The bot is told to read that skill first.
+Type `/` at the start of a message to see that bot's commands: built-in ones first (such as `/fast` for [Fast mode](/docs/agents), when the bot's agent offers it), then the skills the bot has on, then the commands of the bot's agent, marked with its logo ([Commands](/docs/conversations#commands)). Picking a skill fills in `/<skill id>`; write the rest of your message and send it. The bot is told to read that skill first.
 
 - **Desktop app:** the list floats above the message box. Use ↑ and ↓, then Tab or Return. Escape hides it.
 - **iPhone:** the list sits above the message box. Tap a command.

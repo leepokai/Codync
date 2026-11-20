@@ -46,7 +46,17 @@ class NetworkTest {
         // A rule from the command line for one bot on any computer never reads wider than it is.
         assertEquals("Deny: lead on any computer → any bot here", home.describe(NetworkRule("*", "lead", "*", "deny")) { it })
         // Nor does an access this app doesn't know.
-        assertEquals("Deny: any bot on any computer → any bot here", home.describe(NetworkRule(access = "ask")) { it })
+        assertEquals("Deny: any bot on any computer → any bot here", home.describe(NetworkRule(access = "later")) { it })
+        // The ceilings read as what they are.
+        assertEquals("Ask: any bot on any computer → any bot here", home.describe(NetworkRule(access = "ask")) { it })
+        assertEquals("Auto: any bot on any computer → any bot here", home.describe(NetworkRule(access = "auto")) { it })
+    }
+
+    @Test fun `the rules footer says what a computer no rule matches gets`() {
+        val auto = WireJson.decodeFromJsonElement<NetworkInfo>(WireJson.parseToJsonElement("""{"id": "n", "name": "home", "defaultAccess": "auto"}"""))
+        assertTrue(auto.rulesFooter.contains("gets Auto"))
+        // A host before the default sends none, and lets such a computer in.
+        assertTrue(NetworkView.decode(view).networks[0].rulesFooter.contains("every computer in the network may message"))
     }
 
     @Test fun `a computer in no network shows only when cloud assistants can reach it and are on`() {

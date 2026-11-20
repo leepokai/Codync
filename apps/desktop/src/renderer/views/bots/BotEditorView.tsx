@@ -2,17 +2,21 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { fastModeRefusal, fastModeShown } from '@shared/fast-mode'
 import { restLine, restOf, withBackend } from '@shared/fallbacks'
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
+import { MAX_THREADS } from '@shared/work'
 import { AgentIcon } from '../../components/AgentIcon'
 import { CharacterAvatar } from '../../components/Avatar'
-import { CardSection, DropdownMenu, IconButton, Pill, Spinner, ValueRow } from '../../components/Controls'
+import { CardSection, DropdownMenu, IconButton, Pill, Spinner, Stepper, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, Sheet, SheetPage, useDismiss } from '../../components/Overlay'
-import { HStack } from '../../components/Stack'
+import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { controlReady } from '../../lib/screen-state'
 import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
+import { LoginProfileRow } from './LoginProfileRow'
 import { AgentModelPicker } from './AgentModelPicker'
 import { ApprovalRow } from './ApprovalRow'
+import { CompactionRow } from './CompactionRow'
 import { agentChoice, AgentStepBanner, FallbacksRow } from './Fallbacks'
 import { errorText, isValid, lastPathComponent, normalized, useFollowSaved, usePlugins, type Plugins } from './drafts'
 import { FormSheet } from '../marketplace/pieces'
@@ -20,6 +24,7 @@ import { SkillSheet, type SkillRef } from '../marketplace/SkillSheet'
 import { AnchoredPanel, AutoTextArea, AvatarPicker, Field, SwitchRow } from './parts'
 import { NetworkSwitches } from './NetworkSwitches'
 import { FolderPicker } from './FolderPicker'
+import { GitStateLine } from './GitStateLine'
 import './bots.css'
 import { useTr } from '../../lib/use-language'
 import { CustomIconEditor } from './CustomIconEditor'
@@ -61,14 +66,8 @@ export function BotEditorView({ draft: initial }: { draft: BotDraft }) {
   )
 }
 
-/**
- * Which settings a form shows: all of them (the editor sheet), what changes often
- * (instructions, model, fast mode: the inspector's Details tab) or the rest (its Settings tab).
- */
-export type FormPart = 'all' | 'often' | 'rarely'
-
-/** The desktop inspector next to a conversation: the same form, saved as you edit. */
-export function BotSettingsPanel({ botId, part }: { botId: string; part: FormPart }) {
+/** The Settings tab of the desktop inspector next to a conversation: the same form, saved as you edit. */
+export function BotSettingsPanel({ botId }: { botId: string }) {
   const store = useStore()
   const plugins = usePlugins(store)
   const [draft, setDraft] = useState<BotDraft | null>(null)
@@ -95,7 +94,7 @@ export function BotSettingsPanel({ botId, part }: { botId: string; part: FormPar
     return () => clearTimeout(timer)
   }, [draft])
 
-  return draft ? <BotSettingsForm draft={draft} onChange={change} error={error} plugins={plugins} part={part} /> : null
+  return draft ? <BotSettingsForm draft={draft} onChange={change} error={error} plugins={plugins} inspector /> : null
 }
 
 /** The bot that created this one with its team tools, and when. */
@@ -110,13 +109,14 @@ function CreatedBy({ bot, creator }: { bot: Bot; creator: string }) {
   )
 }
 
-/** Bot settings, in sections in the Settings style (`CardSection`). */
-function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
+/** Bot settings, in sections in the Settings style (`CardSection`): how the bot is set up, what it is told and what
+ * runs it first. In the `inspector` the Computer tab holds the Use the computer switch. */
+function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }: {
   draft: BotDraft
   onChange: (update: (d: BotDraft) => BotDraft) => void
   error: string | null
   plugins: Plugins | null
-  part?: FormPart
+  inspector?: boolean
 }) {
   const tr = useTr()
   const store = useStore()
@@ -125,9 +125,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
   const [viewingSkill, setViewingSkill] = useState<SkillRef | null>(null)
   const avatarRef = useRef<HTMLButtonElement>(null)
   const set = <K extends keyof BotDraft>(key: K, value: BotDraft[K]) => onChange((d) => ({ ...d, [key]: value }))
-  // Options belong to one model.
-  const setModel = useCallback((model: string | null) => onChange((d) => (d.model === model ? d : { ...d, model, modelOptions: {} })), [onChange])
-  const setModelOptions = useCallback((modelOptions: Record<string, string>) => onChange((d) => ({ ...d, modelOptions })), [onChange])
+  const setModel = useCallback((model: string | null, modelOptions: Record<string, string>) => onChange((d) => ({ ...d, model, modelOptions })), [onChange])
   const models = useAgentModels(draft.backend)
   const saved = draft.id ? (store.bots.get(draft.id) ?? null) : null
 
@@ -141,19 +139,21 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
       <AutoTextArea className="field-box" value={draft.description} placeholder="e.g. Reviews PRs. Never pushes without asking." minRows={3} maxRows={8} onChange={(v) => set('description', v)} />
     </Field>
   )
-  const ownRest = saved ? restOf(saved, draft.backend, Date.now()) : null
+  const ownRest = saved ? restOf(saved, draft, Date.now()) : null
   const agent = (
     <AgentModelPicker key="agent" backend={draft.backend} models={models} selection={draft.model}
-      onChange={setModel} options={draft.modelOptions ?? {}} onOptionsChange={setModelOptions}
+      onChange={setModel} options={draft.modelOptions ?? {}}
       agents={[...backends.map(agentChoice), { id: 'custom', label: 'Custom command', leading: <AgentIcon registry="custom" size={14} /> }]}
       onAgentChange={(id) => onChange((d) => withBackend(d, id))} fast={draft.fastMode ?? false}
       fastControl={((draft.backend !== 'custom' && models.catalog?.fastMode) || draft.fastMode || (saved?.backend === draft.backend && fastModeShown(saved))) ?
         <SwitchRow title="Fast mode" detail={saved ? fastModeRefusal(saved) : null} on={draft.fastMode ?? false} onChange={(on) => set('fastMode', on)} /> : null}>
-      {ownRest && <Text size="caption" tone="secondary">{restLine(ownRest, Date.now())}</Text>}
+      {ownRest && <Text size="caption" tone="secondary">{tr(restLine(ownRest, Date.now()))}</Text>}
       {backend && !backend.available && <Text size="caption" tone="attention">{backend.installHint}</Text>}
-      {draft.backend === 'custom' && <input className="field-box bot-command" value={draft.command ?? ''} placeholder="ACP command, e.g. my-agent --acp" spellCheck={false} onChange={(e) => set('command', e.target.value || null)} />}
+      {draft.backend === 'custom' && <input className="field-box bot-command" value={draft.command ?? ''} placeholder={tr('ACP command, e.g. my-agent --acp')} spellCheck={false} onChange={(e) => set('command', e.target.value || null)} />}
     </AgentModelPicker>
   )
+  // Its own row under the picker, as on the phones. CardSection gives every child a row, so null when the host has none.
+  const loginProfile = backend?.loginProfiles ? <LoginProfileRow key="login" backend={backend} loginProfile={draft.loginProfile ?? null} onChange={(id) => set('loginProfile', id)} /> : null
   // While the bot runs on a fallback, the Agent card starts with it.
   const step = saved?.agentStep ? <AgentStepBanner key="step" bot={saved} /> : null
   // Only from a host that has them (its bots say).
@@ -167,29 +167,23 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
       onChange={(on) => set('selfFallbacks', on)}
     />,
   ] : null
-
-  if (part === 'often') {
-    return (
-      <div className="bot-form">
-        <div className="bot-form-content">
-          <CardSection title="Instructions">{instructions}</CardSection>
-          <CardSection title="Agent">
-            {step}
-            {agent}
-            {fallbacks}
-          </CardSection>
-          {error ? <Text size="footnote" tone="danger" className="fade-in">{error}</Text> : null}
-        </div>
-      </div>
-    )
-  }
+  // Only where Codync summarizes the chat (its bot says): CardSection gives every child a row.
+  const compaction = saved && saved.compaction !== null ? <CompactionRow key="compaction" draft={draft} bot={saved} onChange={onChange} /> : null
 
   return (
     <div className="bot-form">
       <div className="bot-form-content">
+        <CardSection title="Instructions">{instructions}</CardSection>
+        <CardSection title="Agent">
+          {step}
+          {agent}
+          {loginProfile}
+          {fallbacks}
+          {compaction}
+        </CardSection>
         <CardSection title="Profile">
           <ValueRow label="Avatar">
-            <button ref={avatarRef} className="avatar-button small" title="Edit Bot avatar" aria-label="Edit Bot avatar" onClick={() => setPickingAvatar((p) => !p)}>
+            <button ref={avatarRef} className="avatar-button small" title={tr('Edit Bot avatar')} aria-label={tr('Edit Bot avatar')} onClick={() => setPickingAvatar((p) => !p)}>
               <CharacterAvatar shape={draft.avatarShape} color={draft.avatarColor} size={24} customIcon={draft.id ? store.icons[`bot:${draft.id}`] : undefined} />
             </button>
             <AnchoredPanel open={pickingAvatar} onClose={() => setPickingAvatar(false)} anchor={avatarRef}>
@@ -200,52 +194,67 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
             </AnchoredPanel>
           </ValueRow>
           <Field label="Name">
-            <input className="field-box" value={draft.name} placeholder="Name" onChange={(e) => set('name', e.target.value)} />
+            <input className="field-box" value={draft.name} placeholder={tr('Name')} onChange={(e) => set('name', e.target.value)} />
           </Field>
-          {part === 'all' ? instructions : null}
           {/* Only a row when a bot made it: CardSection gives every child a row. */}
           {saved?.createdBy ? <CreatedBy bot={saved} creator={saved.createdBy} /> : null}
         </CardSection>
 
-        {/* In the inspector the agent and its model are on the Details tab; what's left is where it works. */}
-        <CardSection title={part === 'all' ? 'Agent' : 'Workspace'}>
-          {part === 'all' ? step : null}
+        <CardSection title="Workspace">
           <ValueRow label="Computer">
             <Text truncate>{store.hostName}</Text>
           </ValueRow>
-          {part === 'all' ? agent : null}
-          {part === 'all' ? fallbacks : null}
-          <ValueRow
-            label="Workspace"
-            detail={
-              draft.cwd
-                ? 'This project is the default starting folder. The bot can work elsewhere when you ask.'
-                : 'This bot has its own space for files. It can work in other folders when you ask.'
-            }
-          >
-            <DropdownMenu
-              title={draft.cwd || 'A persistent workspace allocated for this bot'}
-              items={() => [
-                { title: 'Personal workspace', selected: !draft.cwd, action: () => set('cwd', '') },
-                { title: 'Choose project folder…', selected: !!draft.cwd, action: () => setPickingFolder(true) },
-              ]}
+          <VStack gap={6}>
+            <ValueRow
+              label="Workspace"
+              detail={
+                draft.cwd
+                  ? 'This project is the default starting folder. The bot can work elsewhere when you ask.'
+                  : 'This bot has its own space for files. It can work in other folders when you ask.'
+              }
             >
-              <Pill outlined className="workspace-pill">
-                <Text truncate className="workspace-pill-label">{draft.cwd ? lastPathComponent(draft.cwd) : tr(`Personal`)}</Text>
-                <Icon name="chevron.down" size={10} weight="semibold" color="var(--secondary)" />
-              </Pill>
-            </DropdownMenu>
-          </ValueRow>
+              <DropdownMenu
+                title={draft.cwd || tr('A persistent workspace allocated for this bot')}
+                items={() => [
+                  { title: 'Own folder', selected: !draft.cwd, action: () => set('cwd', '') },
+                  { title: 'Choose project folder…', selected: !!draft.cwd, action: () => setPickingFolder(true) },
+                ]}
+              >
+                <Pill outlined className="workspace-pill">
+                  <Text truncate className="workspace-pill-label">{draft.cwd ? lastPathComponent(draft.cwd) : tr('Own folder')}</Text>
+                  <Icon name="chevron.down" size={10} weight="semibold" color="var(--secondary)" />
+                </Pill>
+              </DropdownMenu>
+            </ValueRow>
+            {/* Of the saved folder, from a host that says (one with worktrees). */}
+            {saved && saved.threadWorktrees !== null ? <GitStateLine bot={saved} /> : null}
+          </VStack>
           <ApprovalRow draft={draft} catalog={models.catalog} onChange={onChange} />
+          {/* Only from a host that has the box (its bots say). */}
+          {saved && saved.maxThreads !== null ? (
+            <ValueRow label="Threads at once">
+              <Stepper label="Threads at once" value={draft.maxThreads ?? saved.maxThreads} min={1} max={MAX_THREADS} onChange={(count) => set('maxThreads', count)} />
+            </ValueRow>
+          ) : null}
+          {/* Only where it matters (a project folder in a git repository: a bot's own folder keeps all its work in
+              one place), from a host that has it. */}
+          {saved?.gitRepo && !saved.managedWorkspace && saved.threadWorktrees !== null ? (
+            <SwitchRow
+              title="Worktree per thread"
+              detail="Threads that work at once in this repository each get their own branch."
+              on={draft.threadWorktrees ?? saved.threadWorktrees}
+              onChange={(on) => set('threadWorktrees', on)}
+            />
+          ) : null}
         </CardSection>
 
         <CardSection title="Activity">
           <SwitchRow title="Notifications" detail="Get notified when this bot finishes or needs you" on={draft.notify ?? true} onChange={(on) => set('notify', on)} />
-          {store.screen && part === 'all' ? (
+          {store.screen && !inspector ? (
             <SwitchRow
               title="Use the computer"
               detail={
-                store.screen.platform !== 'windows' && !(store.screen.enabled && store.screen.connected && store.screen.capture && store.screen.input)
+                !controlReady(store.screen)
                   ? 'Let this bot use apps. On that computer, open Codync → Settings → Computer access to set up permissions first.'
                   : store.screen.enabled
                   ? 'Let this bot see the screen and use the mouse and keyboard. You can watch and take over from your phone.'
@@ -279,10 +288,13 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
         <PluginToggles
           title="Skills"
           empty="No skills yet. Get some from Extensions, or write your own."
-          items={skills.map((s) => ({ id: s.id, name: s.name, detail: s.description }))}
+          items={skills.map((s) => ({ id: s.id, name: s.name, detail: '' }))}
           selection={draft.skills ?? []}
           onChange={(ids) => set('skills', ids)}
-          onInfo={(s) => setViewingSkill({ id: s.id, name: s.name, description: s.detail })}
+          onInfo={(item) => {
+            const s = skills.find((x) => x.id === item.id)
+            if (s) setViewingSkill({ id: s.id, name: s.name, description: s.description })
+          }}
         />
         {error ? <Text size="footnote" tone="danger" className="fade-in">{error}</Text> : null}
       </div>
@@ -329,7 +341,7 @@ function PluginToggles({ title, empty, items, selection, onChange, onInfo }: {
         return onInfo ? (
           <HStack key={item.id} gap={4}>
             <div className="plugin-toggle">{row}</div>
-            <IconButton title={`About ${item.name}`} icon="info.circle" onClick={() => onInfo(item)} />
+            <IconButton title={tr('About {name}').replaceAll('{name}', () => item.name)} icon="info.circle" onClick={() => onInfo(item)} />
           </HStack>
         ) : row
       })}

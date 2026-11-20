@@ -13,12 +13,18 @@ class PairingProblem(val kind: Kind, cause: Throwable? = null) : IllegalArgument
     }
 }
 
+/** The code this computer shows if it asks about [identity]'s phone. */
+fun Computer.checkCode(identity: DeviceIdentity): String = RelayCrypto.pairCheck(identity.deviceKey, signKey.decodeBase64Url(32))
+
 /** A short-lived pairing URL. Only the resulting Computer may be persisted. */
 data class Pairing(val computer: Computer, val code: String) {
+    /** With the Codync relay left out, as a phone with no account uses it. A private relay is the user's own: the caller keeps it. */
+    val withoutRelay: Pairing get() = copy(computer = computer.copy(cloud = null))
+
     internal val offerId: String get() = RelayCrypto.offerId(code.decodeBase64Url(16))
 
     /** The code the computer shows if it asks whether to let [identity]'s phone in. */
-    fun checkCode(identity: DeviceIdentity): String = RelayCrypto.pairCheck(identity.deviceKey, computer.signKey.decodeBase64Url(32))
+    fun checkCode(identity: DeviceIdentity): String = computer.checkCode(identity)
 
     companion object {
         private val SHORT_CODE = Regex("([A-Za-z]{4})[- ]?([0-9]{4})")

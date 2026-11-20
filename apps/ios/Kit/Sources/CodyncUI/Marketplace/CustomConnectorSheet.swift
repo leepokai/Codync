@@ -1,4 +1,3 @@
-import AuthenticationServices
 import CodyncKit
 import SwiftUI
 
@@ -7,8 +6,7 @@ struct CustomConnectorSheet: View {
 
     @Environment(BotStore.self) private var model
     @Environment(\.dismissModal) private var dismiss
-    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
-    @Environment(\.openURL) private var openURL
+    private let signInFlow = ConnectorSignInFlow()
     @State private var name = ""
     @State private var mode = Mode.command
     @State private var target = ""
@@ -36,6 +34,7 @@ struct CustomConnectorSheet: View {
             form
         }
         .background(Palette.background)
+        .signInCodeDialog(signInFlow.codePrompt)
     }
 
     private var footer: String {
@@ -102,9 +101,8 @@ struct CustomConnectorSheet: View {
                         name: name, command: remote ? nil : target, url: remote ? target : nil,
                         env: remote ? [:] : pairs, headers: remote ? pairs : [:]
                     )]
-                let signIn = ConnectorSignInFlow(model: model, webAuthenticationSession: webAuthenticationSession, openURL: openURL)
                 for c in added where c.needsSignIn {
-                    try await signIn.signIn(c.id)
+                    try await signInFlow.signIn(c.id)
                 }
                 dismiss()
             } catch {

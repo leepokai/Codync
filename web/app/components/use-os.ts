@@ -1,13 +1,14 @@
 import { useSyncExternalStore } from "react";
 
 // The computer a visitor is on, as far as the browser says: one installer each, `linux-arm64` for Arm Linux.
-// Phones and anything unknown (Android, ChromeOS, 32-bit Arm) get the Mac default, as before.
+// Anything unknown (ChromeOS, 32-bit Arm) gets the Mac default.
 // Chromium reports every Linux as x86_64, so Arm Linux is only caught on Firefox; the menu lists both.
-export type Os = "mac" | "windows" | "linux" | "linux-arm64" | "ios";
+export type Os = "mac" | "windows" | "linux" | "linux-arm64" | "ios" | "android";
 
 function detect(): Os {
   const ua = navigator.userAgent;
-  if (/android|cros/i.test(ua)) return "mac";
+  if (/android/i.test(ua)) return "android";
+  if (/cros/i.test(ua)) return "mac";
   // iPadOS Safari presents itself as a Mac, but a Mac has no touch screen.
   if (/iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) return "ios";
   if (/windows/i.test(ua)) return "windows";

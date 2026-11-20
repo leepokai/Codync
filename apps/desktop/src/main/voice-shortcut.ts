@@ -67,6 +67,10 @@ export class VoiceShortcutKeys {
       return this.shortcut
     })
     ipcMain.on('voice:calling', (e, on: boolean) => (this.call = on ? e.sender : null))
+    // A page that crashed mid-call never says the call ended; its reload starts without one.
+    app.on('render-process-gone', (_e, contents) => {
+      if (contents === this.call) this.call = null
+    })
     app.on('will-quit', () => this.stop?.())
     this.sync()
   }

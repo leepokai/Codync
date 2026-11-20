@@ -2,7 +2,9 @@
 
 use super::{Event, capture};
 use crate::hub::Hub;
-use serde_json::json;
+use crate::store::BotConfig;
+use serde::Serialize;
+use serde_json::{Value, json};
 
 /// How an agent's turn ended (`turn_finished`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -26,19 +28,27 @@ pub enum TurnSource {
     Bot,
     /// The host's own turn, with no message of the user's (the lead opening a call).
     Host,
+    /// A follow-up the bot set for itself came due.
+    FollowUp,
 }
 
-/// `turn_finished`: the agent, how the turn ended, why it failed and how long it ran;
-/// never its text or the error's.
-pub fn turn_finished(
-    hub: &Hub,
-    agent: &str,
-    outcome: TurnOutcome,
-    stop_reason: &str,
-    failure: Option<&anyhow::Error>,
-    source: TurnSource,
-    ms: i64,
-) {
+/// A turn that ended, as its actor knows it (`turn_finished`).
+#[derive(Clone, Copy)]
+pub struct TurnEnd<'a> {
+    pub outcome: TurnOutcome,
+    pub stop_reason: &'a str,
+    pub failure: Option<&'a anyhow::Error>,
+    pub source: TurnSource,
+    /// Where the task a thread works came from (`chat::work::Source::kind`), as the turn began: the task may have
+    /// ended since (a Stop, a run past its limit). Told only of a thread's turn.
+    pub work: &'static str,
+    pub ms: i64,
+}
+
+/// `turn_finished`: the bot's agent, how the turn ended, why it failed, how long it ran, the ceiling a network
+/// rule held it to and, for a thread's turn, where its task came from; never its text or the error's.
+pub fn turn_finished(hub: &Hub, bot: &BotConfig, turn: TurnEnd<'_>) {
+    let TurnEnd { outcome, stop_reason, failure, source, work, ms } = turn;
     let failure = failure.map(failure_kind);
     let outcome = outcome_name(outcome, failure.map(|(kind, _)| kind));
     // ACP's stop reasons plus ours; anything else an adapter invents is just `other`.
@@ -54,8 +64,17 @@ pub fn turn_finished(
         TurnSource::Group => "group",
         TurnSource::Bot => "bot",
         TurnSource::Host => "host",
+        TurnSource::FollowUp => "follow_up",
     };
-    let mut p = json!({"agent": agent, "outcome": outcome, "stop_reason": stop_reason, "source": source, "seconds": ms.max(0) / 1000});
+    let mut p = json!({"agent": bot.backend, "outcome": outcome, "stop_reason": stop_reason, "source": source, "seconds": ms.max(0) / 1000});
+    let access = hub.ceilings.access(&bot.id);
+    if access.is_ceiling() {
+        p["ceiling"] = access.word().into();
+    }
+    // A thread's turn: where the task it works came from, so the work a bot gave away is told from its chat.
+    if bot.is_thread() {
+        p["work"] = work.into();
+    }
     if let Some((kind, rpc)) = failure {
         p["error"] = kind.into();
         if let Some(rpc) = rpc {
@@ -79,9 +98,95 @@ fn outcome_name(outcome: TurnOutcome, error: Option<&str>) -> &'static str {
 }
 
 /// `agent_fell_back`: a turn moved on from `agent` to the bot's next one, and why (never the error's text).
-pub fn agent_fell_back(hub: &Hub, agent: &str, reason: crate::agent::fallback::Reason) {
-    let p = json!({"agent": agent, "reason": reason});
+/// `login_profile`: the step it left or the one taking over runs on a login profile (never which).
+pub fn agent_fell_back(hub: &Hub, agent: &str, login_profile: bool, reason: crate::agent::fallback::Reason) {
+    let p = on_login_profile(json!({"agent": agent, "reason": reason}), login_profile);
     capture(hub, Event::AgentFellBack, p.as_object().cloned().unwrap_or_default());
+}
+
+/// `p` with `loginProfile: true` when a login profile is involved, as the sign-in events mark it (`observe`).
+fn on_login_profile(mut p: Value, login_profile: bool) -> Value {
+    if login_profile {
+        p["loginProfile"] = true.into();
+    }
+    p
+}
+
+/// What an agent taking over the main chat was told first (`handoff_carried`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Carried {
+    /// A new session: the conversation so far.
+    Recap,
+    /// A session it had before: what happened since it left.
+    CatchUp,
+}
+
+/// `handoff_carried`: `agent` took over a bot's chat and was told `bytes` of it first (never the text).
+/// `login_profile`: it runs on a login profile (never which). `window_known`: a recap sized to the agent's window;
+/// a catch-up never is.
+pub fn handoff_carried(hub: &Hub, agent: &str, login_profile: bool, kind: Carried, bytes: usize, window_known: bool) {
+    let p = json!({"agent": agent, "kind": kind, "bytes": bytes, "window_known": window_known});
+    let p = on_login_profile(p, login_profile);
+    capture(hub, Event::HandoffCarried, p.as_object().cloned().unwrap_or_default());
+}
+
+/// Why a bot's agent stopped between turns (`agent_retired`); the next message starts it again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Retired {
+    /// Every session sat unused for 30 minutes.
+    Idle,
+    /// A routine run ended with no other session open.
+    RoutineFinished,
+    /// A routine run ended and the agent couldn't close its session, which holds MCP servers (Cursor can't close one).
+    SessionNotClosed,
+    /// The agent dropped Codync's MCP servers from a live session (OpenCode 2.x after an idle while, #508), so it
+    /// started again and reopened the session with them.
+    ServersLost,
+}
+
+/// `agent_retired`: a bot's `agent` stopped to give back its processes, and why.
+pub fn agent_retired(hub: &Hub, agent: &str, reason: Retired) {
+    let p = json!({"agent": agent, "reason": reason});
+    capture(hub, Event::AgentRetired, p.as_object().cloned().unwrap_or_default());
+}
+
+/// `context_compacted`: Codync started summarizing a bot's chat, at the end of a turn or while it rested, and at
+/// which of the user's thresholds.
+pub fn context_compacted(hub: &Hub, agent: &str, idle: bool, threshold: codync_mem::compaction::Threshold) {
+    let when = if idle { "idle" } else { "turn_end" };
+    let p = json!({"agent": agent, "when": when, "threshold": threshold.kind()});
+    capture(hub, Event::ContextCompacted, p.as_object().cloned().unwrap_or_default());
+}
+
+/// What became of a queued message the user had handled now (`message_steered`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Steer {
+    /// The agent took it into its running turn.
+    Joined,
+    /// The turn ended first: it is the next one.
+    Next,
+    /// The agent can't steer: the user's turn stopped for it.
+    Interrupted,
+    /// Other work runs (a routine, a room, another bot): it is next in line.
+    MovedUp,
+    /// The agent refused it or didn't answer: it waits for its turn.
+    Failed,
+}
+
+/// `message_steered`: the agent and what became of the message.
+pub fn message_steered(hub: &Hub, agent: &str, how: Steer) {
+    let p = json!({"agent": agent, "how": how});
+    capture(hub, Event::MessageSteered, p.as_object().cloned().unwrap_or_default());
+}
+
+/// `agent_command_sent`: the user sent one of the agent's own `/` commands, which went to it as typed. Only which
+/// agent: a command's name can be the user's own.
+pub fn agent_command_sent(hub: &Hub, agent: &str) {
+    let p = json!({"agent": agent});
+    capture(hub, Event::AgentCommandSent, p.as_object().cloned().unwrap_or_default());
 }
 
 /// Why a turn failed, as a category (plus the agent's JSON-RPC error, for its code and own
@@ -95,6 +200,7 @@ fn failure_kind(e: &anyhow::Error) -> (&'static str, Option<&crate::agent::acp::
             FailureKind::Timeout => "timeout",
             FailureKind::Exited => "exited",
             FailureKind::NoModel => "no_model",
+            FailureKind::ModeMissing => "mode_missing",
         };
         return (kind, None);
     }
@@ -179,6 +285,33 @@ mod tests {
         let limited = rpc_error(-32603, "x", Some("rate_limit"));
         assert_eq!(failure_kind(&limited).1.and_then(|r| r.kind.as_deref()), Some("rate_limit"));
         assert_eq!(code(&anyhow::anyhow!("something else")), ("other", None));
+    }
+
+    #[test]
+    fn a_threads_turn_says_where_its_task_came_from() {
+        use crate::LockExt as _;
+        use crate::chat::calls::context::tests::{bot, hub};
+        let hub = hub();
+        let own = bot("b1", "Ada", "/tmp");
+        let thread = BotConfig { id: "thread-1".into(), thread_of: Some("b1".into()), ..own.clone() };
+        // Its box holds no task at work any more: a run the user stopped has ended by the time its turn does.
+        let turn = TurnEnd {
+            outcome: TurnOutcome::Stopped,
+            stop_reason: "cancelled",
+            failure: None,
+            source: TurnSource::Routine,
+            work: "routine",
+            ms: 0,
+        };
+        for cfg in [&own, &thread] {
+            turn_finished(&hub, cfg, turn);
+        }
+        let mut rx = hub.analytics.rx.locked().take().expect("nothing read it yet");
+        let mut work = Vec::new();
+        while let Ok(super::super::Msg::Event(event)) = rx.try_recv() {
+            work.push(event["properties"]["work"].clone());
+        }
+        assert_eq!(work, [Value::Null, json!("routine")], "the bot's own turn in its chat has none");
     }
 
     #[test]

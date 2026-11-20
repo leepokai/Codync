@@ -1,7 +1,12 @@
 //! Encrypted records backed by the operating system credential store. The database
-//! contains ciphertext only; its random master key lives in Keychain/Secret Service.
-use crate::{LockExt, store::Store};
-use anyhow::{Result, anyhow, bail};
+//! contains ciphertext only; its random master key lives in Keychain/Secret Service
+//! (a disposable host: in a file beside its data, see `key_in_folder`).
+//!
+//! A Codync Cloud computer keeps none of this: its records live in its keeper (`crate::keeper`), a process its
+//! agents can't read, and the host only asks it for them.
+use crate::remote::managed::is_managed;
+use crate::{LockExt, environment::Environment, store::Store};
+use anyhow::{Context, Result, anyhow, bail};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use chacha20poly1305::{
     XChaCha20Poly1305, XNonce,
@@ -11,9 +16,9 @@ use std::{sync::Arc, time::Duration};
 use zeroize::Zeroizing;
 
 const PREFIX: &str = "vault:v1:";
-const SERVICE: &str = match crate::environment::Environment::current() {
-    crate::environment::Environment::Main => "dev.codync.credentials",
-    crate::environment::Environment::Dev => "dev.codync.development.credentials",
+const SERVICE: &str = match Environment::current() {
+    Environment::Main => "dev.codync.credentials",
+    Environment::Dev => "dev.codync.development.credentials",
 };
 
 /// How long an unlock prompt (Keychain, Secret Service) may wait for an answer.
@@ -24,6 +29,9 @@ const PROMPT_TIMEOUT: Duration = Duration::from_mins(1);
 /// locks on runtime workers. One read runs at a time and owns `vault_unlock`: callers
 /// arriving meanwhile share its outcome instead of prompting again.
 pub async fn unlock(hub: Arc<crate::hub::Hub>) -> Result<()> {
+    if is_managed(&hub.store) {
+        return crate::keeper::client::wait_unlocked(&hub).await;
+    }
     if hub.store.secret_key.locked().is_some() {
         return Ok(());
     }
@@ -45,7 +53,54 @@ pub async fn unlock(hub: Arc<crate::hub::Hub>) -> Result<()> {
     tokio::time::timeout(wait, read).await.map_err(|_| unavailable())??
 }
 
+/// Where a folder key (`key_in_folder`) is kept.
+fn key_file() -> std::path::PathBuf {
+    crate::service::data_dir().join("vault.key")
+}
+
 fn read_key(store: &Store) -> Result<Zeroizing<Vec<u8>>> {
+    let path = key_file();
+    let in_folder = key_in_folder(
+        Environment::current(),
+        std::env::var("CODYNC_VAULT").ok().as_deref(),
+        path.try_exists()?,
+        store.kv_read("vault.initialized")?.is_some(),
+    );
+    let key = if in_folder { folder_key(&path)? } else { keyring_key(store)? };
+    if key.len() != 32 {
+        bail!("Invalid credential key.");
+    }
+    store.kv_set("vault.initialized", "true")?;
+    Ok(Zeroizing::new(key))
+}
+
+/// `CODYNC_VAULT=folder`, for data that gets thrown away (tests, worktree sandboxes): the key sits beside the
+/// data and goes with it, and the credential store never hears of this host. Only file permissions protect
+/// it, so a production build ignores the switch. Data already sealed with a credential store key stays there:
+/// it is initialized with no key file (a sandbox from before the switch, or one given a copy of a host's database).
+fn key_in_folder(env: Environment, switch: Option<&str>, file_exists: bool, initialized: bool) -> bool {
+    env == Environment::Dev && switch == Some("folder") && (file_exists || !initialized)
+}
+
+fn folder_key(path: &std::path::Path) -> Result<Vec<u8>> {
+    match std::fs::read(path) {
+        Ok(key) => Ok(key),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let key = new_key()?;
+            crate::remote::identity::write_private(path, &key)?;
+            Ok(key)
+        }
+        Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
+    }
+}
+
+fn new_key() -> Result<Vec<u8>> {
+    let mut key = vec![0; 32];
+    getrandom::fill(&mut key).map_err(|_| anyhow!("Could not generate credential key"))?;
+    Ok(key)
+}
+
+fn keyring_key(store: &Store) -> Result<Vec<u8>> {
     let id = if let Some(id) = store.kv_read("vault.id")? {
         id
     } else {
@@ -56,26 +111,51 @@ fn read_key(store: &Store) -> Result<Zeroizing<Vec<u8>>> {
     #[cfg(target_os = "linux")]
     unlock_secret_service().map_err(|_| unavailable())?;
     let entry = keyring::Entry::new(SERVICE, &id).map_err(|_| unavailable())?;
-    let key = match entry.get_secret() {
-        Ok(key) => key,
+    match entry.get_secret() {
+        Ok(key) => Ok(key),
         Err(keyring::Error::NoEntry) => {
             if store.kv_read("vault.initialized")?.is_some() {
                 bail!(
-                    "The credential key is missing. Restore this computer's keychain; encrypted credentials were preserved."
+                    "The key to this computer's saved credentials is missing, as after moving Codync's data to a new computer. Restore the old keychain, or reset saved credentials on that computer (the desktop app's Settings, under Computers, or Reset saved credentials… in codync-host tui) and enter them again."
                 );
             }
-            let mut key = vec![0; 32];
-            getrandom::fill(&mut key).map_err(|_| anyhow!("Could not generate credential key"))?;
+            let key = new_key()?;
             entry.set_secret(&key).map_err(|_| unavailable())?;
-            key
+            Ok(key)
         }
-        Err(_) => return Err(unavailable()),
-    };
-    if key.len() != 32 {
-        bail!("Invalid credential key; restore this computer's keychain.");
+        Err(_) => Err(unavailable()),
     }
-    store.kv_set("vault.initialized", "true")?;
-    Ok(Zeroizing::new(key))
+}
+
+/// Forgets every sealed record and the key they were sealed with: for a computer whose key is gone (its data moved
+/// here without its keychain), whose records nothing can open again. The next unlock makes a new key, and the user
+/// enters the credentials again. Returns how many records went.
+pub async fn reset(hub: Arc<crate::hub::Hub>) -> Result<usize> {
+    if is_managed(&hub.store) {
+        bail!("A Codync Cloud computer keeps its credentials in its keeper; there is nothing to reset here.");
+    }
+    // No unlock reads the old key while its records go.
+    let _reading = Arc::clone(&hub.store.vault_unlock).lock_owned().await;
+    let removed = tokio::task::spawn_blocking(move || -> Result<_> {
+        let store = &hub.store;
+        // Held throughout: a `write` meanwhile would seal a record with the key being forgotten.
+        let mut key = store.secret_key.locked();
+        *key = None;
+        let removed = store.kv_delete_values(PREFIX)?;
+        // The old keyring item stays: a copy of this database elsewhere may still use it, and a new id never reads it.
+        store.kv_delete("vault.id")?;
+        store.kv_delete("vault.initialized")?;
+        let path = key_file();
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e).with_context(|| format!("removing {}", path.display())),
+        }
+        Ok(removed)
+    })
+    .await??;
+    tracing::info!(removed, "saved credentials reset");
+    Ok(removed)
 }
 
 /// keyring keeps its item in the default collection and prompts to unlock it with no
@@ -97,18 +177,64 @@ fn unavailable() -> anyhow::Error {
     )
 }
 
+/// Whether `slot` holds a record, answered without opening the vault.
+pub fn saved(store: &Store, slot: &str) -> Result<bool> {
+    if is_managed(store) {
+        return crate::keeper::client::has(store, slot);
+    }
+    Ok(store.kv_read(slot)?.is_some())
+}
+
 pub fn read(store: &Store, slot: &str) -> Result<Option<String>> {
+    if is_managed(store) {
+        return crate::keeper::client::reveal(store, slot);
+    }
     let Some(raw) = store.kv_read(slot)? else {
         return Ok(None);
     };
-    if !raw.starts_with(PREFIX) {
+    let Some(sealed) = raw.strip_prefix(PREFIX) else {
         // Move existing host configuration into the vault before returning it.
         write(store, slot, &raw)?;
         return Ok(Some(raw));
+    };
+    let key = store.secret_key.locked();
+    let key = key.as_ref().ok_or_else(unavailable)?;
+    Ok(Some(String::from_utf8(open(key, slot.as_bytes(), sealed)?.to_vec())?))
+}
+
+pub fn write(store: &Store, slot: &str, value: &str) -> Result<()> {
+    if is_managed(store) {
+        return crate::keeper::client::put(store, slot, value);
     }
     let key = store.secret_key.locked();
     let key = key.as_ref().ok_or_else(unavailable)?;
-    let bytes = STANDARD.decode(&raw[PREFIX.len()..]).map_err(|_| anyhow!("Invalid encrypted credential record"))?;
+    store.kv_set(slot, &format!("{PREFIX}{}", seal(key, slot.as_bytes(), value.as_bytes())?))
+}
+
+/// Deletes `slot`'s record. Needs no open vault: nothing is read.
+pub fn delete(store: &Store, slot: &str) -> Result<()> {
+    if is_managed(store) {
+        return crate::keeper::client::delete(store, slot);
+    }
+    store.kv_delete(slot)
+}
+
+/// Seals `plain` with the 32-byte `key` (XChaCha20-Poly1305, a random nonce), bound to `aad`: base64 of the nonce
+/// and the ciphertext. The keeper seals its records the same way.
+pub(crate) fn seal(key: &[u8], aad: &[u8], plain: &[u8]) -> Result<String> {
+    let cipher = XChaCha20Poly1305::new_from_slice(key).map_err(|_| unavailable())?;
+    let mut nonce = [0; 24];
+    getrandom::fill(&mut nonce).map_err(|_| anyhow!("Could not generate credential nonce"))?;
+    let sealed = cipher
+        .encrypt(&nonce.into(), Payload { msg: plain, aad })
+        .map_err(|_| anyhow!("Could not encrypt credentials"))?;
+    let bytes: Vec<u8> = nonce.into_iter().chain(sealed).collect();
+    Ok(STANDARD.encode(bytes))
+}
+
+/// Opens what [`seal`] made with the same `key` and `aad`; anything else fails.
+pub(crate) fn open(key: &[u8], aad: &[u8], sealed: &str) -> Result<Zeroizing<Vec<u8>>> {
+    let bytes = STANDARD.decode(sealed).map_err(|_| anyhow!("Invalid encrypted credential record"))?;
     if bytes.len() < 24 {
         bail!("Invalid encrypted credential record");
     }
@@ -116,28 +242,30 @@ pub fn read(store: &Store, slot: &str) -> Result<Option<String>> {
     let plain = cipher
         .decrypt(
             &XNonce::try_from(&bytes[..24]).map_err(|_| anyhow!("Invalid credential nonce"))?,
-            Payload { msg: &bytes[24..], aad: slot.as_bytes() },
+            Payload { msg: &bytes[24..], aad },
         )
         .map_err(|_| anyhow!("Could not decrypt credentials; the stored record was preserved"))?;
-    Ok(Some(String::from_utf8(plain)?))
-}
-
-pub fn write(store: &Store, slot: &str, value: &str) -> Result<()> {
-    let key = store.secret_key.locked();
-    let key = key.as_ref().ok_or_else(unavailable)?;
-    let cipher = XChaCha20Poly1305::new_from_slice(key).map_err(|_| unavailable())?;
-    let mut nonce = [0; 24];
-    getrandom::fill(&mut nonce).map_err(|_| anyhow!("Could not generate credential nonce"))?;
-    let sealed = cipher
-        .encrypt(&nonce.into(), Payload { msg: value.as_bytes(), aad: slot.as_bytes() })
-        .map_err(|_| anyhow!("Could not encrypt credentials"))?;
-    let bytes: Vec<u8> = nonce.into_iter().chain(sealed).collect();
-    store.kv_set(slot, &format!("{PREFIX}{}", STANDARD.encode(bytes)))
+    Ok(Zeroizing::new(plain))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_dev_host_that_asks_keeps_its_key_in_a_file() {
+        use Environment::{Dev, Main};
+        let folder = Some("folder");
+        assert!(key_in_folder(Dev, folder, false, false), "a new host makes one");
+        assert!(key_in_folder(Dev, folder, true, true), "and keeps it");
+        assert!(!key_in_folder(Dev, folder, false, true), "data from before the switch stays on its keyring key");
+        assert!(!key_in_folder(Main, folder, false, false), "production ignores the switch");
+        assert!(!key_in_folder(Main, folder, true, true), "even with a key file there");
+        assert!(!key_in_folder(Dev, None, false, false), "off without the switch");
+        assert!(!key_in_folder(Dev, None, true, true), "whatever file is there");
+        assert!(!key_in_folder(Dev, Some("keyring"), false, false), "or with another value");
+    }
+
     #[test]
     #[ignore = "requires an unlocked OS keychain or Secret Service session"]
     fn platform_keyring_roundtrip() {
@@ -171,6 +299,34 @@ mod tests {
         store.kv_set("two", &first).unwrap();
         assert!(read(&store, "two").is_err());
     }
+
+    #[tokio::test]
+    async fn reset_lets_the_next_unlock_make_a_new_key() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let store = &hub.store;
+        write(store, "connectors", "[1]").unwrap();
+        store.kv_set("vault.id", "old").unwrap();
+        store.kv_set("vault.initialized", "true").unwrap();
+        store.kv_set("plain", "kept").unwrap();
+        std::fs::create_dir_all(crate::service::data_dir()).unwrap();
+        std::fs::write(key_file(), [7; 32]).unwrap();
+        assert_eq!(reset(hub.clone()).await.unwrap(), 1);
+        assert!(store.kv_read("connectors").unwrap().is_none(), "the sealed record went");
+        assert!(store.kv_read("vault.id").unwrap().is_none(), "the new key gets a new id");
+        assert!(!key_file().exists(), "and no old folder key");
+        assert!(store.secret_key.locked().is_none(), "the old key is forgotten");
+        assert_eq!(store.kv_read("plain").unwrap().as_deref(), Some("kept"), "nothing else is touched");
+        // A disposable host's next unlock makes a new key, and the vault works again.
+        let initialized = store.kv_read("vault.initialized").unwrap().is_some();
+        assert!(key_in_folder(Environment::Dev, Some("folder"), false, initialized), "a new key, not a missing one");
+        *store.secret_key.locked() = Some(Zeroizing::new(folder_key(&key_file()).unwrap()));
+        write(store, "connectors", "[2]").unwrap();
+        assert_eq!(read(store, "connectors").unwrap().as_deref(), Some("[2]"));
+        std::fs::remove_file(key_file()).unwrap();
+        crate::remote::managed::set_managed(store).unwrap();
+        assert!(reset(hub.clone()).await.is_err(), "a Codync Cloud computer's keeper holds its records");
+    }
+
     #[test]
     fn locked_storage_preserves_existing_data() {
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();

@@ -18,6 +18,8 @@
 "arrow.turn.down.right",
 "arrow.up",
 "arrow.up.doc.on.clipboard",
+"arrow.up.left.and.arrow.down.right",
+"arrow.up.to.line",
 "arrow.up.right.square",
 "arrow.uturn.backward",
 "arrowshape.turn.up.left",
@@ -122,6 +124,7 @@
 "pin.fill",
 "pin.slash",
 "play.circle",
+"play.fill",
 "plus",
 "plus.circle",
 "point.3.connected.trianglepath.dotted",
@@ -154,6 +157,7 @@
 "text.bubble",
 "trash",
 "tray",
+"tray.full",
 "tray.and.arrow.up",
 "waveform",
 "wifi",
@@ -163,5 +167,7 @@
 "xmark.circle",
 "xmark.circle.fill",
 "house.fill",
-"bubble.left.fill"
+"bubble.left.fill",
+"line.3.horizontal",
+"heart.fill"
 ]

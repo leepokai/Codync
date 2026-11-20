@@ -12,7 +12,8 @@ import { useComputerAccess } from './use-computer-access'
 import appIcon from '../../../../resources/icon.png'
 import './access-onboarding.css'
 
-export function AccessOnboarding({ onContinue }: { onContinue: (ready: boolean) => void }) {
+/** `onBack`: back to the way of signing in, from the first page. */
+export function AccessOnboarding({ onContinue, onBack }: { onContinue: (ready: boolean) => void; onBack?: () => void }) {
   const access = useComputerAccess()
   const tr = useTr()
   const star = useStarAsk()
@@ -26,6 +27,7 @@ export function AccessOnboarding({ onContinue }: { onContinue: (ready: boolean) 
     star.answer(false)
     onContinue(ready)
   }
+  const back = index > 0 ? () => setSelection(pages[index - 1]!.id) : onBack
 
   return <section className="computer-access access-onboarding" aria-label={tr('Computer access setup')}>
     <div className="access-onboarding-content">
@@ -60,6 +62,7 @@ export function AccessOnboarding({ onContinue }: { onContinue: (ready: boolean) 
       <footer className="access-onboarding-footer">
         <Text size="caption" tone="secondary" tabular>{index + 1} / {pages.length}</Text>
         <div className="access-onboarding-navigation">
+          {back ? <IconButton title="Back" icon="chevron.left" onClick={back} /> : null}
           {selection !== 'star' ? <IconButton title="Check again" icon="arrow.clockwise" onClick={() => void access.refresh()} /> : null}
           <Button kind="secondary" onClick={() => selection === 'star' ? finish() : setSelection(pages[index + 1]!.id)}>
             {tr(selection === 'star' ? 'Get started' : accessPageReady(selection, access.step, access.screen) ? 'Continue' : 'Set up later')}<Icon name="arrow.right" size={12} />

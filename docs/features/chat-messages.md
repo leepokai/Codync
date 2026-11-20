@@ -2,6 +2,26 @@
 
 How a bot's work turns into what the user reads, copied from Grok Bot.
 
+## Choice cards
+
+When the user should pick among a few ways forward, a bot sends a card instead of listing them: `request_decision {question, options, recommended?}` on its `chat` server (two to twelve different options). The card shows the question, a numbered button per option (the suggested one marked) and a last row for the user's own words (marked with a pencil, since a typed number picks an option), in the bot's chat on the phone, the computer and the terminal UI (where the message box takes the own words); clients that don't draw the card yet still show its text (the question, the options, and the suggestion).
+
+The card is a `notice` entry with optional additive data: `decision: true`, `question`, `choices` (strings), `recommended` (an index or null), `status` `pending`/`answered`/`expired`, and `selected`. `text` always holds the full question, numbered choices and suggestion. It does not reuse permission `options`, whose elements remain objects for older phone decoders. Older clients already render notices. Any plain typed message answers the waiting card: an exact option, its one-based number, or else the user's own words. Exact labels take priority, including numeric labels. Messages with attachments or a quote, `/` commands (skills and agent commands, which must reach the agent) and speech from a call are ordinary messages and expire the waiting card; a call's own transcript can still name an option or its number. The card's own-words row sends an ordinary message, so it needs no host method and degrades to a plain message on an older host.
+
+The bot shows as needing the user and sends the usual response-needed notification. The call waits up to 270 seconds (Codex drops an MCP call at 300 s, [codex-acp](../upstream-agents/codex-acp.md)), with a 290-second budget through the chat MCP HTTP bridge. When that runs out the call returns `{answered: false, note}` and the card stays `pending` as the actor's open card (one per chat, in memory): a later press marks it answered and posts the choice as the user's next message (`from: decision`, `decisionId`, `replyTo` quoting the question), a new turn; the user's next message answers it under the typed rules above (it goes to the bot as their next message, with `decisionId`, `decisionChoice` and the same `replyTo`, plus a `[Selected: …]` line when they typed an option or its number), or expires it when it's something else. A press in the last second before the deadline already counts as late, so it never races the call's own timer. A new card or a host restart expires it; a task's card still expires at the deadline (the call gets an error), since a press there has no next message to become. A live card expires when its turn ends, the user stops, the agent cancels its call, or the host restarts. Successful answers and expiry clear the waiting state unless a permission card still waits.
+
+MCP clients can cancel a pending call with `notifications/cancelled` and its exact JSON-RPC `requestId` on the same server process. The bridge aborts that request; closing the HTTP wait drops the choice receiver, which the actor's periodic cleanup expires. Unknown, completed, or differently typed IDs are ignored. Closing the MCP process's stdin ends that process and its pending requests. Neither path is a command to stop the bot or choose a default. Cancellation that arrives after an answer was delivered does not undo it. `decision_cancellation_e2e` checks these transport and card-state expectations through actual stdio and HTTP, separately from the 270-second deadline tests.
+
+A press (`respondDecision {entryId, option}`, the option's full text) answers the live call with `{choice}`; the user's own words answer it with `{choice, custom: true}`. The actor records exactly one user message in the same turn (`from: decision`); it never queues another turn (except for the open card above). Text replies reuse their existing user entry. API success requires delivery to the live waiter or the open card's message, so a stale card cannot claim success. Room turns, routines, bot requests and other injected turns ask in a message instead. The actor reports `decision_asked` after publication and `decision_answered` after delivery. Terminal keys F1–F12 reach all choices; keys 1–9 also select the first nine by position while the bot waits on the card (or the card is picked), and otherwise jump to a bot, so an open card never takes a jump key.
+
+### An agent's own questions (ACP elicitation)
+
+An agent can ask the user something mid-turn without the chat MCP server: the host advertises `clientCapabilities.elicitation: {form: {}}` in `initialize`, and an `elicitation/create` (ACP's unstable surface; form mode, for the running turn's session) shows on the same choice card (`host/src/agent/elicitation.rs`, `host/src/agent/bot/elicitations.rs`). Hermes sends its clarify questions this way when the capability is there, and otherwise as a permission request, which **Approve automatically** would answer with its first option. A question is never a permission: the bot's approval setting doesn't answer it, and nothing picks the form's `default`, which shows as the suggested option.
+
+A form with exactly one field and a question of at most 2000 characters (as `request_decision` allows) maps onto the card: a string `enum` (or titled `oneOf`, whose titles show and whose `const` goes back) with 2 to 12 options becomes the options; a `boolean` becomes **Yes** / **No**; a plain string (no `pattern`, `format`, `maxLength` or `minLength` above 1) becomes a card with no options, answered by the user's own words (its own-words row or a plain typed message; every client draws such a card as the question and that row). A card with options takes only an option or its number (`ownWords: false` in its data, so every client hides its own-words row and points to no message box; a missing field keeps the row; its text says so for older clients): own words typed in the message box there are an ordinary message, which expires the card and reaches the bot as the user's next message. Number and integer fields, multi-select arrays, several fields, URL mode, and questions in a room's turn, a routine's run, another bot's request, a host-started turn or while another card waits are declined (`{action: "decline"}`) rather than shown unfaithfully; a thread's card takes presses only, so a thread's free-text question is declined too. Declining rather than a JSON-RPC error lets the agent go on (Hermes takes either reply as a skipped question; an error would leave its question waiting).
+
+The card waits with no time limit: the request stays open until the user answers (`{action: "accept", content: {<field>: <value>}}`: the words, the option's value, or `true`/`false`), and is cancelled (`{action: "cancel"}`) when its card stops waiting unanswered: the user stops the turn or sends a message the card can't take, the turn ends, or the actor or host goes away (the card expires as above). One card waits at a time, so `request_decision` is refused while a question waits. Analytics: `decision_asked` with `asker: agent`, the card's usual `decision_answered` / `decision_expired`, and `elicitation_replied` with what the agent was told.
+
 ## Markdown links
 
 Markdown links in bot replies are underlined on desktop and iPhone so they remain
@@ -13,12 +33,14 @@ it has no pointer tooltip or link-opening action.
 ## Messages are sent, not streamed
 
 - Every bot gets the built-in `chat` MCP server (`codync-host mcp chat`,
-  `host/src/chat/outbox.rs`) with `send_message {text}` and `send_file {path, name?}`. In the bot's own chat, each call is one chat bubble, added to the turn's lane at once as an `agent` entry with
+  `host/src/chat/outbox.rs`) with `send_message {text, reply_to?}` and `send_file {path, name?, text?, reply_to?}` (`text`: the message a voice note plays in, [file attachments](file-attachments.md#a-voice-note-inside-its-message); `reply_to`: a message the bubble quotes, [bots quote too](groups-and-replies.md#bots-quote-too)). In the bot's own chat, each call is one chat bubble, added to the turn's lane at once as an `agent` entry with
   `final: true`. A turn can send several.
 - The agent's own reply text (`agent_message_chunk`) stays in the trace when the turn sent
   text through `send_message`. A turn that sent nothing (an agent that ignores the tool, or has no MCP) falls back to
   the old rule: its last text becomes the turn's final message, unless that text is `(pass)`: a message that
-  needs neither words nor a reaction gets nothing, as in a group.
+  needs neither words nor a reaction gets nothing, as in a group. In a turn a steered message joined, what the agent
+  wrote after its last `send_message` or reaction becomes a final message too, since either may have answered only
+  what came before that message.
 - File cards are separate final entries. Sharing a file preserves an intended final text
   reply; a files-only turn uses its filename for the completion summary. See
   [file attachments](file-attachments.md#files-from-a-bot). Artifact cards (`publish_artifact`) are final entries the
@@ -66,6 +88,20 @@ it has no pointer tooltip or link-opening action.
   user's own chips; it isn't tappable, and a bot that was deleted drops out. The terminal UI lists
   `❤️ Ann, Ben` after the user's reactions.
 
+## Threads in the chat
+
+A [thread](work.md)'s own transcript never enters the chat. Three things of it do:
+
+- **Its approval cards**: a permission entry in the bot's chat with `data.thread = {id, title}` (the title is its
+  task's) and `data.task`, the task's id, shown with the line
+  `Work · <title>` and answered like any card (`respondPermission` reaches the thread's actor).
+- **Its report**: a host-started turn (`HostTurn::TaskReport`) whose reply is the bot's ordinary message. The prompt
+  is `from: host`, shows no bubble, and isn't the user's words to memory.
+- **A report the bot didn't answer** (its turn was stopped, failed or never started): an info notice,
+  `"<title>" finished in the background: …` or `"<title>" did not finish: …`.
+
+The capsule above the composer isn't an entry: it is the bot's `work`.
+
 ## While it works
 
 The working line under the last message shows the bot's activity; composing a `send_message`
@@ -101,7 +137,7 @@ once the turn ends, its last message's `↳ N steps` line counts them the same w
 
 - A message arriving while the list follows the newest pops in: 0.24 s,
   `cubic-bezier(.23, 1, .32, 1)`, from 12 pt lower at 94 % scale (iPhone: `ConversationLayout` in
-  `ConversationList.swift`; desktop: `.row-in` in `thread.css`; reduced motion: a 0.12 s fade).
+  `ConversationList.swift`; desktop: `.row-in` in `chat.css`; reduced motion: a 0.12 s fade).
 - The list stays pinned to the bottom while the reader is there; scrolling up releases it and the
   round "Jump to latest" button brings it back. Sending always returns to the bottom.
 - Opening or closing the phone keyboard keeps a bottom-following chat on its latest message;
@@ -117,6 +153,12 @@ once the turn ends, its last message's `↳ N steps` line counts them the same w
   go of a full sweep (`PullToRefresh.swift`) reconnects to the computer while the chat waits just
   below the turning arrow, then eases back. A pull that isn't full refreshes nothing. The desktop
   reconnects from the computer menu instead.
+- Android: the phone stores each chat on disk and holds only a window of it in memory: the newest
+  300 messages of the open chat and the 5 opened last, the newest 30 rows of every other chat.
+  Earlier messages load once the top of the chat is on screen: rows the phone already stored come
+  first, then a page from the computer, and the window grows by 200 messages each time. It stops at
+  3,000 messages or a per-chat memory budget (tool-heavy chats sooner); the iPhone pages to the
+  first message. `apps/maestro/history.yaml` scrolls a long chat back to its first message on both phones.
 - The terminal UI lists the same messages; its steps line goes under the turn's last message.
 
 - Electron keeps the activity row mounted during its 0.42 s exit and animates its height,

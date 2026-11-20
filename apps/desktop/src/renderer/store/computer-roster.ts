@@ -2,7 +2,7 @@ import { computerSections, moveInOrder, orderedComputers } from '../lib/computer
 import { renamedSectionOrder } from '../lib/roster-section-order'
 import { prefs, usePref } from '../lib/prefs'
 import { useModel } from '../lib/observable'
-import { foldsAfterRename, rosterGroups, rosterLines, sameRosterGroup, sectionRename, shownRows, shownSection } from '../lib/roster-sections'
+import { foldsAfterRename, rosterGroups, rosterLines, rosterRows, sameRosterGroup, sectionRename, shownRows, shownSection } from '../lib/roster-sections'
 import type { BotStore } from './bot-store'
 import type { AppModel, BotRef } from './app-model'
 
@@ -27,6 +27,8 @@ export function useComputerRoster(app: AppModel, shown: Set<string>) {
       setSectionOrders({ ...prefs.rosterSectionOrder.get(), [computerId]: names })
     },
     items: sections.flatMap((section) => section.items),
+    /** Every bot in the order the roster puts them on screen, whether or not its section or computer is folded. */
+    ordered: sections.flatMap((section) => rosterRows(section.items, sectionOrders[section.computer.id])),
     /** The rows on screen, top to bottom, for ↑/↓. */
     navigable: sections.flatMap((section) => grouped && collapsed.includes(section.computer.id) ? [] : shownRows(rosterLines(section.items, folded, sectionOrders[section.computer.id]))),
     toggle(id: string) {

@@ -41,7 +41,7 @@ public extension BotActivityPresentation {
         }
     }
 
-    /// The elapsed time counts up on its own (no push) while the task is live.
+    /// The elapsed time counts up on its own (no push) while the bot works.
     func elapsedStart(_ startedAt: Date?) -> Date? {
         phase == .working || phase == .needsInput || call != nil ? startedAt : nil
     }
@@ -100,7 +100,7 @@ public struct ActivityCaption: View {
     }
 }
 
-/// The task's progress: four segments that fill as it moves, in the state's color.
+/// The bot's progress: four segments that fill as it moves, in the state's color.
 public struct ActivityProgress: View {
     let state: BotActivityPresentation
 
@@ -191,7 +191,7 @@ public extension BotActivityCard where Face == ActivityAvatar, Mark == BotActivi
     }
 }
 
-/// The state mark: a thinking orb while the task is live, a symbol once it has ended
+/// The state mark: a thinking orb while the bot works, a symbol once it has ended
 /// (errors and delayed updates never look complete).
 public struct BotActivityIndicator: View {
     let state: BotActivityPresentation

@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Upload an iPhone release's dSYMs to PostHog, so its crash reports show function, file and line.
+"""Upload an iPhone release's dSYMs to PostHog, so its crash reports show function, file and line, then
+check its app for weak imports from Foundation (check-ios-weak-imports.py).
 
 Usage: upload-dsyms.py v2.19.2 (a release tag or its commit)
 Env: ASC_KEY_ID, ASC_ISSUER_ID, ASC_PRIVATE_KEY (as asc-submit.py); POSTHOG_CLI_API_KEY (a personal
 API key with error tracking write) and POSTHOG_CLI_PROJECT_ID for posthog-cli, which must be on PATH.
-macOS only: posthog-cli reads dSYMs with Xcode's dwarfdump. Runs in a checkout with the release tags.
+macOS only: posthog-cli reads dSYMs with Xcode's dwarfdump, the check uses dyld_info. Runs in a checkout
+with the release tags.
 
-Finds the Xcode Cloud "Release" run on that commit, waits for it, downloads its archive and uploads
-the dSYMs inside. A release that didn't build the iPhone app has no run and nothing to upload.
+Finds the Xcode Cloud "Release" run on that commit, waits for it, downloads its archive, uploads the dSYMs
+inside and checks the app. A release that didn't build the iPhone app has no run and nothing to upload.
 """
 
 import importlib.util
@@ -61,14 +63,23 @@ def main(ref):
         archive = Path(tmp, "archive.zip")
         urllib.request.urlretrieve(archive_url(run["id"]), archive)
         dsyms = Path(tmp, "dSYMs")
+        apps = Path(tmp, "apps")
         with zipfile.ZipFile(archive) as z:
             z.extractall(dsyms, [n for n in z.namelist() if ".dSYM/" in n])
+            z.extractall(apps, [n for n in z.namelist() if ".app/" in n])
         names = sorted(p.name for p in dsyms.rglob("*.dSYM"))
         if not names:
             sys.exit(f"Xcode Cloud build {number}'s archive has no dSYMs")
         print(f"uploading the dSYMs of {ref} (Xcode Cloud build {number}): {', '.join(names)}", flush=True)
         # posthog-cli finds every .dSYM bundle under the directory.
         subprocess.run(["posthog-cli", "dsym", "upload", "--directory", str(dsyms)], check=True)
+
+        # After the upload: a failed check still leaves this release's crash reports readable.
+        app = next(apps.rglob("Codync.app"), None)
+        if not app:
+            sys.exit(f"Xcode Cloud build {number}'s archive has no Codync.app")
+        checker = Path(__file__).with_name("check-ios-weak-imports.py")
+        subprocess.run([sys.executable, str(checker), str(app)], check=True)
 
 
 if __name__ == "__main__":

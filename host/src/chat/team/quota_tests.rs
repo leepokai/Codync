@@ -18,7 +18,7 @@ async fn sender_quota_survives_sender_stop_and_frees_on_recipient_stop() {
     let result = f.message("a new sender turn cannot bypass its quota");
     assert!(result.unwrap_err().to_string().contains("from this bot"));
     f.sending("c");
-    let result = call(&f.hub, "c", "message_bot", &json!({"botId": "b", "message": "another sender"}));
+    let result = call(&f.hub, "c", "c", "message_bot", &json!({"botId": "b", "message": "another sender"}));
     assert!(result.is_ok());
     f.hub.send_cmd("b", Cmd::Stop).unwrap();
     f.until(|| f.hub.team.0.locked().messages == 0 && f.hub.runtime("b").status == BotStatus::Idle).await;

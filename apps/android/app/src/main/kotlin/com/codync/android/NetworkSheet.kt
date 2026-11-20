@@ -40,8 +40,7 @@ import com.kyant.shapes.Capsule
             Text(tr("Network"), style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.width(8.dp))
             // The network is a beta feature.
-            Text(tr("Beta"), style = Type.caption.semibold, color = Palette.secondary,
-                modifier = Modifier.clip(Capsule()).background(Palette.bubbleAgent).padding(horizontal = 7.dp, vertical = 2.dp))
+            BetaTag()
         })
         CardForm {
             // One section per network; who may message the bots here only where it has rules.
@@ -49,7 +48,7 @@ import com.kyant.shapes.Capsule
                 CardSection(network.name) {
                     for (computer in network.computers) row { NetworkComputerRow(computer) }
                 }
-                if (network.rules.isNotEmpty()) CardSection("Who may message bots here", RULES_FOOTER) {
+                if (network.rules.isNotEmpty()) CardSection("Who may message bots here", network.rulesFooter) {
                     for (rule in network.rules) row { RuleRow(network, rule) }
                 }
             }
@@ -61,8 +60,6 @@ import com.kyant.shapes.Capsule
         }
     }
 }
-
-private const val RULES_FOOTER = "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in."
 
 /** One rule, read-only: rules are changed on the computer. */
 @Composable private fun RuleRow(network: NetworkInfo, rule: NetworkRule) {

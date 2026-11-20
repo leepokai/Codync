@@ -115,7 +115,7 @@ fn entries(buf: &mut Buffer, body: Rect, app: &App, memory: &MemorySheet) {
             "{} · {}{}",
             author(app, e),
             when(e["updatedAt"].as_i64().unwrap_or(0)),
-            if archived { " · archived" } else { "" }
+            if archived { tr(" · archived") } else { "".into() }
         );
         put(buf, body.x, y + 1, body.width, &detail, palette.dim.patch(palette.panel));
     }
@@ -123,10 +123,10 @@ fn entries(buf: &mut Buffer, body: Rect, app: &App, memory: &MemorySheet) {
 
 fn author(app: &App, e: &Value) -> String {
     match s(e, "author") {
-        "user" => "You wrote it".into(),
-        "bot" => format!("{} remembered it", name_of(app, s(e, "authorBot"))),
-        "dream" => "Dreaming".into(),
-        _ => "Moved from the old memory".into(),
+        "user" => tr("You wrote it").into_owned(),
+        "bot" => tr("{name} remembered it").replace("{name}", &name_of(app, s(e, "authorBot"))),
+        "dream" => tr("Dreaming").into_owned(),
+        _ => tr("Moved from the old memory").into_owned(),
     }
 }
 
@@ -154,7 +154,7 @@ fn dreams(buf: &mut Buffer, body: Rect, memory: &MemorySheet) {
             when(d["at"].as_i64().unwrap_or(0)),
             count("added"),
             count("archived"),
-            if d["undone"] == true { " · undone" } else { "" }
+            if d["undone"] == true { tr(" · undone") } else { "".into() }
         );
         put(buf, body.x, y, body.width, &head, palette.text.patch(base));
         let mut x = body.x;

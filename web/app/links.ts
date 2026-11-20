@@ -12,17 +12,20 @@ export const WINDOWS = "/download/windows";
 export const LINUX = "/download/linux";
 export const LINUX_ARM = "/download/linux-arm64";
 export const APP_STORE = "https://apps.apple.com/app/codync/id6760984418";
-// Android is in closed testing on Google Play: testers sign up here.
-export const ANDROID_TEST = "https://docs.google.com/forms/d/e/1FAIpQLScvtCO7edjgFHKozWbHQ-9dDIJturifAA8znvhLVfCtRzu8cg/viewform";
+export const GOOGLE_PLAY = "https://play.google.com/store/apps/details?id=com.pokai.Codync.android";
 export const GITHUB = "https://github.com/leepokai/Codync";
 export const DISCORD = "https://discord.gg/KBAX3Qznxh";
-export const WECHAT = "/wechat";
-export const WECHAT_QR = "/wechat-group.png";
+// Telegram, for anyone who can't reach Discord.
+export const TELEGRAM = "https://t.me/+e5egWrp5z4BlOWNl";
+// The Feishu group for users in China (a permanent invite); vercel.json sends the old /wechat page here.
+export const CHINA_COMMUNITY = "https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=49eq6f1e-ef72-40d8-aaf9-9864ee289ba3";
 // Donation page.
 export const KO_FI = "https://ko-fi.com/leepokai";
 export const EMAIL = "kevin@codync.dev";
 // YouTube id of the launch film.
 export const FILM = "QAhyZWpV70U";
+// The homepage card for Codync Cloud, which the hero's "New" link opens.
+export const CLOUD_SECTION = "/#cloud";
 export const PRODUCT_HUNT = "https://www.producthunt.com/products/codync?launch=codync-2";
 // codync-mem, the memory crate: its read-only mirror, crates.io and docs.rs pages.
 export const CODYNC_MEM_REPO = "https://github.com/leepokai/codync-mem";

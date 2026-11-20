@@ -1,5 +1,6 @@
 use super::search_path::TestSearchPath;
 use super::*;
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 struct TempDir(PathBuf);
@@ -49,6 +50,20 @@ fn an_installed_cli_comes_before_the_registry_build() {
             "{id}: the installed CLI first, the registry build kept for a CLI too old for ACP"
         );
     }
+}
+
+#[test]
+fn a_harness_the_registry_also_lists_shows_once() {
+    let dir = TempDir::new();
+    let _path = TestSearchPath::set(dir.0.clone());
+    let agents: Vec<_> =
+        HARNESSES.iter().map(|h| h.id).chain(["unknown-agent"]).map(|id| json!({"id": id, "name": id})).collect();
+    registry::set_cache(Some(json!({"agents": agents})));
+    let listed = list();
+    registry::set_cache(None);
+    let ids: Vec<_> = listed.iter().filter_map(|b| b["id"].as_str()).collect();
+    assert_eq!(ids.iter().collect::<HashSet<_>>().len(), ids.len(), "clients key their lists by id: {ids:?}");
+    assert!(ids.contains(&"unknown-agent"), "a registry agent we don't know by name is still offered");
 }
 
 #[test]
@@ -104,4 +119,17 @@ fn a_codebuddy_on_path_is_not_workbuddy() {
 fn hermes_uses_native_acp() {
     let h = harness("hermes").unwrap();
     assert_eq!((h.local, h.registry, h.login), (Some("{bin} acp"), None, Some("{bin} acp --setup")));
+}
+
+#[test]
+fn an_outdated_cli_is_told_to_update() {
+    let why = exit_reason("dsh", "Error: profile acp does not exist").expect("a reason");
+    assert!(why.starts_with("The DeepSeek Harness on this computer is too old to run in Codync. Update it (run `"));
+    // Codync's own npm, which works without one on the computer.
+    let shell = if cfg!(windows) { " in Command Prompt" } else { "" };
+    let suffix = format!(" npm install -g @deepseek-ai/dsh@latest`{shell} on this computer) and try again.");
+    assert!(why.ends_with(&suffix), "{why}");
+    // Another harness saying the same isn't outdated for it.
+    assert_eq!(exit_reason("kiro", "profile acp does not exist").as_deref(), Some("profile acp does not exist"));
+    assert_eq!(exit_reason("dsh", "Error: no API key").as_deref(), Some("Error: no API key"));
 }

@@ -1,0 +1,37 @@
+# A chain of bots stopped at the handoff limit (#386) leaves a notice in the first bot's chat; its Continue sends the
+# bot "Continue" as the user, once, and the button goes (docs/features/bot-collaboration.md#limits). The chains come
+# from `chain-continue-setup.mjs`, started on the computer before the run, one for each phone. The phone must already
+# be signed in or paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), with the
+# app in English; run it apart from `welcome`, whose clearState undoes the pairing.
+#   node apps/maestro/chain-continue-setup.mjs <sandbox port> "$(cat ~/.codync-dev-<sandbox name>/token)" &
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags teamwork \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" <the line it printed> apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - teamwork
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+      - tapOn: "Chain ios"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+      - tapOn: "Chain android"
+- extendedWaitUntil:
+    visible: "This work went on 8 steps in a row without you, the most it can. Continue to let it go on."
+    timeout: 20000
+- takeScreenshot: chain-continue-notice
+- tapOn: "Continue"
+- extendedWaitUntil:
+    visible: "Continue"
+    timeout: 10000
+- runScript: chain-continue.js

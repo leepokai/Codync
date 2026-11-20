@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { artifactFrameURL, type Artifact } from '@shared/artifacts'
-import type { MenuItem } from '../../components/Overlay'
+import type { MenuItem } from '../../components/Menu'
 import type { BotStore } from '../../store/bot-store'
 import type { ArtifactHTML } from '../../store/artifacts'
 import { useTr } from '../../lib/use-language'
@@ -57,7 +57,11 @@ export function TitleField({ initial, className, done }: { initial: string; clas
       onBlur={() => finish(draft.trim())}
       onKeyDown={(e) => {
         if (e.key === 'Enter') finish(draft.trim())
-        if (e.key === 'Escape') finish(null)
+        if (e.key === 'Escape') {
+          // Escape cancels the rename, not the artifact behind it.
+          e.stopPropagation()
+          finish(null)
+        }
       }}
     />
   )

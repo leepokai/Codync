@@ -2,10 +2,11 @@ package com.codync.android
 
 import android.app.Application
 import com.codync.android.core.*
-import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 
@@ -37,6 +38,7 @@ class AppStore internal constructor(
     internal val screenTakeovers = Mutex()
     internal val attachments = AttachmentFiles(application, local.directory)
     internal val downloadLocks = ConcurrentHashMap<String, Mutex>()
+    internal val imageCopies = CopyRequests()
     internal val mutableState = MutableStateFlow(AppState(computer, contextId = contextId, generation = generation))
     val state = mutableState.asStateFlow()
     internal val feed = TaskFeed(local.directory, computer.id)
@@ -52,20 +54,40 @@ class AppStore internal constructor(
     internal val setupTerminals = mutableMapOf<String, SetupTerminalSession>()
     internal val appConnections = mutableMapOf<String, AppConnectionSession>()
     internal var oauthRequestId: String? = null
+    internal val signInCodeAnswer = SignInCodeAnswer()
     internal var voiceBinding: VoiceBinding? = null
     internal var voiceGeneration: Int? = null
     /** A "Talk to Codync" call waiting for the link (`requestCall`). */
     internal var callWait: Job? = null
     internal val transportRequired: Boolean get() = foreground || state.value.voice != null
     internal val sends = mutableSetOf<String>()
+    /** The message sent from here last: its row in the queue scrolls into view ([QueuedMessages]). */
+    internal var lastSentNonce: String? = null
     internal val actions = mutableMapOf<String, Job>()
+    /** The agents' order waiting to go to the host (`setUsageOrder`). */
+    internal val usageOrders = Channel<List<String>>(Channel.CONFLATED)
     /** The bots as the mirror last had them; the state shows them with [pendingSectionMoves] laid over (`withMoves`). */
     internal var mirrorBots: List<Bot> = emptyList()
     /** Section moves shown but not answered yet, oldest first. */
     internal val pendingSectionMoves = mutableListOf<SectionMove>()
+    /** Queued messages taken back here, by the `rev` they had; the state leaves them out until a newer one (`withRemovals`). */
+    internal val pendingRemovals = mutableMapOf<String, Long>()
     internal var pluginsRefreshAgain = false
     /** The host version an undecodable event already made the mirror fetch everything again for. */
     internal var rewoundFor: String? = null
+    /** The open chat and the few opened last load deeply; the rest keep a short preview. Not saved. */
+    internal val residents = ResidentBots()
+    /** Rows each resident chat loads, grown while its reader pages back through history already on the phone. */
+    internal val windows = ConcurrentHashMap<String, Int>()
+    /** The oldest row each chat's last snapshot held, counted before queued removals hide any. */
+    internal val floors = ConcurrentHashMap<String, Long>()
+    /** Residency applied by the last snapshot, so a history page can skip a repeat read when this chat's window is already loaded. */
+    @Volatile internal var published: Residency? = null
+    /** One mirror read applied at a time, so an older snapshot cannot cover a newer resident set. */
+    private val refreshes = Mutex()
+
+    /** How much of each chat the next snapshot loads. Never every row: the phone's heap is fixed. */
+    internal fun residency(): Residency = Residency(residents.full(state.value.selectedBot), windows = windows.toMap())
 
     /** Opens the mirror and the drafts this phone keeps for the computer; nothing connects yet. */
     internal suspend fun open() {
@@ -73,8 +95,10 @@ class AppStore internal constructor(
         withContext(Dispatchers.IO) {
             database = MirrorDatabase(application, local.directory, id)
             database?.recoverInterrupted()
-            val snapshot = requireNotNull(database).snapshot()
-            val restored = book.recover(snapshot)
+            val mirror = requireNotNull(database)
+            // Only pending sends and the drafts' message ids matter here; refresh() right after loads the rows to show.
+            val pending = mirror.snapshot(Residency(emptySet(), preview = 0)).pending
+            val restored = book.recover(pending.mapTo(mutableSetOf()) { it.nonce } + mirror.confirmedNonces(book.read()))
             savedDrafts = restored.associateBy { it.botId }
             mutableState.update { it.copy(drafts = restored.associateBy { draft -> draft.botId }) }
         }
@@ -110,9 +134,11 @@ class AppStore internal constructor(
         actions.clear(); sends.clear(); downloadLocks.clear()
         // A cancelled section move never heard back: it would lie over the next mirror for good.
         pendingSectionMoves.clear(); mirrorBots = emptyList()
+        pendingRemovals.clear()
         pluginsRefreshAgain = false
         rewoundFor = null
         draftWriter = null; draftBook = null; savedDrafts = emptyMap()
+        published = null; windows.clear(); floors.clear()
         withContext(Dispatchers.IO) { feed.clear(); database?.close(); database = null }
     }
 
@@ -129,6 +155,17 @@ class AppStore internal constructor(
         }
     }
 
+    /** What the account knows about this computer: Codync Cloud runs it, and the cloud's floor for this app version. */
+    internal fun setAccountView(cloudHosting: CloudPlacement?, appFloor: String?) {
+        mutableState.update { if (it.cloudHosting == cloudHosting && it.appFloor == appFloor) it else it.copy(cloudHosting = cloudHosting, appFloor = appFloor) }
+    }
+
+    /** A new name for this computer: its host's `name` event, or a cloud computer renamed from here (shown before its host,
+     * asleep perhaps, says so). */
+    internal fun setHostName(name: String) = mutableState.update { state ->
+        state.hello?.let { state.copy(hello = JsonObject(it + ("name" to JsonPrimitive(name)))) } ?: state
+    }
+
     /** Saves the computer's latest copy (`changeComputer`), then shows it. */
     internal suspend fun save(computer: Computer) {
         saveComputer(computer)
@@ -136,39 +173,55 @@ class AppStore internal constructor(
     }
 
     internal suspend fun refresh() {
+        if (database == null) return
+        refreshes.withLock { publishSnapshot() }
+    }
+
+    private suspend fun publishSnapshot() {
         val mirror = database ?: return
-        val snapshot = withContext(Dispatchers.IO) { mirror.snapshot() }
+        val wanted = residency()
+        val snapshot = withContext(Dispatchers.IO) { mirror.snapshot(wanted) }
+        // Updated in place, never emptied, so a page loading meanwhile doesn't read a chat as having no oldest row.
+        val oldest = snapshot.entries.groupBy { it.botId }.mapValues { (_, rows) -> rows.minOf { it.seq } }
+        floors.keys.retainAll(oldest.keys)
+        floors.putAll(oldest)
+        published = wanted
+        // Rows the window no longer reaches are paged back from the phone again, even after the host had nothing older.
+        val open = state.value.selectedBot
+        val stranded = open != null && state.value.historyEnd[open] == HistoryEnd.Complete && floors[open]?.let { withContext(Dispatchers.IO) { mirror.hasOlder(open, it) } } == true
         val retainedDraftFiles = state.value.drafts.values.flatMap { it.files }.map { it.path }.toSet()
         val retired = state.value.pending.filter { old -> snapshot.pending.none { it.nonce == old.nonce } }.flatMap { it.files }.filter { it.path !in retainedDraftFiles }
         withContext(Dispatchers.IO) { retired.forEach(attachments::discard) }
         // Like iOS, a screen state this app can't read is a host without remote screen.
         val screen = snapshot.screen?.let { runCatching { ScreenState.decode(it) }.getOrNull() }
         mirrorBots = snapshot.bots
-        mutableState.update { current -> current.copy(bots = withMoves(snapshot.bots, pendingSectionMoves), entries = snapshot.entries,
+        mutableState.update { current -> current.copy(bots = withMoves(snapshot.bots, pendingSectionMoves), entries = withRemovals(snapshot.entries, pendingRemovals),
             pending = snapshot.pending, usage = snapshot.usage, screen = screen, mirrorRevision = snapshot.rev, icons = snapshot.icons,
+            historyEnd = if (stranded) current.historyEnd - open!! else current.historyEnd,
             selectedBot = current.selectedBot?.takeIf { id -> snapshot.bots.any { it.id == id } }) }
         if (voiceBinding != null && snapshot.bots.none { it.id == voiceBinding?.botId && !it.deleted }) endVoice("Voice chat ended because its bot was removed.")
         if (PushPreferences.tasks(application)) {
             val watched = withContext(Dispatchers.IO) { feed.all().filter { !it.finished }.map { it.botId }.toSet() }
             for (bot in snapshot.bots.filter { it.id in watched }) {
-                val watch = withContext(Dispatchers.IO) { feed.local(bot) }
+                val watch = withContext(Dispatchers.IO) { feed.local(bot, outsideLine(bot) { it }) }
                 if (watch != null) NotificationDisplay.task(application, local.referenceId, id, watch)
             }
         }
     }
 
-    /** The ready channel, waiting briefly for a reconnect; a timeout is an error the action shows. */
-    internal suspend fun ready(): EncryptedChannel = deadline(20_000, "Can't reach the computer. Check that it's on, then try again.") {
+    /** The ready channel, waiting briefly for a reconnect or a cloud computer the relay is waking; a timeout is an error
+     * the action shows. */
+    internal suspend fun ready(): EncryptedChannel = withTimeoutOrNull(20_000) {
         while (true) {
             val active = channel
-            if (active?.state?.value is LinkState.Ready) return@deadline active
+            // The live link, not the shown one the drop grace holds back.
             val link = active?.state?.value
-            if (link is LinkState.ComputerOffline) throw IOException("The computer is offline.")
-            if (link is LinkState.Failed && link.status in listOf(403, 426)) throw HostError(requireNotNull(link.status), link.message)
+            if (link is LinkState.Ready) return@withTimeoutOrNull active
+            cantWait(link)?.let { throw it }
             delay(100)
         }
         @Suppress("UNREACHABLE_CODE") error("Unreachable")
-    }
+    } ?: throw waitedTooLong(channel?.state?.value)
 
     /** Runs [operation] as [key], its error shown; not while loading or while [key] still runs. Whether it started. */
     internal fun action(key: String, operation: suspend () -> Unit): Boolean {

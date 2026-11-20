@@ -138,6 +138,21 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     return nil
 }
 
+@Test(.timeLimit(.minutes(1))) func withNoRelayAnAddressFoundOnTheNetworkIsDialed() async throws {
+    let (dial, sockets) = fakeDialer()
+    var computer = v.computer
+    computer.cloud = nil
+    computer.urls = []
+    let t = ChannelTransport(computer: computer, identity: v.identity, pairingCode: nil, dial: dial, watchesNetwork: false,
+                             discovered: { _ in ["http://192.168.1.9:19222"] })
+    await t.start()
+    var socketIterator = sockets.makeAsyncIterator()
+    let socket = try #require(await socketIterator.next())
+    guard case let .direct(url) = socket.endpoint else { Issue.record("not direct"); return }
+    #expect(url.absoluteString == "ws://192.168.1.9:19222/channel?v=1")
+    await t.shutdown()
+}
+
 @Test(.timeLimit(.minutes(1))) func directChannelMultiplexesCallsAndStreams() async throws {
     let (dial, sockets) = fakeDialer()
     var computer = v.computer
@@ -332,6 +347,10 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     let seen = Date(milliseconds: 1_790_000_000_000)
     #expect(await t.settled(within: .seconds(5)) == .hostOffline(lastSeen: seen))
     await #expect(throws: HostError.computerOffline(lastSeen: seen)) { _ = try await t.call("hello", body: Data(), timeout: 1) }
+
+    // The relay is waking it (a cloud computer asleep): still offline, the mailbox too, but on its way.
+    await relay.push(["t": "presence", "online": false, "lastSeenAt": 1_790_000_000_000, "waking": 1_790_000_100_000])
+    #expect(await waitFor(t.states()) { $0 == .hostOffline(lastSeen: seen, waking: true) } == .hostOffline(lastSeen: seen, waking: true))
 
     // Queue a message: it goes out sealed for the host's box key.
     let nonce = "3F2504E0-4F89-11D3-9A0C-0305E82C3301"

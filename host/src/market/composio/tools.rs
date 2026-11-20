@@ -1,7 +1,7 @@
 //! Composio tools of the built-in `composio` MCP server: what a bot sees
 //! (`tools`, `INSTRUCTIONS`) and what its calls do, limited to the apps it has on.
 
-use super::{Connection, PREFIX, checked_slug, config, connections, get, post, text};
+use super::{Api, Connection, PREFIX, checked_slug, config, connections, get, post, text};
 use crate::store::Store;
 use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
@@ -82,6 +82,7 @@ pub fn enabled_for(store: &Store, connectors: &[String]) -> Result<bool> {
 /// A tool call from a bot's `composio` MCP server.
 pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<Value> {
     let c = config(store)?;
+    let api = Api::of(store, &c)?;
     let apps = allowed(store, bot)?;
     if apps.is_empty() {
         bail!("No connected apps are turned on for this bot.");
@@ -102,7 +103,7 @@ pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<
             let mut found = vec![];
             for app in targets.iter().take(8) {
                 let v =
-                    get(&c.key, "/tools", &[("toolkit_slug", &app.toolkit), ("query", query), ("limit", "8")]).await?;
+                    get(&api, "/tools", &[("toolkit_slug", &app.toolkit), ("query", query), ("limit", "8")]).await?;
                 for t in v["items"].as_array().into_iter().flatten() {
                     found.push(json!({
                         "slug": t["slug"], "name": t["name"], "app": app.toolkit,
@@ -114,7 +115,7 @@ pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<
         }
         "get_tool" => {
             let slug = checked_slug(args["slug"].as_str().unwrap_or_default())?;
-            let t = tool(&c.key, slug).await?;
+            let t = tool(&api, slug).await?;
             let toolkit = text(&t["toolkit"]["slug"]).unwrap_or_default();
             app_of(&toolkit).ok_or_else(|| anyhow!("{slug} belongs to an app this bot can't use"))?;
             Ok(
@@ -123,12 +124,12 @@ pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<
         }
         "execute" => {
             let slug = checked_slug(args["slug"].as_str().unwrap_or_default())?;
-            let t = tool(&c.key, slug).await?;
+            let t = tool(&api, slug).await?;
             let toolkit = text(&t["toolkit"]["slug"]).unwrap_or_default();
             let app = pick(&apps, &toolkit, args["account"].as_str()).map_err(|e| anyhow!("{slug}: {e}"))?;
             let arguments = args.get("arguments").filter(|a| a.is_object()).cloned().unwrap_or_else(|| json!({}));
             let v = post(
-                &c.key,
+                &api,
                 &format!("/tools/execute/{slug}"),
                 &json!({"user_id": c.user_id, "connected_account_id": app.id, "arguments": arguments}),
             )
@@ -153,8 +154,8 @@ fn pick<'a>(apps: &'a [Connection], toolkit: &str, account: Option<&str>) -> Res
     }
 }
 
-async fn tool(key: &str, slug: &str) -> Result<Value> {
-    get(key, &format!("/tools/{slug}"), &[("toolkit_versions", "latest")]).await
+async fn tool(api: &Api, slug: &str) -> Result<Value> {
+    get(api, &format!("/tools/{slug}"), &[("toolkit_versions", "latest")]).await
 }
 
 #[cfg(test)]

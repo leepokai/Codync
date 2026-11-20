@@ -36,21 +36,21 @@ struct AccessRequestView: View {
                 .padding(.top, 32)
 
             if confirmRenewal {
-                Text("This phone already has approval. If access no longer works, request a new approval on the computer.")
+                Text(L10n.tr("This phone already has approval. If access no longer works, request a new approval on the computer."))
                     .foregroundStyle(Palette.secondary)
                     .multilineTextAlignment(.center)
-                Text("This replaces this phone's current approval. The computer must be online to show the new code.")
+                Text(L10n.tr("This replaces this phone's current approval. The computer must be online to show the new code."))
                     .font(.footnote)
                     .foregroundStyle(Palette.secondary)
                     .multilineTextAlignment(.center)
-                Button("Request new approval") {
+                Button(L10n.tr("Request new approval")) {
                     withAnimation(Motion.reduced(Motion.layout, reduceMotion)) {
                         renewRequest = true
                         confirmRenewal = false
                     }
                 }.buttonStyle(.secondary)
             } else if approved {
-                Label("\(computer.name) approved this iPhone", systemImage: "checkmark.circle.fill")
+                Label(L10n.tr("\(computer.name) approved this iPhone"), systemImage: "checkmark.circle.fill")
                     .font(.headline)
                     .foregroundStyle(Palette.added)
             } else if let ticket {
@@ -62,7 +62,7 @@ struct AccessRequestView: View {
                         .font(.system(size: 52, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Palette.text)
                         .textSelection(.enabled)
-                        .accessibilityLabel("Code \(ticket.code.map(String.init).joined(separator: " "))")
+                        .accessibilityLabel("\(L10n.tr("Code")) \(ticket.code.map(String.init).joined(separator: " "))")
                     Text(L10n.tr("Approve only if the computer shows exactly this code. If it doesn't, deny it there: someone may be trying to get in."))
                         .font(.subheadline)
                         .foregroundStyle(Palette.secondary)
@@ -80,13 +80,13 @@ struct AccessRequestView: View {
                 }
                 .font(.subheadline)
             } else if let error {
-                Text(error)
+                Text(L10n.tr(error))
                     .foregroundStyle(Palette.danger)
                     .multilineTextAlignment(.center)
                 Button(L10n.tr("Try again")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { self.error = nil } }
                     .buttonStyle(.secondary)
             } else if sawTicket {
-                Text(outcome ?? "\(computer.name) didn't approve this request.")
+                Text(L10n.tr(outcome ?? "\(computer.name) didn't approve this request."))
                     .foregroundStyle(Palette.secondary)
                     .multilineTextAlignment(.center)
                 Button(L10n.tr("Ask again")) {
@@ -99,7 +99,7 @@ struct AccessRequestView: View {
             } else {
                 VStack(spacing: 10) {
                     Spinner()
-                    Text(computer.isOnline ? "Asking \(computer.name)…" : "\(computer.name) is offline. Turn it on to continue.")
+                    Text(L10n.tr(computer.isOnline ? "Asking \(computer.name)…" : "\(computer.name) is offline. Turn it on to continue."))
                         .font(.subheadline)
                         .foregroundStyle(Palette.secondary)
                         .multilineTextAlignment(.center)

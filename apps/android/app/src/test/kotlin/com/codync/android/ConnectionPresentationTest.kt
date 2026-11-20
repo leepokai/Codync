@@ -66,11 +66,47 @@ class ConnectionPresentationTest {
         assertEquals("Needs update", connectionDescription(online))
     }
 
+    @Test fun aCloudComputerSleepsUpdatesItselfOrFails() {
+        fun cloudState(link: LinkState, machine: String) = state(link).copy(cloudHosting = CloudPlacement("boat", "Boat", "EU", machine))
+        val asleep = cloudState(LinkState.ComputerOffline(null), "stopped")
+        assertEquals("Sleeping · wakes when you message", statusText(asleep))
+        assertEquals("Sleeping", connectionLabel(asleep))
+        assertEquals("Cloud computer failed", statusText(cloudState(LinkState.Failed("Connection closed."), "failed")))
+        assertEquals("Connecting…", statusText(cloudState(LinkState.Connecting, "stopped")))
+        assertTrue(asleep.isAsleep)
+        assertFalse(cloudState(LinkState.Connecting, "stopped").isAsleep)
+        // The relay waking it: on its way, not offline. The account list's `starting` alone isn't (the relay's word wins).
+        val waking = cloudState(LinkState.ComputerOffline(null, waking = true), "running")
+        assertEquals("Waking the computer…", statusText(waking))
+        assertEquals("Waking the computer…", connectionLabel(waking))
+        assertTrue(waking.isWaking && waking.isAsleep && !waking.unreachable)
+        assertEquals("Offline", statusText(cloudState(LinkState.ComputerOffline(null), "starting")))
+        assertEquals("Offline", statusText(cloudState(LinkState.ComputerOffline(null), "running")))
+        // An action waits out the relay waking it, and only that.
+        assertNull(cantWait(LinkState.ComputerOffline(null, waking = true)))
+        assertNull(cantWait(LinkState.Connecting))
+        assertEquals("The computer is offline.", cantWait(LinkState.ComputerOffline(null))?.message)
+        assertEquals(403, (cantWait(LinkState.Failed("Revoked", 403)) as HostError).status)
+        assertEquals("Still waking the computer: try again in a moment.", waitedTooLong(LinkState.ComputerOffline(null, waking = true)).message)
+        assertEquals("Can't reach the computer. Check that it's on, then try again.", waitedTooLong(LinkState.ComputerOffline(null)).message)
+        val behind = cloudState(LinkState.Ready(HostRoute.Relay), "running").copy(hello = buildJsonObject { put("version", "2.0.0") })
+        assertTrue(behind.cloudUpdating)
+        assertEquals("Updating…", statusText(behind))
+    }
+
+    @Test fun theCloudTurningThisAppAwayAsksForAnUpdate() {
+        val floor = state(LinkState.Failed("Update Codync: security fix.", 426))
+        assertEquals(VersionMismatch.AppFloor("Update Codync: security fix."), floor.mismatch)
+        assertEquals("Needs update", statusText(floor))
+        assertEquals(VersionMismatch.AppFloor("Fix"), state(LinkState.Ready(HostRoute.Direct)).copy(appFloor = "Fix").mismatch)
+    }
+
     @Test fun theHeaderSummarizesTheComputers() {
         assertEquals("1 connected", connectionSummary(listOf(state(LinkState.Ready(HostRoute.Direct)))).filled())
         assertEquals("Connecting…", connectionSummary(listOf(state(LinkState.Connecting))).filled())
         assertEquals("No access", connectionSummary(listOf(state(LinkState.Failed("Revoked", 403)))).filled())
         assertEquals("1 offline", connectionSummary(listOf(state(LinkState.ComputerOffline(null)))).filled())
+        assertEquals("Waking the computer…", connectionSummary(listOf(state(LinkState.ComputerOffline(null, waking = true)))).filled())
         assertEquals("Computers", connectionSummary(emptyList()).filled())
         val laptop = Computer("laptop", "Laptop", "laptop")
         assertEquals("2 connected", connectionSummary(listOf(state(LinkState.Ready(HostRoute.Direct)), state(LinkState.Ready(HostRoute.Relay), laptop))).filled())
@@ -134,5 +170,16 @@ class ConnectionPresentationTest {
         // Two computers paired here: the older copy of the second one is found too.
         val laptop = Computer("laptop", "Laptop", "laptop")
         assertTrue(context(listOf(renamed), computers = listOf(computer, laptop)).isOlderCopy(renamed))
+    }
+
+    @Test fun aScreenThatCantShowSaysWhyInTheOrderTheOtherAppsCheck() {
+        val asleep = state(LinkState.ComputerOffline(null)).copy(cloudHosting = CloudPlacement("boat", "Boat", "EU", "stopped"))
+        assertEquals(null to "Waking the computer…", unavailableNotice(asleep))
+        assertEquals(null to "Connecting to the screen…", unavailableNotice(state(LinkState.Connecting)))
+        assertEquals("wifi.slash" to "This computer is offline.", unavailableNotice(state(LinkState.ComputerOffline(null))))
+        val online = state(LinkState.Ready(HostRoute.Direct))
+        assertEquals("arrow.down.circle", unavailableNotice(online).first)
+        val off = ScreenState(platform = "linux")
+        assertEquals("lock.display" to off.accessGuidance, unavailableNotice(online.copy(screen = off)))
     }
 }

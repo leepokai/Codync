@@ -9,17 +9,15 @@ export function providerTint(id: string) {
 /** CSS color for views (follows the scheme by itself). */
 export const providerTintCSS = (id: string) => (id === 'claude' ? '#D97757' : 'var(--accent)')
 
-/** ACP registry id of the provider's agent, for its logo. */
-export const providerRegistry = (id: string) => (['claude', 'codex'].includes(id) ? `${id}-acp` : id)
+/**
+ * ACP registry id of the provider's agent, for its logo. A host that doesn't name it: Claude and
+ * Codex run through ACP adapters, others go by their own id.
+ */
+export const providerRegistry = ({ id, registry }: UsageProvider) =>
+  registry ?? (['claude', 'codex'].includes(id) ? `${id}-acp` : id)
 
 /** The character that stands for this provider. */
 export const mascotShape = (id: string) => (id === 'codex' ? 'hex' : 'blob')
-
-/** A plan window. Notes (today's tokens, a dollar balance) are not limits. */
-export const isLimit = (w: UsageWindow) => !w.text
-
-export const tightest = (p: UsageProvider) =>
-  p.windows.filter(isLimit).reduce<UsageWindow | null>((a, w) => (!a || w.percent > a.percent ? w : a), null)
 
 /** "62% used": the share of the cap already spent, said so (a bare percent reads as what's left). */
 export const usedText = (percent: number, tr: (text: string) => string) =>

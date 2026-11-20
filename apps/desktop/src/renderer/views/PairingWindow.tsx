@@ -3,6 +3,7 @@ import type { CloudStatus, PairingInfo } from '@shared/models'
 import { LoopbackTransport } from '../client/host-client'
 import { useApp } from '../store/context'
 import { PairingCode } from './PairingCode'
+import { trNow } from '../lib/l10n.ts'
 
 /** The pairing window: this computer's code, without a mirror of its bots. */
 export function PairingWindow() {
@@ -11,14 +12,14 @@ export function PairingWindow() {
   const { baseURL, token } = useApp().host.local ?? {}
   const [cloud, setCloud] = useState<CloudStatus | null>(null)
   const [name, setName] = useState('this computer')
-  // The window stays open between uses: each "Pair iPhone…" shows it again, with a new code.
+  // The window stays open between uses: each "Pair phone…" shows it again, with a new code.
   const [shown, setShown] = useState(0)
   useEffect(() => window.codync.app.onCommand((c) => {
     if (c.kind === 'reviewApprovals') setShown((n) => n + 1)
   }), [])
 
   const requestCode = useCallback(async () => {
-    if (!baseURL || !token) throw new Error("This computer's host isn't connected.")
+    if (!baseURL || !token) throw new Error(trNow("This computer's host isn't connected."))
     const transport = new LoopbackTransport(baseURL, token)
     const [pairing, status, hello] = await Promise.all([
       transport.call('pairing', {}, 20_000) as Promise<PairingInfo>,

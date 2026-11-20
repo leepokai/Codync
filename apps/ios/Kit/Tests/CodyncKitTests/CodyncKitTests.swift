@@ -7,9 +7,10 @@ import Testing
     let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
     let events = lines.compactMap { HostClient.parseEvent(Data($0.dropFirst(5).utf8)) }
     #expect(events.count == 6)
-    guard case let .hello(hostId, rev, usage, _, network) = events[0] else { Issue.record("hello"); return }
+    guard case let .hello(hostId, rev, usage, _, network, catchUp) = events[0] else { Issue.record("hello"); return }
     #expect(hostId == "h1" && rev == 42 && usage.providers.first?.windows.first?.percent == 8)
     #expect(network == nil, "a host before the network view")
+    #expect(catchUp == nil, "a host before the catch-up count")
     guard case let .bot(bot) = events[1] else { Issue.record("bot"); return }
     #expect(bot.name == "Rex" && bot.command == nil && !bot.isWorking)
     guard case let .entry(perm) = events[2] else { Issue.record("perm"); return }
@@ -31,6 +32,13 @@ import Testing
     let e = HostClient.parseEvent(Data(#"{"type":"screen","screen":{"enabled":true,"connected":true,"capture":true,"displays":[{"id":1,"name":"Built-in","width":1512,"height":982,"main":true}],"agentBot":"b1"}}"#.utf8))
     guard case let .screen(s) = e else { Issue.record("screen"); return }
     #expect(s.available && s.agentBot == "b1" && s.mainDisplay?.width == 1512 && !s.userControl)
+}
+
+@Test func parsesAutoOrderEvents() {
+    guard case .autoOrder(true) = HostClient.parseEvent(Data(#"{"type":"autoOrder","enabled":true}"#.utf8)) else {
+        Issue.record("autoOrder"); return
+    }
+    #expect(HostClient.parseEvent(Data(#"{"type":"autoOrder"}"#.utf8)) == nil)
 }
 
 @Test func screenViewportMapsAndZooms() {

@@ -3,11 +3,12 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
+use ratatui::text::Span;
 
-use super::super::app::{App, COLORS, Editor, FIELDS, Field, Form, GroupField, GroupForm, SHAPES, tilde};
+use super::super::app::{App, Bot, COLORS, Editor, FIELDS, Field, Form, GroupField, GroupForm, SHAPES, tilde};
 use super::super::l10n::tr;
 use super::super::manage::Page;
-use super::super::md::{truncate, width as w};
+use super::super::md::{truncate, width as w, wrap};
 use super::super::sheets::page_tabs;
 use super::buffer::{centered, frame_box, put, put_line, restyle, rput, u};
 use super::chat::composer_lines;
@@ -15,6 +16,17 @@ use super::overlay::input_line;
 use super::set_cursor;
 use super::style::{FACE, avatar, bot_color, face_style, theme};
 use super::time::{MONTHS, local, month_day};
+use codync_mem::compaction::Threshold;
+
+/// A compaction threshold as the apps name it: a choice, or the size as "120K".
+fn compaction_label(at: Threshold) -> String {
+    match at {
+        Threshold::Off => tr("Auto (default)").into_owned(),
+        Threshold::Early => tr("Early").into_owned(),
+        Threshold::NearLimit => tr("Near the limit").into_owned(),
+        Threshold::Tokens(n) => format!("{}K", n / 1000),
+    }
+}
 
 /// "created by Lead · Oct 20" for a bot another bot created (`chat::manage`).
 fn created_by(app: &App, id: &str) -> Option<String> {
@@ -22,6 +34,66 @@ fn created_by(app: &App, id: &str) -> Option<String> {
     let creator = app.bots.get(bot.created_by.as_deref()?).map_or("a bot", |b| b.name.as_str());
     let (month, day) = month_day(local(bot.created_at).0);
     Some(format!("created by {creator} · {} {day}", MONTHS[month]))
+}
+
+/// The rows under the fields: the help, up to two, and the buttons.
+const FOOTER: u16 = 3;
+
+/// The rows a field's value takes.
+fn field_rows(field: Field) -> u16 {
+    if field == Field::Instructions { 3 } else { 1 }
+}
+
+/// The line under the fields: why saving failed, else what the focused field does.
+fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> {
+    let t = theme();
+    if let Some(e) = &f.error {
+        return Some((e.clone(), t.red));
+    }
+    let line = match f.current() {
+        Field::Agent => {
+            let using = app.bots.get(&f.bot_id).and_then(|b| super::fallbacks::using_line(app, b))?;
+            return Some((format!("{using} · b switches back"), t.amber));
+        }
+        Field::Fast => match app.bots.get(&f.bot_id).and_then(Bot::fast_refusal) {
+            Some(why) => return Some((why, t.amber)),
+            None => tr("Faster replies for more usage, on models that offer it (Claude Code, Codex)").into_owned(),
+        },
+        Field::Computer => tr("Set up on the computer: Codync → Settings → Computer access").into_owned(),
+        Field::Fallbacks => tr("If {agent} runs out of usage or can't answer, the bot carries on with the next one. Chat, memory and workspace carry over.")
+            .replace("{agent}", agent_name),
+        Field::SelfFallbacks => {
+            tr("Let the bot change its fallbacks: it can set this list itself, for example when you ask it to.").into_owned()
+        }
+        Field::Approvals => {
+            let choice = app.approval(f);
+            [choice.note.unwrap_or_default(), tr(choice.detail).into_owned()].join(" ").trim().to_owned()
+        }
+        Field::Compaction if f.compaction.is_none() => tr("Claude Code and Codex bots only").into_owned(),
+        Field::Compaction => {
+            let about = tr(
+                "Auto leaves it to the agent, which summarizes once the chat fills up. The others have Codync do it sooner.",
+            );
+            let sizes = f.compaction_sizes.as_ref().map_or_else(
+                || tr("Sizes show after the bot's next reply").into_owned(),
+                |s| format!("{} {}K–{}K", tr("Or type a size in K:"), s.min / 1000, s.max / 1000),
+            );
+            [about.into_owned(), sizes].join(" ")
+        }
+        Field::ThreadWorktrees => {
+            tr("Threads that work at once in this repository each get their own branch.").into_owned()
+        }
+        Field::Team => {
+            tr("Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.").into_owned()
+        }
+        Field::Network => tr("Offered to the network: bots on your other computers can see and message this bot.").into_owned(),
+        Field::Assistants => {
+            tr("Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.")
+                .into_owned()
+        }
+        _ => return None,
+    };
+    Some((line, t.dim))
 }
 
 pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
@@ -39,25 +111,37 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         put(buf, inner.x + 1, inner.y + 9, 16, COLORS[f.color], t.secondary.patch(t.panel));
         put(buf, inner.x + 1, inner.y + 10, 16, SHAPES[f.shape], t.dim.patch(t.panel));
     }
-    let label_w = 13u16;
+    let label_w = 20u16;
     let vx = fx + label_w;
     let vw = inner.right().saturating_sub(vx);
     let mut y = inner.y + 1;
     let agent_name = app.agent_name(&f.backend);
-    for (i, field) in FIELDS.iter().enumerate() {
+    // The form can outgrow the terminal: it starts as far down as keeps the focused field in sight.
+    let room = inner.bottom().saturating_sub(FOOTER).saturating_sub(y);
+    let shown = |field: &Field| app.field_shown(f, *field);
+    let height = |fields: &[Field]| fields.iter().filter(|x| shown(x)).map(|x| field_rows(*x) + 1).sum::<u16>();
+    let mut first = 0;
+    while first < f.field && height(&FIELDS[first..f.field]) >= room {
+        first += 1;
+    }
+    for (i, field) in FIELDS.iter().enumerate().skip(first).filter(|(_, field)| shown(field)) {
         let active = i == f.field;
         let base = if active { t.sel } else { t.panel };
         let lab = match field {
             Field::Name => "Name",
             Field::Instructions => "Instructions",
             Field::Agent => "Agent",
+            Field::LoginProfile => "Login profile",
             Field::Model => "Model",
             Field::ModelOptions => "Options",
             Field::Fast => "Fast mode",
             Field::Fallbacks => "Fallbacks",
             Field::SelfFallbacks => "Bot edits",
             Field::Folder => "Workspace",
+            Field::MaxThreads => "Threads at once",
+            Field::ThreadWorktrees => "Worktree per thread",
             Field::Approvals => "Approvals",
+            Field::Compaction => "Summarize",
             Field::Notify => "Notify",
             Field::Computer => "Use computer",
             Field::Team => "Manage team",
@@ -70,7 +154,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         };
         let label = tr(lab);
         put(buf, fx, y, label_w, &label, if active { t.bold } else { t.secondary }.patch(t.panel));
-        let rows = if *field == Field::Instructions { 3 } else { 1 };
+        let rows = field_rows(*field);
         if active {
             restyle(buf, Rect::new(vx.saturating_sub(1), y, vw + 1, rows), t.sel);
         }
@@ -125,7 +209,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 // Known once the agent's model list loads, or once the bot's own sessions say.
                 let saved = app.bots.get(&f.bot_id).filter(|b| b.backend == f.backend);
                 let offered = match app.models.get(&f.backend) {
-                    _ if saved.is_some_and(super::super::app::Bot::fast_shown) => "",
+                    _ if saved.is_some_and(Bot::fast_shown) => "",
                     Some(Some(_)) if !app.fast_mode.contains(&f.backend) => "  · not offered by this agent",
                     _ => "",
                 };
@@ -164,8 +248,27 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             }
             Field::Agent => {
                 put(buf, vx, y, vw, &format!("‹ {agent_name} ›"), t.text.patch(base));
-                if let Some(note) = app.bots.get(&f.bot_id).and_then(|b| super::fallbacks::rest_note(b, &f.backend)) {
+                let bot = app.bots.get(&f.bot_id);
+                if let Some(note) =
+                    bot.and_then(|b| super::fallbacks::rest_note(b, &f.backend, f.login_profile.as_deref()))
+                {
                     rput(buf, inner.right(), y, &note, t.amber.patch(base));
+                }
+            }
+            Field::LoginProfile => {
+                let own = app
+                    .login_profiles(&f.backend)
+                    .into_iter()
+                    .flatten()
+                    .find(|a| a["id"].as_str() == f.login_profile.as_deref());
+                let name = match (&f.login_profile, own.and_then(|a| a["name"].as_str())) {
+                    (None, _) => app.default_login_profile_name(&f.backend),
+                    (Some(_), Some(name)) => name.to_owned(),
+                    (Some(_), None) => tr("New login profile").into_owned(),
+                };
+                put(buf, vx, y, vw, &format!("‹ {name} ›"), t.text.patch(base));
+                if f.login_profile.is_some() && own.is_none_or(|a| a["signedIn"] != true) {
+                    rput(buf, inner.right(), y, &tr("Not signed in"), t.amber.patch(base));
                 }
             }
             Field::Fallbacks => {
@@ -198,20 +301,38 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     &format!(
                         "{}  ▸",
                         truncate(
-                            &if f.cwd.is_empty() {
-                                tr("Personal workspace").into_owned()
-                            } else {
-                                tilde(&f.cwd, &app.home)
-                            },
+                            &if f.cwd.is_empty() { tr("Own folder").into_owned() } else { tilde(&f.cwd, &app.home) },
                             usize::from(vw.saturating_sub(4))
                         )
                     ),
                     t.text.patch(base),
                 );
+                // Of the folder the bot has: one picked here and not saved yet isn't known.
+                let saved = app.bots.get(&f.bot_id).filter(|b| f.cwd == if b.managed_workspace { "" } else { &b.cwd });
+                if let Some(line) = saved.and_then(Bot::git_line)
+                    && y + 1 < inner.bottom().saturating_sub(FOOTER)
+                {
+                    put(buf, vx, y + 1, vw, &tr(line), t.dim.patch(t.panel));
+                }
+            }
+            Field::MaxThreads => {
+                let n = f.max_threads.unwrap_or_default();
+                put(buf, vx, y, vw, &format!("‹ {n} ›"), t.text.patch(base));
+            }
+            Field::ThreadWorktrees => {
+                let s = if f.thread_worktrees == Some(true) { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
+                put(buf, vx, y, vw, s, t.text.patch(base));
             }
             Field::Approvals => {
                 let label = app.approval(f).label;
                 put(buf, vx, y, vw, &format!("‹ {} ›", tr(&label)), t.text.patch(base));
+            }
+            Field::Compaction => {
+                let (value, style) = match f.compaction {
+                    Some(at) => (format!("‹ {} ›", compaction_label(at)), t.text),
+                    None => ("—".to_owned(), t.dim),
+                };
+                put(buf, vx, y, vw, &value, style.patch(base));
             }
             Field::Computer => {
                 let s = if f.computer { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
@@ -274,53 +395,17 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             }
         }
         y += rows + 1;
-        if y >= inner.bottom().saturating_sub(2) {
+        if y >= inner.bottom().saturating_sub(FOOTER) {
             break;
         }
     }
     let by = inner.bottom() - 1;
-    if let Some(e) = &f.error {
-        put(buf, inner.x, by - 1, inner.width, e, t.red.patch(t.panel));
-    } else if f.current() == Field::Fast {
-        let refusal = app.bots.get(&f.bot_id).and_then(super::super::app::Bot::fast_refusal);
-        let (line, style) = match refusal {
-            Some(why) => (why, t.amber),
-            None => {
-                (tr("Faster replies for more usage, on models that offer it (Claude Code, Codex)").into_owned(), t.dim)
-            }
-        };
-        put(buf, inner.x, by - 1, inner.width, &line, style.patch(t.panel));
-    } else if f.current() == Field::Computer {
-        put(
-            buf,
-            inner.x,
-            by - 1,
-            inner.width,
-            &tr("Set up on the computer: Codync → Settings → Computer access"),
-            t.dim.patch(t.panel),
-        );
-    } else if f.current() == Field::Fallbacks {
-        let line = tr("If {agent} runs out of usage or can't answer, the bot carries on with the next one. Chat, memory and workspace carry over.")
-            .replace("{agent}", &agent_name);
-        put(buf, inner.x, by - 1, inner.width, &line, t.dim.patch(t.panel));
-    } else if f.current() == Field::SelfFallbacks {
-        let line = tr("Let the bot change its fallbacks: it can set this list itself, for example when you ask it to.");
-        put(buf, inner.x, by - 1, inner.width, &line, t.dim.patch(t.panel));
-    } else if f.current() == Field::Approvals {
-        let choice = app.approval(f);
-        let line = [choice.note.unwrap_or_default(), tr(choice.detail).into_owned()].join(" ");
-        put(buf, inner.x, by - 1, inner.width, line.trim(), t.dim.patch(t.panel));
-    } else if f.current() == Field::Team {
-        let line =
-            "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.";
-        put(buf, inner.x, by - 1, inner.width, line, t.dim.patch(t.panel));
-    } else if f.current() == Field::Network {
-        let line = tr("Offered to the network: bots on your other computers can see and message this bot.");
-        put(buf, inner.x, by - 1, inner.width, &line, t.dim.patch(t.panel));
-    } else if f.current() == Field::Assistants {
-        let line =
-            tr("Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.");
-        put(buf, inner.x, by - 1, inner.width, &line, t.dim.patch(t.panel));
+    if let Some((line, style)) = field_help(app, f, &agent_name) {
+        let lines = wrap(&[Span::styled(line, style.patch(t.panel))], usize::from(inner.width), &[], &[]);
+        let shown = &lines[..lines.len().min(usize::from(FOOTER - 1))];
+        for (j, l) in shown.iter().enumerate() {
+            put_line(buf, inner.x, by.saturating_sub(u(shown.len() - j)), inner.width, l);
+        }
     }
     let save = if f.saving {
         " … Saving "
@@ -332,18 +417,22 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     let x = put(buf, inner.x, by, 14, save, t.btn_primary) + 1;
     put(buf, x, by, 12, " esc Cancel ", t.text.patch(t.btn).add_modifier(Modifier::BOLD));
     let hint = match f.current() {
-        Field::Folder => "↵ project folder · backspace personal · tab next field",
+        Field::Folder => "↵ project folder · backspace own folder · tab next field",
         Field::Connectors => "←→ move · space toggle · tab next",
         Field::ModelOptions => "←→ move · space change · tab next",
         Field::Skills => "←→ move · space toggle · i details · tab next",
         Field::Agent => "←→ change · ↵ install / sign in · tab next",
+        Field::LoginProfile => "←→ change · ↵ add login profile · tab next",
         Field::Model => "←→ pick a model · or type its id",
-        Field::Fallbacks => "←→ pick · space add / model · a agent · [ ] move · x remove",
+        Field::Fallbacks => "←→ pick · space add / model · a agent · c login profile · [ ] move · x remove",
         Field::Fast
         | Field::SelfFallbacks
+        | Field::MaxThreads
+        | Field::ThreadWorktrees
         | Field::Color
         | Field::Shape
         | Field::Approvals
+        | Field::Compaction
         | Field::Notify
         | Field::Computer
         | Field::Team
@@ -415,7 +504,7 @@ pub(super) fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm)
         put_line(buf, inner.x + 2, y, 2, &avatar(app, b));
         put(buf, inner.x + 5, y, inner.width / 2, &b.name, if sel { t.bold } else { t.text }.patch(base));
         let folder = if b.managed_workspace {
-            "personal".to_owned()
+            "own folder".to_owned()
         } else {
             std::path::Path::new(&b.cwd).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default()
         };

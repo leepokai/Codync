@@ -3,7 +3,8 @@ import Foundation
 import Speech
 
 // codync-speech: transcribes the microphone on device with SFSpeechRecognizer and prints one
-// JSON event per line: {"type":"started"}, {"type":"partial"|"final","text":…},
+// JSON event per line: {"type":"started"}, {"type":"partial"|"final","text":…,"ends":bool} (`ends`: the recognizer
+// closed what was said at a pause; its next result starts over),
 // {"type":"level","value":0…1}, {"type":"error","message":…}. It runs until stdin closes or
 // SIGTERM. `--locales` prints the languages it can transcribe (a JSON array) and exits. The desktop app (src/main/speech.ts) owns endpointing: it stops this process when
 // the speaker pauses.
@@ -17,7 +18,11 @@ final class Recognizer {
     private var lastLevel = Date.distantPast
 
     init(locale: String?) {
-        recognizer = locale.map { SFSpeechRecognizer(locale: Locale(identifier: $0)) } ?? SFSpeechRecognizer()
+        // Else the system's first language the recognizer has; `SFSpeechRecognizer()` (`Locale.current`, whose region
+        // format can be another language) only when none is.
+        recognizer = locale.map { SFSpeechRecognizer(locale: Locale(identifier: $0)) }
+            ?? Locale.preferredLanguages.lazy.compactMap { SFSpeechRecognizer(locale: Locale(identifier: $0)) }.first
+            ?? SFSpeechRecognizer()
     }
 
     func start() async {
@@ -93,13 +98,24 @@ final class Recognizer {
         { result, error in
             let text = result?.bestTranscription.formattedString
             let final = result?.isFinal ?? false
-            let message = error?.localizedDescription
+            // On-device recognition (macOS 15+) closes what was said at a pause with metadata, not a final result,
+            // and starts its transcript over.
+            let ends = !final && result?.speechRecognitionMetadata != nil
+            let message = error.map(Self.message)
             Task { @MainActor in
-                if let text { emit(["type": final ? "final" : "partial", "text": text]) }
+                if let text { emit(["type": final ? "final" : "partial", "text": text, "ends": ends]) }
                 // An error after the stream was ended on purpose is just the end.
                 if let message, !final, owner.request != nil { emit(["type": "error", "message": message]) }
             }
         }
+    }
+
+    /// A recognizer error as the app says it: the ones it knows get a fix the app translates, others the system's words.
+    nonisolated private static func message(_ error: any Error) -> String {
+        let error = error as NSError
+        // "Siri and Dictation are disabled": on-device recognition needs one of them on.
+        if error.domain == "kLSRErrorDomain", error.code == 201 { return dictationOff }
+        return error.localizedDescription
     }
 
     nonisolated private static func level(_ buffer: AVAudioPCMBuffer) -> Float {
@@ -114,6 +130,9 @@ final class Recognizer {
         return max(0, min(1, (db + 50) / 50))
     }
 }
+
+/// Shown (translated) by the app when Siri and Dictation are off.
+let dictationOff = "Siri and Dictation are off on this Mac. Turn on Dictation in System Settings → Keyboard, or pick OpenAI or Gemini for voice."
 
 @MainActor func emit(_ event: [String: Any]) {
     guard let data = try? JSONSerialization.data(withJSONObject: event) else { return }

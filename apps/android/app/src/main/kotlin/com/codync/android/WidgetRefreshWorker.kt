@@ -66,7 +66,7 @@ class WidgetRefreshWorker(context: Context, parameters: WorkerParameters) : Coro
 
         /** One computer's roster (and, for the last active one, its usage), then the link closes. */
         private suspend fun read(computer: Computer, identity: DeviceIdentity, usage: Boolean): Read {
-            val channel = HostConnector.connect(computer, identity)
+            val channel = HostConnector.connect(computer, identity, BuildConfig.VERSION_NAME)
             try {
                 val current = HostClient.hello(channel, computer)
                 // The finite roster snapshot includes its authoritative custom icons.

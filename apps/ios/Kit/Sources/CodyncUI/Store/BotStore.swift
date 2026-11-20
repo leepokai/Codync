@@ -28,8 +28,9 @@ public final class BotStore {
         case unpaired
         case connecting
         case online
-        /// The relay says the computer isn't connected; messages can wait in its mailbox.
-        case computerOffline(lastSeen: Date?)
+        /// The relay says the computer isn't connected; messages can wait in its mailbox. `waking`: the relay is
+        /// starting it (a cloud computer asleep).
+        case computerOffline(lastSeen: Date?, waking: Bool = false)
         /// Can't reach the computer at all (no direct route, no relay), or it can't confirm this
         /// device's access for now.
         case offline(String)
@@ -42,6 +43,11 @@ public final class BotStore {
     /// The first catch-up has arrived: everything up to the host's rev when this app connected.
     public internal(set) var caughtUp = false
     var catchUpRev = Int64.max
+    /// This events stream has delivered its whole catch-up; false again as soon as the stream stops or is replaced.
+    var streamCaughtUp = false
+    /// Online and caught up on this stream: the roster matches the host, so the icon badge stops using
+    /// the computer's alert counts.
+    var rosterIsCurrent: Bool { connection == .online && streamCaughtUp }
     /// The `since` this connection's events stream was opened with; the `hello` that opens its
     /// catch-up reads it (after a mirror reset `rev` no longer says what was requested).
     var requestedSince: Int64 = 0
@@ -63,9 +69,16 @@ public final class BotStore {
     public internal(set) var hostVersion: HostVersion?
     /// An update this phone asked of the computer; cleared when its version changes.
     public internal(set) var hostUpdate: HostUpdate?
+    /// Who runs it when it's a Codync Cloud computer, as the account lists it; nil for the user's own.
+    public internal(set) var cloudHosting: CloudHosting?
     public internal(set) var bots: [String: Bot] = [:]
     public internal(set) var entries: [String: [Entry]] = [:]
+    /// Threads' transcripts as they come in, by thread id: never part of a chat, and gone with the thread.
+    public internal(set) var threadEntries: [String: [Entry]] = [:]
     public internal(set) var usage: Usage
+    /// The newest order still to send, and the task sending them (`setUsageOrder`).
+    @ObservationIgnored var usageOrderWaiting: [String]?
+    @ObservationIgnored var usageOrderSending: Task<Void, Never>?
     /// The computer's remote screen (`nil`: the host predates it).
     public internal(set) var screen: ScreenState?
     /// The computer's network of the user's computers (`nil`: the host predates it).
@@ -86,6 +99,15 @@ public final class BotStore {
     /// The remote screen viewer (iPhone); `codync://screen` opens it.
     public var screenRequest: ScreenRequest?
 
+    /// A bot whose details its conversation should open (from the view of all bots' work), consumed by it.
+    public internal(set) var detailsRequest: String?
+
+    /// A task whose card its bot's conversation should bring into view, consumed by it.
+    public internal(set) var cardRequest: (botId: String, task: WorkTask)?
+
+    /// A task whose thread its bot's conversation should open, in the bot's details; consumed by it.
+    public internal(set) var threadRequest: (botId: String, task: WorkTask)?
+
     /// A Shortcuts request, consumed by the matching conversation.
     public internal(set) var voiceCallRequest: String?
     @ObservationIgnored var preparingVoiceCall: UUID?
@@ -97,7 +119,9 @@ public final class BotStore {
     public var onUsageChanged: (@MainActor (ComputerID, Usage) -> Void)?
     /// A message to the bot from this phone moved along (the Live Activity follows it).
     public var onSent: (@MainActor (Bot, SendProgress) -> Void)?
-    /// A bot appeared, changed or went away.
+    /// A prompt reached the computer or its mailbox.
+    var onPromptSent: @MainActor () -> Void = { ReviewInvitation.shared.sent() }
+    /// A bot appeared, changed or went away, or this stream's catch-up finished (`rosterIsCurrent`).
     var onRosterChanged: (@MainActor () -> Void)?
     /// The computer's addresses or keys changed (merged from its `hello`); persist it.
     var onComputerChanged: (@MainActor (Computer) -> Void)?
@@ -109,13 +133,16 @@ public final class BotStore {
     var retired = false
     /// Files of messages not delivered yet (by client nonce), kept for a retry.
     @ObservationIgnored var outgoingFiles: [String: [OutgoingFile]] = [:]
+    /// The message sent from here last: its row in the queue scrolls into view (`QueuedMessages`).
+    @ObservationIgnored var lastSentNonce: String?
     /// Section moves shown but not answered yet, oldest first.
     @ObservationIgnored var pendingSectionMoves: [SectionMove] = []
 
     var rev: Int64 = 0
     var hostId: String?
     var streamTask: Task<Void, Never>?
-    var eventsTask: Task<Void, Never>?
+    /// Replacing or dropping it clears `streamCaughtUp`: no new stream has caught up yet.
+    var eventsTask: Task<Void, Never>? { didSet { streamCaughtUp = false } }
     var isActive = true
     /// A call's audio: what the computer tells its voice (`CallCue`), and its end.
     struct VoiceCall {
@@ -130,6 +157,8 @@ public final class BotStore {
     @ObservationIgnored var callEnds = 0
     var saveTask: Task<Void, Never>?
     var rewound = false
+    /// While everything is fetched again (`refetchAll`): the entries the computer has sent since it began.
+    var refetched: Set<String>?
     /// Events stayed undecodable after the rewind.
     var unreadable = false
     /// This app's marketing version, compared with the host's `minApp`.
@@ -144,6 +173,7 @@ public final class BotStore {
     /// The chats on screen, by the view showing each.
     @ObservationIgnored var readingViews: [UUID: String] = [:]
 
+    /// What the mirror was synced under (`syncStamp`): from the cache, then from each hello. Nil: nothing held yet.
     var cacheStamp: String?
 
     /// Loads this context's `DeviceIdentity` itself.
@@ -181,6 +211,15 @@ public final class BotStore {
         if case .computerOffline = heldDrop ?? connection { computer.boxKey != nil && transport is any RemoteTransport } else { false }
     }
 
+    /// Can't reach a computer with no relay: text waits on this phone until it can (`sendHeld`).
+    public var holdsOnPhone: Bool {
+        guard computer.cloud == nil else { return false }
+        switch connection {
+        case .connecting, .offline: return true
+        default: return false
+        }
+    }
+
     /// What headers show: a reconnect the grace period keeps quiet reads "Connecting…"
     /// as soon as an action is waiting on it.
     public var shownConnection: Connection { waiting > 0 && connection == .online ? .connecting : connection }
@@ -191,6 +230,7 @@ public final class BotStore {
     /// (docs/reference/compatibility.md). `nil` until the host has answered, and whenever
     /// a version can't be read: an unknown is never a reason to lock someone out.
     public var mismatch: VersionMismatch? {
+        if let reason = AppFloor.shared.reason { return .appFloor(reason: reason) }
         guard let hostVersion else { return nil }
         if let found = VersionMismatch.check(app: appVersion, hostVersion: hostVersion.version, minApp: hostVersion.minApp) {
             return found
@@ -203,7 +243,28 @@ public final class BotStore {
         return nil
     }
 
-    /// Roster order: the lead, pinned bots, then where the user dragged them, then most recent activity.
+    /// A Codync Cloud computer older than this app's `minHost`: the cloud updates it on its own (this app's
+    /// `Codync-App` header asks for it), so it reads as updating, not as something for the user to do.
+    public var isCloudUpdating: Bool {
+        if case .updateHost = mismatch { cloudHosting != nil } else { false }
+    }
+
+    /// A Codync Cloud computer that's asleep, or on its way up: a connection or a message wakes it, so it isn't offline.
+    public var isAsleep: Bool {
+        if case .computerOffline = connection { isWaking || cloudHosting?.state.isAsleep == true } else { false }
+    }
+
+    /// The relay is waking this cloud computer (about 10 to 30 seconds): it's coming, not offline. Only the relay says
+    /// so: the account list's `starting` stays after a wake whose host never came back.
+    public var isWaking: Bool {
+        if case .computerOffline(_, waking: true) = connection { true } else { false }
+    }
+
+    /// Can't be reached, and not because it's updating or asleep (or waking): messaging a sleeping cloud computer
+    /// wakes it (Android `AppState.unreachable`).
+    public var isUnreachable: Bool { isOffline && !isUpdating && !isAsleep }
+
+        /// Roster order: the lead, pinned bots, then where the user dragged them, then most recent activity.
     public var roster: [Bot] {
         bots.values.filter { !$0.hidden }.sorted {
             if $0.band != $1.band { return $0.band < $1.band }
@@ -211,6 +272,10 @@ public final class BotStore {
             return $0.lastAt > $1.lastAt
         }
     }
+
+    /// The visible bots run more than one agent, so the roster marks each with its agent's logo. Not before
+    /// `hello`: it names the logos, and without it every badge would be the same generic one.
+    public var mixesAgents: Bool { hello != nil && bots.values.filter { !$0.hidden }.mixesAgents }
 
     /// Every section on this computer by name, hidden and pinned bots' too (a row's "Move to section").
     public var sections: [String] { RosterSection.sorted(Set(bots.values.compactMap(\.section))) }
@@ -227,6 +292,28 @@ public final class BotStore {
     }
 
     static let leadChoiceHost = "2.33.0"
+
+    /// From host 2.39.0 a queued message can be sent now (`steer`) or taken back (`unqueue`); an older host has neither.
+    public var supportsQueueActions: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.queueActionsHost) } ?? false
+    }
+
+    static let queueActionsHost = "2.39.0"
+
+    /// From host 2.48.1 a reply can quote a part of a message (`send`'s `replyPart`); an older host drops the part
+    /// and quotes the whole message, so its messages offer no Select Text.
+    public var supportsReplyPart: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.replyPartHost) } ?? false
+    }
+
+    static let replyPartHost = "2.48.1"
+
+    /// From host 2.50.0 the user names their own computer (`setComputerName`); an older host has no such method.
+    public var supportsComputerName: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.computerNameHost) } ?? false
+    }
+
+    static let computerNameHost = "2.50.0"
 
     static let sectionsHost = "2.32.0"
 
@@ -248,10 +335,13 @@ public final class BotStore {
     public var hiddenBots: [Bot] { bots.values.filter(\.hidden).sorted { $0.name < $1.name } }
 
     /// Everything in a bot's or group's chat this device has, oldest first (trace included).
-    public func chat(_ botId: String) -> [Entry] { entries[botId] ?? [] }
+    /// A chat as the views read it. A message taken back (`unqueue`) stays only in `entries`, for `upsert`'s rev guard
+    /// against a late response.
+    public func chat(_ botId: String) -> [Entry] { (entries[botId] ?? []).filter { $0.data.removed != true } }
 
+    /// Not while everything is fetched again (`refetchAll`): a page would sit below entries about to go.
     public func canLoadOlder(_ botId: String) -> Bool {
-        !historyComplete.contains(botId) && chat(botId).contains { $0.seq > 0 && $0.seq != Int64.max }
+        refetched == nil && !historyComplete.contains(botId) && chat(botId).contains { $0.seq > 0 && $0.seq != Int64.max }
     }
 
     /// A group's bots that still exist.
@@ -269,19 +359,4 @@ public final class BotStore {
         computer = c
         onComputerChanged?(c)
     }
-}
-
-/// A file picked in the composer, sent with the next message.
-public struct OutgoingFile: Identifiable, Sendable {
-    public let id = UUID()
-    public let name: String
-    public let data: Data
-
-    public init(name: String, data: Data) {
-        self.name = name
-        self.data = data
-    }
-
-    /// Anything larger is refused by the computer.
-    public static let maxSize = 100 * 1024 * 1024
 }

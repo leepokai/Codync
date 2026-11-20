@@ -1,8 +1,13 @@
 //! Run an installed CLI for a usage probe. A missing program is silence: the
 //! probe is skipped until the agent is installed.
 
+use crate::hub::Hub;
+use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+use super::Window;
+use super::reading::{UsageReadStage, report};
 
 /// `name` on the login-shell PATH.
 pub(super) fn program(name: &str) -> Option<PathBuf> {
@@ -40,9 +45,51 @@ pub(super) async fn output(
     (!text.trim().is_empty()).then_some(text)
 }
 
+/// What `name` prints, read by `parse`. Printing no limits keeps the last reading.
+pub(super) async fn windows(
+    name: &str,
+    args: &[&str],
+    stdin_text: Option<&str>,
+    timeout: Duration,
+    parse: impl FnOnce(&str) -> Vec<Window>,
+) -> Option<Vec<Window>> {
+    let text = output(&program(name)?, args, stdin_text, timeout).await?;
+    let windows = parse(&text);
+    if windows.is_empty() {
+        tracing::debug!(name, "the usage report had no limits");
+        return None;
+    }
+    Some(windows)
+}
+
+/// The JSON report of the agent `name`'s CLI, read by `parse`: `None` from it means the format changed.
+/// Nothing printed (not installed, signed out, timed out) or the CLI's words for being signed out are
+/// no reading and no failure.
+pub(super) async fn json_windows(
+    hub: &Hub,
+    name: &str,
+    args: &[&str],
+    timeout: Duration,
+    parse: impl FnOnce(&Value) -> Option<Vec<Window>>,
+) -> Option<Vec<Window>> {
+    let text = output(&program(name)?, args, None, timeout).await?;
+    let reading = match serde_json::from_str::<Value>(&text) {
+        Ok(document) => parse(&document).ok_or(UsageReadStage::Parse),
+        Err(_) if says_signed_out(&text) => return None,
+        Err(_) => Err(UsageReadStage::Parse),
+    };
+    report(hub, name, &reading);
+    reading.ok()
+}
+
+fn says_signed_out(text: &str) -> bool {
+    let text = text.to_lowercase();
+    ["not authenticated", "logged in", "log in", "signed in", "sign in"].iter().any(|words| text.contains(words))
+}
+
 /// Drop CSI colour sequences (`ESC [ … m`). Other characters stay, including
 /// the cursor-position query a Windows console sends.
-pub(super) fn strip_ansi(text: &str) -> String {
+pub(crate) fn strip_ansi(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
@@ -68,5 +115,12 @@ mod tests {
     fn colour_codes_drop_out_of_a_usage_line() {
         let raw = "Credits \u{1b}[32m(12 of 100\u{1b}[0m covered)";
         assert_eq!(strip_ansi(raw), "Credits (12 of 100 covered)");
+    }
+
+    #[test]
+    fn a_cli_saying_it_is_signed_out_is_told_from_a_changed_format() {
+        assert!(says_signed_out("You are not currently logged in to Augment."));
+        assert!(says_signed_out("Error: Not authenticated with Kilo Gateway"));
+        assert!(!says_signed_out("usage: unknown flag --json"));
     }
 }

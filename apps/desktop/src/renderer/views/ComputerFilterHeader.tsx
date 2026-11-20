@@ -1,12 +1,14 @@
+import { counted } from '@shared/fill'
 import { sshSummary, sshStatusDetail } from '@shared/ssh-startup'
 import { DropdownMenu } from '../components/Controls'
 import { ComputerBadge } from './ComputerBadge'
 import { Icon } from '../components/Icon'
-import type { MenuItem } from '../components/Overlay'
+import type { MenuItem } from '../components/Menu'
 import { Text } from '../components/Text'
 import { useApp } from '../store/context'
 import { useSSH } from './settings/ssh-model'
-import type { Connection } from '../store/bot-store'
+import { connectionSummary } from '../lib/computer-roster'
+import { useTr } from '../lib/use-language'
 
 /** An empty exclusion list means all computers, including newly paired ones. */
 export function computerSelection(all: string[], hidden: string) {
@@ -27,27 +29,17 @@ export function computerSelection(all: string[], hidden: string) {
   }
 }
 
-function summary(connections: Connection[]) {
-  if (!connections.length) return 'Computers'
-  const online = connections.filter((c) => c.kind === 'online').length
-  if (online === connections.length) return `${online} connected`
-  if (online > 0) return `${online}/${connections.length} connected`
-  if (connections.some((c) => c.kind === 'connecting')) return 'Connecting…'
-  if (connections.every((c) => c.kind === 'unauthorized')) return 'No access'
-  if (connections.every((c) => c.kind === 'unpaired')) return 'Not paired'
-  return `${connections.length} offline`
-}
-
 /** The roster's connection summary, with details and filters on demand. */
 export function ComputerFilterHeader({ hidden, setHidden, manage, compact = false }: { hidden: string; setHidden: (v: string) => void; manage: () => void; compact?: boolean }) {
+  const tr = useTr()
   const app = useApp()
   const ssh = useSSH()
   const pending = ssh.state.profiles.filter((p) => !ssh.state.attachments.some((a) => a.profileId === p.id))
-  const pendingSummary = sshSummary(pending.map((p) => ssh.status(p.id)))
+  const pendingSummary = sshSummary(pending.map((p) => ssh.status(p.id)), tr)
   const selection = computerSelection(app.computers.map((c) => c.id), hidden)
   const stores = selection.shown.map((id) => app.store(id)).filter((s) => !!s)
   const online = stores.filter((s) => s.shownConnection.kind === 'online').length
-  const text = pendingSummary ? `${online ? `${online} connected · ` : ''}${pendingSummary}` : summary(stores.map((s) => s.shownConnection))
+  const text = pendingSummary ? `${online ? `${counted(tr('%d connected'), online)} · ` : ''}${pendingSummary}` : connectionSummary(stores.map((s) => s.shownConnection), stores.some((s) => s.isWaking), tr)
   const items = (): MenuItem[] => {
     const list: MenuItem[] = [{ title: 'All computers', icon: 'desktopcomputer', selected: selection.shown.length === app.computers.length, keepsOpen: true, action: () => setHidden('') }]
     for (const c of app.computers) {
@@ -62,14 +54,14 @@ export function ComputerFilterHeader({ hidden, setHidden, manage, compact = fals
       list.push({ title: p.name || p.host, verbatim: true, detail, icon: 'network', action: manage })
     }
     if (stores.length) list.push({ title: 'Reconnect', icon: 'arrow.clockwise', divider: true, action: () => stores.forEach((s) => s.restartStream()) })
-    if (app.host.state.kind === 'notInstalled') list.push({ title: `Install host on this ${window.codync.platform === 'darwin' ? 'Mac' : 'computer'}`, icon: 'desktopcomputer', action: () => window.codync.host.install() })
+    if (app.host.state.kind === 'notInstalled') list.push({ title: tr('Install host on this {device}').replaceAll('{device}', () => window.codync.platform === 'darwin' ? tr('Mac') : tr('computer')), icon: 'desktopcomputer', action: () => window.codync.host.install() })
     if (app.host.state.kind === 'failed') list.push({ title: 'Try again on this computer', icon: 'arrow.clockwise', action: () => window.codync.host.restart() })
     list.push({ title: 'Manage computers', icon: 'desktopcomputer', action: manage })
     return list
   }
   return (
     <DropdownMenu items={items} title={text} className={`computer-filter ${compact ? 'computer-filter-action' : ''}`}>
-      {compact ? <Icon name="desktopcomputer" size={12} weight="medium" /> : <Text truncate aria-label={`Computers, ${text}. Filter conversations`}>{text}</Text>}
+      {compact ? <Icon name="desktopcomputer" size={12} weight="medium" /> : <Text truncate aria-label={tr('Computers, {filter}. Filter conversations').replaceAll('{filter}', () => text)}>{text}</Text>}
       <Icon name="chevron.down" size={8} weight="semibold" />
     </DropdownMenu>
   )

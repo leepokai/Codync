@@ -12,7 +12,7 @@ The card always shows the newest version, even an older card from before the bot
 
 The artifact opens full size over the chat:
 
-- **Close artifact** (the X) goes back to the chat.
+- **Close artifact** (the X) goes back to the chat; on the desktop, so does Escape.
 - The title at the top renames it: click or tap it, type the new name (**Rename artifact**).
 - **Share artifact**: on the desktop, **Save as HTML** saves the file and **Open in browser** opens it in your default browser. On the iPhone, the share sheet gives you `<title>.html`.
 - Links in an artifact open in your browser. Its scripts run on their own, apart from Codync, and it keeps its own saved state (a tracker's ticks stay ticked).
@@ -26,7 +26,11 @@ The box at the bottom of an open artifact, **Message about “title”**, sends 
 
 You can also reply to the artifact's card in the chat; it reaches the bot the same way.
 
-An artifact a bot made during a routine run has no card in the chat, so there's no box: ask about it in the chat.
+A bot that keeps an artifact current on its own (a tracker it refreshes during a routine, say) can update it quietly: the artifact and its card in the chat show the new version, without a new card in the chat.
+
+An artifact a bot makes during a routine run gets its card in the chat too, so you can reply to it there.
+
+An artifact a bot makes in a group chat or for another bot has no card in the chat, so there's no box: ask about it in the chat.
 
 ## The Library
 

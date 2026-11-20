@@ -1,6 +1,7 @@
 //! Shared by the end-to-end tests.
 
 pub mod host;
+pub mod steer;
 
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
@@ -18,10 +19,17 @@ fn test_cloud_key() -> String {
 /// Runs `codync-host serve` for `home` until it answers: the process and its base URL. A port
 /// picked here is only free for a moment; when something else takes it before the host binds, the
 /// host exits and this starts it again on another one.
+#[allow(dead_code, reason = "tests on `host::Host` start it through `serve_with`")]
 pub async fn serve(home: &Path) -> (Child, String) {
+    serve_with(home, &[]).await
+}
+
+/// [`serve`] with `env` on top of the test host's own.
+pub async fn serve_with(home: &Path, env: &[(&str, &std::ffi::OsStr)]) -> (Child, String) {
     let deadline = Instant::now() + Duration::from_secs(30);
     let _ = std::fs::create_dir_all(home);
-    let log = home.join("host-stderr.log");
+    // The host logs to stdout (`tracing`) and panics to stderr: both go to one file.
+    let log = home.join("host.log");
     let mut last = String::new();
     loop {
         let port = std::net::TcpListener::bind("127.0.0.1:0").expect("free port").local_addr().expect("port").port();
@@ -32,8 +40,13 @@ pub async fn serve(home: &Path) -> (Child, String) {
             .env("CODYNC_CLOUD", "off")
             // Pairing checks the phone's account: tests sign certificates with `TEST_CLOUD_SEED`.
             .env("CODYNC_DEVICE_CERT_KEY", test_cloud_key())
-            .stdout(Stdio::null())
-            .stderr(std::fs::File::create(&log).map_or_else(|_| Stdio::null(), Stdio::from))
+            // A test host leaves the computer's agent CLIs and the user's logins alone.
+            .env("CODYNC_AGENT_CHECKS", "off")
+            // And the computer's credential store: its key goes with `home`, so no test can leave one behind.
+            .env("CODYNC_VAULT", "folder")
+            .envs(env.iter().copied())
+            .stdout(output(&log))
+            .stderr(output(&log))
             .spawn()
             .expect("start the host");
         while child.try_wait().expect("host state").is_none() {
@@ -46,6 +59,11 @@ pub async fn serve(home: &Path) -> (Child, String) {
         }
         assert!(Instant::now() < deadline, "{}", not_started(&log, &last));
     }
+}
+
+/// The end of `log` a test host appends to; nowhere when it can't be opened.
+fn output(log: &Path) -> Stdio {
+    std::fs::OpenOptions::new().create(true).append(true).open(log).map_or_else(|_| Stdio::null(), Stdio::from)
 }
 
 /// Why a test host didn't answer: the last readiness check's error and the end of the host's log.
@@ -85,9 +103,41 @@ pub fn stop(child: &mut Child) {
     let _ = child.wait();
 }
 
+/// Kills process `pid` at once.
+#[allow(dead_code, reason = "only tests that leave a process of their own use it")]
+pub fn kill(pid: &str) {
+    let mut command = Command::new(if cfg!(windows) { "taskkill" } else { "kill" });
+    if cfg!(windows) {
+        command.args(["/F", "/PID", pid])
+    } else {
+        command.args(["-KILL", pid])
+    };
+    command.status().unwrap();
+}
+
+/// Waits until `done` holds, checking every 100 ms; fails naming `what` after `within`.
+#[allow(dead_code, reason = "only some tests wait this way")]
+pub async fn eventually(what: &str, within: Duration, mut done: impl AsyncFnMut() -> bool) {
+    let deadline = Instant::now() + within;
+    while !done().await {
+        assert!(Instant::now() < deadline, "timed out waiting until {what}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 /// Python as the test machine names it.
 pub fn python() -> &'static str {
     if cfg!(windows) { "python" } else { "python3" }
+}
+
+/// Whether the test machine lacks Python, which a test of a Python fixture then skips.
+#[allow(dead_code, reason = "only the tests of Python fixtures check")]
+pub fn python_missing() -> bool {
+    let missing = Command::new(python()).arg("--version").output().is_err();
+    if missing {
+        eprintln!("skipping: Python not available");
+    }
+    missing
 }
 
 /// The agent command that runs a Python fixture (quoted for `sh -c` / `cmd /c`). UTF-8 mode makes it read the host's
@@ -99,6 +149,18 @@ pub fn python_agent(script: &Path) -> String {
     } else {
         format!("{} -X utf8 -u '{}'", python(), path.replace('\'', "'\\''"))
     }
+}
+
+/// The agent command that runs the Python fixture `fixture` (in `tests/fixtures`) with `args`.
+pub fn fixture_command(fixture: &str, args: &str) -> String {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(fixture);
+    format!("{} {args}", python_agent(&script))
+}
+
+/// The command of a program that listens on `port` of this computer until it's stopped.
+#[allow(dead_code, reason = "only the tests of dev servers use it")]
+pub fn port_server(port: u16) -> String {
+    fixture_command("port_server.py", &port.to_string())
 }
 
 /// What a client holds after the event stream's catch-up: `{"rev", "bots": [...], "entries": [...]}`,

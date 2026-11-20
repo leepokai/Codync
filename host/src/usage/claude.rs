@@ -3,12 +3,17 @@
 
 use serde_json::Value;
 
-use super::Window;
+use super::{Reading, Window};
+use crate::hub::Hub;
 
 /// Flags for `claude -p /usage`. Stream JSON carries the structured
 /// `usage_report`. The empty strict MCP config keeps the check from starting
-/// every MCP server the user has set up.
-const USAGE_ARGS: [&str; 9] = [
+/// every MCP server the user has set up. `--settings` blanks the variables
+/// that route Claude Code off the subscription, whether the environment or a
+/// settings file sets them: a routed `/usage` reports token costs instead of
+/// the plan's limits (#372). The rest of the settings' `env`, a proxy for one,
+/// still applies.
+const USAGE_ARGS: [&str; 11] = [
     "-p",
     "/usage",
     "--output-format",
@@ -18,14 +23,18 @@ const USAGE_ARGS: [&str; 9] = [
     "--strict-mcp-config",
     "--mcp-config",
     r#"{"mcpServers":{}}"#,
+    "--settings",
+    r#"{"env":{"ANTHROPIC_API_KEY":"","ANTHROPIC_AUTH_TOKEN":"","ANTHROPIC_BASE_URL":"","CLAUDE_CODE_USE_BEDROCK":"","CLAUDE_CODE_USE_VERTEX":"","CLAUDE_CODE_USE_FOUNDRY":""}}"#,
 ];
 
 /// `claude -p /usage`: Claude Code's own local usage report, no model call.
-pub(super) async fn collect() -> Option<Vec<Window>> {
-    let bin = super::command::program("claude")?;
+/// `env` points it at a login profile's folder; empty for the default login.
+pub(super) async fn collect(env: Vec<(String, String)>) -> Option<Vec<Window>> {
+    let mut command = tokio::process::Command::new(super::command::program("claude")?);
+    crate::shell::apply_env(command.as_std_mut(), &env);
     let out = tokio::time::timeout(
         std::time::Duration::from_mins(1),
-        tokio::process::Command::new(bin)
+        command
             .args(USAGE_ARGS)
             .current_dir(dirs::home_dir()?)
             .stdin(std::process::Stdio::null())
@@ -62,10 +71,7 @@ fn report_window(limit: &Value) -> Option<Window> {
         }
         _ => return None,
     };
-    let resets = limit["resets_at"]
-        .as_str()
-        .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-        .map(|t| t.timestamp_millis());
+    let resets = limit["resets_at"].as_str().and_then(super::iso_ms);
     Some(Window::new(id, label, limit["percent"].as_f64()?, resets))
 }
 
@@ -89,48 +95,92 @@ pub fn parse_claude_usage(text: &str) -> Vec<Window> {
         .collect()
 }
 
-/// `POST /ingest/statusline` body: Claude Code's statusline JSON.
-pub fn ingest_statusline(hub: &crate::hub::Hub, body: &Value) {
+/// `POST /ingest/statusline` body: Claude Code's statusline JSON, from a session on `profile` (the default login
+/// without one).
+pub fn ingest_statusline(hub: &Hub, profile: Option<&str>, body: &Value) {
     let rl = &body["rate_limits"];
-    let windows: Vec<Window> = [("five_hour", "5-hour"), ("seven_day", "Weekly")]
+    let windows: Vec<Window> = ["five_hour", "seven_day"]
         .into_iter()
-        .filter_map(|(key, label)| {
+        .filter_map(|key| {
+            let (_, label) = claude_kind(key)?;
             let percent = rl[key]["used_percentage"].as_f64()?;
             Some(Window::new(key, label, percent, rl[key]["resets_at"].as_i64().map(|s| s.saturating_mul(1000))))
         })
         .collect();
     if !windows.is_empty() {
-        super::merge(hub, "claude", "Claude", "statusline", windows);
+        land(hub, "statusline", profile, windows);
     }
 }
 
 /// Claude ACP adapter: `usage_update._meta["_claude/rateLimit"]` (the SDK's `SDKRateLimitInfo`).
-pub fn ingest_claude_rate_limit(hub: &crate::hub::Hub, info: &Value) {
-    if let Some(w) = claude_window(info) {
-        super::merge(hub, "claude", "Claude", "agent", vec![w]);
+pub fn ingest_claude_rate_limit(hub: &Hub, profile: Option<&str>, info: &Value) {
+    let windows = claude_windows(info);
+    if !windows.is_empty() {
+        land(hub, "agent", profile, windows);
     }
 }
 
+/// Some of the windows, from the status line or a rate-limit event, land on the login they came from.
+fn land(hub: &Hub, source: &'static str, profile: Option<&str>, windows: Vec<Window>) {
+    let Ok(reader) = super::services::reader("claude") else { return };
+    hub.update_usage(|usage| usage.land(reader, source, profile, Reading::Some(windows)));
+}
+
+/// The limit the event is about, and the others it lists in `unifiedWindows`: the only place a
+/// limit that is merely `allowed` has its utilization. A `claude setup-token` login is read this
+/// way, because its `/usage` reports no plan limits. Claude Code marks the field internal and the
+/// SDK's types leave it out, so an event without it reads as before.
+fn claude_windows(info: &Value) -> Vec<Window> {
+    let listed = info["unifiedWindows"].as_object().into_iter().flatten();
+    let mut windows: Vec<Window> = listed.filter_map(|(kind, limit)| unified_window(kind, limit)).collect();
+    if let Some(own) = claude_window(info) {
+        windows.retain(|w| w.id != own.id);
+        windows.push(own);
+    }
+    windows
+}
+
 fn claude_window(info: &Value) -> Option<Window> {
-    let kind = info["rateLimitType"].as_str()?;
-    let label = match kind {
-        "five_hour" => "5-hour",
-        "seven_day" => "Weekly",
-        "seven_day_opus" => "Weekly · Opus",
-        "seven_day_sonnet" => "Weekly · Sonnet",
-        _ => return None,
-    };
-    // The SDK reports a 0–1 fraction (from the unified rate-limit headers). A
-    // limit that refused a request comes without one: it is used up.
+    let (id, label) = claude_kind(info["rateLimitType"].as_str()?)?;
+    // A limit that refused a request comes without a utilization: it is used up.
     let percent = match info["utilization"].as_f64() {
-        Some(u) if u <= 1.0 => u * 100.0,
-        Some(u) => u,
+        Some(u) => fraction_percent(u),
         None if info["status"] == "rejected" => 100.0,
         None => return None,
     };
-    // Seconds, but accept milliseconds too.
-    let resets = info["resetsAt"].as_i64().map(|t| if t > 100_000_000_000 { t } else { t.saturating_mul(1000) });
-    Some(Window::new(kind, label, percent, resets))
+    Some(Window::new(id, label, percent, reset_ms(&info["resetsAt"])))
+}
+
+/// One of `unifiedWindows`: `{"utilization": 0.26, "resetsAt": 1794470400, "status": "allowed"}`.
+fn unified_window(kind: &str, limit: &Value) -> Option<Window> {
+    let (id, label) = claude_kind(kind)?;
+    let percent = fraction_percent(limit["utilization"].as_f64()?);
+    Some(Window::new(id, label, percent, reset_ms(&limit["resetsAt"])))
+}
+
+/// The SDK's utilization is a 0–1 fraction (from the unified rate-limit headers), above 1 once
+/// usage runs past the cap: that is used up.
+fn fraction_percent(utilization: f64) -> f64 {
+    (utilization * 100.0).clamp(0.0, 100.0)
+}
+
+/// A limit kind's window id and label, the ones the `/usage` report gives it, so both readings
+/// land on one row. `seven_day_overage_included` is what Claude Code itself calls the "Fable
+/// limit"; the event names no model, so the name is fixed here as it is there.
+fn claude_kind(kind: &str) -> Option<(&'static str, &'static str)> {
+    match kind {
+        "five_hour" => Some(("five_hour", "5-hour")),
+        "seven_day" => Some(("seven_day", "Weekly")),
+        "seven_day_opus" => Some(("seven_day_opus", "Weekly · Opus")),
+        "seven_day_sonnet" => Some(("seven_day_sonnet", "Weekly · Sonnet")),
+        "seven_day_overage_included" => Some(("seven_day_fable", "Weekly · Fable")),
+        _ => None,
+    }
+}
+
+/// `resetsAt` as epoch milliseconds: it comes in seconds, but accept milliseconds too.
+fn reset_ms(at: &Value) -> Option<i64> {
+    at.as_i64().map(|t| if t > 100_000_000_000 { t } else { t.saturating_mul(1000) })
 }
 
 #[cfg(test)]
@@ -145,6 +195,50 @@ mod tests {
         let config = USAGE_ARGS.iter().position(|a| *a == "--mcp-config").expect("--mcp-config missing");
         let empty: Value = serde_json::from_str(USAGE_ARGS[config + 1]).unwrap();
         assert_eq!(empty, json!({ "mcpServers": {} }));
+    }
+
+    /// Issue #372: Claude Code routed off the subscription answers `/usage` with token costs, not the
+    /// plan's limits. The fake CLI answers as Claude Code 2.1.327 did, with user settings that set a
+    /// gateway and a proxy: `--settings` overrides their `env` and the environment's, and an empty
+    /// value counts as unset.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn usage_is_read_from_the_subscription_when_claude_code_is_routed_elsewhere() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("codync-claude-usage-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let claude = dir.join("claude");
+        std::fs::write(
+            &claude,
+            r#"#!/bin/sh
+routing="ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_USE_FOUNDRY"
+ANTHROPIC_BASE_URL=http://gateway HTTPS_PROXY=http://proxy:8080
+while [ $# -gt 0 ]; do
+  case $1 in
+    --setting-sources) unset ANTHROPIC_BASE_URL HTTPS_PROXY ;;
+    --settings) for var in $routing; do case $2 in *"\"$var\":\"\""*) unset $var ;; esac; done ;;
+  esac
+  shift
+done
+[ -n "$HTTPS_PROXY" ] || exit 1
+for var in $routing; do
+  if [ -n "$(printenv $var)" ]; then echo '{"type":"result","result":"Estimated cost:        $0.0000"}'; exit; fi
+done
+echo '{"type":"assistant","usage_report":{"rate_limits":{"limits":[{"kind":"weekly_all","percent":43,"resets_at":"2026-11-21T04:00:00+00:00"}]}}}'
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let _path = crate::agent::backends::TestSearchPath::set(dir.clone());
+        let routed = vec![
+            ("ANTHROPIC_AUTH_TOKEN".to_owned(), "gateway-token".to_owned()),
+            ("CLAUDE_CODE_USE_BEDROCK".to_owned(), "1".to_owned()),
+        ];
+        let windows = collect(routed).await;
+        std::fs::remove_dir_all(&dir).ok();
+        let windows = windows.expect("the subscription's limits, not the gateway's token costs");
+        assert_eq!(windows[0].id, "seven_day");
+        assert!((windows[0].percent - 43.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -196,5 +290,92 @@ mod tests {
             .unwrap();
         assert!((w.percent - 100.0).abs() < f64::EPSILON);
         assert!(claude_window(&json!({"status": "allowed", "rateLimitType": "five_hour"})).is_none());
+    }
+
+    #[test]
+    fn allowed_limits_are_read_from_unified_windows() {
+        // Two events of a `claude setup-token` login, as Claude Code 2.1.321 sent them.
+        let weekly = claude_windows(
+            &serde_json::from_str(
+                r#"{"status":"allowed","resetsAt":1794470400,"rateLimitType":"seven_day","overageStatus":"rejected","overageDisabledReason":"out_of_credits","isUsingOverage":false,"unifiedWindows":{"seven_day":{"utilization":0.26,"resetsAt":1794470400,"status":"allowed"}}}"#,
+            )
+            .unwrap(),
+        );
+        assert_eq!(weekly.len(), 1);
+        assert_eq!((weekly[0].id.as_str(), weekly[0].label.as_str()), ("seven_day", "Weekly"));
+        assert!((weekly[0].percent - 26.0).abs() < 1e-9);
+        assert_eq!(weekly[0].resets_at, Some(1_794_470_400_000));
+
+        let mut with_fable = claude_windows(
+            &serde_json::from_str(
+                r#"{"status":"allowed","resetsAt":1794470400,"rateLimitType":"seven_day","overageStatus":"rejected","overageDisabledReason":"out_of_credits","isUsingOverage":false,"unifiedWindows":{"seven_day":{"utilization":0.26,"resetsAt":1794470400,"status":"allowed"},"seven_day_overage_included":{"utilization":0.06,"resetsAt":1794470400,"status":"allowed"}}}"#,
+            )
+            .unwrap(),
+        );
+        with_fable.sort_by(|a, b| a.id.cmp(&b.id));
+        assert_eq!(with_fable.len(), 2);
+        assert_eq!(with_fable[0].id, "seven_day");
+        assert!((with_fable[0].percent - 26.0).abs() < 1e-9);
+        assert_eq!((with_fable[1].id.as_str(), with_fable[1].label.as_str()), ("seven_day_fable", "Weekly · Fable"));
+        assert!((with_fable[1].percent - 6.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_fable_limit_lands_on_the_usage_reports_row() {
+        let report = report_window(&json!({
+            "kind": "weekly_scoped",
+            "percent": 6,
+            "scope": {"model": {"display_name": "Fable"}},
+        }))
+        .unwrap();
+        let hit = claude_window(&json!({"status": "rejected", "rateLimitType": "seven_day_overage_included"})).unwrap();
+        assert_eq!((hit.id.as_str(), hit.label.as_str()), (report.id.as_str(), report.label.as_str()));
+        assert!((hit.percent - 100.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn unified_windows_add_to_the_limit_the_event_is_about() {
+        let mut w = claude_windows(&json!({
+            "status": "allowed_warning",
+            "rateLimitType": "seven_day",
+            "utilization": 0.91,
+            "resetsAt": 1_794_470_400,
+            "unifiedWindows": {
+                "five_hour": {"utilization": 1.04, "resetsAt": 1_794_000_000_000_i64, "status": "rejected"},
+                "seven_day": {"utilization": 0.9, "resetsAt": 1_794_470_400, "status": "allowed_warning"},
+                "monthly": {"utilization": 0.5, "resetsAt": 1_794_470_400},
+            },
+        }));
+        w.sort_by(|a, b| a.id.cmp(&b.id));
+        assert_eq!(w.len(), 2, "a kind the host has no row for is left out");
+        assert_eq!((w[0].id.as_str(), w[0].resets_at), ("five_hour", Some(1_794_000_000_000)));
+        assert!((w[0].percent - 100.0).abs() < f64::EPSILON, "past the cap is used up, not 1.04%");
+        assert_eq!(w[1].id, "seven_day");
+        assert!((w[1].percent - 91.0).abs() < 1e-9, "the event's own reading wins");
+    }
+
+    #[test]
+    fn an_event_without_unified_windows_reads_as_before() {
+        let warning = json!({"status": "allowed_warning", "rateLimitType": "five_hour", "utilization": 0.8});
+        assert_eq!(claude_windows(&warning), claude_window(&warning).into_iter().collect::<Vec<_>>());
+        assert_eq!(claude_windows(&warning).len(), 1);
+        assert_eq!(claude_windows(&json!({"status": "allowed", "rateLimitType": "five_hour"})), []);
+        assert_eq!(claude_windows(&json!({"status": "allowed", "unifiedWindows": null})), []);
+    }
+
+    #[test]
+    fn unified_windows_land_on_the_login_the_event_came_from() {
+        use crate::LockExt;
+
+        let hub = super::super::services::tests::hub();
+        let reader = super::super::services::reader("claude").expect("reader");
+        hub.update_usage(|usage| usage.list_login_profiles(reader, None, vec![("work".into(), "Work".into())]));
+        ingest_claude_rate_limit(
+            &hub,
+            Some("work"),
+            &json!({"status": "allowed", "unifiedWindows": {"seven_day_overage_included": {"utilization": 0.06}}}),
+        );
+        let usage = hub.usage.locked();
+        assert_eq!(usage.windows("claude", Some("work")).expect("work")[0].id, "seven_day_fable");
     }
 }

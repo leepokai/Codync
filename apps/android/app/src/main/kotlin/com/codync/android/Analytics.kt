@@ -58,7 +58,7 @@ internal object Analytics {
     private var prefs: SharedPreferences? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val http by lazy { OkHttpClient() }
-    private val pending = mutableListOf<JsonObject>()
+    internal val pending = mutableListOf<JsonObject>()
     private var timer: Job? = null
     private var sending = false
     private var foreground = false
@@ -82,22 +82,27 @@ internal object Analytics {
 
     fun capture(event: AnalyticsEvent) = record(event.name, event.properties)
 
-    /** One event for the signed-in account (merging the install ID into it once), else the install ID. */
+    /**
+     * One event for the signed-in account, else the install ID. The install ID merges into the first
+     * account only: PostHog refuses a second, so a later account on this phone starts its own profile.
+     */
     fun record(name: String, extra: Map<String, JsonElement>) {
         val stored = prefs ?: return
         if (!enabled) return
         val user = userId()
         if (user != null) {
-            val identified = stored.getStringSet("identified", emptySet()).orEmpty()
-            if (user !in identified) {
+            if (!stored.contains("identified")) {
                 enqueue("\$identify", user, mapOf("\$anon_distinct_id" to JsonPrimitive(installId(stored))))
-                stored.edit().putStringSet("identified", identified + user).apply()
+                stored.edit().putStringSet("identified", setOf(user)).apply()
             }
             enqueue(name, user, extra)
         } else enqueue(name, installId(stored), extra)
     }
 
-    /** `onboarding_completed`, once per phone until Start over (iOS: its `onboardingCompleted` default), whichever account. */
+    /** Setup finished on this phone, in whichever account, until Start over (iOS: its `onboardingCompleted` default). */
+    val onboarded: Boolean get() = prefs?.getBoolean("onboarded", false) == true
+
+    /** `onboarding_completed`, once per phone until Start over, whichever account. */
     fun completeOnboarding(via: OnboardingVia) {
         val stored = prefs ?: return
         if (stored.getBoolean("onboarded", false)) return

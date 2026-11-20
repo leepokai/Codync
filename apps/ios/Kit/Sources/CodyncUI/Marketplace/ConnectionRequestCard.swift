@@ -1,4 +1,3 @@
-import AuthenticationServices
 import CodyncKit
 import SwiftUI
 
@@ -7,8 +6,7 @@ struct ConnectionRequestCard: View {
     let entry: Entry
     let request: ConnectionRequest
     @Environment(BotStore.self) private var model
-    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
-    @Environment(\.openURL) private var openURL
+    private let signInFlow = ConnectorSignInFlow()
     @State private var app: ComposioApp?
     @State private var item: MarketConnector?
     @State private var agent: Backend?
@@ -32,6 +30,7 @@ struct ConnectionRequestCard: View {
                 Spacer(minLength: 8)
                 trailing
             }
+            WorkThreadLine(data: entry.data)
             // The card has no fill, so each field gets one.
             if pending, request.kind == "login" {
                 TextField(L10n.tr("Username or email"), text: $username)
@@ -66,7 +65,8 @@ struct ConnectionRequestCard: View {
         .codyncSheet(item: $app) { app in
             ComposioConnectSheet(app: app, requestId: entry.id) { self.app = nil }
         }
-        .codyncSheet(item: $agent) { AgentSheet(initial: $0, recheck: true) }
+        .codyncSheet(item: $agent) { AgentSheet(initial: $0, recheck: request.loginProfile == nil, signInLoginProfile: request.loginProfile) }
+        .signInCodeDialog(signInFlow.codePrompt)
         .onDisappear { value = ""; username = "" }
     }
 
@@ -92,14 +92,14 @@ struct ConnectionRequestCard: View {
         if pending {
             HStack(spacing: 6) {
                 if busy { Spinner() }
-                Button(connectTitle) { connect() }
+                Button(L10n.tr(connectTitle)) { connect() }
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(busy || (["secret", "login"].contains(request.kind) && value.isEmpty))
             }
         } else {
             HStack(spacing: 6) {
                 if request.status == "ready" { Image(systemName: "checkmark").fontWeight(.semibold) }
-                Text(request.status == "ready" ? doneTitle : "Cancelled")
+                Text(L10n.tr(request.status == "ready" ? doneTitle : "Cancelled"))
             }
             .font(.subheadline)
             .foregroundStyle(Palette.secondary)
@@ -146,9 +146,8 @@ struct ConnectionRequestCard: View {
                     value = ""
                 } else if let id = request.connectorId {
                     let connectors = try await client.connectors()
-                    if connectors.first(where: { $0.id == id })?.needsSignIn == true {
-                        try await ConnectorSignInFlow(model: model, webAuthenticationSession: webAuthenticationSession, openURL: openURL).signIn(id)
-                    }
+                    // Cancelled: the card stays pending.
+                    if connectors.first(where: { $0.id == id })?.needsSignIn == true, try await !signInFlow.signIn(id) { return }
                     try await client.finishConnectionRequest(entry.id, connectorId: id)
                 } else if let name = request.registryName {
                     let loaded = try await client.connectorInfo(name)

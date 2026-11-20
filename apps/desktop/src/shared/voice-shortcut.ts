@@ -1,6 +1,6 @@
 // The voice input shortcut (macOS): a double tap of a ⌘ key starts talking to a bot from any app,
-// one more tap sends what was said. The key watcher (main/voice-shortcut.ts) reports every
-// modifier change; this decides which ones are taps.
+// one more tap ends it (sends what was said, or only stops). The key watcher (main/voice-shortcut.ts)
+// reports every modifier change; this decides which ones are taps.
 
 /** Settings → General: which ⌘ key, tapped twice, starts voice input. */
 export type VoiceShortcut = 'off' | 'rightCommand' | 'leftCommand'
@@ -8,12 +8,21 @@ export type VoiceShortcut = 'off' | 'rightCommand' | 'leftCommand'
 /** A tap of the shortcut's key, or the tap that completes a double tap. */
 export type VoiceKey = 'tap' | 'double'
 
-export const DEFAULT_VOICE_SHORTCUT: VoiceShortcut = 'rightCommand'
+/** Off until chosen: a stray double tap in another app would start dictation (and its errors) unasked. */
+export const DEFAULT_VOICE_SHORTCUT: VoiceShortcut = 'off'
 
 export const VOICE_SHORTCUTS: { id: VoiceShortcut; label: string }[] = [
   { id: 'off', label: 'Off' },
   { id: 'rightCommand', label: 'Right ⌘ twice' },
   { id: 'leftCommand', label: 'Left ⌘ twice' },
+]
+
+/** Settings → General: what the tap after the double tap does with what was said. */
+export type VoiceTap = 'send' | 'stop'
+
+export const VOICE_TAPS: { id: VoiceTap; label: string }[] = [
+  { id: 'send', label: 'Send' },
+  { id: 'stop', label: 'Stop without sending' },
 ]
 
 /** How the tip names the key ("the right ⌘"), or null when the shortcut is off. */
@@ -81,15 +90,15 @@ export class CommandTaps {
 
 /**
  * What a tap of the shortcut does to dictation: a double tap starts it, a tap after a start by the
- * shortcut sends. Double-tapping to send arrives as that tap then a double, and the double starts nothing.
+ * shortcut ends it. Double-tapping to end arrives as that tap then a double, and the double starts nothing.
  */
 export class VoiceKeyRouter {
-  private sentByTap = false
+  private endedByTap = false
 
-  route(key: VoiceKey, dictation: { byShortcut: boolean; busy: boolean }): 'start' | 'send' | null {
-    const pairsWithSend = this.sentByTap
-    this.sentByTap = key === 'tap' && dictation.byShortcut
-    if (this.sentByTap) return 'send'
-    return key === 'double' && !pairsWithSend && !dictation.busy ? 'start' : null
+  route(key: VoiceKey, dictation: { byShortcut: boolean; busy: boolean }): 'start' | 'end' | null {
+    const pairsWithEnd = this.endedByTap
+    this.endedByTap = key === 'tap' && dictation.byShortcut
+    if (this.endedByTap) return 'end'
+    return key === 'double' && !pairsWithEnd && !dictation.busy ? 'start' : null
   }
 }

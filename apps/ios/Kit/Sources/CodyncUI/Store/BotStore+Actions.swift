@@ -11,9 +11,9 @@ extension BotStore {
         connection == .online && heldDrop == nil && eventsTask != nil && !retired ? client : nil
     }
 
-    /// The client once the link is up. A reconnect in progress is waited out (headers show it,
-    /// see `shownConnection`), and an unreachable computer gets one fresh attempt first. A computer
-    /// that is off or refusing this device throws at once; so does a reconnect that outlasts `deadline`.
+    /// The client once the link is up. A reconnect in progress, or a cloud computer the relay is waking, is waited
+    /// out (headers show it, see `shownConnection`), and an unreachable computer gets one fresh attempt first. A
+    /// computer that is off or refusing this device throws at once; so does a wait that outlasts `deadline`.
     func ready(until deadline: ContinuousClock.Instant = .now + BotStore.actionPatience) async throws -> HostClient {
         var counted = false
         var retried = false
@@ -22,13 +22,14 @@ extension BotStore {
             if let live { return live }
             switch connection {
             case .online, .connecting: break
+            case .computerOffline where isWaking: break
             case .offline where !retried:
                 // The link retries on a backoff of up to 30 s: with someone waiting, try now.
                 retried = true
                 restartStream()
             case .offline, .unpaired: throw HostError.unreachable
             // The relay reports when it comes back, so there is no attempt of ours to wait for.
-            case let .computerOffline(lastSeen): throw HostError.computerOffline(lastSeen: lastSeen)
+            case let .computerOffline(lastSeen, _): throw HostError.computerOffline(lastSeen: lastSeen)
             case let .unauthorized(message): throw HostError.unauthorized(message)
             }
             guard ContinuousClock.now < deadline else { break }
@@ -38,7 +39,7 @@ extension BotStore {
             }
             try await Task.sleep(for: .milliseconds(100))
         }
-        throw HostError.unreachable
+        throw isWaking ? HostError.computerWaking : HostError.unreachable
     }
 
     /// Runs `op` once the link is up. With `replay`, only for calls the computer can safely get
@@ -77,6 +78,7 @@ extension BotStore {
     }
 
     public func stop(_ botId: String) { perform(replay: true) { try await $0.stop(botId) } }
+    public func newSession(_ botId: String) { perform { try await $0.newSession(botId) } }
     /// A call's audio is on: the lead speaks first, on the call (an older host, which has no lead, never gets this).
     public func callStarted(_ botId: String, call: String) {
         guard bots[botId]?.lead == true else { return }
@@ -84,6 +86,17 @@ extension BotStore {
     }
     /// The bot's own agent again, off the fallback it runs on.
     public func switchBack(_ botId: String) { perform(replay: true) { try await $0.switchBack(botId) } }
+
+    // MARK: dev servers
+
+    /// A refusal shows; the bot's next update shows the rest.
+    public func devServerAction(_ action: DevServer.Action, botId: String, id: String) {
+        perform { try await $0.devServer(action, botId: botId, id: id) }
+    }
+
+    func devServerLogs(botId: String, id: String) async throws -> String {
+        try await withLink(replay: true) { try await $0.devServerLogs(botId: botId, id: id) }
+    }
 
     // MARK: remote screen
 
@@ -107,6 +120,33 @@ extension BotStore {
         }
     }
 
+    /// Sends a queued message now: into the bot's running turn when its agent can take it, else as its next turn. It
+    /// leaves the queue once the computer says so.
+    /// `thread`: the task's thread the message waits in, not a chat.
+    public func steer(_ entry: Entry, in thread: WorkThread? = nil) {
+        answer(entry, "steer") { try await $0.steer(botId: thread?.botId ?? entry.botId, entryId: entry.id, taskId: thread?.taskId) }
+    }
+
+    /// Takes back a queued message, which never goes out: gone at once, back if the computer refuses.
+    public func unqueue(_ entry: Entry, in thread: WorkThread? = nil) {
+        let mark = { (removed: Bool?) in
+            if let thread {
+                var taken = entry
+                taken.data.removed = removed
+                Motion.animate { self.putThreadEntry(taken, thread: thread.threadId) }
+                return
+            }
+            guard let i = self.entries[entry.botId]?.firstIndex(where: { $0.id == entry.id }) else { return }
+            Motion.animate { self.entries[entry.botId]?[i].data.removed = removed }
+        }
+        mark(true)
+        Task {
+            await attempt(undo: { mark(nil) }) {
+                try await $0.unqueue(botId: thread?.botId ?? entry.botId, entryId: entry.id, taskId: thread?.taskId)
+            }
+        }
+    }
+
     /// A card's button: `entry` shows `choice` as answering (its spinner) while `op` runs.
     private func answer(_ entry: Entry, _ choice: String, _ op: @escaping @MainActor (HostClient) async throws -> Void) {
         guard answering[entry.id] == nil else { return }
@@ -125,6 +165,13 @@ extension BotStore {
         answer(entry, option ?? "") {
             try await $0.respondPermission(entryId: entry.id, optionId: option)
             // The card's own update follows on the events stream; hold the spinner until then.
+            try? await Task.sleep(for: .seconds(2))
+        }
+    }
+
+    public func decide(_ entry: Entry, option: String) {
+        answer(entry, option) {
+            try await $0.respondDecision(entryId: entry.id, option: option)
             try? await Task.sleep(for: .seconds(2))
         }
     }
@@ -166,10 +213,11 @@ extension BotStore {
         }
     }
 
-    /// The roster's "Mark as read": everything in the chat.
+    /// The roster's "Mark as read": everything in the chat, except cards still waiting on the user, which stay
+    /// counted until they're answered.
     public func markAllRead(_ botId: String) {
-        guard (bots[botId]?.unread ?? 0) > 0 else { return }
-        bots[botId]?.unread = 0
+        guard let bot = bots[botId], bot.unseen > 0 else { return }
+        bots[botId]?.unread = bot.waiting
         perform(replay: true) { try await $0.markRead(botId) }
     }
 
@@ -235,6 +283,12 @@ extension BotStore {
         answer(entry, "handoff") { try await $0.keepConversation(entryId: entry.id) }
     }
 
+    /// Continue on a chain stopped at its handoff limit: the bot gets "Continue" from the user; the notice's update
+    /// drops the button.
+    public func continueChain(_ entry: Entry) {
+        answer(entry, "continue") { try await $0.continueChain(entryId: entry.id) }
+    }
+
     /// Runs a failed routine run's work again, from its notice; the notice's update drops the button.
     public func retryRoutineRun(_ entry: Entry) {
         guard let runId = entry.data.runId else { return }
@@ -264,6 +318,24 @@ extension BotStore {
         guard ids != roster.map(\.id) else { return }
         for (position, id) in ids.enumerated() { bots[id]?.position = position }
         perform(replay: true) { try await $0.reorderBots(ids) }
+    }
+
+    /// Whether a bot with a new message moves to the top of this computer's roster.
+    public var autoOrder: Bool { hello?.autoOrder ?? false }
+
+    public func setAutoOrder(_ on: Bool) {
+        hello?.autoOrder = on
+        Task { await attempt(replay: true, undo: { self.hello?.autoOrder = !on }) { try await $0.setAutoOrder(on) } }
+    }
+
+    /// Whether the user names this computer here, on a host that takes it: a cloud computer is named in Codync Cloud.
+    public var canRename: Bool {
+        connection == .online && supportsComputerName && hello.map { $0.device != "cloud" } == true
+    }
+
+    /// The user's name for this computer, empty for its hostname.
+    public func setComputerName(_ name: String) {
+        Task { await attempt { self.hello?.name = try await $0.setComputerName(name) } }
     }
 
     /// One place up (-1) or down (+1) among the bots it moves with (`isRosterPeer`: its band and, below the top, its section; VoiceOver).
@@ -348,6 +420,67 @@ extension BotStore {
         try await ready().callEntries(botId: botId, call: call)
     }
 
+    /// A thread's transcript, for its page in the details. Never `upsert`ed: a thread's entries stay out of chats.
+    public func fetchThreadEntries(_ botId: String, thread: String) async throws -> [Entry] {
+        try await withLink(replay: true) { try await $0.threadEntries(botId: botId, threadId: thread) }
+    }
+
+    /// Has the bot's conversation open its details once it is on screen.
+    public func requestDetails(of botId: String) { detailsRequest = botId }
+
+    /// Consumed once, including when the conversation was already on screen.
+    func takeDetailsRequest(for botId: String) -> Bool {
+        guard detailsRequest == botId else { return false }
+        detailsRequest = nil
+        return true
+    }
+
+    /// Has the bot's conversation show the card `task` waits on once it is on screen.
+    public func requestCard(of botId: String, task: WorkTask) { cardRequest = (botId, task) }
+
+    /// Consumed once, including when the conversation was already on screen.
+    func takeCardRequest(for botId: String) -> WorkTask? {
+        guard let request = cardRequest, request.botId == botId else { return nil }
+        cardRequest = nil
+        return request.task
+    }
+
+    /// The card in the bot's chat that `task` waits on, read from the computer when this device doesn't hold it
+    /// yet: up to five pages of earlier messages. Nil when it isn't there.
+    public func card(for task: WorkTask, in botId: String) async -> Entry? {
+        for _ in 0..<5 {
+            if let card = chat(botId).card(for: task) { return card }
+            guard canLoadOlder(botId) else { return nil }
+            await loadOlder(botId)
+        }
+        return chat(botId).card(for: task)
+    }
+
+    /// Stops one working task of the bot's, or all of them (nil).
+    public func stopWork(_ botId: String, task: String?) {
+        perform(replay: true) { try await $0.stopWork(botId: botId, taskId: task) }
+    }
+
+    /// A waiting task moves to the front of the box.
+    public func workFirst(_ botId: String, task: String) {
+        perform(replay: true) { try await $0.work("workFirst", botId: botId, taskId: task) }
+    }
+
+    /// A waiting task, or one that ended, leaves the box.
+    public func dropWork(_ botId: String, task: String) {
+        perform(replay: true) { try await $0.work("dropWork", botId: botId, taskId: task) }
+    }
+
+    /// A stopped or failed task waits again, last.
+    public func retryWork(_ botId: String, task: String) {
+        perform { try await $0.work("retryWork", botId: botId, taskId: task) }
+    }
+
+    /// Starts a waiting task now in the place of the working task `insteadOf`.
+    public func workCutIn(_ botId: String, task: String, insteadOf: String) {
+        perform { try await $0.workCutIn(botId: botId, taskId: task, insteadOf: insteadOf) }
+    }
+
     /// The bot-to-bot notices between a chat and a peer. Never `upsert`ed: old notices in the
     /// mirror would break `loadOlder`, which pages from the oldest loaded `seq`.
     public func botConversation(_ botId: String, peer: String) async throws -> [Entry] {
@@ -367,6 +500,39 @@ extension BotStore {
         try await ready().listDirs(path)
     }
 
+    /// Whether this computer lists one agent's limits.
+    public func setUsageShown(_ id: String, shown: Bool) async {
+        do {
+            setUsage(try await ready().setUsageShown(id, shown: shown))
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    /// The order this computer lists its agents in; returns once it's sent. One at a time and only the newest: the host
+    /// handles requests side by side, so two sent together could land in either order. A host older than this refuses
+    /// the call: the error shows and the order stays.
+    public func setUsageOrder(_ ids: [String]) async {
+        usageOrderWaiting = ids
+        let sending = usageOrderSending ?? Task { await sendUsageOrders() }
+        usageOrderSending = sending
+        await sending.value
+    }
+
+    private func sendUsageOrders() async {
+        while let ids = usageOrderWaiting {
+            usageOrderWaiting = nil
+            do {
+                setUsage(try await ready().setUsageOrder(ids))
+            } catch {
+                lastError = error.localizedDescription
+                // The row goes back to the host's order, and what waited was moved from one that didn't land.
+                usageOrderWaiting = nil
+            }
+        }
+        usageOrderSending = nil
+    }
+
     public func refreshUsage() async {
         guard !retired, let client else { return }
         if let u = try? await client.usage(refresh: true), !Task.isCancelled { setUsage(u) }
@@ -380,7 +546,8 @@ extension BotStore {
     }
 
     public func loadOlder(_ botId: String) async {
-        guard let client, !historyComplete.contains(botId) else { return }
+        // Held while everything is fetched again, like `canLoadOlder`.
+        guard let client, refetched == nil, !historyComplete.contains(botId) else { return }
         let first = chat(botId).first { $0.seq > 0 && $0.seq != Int64.max }?.seq ?? Int64.max
         guard let older = try? await client.history(botId: botId, beforeSeq: first, limit: 100) else { return }
         if older.count < 100 { historyComplete.insert(botId) }

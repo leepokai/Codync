@@ -35,12 +35,52 @@ reason to lock someone out.
 | Update the host | Desktop on macOS and Windows, its own computer: the bundled host is reinstalled (**Update now**). Any computer whose `hello` has `canUpdate` (the Linux desktop's own too): **Update now** calls `installHostUpdate` ([updates](../guides/updates.md#standalone-hosts-on-linux-and-macos)), and the notice reads *Updating Codync on …* until the host comes back newer, or for 10 minutes; then it offers the update again with why. Otherwise: instructions for that computer. The phones also offer it, and any newer release (`hello.latestVersion`), on the Codync row of the computer's card in Computer management; the desktop on SSH computers' cards in Settings > Computers | `^k` → Check for updates |
 | Sync while mismatched | Stopped; `hello` is asked again every 30 s (5 s while an update asked from here runs) and on every reconnect | Continues; sending is blocked |
 
+Update notices name which side needs updating and its minimum version: this app, Codync on the named computer, or a cloud computer updating itself.
+
 Drafts are kept while sending is blocked. A host update restarts the host, so the reconnect
 reads the new `hello` and the notice goes away on its own.
+
+**Codync Cloud computers** never ask the user to update the host: every app sends
+`Codync-App: <platform>/<version>; minHost=<version>` to the cloud, and a cloud computer below an app's `minHost`
+installs exactly that version before the app talks to it ("Your cloud computer is updating…", seconds). The cloud
+also holds emergency floors that answer `426 appUpdateRequired` or `426 hostUpdateRequired`
+([Codync Cloud plan](../plans/codync-cloud.md#cloud-hard-update-雲端強更新-emergencies-only)).
 
 The iPhone and desktop apps also treat **undecodable data from a newer host** as *Update this app*: an event
 that stays undecodable after the one rewind, or a `hello` whose other fields can't be decoded
 (its `version` and `minApp` are still read). From an older or equal host it's only logged.
+
+**The cached conversation survives an update.** A client keeps a copy of each computer's bots and newest messages
+(its mirror), and an update of the app or the host never empties what a chat shows:
+
+- iPhone and desktop keep their event cursor across app and host updates, so a reconnect catches up only on what
+  is new: a catch-up from rev 0 would bring every chat again. Their copy records what it was synced under: a
+  mirror format the app raises when it starts to need a field cached rows may lack, and `hello.schema` (the
+  host's store schema; a host that sends no `schema` is judged by its version). When either changes, they fetch
+  everything again from rev 0 underneath what's shown and, once that catch-up has all arrived (`hello.catchUp`
+  events), keep exactly what the computer sent again; a refetch the link cut short starts over. A bot field a
+  host update adds shows once that bot next changes.
+- Android stores each row as the computer sent it, so a new app or host version keeps the whole conversation: it
+  only reads the bots again. Its event cursor stays where it was: a catch-up from rev 0 brings only each chat's
+  newest entries, and onto the rows held it could leave a gap paging never fills. The one exception is a change of `hello.schema` (the host's store
+  schema), since a migration may rewrite or delete rows in place; a host that sends no `schema` is judged by its
+  version. The conversation is dropped then and the chats are empty until the catch-up fills them: refetching
+  underneath, as the iPhone does, isn't built on Android
+  ([Android parity](../plans/android-app.md#different-from-the-iphone-on-purpose-or-by-platform)).
+
+Apps older than 2.41.0 on a computer in no account lose the relay: `hello.cloud` is null there, which they save, and they have no **Add to account** row. They reach it over Wi-Fi or Tailscale until the computer joins an account some other way, and `hello.joinAccount` stays `false` so they never call `joinAccount`, which takes a certificate now. It raises no floor: a computer in an account is unchanged for them.
+
+Apps older than 2.45.1 would show a voice note (`voiceNote: true`, a sound in `files` and the message in `text`) as its file card only, without the message, so 2.45.1 raises `minApp`.
+
+Apps older than 2.49.0 don't know a bot's box (`work`, `outside`), where its routine runs and other bots' requests now work: the chat's `status` stays idle while one runs, so they show no work and no Stop for it (the chat's Stop leaves the box alone), and a choice card a task raises in the chat still has their **Something else** field, whose text goes to the chat as a message and never answers the card. So 2.49.0 raises `minApp`.
+
+Writing to an item's thread adds only: `itemId` on `send`, `steer` and `unqueue`, `work[].talk` and
+`work[].folder`, and the user's own entries in a task's transcript. An app from before it shows the transcript to
+read as before, with those entries among the steps, and an item the user reopened elsewhere as working again. A
+host from before it sends no `talk`, so a newer app shows no composer there. It raises no floor.
+
+Apps older than 2.39.0 don't read `removed`: a queued message taken back on a newer client (`unqueue`) stays in their
+chat as *Not sent — stopped*. Nothing breaks and the message never went out, so it raises no floor.
 
 ## Changing what crosses the wire
 
@@ -55,34 +95,46 @@ couldn't get the matching side yet.
   `Submit Android` ship any release whose `MIN_APP` is above their store's version, even
   without app changes), add a row to the floor history, and re-record
   the wire shape snapshot. That release isn't offered (downloads, updaters, Homebrew) until
-  the App Store has the iPhone app (next section), so nobody is asked for an update that
+  the App Store has the iPhone app and Google Play the Android app (next section), so nobody is asked for an update that
   isn't there yet.
 - **Raise `minHost`** when the client's core flows need something older hosts lack. Hosts
   update without review, so this only asks the person to update the computer. An optional
-  feature that needs a newer host hides its control instead.
+  feature that needs a newer host hides its control instead. A client's `minHost` never rises to
+  a release the gate holds ([below](#holding-releases-for-the-stores)): not in the release that
+  raises `MIN_APP`, nor in one published while an earlier raise still waits for a store. Each
+  store publishes its app the moment its own review passes, so the faster store's phones would
+  ask for a host no updater can see until the slower review ends. There, raise `minHost` only to
+  a release that is already *latest*, or in the next release once the gate has caught up.
 - Floors never exceed the release that ships them (unit tests in both crates check this).
 - The encrypted channel's handshake version (`v` in its `hello`, rejected with
   `unsupportedVersion`, close code 4400) is separate: the host must keep accepting every `v`
   a supported client sends.
 
-### Holding releases for the App Store
+### Holding releases for the stores
 
-A release that raises `minApp` would lock out paired iPhones until App Review passes, and a
-computer set up from it would lock out the iPhone it pairs with. So what anyone can get
-follows the App Store:
+A release that raises `minApp` would lock out paired phones until their store's review passes, and a
+computer set up from it would lock out the phone it pairs with. So what anyone can get
+follows the App Store and Google Play:
 
 - **Release gate** (`tools/release-gate.py`, run by `.github/workflows/release-gate.yml` after
   each release, and every 5 minutes while a newer release waits or the Homebrew tap trails the
   latest one, dispatched by the cloud Worker's cron: `cloud/src/release-gate.ts`, token
   `RELEASE_GATE_TOKEN`): releases are published without GitHub's *latest* mark. The gate marks
-  the newest fully uploaded release whose `MIN_APP` the App Store's iPhone version meets
-  (`itunes.apple.com/lookup?id=6760984418`, with a query string of its own each time: Apple's CDN
-  keeps the bare URL for up to a day after a release) and points the Homebrew tap (cask and formula) at
-  it. The website's download links (`releases/latest/download/…`), `packaging/install.sh`,
+  the newest fully uploaded release whose `MIN_APP` both stores' versions meet: the App Store's
+  iPhone version (`itunes.apple.com/lookup?id=6760984418`, with a query string of its own each time:
+  Apple's CDN keeps the bare URL for up to a day after a release) and Google Play's Android version,
+  and points the Homebrew tap (cask and formula) at it. Google Play's version is read from the app's
+  public listing page (`play.google.com/store/apps/details?id=com.pokai.Codync.android`, the version
+  in the page's data before the target and minimum SDK): Play has no lookup like Apple's, and its
+  publishing API lists a release from the moment it is sent for review, so only the listing says
+  what people can install. While the app has no listing (404) Google Play holds nothing; a listing
+  without a readable version fails the run (red, the mark stays) rather than guess. The website's
+  download links (`releases/latest/download/…`), `packaging/install.sh`,
   electron-updater and `codync-host update` all read the latest release, so none of them sees
   a release that waits. Every release after a raise waits with it, desktop-only ones too, until
-  App Review passes; within 5 minutes the gate then offers the newest. The new iPhone app asks for
-  its own host at once, so the wait has to be short. The gate itself reads the App Store from
+  both reviews pass; within 5 minutes the gate then offers the newest. One store's phones can
+  run the new app while the release still waits for the other store, which is why a client's
+  `minHost` never rises to a held release (above). The gate itself reads the App Store from
   GitHub's runners (Apple answers Workers with 403). The cron replaced the workflow's hourly GitHub
   schedule, which GitHub ran late or not at all: on 2026-10-20 iPhone 2.20.1 reached the App Store
   at 09:49 UTC while the next scheduled run came at 11:43, so for two hours every phone that
@@ -141,6 +193,9 @@ Update this table in the release that changes a floor, with the reason.
 
 | Release | Host `minApp` | Client `minHost` | Why |
 |---|---|---|---|
+| 2.51.0 | 2.51.0 | 2.26.0 (unchanged) | A piece of work is a `task` and what does it a `thread` on the wire: `itemId` → `taskId`, the old `taskId` → `threadId`, `taskEntries`/`taskEntry` → `threadEntries`/`threadEntry`, `maxAgents`/`taskWorktrees` → `maxThreads`/`threadWorktrees`, and a card's `data.task` (an object) → `data.thread` with `data.item` → `data.task`. An older app would send `itemId`, which the host no longer reads: a message to a thread would land in the chat. Until `minHost` reaches 2.51.0 each client has one seam for hosts before 2.51.0 (`old-host.ts`, `HostClient+OldHosts.swift`, `OldHostWire.kt`, `tui/net/old_host.rs`): a call that names a task or a bot's thread settings carries both names (`taskId` and `itemId`, `maxThreads` and `maxAgents`, `threadWorktrees` and `taskWorktrees`) whatever the host's version, so one sent before `hello` or under the last connection's version still reaches the thread on either host; only `threadEntries`/`taskEntries` is chosen by the host's version, and what comes in is read in either shape. |
+| 2.49.0 | 2.49.0 | 2.26.0 (unchanged) | Routine runs and other bots' requests work as items in the bot's box, away from its chat: the chat's `status` no longer says they run and its Stop no longer stops them, and a task's choice card in the chat isn't answered by a typed message. Older apps show a running routine as an idle bot with nothing to stop, and their **Something else** answer to a task's card becomes an unrelated message. |
+| 2.45.1 | 2.45.1 | 2.26.0 (unchanged) | A bot's voice note is one message: the player and, in `text`, what the bot wrote. Older apps show a message with `files` as the file card only and never its `text`, so they would drop the message. |
 | 2.36.0 | 2.36.0 | 2.26.0 (unchanged) | Pairing proves the phone's account with a cloud-signed device certificate; older apps send none, so the host rejects their `pair` with `unsupportedVersion`. |
 | 2.34.0 | 2.34.0 | 2.26.0 (iPhone, Android, desktop) | Custom icons are for bots only: `setIcon` rejects `agent:` targets, so older apps' agent icon editor would fail. |
 | 2.26.0 | 2.21.0 | 2.26.0 (iPhone, Android, desktop) | What a call's voice hears comes from the host as `call` events (replies, approvals, failures, progress); the apps no longer derive it from the chat, so on an older host a call would never hear the bot. |
@@ -150,6 +205,10 @@ Update this table in the release that changes a floor, with the reason.
 | 2.18.0 | 2.18.0 | 2.12.0 | Memory moved from Engram into the host: the memory methods take and return the new two layers, and the Engram ones (`memoryDetail`, `reviewMemory`, `exportMemory`, `importMemory`) are gone. Clients still talk to older hosts; only their memory screen shows an error there. |
 | 2.12.0 | 2.3.0 | 2.12.0 | The clients require Engram memory management fields and methods. Older clients can still list and forget memories on the new host. |
 | 2.4.0 | 2.3.0 | 2.3.0 | First release with the check. Since 2.3.0 the wire only gained `minApp` and lost the unused `protocol`; 2.3.0 is the oldest pairing verified to work, and a higher floor would lock out hosts that never auto-update. |
+
+Releases that kept the floor on purpose:
+
+- 2.52.0 (`minApp` stays 2.51.0): an agent's own question (ACP elicitation) that has options comes with `ownWords: false`. Apps older than 2.52.0 ignore the field and still show **Something else** on it; words typed there match no option, so they cancel the question and reach the bot as the next message. Kept because the question is new (older apps lose nothing they had), its options still answer it, and the agent hears `cancel` rather than a wrong answer.
 
 ## Trying it on a simulator
 

@@ -3,7 +3,8 @@
 
 use crate::store::Store;
 use anyhow::{Result, bail};
-use codync_network::{Connector, Rule};
+use codync_network::rules::{ANY, MAX_RULES};
+use codync_network::{Access, Connector, Rule};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -22,6 +23,54 @@ pub struct Saved {
     pub connector: Connector,
     #[serde(default)]
     pub rules: Vec<Rule>,
+    /// Its rules were written for the `auto` default (`Network::DEFAULT_ACCESS`). A network saved before that
+    /// default keeps each computer already in it at `allow` once, with a rule ([`kept_members`]).
+    #[serde(default)]
+    pub auto_default: bool,
+}
+
+impl Saved {
+    /// A network this computer creates or joins now.
+    pub fn new(id: String, name: String, connector: Connector) -> Self {
+        Self { id, name, connector, rules: Vec::new(), auto_default: true }
+    }
+}
+
+/// `rules` with an `allow` rule at the end for each of `members` (by name) that has none of its own yet: what a
+/// computer no rule matched got before the default became `auto`, so the computers already in a network keep it.
+/// Without room for one each, a single `allow * → *` keeps them all (and any computer that joins later) there.
+pub fn kept_members(mut rules: Vec<Rule>, members: &[String]) -> Vec<Rule> {
+    let whole = |r: &Rule, member: &str| {
+        r.from_agent == ANY && r.from_computer.eq_ignore_ascii_case(member) && r.to_agent == ANY
+    };
+    // A computer named `*` would make its rule everyone's.
+    let missing: Vec<&String> =
+        members.iter().filter(|m| m.as_str() != ANY && !rules.iter().any(|r| whole(r, m))).collect();
+    let froms: Vec<String> = match missing.len() {
+        0 => Vec::new(),
+        n if rules.len() + n <= MAX_RULES => missing.iter().map(|m| format!("{ANY}@{m}")).collect(),
+        _ if rules.len() < MAX_RULES => vec![ANY.to_owned()],
+        _ => {
+            tracing::warn!("no room for a rule that keeps the network's computers at allow");
+            Vec::new()
+        }
+    };
+    for from in froms {
+        match Rule::new(Access::Allow, &from, ANY) {
+            Ok(rule) => rules.push(rule),
+            Err(error) => tracing::warn!(error = format!("{error:#}"), "couldn't keep a computer's access"),
+        }
+    }
+    rules
+}
+
+/// Changes the saved network `id` and saves the list.
+pub fn update(store: &Store, id: &str, change: impl FnOnce(&mut Saved)) -> Result<()> {
+    let mut all = load(store);
+    if let Some(saved) = all.iter_mut().find(|s| s.id == id) {
+        change(saved);
+    }
+    save(store, &all)
 }
 
 pub fn dir(id: &str) -> PathBuf {
@@ -48,7 +97,9 @@ pub fn migrate(store: &Store, data: &Path) -> Result<()> {
         return Ok(());
     }
     let connector = store.kv_get(FIRST_CONNECTOR).map_or(Ok(Connector::Public), |c| c.parse())?;
-    save(store, &[Saved { id: FIRST.into(), name: DEFAULT_NAME.into(), connector, rules: Vec::new() }])?;
+    let first =
+        Saved { id: FIRST.into(), name: DEFAULT_NAME.into(), connector, rules: Vec::new(), auto_default: false };
+    save(store, &[first])?;
     store.kv_delete(FIRST_CONNECTOR)
 }
 
@@ -84,7 +135,24 @@ mod tests {
     use super::*;
 
     fn saved(id: &str, name: &str) -> Saved {
-        Saved { id: id.into(), name: name.into(), connector: Connector::Public, rules: Vec::new() }
+        Saved::new(id.into(), name.into(), Connector::Public)
+    }
+
+    #[test]
+    fn the_computers_already_in_a_network_keep_allow_once() {
+        let deny = Rule::new(Access::Deny, "*@server", "*").unwrap();
+        let mine = Rule::new(Access::Ask, "*@Mini", "*").unwrap();
+        let kept = kept_members(vec![deny.clone(), mine.clone()], &["server".into(), "mini".into(), "laptop".into()]);
+        let laptop = Rule::new(Access::Allow, "*@laptop", "*").unwrap();
+        // A computer with a whole-computer rule of its own keeps it; the others are added after the user's rules.
+        assert_eq!(kept, [deny.clone(), mine, laptop]);
+        let named_any = kept_members(vec![deny.clone()], &["*".into()]);
+        assert_eq!(named_any, std::slice::from_ref(&deny), "a computer named * isn't everyone");
+        // Without room for one rule each, one keeps them all.
+        let kept = kept_members(vec![deny.clone(); MAX_RULES - 1], &["laptop".into(), "mini".into()]);
+        assert_eq!(kept.last(), Some(&Rule::new(Access::Allow, "*", "*").unwrap()));
+        assert_eq!(kept.len(), MAX_RULES);
+        assert_eq!(kept_members(vec![deny; MAX_RULES], &["laptop".into()]).len(), MAX_RULES, "nothing fits");
     }
 
     #[test]
@@ -107,7 +175,13 @@ mod tests {
         std::fs::write(data.join(FIRST).join("network.json"), "{}").unwrap();
         store.kv_set(FIRST_CONNECTOR, "private").unwrap();
         migrate(&store, &data).unwrap();
-        let home = Saved { id: FIRST.into(), name: "home".into(), connector: Connector::Private, rules: Vec::new() };
+        let home = Saved {
+            id: FIRST.into(),
+            name: "home".into(),
+            connector: Connector::Private,
+            rules: Vec::new(),
+            auto_default: false,
+        };
         assert_eq!(load(&store), std::slice::from_ref(&home));
         assert_eq!(store.kv_get(FIRST_CONNECTOR), None, "kept with the network now");
         // Once: what the user changes later stays.

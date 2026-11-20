@@ -1,0 +1,116 @@
+import CodyncKit
+import SwiftUI
+
+/// A list above the box, not a menu (the system-menu rule doesn't apply): hugs its rows and scrolls only once they're
+/// taller than 280 points.
+private struct ComposerList<Rows: View>: View {
+    @ViewBuilder let rows: Rows
+
+    var body: some View {
+        CappedHeight(max: 280) {
+            ViewThatFits(in: .vertical) {
+                stack
+                ScrollView { stack }.scrollIndicators(.hidden)
+            }
+        }
+        .glass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private var stack: some View {
+        VStack(spacing: 0) { rows }.padding(.vertical, 6)
+    }
+}
+
+/// A row of a list above the box: its icon, name and what it is; a tap picks it.
+private struct ComposerListRow<Icon: View>: View {
+    let title: String
+    let detail: String
+    var warning = false
+    let pick: () -> Void
+    @ViewBuilder let icon: Icon
+
+    var body: some View {
+        Button(action: pick) {
+            HStack(spacing: 10) {
+                icon.frame(width: 20)
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.text)
+                    .lineLimit(1)
+                    .layoutPriority(1)
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(warning ? Palette.warning : Palette.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressScale())
+        .accessibilityLabel(title)
+        .accessibilityValue(detail)
+    }
+}
+
+/// The `/` list: each command's icon (an agent's own command: that agent's logo), name and what it does; a tap runs it.
+/// While any of the agent's own commands is listed, headings set Codync's (Fast mode, skills) apart from the agent's.
+struct CommandList: View {
+    let commands: [SlashCommand]
+    /// The logo an agent's commands are drawn with (`BotStore.agentRegistry`).
+    let agentRegistry: (String) -> String
+    /// What the user calls an agent (`BotStore.backendName`), for its heading.
+    let agentName: (String) -> String
+    let pick: (SlashCommand) -> Void
+
+    var body: some View {
+        let groups = SlashCommands.groups(commands)
+        ComposerList {
+            ForEach(groups, id: \.agent) { group in
+                if groups.count > 1 || group.agent != nil {
+                    Text(group.agent.map(agentName) ?? "Codync")
+                        .font(.footnote)
+                        .foregroundStyle(Palette.secondary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .padding(.top, 8)
+                        .padding(.bottom, 2)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                ForEach(group.commands) { command in
+                    ComposerListRow(title: command.title, detail: command.detail, warning: command.warning) {
+                        pick(command)
+                    } icon: {
+                        if let agent = group.agent {
+                            AgentIcon(registry: agentRegistry(agent), size: 15)
+                        } else {
+                            Image(systemName: command.icon)
+                                .font(.subheadline)
+                                .foregroundStyle(Palette.secondary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The `@` list in a group: each member's face, name and description; a tap mentions it.
+struct MentionList: View {
+    let members: [Bot]
+    let pick: (Bot) -> Void
+
+    var body: some View {
+        ComposerList {
+            ForEach(members) { member in
+                ComposerListRow(title: member.name, detail: member.description) {
+                    pick(member)
+                } icon: {
+                    CharacterAvatar(bot: member, size: 18, animated: false)
+                }
+            }
+        }
+    }
+}

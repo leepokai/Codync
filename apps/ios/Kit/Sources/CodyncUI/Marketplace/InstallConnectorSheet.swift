@@ -1,4 +1,3 @@
-import AuthenticationServices
 import CodyncKit
 import SwiftUI
 
@@ -11,8 +10,7 @@ struct InstallConnectorSheet: View {
     let done: () -> Void
     @Environment(BotStore.self) private var model
     @Environment(\.dismissModal) private var dismiss
-    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
-    @Environment(\.openURL) private var openURL
+    private let signInFlow = ConnectorSignInFlow()
     @State private var optionId = ""
     @State private var values: [String: String] = [:]
     @State private var installed: InstalledConnector?
@@ -49,6 +47,7 @@ struct InstallConnectorSheet: View {
             started = true
             if addsAtOnce && item.options.count == 1 && item.options[0].inputs.isEmpty { install() }
         }
+        .signInCodeDialog(signInFlow.codePrompt)
         .onDisappear { values.removeAll() }
     }
 
@@ -69,7 +68,7 @@ struct InstallConnectorSheet: View {
                     ChoiceList(selection: $optionId, options: item.options.map { o in
                         (id: o.id, label: o.kind == "remote"
                             ? L10n.tr("Hosted by {name}").replacingOccurrences(of: "{name}", with: item.title)
-                            : L10n.tr("On {name} ({kind})").replacingOccurrences(of: "{name}", with: model.hostName).replacingOccurrences(of: "{kind}", with: o.kind),
+                            : L10n.fill(L10n.tr("On {name} ({kind})"), ["name": model.hostName, "kind": o.kind]),
                          detail: nil)
                     })
                 }
@@ -122,8 +121,10 @@ struct InstallConnectorSheet: View {
                 let c = try await model.installConnector(item, option: option.id, inputs: values)
                 installed = c
                 values.removeAll()
-                if c.needsSignIn {
-                    try await ConnectorSignInFlow(model: model, webAuthenticationSession: webAuthenticationSession, openURL: openURL).signIn(c.id)
+                // Cancelled: the sheet stays as it is.
+                if c.needsSignIn, try await !signInFlow.signIn(c.id) {
+                    saving = false
+                    return
                 }
                 if let requestId {
                     try await client.finishConnectionRequest(requestId, connectorId: c.id)

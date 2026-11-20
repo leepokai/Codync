@@ -45,6 +45,8 @@ DONE = {"READY_FOR_DISTRIBUTION", "REPLACED_WITH_NEW_VERSION", "REMOVED_FROM_SAL
 DRY_RUN = os.environ.get("DRY_RUN") == "1"
 NOTES = Path(__file__).resolve().parent.parent / "apps/ios/WhatsNew.md"
 EMOJI = re.compile("[\U00010000-\U0010FFFF\u2600-\u27BF\uFE0F\u200D]")
+# What looks like a tag, `<command>`: the App Store refuses What's New with markup (2.49.1's zh-Hant `/<指令>`).
+TAG = re.compile(r"<([^<>\n]*)>")
 WORKFLOW_ID = "44342080-ce08-4dc1-be35-34ce6cbb41b5"  # Xcode Cloud "Release": Archive iOS for the App Store
 # What the iPhone app is built from; apps/project.yml counts except its version lines.
 # The App Store notes and the Kit tests never reach the binary.
@@ -63,9 +65,9 @@ def ios_changed(base, tag):
 
 
 def app_store_text(text):
-    """What's New as the App Store takes it: without emoji (it rejects them) or a line their removal
-    left repeating another, within 4000 characters."""
-    lines = [EMOJI.sub("", line).rstrip() for line in text.splitlines()]
+    """What's New as the App Store takes it: without emoji or anything that looks like a tag (it
+    rejects both) or a line their removal left repeating another, within 4000 characters."""
+    lines = [TAG.sub(r"\1", EMOJI.sub("", line)).rstrip() for line in text.splitlines()]
     return "\n".join(line for i, line in enumerate(lines) if not line or line not in lines[:i]).strip()[:4000]
 
 
@@ -76,7 +78,9 @@ def token():
         os.environ["ASC_PRIVATE_KEY"], algorithm="ES256", headers={"kid": os.environ["ASC_KEY_ID"]})
 
 
-def call(method, path, body=None):
+def call(method, path, body=None, attempts=5):
+    """One API call. A GET that hits App Store Connect's passing 5xx or 429 is retried (v2.38.0 died
+    on one 500 mid-wait); writes are not, so nothing is sent twice."""
     if method != "GET" and DRY_RUN:
         print(f"DRY_RUN {method} {path} {json.dumps(body)}")
         return {"data": {"id": "dry-run"}}
@@ -87,6 +91,10 @@ def call(method, path, body=None):
         with urllib.request.urlopen(req) as res:
             raw = res.read()
     except urllib.error.HTTPError as e:
+        if method == "GET" and (e.code >= 500 or e.code == 429) and attempts > 1:
+            print(f"GET {path} -> {e.code}; retrying", flush=True)
+            time.sleep(30)
+            return call(method, path, body, attempts - 1)
         sys.exit(f"{method} {path} -> {e.code}\n{e.read().decode()}")
     return json.loads(raw) if raw else {}
 

@@ -1,4 +1,4 @@
-import { APP_STORE, DISCORD, DMG_FILE, EMAIL, GITHUB, PRODUCT_HUNT } from "./links";
+import { APP_STORE, DMG_FILE, GITHUB } from "./links";
 import { ABOUT, SITE } from "./site";
 
 // Structured data so search and AI answer engines read Codync as a free, open-source app.
@@ -10,17 +10,6 @@ const graph = {
       "@id": `${SITE}/#website`,
       url: SITE,
       name: "Codync",
-      publisher: { "@id": `${SITE}/#org` },
-    },
-    {
-      "@type": "Organization",
-      "@id": `${SITE}/#org`,
-      name: "Leeporic LLC",
-      brand: { "@type": "Brand", name: "Codync" },
-      url: SITE,
-      logo: `${SITE}/icon.png`,
-      email: EMAIL,
-      sameAs: [GITHUB, APP_STORE, PRODUCT_HUNT, DISCORD],
     },
     {
       "@type": "SoftwareApplication",
@@ -36,7 +25,6 @@ const graph = {
       license: "https://www.apache.org/licenses/LICENSE-2.0",
       isAccessibleForFree: true,
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-      publisher: { "@id": `${SITE}/#org` },
       sameAs: [GITHUB, APP_STORE],
     },
   ],

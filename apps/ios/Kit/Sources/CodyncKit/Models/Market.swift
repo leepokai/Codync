@@ -18,6 +18,8 @@ public struct InstalledConnector: Codable, Hashable, Sendable, Identifiable {
     public var logo: String?
     /// Remote servers: `none`, `signedOut` (waits for sign-in; bots don't get it yet) or `signedIn`.
     public var auth: String?
+    /// Set up with a token that a sign-in can replace (GitHub); absent from older hosts.
+    public var canSignIn: Bool?
 
     public var needsSignIn: Bool { auth == "signedOut" }
 }
@@ -27,6 +29,8 @@ public struct InstalledConnector: Codable, Hashable, Sendable, Identifiable {
 public struct ConnectorSignIn: Decodable, Sendable {
     public var url: String
     public var callback: String
+    /// A sign-in with a code (GitHub): what to paste on `url`; the host waits for it.
+    public var code: String?
 }
 
 // MARK: Composio (host/src/market/composio.rs): apps connected through composio.dev
@@ -204,8 +208,10 @@ public extension HostClient {
         return res.items
     }
 
+    /// `showsCode`: this app shows the code of a sign-in with a code (GitHub).
     func connectorSignIn(_ id: String) async throws -> ConnectorSignIn {
-        try await call("connectorSignIn", ["id": id], timeout: 60)
+        struct Body: Encodable { var id: String; var showsCode = true }
+        return try await call("connectorSignIn", Body(id: id), timeout: 60)
     }
 
     @discardableResult
@@ -294,6 +300,10 @@ public struct ConnectionRequest: Codable, Hashable, Sendable {
     public var site: String?
     /// Agent sign-in requests: the agent (backend id) to sign in to.
     public var backend: String?
+    /// Agent sign-in requests: the login profile it is for, when it isn't the computer's own login.
+    public var loginProfile: String?
+    /// Agent sign-in requests: the messages it holds, which go out again once the user has signed in.
+    public var entryIds: [String]?
     /// App requests: the app's logo, when Composio lists it.
     public var logo: String?
 }

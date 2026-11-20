@@ -40,7 +40,8 @@ enum class HostRoute { Direct, Relay }
 sealed interface LinkState {
     data object Connecting : LinkState
     data class Ready(val route: HostRoute) : LinkState
-    data class ComputerOffline(val lastSeenAt: Long?) : LinkState
+    /** The relay says the computer isn't connected; [waking]: the relay is starting it (a cloud computer asleep). */
+    data class ComputerOffline(val lastSeenAt: Long?, val waking: Boolean = false) : LinkState
     data class Failed(val message: String, val status: Int? = null) : LinkState
 }
 
@@ -141,7 +142,8 @@ class EncryptedChannel internal constructor(
                 handshakeDeadline?.cancel()
                 writer.withLock { handshake = null; sealer = null; opener = null }
                 dropPending(IOException("The computer is offline."))
-                mutableState.value = LinkState.ComputerOffline(wire["lastSeenAt"]?.jsonPrimitive?.longOrNull)
+                mutableState.value = LinkState.ComputerOffline(wire["lastSeenAt"]?.jsonPrimitive?.longOrNull,
+                    waking = wire["waking"]?.jsonPrimitive?.longOrNull != null)
                 firstState.complete(Unit)
             }
             "welcome" -> {
@@ -328,8 +330,8 @@ class EncryptedChannel internal constructor(
     }
 
     private fun dropPending(error: Throwable) {
-        calls.keys.toList().forEach { calls.remove(it)?.completeExceptionally(error) }
-        streams.keys.toList().forEach { streams.remove(it)?.events?.close(error) }
+        calls.drain { it.completeExceptionally(error) }
+        streams.drain { it.events.close(error) }
     }
 
     private fun fail(error: Throwable) {
@@ -346,10 +348,19 @@ class EncryptedChannel internal constructor(
         if (mutableState.value !is LinkState.Failed) mutableState.value = LinkState.Failed("Connection closed.")
         firstState.cancel()
         dropPending(IOException("Connection closed."))
-        mailboxCalls.keys.toList().forEach { mailboxCalls.remove(it)?.completeExceptionally(IOException("Relay connection closed.")) }
+        mailboxCalls.drain { it.completeExceptionally(IOException("Relay connection closed.")) }
         socket.close()
         scope.cancel()
     }
+}
+
+/**
+ * Removes every entry while other threads may remove some too (a reply, an unsubscribe): it walks the live key view,
+ * never a snapshot. `keys.toList()` throws NoSuchElementException when an entry goes meanwhile, which ended the app
+ * on a dropped connection.
+ */
+private inline fun <K : Any, V : Any> ConcurrentHashMap<K, V>.drain(action: (V) -> Unit) {
+    for (key in keys) remove(key)?.let(action)
 }
 
 internal fun JsonObject.text(key: String): String? = this[key]?.takeUnless { it == JsonNull }?.jsonPrimitive?.content

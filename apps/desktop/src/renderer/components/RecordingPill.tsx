@@ -22,14 +22,14 @@ function useElapsed(startedAt: number) {
 /**
  * Dictation in progress, in place of the mic: stop, the time since it started, and dots that
  * follow the microphone's level; `transcribing` once a recording waits for its transcript.
- * `color` null is the text color.
+ * `color` defaults to the text color.
  */
-export function RecordingPill({ startedAt, sample, onStop, transcribing = false, color = null, className = '' }: {
+export function RecordingPill({ startedAt, sample, onStop, transcribing = false, color, className = '' }: {
   startedAt: number
   sample: () => LevelSample
   onStop: () => void
   transcribing?: boolean
-  color?: string | null
+  color?: string
   className?: string
 }) {
   const tr = useTr()
@@ -44,11 +44,11 @@ export function RecordingPill({ startedAt, sample, onStop, transcribing = false,
   }
   return (
     <HStack as="span" gap={6} className={`recording-pill ${className}`}>
-      <button type="button" className="recording-stop" aria-label="Stop dictating" title="Stop dictating" onClick={onStop}>
+      <button type="button" className="recording-stop" aria-label={tr('Stop dictating')} title={tr('Stop dictating')} onClick={onStop}>
         <Icon name="stop.fill" size={11} scaled={false} />
       </button>
       <Text tabular tone="text">{elapsed}</Text>
-      <LevelDots sample={sample} color={color} width={32} height={12} label="Listening" />
+      <LevelDots sample={sample} color={color} width={32} height={12} label={tr('Listening')} />
     </HStack>
   )
 }

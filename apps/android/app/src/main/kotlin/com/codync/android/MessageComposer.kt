@@ -36,6 +36,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,6 +46,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,12 +85,12 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
  * trailing button morphs between call, send, stop and interrupt. `onInterrupt` cuts the bot off
  * while it speaks in a voice call. `replyTo` is the message the next send quotes, shown on top. `about`, in an artifact's
  * viewer: the artifact's title, which the box names in place of the quote (its card) it sends with; `draftKey` is then the
- * artifact's draft, apart from the chat's.
+ * artifact's draft, apart from the chat's. `queued`: the user's messages waiting behind the bot's work, shown on top ([QueuedMessages]).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable fun MessageComposer(bot: Bot, state: AppState, store: AppStore, onCall: (() -> Unit)?,
     onInterrupt: (() -> Unit)? = null, replyTo: ReplyQuote? = null, cancelReply: () -> Unit = {}, about: String? = null,
-    draftKey: String = bot.id) {
+    draftKey: String = bot.id, queued: List<Entry> = emptyList()) {
     val draft = state.drafts[draftKey]
     val text = rememberTextFieldState(initialText = draft?.text.orEmpty())
     val files = draft?.files.orEmpty()
@@ -131,8 +134,8 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     } }
     val online = state.actualConnection is LinkState.Ready
     val empty = text.text.isBlank() && files.isEmpty()
-    // Offline computers still take text when the relay can hold it; files need the computer.
-    val canSend = !empty && !importing && !queuing && (online || state.actualConnection is LinkState.ComputerOffline && files.isEmpty())
+    // Offline computers still take text (`holdsText`). Files need the computer.
+    val canSend = !empty && !importing && !queuing && (online || state.holdsText && files.isEmpty())
     val working = bot.isWorking(bot.id)
     val bare = text.text.isEmpty() && files.isEmpty()
     val trailing = when {
@@ -155,30 +158,36 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     val startingCommand = typed == "/"
     LaunchedEffect(startingCommand) { if (startingCommand && online) store.refreshPlugins() }
     // The one way a group's box differs: @ asks one of its bots.
-    val mentions = if (bot.kind != "group") emptyList() else mentionQuery(typed)?.let { query ->
+    val mentions = if (bot.kind != "group") emptyList() else mentionQuery(typed, members)?.let { query ->
         members.filter { query.isEmpty() || it.name.contains(query, true) }
     }.orEmpty()
     fun clear() = text.edit { replace(0, length, "") }
+    fun mention(member: Bot) = text.setTextAndPlaceCursorAtEnd(typed.substring(0, typed.lastIndexOf('@')) + "@${member.name} ")
     fun run(command: SlashCommand) {
-        val skill = command.skill
-        when {
-            skill != null -> text.setTextAndPlaceCursorAtEnd("/$skill ")
-            else -> { store.toggleFastMode(bot); clear() }
-        }
+        if (command.fills) text.setTextAndPlaceCursorAtEnd("/${command.name} ") else { store.toggleFastMode(bot); clear() }
     }
-    fun send() {
-        // Words still on their way would land in the emptied box.
+    fun sendNow() {
+        // A start still waiting (the key check) never opens the microphone after the send.
         dictation.stop()
-        val command = if (files.isEmpty()) SlashCommands.builtIn(bot, typed, members) else null
-        if (command != null) run(command) else store.sendDraft(draftKey, bot.id, typed, replyTo) { clear(); cancelReply() }
+        // The box now, not as composed: a send after dictation has the transcript too.
+        val message = text.text.toString()
+        val command = if (files.isEmpty()) SlashCommands.builtIn(bot, message, members) else null
+        if (command != null) run(command) else store.sendDraft(draftKey, bot.id, message, replyTo) { clear(); cancelReply() }
     }
+    // The composition current when the transcript arrives: a reply cancelled while it transcribes stays cancelled.
+    val latestSend by rememberUpdatedState(::sendNow)
+    // Sent once the words still on their way are in the box, with what was typed.
+    fun send() = if (dictation.busy) dictation.finish { latestSend() } else sendNow()
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    // Over the box, past the + button.
+    QueuedMessages(queued, state, store, Modifier.padding(start = 16.dp + FIELD_HEIGHT + 8.dp, end = 16.dp))
     AnimatedVisibility(commands.isNotEmpty(), enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
         exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
-        CommandList(commands, ::run, Modifier.padding(horizontal = 16.dp))
+        CommandList(commands, { agentRegistry(state, it) }, { backendName(state, it) }, ::run, Modifier.padding(horizontal = 16.dp))
     }
-    AnimatedVisibility(mentions.isNotEmpty(), enter = fadeIn(Motion.fade()), exit = fadeOut(Motion.fade())) {
-        MentionChips(mentions, state.bots) { member -> text.setTextAndPlaceCursorAtEnd(typed.substring(0, typed.lastIndexOf('@')) + "@${member.name} ") }
+    AnimatedVisibility(mentions.isNotEmpty(), enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
+        exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
+        MentionList(mentions, state.bots, ::mention, Modifier.padding(horizontal = 16.dp))
     }
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 16.dp), verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -207,35 +216,68 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 for (file in files) ComposerAttachment(file) { store.removeDraftFile(draftKey, file) }
             }
-            Row(Modifier.padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // A hardware keyboard's Enter is a new line; Ctrl/Meta+Enter (⌘↩ on iOS) sends, and never stops or calls.
-                val sendKey = Modifier.onPreviewKeyEvent { e ->
-                    val ctrlEnter = e.type == KeyEventType.KeyDown && e.key == Key.Enter && (e.isCtrlPressed || e.isMetaPressed)
-                    if (ctrlEnter && trailing == Trailing.Send && canSend) send()
-                    ctrlEnter
-                }
-                BasicTextField(state = text, enabled = !queuing, modifier = Modifier.weight(1f).focusRequester(focus).contentReceiver(receiver).then(sendKey).padding(vertical = 10.dp),
-                    textStyle = Type.body.copy(color = Palette.text), cursorBrush = SolidColor(Palette.accent),
-                    lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 8),
-                    decorator = { input -> Box { if (text.text.isEmpty()) Text(placeholder, style = Type.body, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis); input() } })
+            ComposerInput(text, placeholder, trailing, canSend, enabled = !queuing, field = Modifier.focusRequester(focus).contentReceiver(receiver), accessory = {
                 Box(Modifier.padding(bottom = 4.dp)) {
                     DictationButton(dictation, state, store, 34.dp, { text.text.toString() }) { change ->
                         text.setTextAndPlaceCursorAtEnd(change(text.text.toString()))
                     }
                 }
-                TrailingButton(trailing, canSend, Modifier.padding(bottom = 4.dp)) {
-                    when (trailing) {
-                        Trailing.Interrupt -> onInterrupt?.invoke()
-                        Trailing.Stop -> store.command("stop", body("botId" to bot.id))
-                        // The call takes the microphone.
-                        Trailing.Call -> { dictation.stop(); onCall?.invoke() }
-                        Trailing.Send -> send()
-                    }
+            }) {
+                when (trailing) {
+                    Trailing.Interrupt -> onInterrupt?.invoke()
+                    Trailing.Stop -> store.command("stop", body("botId" to bot.id))
+                    // The call takes the microphone.
+                    Trailing.Call -> { dictation.stop(); onCall?.invoke() }
+                    Trailing.Send -> send()
                 }
             }
         }
     }
+    }
+}
+
+/**
+ * The chat's box with text alone (no files, no microphone), under a task's thread: [send] takes what was typed, only
+ * while the computer is there to take it. What is typed is saved as you type under [draftKey], as a chat's draft is.
+ * The messages waiting behind the thread's turn show on top as a chat's do ([queued], with [steer] and [remove]).
+ */
+@Composable internal fun ThreadComposer(state: AppState, store: AppStore, draftKey: String, queued: List<Entry>, steer: (Entry) -> Unit,
+    remove: (Entry) -> Unit, send: (String) -> Unit) {
+    val text = rememberTextFieldState(initialText = state.drafts[draftKey]?.text.orEmpty())
+    LaunchedEffect(text, draftKey) { snapshotFlow { text.text.toString() }.collect { store.editDraft(draftKey, it) } }
+    val placeholder = tr("Message this thread")
+    val canSend = text.text.isNotBlank() && state.actualConnection is LinkState.Ready
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        QueuedMessages(queued, state, store, Modifier.padding(horizontal = 16.dp), steer, remove)
+        Box(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 16.dp).glass(RoundedRectangle(24.dp))) {
+            ComposerInput(text, placeholder, Trailing.Send, canSend, field = Modifier.semantics { contentDescription = placeholder }) {
+                send(text.text.toString())
+                text.clearText()
+            }
+        }
+    }
+}
+
+/**
+ * A composer's text and its one [trailing] button, which runs [act]. [field]: what the text takes besides typing (focus,
+ * pasted files); [accessory]: what stands before the button (the microphone).
+ */
+@Composable private fun ComposerInput(text: TextFieldState, placeholder: String, trailing: Trailing, canSend: Boolean, enabled: Boolean = true,
+    field: Modifier = Modifier, accessory: @Composable () -> Unit = {}, act: () -> Unit) {
+    Row(Modifier.padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // A hardware keyboard's Enter is a new line; Ctrl/Meta+Enter (⌘↩ on iOS) sends, and never stops or calls.
+        val sendKey = Modifier.onPreviewKeyEvent { e ->
+            val ctrlEnter = e.type == KeyEventType.KeyDown && e.key == Key.Enter && (e.isCtrlPressed || e.isMetaPressed)
+            if (ctrlEnter && trailing == Trailing.Send && canSend) act()
+            ctrlEnter
+        }
+        BasicTextField(state = text, enabled = enabled, modifier = Modifier.weight(1f).then(field).then(sendKey).padding(vertical = 10.dp),
+            textStyle = Type.body.copy(color = Palette.text), cursorBrush = SolidColor(Palette.accent),
+            lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 8),
+            decorator = { input -> Box { if (text.text.isEmpty()) Text(placeholder, style = Type.body, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis); input() } })
+        accessory()
+        TrailingButton(trailing, canSend, Modifier.padding(bottom = 4.dp), act)
     }
 }
 
@@ -280,8 +322,3 @@ internal fun clipOffersFiles(mimeTypes: List<String>): Boolean =
 
 private fun ClipDescription.mimeTypes(): List<String> = (0 until mimeTypeCount).map(::getMimeType)
 
-fun formatBytes(size: Long): String = when {
-    size >= 1024 * 1024 -> "%.1f MB".format(size / (1024.0 * 1024))
-    size >= 1024 -> "%.0f KB".format(size / 1024.0)
-    else -> "$size bytes"
-}

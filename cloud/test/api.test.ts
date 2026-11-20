@@ -9,6 +9,7 @@ import {
   ORIGIN,
   call,
   clerkToken,
+  deliverClerk,
   devicePath,
   env,
   hostSocket,
@@ -266,15 +267,14 @@ describe("devices", () => {
     const [hostWs, elsewhereWs] = await Promise.all([hostSocket(host), hostSocket(elsewhere)]);
     const before = Date.now();
     expect((await call("POST", "/v1/devices/sign-out", { token: u.token, key: u.key })).status).toBe(200);
-    const after = Date.now();
     // The account's computers pull now, not at their next poll; another account's hear nothing.
     await hostWs.nextT("cloud.changed");
     await elsewhereWs.none((m) => m.t === "cloud.changed");
     const marks = await signedOut(host);
-    expect(marks).toEqual([{ deviceKey: u.dk, signedOutAt: expect.any(Number) }]);
-    // In ms, as the host's push tickets: it drops the ones that came up to then.
-    expect(marks[0].signedOutAt).toBeGreaterThanOrEqual(before);
-    expect(marks[0].signedOutAt).toBeLessThanOrEqual(after);
+    expect(marks).toEqual([{ deviceKey: u.dk, signedOutAgo: expect.any(Number) }]);
+    // In ms, as the host's push tickets: it drops the ones that came up to then, counted back on its own clock.
+    expect(marks[0].signedOutAgo).toBeGreaterThanOrEqual(0);
+    expect(marks[0].signedOutAgo).toBeLessThanOrEqual(Date.now() - before);
     expect(await signedOut(elsewhere)).toEqual([]);
     // Still in the account, so signing back in needs no new access: registering again clears it.
     expect((await call("POST", "/v1/devices/certificate", { token: u.token, key: u.key })).status).toBe(200);
@@ -536,18 +536,6 @@ describe("revocation reaches the relay", () => {
 });
 
 describe("Clerk webhook", () => {
-  const deliver = (id: string, payload: unknown, secret = env.CLERK_WEBHOOK_SECRET!) => {
-    const body = JSON.stringify(payload);
-    const now = new Date();
-    return call("POST", "/v1/webhooks/clerk", {
-      body: payload,
-      headers: {
-        "svix-id": id,
-        "svix-timestamp": String(Math.floor(now.getTime() / 1000)),
-        "svix-signature": new Webhook(secret).sign(id, now, body),
-      },
-    });
-  };
 
   it("revokes access before failed R2 cleanup and retries the retained ownership", async () => {
     const u = await newUser();
@@ -571,12 +559,12 @@ describe("Clerk webhook", () => {
     expect(state.grants).toEqual([]);
     expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM devices WHERE owner_user_id=? AND revoked_at IS NULL").bind(u.userId).first<{n:number}>())?.n).toBe(0);
     expect((await env.DB.prepare("SELECT owner_user_id FROM computers WHERE id=?").bind(host.cid).first<{owner_user_id:string}>())?.owner_user_id).toBe(u.userId);
-    expect((await deliver(id, payload)).status).toBe(200);
+    expect((await deliverClerk(id, payload)).status).toBe(200);
     expect((await call("GET", "/v1/host/state", { key: host.sign })).body.owner).toBeNull();
   });
 
   it("rejects bad signatures", async () => {
-    const r = await deliver("msg_bad", { type: "user.deleted", data: { id: "x" } }, `whsec_${btoa("0".repeat(24))}`);
+    const r = await deliverClerk("msg_bad", { type: "user.deleted", data: { id: "x" } }, `whsec_${btoa("0".repeat(24))}`);
     expect(r.status).toBe(401);
   });
 
@@ -586,10 +574,10 @@ describe("Clerk webhook", () => {
     await claim(u, host);
     await grantAccess(u, host);
     const id = `msg_${ref.b64url(ref.random(8))}`;
-    expect((await deliver(id, { type: "user.deleted", data: { id: u.userId } })).status).toBe(200);
+    expect((await deliverClerk(id, { type: "user.deleted", data: { id: u.userId } })).status).toBe(200);
     expect((await call("GET", "/v1/me", { token: u.token })).body.error.code).toBe("accountDeleted");
     expect((await call("GET", "/v1/host/state", { key: host.sign })).body).toEqual({ owner: null, grants: [], requests: [], signedOutDevices: [] });
-    expect((await deliver(id, { type: "user.deleted", data: { id: u.userId } })).status).toBe(200);
+    expect((await deliverClerk(id, { type: "user.deleted", data: { id: u.userId } })).status).toBe(200);
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM processed_events WHERE event_id = ?").bind(id).first<{ n: number }>();
     expect(n?.n).toBe(1);
     const audits = await env.DB.prepare("SELECT COUNT(*) AS n FROM audit_events WHERE action = 'account.delete' AND target = ?")

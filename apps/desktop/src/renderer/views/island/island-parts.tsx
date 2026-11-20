@@ -3,6 +3,8 @@ import type { IslandBot } from '@shared/island'
 import { CharacterAvatar, type Mood } from '../../components/Avatar'
 import { Icon } from '../../components/Icon'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
+import { useTr } from '../../lib/use-language'
+import { fill } from '@shared/fill'
 import { useArrivals, useFlip } from './island-motion'
 import { avatarColor, palette, withAlpha } from '../../lib/theme'
 
@@ -45,6 +47,7 @@ export function BigCharacter({ bot, size, mood, badge, onOpen }: {
   badge: Badge
   onOpen?: () => void
 }) {
+  const tr = useTr()
   const glow = glowOf(badge, bot.color)
   const inner = (
     <>
@@ -55,7 +58,7 @@ export function BigCharacter({ bot, size, mood, badge, onOpen }: {
   )
   const style = { width: size, height: size }
   return onOpen ? (
-    <button className="island-big" style={style} onClick={onOpen} title="Open conversation" aria-label="Open conversation">
+    <button className="island-big" style={style} onClick={onOpen} title={tr('Open conversation')} aria-label={tr('Open conversation')}>
       {inner}
     </button>
   ) : (
@@ -66,17 +69,18 @@ export function BigCharacter({ bot, size, mood, badge, onOpen }: {
 }
 
 export function StateBadge({ badge, small = false }: { badge: Badge; small?: boolean }) {
+  const tr = useTr()
   if (!badge) return null
   if (badge === 'working' && !small) {
     return (
-      <span className="island-badge orb" aria-label="Working">
+      <span className="island-badge orb" aria-label={tr('Working')}>
         <ThinkingOrb size={14} color="#F5F6F8" />
       </span>
     )
   }
   if (badge === 'working') {
     return (
-      <span className={`island-badge dots ${small ? 'small' : ''}`} aria-label="Working">
+      <span className={`island-badge dots ${small ? 'small' : ''}`} aria-label={tr('Working')}>
         <i />
         <i />
         <i />
@@ -105,13 +109,14 @@ export function AgentRow({ color, name, subtitle }: { color: string; name: strin
 
 /** The other bots down the right edge; each opens its conversation. */
 export function MiniColumn({ bots, onOpen }: { bots: IslandBot[]; onOpen: (ref: string) => void }) {
+  const tr = useTr()
   const arrivals = useArrivals(bots.map((b) => b.ref))
   const column = useRef<HTMLDivElement>(null)
   useFlip(column)
   return (
     <div ref={column} className="island-minis">
       {bots.map((b) => (
-        <button key={b.ref} data-flip={b.ref} className={`island-mini ${arrivals.has(b.ref) ? 'island-swap' : ''}`} title={b.name} aria-label={`Open ${b.name}`} onClick={() => onOpen(b.ref)}>
+        <button key={b.ref} data-flip={b.ref} className={`island-mini ${arrivals.has(b.ref) ? 'island-swap' : ''}`} title={b.name} aria-label={fill(tr('Open {name}'), { name: b.name })} onClick={() => onOpen(b.ref)}>
           <CharacterAvatar customIcon={b.customIcon} shape={b.shape} color={b.color} size={18} mood={moodOf(b)} dark />
           <StatusDot bot={b} />
         </button>

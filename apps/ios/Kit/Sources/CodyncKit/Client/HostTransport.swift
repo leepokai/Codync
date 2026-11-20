@@ -19,8 +19,9 @@ public enum HostStreamRequest: Sendable {
 public enum LinkState: Sendable, Equatable {
     case connecting
     case ready(HostRoute)
-    /// The relay says the computer isn't connected (asleep, off): the mailbox still works.
-    case hostOffline(lastSeen: Date?)
+    /// The relay says the computer isn't connected (asleep, off): the mailbox still works. `waking`: the relay is
+    /// starting it (a cloud computer asleep), so it's on its way rather than off.
+    case hostOffline(lastSeen: Date?, waking: Bool = false)
     /// Revoked, or the computer's identity changed: retrying won't help.
     case unauthorized(String)
     /// Can't reach the computer at all (neither directly nor through the relay), or it can't confirm
@@ -57,7 +58,7 @@ public extension HostTransport {
 /// in the relay mailbox while it is offline. `ChannelTransport` is the real one.
 public protocol RemoteTransport: HostTransport {
     func computerUpdates() -> AsyncStream<Computer>
-    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?) async throws
+    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?, replyPart: String?, pasted: [String]?) async throws
     func cancelQueued(clientNonce: String) async -> MailboxCancel
     func listQueued() async throws -> [QueuedItem]
     func mailboxEvents() -> AsyncStream<MailboxEvent>
@@ -68,7 +69,11 @@ public protocol RemoteTransport: HostTransport {
 public enum HostError: LocalizedError, Sendable, Equatable {
     case http(Int, String)
     case unreachable
+    /// With no relay, a computer that's off and a phone that's away look the same.
+    case unreachableDirectly
     case computerOffline(lastSeen: Date?)
+    /// The relay is still waking it (a cloud computer asleep) when an action gave up waiting.
+    case computerWaking
     case unauthorized(String)
     case upgradeRequired
 
@@ -77,7 +82,9 @@ public enum HostError: LocalizedError, Sendable, Equatable {
         case .http(401, _): "This device isn't allowed on that computer anymore."
         case let .http(_, message): message
         case .unreachable: "Can't reach your computer. Is it on and connected to the internet?"
+        case .unreachableDirectly: "Can't reach your computer. Check you're on the same network or that Tailscale is on."
         case .computerOffline: "Your computer is offline."
+        case .computerWaking: "Still waking the computer: try again in a moment."
         case let .unauthorized(message): message
         case .upgradeRequired: "Update Codync to connect to this computer."
         }
@@ -86,7 +93,7 @@ public enum HostError: LocalizedError, Sendable, Equatable {
     /// The link failed, not the request: the same call can work once the computer is reachable again.
     public var isTransient: Bool {
         switch self {
-        case .unreachable, .computerOffline: true
+        case .unreachable, .unreachableDirectly, .computerOffline, .computerWaking: true
         default: false
         }
     }

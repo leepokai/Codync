@@ -15,10 +15,6 @@ struct CodyncApp: App {
     @AppStorage(Appearance.storageKey) private var appearance = Appearance.system
     @AppStorage("onboardingCompleted") private var onboardingCompleted = false
     @AppStorage(AppLanguage.storageKey, store: AppLanguage.defaults) private var appLanguageRaw = AppLanguage.system.rawValue
-    /// Cold launch with a computer to reach: the splash covers its connect and catch-up. Not over the sign-in
-    /// screen, where signed-out computers wait to move into the account.
-    @State private var launching = !AppStore.shared.accounts.computers.isEmpty
-        && (AppStore.shared.accounts.accountId != nil || !AppStore.shared.account.isConfigured)
     init() {
         // A tapped widget bot arrives as an intent, not a URL.
         OpenBotIntent.open = { AppStore.shared.open($0) }
@@ -45,6 +41,8 @@ struct CodyncApp: App {
                 .environment(updates)
                 .tint(Palette.accent)
                 .background(AppearanceWindow(appearance: appearance).frame(width: 0, height: 0))
+                // A computer's screen pauses after a while with nobody touching the app.
+                .recordsTouches()
                 .environment(\.locale, AppLanguage.locale(
                     preference: AppLanguage(rawValue: appLanguageRaw) ?? .system,
                     systemIsChinese: AppLanguage.systemIsChinese()))
@@ -65,15 +63,14 @@ struct CodyncApp: App {
                     app.switchAccount(to: userID)
                 }
                 .overlay {
-                    if launching {
+                    if app.launching {
                         LaunchSplash(stores: app.accounts.computers.compactMap { app.accounts.store(for: $0.id) }) {
-                            withAnimation(.easeOut(duration: 0.35)) { launching = false }
+                            withAnimation(.easeOut(duration: 0.35)) { app.launching = false }
                         }
                     }
                 }
                 .onOpenURL { url in app.open(url) }
                 .onChange(of: scenePhase, initial: true) { _, phase in
-                    ReviewInvitation.shared.setActive(phase == .active)
                     switch phase {
                     case .active: Analytics.shared.becameActive()
                     case .background: BackgroundTime.run("Analytics") { await Analytics.shared.enteredBackground() }
@@ -84,6 +81,7 @@ struct CodyncApp: App {
                     app.accounts.setActive(phase != .background)
                     // Back in the app: a computer may have joined the account meanwhile.
                     if phase == .active {
+                        app.showIconBadge()
                         Task { await app.accounts.refreshCloud() }
                         Task { await updates.refresh() }
                     }
@@ -93,6 +91,10 @@ struct CodyncApp: App {
                     // Simulator/UI-test pairing: SIMCTL_CHILD_CODYNC_PAIR_URL=codync://pair?...
                     if let s = ProcessInfo.processInfo.environment["CODYNC_PAIR_URL"], let p = Pairing(string: s) {
                         _ = try? await app.pair(p, via: .link)
+                    }
+                    // Cloud computer tests: SIMCTL_CHILD_CODYNC_TEST_SIGN_IN=<name>+clerk_test@example.com
+                    if let email = ProcessInfo.processInfo.environment["CODYNC_TEST_SIGN_IN"] {
+                        await app.account.signInTestAccount(email)
                     }
                     if ProcessInfo.processInfo.environment["CODYNC_OPEN_USAGE"] != nil { app.tab = .state; app.showUsage = true }
                     if ProcessInfo.processInfo.environment["CODYNC_STATE_SURFACE"] != nil { app.tab = .state }
@@ -135,6 +137,11 @@ final class AppStore {
     var marketplace: ComputerID?
     /// While an account is being left: its stores stay open until its computers have been told.
     var leaving = false
+    /// Cold launch with a computer to reach: the splash covers its connect and catch-up. Not over the sign-in
+    /// screen, where signed-out computers wait to move into the account.
+    var launching = false
+    /// Decided now, before onboarding can finish this run (docs/features/whats-new.md).
+    let whatsNew = WhatsNew(usedBefore: UserDefaults.standard.bool(forKey: "onboardingCompleted"))
 
     private init() {
         let session = AccountSession()
@@ -151,11 +158,13 @@ final class AppStore {
         }
         CrashReports.shared.start()
         contextID = storage.id
-        Self.adoptSignedOutPairings(into: storage)
+        let rescan = Self.adoptSignedOutPairings(into: storage)
         // Accounts Clerk hasn't restored by launch keep their computers' push on.
         SharedStore.Context.splitPushSwitch(from: .standard,
                                             into: Set([nil, storage.accountID] + session.accounts.map(\.id)).map { SharedStore.Context(accountID: $0) })
         (accounts, cloud) = Self.makeAccounts(storage, session: session)
+        launching = !accounts.computers.isEmpty && (accounts.accountId != nil || !session.isConfigured)
+        if rescan { accounts.lastError = Self.scanAgain }
     }
 
     var storage: SharedStore.Context { accounts.storage }
@@ -171,7 +180,7 @@ final class AppStore {
         accounts.retire()
         PushRegistrar.shared.deactivate()
         LiveActivities.shared.endAll()
-        Self.adoptSignedOutPairings(into: storage)
+        let rescan = Self.adoptSignedOutPairings(into: storage)
         SharedStore.activeAccountID = userID
         storage.bots = []
         contextID = storage.id
@@ -179,7 +188,9 @@ final class AppStore {
         showComputers = false
         marketplace = nil
         (accounts, cloud) = Self.makeAccounts(storage, session: account)
+        if rescan { accounts.lastError = Self.scanAgain }
         BotsWidgetFeed.reset()
+        IconBadge.show(0)
         WidgetCenter.shared.reloadAllTimelines()
     }
 
@@ -198,6 +209,7 @@ final class AppStore {
         storage.bots = []
         SharedStore.activeAccountID = nil
         UserDefaults.standard.set(false, forKey: "onboardingCompleted")
+        UserDefaults.standard.set(false, forKey: "withoutAccount")
         showComputers = false
         account.showSwitcher = false
         marketplace = nil
@@ -206,6 +218,7 @@ final class AppStore {
         (accounts, cloud) = Self.makeAccounts(storage, session: account)
         generation += 1
         BotsWidgetFeed.reset()
+        IconBadge.show(0)
         WidgetCenter.shared.reloadAllTimelines()
     }
 
@@ -214,7 +227,7 @@ final class AppStore {
     func pairing(from text: String) async throws -> Pairing {
         do {
             guard let code = Pairing.shortCode(text) else { return try Pairing.parse(text) }
-            guard let cloud else { throw AccountStore.noCertificate }
+            guard let cloud else { throw AccountStore.signInForShortCode }
             return try Pairing.parse(try await cloud.pairingLink(code: code))
         } catch {
             throw pairingFailed(error)
@@ -274,6 +287,14 @@ final class AppStore {
         }
     }
 
+    /// The app icon's badge from the active context's snapshot: on every roster change, back in the app (an
+    /// alert may have set it while away) and when its Settings switch flips.
+    func showIconBadge() { Self.showIconBadge(accounts) }
+
+    private static func showIconBadge(_ accounts: AccountStore) {
+        IconBadge.show(IconBadge.settled(behind: accounts.computersBehind, in: accounts.storage))
+    }
+
     private static func makeAccounts(_ storage: SharedStore.Context, session: AccountSession) -> (AccountStore, CloudClient?) {
         let identity = storage.accountID == nil ? nil : try? DeviceIdentity.load(context: storage)
         let cloud = session.cloudClient(for: storage.accountID, identity: identity)
@@ -283,8 +304,13 @@ final class AppStore {
             store.onUsageChanged = { _, _ in WidgetCenter.shared.reloadTimelines(ofKind: "CodyncUsage") }
         }
         accounts.onBotUpdated = { ref, bot in LiveActivities.shared.update(ref, bot: bot) }
-        accounts.onRosterChanged = { roster in
-            BotsWidgetFeed.update(roster, storage: storage)
+        accounts.onRosterChanged = { [weak accounts] roster in
+            // The snapshot the widgets and the icon badge read: the active context's roster only.
+            if storage.id == SharedStore.activeContext.id {
+                storage.bots = roster.map { BotSnapshot(computerId: $0.ref.computerId, bot: $0.bot) }
+                BotsWidgetFeed.update(roster, scope: storage.id)
+                if let accounts { showIconBadge(accounts) }
+            }
             if roster.isEmpty {
                 LiveActivities.shared.endAll()
                 WidgetCenter.shared.reloadAllTimelines()
@@ -328,6 +354,12 @@ final class AppStore {
         accounts.setNotifications(id, on)
         if let store = accounts.store(for: id) { PushRegistrar.shared.syncDevice(with: store) }
         Analytics.shared.capture(.settingChanged(.push, on: on))
+    }
+
+    func setIconBadge(_ on: Bool) {
+        SharedStore.defaults.set(on, forKey: IconBadge.enabledKey)
+        showIconBadge()
+        Analytics.shared.capture(.settingChanged(.iconBadge, on: on))
     }
 }
 
@@ -404,7 +436,7 @@ private final class BackgroundTime {
     }
 }
 
-/// Keeps the Bots widget's snapshot current; asks WidgetKit to redraw only when
+/// Asks WidgetKit to redraw the Bots widget (from the snapshot in `SharedStore`) only when
 /// something the widget shows changes (who is working / needs you / unread).
 @MainActor
 enum BotsWidgetFeed {
@@ -430,10 +462,7 @@ enum BotsWidgetFeed {
 
     static func reset() { shown = nil; scope = nil }
 
-    static func update(_ roster: [RosterItem], storage: SharedStore.Context) {
-        guard storage.id == SharedStore.activeContext.id else { return }
-        storage.bots = roster.map { BotSnapshot(computerId: $0.ref.computerId, bot: $0.bot) }
-        let currentScope = storage.id
+    static func update(_ roster: [RosterItem], scope currentScope: String) {
         let signature = roster.filter { !$0.bot.hidden }.map { Snapshot($0.bot, computerId: $0.ref.computerId) }
         guard signature != shown || scope != currentScope else { return }
         shown = signature

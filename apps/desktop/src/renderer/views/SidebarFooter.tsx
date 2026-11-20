@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef } from 'react'
+import { fill } from '@shared/fill'
 import { IconButton } from '../components/Controls'
 import { Icon } from '../components/Icon'
 import { Text } from '../components/Text'
-import type { AccountMismatch } from '../lib/auto-claim'
 import { useModel } from '../lib/observable'
 import { useTr } from '../lib/use-language'
 import { useAccount } from '../store/account'
@@ -15,15 +15,13 @@ import drive from '../assets/google-drive.png'
 import './sidebar-footer.css'
 
 /** Account and app connections float above the scrolling roster; Extensions only when given. */
-export function SidebarFooter({ accountOpen, onAccount, onExtensions, onComputers }: {
+export function SidebarFooter({ accountOpen, onAccount, onExtensions }: {
   accountOpen: boolean
   onAccount: () => void
   onExtensions?: () => void
-  /** Settings → Computers, where a computer out of the account is added. */
-  onComputers: () => void
 }) {
   const tr = useTr()
-  const notice = useAccountNotice(onComputers)
+  const notice = useAccountNotice()
   const footer = useRef<HTMLDivElement>(null)
   // The roster scrolls under the footer: its height (taller with the notice, wrapped or not) is the roster's bottom padding.
   useLayoutEffect(() => {
@@ -50,9 +48,9 @@ export function SidebarFooter({ accountOpen, onAccount, onExtensions, onComputer
       ) : null}
       <button
         className={`sidebar-account ${accountOpen ? 'active' : ''}`}
-        aria-label="Open account menu for Account"
+        aria-label={tr('Open account menu for Account')}
         aria-expanded={accountOpen}
-        title="Account menu"
+        title={tr('Account menu')}
         onClick={onAccount}
       >
         <ProfileAvatar />
@@ -71,16 +69,16 @@ export function SidebarFooter({ accountOpen, onAccount, onExtensions, onComputer
 }
 
 /** The narrow rail's notice: an icon with the notice's text as its tooltip, the same choice behind it. */
-export function RailAccountNotice({ onComputers }: { onComputers: () => void }) {
-  const notice = useAccountNotice(onComputers)
+export function RailAccountNotice() {
+  const notice = useAccountNotice()
   return notice ? <IconButton title={notice.text} icon="exclamationmark.circle.fill" size={36} className="rail-account-notice" onClick={notice.open} /> : null
 }
 
 /**
- * This computer and the account signed in here differ (`CloudModel.mismatch`): what to say, and the choice behind it.
- * In another account, the move prompt again; in none, Settings → Computers.
+ * This computer is in another account than the one signed in here (`CloudModel.mismatch`): what to say, and the move
+ * prompt again.
  */
-function useAccountNotice(onComputers: () => void) {
+function useAccountNotice() {
   const tr = useTr()
   const app = useApp()
   useAccount()
@@ -88,16 +86,6 @@ function useAccountNotice(onComputers: () => void) {
   useModel(app.local)
   const mismatch = app.cloud.mismatch
   if (!mismatch) return null
-  return { text: mismatchLine(mismatch, tr), open: () => (mismatch.kind === 'other' ? app.cloud.reconsiderMove() : onComputers()) }
-}
-
-function mismatchLine(mismatch: AccountMismatch, tr: (text: string) => string) {
-  if (mismatch.kind === 'other') {
-    return mismatch.email ? tr(`This computer is in {name}'s account`).replaceAll('{name}', mismatch.email) : tr('This computer is in another account')
-  }
-  switch (mismatch.reason) {
-    case 'cloudOff': return tr(`This computer isn't in an account: its cloud is off`)
-    case 'privateRelay': return tr(`This computer isn't in an account: it uses a private relay`)
-    case 'keptOut': return tr(`This computer isn't in your account`)
-  }
+  const text = mismatch.email ? fill(tr(`This computer is in {name}'s account`), { name: mismatch.email }) : tr('This computer is in another account')
+  return { text, open: () => app.cloud.reconsiderMove() }
 }

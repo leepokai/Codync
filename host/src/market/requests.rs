@@ -175,10 +175,9 @@ pub async fn finish(hub: &Arc<Hub>, args: &Value) -> Result<Value> {
     }
     if kind == RequestKind::Agent {
         let backend = text(request, "backend")?;
-        if crate::agent::auth::check(&hub.store, backend).await?["signedIn"] != true {
+        if !super::agent_sign_in::confirm(hub, backend, request["loginProfile"].as_str()).await? {
             bail!("{} isn't signed in yet.", request["title"].as_str().unwrap_or("The agent"));
         }
-        super::agent_sign_in::agent_signed_in(hub, backend)?;
         return Ok(json!({"entry": hub.store.entry(id)}));
     }
     if kind == RequestKind::Login {
@@ -189,7 +188,7 @@ pub async fn finish(hub: &Arc<Hub>, args: &Value) -> Result<Value> {
             text(args, "value")?,
         )?;
         let note = format!(
-            "[Login for {} saved as `{}`{}. Type it with the computer tool type_login; the password is never shown to you. Continue the task.]",
+            "[Login for {} saved as `{}`{}. Type it with the computer tool type_login; the password is never shown to you. Continue your work.]",
             login.site,
             login.id,
             if login.username.is_empty() { String::new() } else { format!(" (username {})", login.username) }
@@ -208,7 +207,7 @@ pub async fn finish(hub: &Arc<Hub>, args: &Value) -> Result<Value> {
             }
             if kind == RequestKind::Secret {
                 let value = text(args, "value")?;
-                if value.len() > 64 * 1024 {
+                if value.len() > super::MAX_CREDENTIAL_BYTES {
                     bail!("Credential is too large");
                 }
                 let field = text(request, "field")?.to_owned();
@@ -235,7 +234,7 @@ pub async fn finish(hub: &Arc<Hub>, args: &Value) -> Result<Value> {
     hub.update_bot(&json!({"id":bot,"connectors":enabled}))?;
     hub.send_cmd(bot, Cmd::RefreshTools)?;
     let note = format!(
-        "[Connection setup completed: {}. Credentials were submitted securely and are not in this conversation. Continue the task.]",
+        "[Connection setup completed: {}. Credentials were submitted securely and are not in this conversation. Continue your work.]",
         request["title"].as_str().unwrap_or("Connector")
     );
     complete(hub, &e, id, note)
@@ -319,7 +318,7 @@ pub(super) mod tests {
     fn remote_control_devices_cannot_retrieve_credentials_or_forge_requests() {
         let caller =
             crate::api::devices::Caller::Device { key: "test".into(), scopes: vec![crate::store::Scope::Control] };
-        for method in ["connectorRuntime", "connectorTarget", "connectorCall"] {
+        for method in ["connectorRuntime", "connectorTarget", "connectorCall", "updateConnector"] {
             assert!(crate::api::devices::permit(&caller, method).is_err());
         }
         assert!(crate::api::devices::permit(&caller, "connectorRequestFinish").is_ok());

@@ -3,42 +3,61 @@
 //! Claude: `claude -p /usage`, the status line, and the ACP rate-limit event.
 //! Codex: the CLI's live account rate limits. The other agents Codync runs are
 //! read the same way when they can report locally: `omp usage`, `amp usage`,
-//! `kiro-cli /usage`, a `kimi` screen, Antigravity's language server, OpenCode's
-//! database, Vibe's session logs, and the `JetBrains` IDE quota file.
+//! `hermes usage`, `auggie account status`, `kilo profile`, `kiro-cli /usage`, a `kimi`
+//! screen, Antigravity's ACP `/usage` command or its IDE's language server, Copilot's
+//! headless server, Grok's ACP billing extension, OpenCode's database, Vibe's session logs,
+//! and the `JetBrains` IDE quota file. Which of them get read and shown: [`services`].
+//! Failures: [`reading`].
 //!
 //! Cursor's saved CLI or app login reads the dashboard service's weekly unified
 //! allowance, or the website's usage summary for legacy monthly plans. These are
 //! the only provider requests, and the token is never logged.
 
+mod acp_read;
 mod amp;
 mod antigravity;
+mod auggie;
 mod claude;
 mod codex;
 mod command;
+mod copilot;
 mod cursor;
+mod grok;
+mod hermes;
 mod junie;
+mod kilo;
 mod kimi;
 mod kiro;
 mod omp;
 mod opencode;
+mod reading;
+mod services;
 mod vibe;
 
 pub use claude::{ingest_claude_rate_limit, ingest_statusline};
+pub(crate) use command::strip_ansi;
+pub use services::{bots_changed, login_profiles_changed, set_order, set_shown};
 
 use crate::LockExt;
 use crate::hub::Hub;
+use futures::future::BoxFuture;
+use futures::stream::{FuturesUnordered, StreamExt};
 use serde::Serialize;
+use services::{Reader, Service};
 use std::sync::Arc;
 use std::time::Duration;
 
 const POLL_EVERY: Duration = Duration::from_mins(5);
+/// How long a forced refresh holds up whoever asked. A slower reader lands through `usage` events.
+const REFRESH_WAIT: Duration = Duration::from_mins(1);
 /// Usage of a plan above which background work (dreaming, the lead's check-ins) waits.
 const HEADROOM_PERCENT: f64 = 75.0;
 
-/// Usage of harness `backend`'s plan above [`HEADROOM_PERCENT`] in any window.
-/// A note (today's tokens, a dollar balance) is not a plan window.
-pub fn near_limit(hub: &Hub, backend: &str) -> bool {
-    hub.usage.locked().providers.iter().filter(|p| p.id == backend).any(|p| over_headroom(&p.windows))
+/// Usage of the plan `cfg`'s agent runs on (its login profile's, or the default login's) above
+/// [`HEADROOM_PERCENT`] in any window. A note (today's tokens, a dollar balance) is not a plan window.
+pub fn near_limit(hub: &Hub, cfg: &crate::store::BotConfig) -> bool {
+    let profile = crate::agent::login_profiles::of_bot(&hub.store, &cfg.backend, cfg);
+    hub.usage.locked().windows(&cfg.backend, profile).is_some_and(over_headroom)
 }
 
 fn over_headroom(windows: &[Window]) -> bool {
@@ -49,6 +68,8 @@ fn over_headroom(windows: &[Window]) -> bool {
 #[derive(Serialize, Clone, Debug, Default, PartialEq)]
 pub struct Usage {
     pub providers: Vec<Provider>,
+    /// The agents the user can choose among in the Usage screen.
+    pub services: Vec<Service>,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -56,11 +77,79 @@ pub struct Usage {
 pub struct Provider {
     pub id: &'static str,
     pub name: &'static str,
+    /// The agent's ACP registry id, which its logo goes by. Without one, its `id`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub registry: Option<&'static str>,
+    /// The default login's windows.
     pub windows: Vec<Window>,
     /// Where the numbers came from: `claude` (CLI), `statusline`, `agent`, `sessions`,
     /// or a short phrase for the other agents.
     pub source: &'static str,
+    /// When the default login was last checked.
+    #[serde(flatten)]
+    pub checked: Checked,
+    /// What the default login is called, while the agent has login profiles to tell it from.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_login_profile: Option<String>,
+    /// The agent's signed-in account login profiles, each with its own windows: none yet reads **No reading yet**.
+    /// Which ones are listed is [`services::sync`]'s; a reading only fills a row that is there.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub login_profiles: Vec<LoginReading>,
+}
+
+/// One login profile's plan windows.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LoginReading {
+    pub id: String,
+    pub name: String,
+    pub windows: Vec<Window>,
+    #[serde(flatten)]
+    pub checked: Checked,
+}
+
+/// When a login was last checked: read at `updated_at`, or failing since `failed_at`, which leaves the windows from
+/// the reading at `updated_at`.
+#[derive(Serialize, Clone, Copy, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Checked {
+    /// Zero until its first reading comes back.
     pub updated_at: i64,
+    /// Cleared by the next reading.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failed_at: Option<i64>,
+}
+
+impl Checked {
+    fn now() -> Self {
+        Self { updated_at: crate::store::now_ms(), failed_at: None }
+    }
+
+    /// A check lands: a reading, or a failure ([`Reading::Unknown`]) marked at the first one since the last
+    /// reading, so a check that keeps failing changes nothing and sends no event. A reading of only some windows
+    /// (Claude's status line) on a login marked failed stands for the whole login: the windows it doesn't bring are
+    /// from before the failure, out of date with nothing left to mark them, so they go.
+    fn land(&mut self, reading: Reading) -> Reading {
+        match reading {
+            Reading::Unknown => {
+                self.failed_at.get_or_insert_with(crate::store::now_ms);
+                Reading::Unknown
+            }
+            Reading::Some(new) if self.failed_at.is_some() => {
+                *self = Self::now();
+                Reading::All(new)
+            }
+            reading => {
+                *self = Self::now();
+                reading
+            }
+        }
+    }
+
+    /// Checked at least once, whether it read or failed.
+    fn asked(self) -> bool {
+        self.updated_at != 0 || self.failed_at.is_some()
+    }
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -93,86 +182,227 @@ impl Window {
 }
 
 impl Usage {
-    /// One window at a time, for Claude's status line and rate-limit events.
-    /// The provider's other windows stay.
-    fn merge(&mut self, id: &'static str, name: &'static str, source: &'static str, new: Vec<Window>) {
-        let mut windows = self.providers.iter().find(|p| p.id == id).map(|p| p.windows.clone()).unwrap_or_default();
-        windows.retain(|w| !new.iter().any(|n| n.id == w.id));
-        windows.extend(new);
-        windows.sort_by(|a, b| a.id.cmp(&b.id));
-        self.providers.retain(|p| p.id != id);
-        self.providers.push(Provider { id, name, windows, source, updated_at: crate::store::now_ms() });
+    /// What the apps get: without the readings of the agents the user doesn't show.
+    pub fn visible(&self) -> Self {
+        let hidden = |id: &str| self.services.iter().any(|service| service.id == id && !service.shown);
+        let rank = |id: &str| self.services.iter().position(|service| service.id == id).unwrap_or(usize::MAX);
+        let mut providers: Vec<Provider> =
+            self.providers.iter().filter(|provider| !hidden(provider.id)).cloned().collect();
+        providers.sort_by_key(|provider| rank(provider.id));
+        Self { providers, services: self.services.clone() }
+    }
+
+    /// The windows of `backend`'s login: `profile`'s, or the default one's.
+    pub fn windows(&self, backend: &str, profile: Option<&str>) -> Option<&[Window]> {
+        let id = crate::agent::backends::agent_id(backend);
+        let provider = self.providers.iter().find(|p| p.id == id)?;
+        match profile {
+            None => Some(&provider.windows),
+            Some(profile) => provider.login_profiles.iter().find(|l| l.id == profile).map(|l| l.windows.as_slice()),
+        }
+    }
+
+    /// The login profiles `reader`'s agent lists (`rows`: id and name) and what its default login is called beside
+    /// them. A row that stays keeps its reading; an agent with rows is listed before its first reading.
+    fn list_login_profiles(&mut self, reader: &Reader, default: Option<String>, rows: Vec<(String, String)>) {
+        if rows.is_empty() && !self.providers.iter().any(|p| p.id == reader.id) {
+            return;
+        }
+        let provider = self.provider(reader, reader.source);
+        let old = std::mem::take(&mut provider.login_profiles);
+        let row = |(id, name): (String, String)| {
+            let kept = old.iter().find(|row| row.id == id);
+            let windows = kept.map(|row| row.windows.clone()).unwrap_or_default();
+            LoginReading { id, name, windows, checked: kept.map(|row| row.checked).unwrap_or_default() }
+        };
+        provider.login_profiles = rows.into_iter().map(row).collect();
+        provider.default_login_profile = default.filter(|_| !provider.login_profiles.is_empty());
+        self.tidy();
+    }
+
+    /// `reader`'s agent, listed with nothing read yet when it wasn't there.
+    fn provider(&mut self, reader: &Reader, source: &'static str) -> &mut Provider {
+        let at = self.providers.iter().position(|p| p.id == reader.id).unwrap_or_else(|| {
+            let unread =
+                Provider { checked: Checked::default(), ..Provider::new(reader.id, reader.name, source, Vec::new()) };
+            self.providers.push(unread);
+            self.providers.len() - 1
+        });
+        &mut self.providers[at]
+    }
+
+    /// An agent with no windows and no login profiles has nothing to show.
+    fn tidy(&mut self) {
+        self.providers.retain(|p| !p.windows.is_empty() || !p.login_profiles.is_empty());
         self.providers.sort_by_key(|p| p.id);
     }
 
-    /// A probe's full reading. Windows it no longer reports are dropped, and an
-    /// empty reading removes the provider.
-    fn replace(&mut self, id: &'static str, name: &'static str, source: &'static str, new: Vec<Window>) {
-        self.providers.retain(|p| p.id != id);
-        if new.is_empty() {
-            return;
+    /// A reading of `reader`'s agent lands: on login profile `profile`'s row (dropped when the row is gone), or on
+    /// the default login. A failed one ([`Reading::Unknown`]) keeps the windows and their time, and marks when it
+    /// failed. An agent left with no windows and no rows is removed.
+    fn land(&mut self, reader: &Reader, source: &'static str, profile: Option<&str>, reading: Reading) {
+        let provider = self.provider(reader, source);
+        match profile {
+            // A probe doesn't mark windows another source wrote, which it can't read: Claude's rate-limit event or
+            // status line, on a login whose `/usage` reports no plan limits.
+            None if matches!(reading, Reading::Unknown) && provider.source != source => {}
+            None => {
+                provider.checked.land(reading).onto(&mut provider.windows);
+                provider.source = source;
+            }
+            Some(profile) => {
+                if let Some(row) = provider.login_profiles.iter_mut().find(|l| l.id == profile) {
+                    row.checked.land(reading).onto(&mut row.windows);
+                }
+            }
         }
-        let mut windows = new;
-        windows.sort_by(|a, b| a.id.cmp(&b.id));
-        self.providers.push(Provider { id, name, windows, source, updated_at: crate::store::now_ms() });
-        self.providers.sort_by_key(|p| p.id);
+        self.tidy();
     }
 }
 
-pub(super) fn merge(hub: &Hub, id: &'static str, name: &'static str, source: &'static str, windows: Vec<Window>) {
-    let mut usage = hub.usage.locked().clone();
-    usage.merge(id, name, source, windows);
-    hub.set_usage(usage);
+/// How a reading changes the windows a login already shows.
+enum Reading {
+    /// Some windows at a time, for Claude's status line and rate-limit events. The others stay.
+    Some(Vec<Window>),
+    /// A probe's full reading: windows it no longer reports are dropped.
+    All(Vec<Window>),
+    /// The probe couldn't tell: what's shown stays.
+    Unknown,
+}
+
+impl Reading {
+    fn onto(self, windows: &mut Vec<Window>) {
+        match self {
+            Self::Some(new) => {
+                windows.retain(|w| !new.iter().any(|n| n.id == w.id));
+                windows.extend(new);
+            }
+            Self::All(new) => *windows = new,
+            Self::Unknown => {}
+        }
+        windows.sort_by(|a, b| a.id.cmp(&b.id));
+    }
+}
+
+impl Provider {
+    fn new(id: &'static str, name: &'static str, source: &'static str, windows: Vec<Window>) -> Self {
+        Self {
+            id,
+            name,
+            registry: services::registry(id),
+            windows,
+            source,
+            checked: Checked::now(),
+            default_login_profile: None,
+            login_profiles: Vec::new(),
+        }
+    }
 }
 
 pub async fn poll(hub: Arc<Hub>) {
     loop {
-        refresh(&hub).await;
-        tokio::time::sleep(POLL_EVERY).await;
+        read_all(&hub).await;
+        let next = tokio::time::Instant::now() + POLL_EVERY;
+        // An agent that just became wanted (a new bot's, one the user turned on) reads right away.
+        while tokio::time::timeout_at(next, hub.usage_wake.notified()).await.is_ok() {
+            read(&hub, readers(&hub, services::unread_readers).await).await;
+        }
     }
 }
 
-pub async fn refresh(hub: &Hub) {
-    let (
-        codex,
-        claude,
-        omp_windows,
-        amp_windows,
-        kiro_windows,
-        kimi_windows,
-        antigravity,
-        opencode,
-        vibe_notes,
-        junie,
-        cursor_windows,
-    ) = tokio::join!(
-        codex::collect(),
-        claude::collect(),
-        omp::collect(),
-        amp::collect(),
-        kiro::collect(),
-        tokio::task::spawn_blocking(kimi::collect),
-        antigravity::collect(),
-        tokio::task::spawn_blocking(opencode::collect),
-        tokio::task::spawn_blocking(vibe::collect),
-        tokio::task::spawn_blocking(junie::collect),
-        cursor::collect(),
-    );
-    apply(hub, codex, "codex", "Codex", "Codex CLI");
-    apply(hub, claude, "claude", "Claude", "claude");
-    apply(hub, omp_windows, "omp", "oh-my-pi", "omp usage");
-    apply(hub, amp_windows, "amp", "Amp", "amp usage");
-    apply(hub, kiro_windows, "kiro", "Kiro CLI", "kiro-cli");
-    apply(hub, joined(kimi_windows), "kimi", "Kimi Code", "kimi");
-    apply(hub, antigravity, "antigravity", "Google Antigravity", "antigravity");
-    apply(hub, joined(opencode), "opencode", "OpenCode", "opencode database");
-    apply(hub, joined(vibe_notes), "vibe", "Mistral Vibe", "vibe logs");
-    apply(hub, joined(junie), "junie", "Junie", "JetBrains IDE");
-    apply(hub, cursor_windows, "cursor", "Cursor", "Cursor");
+/// A forced read for a caller that's waiting, which gets what has landed by [`REFRESH_WAIT`].
+pub async fn refresh(hub: &Arc<Hub>) {
+    let reading = tokio::spawn({
+        let hub = hub.clone();
+        async move { read_all(&hub).await }
+    });
+    // Past the wait the reading carries on by itself.
+    if let Ok(Err(error)) = tokio::time::timeout(REFRESH_WAIT, reading).await {
+        tracing::warn!(%error, "a usage refresh failed");
+    }
 }
 
-fn joined(result: Result<Option<Vec<Window>>, tokio::task::JoinError>) -> Option<Vec<Window>> {
-    result.ok().flatten()
+async fn read_all(hub: &Arc<Hub>) {
+    let wanted = |hub: &Hub| {
+        services::sync(hub);
+        services::wanted_readers(&hub.store)
+    };
+    read(hub, readers(hub, wanted).await).await;
+}
+
+/// The readers `pick` names, away from the async workers: it goes to the database and the disk.
+async fn readers(hub: &Arc<Hub>, pick: fn(&Hub) -> Vec<&'static Reader>) -> Vec<&'static Reader> {
+    let hub = hub.clone();
+    tokio::task::spawn_blocking(move || pick(&hub)).await.unwrap_or_else(|error| {
+        tracing::warn!(%error, "couldn't list the agents to read");
+        Vec::new()
+    })
+}
+
+/// Each reading lands as it comes in: a slow agent doesn't hold back the others. A reader that can read a login
+/// profile reads each one listed under its agent, beside the default login.
+async fn read(hub: &Hub, readers: Vec<&'static Reader>) {
+    if crate::agent::backends::agent_checks_off() {
+        return;
+    }
+    let mut readings: FuturesUnordered<BoxFuture<'_, ()>> = FuturesUnordered::new();
+    for reader in readers {
+        readings.push(Box::pin(async move {
+            let reading = match (reader.read)(hub).await {
+                reading::Outcome::Read(windows) => Reading::All(windows),
+                // Skipped while the agent is being read already, whose reading lands instead, or on purpose.
+                reading::Outcome::Skipped => return,
+                reading::Outcome::Failed if reading::busy(reader.id) => return,
+                reading::Outcome::Failed => Reading::Unknown,
+            };
+            hub.update_usage(|usage| usage.land(reader, reader.source, None, reading));
+        }));
+        for profile in listed_profiles(hub, reader) {
+            readings.push(Box::pin(async move {
+                let reading = read_profile(hub, reader, &profile).await.map_or(Reading::Unknown, Reading::All);
+                hub.update_usage(|usage| usage.land(reader, reader.source, Some(&profile), reading));
+            }));
+        }
+    }
+    while readings.next().await.is_some() {}
+}
+
+/// The login profiles listed under `reader`'s agent, when it can read one.
+fn listed_profiles(hub: &Hub, reader: &Reader) -> Vec<String> {
+    if reader.read_profile.is_none() {
+        return Vec::new();
+    }
+    let usage = hub.usage.locked();
+    let rows = usage.providers.iter().find(|p| p.id == reader.id).map(|p| p.login_profiles.as_slice());
+    rows.unwrap_or_default().iter().map(|row| row.id.clone()).collect()
+}
+
+/// `profile`'s windows, read by its agent's own CLI pointed at the profile's folder. `None`: it couldn't tell.
+async fn read_profile(hub: &Hub, reader: &Reader, profile: &str) -> Option<Vec<Window>> {
+    use crate::agent::login_profiles;
+    use anyhow::Context;
+    let read = reader.read_profile?;
+    let ready = || {
+        // Held while the CLI runs, so the profile isn't removed under it.
+        let running = login_profiles::hold(&hub.store, reader.id, Some(profile))?.context("another agent's profile")?;
+        anyhow::Ok((running, login_profiles::env(&hub.store, reader.id, Some(profile))?.0))
+    };
+    match ready() {
+        Ok((_running, env)) => read(env).await,
+        Err(error) => {
+            tracing::debug!(agent = reader.id, error = format!("{error:#}"), "couldn't read a login profile's usage");
+            None
+        }
+    }
+}
+
+fn iso_ms(text: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(text).ok().map(|at| at.timestamp_millis())
+}
+
+/// A window id made from its label.
+fn slug(label: &str) -> String {
+    label.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect()
 }
 
 pub(super) fn finite_i64(n: f64) -> Option<i64> {
@@ -189,48 +419,145 @@ pub(super) fn finite_i64(n: f64) -> Option<i64> {
     Some(rounded as i64)
 }
 
-fn apply(hub: &Hub, windows: Option<Vec<Window>>, id: &'static str, name: &'static str, source: &'static str) {
-    let Some(windows) = windows else { return };
-    let mut usage = hub.usage.locked().clone();
-    usage.replace(id, name, source, windows);
-    hub.set_usage(usage);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::Value;
 
+    fn reader(id: &str) -> &'static Reader {
+        services::reader(id).expect("a reader")
+    }
+
+    fn land(usage: &mut Usage, id: &str, source: &'static str, profile: Option<&str>, reading: Reading) {
+        usage.land(reader(id), source, profile, reading);
+    }
+
     #[test]
     fn merge_replaces_only_matching_windows() {
         let mut u = Usage::default();
-        u.merge(
-            "claude",
-            "Claude",
-            "claude",
-            vec![Window::new("five_hour", "5-hour", 10.0, None), Window::new("seven_day", "Weekly", 50.0, None)],
-        );
-        u.merge("claude", "Claude", "statusline", vec![Window::new("five_hour", "5-hour", 12.0, None)]);
+        let both = vec![Window::new("five_hour", "5-hour", 10.0, None), Window::new("seven_day", "Weekly", 50.0, None)];
+        land(&mut u, "claude", "claude", None, Reading::Some(both));
+        land(&mut u, "claude", "statusline", None, Reading::Some(vec![Window::new("five_hour", "5-hour", 12.0, None)]));
         let c = &u.providers[0];
         assert_eq!((c.windows.len(), c.source), (2, "statusline"));
         assert!((c.windows[0].percent - 12.0).abs() < f64::EPSILON, "five_hour updated");
-        assert_eq!(serde_json::to_value(&u).unwrap()["providers"][0]["windows"][1]["resetsAt"], Value::Null);
+        let wire = serde_json::to_value(&u).unwrap();
+        assert_eq!(wire["providers"][0]["windows"][1]["resetsAt"], Value::Null);
+        assert!(wire["providers"][0].get("loginProfiles").is_none(), "an agent on one login says nothing of profiles");
     }
 
     #[test]
     fn a_full_reading_drops_windows_the_probe_no_longer_reports() {
         let mut u = Usage::default();
-        u.replace(
-            "cursor",
-            "Cursor",
-            "Cursor",
-            vec![Window::new("monthly", "Monthly", 40.0, None), Window::note("on_demand", "On-Demand", "$1")],
-        );
-        u.replace("cursor", "Cursor", "Cursor", vec![Window::note("unlimited", "Monthly", "Unlimited")]);
+        let first = vec![Window::new("monthly", "Monthly", 40.0, None), Window::note("on_demand", "On-Demand", "$1")];
+        land(&mut u, "cursor", "Cursor", None, Reading::All(first));
+        land(&mut u, "cursor", "Cursor", None, Reading::All(vec![Window::note("unlimited", "Monthly", "Unlimited")]));
         assert_eq!(u.providers[0].windows.len(), 1);
         assert_eq!(u.providers[0].windows[0].id, "unlimited");
-        u.replace("cursor", "Cursor", "Cursor", Vec::new());
+        land(&mut u, "cursor", "Cursor", None, Reading::All(Vec::new()));
         assert_eq!(u.providers, []);
+    }
+
+    #[test]
+    fn each_login_profile_keeps_its_own_windows_beside_the_default_login() {
+        let mut u = Usage::default();
+        let weekly = |percent| vec![Window::new("seven_day", "Weekly", percent, None)];
+        // A reading for a profile nobody listed is dropped.
+        land(&mut u, "claude", "claude", Some("work"), Reading::All(weekly(90.0)));
+        assert_eq!(u.providers, []);
+
+        let rows = vec![("work".to_owned(), "Work".to_owned()), ("side".to_owned(), "Side".to_owned())];
+        u.list_login_profiles(reader("claude"), Some("me@example.com".into()), rows);
+        let wire = serde_json::to_value(&u).unwrap();
+        assert_eq!(wire["providers"][0]["windows"], serde_json::json!([]), "listed before anything is read");
+        assert_eq!(wire["providers"][0]["defaultLoginProfile"], "me@example.com");
+        assert_eq!(wire["providers"][0]["loginProfiles"][1]["updatedAt"], 0);
+
+        land(&mut u, "claude", "claude", None, Reading::All(weekly(10.0)));
+        land(&mut u, "claude", "claude", Some("work"), Reading::All(weekly(90.0)));
+        land(
+            &mut u,
+            "claude",
+            "agent",
+            Some("work"),
+            Reading::Some(vec![Window::new("five_hour", "5-hour", 5.0, None)]),
+        );
+        land(&mut u, "claude", "claude", Some("side"), Reading::Unknown);
+        let percents = |windows: &[Window]| windows.iter().map(|w| w.percent).collect::<Vec<_>>();
+        assert_eq!(percents(u.windows("claude-acp", None).unwrap()), [10.0], "by its registry id too");
+        assert_eq!(percents(u.windows("claude", Some("work")).unwrap()), [5.0, 90.0]);
+        assert_eq!(u.windows("claude", Some("side")).unwrap(), []);
+        let side = &u.providers[0].login_profiles[1];
+        assert_eq!(side.checked.updated_at, 0, "nothing read yet");
+        assert!(side.checked.asked(), "asked, so it isn't read again right away");
+        assert_eq!(u.windows("claude", Some("gone")), None);
+
+        // One renamed and one removed: the one that stays keeps its reading.
+        u.list_login_profiles(reader("claude"), None, vec![("work".to_owned(), "Day job".to_owned())]);
+        let work = &u.providers[0].login_profiles[0];
+        assert_eq!((work.name.as_str(), work.windows.len(), u.providers[0].login_profiles.len()), ("Day job", 2, 1));
+        // With the last one gone, the default login is the agent's only one again.
+        u.list_login_profiles(reader("claude"), Some("me@example.com".into()), Vec::new());
+        assert_eq!((u.providers[0].default_login_profile.as_deref(), u.providers[0].windows.len()), (None, 1));
+    }
+
+    /// #516: a check that fails keeps the last windows, and the apps must be able to tell them from a fresh
+    /// reading of the same numbers, on the default login and on a login profile alike.
+    #[test]
+    fn a_failed_reading_is_marked_rather_than_shown_as_current() {
+        let weekly = || vec![Window::new("seven_day", "Weekly", 40.0, None)];
+        let after = |second: fn() -> Reading| {
+            let mut u = Usage::default();
+            u.list_login_profiles(
+                reader("claude"),
+                Some("me@example.com".into()),
+                vec![("work".into(), "Work".into())],
+            );
+            for profile in [None, Some("work")] {
+                land(&mut u, "claude", "claude", profile, Reading::All(weekly()));
+                land(&mut u, "claude", "claude", profile, second());
+            }
+            let mut wire = serde_json::to_value(&u).unwrap();
+            // When it was read isn't the point: two readings in one millisecond share it.
+            wire["providers"][0].as_object_mut().unwrap().remove("updatedAt");
+            wire["providers"][0]["loginProfiles"][0].as_object_mut().unwrap().remove("updatedAt");
+            wire
+        };
+        let fresh = after(|| Reading::All(vec![Window::new("seven_day", "Weekly", 40.0, None)]));
+        let failed = after(|| Reading::Unknown);
+        assert_ne!(failed["providers"][0], fresh["providers"][0], "a failed reading looks just like a fresh one");
+        assert_ne!(
+            failed["providers"][0]["loginProfiles"][0], fresh["providers"][0]["loginProfiles"][0],
+            "a login profile's failed reading looks just like a fresh one"
+        );
+
+        let mut u = Usage::default();
+        land(&mut u, "claude", "claude", None, Reading::All(weekly()));
+        land(&mut u, "claude", "claude", None, Reading::Unknown);
+        let since = u.clone();
+        land(&mut u, "claude", "claude", None, Reading::Unknown);
+        assert_eq!(u, since, "a check that keeps failing changes nothing, so no event goes out");
+        land(&mut u, "claude", "claude", None, Reading::All(weekly()));
+        assert_eq!(u.providers[0].checked.failed_at, None, "the next reading clears it");
+
+        // Windows from Claude's rate-limit event aren't marked by a `/usage` that reports no plan limits.
+        let mut u = Usage::default();
+        land(&mut u, "claude", "agent", None, Reading::Some(weekly()));
+        land(&mut u, "claude", "claude", None, Reading::Unknown);
+        assert_eq!(u.providers[0].checked.failed_at, None, "the probe can't read the event's windows");
+
+        // A status-line reading on a login whose `/usage` just failed drops the window it doesn't bring, which would
+        // otherwise show as current with its mark gone.
+        let mut u = Usage::default();
+        let model = Window::new("seven_day_opus", "Weekly Opus", 10.0, None);
+        land(&mut u, "claude", "claude", None, Reading::All(vec![weekly()[0].clone(), model]));
+        land(&mut u, "claude", "claude", None, Reading::Unknown);
+        land(&mut u, "claude", "agent", None, Reading::Some(weekly()));
+        let ids: Vec<&str> = u.providers[0].windows.iter().map(|w| w.id.as_str()).collect();
+        assert_eq!((ids, u.providers[0].checked.failed_at), (vec!["seven_day"], None));
+        // Without a failure it only adds to what's there.
+        land(&mut u, "claude", "agent", None, Reading::Some(vec![Window::new("five_hour", "5h", 1.0, None)]));
+        assert_eq!(u.providers[0].windows.len(), 2);
     }
 
     #[test]
@@ -240,6 +567,34 @@ mod tests {
         assert_eq!(value["text"], "$1.50");
         assert_eq!(value["percent"], 0.0);
         assert!(value.get("resetsText").is_none());
+    }
+
+    #[test]
+    fn the_apps_get_only_what_the_user_shows() {
+        let window = Window::new("weekly", "Weekly", 10.0, None);
+        let provider = |id| Provider { windows: vec![window.clone()], ..Provider::new(id, id, "test", Vec::new()) };
+        let usage = Usage {
+            providers: vec![provider("claude"), provider("cursor"), provider("codex")],
+            services: vec![
+                Service { id: "claude", name: "Claude", registry: None, shown: true },
+                Service { id: "cursor", name: "Cursor", registry: None, shown: false },
+            ],
+        };
+        let visible = usage.visible();
+        let ids: Vec<_> = visible.providers.iter().map(|p| p.id).collect();
+        // A reading with no row yet (a status line before the first sync) isn't lost.
+        assert_eq!(ids, ["claude", "codex"]);
+        assert_eq!(visible.services.len(), 2, "the chooser still lists the hidden one");
+    }
+
+    #[test]
+    fn a_reading_names_the_registry_id_its_logo_goes_by() {
+        let mut u = Usage::default();
+        land(&mut u, "copilot", "test", None, Reading::All(vec![Window::note("plan", "Plan", "Unlimited")]));
+        land(&mut u, "hermes", "test", None, Reading::All(vec![Window::note("plan", "Plan", "Unlimited")]));
+        let value = serde_json::to_value(&u).unwrap();
+        assert_eq!(value["providers"][0]["registry"], "github-copilot-cli");
+        assert!(value["providers"][1].get("registry").is_none(), "no registry entry: clients use the id");
     }
 
     #[test]

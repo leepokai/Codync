@@ -23,6 +23,8 @@ impl Fixture {
                 "id": id, "name": id, "backend": "fixture", "cwd": cwd,
                 "command": crate::shell::python(&agent),
                 "notify": false, "permission": "ask",
+                // They answer requests in their chat, whose queue these tests are about (the box: `work_e2e`).
+                "manageTeam": true,
             }))
             .unwrap();
             store.save_bot(&cfg).unwrap();
@@ -47,7 +49,7 @@ impl Fixture {
     }
 
     fn message(&self, message: &str) -> Result<Value> {
-        call(&self.hub, "a", "message_bot", &json!({"botId": "b", "message": message}))
+        call(&self.hub, "a", "a", "message_bot", &json!({"botId": "b", "message": message}))
     }
 
     fn notices(&self, request: &Value) -> Vec<crate::store::Entry> {
@@ -192,7 +194,7 @@ async fn permission_cards_still_require_the_recipients_approval_and_a_request_me
     let receipt = f.message("PERMISSION inspect the project").unwrap();
     f.until(|| f.hub.runtime("b").status == BotStatus::NeedsInput).await;
     // Its reply goes back to a: a message from this turn would be answered in b's own chat instead.
-    let back = call(&f.hub, "b", "message_bot", &json!({"botId": "c", "message": "pass it on"}));
+    let back = call(&f.hub, "b", "b", "message_bot", &json!({"botId": "c", "message": "pass it on"}));
     assert!(back.unwrap_err().to_string().contains("answering another bot's request"));
     assert_eq!(f.hub.team.0.locked().messages, 1);
     let card = f.hub.store.history("b", i64::MAX, 100).unwrap().into_iter().find(|e| e.kind == "permission").unwrap();
@@ -332,7 +334,7 @@ async fn replies_that_arrive_while_the_sender_works_are_one_turn() {
     f.send_to("a", "BLOCK user work").await;
     f.until(|| f.prompts_of("a").len() == 1).await;
     f.message("first").unwrap();
-    call(&f.hub, "a", "message_bot", &json!({"botId": "c", "message": "second"})).unwrap();
+    call(&f.hub, "a", "a", "message_bot", &json!({"botId": "c", "message": "second"})).unwrap();
     f.until(|| f.took("b", 1) && f.took("c", 1)).await;
     std::fs::write(f.dir.join("a/release"), "").unwrap();
     f.until(|| f.took("a", 2)).await;
@@ -367,7 +369,7 @@ async fn requests_from_several_senders_keep_fifo_and_user_batch_boundaries() {
     f.send_user("first user").await;
     f.send_user("second user").await;
     let first = f.message("first message").unwrap();
-    let from_c = call(&f.hub, "c", "message_bot", &json!({"botId": "b", "message": "message from c"}));
+    let from_c = call(&f.hub, "c", "c", "message_bot", &json!({"botId": "b", "message": "message from c"}));
     let second = f.message("second message").unwrap();
     f.send_user("third user").await;
     f.send_user("fourth user").await;
@@ -420,6 +422,64 @@ async fn failed_message_admission_never_executes_or_leaks_capacity() {
     f.shutdown().await;
 }
 
+/// #386: a chain stopped by the handoff limit leaves the user one notice in the stopped bot's chat, whose Continue
+/// sends the bot "Continue" as the user (a fresh chain), once.
+#[tokio::test]
+async fn hop_limit_refusal_leaves_the_user_a_notice() {
+    let f = Fixture::new();
+    // 8: the handoff limit (`requests::MAX_REQUEST_HOPS`).
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    let continues = || {
+        let history = f.hub.store.history("a", i64::MAX, 100).unwrap();
+        history.into_iter().filter(|e| e.kind == "notice" && !e.data["continueChain"].is_null()).collect::<Vec<_>>()
+    };
+    for _ in 0..2 {
+        assert!(f.message("one more handoff").unwrap_err().to_string().contains("hop limit"));
+    }
+    let notices = continues();
+    assert_eq!(notices.len(), 1, "one notice a turn, however often the bot tries");
+    let press = |id: &str| {
+        crate::api::dispatch(&f.hub, &crate::api::devices::Caller::Local, "continueChain", json!({"entryId": id}))
+    };
+    let sent = || {
+        let history = f.hub.store.history("a", i64::MAX, 100).unwrap();
+        history.iter().filter(|e| e.kind == "user" && e.data["text"] == "Continue").count()
+    };
+    // A second stopped turn's notice, for the bot whose actor is gone below.
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    assert!(f.message("one more handoff").is_err());
+    let notices = continues();
+    assert_eq!(notices.len(), 2);
+    // A notice that couldn't be updated refuses the press, and a Continue that couldn't be saved puts the button back:
+    // neither sends anything.
+    let db = rusqlite::Connection::open(f.dir.join("test.db")).unwrap();
+    for trigger in
+        ["BEFORE UPDATE ON entries WHEN OLD.kind = 'notice'", "BEFORE INSERT ON entries WHEN NEW.kind = 'user'"]
+    {
+        db.execute_batch(&format!(
+            "CREATE TRIGGER reject_continue {trigger} BEGIN SELECT RAISE(ABORT, 'fixture save failure'); END;"
+        ))
+        .unwrap();
+        assert!(press(&notices[0].id).await.is_err());
+        db.execute_batch("DROP TRIGGER reject_continue;").unwrap();
+        assert_eq!(continues()[0].data["continueChain"], true, "the button stays to press again");
+        assert_eq!(sent(), 0);
+    }
+    drop(db);
+    let entry = press(&notices[0].id).await.unwrap();
+    assert_eq!(entry["entry"]["data"]["text"], "Continue");
+    assert_eq!(entry["entry"]["kind"], "user", "the user's own message, which starts a fresh chain");
+    assert_eq!(continues()[0].data["continueChain"], false, "the button goes");
+    assert!(press(&notices[0].id).await.is_err(), "and works once");
+    // The hub still lists the bot, but its actor is gone: the saved Continue stays the only one, its button off.
+    drop(f.hub.attach_bot_for_test("a"));
+    assert!(press(&notices[1].id).await.is_err());
+    assert_eq!(continues()[1].data["continueChain"], false, "a saved message never brings the button back");
+    assert!(press(&notices[1].id).await.is_err());
+    assert_eq!(sent(), 2, "one for each notice");
+    f.shutdown().await;
+}
+
 #[path = "quota_tests.rs"]
 mod quotas;
 
@@ -442,11 +502,11 @@ async fn invalid_messages_never_start_and_stopped_senders_cannot_admit_more() {
     let mut hidden = visible_bot(&f.hub, "c").unwrap();
     hidden.hidden = true;
     f.hub.store.save_bot(&hidden).unwrap();
-    let list = call(&f.hub, "a", "list_bots", &json!({})).unwrap();
+    let list = call(&f.hub, "a", "a", "list_bots", &json!({})).unwrap();
     assert_eq!(list["bots"].as_array().unwrap().len(), 1);
     assert_eq!(list["bots"][0]["id"], "b");
     for target in ["a", "c", "missing"] {
-        let result = call(&f.hub, "a", "message_bot", &json!({"botId": target, "message": "work"}));
+        let result = call(&f.hub, "a", "a", "message_bot", &json!({"botId": target, "message": "work"}));
         assert!(result.is_err());
     }
     for message in [" ".to_owned(), "x".repeat(MAX_MESSAGE_BYTES + 1)] {
@@ -502,7 +562,7 @@ async fn sender_deletion_preserves_messages_and_recipient_deletion_closes_them()
     }
     assert_eq!(f.prompts().len(), 1);
     // Deleting the recipient doesn't wake the sender: its only turn is a later message's reply.
-    let later = call(&f.hub, "a", "message_bot", &json!({"botId": "c", "message": "later work"})).unwrap();
+    let later = call(&f.hub, "a", "a", "message_bot", &json!({"botId": "c", "message": "later work"})).unwrap();
     f.until(|| f.took("a", 1)).await;
     assert!(f.prompts_of("a")[0].contains(later["requestId"].as_str().unwrap()));
     f.shutdown().await;
@@ -518,7 +578,7 @@ async fn message_turns_have_no_resume_marker_and_restart_expires_both_notices() 
     // A new store connection applies the same startup cleanup to the
     // persisted queued and running notices, without replaying a prompt.
     let store = Store::open(&f.dir.join("test.db")).unwrap();
-    assert_eq!(store.expire_pending().unwrap(), 4);
+    assert_eq!(store.expire_pending().unwrap().closed, 4);
     for receipt in [&running, &queued] {
         assert!(f.notices(receipt).iter().all(|e| e.data["status"] == "failed"
             && e.data["text"].as_str().unwrap().contains("Interrupted by host restart")));

@@ -7,6 +7,18 @@ use std::time::Duration;
 pub(crate) const NOT_RUNNING: &str =
     "codync-host isn't running here. Start it with `codync-host install` (or `serve`).";
 
+/// `local_call` found no host to ask: no token yet, or nothing answering on the port.
+#[derive(Debug)]
+pub(crate) struct NotRunning;
+
+impl std::fmt::Display for NotRunning {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(NOT_RUNNING)
+    }
+}
+
+impl std::error::Error for NotRunning {}
+
 /// Calls `method` on the running host.
 pub(crate) async fn local_call(port: u16, method: &str, body: serde_json::Value) -> Result<serde_json::Value> {
     local_call_for(port, method, body, Duration::from_secs(20)).await
@@ -19,7 +31,7 @@ pub(crate) async fn local_call_for(
     body: serde_json::Value,
     timeout: Duration,
 ) -> Result<serde_json::Value> {
-    let not_running = || anyhow::anyhow!(NOT_RUNNING);
+    let not_running = || anyhow::Error::new(NotRunning);
     let token = std::fs::read_to_string(service::data_dir().join("token")).map_err(|_| not_running())?;
     let res = http()
         .post(format!("http://127.0.0.1:{port}/api/{method}"))

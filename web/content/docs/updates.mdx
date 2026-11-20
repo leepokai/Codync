@@ -57,11 +57,15 @@ A Windows computer shows only its version there, with **Update** only when this 
 
 The iPhone app updates through the App Store. Every iPhone release goes through Apple's App Review first, so the App Store version can be a day or more behind the desktop app and the host. When a newer version is out, a card at the top of the bot list tells you which version is available, with an **Update** button that opens the App Store. You can dismiss it.
 
-Your computer accounts for the review delay: a computer update that needs a newer iPhone app isn't offered to computers until that iPhone version is in the App Store.
+Your computer accounts for the review delay: a computer update that needs a newer phone app isn't offered to computers until the App Store has the iPhone version and Google Play has the Android version.
+
+## What's new after an update
+
+When a release brings something important, the iPhone and Android apps, the desktop app and the terminal UI each show a **What's new** window the first time they open on it. Each highlight has a short silent preview clip over its name and a sentence about it, with a play button for the full video when there is one; smaller changes are listed below. The terminal UI shows the text and the video's link. It appears once, over the main screen (not during setup), and you close it with ✕, a swipe down on the phones, or Esc. Most releases don't have one, and a new install never shows it.
 
 ## When the phone and computer versions don't match
 
-Each side knows the oldest version of the other side it still works with. When one side is too old, you see a notice above that computer's bots and in place of the message box, and the computer's status reads **Needs update**. Your chats stay safe on the computer, and drafts are kept. Once the older side is updated, the notice goes away on its own.
+Each side knows the oldest version of the other side it still works with. When one side is too old, you see a notice above that computer's bots and in place of the message box, and the computer's status reads **Needs update**. Your chats stay safe on the computer, and drafts are kept. The notice names the app or computer that needs updating and the minimum version it needs. A cloud computer updates itself; the app reconnects when it finishes. Once the older side is updated, the notice goes away on its own.
 
 | Notice | What to do |
 | --- | --- |
@@ -98,7 +102,7 @@ With Homebrew, quit Codync and run `brew reinstall --cask leepokai/codync/codync
 
 `~/.codync` (on Windows, `.codync` in your user folder) holds your bots, conversations, routines, memory and the computer's identity. It stays after you uninstall. Delete it to remove all of it.
 
-To erase everything from the desktop app in one step, choose **Settings → Reset all data…** in the menu bar or tray menu. It removes the computer from your account, revokes every paired device, signs you out, uninstalls the host, deletes its data and the app's settings, and restarts Codync at the welcome screen. With Homebrew, `brew uninstall --zap --cask leepokai/codync/codync` also deletes `~/.codync` and the app's settings.
+To erase everything from the desktop app in one step, choose **Reset everything** under **Reset** at the bottom of **Settings → Computers**, or **Settings → Reset all data…** in the menu bar or tray menu, and confirm twice. It removes the computer from your account, revokes every paired device, signs you out, uninstalls the host, deletes its data and the app's settings, and restarts Codync at the welcome screen. With Homebrew, `brew uninstall --zap --cask leepokai/codync/codync` also deletes `~/.codync` and the app's settings.
 
 ### On the iPhone
 

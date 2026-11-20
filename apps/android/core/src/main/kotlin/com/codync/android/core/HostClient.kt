@@ -1,13 +1,16 @@
 package com.codync.android.core
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class Bot(
     val id: String,
@@ -18,6 +21,8 @@ data class Bot(
     val avatarColor: String = "blue",
     val avatarShape: String = "blob",
     val command: String? = null,
+    /** The login profile it runs on ([LoginProfile]); null for the login the computer already has. */
+    val loginProfile: String? = null,
     val cwd: String = "",
     val managedWorkspace: Boolean = false,
     val permission: String = "ask",
@@ -49,6 +54,10 @@ data class Bot(
     val harnessMemory: Boolean? = null,
     /** The harness keeps one memory for all its sessions that Codync can't turn off (Hermes Agent, Gemini CLI): every bot on it shares it. */
     val harnessMemoryShared: Boolean? = null,
+    /** When Codync summarizes its chat; null where it doesn't (an agent it can't ask to, a group, an older host). */
+    val compaction: Compaction? = null,
+    /** The sizes its agent's window allows; null until the agent has told its window. */
+    val compactionTokens: CompactionTokens? = null,
     /** Moves whenever memory changes, so an open memory screen fetches it again. */
     val memoryRev: Long? = null,
     val autoName: Boolean = false,
@@ -69,6 +78,8 @@ data class Bot(
     val position: Int = 0,
     val hidden: Boolean = false,
     val unread: Int = 0,
+    /** How many of [unread] are cards waiting on the user: the badge turns amber. 0 from an older host. */
+    val waiting: Int = 0,
     val rev: Long = 0,
     val deleted: Boolean = false,
     /** Agents that carry on, in order, when its own can't answer (out of usage, rate limited, signed out…); null from an older host. */
@@ -79,13 +90,36 @@ data class Bot(
     val agentStep: AgentStep? = null,
     /** Agents of its chain resting now. */
     val resting: List<Resting> = emptyList(),
+    /** The `/` commands of the agent it runs on now. Empty from an older host, and for a group. */
+    val agentCommands: List<AgentCommand> = emptyList(),
+    /** What it keeps running on the computer. Empty from an older host, and for a group. */
+    val devServers: List<DevServer> = emptyList(),
+    /** Its box ([WorkTask]): every live or waiting task in dispatch order, then the ones ended in the last day. Empty from a host before the box, and for a group. */
+    @Serializable(with = WorkSerializer::class)
+    val work: List<WorkTask> = emptyList(),
+    /** The most threads it runs at once; null from a host before the box. */
+    // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
+    @JsonNames("maxAgents")
+    @Serializable(with = MaxThreadsSerializer::class)
+    val maxThreads: Int? = null,
+    /** A thread that starts while another of its threads works in the same repository gets a git worktree of its own; null from an older host. */
+    // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
+    @JsonNames("taskWorktrees")
+    val threadWorktrees: Boolean? = null,
+    /** Its folder is in a git repository: where [threadWorktrees] matters. */
+    val gitRepo: Boolean = false,
+    /** Git is on the computer; null from an older host, which is counted as having it ([gitState]). */
+    val gitInstalled: Boolean? = null,
+    /** How it stands outside its chat ([Outside]); null from an older host. */
+    @Serializable(with = OutsideSerializer::class)
+    val outside: Outside? = null,
     val customIcon: CustomIcon? = null,
 ) {
+    /** The messages in the badge the user hasn't read: what `markRead` clears (waiting cards stay counted). */
+    val unseen: Int get() = unread - waiting
+
     /** Its band in the roster: pinned bots, then the rest. Reordering stays inside a band. */
     val band: Int get() = if (pinned) 0 else 1
-
-    /** [agent]'s rest, unless it's over. */
-    fun restOf(agent: String, now: Long = System.currentTimeMillis()): Resting? = resting.firstOrNull { it.agent == agent && it.until > now }
 
     /** An agent bot unless its agent said it has no Fast mode, or one that has it on (so it can be turned off). */
     val fastModeShown: Boolean get() = kind != "group" && (fastMode || fastModeSupport != "unsupported")
@@ -97,8 +131,15 @@ data class Bot(
     /** A group's bots, in member order, from [bots]. */
     fun memberBots(bots: List<Bot>): List<Bot> = members.mapNotNull { id -> bots.firstOrNull { it.id == id } }
 
+    /** Its status outside its chat: the chat's own from a host that names none. */
+    val outsideStatus: String get() = outside?.status ?: status
+    /** When what it does outside its chat started. */
+    val outsideStartedAt: Long? get() = if (outside != null) outside.startedAt else startedAt
+
+    /** Working anywhere: its own chat, a room or a routine. */
+    val isWorking: Boolean get() = status in listOf("working", "needsInput")
     /** Working right now in this chat (its own, or a group it's in). */
-    fun isWorking(chat: String): Boolean = status in listOf("working", "needsInput") && (workingChat ?: id) == chat
+    fun isWorking(chat: String): Boolean = isWorking && (workingChat ?: id) == chat
 }
 
 object HostClient {

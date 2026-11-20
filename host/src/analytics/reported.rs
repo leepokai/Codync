@@ -33,6 +33,9 @@ pub enum App {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Reported {
+    DevServerAction {
+        action: DevServerAction,
+    },
     AppOpened {
         /// Opened by the login item (desktop).
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -60,6 +63,7 @@ pub enum Reported {
         provider: Option<Provider>,
     },
     SignedOut,
+    ContinuedWithoutAccount,
     StarPromptAnswered {
         ask: Ask,
         starred: bool,
@@ -69,6 +73,32 @@ pub enum Reported {
     },
     ScreenViewed {
         screen: Screen,
+    },
+    /// A computer's screen stopped streaming after a while with nobody touching the app (desktop): the bot details'
+    /// picture (`bot_computer`) or the full viewer (`remote_screen`).
+    RemoteScreenPaused {
+        screen: Screen,
+    },
+    /// A picture opened full size (desktop).
+    ImagePreviewOpened,
+    ImagePreviewAction {
+        action: ImageAction,
+        from: ImageFrom,
+        outcome: ImageOutcome,
+        /// Why a copy or download failed.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<ImageFailure>,
+    },
+    /// Find in a conversation opened (desktop ⌘F, terminal `/` or ^f).
+    ConversationFindOpened,
+    ConversationFindSearched {
+        /// Whether the search found anything; never the text searched for.
+        found: bool,
+    },
+    /// A quote in a bubble was opened (desktop click, terminal `q`).
+    QuoteOpened {
+        /// Whether the quoted message was among the loaded ones and came into view.
+        found: bool,
     },
     VoiceCallStarted {
         engine: Engine,
@@ -81,10 +111,100 @@ pub enum Reported {
         reconnects: u32,
         stuck: VoiceStuck,
         failure: VoiceFailure,
+        /// Gemini's Google Search was on for this engine (the computer confirmed it); left out when it wasn't.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        google_search: bool,
+        /// Answers that came with Google's search suggestions; sent only with `google_search`. Never the query.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        searches: Option<u32>,
+    },
+    WindowRecovery {
+        outcome: WindowRecoveryOutcome,
+    },
+    ReachAccountAnswered {
+        outcome: ReachOutcome,
+        /// Why adding the computer failed.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<ClaimFailure>,
+    },
+    JoinOfferAnswered {
+        outcome: JoinOutcome,
+    },
+    CloudKeySaved {
+        outcome: CloudKeyOutcome,
+        /// Older desktop builds don't say.
+        #[serde(default)]
+        provider: CloudProvider,
+    },
+    CloudComputerCreated {
+        outcome: CloudCreateOutcome,
+        provider: CloudProvider,
+    },
+    CloudOfferOpened {
+        provider: CloudProvider,
+    },
+    CloudComputerRenamed {
+        outcome: CloudRenameOutcome,
+    },
+    CloudComputerDeleted {
+        outcome: CloudDeleteOutcome,
+        provider: CloudProvider,
+    },
+    CloudKeyRemoved {
+        outcome: CloudKeyRemoveOutcome,
+        provider: CloudProvider,
+    },
+    CloudSnapshotsDeleted {
+        outcome: CloudDeleteOutcome,
+        provider: CloudProvider,
+    },
+    VoiceNotePlayed {
+        outcome: VoiceNoteOutcome,
+        /// Which step broke, when it failed.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<VoiceNoteFailure>,
+    },
+    /// `ask`: which invitation (1 for the first); older clients don't say.
+    KofiInviteShown {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ask: Option<u8>,
+    },
+    KofiInviteAnswered {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ask: Option<u8>,
+        opened: bool,
+    },
+    WhatsNewShown,
+    DesktopNotificationsSet {
+        on: bool,
+    },
+    DesktopNotificationOpened {
+        kind: AlertKind,
     },
 }
 
 // Value lists. A value a newer client adds arrives as `other` instead of being refused.
+
+/// Which alert a desktop notification showed (`remote::push::AlertKind`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertKind {
+    Done,
+    NeedsInput,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// What came of a desktop window whose page crashed: it loaded again, or crashed too often and stays down.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowRecoveryOutcome {
+    Reloaded,
+    GaveUp,
+    #[serde(other)]
+    Other,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -131,6 +251,51 @@ pub enum Link {
     Privacy,
     Support,
     InstallCommand,
+    WhatsNewFilm,
+    #[serde(other)]
+    Other,
+}
+
+/// What was done in the full-size picture viewer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageAction {
+    Zoom,
+    CopyImage,
+    CopyName,
+    Download,
+    #[serde(other)]
+    Other,
+}
+
+/// Where it was done: inside the full-size viewer, or from a picture's menu in a chat or the Library.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageFrom {
+    Viewer,
+    Menu,
+    #[serde(other)]
+    Other,
+}
+
+/// How a picture action ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageOutcome {
+    Done,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// Why a picture copy or download failed: its bytes weren't there, couldn't be converted, the clipboard refused them, or the transfer broke.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageFailure {
+    Unavailable,
+    Convert,
+    Clipboard,
+    Transfer,
     #[serde(other)]
     Other,
 }
@@ -145,6 +310,7 @@ pub enum Screen {
     Chat,
     Trace,
     BotDetails,
+    BotComputer,
     Memory,
     Routines,
     Marketplace,
@@ -160,6 +326,10 @@ pub enum Screen {
     Library,
     Artifact,
     Network,
+    /// A background thread's details.
+    Thread,
+    /// Every bot's work on one page.
+    AllWork,
     #[serde(other)]
     Other,
 }
@@ -195,6 +365,138 @@ pub enum VoiceFailure {
     Microphone,
     Connection,
     Provider,
+    #[serde(other)]
+    Other,
+}
+
+/// How the ask before Reach from anywhere turns on ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReachOutcome {
+    Added,
+    OwnRelay,
+    Cancelled,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// How the ask to add this computer to the signed-in account ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JoinOutcome {
+    Added,
+    KeptOut,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// How giving Codync Cloud a provider's key ended: kept, turned down (the user was told what to fix), or failed otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudKeyOutcome {
+    Saved,
+    Refused,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// How creating a Codync Cloud computer ended: created, turned down (over the limit, or the provider refused the key or
+/// the plan, and the user was told what to fix), or failed otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudCreateOutcome {
+    Created,
+    Refused,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// How renaming a Codync Cloud computer ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudRenameOutcome {
+    Renamed,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// How deleting a Codync Cloud computer, or its snapshots, ended: deleted, turned down by the cloud (`409`: its snapshots
+/// while it sleeps), or failed otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudDeleteOutcome {
+    Deleted,
+    Refused,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// How removing a cloud provider's key from Codync Cloud ended: removed, turned down by the cloud (`409`: a computer
+/// still runs on that provider), or failed otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudKeyRemoveOutcome {
+    Removed,
+    Refused,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// The cloud provider a Codync Cloud key or computer is for (the cloud's id for it).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudProvider {
+    Boat,
+    Instabox,
+    #[default]
+    #[serde(other)]
+    Other,
+}
+
+/// What the apps do with a dev server on their own (the host's methods report the rest).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DevServerAction {
+    Open,
+    Copy,
+    #[serde(other)]
+    Other,
+}
+
+/// Whether a voice note started from its beginning, or couldn't play.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceNoteOutcome {
+    Played,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// Which step of a voice note's play failed: fetching or opening it, or starting it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceNoteFailure {
+    Load,
+    Playback,
+    #[serde(other)]
+    Other,
+}
+
+/// Why a computer couldn't be added to the account.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimFailure {
+    Unreachable,
+    Refused,
+    Host,
     #[serde(other)]
     Other,
 }
@@ -252,6 +554,12 @@ mod tests {
         assert_eq!(read_json(&newer), Some((Event::ScreenViewed, json!({"app": "tui", "screen": "other"}))));
         let unknown_app = json!({"event": "window_opened", "app": "watch"});
         assert_eq!(read_json(&unknown_app), Some((Event::WindowOpened, json!({"app": "other"}))));
+        let newer = json!({"event": "cloud_key_removed", "outcome": "expired", "provider": "fly"});
+        assert_eq!(
+            read_json(&newer),
+            Some((Event::CloudKeyRemoved, json!({"app": "desktop", "outcome": "other", "provider": "other"})))
+        );
+        assert!(read(&json!({"event": "cloud_computer_deleted", "outcome": "deleted"})).is_err(), "missing `provider`");
 
         // Extra keys, content above all, never reach the event.
         let noisy = json!({"event": "link_opened", "link": "discord", "url": "https://example.com/secret",
@@ -288,12 +596,99 @@ mod tests {
                 Event::StarPromptAnswered,
             ),
             (json!({"event": "link_opened", "app": "desktop", "link": "install_command"}), Event::LinkOpened),
+            (json!({"event": "dev_server_action", "app": "desktop", "action": "open"}), Event::DevServerAction),
+            (json!({"event": "voice_note_played", "app": "desktop", "outcome": "played"}), Event::VoiceNotePlayed),
+            (
+                json!({"event": "voice_note_played", "app": "desktop", "outcome": "failed", "error": "load"}),
+                Event::VoiceNotePlayed,
+            ),
             (json!({"event": "screen_viewed", "app": "tui", "screen": "bot_details"}), Event::ScreenViewed),
+            (
+                json!({"event": "remote_screen_paused", "app": "desktop", "screen": "bot_computer"}),
+                Event::RemoteScreenPaused,
+            ),
+            (json!({"event": "image_preview_opened", "app": "desktop"}), Event::ImagePreviewOpened),
+            (
+                json!({"event": "image_preview_action", "app": "desktop", "action": "copy_image", "from": "menu", "outcome": "done"}),
+                Event::ImagePreviewAction,
+            ),
+            (
+                json!({"event": "image_preview_action", "app": "desktop", "action": "download", "from": "viewer",
+                    "outcome": "failed", "error": "transfer"}),
+                Event::ImagePreviewAction,
+            ),
+            (json!({"event": "conversation_find_opened", "app": "desktop"}), Event::ConversationFindOpened),
+            (
+                json!({"event": "conversation_find_searched", "app": "desktop", "found": true}),
+                Event::ConversationFindSearched,
+            ),
+            (json!({"event": "quote_opened", "app": "desktop", "found": false}), Event::QuoteOpened),
             (json!({"event": "voice_call_started", "app": "desktop", "engine": "on_device"}), Event::VoiceCallStarted),
             (
                 json!({"event": "voice_call_quality", "app": "desktop", "engine": "gemini", "ready_ms": 1200,
                     "reconnects": 1, "stuck": "none", "failure": "none"}),
                 Event::VoiceCallQuality,
+            ),
+            (
+                json!({"event": "voice_call_quality", "app": "desktop", "engine": "gemini", "ready_ms": 900,
+                    "reconnects": 0, "stuck": "none", "failure": "none", "google_search": true, "searches": 2}),
+                Event::VoiceCallQuality,
+            ),
+            (json!({"event": "window_recovery", "app": "desktop", "outcome": "reloaded"}), Event::WindowRecovery),
+            (json!({"event": "window_recovery", "app": "desktop", "outcome": "gave_up"}), Event::WindowRecovery),
+            (json!({"event": "continued_without_account", "app": "desktop"}), Event::ContinuedWithoutAccount),
+            (json!({"event": "kofi_invite_shown", "app": "tui"}), Event::KofiInviteShown),
+            (json!({"event": "kofi_invite_shown", "app": "tui", "ask": 2}), Event::KofiInviteShown),
+            (json!({"event": "kofi_invite_answered", "app": "desktop", "opened": true}), Event::KofiInviteAnswered),
+            (
+                json!({"event": "kofi_invite_answered", "app": "desktop", "ask": 1, "opened": false}),
+                Event::KofiInviteAnswered,
+            ),
+            (json!({"event": "whats_new_shown", "app": "tui"}), Event::WhatsNewShown),
+            (
+                json!({"event": "desktop_notifications_set", "app": "desktop", "on": true}),
+                Event::DesktopNotificationsSet,
+            ),
+            (
+                json!({"event": "desktop_notification_opened", "app": "desktop", "kind": "needs_input"}),
+                Event::DesktopNotificationOpened,
+            ),
+            (
+                json!({"event": "join_offer_answered", "app": "desktop", "outcome": "kept_out"}),
+                Event::JoinOfferAnswered,
+            ),
+            (
+                json!({"event": "cloud_key_saved", "app": "desktop", "outcome": "refused", "provider": "instabox"}),
+                Event::CloudKeySaved,
+            ),
+            (
+                json!({"event": "cloud_computer_created", "app": "desktop", "outcome": "created", "provider": "boat"}),
+                Event::CloudComputerCreated,
+            ),
+            (json!({"event": "cloud_offer_opened", "app": "desktop", "provider": "instabox"}), Event::CloudOfferOpened),
+            (
+                json!({"event": "cloud_computer_renamed", "app": "desktop", "outcome": "failed"}),
+                Event::CloudComputerRenamed,
+            ),
+            (
+                json!({"event": "cloud_computer_deleted", "app": "desktop", "outcome": "deleted", "provider": "boat"}),
+                Event::CloudComputerDeleted,
+            ),
+            (
+                json!({"event": "cloud_key_removed", "app": "desktop", "outcome": "removed", "provider": "instabox"}),
+                Event::CloudKeyRemoved,
+            ),
+            (
+                json!({"event": "cloud_snapshots_deleted", "app": "desktop", "outcome": "refused", "provider": "boat"}),
+                Event::CloudSnapshotsDeleted,
+            ),
+            (
+                json!({"event": "reach_account_answered", "app": "desktop", "outcome": "own_relay"}),
+                Event::ReachAccountAnswered,
+            ),
+            (
+                json!({"event": "reach_account_answered", "app": "desktop", "outcome": "failed", "error": "refused"}),
+                Event::ReachAccountAnswered,
             ),
         ];
         for (body, event) in cases {

@@ -1,8 +1,10 @@
 //! Replies to the sheets' commands.
 
 use serde_json::{Value, json};
+use std::time::{Duration, Instant};
 
 use super::super::app::{After, AgentModel, App, Entry, Overlay, Toggle, rename_fold};
+use super::super::l10n::tr;
 use super::{Market, MemoryMode, Reply, Shell, open_browser, s};
 
 impl App {
@@ -59,6 +61,12 @@ impl App {
             Reply::CallEntries(call) => {
                 self.call_entries.insert(call, entries_of(&v));
             }
+            Reply::ThreadEntries(thread) => self.thread_fetched(&thread, Ok(&v)),
+            Reply::ThreadSent(task) => self.thread_sent(&task, Ok(())),
+            Reply::DevServerLogs(id) => {
+                let text = v["text"].as_str().unwrap_or_default().to_owned();
+                self.dev_server_logs(&id, Ok(text));
+            }
             Reply::BotChat { bot, peer } => {
                 let entries = entries_of(&v);
                 for o in &mut self.overlays {
@@ -72,14 +80,17 @@ impl App {
             }
             Reply::Routines(bot) => {
                 if v["routines"].is_array() {
+                    let (work, max_threads) = self.bots.get(&bot).map_or((&[][..], None), |b| (&b.work, b.max_threads));
                     for o in &mut self.overlays {
-                        if let Overlay::Routines(l) = o
+                        if let Overlay::Details(l) = o
                             && l.bot == bot
                         {
-                            let items = v["routines"].as_array().cloned().unwrap_or_default();
-                            l.cursor = l.cursor.min(items.len().saturating_sub(1));
-                            l.items = Some(items);
+                            // Follow-ups come and go with no key pressed: the cursor stays on the row it picked.
+                            let picked = l.picked(work, max_threads).map(|row| row.id().to_owned());
+                            l.routines = Some(v["routines"].as_array().cloned().unwrap_or_default());
+                            l.follow_ups = v["followUps"].as_array().cloned().unwrap_or_default();
                             l.runs = v["runs"].as_array().cloned().unwrap_or_default();
+                            l.keep_cursor(picked.as_deref(), work, max_threads);
                         }
                     }
                 } else {
@@ -104,6 +115,10 @@ impl App {
                     }
                 }
             }
+            Reply::FollowUpCancelled(bot) => {
+                self.flash("Follow-up cancelled");
+                self.reload_details(&bot);
+            }
             Reply::RoutineSaved => {
                 if let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Routine(_))) {
                     self.overlays.truncate(i);
@@ -117,11 +132,7 @@ impl App {
                     s(&v, "key")
                 );
                 super::super::app::copy(&text);
-                self.flash(if v["url"].is_string() {
-                    "Copied a curl command for the public URL (with its key)"
-                } else {
-                    "Copied a curl command (the cloud is off: this computer only)"
-                });
+                self.flash(webhook_copied(&v));
             }
             Reply::Registry { search, cursor } => self.with_market(|app, m| {
                 if !m.awaits(&search, cursor.as_deref()) {
@@ -159,18 +170,32 @@ impl App {
                 }
                 self.call("refreshBackends", json!({}), After::Nothing);
             }
-            Reply::Setup => {
+            Reply::LoginProfiles(backend) => self.login_profiles_changed(&backend, &v),
+            Reply::LoginProfileAdded(backend) => {
+                self.login_profiles_changed(&backend, &v);
+                if let Some(id) = v["loginProfile"]["id"].as_str() {
+                    self.sign_in_login_profile(&backend, id);
+                }
+            }
+            Reply::LoginKeys(backend) => self.login_keys_saved(&backend, &v),
+            Reply::ShellVariables(login_profile) => self.shell_variables(&login_profile, Ok(&v)),
+            Reply::Setup(login_profile) => {
                 let Some(id) = v["term"].as_str() else { return };
                 let backend = match self.overlays.last() {
                     Some(Overlay::Agent(a)) => a.backend.clone(),
                     _ => String::new(),
                 };
                 let input = self.client.spawn_term(id.to_owned(), self.tx.clone());
-                self.shell = Some(Shell { id: id.to_owned(), input, backend, exited: None, out: vec![] });
+                self.shell =
+                    Some(Shell { id: id.to_owned(), input, backend, login_profile, exited: None, out: vec![] });
             }
             Reply::FieldsSaved => {
                 if let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Fields(_))) {
                     self.overlays.truncate(i);
+                }
+                // A renamed login profile comes back with the agents.
+                if let Some(agents) = v["backends"].as_array() {
+                    self.backends.clone_from(agents);
                 }
                 if let Some(Overlay::Agent(a)) = self.overlays.last_mut()
                     && v.get("signedIn").is_some()
@@ -188,11 +213,24 @@ impl App {
             }
             Reply::SignIn => {
                 let url = s(&v, "url");
-                super::super::app::copy(&url);
-                if open_browser(&url, &self.url) {
-                    self.flash("Finish in the browser, then ^r refreshes");
+                let opened = open_browser(&url, &self.url);
+                // A sign-in with a code (GitHub): the code is what to paste, and it stays up meanwhile.
+                if let Some(code) = v["code"].as_str() {
+                    super::super::app::copy(code);
+                    let text = if opened {
+                        tr("Code {code} copied: paste it on the page that opened, then ^r refreshes")
+                    } else {
+                        tr("Code {code} copied: paste it at {url}, then ^r refreshes")
+                    };
+                    let text = text.replace("{code}", code).replace("{url}", &url);
+                    self.hint = Some((text, Instant::now() + Duration::from_mins(2)));
                 } else {
-                    self.flash("Sign-in link copied: open it on this computer, then ^r refreshes");
+                    super::super::app::copy(&url);
+                    self.flash(if opened {
+                        "Finish in the browser, then ^r refreshes"
+                    } else {
+                        "Sign-in link copied: open it on this computer, then ^r refreshes"
+                    });
                 }
             }
             Reply::Models(backend) => {
@@ -254,12 +292,15 @@ impl App {
                 }
                 _ => self.flash(&e),
             },
-            Reply::Auth(backend) => {
+            Reply::LoginKeys(_) => self.login_keys_failed(e),
+            Reply::ShellVariables(login_profile) => self.shell_variables(login_profile, Err(e)),
+            Reply::Auth(backend) | Reply::LoginProfiles(backend) | Reply::LoginProfileAdded(backend) => {
                 for o in &mut self.overlays {
                     if let Overlay::Agent(a) = o
                         && a.backend == *backend
                     {
                         a.busy = false;
+                        a.signing_in = None;
                         a.error = Some(e.clone());
                     }
                 }
@@ -286,6 +327,9 @@ impl App {
                 self.unfolded.retain(|id| !lines.contains(id));
                 self.flash(&e);
             }
+            Reply::ThreadEntries(thread) => self.thread_fetched(thread, Err(e)),
+            Reply::ThreadSent(task) => self.thread_sent(task, Err(e)),
+            Reply::DevServerLogs(id) => self.dev_server_logs(id, Err(e)),
             Reply::BotChat { bot, peer } => {
                 for o in &mut self.overlays {
                     if let Overlay::BotChat(c) = o
@@ -339,8 +383,8 @@ impl App {
                             m.busy = false;
                             m.error = Some(e.clone());
                         }
-                        Overlay::Routines(l) => {
-                            l.items.get_or_insert_with(Vec::new);
+                        Overlay::Details(l) => {
+                            l.routines.get_or_insert_with(Vec::new);
                         }
                         _ => {}
                     }
@@ -376,7 +420,7 @@ impl App {
                         calls.push(("memoryFile", body, After::Sheet(Reply::MemoryFile(m.bot.clone()))));
                     }
                 }
-                Overlay::Routines(l) => {
+                Overlay::Details(l) => {
                     calls.push(("routines", json!({"botId": l.bot}), After::Sheet(Reply::Routines(l.bot.clone()))));
                 }
                 Overlay::Library(l) => {
@@ -419,6 +463,29 @@ impl App {
 }
 
 /// The entries in a host reply (`callEntries`, `botConversation`).
+/// What copying a routine's curl command says about where it works.
+fn webhook_copied(v: &Value) -> &'static str {
+    if v["url"].is_string() {
+        "Copied a curl command for the public URL (with its key)"
+    } else if v["needsAccount"] == true {
+        "Copied a curl command (not in an account: this computer only)"
+    } else {
+        "Copied a curl command (the cloud is off: this computer only)"
+    }
+}
+
 fn entries_of(v: &Value) -> Vec<Entry> {
     v["entries"].as_array().into_iter().flatten().filter_map(Entry::parse).map(|(_, e)| e).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_copied_webhook_says_where_it_works() {
+        assert!(webhook_copied(&json!({"url": "https://x"})).contains("public URL"));
+        assert!(webhook_copied(&json!({"url": null, "needsAccount": true})).contains("not in an account"));
+        assert!(webhook_copied(&json!({"url": null, "needsAccount": false})).contains("the cloud is off"));
+    }
 }

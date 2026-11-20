@@ -15,6 +15,7 @@ import {
 import { AppLogo, Field, FormSheet, ServiceLogo } from './pieces'
 import { pluginsFor } from './plugins'
 import { useTr } from '../../lib/use-language'
+import { ThreadLine } from '../chat/PermissionCard'
 
 
 /** Credentials go through the setup API; only the request's state is a chat entry. */
@@ -43,7 +44,7 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
         // The host completes the card and resends the messages once the sheet finds it signed in.
         const backend = store.hello?.backends.find((b) => b.id === request.backend)
         if (backend) setAgent(backend)
-        else setError(`Open ${request.title} in Extensions to sign in.`)
+        else setError(tr('Open {name} in Extensions to sign in.').replaceAll('{name}', () => request.title))
       } else if (request.kind === 'app' && request.toolkit) {
         setApp({ slug: request.toolkit, name: request.title })
       } else if (isLogin) {
@@ -55,8 +56,9 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
       } else if (request.connectorId) {
         const id = request.connectorId
         const connector = (await market.connectors(client)).find((c) => c.id === id)
-        if (connector && needsSignIn(connector)) await pluginsFor(store).signIn(id)
-        await market.finishConnectionRequest(client, entry.id, { connectorId: id })
+        // Cancelled: the card stays pending.
+        const signedIn = !(connector && needsSignIn(connector)) || (await pluginsFor(store).signIn(id))
+        if (signedIn) await market.finishConnectionRequest(client, entry.id, { connectorId: id })
       } else if (request.registryName) {
         setItem(await market.connectorInfo(client, request.registryName))
       }
@@ -68,6 +70,7 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
 
   const pending = request.status === 'pending'
   return (
+    // A thread's sign-in card: the task's row on the bot's Details finds it by this.
     <VStack gap={12} className="request-card">
       <HStack gap={14}>
         <RequestLogo request={request} />
@@ -79,16 +82,17 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
           <HStack gap={6} className="request-card-trailing">
             {busy ? <Spinner /> : null}
             <Button disabled={busy || ((isSecret || isLogin) && !value)} onClick={() => void connect()}>
-              {isAgent ? 'Sign in' : isLogin ? 'Save' : 'Connect'}
+              {tr(isAgent ? 'Sign in' : isLogin ? 'Save' : 'Connect')}
             </Button>
           </HStack>
         ) : (
           <HStack as="span" gap={6} className="request-card-trailing request-card-status">
             {request.status === 'ready' ? <Icon name="checkmark" size={11} weight="semibold" /> : null}
-            {request.status === 'ready' ? (isAgent ? 'Signed in' : isLogin ? 'Saved' : 'Connected') : 'Cancelled'}
+            {tr(request.status === 'ready' ? (isAgent ? 'Signed in' : isLogin ? 'Saved' : 'Connected') : 'Cancelled')}
           </HStack>
         )}
       </HStack>
+      <ThreadLine entry={entry} />
       {pending && isLogin ? (
         <>
           <Field value={username} onChange={setUsername} placeholder="Username or email" />
@@ -102,7 +106,7 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
           <Text size="caption" tone="secondary">{tr(`Saved securely on this computer. Never added to the conversation.`)}</Text>
         </>
       ) : null}
-      {error ? <Text size="footnote" tone="danger">{error}</Text> : null}
+      {error ? <Text size="footnote" tone="danger">{tr(error)}</Text> : null}
       <FormSheet open={item !== null} onClose={() => setItem(null)}>
         {item ? <InstallConnectorSheet item={item} requestId={entry.id} done={() => setItem(null)} /> : null}
       </FormSheet>
@@ -110,7 +114,7 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
         {app ? <ComposioConnectSheet app={app} requestId={entry.id} done={() => setApp(null)} /> : null}
       </FormSheet>
       <FormSheet open={agent !== null} onClose={() => setAgent(null)} width={560} height={560} fixed>
-        {agent ? <AgentSheet key={agent.id} initial={agent} recheck /> : null}
+        {agent ? <AgentSheet key={agent.id} initial={agent} recheck={!request.loginProfile} signInProfile={request.loginProfile} /> : null}
       </FormSheet>
     </VStack>
   )

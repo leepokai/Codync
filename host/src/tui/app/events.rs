@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use serde_json::{Value, json};
 
-use super::{After, App, Bot, Dir, Entry, Focus, Msg, Overlay, Status, merge_toggles};
+use super::{After, App, Bot, Dir, Entry, Focus, Kind, Msg, Overlay, Status, merge_toggles};
 
 /// An entry the mirror doesn't hold, below the floor its bot's loaded chat had when this
 /// connection began: `seq` grows with insertion, so it predates the window and only arrived because
@@ -18,6 +18,10 @@ impl App {
         match m {
             Msg::Online(on) => {
                 self.online = on;
+                if !on {
+                    // The next connection may reach another host: nothing goes by this one's version.
+                    self.host_version.clear();
+                }
                 if !on && self.error.is_none() && self.bots.is_empty() {
                     // Say why instead of spinning on "Connecting…".
                     self.call("hello", json!({}), After::Hello);
@@ -38,8 +42,17 @@ impl App {
                 self.stream_since = since;
                 self.floors.clear();
             }
-            Msg::Event(v) => self.on_event(&v),
-            Msg::Reply(after, r) => self.on_reply(after, r),
+            // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
+            Msg::Event(mut v) => {
+                crate::tui::net::old_host::incoming(&mut v);
+                self.on_event(&v);
+            }
+            Msg::Reply(after, mut r) => {
+                if let Ok(v) = &mut r {
+                    crate::tui::net::old_host::incoming(v);
+                }
+                self.on_reply(after, r);
+            }
             Msg::FileDownload { id, status, done } => {
                 if self.download.as_ref().is_some_and(|job| job.id == id) {
                     self.flash(&status.unwrap_or_else(|error| format!("Download failed: {error}")));
@@ -65,18 +78,30 @@ impl App {
             Some("screen") => self.screen = v["screen"].clone(),
             Some("network") => self.network_changed(&v["network"]),
             Some("cloud") => self.cloud = v["cloud"].clone(),
+            Some("name") => {
+                if let Some(name) = v["name"].as_str() {
+                    name.clone_into(&mut self.host);
+                }
+            }
+            Some("autoOrder") => self.auto_order = v["enabled"].as_bool(),
             Some("pairingRequests") => self.pairing_requests_changed(v),
             Some("bot") => {
                 self.upsert_bot(&v["bot"]);
+                self.close_idle_work_page();
                 self.memory_moved(&v["bot"]);
             }
             Some("artifact") => self.artifact_changed(&v["artifact"]),
+            Some("threadEntry") => self.thread_entries.keep(v["thread"].as_str(), &v["entry"]),
             Some("entry") => {
                 if let Some((bot, e)) = Entry::parse(&v["entry"])
                     && !self.outside_window(&bot, &e)
                 {
                     if !self.entries.get(&bot).is_some_and(|m| m.contains_key(&e.seq)) {
                         self.entry_added(&bot, &e);
+                        // A routine's run and a follow-up say in the chat that they began or were dropped.
+                        if e.kind == Kind::Notice {
+                            self.reload_details(&bot);
+                        }
                     }
                     self.entries.entry(bot).or_default().insert(e.seq, e);
                 }
@@ -108,12 +133,15 @@ impl App {
     fn upsert_bot(&mut self, v: &Value) {
         let Some(id) = v["id"].as_str() else { return };
         if v["deleted"].as_bool().unwrap_or(false) {
-            self.bots.remove(id);
+            if let Some(gone) = self.bots.remove(id) {
+                self.threads_ended(&gone.work, &[]);
+            }
             self.entries.remove(id);
             self.floors.remove(id);
             self.drafts.remove(id);
             self.files.remove(id);
             if self.selected.as_deref() == Some(id) {
+                self.close_find();
                 self.selected = None;
                 self.reply = None;
                 self.pick = None;
@@ -129,6 +157,9 @@ impl App {
         }
         let old = self.bots.insert(new.id.clone(), new.clone());
         let Some(old) = old else { return };
+        self.threads_ended(&old.work, &new.work);
+        self.follow_threads(&new.id);
+        self.keep_details_cursor(&new.id, (&old.work, old.max_threads));
         let watching = self.selected.as_deref() == Some(new.id.as_str()) && self.chat_visible() && self.term_focused;
         // A member's turn in a group is the group's: it alone says done / needs you.
         if !new.notify || watching || old.away().is_some() || new.away().is_some() {
@@ -165,6 +196,10 @@ impl App {
         }
         if let After::Network(n) = after {
             self.network_reply(n, r);
+            return;
+        }
+        if let After::UsageOrder(to) = after {
+            self.usage_order_answered(to, r);
             return;
         }
         if matches!(after, After::Pairing | After::Cloud | After::PairingRequests | After::PairingDecided) {
@@ -214,6 +249,7 @@ impl App {
             | After::Answered(_)
             | After::Sheet(_)
             | After::Network(_)
+            | After::UsageOrder(_)
             | After::Sent(_)
             | After::Connection(_, _)
             | After::Pairing
@@ -233,9 +269,19 @@ impl App {
                 v["home"].as_str().unwrap_or_default().clone_into(&mut self.home);
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.analytics_hello(&v);
+                self.auto_order = v["autoOrder"].as_bool();
+                self.credentials_reset = v["credentialsReset"].as_bool().unwrap_or(false);
                 self.screen = v["screen"].clone();
+                // A thread's entries aren't in a connection's catch-up: the open transcripts ask for what they
+                // missed, now that the host's version says which name `threadEntries` goes by.
+                self.reload_thread_details();
             }
             After::Analytics => self.analytics_set(&v),
+            After::AutoOrder => self.auto_order_set(&v),
+            After::CredentialsReset => {
+                self.backends = v["backends"].as_array().cloned().unwrap_or_default();
+                self.flash("Saved credentials reset. Enter them again where you use them.");
+            }
             After::Backends => {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.flash("Agents refreshed");
@@ -360,6 +406,7 @@ impl App {
                 }
                 // The stream may already hold a newer copy (its delivery status).
                 if let Some((bot, e)) = Entry::parse(&value["entry"]) {
+                    super::kofi::sent();
                     self.entries.entry(bot).or_default().entry(e.seq).or_insert(e);
                 }
                 self.flash("Sent");
@@ -491,5 +538,13 @@ mod tests {
         assert!(app.bots["b"].fast_refusal().is_some_and(|why| why.contains("requires extra usage")));
         app.upsert_bot(&json!({"id":"g", "kind":"group", "fastModeSupport":"offered"}));
         assert!(!app.bots["g"].fast_shown());
+    }
+
+    #[tokio::test]
+    async fn a_dropped_connection_forgets_the_hosts_version() {
+        let mut app = test_app();
+        app.host_version = "2.50.1".into();
+        app.on_msg(Msg::Online(false));
+        assert!(app.host_version.is_empty(), "the host that answers next may be another build");
     }
 }

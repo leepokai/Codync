@@ -5,17 +5,23 @@ pub mod acp;
 pub mod auth;
 pub mod backends;
 pub mod bot;
+pub mod codex_app;
 pub mod config;
+pub mod elicitation;
 pub mod fallback;
 pub mod gear;
+pub mod login_profiles;
 pub mod modes;
 pub mod new_bot;
 pub mod node;
 pub mod own_memory;
 pub mod registry;
 pub mod term;
+pub mod versions;
 pub mod workspace;
 
-mod process;
+pub(crate) mod process;
+#[cfg(unix)]
+mod process_unix;
 #[cfg(windows)]
 mod process_windows;

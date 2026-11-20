@@ -1,6 +1,7 @@
-import { Children, Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { Children, Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { Icon } from './Icon'
-import { AnchoredMenu, IconButtonBase, usePresence, type MenuItem } from './Overlay'
+import { IconButtonBase, usePresence } from './Overlay'
+import { AnchoredMenu, type MenuItem } from './Menu'
 import { HStack, Spacer, VStack } from './Stack'
 import { useTr } from '../lib/use-language'
 import { Text } from './Text'
@@ -12,7 +13,7 @@ export const IconButton = IconButtonBase
 
 /** The filled call-to-action (`.primary`) or the quieter filled one (`.secondary`). */
 export function Button({ kind = 'primary', children, onClick, disabled, className, title }: {
-  kind?: 'primary' | 'secondary'
+  kind?: 'primary' | 'secondary' | 'destructive'
   children: ReactNode
   onClick?: () => void
   disabled?: boolean
@@ -78,13 +79,25 @@ export function Switch({ on, onChange, children, label, disabled, className }: {
   )
 }
 
+/** A whole number stepped between `min` and `max`: less, the number, more. `label` names what it counts. */
+export function Stepper({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }) {
+  const tr = useTr()
+  return (
+    <HStack as="span" gap={2} role="group" aria-label={tr(label)}>
+      <IconButton title="Decrease" icon="minus.circle" size={24} disabled={value <= min} onClick={() => onChange(value - 1)} />
+      <Text tone="text" tabular className="stepper-value" aria-live="polite">{value}</Text>
+      <IconButton title="Increase" icon="plus.circle" size={24} disabled={value >= max} onClick={() => onChange(value + 1)} />
+    </HStack>
+  )
+}
+
 /** A button that opens a Codync menu. */
-export function DropdownMenu({ items, children, className, style, title }: { items: () => MenuItem[]; children: ReactNode; className?: string; style?: CSSProperties; title?: string }) {
+export function DropdownMenu({ items, children, className, style, title, disabled }: { items: () => MenuItem[]; children: ReactNode; className?: string; style?: CSSProperties; title?: string; disabled?: boolean }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLButtonElement>(null)
   return (
     <>
-      <button ref={ref} className={className} style={style} title={title} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <button ref={ref} className={className} style={style} title={title} disabled={disabled} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         {children}
       </button>
       <AnchoredMenu open={open} onClose={() => setOpen(false)} anchor={ref} items={items} />
@@ -118,15 +131,39 @@ export function ChoicePicker<T extends string | number>({ selection, options, on
   )
 }
 
-/** Picks one of a few values side by side: the replacement for `.segmented`. */
+/** Picks one of a few values side by side: the replacement for `.segmented`. The capsule follows the chosen button: the labels are not the same width, so a slice of the track would miss the word. */
 export function SegmentedChoice<T extends string>({ selection, options, onChange }: { selection: T; options: { id: T; label: string }[]; onChange: (id: T) => void }) {
   const tr = useTr()
-  const index = options.findIndex((o) => o.id === selection)
+  const root = useRef<HTMLDivElement>(null)
+  const [thumb, setThumb] = useState<{ x: number; width: number } | null>(null)
+  const shown = options.map((o) => `${o.id}\0${tr(o.label)}`).join('\n')
+
+  useLayoutEffect(() => {
+    const el = root.current
+    if (!el) return
+    const place = () => {
+      const chosen = el.querySelector<HTMLElement>(':scope > .segmented-option.on')
+      if (!chosen) {
+        setThumb((prev) => (prev === null ? prev : null))
+        return
+      }
+      // The thumb's `left` is the track's padding, so the slide starts from the button's own edge.
+      const pad = Number.parseFloat(getComputedStyle(el).paddingLeft) || 0
+      const x = chosen.offsetLeft - pad
+      const width = chosen.offsetWidth
+      setThumb((prev) => (prev && prev.x === x && prev.width === width ? prev : { x, width }))
+    }
+    place()
+    const observer = new ResizeObserver(place)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [shown, selection])
+
   return (
-    <div className="segmented">
-      {index >= 0 && <div className="segmented-thumb" style={{ width: `calc((100% - 6px - ${(options.length - 1) * 2}px) / ${options.length})`, transform: `translateX(calc(${index} * (100% + 2px)))` }} />}
+    <div className="segmented" ref={root}>
+      {thumb ? <div className="segmented-thumb" style={{ width: thumb.width, transform: `translateX(${thumb.x}px)` }} /> : null}
       {options.map((o) => (
-        <button key={o.id} className={`segmented-option ${o.id === selection ? 'on' : ''}`} onClick={() => onChange(o.id)} aria-pressed={o.id === selection}>
+        <button key={o.id} className={`segmented-option${o.id === selection ? ' on' : ''}`} onClick={() => onChange(o.id)} aria-pressed={o.id === selection}>
           {tr(o.label)}
         </button>
       ))}
@@ -257,13 +294,25 @@ export function ValueRow({ label, detail, children }: { label: string; detail?: 
 }
 
 /** A search box: the replacement for `.searchable`. */
-export function SearchField({ value, onChange, prompt = 'Search', inputRef }: { value: string; onChange: (v: string) => void; prompt?: string; inputRef?: React.RefObject<HTMLInputElement | null> }) {
+export function SearchField({
+  value,
+  onChange,
+  prompt = 'Search',
+  inputRef,
+  onKeyDown,
+}: {
+  value: string
+  onChange: (v: string) => void
+  prompt?: string
+  inputRef?: React.RefObject<HTMLInputElement | null>
+  onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void
+}) {
   const tr = useTr()
   const clear = tr('Clear search')
   return (
     <div className="search-field">
       <Icon name="magnifyingglass" size={12} color="var(--secondary)" />
-      <input ref={inputRef} value={value} placeholder={tr(prompt)} spellCheck={false} onChange={(e) => onChange(e.target.value)} />
+      <input ref={inputRef} value={value} placeholder={tr(prompt)} aria-label={tr(prompt)} spellCheck={false} onChange={(e) => onChange(e.target.value)} onKeyDown={onKeyDown} />
       {value ? (
         <button aria-label={clear} title={clear} className="search-clear" onClick={() => onChange('')}>
           <Icon name="xmark.circle.fill" size={12} />
@@ -290,8 +339,8 @@ export function Disclosure({ expanded, onToggle, label, children }: { expanded: 
 }
 
 /** Keeps `children` mounted while it fades and folds away. */
-export function Reveal({ show, children }: { show: boolean; children: ReactNode }) {
-  const { mounted, shown } = usePresence(show)
+export function Reveal({ show, animateOnMount, children }: { show: boolean; animateOnMount?: boolean; children: ReactNode }) {
+  const { mounted, shown } = usePresence(show, undefined, animateOnMount)
   if (!mounted) return null
   return (
     <div className={`reveal ${shown ? 'shown' : ''}`}>
@@ -377,4 +426,10 @@ export function ResizeHandle({ label, width, min, max, edge, onResize, onDraggin
       onKeyDown={onKeyDown}
     />
   )
+}
+
+/** A quiet "Beta" pill beside a feature still in beta (Network, Codync Cloud). */
+export function BetaTag() {
+  const tr = useTr()
+  return <Text as="span" size="caption" weight="semibold" className="beta-tag">{tr('Beta')}</Text>
 }

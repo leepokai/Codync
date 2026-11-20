@@ -2,7 +2,7 @@
 //! macOS helper: `{role, title?, description?, value?, frame: [x, y, w, h], children?}`
 //! with frames relative to the display.
 
-use crate::portal::Display;
+use crate::backend::Display;
 use anyhow::{Context, Result, anyhow};
 use atspi::connection::AccessibilityConnection;
 use atspi::proxy::accessible::{AccessibleProxy, ObjectRefExt};

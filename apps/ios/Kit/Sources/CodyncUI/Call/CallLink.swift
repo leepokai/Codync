@@ -35,9 +35,11 @@ final class CallLink {
     }
 
     /// Starts the call on the computer (again, when a provider session is replaced): what the voice needs.
-    func start(_ mode: String, provider: VoiceProvider? = nil, model chosen: String? = nil, voice: String? = nil) async throws -> CallSession {
+    /// `googleSearch` asks for Gemini's built-in search; the session says whether it's on.
+    func start(_ mode: String, provider: VoiceProvider? = nil, model chosen: String? = nil, voice: String? = nil,
+               googleSearch: Bool = false) async throws -> CallSession {
         try await client().startCall(botId: botId, call: call, mode: mode, provider: provider, model: chosen, voice: voice,
-                                     language: Locale.preferredLanguages.first)
+                                     language: Locale.preferredLanguages.first, googleSearch: googleSearch)
     }
 
     /// One of the voice's tool calls, run on the computer with what was said that it hasn't got yet; its answer is

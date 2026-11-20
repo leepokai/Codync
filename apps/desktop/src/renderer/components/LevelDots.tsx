@@ -16,14 +16,14 @@ const PERIOD = 2.4
 
 /**
  * A dotted line that follows your voice while listening, ripples while the other side talks,
- * breathes while work goes on, and rests as faint dots otherwise. While a call connects it shows an
+ * breathes while work goes on, and rests as a still row of dots otherwise. While a call connects it shows an
  * indeterminate progress line instead (a short segment gliding back and forth along a faint track, resting
  * at the left with reduced motion), and fades back to the dots. `sample` is read every frame.
- * `color` null is the text color.
+ * `color` defaults to the ink color, so a dark bot's line stays visible on the dark call bar.
  */
 export function LevelDots({ sample, color, width, height = 16, label, className }: {
   sample: () => LevelSample
-  color: string | null
+  color?: string
   width: number
   height?: number
   label: string
@@ -51,7 +51,7 @@ export function LevelDots({ sample, color, width, height = 16, label, className 
       const { level, speaking = false, working = false, connecting = false } = sample()
       const t = reduceMotion ? 0 : now / 1000
       const accent = dark ? '#ffffff' : '#000000'
-      const tint = speaking ? accent : (color ?? accent)
+      const tint = color ?? accent
       const target = connecting ? 1 : 0
       mix = reduceMotion || !last ? target : mix + (target - mix) * Math.min(1, ((now - last) / 1000) * 8)
       last = now

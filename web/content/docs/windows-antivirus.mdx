@@ -1,0 +1,86 @@
+Codync on Windows is a desktop app plus a background service, the host, that runs your bots. Antivirus and other security software sometimes stop the host or remove the entry that starts it, because a program that starts by itself and launches other programs looks unusual to them. This page says how to tell that happened and what to allow.
+
+Update to the latest Codync first ([Updates](/docs/updates)): it starts the host even when the entry that starts it at sign-in was blocked.
+
+## Warnings when you download and install
+
+The installer isn't code-signed yet. Windows, browsers and antivirus products warn about installers they haven't seen from a known publisher, so expect one or more of these the first time. Download the installer only from the link in [Getting started](/docs/getting-started#windows), which points at Codync's releases on GitHub.
+
+- **The browser holds the download.** Microsoft Edge may say the file isn't commonly downloaded: open the download's **…** menu, choose **Keep**, then **Show more** and **Keep anyway**. Chrome may ask the same in its downloads list: choose **Keep**.
+- **Windows protected your PC.** SmartScreen shows this when you run the installer: choose **More info**, then **Run anyway**. It asks once.
+- **Your antivirus asks, or removes the file.** A product may scan the installer, ask whether to run it, or move it to quarantine. Allow it; if the file is gone, restore it from the product's quarantine or history, or add your Downloads folder's copy to its trusted list and download again.
+
+To check that the file is the one Codync published, compare its SHA-256 with the `.sha256` file beside it on the [release page](https://github.com/leepokai/Codync/releases/latest). In PowerShell:
+
+```powershell
+Get-FileHash "$env:USERPROFILE\Downloads\codync-windows-x64.exe" -Algorithm SHA256
+```
+
+The two values match when the download is intact. Letter case doesn't matter.
+
+## Signs that security software is in the way
+
+- The Codync window says **The host isn't running**, and **Try again** doesn't change it.
+- Your bots work while the Codync app is open, but after you restart the computer the phone shows the computer as offline until you open Codync again. The entry that starts the host at sign-in was removed.
+- The security software showed a notice about `codync-host.exe`, `codync-hostw.exe` or a new startup item around the time you installed or updated Codync.
+- An agent Codync installed for you stops starting, or its files disappear.
+
+## What Codync puts on your computer
+
+Everything is installed for your Windows user only. Nothing needs administrator rights.
+
+| What | Where | What it does |
+| --- | --- | --- |
+| The app | `%LOCALAPPDATA%\Programs\codync-desktop\Codync.exe` | The window and the tray icon |
+| The host | `codync-host.exe` in the `resources` folder beside the app | Runs your agents and keeps every bot's chat |
+| The host's runner | `codync-hostw.exe` in the same folder | Starts the host without a console window and starts it again if it stops |
+| Computer use | `cua-driver.exe` and `cua-driver-uia.exe` in the same folder | Lets a bot use the screen, only for bots you turned it on for |
+| The startup entry | The value `CodyncHost` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | Starts the host's runner when you sign in to Windows |
+| Your data | `.codync` in your user folder | Bots, conversations, memory, and the agents Codync installed (`.codync\agents`) |
+
+## Allow Codync in your security software
+
+The names differ from one product to the next, but the steps are the same three:
+
+1. **Restore anything it removed.** Open the product's quarantine or history, find the Codync files listed above and restore them. If a file is gone and can't be restored, install Codync again after the next step.
+2. **Trust Codync's programs.** Add `%LOCALAPPDATA%\Programs\codync-desktop` (the app, the host and its helpers) and `.codync\agents` in your user folder (the agents Codync installed) to the product's exclusions, trusted list or allow list. Paste a path into the File Explorer address bar to open the folder and see its full path. Leave the rest of `.codync` scanned: it holds your bots' own folders and the files you send them, which your security software should keep checking.
+3. **Allow the startup item.** If the product manages startup items, find the one that runs `codync-hostw.exe` and allow it. Products that ask before a program adds a startup item usually have a list of blocked items where you can change the answer.
+
+Then open Codync and choose **Try again**, or quit Codync from the tray menu and open it again.
+
+### Microsoft Defender
+
+1. Open **Windows Security**, then **Virus & threat protection**.
+2. Under **Protection history**, look for a Codync file. Open the item and choose **Actions**, then **Restore** or **Allow on device**.
+3. Under **Virus & threat protection settings**, choose **Manage settings**, scroll to **Exclusions** and choose **Add or remove exclusions**. Add both folders from step 2 above with **Add an exclusion**, then **Folder**.
+
+If **Controlled folder access** is on (**Virus & threat protection**, then **Ransomware protection**), bots can't write to protected folders such as Documents. Choose **Allow an app through Controlled folder access** and add `codync-host.exe`, and the agent's own program if Windows still blocks it.
+
+### Other products
+
+360 Total Security, Huorong, Tencent PC Manager, Kaspersky, Avast and similar products have the same three places under their own names: a quarantine or history, a trusted or exclusion list, and a startup manager. If the product asks about Codync when you install or update it, allow it and tick the option to remember the answer.
+
+## The firewall question
+
+The first time the host starts, Windows Defender Firewall asks whether to allow `codync-host`. Allow it on private networks so your phone can connect directly on the same Wi-Fi. If you decline, the phone still reaches the computer through the relay when the computer is in your account and **Reach from anywhere** is on. See [Remote access](/docs/remote-access).
+
+## Check that the host runs
+
+Open PowerShell and run:
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\codync-desktop\resources\codync-host.exe" status
+```
+
+To see whether the startup entry is still there:
+
+```powershell
+Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name CodyncHost
+```
+
+If the second command finds nothing, security software removed the entry. Allow the startup item as above, then add the entry back and restart the host:
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\codync-desktop\resources\codync-host.exe" install
+```
+

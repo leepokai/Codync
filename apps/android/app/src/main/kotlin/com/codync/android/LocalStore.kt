@@ -57,11 +57,12 @@ class LocalStore(private val context: Context, val contextId: String = "local") 
     internal data class Adoption(val computers: Int, val keys: MovedKeys)
 
     /**
-     * Sign-in is required: [from] (the signed-out context) moves into this account context, then is erased (iOS
+     * Signing in: [from] (the signed-out context) moves into this account context, then is erased (iOS
      * `SharedStore.Context.adopt(from:)`). New here (no identity, no computers), this context takes everything, its device
      * keys too (sealed again under this scope), so computers keep seeing the same device. Otherwise, or when that move
-     * fails, only the computer list merges (this context's entry wins), and those computers ask to be paired again. Null
-     * when there was nothing to move; a failure to merge leaves [from] as it was. Run before this context's stores and identity load.
+     * fails, the computer list merges (this context's entry wins) with the chats and waiting messages of the computers it
+     * gains, and those computers ask to be paired again. Null when there was nothing to move; a failure to merge leaves
+     * [from] as it was. Run before this context's stores and identity load.
      */
     @Synchronized
     internal fun adopt(from: LocalStore): Adoption? {
@@ -70,11 +71,25 @@ class LocalStore(private val context: Context, val contextId: String = "local") 
         val own = computers()
         val keys = if (!hasIdentity() && own.isEmpty() && takeAll(from)) MovedKeys.Moved else {
             val known = own.map { it.id }.toSet()
-            saveComputers(own + moving.filter { it.id !in known })
+            val gained = moving.filter { it.id !in known }
+            takeChats(from, gained)
+            saveComputers(own + gained)
             MovedKeys.Rescan
         }
         from.erase()
         return Adoption(moving.size, keys)
+    }
+
+    /** [from]'s chats, drafts and outgoing files of [computers], for [adopt]: messages waiting to go live there. */
+    private fun takeChats(from: LocalStore, computers: List<Computer>) {
+        val prefixes = computers.flatMap { listOf("mirror-${it.id}.db", "drafts-${it.id}.json") }
+        for (file in from.directory.listFiles().orEmpty()) {
+            if (file.name == "outgoing" || prefixes.any(file.name::startsWith)) file.copyRecursively(File(directory, file.name), overwrite = true)
+        }
+        for (computer in computers) {
+            DraftBook(directory, computer.id).relocate(from.directory)
+            MirrorDatabase.relocate(context, directory, computer.id, from.directory)
+        }
     }
 
     /** [from]'s device keys and files, for [adopt]; false when they couldn't move (the computers merge instead). */
@@ -128,6 +143,12 @@ class LocalStore(private val context: Context, val contextId: String = "local") 
     fun saveShortcutLead(id: String?) {
         if (id == null) File(directory, "shortcut-lead").delete() else write(AtomicFile(File(directory, "shortcut-lead")), id.toByteArray())
     }
+
+    /** The chats things shared from other apps went to, most recent first (`ShareToBot`'s Recent). */
+    fun shareRecipients(): List<ShareRecipient> = AtomicFile(File(directory, "share-recipients.json")).takeIf { it.baseFile.exists() }
+        ?.let { json.decodeFromString<List<ShareRecipient>>(it.readFully().toString(Charsets.UTF_8)) }.orEmpty()
+    fun saveShareRecipients(recipients: List<ShareRecipient>) =
+        write(AtomicFile(File(directory, "share-recipients.json")), json.encodeToString(recipients).toByteArray())
 
     fun setupComplete(): Boolean = File(directory, "setup-complete").exists()
     fun hasIdentity(): Boolean = File(directory, "identity").exists()

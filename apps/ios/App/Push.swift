@@ -214,7 +214,7 @@ final class LiveActivities {
         switch progress {
         case .sending: status = "sending"
         case .queued: status = "queued"
-        case .delivered: status = bot.needsInput ? "needsInput" : "working"
+        case .delivered: status = bot.needsYouOutside ? "needsInput" : "working"
         case .failed:
             let state = CallActivity.withCall(.init(status: "error", activity: "Couldn't send", startedAt: nil), botId: ref.botId)
             Task.detached { await Self.apply(ref, state: state, end: !onCall) }
@@ -236,7 +236,7 @@ final class LiveActivities {
                 Task.detached { await Self.find(ref)?.update(.init(state: state, staleDate: staleDate)) }
                 return
             }
-            // The call's own activity can't take the computer's updates: the task gets one that can, in its place.
+            // The call's own activity can't take the computer's updates: the bot's work gets one that can, in its place.
             let id = current.id
             Task.detached {
                 for activity in Activity<BotActivityAttributes>.activities where activity.id == id {
@@ -315,17 +315,13 @@ final class LiveActivities {
         guard let current = Self.find(ref) else { return }
         // Until the computer starts on the message, an idle bot just hasn't begun yet.
         let local = ["sending", "queued"].contains(current.content.state.status)
-        guard !local || bot.isWorking else { return }
-        var state = CallActivity.withCall(.init(
-            status: bot.status,
-            // ACP activity is already visible in the app. Show it in the local Live Activity
-            // while this phone is connected; APNs payloads continue to contain no free text.
-            activity: bot.activity,
-            startedAt: bot.startedAt.map(Date.init(milliseconds:))
-        ), botId: ref.botId)
+        guard !local || bot.isBusyOutside else { return }
+        // How the bot stands outside its chat, so the activity stays while items work after the chat's turn. Its
+        // line is already visible in the app: shown while this phone is connected; APNs payloads carry no text.
+        var state = CallActivity.withCall(.init(outside: bot), botId: ref.botId)
         state.customIconRevision = (bot.customIcon?.filename ?? "default") + (bot.customIcon?.tinted == true ? ":tint" : ":color")
-        // A call with the bot keeps its activity up after the task.
-        let working = bot.isWorking || CallActivity.isLive(botId: ref.botId)
+        // A call with the bot keeps its activity up after the work.
+        let working = bot.isBusyOutside || CallActivity.isLive(botId: ref.botId)
         Task.detached { await Self.apply(ref, state: state, end: !working) }
     }
 

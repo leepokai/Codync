@@ -24,6 +24,8 @@ impl App {
             }
             KeyCode::Enter => self.save_fields(&mut f),
             KeyCode::Char('s') if ctrl(k) => self.save_fields(&mut f),
+            KeyCode::Char('x') if ctrl(k) => self.remove_login_key(&mut f),
+            KeyCode::Char('l') if ctrl(k) => self.import_login_keys(&f),
             KeyCode::Tab | KeyCode::Down => f.cursor = (f.cursor + 1) % rows.max(1),
             KeyCode::BackTab | KeyCode::Up => f.cursor = (f.cursor + rows.max(1) - 1) % rows.max(1),
             KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') if on_choice => {
@@ -48,14 +50,13 @@ impl App {
             f.error = Some(format!("{} is required.", i.label));
             return;
         }
-        let values: serde_json::Map<String, Value> = f
-            .inputs
-            .iter()
-            .filter(|i| !i.ed.text.trim().is_empty())
-            .map(|i| (i.name.clone(), if i.secret { i.ed.text.as_str() } else { i.ed.text.trim() }.into()))
-            .collect();
+        let values = f.typed();
         f.saving = true;
         f.error = None;
+        if matches!(f.submit, Submit::LoginProfileKeys { .. }) {
+            self.save_login_keys(f, values);
+            return;
+        }
         match &f.submit {
             Submit::Icon(target) => {
                 let mut body = json!({"target": target, "tinted": f.choice == 1});
@@ -97,10 +98,29 @@ impl App {
                 let r = Reply::SectionRenamed { from: from.clone(), to: to.clone() };
                 self.sheet("renameSection", json!({"from": from, "to": to}), r);
             }
+            Submit::ComputerName => {
+                self.sheet("setComputerName", json!({"name": values.get("name")}), Reply::FieldsSaved);
+            }
             Submit::RenameArtifact { bot, artifact } => {
                 let body = json!({"botId": bot, "artifactId": artifact, "title": values["title"]});
                 self.sheet("renameArtifact", body, Reply::FieldsSaved);
             }
+            Submit::RenameLoginProfile { backend, login_profile } => {
+                let name: String = values
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .chars()
+                    .take(codync_accounts::LABEL_MAX)
+                    .collect();
+                let mut body = json!({"backend": backend, "name": name});
+                if let Some(login_profile) = login_profile {
+                    body["loginProfile"] = login_profile.as_str().into();
+                }
+                self.sheet("renameLoginProfile", body, Reply::FieldsSaved);
+            }
+            // Saved above: its new variable takes the map apart.
+            Submit::LoginProfileKeys { .. } => {}
         }
     }
 }
@@ -128,8 +148,15 @@ pub fn handoff_fields(entry: &Entry) -> Fields {
     }
 }
 
-/// Asks for a section name: where a bot goes, or a section's new name. Empty is allowed.
-pub fn section_fields(title: &str, note: String, current: Option<&str>, submit: Submit) -> Fields {
+/// Asks for one name (a section's, this computer's) under `label`, starting from `current`. Empty is allowed.
+pub fn name_fields(
+    title: &str,
+    note: String,
+    label: &str,
+    placeholder: &str,
+    current: Option<&str>,
+    submit: Submit,
+) -> Fields {
     Fields {
         title: title.into(),
         note,
@@ -137,11 +164,11 @@ pub fn section_fields(title: &str, note: String, current: Option<&str>, submit: 
         choice: 0,
         inputs: vec![Input {
             name: "name".into(),
-            label: "Section".into(),
+            label: label.into(),
             secret: false,
             required: false,
             multiline: false,
-            placeholder: "Section name".into(),
+            placeholder: placeholder.into(),
             ed: Editor::with(current.unwrap_or_default()),
         }],
         cursor: 0,

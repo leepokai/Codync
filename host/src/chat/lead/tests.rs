@@ -1,6 +1,6 @@
 use super::*;
 use crate::remote::identity::Identity;
-use crate::usage::{Provider, Usage, Window};
+use crate::usage::{Checked, Provider, Usage, Window};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -126,6 +126,7 @@ async fn check_ins_wait_while_the_plan_is_nearly_used_up() {
         providers: vec![Provider {
             id: "fixture",
             name: "Fixture",
+            registry: None,
             windows: vec![Window {
                 id: "week".into(),
                 label: "Week".into(),
@@ -135,12 +136,15 @@ async fn check_ins_wait_while_the_plan_is_nearly_used_up() {
                 text: None,
             }],
             source: "agent",
-            updated_at: 0,
+            checked: Checked::default(),
+            default_login_profile: None,
+            login_profiles: Vec::new(),
         }],
+        services: Vec::new(),
     };
-    f.hub.set_usage(used(40.0));
+    f.hub.update_usage(|usage| *usage = used(40.0));
     assert!(!check_in_waits(&f.hub, &routine, &lead, &scheduled));
-    f.hub.set_usage(used(90.0));
+    f.hub.update_usage(|usage| *usage = used(90.0));
     assert!(check_in_waits(&f.hub, &routine, &lead, &scheduled));
     assert!(!check_in_waits(&f.hub, &routine, &lead, &test), "a test run the user asked for still runs");
     assert!(!check_in_waits(&f.hub, "another", &lead, &scheduled), "the user's own routines still run");

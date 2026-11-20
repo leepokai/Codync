@@ -1,150 +1,156 @@
-//! Input events (see `host/src/screen/mod.rs`) through the `RemoteDesktop` portal.
+//! Input events (see `host/src/screen/mod.rs`), parsed once for every backend, and the X
+//! keysyms both backends type with.
 
-use crate::portal::{Display, Portal};
-use anyhow::{Result, anyhow};
-use ashpd::desktop::remote_desktop::{Axis, KeyState};
+use crate::backend::{Backend, Display};
+use anyhow::{Result, anyhow, bail};
 use serde_json::Value;
 use std::time::Duration;
 
-/// Linux input event codes (`linux/input-event-codes.h`).
-const BTN_LEFT: i32 = 0x110;
-const BTN_RIGHT: i32 = 0x111;
-const BTN_MIDDLE: i32 = 0x112;
+/// A position in display points.
+pub type Point = (f64, f64);
 
-pub async fn perform(portal: &Portal, display: &Display, event: &Value) -> Result<()> {
-    let (d, e) = (display, event);
-    let rd = portal.remote();
-    let session = portal.session();
-    let num = |k: &str| e[k].as_f64();
-    let point = || -> Result<(f64, f64)> {
-        Ok((
-            num("x").ok_or_else(|| anyhow!("x is required"))?,
-            num("y").ok_or_else(|| anyhow!("y is required"))?,
-        ))
-    };
-    let button = match e["button"].as_str() {
-        Some("right") => BTN_RIGHT,
-        Some("middle") => BTN_MIDDLE,
-        _ => BTN_LEFT,
-    };
-    let modifiers: Vec<i32> = e["modifiers"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|m| modifier(m.as_str()?))
-        .collect();
-    let move_to = |x: f64, y: f64| {
-        rd.notify_pointer_motion_absolute(session, d.node, x, y, Default::default())
-    };
-    let hold = |down: bool| {
-        let modifiers = modifiers.clone();
-        async move {
-            let state = if down {
-                KeyState::Pressed
-            } else {
-                KeyState::Released
-            };
-            for m in modifiers {
-                rd.notify_keyboard_keysym(session, m, state, Default::default())
-                    .await?;
-            }
-            anyhow::Ok(())
-        }
-    };
-    match e["type"].as_str().unwrap_or_default() {
-        "move" => {
-            let (px, py) = point()?;
-            move_to(px, py).await?;
-        }
-        "down" | "up" => {
-            let (px, py) = point()?;
-            move_to(px, py).await?;
-            let state = if e["type"] == "down" {
-                KeyState::Pressed
-            } else {
-                KeyState::Released
-            };
-            rd.notify_pointer_button(session, button, state, Default::default())
-                .await?;
-        }
-        "click" => {
-            let (px, py) = point()?;
-            move_to(px, py).await?;
-            hold(true).await?;
-            let count = e["count"].as_u64().unwrap_or(1).clamp(1, 3);
-            for _ in 0..count {
-                rd.notify_pointer_button(session, button, KeyState::Pressed, Default::default())
-                    .await?;
-                rd.notify_pointer_button(session, button, KeyState::Released, Default::default())
-                    .await?;
-            }
-            hold(false).await?;
-        }
-        "drag" => {
-            let (px, py) = point()?;
-            let (tx, ty) = (
-                num("toX").ok_or_else(|| anyhow!("toX is required"))?,
-                num("toY").ok_or_else(|| anyhow!("toY is required"))?,
-            );
-            move_to(px, py).await?;
-            rd.notify_pointer_button(session, BTN_LEFT, KeyState::Pressed, Default::default())
-                .await?;
-            for i in 1..=20 {
-                tokio::time::sleep(Duration::from_millis(15)).await;
-                let t = f64::from(i) / 20.0;
-                move_to(px + (tx - px) * t, py + (ty - py) * t).await?;
-            }
-            rd.notify_pointer_button(session, BTN_LEFT, KeyState::Released, Default::default())
-                .await?;
-        }
-        "scroll" => {
-            let (px, py) = point()?;
-            move_to(px, py).await?;
-            let (dx, dy) = (num("dx").unwrap_or(0.0), num("dy").unwrap_or(0.0));
-            if e["units"] == "pixel" {
-                rd.notify_pointer_axis(
-                    session,
-                    dx,
-                    dy,
-                    ashpd::desktop::remote_desktop::NotifyPointerAxisOptions::default()
-                        .set_finish(true),
-                )
-                .await?;
-            } else {
-                #[expect(clippy::cast_possible_truncation, reason = "a few scroll lines")]
-                for (axis, steps) in [
-                    (Axis::Vertical, dy.round() as i32),
-                    (Axis::Horizontal, dx.round() as i32),
-                ] {
-                    if steps != 0 {
-                        rd.notify_pointer_axis_discrete(session, axis, steps, Default::default())
-                            .await?;
-                    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Button {
+    Left,
+    Middle,
+    Right,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScrollUnit {
+    Line,
+    Pixel,
+}
+
+/// A button pressed or let go at a point, with modifiers (X keysyms).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Press {
+    pub at: Point,
+    pub button: Button,
+    pub modifiers: Vec<i32>,
+}
+
+/// One input event. `modifiers` are X keysyms, held around the action.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Event {
+    Move(Point),
+    /// A button pressed with its modifiers until the matching `Up` (the desktop's real mouse, touch drags).
+    Down(Press),
+    /// Lets go of the button and of the modifiers its `Down` pressed (`Helper::input` puts those in).
+    Up(Press),
+    Click {
+        at: Point,
+        button: Button,
+        count: u64,
+        modifiers: Vec<i32>,
+    },
+    Drag {
+        from: Point,
+        to: Point,
+    },
+    Scroll {
+        at: Point,
+        dx: f64,
+        dy: f64,
+        unit: ScrollUnit,
+    },
+    Text(String),
+    Key {
+        sym: i32,
+        modifiers: Vec<i32>,
+    },
+}
+
+impl Event {
+    pub fn parse(e: &Value) -> Result<Self> {
+        let num = |k: &str| e[k].as_f64().ok_or_else(|| anyhow!("{k} is required"));
+        let at = || anyhow::Ok((num("x")?, num("y")?));
+        let button = match e["button"].as_str() {
+            Some("right") => Button::Right,
+            Some("middle") => Button::Middle,
+            _ => Button::Left,
+        };
+        let modifiers = || {
+            e["modifiers"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|m| modifier(m.as_str()?))
+                .collect()
+        };
+        Ok(match e["type"].as_str().unwrap_or_default() {
+            "move" => Self::Move(at()?),
+            "down" => Self::Down(Press {
+                at: at()?,
+                button,
+                modifiers: modifiers(),
+            }),
+            "up" => Self::Up(Press {
+                at: at()?,
+                button,
+                modifiers: modifiers(),
+            }),
+            "click" => Self::Click {
+                at: at()?,
+                button,
+                count: e["count"].as_u64().unwrap_or(1).clamp(1, 3),
+                modifiers: modifiers(),
+            },
+            "drag" => Self::Drag {
+                from: at()?,
+                to: (num("toX")?, num("toY")?),
+            },
+            "scroll" => Self::Scroll {
+                at: at()?,
+                dx: e["dx"].as_f64().unwrap_or(0.0),
+                dy: e["dy"].as_f64().unwrap_or(0.0),
+                unit: if e["units"] == "pixel" {
+                    ScrollUnit::Pixel
+                } else {
+                    ScrollUnit::Line
+                },
+            },
+            "text" => Self::Text(e["text"].as_str().unwrap_or_default().to_owned()),
+            "key" => {
+                let name = e["key"].as_str().unwrap_or_default();
+                Self::Key {
+                    sym: keysym(name).ok_or_else(|| anyhow!("unknown key {name}"))?,
+                    modifiers: modifiers(),
                 }
             }
-        }
-        "text" => {
-            for c in e["text"].as_str().unwrap_or_default().chars() {
-                let sym = char_keysym(c);
-                rd.notify_keyboard_keysym(session, sym, KeyState::Pressed, Default::default())
-                    .await?;
-                rd.notify_keyboard_keysym(session, sym, KeyState::Released, Default::default())
-                    .await?;
-            }
-        }
-        "key" => {
-            let name = e["key"].as_str().unwrap_or_default();
-            let sym = keysym(name).ok_or_else(|| anyhow!("unknown key {name}"))?;
-            hold(true).await?;
-            rd.notify_keyboard_keysym(session, sym, KeyState::Pressed, Default::default())
-                .await?;
-            rd.notify_keyboard_keysym(session, sym, KeyState::Released, Default::default())
-                .await?;
-            hold(false).await?;
-        }
-        other => return Err(anyhow!("unknown input {other}")),
+            other => bail!("unknown input {other}"),
+        })
     }
-    Ok(())
+}
+
+/// Remembers a `Down` (on its display) in `held`, and gives its `Up` the modifiers that `Down`
+/// pressed in place of its own.
+pub fn track_held(held: &mut Option<(Display, Press)>, d: &Display, event: Event) -> Event {
+    match event {
+        Event::Down(press) => {
+            *held = Some((d.clone(), press.clone()));
+            Event::Down(press)
+        }
+        Event::Up(press) => Event::Up(Press {
+            modifiers: held
+                .take()
+                .map(|(_, down)| down.modifiers)
+                .unwrap_or_default(),
+            ..press
+        }),
+        other => other,
+    }
+}
+
+/// Pause between a drag's steps, so apps see the motion.
+pub const DRAG_STEP: Duration = Duration::from_millis(15);
+
+/// The points a drag passes through after its start, `DRAG_STEP` apart.
+pub fn drag_path(from: Point, to: Point) -> impl Iterator<Item = Point> {
+    (1..=20).map(move |i| {
+        let t = f64::from(i) / 20.0;
+        (from.0 + (to.0 - from.0) * t, from.1 + (to.1 - from.1) * t)
+    })
 }
 
 fn modifier(name: &str) -> Option<i32> {
@@ -205,7 +211,7 @@ pub fn char_keysym(c: char) -> i32 {
 }
 
 /// Opens an app by desktop-file id or name, else runs it as a command.
-pub async fn open_app(name: &str) -> Result<()> {
+pub async fn open_app(backend: &Backend, name: &str) -> Result<()> {
     let id = name.trim().trim_end_matches(".desktop");
     let candidates = [
         id.to_owned(),
@@ -213,7 +219,8 @@ pub async fn open_app(name: &str) -> Result<()> {
         id.to_lowercase().replace(' ', "-"),
     ];
     for c in &candidates {
-        let ok = tokio::process::Command::new("gtk-launch")
+        let ok = backend
+            .command("gtk-launch")
             .arg(c)
             .status()
             .await
@@ -222,7 +229,8 @@ pub async fn open_app(name: &str) -> Result<()> {
             return Ok(());
         }
     }
-    tokio::process::Command::new(id.to_lowercase())
+    backend
+        .command(&id.to_lowercase())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -233,7 +241,9 @@ pub async fn open_app(name: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn keysyms() {
@@ -243,5 +253,58 @@ mod tests {
         assert_eq!(keysym("banana"), None);
         assert_eq!(char_keysym('é'), 0xe9);
         assert_eq!(char_keysym('中'), 0x0100_4e2d);
+    }
+
+    #[test]
+    fn events_parse_with_their_modifiers() {
+        let down = json!({"type": "down", "x": 1, "y": 2, "button": "right", "count": 2, "modifiers": ["shift", "bogus"]});
+        assert_eq!(
+            Event::parse(&down).unwrap(),
+            Event::Down(Press {
+                at: (1.0, 2.0),
+                button: Button::Right,
+                modifiers: vec![0xffe1],
+            })
+        );
+        let click = json!({"type": "click", "x": 1, "y": 2, "count": 9});
+        assert!(matches!(
+            Event::parse(&click).unwrap(),
+            Event::Click { count: 3, .. }
+        ));
+        let scroll = json!({"type": "scroll", "x": 0, "y": 0, "dy": 30, "units": "pixel"});
+        assert!(matches!(
+            Event::parse(&scroll).unwrap(),
+            Event::Scroll {
+                unit: ScrollUnit::Pixel,
+                ..
+            }
+        ));
+        assert!(Event::parse(&json!({"type": "move", "x": 1})).is_err());
+        assert!(Event::parse(&json!({"type": "key", "key": "banana"})).is_err());
+    }
+
+    #[test]
+    fn an_up_lets_go_of_what_its_down_pressed() {
+        let d = Display {
+            id: 0,
+            x: 0,
+            y: 0,
+            width: 10.0,
+            height: 10.0,
+        };
+        let press = |modifiers: Vec<i32>| Press {
+            at: (1.0, 1.0),
+            button: Button::Left,
+            modifiers,
+        };
+        let mut held = None;
+        let down = track_held(&mut held, &d, Event::Down(press(vec![0xffe3])));
+        assert_eq!(down, Event::Down(press(vec![0xffe3])));
+        // Ctrl was let go before the button: the up carries none, and still lets go of Ctrl.
+        let up = track_held(&mut held, &d, Event::Up(press(vec![])));
+        assert_eq!(up, Event::Up(press(vec![0xffe3])));
+        assert!(held.is_none());
+        let up = track_held(&mut held, &d, Event::Up(press(vec![0xffe1])));
+        assert_eq!(up, Event::Up(press(vec![])), "nothing held, nothing let go");
     }
 }

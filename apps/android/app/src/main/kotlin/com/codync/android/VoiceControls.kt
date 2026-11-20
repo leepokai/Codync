@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -69,10 +70,9 @@ internal fun openAppSettings(context: android.content.Context) =
 @Composable internal fun CallBar(call: VoiceCallViewState, state: AppState, store: AppStore) {
     val voice = call.state
     val bot = state.bots.firstOrNull { it.id == call.botId }
-    val color = bot?.let { AvatarPalette.tint(it.avatarColor) } ?: Palette.accent
     var settings by remember { mutableStateOf(false) }
     val speaking = voice.phase == VoicePhase.Speaking
-    Column(Modifier.padding(horizontal = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(Modifier.padding(horizontal = 12.dp).animateContentSize(Motion.layoutSize), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.fillMaxWidth().glass(Capsule()).padding(start = 14.dp, end = 7.dp, top = 7.dp, bottom = 7.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             // The bot; tapping it while it talks cuts the reply short, otherwise it opens the call's chat.
@@ -83,7 +83,7 @@ internal fun openAppSettings(context: android.content.Context) =
                 .semantics { contentDescription = if (speaking) "Interrupt" else bot?.name.orEmpty() }) {
                 if (bot != null) BotAvatar(bot, state.bots, 34.dp)
             }
-            LevelDots(voice.level, speaking, bot?.status == "working", voice.phase.connecting, color,
+            LevelDots(voice.level, speaking, bot?.status == "working", voice.phase.connecting,
                 Modifier.weight(1f).height(20.dp).semantics { contentDescription = statusText(voice, bot?.status == "working") })
             // Audio leaves the phone: say where.
             voice.provider?.let { provider ->
@@ -97,6 +97,7 @@ internal fun openAppSettings(context: android.content.Context) =
                 Symbol("xmark", size = 18.dp, tint = Color.White)
             }
         }
+        voice.searchResult?.let { CallSearchView(it) }
         val failure = voice.error ?: if (voice.phase == VoicePhase.Failed) "Voice audio unavailable" else null
         when {
             failure != null -> CallLine(failure, Palette.danger)
@@ -134,11 +135,12 @@ private const val CONNECTING_PERIOD = 2.4f
 
 /**
  * The dotted line in the call bar: it follows your voice while listening, ripples while the bot
- * talks, breathes while it works, and rests as faint dots otherwise. While the call connects it shows
+ * talks, breathes while it works, and rests as a still row of dots otherwise, in the ink color so a dark
+ * bot's line stays visible on the dark bar. While the call connects it shows
  * an indeterminate progress line instead (a short segment gliding back and forth along a faint track,
  * resting at the left with reduced motion), and fades back to the dots.
  */
-@Composable internal fun LevelDots(level: Float, speaking: Boolean, working: Boolean, connecting: Boolean, color: Color, modifier: Modifier) {
+@Composable internal fun LevelDots(level: Float, speaking: Boolean, working: Boolean, connecting: Boolean, modifier: Modifier) {
     val still = reduceMotion()
     var time by remember { mutableFloatStateOf(0f) }
     if (!still) LaunchedEffect(Unit) { while (true) withFrameNanos { time = it / 1e9f } }
@@ -158,7 +160,7 @@ private const val CONNECTING_PERIOD = 2.4f
                 else -> 0.08f
             }
             val height = 4.dp.toPx() + amount * (size.height - 4.dp.toPx())
-            drawRoundRect((if (speaking) accent else color).copy(alpha = (0.5f + 0.5f * amount) * (1 - mix)),
+            drawRoundRect(accent.copy(alpha = (0.5f + 0.5f * amount) * (1 - mix)),
                 Offset(i * spacing + spacing / 2 - width / 2, (size.height - height) / 2), Size(width, height), CornerRadius(width / 2))
         }
     }

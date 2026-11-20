@@ -199,7 +199,7 @@ async fn run(hub: &Arc<Hub>, bot_id: &str) -> Result<Ran> {
         return Ok(Ran::Done { more: false });
     };
     // Dreaming never spends the user's last headroom.
-    if crate::usage::near_limit(hub, &cfg.backend) {
+    if crate::usage::near_limit(hub, &cfg) {
         return Ok(Ran::Later);
     }
     let shared = super::shared(&cfg);
@@ -252,7 +252,13 @@ async fn run(hub: &Arc<Hub>, bot_id: &str) -> Result<Ran> {
 /// and the rest waits for the next run.
 fn write(hub: &Hub, cfg: &BotConfig, edits: &Edits) -> Result<bool> {
     let dream = hub.store.memory_write(|c, now, _| dream::begin(c, &cfg.id, now))?;
-    let writer = super::files::Writer { author: Author::Dream, bot: Some(cfg), cause: Cause::Dream, message: None };
+    let writer = super::files::Writer {
+        author: Author::Dream,
+        bot: Some(cfg),
+        cause: Cause::Dream,
+        message: None,
+        session: None,
+    };
     let mut whole = true;
     for edit in &edits.files {
         let layer = edit.bot.as_deref();

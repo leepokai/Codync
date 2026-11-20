@@ -43,7 +43,7 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
 @Composable internal fun AgentModelPicker(state: AppState, load: suspend (String) -> AgentModels, backend: String, selection: String?,
     options: Map<String, String>, fastMode: Boolean, bot: Bot?, choose: (String?, Map<String, String>) -> Unit, setFast: ((Boolean) -> Unit)?,
     agents: List<Pair<String, String>> = emptyList(), chooseAgent: ((String) -> Unit)? = null,
-    onReload: () -> Unit = {}, agentDetails: @Composable () -> Unit = {}) {
+    onReload: () -> Unit = {}, expanded: Boolean = false, agentDetails: @Composable () -> Unit = {}) {
     val online = state.actualConnection is LinkState.Ready
     var catalog by remember(backend) { mutableStateOf<AgentModels?>(null) }
     var loading by remember(backend) { mutableStateOf(false) }
@@ -59,7 +59,8 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
         catch (error: Exception) { failure = "Couldn't load models: ${error.message ?: "Try again."}" }
         finally { loading = false }
     }
-    var stage by remember { mutableStateOf(PickerStage.Closed) }
+    // expanded: a fallback just added starts open on its choices.
+    var stage by remember { mutableStateOf(if (expanded) PickerStage.Settings else PickerStage.Closed) }
     var query by remember { mutableStateOf("") }
     fun open(next: PickerStage) { query = ""; stage = next }
     // The agent's own "Default" entry is the same choice as no model.
@@ -95,7 +96,10 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
                     if (loading) Spinner(12.dp) else IconButton(if (failure == null) "Refresh model list" else "Retry model list", "arrow.clockwise") { retry++; onReload() }
                 }
                 val choices = (if (stage == PickerStage.Agents) agents else modelChoices).filter { it.second.contains(query, ignoreCase = true) }
-                Column(Modifier.heightIn(max = 180.dp).verticalScroll(rememberScrollState())) {
+                val scroll = rememberScrollState()
+                // The rows blur under the edges into the card's fill (an outlined card has none: the page shows).
+                val ground = if (LocalCardStyle.current == CardStyle.Outlined) Palette.background else Palette.surface
+                ScrollEdges(scroll, Modifier.heightIn(max = 180.dp), ground) { Column(Modifier.verticalScroll(scroll)) {
                     for ((id, name) in choices) Row(Modifier.fillMaxWidth().clickable {
                         if (stage == PickerStage.Agents) { if (id != backend) chooseAgent?.invoke(id); open(PickerStage.Models) }
                         else { if (id != value) choose(id.ifEmpty { null }, emptyMap()); open(PickerStage.Settings) }
@@ -104,7 +108,7 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
                         if (id == if (stage == PickerStage.Agents) backend else value) Symbol("checkmark", size = 12.dp, tint = Palette.text)
                     }
                     if (choices.isEmpty()) Text("No results", style = Type.caption, color = Palette.secondary)
-                }
+                } }
                 if (stage == PickerStage.Models && (backend == "custom" || (!loading && catalog?.models.isNullOrEmpty())))
                     PlainTextField(value, { choose(it.ifEmpty { null }, emptyMap()) }, prompt = "Default", singleLine = true)
             }

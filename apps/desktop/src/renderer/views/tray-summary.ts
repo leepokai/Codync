@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react'
-import { TRAY_SYMBOLS, type TrayImage, type TraySummary } from '@shared/ipc'
-import { isGroup, isWorking, needsInput, folderName, type Bot, type UsageWindow } from '@shared/models'
+import { TRAY_SYMBOLS, type TrayImage, type TraySummary, type TrayUsageAgent, type TrayUsageComputer } from '@shared/ipc'
+import { isGroup, folderName, type Bot, type UsageProvider, type UsageWindow } from '@shared/models'
 import type { NetworkView } from '@shared/network'
+import { outsideStatus, summaryLine, worksOutside } from '@shared/work'
 import { iconBitmap, drawIconBitmap } from '../lib/icon-bitmap'
 import { drawCharacter, moodOf } from '../components/Avatar'
 import { fallbackPath } from '../components/icon-fallbacks'
 import { botsTemplate, presenceTitle, roleTitle } from '../lib/network-copy'
 import { useModels } from '../lib/observable'
-import { resetLine, resolvedLanguage, translate } from '../lib/l10n'
+import { resetLine, resolvedLanguage, systemLanguage, translate } from '../lib/l10n'
 import { prefs, usePref } from '../lib/prefs'
 import { avatarColor, isDark, palette } from '../lib/theme'
 import type { AppModel } from '../store/app-model'
+import { computerSymbol } from './ComputerBadge'
+import { logins } from './usage/usage-logins'
 import { providerTint, resetDate, untilText, windowReading, windowTitle } from './usage/usage-model'
 import { drawMascot, nearlyUsedUp } from './usage/ProviderMascot'
 
@@ -46,13 +49,15 @@ function canvasImage(key: string, width: number, height: number, draw: (ctx: Can
 
 function avatarIcon(bot: Bot) {
   const bitmap = iconBitmap(bot.customIcon)?.image
-  const key = `bot|${bot.customIcon?.dataUrl ?? ""}|${bot.customIcon?.tinted}|${bitmap?.complete}|${bot.id}|${bot.avatarShape}|${bot.avatarColor}|${bot.status}|${bot.unread > 0}`
+  // The dot follows how the bot stands outside its chat: a task waiting on the user shows it too.
+  const asks = outsideStatus(bot) === 'needsInput'
+  const key = `bot|${asks}|${bot.customIcon?.dataUrl ?? ""}|${bot.customIcon?.tinted}|${bitmap?.complete}|${bot.id}|${bot.avatarShape}|${bot.avatarColor}|${bot.status}|${bot.unread > 0}`
   return canvasImage(key, 20, 20, (ctx) => {
     const dark = isDark()
     if (!drawIconBitmap(ctx, bot.customIcon, 20, avatarColor(bot.avatarColor))) drawCharacter(ctx, { shape: bot.avatarShape, fill: avatarColor(bot.avatarColor), size: 20, mood: moodOf(bot, false), dark, t: 0, still: true })
-    const badge = needsInput(bot) ? palette(dark).warning : bot.unread > 0 ? (dark ? '#FFFFFF' : '#000000') : null
+    const badge = asks ? palette(dark).warning : bot.unread > 0 ? (dark ? '#FFFFFF' : '#000000') : null
     if (badge) {
-      const r = needsInput(bot) ? 3.6 : 2.8
+      const r = asks ? 3.6 : 2.8
       ctx.beginPath()
       ctx.arc(20 - r, 20 - r, r + 1, 0, Math.PI * 2)
       ctx.fillStyle = dark ? '#1e1e1e' : '#f2f2f2'
@@ -65,10 +70,9 @@ function avatarIcon(bot: Bot) {
   })
 }
 
-/** A bot's line under its name: that it needs you, what it's doing, or its last message. */
-export function botDetail(bot: Bot) {
-  return needsInput(bot) ? 'Needs your response' : isWorking(bot) ? bot.activity || 'Working…' : (bot.lastMessage ?? folderName(bot))
-}
+/** A bot's line under its name in the tray menu and the notch island, in its roster row's order (`summaryLine`);
+ * with nothing to say, where it works. */
+export const botDetail = (bot: Bot) => summaryLine(bot, tr) ?? folderName(bot, tr)
 
 /** One usage limit's bar in the provider's color: amber from 70%, red from 90%. */
 function barIcon(providerId: string, window: UsageWindow) {
@@ -127,7 +131,6 @@ function symbolIcons(): TraySummary['symbols'] {
 }
 
 /** The menu's language: the app's setting, else the system's. */
-const systemLanguage = () => (typeof navigator === 'undefined' ? 'en' : navigator.language)
 const tr = (text: string) => translate(text, prefs.appLanguage.get(), systemLanguage())
 
 /** "home · Owner" and "desk · Online · 3 bots" per network; null on hosts without networks. */
@@ -146,6 +149,33 @@ function usageLine(w: UsageWindow) {
   const reset = resetDate(w)
   const spoken = reset ? resetLine(`resets in ${untilText(reset)}`, prefs.appLanguage.get(), systemLanguage()) : ''
   return `${tr(windowTitle(w))} · ${windowReading(w, tr)}${spoken ? ` · ${spoken}` : ''}`
+}
+
+/** An agent's limits for the menu, login by login: one with nothing read says so. */
+function usageAgent(p: UsageProvider, iconStyle: 'character' | 'original'): TrayUsageAgent {
+  return {
+    name: p.name,
+    icon: canvasImage(`mascot|${p.id}|${iconStyle}|${nearlyUsedUp(p)}`, 16, 16, (ctx) => drawMascot(ctx, p, 16, iconStyle, isDark())),
+    logins: logins(p).map((login) => ({
+      name: login.name ?? tr('Default login profile'),
+      lines: login.windows.length
+        ? login.windows.map((w) => ({ title: usageLine(w), bar: w.text ? null : barIcon(p.id, w) }))
+        : [{ title: tr('No reading yet'), bar: null }],
+    })),
+  }
+}
+
+/** Every computer with usage limits to show, in the app's order; unnamed while the app has one computer. One that isn't
+ * connected (offline, or a cloud computer let go to sleep while the window is away) is left out: its readings are old. */
+function usageComputers(app: AppModel, iconStyle: 'character' | 'original'): TrayUsageComputer[] {
+  return app.computers
+    .flatMap((c) => app.store(c.id) ?? [])
+    .filter((store) => store.connection.kind === 'online' && store.usage.providers.length > 0)
+    .map((store) => ({
+      name: app.computers.length > 1 ? store.computer.name : null,
+      symbol: computerSymbol(store.computer.device),
+      agents: store.usage.providers.map((p) => usageAgent(p, iconStyle)),
+    }))
 }
 
 /** Sends what the menu bar shows whenever the stores change. */
@@ -182,14 +212,10 @@ export function useTraySummary(app: AppModel) {
           ref: `${i.ref.computerId}/${i.ref.botId}`,
           name: app.computers.length > 1 ? `${i.bot.name} · ${i.computer.name}` : i.bot.name,
           detail: botDetail(i.bot),
-          working: isWorking(i.bot),
+          working: worksOutside(i.bot),
           avatar: avatarIcon(i.bot),
         })),
-        usage: (local?.usage.providers ?? []).map((p) => ({
-          name: p.name,
-          icon: canvasImage(`mascot|${p.id}|${iconStyle}|${nearlyUsedUp(p)}`, 16, 16, (ctx) => drawMascot(ctx, p, 16, iconStyle, isDark())),
-          lines: p.windows.map((w) => ({ title: usageLine(w), bar: w.text ? null : barIcon(p.id, w) })),
-        })),
+        usage: usageComputers(app, iconStyle),
         screen: screen
           ? {
               enabled: screen.enabled,

@@ -11,7 +11,6 @@
 use crate::agent::{acp, node, registry};
 use crate::shell;
 use serde_json::{Value, json};
-use std::collections::HashSet;
 use std::path::Path;
 
 mod catalog;
@@ -19,10 +18,12 @@ mod search_path;
 mod sign_in;
 mod workbuddy;
 pub use catalog::HARNESSES;
+#[cfg(all(test, unix))]
+pub(crate) use search_path::TestSearchPath;
 pub use search_path::{hydrate_path, on_path, which};
 pub use sign_in::{
-    SignInCheck, apply_prompt_refusal, clear_prompt_refused, cli_signed_in, note_prompt_refused, refresh_sign_in,
-    set_signed_in, signed_in,
+    SignInCheck, agent_checks_off, apply_prompt_refusal, clear_prompt_refused, cli_signed_in, note_prompt_refused,
+    refresh_sign_in, run_cli, set_signed_in, signed_in,
 };
 pub use workbuddy::{apply_process_env, move_saved_session_aside, session_proves_sign_in};
 
@@ -44,6 +45,13 @@ pub struct Harness {
     pub login: Option<&'static str>,
     /// How to tell whether it's signed in without starting it.
     pub signed_in: Option<SignInCheck>,
+}
+
+impl Harness {
+    /// A backend id is this harness's: its own id or its registry entry's.
+    fn answers_to(&self, id: &str) -> bool {
+        self.id == id || self.registry == Some(id)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -72,6 +80,21 @@ impl Install {
 
 pub fn harness(id: &str) -> Option<&'static Harness> {
     HARNESSES.iter().find(|h| h.id == id)
+}
+
+/// The harness a bot's `backend` is: by its own id or its registry entry's.
+pub fn harness_of(backend: &str) -> Option<&'static Harness> {
+    HARNESSES.iter().find(|h| h.answers_to(backend))
+}
+
+/// The agent `backend` is: its harness id, also for its registry entry's. One with no harness goes by its own id.
+pub fn agent_id(backend: &str) -> &str {
+    harness_of(backend).map_or(backend, |h| h.id)
+}
+
+/// `id`'s CLI is on this computer.
+pub fn installed(id: &str) -> bool {
+    harness(id).is_some_and(|h| installed_cli(h).is_some())
 }
 
 // MARK: listing + launching
@@ -107,10 +130,9 @@ pub fn list() -> Vec<Value> {
         })
         .collect();
     // Registry agents we don't know by name: runnable, but you sign in yourself.
-    let known: HashSet<&str> = HARNESSES.iter().filter_map(|h| h.registry).collect();
     for a in &registry {
         let id = a["id"].as_str().unwrap_or_default();
-        if id.is_empty() || known.contains(id) || id == "github-copilot" {
+        if id.is_empty() || HARNESSES.iter().any(|h| h.answers_to(id)) || id == "github-copilot" {
             continue;
         }
         out.push(json!({
@@ -139,9 +161,47 @@ pub fn belongs_to_other(backend: &str, program: &str) -> bool {
         return backend != "workbuddy";
     }
     let name = Path::new(program).file_name().and_then(|n| n.to_str()).unwrap_or(program);
-    let own = |h: &Harness| h.id == backend || h.registry == Some(backend);
+    let own = |h: &Harness| h.answers_to(backend);
     HARNESSES.iter().any(|h| !own(h) && h.bins.contains(&name))
         && !HARNESSES.iter().any(|h| own(h) && h.bins.contains(&name))
+}
+
+/// The CLI names `backend`'s harness goes by.
+pub fn bins(backend: &str) -> &'static [&'static str] {
+    HARNESSES.iter().find(|h| h.answers_to(backend)).map_or(&[], |h| h.bins)
+}
+
+/// Why `backend`'s agent quit, from the stderr it left: a CLI too old for its ACP mode is told to update,
+/// anything else is the line that explains it.
+pub fn exit_reason(backend: &str, stderr_tail: &str) -> Option<String> {
+    let outdated = catalog::OUTDATED.iter().any(|(id, says)| *id == backend && stderr_tail.contains(says));
+    match harness(backend).filter(|_| outdated) {
+        Some(h) => {
+            // Codync's own npm: the computer may have no `npm` of its own.
+            let update = match h.install.filter(|i| matches!(i, Install::Npm(_))).and_then(Install::command) {
+                // `Install::command` quotes for `cmd`: PowerShell would need `&` before a quoted path.
+                Some(install) => {
+                    let shell = if cfg!(windows) { " in Command Prompt" } else { "" };
+                    format!("Update it (run `{install}@latest`{shell} on this computer) and try again.")
+                }
+                None => "Update it and try again.".to_owned(),
+            };
+            Some(format!("The {} on this computer is too old to run in Codync. {update}", h.name))
+        }
+        None => acp::stderr_reason(stderr_tail),
+    }
+}
+
+/// `e` from `backend`'s agent, with why it quit (`exit_reason`) when it went away during the request.
+pub async fn explain_exit(
+    backend: &str,
+    e: anyhow::Error,
+    inbox: &mut tokio::sync::mpsc::UnboundedReceiver<acp::Incoming>,
+) -> anyhow::Error {
+    match acp::exit_tail(&e, inbox).await.and_then(|tail| exit_reason(backend, &tail)) {
+        Some(why) => e.context(why),
+        None => e,
+    }
 }
 
 pub fn is_known(id: &str) -> bool {

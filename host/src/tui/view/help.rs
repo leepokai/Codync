@@ -10,7 +10,10 @@ use super::buffer::{centered, frame_box, put, u};
 use super::overlay::field_line;
 use super::style::theme;
 
-const HELP: [(&str, &str, &str); 73] = [
+/// The key of the page of every bot's work: listed only while some bot has a live or waiting task.
+const WORK_KEY: &str = "E";
+
+const HELP: [(&str, &str, &str); 86] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -27,11 +30,15 @@ const HELP: [(&str, &str, &str); 73] = [
     ("CHAT", "N", "reject and say why"),
     ("CHAT", "1…9", "pick an approval option"),
     ("CHAT", "s", "stop the bot"),
+    ("CHAT", "S", "send the next queued message now"),
+    ("CHAT", "D", "take back the last queued message"),
+    ("CHAT", "B", "details: what the bot does in the background"),
+    ("CHAT", "X", "stop the one task in the background"),
     ("CHAT", ">", "show / hide the working turn's steps (thinking details on)"),
     ("CHAT", "o", "last turn's steps"),
     ("CHAT", "c", "copy the last reply"),
     ("CHAT", "C", "open connection / login request"),
-    ("CHAT", "F", "try a failed routine run again"),
+    ("CHAT", "F", "try a failed routine run again, or continue a stopped bot chain"),
     ("CHAT", "r", "reply to a message"),
     ("CHAT", "v", "pick a message"),
     ("CHAT", "j k  ↵", "picking: move / reply"),
@@ -39,9 +46,11 @@ const HELP: [(&str, &str, &str); 73] = [
     ("CHAT", "f", "picking: save its files or artifact"),
     ("CHAT", "o", "picking an artifact: open it in the browser"),
     ("CHAT", "o", "picking: show a summary, handoff or note change"),
+    ("CHAT", "q", "picking a quote: show the quoted message"),
     ("CHAT", "e K", "picking a handoff: edit / keep the chat"),
     ("CHAT", "A", "picking a failure: add a fallback agent"),
     ("CHAT", "↵", "picking a bot message: open its conversation"),
+    ("CHAT", "/  ^f", "find in the chat: ↵ ↓ next · ↑ previous · esc closes"),
     ("CHAT", "esc", "cancel the reply"),
     ("TYPE", "↵", "send"),
     ("TYPE", "⇧↵ alt↵ ^j", "new line"),
@@ -51,7 +60,7 @@ const HELP: [(&str, &str, &str); 73] = [
     ("TYPE", "alt b / f", "word left / right"),
     ("TYPE", "^w ^u", "delete word / line"),
     ("TYPE", "@name", "group: ask just that bot"),
-    ("TYPE", "/", "commands: /fast, skills"),
+    ("TYPE", "/", "commands: /fast, /servers, skills"),
     ("BOTS", "n", "new bot"),
     ("BOTS", "m", "new group chat"),
     ("BOTS", "e", "settings, or edit a group"),
@@ -62,12 +71,19 @@ const HELP: [(&str, &str, &str); 73] = [
     ("BOTS", "J K", "move bot down / up"),
     ("BOTS", "w", "move to section"),
     ("BOTS", "W", "rename / remove section"),
+    ("BOTS", WORK_KEY, "work: every bot's tasks"),
     ("BOTS", "z", "fold / unfold section"),
     ("BOTS", "M", "memory"),
-    ("BOTS", "R", "details: routines, computer"),
-    ("BOTS", "B", "details: switch back to the bot's own agent"),
+    ("BOTS", "^k session", "new session: fresh agent context; the chat stays"),
+    ("BOTS", "R", "details: threads, event box, routines, recent"),
+    ("BOTS", "↵ X", "details, on a task: its thread / stop"),
+    ("BOTS", "F C D A", "details, on a task: first / cut in / drop / try again"),
+    ("BOTS", "i S D", "a task's thread: write to it / send now / take back"),
+    ("BOTS", "tab ↵", "a task's thread: pick what it put in the chat / show it there"),
+    ("BOTS", "b", "settings, on Agent: switch back to the bot's own agent"),
+    ("BOTS", "O", "computer: where it runs, use the computer"),
     ("BOTS", "L", "library: artifacts and files; open, save, rename"),
-    ("BOTS", "⇧← ⇧→", "between details, library, memory and settings"),
+    ("BOTS", "⇧← ⇧→", "between details, computer, library, memory and settings"),
     ("BOTS", "A", "extensions, sign-in"),
     ("BOTS", "x", "delete bot or group"),
     ("VIEW", "t", "trace pane"),
@@ -79,14 +95,15 @@ const HELP: [(&str, &str, &str); 73] = [
     ("VIEW", "N", "network: your other computers"),
     ("VIEW", "^k share", "share usage analytics on / off"),
     ("VIEW", "^k about", "what usage analytics include"),
-    ("VIEW", "language", "app language: follow system or choose one of eight languages"),
+    ("VIEW", "language", "app language: follow system or choose a language"),
     ("VIEW", "esc", "close / go back"),
     ("VIEW", "q", "quit; bots keep going"),
     ("MOUSE", "click", "open, press a button"),
     ("MOUSE", "wheel", "scroll under pointer"),
 ];
 
-pub(super) fn help(buf: &mut Buffer, area: Rect, filter: &Editor) {
+/// The keys; `work`: some bot has a live or waiting task, so `E` has a page to open.
+pub(super) fn help(buf: &mut Buffer, area: Rect, filter: &Editor, work: bool) {
     let t = theme();
     // Two columns fit everything from 42 rows up; shorter windows get a third.
     let r = centered(area, if area.height >= 42 { 80 } else { 120 }, 40);
@@ -95,6 +112,7 @@ pub(super) fn help(buf: &mut Buffer, area: Rect, filter: &Editor) {
     let q = filter.text.to_lowercase();
     let items: Vec<&(&str, &str, &str)> = HELP
         .iter()
+        .filter(|(_, k, _)| work || *k != WORK_KEY)
         .filter(|(_, k, d)| q.is_empty() || d.to_lowercase().contains(&q) || k.to_lowercase().contains(&q))
         .collect();
     // As many 38-wide columns as fit; what doesn't fit is counted in the footer.

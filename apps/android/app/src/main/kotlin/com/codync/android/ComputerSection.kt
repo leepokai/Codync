@@ -46,19 +46,16 @@ import com.codync.android.design.*
     val turn by animateFloatAsState(if (folded) -90f else 0f, Motion.layout(), label = "Chevron")
     val link = state.connection
     val status = if (stale) computerStatusText(state, true) else statusText(state)
-    val offline = (link is LinkState.ComputerOffline || link is LinkState.Failed) && !state.isUpdating
+    val offline = state.unreachable
     Column(modifier.fillMaxWidth().padding(top = 22.dp, bottom = 2.dp)) {
         Row(Modifier.fillMaxWidth().contextActions(onClick = toggle, reorder = drag) { emptyList() }
             .clearAndSetSemantics {
                 heading()
                 contentDescription = "${state.hostName}, ${translate(status)}"
                 stateDescription = translate(if (folded) "Collapsed" else "Expanded")
-                customActions = listOfNotNull(
-                    CustomAccessibilityAction(translate(if (folded) "Expand" else "Collapse")) { toggle(); true },
-                    CustomAccessibilityAction(translate("Move up")) { move(-1); true },
-                    CustomAccessibilityAction(translate("Move down")) { move(1); true },
-                    extensions?.let { open -> CustomAccessibilityAction(translate("Extensions")) { open(); true } },
-                )
+                customActions = listOf(CustomAccessibilityAction(translate(if (folded) "Expand" else "Collapse")) { toggle(); true }) +
+                    moveActions(translate, move) +
+                    listOfNotNull(extensions?.let { open -> CustomAccessibilityAction(translate("Extensions")) { open(); true } })
             }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             ComputerBadge(state.hello?.text("device"), 20.dp, state.computer.color)
             // The name and the connection share the row; the connection sits at the trailing edge, before the heading's buttons.

@@ -167,6 +167,7 @@ async fn an_answer_from_another_computer_waits_in_the_replies() {
         reply_to: Some(request.into()),
         hops: 1,
         meta: Some(json!({"codync": status})),
+        access: Access::Allow,
     };
     tx.send(answer("l1", "all green", "completed")).await.unwrap();
     tx.send(answer("l2", "Couldn't finish: tests fail", "failed")).await.unwrap();

@@ -1,6 +1,6 @@
 //! The `entries` table: the transcript of every chat.
 
-use super::model::{Entry, EntryKind, Lane};
+use super::model::{Entry, EntryKind, Lane, thread_ids};
 use super::{Store, logged, next_rev, now_ms};
 use crate::LockExt;
 use anyhow::{Result, ensure};
@@ -26,6 +26,17 @@ fn row_entry(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
 const ENTRY_COLS: &str = "seq, id, bot_id, rev, kind, turn, data, created_at, updated_at";
 /// A bot still winding down after its deletion can't leave lines behind (`?2` is the chat).
 const LIVE_CHAT: &str = "WHERE NOT EXISTS (SELECT 1 FROM bots WHERE id = ?2 AND deleted = 1)";
+/// Leaves out a message the user took back before it went out (`unqueue`): no bot, model or list reads it.
+pub(super) const NOT_REMOVED: &str = "json_extract(data, '$.removed') IS NOT 1";
+
+/// What `expire_pending` closed out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Expired {
+    /// Every card and send it closed.
+    pub closed: usize,
+    /// The choice cards among them.
+    pub decisions: usize,
+}
 
 impl Store {
     pub fn insert_entry(&self, lane: &Lane, kind: EntryKind, turn: i64, data: &Value) -> Result<Entry> {
@@ -81,11 +92,16 @@ impl Store {
     }
 
     pub fn update_entry(&self, id: &str, data: &Value) -> Result<Option<Entry>> {
+        self.update_entry_turn(id, None, data)
+    }
+
+    /// [`Self::update_entry`] that also moves the entry into `turn` when given (a queued message on its way out).
+    pub fn update_entry_turn(&self, id: &str, turn: Option<i64>, data: &Value) -> Result<Option<Entry>> {
         let c = self.db.locked();
         let rev = next_rev(&c)?;
         c.execute(
-            "UPDATE entries SET rev = ?2, data = ?3, updated_at = ?4 WHERE id = ?1",
-            params![id, rev, data.to_string(), now_ms()],
+            "UPDATE entries SET rev = ?2, data = ?3, updated_at = ?4, turn = COALESCE(?5, turn) WHERE id = ?1",
+            params![id, rev, data.to_string(), now_ms(), turn],
         )?;
         Ok(c.query_row(&format!("SELECT {ENTRY_COLS} FROM entries WHERE id = ?1"), [id], row_entry).optional()?)
     }
@@ -148,27 +164,30 @@ impl Store {
         )?)
     }
 
-    /// Entries changed after `since`. A fresh client (`since == 0`) only gets the
+    /// Entries changed after `since`, in the chats clients list: a thread's transcript is fetched by itself
+    /// (`threadEntries`). A fresh client (`since == 0`) only gets the
     /// newest `cap` entries per bot and pages older ones in with `history`.
     pub fn entries_since(&self, since: i64, cap: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
+        let threads = thread_ids("bot_id");
         let sql = if since == 0 {
             format!(
-                "SELECT {ENTRY_COLS} FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY bot_id ORDER BY seq DESC) AS rn FROM entries)
+                "SELECT {ENTRY_COLS} FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY bot_id ORDER BY seq DESC) AS rn FROM entries
+                   WHERE NOT {threads})
                  WHERE rn <= ?2 AND rev > ?1 ORDER BY seq"
             )
         } else {
-            format!("SELECT {ENTRY_COLS} FROM entries WHERE rev > ?1 AND ?2 > 0 ORDER BY seq")
+            format!("SELECT {ENTRY_COLS} FROM entries WHERE rev > ?1 AND ?2 > 0 AND NOT {threads} ORDER BY seq")
         };
         let mut st = c.prepare(&sql)?;
         Ok(st.query_map(params![since, cap], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// Older entries of a chat.
+    /// Older entries of a chat, without the messages taken back: a client hears of those through `entries_since`.
     pub fn history(&self, bot_id: &str, before_seq: i64, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq < ?2
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq < ?2 AND {NOT_REMOVED}
              ORDER BY seq DESC LIMIT ?3"
         ))?;
         let mut rows: Vec<Entry> =
@@ -182,11 +201,24 @@ impl Store {
     pub fn file_messages(&self, bot_id: &str, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND {NOT_REMOVED}
                AND (json_array_length(data, '$.files') > 0 OR json_array_length(data, '$.attachments') > 0)
              ORDER BY seq DESC LIMIT ?2"
         ))?;
         Ok(st.query_map(params![bot_id, limit], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The user's own messages in `bot_id`'s chat that still wait for their turn (not what the host wrote there),
+    /// oldest first.
+    pub fn queued_messages(&self, bot_id: &str) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND kind = 'user'
+               AND json_extract(data, '$.status') = 'queued'
+               AND COALESCE(json_extract(data, '$.from'), '') != 'host'
+             ORDER BY seq"
+        ))?;
+        Ok(st.query_map([bot_id], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
     /// Cards still waiting for the user to sign in to agent `backend`, oldest first.
@@ -209,7 +241,7 @@ impl Store {
     // An FTS5 trigram table once a bot's search passes a second.
     pub fn search_messages(&self, bot_id: &str, terms: &[String], from: Option<i64>, limit: i64) -> Result<Vec<Entry>> {
         let mut sql = format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq <= ?3 AND
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq <= ?3 AND {NOT_REMOVED} AND
                (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))"
         );
         for i in 0..terms.len() {
@@ -244,7 +276,7 @@ impl Store {
     pub fn conversation_since(&self, bot_id: &str, after_seq: i64, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq > ?2 AND
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq > ?2 AND {NOT_REMOVED} AND
                (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1)
                 OR (kind = 'notice' AND json_extract(data, '$.transcript') IS NOT NULL))
              ORDER BY seq LIMIT ?3"
@@ -266,7 +298,7 @@ impl Store {
     pub fn messages_after(&self, lane: &Lane, after_seq: i64, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq > ?2 AND
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq > ?2 AND {NOT_REMOVED} AND
                (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))
              ORDER BY seq DESC LIMIT ?3"
         ))?;
@@ -274,6 +306,19 @@ impl Store {
             st.query_map(params![lane.chat, after_seq, limit], row_entry)?.collect::<rusqlite::Result<_>>()?;
         rows.reverse();
         Ok(rows)
+    }
+
+    /// The newest `limit` tool calls of the work done in `lane` after `after_seq`, newest first: what a handoff's
+    /// ledger reads. Not the bot's own bookkeeping (a message sent, a memory kept), nor turn `except_turn`'s calls.
+    pub fn tools_after(&self, lane: &Lane, after_seq: i64, except_turn: Option<i64>, limit: i64) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq > ?2 AND {NOT_REMOVED} AND kind = 'tool'
+               AND (?3 IS NULL OR turn != ?3) AND json_extract(data, '$.bookkeeping') IS NOT 1
+             ORDER BY seq DESC LIMIT ?4"
+        ))?;
+        let rows = st.query_map(params![lane.chat, after_seq, except_turn, limit], row_entry)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     /// The newest `kind` entry in `lane` after `after_seq`.
@@ -301,22 +346,29 @@ impl Store {
         logged("last spoke", n).unwrap_or(0)
     }
 
-    /// Permission cards left `pending` (and sends left `queued`) by a crash or restart
+    /// Permission and choice cards left `pending` (and sends left `queued`) by a crash or restart
     /// can never be honored; returns how many were closed out.
-    pub fn expire_pending(&self) -> Result<usize> {
+    pub fn expire_pending(&self) -> Result<Expired> {
         let ids: Vec<String> = {
             let c = self.db.locked();
             let mut st = c.prepare(
                 "SELECT id FROM entries WHERE (kind = 'permission' AND json_extract(data, '$.status') = 'pending')
+                  OR (kind = 'notice' AND json_extract(data, '$.decision') = 1 AND json_extract(data, '$.status') = 'pending')
                   OR (kind = 'user' AND json_extract(data, '$.status') = 'queued')
                   OR (kind = 'notice' AND json_extract(data, '$.delegationId') IS NOT NULL
                       AND json_extract(data, '$.status') IN ('queued', 'sent'))",
             )?;
             st.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
         };
+        let mut decisions = 0;
         for id in &ids {
             if let Some(mut e) = self.entry(id) {
-                let status = if e.kind == EntryKind::Notice.as_str() {
+                let status = if crate::chat::decision::is_card(&e) {
+                    crate::chat::decision::mark_expired(&mut e.data, crate::chat::decision::Expiry::Restart.text());
+                    self.update_entry(id, &e.data)?;
+                    decisions += 1;
+                    continue;
+                } else if e.kind == EntryKind::Notice.as_str() {
                     let heading = e.data["heading"].as_str().unwrap_or("Bot request");
                     e.data["text"] = format!(
                         "{heading}\nInterrupted by host restart. Partial work may have happened; check before retrying."
@@ -338,9 +390,13 @@ impl Store {
                 };
                 e.data["status"] = status.into();
                 self.update_entry(id, &e.data)?;
+                if e.kind == EntryKind::Permission.as_str() {
+                    // Its chat's badge counted the card (`Store::badge`): resync the bot.
+                    self.touch_bot(&e.bot_id)?;
+                }
             }
         }
-        Ok(ids.len())
+        Ok(Expired { closed: ids.len(), decisions })
     }
 }
 
@@ -389,15 +445,65 @@ mod tests {
     }
 
     #[test]
+    fn a_message_taken_back_reaches_no_reader() {
+        let s = temp_store();
+        let main = Lane::main("b1");
+        let file = json!([{"name": "a.png", "size": 1}]);
+        let kept = s.insert_entry(&main, EntryKind::User, 1, &json!({"text": "ship it", "attachments": file})).unwrap();
+        let gone = json!({"text": "ship the prod table", "attachments": file, "status": "cancelled", "removed": true});
+        s.insert_entry(&main, EntryKind::User, 2, &gone).unwrap();
+        let ids = |rows: Vec<Entry>| rows.into_iter().map(|e| e.id).collect::<Vec<_>>();
+        let kept = [kept.id];
+        assert_eq!(ids(s.messages_after(&main, 0, 10).unwrap()), kept, "recaps, calls and rooms");
+        assert_eq!(ids(s.conversation_since("b1", 0, 10).unwrap()), kept, "dreaming");
+        assert_eq!(ids(s.search_messages("b1", &["ship".to_owned()], None, 10).unwrap()), kept, "memory search");
+        assert_eq!(ids(s.file_messages("b1", 10).unwrap()), kept, "the Library");
+        assert_eq!(ids(s.history("b1", i64::MAX, 10).unwrap()), kept, "paging, handoffs and calls");
+        assert_eq!(s.last_message("b1").unwrap().text, "ship it", "the roster");
+    }
+
+    #[test]
+    fn a_ledger_reads_the_work_of_the_turns_before_the_running_one() {
+        let s = temp_store();
+        let main = Lane::main("b1");
+        let tool = |turn, data: Value| s.insert_entry(&main, EntryKind::Tool, turn, &data).unwrap();
+        let edit = tool(1, json!({"title": "Edit a.rs"}));
+        tool(1, json!({"title": "Edit MEMORY.md", "bookkeeping": true}));
+        let test = tool(2, json!({"title": "cargo test", "bookkeeping": false}));
+        s.insert_entry(&main, EntryKind::User, 3, &json!({"text": "Now the docs"})).unwrap();
+        tool(3, json!({"title": "Edit b.rs"}));
+        let ids = |rows: Vec<Entry>| rows.into_iter().map(|e| e.id).collect::<Vec<_>>();
+        let read = |after, except, limit| ids(s.tools_after(&main, after, except, limit).unwrap());
+        let (edit_id, test_id) = (edit.id.as_str(), test.id.as_str());
+        assert_eq!(read(0, Some(3), 10), [test_id, edit_id], "newest first, no bookkeeping");
+        assert_eq!(read(0, Some(3), 1), [test_id], "the running turn's calls take no place in the limit");
+        assert_eq!(read(edit.seq, Some(3), 10), [test_id]);
+        assert_eq!(read(0, None, 10).len(), 3, "between turns nothing is left out");
+    }
+
+    #[test]
     fn restart_expires_pending_cards_and_queued_sends() {
         let s = temp_store();
         s.insert_entry(&Lane::main("b1"), EntryKind::Permission, 1, &serde_json::json!({"status": "pending"})).unwrap();
         let q =
             s.insert_entry(&Lane::main("b1"), EntryKind::User, 2, &serde_json::json!({"status": "queued"})).unwrap();
         s.insert_entry(&Lane::main("b1"), EntryKind::User, 1, &serde_json::json!({"status": "sent"})).unwrap();
-        assert_eq!(s.expire_pending().unwrap(), 2);
+        assert_eq!(s.expire_pending().unwrap().closed, 2);
         assert_eq!(s.entry(&q.id).unwrap().data["status"], "failed");
-        assert_eq!(s.expire_pending().unwrap(), 0, "idempotent");
+        assert_eq!(s.expire_pending().unwrap().closed, 0, "idempotent");
+    }
+
+    #[test]
+    fn restart_expires_choice_notices_but_keeps_answered_choices() {
+        let s = temp_store();
+        let card = |status| serde_json::json!({"decision":true,"text":"Choose?\n1. A\n2. B","choices":["A","B"],"status":status});
+        let pending = s.insert_entry(&Lane::main("b"), EntryKind::Notice, 1, &card("pending")).unwrap();
+        let answered = s.insert_entry(&Lane::main("b"), EntryKind::Notice, 1, &card("answered")).unwrap();
+        assert_eq!(s.expire_pending().unwrap(), Expired { closed: 1, decisions: 1 }, "counted for analytics");
+        assert_eq!(s.entry(&pending.id).unwrap().data["status"], "expired");
+        assert!(s.entry(&pending.id).unwrap().data["text"].as_str().unwrap().contains("host restarted"));
+        assert_eq!(s.entry(&answered.id).unwrap().data["status"], "answered");
+        assert_eq!(s.expire_pending().unwrap().closed, 0);
     }
 
     #[test]

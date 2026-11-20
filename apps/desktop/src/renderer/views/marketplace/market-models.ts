@@ -18,14 +18,17 @@ export interface InstalledConnector {
   logo?: string | null
   /** Remote servers: `none`, `signedOut` (waits for sign-in; bots don't get it yet) or `signedIn`. */
   auth?: string | null
+  /** Set up with a saved token where signing in works now (GitHub): offer the sign-in. Older hosts omit it. */
+  canSignIn?: boolean
 }
 
 export const needsSignIn = (c: InstalledConnector) => c.auth === 'signedOut'
 
-/** Where a connector's sign-in page is and who catches its return: `app` or `host`. */
+/** Where a connector's sign-in page is and who catches its return: `app` or `host`; `code`: what to type there (GitHub). */
 export interface ConnectorSignIn {
   url: string
   callback: string
+  code?: string | null
 }
 
 export interface ComposioStatus {
@@ -125,6 +128,8 @@ export interface ConnectionRequest {
   site?: string | null
   /** Agent sign-in requests: the agent (backend id) to sign in to. */
   backend?: string | null
+  /** Agent sign-in requests: the login profile to sign in, when it isn't the computer's own login. */
+  loginProfile?: string | null
   /** App requests: the app's logo, when Composio lists it. */
   logo?: string | null
 }
@@ -194,7 +199,8 @@ export const market = {
     (await c.call<{ connector: InstalledConnector }>('installConnector', body, s(45))).connector,
   /** Adds every server in a pasted MCP config (`mcpServers` / `servers` JSON, or one server's entry). */
   importConnectors: async (c: HostClient, config: string) => (await c.call<{ items: InstalledConnector[] }>('importConnectors', { config }, s(60))).items,
-  connectorSignIn: (c: HostClient, id: string) => c.call<ConnectorSignIn>('connectorSignIn', { id }, s(60)),
+  // `showsCode`: this app shows a device sign-in's code, so the host may answer with one.
+  connectorSignIn: (c: HostClient, id: string) => c.call<ConnectorSignIn>('connectorSignIn', { id, showsCode: true }, s(60)),
   finishConnectorSignIn: async (c: HostClient, state: string, code: string | null, error: string | null) =>
     (await c.call<{ connector: InstalledConnector }>('connectorSignInFinish', { state, code, error }, s(60))).connector,
   removeConnector: (c: HostClient, id: string) => c.call('removeConnector', { id }),
@@ -226,8 +232,8 @@ export const market = {
 
   // Agent setup terminals
   /** The first sign-in through a registry build can download it. */
-  agentSetup: async (c: HostClient, backend: string, step: SetupStep, method: string | null, cols: number, rows: number) =>
-    (await c.call<{ term: string }>('agentSetup', { backend, step, method, cols, rows }, s(300))).term,
+  agentSetup: async (c: HostClient, backend: string, step: SetupStep, method: string | null, cols: number, rows: number, loginProfile?: string) =>
+    (await c.call<{ term: string }>('agentSetup', { backend, step, method, loginProfile, cols, rows }, s(300))).term,
   agentAuth: (c: HostClient, backend: string) => c.call<AgentAuth>('agentAuth', { backend }, s(300)),
   agentAuthenticate: (c: HostClient, backend: string, method: string) => c.call<AgentAuth>('agentAuthenticate', { backend, method }, s(660)),
   setAgentEnv: (c: HostClient, backend: string, vars: Record<string, string>) => c.call<AgentAuth>('setAgentEnv', { backend, vars }, s(300)),

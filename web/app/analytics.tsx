@@ -2,7 +2,8 @@
 
 import { useEffect } from "react";
 import posthog from "posthog-js";
-import { ANDROID_TEST, APP_STORE, DISCORD, DMG, GITHUB, KO_FI, LINUX, LINUX_ARM, PRODUCT_HUNT, WINDOWS } from "./links";
+import "posthog-js/dist/web-vitals"; // Bundled, as external loading is off below.
+import { APP_STORE, CHINA_COMMUNITY, CLOUD_SECTION, DISCORD, DMG, GITHUB, GOOGLE_PLAY, KO_FI, LINUX, LINUX_ARM, PRODUCT_HUNT, TELEGRAM, WINDOWS } from "./links";
 
 // Cookieless counts for codync.dev (docs/reference/analytics-events.md, Website). Nothing is
 // stored on the device; PostHog's server hashes the visitor per day.
@@ -10,17 +11,19 @@ const TOKEN = "phc_rQHvxdSFKnMquPfMjmiMhXhM4tqJ5qCYsWuVEoFxCCWX"; // write-only 
 const LOCAL = ["localhost", "127.0.0.1", "[::1]"];
 const MAIN = ["codync.dev", "www.codync.dev"];
 
-export type Platform = "mac" | "windows" | "linux" | "ios";
+export type Platform = "mac" | "windows" | "linux" | "ios" | "android";
 
-const downloads: Record<string, Platform> = { [DMG]: "mac", [WINDOWS]: "windows", [LINUX]: "linux", [LINUX_ARM]: "linux", [APP_STORE]: "ios" };
+const downloads: Record<string, Platform> = { [DMG]: "mac", [WINDOWS]: "windows", [LINUX]: "linux", [LINUX_ARM]: "linux", [APP_STORE]: "ios", [GOOGLE_PLAY]: "android" };
 // Matched by prefix, first hit wins.
 const links: [prefix: string, link: string][] = [
   [`${GITHUB}/issues`, "issues"],
   [GITHUB, "github"],
   [DISCORD, "discord"],
+  [TELEGRAM, "telegram"],
+  [CHINA_COMMUNITY, "feishu"],
   [PRODUCT_HUNT, "product_hunt"],
   [KO_FI, "ko_fi"],
-  [ANDROID_TEST, "android_test"],
+  [CLOUD_SECTION, "cloud_new"],
 ];
 
 export function track(event: "download_clicked", props: { platform: Platform }): void;
@@ -52,15 +55,15 @@ export default function Analytics() {
     const host = location.hostname;
     if (LOCAL.includes(host)) return;
     posthog.init(TOKEN, {
-      api_host: "https://us.i.posthog.com",
+      api_host: "/e", // vercel.json rewrites it to PostHog.
       cookieless_mode: "always",
       capture_pageview: "history_change",
-      capture_pageleave: false,
+      capture_pageleave: true,
       autocapture: false,
       rageclick: false,
       capture_dead_clicks: false,
       capture_heatmaps: false,
-      capture_performance: false,
+      capture_performance: { web_vitals: true, web_vitals_attribution: false },
       capture_exceptions: false,
       disable_session_recording: true,
       disable_surveys: true,

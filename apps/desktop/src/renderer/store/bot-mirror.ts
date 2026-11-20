@@ -1,4 +1,6 @@
+import type { HostAlert } from '@shared/alerts'
 import { checkVersions, isBelow, type VersionMismatch } from '@shared/compat'
+import { mixesAgents } from '@shared/fallbacks'
 import {
   type AccessRequest,
   type Bot,
@@ -9,25 +11,34 @@ import {
   type PairingRequest,
   type ScreenState,
   type Usage,
+  normalizeBot,
+  withoutRemoved,
 } from '@shared/models'
 import type { NetworkView, RecoveryCode } from '@shared/network'
 import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
+import type { CloudPlacement } from '../lib/cloud-computer'
 import { rosterOrder } from '../lib/computer-roster'
 import { HOST_UPDATE_WAIT, hostVersionLine, offerHostUpdate, type HostUpdate, type HostUpdateOffer, type HostVersionLine } from '../lib/host-update'
 import { Observable } from '../lib/observable'
 import { hostHasSections } from '../lib/roster-sections'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
+import { fromOldBot, fromOldEntry } from '@shared/old-host'
 import { loadIconCache, saveIconCache } from '../lib/icon-cache'
+import { trNow } from '../lib/l10n.ts'
+import { ThreadTranscripts } from './thread-transcripts'
 
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
+/** The first host the user names (`setComputerName`). */
+const COMPUTER_NAME_HOST = '2.50.0'
 
 export type Connection =
   | { kind: 'unpaired' }
   | { kind: 'connecting' }
   | { kind: 'online' }
-  | { kind: 'computerOffline'; lastSeen: number | null }
+  /** `waking`: the relay is starting it (a cloud computer asleep). */
+  | { kind: 'computerOffline'; lastSeen: number | null; waking?: boolean }
   | { kind: 'offline'; message: string }
   | { kind: 'unauthorized'; message: string }
 
@@ -70,6 +81,8 @@ export class BotMirror extends Observable {
   computer: Computer
   connection: Connection = { kind: 'connecting' }
   hostRoute: HostRoute | null = null
+  /** Set for a Codync Cloud computer: who runs it, where, and whether it's awake (the account's computer list). */
+  cloudHosting: CloudPlacement | null = null
   client: HostClient | null = null
   hello: Hello | null = null
   hostVersion: { version: string; minApp?: string | null } | null = null
@@ -77,6 +90,7 @@ export class BotMirror extends Observable {
   hostUpdate: HostUpdate | null = null
   bots = new Map<string, Bot>()
   entries = new Map<string, Entry[]>()
+  private threadTranscripts = new ThreadTranscripts()
   usage: Usage = { providers: [] }
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
@@ -95,14 +109,19 @@ export class BotMirror extends Observable {
   answering = new Map<string, string>()
 
   onRosterChanged: (() => void) | null = null
+  /** The host's alerts for bots no chat on screen shows (a system notification, if the user turned those on). */
+  onAlert: ((alert: HostAlert) => void) | null = null
   onComputerChanged: ((c: Computer) => void) | null = null
 
   protected waiting = 0
   protected rev = 0
+  /** While everything is fetched again (`refetchAll`): the entries the computer has sent since it began. */
+  protected refetched: Set<string> | null = null
   protected hostId: string | null = null
   protected retired = false
   protected unreadable = false
   protected saveTimer: ReturnType<typeof setTimeout> | null = null
+  /** What the mirror was synced under (`syncStamp`): from the cache, then from each hello. Null: nothing held yet. */
   protected cacheStamp: string | null = null
 
   constructor(
@@ -115,7 +134,7 @@ export class BotMirror extends Observable {
     super()
     this.computer = computer
     this.composerDrafts = new ComposerDrafts(localStorage, `codync-drafts-v1-${JSON.stringify([contextId, computer.id])}`,
-      () => this.setError("Couldn't save the draft on this device. Your text is still here; keep this window open until you send or copy it."))
+      () => this.setError(trNow("Couldn't save the draft on this device. Your text is still here; keep this window open until you send or copy it.")))
     this.loadCache()
   }
 
@@ -140,6 +159,43 @@ export class BotMirror extends Observable {
     return this.hello?.name ?? this.computer.name
   }
 
+  /** The automatic bot order switch as the computer has it: switched here, or its `autoOrder` event (another device). */
+  showAutoOrder(on: boolean) {
+    if (!this.hello || this.hello.autoOrder === on) return
+    this.hello = { ...this.hello, autoOrder: on }
+    this.changed()
+  }
+
+  /** A new name for this computer: its host's `name` event, or a cloud computer renamed from here (shown before its host,
+   * asleep perhaps, says so). */
+  setHostName(name: string) {
+    if (!this.hello || this.hello.name === name) return
+    this.hello = { ...this.hello, name }
+    this.changed()
+  }
+
+  setCloudHosting(hosting: CloudPlacement | null) {
+    if (JSON.stringify(hosting) === JSON.stringify(this.cloudHosting)) return
+    this.cloudHosting = hosting
+    this.changed()
+  }
+
+  /** A Codync Cloud computer that's asleep, or on its way up: a connection or a message wakes it, so it isn't offline. */
+  get isAsleep() {
+    return this.connection.kind === 'computerOffline' && (this.isWaking || this.cloudHosting?.state === 'stopped' || this.cloudHosting?.state === 'stopping')
+  }
+
+  /** The relay is waking this cloud computer (about 10 to 30 seconds): it's coming, not offline. Only the relay says so:
+   * the account list's `starting` stays after a wake whose host never came back. */
+  get isWaking() {
+    return this.connection.kind === 'computerOffline' && this.connection.waking === true
+  }
+
+  /** A Codync Cloud computer older than this app's `minHost`: the cloud updates it on its own (this app's `Codync-App` header asks for it). */
+  get isCloudUpdating() {
+    return this.mismatch?.kind === 'updateHost' && this.cloudHosting !== null
+  }
+
   get mismatch(): VersionMismatch | null {
     if (!this.hostVersion) return null
     const found = checkVersions(this.appVersion, this.hostVersion.version, this.hostVersion.minApp)
@@ -158,6 +214,12 @@ export class BotMirror extends Observable {
     return this.hostVersion !== null && !isBelow(this.hostVersion.version, LEAD_CHOICE_HOST)
   }
 
+  /** The user names this computer here, on a host that takes it: a cloud computer is named in Codync Cloud. */
+  get canRename() {
+    return this.connection.kind === 'online' && this.hello?.device !== 'cloud'
+      && this.hostVersion !== null && !isBelow(this.hostVersion.version, COMPUTER_NAME_HOST)
+  }
+
   /** What the update notice offers while this computer is behind this app. */
   get hostUpdateOffer(): HostUpdateOffer {
     return offerHostUpdate(this.hostUpdate, this.hello?.canUpdate === true)
@@ -167,7 +229,7 @@ export class BotMirror extends Observable {
   hostVersionLine(now = Date.now()): HostVersionLine | null {
     if (!this.hello) return null
     return hostVersionLine(this.hello.version, this.hello.latestVersion, this.mismatch,
-      offerHostUpdate(this.hostUpdate, this.hello.canUpdate === true, now), this.hostName, this.hello.os)
+      offerHostUpdate(this.hostUpdate, this.hello.canUpdate === true, now), this.hostName, this.hello.os, this.cloudHosting !== null)
   }
 
   /** Out of reach while an update asked from here installs: the computer restarts on its own, so it
@@ -186,6 +248,12 @@ export class BotMirror extends Observable {
     return [...this.bots.values()].filter((b) => !b.hidden).sort(rosterOrder)
   }
 
+  /** The visible bots run more than one agent, so the roster marks each with its agent's logo. Not before
+   * `hello`: it names the logos, and without it every badge would be the same generic one. */
+  get mixesAgents(): boolean {
+    return this.hello !== null && mixesAgents([...this.bots.values()].filter((b) => !b.hidden))
+  }
+
   get hiddenBots(): Bot[] {
     return [...this.bots.values()].filter((b) => b.hidden).sort((a, b) => a.name.localeCompare(b.name))
   }
@@ -201,11 +269,13 @@ export class BotMirror extends Observable {
 
   /** A bot's or group's chat, trace entries included. */
   allEntries(botId: string) {
-    return this.entries.get(botId) ?? []
+    const list = this.entries.get(botId)
+    return list ? withoutRemoved(list) : []
   }
 
+  /** Not while everything is fetched again (`refetchAll`): a page would sit below entries about to go. */
   canLoadOlder(botId: string) {
-    return canLoadHistory(this.allEntries(botId), this.historyComplete.has(botId))
+    return !this.refetched && canLoadHistory(this.allEntries(botId), this.historyComplete.has(botId))
   }
 
   members(group: Bot) {
@@ -214,13 +284,15 @@ export class BotMirror extends Observable {
 
   /** A bot's name; `fallback` for one that isn't this computer's (a bot on another computer). */
   authorName(id: string | null | undefined, fallback?: string) {
-    return (id && this.bots.get(id)?.name) || fallback || 'A deleted bot'
+    return (id && this.bots.get(id)?.name) || fallback || trNow('A deleted bot')
   }
 
   get connectionLabel() {
+    if (this.isWaking) return 'Waking the computer…'
+    if (this.isAsleep) return 'Sleeping'
     switch (this.shownConnection.kind) {
       case 'online':
-        return this.mismatch ? 'Needs update' : 'Connected'
+        return this.isCloudUpdating ? 'Updating…' : this.mismatch ? 'Needs update' : 'Connected'
       case 'connecting':
         return 'Connecting…'
       case 'computerOffline':
@@ -242,6 +314,7 @@ export class BotMirror extends Observable {
   }
 
   protected upsert(e: Entry) {
+    this.refetched?.add(e.id)
     const list = [...(this.entries.get(e.botId) ?? [])]
     const i = list.findIndex((x) => x.id === e.id)
     if (i >= 0) {
@@ -263,6 +336,21 @@ export class BotMirror extends Observable {
       return
     }
     this.entries.set(e.botId, list)
+  }
+
+  /** Holds a thread's transcript from now until the returned function is called: its details are open. */
+  watchThread(threadId: string): () => void {
+    return this.threadTranscripts.watch(threadId)
+  }
+
+  /** A watched thread's transcript, oldest first. */
+  threadEntriesOf(threadId: string): Entry[] {
+    return this.threadTranscripts.of(threadId)
+  }
+
+  /** More of a thread's transcript (fetched, or a live `threadEntry`). */
+  protected mergeThread(threadId: string, entries: Entry[]) {
+    this.threadTranscripts.merge(threadId, entries)
   }
 
   setError(message: string | null) {
@@ -297,9 +385,11 @@ export class BotMirror extends Observable {
       this.cacheStamp = cache.stamp ?? ''
       this.hostId = cache.hostId ?? null
       this.rev = cache.rev
-      this.bots = new Map(cache.bots.map((b) => [b.id, b]))
+      // A copy cached by an older app lacks the fields added since. One from before 2.51.0 has the old names
+      // (hosts before 2.51.0: `fromOld…` goes when MIN_HOST reaches 2.51.0).
+      this.bots = new Map(cache.bots.map((b) => [b.id, normalizeBot(fromOldBot(b) as Bot)]))
       const grouped = new Map<string, Entry[]>()
-      for (const e of cache.entries) grouped.set(e.botId, [...(grouped.get(e.botId) ?? []), e])
+      for (const e of cache.entries.map(fromOldEntry)) grouped.set(e.botId, [...(grouped.get(e.botId) ?? []), e])
       this.entries = grouped
     } catch {}
   }
@@ -319,7 +409,9 @@ export class BotMirror extends Observable {
       kept.push(...list.filter((e) => e.id.startsWith('local-') && e.data.status === 'failed'))
     }
     const bots = [...this.bots.values()].map(({ customIcon: _image, ...bot }) => bot)
-    const cache = { stamp: `${this.appVersion}/${this.hello?.version ?? ''}`, hostId: this.hostId, rev: this.rev, bots, entries: kept }
+    // Saved partway through a refetch, the cache says so: the next launch begins it again.
+    const stamp = this.refetched ? '' : this.cacheStamp ?? ''
+    const cache = { stamp, hostId: this.hostId, rev: this.rev, bots, entries: kept }
     try {
       localStorage.setItem(this.cacheKey, JSON.stringify(cache))
     } catch {}
@@ -339,6 +431,6 @@ export function builtInBackendName(id: string) {
     case 'gemini':
       return 'Gemini CLI'
     default:
-      return 'Custom agent'
+      return trNow('Custom agent')
   }
 }

@@ -28,14 +28,14 @@ export function ReasoningSlider({ option, value, onChange, onReset }: {
       </button>
     </div>
     <div className={`reasoning-slider${index < 0 ? ' unknown' : ''}`} style={{ '--effort-position': last > 0 ? Math.max(0, index) / last : 0 } as CSSProperties}>
-      <div className="reasoning-track" aria-hidden="true"><div className="reasoning-fill" /></div>
+      <div className="reasoning-track" aria-hidden="true"><div className="reasoning-halftone" /></div>
       <div className="reasoning-stops" aria-hidden="true">{option.values.map((level) => <span key={level.id} title={level.name} />)}</div>
       <div className="reasoning-thumb" aria-hidden="true" />
       <input type="range" min={0} max={Math.max(1, last)} step={1} value={Math.max(0, index)}
         onPointerDown={(event) => {
           if (index >= 0 && last > 0) return
           const bounds = event.currentTarget.getBoundingClientRect()
-          const fraction = Math.max(0, Math.min(1, (event.clientX - bounds.left - 15) / Math.max(1, bounds.width - 30)))
+          const fraction = Math.max(0, Math.min(1, (event.clientX - bounds.left - 18) / Math.max(1, bounds.width - 36)))
           const level = option.values[Math.round(fraction * last)]
           if (level) onChange(level.id)
         }}

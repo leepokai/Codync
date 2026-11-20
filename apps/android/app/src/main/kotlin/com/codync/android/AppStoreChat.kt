@@ -15,8 +15,17 @@ fun AppStore.openBot(id: String?) {
     // Leaving a chat drops the call "Talk to Codync" asked for there, waiting or not (iOS `cancelVoiceCallRequest`).
     val leaving = id != state.value.selectedBot
     if (leaving) callWait?.cancel()
-    mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving }) }
+    if (id != null) residents.touch(id)
+    // The chat left gives its extra rows back, so it pages its earlier ones again if opened later.
+    if (leaving) state.value.selectedBot?.let { left ->
+        windows.remove(left)
+        mutableState.update { it.copy(historyEnd = it.historyEnd - left) }
+    }
+    mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving },
+        detailsRequest = it.detailsRequest.takeUnless { leaving }, cardRequest = it.cardRequest.takeUnless { leaving }) }
     if (id != null) { opened(this); acknowledgeVisible() }
+    // The open chat swaps its preview for its window.
+    if (leaving) contextScope.launch { refresh() }
 }
 fun AppStore.showTrace(show: Boolean) { mutableState.update { it.copy(trace = show) } }
 
@@ -33,6 +42,58 @@ fun AppStore.requestCall(botId: String) {
     }
 }
 
+/** Opens [botId]'s chat with its details over it, at the thread of its task [taskId] when one is named; the chat takes the request (`takeDetailsRequest`). */
+internal fun AppStore.openDetails(botId: String, taskId: String? = null) {
+    openBot(botId)
+    mutableState.update { it.copy(detailsRequest = botId to taskId) }
+}
+
+/** Once: what [botId]'s details were asked to open on, or null when they weren't. */
+internal fun AppStore.takeDetailsRequest(botId: String): DetailsRequest? {
+    val (asked, taskId) = state.value.detailsRequest ?: return null
+    if (asked != botId) return null
+    mutableState.update { it.copy(detailsRequest = null) }
+    return DetailsRequest(taskId = taskId)
+}
+
+/** Opens [botId]'s chat at the card its [task] waits on (iOS `requestCard`); the chat takes the request (`takeCardRequest`). */
+internal fun AppStore.openCard(botId: String, task: WorkTask) {
+    openBot(botId)
+    mutableState.update { it.copy(cardRequest = botId to task) }
+}
+
+/** Once. */
+internal fun AppStore.takeCardRequest(botId: String): Boolean {
+    if (state.value.cardRequest?.first != botId) return false
+    mutableState.update { it.copy(cardRequest = null) }
+    return true
+}
+
+/**
+ * Pages [botId]'s open chat back for the card its [task] waits on while the rows loaded don't hold it (iOS
+ * `card(for:in:)`); the chat takes the request once it holds the card. One it can't find drops the request, and the
+ * chat stays where it was.
+ */
+internal fun AppStore.pageToCard(botId: String, task: WorkTask) = action(historyKey(botId)) {
+    val found = { pendingCard(state.value.entries.filter { it.botId == botId }, task) != null }
+    try {
+        pageUntil(found, more = { state.value.selectedBot == botId && botId !in state.value.historyEnd }) { pageHistory(botId) }
+    } finally {
+        if (!found() && state.value.cardRequest == (botId to task)) takeCardRequest(botId)
+    }
+}
+
+/** How many older pages opening a task's card loads to find it, like the iPhone. */
+private const val CARD_PAGES = 5
+
+/** Pages back ([page]) until [found], while [more] can come, [CARD_PAGES] pages at most. */
+internal suspend fun pageUntil(found: () -> Boolean, more: () -> Boolean, page: suspend () -> Unit) {
+    repeat(CARD_PAGES) {
+        if (found() || !more()) return
+        page()
+    }
+}
+
 /** Once: a chat that already has a call takes it too, so it can't start one later. */
 fun AppStore.takeCallRequest(botId: String): Boolean {
     if (state.value.callRequest != botId) return false
@@ -43,16 +104,28 @@ fun AppStore.takeCallRequest(botId: String): Boolean {
 /** The chat being read (iOS `ReadingConversation`): the open one, still on screen under Full conversation. */
 internal val AppState.readingChats: List<String> get() = listOfNotNull(selectedBot)
 
-/** The chats events make unread while they're on screen: a message in one, or its bot counting unread. */
+/** The chats events make unread while they're on screen: a message in one, or its bot counting unread messages. */
 internal fun readAfter(events: List<MirrorEvent>, chats: List<String>): List<String> = chats.filter { chat ->
     events.any { event ->
         when (event) {
             is MirrorEvent.EntryChanged -> event.entry.isChat && event.entry.botId == chat
-            is MirrorEvent.BotChanged -> event.bot.id == chat && event.bot.unread > 0
+            is MirrorEvent.BotChanged -> event.bot.id == chat && event.bot.unseen > 0
             else -> false
         }
     }
 }
+
+/** The chats whose alert (`alerts`: bot → the alert's kind) events have dealt with, here or on another device: a reply
+ *  once nothing is unread, a question once the bot (or a thread of its) no longer waits. A failure never counted unread, so it stays. */
+internal fun readChats(events: List<MirrorEvent>, alerts: Map<String, String>): List<String> =
+    events.filterIsInstance<MirrorEvent.BotChanged>().associateBy { it.bot.id }.values.map { it.bot }.filter { bot ->
+        bot.unread == 0 && when (alerts[bot.id]) {
+            "done" -> true
+            // A thread's question waits outside the chat.
+            "needsInput" -> "needsInput" !in setOf(bot.status, bot.outsideStatus)
+            else -> false
+        }
+    }.map { it.id }
 
 /** Marks the chats on screen read (`chats`: only these); the host ignores it when nothing there is unread. */
 internal fun AppStore.acknowledgeVisible(chats: List<String> = state.value.readingChats) {
@@ -68,26 +141,89 @@ internal fun entriesOf(response: JsonElement): List<Entry> =
 internal suspend fun AppStore.callEntries(botId: String, call: String): List<Entry> =
     entriesOf(hostCall("callEntries", buildJsonObject { put("botId", botId); put("callId", call) }, 20_000))
 
-fun AppStore.loadHistory() {
+/** Pages the open chat's earlier rows. [failed] hears when that page didn't load (its error shows as usual). */
+fun AppStore.loadHistory(failed: () -> Unit = {}) {
     val id = state.value.selectedBot ?: return
-    action("history") {
-        val mirror = requireNotNull(database)
-        if (withContext(Dispatchers.IO) { mirror.historyComplete(id) }) {
-            mutableState.update { it.copy(historyComplete = it.historyComplete + id) }
-            return@action
-        }
-        val before = state.value.entries.filter { it.botId == id }.minOfOrNull(Entry::seq) ?: Long.MAX_VALUE
-        val active = ready()
-        val response = active.call("history", buildJsonObject { put("botId", id); put("beforeSeq", before); put("limit", 100) })
-        val entries = response.jsonObject.getValue("entries").jsonArray.map { Entry.decode(it.jsonObject) }
-        withContext(Dispatchers.IO) {
-            mirror.receive(entries)
-            if (entries.size < 100) mirror.finishHistory(id)
-        }
-        if (entries.size < 100) mutableState.update { it.copy(historyComplete = it.historyComplete + id) }
+    val started = action(historyKey(id)) {
+        try { pageHistory(id) }
+        catch (error: CancellationException) { throw error }
+        catch (error: Exception) { failed(); throw error }
+    }
+    if (!started) failed()
+}
+
+private suspend fun AppStore.pageHistory(id: String) {
+    // beforeSeq is the open window's oldest row, not the preview from before this chat was resident. When that
+    // read already reached further back, stop; the screen asks again only while its earlier row is still showing.
+    val last = published
+    if (last == null || id !in last.full || last.limit(id) != residency().limit(id)) {
+        val loadedFrom = floors[id]
         refresh()
+        if (floors[id] != loadedFrom) return
+    }
+    // The oldest row SQLite handed the window, counting rows a queued removal hides from the screen.
+    val before = floors[id] ?: Long.MAX_VALUE
+    // Older rows the phone already stored come from SQLite before the computer is asked for a page of them.
+    if (!withContext(Dispatchers.IO) { requireNotNull(database).hasOlder(id, before) } && !fetchHistoryPage(id, before)) return
+    // The older rows are on the phone now. The window grows over them whatever they hold, so a page of only tool or
+    // thought rows moves the chat too.
+    if (state.value.selectedBot == id) windows[id] = residency().widened(id)
+    refresh()
+    // The window grew and the same rows came back: this chat's memory budget is spent.
+    if (floors[id] == before && state.value.selectedBot == id) mutableState.update { it.copy(historyEnd = it.historyEnd + (id to HistoryEnd.MemoryFull)) }
+}
+
+/** Stores the computer's page of [id]'s rows older than [before]. Whether it held any. */
+private suspend fun AppStore.fetchHistoryPage(id: String, before: Long): Boolean {
+    val mirror = requireNotNull(database)
+    if (withContext(Dispatchers.IO) { mirror.historyComplete(id) }) {
+        mutableState.update { it.copy(historyEnd = it.historyEnd + (id to HistoryEnd.Complete)) }
+        return false
+    }
+    val response = ready().call("history", buildJsonObject { put("botId", id); put("beforeSeq", before); put("limit", 100) })
+    val entries = response.jsonObject.getValue("entries").jsonArray.map { Entry.decode(it.jsonObject) }
+    withContext(Dispatchers.IO) {
+        mirror.receive(entries)
+        if (entries.size < 100) mirror.finishHistory(id)
+    }
+    // The reader may have gone to another chat while the computer answered: its rows are kept, but nothing here is theirs now.
+    if (entries.size < 100 && state.value.selectedBot == id) mutableState.update { it.copy(historyEnd = it.historyEnd + (id to HistoryEnd.Complete)) }
+    return entries.isNotEmpty()
+}
+
+/** The earlier row pages only once it is actually on screen, and only when that page would move the chat. */
+internal fun pageEarlier(
+    settled: Boolean, visible: Boolean, loading: Boolean, shown: Int, floor: Long, askedShown: Int, askedFloor: Long,
+): Boolean = settled && visible && !loading && (shown > askedShown || floor < askedFloor)
+
+/**
+ * When the open chat's earlier-messages row asks for a page, during one visit ([pageEarlier]). A page that failed is
+ * asked for again once the row comes back on screen (the iPhone's `onAppear`), never in a loop while the computer is out of reach.
+ */
+internal class EarlierPaging {
+    private var askedShown = -1
+    private var askedFloor = Long.MAX_VALUE
+    private var lastFailed = false
+
+    /** Whether to page now. Asking remembers [shown] and [floor], so the next page waits until this one moved them. */
+    fun ask(settled: Boolean, visible: Boolean, loading: Boolean, shown: Int, floor: Long): Boolean {
+        if (!visible) left()
+        if (!pageEarlier(settled, visible, loading, shown, floor, askedShown, askedFloor)) return false
+        askedShown = shown; askedFloor = floor; lastFailed = false
+        return true
+    }
+
+    /** The page asked for last didn't load. */
+    fun failed() { lastFailed = true }
+
+    /** The row is off screen, or the list dropped it before it could see that: after a failure, it may ask again when it shows anew. */
+    fun left() {
+        if (lastFailed) { lastFailed = false; askedShown = -1; askedFloor = Long.MAX_VALUE }
     }
 }
+
+/** One history load per chat at a time, so a chat still loading doesn't make the one opened next wait. */
+internal fun historyKey(botId: String) = "history:$botId"
 
 fun AppStore.retry(send: PendingSend) = action("send:" + send.nonce) { deliver(send.copy(status = SendStatus.Sending, error = null)) }
 fun AppStore.discard(send: PendingSend) = action("discard:" + send.nonce) {
@@ -96,6 +232,11 @@ fun AppStore.discard(send: PendingSend) = action("discard:" + send.nonce) {
     refresh()
 }
 fun AppStore.cancelQueued(send: PendingSend) = action("cancel:" + send.nonce) {
+    if (discardsOnPhone(state.value.computer.cloud, send.status)) {
+        withContext(Dispatchers.IO) { requireNotNull(database).discard(send.nonce) }
+        refresh()
+        return@action
+    }
     val active = requireNotNull(channel) { "Reconnect to the relay to cancel this message." }
     when (active.cancelQueued(send.nonce)) {
         "cancelled" -> { withContext(Dispatchers.IO) { requireNotNull(database).discard(send.nonce) }; refresh() }
@@ -104,15 +245,25 @@ fun AppStore.cancelQueued(send: PendingSend) = action("cancel:" + send.nonce) {
     }
 }
 
+/** Sends [text] to chat [botId] outside its message box: a choice card's own answer, or what was said on voice [call]. */
+fun AppStore.sendText(botId: String, text: String, call: String? = null) {
+    if (state.value.loading || text.isBlank()) return
+    val send = PendingSend(UUID.randomUUID().toString(), botId, text.trim(), System.currentTimeMillis(), call = call)
+    lastSentNonce = send.nonce
+    action("save:" + send.nonce) { savePending(send); deliver(send) }
+}
+
 internal suspend fun AppStore.deliver(send: PendingSend) {
     if (!sends.add(send.nonce)) return
     try {
         if (state.value.entries.any { it.botId == send.botId && it.clientNonce == send.nonce }) return
+        // The sent message may sit in older rows this phone holds on disk but not in memory.
+        if (withContext(Dispatchers.IO) { requireNotNull(database).hasNonce(send.botId, send.nonce) }) return
         savePending(send)
         val active = channel
         if (active?.state?.value is LinkState.ComputerOffline && send.files.isEmpty()) {
             savePending(send.copy(status = SendStatus.Waiting))
-            try { active.enqueue(send); return }
+            try { active.enqueue(send); ReviewPrompt.promptSent(application, send); return }
             catch (error: IOException) {
                 if (error.message != "hostOnline") throw error
                 // Relay presence can lag; use the same nonce after the channel becomes ready.
@@ -136,6 +287,8 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
         val entry = Entry.decode(result.jsonObject.getValue("entry").jsonObject)
         withContext(Dispatchers.IO) { requireNotNull(database).receive(listOf(entry)) }
         refresh()
+        // Only once it arrived, so a resend counts once.
+        ReviewPrompt.promptSent(application, send)
         val bot = state.value.bots.firstOrNull { it.id == send.botId }
         if (bot != null && PushPreferences.tasks(application) && application.getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled()) {
             val watch = withContext(Dispatchers.IO) { feed.start(bot) }
@@ -146,12 +299,30 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
         withContext(NonCancellable) { savePending(send.copy(status = SendStatus.Failed, error = "Sending was interrupted. Retry uses the same message ID.")) }
         throw error
     } catch (error: Exception) {
-        savePending(send.copy(status = SendStatus.Failed, error = error.message ?: "Couldn't send."))
+        savePending(afterFailure(send, state.value.computer.cloud, error))
     } finally {
         sends.remove(send.nonce)
         mutableState.update { it.copy(uploadProgress = it.uploadProgress - send.nonce) }
     }
 }
+
+/** A send that failed. With no relay holding it, a message waits here until the computer can be reached (`reconcileMailbox`). */
+internal fun afterFailure(send: PendingSend, cloud: String?, error: Exception): PendingSend =
+    if (cloud == null && error is IOException && error !is HostError) send.copy(status = SendStatus.Held)
+    else send.copy(status = SendStatus.Failed, error = error.message ?: "Couldn't send.")
+
+/** Can't reach a computer with no relay: text waits on this phone until it can (iOS `BotStore.holdsOnPhone`). */
+internal fun holdsOnPhone(cloud: String?, link: LinkState): Boolean = cloud == null && when (link) {
+    LinkState.Connecting -> true
+    is LinkState.Failed -> link.status !in listOf(403, 426)
+    else -> false
+}
+
+/** The computer can't take a message now, but text still goes: its relay holds it, or with no relay this phone does. */
+internal val AppState.holdsText get() = actualConnection is LinkState.ComputerOffline || holdsOnPhone(computer.cloud, actualConnection)
+
+/** No relay holds it, so taking it back touches only this phone (iOS `BotStore.cancelQueued`). */
+internal fun discardsOnPhone(cloud: String?, status: SendStatus): Boolean = cloud == null || status == SendStatus.Held
 
 internal suspend fun AppStore.savePending(send: PendingSend) {
     withContext(Dispatchers.IO) { requireNotNull(database).save(send) }
@@ -163,8 +334,35 @@ fun AppStore.respond(entry: Entry, option: String?) = action("permission:" + ent
     delay(2_000)
 }
 
+fun AppStore.decide(entry: Entry, option: String) = action("decision:" + entry.id) {
+    ready().call("respondDecision", body("entryId" to entry.id, "option" to option))
+    delay(2_000)
+}
+
+/** A queued message goes now: into the running turn when the agent can take it, else as the next turn (the host decides). */
+internal fun AppStore.steer(entry: Entry) = command("steer", body("botId" to entry.botId, "entryId" to entry.id), "steer:" + entry.id)
+
+/** A queued message never goes out: gone at once, back if the computer refuses (its error shows). */
+internal fun AppStore.unqueue(entry: Entry) {
+    pendingRemovals[entry.id] = entry.rev
+    mutableState.update { it.copy(entries = withRemovals(it.entries, pendingRemovals)) }
+    command("unqueue", body("botId" to entry.botId, "entryId" to entry.id), "unqueue:" + entry.id, onFailure = {
+        pendingRemovals.remove(entry.id)
+        contextScope.launch { refresh() }
+    })
+}
+
+/** [entries] as the screens read them, without the messages taken back: for good once the computer says so (the mirror keeps
+ *  its copy, for its rev guard), and those [pending] (with the `rev` each had) until its newer copy says what became of them
+ *  (removed, or sent because the agent had taken it first). */
+internal fun withRemovals(entries: List<Entry>, pending: Map<String, Long>): List<Entry> =
+    entries.filterNot { it.isRemoved || pending[it.id] == it.rev }
+
 /** Carries on with the bot's current conversation instead of the handoff. */
 internal fun AppStore.keepConversation(entry: Entry) = command("keepConversation", body("entryId" to entry.id), "handoff:" + entry.id)
+
+/** Continue on a chain stopped at its handoff limit: the bot gets "Continue" from the user; the notice's update drops the button. */
+internal fun AppStore.continueChain(entry: Entry) = command("continueChain", body("entryId" to entry.id), "continue:" + entry.id)
 
 /** Saves the user's version of a handoff that hasn't been sent; whether it did (its error shows). */
 internal suspend fun AppStore.editHandoff(entry: Entry, text: String): Boolean = try {

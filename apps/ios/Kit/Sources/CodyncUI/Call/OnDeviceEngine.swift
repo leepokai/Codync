@@ -20,6 +20,8 @@ final class OnDeviceEngine: VoiceEngine {
     @ObservationIgnored var onActivityChanged: ((Bool) -> Void)?
     /// What you're saying right now (live caption).
     private(set) var heard = ""
+    /// The recognizer's results since listening started, as one transcript.
+    @ObservationIgnored private var segments = SpeechSegments()
     /// The reply being read aloud.
     private(set) var said = ""
     /// Microphone loudness, 0…1, while listening.
@@ -32,9 +34,7 @@ final class OnDeviceEngine: VoiceEngine {
     }
 
     private let send: (String) -> Void
-    /// The language picked in the call settings, else the phone's.
-    private let recognizer = UserDefaults.standard.string(forKey: OnDeviceEngine.languageKey)
-        .flatMap { $0.isEmpty ? nil : SFSpeechRecognizer(locale: Locale(identifier: $0)) } ?? SFSpeechRecognizer()
+    private let recognizer = OnDeviceSpeech.recognizer()
     /// Created when the microphone first opens: touching the audio system starts it.
     @ObservationIgnored private lazy var engine = AVAudioEngine()
     /// The microphone tap is on.
@@ -43,6 +43,9 @@ final class OnDeviceEngine: VoiceEngine {
     private var task: SFSpeechRecognitionTask?
     /// Bumped per utterance so late callbacks from a cancelled recognition are dropped.
     private var generation = 0
+    /// When the current recognition started, and its failures in a row.
+    private var listenedAt = Date.distantPast
+    private var failures = RecognitionFailures()
     private var silence: Task<Void, Never>?
     private let synthesizer = AVSpeechSynthesizer()
     private var speechDone: SpeechDone?
@@ -80,12 +83,10 @@ final class OnDeviceEngine: VoiceEngine {
         guard await AVAudioApplication.requestRecordPermission() else {
             return fail("Allow the microphone for Codync in Settings to talk to your bots.", .microphone)
         }
-        guard await Self.speechAuthorized() else {
+        guard await OnDeviceSpeech.authorized() else {
             return fail("Allow Speech Recognition for Codync in Settings to talk to your bots.", .microphone)
         }
-        guard let recognizer, recognizer.isAvailable else {
-            return fail("Speech recognition isn't available for this language right now.", .provider)
-        }
+        guard let recognizer, recognizer.isAvailable else { return fail(OnDeviceSpeech.unavailable, .provider) }
         guard !ended else { return }
         do {
             try CallAudioSession.activate()
@@ -166,12 +167,10 @@ final class OnDeviceEngine: VoiceEngine {
     private func listen() {
         phase = .listening
         heard = ""
+        segments = SpeechSegments()
         guard !muted, !ended, let recognizer else { return }
         generation += 1
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = true
-        request.addsPunctuation = true
-        if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
+        let request = OnDeviceSpeech.request(for: recognizer)
         self.request = request
         let input = engine.inputNode
         input.removeTap(onBus: 0)
@@ -187,10 +186,12 @@ final class OnDeviceEngine: VoiceEngine {
             log.error("audio engine: \(error.localizedDescription, privacy: .public)")
             return fail("Couldn't use the microphone: \(error.localizedDescription)", .microphone)
         }
+        listenedAt = .now
         task = recognizer.recognitionTask(with: request, resultHandler: Self.results(self, generation: generation))
     }
 
     private func stopListening() {
+        if task != nil { failures.stopped(after: Date.now.timeIntervalSince(listenedAt)) }
         silence?.cancel()
         silence = nil
         generation += 1
@@ -206,9 +207,10 @@ final class OnDeviceEngine: VoiceEngine {
         level = 0
     }
 
-    fileprivate func recognized(_ text: String, final: Bool, generation: Int) {
+    fileprivate func recognized(_ text: String, final: Bool, ends: Bool, generation: Int) {
         guard generation == self.generation, phase == .listening else { return }
-        heard = text
+        heard = segments.heard(text, ends: ends)
+        if !text.isEmpty { failures.reset() }
         silence?.cancel()
         if final { return submit() }
         silence = Task {
@@ -224,6 +226,14 @@ final class OnDeviceEngine: VoiceEngine {
         if !text.isEmpty { send(text) }
         // Keep listening while the bot works: more messages fold into its next turn.
         listen()
+    }
+
+    /// The recognizer stopped with an error: what was heard goes and it listens again, unless it keeps failing right
+    /// away (otherwise the call would show listening and never hear anything).
+    fileprivate func recognitionFailed(generation: Int) {
+        guard generation == self.generation, phase == .listening else { return }
+        if failures.failed(after: Date.now.timeIntervalSince(listenedAt)) { return fail(OnDeviceSpeech.unheard, .provider) }
+        submit()
     }
 
     private func finishedSpeaking() {
@@ -254,17 +264,15 @@ final class OnDeviceEngine: VoiceEngine {
     }
 
     private nonisolated static func results(_ session: OnDeviceEngine, generation: Int) -> @Sendable (SFSpeechRecognitionResult?, (any Error)?) -> Void {
-        { result, _ in
-            guard let result else { return }
-            let text = result.bestTranscription.formattedString
-            let final = result.isFinal
-            Task { @MainActor in session.recognized(text, final: final, generation: generation) }
-        }
-    }
-
-    private nonisolated static func speechAuthorized() async -> Bool {
-        await withCheckedContinuation { done in
-            SFSpeechRecognizer.requestAuthorization { done.resume(returning: $0 == .authorized) }
+        { result, error in
+            let text = result?.bestTranscription.formattedString
+            let final = result?.isFinal ?? false
+            let ends = result?.endsSegment ?? false
+            let failed = error != nil
+            Task { @MainActor in
+                if let text { session.recognized(text, final: final, ends: ends, generation: generation) }
+                if failed { session.recognitionFailed(generation: generation) }
+            }
         }
     }
 

@@ -2,12 +2,13 @@
 
 use crate::LockExt;
 use anyhow::{Result, bail};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use super::MAX_PENDING_MESSAGES;
 
 const MAX_REQUEST_HOPS: u8 = 8;
+const _: () = assert!(MAX_REQUEST_HOPS == 8, "limit::NOTICE and its translations say 8");
 pub(super) const MAX_PENDING_MESSAGES_PER_SENDER: usize = 16;
 
 /// Nothing waits on a message, so there is no wait graph: capacity and the chain's hop count
@@ -30,12 +31,21 @@ pub(super) struct RequestState {
     pub(super) active: HashMap<String, Turn>,
     pub(super) messages: usize,
     pub(super) messages_by_sender: HashMap<String, usize>,
+    /// Turns whose chain already stopped at the hop limit: the user gets one notice per turn.
+    stopped: HashSet<String>,
 }
 
 impl Requests {
+    #[cfg(test)]
     pub(super) fn reserve_message(&self, from: &str) -> Result<u8> {
+        self.reserve_message_in(from, from)
+    }
+
+    /// Takes one of `from`'s places for a message it sends from `turn`'s running turn: its own, or that of a thread of
+    /// its that acts as it. The chain's hops so far are that turn's.
+    pub(super) fn reserve_message_in(&self, from: &str, turn: &str) -> Result<u8> {
         let mut state = self.0.locked();
-        let hops = state.next_hop(from)?;
+        let hops = state.next_hop(turn)?;
         if state.messages >= MAX_PENDING_MESSAGES {
             bail!("too many pending bot messages");
         }
@@ -60,26 +70,51 @@ impl Requests {
     }
 
     pub fn start_turn(&self, bot: &str, turn: Turn) {
-        self.0.locked().active.insert(bot.to_owned(), turn);
+        let mut state = self.0.locked();
+        state.active.insert(bot.to_owned(), turn);
+        state.stopped.remove(bot);
+    }
+
+    /// Whether `turn`'s running turn may make no more handoffs.
+    pub(super) fn at_hop_limit(&self, turn: &str) -> bool {
+        self.0.locked().at_hop_limit(turn)
+    }
+
+    /// Whether this is the first time `turn`'s running turn was stopped at a limit: the user gets one notice a turn.
+    pub(super) fn first_stop(&self, turn: &str) -> bool {
+        self.0.locked().stopped.insert(turn.to_owned())
+    }
+
+    /// Whether `bot`'s running turn answers another bot's request.
+    pub fn answering(&self, bot: &str) -> bool {
+        matches!(self.0.locked().active.get(bot), Some(Turn::Request))
     }
 
     /// `bot`'s turn ended (or it was deleted): it can't send more until its next turn.
     pub fn end_turn(&self, bot: &str) {
-        self.0.locked().active.remove(bot);
+        let mut state = self.0.locked();
+        state.active.remove(bot);
+        state.stopped.remove(bot);
     }
 }
 
 impl RequestState {
+    fn at_hop_limit(&self, turn: &str) -> bool {
+        matches!(self.active.get(turn), Some(&Turn::Chat(hops)) if hops >= MAX_REQUEST_HOPS)
+    }
+
     fn next_hop(&self, from: &str) -> Result<u8> {
+        if self.at_hop_limit(from) {
+            bail!(
+                "bot request hop limit ({MAX_REQUEST_HOPS}) reached: the user has a Continue button in the chat to start a new chain; tell them where things stand and end your turn"
+            )
+        }
         match self.active.get(from) {
             None => bail!("the requesting bot is no longer working"),
             Some(Turn::Request) => {
                 bail!(
                     "message_bot isn't available while answering another bot's request: say what you need in your reply"
                 )
-            }
-            Some(&Turn::Chat(hops)) if hops >= MAX_REQUEST_HOPS => {
-                bail!("bot request hop limit ({MAX_REQUEST_HOPS}) reached; ask the user before starting another chain")
             }
             Some(&Turn::Chat(hops)) => Ok(hops + 1),
         }

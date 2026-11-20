@@ -33,11 +33,11 @@ struct CallView: View {
 
     private var bot: Bot? { model.bots[botId] }
     private var call: String { callID.uuidString }
-    private var color: Color { bot.map { AvatarPalette.color($0.avatarColor) } ?? Palette.accent }
 
     var body: some View {
         VStack(spacing: 6) {
             bar
+            if let result = session?.searchResult { CallSearchView(result: result) }
             if case .failed(let message, _) = session?.phase {
                 line(message, color: Palette.danger)
             } else if session?.phase == .interrupted {
@@ -52,6 +52,7 @@ struct CallView: View {
         .padding(.horizontal, 12)
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: session?.phase)
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: notice)
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: session?.searchResult?.html)
         .onAppear {
             startedAt = .now
             link = CallLink(model: model, botId: botId, call: call)
@@ -128,7 +129,7 @@ struct CallView: View {
             let voice = VoiceSettings.voice(provider)
             engine = switch provider {
             case .openAI: OpenAIRealtimeEngine(model: chosen, voice: voice, link: link)
-            case .gemini: GeminiLiveEngine(model: chosen, voice: voice, link: link)
+            case .gemini: GeminiLiveEngine(model: chosen, voice: voice, googleSearch: VoiceSettings.googleSearch, link: link)
             }
             cloudStartedAt = .now
         } else {
@@ -137,6 +138,7 @@ struct CallView: View {
         }
         quality.begin(engine.analyticsName)
         (engine as? GeminiLiveEngine)?.onStall = { [quality] in quality.stalled() }
+        (engine as? GeminiLiveEngine)?.onSearch = { [quality] in quality.search($0) }
         engine.onActivityChanged = { [weak engine, model, callID] active in
             if active {
                 model.beginVoiceCall(callID, hear: { [weak engine, activity] cue in
@@ -185,7 +187,7 @@ struct CallView: View {
             avatar
             LevelDots(level: session?.level ?? 0, speaking: session?.phase == .speaking,
                       working: bot?.isWorking == true, connecting: session?.phase.isConnecting ?? true,
-                      color: color, reduceMotion: reduceMotion)
+                      reduceMotion: reduceMotion)
                 .frame(minWidth: Self.dotsWidth, maxWidth: Self.dotsMaxWidth, minHeight: Self.dotsHeight, maxHeight: Self.dotsHeight)
                 .accessibilityLabel(statusText)
             // Audio leaves the phone: say where.

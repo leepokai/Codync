@@ -2,6 +2,7 @@ import type { SignInFailure, SignInProvider } from './analytics'
 import type { SharedFile } from './models'
 import type { SSHBridge } from './ssh'
 import type { ScreenAgentState } from './computer-access'
+import type { AlertKind, DesktopAlert } from './alerts'
 import type { IslandRect, IslandScreen, IslandSummary } from './island'
 import type { VoiceKey, VoiceShortcut } from './voice-shortcut'
 import type { ErrorReport } from './error-report'
@@ -32,9 +33,17 @@ export interface HostSnapshot {
   logPath: string
 }
 
+/** An account computer as the relay last told it: connected (`online`), not (`offline`: a cloud computer asleep, or
+ * one that's off), or not yet but on its way (`waking`: the relay is starting a cloud computer asleep). */
+export type RelayPresence = 'online' | 'offline' | 'waking'
+/** An account computer the relay says isn't connected. */
+export type RelayAbsence = Exclude<RelayPresence, 'online'>
+
 export interface CallError {
   status: number
   message: string
+  /** An account computer that isn't connected to the relay. */
+  presence?: RelayAbsence
 }
 
 /** A menu image as PNG data URLs drawn for 1x and 2x screens; each screen shows its own. */
@@ -43,8 +52,7 @@ export interface TrayImage {
   x2: string
 }
 
-/** What the tray menu shows; the renderer owns the stores and sends this on every change. */
-/** The SF Symbols beside the tray menu's actions. */
+/** The SF Symbols beside the tray menu's actions and its computers. */
 export const TRAY_SYMBOLS = [
   'macwindow',
   'qrcode',
@@ -56,15 +64,50 @@ export const TRAY_SYMBOLS = [
   'display',
   'gearshape',
   'power',
+  'laptopcomputer',
+  'desktopcomputer',
+  'macmini',
+  'macstudio',
+  'macpro.gen3',
+  'cloud',
 ] as const
 export type TraySymbol = (typeof TRAY_SYMBOLS)[number]
 
+/** One usage limit in the tray menu: its line and bar, or a note with no bar. */
+export interface TrayUsageLine {
+  title: string
+  bar: TrayImage | null
+}
+
+/** One login of an agent with its limits. */
+export interface TrayUsageLogin {
+  name: string
+  lines: TrayUsageLine[]
+}
+
+/** An agent's logins, the default one first: one when it has no login profiles. */
+export interface TrayUsageAgent {
+  name: string
+  icon: TrayImage | null
+  logins: TrayUsageLogin[]
+}
+
+/** A computer's usage limits by agent. */
+export interface TrayUsageComputer {
+  /** Null while the app has one computer: its agents then list in the menu itself. */
+  name: string | null
+  symbol: TraySymbol
+  agents: TrayUsageAgent[]
+}
+
+/** What the tray menu shows; the renderer owns the stores and sends this on every change. */
 export interface TraySummary {
   status: string
   canPair: boolean
   bots: { ref: string; name: string; detail: string; working: boolean; avatar: TrayImage | null }[]
   approval: string | null
-  usage: { name: string; icon: TrayImage | null; lines: { title: string; bar: TrayImage | null }[] }[]
+  /** Every computer with usage limits to show. */
+  usage: TrayUsageComputer[]
   screen: {
     enabled: boolean
     subtitle: string
@@ -79,13 +122,15 @@ export interface TraySummary {
   needsAttention: boolean
   textSize: number
   usageIconStyle: 'character' | 'original'
-  /** The menu bar is a system menu, so the main process translates its labels from this. */
-  language: 'en' | 'zh' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es'
+  /** The tray and the application menu are system menus, so the main process translates their labels from this. */
+  language: 'en' | 'zh' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'pt-BR' | 'ru' | 'it'
 }
 
 /** Things the tray menu (or the app menu) asks the window to do. */
 export type WindowCommand =
   | { kind: 'openBot'; ref: string }
+  /** A system notification was clicked: opens its bot (`desktop_notification_opened`). */
+  | { kind: 'openAlert'; ref: string; alert: AlertKind }
   | { kind: 'stopBot'; ref: string }
   | { kind: 'reviewApprovals' }
   | { kind: 'confirmReset' }
@@ -98,6 +143,10 @@ export type WindowCommand =
   | { kind: 'networkSettings' }
   | { kind: 'newBot' }
   | { kind: 'search' }
+  /** ⌘F: the find bar over the open conversation. */
+  | { kind: 'find' }
+  /** ⌘G / ⇧⌘G: the next or previous match of the open find bar. */
+  | { kind: 'findStep'; forward: boolean }
   | { kind: 'toggleSidebar' }
   | { kind: 'toggleDetails' }
   | { kind: 'refresh' }
@@ -137,7 +186,8 @@ export interface AccountState {
 }
 
 export type SpeechEvent =
-  | { type: 'partial' | 'final'; text: string }
+  /** `ends`: the recognizer marked the end of what was said, without a final result (it starts over after a pause). */
+  | { type: 'partial' | 'final'; text: string; ends?: boolean }
   | { type: 'level'; value: number }
   | { type: 'started' }
   | { type: 'stopped' }
@@ -168,6 +218,14 @@ export interface CodyncBridge {
     /** SSE on a loopback host: each `data:` line, then `onEnd` (with an error when it failed). */
     stream(url: string, token: string, onData: (line: string) => void, onEnd: (error: CallError | null) => void): () => void
   }
+  /** An account computer over the relay's encrypted channel, with the same calls and streams as `host`. */
+  channel: {
+    call(computerId: string, signKey: string, method: string, body: unknown, timeoutMs: number): Promise<unknown>
+    /** `path`: `/events?…` or `/term/{id}`, as on a loopback host. */
+    stream(computerId: string, signKey: string, path: string, onData: (line: string) => void, onEnd: (error: CallError | null) => void): () => void
+    /** Each presence the relay tells an open channel, as it comes. */
+    onPresence(cb: (p: { computerId: string; presence: RelayPresence }) => void): () => void
+  }
   account: {
     state(): Promise<AccountState>
     onChange(cb: (s: AccountState) => void): () => void
@@ -195,6 +253,15 @@ export interface CodyncBridge {
     setCalling(on: boolean): void
   }
   ssh: SSHBridge
+  /** System notifications for hosts' alerts (shared/alerts.ts): off until the user turns them on, since a phone gets the same ones. */
+  notifications: {
+    /** False where the system shows none (a Linux desktop without a notification server). */
+    supported: boolean
+    enabled(): Promise<boolean>
+    setEnabled(on: boolean): Promise<boolean>
+    /** Shown only while turned on; a click opens its bot. */
+    show(alert: DesktopAlert): void
+  }
   /** The notch island (shared/island.ts): its setting, the chat window's summary, and the island window's side. */
   island: {
     /** False where a window can't place itself at the top of the screen (Linux on Wayland). */
@@ -224,6 +291,8 @@ export interface CodyncBridge {
   /** The Codync cloud's `/v1` API with the signed-in session (and the device key for `signed`). */
   cloud: {
     request(method: string, path: string, body: unknown, signed: boolean): Promise<{ ok: true; value: unknown } | { ok: false; error: { status: number; code: string; message: string | null } }>
+    /** Asks a Codync Cloud computer for this device's access and waits for its answer (it approves by itself). */
+    requestAccess(computerId: string): Promise<{ ok: true; value: { status: string } } | { ok: false; error: { status: number; code: string; message: string | null } }>
   }
   updates: {
     state(): Promise<UpdateState>
@@ -247,10 +316,15 @@ export interface CodyncBridge {
     cancel(id: string): Promise<void>
   }
   app: {
+    /** Whether someone is looking at this window (shown, and the computer in use), then each change. */
+    attended(): Promise<boolean>
+    onAttended(cb: (attended: boolean) => void): () => void
     /** Error tracking: an uncaught error in this window (shared/error-report.ts). */
     reportError(report: ErrorReport): void
     openExternal(url: string): void
     copy(text: string): void
+    /** The remote screen keyboard took or lost focus: while it has it, shortcuts go to the other computer, not the menu. */
+    remoteKeyboard(on: boolean): void
     /** Files picked in the system dialog: name and bytes. */
     pickFiles(): Promise<PickedFile[]>
     /** A bot export (.zip) picked in the system dialog: its path on this computer, or null. */

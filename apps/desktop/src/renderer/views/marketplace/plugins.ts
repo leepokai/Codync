@@ -1,6 +1,7 @@
 import { Observable, useModel } from '../../lib/observable'
 import type { BotStore } from '../../store/bot-store'
-import { market, needsSignIn, sleep, type InstalledConnector, type InstalledSkill, type MarketConnector } from './market-models'
+import { market, sleep, type InstalledConnector, type InstalledSkill, type MarketConnector } from './market-models'
+import { signInCode } from './sign-in-code'
 
 /** What's installed on one computer, for the Marketplace and bot settings (kit BotStore's plugin state). */
 export class Plugins extends Observable {
@@ -42,13 +43,15 @@ export class Plugins extends Observable {
     return this.after(market.finishConnectorSignIn(await this.store.ready(), state, code, error))
   }
 
-  /** Waits while the user signs in in the computer's browser (the host catches the return). */
+  /**
+   * Waits while the user signs in in the computer's browser (the host catches the return).
+   * A connector with a saved token reads `none` until then, so only `signedIn` ends the wait.
+   */
   async waitForSignIn(id: string) {
     for (let i = 0; i < 150; i++) {
       await sleep(2000)
       await this.refresh()
-      const c = this.installedConnectors.find((c) => c.id === id)
-      if (c && !needsSignIn(c)) return
+      if (this.installedConnectors.find((c) => c.id === id)?.auth === 'signedIn') return
     }
   }
 
@@ -72,24 +75,30 @@ export class Plugins extends Observable {
    * Signs in to a remote connector (host/src/market/oauth.rs). With an `app` callback the system
    * browser returns `codync://oauth?…` and the code goes to the host; with `host` the browser
    * returns to the host directly and we wait for the connector to flip to signed in.
-   * Returns quietly when the user cancels.
+   * A sign-in with a code (GitHub) shows the code first, then waits the same way.
+   * False when the user cancels, so the caller stops there too.
    */
   async signIn(id: string) {
     const plan = await market.connectorSignIn(await this.store.ready(), id)
-    if (!URL.canParse(plan.url)) return
+    if (!URL.canParse(plan.url)) return false
+    if (plan.code) {
+      if (!(await signInCode.ask(plan.code))) return false
+      window.codync.app.copy(plan.code)
+    }
     if (plan.callback !== 'app') {
       window.codync.app.openExternal(plan.url)
       await this.waitForSignIn(id)
-      return
+      return true
     }
     let back: string
     try {
       back = await window.codync.app.authenticate(plan.url, window.codync.appScheme)
     } catch {
-      return
+      return false
     }
     const items = new URL(back).searchParams
     await this.finishConnectorSignIn(items.get('state') ?? '', items.get('code'), items.get('error_description') ?? items.get('error'))
+    return true
   }
 }
 

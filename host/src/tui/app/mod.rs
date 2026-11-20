@@ -2,30 +2,44 @@
 
 mod analytics;
 mod approvals;
+mod auto_order;
 mod bot;
+mod computer_name;
+mod credentials;
 mod editor;
 mod events;
 mod exchange;
 mod fallbacks;
+mod find;
 mod forms;
 mod group_form;
 mod input;
+mod kofi;
+mod login_profiles;
 mod model;
 mod navigate;
 mod new_bot;
 mod overlay_keys;
 mod pair;
+mod queue;
 mod roster;
 mod section_order;
 mod slash;
 mod steps;
 mod ui;
+mod usage_chooser;
+mod whats_new;
+mod work;
 
 pub use approvals::parse_modes;
 pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};
 pub use editor::Editor;
 pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group, rows};
+pub use find::{Find, match_ranges};
+pub use kofi::KofiSheet;
+pub(in crate::tui) use kofi::URL as KOFI_URL;
 pub use model::{After, Entry, Kind, Mark, Msg, Status};
+pub use queue::Queued;
 pub use roster::{RosterLine, cursor_line, rename_fold, roster_lines, stops};
 pub use slash::SlashAction;
 pub(super) use steps::{running_turn, working_steps};
@@ -33,6 +47,11 @@ pub use ui::{
     ACTIONS, Action, COLORS, Click, Confirm, ConfirmAct, Dir, FIELDS, FILTERS, Field, Focus, FolderMode, FolderPicker,
     Form, Goto, GotoItem, GroupField, GroupForm, Hits, NewBot, NewBotField, Overlay, PairCode, SHAPES, Toast, Toggle,
     TraceMode, Width,
+};
+pub use whats_new::WhatsNew;
+pub use work::{
+    Background, MAX_THREADS, Sections, Source, WorkStatus, WorkTask, can_cut_in, counts, shared_line, threads_at_once,
+    word,
 };
 
 use crate::tui::l10n::tr;
@@ -58,6 +77,8 @@ pub struct App {
     pub client: Client,
     pub(super) tx: UnboundedSender<Msg>,
     pub url: String,
+    /// Whether the host is this computer's. Attached with `--url` nothing tells: a tunnel's address looks local.
+    pub on_this_computer: bool,
     pub host: String,
     pub home: String,
     /// The host's version (`hello`): features newer than `MIN_HOST` check it.
@@ -118,6 +139,8 @@ pub struct App {
     pub reply: Option<String>,
     /// A message picked to act on: reply, react, copy, save its files (`r`, then j/k and ↵).
     pub pick: Option<String>,
+    /// Find in the open conversation (`/` or ^f).
+    pub find: Option<Find>,
     /// Chat lines showing their full text: a handoff (`o` on the picked line).
     pub unfolded: HashSet<String>,
     /// Roster sections showing their label alone (`z`); this run only.
@@ -126,6 +149,8 @@ pub struct App {
     pub section_order: Vec<String>,
     /// Voice calls' own messages, by call id (`callEntries`): the chat loaded here may not reach back to them.
     pub call_entries: HashMap<String, Vec<Entry>>,
+    /// Background threads' own transcripts, by thread id (`threadEntry` events, `threadEntries`): never part of a chat.
+    pub thread_entries: super::manage::ThreadEntries,
     pub market: (Vec<Toggle>, Vec<Toggle>),
     /// Installed connectors and skills as the host lists them.
     pub plugins: (Vec<Value>, Vec<Value>),
@@ -151,6 +176,10 @@ pub struct App {
     pub hint: Option<(String, Instant)>,
     /// Whether this computer shares usage analytics (`None`: before the first `hello`).
     pub analytics: Option<bool>,
+    /// Whether a bot with a new message moves to the top of the roster (`None`: before `hello`, or an older host).
+    pub auto_order: Option<bool>,
+    /// Whether `resetCredentials` can be used here (`hello`): not on a Codync Cloud computer or an older host.
+    pub credentials_reset: bool,
     /// What usage analytics has reported this run (`app_opened`, `screen_viewed`).
     seen: analytics::Seen,
 }
@@ -163,6 +192,7 @@ impl App {
             client,
             tx,
             url,
+            on_this_computer: true,
             host: String::new(),
             home: String::new(),
             host_version: String::new(),
@@ -204,10 +234,12 @@ impl App {
             chat_top: false,
             reply: None,
             pick: None,
+            find: None,
             unfolded: HashSet::new(),
             folded: HashSet::new(),
             section_order: Vec::new(),
             call_entries: HashMap::new(),
+            thread_entries: super::manage::ThreadEntries::default(),
             market: (vec![], vec![]),
             plugins: (vec![], vec![]),
             models: HashMap::new(),
@@ -222,11 +254,15 @@ impl App {
             floors: HashMap::new(),
             hint: None,
             analytics: None,
+            auto_order: None,
+            credentials_reset: false,
             seen: analytics::Seen::default(),
         }
     }
 
     pub fn call(&self, method: &'static str, body: Value, after: After) {
+        // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
+        let (method, body) = super::net::old_host::outgoing(&self.host_version, method, body);
         self.client.spawn_call(method, body, after, self.tx.clone());
     }
 
@@ -239,7 +275,7 @@ impl App {
     pub fn counts(&self) -> [usize; 4] {
         let mut c = [0; 4];
         for b in self.bots.values().filter(|b| !b.hidden) {
-            match b.mark() {
+            match b.roster_mark() {
                 Mark::Need => c[0] += 1,
                 Mark::Work => c[1] += 1,
                 Mark::Unread => c[2] += 1,
@@ -257,14 +293,42 @@ impl App {
         // line when the call ends, or when its app went away. A file or an artifact the bot sent stays, to be opened.
         let opens = |e: &Entry| e.artifact().is_some() || e.data["files"].as_array().is_some_and(|f| !f.is_empty());
         v.retain(|e| e.kind == Kind::Notice || e.call().is_none() || opens(e));
+        // A queued message the user took back (`unqueue`).
+        v.retain(|e| e.data["removed"] != true);
         // A message sent mid-turn belongs after that turn's reply.
         v.sort_by_key(|e| (e.turn, e.seq));
         v
     }
 
     pub fn pending(&self) -> Option<&Entry> {
+        self.to_answer(|_| true)
+    }
+
+    /// The newest pending card of one kind: F-keys answer the choice card and y/a/n/N the approval, even when a
+    /// card of the other kind came after it.
+    pub fn pending_of(&self, kind: Kind) -> Option<&Entry> {
+        self.to_answer(|e| e.kind == kind)
+    }
+
+    /// The selected chat's pending card that `wanted` takes and the keys answer: the picked one (Work's `↵` on an
+    /// task that needs you picks its card), else the newest.
+    fn to_answer(&self, wanted: impl Fn(&Entry) -> bool) -> Option<&Entry> {
         let id = self.selected.as_ref()?;
-        self.lane(id).into_iter().rev().find(|e| e.pending())
+        let cards: Vec<&Entry> = self.lane(id).into_iter().filter(|e| e.pending() && wanted(e)).collect();
+        cards.iter().find(|e| self.pick.as_ref() == Some(&e.id)).or(cards.last()).copied()
+    }
+
+    /// The card `task` waits on in `bot`'s chat (an approval, a choice, a sign-in): the newest one, or, when that is a
+    /// sign-in and another (the agent the turn left signed out, while its fallback was too) holds the task's message,
+    /// that one, whose sign-in sends it again.
+    pub fn card_of(&self, bot: &str, task: &WorkTask) -> Option<&Entry> {
+        let waits = |e: &&Entry| (e.pending() || e.waits_for_sign_in()) && e.data["task"] == task.id.as_str();
+        let cards: Vec<&Entry> = self.lane(bot).into_iter().filter(waits).collect();
+        let newest = *cards.last()?;
+        if !newest.waits_for_sign_in() {
+            return Some(newest);
+        }
+        Some(cards.into_iter().rfind(|e| e.holds_messages()).unwrap_or(newest))
     }
 
     /// The message the composer replies to, in the selected chat.
@@ -314,11 +378,13 @@ impl App {
             || self.hint.is_some()
             || !self.online
             || !self.answering.is_empty()
-            || self.bots.values().any(|b| b.status == Status::Working)
+            // A working task's time runs while its bot's chat is idle.
+            || self.bots.values().any(|b| b.status == Status::Working || b.work.iter().any(|i| i.status.live()))
     }
 
-    fn select(&mut self, id: &str) {
+    pub(in crate::tui) fn select(&mut self, id: &str) {
         if self.selected.as_deref() != Some(id) {
+            self.close_find();
             self.selected = Some(id.to_owned());
             self.reply = None;
             self.pick = None;
@@ -334,7 +400,7 @@ impl App {
         let ids: Vec<(String, bool)> = self
             .roster()
             .iter()
-            .map(|b| (b.id.clone(), b.mark() == want && (want != Mark::Need || b.away().is_none())))
+            .map(|b| (b.id.clone(), b.roster_mark() == want && (want != Mark::Need || b.away().is_none())))
             .collect();
         let start = self.selected.as_ref().and_then(|s| ids.iter().position(|(x, _)| x == s)).map_or(0, |i| i + 1);
         let found = (0..ids.len()).map(|k| &ids[(start + k) % ids.len()]).find(|(_, hit)| *hit).cloned();
@@ -385,7 +451,7 @@ impl App {
         if self.chat_visible()
             && self.term_focused
             && let Some(b) = self.bot()
-            && b.unread > 0
+            && b.unseen() > 0
         {
             let id = b.id.clone();
             if self.reading.insert(id.clone()) {
@@ -417,16 +483,20 @@ pub fn mismatch_text(m: &crate::compat::Mismatch, host: &str) -> String {
     let host = if host.is_empty() { "the computer" } else { host };
     match m {
         crate::compat::Mismatch::UpdateApp { minimum } => {
-            format!("Update this app: {host} needs Codync {minimum} or newer here.")
+            format!("Update this app: the app on this computer needs Codync {minimum} or newer ({host} requires it).")
         }
         crate::compat::Mismatch::UpdateHost { version, minimum } => format!(
-            "Update Codync on {host}: it runs {version}, this app needs {minimum} or newer. ^k → Check for updates."
+            "Update Codync on {host}: it runs {version}; that computer needs Codync {minimum} or newer. ^k → Check for updates."
         ),
     }
 }
 
 /// OSC 52: the terminal puts it on the clipboard, over SSH too.
 pub fn copy(text: &str) {
+    // Tests run in the developer's terminal: leave its clipboard alone.
+    if cfg!(test) {
+        return;
+    }
     let mut out = std::io::stdout();
     let _ = write!(out, "\x1b]52;c;{}\x07", base64::Engine::encode(&base64::engine::general_purpose::STANDARD, text));
     let _ = out.flush();
@@ -474,9 +544,12 @@ pub fn fuzzy(query: &str, fields: &[&str]) -> bool {
     })
 }
 
+/// `path` with the computer's `home` folder as `~`, on either kind of separator; unchanged outside the home folder
+/// (`/Users/me2` isn't in `/Users/me`) or without one.
 pub fn tilde(path: &str, home: &str) -> String {
+    let home = home.trim_end_matches(['/', '\\']);
     match path.strip_prefix(home) {
-        Some(rest) if !home.is_empty() => format!("~{rest}"),
+        Some(rest) if !home.is_empty() && (rest.is_empty() || rest.starts_with(['/', '\\'])) => format!("~{rest}"),
         _ => path.to_owned(),
     }
 }
@@ -485,6 +558,52 @@ pub fn tilde(path: &str, home: &str) -> String {
 pub(in crate::tui) fn test_app() -> App {
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     App::new(Client::new("http://127.0.0.1:1", None), tx, String::new())
+}
+
+/// A host that hands each request it gets to `requests`, answering them all alike: its address and `requests`.
+#[cfg(test)]
+pub(in crate::tui) async fn recording_host() -> (String, tokio::sync::mpsc::UnboundedReceiver<String>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("a free port");
+    let base = format!("http://{}", listener.local_addr().expect("its address"));
+    let (seen, requests) = tokio::sync::mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            let mut request = Vec::new();
+            while !request.ends_with(b"}") {
+                let mut chunk = [0; 4096];
+                let read = socket.read(&mut chunk).await.expect("a request");
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&chunk[..read]);
+            }
+            let _ = seen.send(String::from_utf8_lossy(&request).into_owned());
+            let answer = b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}";
+            let _ = socket.write_all(answer).await;
+        }
+    });
+    (base, requests)
+}
+
+/// The next request [`recording_host`] got.
+#[cfg(test)]
+pub(in crate::tui) async fn next_request(requests: &mut tokio::sync::mpsc::UnboundedReceiver<String>) -> String {
+    tokio::time::timeout(Duration::from_secs(10), requests.recv())
+        .await
+        .expect("the host hears of it in time")
+        .expect("the host is up")
+}
+
+/// What `draw` leaves in `area`, line by line.
+#[cfg(test)]
+pub(in crate::tui) fn screen(
+    area: ratatui::layout::Rect,
+    draw: impl FnOnce(&mut ratatui::buffer::Buffer),
+) -> Vec<String> {
+    let mut buf = ratatui::buffer::Buffer::empty(area);
+    draw(&mut buf);
+    (0..area.height).map(|y| (0..area.width).map(|x| buf[(x, y)].symbol()).collect()).collect()
 }
 
 #[cfg(test)]

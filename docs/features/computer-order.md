@@ -13,6 +13,17 @@ Alt+Up/Down on the heading; iOS exposes Move up/down accessibility actions.
 Filtering, folding and ordering are device-local preferences. The iPhone and each
 desktop installation keep their own order, even when signed in to the same account.
 
+## Display name
+
+The name every app shows for a computer is the host's (`computer_name` in `host/src/remote/managed.rs`), sent in
+`hello`, pairing, the account claim and `/v1/host/register`. It is the name the user gave it, else its hostname, so
+two hosts on one machine (two users) can be told apart. `setComputerName {name}` (Control scope) stores it, trimmed
+and cut to the cloud's 64 UTF-16 units; empty goes back to the hostname. Connected apps hear a `name` event, the
+others read it in their next `hello`, and the host registers again so the account's computer list has it. A cloud
+computer is named in Codync Cloud instead (the call refuses there). iPhone and Android: **Rename…** in the
+computer card's long-press menu in Computer management; desktop: the pencil on its card in Settings › Computers;
+terminal UI: **Computer name** in the command palette.
+
 ## Local persistence
 
 Desktop saves the order in localStorage, separately for each account and cloud
@@ -48,6 +59,14 @@ pinned rows show no sections, so pinned bots reorder among all pinned bots). Unt
 bots are first arranged, every position is 0 and they sort by recent activity; after that they
 stay put and a new bot appears at the top of its band. Hidden bots keep their position for when
 they return.
+
+**Move active bots to the top** (a switch per computer, off by default; `setAutoOrder`, read from
+`hello.autoOrder`, kept in the host's `kv`; apps connected when it's switched hear an `autoOrder` event, so every device's switch shows it): while on, a message the roster preview shows (the
+user's, or an agent's finished reply, so conversations and routine runs alike) gives its chat a
+position above every other bot (`Hub::order_on_message`). Clients sort as before, so the bot rises to
+the top of its band and section. Dragging still works; the bot's next message moves it again. Phones
+show the switch in the computer's card (Bots tab connection status › Manage computers), the desktop app in the computer's
+settings, the TUI in the command palette.
 
 A bot or group chat can be in one section, a name the user picks (`section`, set with `updateBot`;
 `renameSection` renames, merges into another section's name, or removes one; `host/src/hub/sections.rs`).

@@ -1,0 +1,33 @@
+/* Find in the conversation: floats under the top chrome, above the chat, filled with the floating-layer shadow. */
+.find-bar {
+  position: absolute;
+  top: 60px;
+  right: 16px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 6px 0 12px;
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  box-shadow: var(--shadow-m);
+}
+.find-bar .search-field {
+  width: 200px;
+}
+.find-count {
+  flex: none;
+  min-width: 36px;
+  text-align: right;
+}
+
+/* The matches in the conversation (CSS custom highlights): all of them, and the one stepped to. */
+::highlight(find-match) {
+  background-color: color-mix(in srgb, var(--attention) 40%, transparent);
+  color: inherit;
+}
+::highlight(find-active) {
+  background-color: var(--attention);
+  color: var(--background);
+}

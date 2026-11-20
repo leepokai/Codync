@@ -2,25 +2,21 @@ import Image from "next/image";
 import { DeviceMobile, LinuxLogo, WindowsLogo } from "@phosphor-icons/react/ssr";
 import { AppleLogo } from "./apple-logo";
 import CopyCommand from "./copy-command";
-import Eyebrow from "./eyebrow";
 import Halftone from "./halftone";
 import Reveal from "./reveal";
-import { ANDROID_TEST, APP_STORE, DMG, INSTALL_SH, LINUX, LINUX_ARM, WINDOWS } from "../links";
+import SectionHeader from "./section-header";
+import { APP_STORE, DMG, GOOGLE_PLAY, INSTALL_SH, LINUX, LINUX_ARM, WINDOWS } from "../links";
 
 export default function Install() {
   return (
-    <section id="install" className="relative overflow-hidden px-4 py-20 sm:px-6 md:py-28">
+    <section id="install" className="relative overflow-hidden px-4 py-24 sm:px-6 md:py-32">
       <Halftone className="w-[36rem] max-w-[80vw] text-neutral-50 opacity-[0.12]" />
       <div className="relative mx-auto max-w-6xl">
-        <Reveal>
-          <Eyebrow>Install</Eyebrow>
-          <h2 className="text-3xl font-semibold tracking-tight text-neutral-50 md:text-4xl">Install once.</h2>
-          <p className="mt-4 max-w-[36rem] text-lg leading-relaxed text-neutral-400">
-            Put Codync on the computer your agents run on, then pair your phone from it.
-          </p>
-        </Reveal>
+        <SectionHeader title="Install once.">
+          Put Codync on the computer your agents run on, then pair your phone from it.
+        </SectionHeader>
 
-        <div className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-14 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Reveal className="h-full">
             <div className="flex h-full flex-col rounded-3xl bg-neutral-900 p-8">
               <AppleLogo size={28} weight="fill" className="text-neutral-50" />
@@ -82,16 +78,15 @@ export default function Install() {
               <DeviceMobile size={28} weight="fill" className="text-neutral-50" />
               <h3 className="mt-5 text-xl font-semibold text-neutral-50">iPhone &amp; Android</h3>
               <p className="mt-2 flex-1 leading-relaxed text-neutral-400">
-                Get the app, then scan the code from <span className="text-neutral-200">Pair iPhone…</span> in the
+                Get the app, then scan the code from <span className="text-neutral-200">Pair phone…</span> in the
                 Mac menu bar, the Windows or Linux app, or <code className="font-mono text-neutral-200">codync-host pair</code>.
               </p>
               <div className="mt-5 flex flex-wrap gap-3">
                 <a href={APP_STORE} target="_blank" rel="noopener noreferrer" className="inline-flex transition hover:opacity-80 active:scale-[0.98]">
                   <Image src="/app-store-badge.svg" alt="Download on the App Store" width={120} height={40} className="h-11 w-auto" />
                 </a>
-                {/* Android is in closed testing: the badge opens the tester sign-up form. */}
-                <a href={ANDROID_TEST} target="_blank" rel="noopener noreferrer" className="inline-flex transition hover:opacity-80 active:scale-[0.98]">
-                  <Image src="/google-play-badge.svg" alt="Join the Android test on Google Play" width={180} height={53} className="h-11 w-auto" />
+                <a href={GOOGLE_PLAY} target="_blank" rel="noopener noreferrer" className="inline-flex transition hover:opacity-80 active:scale-[0.98]">
+                  <Image src="/google-play-badge.svg" alt="Get it on Google Play" width={180} height={53} className="h-11 w-auto" />
                 </a>
               </div>
             </div>

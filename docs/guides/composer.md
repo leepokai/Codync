@@ -32,7 +32,7 @@ iPhone and the desktop app show local image attachments as thumbnails above the 
 with a remove button in the upper-right corner. The entire image fits inside the
 preview; its original data remains the attachment sent to the host. On iPhone,
 ImageIO creates display-sized thumbnails off the main actor; the desktop app
-(`views/thread/ComposerAttachment.tsx`) lets the browser decode the image. Invalid image data falls
+(`views/chat/ComposerAttachment.tsx`) lets the browser decode the image. Invalid image data falls
 back to the filename chip, as do non-image files. Multiple attachments scroll
 horizontally and remain removable individually.
 
@@ -49,6 +49,23 @@ While replying to a message, the composer shows its quote on top: `text.bubble`,
 on one line and an X that cancels (the terminal UI: `↳ “…”`, esc cancels). The
 placeholder reads "Reply…", and leaving the chat cancels the reply. See
 [replies](../features/groups-and-replies.md).
+
+## Queued messages
+
+While the bot works anywhere (its own chat, a room, a routine), the user's queued messages leave the transcript and
+wait above the box, oldest first, one line each: the desktop's tray tucked under the composer's top edge
+(`views/chat/QueuedMessages.tsx`), the phones' card past the + button (`Chat/QueuedMessages.swift`,
+`QueuedMessages.kt`), the terminal's band over its input (`view/queue.rs`). An idle bot takes the next message at once,
+so the chat keeps showing that one.
+
+A long queue stays bounded, so the chat keeps its room. The desktop's tray stops at about four and a half rows and the
+phones' card at 190 pt/dp, and they scroll, staying where they are with the oldest row (next to go) in view, except
+that a message sent from that device scrolls to its new row. The terminal shows at most three rows and counts the rest.
+
+Each row has icon-only Send now (`arrow.turn.down.right`) and Remove (`trash`); the terminal has `S` (send the oldest
+now) and `D` (take back the newest). A host older than 2.39.0 has neither, so the rows only show. Remove hides the
+message at once and brings it back if the host refuses. What each does on the host:
+[turns](../features/context-and-memory.md#turns).
 
 ## Draft lifetime
 

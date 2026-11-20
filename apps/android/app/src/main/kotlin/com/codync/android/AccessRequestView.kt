@@ -80,42 +80,43 @@ private enum class AccessPhase { Renew, Asking, Code, Approved, Failed, Ended }
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(24.dp)) {
                     when (shown) {
                         AccessPhase.Renew -> {
-                            Text("This phone already has approval. If access no longer works, request a new approval on the computer.",
+                            Text(tr("This phone already has approval. If access no longer works, request a new approval on the computer."),
                                 style = Type.body, color = Palette.secondary, textAlign = TextAlign.Center)
-                            Text("This replaces this phone's current approval. The computer must be online to show the new code.",
+                            Text(tr("This replaces this phone's current approval. The computer must be online to show the new code."),
                                 style = Type.footnote, color = Palette.secondary, textAlign = TextAlign.Center)
                             SecondaryButton("Request new approval") { confirmRenewal = false; renewRequest = true; store.requestAccess(computer, renew = true) }
                         }
                         AccessPhase.Approved -> IconLabel("${computer.name} approved this phone", "checkmark.circle.fill", Palette.added, style = Type.headline)
                         AccessPhase.Code -> {
                             val code = ticket?.code.orEmpty()
+                            val spoken = "${tr("Code")} ${code.toList().joinToString(" ")}"
                             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("Check the code on ${computer.name}", style = Type.headline, color = Palette.text)
+                                Text(tr("Check the code on ${computer.name}"), style = Type.headline, color = Palette.text)
                                 SelectionContainer {
                                     Text(if (code.length == 6) "${code.take(3)} ${code.takeLast(3)}" else code,
-                                        Modifier.semantics { contentDescription = "Code ${code.toList().joinToString(" ")}" },
+                                        Modifier.semantics { contentDescription = spoken },
                                         style = Type.system(52f, FontWeight.SemiBold).copy(fontFamily = FontFamily.Monospace), color = Palette.text)
                                 }
-                                Text("Approve only if the computer shows exactly this code. If it doesn't, deny it there: someone may be trying to get in.",
+                                Text(tr("Approve only if the computer shows exactly this code. If it doesn't, deny it there: someone may be trying to get in."),
                                     style = Type.subheadline, color = Palette.secondary, textAlign = TextAlign.Center)
                             }
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Spinner()
-                                Text("Waiting for approval…", style = Type.subheadline, color = Palette.secondary)
+                                Text(tr("Waiting for approval…"), style = Type.subheadline, color = Palette.secondary)
                                 IconButton("Cancel request", "xmark.circle.fill") { store.cancelAccess(computer.computerId); dismiss() }
                             }
                         }
                         AccessPhase.Failed -> {
-                            Text(failed.orEmpty(), style = Type.body, color = Palette.danger, textAlign = TextAlign.Center)
+                            Text(tr(failed.orEmpty()), style = Type.body, color = Palette.danger, textAlign = TextAlign.Center)
                             SecondaryButton("Try again") { failed = null; store.requestAccess(computer, renew = renewRequest) }
                         }
                         AccessPhase.Ended -> {
-                            Text(ended.orEmpty(), style = Type.body, color = Palette.secondary, textAlign = TextAlign.Center)
+                            Text(tr(ended.orEmpty()), style = Type.body, color = Palette.secondary, textAlign = TextAlign.Center)
                             SecondaryButton("Ask again") { ended = null; sawTicket = false; store.requestAccess(computer, renew = renewRequest) }
                         }
                         AccessPhase.Asking -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Spinner()
-                            Text(if (computer.online != false) "Asking ${computer.name}…" else "${computer.name} is offline. Turn it on to continue.",
+                            Text(tr(if (computer.online != false) "Asking ${computer.name}…" else "${computer.name} is offline. Turn it on to continue."),
                                 style = Type.subheadline, color = Palette.secondary, textAlign = TextAlign.Center)
                         }
                     }
@@ -125,15 +126,18 @@ private enum class AccessPhase { Renew, Asking, Code, Approved, Failed, Ended }
     }
 }
 
-/** The pending access request over the tabs: approve on that computer, or cancel. */
-@Composable internal fun AccessBanner(ticket: AccessTicket, name: String, cancel: () -> Unit) {
+/** The pending access request over the tabs: approve on that computer, or cancel. A cloud computer approves by itself. */
+@Composable internal fun AccessBanner(ticket: AccessTicket, name: String, cloud: Boolean = false, cancel: () -> Unit) {
     Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedRectangle(16.dp)).background(Palette.bubbleAgent)
         .padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Spinner(16.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text("Approve on $name", style = Type.subheadline.medium, color = Palette.text)
-            Text("Code ${ticket.code.take(3)} ${ticket.code.takeLast(3)}", style = Type.footnote.monospacedDigit, color = Palette.secondary)
+            if (cloud) Text(tr("Connecting to {name}…").replace("{name}", name), style = Type.subheadline.medium, color = Palette.text)
+            else {
+                Text(tr("Approve on $name"), style = Type.subheadline.medium, color = Palette.text)
+                Text("${tr("Code")} ${ticket.code.take(3)} ${ticket.code.takeLast(3)}", style = Type.footnote.monospacedDigit, color = Palette.secondary)
+            }
         }
         IconButton("Cancel request", "xmark", action = cancel)
     }

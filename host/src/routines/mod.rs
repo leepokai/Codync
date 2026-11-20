@@ -3,14 +3,18 @@ mod check;
 pub use check::Checked;
 mod editor;
 pub use editor::{ScheduleDraft, preview as schedule_preview};
+mod follow_up;
+pub use follow_up::{Cancelled, FollowUp};
 pub mod hooks;
 use hooks::Refused;
+mod kept;
 mod mcp;
-pub use mcp::{INSTRUCTIONS, call, tools};
+pub use mcp::{BRIEF, INSTRUCTIONS, call, tools};
+mod progress;
 mod retry;
 mod runner;
 mod schedule;
-pub use runner::start;
+pub use runner::{Ran, STOPPED_BY_USER, TIMED_OUT, could_not_start, did_not_finish, start};
 pub use schedule::{Trigger, local_zone};
 
 use crate::{
@@ -50,6 +54,9 @@ pub struct Routine {
     pub timeout_seconds: u64,
     #[serde(default)]
     pub last_error: Option<String>,
+    /// Where its runs stand, for the next one (`progress.rs`).
+    #[serde(default)]
+    pub progress: Option<String>,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -101,6 +108,9 @@ pub struct Run {
     /// This failed run can be retried by the user, so it keeps its event until then.
     #[serde(default)]
     pub retryable: bool,
+    /// It is a task in its bot's box (`chat::work`), which says where it stands, not a turn in the chat.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub boxed: bool,
 }
 
 impl Run {
@@ -114,6 +124,8 @@ impl Run {
 struct State {
     routines: Vec<Routine>,
     runs: Vec<Run>,
+    #[serde(default)]
+    follow_ups: Vec<FollowUp>,
 }
 
 pub struct Routines {
@@ -123,6 +135,7 @@ pub struct Routines {
     stopping: std::sync::atomic::AtomicBool,
     /// Bumped whenever the webhook set the relay registers (`hooks()`) changes.
     hooks_rev: tokio::sync::watch::Sender<u64>,
+    following: follow_up::Following,
 }
 
 impl Default for Routines {
@@ -133,6 +146,7 @@ impl Default for Routines {
             scheduler: Mutex::default(),
             stopping: std::sync::atomic::AtomicBool::default(),
             hooks_rev: tokio::sync::watch::channel(0).0,
+            following: follow_up::Following::default(),
         }
     }
 }
@@ -169,7 +183,8 @@ impl Routines {
         for run in &mut state.runs {
             match run.status {
                 Status::Starting => run.status = Status::Pending,
-                Status::Running | Status::Recovering => {
+                // A run in the box is its thread's to resume (`chat::work::restore`).
+                Status::Running | Status::Recovering if !run.boxed => {
                     run.status = Status::Recovering;
                     run.finished_at = None;
                     active.insert(run.bot_id.clone());
@@ -221,20 +236,20 @@ impl Routines {
 
     pub fn list(&self, bot: &str) -> Value {
         let state = self.state.locked();
+        // The next one to happen first, as every list of them shows.
+        let mut follow_ups: Vec<_> = state.follow_ups.iter().filter(|f| f.bot_id == bot).collect();
+        follow_ups.sort_by_key(|f| f.at);
         json!({"routines": state.routines.iter().filter(|r| r.bot_id == bot && !r.deleted).map(public).collect::<Vec<_>>(),
-            "runs": state.runs.iter().rev().filter(|r| r.bot_id == bot).take(200).collect::<Vec<_>>()})
+            "runs": state.runs.iter().rev().filter(|r| r.bot_id == bot).take(200).collect::<Vec<_>>(),
+            "followUps": follow_ups})
     }
 
     pub fn owns(&self, bot: &str, id: &str) -> bool {
-        self.state.locked().routines.iter().any(|r| r.id == id && r.bot_id == bot && !r.deleted)
+        self.state.locked().routines.iter().any(|r| r.is(bot, id))
     }
 
     pub fn save(&self, hub: &Hub, bot: &str, body: &Value) -> Result<Value> {
-        let row = hub
-            .store
-            .bot(bot)?
-            .filter(|b| !b.deleted && !b.config.is_group())
-            .context("routine requires an existing agent bot")?;
+        let row = agent_bot(hub, bot)?;
         let Checked { name, instruction, triggers, timeout } = Checked::parse(body)?;
         let now = now_ms();
         let id = body["id"].as_str().map_or_else(|| uuid::Uuid::new_v4().to_string(), str::to_owned);
@@ -266,6 +281,7 @@ impl Routines {
                 timeout_seconds: timeout
                     .unwrap_or_else(|| old.as_ref().map_or_else(default_timeout, |r| r.timeout_seconds)),
                 last_error: None,
+                progress: old.as_ref().and_then(|r| r.progress.clone()),
             };
             if !(1..=86_400).contains(&r.timeout_seconds) {
                 bail!("timeoutSeconds must be between 1 and 86400");
@@ -283,11 +299,7 @@ impl Routines {
 
     pub fn set_enabled(&self, store: &Store, bot: &str, id: &str, enabled: bool) -> Result<Value> {
         self.change(store, |s| {
-            let r = s
-                .routines
-                .iter_mut()
-                .find(|r| r.id == id && r.bot_id == bot && !r.deleted)
-                .context("routine not found")?;
+            let r = own_mut(&mut s.routines, bot, id)?;
             if enabled && !r.enabled {
                 r.next_runs = r.triggers.iter().map(|t| t.next(now_ms())).collect::<Result<_>>()?;
             }
@@ -306,11 +318,7 @@ impl Routines {
 
     pub fn remove(&self, hub: &Hub, bot: &str, id: &str) -> Result<Value> {
         let withdrawn = self.change(&hub.store, |s| {
-            let r = s
-                .routines
-                .iter_mut()
-                .find(|r| r.id == id && r.bot_id == bot && !r.deleted)
-                .context("routine not found")?;
+            let r = own_mut(&mut s.routines, bot, id)?;
             r.deleted = true;
             r.enabled = false;
             r.webhook_key.clear();
@@ -331,8 +339,7 @@ impl Routines {
         test: bool,
     ) -> Result<Value> {
         self.change(store, |s| {
-            let r =
-                s.routines.iter().find(|r| r.id == id && r.bot_id == bot && !r.deleted).context("routine not found")?;
+            let r = own(&s.routines, bot, id)?;
             if !r.enabled && !test {
                 bail!(Refused::Paused);
             }
@@ -368,31 +375,22 @@ impl Routines {
     pub fn credentials(&self, hub: &Hub, bot: &str, id: &str, rotate: bool) -> Result<Value> {
         if rotate {
             self.change(&hub.store, |s| {
-                let r = s
-                    .routines
-                    .iter_mut()
-                    .find(|r| r.id == id && r.bot_id == bot && !r.deleted)
-                    .context("routine not found")?;
+                let r = own_mut(&mut s.routines, bot, id)?;
                 r.webhook_key = webhook_key();
                 r.updated_at = now_ms();
                 Ok(())
             })?;
         }
-        let key = {
-            let s = self.state.locked();
-            s.routines
-                .iter()
-                .find(|r| r.id == id && r.bot_id == bot && !r.deleted)
-                .context("routine not found")?
-                .webhook_key
-                .clone()
-        };
+        let key = own(&self.state.locked().routines, bot, id)?.webhook_key.clone();
         let cloud = hub.cloud.status();
+        // Public deliveries go through the relay, for a computer in an account (docs/plans/optional-sign-in.md).
         let url = crate::remote::cloud::codync_url(hub)
             .ok()
+            .filter(|_| crate::remote::owner::owner(&hub.store).is_some())
             .map(|base| format!("{}/v1/hooks/{}/{id}", base.trim_end_matches('/'), hub.identity.computer_id()));
         Ok(json!({
             "url": url,
+            "needsAccount": crate::remote::owner::can_join(hub),
             "localUrl": format!("http://127.0.0.1:{}/hooks/routines/{id}", hub.port),
             "key": key,
             "connected": url.is_some() && cloud.connected,
@@ -423,6 +421,30 @@ impl Routines {
     }
 }
 
+impl Routine {
+    /// Whether this is `bot`'s routine `id`.
+    fn is(&self, bot: &str, id: &str) -> bool {
+        self.id == id && self.bot_id == bot && !self.deleted
+    }
+}
+
+/// `bot`'s own routine `id`. They take the routines alone, so a caller can change the runs while it holds one.
+fn own<'a>(routines: &'a [Routine], bot: &str, id: &str) -> Result<&'a Routine> {
+    routines.iter().find(|r| r.is(bot, id)).ok_or_else(|| kept::Refused::NotFound.into())
+}
+
+fn own_mut<'a>(routines: &'a mut [Routine], bot: &str, id: &str) -> Result<&'a mut Routine> {
+    routines.iter_mut().find(|r| r.is(bot, id)).ok_or_else(|| kept::Refused::NotFound.into())
+}
+
+/// Routines and follow-ups belong to an agent bot: a group has no agent to take their turn.
+fn agent_bot(hub: &Hub, bot: &str) -> Result<crate::store::BotRow> {
+    hub.store
+        .bot(bot)?
+        .filter(|b| !b.deleted && !b.config.is_group())
+        .context("routines and follow-ups need an existing agent bot")
+}
+
 fn required<'a>(body: &'a Value, key: &str) -> Result<&'a str> {
     body[key].as_str().with_context(|| format!("{key} is required"))
 }
@@ -449,6 +471,7 @@ fn new_run(r: &Routine, event: Value, delivery_id: Option<String>) -> Run {
         not_before: None,
         retry_at: None,
         retryable: false,
+        boxed: false,
     }
 }
 
@@ -457,10 +480,20 @@ fn may_run(routine: &Routine, event: &Value) -> bool {
     routine.enabled || event["source"] == "test"
 }
 
-/// Whether `routine` has a run under way or queued; a retry waiting for its time doesn't count.
+/// Most runs one routine holds queued and not yet started (webhook deliveries waiting for a busy bot, retries).
+// ponytail: fixed ceiling per routine, whatever the payload sizes; make it a setting if a sender bursts more.
+pub const MAX_QUEUED: usize = 16;
+
+/// Whether `routine` takes no new run now: one of its runs has started, or `MAX_QUEUED` wait to. Queued runs
+/// alone don't block: each runs once, in the order it came, when its bot is free (issue #502).
 fn busy(s: &State, routine: &str) -> bool {
-    let now = now_ms();
-    s.runs.iter().any(|r| r.routine_id == routine && r.status.active() && !r.waiting(now))
+    started(s, routine)
+        || s.runs.iter().filter(|r| r.routine_id == routine && r.status == Status::Pending).count() >= MAX_QUEUED
+}
+
+/// Whether a run of `routine` has started and not ended: its other runs wait for it (one at a time, in order).
+fn started(s: &State, routine: &str) -> bool {
+    s.runs.iter().any(|r| r.routine_id == routine && r.status.active() && r.status != Status::Pending)
 }
 
 fn cancel_run(run: &mut Run) {
@@ -484,6 +517,11 @@ pub fn session_slot(run_id: &str) -> String {
 /// The notice a run posts in the chat when it begins; the run's turn is the notice's.
 pub fn notice_id(run_id: &str) -> String {
     format!("routine-{run_id}")
+}
+
+/// The reply of a run that worked in the box, which the host posts for it (`chat::work`).
+pub fn reply_id(run_id: &str) -> String {
+    format!("routine-reply-{run_id}")
 }
 
 /// The chat notice that reports a run's outcome.

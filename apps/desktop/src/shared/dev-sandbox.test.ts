@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { devClerkSecretKey, sandboxLabel, sandboxName, sandboxPorts } from './dev-sandbox.ts'
+import { devClerkSecretKey, sandboxCloudMode, sandboxLabel, sandboxName, sandboxPorts } from './dev-sandbox.ts'
 
 test('sandbox ports skip the ones other sandboxes hold and never reach Codync or Codync Dev', () => {
   const ports = sandboxPorts([19300, 19302])
@@ -22,4 +22,13 @@ test('a sandbox only ever takes a Clerk development key, from the environment fi
   assert.equal(devClerkSecretKey(undefined, 'CLERK_SECRET_KEY=sk_live_other'), null)
   assert.throws(() => devClerkSecretKey('sk_live_x', undefined), /sk_test_/)
   assert.throws(() => devClerkSecretKey(undefined, 'CODYNC_CLERK_SECRET_KEY=sk_live_x'), /sk_test_/)
+})
+
+test('a sandbox uses the dev cloud only when asked, and its own on a branch that changes cloud/', () => {
+  const mode = (o: Partial<Parameters<typeof sandboxCloudMode>[0]>) => sandboxCloudMode({ changesCloud: false, windows: false, ...o })
+  assert.equal(mode({}), 'off')
+  assert.equal(mode({ changesCloud: true }), 'local')
+  assert.equal(mode({ localCloud: true }), 'local')
+  assert.equal(mode({ changesCloud: true, cloud: true }), 'dev')
+  assert.equal(mode({ changesCloud: true, windows: true }), 'off')
 })

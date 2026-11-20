@@ -65,31 +65,21 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
     });
     let (name, instructions, available_tools) = match server {
         Server::Connectors => {
-            ("codync-connectors", crate::market::requests::INSTRUCTIONS, crate::market::requests::tools())
+            ("codync-connectors", crate::market::requests::INSTRUCTIONS.to_owned(), crate::market::requests::tools())
         }
         // Listed by the host: they depend on this computer's driver.
-        Server::Computer => ("codync-computer", INSTRUCTIONS, Value::Null),
-        Server::Routines => ("codync-routines", crate::routines::INSTRUCTIONS, crate::routines::tools()),
-        Server::Chat => {
-            let mut tools = crate::chat::outbox::tools();
-            if let Some(list) = tools.as_array_mut() {
-                list.extend(crate::chat::artifacts::tools());
-                list.extend(crate::chat::profile::tools());
-                list.extend(crate::chat::fallbacks::tools());
-                list.push(crate::chat::reactions::tool());
-                list.push(crate::chat::skills::tool());
-            }
-            ("codync-chat", crate::chat::outbox::INSTRUCTIONS, tools)
-        }
-        Server::Team => ("codync-team", crate::chat::team::INSTRUCTIONS, crate::chat::team::tools()),
-        Server::Manage => ("codync-manage", crate::chat::manage::INSTRUCTIONS, crate::chat::manage::tools()),
-        Server::Memory => ("codync-memory", crate::chat::memory::INSTRUCTIONS, crate::chat::memory::tools()),
+        Server::Computer => ("codync-computer", INSTRUCTIONS.to_owned(), Value::Null),
+        Server::Routines => ("codync-routines", crate::routines::INSTRUCTIONS.to_owned(), crate::routines::tools()),
+        Server::Chat => ("codync-chat", crate::chat::outbox::instructions(), chat_tools()),
+        Server::Team => ("codync-team", crate::chat::team::INSTRUCTIONS.to_owned(), crate::chat::team::tools()),
+        Server::Manage => ("codync-manage", crate::chat::manage::INSTRUCTIONS.to_owned(), crate::chat::manage::tools()),
+        Server::Memory => ("codync-memory", crate::chat::memory::INSTRUCTIONS.to_owned(), crate::chat::memory::tools()),
         Server::Composio => {
-            ("codync-composio", crate::market::composio::INSTRUCTIONS, crate::market::composio::tools())
+            ("codync-composio", crate::market::composio::INSTRUCTIONS.to_owned(), crate::market::composio::tools())
         }
         // The one server agents that aren't bots add as `codync` (the cloud connector's name too); more tools join it.
         Server::Network => {
-            ("codync", crate::chat::team::assistant::INSTRUCTIONS, crate::chat::team::assistant::tools())
+            ("codync", crate::chat::team::assistant::INSTRUCTIONS.to_owned(), crate::chat::team::assistant::tools())
         }
     };
     // Requests still running, by id: a cancelled one stops, and its host call with it (a team change's card expires).
@@ -108,6 +98,7 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         let key = id.to_string();
         let (replies, token, bot, available_tools) =
             (replies.clone(), token.clone(), bot.clone(), available_tools.clone());
+        let instructions = instructions.clone();
         let request = tokio::spawn(async move {
             let params = &msg["params"];
             let reply = match msg["method"].as_str().unwrap_or_default() {
@@ -136,6 +127,21 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
     Ok(())
 }
 
+/// The `chat` server's tools, from each part of the host that answers them.
+pub(crate) fn chat_tools() -> Value {
+    let mut tools = crate::chat::outbox::tools();
+    if let Some(list) = tools.as_array_mut() {
+        list.extend(crate::chat::artifacts::tools());
+        list.extend(crate::chat::profile::tools());
+        list.extend(crate::chat::fallbacks::tools());
+        list.push(crate::chat::reactions::tool());
+        list.push(crate::chat::skills::tool());
+        list.extend(crate::dev_servers::tools());
+        list.extend(crate::chat::work::tools());
+    }
+    tools
+}
+
 /// The `computer` tools the host offers; none when it can't be reached.
 async fn computer_tools(port: u16, token: &str) -> Value {
     let res = crate::http()
@@ -162,6 +168,14 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
         Server::Connectors => ("connectorCall", Duration::from_secs(90)),
         Server::Routines => ("routineCall", Duration::from_secs(30)),
         Server::Computer => ("computerCall", Duration::from_mins(1)),
+        // Starting a dev server may wait on an approval card, then for its port.
+        Server::Chat if params["name"] == crate::dev_servers::START => {
+            ("chatCall", crate::chat::manage::APPROVAL_TIMEOUT + Duration::from_secs(25))
+        }
+        // The actor's 270-second choice window must fit inside the actual MCP HTTP request.
+        Server::Chat if params["name"] == crate::chat::decision::TOOL => {
+            ("chatCall", crate::chat::decision::WAIT + Duration::from_secs(20))
+        }
         Server::Chat => ("chatCall", Duration::from_secs(if params["name"] == "send_file" { 70 } else { 30 })),
         Server::Team => ("teamCall", Duration::from_secs(30)),
         Server::Manage => ("manageCall", crate::chat::manage::APPROVAL_TIMEOUT + Duration::from_secs(30)),

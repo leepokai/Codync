@@ -4,6 +4,7 @@
 pub mod artifacts;
 pub mod calls;
 pub mod context;
+pub mod decision;
 pub mod fallbacks;
 pub mod files;
 pub mod group;
@@ -23,3 +24,4 @@ pub mod replies;
 pub mod skills;
 pub mod team;
 pub mod uploads;
+pub mod work;

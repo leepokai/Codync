@@ -23,8 +23,10 @@ export function connectedThrough(cloud: string | null | undefined): string {
 }
 
 /** The desktop "Reach from anywhere" caption while there is no error to show. */
-export function cloudStatusLine(cloud: { enabled: boolean; url?: string | null; connected?: boolean | null }): string {
+export function cloudStatusLine(cloud: { enabled: boolean; url?: string | null; connected?: boolean | null; canJoinAccount?: boolean | null }): string {
   if (!cloud.enabled) return 'Off: only Wi-Fi and Tailscale reach it, nothing goes through Cloudflare.'
+  // In no account it holds no relay socket: phones go over Wi-Fi or Tailscale (docs/plans/optional-sign-in.md).
+  if (cloud.canJoinAccount) return 'Not in an account: only Wi-Fi and Tailscale reach it.'
   const host = relayHost(cloud.url)
   if (!host) return cloud.connected ? 'Reachable from anywhere through Cloudflare (encrypted).' : 'Connecting to Cloudflare…'
   return cloud.connected

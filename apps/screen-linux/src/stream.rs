@@ -1,33 +1,16 @@
-//! Video: a PipeWire monitor stream encoded as H.264 and sent over GStreamer
-//! `webrtcbin` with negotiated trickle ICE, plus one-off JPEG stills.
+//! Video: a display's capture source (PipeWire or X11, see `backend.rs`) encoded as H.264
+//! and sent over GStreamer `webrtcbin` with negotiated trickle ICE, plus one-off JPEG stills.
 
+use crate::backend::{Backend, Display};
 use crate::negotiation::ice_uri;
-use crate::portal::Display;
 use crate::video::{h264_format, h264_payload};
 use crate::{Helper, input};
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine as _;
 use gst::prelude::*;
 use serde_json::{Value, json};
-use std::os::fd::{IntoRawFd, OwnedFd};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
-
-/// The PipeWire source for one portal stream. Only properties every supported PipeWire has
-/// (Ubuntu 24.04's 1.0 onward) go in the builder: an unknown one panics there.
-fn capture_source(fd: OwnedFd, node: u32) -> Result<gst::Element> {
-    let src = gst::ElementFactory::make("pipewiresrc")
-        .property("fd", fd.into_raw_fd())
-        .property("path", node.to_string())
-        .property("do-timestamp", true)
-        .build()
-        .context("GStreamer's PipeWire plugin (gstreamer1.0-pipewire) is missing")?;
-    if src.has_property("keepalive-time") {
-        // A still screen keeps sending frames now and then, so keyframe requests get answered.
-        src.set_property("keepalive-time", 1000i32);
-    }
-    Ok(src)
-}
 
 /// Hardware encoders first; x264 is the always-there fallback.
 const ENCODERS: &[&str] = &[
@@ -45,13 +28,30 @@ pub struct Session {
     pub(super) webrtc: gst::Element,
     /// The phone's candidates so far; `None` for a complete-SDP session.
     pub(super) incoming: Option<Mutex<crate::candidates::Candidates>>,
+    /// Applies the viewer's messages (`spawn_messages`); None in a bare session.
+    pub(super) task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Session {
+    /// A session around `pipeline` and `webrtc` with nothing applying messages, for tests.
+    #[cfg(test)]
+    pub(crate) fn bare(
+        pipeline: gst::Pipeline,
+        webrtc: gst::Element,
+        incoming: Option<Mutex<crate::candidates::Candidates>>,
+    ) -> Self {
+        Self {
+            pipeline,
+            webrtc,
+            incoming,
+            task: None,
+        }
+    }
+
     pub fn new(
         id: String,
         display: &Display,
-        fd: OwnedFd,
+        src: &gst::Element,
         helper: &Arc<Helper>,
         config: &Value,
     ) -> Result<Self> {
@@ -60,7 +60,6 @@ impl Session {
         // Capture and keepalive timestamps use the system clock. pipewiresrc only gained a
         // switch for this (`provide-clock`) in PipeWire 1.6; Ubuntu 24.04 ships 1.0.
         pipeline.use_clock(Some(&gst::SystemClock::obtain()));
-        let src = capture_source(fd, display.node)?;
         let convert = make("videoconvert")?;
         let crop = make("videocrop")?;
         let scale = make("videoscale")?;
@@ -114,50 +113,29 @@ impl Session {
             }
         }
         let chain = [
-            &src, &convert, &crop, &scale, &size, &rate, &convert2, &format, &queue, &encoder,
+            src, &convert, &crop, &scale, &size, &rate, &convert2, &format, &queue, &encoder,
             &parse, &pay, &rtp_caps, &webrtc,
         ];
         pipeline.add_many(chain)?;
         gst::Element::link_many(chain)?;
 
         // Input from the phone, applied in order.
-        let (tx, mut rx) = mpsc::unbounded_channel::<Value>();
+        let (tx, rx) = mpsc::unbounded_channel::<Incoming>();
+        observe_frame(&convert, tx.downgrade())?;
         let view = View {
+            // Weak: the pipeline holds this task's sender, through webrtcbin's data channels.
+            pipeline: pipeline.downgrade(),
+            src: src.clone(),
+            convert: convert.clone(),
             crop: crop.clone(),
             size: size.clone(),
             display: display.clone(),
+            frame: None,
+            shown: None,
+            fit: None,
         };
         let channels: Arc<Mutex<Vec<gst_webrtc::WebRTCDataChannel>>> = Arc::default();
-        {
-            let helper = helper.clone();
-            let channels = channels.clone();
-            let display = display.clone();
-            tokio::spawn(async move {
-                while let Some(msg) = rx.recv().await {
-                    let reply = match msg["type"].as_str() {
-                        Some("view") => Some(view.apply(&msg)),
-                        Some("clipboard") => {
-                            set_clipboard(msg["text"].as_str().unwrap_or_default())
-                                .await
-                                .err()
-                                .as_ref()
-                                .map(error_msg)
-                        }
-                        _ => match helper.portal().await {
-                            Ok(portal) => input::perform(&portal, &display, &msg)
-                                .await
-                                .err()
-                                .as_ref()
-                                .map(error_msg),
-                            Err(error) => Some(error_msg(&error)),
-                        },
-                    };
-                    if let Some(reply) = reply {
-                        send(&channels, &reply);
-                    }
-                }
-            });
-        }
+        let task = spawn_messages(helper.clone(), id.clone(), view, channels.clone(), rx);
         webrtc.connect("on-data-channel", false, {
             let channels = channels.clone();
             move |values| {
@@ -170,7 +148,7 @@ impl Session {
                         .flatten()
                         .and_then(|s| serde_json::from_str::<Value>(&s).ok())
                     {
-                        let _ = tx.send(msg);
+                        let _ = tx.send(Incoming::Viewer(msg));
                     }
                     None
                 });
@@ -192,6 +170,7 @@ impl Session {
             pipeline,
             webrtc,
             incoming: trickle.then(Mutex::default),
+            task: Some(task),
         })
     }
 
@@ -200,42 +179,154 @@ impl Session {
     }
 }
 
+/// Applies the viewer's messages in order. Its data channels' handlers hold its sender and it
+/// holds the channels, so it never ends by itself: it stops with its session, letting go of them
+/// and of the capture source.
+fn spawn_messages(
+    helper: Arc<Helper>,
+    owner: String,
+    mut view: View,
+    channels: Arc<Mutex<Vec<gst_webrtc::WebRTCDataChannel>>>,
+    mut rx: mpsc::UnboundedReceiver<Incoming>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        while let Some(incoming) = rx.recv().await {
+            let msg = match incoming {
+                Incoming::Frame(frame) => {
+                    view.frame = Some(frame);
+                    view.resize();
+                    continue;
+                }
+                Incoming::Viewer(msg) => msg,
+            };
+            let reply = if msg["type"] == "view" {
+                Some(
+                    view.view(&helper, &msg)
+                        .await
+                        .unwrap_or_else(|e| error_msg(&e)),
+                )
+            } else {
+                apply(&helper, &view.display, &owner, &msg)
+                    .await
+                    .err()
+                    .as_ref()
+                    .map(error_msg)
+            };
+            if let Some(reply) = reply {
+                send(&channels, &reply);
+            }
+        }
+    })
+}
+
 impl Drop for Session {
     fn drop(&mut self) {
         // Negotiation failure must stop capture too, before the session enters the helper's map.
         let _ = self.pipeline.set_state(gst::State::Null);
+        if let Some(task) = &self.task {
+            task.abort();
+        }
     }
 }
 
-/// Crop and output size for what the phone shows (see the iOS `ScreenViewport`).
+/// What the session's task handles, in order.
+enum Incoming {
+    /// A message from the viewer.
+    Viewer(Value),
+    /// The capture source's frame size, sent whenever the source (re)negotiates.
+    Frame((f64, f64)),
+}
+
+/// Reports each frame size the capture source negotiates into `convert`. Weak: `View` holds
+/// `convert`, so a strong sender here would keep the session's task alive forever.
+fn observe_frame(convert: &gst::Element, tx: mpsc::WeakUnboundedSender<Incoming>) -> Result<()> {
+    let pad = convert
+        .static_pad("sink")
+        .context("videoconvert has no sink")?;
+    pad.add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, move |_, info| {
+        if let Some(gst::PadProbeData::Event(event)) = &info.data
+            && let gst::EventView::Caps(caps) = event.view()
+            && let Some(s) = caps.caps().structure(0)
+            && let (Ok(w), Ok(h)) = (s.get::<i32>("width"), s.get::<i32>("height"))
+            && let Some(tx) = tx.upgrade()
+        {
+            let _ = tx.send(Incoming::Frame((f64::from(w), f64::from(h))));
+        }
+        gst::PadProbeReturn::Ok
+    });
+    Ok(())
+}
+
+/// The display a viewer sees and controls, and the crop and output size it's shown at (see the
+/// iOS `ScreenViewport`).
 struct View {
+    pipeline: gst::glib::WeakRef<gst::Pipeline>,
+    /// The display's capture source, feeding `convert`.
+    src: gst::Element,
+    convert: gst::Element,
     crop: gst::Element,
     size: gst::Element,
     display: Display,
+    /// The source's frame size, larger than the display's logical size on HiDPI; `None` until
+    /// the current source negotiates.
+    frame: Option<(f64, f64)>,
+    /// The display region shown (x, y, width, height in logical points); `None` for all of it.
+    shown: Option<(f64, f64, f64, f64)>,
+    /// The longest and shortest side the viewer shows the picture at, once it said.
+    fit: Option<(f64, f64)>,
 }
 
 impl View {
-    fn apply(&self, msg: &Value) -> Value {
-        // Source frames can be larger than the logical size (HiDPI).
-        let (fw, fh) = self
-            .crop
-            .static_pad("sink")
-            .and_then(|p| p.current_caps())
-            .and_then(|c| {
-                let s = c.structure(0)?;
-                Some((
-                    f64::from(s.get::<i32>("width").ok()?),
-                    f64::from(s.get::<i32>("height").ok()?),
-                ))
-            })
-            .unwrap_or((self.display.width, self.display.height));
-        let factor = fw / self.display.width;
-        let crop = msg["crop"].as_array().and_then(|c| {
-            let v: Vec<f64> = c.iter().filter_map(Value::as_f64).collect();
-            (v.len() == 4 && v[2] >= 16.0 && v[3] >= 16.0)
-                .then(|| (v[0].max(0.0), v[1].max(0.0), v[2], v[3]))
-        });
-        let (x, y, w, h) = crop.unwrap_or((0.0, 0.0, self.display.width, self.display.height));
+    /// A `view` message: moves to the display it names, else takes its crop; its size, when given, either way.
+    async fn view(&mut self, helper: &Helper, msg: &Value) -> Result<Value> {
+        if let (Some(long), Some(short)) = (msg["long"].as_f64(), msg["short"].as_f64()) {
+            self.fit = Some((long, short));
+        }
+        match msg["display"]
+            .as_u64()
+            .filter(|&id| id != u64::from(self.display.id))
+        {
+            // Shown whole until the viewer crops the new display's picture.
+            Some(id) => self.switch(helper, id).await?,
+            None => {
+                self.shown = msg["crop"].as_array().and_then(|c| {
+                    let v: Vec<f64> = c.iter().filter_map(Value::as_f64).collect();
+                    (v.len() == 4 && v[2] >= 16.0 && v[3] >= 16.0)
+                        .then(|| (v[0].max(0.0), v[1].max(0.0), v[2], v[3]))
+                });
+            }
+        }
+        self.resize();
+        Ok(json!({
+            "type": "view",
+            "display": self.display.id,
+            "crop": self.shown.map(|(x, y, w, h)| json!([x, y, w, h])),
+        }))
+    }
+
+    /// Moves capture and input to display `id`, shown whole.
+    async fn switch(&mut self, helper: &Helper, id: u64) -> Result<()> {
+        let backend = helper.backend().await?;
+        let display = backend.display(Some(id))?;
+        let src = backend.source(&display).await?;
+        let pipeline = self
+            .pipeline
+            .upgrade()
+            .context("the screen session ended")?;
+        replace_source(&pipeline, &self.src, &src, &self.convert)?;
+        self.src = src;
+        self.display = display;
+        self.frame = None;
+        self.shown = None;
+        Ok(())
+    }
+
+    /// Sets the crop and output size for the shown region, the frame size and the viewer's size.
+    fn resize(&self) {
+        let (dw, dh) = (self.display.width, self.display.height);
+        let (fw, fh) = self.frame.unwrap_or((dw, dh));
+        let factor = fw / dw;
+        let (x, y, w, h) = self.shown.unwrap_or((0.0, 0.0, dw, dh));
         let px = |v: f64| to_i32(v * factor);
         self.crop.set_property("left", px(x));
         self.crop.set_property("top", px(y));
@@ -243,7 +334,7 @@ impl View {
             .set_property("right", (to_i32(fw) - px(x + w)).max(0));
         self.crop
             .set_property("bottom", (to_i32(fh) - px(y + h)).max(0));
-        if let (Some(long), Some(short)) = (msg["long"].as_f64(), msg["short"].as_f64()) {
+        if let Some((long, short)) = self.fit {
             let (cw, ch) = (w * factor, h * factor);
             let fit = (long.min(3840.0) / cw.max(ch))
                 .min(short.min(2160.0) / cw.min(ch))
@@ -257,8 +348,37 @@ impl View {
                     .build(),
             );
         }
-        json!({"type": "view", "display": self.display.id, "crop": crop.map(|(x, y, w, h)| json!([x, y, w, h]))})
     }
+}
+
+/// Swaps `old` for `new` in front of `convert`; on failure the old source is put back.
+fn replace_source(
+    pipeline: &gst::Pipeline,
+    old: &gst::Element,
+    new: &gst::Element,
+    convert: &gst::Element,
+) -> Result<()> {
+    let attach = |src: &gst::Element| -> Result<()> {
+        pipeline.add(src)?;
+        src.link(convert)?;
+        src.sync_state_with_parent()?;
+        Ok(())
+    };
+    // Stopped first, so the old source never pushes into an unlinked pad.
+    old.set_state(gst::State::Null)?;
+    // A source a failed earlier swap couldn't put back is already out.
+    if old.parent().is_some() {
+        pipeline.remove(old)?;
+    }
+    let Err(error) = attach(new) else {
+        return Ok(());
+    };
+    let _ = new.set_state(gst::State::Null);
+    if new.parent().is_some() {
+        pipeline.remove(new)?;
+    }
+    attach(old).with_context(|| format!("{error:#}; couldn't go back to the previous display"))?;
+    Err(error)
 }
 
 #[expect(
@@ -267,6 +387,17 @@ impl View {
 )]
 fn to_i32(v: f64) -> i32 {
     v.round() as i32
+}
+
+/// A clipboard or input message from `owner`'s viewer, on the current backend.
+async fn apply(helper: &Helper, display: &Display, owner: &str, msg: &Value) -> Result<()> {
+    let backend = helper.backend().await?;
+    if msg["type"] == "clipboard" {
+        return set_clipboard(&backend, msg["text"].as_str().unwrap_or_default()).await;
+    }
+    helper
+        .input(&backend, display, Some(owner), input::Event::parse(msg)?)
+        .await
 }
 
 fn error_msg(e: &anyhow::Error) -> Value {
@@ -283,13 +414,14 @@ fn send(channels: &Mutex<Vec<gst_webrtc::WebRTCDataChannel>>, msg: &Value) {
 }
 
 /// Wayland first, then X11.
-async fn set_clipboard(text: &str) -> Result<()> {
+async fn set_clipboard(backend: &Backend, text: &str) -> Result<()> {
     use tokio::io::AsyncWriteExt;
     for (cmd, args) in [
         ("wl-copy", &[][..]),
         ("xclip", &["-selection", "clipboard"][..]),
     ] {
-        let Ok(mut child) = tokio::process::Command::new(cmd)
+        let Ok(mut child) = backend
+            .command(cmd)
             .args(args)
             .stdin(std::process::Stdio::piped())
             .spawn()
@@ -341,19 +473,17 @@ fn encoder(bitrate_kbps: u32) -> Result<gst::Element> {
 }
 
 /// One still for agents: `width`×`height` JPEG, base64.
-pub async fn screenshot(fd: OwnedFd, d: &Display, width: u32, height: u32) -> Result<String> {
-    let desc = format!(
-        "pipewiresrc name=src path={} do-timestamp=true ! videoconvert ! videoscale ! video/x-raw,width={width},height={height} ! jpegenc quality=80 ! appsink name=sink max-buffers=1",
-        d.node
-    );
-    let pipeline = gst::parse::launch(&desc)?
-        .downcast::<gst::Pipeline>()
-        .map_err(|_| anyhow!("bad pipeline"))?;
-    let src = pipeline
-        .by_name("src")
-        .ok_or_else(|| anyhow!("no source"))?;
-    src.set_property("fd", fd.into_raw_fd());
-    let sink = pipeline
+pub async fn screenshot(src: gst::Element, width: u32, height: u32) -> Result<String> {
+    let still = gst::parse::bin_from_description(
+        &format!(
+            "videoconvert ! videoscale ! video/x-raw,width={width},height={height} ! jpegenc quality=80 ! appsink name=sink max-buffers=1"
+        ),
+        true,
+    )?;
+    let pipeline = gst::Pipeline::new();
+    pipeline.add_many([&src, still.upcast_ref()])?;
+    src.link(&still)?;
+    let sink = still
         .by_name("sink")
         .ok_or_else(|| anyhow!("no sink"))?
         .downcast::<gst_app::AppSink>()
@@ -376,6 +506,30 @@ mod tests {
     use crate::candidates::Candidate;
 
     #[tokio::test]
+    async fn a_dropped_session_stops_its_message_task() {
+        gst::init().unwrap();
+        let held = Arc::new(());
+        let mut session = Session::bare(
+            gst::Pipeline::new(),
+            gst::ElementFactory::make("webrtcbin").build().unwrap(),
+            None,
+        );
+        let guard = held.clone();
+        session.task = Some(tokio::spawn(async move {
+            std::future::pending::<()>().await;
+            drop(guard);
+        }));
+        drop(session);
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while Arc::strong_count(&held) > 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the task lets go of what it holds");
+    }
+
+    #[tokio::test]
     async fn trickle_answer_does_not_wait_for_candidate_gathering() {
         gst::init().unwrap();
         let pipeline = gst::parse::launch(
@@ -389,11 +543,7 @@ mod tests {
         .unwrap();
         let webrtc = pipeline.by_name("peer").unwrap();
         pipeline.set_state(gst::State::Ready).unwrap();
-        let session = Session {
-            pipeline,
-            webrtc,
-            incoming: Some(Mutex::default()),
-        };
+        let session = Session::bare(pipeline, webrtc, Some(Mutex::default()));
         let offer = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n\
             m=video 9 UDP/TLS/RTP/SAVPF 96\r\nc=IN IP4 0.0.0.0\r\n\
             a=mid:0\r\na=recvonly\r\na=rtcp-mux\r\na=setup:actpass\r\n\

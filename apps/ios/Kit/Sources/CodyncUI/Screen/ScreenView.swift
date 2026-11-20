@@ -8,8 +8,7 @@ public struct ScreenView: View {
     @Environment(BotStore.self) private var model
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The bot being watched, when opened from its chat.
-    private let watching: String?
+    @Environment(\.scenePhase) private var scenePhase
     /// Animated close from the presenting layer (`.codyncOverlay`'s `close`); falls back to `dismiss`.
     private let close: (() -> Void)?
 
@@ -22,15 +21,22 @@ public struct ScreenView: View {
     @State private var zoomed = false
     @State private var resetToken = 0
     @State private var tookOver = false
+    /// Whether the user wants the controls: at first unless watching a bot (look first; otherwise take
+    /// the screen, bots may still look), then what they last chose.
+    @State private var wanted: Bool
     @State private var portrait = false
+    @State private var pause = ScreenPause(.remoteScreen, state: .watching)
 
+    /// `watching`: the bot being watched, when opened from its chat.
     public init(watching: String? = nil, close: (() -> Void)? = nil) {
-        self.watching = watching
         self.close = close
+        _wanted = State(initialValue: watching == nil)
     }
 
     private var screen: ScreenState? { model.screen }
     private var agent: Bot? { screen?.agentBot.flatMap { model.bots[$0] } }
+    /// The idle pause counts while the picture is live and the app in front.
+    private var idleCounts: Bool { session?.phase == .live && scenePhase == .active }
 
     public var body: some View {
         ZStack {
@@ -43,6 +49,8 @@ public struct ScreenView: View {
                     // overlays it, since shrinking there would leave the screen too small.
                     .ignoresSafeArea(portrait ? [] : .keyboard)
                 status(session)
+            } else if ScreenNotice(model) == nil, let prompt = ScreenNotice(pause) {
+                prompt
             } else {
                 unavailable
             }
@@ -70,8 +78,21 @@ public struct ScreenView: View {
         .onChange(of: screen?.available) { _, available in
             if available == true, session == nil { start() }
         }
-        .onChange(of: screen?.input) { _, input in
-            if input != true { setInteractive(false) }
+        // Paused after a while live with nobody touching the app (the count starts over back from the background);
+        // tapping continues in a new session, with the user's choice of control.
+        .task(id: idleCounts) { if idleCounts { await pause.pauseWhenIdle() } }
+        .onChange(of: pause.state) { _, state in
+            if state == .watching { start() } else { stop() }
+        }
+        // Control comes and goes with the computer (a restarted helper, its permission): the user's
+        // choice comes back with it.
+        .onChange(of: screen?.input) {
+            setInteractive(session != nil && wanted)
+        }
+        // Back live after a failure or a long outage, the host may have handed control back to the bots when this
+        // phone's last session went: ask again.
+        .onChange(of: session?.phase == .live) { _, live in
+            if live, tookOver, screen?.userControl == false { model.screenTakeover(true) }
         }
     }
 
@@ -79,13 +100,13 @@ public struct ScreenView: View {
 
     /// Also runs when the screen becomes available after opening, so it leaves orientation alone.
     private func start() {
-        guard session == nil, let client = model.client, let screen, screen.available, let d = display ?? screen.mainDisplay else { return }
+        guard session == nil, pause.state == .watching, let client = model.client, let screen, screen.available,
+              let d = display ?? screen.mainDisplay else { return }
         display = d
         let s = ScreenSession(client: client, display: d)
         session = s
         Task { await s.start() }
-        // Watching a bot: look first. Otherwise take the screen (bots may still look).
-        setInteractive(watching == nil)
+        setInteractive(wanted)
     }
 
     private func stop() {
@@ -93,6 +114,8 @@ public struct ScreenView: View {
         session = nil
         if tookOver { model.screenTakeover(false) }
         tookOver = false
+        interactive = false
+        keyboard = false
     }
 
     private func setInteractive(_ on: Bool) {
@@ -111,13 +134,7 @@ public struct ScreenView: View {
         HStack(spacing: 8) {
             OverlayButton("Close", "xmark") { if let close { close() } else { dismiss() } }
             if let agent, !interactive {
-                Label("\(agent.name) is using the computer", systemImage: "cursorarrow.motionlines")
-                    .font(.caption.weight(.medium))
-                    .lineLimit(1)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .transition(.opacity)
+                AgentAtScreen(name: agent.name).transition(.opacity)
             }
             Spacer()
             // Allow an explicit rotation even when the user has enabled iOS rotation lock.
@@ -145,7 +162,10 @@ public struct ScreenView: View {
                     } label: { IconLabel("Displays", "display.2") }
                 }
                 OverlayButton(interactive ? "Hand back to bots" : "Take over", interactive ? "hand.raised.slash" : "hand.raised") {
-                    animate { setInteractive(!interactive) }
+                    animate {
+                        wanted = !interactive
+                        setInteractive(wanted)
+                    }
                 }
                 .disabled(screen?.input != true)
             }
@@ -180,63 +200,25 @@ public struct ScreenView: View {
     }
 
     @ViewBuilder private func status(_ session: ScreenSession) -> some View {
-        switch session.phase {
-        case .connecting:
-            Overlay(icon: nil, text: "Connecting to the screen…")
-        case .reconnecting:
-            Overlay(icon: nil, text: "Reconnecting…")
-        case let .failed(message):
-            Overlay(icon: "exclamationmark.triangle", text: message) {
-                Task { await session.start() }
-            }
-        case .live, .closed:
-            if screen?.input != true {
-                Text(L10n.tr("View only. To allow control, open Codync → Settings → Computer access on the computer."))
-                    .font(.caption).padding(12)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 24)
-            } else if let error = session.lastError {
-                Text(L10n.tr(error))
-                    .font(.caption)
-                    .padding(8)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
-                    .frame(maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, 24)
-            }
+        if let notice = ScreenNotice(session) {
+            notice
+        } else if screen?.input != true {
+            Text(L10n.tr("View only. To allow control, open Codync → Settings → Computer access on the computer."))
+                .font(.caption).padding(12)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 24)
+        } else if let error = session.lastError {
+            Text(L10n.tr(error))
+                .font(.caption)
+                .padding(8)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, 24)
         }
     }
 
-    @ViewBuilder private var unavailable: some View {
-        let s = screen
-        let (icon, text): (String, String) =
-            if model.connection != .online { ("wifi.slash", "This computer is offline.") }
-            else if s == nil { ("arrow.down.circle", "Update Codync on your computer to use its screen from here.") }
-            else { ("lock.display", s?.accessGuidance ?? "Set up Computer access in Codync on the computer.") }
-        Overlay(icon: icon, text: text)
-    }
-}
-
-private struct Overlay: View {
-    let icon: String?
-    let text: String
-    var retry: (() -> Void)?
-
-    var body: some View {
-        VStack(spacing: 12) {
-            if let icon {
-                Image(systemName: icon).font(.largeTitle).foregroundStyle(.secondary)
-            } else {
-                Spinner(size: 22)
-            }
-            Text(L10n.tr(text)).font(.callout).multilineTextAlignment(.center).foregroundStyle(.secondary)
-            if let retry {
-                Button(L10n.tr("Try again"), systemImage: "arrow.clockwise", action: retry)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.secondary)
-            }
-        }
-        .padding(32)
-        .frame(maxWidth: 420)
+    private var unavailable: some View {
+        ScreenNotice(model) ?? ScreenNotice(icon: "lock.display", text: screen?.accessGuidance ?? "")
     }
 }
 

@@ -1,5 +1,5 @@
 use super::*;
-use crate::store::{Device, DeviceSource, Store};
+use crate::store::{Device, DeviceAccount, DeviceSource, Store};
 use serde_json::json;
 
 fn temp_hub() -> (std::sync::Arc<Hub>, std::path::PathBuf) {
@@ -19,7 +19,11 @@ fn observed_events_carry_no_content() {
     let b = json!({"botId": "b1", "text": "secret plan", "replyTo": "e1", "attachments": ["u1", "u2"]});
     let (event, p) = props("send", &b).expect("send is tracked");
     assert_eq!(event, Event::MessageSent);
-    assert_eq!(p, json!({"reply": true, "attachments": 2, "client": "local"}));
+    assert_eq!(p, json!({"reply": true, "replyPart": false, "attachments": 2, "client": "local"}));
+    assert!(!p.to_string().contains("secret"));
+    let part = json!({"botId": "b1", "text": "why?", "replyTo": "e1", "replyPart": "the secret step"});
+    let (_, p) = props("send", &part).expect("send is tracked");
+    assert_eq!(p["replyPart"], true);
     assert!(!p.to_string().contains("secret"));
 
     let custom = json!({"name": "mine", "command": "/Users/me/bin/server"});
@@ -59,6 +63,15 @@ fn handoff_and_credentials_name_a_fixed_action() {
 fn settings_routines_screen_and_devices() {
     let setting = |m: &str, b: Value| props(m, &b).map(|(e, p)| (e, p["setting"].clone(), p["on"].clone()));
     assert_eq!(
+        setting("setVoiceServer", json!({"provider": "openai", "url": "http://127.0.0.1:8890"})),
+        Some((Event::SettingChanged, json!("voice_server"), json!(true))),
+        "never the address"
+    );
+    assert_eq!(
+        setting("setVoiceServer", json!({"provider": "openai", "url": " "})).map(|(_, _, on)| on),
+        Some(json!(false))
+    );
+    assert_eq!(
         setting("setCloud", json!({"enabled": true})),
         Some((Event::SettingChanged, json!("remote_access"), json!(true)))
     );
@@ -74,6 +87,10 @@ fn settings_routines_screen_and_devices() {
         Some((Event::SettingChanged, json!("cloud_assistants"), json!(true)))
     );
     assert_eq!(
+        setting("setAutoOrder", json!({"enabled": true})),
+        Some((Event::SettingChanged, json!("auto_order"), json!(true)))
+    );
+    assert_eq!(
         props("networkJoin", &json!({"invite": "codync-network:…", "name": "laptop"})),
         Some((Event::NetworkJoined, json!({"via": "invite", "client": "local"})))
     );
@@ -84,10 +101,23 @@ fn settings_routines_screen_and_devices() {
     );
     assert!(!saved.unwrap().1.to_string().contains("relay.example.com"), "the URL is not a property");
     assert_eq!(setting("setCloudUrl", json!({"url": "  "})).map(|s| s.2), Some(json!(false)));
+    assert_eq!(
+        setting("setUsageOrder", json!({"ids": ["codex", "claude"]})),
+        Some((Event::SettingChanged, json!("usage_order"), json!(true)))
+    );
 
     assert_eq!(
         props("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})),
         Some((Event::RoutineToggled, json!({"enabled": false, "client": "local"})))
+    );
+    let (event, p) = props("cancelFollowUp", &json!({"botId": "b", "id": "f"})).expect("tracked");
+    assert_eq!((event, &p), (Event::FollowUpCancelled, &json!({"by": "user", "client": "local"})));
+    let Value::Object(p) = p else { unreachable!() };
+    assert!(answered(event, p.clone(), &json!({"ok": true})).is_some());
+    assert!(answered(event, p, &json!({"ok": true, "gone": true})).is_none(), "it had already begun");
+    assert_eq!(
+        props("devServerRestart", &json!({"botId": "b", "id": "s"})),
+        Some((Event::DevServerAction, json!({"action": "restart", "client": "local"})))
     );
     assert_eq!(props("screenTakeover", &json!({"on": true})).map(|(e, _)| e), Some(Event::ScreenTakenOver));
     assert!(props("screenTakeover", &json!({"on": false})).is_none(), "handing it back");
@@ -105,6 +135,40 @@ fn settings_routines_screen_and_devices() {
 }
 
 #[test]
+fn a_connector_edit_reports_how_it_ended_and_nothing_it_changed() {
+    use crate::market::connector_update::EditFailure;
+    let edit = json!({"id": "mine", "command": "/Users/me/bin/server", "env": {"API_KEY": "secret"}});
+    let (event, p) = observe(&Caller::Local, "updateConnector", &edit).expect("tracked");
+    assert_eq!(event, Event::ConnectorUpdated);
+    let saved = |answer: Value| Value::Object(answered(event, p.clone(), &answer).expect("reported"));
+    let checked = json!({"connector": {"id": "mine"}, "verify": {"status": "ready"}});
+    assert_eq!(saved(checked), json!({"client": "local", "outcome": "ready"}));
+    let unchecked = json!({"connector": {"id": "mine"}, "verify": null});
+    assert_eq!(saved(unchecked), json!({"client": "local", "outcome": "saved"}));
+
+    let refused = |error: anyhow::Error| {
+        let (event, p) = failed(event, p.clone(), &error).expect("reported");
+        assert_eq!(event, Event::ConnectorUpdated);
+        Value::Object(p)
+    };
+    for (failure, category) in [
+        (EditFailure::Invalid, "invalid"),
+        (EditFailure::Refused, "refused"),
+        (EditFailure::WontStart, "wont_start"),
+        (EditFailure::Conflict, "conflict"),
+    ] {
+        let reported = refused(failure.error("/Users/me/bin/server won't start"));
+        assert_eq!(reported, json!({"client": "local", "outcome": "failed", "error": category}));
+    }
+    let locked = refused(anyhow::anyhow!("the vault is locked"));
+    assert_eq!(locked, json!({"client": "local", "outcome": "failed", "error": "other"}));
+
+    let (event, p) = observe(&Caller::Local, "removeLoginProfile", &json!({"loginProfile": "a1"})).unwrap();
+    let (_, other) = failed(event, p, &anyhow::anyhow!("removing /Users/me/slot")).expect("reported");
+    assert_eq!(other["error"], "other", "never the error's own words");
+}
+
+#[test]
 fn connectors_skills_and_agents() {
     assert_eq!(
         props("removeConnector", &json!({"id": "github"})),
@@ -119,6 +183,27 @@ fn connectors_skills_and_agents() {
     );
     assert_eq!(written(json!({"id": "deploy"})).map(|(_, p)| p["change"].clone()), Some(json!("update")));
     assert_eq!(props("chatCall", &json!({"name": "send_message"})), None, "other chat tools aren't events");
+    let sent =
+        |arguments: Value| props("chatCall", &json!({"botId": "b", "name": "send_file", "arguments": arguments}));
+    assert_eq!(
+        sent(json!({"path": "/secret/note.m4a", "text": "never sent"})),
+        Some((Event::VoiceNoteSent, json!({"client": "local"})))
+    );
+    assert_eq!(sent(json!({"path": "report.pdf"})), None, "a file card isn't a voice note");
+    let quoting =
+        |name: &str, arguments: Value| props("chatCall", &json!({"botId": "b", "name": name, "arguments": arguments}));
+    assert_eq!(
+        quoting("send_message", json!({"text": "secret", "reply_to": "e1"})),
+        Some((Event::BotQuoted, json!({"tool": "message", "client": "local"})))
+    );
+    let file = quoting("send_file", json!({"path": "/secret/report.pdf", "reply_to": "e1"}));
+    assert_eq!(file.map(|(_, p)| p["tool"].clone()), Some(json!("file")));
+    let (event, p) =
+        observe(&Caller::Local, "chatCall", &json!({"name": "send_message", "arguments": {"reply_to": "e1"}}))
+            .expect("a quote is tracked");
+    let outcome = |answer: Value| answered(event, p.clone(), &answer).map(|p| p["outcome"].clone());
+    assert_eq!(outcome(json!({"sent": true})), Some(json!("quoted")));
+    assert_eq!(outcome(json!({"sent": true, "warning": "x"})), Some(json!("unquoted")));
     let published = |arguments: Value| {
         observe(&Caller::Local, "chatCall", &json!({"botId": "b", "name": "publish_artifact", "arguments": arguments}))
             .expect("a publish is tracked")
@@ -127,17 +212,45 @@ fn connectors_skills_and_agents() {
     let p = answered(event, p, &json!({"published": true})).expect("published");
     assert_eq!(
         (event, Value::Object(p)),
-        (Event::ArtifactPublished, json!({"change": "new", "card": true, "client": "local"}))
+        (Event::ArtifactPublished, json!({"change": "new", "card": true, "quiet": false, "client": "local"}))
     );
     let (event, p) = published(json!({"path": "r.html", "artifact": "a1"}));
     let p = answered(event, p, &json!({"published": true, "card": "not posted"})).expect("published");
-    assert_eq!((p["change"].clone(), p["card"].clone()), (json!("update"), json!(false)), "a routine's has no card");
+    assert_eq!((p["change"].clone(), p["card"].clone()), (json!("update"), json!(false)), "a room's has no card");
+    let (event, p) = published(json!({"path": "r.html", "artifact": "a1", "notify": false}));
+    let p = answered(event, p, &json!({"published": true, "quiet": true})).expect("published");
+    assert_eq!((p["card"].clone(), p["quiet"].clone()), (json!(false), json!(true)), "a quiet update posts no card");
     assert_eq!(props("connectorSignIn", &json!({"id": "c"})).map(|(e, _)| e), Some(Event::ConnectorSigninStarted));
     let setup = props("agentSetup", &json!({"backend": "claude-acp", "step": "install"}));
     assert_eq!(setup, Some((Event::AgentSetupStarted, json!({"agent": "claude-acp", "client": "local"}))));
     assert_eq!(props("agentSetup", &json!({"step": "node"})).map(|(_, p)| p), Some(json!({"client": "local"})));
     let signed = props("agentAuthenticate", &json!({"backend": "codex", "method": "chatgpt"}));
     assert_eq!(signed, Some((Event::AgentSignedIn, json!({"agent": "codex", "client": "local"}))));
+    assert_eq!(props("agentAuth", &json!({"backend": "codex"})), None, "a check of the computer's own login");
+    let (event, p) = observe(&Caller::Local, "agentAuth", &json!({"backend": "codex", "loginProfile": "a1"})).unwrap();
+    assert_eq!(event, Event::AgentSignedIn);
+    assert!(answered(event, p.clone(), &json!({"signedIn": false})).is_none(), "still signed out");
+    let p = answered(event, p, &json!({"signedIn": true})).expect("signed in");
+    assert_eq!(Value::Object(p), json!({"agent": "codex", "loginProfile": true, "client": "local"}));
+    let added = props("addLoginProfile", &json!({"backend": "claude"}));
+    assert_eq!(
+        added,
+        Some((
+            Event::LoginProfileChanged,
+            json!({"action": "add", "agent": "claude", "kind": "account", "client": "local"})
+        ))
+    );
+    let keys = props(
+        "setLoginProfileKeys",
+        &json!({"loginProfile": "a1", "vars": {"MY_KEY": "secret"}, "import": ["A", "B"]}),
+    );
+    let counted = json!({"action": "keys", "typed": 1, "imported": 2, "client": "local"});
+    assert_eq!(keys, Some((Event::LoginProfileChanged, counted)), "counts, never a name or a value");
+    let renamed = props("renameLoginProfile", &json!({"backend": "claude", "loginProfile": "a1", "name": "Work"}));
+    let named = json!({"action": "rename", "agent": "claude", "client": "local"});
+    assert_eq!(renamed, Some((Event::LoginProfileChanged, named)), "never the name");
+    let removed = props("removeLoginProfile", &json!({"loginProfile": "a1"})).map(|(_, p)| p);
+    assert_eq!(removed, Some(json!({"action": "remove", "client": "local"})), "never the login profile");
 
     let (event, p) = observe(&Caller::Local, "importConnectors", &json!({"config": "{\"secret\": 1}"})).unwrap();
     let p = answered(event, p, &json!({"items": [{"id": "a"}, {"id": "b"}]})).expect("an import");
@@ -150,6 +263,21 @@ fn connectors_skills_and_agents() {
         (event, Value::Object(p)),
         (Event::ConnectorInstalled, json!({"connector": "composio", "client": "local"}))
     );
+}
+
+#[test]
+fn decision_events_are_reported_only_by_the_actor_after_delivery() {
+    assert_eq!(
+        props(
+            "chatCall",
+            &json!({"botId": "b", "name": "request_decision", "arguments": {
+            "question": "Ship now or wait?", "options": ["Ship", "Wait"], "recommended": "Wait" }})
+        ),
+        None,
+        "API entry is not card publication"
+    );
+    assert_eq!(props("chatCall", &json!({"name": "request_decision"})).map(|(_, p)| p["options"].clone()), None);
+    assert_eq!(props("respondDecision", &json!({"entryId": "e", "option": "Ship"})), None);
 }
 
 #[test]
@@ -168,6 +296,21 @@ fn a_bot_edit_names_the_settings_it_changes() {
         serde_json::from_value(json!({"id": "b1", "name": "Ada", "backend": "codex", "cwd": own})).unwrap();
     assert_eq!(changed_fields(&stored, &json!({"id": "b1", "cwd": "", "fastMode": true})), ["fastMode"]);
     assert_eq!(changed_fields(&stored, &json!({"id": "b1", "cwd": "/tmp"})), ["cwd"]);
+}
+
+#[test]
+fn a_computer_rename_reports_without_the_name() {
+    assert_eq!(
+        props("setComputerName", &json!({"name": "Work Mac"})),
+        Some((Event::ComputerRenamed, json!({"removed": false, "outcome": "renamed", "client": "local"})))
+    );
+    let (event, p) = observe(&Caller::Local, "setComputerName", &json!({"name": " "})).unwrap();
+    assert_eq!(p["removed"], true);
+    let failed = failed(event, p, &anyhow::anyhow!("A cloud computer is renamed in Codync Cloud."));
+    assert_eq!(
+        failed.map(|(_, p)| (p["outcome"].clone(), p["error"].clone())),
+        Some((json!("failed"), json!("other")))
+    );
 }
 
 #[test]
@@ -224,6 +367,15 @@ async fn store_lookups_add_fields_choice_and_platform() {
     hub.store.save_bot(&cfg).unwrap();
     let (_, p) = observe_call(&hub, &Caller::Local, "updateBot", &json!({"id": "b1", "permission": "auto"})).unwrap();
     assert_eq!(p["fields"], json!(["permission"]));
+    assert!(p.get("compaction").is_none());
+    let (_, p) = observe_call(&hub, &Caller::Local, "updateBot", &json!({"id": "b1", "compaction": 120_000})).unwrap();
+    assert_eq!((&p["fields"], &p["compaction"]), (&json!(["compaction"]), &json!("tokens")), "the kind, not the size");
+    // The apps send the whole form: an unchanged threshold in it isn't a pick.
+    let (_, p) =
+        observe_call(&hub, &Caller::Local, "updateBot", &json!({"id": "b1", "name": "c", "compaction": "off"}))
+            .unwrap();
+    assert_eq!(p["fields"], json!(["name"]));
+    assert!(p.get("compaction").is_none());
 
     let card = json!({"status": "pending", "options": [{"optionId": "o1", "name": "Allow", "kind": "allow_always"}]});
     let e =
@@ -242,7 +394,7 @@ async fn store_lookups_add_fields_choice_and_platform() {
             lease_until: None,
             created_at: 0,
             last_seen_at: None,
-            account: None,
+            account: DeviceAccount::Unrecorded,
         })
         .unwrap();
     let (event, p) = observe_call(&hub, &phone, "respondPermission", &answer).unwrap();
@@ -260,7 +412,7 @@ async fn store_lookups_add_fields_choice_and_platform() {
 fn a_failed_network_call_reports_what_it_was_and_others_nothing() {
     let failed_call = |method: &str, b: &Value| {
         let (event, p) = observe(&Caller::Local, method, b)?;
-        failed(event, p).map(|(e, p)| (e, Value::Object(p)))
+        failed(event, p, &anyhow::anyhow!("refused")).map(|(e, p)| (e, Value::Object(p)))
     };
     assert_eq!(
         failed_call("networkJoin", &json!({"invite": "codync-network:…", "name": "laptop"})),
@@ -271,4 +423,41 @@ fn a_failed_network_call_reports_what_it_was_and_others_nothing() {
         Some((Event::NetworkFailed, json!({"action": "remove", "client": "local", "stage": "action"})))
     );
     assert_eq!(failed_call("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})), None);
+    assert_eq!(failed_call("setCloudUrl", &json!({"url": "https://relay.example.com"})), None);
+}
+
+#[test]
+fn a_voice_server_that_wasnt_saved_reports_why_never_what_it_said() {
+    let (event, p) =
+        observe(&Caller::Local, "setVoiceServer", &json!({"provider": "openai", "url": "http://x"})).unwrap();
+    let refused = crate::voice::ServerRefused::error("unreachable", "Can't reach your server.");
+    let reported = |error: &anyhow::Error| failed(event, p.clone(), error).map(|(e, p)| (e, Value::Object(p)));
+    let with = |category: &str| {
+        let props =
+            json!({"setting": "voice_server", "on": true, "client": "local", "outcome": "failed", "error": category});
+        Some((Event::SettingChanged, props))
+    };
+    assert_eq!(reported(&refused), with("unreachable"));
+    assert_eq!(reported(&anyhow::anyhow!("the vault is locked")), with("other"));
+}
+
+#[test]
+fn a_team_change_names_the_settings_it_passes_never_their_values() {
+    let arguments = json!({"botId": "b2", "name": "Secret", "modelOptions": {"effort": "low"}, "made_up": 1});
+    let b = json!({"botId": "b1", "name": "update_bot", "arguments": arguments});
+    assert_eq!(
+        props("manageCall", &b),
+        Some((Event::TeamManaged, json!({"tool": "update", "fields": ["modelOptions", "name"], "client": "local"})))
+    );
+    assert_eq!(props("manageCall", &json!({"name": "list_team", "arguments": {}})), None, "a read");
+}
+
+#[test]
+fn a_refused_team_change_reports_why_never_what_it_said() {
+    let b = json!({"name": "create_bot", "arguments": {"name": "Scout"}});
+    let (event, p) = observe(&Caller::Local, "manageCall", &b).unwrap();
+    let reported = |error: &anyhow::Error| failed(event, p.clone(), error).map(|(_, p)| p["error"].clone());
+    let denied = crate::chat::manage::Refused::error("denied", "the user didn't allow this change".into());
+    assert_eq!(reported(&denied), Some(json!("denied")));
+    assert_eq!(reported(&anyhow::anyhow!("nothing to change")), Some(json!("other")));
 }

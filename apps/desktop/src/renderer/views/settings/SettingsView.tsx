@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState } from 'react'
 import type { Screen } from '@shared/analytics'
 import { APPEARANCES, type Appearance } from '@shared/appearance'
 import { islandLabel } from '@shared/island'
-import { VOICE_SHORTCUTS, type VoiceShortcut } from '@shared/voice-shortcut'
+import { VOICE_SHORTCUTS, VOICE_TAPS, type VoiceShortcut } from '@shared/voice-shortcut'
 import { Button, CardForm, CardSection, ChoicePicker, IconButton, ProgressBar, Switch, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { useDismiss } from '../../components/Overlay'
@@ -13,14 +13,15 @@ import { appLanguages, languageTitle } from '../../lib/l10n'
 import { useTr } from '../../lib/use-language'
 import { DEFAULT_TEXT_SIZE, prefs, TEXT_SIZES, usePref } from '../../lib/prefs'
 import { useAccount } from '../../store/account'
-import { useScreenViewed } from '../../store/analytics'
+import { analytics, useScreenViewed } from '../../store/analytics'
 import { StoreContext, useApp } from '../../store/context'
+import { SwitchRow } from '../bots/parts'
 import { ComputerBadge } from '../ComputerBadge'
 import { UpdateButton, useUpdates } from '../UpdateButton'
 import { ComputersView } from './ComputersView'
 import { NetworkView } from './NetworkView'
 import { errorText, isMac, thisMac } from './parts'
-import { UsageLimits } from './UsageLimits'
+import { UsageSection } from './UsageLimits'
 import { VoiceChatSettingsView } from './VoiceChatSettingsView'
 import { ComputerAccessView } from '../computer-access/ComputerAccessView'
 import { FormSheet } from '../marketplace/pieces'
@@ -107,7 +108,7 @@ function PageContent({ page }: { page: SettingsPage }) {
         </StoreContext.Provider>
       ) : (
         <CardForm>
-          <Text tone="secondary">{tr(isMac ? "Voice keys are kept by This Mac's host, which isn't running." : `Voice keys are kept by ${thisMac}'s host, which isn't running.`)}</Text>
+          <Text tone="secondary">{tr(isMac ? "Voice keys are kept by This Mac's host, which isn't running." : "Voice keys are kept by {computer}'s host, which isn't running.").replaceAll('{computer}', () => thisMac)}</Text>
         </CardForm>
       )
     case 'usage':
@@ -131,11 +132,15 @@ function GeneralSettings() {
   const systemLanguage = typeof navigator === 'undefined' ? 'en' : navigator.language
   const [usageIconStyle, setUsageIconStyle] = usePref(prefs.usageIconStyle)
   const [compact, setCompact] = usePref(prefs.sidebarCompact)
+  const [agentLogos, setAgentLogos] = usePref(prefs.agentLogos)
   const [thinkingDetails, setThinkingDetails] = usePref(prefs.thinkingDetails)
+  const [voiceTap, setVoiceTap] = usePref(prefs.voiceShortcutTap)
   const [showInDock, setShowInDock] = useState(true)
   useEffect(() => void window.codync.app.showInDock().then(setShowInDock), [])
   const [launchAtLogin, setLaunchAtLogin] = useState(false)
   useEffect(() => void window.codync.app.launchAtLogin().then(setLaunchAtLogin), [])
+  const [notifications, setNotifications] = useState(false)
+  useEffect(() => void window.codync.notifications.enabled().then(setNotifications), [])
   const [island, setIsland] = useState(false)
   useEffect(() => void window.codync.island.enabled().then(setIsland), [])
   const [voiceShortcut, setVoiceShortcut] = useState<VoiceShortcut>('off')
@@ -191,6 +196,7 @@ function GeneralSettings() {
         <Switch on={compact} onChange={setCompact}>
           Compact sidebar
         </Switch>
+        <SwitchRow title="Show agent logos" detail="Marks each bot with its agent's logo when your bots use more than one agent." on={agentLogos} onChange={setAgentLogos} />
       </CardSection>
       <CardSection
         title="Language"
@@ -214,6 +220,17 @@ function GeneralSettings() {
       </CardSection>
       <CardSection title="System">
         {window.codync.platform === 'darwin' ? <Switch on={showInDock} onChange={(on) => void window.codync.app.setShowInDock(on).then(setShowInDock)}>Show in Dock</Switch> : null}
+        {window.codync.notifications.supported ? (
+          <SwitchRow
+            title="Notifications"
+            detail="Alerts you when a bot is done, needs you or hits an error, unless its chat is open. A phone with Codync gets the same alerts, so this starts off."
+            on={notifications}
+            onChange={(on) => {
+              analytics.track({ event: 'desktop_notifications_set', on })
+              void window.codync.notifications.setEnabled(on).then(setNotifications)
+            }}
+          />
+        ) : null}
         {window.codync.island.supported ? (
           <Switch on={island} onChange={(on) => void window.codync.island.setEnabled(on).then(setIsland)}>
             {islandLabel(window.codync.platform)}
@@ -221,9 +238,19 @@ function GeneralSettings() {
         ) : null}
         {/* On-device speech, so macOS only. */}
         {window.codync.speech.available ? (
-          <ValueRow label="Voice input shortcut" detail="Talk to a bot from any app, then tap the key once more to send.">
-            <ChoicePicker selection={voiceShortcut} options={VOICE_SHORTCUTS} onChange={(s) => void window.codync.speech.setShortcut(s).then(setVoiceShortcut)} />
-          </ValueRow>
+          <>
+            <ValueRow
+              label="Voice input shortcut"
+              detail={voiceTap === 'stop' ? 'Talk to a bot from any app, then tap the key once more to stop without sending.' : 'Talk to a bot from any app, then tap the key once more to send.'}
+            >
+              <ChoicePicker selection={voiceShortcut} options={VOICE_SHORTCUTS} onChange={(s) => void window.codync.speech.setShortcut(s).then(setVoiceShortcut)} />
+            </ValueRow>
+            {voiceShortcut !== 'off' ? (
+              <ValueRow label="Tap again to">
+                <ChoicePicker selection={voiceTap} options={VOICE_TAPS} onChange={setVoiceTap} />
+              </ValueRow>
+            ) : null}
+          </>
         ) : null}
         <Switch on={launchAtLogin} onChange={(on) => void window.codync.app.setLaunchAtLogin(on).then(setLaunchAtLogin)}>
           Open at login
@@ -264,25 +291,29 @@ function UsageLimitsList() {
   const tr = useTr()
   const app = useApp()
   const stores = app.computers.flatMap((c) => app.store(c.id) ?? [])
-  const withUsage = stores.filter((s) => s.usage.providers.length > 0)
+  const withUsage = stores.filter((s) => s.usage.providers.length > 0 || s.usage.services?.length)
   if (withUsage.length === 0) return <Text tone="secondary">{tr(`No usage information yet.`)}</Text>
   return (
     <>
-      {withUsage.flatMap((store) => [
-        stores.length > 1 ? (
-          <HStack key={`${store.computer.id}-label`} gap={6} className="settings-usage-computer">
+      {withUsage.map((store) => (
+        <UsageSection
+          key={store.computer.id}
+          title={<>
             <ComputerBadge computer={store.computer} size={16} />
             {store.hostName}
-          </HStack>
-        ) : null,
-        <UsageLimits key={store.computer.id} usage={store.usage} />,
-      ])}
+          </>}
+          usage={store.usage}
+          onShown={(id, shown) => void store.setUsageShown(id, shown).catch((e: unknown) => app.setError(errorText(e)))}
+          onOrder={(ids) => store.setUsageOrder(ids).catch((e: unknown) => app.setError(errorText(e)))}
+        />
+      ))}
     </>
   )
 }
 
 /** The app's update check and preferences, the same as the menu bar's Updates menu. */
 function UpdateSettings() {
+  const tr = useTr()
   const updates = useUpdates()
   if (!updates) return null
   const footer = updates.supported ? null : 'Updates are available in release builds.'
@@ -302,7 +333,7 @@ function UpdateSettings() {
           ...(updates.downloadPercent !== null
             ? [
                 <div key="progress" className="settings-row settings-appear">
-                  <ProgressBar value={updates.downloadPercent / 100} label={`Downloading Codync ${updates.availableVersion ?? ''}`} />
+                  <ProgressBar value={updates.downloadPercent / 100} label={tr('Downloading Codync {version}').replaceAll('{version}', () => updates.availableVersion ?? '')} />
                 </div>,
               ]
             : []),

@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { fill } from '@shared/fill'
 import { CharacterAvatar, type Mood } from '../components/Avatar'
 import { Button } from '../components/Controls'
 import { Icon } from '../components/Icon'
@@ -11,13 +12,14 @@ const isMac = window.codync.platform === 'darwin'
 
 /** What stands between this computer and the chat, with the one action that fixes it. */
 export function HostStateView({ compact = false }: { compact?: boolean }) {
+  const tr = useTr()
   const app = useApp()
   const state = app.host.state
   switch (state.kind) {
     case 'notInstalled':
-      return <EmptyState compact={compact} icon={<HostBot compact={compact} mood="idle" />} title={`Set up this ${isMac ? 'Mac' : 'computer'}`} message={`Codync runs your coding agents through the host, a small background service on this ${isMac ? 'Mac' : 'computer'}.`} action={['Install host', () => window.codync.host.install()]} />
+      return <EmptyState compact={compact} icon={<HostBot compact={compact} mood="idle" />} title={tr('Set up this {device}').replaceAll('{device}', () => isMac ? tr('Mac') : tr('computer'))} message={tr('Codync runs your coding agents through the host, a small background service on this {device}.').replaceAll('{device}', () => isMac ? tr('Mac') : tr('computer'))} action={['Install host', () => window.codync.host.install()]} />
     case 'missingBinary':
-      return <EmptyState compact={compact} icon={<HostBot compact={compact} mood="failed" />} title="The host is missing" message={window.codync.appScheme === 'codync-dev' ? 'Rebuild Codync Dev with its development host, then open it again.' : "This copy of Codync doesn't include codync-host. Download Codync again from codync.dev or GitHub."} />
+      return <EmptyState compact={compact} icon={<HostBot compact={compact} mood="failed" />} title={tr('The host is missing')} message={window.codync.appScheme === 'codync-dev' ? tr('Rebuild Codync Dev with its development host, then open it again.') : tr("This copy of Codync doesn't include codync-host. Download Codync again from codync.dev or GitHub.")} />
     case 'failed':
       return <FailedHost compact={compact} message={state.message} />
     default:
@@ -31,7 +33,7 @@ function hostFailure(message: string, tr: (text: string) => string): string {
   if (loaded || message.includes('Bootstrap failed:')) {
     const path = loaded?.[1]
     return path
-      ? tr("The background service didn't start. macOS couldn't load {path}.").replaceAll('{path}', path)
+      ? fill(tr("The background service didn't start. macOS couldn't load {path}."), { path })
       : tr("The background service didn't start.")
   }
   return tr(message)
@@ -51,14 +53,14 @@ function HostBot({ compact, mood }: { compact: boolean; mood: Mood }) {
   )
 }
 
-/** A quiet placeholder for an empty screen: icon (an SF Symbol name or artwork), title, a line of help and an optional action. */
-export function EmptyState({ icon, title, message, action, compact = false }: { icon: string | ReactElement; title: string; message: string; action?: [string, () => void]; compact?: boolean }) {
+/** A quiet placeholder for an empty screen: icon (an SF Symbol name or artwork), title, an optional line of help and an optional action. */
+export function EmptyState({ icon, title, message, action, compact = false }: { icon: string | ReactElement; title: string; message?: string; action?: [string, () => void]; compact?: boolean }) {
   const tr = useTr()
   return (
     <div className={`empty-state ${compact ? 'local-recovery' : ''}`}>
       {typeof icon === 'string' ? <Icon name={icon} size={compact ? 22 : 36} weight="light" color="var(--tertiary)" /> : icon}
       <Text as="div" size={compact ? 'callout' : 'title3'} weight="semibold" tone="text">{tr(title)}</Text>
-      <Text as="div" size="callout" tone="secondary" className="empty-state-message">{tr(message)}</Text>
+      {message ? <Text as="div" size="callout" tone="secondary" className="empty-state-message">{tr(message)}</Text> : null}
       {action ? (
         <Button kind={compact ? 'secondary' : 'primary'} onClick={action[1]} className="empty-state-action">
           {action[0]}

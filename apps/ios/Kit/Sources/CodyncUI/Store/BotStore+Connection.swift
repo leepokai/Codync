@@ -128,7 +128,8 @@ extension BotStore {
             return
         }
         self.transport = transport
-        let client = HostClient(transport: transport)
+        var client = HostClient(transport: transport)
+        client.hostVersion = hostVersion?.version
         self.client = client
         if let remote = transport as? any RemoteTransport { watch(remote) }
         for await state in transport.states() {
@@ -148,9 +149,9 @@ extension BotStore {
             case .connecting:
                 stopEvents()
                 setConnection(.connecting)
-            case let .hostOffline(lastSeen):
+            case let .hostOffline(lastSeen, waking):
                 stopEvents()
-                setConnection(.computerOffline(lastSeen: lastSeen))
+                setConnection(.computerOffline(lastSeen: lastSeen, waking: waking))
                 if let remote = transport as? any RemoteTransport {
                     Task { [weak self] in await self?.reconcileQueued(remote) }
                 }
@@ -216,12 +217,15 @@ extension BotStore {
         Task { [weak self] in
             for await computer in updates {
                 guard let self, !self.retired else { return }
+                let hadRelay = self.computer.cloud != nil
                 // The transport's copy of this device's picks may be older.
                 self.updateComputer { current in
                     var next = computer
                     next.keepDevicePicks(from: current)
                     current = next
                 }
+                // The relay it had was the only one to ask about what it held.
+                if hadRelay, self.computer.cloud == nil { await self.reconcileQueued(remote) }
             }
         }
         Task { [weak self] in

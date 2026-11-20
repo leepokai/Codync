@@ -11,6 +11,6 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["src", "test"],
+  "include": ["src", "test", "machines"],
   "exclude": ["test/e2e"]
 }

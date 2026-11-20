@@ -38,17 +38,24 @@ standalone crate, and it reaches Claude Code and Codex sessions too.
   bots) through the app, a Claude Code session through the inbox socket Claude Code gives every session (read
   between tool calls while it works, a new turn when it is idle), a Codex thread through `codex queue`. A notice
   wakes no one: it goes in with the next message that does.
-- **Quiet by design.** A message costs the receiving agent a turn, so nothing is sent unless an agent sends one or
-  someone asks who is around: no presence heartbeats, no status pushes. The receiving computer enforces budgets
+- **Quiet by design.** A message costs the receiving agent a turn, so nothing reaches an agent unless an agent sends
+  it or someone asks who is around: no presence heartbeats, no status pushes. The receiving computer enforces budgets
   whatever the sender's agents were told: a chain of handoffs (A asks B, B's answer makes A ask C, …) stops after 8,
   each pair of agents gets a burst of 5 messages and then one every 2 minutes, and the same words twice within 10
   minutes are refused. A sender's retry of a letter already taken is acknowledged, not delivered again.
 - **Letters wait.** A letter for a computer that is asleep waits in the sender's outbox for up to a day and goes
   out when that computer answers again.
+- **One connection per pair, used both ways.** Two computers keep the connection either one opened and ask each
+  other over it; a computer with none open to another tries again every 30 seconds, and each listens on the same
+  UDP port across restarts (kept in its state folder). So a computer whose firewall lets in only what it started
+  (Windows by default) is still written to, over its own connection, also after the other one restarts.
 - **The receiver decides who writes.** Each computer keeps ordered rules of who on the others may write to which of
-  its agents (`deny *@laptop → *`), the first match deciding; with none, every member may. The answer to a request
+  its agents (`deny *@laptop → *`), the first match deciding; a sender no rule matches gets the default, `allow` unless the app sets another. A rule is `allow`, `deny`,
+  or a ceiling, `auto` or `ask`: the letter is taken and says so (`Message::access`), for an app that can hold its
+  agent to asking its user. Only an agent the app runs can be held to one, so a letter under a ceiling to a session
+  the network knocks on is refused. The answer to a request
   this computer sent still gets in, from the computer it asked and to the agent that asked, so a rule added
-  meanwhile doesn't strand it.
+  meanwhile doesn't strand it; under a ceiling (past a `deny` it comes in at `ask`) only to an agent the app runs.
 - **A computer that moves says so.** When its addresses change (a laptop on another Wi-Fi), it signs where it is
   now into the roster and tells the others, so they find it without a restart.
 
@@ -96,6 +103,13 @@ here read-only. The API changes with Codync. Report issues here; send pull reque
 [Codync's `dev` branch](https://github.com/leepokai/Codync) (`host/crates/network`). Messages into Claude Code
 sessions and the daemon's control socket work on macOS and Linux; on Windows the crate builds, and those come later.
 
+On a Mac reachable on two IPv4 addresses (Wi-Fi and Ethernet on one network, a VM's gateway), connections *into* the
+Mac stall in the handshake: noq-udp 1.4, under iroh, sends the Mac's answer from the wrong address. Codync's host
+builds a patched noq-udp (`host/vendor/noq-udp` in Codync's repository); a build of this crate from crates.io has
+the bug until a noq-udp release carries quinn-udp's fix (quinn-rs/quinn@a2c55b3681). To get it now, copy that
+folder and patch noq-udp with the copy: in an app, `noq-udp = { path = "<copy>" }` under `[patch.crates-io]` in
+its `Cargo.toml`; for the daemon, `cargo install codync-network --config 'patch.crates-io.noq-udp.path="<copy>"'`.
+
 ## Install
 
 The daemon and its command (`codync-network`), with Rust 1.91 or later:
@@ -114,7 +128,7 @@ It builds iroh on rustls with ring. An app that already uses rustls with aws-lc-
 aren't built in together (rustls then can't pick a provider by itself):
 
 ```toml
-codync-network = { version = "0.2", default-features = false, features = ["tls-aws-lc-rs"] }
+codync-network = { version = "0.3", default-features = false, features = ["tls-aws-lc-rs"] }
 ```
 
 ## Try it
@@ -137,6 +151,8 @@ codync-network promote laptop                    # the owner makes laptop an adm
 codync-network remove laptop [--cascade]         # out for good (--cascade: and whom it admitted)
 codync-network rules deny '*@laptop' reviewer    # laptop's agents can't write to reviewer here
 codync-network rules allow lead@laptop reviewer --first   # except lead (the first match decides)
+codync-network rules ask '*@cloud' terminal      # cloud's letters to this terminal print as (ask); to a session agent
+                                                 # such as reviewer, auto and ask refuse them: nothing holds it to asking
 codync-network rules                             # the rules, numbered
 codync-network rules remove 2                    # take out rule 2
 ```
@@ -154,7 +170,7 @@ is `accept`.
 
 `--connector public|private|https://your-relay` picks the connector (default `public`), `--dir` the state folder
 (default `~/.codync-network`: the key in `secret.key`, the roster in `network.json`, the agents in `agents.json`,
-the rules in `rules.json`). A Codync host keeps a node per network in `~/.codync` (`network`, `network-…`); never
+the rules in `rules.json`, the UDP port in `port`). A Codync host keeps a node per network in `~/.codync` (`network`, `network-…`); never
 point two nodes at one folder.
 
 ## Use
@@ -182,6 +198,11 @@ kind; `set_agents` sets it to ClaudeCode or Codex for a `Reach::ClaudeCode` or `
 name or presence changes, another computer offers different agents), for an app that shows the network live.
 
 - `node.set_rules(rules)` sets who may write to this computer's agents (`Rule::new(Access::Deny, "*@laptop", "*")`).
+  A message says what its sender's rule is (`message.access`): under `Access::Auto` or `Access::Ask`, have the
+  agent ask its user before it acts. `rules::access` is the same check for an app's own use.
+- `node.set_default_access(access)` sets what a sender no rule matches gets (`allow` by default). Set `auto` or `ask`
+  only if every agent the app offers is one it runs and holds to a ceiling: a letter under one to a session the
+  network knocks on is refused.
 - `node.set_senders(names)` lets the app send as agents it doesn't offer (a hosted assistant that asks agents
   elsewhere but can't be asked itself); the answers to its letters still come back.
 - `node.set_network_name(Some("home"))` names the network in the invites this computer makes, and

@@ -20,7 +20,7 @@ extension ChannelTransport {
             switch state {
             case .ready where link?.sealer != nil: return
             case .ready, .connecting:
-                guard ContinuousClock.now < deadline else { throw HostError.unreachable }
+                guard ContinuousClock.now < deadline else { throw linkError(.connecting) }
                 await stateChange(until: deadline)
             case .hostOffline, .unauthorized, .failed: throw linkError(state)
             }
@@ -45,10 +45,10 @@ extension ChannelTransport {
     /// What a link state the caller can't use means to it.
     private func linkError(_ state: LinkState) -> HostError {
         switch state {
-        case let .hostOffline(lastSeen): .computerOffline(lastSeen: lastSeen)
+        case let .hostOffline(lastSeen, _): .computerOffline(lastSeen: lastSeen)
         case let .unauthorized(message): .unauthorized(message)
         case .failed where needsUpgrade: .upgradeRequired
-        case .connecting, .ready, .failed: .unreachable
+        case .connecting, .ready, .failed: computer.cloud == nil ? .unreachableDirectly : .unreachable
         }
     }
 

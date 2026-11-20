@@ -5,15 +5,16 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { BotAvatar } from '../../components/Avatar'
 import { Icon } from '../../components/Icon'
 import { LevelDots } from '../../components/LevelDots'
+import { Reveal } from '../../components/Controls'
+import { SearchResultView } from './SearchResultView'
 import { Sheet } from '../../components/Overlay'
 import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
-import { avatarColor } from '../../lib/theme'
 import { analytics } from '../../store/analytics'
 import { useStore } from '../../store/context'
 import { VoiceChatSettingsView } from '../settings/VoiceChatSettingsView'
 import { engine as preferredEngine, voiceStatus } from '../settings/voice-settings'
-import { stopDictation } from '../thread/dictation'
+import { stopDictation } from '../chat/dictation'
 import { CallLink } from './call-link'
 import { CallQuality } from './call-quality'
 import { CloudSpeechEngine } from './CloudSpeechEngine'
@@ -21,6 +22,9 @@ import { GeminiLiveEngine } from './GeminiLiveEngine'
 import { OnDeviceEngine } from './OnDeviceEngine'
 import { OpenAIRealtimeEngine } from './OpenAIRealtimeEngine'
 import { countVoiceUsage, fromBase64, onDeviceAvailable, onDeviceUnavailableReason, providerName, transcribeOnHost, VoiceEngine, VoiceSettings, voiceSettingsClosed, type VoicePhase, type VoiceProvider } from './voice'
+import { useTr } from '../../lib/use-language'
+import { trNow } from '../../lib/l10n.ts'
+import { fill } from '@shared/fill'
 import './call.css'
 
 /** What the call bar says for `phase`. */
@@ -30,13 +34,13 @@ function statusText(phase: VoicePhase | null, muted: boolean, working: boolean) 
     case 'starting':
       return 'Connecting'
     case 'reconnecting':
-      return 'Reconnecting'
+      return trNow('Reconnecting')
     case 'speaking':
-      return 'Speaking'
+      return trNow('Speaking')
     case 'failed':
-      return "Can't listen"
+      return trNow("Can't listen")
     case 'listening':
-      return muted ? 'Muted' : working ? 'Working, listening' : 'Listening'
+      return muted ? trNow('Muted') : working ? trNow('Working, listening') : trNow('Listening')
   }
 }
 
@@ -58,6 +62,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
   interrupt: { current: (() => void) | null }
   onEnd: () => void
 }) {
+  const tr = useTr()
   const store = useStore()
   const [session, setSession] = useState<VoiceEngine | null>(null)
   useModel(session)
@@ -77,7 +82,6 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
   const engineName = useRef<VoiceCallEngine>('on_device')
   const counted = useRef(false)
   const bot = store.bots.get(botId)
-  const color = bot ? avatarColor(bot.avatarColor) : null
   /** The call on the computer, which runs it. */
   const link = useRef<CallLink | null>(null)
   link.current ??= new CallLink(store, botId, crypto.randomUUID())
@@ -125,7 +129,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
       next =
         provider === 'openai'
           ? new OpenAIRealtimeEngine(model, voice, call)
-          : new GeminiLiveEngine(model, voice, call)
+          : new GeminiLiveEngine(model, voice, VoiceSettings.googleSearch(provider), call)
       cloudStartedAt.current = Date.now()
       engineName.current = provider
     } else {
@@ -134,7 +138,10 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
       engineName.current = 'on_device'
     }
     quality.current!.begin(engineName.current)
-    if (next instanceof GeminiLiveEngine) next.onStall = () => quality.current!.stalled()
+    if (next instanceof GeminiLiveEngine) {
+      next.onStall = () => quality.current!.stalled()
+      next.onSearch = (use) => quality.current!.search(use)
+    }
     // Picks up the computer's newest models for the next call; this one starts right away.
     if (provider) void rememberStatus()
     // The computer decides what the voice hears (host chat/calls/announce); the engine only says it.
@@ -179,7 +186,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
     // Ended, or another engine was picked meanwhile.
     if (closed.current || engineChoice.current !== picked) return
     if (configured) {
-      setNotice(`${onDeviceUnavailableReason()} Using ${providerName(configured)}.`)
+      setNotice(tr('{device} Using {name}.').replace('{device}', () => onDeviceUnavailableReason()).replaceAll('{name}', () => providerName(configured)))
       if (window.codync.platform !== 'darwin') preferredEngine.set(configured)
       begin(configured)
       if (window.codync.platform === 'darwin') engineChoice.current = picked
@@ -222,7 +229,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
     // A cloud engine that can't start or drops mid-call hands over to on-device voice.
     if (phase === 'failed' && session.provider && onDeviceAvailable()) {
       countCloudMinutes()
-      setNotice(`${providerName(session.provider)} isn't available (${session.failure}). Using on-device voice.`)
+      setNotice(fill(tr("{name} isn't available ({reason}). Using on-device voice."), { name: providerName(session.provider), reason: tr(String(session.failure)) }))
       begin(null)
     }
   }, [session, phase])
@@ -239,49 +246,51 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
         <button
           className={`call-avatar ${speaking ? 'speaking' : ''}`}
           disabled={!speaking}
-          aria-label={speaking ? 'Interrupt' : (bot?.name ?? '')}
-          title={speaking ? 'Interrupt' : undefined}
+          aria-label={speaking ? tr('Interrupt') : (bot?.name ?? '')}
+          title={speaking ? tr('Interrupt') : undefined}
           onClick={() => session?.interrupt()}
         >
           {bot ? <BotAvatar bot={bot} size={34} /> : <span className="call-avatar-empty" />}
         </button>
         <LevelDots
           sample={() => ({ level: session?.level ?? 0, speaking: session?.phase === 'speaking', working, connecting: connecting && !blocked })}
-          color={color}
           width={120}
           label={statusText(phase, muted, working)}
           className="call-dots"
         />
         {/* Audio leaves the computer: say where. */}
         {session?.provider ? (
-          <Text size="caption2" weight="semibold" tone="secondary" aria-label={`Voice by ${providerName(session.provider)}`}>
+          <Text size="caption2" weight="semibold" tone="secondary" aria-label={tr('Voice by {name}').replaceAll('{name}', providerName(session.provider))}>
             {providerName(session.provider)}
           </Text>
         ) : null}
-        <button className="call-round" title="Call settings" aria-label="Call settings" onClick={() => (openVoiceSettings ? openVoiceSettings() : setSettings(true))}>
+        <button className="call-round" title={tr('Call settings')} aria-label={tr('Call settings')} onClick={() => (openVoiceSettings ? openVoiceSettings() : setSettings(true))}>
           <Icon name="gearshape" size={16} weight="medium" scaled={false} />
         </button>
         <button
           className={`call-round ${muted ? 'on' : ''}`}
-          title={muted ? 'Unmute' : 'Mute'}
+          title={tr(muted ? 'Unmute' : 'Mute')}
           aria-label={muted ? 'Unmute' : 'Mute'}
           onClick={() => session && (session.muted = !session.muted)}
         >
           <Icon name={muted ? 'mic.slash' : 'mic'} size={16} weight="medium" scaled={false} />
         </button>
-        <button className="call-round end" title="End call" aria-label="End call" onClick={onEnd}>
+        <button className="call-round end" title={tr('End call')} aria-label={tr('End call')} onClick={onEnd}>
           <Icon name="xmark" size={16} weight="semibold" scaled={false} />
         </button>
       </div>
       {failure ? (
         <Text as="div" key="failure" tone="danger" className="call-line">
-          {failure}
+          {tr(failure)}
         </Text>
       ) : notice ? (
         <Text as="div" key={notice} tone="secondary" className="call-line">
           {notice}
         </Text>
       ) : null}
+      <Reveal show={session?.searchResult != null}>
+        {session?.searchResult ? <SearchResultView result={session.searchResult} /> : null}
+      </Reveal>
       <Sheet open={settings} onClose={() => setSettings(false)}>
         <VoiceChatSettingsView />
       </Sheet>

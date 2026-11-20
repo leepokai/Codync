@@ -9,14 +9,16 @@ use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::process::Stdio;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::ChildStdin;
 use tokio::sync::{mpsc, oneshot};
 
 pub mod codebuddy;
+mod exit;
+pub use exit::{exit_tail, stderr_reason};
 
 /// stderr lines kept to explain a crash.
 const STDERR_TAIL_LINES: usize = 12;
@@ -25,6 +27,8 @@ const EXIT_GRACE: Duration = Duration::from_secs(10);
 
 /// Agents [`Acp::kill`] is still stopping, for the host to wait for before it exits.
 static STOPPING: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>> = std::sync::Mutex::new(Vec::new());
+/// Every agent started, for the host to stop whichever are left before it exits.
+static STARTED: std::sync::Mutex<Vec<Weak<Acp>>> = std::sync::Mutex::new(Vec::new());
 
 pub enum Incoming {
     Notification { method: String, params: Value },
@@ -90,6 +94,8 @@ pub enum FailureKind {
     Exited,
     /// The agent wouldn't take the bot's model.
     NoModel,
+    /// The agent doesn't have the mode the bot works in.
+    ModeMissing,
 }
 
 #[derive(Debug)]
@@ -175,8 +181,11 @@ pub struct Acp {
     pending: Pending,
     /// Owns the agent's whole process tree: dropping it kills what the agent started.
     child: Arc<tokio::sync::Mutex<Process>>,
-    /// The process (and, on Unix, process group) leader.
+    /// The process and process group leader.
+    #[cfg(unix)]
     pid: Option<u32>,
+    /// A cloud computer's keeper grants this process started with: revoked once it is stopped, or gone.
+    grants: std::sync::Mutex<crate::keeper::client::Grants>,
 }
 
 impl Acp {
@@ -188,25 +197,19 @@ impl Acp {
         env: &[(String, String)],
     ) -> Result<(Arc<Self>, mpsc::UnboundedReceiver<Incoming>)> {
         let mut process = crate::shell::exec(command).tokio();
-        process
-            .envs(env.iter().map(|(k, v)| (k, v)))
-            .current_dir(cwd)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        // Its own group, so `kill` can stop everything it started.
-        #[cfg(unix)]
-        process.process_group(0);
-        #[cfg(windows)]
-        process.creation_flags(windows_sys::Win32::System::Threading::CREATE_SUSPENDED);
+        crate::shell::apply_env(process.as_std_mut(), env);
+        process.current_dir(cwd).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+        // So `kill` can stop everything it started.
+        super::process::own_tree(&mut process);
         let mut child = process.spawn().with_context(|| format!("starting `{command}`"))?;
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
+        #[cfg(unix)]
         let pid = child.id();
         let child = Arc::new(tokio::sync::Mutex::new(Process::new(child)?));
-        Process::monitor(&child);
+        let (ended, leader_ended) = oneshot::channel();
+        Process::monitor(&child, ended);
         // Deliberately unbounded: `session/load` replays a whole history as notifications
         // *before* its response, while the bot is still awaiting that response. A bounded
         // queue would stall this reader, and with it the response — a deadlock.
@@ -214,7 +217,7 @@ impl Acp {
         let pending = Pending::default();
 
         let tail = Arc::new(std::sync::Mutex::new(VecDeque::<String>::with_capacity(STDERR_TAIL_LINES)));
-        {
+        let stderr_read = {
             let tail = tail.clone();
             tokio::spawn(async move {
                 let mut lines = BufReader::new(stderr).lines();
@@ -226,39 +229,57 @@ impl Acp {
                     }
                     t.push_back(line);
                 }
-            });
-        }
+            })
+        };
         {
             let pending = pending.clone();
             tokio::spawn(async move {
-                let mut lines = BufReader::new(stdout).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    let Ok(msg) = serde_json::from_str::<Value>(&line) else {
-                        tracing::debug!(target: "agent", stdout = %line, "ignoring non-JSON output");
-                        continue;
-                    };
-                    let method = msg["method"].as_str().map(str::to_owned);
-                    match (method, msg.get("id").cloned()) {
-                        (Some(method), Some(id)) if !id.is_null() => {
-                            let _ = tx.send(Incoming::Request { id, method, params: msg["params"].clone() });
-                        }
-                        (Some(method), _) => {
-                            let _ = tx.send(Incoming::Notification { method, params: msg["params"].clone() });
-                        }
-                        (None, Some(id)) => {
-                            if let Some(id) = id.as_i64()
-                                && let Some(waiter) = pending.locked().remove(&id)
-                            {
-                                let res = match msg.get("error") {
-                                    Some(err) => Err(err.clone()),
-                                    None => Ok(msg["result"].clone()),
-                                };
-                                let _ = waiter.send(res);
+                let read = async {
+                    let mut lines = BufReader::new(stdout).lines();
+                    while let Ok(Some(line)) = lines.next_line().await {
+                        let Ok(msg) = serde_json::from_str::<Value>(&line) else {
+                            tracing::debug!(target: "agent", stdout = %line, "ignoring non-JSON output");
+                            continue;
+                        };
+                        let method = msg["method"].as_str().map(str::to_owned);
+                        match (method, msg.get("id").cloned()) {
+                            (Some(method), Some(id)) if !id.is_null() => {
+                                let _ = tx.send(Incoming::Request { id, method, params: msg["params"].clone() });
                             }
+                            (Some(method), _) => {
+                                let _ = tx.send(Incoming::Notification { method, params: msg["params"].clone() });
+                            }
+                            (None, Some(id)) => {
+                                if let Some(id) = id.as_i64()
+                                    && let Some(waiter) = pending.locked().remove(&id)
+                                {
+                                    let res = match msg.get("error") {
+                                        Some(err) => Err(err.clone()),
+                                        None => Ok(msg["result"].clone()),
+                                    };
+                                    let _ = waiter.send(res);
+                                }
+                            }
+                            _ => {}
                         }
-                        _ => {}
                     }
+                };
+                // Once the agent exited by itself, what it wrote last is read for a moment, not until stdout closes: a
+                // process that left its tree (its own session, a job escapee on Windows) can hold it open forever (#466).
+                let left = async {
+                    match leader_ended.await {
+                        Ok(()) => tokio::time::sleep(exit::STDERR_FLUSH).await,
+                        // Being stopped: `kill` fails the waiters.
+                        Err(_) => std::future::pending().await,
+                    }
+                };
+                tokio::select! {
+                    () = read => {}
+                    () = left => {}
                 }
+                // What it printed on its way out is still being read; a child that keeps stderr open isn't waited for.
+                // Read before the waiters fail, so `Closed` follows their failure at once.
+                let _ = tokio::time::timeout(exit::STDERR_FLUSH, stderr_read).await;
                 // Process gone: dropping the waiters fails them as `FailureKind::Exited`.
                 pending.locked().clear();
                 let stderr_tail = tail.locked().iter().cloned().collect::<Vec<_>>().join("\n");
@@ -271,13 +292,33 @@ impl Acp {
             next_id: AtomicI64::new(1),
             pending,
             child,
+            #[cfg(unix)]
             pid,
+            grants: std::sync::Mutex::default(),
         });
+        note_started(&acp);
         Ok((acp, rx))
     }
 
+    #[cfg(unix)]
     pub fn pid(&self) -> Option<u32> {
         self.pid
+    }
+
+    /// Keeps the grants in this process's environment for as long as it runs (`stop` or drop revokes them).
+    pub fn hold(&self, grants: crate::keeper::client::Grants) {
+        *self.grants.locked() = grants;
+    }
+
+    /// Whether it was started with keeper grants (which a restarted keeper no longer knows).
+    pub fn holds_grants(&self) -> bool {
+        !self.grants.locked().is_empty()
+    }
+
+    /// Everything still running in the agent's job.
+    #[cfg(windows)]
+    pub(crate) async fn job_processes(&self) -> Result<Vec<super::process::JobProcess>> {
+        self.child.lock().await.processes().await
     }
 
     async fn write(&self, msg: Value) -> Result<()> {
@@ -285,9 +326,17 @@ impl Acp {
         line.push(b'\n');
         let mut stdin = self.stdin.lock().await;
         let stdin = stdin.as_mut().ok_or_else(|| Failure::error(FailureKind::Exited, "agent stopped"))?;
-        stdin.write_all(&line).await?;
-        stdin.flush().await?;
-        Ok(())
+        let written = async {
+            stdin.write_all(&line).await?;
+            stdin.flush().await
+        };
+        match written.await {
+            // The agent exited before reading it.
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
+                Err(Failure::error(FailureKind::Exited, "agent process exited"))
+            }
+            r => Ok(r?),
+        }
     }
 
     pub async fn request(&self, method: &str, params: Value) -> Result<Value> {
@@ -322,10 +371,15 @@ impl Acp {
     /// lets it exit by itself first: Claude Code killed during an OAuth refresh loses the new
     /// refresh token, and the user's login with it.
     pub async fn kill(&self) {
+        // Its requests fail now as `FailureKind::Exited`, not at stdout EOF: a process that left its tree (its own
+        // session, or a job escapee on Windows) can hold stdout open forever, and with it the turn (#466).
+        self.pending.locked().clear();
         let mut child = self.child.lock().await;
         if !child.begin_stop() {
             return;
         }
+        let grants = std::mem::take(&mut *self.grants.locked());
+        drop(grants);
         self.stdin.lock().await.take();
         let owned = self.child.clone();
         let mut stopping = STOPPING.locked();
@@ -334,10 +388,25 @@ impl Acp {
     }
 }
 
-/// Waits until every agent being stopped has exited or been killed (at most [`EXIT_GRACE`]).
+/// Waits until every agent being stopped has exited or been killed: at most [`EXIT_GRACE`], then
+/// [`UNWIND`](super::process::UNWIND) for its tree to end from its leaves up.
 pub async fn stopped() {
     let tasks = std::mem::take(&mut *STOPPING.locked());
     futures::future::join_all(tasks).await;
+}
+
+/// Stops every agent left and waits for them, before the host exits: `process::exit` drops no process, and Cursor's agent
+/// outlives its closed stdin. The bots stop their own, so this is for a sign-in check or a model list still under way.
+pub async fn stop_all() {
+    let started: Vec<_> = std::mem::take(&mut *STARTED.locked()).iter().filter_map(Weak::upgrade).collect();
+    futures::future::join_all(started.iter().map(|acp| acp.kill())).await;
+    stopped().await;
+}
+
+fn note_started(acp: &Arc<Acp>) {
+    let mut started = STARTED.locked();
+    started.retain(|acp| acp.strong_count() > 0);
+    started.push(Arc::downgrade(acp));
 }
 
 /// The result for a `session/request_permission`: the option picked, or `cancelled` without one.
@@ -377,158 +446,4 @@ pub fn truncate(s: &str, max: usize) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    async fn descendant_agent() -> (Arc<Acp>, mpsc::UnboundedReceiver<Incoming>) {
-        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/process_agent.py");
-        let python = if cfg!(windows) { "python" } else { "python3" };
-        let command = format!("{python} -u {}", crate::shell::quote(&script.display().to_string()));
-        let (acp, mut rx) = Acp::spawn(&command, env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
-        let ready = tokio::time::timeout(Duration::from_secs(15), rx.recv()).await;
-        let ready = ready.unwrap();
-        assert!(matches!(ready, Some(Incoming::Notification { method, .. }) if method == "ready"));
-        (acp, rx)
-    }
-
-    async fn assert_descendant_pipes_close(mut rx: mpsc::UnboundedReceiver<Incoming>) {
-        let closed = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await;
-        let closed = closed.unwrap();
-        assert!(matches!(closed, Some(Incoming::Closed { .. })));
-    }
-
-    #[tokio::test]
-    async fn leader_exit_releases_descendants_without_waiting_for_stdout_eof() {
-        let (acp, rx) = descendant_agent().await;
-        let notified = acp.notify("exit", json!({})).await;
-        notified.unwrap();
-        assert_descendant_pipes_close(rx).await;
-    }
-
-    #[tokio::test]
-    async fn dropping_an_agent_releases_its_process_tree() {
-        let (acp, rx) = descendant_agent().await;
-        drop(acp);
-        assert_descendant_pipes_close(rx).await;
-    }
-
-    #[tokio::test]
-    async fn actor_unwinding_releases_its_process_tree() {
-        let (acp, rx) = descendant_agent().await;
-        let task = tokio::spawn(async move {
-            let _owned = acp;
-            panic!("simulated actor panic");
-        });
-        let panicked = task.await;
-        assert!(panicked.unwrap_err().is_panic());
-        assert_descendant_pipes_close(rx).await;
-    }
-
-    #[tokio::test]
-    async fn timed_out_requests_do_not_accumulate_pending_answers() {
-        let (acp, rx) = descendant_agent().await;
-        for _ in 0..10 {
-            let response = tokio::time::timeout(Duration::from_millis(10), acp.request("never", json!({}))).await;
-            assert!(response.is_err());
-            assert_eq!(acp.pending.locked().len(), 0);
-        }
-        acp.kill().await;
-        stopped().await;
-        assert_descendant_pipes_close(rx).await;
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn a_stopped_agent_that_exits_cleanly_does_not_hold_the_host_for_the_grace_period() {
-        let (acp, mut rx) = Acp::spawn("cat", env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
-        let started = tokio::time::Instant::now();
-        acp.kill().await;
-        stopped().await;
-        assert!(started.elapsed() < EXIT_GRACE / 2, "stopping waited out the grace period");
-        assert!(matches!(rx.recv().await, Some(Incoming::Closed { .. })));
-    }
-
-    #[test]
-    fn content_text_flattens_blocks() {
-        let v = json!([
-            {"type": "content", "content": {"type": "text", "text": "a"}},
-            {"type": "diff", "path": "/x"},
-            {"type": "text", "text": "b"}
-        ]);
-        assert_eq!(content_text(&v), "a\nb");
-        assert_eq!(truncate("héllo", 2), "h…");
-    }
-
-    #[tokio::test]
-    async fn an_error_keeps_the_adapters_category_only_when_it_is_an_identifier() {
-        let kind = |data: Value| async move {
-            let (tx, rx) = oneshot::channel();
-            let _ = tx.send(Err(json!({"code": -32603, "message": "Internal error", "data": data})));
-            let e = Answer { id: 0, pending: Pending::default(), rx: Some(rx) }
-                .response()
-                .await
-                .expect_err("an error answer");
-            e.downcast::<RpcError>().expect("an RpcError").kind
-        };
-        assert_eq!(kind(json!({"errorKind": "rate_limit"})).await.as_deref(), Some("rate_limit"));
-        assert_eq!(kind(json!({"errorKind": "Usage: /Users/me"})).await, None);
-        assert_eq!(kind(json!({"errorKind": ""})).await, None);
-        assert_eq!(kind(json!("details")).await, None);
-        assert_eq!(
-            kind(json!({"codexErrorInfo": "usageLimitExceeded"})).await.as_deref(),
-            Some("usage_limit_exceeded")
-        );
-        assert_eq!(
-            kind(json!({"codexErrorInfo": {"httpConnectionFailed": {"httpStatusCode": 502}}})).await.as_deref(),
-            Some("http_connection_failed")
-        );
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn stopping_an_agent_closes_its_descendants_pipes() {
-        let (acp, mut rx) = Acp::spawn(
-            r#"sh -c 'sleep 60 & echo "{\"jsonrpc\":\"2.0\",\"method\":\"ready\"}"; read line'"#,
-            "/tmp",
-            &[],
-        )
-        .unwrap();
-        let ready = tokio::time::timeout(Duration::from_secs(3), rx.recv()).await.unwrap();
-        assert!(matches!(ready, Some(Incoming::Notification { .. })));
-        acp.kill().await;
-        // Killing only the shell leaves sleep holding stdout for 60 seconds.
-        let closed = tokio::time::timeout(EXIT_GRACE + Duration::from_secs(3), rx.recv()).await.unwrap();
-        assert!(matches!(closed, Some(Incoming::Closed { .. })));
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn a_stopped_agent_finishes_by_itself_first() {
-        // The adapter exits on its closed stdin; the CLI it started saves its login a second later.
-        let (acp, mut rx) = Acp::spawn(
-            r#"sh -c 'read line; (sleep 1; echo "{\"jsonrpc\":\"2.0\",\"method\":\"saved\"}") &'"#,
-            "/tmp",
-            &[],
-        )
-        .unwrap();
-        acp.kill().await;
-        let saved = tokio::time::timeout(EXIT_GRACE, rx.recv()).await.unwrap();
-        assert!(matches!(saved, Some(Incoming::Notification { method, .. }) if method == "saved"));
-        assert!(acp.notify("x", json!({})).await.is_err(), "a stopped agent takes no more messages");
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn request_response_roundtrip() {
-        // A fake agent: answers `initialize`, then sends a notification and exits.
-        let script = r#"read l; id=$(echo "$l" | sed 's/.*"id":\([0-9]*\).*/\1/'); echo "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"ok\":true}}"; echo '{"jsonrpc":"2.0","method":"session/update","params":{"x":1}}'"#;
-        let (acp, mut rx) = Acp::spawn(&format!("sh -c '{}'", script.replace('\'', "'\\''")), "/tmp", &[]).unwrap();
-        let res = acp.request("initialize", json!({})).await.unwrap();
-        assert_eq!(res["ok"], true);
-        match rx.recv().await.unwrap() {
-            Incoming::Notification { method, .. } => assert_eq!(method, "session/update"),
-            _ => panic!("expected notification"),
-        }
-        assert!(matches!(rx.recv().await.unwrap(), Incoming::Closed { .. }));
-    }
-}
+mod tests;

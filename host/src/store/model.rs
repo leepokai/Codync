@@ -75,6 +75,10 @@ pub struct BotConfig {
     pub backend: String,
     #[serde(default)]
     pub command: Option<String>,
+    /// The login profile it runs on (`agent::login_profiles`). None: the default one, the login this computer
+    /// already has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub login_profile: Option<String>,
     /// Empty for a group.
     #[serde(default)]
     pub cwd: String,
@@ -146,17 +150,73 @@ pub struct BotConfig {
     /// it got it sends `null` where there is no switch.
     #[serde(default, deserialize_with = "null_as_false")]
     pub harness_memory: bool,
+    /// When Codync summarizes the bot's chat ahead of time (see `agent::bot::compaction`); only for an agent it can
+    /// ask to, and the apps show it only there. `null` and values from a newer app read as the default.
+    #[serde(default)]
+    pub compaction: codync_mem::compaction::Threshold,
     /// Created without a name: the host names it from its first conversations (see `naming`)
     /// until the user renames it.
     #[serde(default)]
     pub auto_name: bool,
+    /// Set on a thread bot: the bot whose work it does away from the chat (see `chat::work`). It has its own actor,
+    /// agent process, session and transcript; clients never see it as a bot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_of: Option<String>,
+    /// The most threads that work on the bot's box at once (see `chat::work`): 1 to [`MAX_THREADS`].
+    #[serde(default = "default_max_threads")]
+    pub max_threads: u8,
+    /// A thread that starts while another of the bot's works in the same git repository gets a worktree of its own
+    /// (see `chat::work::worktree`). Only matters where the workspace is in a repository.
+    #[serde(default = "yes")]
+    pub thread_worktrees: bool,
     #[serde(default)]
     pub created_at: i64,
+}
+
+/// The most threads a bot may be set to run at once.
+pub const MAX_THREADS: u8 = 6;
+/// The threads a bot runs at once unless the user changed it.
+pub const DEFAULT_THREADS: u8 = 3;
+
+fn default_max_threads() -> u8 {
+    DEFAULT_THREADS
+}
+
+/// A thread bot's id starts with this; a bot's and a group's are plain UUIDs.
+pub const THREAD_PREFIX: &str = "thread-";
+
+/// A thread bot started before this release keeps the id it had: its transcript, session and cards are keyed by it.
+const OLD_THREAD_PREFIX: &str = "task-";
+
+/// SQL for "`column` is a thread bot's id", for the queries that keep thread bots and their transcripts apart.
+pub(super) fn thread_ids(column: &str) -> String {
+    format!("({column} GLOB '{THREAD_PREFIX}*' OR {column} GLOB '{OLD_THREAD_PREFIX}*')")
+}
+
+/// Whether `id` is a thread bot's (and so a chat no client lists).
+pub fn is_thread_id(id: &str) -> bool {
+    id.starts_with(THREAD_PREFIX) || id.starts_with(OLD_THREAD_PREFIX)
 }
 
 impl BotConfig {
     pub fn is_group(&self) -> bool {
         self.kind == BotKind::Group
+    }
+
+    pub fn is_thread(&self) -> bool {
+        self.thread_of.is_some()
+    }
+
+    /// The bot it is to the user: a thread's bot, else itself.
+    pub fn owner(&self) -> &str {
+        self.thread_of.as_deref().unwrap_or(&self.id)
+    }
+
+    /// This config under its owner's id: what memory and the instruction snapshot key on, so a thread reads and
+    /// writes its bot's.
+    #[must_use]
+    pub fn as_owner(&self) -> Self {
+        Self { id: self.owner().to_owned(), thread_of: None, ..self.clone() }
     }
 }
 
@@ -167,6 +227,10 @@ pub struct Fallback {
     pub backend: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    /// The login profile this step runs on (`agent::login_profiles`). None: the default one. Always on the wire,
+    /// `null` for none: an edit that leaves the key out keeps the saved one (`hub::patch`).
+    #[serde(default)]
+    pub login_profile: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
@@ -224,6 +288,13 @@ pub struct Entry {
     pub updated_at: i64,
 }
 
+impl Entry {
+    /// A message the chat shows as one: the user's, or an agent's finished reply.
+    pub fn is_message(&self) -> bool {
+        self.kind == EntryKind::User.as_str() || (self.kind == EntryKind::Agent.as_str() && self.data["final"] == true)
+    }
+}
+
 /// A message's text, or the names of its files when it has none.
 pub fn message_text(data: &Value) -> String {
     match data["text"].as_str().unwrap_or_default() {
@@ -254,6 +325,21 @@ pub struct BotRow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_thread_bot_is_known_by_its_id_new_or_from_before_this_release() {
+        assert!(is_thread_id("thread-1") && is_thread_id("task-1") && !is_thread_id("b1"));
+        assert_eq!(thread_ids("id"), "(id GLOB 'thread-*' OR id GLOB 'task-*')");
+    }
+
+    #[test]
+    fn the_old_names_of_a_bots_thread_settings_are_no_longer_read() {
+        // Stored bots were renamed once (`schema::migrate_9`); `updateBot` takes only the new names.
+        let old = serde_json::json!({"id": "b", "name": "B", "backend": "claude", "taskOf": "b1",
+            "maxAgents": 5, "taskWorktrees": false});
+        let cfg: BotConfig = serde_json::from_value(old).expect("a bot");
+        assert_eq!((cfg.thread_of, cfg.max_threads, cfg.thread_worktrees), (None, DEFAULT_THREADS, true));
+    }
 
     #[test]
     fn permission_wire_values_round_trip() {

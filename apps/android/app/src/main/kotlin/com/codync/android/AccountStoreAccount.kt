@@ -17,7 +17,10 @@ internal fun AccountStore.signIn(provider: SignInProvider) = sessionAction {
         NativeAccounts.signIn(provider)
     } catch (error: CancellationException) { throw error }
     catch (error: Exception) {
-        Analytics.capture(AnalyticsEvent.SignInFailed(provider, (error as? SignInError)?.reason ?: SignInFailure.Error))
+        val reason = (error as? SignInError)?.reason ?: SignInFailure.Error
+        Analytics.capture(AnalyticsEvent.SignInFailed(provider, reason))
+        // The user closed the browser: no error to show, as on the iPhone.
+        if (reason == SignInFailure.Cancelled) return@sessionAction
         throw error
     }
     // Clerk holds the new session already, so this counts toward the account.
@@ -31,7 +34,7 @@ fun AccountStore.retryAccounts() { NativeAccounts.retry() }
  * one connected (`AppStore.retire`), and the account tells the others (iOS `signOut`; connections.md, accounts on a phone).
  */
 fun AccountStore.signOut() = sessionAction {
-    val old = state.value.account.accounts.firstOrNull { it.userId == state.value.account.userId } ?: return@sessionAction
+    val old = state.value.account.current ?: return@sessionAction
     // Sent first so it still counts toward the account.
     Analytics.capture(AnalyticsEvent.SignedOut)
     // The cloud call goes out after Clerk signed out, on a token taken now (it outlives the session).
@@ -99,22 +102,33 @@ private suspend fun AccountStore.forget(userId: String) {
 }
 
 fun AccountStore.refreshCloud() = action("cloud") {
-    val client = cloud ?: return@action
     try {
+        val client = cloud ?: return@action
         client.registerDevice(Build.MODEL.take(100))
         val computers = client.computers()
-        mutableState.update { it.copy(cloudComputers = computers) }
-        // Signed in to an account with computers, before pairing any (iOS: the same moment): setup is done.
-        if (computers.isNotEmpty() && !state.value.setupComplete) {
-            withContext(Dispatchers.IO) { local.completeSetup() }
-            mutableState.update { it.copy(setupComplete = true) }
-        }
-        if (computers.isNotEmpty() && state.value.computers.isEmpty()) Analytics.completeOnboarding(OnboardingVia.Account)
+        mutableState.update { it.copy(cloudComputers = computers, appFloor = null) }
+        shareAccountView()
+        learnRelay(computers)
+        askCloudComputers(computers)
     } catch (error: IOException) {
         if (error is CloudError && !error.isTransient) throw error
         // Runs on every launch and foreground: a dropped connection, a busy cloud or a token not ready
         // yet fixes itself on the next refresh, so only answers that stay reach the dialog (as on iOS).
         android.util.Log.i("Codync", "Cloud refresh failed: ${error.message}")
+    } finally { mutableState.update { it.copy(cloudLoaded = true) } }
+}
+
+/**
+ * A computer that joined this account while this phone couldn't hear its `hello` still has the relay, or a phone away
+ * from its network could never reach it to find out (iOS `learnRelay`). Listed online, it's on the relay; a phone
+ * connected to it goes by its `hello`.
+ */
+private suspend fun AccountStore.learnRelay(listed: List<CloudComputer>) {
+    for (store in stores.value) {
+        val state = store.state.value
+        if (state.computer.cloud != null || state.connection is LinkState.Ready || listed.none { it.computerId == store.id && it.online == true }) continue
+        store.changeComputer { it.copy(cloud = BuildConfig.CLOUD_URL) }
+        store.reconnect()
     }
 }
 
@@ -130,8 +144,9 @@ suspend fun AccountStore.refreshRoster() {
 /**
  * Asks [target] for access; the code arrives in `access`, where it must match the one the computer shows.
  * Asking again while it runs joins it; [renew] revokes this phone's earlier grant and asks anew (iOS `requestAccess`).
+ * [quiet] is the ask nobody tapped for ([askCloudComputers]): where the next refresh mends its failure, no dialog says so.
  */
-fun AccountStore.requestAccess(target: CloudComputer, renew: Boolean = false) {
+fun AccountStore.requestAccess(target: CloudComputer, renew: Boolean = false, quiet: Boolean = false) {
     val key = "access:" + target.computerId
     if (renew) {
         action("renewAccess:" + target.computerId) {
@@ -139,26 +154,39 @@ fun AccountStore.requestAccess(target: CloudComputer, renew: Boolean = false) {
             actions[key]?.cancelAndJoin()
             startAccess(target, renew = true)
         }
-    } else startAccess(target, renew = false)
+    } else startAccess(target, renew = false, quiet)
 }
 
-private fun AccountStore.startAccess(target: CloudComputer, renew: Boolean) = action("access:" + target.computerId) {
+private fun AccountStore.startAccess(target: CloudComputer, renew: Boolean, quiet: Boolean = false) = action("access:" + target.computerId) {
     mutableState.update { it.copy(asking = it.asking + target.computerId) }
-    try { askForAccess(target, renew) } finally { mutableState.update { it.copy(asking = it.asking - target.computerId) } }
+    try { askForAccess(target, renew, quiet) }
+    catch (error: Exception) {
+        // Failed or ended unapproved: a cloud computer is asked again by itself on the next refresh.
+        if (error !is CancellationException) askedCloud.remove(target.computerId)
+        throw error
+    } finally { mutableState.update { it.copy(asking = it.asking - target.computerId) } }
 }
 
-private suspend fun AccountStore.askForAccess(target: CloudComputer, renew: Boolean) {
+private suspend fun AccountStore.askForAccess(target: CloudComputer, renew: Boolean, quiet: Boolean) {
     val client = requireNotNull(cloud) { "Sign in to reach your account." }
     if (renew) client.revokeAccess(target.computerId)
-    val ticket = client.requestAccess(target.computerId, target.signKey)
+    val ticket = try { client.requestAccess(target.computerId, target.signKey) }
+    catch (error: IOException) {
+        if (!quiet || (error is CloudError && !error.isTransient)) throw error
+        // A dropped connection or a busy cloud: the next refresh asks again, as on iOS, which only logs it too.
+        android.util.Log.i("Codync", "Cloud computer access request failed: ${error.message}")
+        askedCloud.remove(target.computerId)
+        return
+    }
     Analytics.capture(AnalyticsEvent.AccessRequested)
     mutableState.update { it.copy(access = it.access + (ticket.computerId to ticket)) }
     try {
         while (currentCoroutineContext().isActive) {
             if (System.currentTimeMillis() >= ticket.expiresAt) throw CloudError(410, "requestExpired")
             delay(2_000)
+            // A dropped connection or a busy cloud is asked again until the request expires (iOS too).
             val status = try { client.accessStatus(ticket.requestId) }
-            catch (error: CloudError) { if (error.isTransient) continue else throw error }
+            catch (error: IOException) { if (error is CloudError && !error.isTransient) throw error else continue }
             require(status.requestId == ticket.requestId && (status.computerId == null || status.computerId == ticket.computerId)) { "Invalid access response" }
             when (status.state) {
                 "pending" -> continue
@@ -192,13 +220,15 @@ private suspend fun AccountStore.askForAccess(target: CloudComputer, renew: Bool
     } finally { mutableState.update { it.copy(access = it.access - ticket.computerId) } }
 }
 
-/** The approved computer joins this phone's computers (or replaces its older pairing), then connects. */
+/** The approved computer joins this phone's computers (or replaces its older pairing), then connects. A cloud computer
+ * started from the setup pages is let in this way too, by its host. */
 private suspend fun AccountStore.useApprovedComputer(computer: Computer, requestId: String) {
     // Approval is already confirmed by the cloud.
     mutableState.update { it.copy(approvedAccess = it.approvedAccess + (computer.id to requestId)) }
     transitions.withLock { addComputer(computer) }
     withContext(Dispatchers.IO) { local.completeSetup() }
     mutableState.update { it.copy(setupComplete = true) }
+    Analytics.completeOnboarding(if (state.value.startedCloud) OnboardingVia.Cloud else OnboardingVia.Account)
     refreshCloud()
 }
 
@@ -276,7 +306,8 @@ fun AccountStore.startOver() = sessionAction {
                 cache.listFiles()?.filter { it.name.startsWith("codync-images") }?.forEach { it.deleteRecursively() }
             }
             Analytics.forgetOnboarding()
-            mutableState.update { it.copy(account = AccountState(ready = true), error = null) }
+            withoutAccountChosen = false
+            mutableState.update { it.copy(account = AccountState(ready = true), error = null, withoutAccount = false) }
             loadContext(null)
         }
     }

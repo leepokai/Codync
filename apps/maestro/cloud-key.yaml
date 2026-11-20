@@ -1,0 +1,183 @@
+# Computers → Codync Cloud → "+" (New cloud computer), three steps in one sheet: every provider with where it runs and
+# what it costs; one without a key goes to Connect {provider} (its steps, its free plan when it has one, the commands
+# folded under Use the command line instead), where a key the provider turns down shows what to fix and a kept one moves
+# on to the name, with Create on; back on the providers, the row shows the key's hint and its ⋯ (More) offers Remove key,
+# which works.
+# Needs a cloud that offers Codync Cloud: dev-api offers it to every account, or, to stay off the shared dev or when the
+# branch changes cloud/, `npm run cloud:stack` in cloud/ with a provider key (docs/guides/cloud-computer-testing.md);
+# the phone signed in with `npm run phone-account` and pointed at it (iPhone:
+# SIMCTL_CHILD_CODYNC_CLOUD_URL=<url> on that command, which this flow's launch keeps; Android: built with
+# -PcodyncCloudUrl=<url> with -PcodyncClerkPublishableKey and -PcodyncPushRelayUrl, plus adb reverse), an account with no
+# cloud computer, and BOAT_KEY, a key its Boat takes. An account saves at most 5 keys a minute: run the phones one after
+# another, or on accounts of their own.
+# Run it apart from `smoke`, whose welcome flow clears the sign-in.
+# One flow for iPhone and Android (docs/guides/test-stack.md):
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags codync-cloud -e BOAT_KEY=<key> apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - codync-cloud
+env:
+  REFUSED_KEY: boat_e2e_revoked_key_0000
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          stopApp: false
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+          stopApp: false
+# An account with no computer starts on first-run setup's install page, which it skips to reach the bots.
+- extendedWaitUntil:
+    visible: "(Install Codync.*|Skip|No bots yet|Manage computers)"
+    timeout: 20000
+- runFlow:
+    when:
+      visible: "Install Codync.*"
+    commands:
+      - tapOn: "Continue"
+      - extendedWaitUntil:
+          visible: "Skip"
+          timeout: 10000
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+# The bot list's header is named Computers too, and opens a menu that leads there.
+- runFlow:
+    when:
+      notVisible: "Manage computers"
+    commands:
+      - tapOn: "Computers"
+- runFlow:
+    when:
+      visible: "Manage computers"
+    commands:
+      - tapOn: "Manage computers"
+- extendedWaitUntil:
+    visible: "Codync Cloud"
+    timeout: 20000
+- scrollUntilVisible:
+    element: "New cloud computer"
+- tapOn: "New cloud computer"
+- extendedWaitUntil:
+    visible: "Provider"
+    timeout: 10000
+# Keys an earlier run left go first, each from its row's ⋯ (More; only a provider with a key has one).
+- repeat:
+    while:
+      visible:
+        text: "More"
+        below: "Provider"
+    commands:
+      - tapOn:
+          text: "More"
+          below: "Provider"
+      - tapOn: "Remove key"
+      - waitForAnimationToEnd
+      - extendedWaitUntil:
+          notVisible: "Remove key"
+          timeout: 15000
+
+# Without keys, every provider says where it runs and what it costs.
+- extendedWaitUntil:
+    visible: "EU · From \\$20 a month"
+    timeout: 10000
+- assertVisible: "US · Free plan available"
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - assertVisible:
+          id: "cloudProvider.boat"
+      - assertVisible:
+          id: "cloudProvider.instabox"
+
+# InstaBox: its steps, its free plan and its commands (one text that scrolls sideways on the iPhone, wider than the
+# screen, so it's never all in view), then back to the providers.
+- tapOn: "InstaBox.*"
+- extendedWaitUntil:
+    visible: "Connect InstaBox"
+    timeout: 10000
+- assertVisible: "Sign in, or sign up for the free plan."
+- assertVisible: "Open InstaBox"
+- assertVisible: "InstaBox's free plan includes one machine.*"
+- assertVisible: "Get a free sandbox"
+- scrollUntilVisible:
+    element: "Use the command line instead"
+- tapOn: "Use the command line instead"
+- scrollUntilVisible:
+    element: "(?s).*instabox keys create --name codync --scope machines:read,machines:write,machines:delete.*"
+    visibilityPercentage: 25
+- assertVisible: "(?s).*# The key reaches every machine in this workspace.*"
+- tapOn: "Back"
+- extendedWaitUntil:
+    visible: "Provider"
+    timeout: 10000
+
+# Boat: no free plan. Turned down: what to fix.
+- tapOn: "Boat.*"
+- extendedWaitUntil:
+    visible: "Connect Boat"
+    timeout: 10000
+- assertVisible: "Create an environment named codync and mark it safe for third parties."
+- assertNotVisible: "Get a free sandbox"
+- tapOn: "(Boat API key|boat_…)"
+- inputText: ${REFUSED_KEY}
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: "(This key wasn't accepted|The provider refused this key).*"
+    timeout: 15000
+
+# Kept: on to the name, with Create on. The field still holds the refused key: on Android a tap puts the caret where it
+# lands, so a double tap selects the key (one word) before erasing.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: "(Boat API key|boat_…)"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - doubleTapOn: "(Boat API key|boat_…)"
+- eraseText
+- inputText: ${BOAT_KEY}
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: "Runs on Boat · EU"
+    timeout: 15000
+- assertVisible: "Cloud computer"
+- assertVisible:
+    text: "Create"
+    enabled: true
+
+# Back on the providers, Boat shows only its key's hint; its ⋯ offers the key again and Remove key, which goes back to
+# what it costs.
+- tapOn: "Back"
+- extendedWaitUntil:
+    visible: ${'.*' + BOAT_KEY.slice(0, BOAT_KEY.indexOf('_') + 1) + '…' + BOAT_KEY.slice(-4)}
+    timeout: 10000
+- tapOn:
+    text: "More"
+    below: "Provider"
+- extendedWaitUntil:
+    visible: "Remove key"
+    timeout: 10000
+- assertVisible: "Boat API key"
+- tapOn: "Remove key"
+- extendedWaitUntil:
+    visible: "EU · From \\$20 a month"
+    timeout: 15000
+- assertNotVisible: "Remove key"
+- tapOn: "Close"
+- extendedWaitUntil:
+    notVisible: "Provider"
+    timeout: 10000

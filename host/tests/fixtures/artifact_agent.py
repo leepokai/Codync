@@ -35,6 +35,13 @@ def prompt(message):
             (cwd / 'report.html').write_text('<h1>Weekly report</h1>')
             results.append(call('publish_artifact', {'path':'report.html', 'title':'Weekly report'}))
             results.append(call('publish_artifact', {'path':'report.html'}))
+        elif 'quiet-new' in text:
+            (cwd / 'report.html').write_text('<h1>Weekly report</h1>')
+            results.append(call('publish_artifact', {'path':'report.html', 'title':'Weekly report', 'notify':False}))
+        elif 'quiet-update' in text:
+            artifact = json.loads(call('list_artifacts', {})['content'][0]['text'])['artifacts'][0]
+            (cwd / 'report.html').write_text(Path(artifact['path']).read_text() + '<p>Quiet fix</p>')
+            results.append(call('publish_artifact', {'path':'report.html', 'artifact':artifact['id'], 'notify':False}))
         elif 'update-artifact' in text:
             artifact = json.loads(call('list_artifacts', {})['content'][0]['text'])['artifacts'][0]
             html = Path(artifact['path']).read_text() + '<p>Updated</p>'

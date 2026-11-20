@@ -53,14 +53,17 @@ impl App {
     /// one, else the full trace.
     fn screen_on_top(&self) -> Option<Screen> {
         let overlay = self.overlays.iter().rev().find_map(|o| match o {
-            Overlay::Usage(_) => Some(Screen::Usage),
+            Overlay::Usage(_) | Overlay::UsageChooser { .. } => Some(Screen::Usage),
             Overlay::Pair(_) => Some(Screen::Pairing),
             Overlay::Network(_) => Some(Screen::Network),
             Overlay::Memory(_) => Some(Screen::Memory),
             Overlay::Library(_) => Some(Screen::Library),
-            Overlay::Routines(_) => Some(Screen::Routines),
+            Overlay::Details(_) => Some(Screen::Routines),
+            Overlay::Computer(_) => Some(Screen::BotComputer),
             Overlay::Market(_) => Some(Screen::Marketplace),
             Overlay::Help(_) => Some(Screen::Help),
+            Overlay::Thread(_) => Some(Screen::Thread),
+            Overlay::AllWork(_) => Some(Screen::AllWork),
             Overlay::Form(_) => Some(Screen::BotDetails),
             Overlay::Group(g) if g.group_id.is_some() => Some(Screen::BotDetails),
             _ => None,
@@ -68,7 +71,7 @@ impl App {
         overlay.or_else(|| (self.trace == TraceMode::Full).then_some(Screen::Trace))
     }
 
-    fn track(&self, event: Reported) {
+    pub(in crate::tui) fn track(&self, event: Reported) {
         self.call("track", Track::body(Reporter::Tui, event), After::Tracked);
     }
 
@@ -106,6 +109,23 @@ mod tests {
         app.overlays.push(Overlay::Analytics(crate::tui::manage::AnalyticsSheet::default()));
         app.report_screen();
         assert_eq!(app.seen.screen, Some(Screen::Usage), "a sheet over it isn't a screen");
+        app.overlays.push(Overlay::Computer("b".into()));
+        app.report_screen();
+        assert_eq!(app.seen.screen, Some(Screen::BotComputer));
+        app.overlays.pop();
+        app.overlays.push(Overlay::Thread(crate::tui::manage::ThreadSheet::new(
+            "b".into(),
+            "i".into(),
+            "thread-1".into(),
+        )));
+        app.report_screen();
+        assert_eq!(app.seen.screen, Some(Screen::Thread), "a thread's transcript");
+        app.overlays.pop();
+        app.overlays.push(Overlay::AllWork(crate::tui::manage::AllWork::default()));
+        app.report_screen();
+        assert_eq!(app.seen.screen, Some(Screen::AllWork), "every bot's work");
+        let body = serde_json::to_value(Screen::AllWork).expect("a screen's name");
+        assert_eq!(body, "all_work", "named as on the other clients");
 
         app.overlays.clear();
         app.trace = TraceMode::Full;

@@ -1,10 +1,11 @@
-import { ipcMain, type WebContents } from 'electron'
+import { app, ipcMain, type WebContents } from 'electron'
 import type { CallError } from '../shared/ipc'
 import { noteAnalyticsSetting } from './analytics'
 
 // Loopback HTTP + SSE for the renderer. The host has no CORS (it's a loopback API for local
 // apps), so requests leave from the main process.
 
+/** Open streams by `<window>:<id>`: each window's page numbers its streams from 1. */
 const streams = new Map<string, AbortController>()
 
 function isLoopback(url: string) {
@@ -43,11 +44,26 @@ async function call(baseURL: string, token: string, method: string, body: unknow
   return value
 }
 
+function close(key: string) {
+  const controller = streams.get(key)
+  streams.delete(key)
+  controller?.abort()
+}
+
+/** A crashed page's streams (a page that unloads closes its own, preload/index.ts): left open, they'd feed the reloaded page. */
+function closePage(contents: WebContents) {
+  const prefix = `${contents.id}:`
+  for (const key of streams.keys()) if (key.startsWith(prefix)) close(key)
+}
+
 function stream(sender: WebContents, id: string, url: string, token: string) {
+  const key = `${sender.id}:${id}`
   const controller = new AbortController()
-  streams.set(id, controller)
+  streams.set(key, controller)
+  // A closed stream sends nothing more: the page that reloaded may have given its id to a new stream.
+  const open = () => streams.get(key) === controller
   const send = (channel: string, payload: unknown) => {
-    if (!sender.isDestroyed()) sender.send(channel, id, payload)
+    if (open() && !sender.isDestroyed()) sender.send(channel, id, payload)
   }
   void (async () => {
     // Idle timeout, not a total one: the host pings every 15 s, so silence this long means it's gone.
@@ -82,12 +98,12 @@ function stream(sender: WebContents, id: string, url: string, token: string) {
       send('host:stream:end', null)
     } catch (error) {
       const e = error as Partial<CallError>
-      send('host:stream:end', controller.signal.aborted && streams.has(id)
+      send('host:stream:end', controller.signal.aborted
         ? { status: 0, message: "Can't reach your computer." }
         : { status: e.status ?? 0, message: e.message ?? "Can't reach your computer." })
     } finally {
       if (idle) clearTimeout(idle)
-      streams.delete(id)
+      if (open()) streams.delete(key)
     }
   })()
 }
@@ -100,9 +116,6 @@ export function registerHostProxy() {
     ),
   )
   ipcMain.on('host:stream:open', (e, id: string, url: string, token: string) => stream(e.sender, id, url, token))
-  ipcMain.on('host:stream:close', (_e, id: string) => {
-    const controller = streams.get(id)
-    streams.delete(id)
-    controller?.abort()
-  })
+  ipcMain.on('host:stream:close', (e, id: string) => close(`${e.sender.id}:${id}`))
+  app.on('render-process-gone', (_e, contents) => closePage(contents))
 }

@@ -62,7 +62,7 @@ pub async fn dispatch(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -
     let result = route(hub, caller, method, b).await;
     let report = observed.and_then(|(event, properties)| match &result {
         Ok(answer) => crate::analytics::answered(event, properties, answer).map(|p| (event, p)),
-        Err(_) => crate::analytics::failed(event, properties),
+        Err(error) => crate::analytics::failed(event, properties, error),
     });
     if let Some((event, properties)) = report {
         crate::analytics::capture(hub, event, properties);
@@ -84,8 +84,8 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
         // Only signing in reads the vault; other computer tools work without a keyring.
         || (method == "computerCall" && b["name"] == "type_login")
         || method.starts_with("voice")
-        || method == "setVoiceKey"
-        || matches!(method, "agentAuth" | "agentAuthenticate" | "setAgentEnv")
+        || matches!(method, "setVoiceKey" | "setVoiceServer")
+        || matches!(method, "agentAuth" | "agentAuthenticate" | "setAgentEnv" | "setLoginProfileKeys")
     {
         market::vault::unlock(hub.clone()).await?;
     }

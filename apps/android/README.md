@@ -13,7 +13,7 @@ Use JDK 21, Android SDK 37 and Build Tools 37.0.0. Set `JAVA_HOME` and
 
 ```sh
 cd apps/android
-./gradlew :core:test :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+./gradlew :core:test :design:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
 ./gradlew :app:assembleRelease
 adb install -r -d app/build/outputs/apk/debug/app-debug.apk
 ```
@@ -87,7 +87,12 @@ The roster shows activity, previews, unread counts, groups, pin/hide actions and
 touch and hold a bot, then move it, to reorder within its section (the order syncs through the host). Cached bots remain readable offline and are labeled as saved. An
 unreachable computer is distinguished from an empty online roster. Chat supports
 final replies, Markdown/code, permissions, reactions, quote replies (touch and hold a
-message, then Reply), history and Full conversation.
+message, then Reply; Select Text there replies to the part of it you select), history and Full conversation. A bot's work away from
+its chat ([event box](../../docs/plans/event-box.md)) shows as one capsule above the composer; its text opens the bot's
+details, whose Details page lists its threads (the sessions running now), its event box (what waits), what it does
+later and what ended recently. A row there pushes its task's thread inside the sheet
+(back returns to the details): where it works, what its thread did, and a text composer for the bot's own tasks, whose waiting messages
+offer Send now and Remove as a chat's do. The thread's transcript is held in memory per thread and never in the chat or the mirror.
 
 Text and private attachment drafts survive process death separately for each bot. Sends retain their nonce through durable queue commit and retry.
 Uncertain sends require explicit retry with the same ID. Text can wait in the
@@ -111,6 +116,8 @@ uses a temporary copy rather than exposing the private cache.
 Ed25519/X25519 seeds use Android Keystore AES-GCM wrapping; no global crypto
 provider is replaced. Local data is excluded from backup and device transfer.
 The mirror commits updates, send reconciliation and the event cursor together.
+It loads only a window of each chat into memory (`Residency`); older rows stay on disk
+until the reader scrolls back ([chat messages](../../docs/features/chat-messages.md)).
 Context retirement joins writers before changing identity or closing databases.
 A changed host identity produces an error rather than silently trusting new keys.
 
@@ -123,11 +130,12 @@ work.
 
 ```sh
 ./gradlew :app:assembleDebugAndroidTest
-ANDROID_SERIAL=emulator-5580 ./gradlew :app:connectedDebugAndroidTest
+./gradlew :app:connectedDebugAndroidTest
 ```
 
-Use a disposable emulator/application for ordinary instrumentation: it includes
-local reset and credential fixtures. Do not run it against a personal phone's
+Use the [shared test emulator](../../docs/guides/dev-app.md#worktree-sandboxes),
+under its lock, for ordinary instrumentation: it includes local reset and
+credential fixtures. Do not run it against a personal phone's
 saved accounts. Mutating live suites require `fixtureComputerId` matching an
 isolated fake-agent host. Shared vectors come from
 [remote-relay-vectors.json](../../docs/reference/fixtures/remote-relay-vectors.json).
@@ -139,7 +147,10 @@ byte. `LiveRosterTest` offers separately opted-in read-only inspection of an
 existing connection; it is not the ordinary reset suite.
 
 The emulator-only `-PcodyncReleaseTests=true` variant signs an R8 acceptance build
-with the debug key; ordinary release builds take only the upload key. Physical camera,
+with the debug key; ordinary release builds take only the upload key. Its
+`VoiceReleaseRunner` checks the minified WebRTC offer, Vosk speech and the widgets; the widget
+stage needs exactly one paired computer, the fixture `9ESVKkTXlLyIExxnW7-PIg`. CI compiles the
+variant on `dev` and `main`; run it on the emulator by hand. Physical camera,
 keyboard/TalkBack, provider login, background push, voice and release acceptance
 are separate [checklist](../../docs/plans/android-app.md) gates.
 
@@ -173,7 +184,7 @@ crypto or camera library is introduced. WebRTC comes from the webrtc-sdk build o
 | CommonMark and GFM extensions | 0.30.0 | [CommonMark Java](https://github.com/commonmark/commonmark-java), BSD-2-Clause; selectable Markdown, tables and strikethrough |
 | Coil | 3.4.0 | [Coil](https://github.com/coil-kt/coil/releases/tag/3.4.0), Apache-2.0; bounded image loading and caching |
 | Java API desugaring | 2.1.5 | [Android desugaring](https://developer.android.com/studio/write/java11-default-support-table), GPL-2.0 with Classpath Exception; CommonMark runtime support |
-| Clerk Android | 1.1.11 | [Clerk SDK](https://github.com/clerk/clerk-android), MIT; native account sessions and browser/provider authentication |
+| Clerk Android | 1.4.1 | [Clerk SDK](https://github.com/clerk/clerk-android), MIT; native account sessions and browser/provider authentication |
 | Firebase BOM / Google Services plugin | 34.19.0 / 4.5.0 | [Firebase Android](https://firebase.google.com/support/release-notes/android), Apache-2.0; FID registration and data-only FCM delivery |
 | Play app update | 2.1.0 | [Play Core](https://developer.android.com/guide/playcore), [Play Core SDK Terms](https://developer.android.com/guide/playcore#license); the update notice and reminder |
 | WorkManager | 2.12.0 | [AndroidX Work](https://developer.android.com/jetpack/androidx/releases/work), Apache-2.0; bounded background registration retries |

@@ -18,6 +18,7 @@ use crate::network::Recipient;
 use crate::remote::cloud::{self, CloudStatus};
 use crate::store::{BotConfig, Store, now_ms};
 use anyhow::{Result, anyhow, bail};
+use codync_network::Access;
 use serde_json::{Value, json};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -204,7 +205,7 @@ fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
     let exchange = Exchange { request: &request, source, target: &target.id, text: message, peer_name: Some(name) };
     lifetime.entries.push(exchange.notice(hub, &target.id, &format!("Message from {name}: {message}"), true)?);
     hub.assistant.add(Reply::queued(&asker.id, &request, &target.name, message));
-    lifetime.deliver(&target.id, 1, request_prompt(&asker.who, name, message))?;
+    lifetime.deliver(&target.id, 1, Access::Allow, request_prompt(&asker.who, name, Access::Allow, message))?;
     Ok(json!({
         "requestId": request, "botId": target.id, "name": target.name, "status": RequestStatus::Queued,
         "note": "Queued. Bots can take minutes: get the reply later with read_replies.",
@@ -241,7 +242,7 @@ pub fn tools() -> Value {
             "description": "Send a self-contained request to one of the user's Codync bots. It runs in that bot's own chat, with the bot's tools, folder and permissions, and this returns as soon as it is queued. Get the reply later with read_replies.",
             "inputSchema": {"type": "object", "properties": {
                 "botId": {"type": "string", "description": "The bot's id from list_bots."},
-                "message": {"type": "string", "description": "The task, relevant context, file paths and the expected result."},
+                "message": {"type": "string", "description": "The request, relevant context, file paths and the expected result."},
             }, "required": ["botId", "message"]},
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
         },
@@ -257,7 +258,7 @@ pub fn tools() -> Value {
 }
 
 pub const INSTRUCTIONS: &str = "Codync connects you to the user's Codync bots, on this computer and the user's \
-other computers. Use list_bots to find one, message_bot to give it a self-contained task, and read_replies to collect \
+other computers. Use list_bots to find one, message_bot to give it a self-contained request, and read_replies to collect \
 its answer. Bots work in their own folders with their own tools and can take minutes: after messaging one, go on with \
 your work and check read_replies later instead of waiting in a loop.";
 

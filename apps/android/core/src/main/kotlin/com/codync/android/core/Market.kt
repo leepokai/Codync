@@ -5,7 +5,9 @@ import kotlinx.serialization.SerialName
 
 @Serializable data class InstalledConnector(val id: String, val name: String, val description: String = "",
     val registryName: String? = null, val kind: String, val command: String? = null, val url: String? = null,
-    val keys: List<String> = emptyList(), val logo: String? = null, val auth: String? = null) {
+    val keys: List<String> = emptyList(), val logo: String? = null, val auth: String? = null,
+    /** Set up with a saved token where it could sign in instead (GitHub); older hosts leave it out. */
+    val canSignIn: Boolean = false) {
     val needsSignIn: Boolean get() = auth == "signedOut"
 }
 @Serializable data class InstalledSkill(val id: String, val name: String, val description: String = "", val source: String, val path: String)

@@ -1,5 +1,5 @@
 //! A real host driving scripted ACP agents: the turn-end alert reaches the user only when the turn left
-//! them something to read (#486) — a turn woken by a bot's reply that says nothing pushes nothing.
+//! them something to read (#486), exactly once, and never on top of the alert a card or approval sent.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -50,11 +50,11 @@ impl Host {
         v
     }
 
-    /// A bot running the team fixture in its own folder, with its alerts on (the push under test).
-    async fn bot(&self, name: &str) -> String {
+    /// A bot running `fixture` in its own folder, with its alerts on (the push under test).
+    async fn bot(&self, name: &str, fixture: &str) -> String {
         let cwd = self.home.join(name);
         std::fs::create_dir_all(&cwd).unwrap();
-        let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
+        let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(fixture);
         let bot = json!({
             "name": name, "backend": "custom", "command": common::python_agent(&agent),
             "cwd": cwd, "permission": "ask",
@@ -95,17 +95,18 @@ impl Host {
     }
 }
 
-/// The live `alert` events the host sent while the stream was open: the pushes a phone or desktop app shows.
-fn alert_collector(base: String, token: String) -> Arc<Mutex<Vec<Value>>> {
+/// The live `alert` events the host sends from now on (the stream is open on return): the pushes a phone or
+/// desktop app shows.
+async fn alert_collector(base: String, token: String) -> Arc<Mutex<Vec<Value>>> {
     let alerts = Arc::new(Mutex::new(Vec::new()));
     let sink = alerts.clone();
+    let res = reqwest::Client::new()
+        .get(format!("{base}/events?since=0&client=test"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .expect("open the event stream");
     tokio::spawn(async move {
-        let res = reqwest::Client::new()
-            .get(format!("{base}/events?since=0&client=test"))
-            .bearer_auth(token)
-            .send()
-            .await
-            .expect("open the event stream");
         let mut body = res.bytes_stream();
         let mut buf = String::new();
         while let Some(Ok(chunk)) = body.next().await {
@@ -128,24 +129,29 @@ fn alert_collector(base: String, token: String) -> Arc<Mutex<Vec<Value>>> {
     alerts
 }
 
-/// The bodies of the alerts sent for `bot`, in order.
-fn bodies(alerts: &Mutex<Vec<Value>>, bot: &str) -> Vec<String> {
+/// The alerts sent for `bot` as (kind, body), in order, once the last one has had time to arrive.
+async fn alerts_for(alerts: &Mutex<Vec<Value>>, bot: &str) -> Vec<(String, String)> {
+    tokio::time::sleep(Duration::from_millis(500)).await;
     alerts
         .lock()
         .unwrap()
         .iter()
         .filter(|a| a["botId"] == bot)
-        .map(|a| a["body"].as_str().unwrap_or_default().to_owned())
+        .map(|a| (a["kind"].as_str().unwrap().to_owned(), a["body"].as_str().unwrap().to_owned()))
         .collect()
+}
+
+fn done(body: &str) -> (String, String) {
+    ("done".into(), body.into())
 }
 
 #[tokio::test]
 async fn a_silent_turn_woken_by_a_bot_reply_does_not_alert_the_user() {
     let host = Host::start().await;
-    let lead = host.bot("lead").await;
-    let reviewer = host.bot("reviewer").await;
+    let lead = host.bot("lead", "team_agent.py").await;
+    let reviewer = host.bot("reviewer", "team_agent.py").await;
     host.call("updateBot", json!({"id": reviewer, "manageTeam": true})).await;
-    let alerts = alert_collector(host.base.clone(), host.token.clone());
+    let alerts = alert_collector(host.base.clone(), host.token.clone()).await;
 
     // The lead delegates; its own turn answers the user ("Message queued"), which alerts once.
     host.call("send", json!({"botId": lead, "text": format!("DELEGATE {reviewer} BLOCK SILENT")})).await;
@@ -174,6 +180,43 @@ async fn a_silent_turn_woken_by_a_bot_reply_does_not_alert_the_user() {
     assert_eq!(finals, ["Message queued"], "the woken turn told the user nothing");
 
     // One push for the turn that answered the user; none for the silent one, none for the answering bot.
-    assert_eq!(bodies(&alerts, &lead), ["Message queued"]);
-    assert_eq!(bodies(&alerts, &reviewer), Vec::<String>::new());
+    assert_eq!(alerts_for(&alerts, &lead).await, [done("Message queued")]);
+    assert_eq!(alerts_for(&alerts, &reviewer).await, []);
+}
+
+#[tokio::test]
+async fn a_turn_that_talked_through_send_message_alerts_once_with_what_it_sent() {
+    let host = Host::start().await;
+    let bot = host.bot("writer", "team_agent.py").await;
+    let alerts = alert_collector(host.base.clone(), host.token.clone()).await;
+
+    host.call("send", json!({"botId": bot, "text": "REPORT"})).await;
+    host.wait_finished().await;
+    assert_eq!(alerts_for(&alerts, &bot).await, [done("Report for the user\n\nSecond report for the user")]);
+}
+
+#[tokio::test]
+async fn a_turn_that_only_shared_a_file_alerts_once_with_the_file() {
+    let host = Host::start().await;
+    let bot = host.bot("sharer", "file_agent.py").await;
+    let alerts = alert_collector(host.base.clone(), host.token.clone()).await;
+
+    host.call("send", json!({"botId": bot, "text": "share-image files-only"})).await;
+    host.wait_finished().await;
+    let size = std::fs::metadata(host.home.join("sharer/chart.png")).unwrap().len();
+    assert_eq!(alerts_for(&alerts, &bot).await, [done(&format!("chart.png ({size} bytes)"))]);
+}
+
+#[tokio::test]
+async fn a_turn_waiting_on_an_approval_alerts_only_for_the_approval() {
+    let host = Host::start().await;
+    let bot = host.bot("editor", "team_agent.py").await;
+    let alerts = alert_collector(host.base.clone(), host.token.clone()).await;
+
+    // Asks for an approval, then ends with no text once it's answered: the card was what it left the user.
+    host.call("send", json!({"botId": bot, "text": "PERMISSION EMPTY"})).await;
+    let card = host.wait_for(&bot, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
+    host.call("respondPermission", json!({"entryId": card["id"], "optionId": "allow"})).await;
+    host.wait_finished().await;
+    assert_eq!(alerts_for(&alerts, &bot).await, [("needsInput".to_owned(), "Edit a file".to_owned())]);
 }

@@ -216,13 +216,14 @@ impl Routines {
                 r.status = status;
                 r.finished_at = Some(now);
                 r.detail = detail;
-                // A reply that ends in `(pass)` says nothing, even with a line before it (a quiet run that added a
-                // reason first): the text stays in the run's trace.
-                r.result = text.filter(|t| !crate::chat::group::ends_in_pass(t));
-                r.report_pending = r.result.is_some() || failed;
+                // 保留上游的静默结果语义，串联事件同样忽略以 (pass) 结尾的回复。
+                let reply = text.filter(|t| !crate::chat::group::ends_in_pass(t));
+                r.report_pending = reply.is_some() || failed;
                 if failed {
                     withdrawn = retry::after_failure(s, i, safe, now);
                 }
+                super::chain::emit(s, i, reply.as_deref());
+                s.runs[i].result = reply;
                 if !s.runs[i].retryable {
                     s.runs[i].event = Value::Null;
                 }

@@ -24,17 +24,22 @@ advance, and moving the agent loop off the user's computer.
 
 ## 1. Watchdog
 
+All three layers are built ([watchdog](../features/work.md#watchdog)).
+
 - **Layer 0, the host itself** (`host/src/watchdog.rs`): an OS thread outside the async runtime expects a heartbeat
-  that goes through the runtime and the hub's locks. One missing for 5 minutes (a deadlock, a starved runtime) logs,
-  leaves a mark, and aborts the process; the service manager starts it again (launchd `KeepAlive`, systemd
-  `Restart=always`, the Windows Run entry through the desktop app), and the next start reports it. A sleeping
-  computer is not a hung host: the thread's own clock gap resets the wait.
+  that goes through the runtime and the hub's emit lock. One missing for 5 minutes (a deadlock, a starved runtime)
+  logs, leaves a mark, and aborts the process; the service starts it again (launchd `KeepAlive`, systemd
+  `Restart=always`, `codync-hostw` on Windows), and the next start reports it (`host_restarted_stuck`). Only under
+  the service (`service::started_by_service`). A stall within 30 minutes of the last such restart only logs, so a hang
+  that comes back at start doesn't restart the host every few minutes. A sleeping computer is not a hung host: the
+  thread's wall-clock gap resets the wait.
 - **Layer 1, code checks** (`work/watch.rs`): every 5 minutes while any thread of the bot works, a pure function looks
   at each working thread's current turn: the same tool call again and again (`looping`), tool calls that keep failing
   (`failing`), a turn with no new step for an hour (`quiet`), and a card left unanswered for two hours
-  (`unanswered`). Silence alone never acts: a quiet turn only asks the bot to look.
-- **Layer 2, the bot looks** (only on a flag): `unanswered` reminds the user once (a push, no agent). The others go
-  to the bot's own chat as a host turn, with the task, its brief and its last steps; the bot decides with the tools it
+  (`card`). Silence alone never acts: a quiet turn only asks the bot to look.
+- **Layer 2, the bot looks** (only on a flag): `card` reminds the user once (a push, no agent). The others go
+  to the bot's own chat as a host turn, with the task and what shows it stuck (the repeated call, the failed calls,
+  the minutes without a step); the bot reads its steps with `recall_task` and decides with the tools it
   has (`tell_task` to nudge, `steer_task` to start again or stop) and answers `(pass)` when it is fine. Each thread
   is looked at by the bot at most once an hour.
 

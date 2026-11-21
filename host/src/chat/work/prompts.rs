@@ -47,12 +47,25 @@ pub(super) fn task_prompt(task: &Task, first: bool) -> String {
     }
     format!(
         "{lead}: \"{}\".\n\n{}{said}\n\n\
-         [Codync: work until it's done. Your last message is the report the chat gets, so end with what you did and \
-         found. Messages you send with send_message show in this thread, not in the chat. Approvals reach the \
-         user in the chat, and so does what the user must see or decide before you can go on: request_decision \
-         asks them there, send_file and publish_artifact share there. You can't add a task, set a follow-up or \
-         message another bot from here: say in your report what you need.]",
+         [Codync: work until it's done. Don't end your turn while something you started in the background still \
+         runs: wait for it and report its result. Your last message is the report the chat gets, so end with what \
+         you did and found. Messages you send with send_message show in this thread, not in the chat. Approvals \
+         reach the user in the chat, and so does what the user must see or decide before you can go on: \
+         request_decision asks them there, send_file and publish_artifact share there. You can't add a task, set a \
+         follow-up or message another bot from here: say in your report what you need.]",
         task.title, task.brief
+    )
+}
+
+/// The prompt of the turn the watchdog starts in the bot's chat for `task`, which looks stuck (`evidence`: what
+/// shows it).
+pub(super) fn stuck(task: &Task, evidence: &str) -> String {
+    format!(
+        "[Codync watchdog] Task \"{}\" ({}) looks stuck: {evidence}. Look at it (work_status, recall_task) and do one \
+         thing: tell_task it what to change, steer_task it (stop, or replace it with a better brief), or, if it is \
+         fine, reply exactly (pass). This is Codync checking on your work, not the user speaking: if you act, tell \
+         the user in a sentence what you did.",
+        task.title, task.id
     )
 }
 
@@ -248,6 +261,7 @@ mod tests {
              [The user said since: «and keep the query»]\n\n[Your chat passed on: «the API page too»]\n\n\
              [Codync: work until"
         ));
+        assert!(prompt.contains("Don't end your turn while something you started in the background still runs"));
         task.cut_in = true;
         assert!(task_prompt(&task, true).contains("set aside"));
         assert!(task_prompt(&task, false).starts_with("[Task] Next, in this same thread"));

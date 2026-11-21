@@ -8,6 +8,7 @@ mod common;
 
 use common::host::Host;
 use serde_json::{Value, json};
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -107,6 +108,29 @@ async fn no_thread_bot_reached(events: &mut tokio::sync::mpsc::UnboundedReceiver
         }
     }
     threads
+}
+
+#[tokio::test]
+async fn a_thread_that_makes_one_call_again_and_again_gets_its_bot_one_watchdog_turn() {
+    // The watchdog looks every second here, not every five minutes.
+    let host = Host::start_with(&[("CODYNC_WORK_WATCH_SECS", OsStr::new("1"))]).await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Tail the log|LOOP HOLD:tail").await;
+
+    let looked = reply(&host, &bot, "Watchdog:").await;
+    assert_eq!(looked, "Watchdog: it has called \"Read the log\" 6 times in a row");
+    // It went on looking meanwhile: the bot is woken for a thread at most once an hour.
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    let woken: Vec<Value> = logged(&host.workspace(&bot), "prompts.jsonl")
+        .into_iter()
+        .filter(|p| p["text"].as_str().is_some_and(|t| t.contains("[Codync watchdog]")))
+        .collect();
+    assert_eq!(woken.len(), 1, "{woken:?}");
+    let task = task(&host, &bot, "Tail the log", "working").await;
+    assert!(woken[0]["text"].as_str().unwrap().contains(&format!("Task \"Tail the log\" ({})", id(&task))));
+
+    release(&host, &bot, "tail");
+    reply(&host, &bot, "Relayed: Report Tail the log").await;
 }
 
 #[tokio::test]

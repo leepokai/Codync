@@ -6,7 +6,8 @@ works until a `release-<name>` file is in its folder, `PERMISSION` asks for an a
 `release-<name>` is there), `ASK` asks the user to
 choose, `SHARE` sends a file (`QUOTE`: quoting the chat message that added the task), `ARTIFACT` publishes one,
 `NEST` tries what a thread may not, `REMEMBER` adds a line to `MEMORY.md` with `edit_memory` and `FORGET` tries to take
-one out (both once it is released), `TOUCH` writes `made.txt` in its folder.
+one out (both once it is released), `TOUCH` writes `made.txt` in its folder, `LOOP` makes the same tool call six
+times. The watchdog's turn in the chat answers `Watchdog: <why the task looks stuck>`.
 
 A routine run and another bot's request read the same words in the routine's instruction or the request, and also
 `SEND` (a message to the user), `PROGRESS` (saves the routine's progress note), `FOLLOW` (sets a follow-up) and
@@ -170,6 +171,10 @@ def work(text, session):
         notes.append(said(chat_tool("add_task", {"title": "Inner", "brief": "x"}), "Nested: ")[:60])
     if "TOUCH" in brief:
         pathlib.Path("made.txt").write_text("made by a thread", encoding="utf-8")
+    if "LOOP" in brief:
+        for n in range(6):
+            send({"method": "session/update", "params": {"sessionId": session, "update": {
+                "sessionUpdate": "tool_call", "toolCallId": f"loop-{n}", "title": "Read the log", "status": "completed"}}})
     if "PERMISSION" in brief:
         later = re.search(r"PERMISSION:(\w+)", brief)
         if later:
@@ -209,6 +214,8 @@ def thread(text):
 
 def answer(text, session):
     """What this turn replies."""
+    if "[Codync watchdog]" in text:
+        return "Watchdog: " + text.split("looks stuck: ", 1)[1].split(". Look at it", 1)[0]
     if "[Codync: your task" in text:
         return relayed(text)
     if "[Codync: your chat passed this on" in text:

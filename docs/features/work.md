@@ -19,7 +19,7 @@ Design: [the event box](../plans/event-box.md); why a thread is a bot of its own
 [the first design](../archive/background-tasks-plan-2026-11-15.md). Code: `host/src/chat/work/` (`tasks.rs`: the box, its wire shape and what the bot reads of it;
 `dispatch.rs`: which task a thread takes next; `steer.rs`: first, cut in, replace, stop, drop, retry; `mod.rs`: a
 thread's turn end, the report, host start; `sources.rs`: routine runs and other bots' requests as tasks; `thread.rs`: the user's messages to a task's thread;
-`tools.rs`: the bot's tools and what a thread may not call; `sweep.rs`: the hourly look; `worktree.rs`: a thread's git worktree;
+`tools.rs`: the bot's tools and what a thread may not call; `sweep.rs`: the hourly look; `watch.rs`: the [watchdog](#watchdog); `worktree.rs`: a thread's git worktree;
 `prompts.rs`: the words); the actor's side is in `host/src/agent/bot/` (`session.rs` for the fork, `turn.rs` for the box in the prompt, the worktree
 and the report, `queue.rs` for `turn_over`, `updates.rs` for cards). Git is run through `host/src/git.rs`.
 
@@ -551,8 +551,54 @@ The hourly look (`work/sweep.rs`) catches what no event said. After every dispat
 working tasks in a box, one timer per bot is set for an hour later (reset by the next pass, none for an empty box).
 When it fires, the host takes a dispatcher pass again, and a working task whose thread runs no turn (its actor is
 gone or idle, and nothing is about to resume) follows the restart rule: back to waiting once, then failed with a
-report (`work_finished` `error: lost`). A turn that runs is never touched, however long and quiet. The look is host
-code only: no agent is woken unless a task was lost.
+report (`work_finished` `error: lost`). A turn that runs is never touched, however long and quiet (the
+[watchdog](#watchdog) asks the bot to look at one that seems stuck). The look is host code only: no agent is woken
+unless a task was lost.
+
+## Watchdog
+
+Every 5 minutes (`work/watch.rs`: one host-wide timer, started by `work::restore`), host code reads the running turn
+of each thread that works on one of a bot's own tasks: its newest 50 entries since the turn began (its runtime's
+`startedAt`), and its cards in the bot's chat (`Store::open_cards`). A routine's run and another bot's request
+aren't watched: their result has an owner other than the bot's chat. What it flags:
+
+- **looping**: the turn's last 6 tool calls have one title.
+- **failing**: its last 5 tool calls ended `failed`.
+- **quiet**: no entry of the turn was created or changed for 60 minutes, while no tool call is `pending` or
+  `in_progress` (a long build isn't stuck). The hour counts from when the computer last woke, if that is later: a
+  look that comes long after the one before means the computer slept.
+- **card**: an approval or choice card of the thread has waited on the user for 2 hours. The user gets one reminder
+  per card: the needs-you alert (`AlertKind::NeedsInput`, opening the bot's chat; none when the bot's alerts are off).
+
+A thread that waits on the user (a card, a sign-in) is never flagged otherwise, nor is one between turns.
+
+**The wake-up.** On `looping`, `failing` or `quiet` the bot gets a host turn in its own chat (`Cmd::Watchdog`,
+`HostTurn::Watchdog`), queued behind the user's messages as a report is: `[Codync watchdog] Task "<title>" (<id>)
+looks stuck: <the repeated call, the failed calls' titles, or the minutes without a step>`, asking it to look
+(`work_status`, `recall_task`) and do one thing: `tell_task` what to change, `steer_task` it (stop, or replace the
+brief), or reply `(pass)` if it is fine. A task that ended or left that thread before the turn comes drops it.
+`(pass)` leaves nothing in the chat and alerts no one; another answer alerts like a reply. A task the turn adds
+carries the stuck task's hops on, as a report's turn does. A host restart doesn't resume it; the next look asks again.
+
+**Limits.** A thread wakes its bot at most once an hour (kept in memory, so a host restart forgets it). No wake
+while the chat's own agent rests (`agent::fallback::rest`, its login) or is near its usage limit
+(`usage::near_limit`, as the dispatcher counts it); the next look tries again. A Stop in the chat drops a wake-up
+that waits there.
+
+**The host itself** (`host/src/watchdog.rs`). Under the service (`service::started_by_service`), a beat goes through
+the runtime and the hub's emit lock every 10 seconds, and an OS thread outside the runtime looks every 30. No beat for
+5 minutes (every worker blocked, a lock never freed) logs, writes `watchdog.restart` in the data folder and aborts
+the process; the service starts it again (launchd `KeepAlive`, systemd `Restart=always`, `codync-hostw` on Windows),
+whose start reports `host_restarted_stuck` and keeps the time as `watchdog.last`. A stall within 30 minutes of that
+restart only logs, so a hang that returns at start can't restart the host, and resume its turns, every few minutes.
+A nap of the thread that runs long by the wall clock means the computer slept: the wait starts over.
+`CODYNC_WATCHDOG_STALL_SECS` sets the stall and turns the watchdog on outside the service; a debug build with
+`CODYNC_WATCHDOG_TEST_HANG` stops beating (`watchdog_e2e`).
+
+**Analytics.** `watchdog_flagged`: `signal` (`looping`, `failing`, `quiet`, `card`), `action` (`woke`,
+`reminded`, `skipped`) and, when skipped, `reason` (`cooldown`, `rests`, `near_limit`); a skip is counted once
+per thread and reason in a row. Never a title or text. `CODYNC_WORK_WATCH_SECS` sets the period for the end-to-end
+test (`work_e2e`).
 
 ## Limits of this version
 

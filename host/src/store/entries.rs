@@ -28,6 +28,9 @@ const ENTRY_COLS: &str = "seq, id, bot_id, rev, kind, turn, data, created_at, up
 const LIVE_CHAT: &str = "WHERE NOT EXISTS (SELECT 1 FROM bots WHERE id = ?2 AND deleted = 1)";
 /// Leaves out a message the user took back before it went out (`unqueue`): no bot, model or list reads it.
 pub(super) const NOT_REMOVED: &str = "json_extract(data, '$.removed') IS NOT 1";
+/// An approval or choice card still waiting on the user.
+const OPEN_CARD: &str = "(kind = 'permission' AND json_extract(data, '$.status') = 'pending')
+  OR (kind = 'notice' AND json_extract(data, '$.decision') = 1 AND json_extract(data, '$.status') = 'pending')";
 
 /// What `expire_pending` closed out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -235,6 +238,20 @@ impl Store {
         Ok(st.query_map([backend], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// The approval and choice cards thread `thread` put in `bot_id`'s chat that still wait on the user, oldest
+    /// first.
+    // ponytail: scans the chat's entries without an index; the watchdog asks every few minutes, only while the thread
+    // works. Add one if it shows up in profiles.
+    pub fn open_cards(&self, bot_id: &str, thread: &str) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND ({OPEN_CARD})
+               AND json_extract(data, '$.thread.id') = ?2
+             ORDER BY seq"
+        ))?;
+        Ok(st.query_map([bot_id, thread], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Chat-visible messages (the user's, final replies) in `bot_id`'s chat that
     /// contain every term (case-insensitive for ASCII), newest first, from `from` (a `seq`) back.
     // ponytail: substring scan, no index (CJK needs no tokenizer this way): 0.6 s over 180k messages of one bot.
@@ -351,13 +368,12 @@ impl Store {
     pub fn expire_pending(&self) -> Result<Expired> {
         let ids: Vec<String> = {
             let c = self.db.locked();
-            let mut st = c.prepare(
-                "SELECT id FROM entries WHERE (kind = 'permission' AND json_extract(data, '$.status') = 'pending')
-                  OR (kind = 'notice' AND json_extract(data, '$.decision') = 1 AND json_extract(data, '$.status') = 'pending')
+            let mut st = c.prepare(&format!(
+                "SELECT id FROM entries WHERE {OPEN_CARD}
                   OR (kind = 'user' AND json_extract(data, '$.status') = 'queued')
                   OR (kind = 'notice' AND json_extract(data, '$.delegationId') IS NOT NULL
-                      AND json_extract(data, '$.status') IN ('queued', 'sent'))",
-            )?;
+                      AND json_extract(data, '$.status') IN ('queued', 'sent'))"
+            ))?;
             st.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
         };
         let mut decisions = 0;

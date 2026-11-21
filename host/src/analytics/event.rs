@@ -10,6 +10,8 @@ pub enum Event {
     AppOpened,
     WindowOpened,
     HostStarted,
+    /// The watchdog aborted the last host process, which had stopped answering, and the service started this one.
+    HostRestartedStuck,
     OnboardingCompleted,
     ComputerAccessFinished,
     SignInStarted,
@@ -104,6 +106,9 @@ pub enum Event {
     WorkRecalled,
     /// The user wrote to a task's thread (`chat::work::thread`): whether it reopened the task, and whether it waits.
     WorkMessaged,
+    /// The watchdog found one of a bot's own tasks looking stuck (`signal`) and woke the bot, reminded the user of a
+    /// card, or let it be (`action`, `reason`) (`chat::work::watch`).
+    WatchdogFlagged,
     /// A bot's `start_dev_server` ended (`outcome`).
     DevServerStarted,
     /// A dev server ended (`by`).
@@ -203,6 +208,7 @@ impl Event {
             Self::AppOpened => "app_opened",
             Self::WindowOpened => "window_opened",
             Self::HostStarted => "host_started",
+            Self::HostRestartedStuck => "host_restarted_stuck",
             Self::OnboardingCompleted => "onboarding_completed",
             Self::ComputerAccessFinished => "computer_access_finished",
             Self::SignInStarted => "sign_in_started",
@@ -271,6 +277,7 @@ impl Event {
             Self::WorkTold => "work_told",
             Self::WorkRecalled => "work_recalled",
             Self::WorkMessaged => "work_messaged",
+            Self::WatchdogFlagged => "watchdog_flagged",
             Self::DevServerStarted => "dev_server_started",
             Self::DevServerStopped => "dev_server_stopped",
             Self::DevServerAction => "dev_server_action",

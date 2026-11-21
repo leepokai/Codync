@@ -34,6 +34,7 @@ mod tui;
 mod update;
 mod usage;
 mod voice;
+mod watchdog;
 
 use agent::backends;
 use local_api::local_call;
@@ -557,6 +558,10 @@ async fn serve(bind: Option<std::net::IpAddr>, port: u16) -> Result<()> {
     hub.start()?;
     network::start(&hub).await;
     analytics::host_started(&hub, service::started_by_service(), bind.is_loopback());
+    if watchdog::restarted(&service::data_dir()) {
+        analytics::capture(&hub, analytics::Event::HostRestartedStuck, serde_json::Map::new());
+    }
+    watchdog::start(&hub, service::data_dir(), service::started_by_service());
     let agent_checks = background::start(&hub);
     tracing::info!(version = env!("CARGO_PKG_VERSION"), %bind, port, "codync-host listening");
     // Peer addresses: some settings may only be changed from this computer.

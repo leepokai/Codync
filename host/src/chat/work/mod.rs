@@ -13,7 +13,7 @@
 //!
 //! Here: a thread's life from its turn's end to its report. [`steer`] has what the user and the bot do to a task,
 //! [`tools`] the bot's tools, [`prompts`] the words, [`worktree`] the git worktree of a thread that works beside
-//! another in one repository.
+//! another in one repository, [`watch`] the watchdog that wakes the bot for a thread that looks stuck.
 
 mod dispatch;
 mod prompts;
@@ -23,6 +23,7 @@ mod sweep;
 mod tasks;
 mod thread;
 mod tools;
+mod watch;
 mod worktree;
 
 pub use dispatch::{Wait, dispatch};
@@ -34,6 +35,7 @@ pub use tasks::put_working_for_test;
 pub use tasks::{Source, Status, doing, lines, outside, wire, working_threads};
 pub use thread::{Refused as ThreadRefused, heard, message, picked_up, thread as thread_of};
 pub use tools::{TOOLS, acting_as, call, refuse_chat_only, refuse_in_thread, tools};
+pub use watch::Stuck;
 pub use worktree::{Worktree, enter as enter_worktree, in_repo};
 
 use crate::LockExt;
@@ -154,6 +156,8 @@ pub struct Work {
     /// Bots one of whose threads began to wait on the user, so gave its seat up: each box is looked over again.
     freed: Mutex<BTreeSet<String>>,
     seat_freed: tokio::sync::Notify,
+    /// What the watchdog remembers of the threads it looks at (`watch`).
+    watch: Mutex<watch::Memory>,
 }
 
 impl Work {
@@ -510,6 +514,7 @@ pub fn reported(hub: &Hub, bot: &str, delivered: &[String]) {
 /// At host start: old tasks go, and the others pick up where the last process left them.
 pub fn restore(hub: &Arc<Hub>) {
     look_when_seats_free(hub);
+    watch::start(hub);
     let lives = |bot: &str| hub.store.bot(bot).ok().flatten().is_some_and(|r| !r.deleted);
     let threads = hub.store.thread_bots().unwrap_or_default();
     for thread in threads.iter().filter(|thread| !thread.config.thread_of.as_deref().is_some_and(lives)) {

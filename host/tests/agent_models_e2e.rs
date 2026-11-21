@@ -91,3 +91,149 @@ async fn agent_models_scopes_discovery_by_login_profile() {
 
     let _ = std::fs::remove_dir_all(&shim_root);
 }
+
+#[tokio::test]
+async fn agent_models_holds_login_profile_against_removal_until_discovery_finishes() {
+    if common::python_missing() {
+        return;
+    }
+    let shim_root = std::env::temp_dir().join(format!("codync-agent-models-hold-{}", uuid::Uuid::new_v4()));
+    let bin = shim_root.join("bin");
+    write_devin_shim(&bin);
+    let started_flag = shim_root.join("probe.started");
+    let release_flag = shim_root.join("probe.release");
+
+    let inherited_path = std::env::var_os("PATH").unwrap_or_default();
+    let mut paths = vec![bin];
+    paths.extend(std::env::split_paths(&inherited_path));
+    let path = std::env::join_paths(paths).unwrap();
+
+    let empty = std::ffi::OsStr::new("");
+    let host = std::sync::Arc::new(
+        common::host::Host::start_with(&[
+            ("PATH", path.as_os_str()),
+            ("CODYNC_AGENT_ACCOUNT", empty),
+            ("E2E_MODEL_TIER", empty),
+            ("XDG_DATA_HOME", empty),
+            ("XDG_STATE_HOME", empty),
+            ("E2E_HOLD_ACCOUNT", std::ffi::OsStr::new("*")),
+            ("E2E_PROBE_STARTED", started_flag.as_os_str()),
+            ("E2E_PROBE_RELEASE", release_flag.as_os_str()),
+        ])
+        .await,
+    );
+
+    let account =
+        host.call("addLoginProfile", json!({"backend": "devin", "kind": "account"})).await["loginProfile"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+    let slot_dir = host.home.join("login-profiles").join("devin").join(&account);
+    assert!(slot_dir.exists(), "account slot directory should exist before probe: {}", slot_dir.display());
+
+    let probe_host = host.clone();
+    let probe_account = account.clone();
+    let probe_task = tokio::spawn(async move {
+        probe_host.call("agentModels", json!({"backend": "devin", "loginProfile": probe_account})).await
+    });
+
+    common::eventually("agentModels probe starts on loginProfile", std::time::Duration::from_secs(15), || {
+        let started = started_flag.clone();
+        async move { started.exists() }
+    })
+    .await;
+
+    // While discovery is in-flight, concurrent removal must be refused and the slot directory preserved.
+    let err = host.refused("removeLoginProfile", json!({"loginProfile": account})).await;
+    assert!(err.contains("still running") || err.contains("being checked"), "{err}");
+    assert!(slot_dir.exists(), "account slot directory must not be deleted while probe runs");
+
+    // Default login discovery stays independent and unblocked while the profile probe is paused.
+    let default_catalog = host.call("agentModels", json!({"backend": "devin", "loginProfile": null})).await;
+    assert_eq!(model_ids(&default_catalog), vec!["default-flash"]);
+
+    // Missing profile is refused cleanly without spawning.
+    let missing_err = host.refused("agentModels", json!({"backend": "devin", "loginProfile": "missing-id"})).await;
+    assert!(missing_err.contains("removed"), "{missing_err}");
+
+    // Unblock discovery; once `models()` calls `acp.kill().await` and drops `Running`, removal succeeds.
+    std::fs::write(&release_flag, "go").unwrap();
+    let acct_catalog = probe_task.await.unwrap();
+    assert_eq!(model_ids(&acct_catalog), vec![format!("acct-{account}-pro"), "shared-flash".to_owned()]);
+
+    host.call("removeLoginProfile", json!({"loginProfile": account})).await;
+    assert!(!slot_dir.exists(), "account slot directory should be deleted once probe finishes");
+
+    // Removing it leaves subsequent discovery on that profile cleanly refused.
+    let gone_err = host.refused("agentModels", json!({"backend": "devin", "loginProfile": account})).await;
+    assert!(gone_err.contains("removed"), "{gone_err}");
+
+    let _ = std::fs::remove_dir_all(&shim_root);
+}
+
+#[tokio::test]
+async fn agent_models_releases_login_profile_when_discovery_fails() {
+    if common::python_missing() {
+        return;
+    }
+    let shim_root = std::env::temp_dir().join(format!("codync-agent-models-fail-{}", uuid::Uuid::new_v4()));
+    let bin = shim_root.join("bin");
+    write_devin_shim(&bin);
+    let started_flag = shim_root.join("probe.started");
+    let release_flag = shim_root.join("probe.release");
+
+    let inherited_path = std::env::var_os("PATH").unwrap_or_default();
+    let mut paths = vec![bin];
+    paths.extend(std::env::split_paths(&inherited_path));
+    let path = std::env::join_paths(paths).unwrap();
+
+    let empty = std::ffi::OsStr::new("");
+    let host = std::sync::Arc::new(
+        common::host::Host::start_with(&[
+            ("PATH", path.as_os_str()),
+            ("CODYNC_AGENT_ACCOUNT", empty),
+            ("E2E_MODEL_TIER", empty),
+            ("XDG_DATA_HOME", empty),
+            ("XDG_STATE_HOME", empty),
+            ("E2E_HOLD_ACCOUNT", std::ffi::OsStr::new("*")),
+            ("E2E_PROBE_STARTED", started_flag.as_os_str()),
+            ("E2E_PROBE_RELEASE", release_flag.as_os_str()),
+            ("E2E_PROBE_FAIL", std::ffi::OsStr::new("1")),
+        ])
+        .await,
+    );
+
+    let account =
+        host.call("addLoginProfile", json!({"backend": "devin", "kind": "account"})).await["loginProfile"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+    let slot_dir = host.home.join("login-profiles").join("devin").join(&account);
+    assert!(slot_dir.exists());
+
+    let probe_host = host.clone();
+    let probe_account = account.clone();
+    let probe_task = tokio::spawn(async move {
+        probe_host.refused("agentModels", json!({"backend": "devin", "loginProfile": probe_account})).await
+    });
+
+    common::eventually("failing agentModels probe starts", std::time::Duration::from_secs(15), || {
+        let started = started_flag.clone();
+        async move { started.exists() }
+    })
+    .await;
+
+    let err = host.refused("removeLoginProfile", json!({"loginProfile": account})).await;
+    assert!(err.contains("still running") || err.contains("being checked"), "{err}");
+    assert!(slot_dir.exists());
+
+    std::fs::write(&release_flag, "go").unwrap();
+    let probe_err = probe_task.await.unwrap();
+    assert!(probe_err.contains("probe failed"), "{probe_err}");
+
+    // Even after discovery errors out, `Running` was released after `acp.kill().await`.
+    host.call("removeLoginProfile", json!({"loginProfile": account})).await;
+    assert!(!slot_dir.exists());
+
+    let _ = std::fs::remove_dir_all(&shim_root);
+}

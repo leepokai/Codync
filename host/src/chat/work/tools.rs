@@ -1,8 +1,10 @@
-//! The `chat` server's work tools (`add_task`, `steer_task`, `work_status`), and what a thread itself may not call.
+//! The `chat` server's work tools (`add_task`, `steer_task`, `tell_task`, `work_status`, `recall_task`), and what a
+//! thread itself may not call.
 
 use super::steer::{self, Steer};
 use super::tasks::{self, Shown, Status, Task};
-use super::{MAX_BRIEF, MAX_HOPS, MAX_TITLE, MAX_WAITING, dispatch, sources};
+use super::thread::{self, Told};
+use super::{MAX_BRIEF, MAX_HOPS, MAX_TITLE, MAX_WAITING, dispatch, recall, sources};
 use crate::LockExt;
 use crate::analytics::{self, Event};
 use crate::hub::Hub;
@@ -13,7 +15,7 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 /// The `chat` server's tools that are the box's.
-pub const TOOLS: [&str; 3] = ["add_task", "steer_task", "work_status"];
+pub const TOOLS: [&str; 5] = ["add_task", "steer_task", "tell_task", "work_status", "recall_task"];
 
 /// A thread can't do what only makes sense from the chat. `what`: the tool, as the refusal names it.
 pub fn refuse_in_thread(hub: &Hub, bot: &str, what: &str) -> Result<()> {
@@ -70,9 +72,29 @@ pub fn tools() -> Vec<Value> {
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
         }),
         json!({
+            "name": "tell_task",
+            "description": "Pass words on to one of your tasks without starting it again: what the user added about it (\"also check the tests\"), a fact it needs, a nudge when it goes the wrong way. A waiting task reads them when it starts. A working one gets them in its thread once its current turn ends, before it reports; with now, at its next step instead (an agent that can't take a message mid-turn stops its current turn for them, so use now only when it should change course). To start a task over, use steer_task replace.",
+            "inputSchema": {"type": "object", "properties": {
+                "task": {"type": "string", "description": "The task's id."},
+                "text": {"type": "string", "description": "What to pass on, as the task should read it."},
+                "now": {"type": "boolean", "description": "Hand it to a working task at its next step."},
+            }, "required": ["task", "text"]},
+            "annotations": {"readOnlyHint": false, "idempotentHint": false},
+        }),
+        json!({
             "name": "work_status",
             "description": "Your event box: every task that is working or waiting, and those ended in the last day, with its status, what it does now, how long, and its result.",
             "inputSchema": {"type": "object", "properties": {}},
+            "annotations": {"readOnlyHint": true},
+        }),
+        json!({
+            "name": "recall_task",
+            "description": "Look back at your tasks, ended ones too, up to 30 days. With task: its brief, what the user said and your chat passed on about it, its whole result, the tasks it follows and that follow it, and a page of its thread's steps (a thread is kept a week; for the page before, pass before: the earlierSteps it gave). With query: the tasks whose title, brief or result has those words. With neither: the latest ones.",
+            "inputSchema": {"type": "object", "properties": {
+                "task": {"type": "string", "description": "A task's id."},
+                "query": {"type": "string", "description": "Words to find in a task's title, brief or result."},
+                "before": {"type": "integer", "description": "With task: the earlierSteps of the page you have, for the one before it."},
+            }},
             "annotations": {"readOnlyHint": true},
         }),
     ]
@@ -82,7 +104,9 @@ pub fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value
     match name {
         "add_task" => add(hub, bot, args),
         "steer_task" => steer_task(hub, bot, args),
+        "tell_task" => tell(hub, bot, args),
         "work_status" => status(hub, bot),
+        "recall_task" => recall::call(hub, bot, args),
         _ => bail!("unknown work tool: {name}"),
     }
 }
@@ -212,6 +236,42 @@ fn steer_task(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     Ok(json!({"taskId": id, "status": status}))
 }
 
+fn tell(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
+    let now = args["now"] == true;
+    let told = told(hub, bot, args, now);
+    let properties = match &told {
+        Ok((_, Told::Waiting)) => json!({"outcome": "told", "to": "waiting", "now": now}),
+        Ok((_, Told::Working { .. })) => json!({"outcome": "told", "to": "working", "now": now}),
+        Err(error) => {
+            let category = error.downcast_ref::<thread::Refused>().map_or("other", |refused| refused.category);
+            json!({"outcome": "failed", "error": category, "now": now})
+        }
+    };
+    analytics::capture(hub, Event::WorkTold, properties.as_object().cloned().unwrap_or_default());
+    let (id, to) = told?;
+    let (status, note) = match to {
+        Told::Waiting => (Status::Waiting, "It reads this when it starts."),
+        Told::Working { queued: false } => (Status::Working, "Its thread takes it now."),
+        Told::Working { queued: true } if now => (Status::Working, "It takes this at its next step."),
+        Told::Working { queued: true } => {
+            (Status::Working, "It takes this once its current turn ends, before it reports.")
+        }
+    };
+    Ok(json!({"taskId": id, "status": status, "note": note}))
+}
+
+/// Passes `tell_task`'s words on to the task its arguments name: that task's id, and where they went.
+fn told(hub: &Arc<Hub>, bot: &str, args: &Value, now: bool) -> Result<(String, Told)> {
+    let text = |key: &str| args[key].as_str().map(str::trim).filter(|t| !t.is_empty());
+    let invalid = |why: String| thread::Refused::error("invalid", why);
+    let id = text("task").ok_or_else(|| invalid("task is required: its id, from work_status".into()))?;
+    let words = text("text").ok_or_else(|| invalid("text is required: what to pass on".into()))?;
+    if words.len() > MAX_BRIEF {
+        return Err(invalid(format!("text is at most {MAX_BRIEF} bytes")));
+    }
+    Ok((id.to_owned(), thread::tell(hub, bot, id, words, now)?))
+}
+
 fn status(hub: &Hub, bot: &str) -> Result<Value> {
     let cfg = hub.store.bot(bot)?.ok_or_else(|| anyhow!("unknown bot"))?.config;
     let now = now_ms();
@@ -270,6 +330,46 @@ mod tests {
         }
         let (outcome, _) = checked(Some("t"), None).expect_err("no brief");
         assert_eq!(outcome, Admission::Invalid);
+    }
+
+    #[test]
+    fn tell_task_notes_a_waiting_task_refuses_an_ended_one_or_anothers_and_is_the_chats_alone() {
+        use crate::chat::calls::context::tests::{bot, hub};
+        let hub = hub();
+        hub.store.save_bot(&bot("b1", "Mika", "/tmp")).expect("saved");
+        let tasks = json!([
+            {"id": "i1", "title": "Docs", "brief": "x", "status": "waiting", "order": 1, "createdAt": 0},
+            {"id": "i2", "title": "Login", "brief": "x", "status": "done", "order": 0, "createdAt": 0, "endedAt": 1},
+            {"id": "i3", "title": "Morning", "brief": "x", "status": "waiting", "order": 2, "createdAt": 0,
+                "source": {"kind": "routine", "id": "r", "run": "u"}},
+        ]);
+        hub.store.kv_set(&format!("{}b1", tasks::PREFIX), &tasks.to_string()).expect("saved");
+
+        let told = call(&hub, "b1", "tell_task", &json!({"task": "i1", "text": " also the API page "})).expect("told");
+        assert_eq!(
+            (told["status"].as_str(), told["note"].as_str()),
+            (Some("waiting"), Some("It reads this when it starts."))
+        );
+        let docs = tasks::load(&hub.store, "b1").remove(0);
+        assert_eq!(docs.relayed, ["also the API page"], "its thread reads it when it starts");
+        assert!(docs.notes.is_empty(), "never as the user's own words");
+
+        let category = |error: anyhow::Error| error.downcast_ref::<thread::Refused>().map(|refused| refused.category);
+        let ended = call(&hub, "b1", "tell_task", &json!({"task": "i2", "text": "more"})).expect_err("it ended");
+        assert!(ended.to_string().starts_with("\"Login\" has ended"), "{ended}");
+        assert_eq!(category(ended), Some("ended"));
+        let run = call(&hub, "b1", "tell_task", &json!({"task": "i3", "text": "skip staging"})).expect_err("a run");
+        assert_eq!(run.to_string(), "\"Morning\" is a routine's run: it can be read and stopped, not written to");
+        assert_eq!(category(run), Some("read_only"));
+        assert!(tasks::load(&hub.store, "b1")[2].relayed.is_empty(), "nothing it would never read");
+        let empty = call(&hub, "b1", "tell_task", &json!({"task": "i1"})).expect_err("nothing to pass on");
+        assert_eq!(category(empty), Some("invalid"));
+
+        let thread = crate::store::BotConfig { thread_of: Some("b1".into()), ..bot("thread-1", "Mika", "/tmp") };
+        hub.store.save_bot(&thread).expect("saved");
+        assert!(refuse_chat_only(&hub, "thread-1", "tell_task").is_err(), "a thread can't tell its siblings");
+        hub.ceilings.set("b1", codync_network::Access::Ask);
+        assert!(hub.ceilings.check_tool("b1", "tell_task").is_err(), "it acts later: held under a ceiling");
     }
 
     /// #386: work added too often in a row leaves the user one Continue notice a turn, as the handoff limit does.

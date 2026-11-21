@@ -2429,5 +2429,10 @@
   "{count} tool requests": "{count} 件のツールリクエスト",
   "Group by folder": "フォルダでグループ化",
   "Show more": "さらに表示",
-  "No bot": "ボットなし"
+  "No bot": "ボットなし",
+  "Advisor mode": "アドバイザーモード",
+  "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.": "チャットが計画して作業を任せ、thread は専用の agent とフォールバックで動きます。",
+  "Threads' agent": "Thread の agent",
+  "Threads' fallbacks": "Thread のフォールバック",
+  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "{agent} の使用量がなくなるか応答できない場合、thread は次のものに引き継ぎます。"
 }

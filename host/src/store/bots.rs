@@ -239,6 +239,8 @@ mod tests {
             model_options: std::collections::BTreeMap::new(),
             fast_mode: false,
             fallbacks: vec![],
+            thread_agent: None,
+            thread_fallbacks: Vec::new(),
             self_fallbacks: true,
             pinned: false,
             lead: false,

@@ -199,6 +199,12 @@ pub enum Field {
     Fast,
     Fallbacks,
     SelfFallbacks,
+    /// Advisor mode: the bot's threads run on an agent of their own; only on a host that has it.
+    Advisor,
+    /// In Advisor mode, the agent its threads run on.
+    ThreadAgent,
+    /// In Advisor mode, the threads' fallbacks.
+    ThreadFallbacks,
     Folder,
     /// The most threads it runs at once; only on a host that sends `maxThreads`.
     MaxThreads,
@@ -217,7 +223,7 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 23] = [
+pub const FIELDS: [Field; 26] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,
@@ -227,6 +233,9 @@ pub const FIELDS: [Field; 23] = [
     Field::Fast,
     Field::Fallbacks,
     Field::SelfFallbacks,
+    Field::Advisor,
+    Field::ThreadAgent,
+    Field::ThreadFallbacks,
     Field::Compaction,
     Field::Folder,
     Field::MaxThreads,
@@ -264,6 +273,11 @@ pub struct Form {
     /// Agents that carry on, in order, when the bot's own can't answer.
     pub fallbacks: Vec<crate::store::Fallback>,
     pub self_fallbacks: bool,
+    /// The host has Advisor mode.
+    pub advisor: bool,
+    /// In Advisor mode, the agent the threads run on; `None`: off.
+    pub thread_agent: Option<crate::store::Fallback>,
+    pub thread_fallbacks: Vec<crate::store::Fallback>,
     pub cwd: String,
     /// The most threads it runs at once; `None`: the host has no event box.
     pub max_threads: Option<u8>,

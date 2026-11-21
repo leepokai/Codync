@@ -360,6 +360,10 @@ impl Hub {
             // A thread's status is its bot's to what follows the bot from outside its chat.
             if let Some(owner) = self.store.bot(id).ok().flatten().and_then(|row| row.config.thread_of) {
                 self.outside_changed(&owner);
+                // Waiting on the user, it gives its seat up (`work::dispatch`).
+                if after.status == BotStatus::NeedsInput {
+                    self.work.seat_freed(&owner);
+                }
             }
         } else if before.status != after.status {
             self.outside_changed(id);

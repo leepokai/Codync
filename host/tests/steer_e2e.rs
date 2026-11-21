@@ -41,6 +41,27 @@ async fn a_steered_message_joins_the_running_turn() {
 }
 
 #[tokio::test]
+async fn a_steered_message_goes_out_again_when_its_agent_cancels_the_turn_before_a_word() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Drops", "steer_agent.py", "drops 30").await;
+    let (_, second) = queue_behind_a_turn(&host, &bot).await;
+    host.call("steer", json!({"botId": bot, "entryId": second})).await;
+    eventually("the message got a turn of its own", Duration::from_secs(20), async || {
+        host.requests(&bot, "session/prompt").len() == 2 && idle(&host, &bot).await
+    })
+    .await;
+
+    let prompts = host.requests(&bot, "session/prompt");
+    assert!(prompts[1]["params"]["prompt"].to_string().contains("second"), "{}", prompts[1]);
+    assert_eq!(status(&host, &bot, &second).await, "sent");
+    let reply = entries(&host, &bot).await.into_iter().rev().find(|e| e["data"]["final"] == true).unwrap();
+    assert!(reply["data"]["text"].as_str().unwrap().contains("second"), "{reply}");
+}
+
+#[tokio::test]
 async fn a_steered_message_gets_its_reply_even_after_the_bot_used_send_message() {
     if python_missing() {
         return;

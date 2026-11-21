@@ -268,7 +268,7 @@ fn conversation(hub: &Hub, cfg: &BotConfig, recent: &[Entry]) -> String {
 }
 
 /// When something happened, on this computer's clock (as "Now" reads).
-fn local_time(ms: i64) -> String {
+pub(crate) fn local_time(ms: i64) -> String {
     chrono::DateTime::from_timestamp_millis(ms)
         .map_or_else(|| "unknown date".into(), |t| t.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
 }
@@ -342,6 +342,8 @@ pub(crate) mod tests {
             model_options: std::collections::BTreeMap::new(),
             fast_mode: false,
             fallbacks: vec![],
+            thread_agent: None,
+            thread_fallbacks: Vec::new(),
             self_fallbacks: true,
             pinned: false,
             position: 0,

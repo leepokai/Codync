@@ -5,6 +5,7 @@ use super::tasks::{self, Source, Status, Task};
 use super::worktree::{self, Place, Worktree};
 use super::{Outcome, finished, of, prompts};
 use crate::LockExt;
+use crate::agent::fallback;
 use crate::analytics::errors::host_error;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, THREAD_PREFIX, now_ms};
@@ -18,7 +19,7 @@ use std::sync::Arc;
 pub(super) struct Capacity {
     /// New threads the bot may start now, under its ceiling.
     pub free: usize,
-    /// The bot's threads at work.
+    /// The bot's threads at work, those waiting on the user included.
     pub running: usize,
     /// The bot's agent is near its usage limit: one thread at a time.
     pub near_limit: bool,
@@ -141,6 +142,15 @@ pub(super) fn thread_state(hub: &Hub, thread: &str, over: Option<&str>) -> Threa
     }
 }
 
+/// How many new threads a bot that runs at most `most` threads may still start. `live`: its threads that have a task
+/// or are still stopping; `asking`: those of them that wait on the user (a card, a sign-in). One that waits gives its
+/// seat up, so other work goes on meanwhile; the user's answer then takes it back past the ceiling, so every live
+/// thread counts toward one more than it.
+fn free_seats(most: u8, live: usize, asking: usize) -> usize {
+    let most = usize::from(most);
+    most.saturating_sub(live.saturating_sub(asking)).min((most + 1).saturating_sub(live))
+}
+
 /// What `cfg`'s waiting tasks can count on now. `tasks`: its box.
 pub(super) fn capacity(hub: &Hub, cfg: &BotConfig, tasks: &[Task], over: Option<&str>) -> Capacity {
     // A thread told to stop (its task stopped, gave way or was replaced) still works until its turn ends.
@@ -148,18 +158,16 @@ pub(super) fn capacity(hub: &Hub, cfg: &BotConfig, tasks: &[Task], over: Option<
         .iter()
         .filter(|thread| tasks::of_thread(tasks, &thread.id).is_none() && turn_runs(hub, &thread.id, over))
         .count();
+    let asking = tasks.iter().filter(|i| tasks::asks_user(hub, i)).count();
     let running = tasks::working(tasks) + stopping;
+    let free = free_seats(cfg.max_threads, running, asking);
     // A turn the last host process left cut off is resumed by the bot's actor: it runs, though nothing says so yet.
     let chat_free = over == Some(cfg.id.as_str())
         || !(turn_runs(hub, &cfg.id, None) || crate::agent::bot::resumable(&hub.store, &cfg.id));
-    // The limit of the agent a new thread starts on: past a resting one, its fallback's.
-    let starts_on = crate::agent::fallback::starting(&hub.store, cfg, now_ms());
-    Capacity {
-        free: usize::from(cfg.max_threads).saturating_sub(running),
-        running,
-        near_limit: crate::usage::near_limit(hub, &starts_on),
-        chat_free,
-    }
+    // The limit of the agent a new thread starts on (the threads' own in Advisor mode): past a resting one, its
+    // fallback's.
+    let starts_on = fallback::starting(&hub.store, &fallback::threads(cfg), now_ms());
+    Capacity { free, running, near_limit: crate::usage::near_limit(hub, &starts_on), chat_free }
 }
 
 /// What a pass decided, done once the box is saved.
@@ -292,7 +300,11 @@ fn plan(hub: &Hub, cfg: &BotConfig, tasks: &mut Vec<Task>, over: Option<&str>) -
             // A routine's run starts as it did in the chat: a new session that knows only its own prompt.
             // ponytail: a thread in a worktree starts from a brief, not a fork: a fork is taken in another folder
             // than its session's, which no agent is checked to honor. Fork there once one is (stage 10's spikes).
-            let forks = sources::from_chat(&task.source) && task.place == Place::Folder;
+            // A thread its setup puts on another agent or login can't take the chat's session either.
+            let forks = sources::from_chat(&task.source)
+                && task.place == Place::Folder
+                && threads_fork(cfg)
+                && fallback::login::of(&thread) == fallback::login::of(cfg);
             task.fork_from = forks.then(|| fork_source(hub, &cfg.id)).flatten();
             task.thread = Some(thread.id.clone());
             {
@@ -343,7 +355,14 @@ fn begin(hub: &Arc<Hub>, bot: &str, thread: &BotConfig, task: &Task, first: bool
     }
 }
 
-/// A thread bot for `cfg`: its config with what its task's `setup` changes, without what stays with the chat.
+/// Whether `cfg`'s threads run on the chat's own agent and login, so a thread may start as a fork of the chat's
+/// session (its model may differ: a forked session takes the thread's model like a new one).
+fn threads_fork(cfg: &BotConfig) -> bool {
+    fallback::login::of(&fallback::threads(cfg)) == fallback::login::of(cfg)
+}
+
+/// A thread bot for `cfg`: its config (on the threads' own agent, in Advisor mode) with what its task's `setup`
+/// changes, without what stays with the chat.
 fn thread_bot(cfg: &BotConfig, setup: &tasks::Setup) -> BotConfig {
     BotConfig {
         id: format!("{THREAD_PREFIX}{}", uuid::Uuid::new_v4()),
@@ -364,7 +383,10 @@ fn thread_bot(cfg: &BotConfig, setup: &tasks::Setup) -> BotConfig {
         manage_team: false,
         // As its bot's, wherever the thread works (a worktree isn't the bot's own folder).
         shared_memory: Some(crate::chat::memory::shared(cfg)),
-        ..setup.over(cfg)
+        // A thread runs no threads of its own.
+        thread_agent: None,
+        thread_fallbacks: Vec::new(),
+        ..setup.over(&fallback::threads(cfg))
     }
 }
 
@@ -436,6 +458,31 @@ mod tests {
     }
 
     #[test]
+    fn a_thread_waiting_on_the_user_gives_its_seat_up_but_one_past_the_ceiling_is_the_most() {
+        assert_eq!(free_seats(3, 3, 0), 0, "every seat taken");
+        assert_eq!(free_seats(3, 3, 1), 1, "one waits on the user: its seat is free");
+        assert_eq!(free_seats(3, 4, 1), 0, "the one that took it: four live threads, one past the ceiling");
+        assert_eq!(free_seats(3, 4, 2), 0, "never two past it, however many wait");
+        assert_eq!(free_seats(1, 1, 1), 1);
+        assert_eq!(free_seats(2, 4, 0), 0, "the ceiling was lowered: nothing new starts");
+    }
+
+    #[test]
+    fn a_thread_forks_the_chats_session_only_on_the_chats_own_agent_and_login() {
+        use crate::store::Fallback;
+        let base: BotConfig =
+            serde_json::from_value(json!({"id": "b", "name": "B", "backend": "claude", "model": "opus"}))
+                .expect("a bot");
+        assert!(threads_fork(&base), "off: the chat's own agent");
+        let on = |backend: &str| BotConfig {
+            thread_agent: Some(Fallback { backend: backend.into(), model: Some("m".into()), ..Fallback::default() }),
+            ..base.clone()
+        };
+        assert!(!threads_fork(&on("codex")), "another agent can't take the chat's session");
+        assert!(threads_fork(&on("claude")), "only the model differs: a fork takes the thread's model");
+    }
+
+    #[test]
     fn a_new_thread_waits_for_the_bots_own_turn_to_end() {
         let tasks = [task("a", Status::Waiting, 1)];
         let busy = Capacity { chat_free: false, ..capacity(3, 0) };
@@ -448,6 +495,9 @@ mod tests {
         let near = Capacity { near_limit: true, ..capacity(3, 0) };
         let standings = stand(&tasks, near, ThreadState::Gone);
         assert_eq!(of(&standings), [("a", &Standing::Start), ("b", &Standing::Wait(Wait::Usage))]);
+        // A thread waiting on the user lends its seat, but still runs.
+        let asking = Capacity { near_limit: true, ..capacity(1, 1) };
+        assert_eq!(stand(&tasks, asking, ThreadState::Gone)[0].1, Standing::Wait(Wait::Usage));
     }
 
     #[test]
@@ -526,6 +576,17 @@ mod tests {
         let p = super::capacity(&hub, &cfg, &replaced, None);
         assert_eq!((p.free, p.running), (0, 1), "the replacement waits for it");
         assert_eq!(super::capacity(&hub, &cfg, &replaced, Some("thread-1")).free, 1, "its turn is over");
+    }
+
+    #[test]
+    fn a_thread_waiting_on_the_user_lends_its_seat_and_still_runs() {
+        let hub = hub();
+        let cfg = BotConfig { max_threads: 1, ..bot("b1", "Mika", "/tmp") };
+        hub.store.save_bot(&cfg).expect("saved");
+        hub.set_runtime("thread-1", |rt| rt.status = BotStatus::NeedsInput);
+        let asking = [on("thread-1", task("a", Status::Working, 0)), task("b", Status::Waiting, 1)];
+        let p = super::capacity(&hub, &cfg, &asking, None);
+        assert_eq!((p.free, p.running), (1, 1), "the next may start; near the usage limit it waits");
     }
 
     #[test]

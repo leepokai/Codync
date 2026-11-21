@@ -2429,5 +2429,10 @@
   "{count} tool requests": "{count} solicitações de ferramentas",
   "Group by folder": "Agrupar por pasta",
   "Show more": "Mostrar mais",
-  "No bot": "Sem bot"
+  "No bot": "Sem bot",
+  "Advisor mode": "Modo consultor",
+  "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.": "O chat planeja e repassa o trabalho; os threads rodam em um agente próprio, com seus próprios agentes de reserva.",
+  "Threads' agent": "Agente dos threads",
+  "Threads' fallbacks": "Agentes de reserva dos threads",
+  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "Se {agent} ficar sem uso ou não puder responder, os threads continuam com o próximo."
 }

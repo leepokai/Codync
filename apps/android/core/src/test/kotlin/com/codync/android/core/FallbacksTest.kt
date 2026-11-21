@@ -23,6 +23,7 @@ class FallbacksTest {
 
         val old = HostClient.decode(Json.parseToJsonElement("""{"id":"b","name":"Scout","agentStep":null}""").jsonObject)
         assertNull(old.fallbacks); assertNull(old.selfFallbacks); assertNull(old.agentStep); assertTrue(old.resting.isEmpty())
+        assertNull(old.threadAgent); assertNull(old.threadFallbacks)
     }
 
     @Test fun `bots mix agents when they run more than one, counting a fallback and leaving groups out`() {
@@ -58,7 +59,33 @@ class FallbacksTest {
 
         val old = BotDraft.from(Bot("b", "Scout", backend = "claude"))
         assertFalse("fallbacks" in old.body() || "selfFallbacks" in old.body())
+        assertFalse("nor Advisor mode", "threadAgent" in old.body() || "threadFallbacks" in old.body())
         assertNull(old.withAgent("codex").fallbacks)
+    }
+
+    @Test fun `Advisor mode starts the threads on the bot's own agent and chain, and another threads' agent drops its login from theirs`() {
+        val codex = Fallback("codex")
+        val draft = BotDraft.from(HostClient.decode(Json.parseToJsonElement("""{"id":"b","name":"Scout","backend":"claude","model":"opus",
+            "fallbacks":[{"backend":"codex"}],"threadAgent":null,"threadFallbacks":[]}""").jsonObject))
+        assertEquals("a host with Advisor mode: off is sent as null", JsonNull, draft.body()["threadAgent"])
+        assertEquals(JsonArray(emptyList()), draft.body()["threadFallbacks"])
+        val on = draft.withAdvisor(true, emptyList())
+        assertEquals(Fallback("claude", model = "opus"), on.threadAgent)
+        assertEquals(listOf(codex), on.threadFallbacks)
+        assertEquals("claude", on.body()["threadAgent"]?.jsonObject?.get("backend")?.jsonPrimitive?.content)
+        assertFalse("a template names no agent of this computer's",
+            WireJson.parseToJsonElement(on.template()).jsonObject.keys.any { it in setOf("threadAgent", "threadFallbacks") })
+        val moved = on.copy(threadFallbacks = listOf(codex, Fallback("codex", loginProfile = "c1"))).withThreadAgent("codex")
+        assertEquals(Fallback("codex"), moved.threadAgent)
+        assertEquals(listOf(Login("codex", "c1")), moved.threadFallbacks?.map { it.login })
+        assertSame(moved, moved.withThreadAgent("codex"))
+        assertEquals("the chat's chain is its own", listOf(codex), moved.fallbacks)
+        val off = moved.withAdvisor(false, emptyList())
+        assertNull(off.threadAgent)
+        assertEquals(emptyList<Fallback>(), off.threadFallbacks)
+        val missing = WireJson.decodeFromString<AgentBackend>("""{"id":"qwen","name":"Qwen"}""")
+        val gemini = WireJson.decodeFromString<AgentBackend>("""{"id":"gemini","name":"Gemini","available":true}""")
+        assertEquals("the picker has no custom command", Fallback("gemini"), draft.copy(backend = "custom").withAdvisor(true, listOf(missing, gemini)).threadAgent)
     }
 
     @Test fun `a step runs on a login profile, and rests and the step in use match by login`() {

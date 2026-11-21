@@ -141,6 +141,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         sent: Vec::new(),
         reacted: Reacted::No,
         joined: false,
+        unheard: Vec::new(),
         files: files::FileShares::default(),
         perms: HashMap::new(),
         asked: HashMap::new(),
@@ -375,6 +376,11 @@ struct Actor {
     // ponytail: the host can't tell which message a send answered, so a closing note after one shows too; a bubble too
     // many beats a reply lost.
     joined: bool,
+    /// Messages that joined this turn (`steer`) with nothing from the agent since: a turn its agent then cancels on its
+    /// own drops them (Codex, on a refused card), so they go out again (`requeue_unheard`).
+    // ponytail: any text or tool call counts as the agent's word on them, so a card from the step already under way when
+    // one joined, refused, still drops it; ACP doesn't say which step read the message.
+    unheard: Vec<Queued>,
     files: files::FileShares,
     /// permission entry id -> who waits for the answer
     perms: HashMap<String, updates::Answer>,

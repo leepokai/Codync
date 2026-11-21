@@ -620,3 +620,89 @@ test('Settings holds Instructions and Agent first, and Threads at once steps bet
     await browser.close()
   }
 })
+
+test('a thread waiting on the user gives its seat up: the next task starts, and the first goes on once answered', async () => {
+  const { browser, page } = await attach()
+  const name = `Work seat e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name, 1)
+    // The first thread asks for approval once `release-seat` is in the bot's folder; the second waits for its seat.
+    await addWork(page, botId, 'Asks first', 'PERMISSION:seat')
+    await addWork(page, botId, 'Goes next', HOLD)
+    expect(await statuses(page, botId)).toEqual({ 'Asks first': 'working', 'Goes next': 'waiting' })
+
+    // Its card raised, the first thread gives its seat up and the next task starts beside it.
+    writeFileSync(join(sandbox().home, 'bots', botId, 'workspace', 'release-seat'), '')
+    const card = page.locator('.permission-card', { hasText: 'Work · Asks first' })
+    await expect(card).toBeVisible()
+    await expect.poll(async () => (await statuses(page, botId!))['Goes next']).toBe('working')
+    const details = await openDetails(page)
+    await expect(row(details, 'Threads', 'Asks first')).toHaveAttribute('data-work-status', 'needsYou')
+    await expect(row(details, 'Threads', 'Goes next')).toHaveAttribute('data-work-status', 'working')
+    // One seat of one in use: the thread waiting on the user takes none, and no Free row or box is left.
+    await expect(section(details, 'Threads').locator('.work-section-count')).toHaveText('1 / 1')
+    await expect(section(details, 'Threads').locator('.work-row.free')).toHaveCount(0)
+    await expect(section(details, 'Event box')).toHaveCount(0)
+
+    // Answered, it goes on beside the other and reports.
+    await card.getByRole('button', { name: 'Allow once' }).click()
+    await expect(page.locator('.transcript')).toContainText('Report Asks first')
+    await expect(row(details, 'Recent', 'Asks first')).toHaveAttribute('data-work-status', 'done')
+    await expect(row(details, 'Threads', 'Goes next')).toHaveAttribute('data-work-status', 'working')
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+test('the bot passes words on to a working task: its thread shows them as told, and it reports once after them', async () => {
+  const { browser, page } = await attach()
+  const name = `Work tell e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name)
+    await addWork(page, botId, 'Audit the repo', 'HOLD:tell')
+
+    // The chat's tell_task: the task takes the words once its current turn ends, before it reports.
+    await api(page, 'send', { botId, text: 'TELL Audit the repo|and the tests' })
+    await expect(page.locator('.transcript')).toContainText('Told:')
+    await expect(page.locator('.transcript')).toContainText('before it reports')
+
+    // In its thread they read as what it was told, not as the user's message waiting with Send now.
+    const details = await openDetails(page)
+    const thread = await openThread(details, row(details, 'Threads', 'Audit the repo'))
+    await expect(thread.locator('.work-thread-quote', { hasText: 'and the tests' })).toBeVisible()
+    await expect(thread.locator('.work-thread-mine', { hasText: 'and the tests' })).toHaveCount(0)
+    await closeThread(details)
+
+    // Its turn over, the thread takes them, and the task reports once: after them.
+    writeFileSync(join(sandbox().home, 'bots', botId, 'workspace', 'release-tell'), '')
+    await expect(row(details, 'Recent', 'Audit the repo')).toHaveAttribute('data-work-status', 'done')
+    await expect(page.locator('.transcript')).toContainText('Relayed: Heard and the tests')
+    await expect(page.locator('.transcript .message.agent', { hasText: 'Relayed:' })).toHaveCount(1)
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+test('the bot looks back at a finished task: its status, result and thread steps', async () => {
+  const { browser, page } = await attach()
+  const name = `Work recall e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name)
+    await addWork(page, botId, 'Quick look', 'nothing to wait for')
+    await expect.poll(async () => (await statuses(page, botId!))['Quick look']).toBe('done')
+
+    // The fixture's recall_task: by words for the task, then by its id for the whole of it.
+    await typeMessage(page, 'RECALL Quick look')
+    const recalled = page.locator('.transcript .message.agent', { hasText: 'Recalled' })
+    await expect(recalled).toContainText('Recalled Quick look: done | Report Quick look:')
+    await expect(recalled).toContainText(/\| [1-9]\d* steps/)
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})

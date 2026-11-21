@@ -13,7 +13,7 @@ use std::sync::Mutex;
 /// (a routine, background work, a follow-up, a message to another bot, the bot's instructions, skills, fallbacks or
 /// memory, a dev server, the team) could act later or elsewhere without the ceiling, so it is refused, and so is any
 /// tool added after this list: a new tool is held until it is listed here.
-const UNDER_CEILING: [&str; 17] = [
+const UNDER_CEILING: [&str; 18] = [
     "send_message",
     "send_file",
     "request_decision",
@@ -24,6 +24,7 @@ const UNDER_CEILING: [&str; 17] = [
     "list_dev_servers",
     "dev_server_logs",
     "work_status",
+    "recall_task",
     "list_routines",
     "read_progress",
     "list_bots",

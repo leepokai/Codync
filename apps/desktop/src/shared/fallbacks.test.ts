@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { clockTime, freeLogins, mixesAgents, moveFallback, restLine, restOf, restPhrase, runningAgent, sameLogin, stepAgents, stepBannerPhrase, stepLogins, stepOn, withBackend } from './fallbacks.ts'
+import { clockTime, freeLogins, mixesAgents, moveFallback, restLine, restOf, restPhrase, runningAgent, sameLogin, stepAgents, stepBannerPhrase, stepLogins, stepOn, withAdvisor, withBackend, withThreadBackend } from './fallbacks.ts'
 import { fill } from './fill.ts'
 import { draftOf, normalizeBot, type Backend, type Bot } from './models.ts'
 
@@ -102,10 +102,28 @@ test('making a fallback the bot\'s own agent drops it from the list', () => {
   assert.deepEqual(next.fallbacks?.map((f) => f.backend), ['gemini'])
 })
 
+test('Advisor mode starts the threads on the bot\'s own agent and chain, and another threads\' agent drops its login from theirs', () => {
+  const codex = { backend: 'codex', model: null, modelOptions: {} }
+  const draft = draftOf(normalizeBot({ id: 'b', backend: 'claude', model: 'opus', fallbacks: [codex], threadAgent: null, threadFallbacks: [] }))
+  assert.equal(draft.threadAgent, null, 'a host with Advisor mode: off is sent as null')
+  const on = withAdvisor(draft, true, [])
+  assert.deepEqual(on.threadAgent, { backend: 'claude', loginProfile: null, model: 'opus', modelOptions: {} })
+  assert.deepEqual(on.threadFallbacks, [codex])
+  const moved = withThreadBackend(on, 'codex')
+  assert.deepEqual([moved.threadAgent?.backend, moved.threadAgent?.model, moved.threadFallbacks], ['codex', null, []])
+  assert.equal(withThreadBackend(moved, 'codex'), moved)
+  assert.deepEqual(moved.fallbacks, [codex], 'the chat\'s chain is its own')
+  assert.deepEqual([withAdvisor(moved, false, []).threadAgent, withAdvisor(moved, false, []).threadFallbacks], [null, []])
+  const installed = { id: 'gemini', name: 'Gemini', available: true } as Backend
+  assert.equal(withAdvisor({ ...draft, backend: 'custom' }, true, [installed]).threadAgent?.backend, 'gemini', 'the picker has no custom command')
+})
+
 test('an older host has no fallbacks to show or send', () => {
   const bot = normalizeBot({ id: 'b' })
   assert.equal(bot.selfFallbacks, null)
   assert.equal(draftOf(bot).selfFallbacks, undefined)
+  assert.equal(bot.threadFallbacks, null)
+  assert.equal('threadAgent' in draftOf(bot), false, 'nor Advisor mode')
   assert.equal(normalizeBot({ id: 'b', selfFallbacks: false }).selfFallbacks, false)
 })
 

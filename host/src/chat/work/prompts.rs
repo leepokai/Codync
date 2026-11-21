@@ -12,12 +12,14 @@ it is under way and end your turn. One of your threads (you again, in a session 
 chat; its report comes back to you as a message, and you tell the user what it found. Add one task per piece of work: \
 tasks wait their turn in your event box, and how many threads run at once is the user's setting. For more of the same \
 work, add a task with after: the id of the one it continues. steer_task moves a task first, starts it now, replaces \
-its brief or stops it. Only quick answers and work of a few tool calls you do here yourself.";
+its brief or stops it. tell_task passes words on to a task without starting it again: what the user adds about work \
+under way, a fact it needs. Only quick answers and work of a few tool calls you do here yourself.";
 
 /// Said with each message in the bot's own chat: with the instructions alone, a real agent (Claude, 2026-11-15) did
 /// 90 seconds of reading in the chat's turn instead of handing the work on.
 pub const EACH_TURN: &str = "If this needs more than a few tool calls, don't do it in this turn: call add_task first \
-(the chat must stay free for the user), then say briefly that it is under way.";
+(the chat must stay free for the user), then say briefly that it is under way. What is about a task under way, \
+tell_task passes on.";
 
 /// What a message in a bot's own chat says of its box, if anything. `briefed`: the session's instructions hold
 /// [`BRIEF`]; `known`: the agent is a harness Codync knows. A known harness hears [`EACH_TURN`] with every message; a
@@ -64,6 +66,15 @@ const TOLD_LONGEST: usize = 280;
 /// goes.
 const IN_THREAD: &str = "the user wrote this to you directly, in this task's thread, which they read. Your last \
 message of this turn is again the report the chat gets.";
+
+/// Said after what the bot's chat passes on to a thread (`tell_task`), so the thread knows it isn't the user there.
+const RELAYED: &str = "your chat passed this on to you while you work on this task (it may carry what the user said \
+there). Take it into account and go on; your last message of this turn is again the report the chat gets.";
+
+/// What the bot's chat passed on to its working task (`text`), as the thread hears it.
+pub fn relayed(text: &str) -> String {
+    format!("{text}\n\n[Codync: {RELAYED}]")
+}
 
 /// What the user wrote to a thread (`text`), as the thread hears it: after the work itself (`picked_up`) where
 /// its session doesn't hold it, and saying who wrote it and where.
@@ -148,6 +159,13 @@ pub fn report_notice(report: &Report) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn what_the_chat_passes_on_says_it_is_not_the_user_there() {
+        let text = relayed("Also run the API tests.");
+        assert!(text.starts_with("Also run the API tests.\n\n[Codync: your chat passed this on"), "{text}");
+        assert!(text.ends_with("the report the chat gets.]"));
+    }
 
     #[test]
     fn a_report_turn_reads_each_task_and_says_who_speaks() {

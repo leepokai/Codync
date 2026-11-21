@@ -26,7 +26,7 @@ mod tools;
 mod worktree;
 
 pub use dispatch::{Wait, dispatch};
-pub use prompts::{BRIEF, in_thread, reminder, report_notice, report_prompt};
+pub use prompts::{BRIEF, in_thread, relayed, reminder, report_notice, report_prompt};
 pub use sources::{access_of, add_request, add_routine, boxed, from_chat, routines_changed, source_of};
 pub use steer::{Steer, cut_in, drop_task, first, retry, stop};
 #[cfg(test)]

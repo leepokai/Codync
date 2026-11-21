@@ -7,6 +7,7 @@
 use super::tasks::{self, Source, Status, Task};
 use super::{prompts, worktree};
 use crate::LockExt;
+use crate::agent::bot::Cmd;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, Entry, Store, now_ms};
 use anyhow::{Result, anyhow};
@@ -151,6 +152,40 @@ pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, nonce: &str) -> 
         super::dispatch(hub, bot);
     }
     Ok(json!({"entry": entry, "reopened": reopened, "queued": queued}))
+}
+
+/// The bot passes `text` on to its working task `id` (`tell_task`): a message in the task's thread from the chat
+/// (`from: host`, `relay`; every client quotes it there, as what the thread was told), which waits behind a running
+/// turn as the user's does and keeps the task going until it is taken. `now` hands it to that turn at its next step,
+/// or stops the turn for it where the agent takes no message mid-turn (`agent::bot::steer`). It stays with the task as a
+/// note, so a session that starts the task again reads it. Answers whether it waits behind a running turn.
+pub fn relay(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, now: bool) -> Result<bool> {
+    let (entry, queued, thread) = tasks::change(hub, bot, |tasks| {
+        let task = tasks::find(tasks, id)?;
+        anyhow::ensure!(task.status == Status::Working, "\"{}\" isn't working", task.title);
+        let thread = thread_of(&hub.store, task)?;
+        note(&mut task.notes, text);
+        if !hub.has_actor(&thread.id) {
+            hub.spawn_bot(thread.clone());
+        }
+        let queued = matches!(hub.runtime(&thread.id).status, BotStatus::Working | BotStatus::NeedsInput);
+        let data = json!({"text": text, "from": "host", "relay": true});
+        Ok((crate::chat::messages::post(hub, &thread, data)?, queued, thread.id))
+    })?;
+    if now && queued {
+        hub.send_cmd(&thread, Cmd::Steer { entry_id: entry.id })?;
+    }
+    Ok(queued)
+}
+
+/// Words passed on to `bot`'s waiting task `id`: a note its thread reads when it starts.
+pub fn note_waiting(hub: &Hub, bot: &str, id: &str, text: &str) -> Result<()> {
+    tasks::change(hub, bot, |tasks| {
+        let task = tasks::find(tasks, id)?;
+        anyhow::ensure!(task.status == Status::Waiting, "\"{}\" isn't waiting", task.title);
+        note(&mut task.notes, text);
+        Ok(())
+    })
 }
 
 /// A turn of thread `cfg` begins for what the user wrote to its thread (`words`, each message's): the task's next

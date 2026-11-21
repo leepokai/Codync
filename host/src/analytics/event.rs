@@ -98,6 +98,8 @@ pub enum Event {
     WorktreesTidied,
     /// A task's turn couldn't go on until the user signs in to its agent, so it waits for them (`agent`, `source`).
     WorkNeedsSignIn,
+    /// A bot passed words on to one of its tasks (`tell_task`): where they went (`to`), handed over now or not (`now`).
+    WorkTold,
     /// The user wrote to a task's thread (`chat::work::thread`): whether it reopened the task, and whether it waits.
     WorkMessaged,
     /// A bot's `start_dev_server` ended (`outcome`).
@@ -264,6 +266,7 @@ impl Event {
             Self::WorkSteered => "work_steered",
             Self::WorktreesTidied => "worktrees_tidied",
             Self::WorkNeedsSignIn => "work_needs_sign_in",
+            Self::WorkTold => "work_told",
             Self::WorkMessaged => "work_messaged",
             Self::DevServerStarted => "dev_server_started",
             Self::DevServerStopped => "dev_server_stopped",

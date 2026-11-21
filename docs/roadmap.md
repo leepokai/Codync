@@ -81,7 +81,7 @@ by those results.
 Goal: every agent that Codync drives over ACP keeps working as adapters change, and the patches around them shrink
 over time.
 
-Where it stands: the host drives agents over ACP (`host/src/agent/acp.rs`, `host/src/agent/bot/`). Each agent bug,
+Where it stands: the host drives agents over ACP (`host/crates/agent/src/acp.rs`, `host/src/agent/bot/`). Each agent bug,
 patched in the host or not, has a row on its agent's page in [upstream agent bugs](upstream-agents/README.md) (last
 checked 2026-11-02). Open upstream items include codex-acp#647 (429s and other errors sent as reply text) and the JetBrains AIR opt-in that works around it.
 

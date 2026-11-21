@@ -1,11 +1,11 @@
 //! Starting an agent for a check, and letting it sign itself in.
 
 use super::{check, launch_env, probe_dir};
-use crate::agent::acp::{self, Acp, Incoming};
-use crate::agent::backends;
-use crate::agent::registry::{Candidate, Cmd};
 use crate::store::Store;
 use anyhow::{Context, Result, anyhow, bail};
+use codync_agent::acp::{self, Acp, Incoming};
+use codync_agent::backends;
+use codync_agent::registry::{Candidate, Cmd};
 use serde_json::{Value, json};
 use std::ffi::OsStr;
 use std::sync::Arc;
@@ -146,7 +146,7 @@ async fn sign_in(acp: &Acp, inbox: &mut mpsc::UnboundedReceiver<Incoming>, metho
                 Some(notification) => {
                     if !opened && let Some(url) = acp::codebuddy::sign_in_url(&notification) {
                         opened = true;
-                        if !crate::shell::open(OsStr::new(&url)) {
+                        if !codync_agent::shell::open(OsStr::new(&url)) {
                             tracing::warn!("couldn't open the sign-in page");
                         }
                     }

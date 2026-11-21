@@ -2,11 +2,11 @@
 //! attached to a session request.
 
 use super::{Adapter, Conn, ServerWatch, SessionCaps};
-use crate::agent::acp::{self, Acp};
-use crate::agent::backends;
-use crate::agent::registry::{Candidate, Cmd};
 use crate::store::BotConfig;
 use anyhow::{Result, anyhow};
+use codync_agent::acp::{self, Acp};
+use codync_agent::backends;
+use codync_agent::registry::{Candidate, Cmd};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -75,7 +75,7 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
             current = answer;
         }
     }
-    // The older `modes` field comes only with the session (`agent::modes`).
+    // The older `modes` field comes only with the session (`codync_agent::modes`).
     if current.get("modes").is_none()
         && let Some(modes) = res.get("modes")
     {

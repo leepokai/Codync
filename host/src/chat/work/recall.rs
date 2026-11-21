@@ -70,7 +70,7 @@ fn list(all: &[Task], query: Option<&str>) -> Value {
         .into_iter()
         .take(LISTED)
         .map(|i| {
-            let gist = i.result.as_deref().map(|r| crate::agent::acp::truncate(r, GIST));
+            let gist = i.result.as_deref().map(|r| codync_agent::acp::truncate(r, GIST));
             let ended = i.ended_at.map(local_time);
             json!({"taskId": i.id, "title": i.title, "status": i.status, "ended": ended, "result": gist})
         })
@@ -90,7 +90,7 @@ fn steps(store: &Store, thread: &str, before: i64) -> Result<(Vec<Value>, Option
                 "tool" | "permission" => e.data["title"].as_str()?,
                 _ => return None,
             };
-            let text = crate::agent::acp::truncate(text, STEP);
+            let text = codync_agent::acp::truncate(text, STEP);
             Some(json!({"kind": e.kind, "text": text, "status": e.data["status"]}))
         })
         .collect();

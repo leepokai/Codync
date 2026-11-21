@@ -3,13 +3,13 @@
 use super::fast_mode::Listing;
 use super::launch::{claude_meta, launch_commands, select_model, start_agent, start_first, system_prompt};
 use super::{Actor, Adapter, Conn, Instructions, ServerWatch, background_work, codex_names, pi_tools};
-use crate::agent::acp::{self, Incoming};
 use crate::agent::own_memory;
-use crate::agent::registry::Candidate;
 use crate::analytics::Retired;
 use crate::chat::{context, memory};
 use crate::store::run_session_key;
 use anyhow::{Context, Result, anyhow, bail};
+use codync_agent::acp::{self, Incoming};
+use codync_agent::registry::Candidate;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 

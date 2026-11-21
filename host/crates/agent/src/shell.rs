@@ -212,11 +212,11 @@ pub fn open(target: &std::ffi::OsStr) -> bool {
 /// `program` as spawnable: its full path when it's on the search path. Windows
 /// needs this for npm's `.cmd` shims, which `CreateProcess` won't find by name.
 pub fn program(name: &str) -> PathBuf {
-    crate::agent::backends::which(name).unwrap_or_else(|| name.into())
+    crate::backends::which(name).unwrap_or_else(|| name.into())
 }
 
 /// The command that runs a Python test fixture.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn python(script: &std::path::Path) -> String {
     let python = if cfg!(windows) { "python" } else { "python3" };
     format!("{python} -u {}", quote(&script.to_string_lossy()))

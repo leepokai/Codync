@@ -456,14 +456,14 @@ mod tests {
     fn run_statusline(cmd: &str) -> String {
         let exe = format!("'{}'", current_exe().unwrap().to_string_lossy());
         let args = cmd.strip_prefix(&exe).expect("our wrapper");
-        let out = crate::shell::line(&format!("printf '%s\\0' {args}")).std().output().unwrap();
+        let out = codync_agent::shell::line(&format!("printf '%s\\0' {args}")).std().output().unwrap();
         let printed = String::from_utf8(out.stdout).unwrap();
         let cli = <crate::Cli as clap::Parser>::try_parse_from(
             std::iter::once("codync-host").chain(printed.split_terminator('\0')),
         )
         .unwrap();
         let Some(crate::Sub::Statusline { command, wrapped, .. }) = cli.cmd else { panic!("not statusline") };
-        let out = crate::shell::line(&command.unwrap_or_else(|| wrapped.join(" "))).std().output().unwrap();
+        let out = codync_agent::shell::line(&command.unwrap_or_else(|| wrapped.join(" "))).std().output().unwrap();
         String::from_utf8(out.stdout).unwrap()
     }
 
@@ -471,7 +471,7 @@ mod tests {
     #[test]
     fn a_wrapped_status_line_keeps_its_shell_quoting() {
         for original in ["printf '%s|' 'a b' c", r#"/bin/sh -c 'X="a  b"; printf "%s|" "$X"' && printf ok"#] {
-            let expected = crate::shell::line(original).std().output().unwrap();
+            let expected = codync_agent::shell::line(original).std().output().unwrap();
             let f = temp_settings(&json!({"statusLine": {"type": "command", "command": original}}).to_string());
             ensure_statusline(&f).unwrap();
             let cmd = read(&f)["statusLine"]["command"].as_str().unwrap().to_owned();

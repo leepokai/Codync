@@ -2,7 +2,6 @@
 
 use super::sign_in::Held;
 use super::{Actor, Conn, Done, HostTurn, Instructions, NoticeStyle, Queued, Reacted, Seg};
-use crate::agent::acp::{self, Incoming};
 use crate::analytics::{self, TurnEnd, TurnOutcome, TurnSource};
 use crate::chat::context::{self, Snapshot};
 use crate::chat::memory;
@@ -12,6 +11,7 @@ use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{BotConfig, EntryKind, Lane, now_ms};
 use anyhow::{Result, anyhow};
+use codync_agent::acp::{self, Incoming};
 use serde_json::json;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -77,7 +77,7 @@ impl Actor {
         if remind_follow_ups && own_chat {
             prompt = format!("{prompt}\n\n[Codync: {}]", crate::routines::BRIEF);
         }
-        let known = crate::agent::backends::harness(&self.cfg.backend).is_some();
+        let known = codync_agent::backends::harness(&self.cfg.backend).is_some();
         let own_box = own_chat && !self.cfg.is_thread();
         if let Some(about) = work::reminder(briefed_on_threads, known).filter(|_| own_box) {
             prompt = format!("{prompt}\n\n[Codync: {about}]");

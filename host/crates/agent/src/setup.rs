@@ -21,5 +21,15 @@ pub fn init(setup: Setup) {
 }
 
 pub(crate) fn get() -> &'static Setup {
-    SETUP.get().expect("the agent runtime is set up at start, before any agent runs")
+    SETUP.get().expect("codync_agent::init runs at start, before any agent runs")
+}
+
+/// This crate's own tests: a data directory of their own.
+#[cfg(test)]
+pub(crate) fn set_up_for_tests() {
+    init(Setup {
+        data_dir: std::env::temp_dir().join(format!("codync-agent-unit-{}", std::process::id())),
+        exe: std::env::current_exe().ok(),
+        http: reqwest::Client::new(),
+    });
 }

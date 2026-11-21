@@ -113,7 +113,7 @@ pub(super) fn picked_up(task: &Task) -> String {
     let said = said(task);
     let reported = task.said.as_deref().map_or_else(
         || "[Codync: it ended without a report.]".to_owned(),
-        |text| format!("[Codync: what you reported when it ended:]\n{}", crate::agent::acp::truncate(text, 2_000)),
+        |text| format!("[Codync: what you reported when it ended:]\n{}", codync_agent::acp::truncate(text, 2_000)),
     );
     format!(
         "[Task] You are the same bot, away from the chat. You worked on \"{}\" before, in a session that can't be \
@@ -128,7 +128,7 @@ pub(super) fn picked_up(task: &Task) -> String {
 fn told_line(told: &[String]) -> Option<String> {
     let shown = &told[told.len().saturating_sub(TOLD_IN_REPORT)..];
     let words: Vec<String> =
-        shown.iter().map(|w| format!("«{}»", crate::agent::acp::truncate(w, TOLD_LONGEST))).collect();
+        shown.iter().map(|w| format!("«{}»", codync_agent::acp::truncate(w, TOLD_LONGEST))).collect();
     let earlier = match told.len() - shown.len() {
         0 => String::new(),
         n => format!(" (and {n} earlier)"),

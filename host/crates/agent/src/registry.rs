@@ -111,7 +111,7 @@ fn binary_for<'a>(distribution: &'a Value, platform: &str) -> Option<&'a Value> 
 
 pub fn launch_kind(agent: &Value) -> Option<Launch> {
     let d = &agent["distribution"];
-    let on_path = crate::agent::backends::on_path;
+    let on_path = crate::backends::on_path;
     if binary(d).is_some() {
         return Some(Launch::Download);
     }
@@ -479,9 +479,9 @@ mod tests {
     /// routine run) failed with "The Claude CLI is missing" until the host restarted.
     #[tokio::test]
     async fn an_update_keeps_the_build_a_running_agent_came_from() {
-        crate::agent::set_up_for_tests();
+        crate::setup::set_up_for_tests();
         let id = format!("test-{}", uuid::Uuid::new_v4());
-        let root = crate::agent::setup::get().data_dir.join("agents").join(&id);
+        let root = crate::setup::get().data_dir.join("agents").join(&id);
         let (old, new) = (root.join("0.107.1"), root.join("0.107.2"));
         for dir in [&old, &new] {
             std::fs::create_dir_all(dir).unwrap();

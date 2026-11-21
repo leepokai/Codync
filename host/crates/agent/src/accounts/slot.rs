@@ -3,8 +3,8 @@
 //! without a word. Folders are linked, so both sides see one copy; files the agent rewrites by rename (which
 //! replaces a link) are copied before each start.
 
-use crate::Error;
-use crate::identity::read_json;
+use crate::accounts::Error;
+use crate::accounts::identity::read_json;
 use serde_json::Value;
 use std::fs;
 use std::io::ErrorKind;

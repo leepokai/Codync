@@ -411,7 +411,7 @@ fn end(tasks: &mut [Task], thread: &str, outcome: Outcome) -> Option<Task> {
             // A report to the bot's own turn carries only so much; a routine run's or a request's result is posted
             // whole, as its message.
             let most = if task.source.is_bot() { MAX_REPORT } else { usize::MAX };
-            let text = text.map(|t| crate::agent::acp::truncate(t.trim(), most)).filter(|t| !t.is_empty());
+            let text = text.map(|t| codync_agent::acp::truncate(t.trim(), most)).filter(|t| !t.is_empty());
             match text {
                 Some(text) => (Status::Done, Some(Ok(text)), None),
                 // A routine run with nothing to tell says nothing (`(pass)`).

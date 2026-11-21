@@ -324,7 +324,7 @@ impl Acp {
 
     /// Everything still running in the agent's job.
     #[cfg(windows)]
-    pub(crate) async fn job_processes(&self) -> Result<Vec<super::process::JobProcess>> {
+    pub async fn job_processes(&self) -> Result<Vec<super::process::JobProcess>> {
         self.child.lock().await.processes().await
     }
 

@@ -1,7 +1,7 @@
 //! Where harness CLIs are looked up: the login shell's PATH plus the usual install dirs.
 
 use crate::LockExt;
-use crate::agent::node;
+use crate::node;
 use crate::shell;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -132,26 +132,26 @@ pub fn on_path(bin: &str) -> bool {
 }
 
 /// Serializes tests that replace the search path: `cargo test` runs them at once.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 /// Holds the search path on `dir` until dropped, one test at a time.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[must_use]
-pub(crate) struct TestSearchPath {
+pub struct TestSearchPath {
     _lock: std::sync::MutexGuard<'static, ()>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl TestSearchPath {
-    pub(crate) fn set(dir: PathBuf) -> Self {
+    pub fn set(dir: PathBuf) -> Self {
         let lock = TEST_LOCK.locked();
         *SEARCH_PATH.locked() = vec![dir];
         Self { _lock: lock }
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Drop for TestSearchPath {
     fn drop(&mut self) {
         SEARCH_PATH.locked().clear();

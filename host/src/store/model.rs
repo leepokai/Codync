@@ -84,7 +84,7 @@ pub struct BotConfig {
     pub cwd: String,
     #[serde(default)]
     pub permission: Permission,
-    /// The agent mode to work in (see `agent::modes`): its own id, or `auto` for its Auto mode under any id (an agent
+    /// The agent mode to work in (see `codync_agent::modes`): its own id, or `auto` for its Auto mode under any id (an agent
     /// without one keeps its own). None: the mode its sessions open in, the agent's default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,

@@ -159,7 +159,7 @@ pub struct App {
     /// Agents whose model list came with Fast mode.
     pub fast_mode: HashSet<String>,
     /// The modes each agent's model list came with.
-    pub modes: HashMap<String, Vec<crate::agent::modes::Mode>>,
+    pub modes: HashMap<String, Vec<codync_agent::modes::Mode>>,
     /// A setup terminal holding the screen.
     pub shell: Option<Shell>,
     /// Chats marked read since their bot's unread count last changed.

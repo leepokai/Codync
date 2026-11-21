@@ -11,10 +11,11 @@ use super::{
     opencode, vibe,
 };
 use crate::LockExt;
-use crate::agent::{backends, login_profiles};
+use crate::agent::login_profiles;
 use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::{Context, Result};
+use codync_agent::backends;
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use serde::Serialize;

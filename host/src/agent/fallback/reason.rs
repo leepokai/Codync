@@ -2,7 +2,7 @@
 //! the adapter's category (`errorKind`, codex-acp's `codexErrorInfo`), and the host's own `Failure`. The agents
 //! retry what is worth retrying before they answer with an error, so Codync never asks the same agent again.
 
-use crate::agent::acp::{Failure, FailureKind, RpcError, signed_out};
+use codync_agent::acp::{Failure, FailureKind, RpcError, signed_out};
 use serde::{Deserialize, Serialize};
 
 /// Why an agent couldn't answer, and how long it rests for it (see `rest`).
@@ -104,7 +104,7 @@ pub fn of_rpc(r: &RpcError) -> Option<Reason> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::acp::AUTH_REQUIRED;
+    use codync_agent::acp::AUTH_REQUIRED;
 
     fn rpc(code: i64, message: &str, kind: Option<&str>) -> anyhow::Error {
         RpcError { code, message: message.into(), kind: kind.map(Into::into) }.into()

@@ -37,7 +37,7 @@ impl Fixture {
         let store = Store::open(&dir.join("test.db")).unwrap();
         let hub = Hub::new(store, "lead-test".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
         hub.start().unwrap();
-        Self { hub, command: crate::shell::python(&agent), dir }
+        Self { hub, command: codync_agent::shell::python(&agent), dir }
     }
 
     fn cfg(&self, name: &str) -> BotConfig {

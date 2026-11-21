@@ -3,7 +3,7 @@
 //! build that Codync adds into `~/.codync/node` when the user asks (an agent's setup, or
 //! installing an npm CLI).
 
-use crate::agent::{backends, registry};
+use crate::{backends, registry};
 use anyhow::{Context, Result, ensure};
 use std::path::{Path, PathBuf};
 use std::time::Duration;

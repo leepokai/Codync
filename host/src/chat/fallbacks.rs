@@ -59,7 +59,7 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
     match name {
         "list_agents" => {
             let now = now_ms();
-            let agents: Vec<Value> = crate::agent::backends::list()
+            let agents: Vec<Value> = codync_agent::backends::list()
                 .into_iter()
                 .filter(|a| a["installed"] == true || a["available"] == true)
                 .map(|a| {

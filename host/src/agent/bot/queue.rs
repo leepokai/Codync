@@ -188,6 +188,8 @@ impl Actor {
                 Queued::Group(turn) if turn.late => self.queue.push_back(Queued::Group(turn)),
                 // A task's report is news the user still wants.
                 Queued::TaskReport(report) => self.queue.push_back(Queued::TaskReport(report)),
+                // Its notice keeps the outcome; a host restart doesn't bring back what the user stopped.
+                Queued::BotReply(reply) => crate::chat::team::relayed(&self.hub, std::slice::from_ref(&reply)),
                 Queued::User { entry_id, .. } => {
                     if let Some(mut e) = self.hub.store.entry(&entry_id) {
                         e.data["status"] = "cancelled".into();
@@ -303,6 +305,8 @@ impl Actor {
                     self.hub.ceilings.set(&self.cfg.id, access);
                     self.reply_hops = replies.iter().map(crate::chat::team::BotReply::hops).max();
                     let prompt = crate::chat::team::reply_prompt(&replies, access);
+                    // From here a host restart resumes this turn, which holds them.
+                    crate::chat::team::relayed(&self.hub, &replies);
                     if let Err(e) = self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
                         self.start_error(e, done_tx).await;
                     }

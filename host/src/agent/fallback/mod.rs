@@ -321,6 +321,7 @@ mod tests {
 
     #[test]
     fn the_chain_names_each_agent_once() {
+        crate::agent::set_up_for_tests();
         assert!(check(&bot(&[("codex", None), ("gemini", None)])).is_ok());
         assert!(check(&bot(&[("claude", Some("sonnet"))])).is_err(), "the bot's own agent again");
         assert!(check(&bot(&[("codex", None), ("codex", Some("o3"))])).is_err());

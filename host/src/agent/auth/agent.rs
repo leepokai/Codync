@@ -79,7 +79,9 @@ pub(crate) async fn start_with(
         );
         match tokio::time::timeout(budget, init).await {
             Ok(Ok(init)) => {
-                acp.hold(std::mem::take(&mut grants));
+                if !grants.is_empty() {
+                    acp.hold(std::mem::take(&mut grants));
+                }
                 return Ok(Started { acp, inbox: rx, init, cmd });
             }
             Ok(Err(e)) => last = Some(backends::explain_exit(backend, e, &mut rx).await),

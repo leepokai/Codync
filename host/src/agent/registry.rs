@@ -31,7 +31,7 @@ pub enum Launch {
 }
 
 fn cache_file() -> PathBuf {
-    crate::service::data_dir().join("registry.json")
+    super::setup::get().data_dir.join("registry.json")
 }
 
 /// Registry agents (from memory, else the on-disk copy).
@@ -71,8 +71,15 @@ pub async fn refresh_loop() {
 }
 
 async fn fetch() -> Result<Value> {
-    let v: Value =
-        crate::http().get(URL).timeout(Duration::from_secs(20)).send().await?.error_for_status()?.json().await?;
+    let v: Value = super::setup::get()
+        .http
+        .get(URL)
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     if !v["agents"].is_array() {
         bail!("unexpected registry format");
     }
@@ -245,7 +252,7 @@ async fn prepare_npx(package: &str, name: &str, progress: &impl Fn(&str)) -> Res
         // `exit 0`, not `true`: on Windows npm runs `-c` in cmd.exe, which has no `true`.
         .args(["exec", "--yes", "--package", package, "-c", "exit 0"])
         // Away from any project, so npx doesn't settle for a local node_modules.
-        .current_dir(crate::service::data_dir())
+        .current_dir(&super::setup::get().data_dir)
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true)
         .output();
@@ -307,7 +314,7 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
 fn binary_dir(agent: &Value) -> Result<PathBuf> {
     let id = agent["id"].as_str().and_then(safe_component).ok_or_else(|| anyhow!("registry entry has a bad id"))?;
     let version = agent["version"].as_str().and_then(safe_component).unwrap_or("latest");
-    Ok(crate::service::data_dir().join("agents").join(id).join(version))
+    Ok(super::setup::get().data_dir.join("agents").join(id).join(version))
 }
 
 /// Downloads + extracts a binary distribution into [`binary_dir`].
@@ -333,7 +340,8 @@ async fn install_binary(agent: &Value, target: &Value, cmd: &Path, progress: &im
         bail!("refusing a non-HTTPS download for {id}");
     }
     progress(&format!("Downloading {}…", agent["name"].as_str().unwrap_or(id)));
-    let bytes = crate::http()
+    let bytes = super::setup::get()
+        .http
         .get(url)
         .timeout(Duration::from_mins(10))
         .send()
@@ -471,8 +479,9 @@ mod tests {
     /// routine run) failed with "The Claude CLI is missing" until the host restarted.
     #[tokio::test]
     async fn an_update_keeps_the_build_a_running_agent_came_from() {
+        crate::agent::set_up_for_tests();
         let id = format!("test-{}", uuid::Uuid::new_v4());
-        let root = crate::service::data_dir().join("agents").join(&id);
+        let root = crate::agent::setup::get().data_dir.join("agents").join(&id);
         let (old, new) = (root.join("0.107.1"), root.join("0.107.2"));
         for dir in [&old, &new] {
             std::fs::create_dir_all(dir).unwrap();

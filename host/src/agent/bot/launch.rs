@@ -292,6 +292,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_outdated_agent_that_quits_at_start_is_told_to_update() {
+        crate::agent::set_up_for_tests();
         let python = if cfg!(windows) { "python" } else { "python3" };
         let command = format!(
             r#"{python} -c "import sys; sys.stderr.write('Error: profile acp does not exist\n'); sys.exit(1)""#

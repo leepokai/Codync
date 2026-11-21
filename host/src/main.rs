@@ -364,6 +364,11 @@ fn write_token_file(token: &str) -> Result<()> {
 async fn main() -> Result<()> {
     // Every TLS connection (the relay, HTTPS) uses aws-lc-rs, also in builds that have ring too.
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    agent::setup::init(agent::setup::Setup {
+        data_dir: service::data_dir(),
+        exe: service::current_exe().ok(),
+        http: http().clone(),
+    });
     let cli = Cli::parse();
     match cli.cmd.unwrap_or(Sub::Serve { port: service::DEFAULT_PORT, bind: None }) {
         Sub::Serve { port, bind } => serve(bind, port).await,

@@ -71,8 +71,9 @@ impl Install {
             Self::Script(s) | Self::Scripts { unix: s, .. } if cfg!(unix) => Some(s.to_owned()),
             Self::Script(_) => None,
             Self::Scripts { windows, .. } => Some(windows.to_owned()),
-            Self::Npm(pkg) => crate::service::current_exe()
-                .ok()
+            Self::Npm(pkg) => super::setup::get()
+                .exe
+                .as_ref()
                 .map(|exe| format!("{} npm install -g {pkg}", shell::quote(&exe.to_string_lossy()))),
         }
     }

@@ -35,7 +35,9 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
         crate::agent::bot::start_agent(&cfg.backend, &command[0], workspace, &env, Duration::from_mins(1)).await
     })
     .await?;
-    conn.acp.hold(grants);
+    if !grants.is_empty() {
+        conn.acp.hold(grants);
+    }
     let acp = conn.acp.clone();
     let mut opened = None;
     let result = async {

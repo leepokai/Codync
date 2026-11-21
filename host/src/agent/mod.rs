@@ -16,9 +16,20 @@ pub mod new_bot;
 pub mod node;
 pub mod own_memory;
 pub mod registry;
+pub mod setup;
 pub mod term;
 pub mod versions;
 pub mod workspace;
+
+/// Tests never run `main`: the agent runtime gets the tests' data directory here.
+#[cfg(test)]
+pub fn set_up_for_tests() {
+    setup::init(setup::Setup {
+        data_dir: crate::service::data_dir(),
+        exe: crate::service::current_exe().ok(),
+        http: crate::http().clone(),
+    });
+}
 
 pub(crate) mod process;
 #[cfg(unix)]

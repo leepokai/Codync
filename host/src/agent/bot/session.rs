@@ -205,9 +205,7 @@ impl Actor {
                 self.start_candidate(candidate, env, budget, &progress)
             })
             .await?;
-            if !grants.is_empty() {
-                conn.acp.hold(grants);
-            }
+            grants.held_by(&conn.acp);
             conn.on_profile = on_profile;
             conn.codex_home =
                 env.iter().find(|(key, home)| key == "CODEX_HOME" && !home.is_empty()).map(|(_, home)| home.clone());

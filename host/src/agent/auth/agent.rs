@@ -79,9 +79,7 @@ pub(crate) async fn start_with(
         );
         match tokio::time::timeout(budget, init).await {
             Ok(Ok(init)) => {
-                if !grants.is_empty() {
-                    acp.hold(std::mem::take(&mut grants));
-                }
+                std::mem::take(&mut grants).held_by(&acp);
                 return Ok(Started { acp, inbox: rx, init, cmd });
             }
             Ok(Err(e)) => last = Some(backends::explain_exit(backend, e, &mut rx).await),
@@ -146,7 +144,7 @@ async fn sign_in(acp: &Acp, inbox: &mut mpsc::UnboundedReceiver<Incoming>, metho
                 Some(notification) => {
                     if !opened && let Some(url) = acp::codebuddy::sign_in_url(&notification) {
                         opened = true;
-                        if !codync_agent::shell::open(OsStr::new(&url)) {
+                        if !crate::service::open(OsStr::new(&url)) {
                             tracing::warn!("couldn't open the sign-in page");
                         }
                     }

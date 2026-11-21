@@ -160,3 +160,17 @@ impl Actor {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use codync_network::Access;
+
+    #[test]
+    fn a_network_rule_holds_a_turn_to_ask_or_auto() {
+        assert_eq!(ceiling(Access::Ask), Some(Ceiling::Ask));
+        assert_eq!(ceiling(Access::Auto), Some(Ceiling::Auto));
+        assert_eq!(ceiling(Access::Allow), None);
+        assert_eq!(ceiling(Access::Deny), None);
+    }
+}

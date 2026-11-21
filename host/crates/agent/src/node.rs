@@ -112,8 +112,7 @@ async fn install(progress: &impl Fn(&str)) -> Result<()> {
     let name = format!("node-v{VERSION}-{platform}");
     let file = format!("{name}.{}", if cfg!(windows) { "zip" } else { "tar.gz" });
     progress("Downloading Node.js…");
-    let mut response = super::setup::get()
-        .http
+    let mut response = (super::setup::get().http)()
         .get(format!("https://nodejs.org/dist/v{VERSION}/{file}"))
         .timeout(Duration::from_mins(10))
         .send()

@@ -10,7 +10,8 @@ pub struct Setup {
     pub data_dir: PathBuf,
     /// The app's own binary; `None` when it can't be located (then npm agents can't be installed).
     pub exe: Option<PathBuf>,
-    pub http: reqwest::Client,
+    /// Called only when a request goes out, so a run that sends none never sets up TLS.
+    pub http: fn() -> &'static reqwest::Client,
 }
 
 static SETUP: OnceLock<Setup> = OnceLock::new();
@@ -20,16 +21,21 @@ pub fn init(setup: Setup) {
     let _ = SETUP.set(setup);
 }
 
+#[cfg(not(test))]
 pub(crate) fn get() -> &'static Setup {
     SETUP.get().expect("codync_agent::init runs at start, before any agent runs")
 }
 
 /// This crate's own tests: a data directory of their own.
 #[cfg(test)]
-pub(crate) fn set_up_for_tests() {
-    init(Setup {
+pub(crate) fn get() -> &'static Setup {
+    fn http() -> &'static reqwest::Client {
+        static CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(reqwest::Client::new);
+        &CLIENT
+    }
+    SETUP.get_or_init(|| Setup {
         data_dir: std::env::temp_dir().join(format!("codync-agent-unit-{}", std::process::id())),
         exe: std::env::current_exe().ok(),
-        http: reqwest::Client::new(),
-    });
+        http,
+    })
 }

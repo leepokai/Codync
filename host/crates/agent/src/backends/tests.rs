@@ -54,7 +54,6 @@ fn an_installed_cli_comes_before_the_registry_build() {
 
 #[test]
 fn a_harness_the_registry_also_lists_shows_once() {
-    crate::setup::set_up_for_tests();
     let dir = TempDir::new();
     let _path = TestSearchPath::set(dir.0.clone());
     let agents: Vec<_> =
@@ -106,7 +105,6 @@ fn workbuddy_cli_is_not_codebuddy_code() {
 
 #[test]
 fn a_codebuddy_on_path_is_not_workbuddy() {
-    crate::setup::set_up_for_tests();
     let dir = TempDir::new();
     write_cli(&dir.0, "codebuddy");
     let _path = TestSearchPath::set(dir.0.clone());
@@ -125,7 +123,6 @@ fn hermes_uses_native_acp() {
 
 #[test]
 fn an_outdated_cli_is_told_to_update() {
-    crate::setup::set_up_for_tests();
     let why = exit_reason("dsh", "Error: profile acp does not exist").expect("a reason");
     assert!(why.starts_with("The DeepSeek Harness on this computer is too old to run in Codync. Update it (run `"));
     // Codync's own npm, which works without one on the computer.

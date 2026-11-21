@@ -14,12 +14,12 @@ pub mod term;
 pub mod versions;
 pub mod workspace;
 
-/// Tests never run `main`: the agent runtime gets the tests' data directory here.
-#[cfg(test)]
-pub fn set_up_for_tests() {
+/// Gives the agent runtime the host's data directory, binary and HTTP client: `main` at start, and tests, which
+/// never run it.
+pub fn init_runtime() {
     codync_agent::init(codync_agent::Setup {
         data_dir: crate::service::data_dir(),
         exe: crate::service::current_exe().ok(),
-        http: crate::http().clone(),
+        http: crate::http,
     });
 }

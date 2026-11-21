@@ -71,8 +71,7 @@ pub async fn refresh_loop() {
 }
 
 async fn fetch() -> Result<Value> {
-    let v: Value = super::setup::get()
-        .http
+    let v: Value = (super::setup::get().http)()
         .get(URL)
         .timeout(Duration::from_secs(20))
         .send()
@@ -340,8 +339,7 @@ async fn install_binary(agent: &Value, target: &Value, cmd: &Path, progress: &im
         bail!("refusing a non-HTTPS download for {id}");
     }
     progress(&format!("Downloading {}…", agent["name"].as_str().unwrap_or(id)));
-    let bytes = super::setup::get()
-        .http
+    let bytes = (super::setup::get().http)()
         .get(url)
         .timeout(Duration::from_mins(10))
         .send()
@@ -479,7 +477,6 @@ mod tests {
     /// routine run) failed with "The Claude CLI is missing" until the host restarted.
     #[tokio::test]
     async fn an_update_keeps_the_build_a_running_agent_came_from() {
-        crate::setup::set_up_for_tests();
         let id = format!("test-{}", uuid::Uuid::new_v4());
         let root = crate::setup::get().data_dir.join("agents").join(&id);
         let (old, new) = (root.join("0.107.1"), root.join("0.107.2"));

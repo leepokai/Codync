@@ -226,7 +226,7 @@ mod tests {
         let base = vars.iter().find(|(k, _)| k == "GOOGLE_GEMINI_BASE_URL").unwrap().1.clone();
         let token = base.rsplit('/').next().unwrap().to_owned();
         let (acp, _inbox) = codync_agent::acp::Acp::spawn("cat", env!("CARGO_MANIFEST_DIR"), &vars).unwrap();
-        acp.hold(grants);
+        grants.held_by(&acp);
         assert!(acp.holds());
         assert!(k.keeper.granted(&token).is_some());
         acp.kill().await;

@@ -156,7 +156,7 @@ impl Hub {
 
     pub fn new(store: Store, host_id: String, identity: Identity, token: String, port: u16) -> Arc<Self> {
         #[cfg(test)]
-        crate::agent::set_up_for_tests();
+        crate::agent::init_runtime();
         let (events, _) = broadcast::channel(1024);
         let screen = Arc::new(Screen::new(Screen::load_enabled(&store), events.clone()));
         Arc::new(Self {

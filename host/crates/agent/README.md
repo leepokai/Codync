@@ -16,11 +16,17 @@ host that is true of the agents themselves, with no app in it:
 ```rust,no_run
 use std::path::PathBuf;
 
+// The app's one HTTP client, set up only once a request goes out.
+fn http() -> &'static reqwest::Client {
+    static CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(reqwest::Client::new);
+    &CLIENT
+}
+
 // Once at start, before any agent runs.
 codync_agent::init(codync_agent::Setup {
     data_dir: PathBuf::from("/var/app/agents"),
     exe: std::env::current_exe().ok(),
-    http: reqwest::Client::new(),
+    http,
 });
 
 # async fn run() -> anyhow::Result<()> {

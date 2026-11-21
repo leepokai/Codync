@@ -24,7 +24,7 @@ tracing = "0.1.44"
 uuid = { version = "1.26.1", features = ["v4"] }
 
 [features]
-# What an app's own tests use: `backends::TestSearchPath`.
+# What an app's own tests use: `backends::TestSearchPath` and `shell::python`.
 test-support = []
 
 [target.'cfg(unix)'.dependencies]

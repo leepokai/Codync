@@ -33,7 +33,6 @@ pub struct JobProcess {
 }
 
 /// Rows of `ps -o pid=,ppid=,comm=`; a name may hold spaces.
-#[cfg(any(unix, test, feature = "test-support"))]
 pub fn parse_ps(listed: &str) -> Vec<JobProcess> {
     listed
         .lines()
@@ -49,7 +48,6 @@ pub fn parse_ps(listed: &str) -> Vec<JobProcess> {
 }
 
 /// Everything under `leader` in `rows`, without it.
-#[cfg(any(unix, test, feature = "test-support"))]
 pub fn descendants(rows: &[JobProcess], leader: u32) -> Vec<JobProcess> {
     let mut found: Vec<JobProcess> = Vec::new();
     let mut parents = vec![leader];

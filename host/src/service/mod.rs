@@ -53,12 +53,26 @@ pub fn current_exe() -> std::io::Result<PathBuf> {
     })
 }
 
+/// Opens a link or file with this computer's default app for it (a web page: the browser). Whether it started.
+pub fn open(target: &std::ffi::OsStr) -> bool {
+    let mut command = if cfg!(windows) {
+        let mut c = Command::new("rundll32");
+        c.arg("url.dll,FileProtocolHandler");
+        c
+    } else {
+        Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" })
+    };
+    let opener = command.arg(target).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    // Waited for, so the host, which runs for days, keeps no exited opener around.
+    opener.map(|mut opener| std::thread::spawn(move || opener.wait())).is_ok()
+}
+
 pub fn binary_identity() -> Option<&'static (String, String)> {
     BINARY_IDENTITY.get()
 }
 
 /// How long a stopping host may take: its bots get 5 s, then its agents and dev servers up to 10 s to end by themselves
-/// and 15 s to end from their leaves up (`agent/acp.rs`, `agent/process.rs`), then its analytics are sent (3 s). launchd
+/// and 15 s to end from their leaves up (`codync_agent::acp`, `codync_agent::process`), then its analytics are sent (3 s). launchd
 /// waits as long before it kills the host (`ExitTimeOut`), which would leave its agents running.
 const HOST_EXIT: Duration = Duration::from_secs(40);
 

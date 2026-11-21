@@ -167,6 +167,7 @@ impl Actor {
         self.sent.clear();
         self.reacted = Reacted::No;
         self.joined = false;
+        self.unheard.clear();
         self.files.summary = None;
         self.files.cancel();
         if hidden {
@@ -370,7 +371,11 @@ impl Actor {
         {
             *used = Instant::now();
         }
-        let stopped = self.stop_requested || matches!(&done, Ok(v) if v["stopReason"] == "cancelled");
+        let cancelled = matches!(&done, Ok(v) if v["stopReason"] == "cancelled");
+        if cancelled && !self.stop_requested {
+            self.requeue_unheard();
+        }
+        let stopped = self.stop_requested || cancelled;
         self.close_attempt(stopped || done.is_err());
         let mut final_text = None;
         let routine = self.active_routine.is_some();

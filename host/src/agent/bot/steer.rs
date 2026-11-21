@@ -170,7 +170,10 @@ impl Actor {
             }
             return;
         }
-        let Some(Queued::User { text, .. }) = self.queue.remove(at) else { return };
+        let Some(item) = self.queue.remove(at) else { return };
+        let Queued::User { text, .. } = &item else { return };
+        let text = text.clone();
+        self.unheard.push(item);
         // The host's copy, never `removed`, also brings it back to a client that took it back meanwhile.
         if let Some(mut e) = self.hub.store.entry(entry_id) {
             e.data["status"] = json!(RequestStatus::Sent);
@@ -183,6 +186,21 @@ impl Actor {
             }
         }
         self.record_joined_input(entry_id, &text);
+    }
+
+    /// The agent cancelled its turn on its own before a word on what joined it (`unheard`): those messages go first in
+    /// line again, waiting as before.
+    pub(super) fn requeue_unheard(&mut self) {
+        for item in std::mem::take(&mut self.unheard).into_iter().rev() {
+            if let Queued::User { entry_id, .. } = &item
+                && let Some(mut e) = self.hub.store.entry(entry_id)
+            {
+                e.data["status"] = json!(RequestStatus::Queued);
+                self.hub.set_entry(entry_id, &e.data);
+            }
+            self.queue.push_back(item);
+            self.move_first(self.queue.len() - 1);
+        }
     }
 
     /// A user input delivered inside this turn belongs in its reply, memory and fallback context.

@@ -53,11 +53,18 @@ fn settle(hub: &Arc<Hub>, notices: &[Entry]) {
     if let Some(ended) = notices.iter().find(|notice| !open(notice))
         && let Some(outcome) = status(ended)
     {
-        let detail =
-            ended.data["text"].as_str().and_then(|text| text.split_once('\n')).map_or("", |(_, detail)| detail);
-        let reply = ended.data["botMessage"]["reply"].as_str();
+        // From the saved fields, as `complete` wrote them: the text's heading may hold the request's own lines.
+        let message = &ended.data["botMessage"];
+        let reply = message["reply"].as_str();
+        let detail = match (outcome, reply) {
+            (RequestStatus::Completed, Some(reply)) => {
+                let target = message["targetBotId"].as_str().unwrap_or_default();
+                format!("Reply from {}:\n{reply}", hub.bot_name(target))
+            }
+            _ => message["detail"].as_str().unwrap_or_default().to_owned(),
+        };
         for notice in notices.iter().filter(open) {
-            finish_entry(hub, &notice.id, outcome, detail, reply, false);
+            finish_entry(hub, &notice.id, outcome, &detail, reply, false);
         }
         return;
     }

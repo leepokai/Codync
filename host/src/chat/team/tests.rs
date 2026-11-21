@@ -685,7 +685,7 @@ async fn a_restart_between_a_requests_two_notices_keeps_the_outcome_saved_first(
     let f = Fixture::new();
     f.send_to("a", "BLOCK user work").await;
     f.until(|| f.prompts_of("a").len() == 1).await;
-    let receipt = f.message("work").unwrap();
+    let receipt = f.message("work\non two lines").unwrap();
     f.until(|| f.took("b", 1)).await;
     // The last process saved the sender's notice and stopped before the recipient's.
     let recipient = f.notices(&receipt).into_iter().find(|e| e.bot_id == "b").unwrap();
@@ -697,7 +697,10 @@ async fn a_restart_between_a_requests_two_notices_keeps_the_outcome_saved_first(
     let replied = |p: &String| p.contains(&format!("b replied to your message_bot request {id}"));
     f.until(|| f.idle("a") && f.prompts_of("a").iter().any(replied)).await;
     assert!(f.prompts_of("a").iter().all(|p| !p.contains(crate::store::INTERRUPTED)), "no second outcome");
-    assert!(f.notices(&receipt).iter().all(|e| e.data["status"] == "completed"));
+    let notices = f.notices(&receipt);
+    assert!(notices.iter().all(|e| e.data["status"] == "completed"));
+    let answers: Vec<_> = notices.iter().map(|e| e.data["text"].as_str().unwrap().split("Reply from").nth(1)).collect();
+    assert!(answers[0].is_some() && answers[0] == answers[1], "both say the same: {answers:?}");
     assert_eq!(f.prompts().len(), 1, "the request itself never ran again");
     f.shutdown().await;
 }

@@ -44,7 +44,7 @@ test('a failed voice note offers retry in the selected language', async () => {
     expect(error.bar).toBe(false)
     expect(Math.abs(error.left - error.right)).toBeLessThanOrEqual(1)
     await player.click({ button: 'right' })
-    await expect(page.getByRole('menuitem')).toHaveText(['Play', 'Download', 'Reply', 'Show what it did'])
+    await expect(page.getByRole('menuitem')).toHaveText(['Play', 'Download', 'Copy', 'Reply', 'Show what it did'])
     await page.keyboard.press('Escape')
     await page.getByRole('button', { name: 'More message actions' }).click()
     await expect(page.getByRole('menuitem')).toHaveText(['Copy', 'Download', 'Show what it did'])

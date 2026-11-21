@@ -211,6 +211,7 @@ impl Hub {
             }
         }
         crate::chat::work::restore(self);
+        crate::chat::team::restart::restore(self);
         crate::chat::calls::rewatch(self);
         crate::routines::start(self);
         crate::analytics::start(self);
@@ -264,6 +265,14 @@ impl Hub {
         let bots = self.bots.locked();
         let h = bots.get(bot_id).ok_or_else(|| anyhow!("unknown bot"))?;
         h.tx.send(cmd).map_err(|_| anyhow!("bot stopped"))
+    }
+
+    /// [`Self::send_cmd`], giving `cmd` back when `bot_id`'s actor doesn't run.
+    pub(crate) fn offer_cmd(&self, bot_id: &str, cmd: Cmd) -> std::result::Result<(), Box<Cmd>> {
+        match self.bots.locked().get(bot_id) {
+            Some(h) => h.tx.send(cmd).map_err(|refused| Box::new(refused.0)),
+            None => Err(Box::new(cmd)),
+        }
     }
 
     // MARK: bots

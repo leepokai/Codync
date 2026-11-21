@@ -379,7 +379,7 @@ request from another computer under a network rule's `auto` or `ask` holds its t
 
 What differs from the bot's own tasks:
 
-- **Stop** cancels the run (`Stopped by user`, no failure line) or tells the asking bot its request was stopped.
+- **Stop** cancels the run (`Stopped by user`, no failure line) or tells the asking bot its request was stopped (a reply turn of its own).
   **Drop** on a waiting one does the same.
 - **Try again** on a routine's task runs the routine again: a new run (with the failed run's event when it kept
   one, else as `runRoutine` does) and a new task in the old one's place. A request can't be tried again: the bot
@@ -388,7 +388,8 @@ What differs from the bot's own tasks:
   act twice.
 - **They never start twice.** Cut off by a host restart with a thread that can't resume, or lost (the hourly look), a
   run ends `interrupted` at once and its routine's retry rules decide, and a request fails. A request lives in the
-  host process (its notices are marked interrupted at start, as before), so its task leaves the box at host start.
+  host process, so its task leaves the box at host start; one that hadn't started comes back as a new task, sent
+  again from its notices, and one that had fails and wakes its sender ([bot collaboration](bot-collaboration.md#stops-failures-and-restart)).
 - A run whose routine was paused or deleted while it waited leaves the box.
 - Stop in the chat no longer cancels a routine's run that waits in the box, nor a request: the box's Stop does.
 

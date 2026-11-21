@@ -5,6 +5,7 @@
 //! the Codync connector (`assistant`).
 
 use crate::agent::bot::Cmd;
+use crate::analytics::{self, Event};
 use crate::hub::Hub;
 use crate::network::Recipient;
 use crate::store::{BotConfig, BotRow, EntryKind, Lane, Store};
@@ -12,7 +13,7 @@ use anyhow::{Result, anyhow, bail};
 use codync_agent::acp::truncate;
 use codync_network::Access;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use std::sync::Arc;
 
 pub mod assistant;
@@ -720,6 +721,15 @@ fn local_lead(hub: &Hub) -> Option<BotConfig> {
     hub.store.bots().ok()?.into_iter().find(|row| !row.deleted && row.config.lead).map(|row| row.config)
 }
 
+/// One lift's use and its outcome, with no message text or bot/refusal id. Delivery failures are `not_queued`.
+pub(crate) fn hop_lift_finished(hub: &Hub, action: &str, outcome: &str) {
+    analytics::capture(
+        hub,
+        Event::HopLiftFinished,
+        Map::from_iter([("action".into(), action.into()), ("outcome".into(), outcome.into())]),
+    );
+}
+
 fn explain_hop_block(hub: &Arc<Hub>, source: &BotConfig, turn: &str, args: &Value) -> Result<Value> {
     let refusal = refusal_arg(args)?;
     let explanation = args["text"].as_str().unwrap_or("").trim();
@@ -733,8 +743,10 @@ fn explain_hop_block(hub: &Arc<Hub>, source: &BotConfig, turn: &str, args: &Valu
     // text in place, the same way an unsent reset gives its grant back.
     if let Err(error) = hop_notice_to_lead(hub, source, refusal, &heading, introduction, &stored) {
         hub.team.abort_unsent_explanation(turn, refusal);
+        hop_lift_finished(hub, "explain", "not_queued");
         return Err(error);
     }
+    hop_lift_finished(hub, "explain", "delivered");
     tracing::info!(actor = %turn, refusal, "hop-limit explanation recorded");
     Ok(json!({ "refusal": refusal, "status": "recorded" }))
 }
@@ -766,8 +778,10 @@ fn ask_hop_clarification(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Re
     if let Err(error) = hub.send_cmd(&actor, wake) {
         // The wake was never queued: the ask did not happen, so the lead can ask again.
         hub.team.abort_unsent_ask(refusal);
+        hop_lift_finished(hub, "ask", "not_queued");
         return Err(error);
     }
+    hop_lift_finished(hub, "ask", "queued");
     tracing::info!(lead = %source.id, refusal, "hop-limit clarification asked");
     Ok(json!({ "refusal": refusal, "status": "asked" }))
 }
@@ -783,8 +797,10 @@ fn answer_hop_clarification(hub: &Arc<Hub>, source: &BotConfig, turn: &str, args
     let introduction = "The bot blocked by the hop limit answered your clarification.";
     if let Err(error) = hop_notice_to_lead(hub, source, refusal, &heading, introduction, &stored) {
         hub.team.abort_unsent_answer(turn, refusal);
+        hop_lift_finished(hub, "answer", "not_queued");
         return Err(error);
     }
+    hop_lift_finished(hub, "answer", "delivered");
     tracing::info!(actor = %turn, refusal, "hop-limit clarification answered");
     Ok(json!({ "refusal": refusal, "status": "answered" }))
 }
@@ -810,9 +826,11 @@ fn reset_hop_count(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<V
         );
         if let Err(error) = hub.send_cmd(&actor, Cmd::HopLift { text, refusal_id: refusal, control: false }) {
             hub.team.abort_unsent_reset(&actor, refusal);
+            hop_lift_finished(hub, "reset", "not_queued");
             return Err(error);
         }
     }
+    hop_lift_finished(hub, "reset", "queued");
     tracing::info!(lead = %source.id, actor = %actor, refusal, "hop count reset");
     Ok(json!({ "refusal": refusal, "status": "reset" }))
 }
@@ -829,6 +847,7 @@ fn deny_hop_reset(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Va
         bail!("botId does not match this hop-limit block");
     }
     hub.team.deny(refusal)?;
+    hop_lift_finished(hub, "deny", "done");
     tracing::info!(lead = %source.id, refusal, "hop reset denied");
     Ok(json!({ "refusal": refusal, "status": "denied" }))
 }
@@ -876,8 +895,10 @@ pub(super) fn on_hop_limit(
         // (`turn`, the caller of `reserve`), not the sender; they differ when a thread acts for its bot.
         let actor = hub.team.lift_actor(refusal).unwrap_or_else(|_| source.id.clone());
         hub.team.abort_unsent_notice(&actor, refusal);
+        hop_lift_finished(hub, "notice", "not_queued");
         return Err(delivery);
     }
+    hop_lift_finished(hub, "notice", "delivered");
     tracing::info!(actor = %turn, refusal, "hop-limit notice queued");
     bail!("bot request hop limit ({}) reached; the lead was notified (refusal {refusal})", hub.team.hop_limit())
 }

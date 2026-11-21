@@ -322,6 +322,10 @@ impl Actor {
         // here is the turn's own end, not a failed start.
         self.spent_carry = false;
         self.hub.team.wake_delivered(&self.cfg.id);
+        if matches!(self.host_turn, Some(HostTurn::HopLift)) {
+            let action = if self.hub.team.in_control(&self.cfg.id) { "ask" } else { "reset" };
+            crate::chat::team::hop_lift_finished(&self.hub, action, "applied");
+        }
         if !self.turn_memory_revision.is_empty()
             && let Err(error) =
                 memory::mark_announced(&self.hub.store, self.cfg.owner(), &sid, &self.turn_memory_revision)

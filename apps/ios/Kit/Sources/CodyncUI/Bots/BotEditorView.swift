@@ -131,6 +131,20 @@ struct BotSettingsForm: View {
         if draft.fallbacks != nil { FallbackList(draft: $draft, bot: bot) }
     }
 
+    /// Advisor mode, from a host that has it: its threads' agent and fallbacks show once it's on.
+    @ViewBuilder private var advisor: some View {
+        if draft.threadFallbacks != nil {
+            SwitchRow("Advisor mode", detail: "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.",
+                      isOn: Binding(get: { draft.threadAgent != nil }, set: { on in
+                          withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.setAdvisor(on, backends: model.hello?.backends ?? []) }
+                      }))
+            if draft.threadAgent != nil {
+                ThreadsAgentRow(draft: $draft, bot: bot)
+                FallbackList(draft: $draft, bot: bot, threads: true)
+            }
+        }
+    }
+
     /// Only where the host summarizes this bot's chat (its bot says).
     @ViewBuilder private var compactionPicker: some View {
         if bot?.compaction != nil, draft.compaction != nil {
@@ -147,6 +161,7 @@ struct BotSettingsForm: View {
                 modelPicker
                 loginProfilePicker
                 fallbackList
+                advisor
                 compactionPicker
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot?.agentStep)

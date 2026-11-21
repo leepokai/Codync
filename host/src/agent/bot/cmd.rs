@@ -39,6 +39,13 @@ pub enum Cmd {
     BotRequest(crate::chat::team::BotRequest),
     /// How a request this bot sent came out: a turn of its own, with any others that arrive meanwhile.
     BotReply(crate::chat::team::BotReply),
+    /// A hop-limit lift the host starts: a clarification, an explanation or answer for the lead, or a reset.
+    /// `control` is a clarification (or other hop-limit turn) where `message_bot` stays unavailable.
+    HopLift {
+        text: String,
+        refusal_id: u64,
+        control: bool,
+    },
     /// A turn the host starts in the bot's own chat, with no message of the user's (the lead opening a call): its
     /// reply is that call's (`chat::calls`).
     Prompt {
@@ -128,6 +135,12 @@ pub(super) enum Queued {
     },
     BotRequest(crate::chat::team::BotRequest),
     BotReply(crate::chat::team::BotReply),
+    /// A hop-limit lift (`Cmd::HopLift`).
+    HopLift {
+        text: String,
+        refusal_id: u64,
+        control: bool,
+    },
     Prompt {
         text: String,
         call: Option<String>,
@@ -151,13 +164,15 @@ pub(super) enum HostTurn {
     /// The reports of the bot's tasks (`Cmd::TaskReport`): the bot tells the user what they found, which alerts like
     /// a reply. A restart doesn't resume it: the reports it didn't answer come again (`work::restore`).
     TaskReport,
+    /// A hop-limit lift (`Cmd::HopLift`): alerts no one and isn't resumed after a restart.
+    HopLift,
 }
 
 impl HostTurn {
     /// Whether a host restart in the middle of it resumes it.
     pub(super) fn resumed(self) -> bool {
         match self {
-            Self::Opening | Self::TaskReport => false,
+            Self::Opening | Self::TaskReport | Self::HopLift => false,
             Self::FollowUp => true,
         }
     }
@@ -165,7 +180,7 @@ impl HostTurn {
     /// Whether its end alerts the user, as a reply's does.
     pub(super) fn alerts(self) -> bool {
         match self {
-            Self::Opening => false,
+            Self::Opening | Self::HopLift => false,
             Self::FollowUp | Self::TaskReport => true,
         }
     }
@@ -173,7 +188,7 @@ impl HostTurn {
     /// What `turn_finished` reports as its source.
     pub(super) fn source(self) -> TurnSource {
         match self {
-            Self::Opening | Self::TaskReport => TurnSource::Host,
+            Self::Opening | Self::TaskReport | Self::HopLift => TurnSource::Host,
             Self::FollowUp => TurnSource::FollowUp,
         }
     }

@@ -108,6 +108,12 @@ def prompt(request):
         update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})
         send({"id": request["id"], "result": {"stopReason": "end_turn"}})
         return
+    if text.split("\n\n")[-1].startswith("Hop-limit refusal") and "starts at 0" in text.split("\n\n")[-1]:
+        # The hop-limit approval wake: prove the grant works by delegating on it.
+        reply = chain()
+        update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})
+        send({"id": request["id"], "result": {"stopReason": "end_turn"}})
+        return
     if text.split("\n\n")[-1] == "REPORT":
         response = mcp_call("chat", "send_message", {"text": "Report for the user"})
         if "Your final reply goes back to" in text:

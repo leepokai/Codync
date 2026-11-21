@@ -29,6 +29,11 @@ impl Actor {
     /// The prompt for `text` in session `sid`: what the agent should hear first (its profile, a handoff, a memory
     /// change) and after (a profile update, how to share files).
     async fn compose(&mut self, sid: &str, text: &str) -> Result<String> {
+        // An agent on its own (`BotConfig::plain`) hears the user's words alone.
+        if self.cfg.plain {
+            self.session_fresh = false;
+            return Ok(text.to_owned());
+        }
         let instructions = self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions);
         let mut snapshot = self.snapshot(sid).await?;
         // Sessions whose frozen instructions predate send_file, artifacts or follow-ups hear about them each turn.
@@ -273,8 +278,11 @@ impl Actor {
             self.carry_in();
         }
         // What the user wrote to a thread says so, after the work itself where the session doesn't hold it.
-        let text =
-            &if written.is_empty() || agent_command { text.to_owned() } else { work::in_thread(text, picked_up) };
+        let text = &if written.is_empty() || agent_command || self.cfg.plain {
+            text.to_owned()
+        } else {
+            work::in_thread(text, picked_up)
+        };
         let prompt = if std::mem::take(&mut self.raw_prompt) || agent_command {
             text.to_owned()
         } else {

@@ -57,6 +57,8 @@ export interface Bot {
   /** The roster section the user put it in (`Work`, `Personal`); none when absent. */
   section?: string
   hidden: boolean
+  /** The computer's box for threads without a bot: an agent on its own. Never a bot to the user. */
+  plain: boolean
   notify?: boolean | null
   connectors: string[]
   skills: string[]
@@ -152,6 +154,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     // A cleared section (null, or an empty name) reads as none.
     section: raw.section || undefined,
     hidden: raw.hidden ?? false,
+    plain: raw.plain === true,
     notify: raw.notify ?? null,
     connectors: raw.connectors ?? [],
     skills: raw.skills ?? [],
@@ -683,6 +686,8 @@ export interface Hello {
   autoOrder?: boolean
   /** The user can start a thread with a bot themselves (`startThread`). Absent from older hosts. */
   startThread?: boolean
+  /** A thread may start without a bot, on an agent the user names (`startThread` without `botId`). */
+  threadsWithoutBot?: boolean
   /** `resetCredentials` can be used on this computer (absent from older hosts, false on a Codync Cloud computer). */
   credentialsReset?: boolean
   /** The host can store workflows. Missing means it cannot. */

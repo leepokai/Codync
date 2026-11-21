@@ -2428,5 +2428,6 @@
   "What should it work on?": "무엇을 작업할까요?",
   "{count} tool requests": "도구 요청 {count}개",
   "Group by folder": "폴더별로 그룹화",
-  "Show more": "더 보기"
+  "Show more": "더 보기",
+  "No bot": "봇 없음"
 }

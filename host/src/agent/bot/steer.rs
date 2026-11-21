@@ -77,8 +77,9 @@ impl Actor {
         };
         let (acp, hub, bot) = (conn.acp.clone(), self.hub.clone(), self.cfg.id.clone());
         // What the user wrote to a thread says so, as when it starts a turn of its own.
-        let threaded =
-            self.cfg.is_thread() && self.hub.store.entry(&entry_id).is_some_and(|e| e.data["from"] != "host");
+        let threaded = self.cfg.is_thread()
+            && !self.cfg.plain
+            && self.hub.store.entry(&entry_id).is_some_and(|e| e.data["from"] != "host");
         let text = if threaded { crate::chat::work::in_thread(text, None) } else { text.to_owned() };
         let params = json!({
             "sessionId": sid,

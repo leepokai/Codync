@@ -244,12 +244,18 @@ export class BotStore extends BotSync {
     return this.hello?.startThread === true
   }
 
-  /** A thread the user starts with `botId` themselves, opened by `text`, its task on `setup` where that differs from
-   *  the bot's: the id of its task in the bot's work. */
-  async startThread(botId: string, text: string, setup: ThreadSetup = {}): Promise<string> {
-    const { taskId } = await this.withLink((c) => c.call<{ taskId: string }>('startThread', { botId, text: text.trim(), setup }))
+  /** Threads may start without a bot here (`startThread` without `botId`). */
+  get startsThreadsWithoutBot() {
+    return this.hello?.threadsWithoutBot === true
+  }
+
+  /** A thread the user starts with `botId` themselves (null: without a bot, on the agent `setup` names), opened by
+   *  `text`, its task on `setup` where that differs from the bot's: where its task is, the bot's (or the box's) id
+   *  and the task's. */
+  async startThread(botId: string | null, text: string, setup: ThreadSetup = {}): Promise<{ botId: string; taskId: string }> {
+    const started = await this.withLink((c) => c.call<{ botId: string; taskId: string }>('startThread', { ...(botId ? { botId } : {}), text: text.trim(), setup }))
     noteActiveDay()
-    return taskId
+    return started
   }
 
   /** Whether a bot with a new message moves to the top of this computer's roster; undefined before hello or on older hosts. */

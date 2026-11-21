@@ -64,6 +64,8 @@ impl Hub {
             if cfg.is_group() {
                 cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
             }
+            // Only the host makes the box of threads without a bot (`chat::work::plain`).
+            cfg.plain = row.config.plain;
             self.settle_config(&mut cfg)?;
             crate::agent::own_memory::settle(&mut cfg, &row.config, patch);
             self.store.save_bot(&cfg)?;

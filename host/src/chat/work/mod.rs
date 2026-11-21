@@ -16,6 +16,7 @@
 //! another in one repository.
 
 mod dispatch;
+pub mod plain;
 mod prompts;
 mod sources;
 mod steer;

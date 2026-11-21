@@ -246,6 +246,7 @@
     "hello.schema": "number",
     "hello.signKey": "string",
     "hello.startThread": "bool",
+    "hello.threadsWithoutBot": "bool",
     "hello.version": "string",
     "hello.workflows": "bool"
   }

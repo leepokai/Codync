@@ -99,10 +99,13 @@ impl Source {
 }
 
 /// What a thread the user starts changes from its bot's setup, for its own task (`startThread`'s `setup`): the
-/// folder it works in, its model and how it is approved. What it leaves out is the bot's.
+/// agent (a thread without a bot names it), the folder it works in, its model and how it is approved. What it
+/// leaves out is the bot's.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Setup {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backend: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -136,6 +139,13 @@ impl Setup {
     /// `cfg` with what this changes.
     pub fn over(&self, cfg: &BotConfig) -> BotConfig {
         let mut cfg = cfg.clone();
+        // Another agent runs on its own login, without the bot's fallbacks or command.
+        if let Some(backend) = self.backend.as_ref().filter(|b| **b != cfg.backend) {
+            backend.clone_into(&mut cfg.backend);
+            cfg.login_profile = None;
+            cfg.command = None;
+            cfg.fallbacks.clear();
+        }
         if let Some(cwd) = &self.cwd {
             cfg.cwd.clone_from(cwd);
         }
@@ -418,6 +428,10 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
                 }
                 if let Some(worktree) = task.worktree.as_ref().and_then(Worktree::wire) {
                     row["worktree"] = worktree;
+                }
+                // The agent a thread the user started runs on, where it isn't its bot's (always without a bot).
+                if let Some(agent) = &task.setup.backend {
+                    row["agent"] = agent.clone().into();
                 }
                 row
             })

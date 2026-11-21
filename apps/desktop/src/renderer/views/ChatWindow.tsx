@@ -277,7 +277,9 @@ function ChatSplitView() {
   const localOnline = !!app.local && onlineStores.includes(app.local)
   const roster = useComputerRoster(app, shown)
   const visibleRoster = roster.items
-  const threads = threadSections(roster.ordered, threadsGroup, (of) => refKey(of.ref), (of) => of.store.hostName)
+  // The Threads page lists the boxes of threads without a bot too, of the computers shown.
+  const threadRoster = [...roster.ordered, ...app.plainBoxes.filter((r) => shown.has(r.ref.computerId))]
+  const threads = threadSections(threadRoster, threadsGroup, (of) => refKey(of.ref), (of) => of.store.hostName)
   /** A bot's chat, on the Bots page. */
   const openBot = (ref: BotRef) => {
     app.select(ref)
@@ -537,7 +539,7 @@ function ChatSplitView() {
               </div>
             ) : (
               <div className="roster">
-                <ThreadList roster={roster.ordered} picked={picked} pick={setPicked} start={startThread} />
+                <ThreadList roster={threadRoster} picked={picked} pick={setPicked} start={startThread} />
               </div>
             )}
           </aside>
@@ -555,7 +557,7 @@ function ChatSplitView() {
       {page === 'threads' ? (
         <main className="detail">
           <WindowBarSlots.Provider value={{ title: barTitle, end: barEnd }}>
-            <ThreadDetail roster={roster.ordered} picked={picked} pick={setPicked} starting={starting} start={setStarting} />
+            <ThreadDetail roster={threadRoster} picked={picked} pick={setPicked} starting={starting} start={setStarting} />
           </WindowBarSlots.Provider>
         </main>
       ) : page === 'workflows' && workflowStore && workflows ? (

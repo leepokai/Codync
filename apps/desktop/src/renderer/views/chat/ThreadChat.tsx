@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { Bot } from '@shared/models'
 import { isTold } from '@shared/threads'
 import { isLive, readOnlyReason, workStatusWord, type WorkTask } from '@shared/work'
+import { AgentIcon } from '../../components/AgentIcon'
 import { BotAvatar } from '../../components/Avatar'
 import { IconButton, Spinner } from '../../components/Controls'
 import { Sheet } from '../../components/Overlay'
@@ -26,7 +27,7 @@ import { Timer } from './WorkingIndicator'
 import { WorkingTransition } from './WorkingTransition'
 import { WhereCopy } from './WorkThread'
 import { Mine, ThreadReadFailed, Told, useThreadEntries } from './WorkThreadTranscript'
-import './thread.css'
+import './chat.css'
 import './composer.css'
 import './chat-controls.css'
 import './thread-chat.css'
@@ -90,14 +91,14 @@ export function ThreadChat({ bot, task }: { bot: Bot; task: WorkTask }) {
   }
 
   return (
-    <div className="thread-view thread-chat" data-work-thread={task.id}>
+    <div className="chat-view thread-chat" data-work-thread={task.id}>
       <div className="conversation" ref={root}>
         <div className="top-chrome">
           <div className="top-fade" />
           {bar.title ? createPortal(<>
             <div className="title-pill" title={task.title}>
               <HStack as="span" gap={7}>
-                <BotAvatar bot={bot} size={22} animated={false} />
+                {bot.plain ? <AgentIcon registry={store.agentRegistry(task.agent ?? bot.backend)} size={18} /> : <BotAvatar bot={bot} size={22} animated={false} />}
                 <Text size="body" weight="medium" tone="text" truncate>{task.title}</Text>
               </HStack>
             </div>

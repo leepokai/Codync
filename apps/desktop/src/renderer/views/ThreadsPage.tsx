@@ -14,7 +14,7 @@ import { StoreContext } from '../store/context'
 import { relativeTime } from './chat/chat-items'
 import { WORK_MARK, WorkDot } from './chat/WorkDialogs'
 import { ThreadChat } from './chat/ThreadChat'
-import { ThreadStart } from './chat/ThreadStart'
+import { ThreadStart, type ThreadWith } from './chat/ThreadStart'
 import './computer-roster.css'
 import './threads-page.css'
 
@@ -46,7 +46,7 @@ export function ThreadList({ roster, picked, pick, start }: {
   const [folded, setFolded] = usePref(prefs.foldedThreadSections)
   const [more, setMore] = useState(false)
   const { needsYou, groups, recent } = threadSections(roster, grouping, (of) => refKey(of.ref), (of) => of.store.hostName)
-  const canStart = threadBots(roster).length > 0
+  const canStart = threadBots(roster).length > 0 || plainStores(roster).length > 0
   const row = ({ of, task }: { of: RosterItem; task: WorkTask }, label = task.title) => (
     <StoreContext.Provider key={`${refKey(of.ref)}/${task.id}`} value={of.store}>
       <ThreadRow
@@ -76,17 +76,19 @@ export function ThreadList({ roster, picked, pick, start }: {
             {mine.map((group) => {
               const isFolded = folded.includes(group.key)
               const of = group.rows[0]!.of
+              // The box of threads without a bot is no bot: its group says so.
+              const title = of.bot.plain && group.kind === 'bot' ? tr('No bot') : group.title
               // Folded, its heading still says that something in it went wrong or works.
               const loud = isFolded ? (group.rows.find((r) => r.task.status === 'failed') ?? group.rows.find((r) => r.task.status === 'working')) : undefined
               return (
-                <div key={group.key} className="thread-group" role="group" aria-label={group.title}>
+                <div key={group.key} className="thread-group" role="group" aria-label={title}>
                   <HStack gap={2} className="thread-section-heading">
                     <button className="thread-row thread-section-toggle" aria-expanded={!isFolded} onClick={() => setFolded(isFolded ? folded.filter((key) => key !== group.key) : [...folded, group.key])}>
-                      {group.kind === 'bot' ? <BotAvatar bot={of.bot} size={16} animated={false} /> : <Icon name={({ folder: 'folder', routine: 'clock', computer: 'desktopcomputer' } as const)[group.kind]} size={12} color="var(--secondary)" />}
-                      <Text tone="text" truncate grow>{group.title}</Text>
+                      {group.kind === 'bot' && !of.bot.plain ? <BotAvatar bot={of.bot} size={16} animated={false} /> : <Icon name={({ folder: 'folder', routine: 'clock', computer: 'desktopcomputer', bot: 'cpu' } as const)[group.kind]} size={12} color="var(--secondary)" />}
+                      <Text tone="text" truncate grow>{title}</Text>
                       {loud ? <StatusMark status={loud.task.status} /> : null}
                     </button>
-                    {group.kind === 'bot' && threadBots([of]).length ? <IconButton title="New thread" icon="plus" size={24} className="thread-section-new" onClick={() => start(of.ref)} /> : null}
+                    {group.kind === 'bot' && (threadBots([of]).length || plainStores([of]).length) ? <IconButton title="New thread" icon="plus" size={24} className="thread-section-new" onClick={() => start(of.ref)} /> : null}
                   </HStack>
                   <div className={`computer-roster-content ${isFolded ? 'collapsed' : ''}`} inert={isFolded} aria-hidden={isFolded}>
                     {/* A routine's runs are told apart by when they started. */}
@@ -129,8 +131,13 @@ function ThreadRow({ task, label, selected, open }: { task: WorkTask; label: str
   )
 }
 
-/** The bots a thread can start with: on a computer that is connected and starts threads; never a group. */
-export const threadBots = (roster: RosterItem[]) => roster.filter((r) => !isGroup(r.bot) && r.store.startsThreads && !r.store.isOffline)
+/** The bots a thread can start with: on a computer that is connected and starts threads; never a group, nor the box
+ * of threads without a bot. */
+export const threadBots = (roster: RosterItem[]) => roster.filter((r) => !isGroup(r.bot) && !r.bot.plain && r.store.startsThreads && !r.store.isOffline)
+
+/** The connected computers of `roster` where a thread may start without a bot, one item each. */
+const plainStores = (roster: RosterItem[]) =>
+  roster.filter((r, at) => r.store.startsThreadsWithoutBot && !r.store.isOffline && roster.findIndex((o) => o.ref.computerId === r.ref.computerId) === at)
 
 /**
  * Beside the list: the thread picked there, its title, status, transcript and message box (`WorkThread`); one that
@@ -165,7 +172,15 @@ export function ThreadDetail({ roster, picked, pick, starting, start }: {
     )
   }
   const bots = threadBots(roster)
-  const first = bots.find((r) => sameRef(r.ref, starting)) ?? bots.find((r) => r.bot.lead) ?? bots[0]
+  // A ref without a bot (`botId` '') is a thread without one on that computer, as is the box's own ref.
+  const plainOn = plainStores(roster)
+  const plain = starting && (starting.botId === '' || roster.some((r) => r.bot.plain && sameRef(r.ref, starting)))
+    ? plainOn.find((r) => r.ref.computerId === starting.computerId)
+    : undefined
+  const first: ThreadWith | undefined = plain
+    ? { ref: { computerId: plain.ref.computerId, botId: '' }, store: plain.store, bot: null }
+    : bots.find((r) => sameRef(r.ref, starting)) ?? bots.find((r) => r.bot.lead) ?? bots[0]
+      ?? (plainOn[0] ? { ref: { computerId: plainOn[0].ref.computerId, botId: '' }, store: plainOn[0].store, bot: null } : undefined)
   if (!first) {
     return (
       <div className="empty-detail">
@@ -176,7 +191,13 @@ export function ThreadDetail({ roster, picked, pick, starting, start }: {
   }
   return (
     <StoreContext.Provider value={first.store}>
-      <ThreadStart key={refKey(first.ref)} bots={bots} of={first} choose={start} started={(taskId) => pick({ ref: first.ref, taskId })} />
+      <ThreadStart
+        key={refKey(first.ref)}
+        bots={bots}
+        of={first}
+        choose={(ref, none) => start(none ? { computerId: ref.computerId, botId: '' } : ref)}
+        started={(ref, taskId) => pick({ ref, taskId })}
+      />
     </StoreContext.Provider>
   )
 }

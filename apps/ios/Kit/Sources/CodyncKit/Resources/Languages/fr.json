@@ -2428,5 +2428,6 @@
   "What should it work on?": "Sur quoi doit-il travailler ?",
   "{count} tool requests": "{count} demandes d’outils",
   "Group by folder": "Grouper par dossier",
-  "Show more": "Afficher plus"
+  "Show more": "Afficher plus",
+  "No bot": "Aucun bot"
 }

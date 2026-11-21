@@ -204,6 +204,11 @@ export class AppModel extends Observable {
     return this.botsOnEveryComputer((store) => store.hiddenBots)
   }
 
+  /** Every computer's box of threads without a bot, where one started. */
+  get plainBoxes(): RosterItem[] {
+    return this.botsOnEveryComputer((store) => (store.plainBox ? [store.plainBox] : []))
+  }
+
   private botsOnEveryComputer(bots: (store: BotStore) => Bot[]): RosterItem[] {
     const items: RosterItem[] = []
     for (const computer of this.computers) {

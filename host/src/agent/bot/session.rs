@@ -74,7 +74,7 @@ impl Actor {
         if let Some(sid) = session {
             params["sessionId"] = sid.into();
         }
-        if self.conn.as_ref().is_some_and(|c| c.sessions.additional_directories) {
+        if !self.cfg.plain && self.conn.as_ref().is_some_and(|c| c.sessions.additional_directories) {
             params["additionalDirectories"] = json!(memory::files::folders(&self.cfg.as_owner()));
         }
         params
@@ -98,6 +98,10 @@ impl Actor {
 
     /// ACP connectors, team collaboration, and optional team management and computer control.
     pub(super) fn mcp_servers(&self) -> Result<Value> {
+        // An agent on its own (`BotConfig::plain`) has its own tools only.
+        if self.cfg.plain {
+            return Ok(json!([]));
+        }
         let Ok(exe) = std::env::current_exe() else {
             tracing::warn!("can't locate codync-host for MCP servers");
             return Ok(json!([]));
@@ -218,7 +222,12 @@ impl Actor {
         if self.conn.as_ref().is_some_and(|c| c.adapter == Adapter::Codex) {
             renamed = codex_names::avoid_clashes(&mut servers, &self.cfg.cwd, self.saved_env("CODEX_HOME")).await;
         }
-        let instructions = self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions);
+        // An agent on its own gets no system prompt of Codync's, and `compose` adds no first-message one.
+        let instructions = if self.cfg.plain {
+            Instructions::FirstMessage
+        } else {
+            self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions)
+        };
         // Claude gets the frozen instructions as its system prompt. When a compaction
         // re-rendered them, loading the session again swaps the prompt in (the adapter
         // rebuilds its query and resumes the same conversation).

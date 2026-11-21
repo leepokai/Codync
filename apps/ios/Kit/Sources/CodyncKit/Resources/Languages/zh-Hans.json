@@ -2428,5 +2428,6 @@
   "What should it work on?": "要它处理什么？",
   "{count} tool requests": "{count} 个工具请求",
   "Group by folder": "按文件夹分组",
-  "Show more": "显示更多"
+  "Show more": "显示更多",
+  "No bot": "不使用 Bot"
 }

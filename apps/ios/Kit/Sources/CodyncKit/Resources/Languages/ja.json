@@ -2428,5 +2428,6 @@
   "What should it work on?": "何に取り組みますか？",
   "{count} tool requests": "{count} 件のツールリクエスト",
   "Group by folder": "フォルダでグループ化",
-  "Show more": "さらに表示"
+  "Show more": "さらに表示",
+  "No bot": "ボットなし"
 }

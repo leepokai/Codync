@@ -56,11 +56,15 @@ export interface WorkTask {
   folder: string | null
   /** Its thread takes the user's messages, as the host says: the bot's own task whose thread still exists. */
   talk: boolean
+  /** The agent a thread the user started runs on, where it isn't its bot's (always without a bot). */
+  agent: string | null
 }
 
 /** What a thread the user starts changes from its bot's setup, for its own task (`startThread`'s `setup`): the folder
  * it works in, its model with that model's settings, and how it is approved. What it leaves out is the bot's. */
 export interface ThreadSetup {
+  /** The agent: a thread without a bot names it. */
+  backend?: string
   cwd?: string
   model?: { id: string | null; options: Record<string, string> }
   approval?: { permission: string; mode: string | null }
@@ -92,6 +96,7 @@ export function normalizeWork(raw: unknown): WorkTask[] {
           source: t.source?.kind === 'routine' || t.source?.kind === 'request' ? { kind: t.source.kind, id: t.source.id ?? null } : null,
           folder: t.folder || null,
           talk: t.talk ?? false,
+          agent: typeof t.agent === 'string' ? t.agent : null,
         }]
       : [],
   )

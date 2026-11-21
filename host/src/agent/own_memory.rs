@@ -55,7 +55,8 @@ pub fn settle(cfg: &mut BotConfig, before: &BotConfig, patch: &Value) {
 
 /// Sets the harness's own memory for one launch of the bot's agent: off, unless the user kept it on.
 pub async fn apply(cfg: &BotConfig, env: &mut Vec<(String, String)>, commands: &mut [String]) {
-    let on = kept(cfg);
+    // An agent on its own (`BotConfig::plain`) keeps its memory, as it has outside Codync.
+    let on = cfg.plain || kept(cfg);
     if !on {
         switch_off(&cfg.backend, env, commands);
     }

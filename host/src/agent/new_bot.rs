@@ -10,8 +10,10 @@ use std::sync::Arc;
 /// The bot or group `b` asks for, with the defaults for what the caller left out.
 pub async fn with_defaults(hub: &Arc<Hub>, mut b: Value) -> Result<BotConfig> {
     b["id"] = "".into();
-    // A lead is made by the host or picked by the user (`chat::lead`), never on creation.
+    // A lead is made by the host or picked by the user (`chat::lead`), never on creation; the box of threads
+    // without a bot only by the host (`chat::work::plain`).
     b["lead"] = false.into();
+    b["plain"] = false.into();
     // Connectors are on for a new bot unless the client picked them.
     if b["connectors"].is_null() && b["kind"] != "group" {
         b["connectors"] = default_connectors(hub).await?;

@@ -1527,3 +1527,45 @@ async fn a_thread_the_user_starts_works_where_its_setup_says() {
     assert!(start(json!({"cwd": "/no/such/folder"})).await.contains("does not exist"));
     assert!(start(json!({"approval": {"permission": "yolo", "mode": null}})).await.contains("a thread's setup"));
 }
+
+/// What the scripted agent heard in `folder`, oldest first.
+fn heard_in(folder: &Path) -> Vec<Value> {
+    let log = std::fs::read_to_string(folder.join("prompts.jsonl")).unwrap_or_default();
+    log.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()["text"].clone()).collect()
+}
+
+#[tokio::test]
+async fn a_thread_without_a_bot_runs_its_agent_on_its_own() {
+    let host = Host::start().await;
+    let refused = "a thread without a bot names its agent";
+    assert_eq!(host.refused("startThread", json!({"text": "Hello"})).await, refused);
+    // The first one makes the computer's box, hidden, before its setup is checked: this one's folder isn't there.
+    let gone = json!({"backend": "claude", "cwd": "/no/such/folder"});
+    assert!(host.refused("startThread", json!({"text": "Hello", "setup": gone})).await.contains("does not exist"));
+    let snapshot = host.snapshot().await;
+    let boxes: Vec<&Value> = snapshot["bots"].as_array().unwrap().iter().filter(|b| b["plain"] == true).collect();
+    assert_eq!(boxes.len(), 1, "one box");
+    let owner = boxes[0]["id"].as_str().unwrap().to_owned();
+    assert_eq!((&boxes[0]["hidden"], &boxes[0]["connectors"]), (&json!(true), &json!([])));
+    // Only the host makes it, and it stays out of sight.
+    let made = host.call("createBot", json!({"name": "B", "backend": "custom", "command": "x", "plain": true})).await;
+    assert!(made["bot"]["plain"].is_null(), "{made}");
+    let shown = host.refused("updateBot", json!({"id": owner, "hidden": false})).await;
+    assert_eq!(shown, "the box of threads without a bot stays hidden");
+
+    // Here it runs the scripted agent, which hears the user's words and nothing of Codync's.
+    let agent = common::fixture_command("work_agent.py", "");
+    host.call("updateBot", json!({"id": owner, "backend": "custom", "command": agent})).await;
+    let folder = host.home.join("project");
+    std::fs::create_dir_all(&folder).unwrap();
+    let setup = json!({"backend": "custom", "cwd": folder});
+    let started = host.call("startThread", json!({"text": "Look around", "setup": setup})).await;
+    let done = task(&host, &owner, "Look around", "done").await;
+    assert_eq!((&done["id"], &done["folder"]), (&started["taskId"], &json!(folder)));
+    assert_eq!((&started["botId"], &done["agent"]), (&json!(owner), &json!("custom")), "where it went, on what");
+    assert_eq!(heard_in(&folder), [json!("Look around")]);
+    // It takes more messages, as they are written.
+    tell(&host, &owner, &done, "and the docs").await;
+    wait("the second message", async || heard_in(&folder).get(1).cloned()).await;
+    assert_eq!(heard_in(&folder)[1], "and the docs");
+}

@@ -369,6 +369,24 @@ What differs from the bot's own tasks:
 - A run whose routine was paused or deleted while it waited leaves the box.
 - Stop in the chat no longer cancels a routine's run that waits in the box, nor a request: the box's Stop does.
 
+### Threads without a bot
+
+`startThread` without `botId` starts a thread that runs an agent on its own (`work::plain`): `setup.backend` names
+the agent (refused without one: `a thread without a bot names its agent`), and the app sends the folder (the home
+folder unless the user picked one), the approvals and the model with it. Its task waits in the computer's **box of
+threads without a bot**, a bot the host makes the first time one starts (`BotConfig::plain`, named `Agents`): always
+hidden (`updateBot` can't show it, `createBot` can't make one), in the home folder, no connectors, skills, shared
+memory or alerts, `maxThreads` 6, the harness's own memory kept. Apps that know it (`hello.threadsWithoutBot: true`)
+keep it out of every list of bots and list its threads on the Threads page, under **No bot** when grouped by bot;
+an app from before it lists it among the hidden bots. The reply names it (`{botId, taskId}`) and the task's wire row
+carries `agent`, the agent it runs on.
+
+Its thread is told nothing of Codync's (`plain` on the thread bot, copied from the box): no system prompt or
+`<bot-profile>`, no MCP servers (its own tools only), no memory folders, no message ids, no `[Codync: …]` notes on
+the user's messages; the user's words reach the agent as written. Its approval and choice cards and sign-in go to
+the box's chat, which the Threads page shows in the thread, as for any thread. Everything else is a thread the user
+started: it takes messages, can be stopped, steered and tried again, and reports to no chat.
+
 **Kept as turns in the chat**: a bot with **computer use** or **Manage the team** on takes its routine runs and
 requests in its chat as before (`work::boxed`), because a thread has neither the `computer` nor the `manage` server
 (one screen and one team stay with the chat), so a run that drives the screen or sets up a bot would stop working.
@@ -470,8 +488,8 @@ A task's end sends no alert of its own: its report is a turn of the bot's, whose
   `gitRepo` it gives the line under the folder in Settings: `Git repository`, `Not a git repository`, `Git isn't
   installed on this computer`. The manual's page for it: `/docs/working-folders` (`#without-git`).
 - `threadEntry` events `{rev, thread, entry}` for a thread's transcript; none in the catch-up.
-- `startThread {botId, text, setup?: {cwd?, model?: {id, options}, approval?: {permission, mode}}}` → `{taskId}`:
-  [a thread the user starts](#other-sources).
+- `startThread {botId?, text, setup?: {backend?, cwd?, model?: {id, options}, approval?: {permission, mode}}}` →
+  `{botId, taskId}`: [a thread the user starts](#other-sources), without `botId` [without a bot](#threads-without-a-bot).
 - `threadEntries {botId, threadId}` → `{thread: {id, title, status, startedAt, endedAt, start}, entries}` (newest 500):
   `threadId` is a task's `thread`; `title`, `status` and the times are of the task it works on, else the last it
   worked on. A user entry there is what the thread was told (`data.from: "host"`: a task, as its thread read it) or the

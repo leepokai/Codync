@@ -266,7 +266,12 @@ export class BotMirror extends Observable {
   }
 
   get hiddenBots(): Bot[] {
-    return [...this.bots.values()].filter((b) => b.hidden).sort((a, b) => a.name.localeCompare(b.name))
+    return [...this.bots.values()].filter((b) => b.hidden && !b.plain).sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  /** The computer's box for threads without a bot, once the first one started. */
+  get plainBox(): Bot | undefined {
+    return [...this.bots.values()].find((b) => b.plain)
   }
 
   backendName(id: string) {

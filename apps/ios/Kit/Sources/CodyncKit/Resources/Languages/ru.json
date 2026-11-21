@@ -2428,5 +2428,6 @@
   "What should it work on?": "Над чем ему работать?",
   "{count} tool requests": "Запросов к инструментам: {count}",
   "Group by folder": "Группировать по папкам",
-  "Show more": "Показать ещё"
+  "Show more": "Показать ещё",
+  "No bot": "Без бота"
 }

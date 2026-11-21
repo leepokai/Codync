@@ -14,6 +14,10 @@ pub(crate) fn validate(cfg: &BotConfig) -> Result<()> {
     if cfg.lead && cfg.hidden {
         bail!("the lead bot can't be hidden");
     }
+    // An app from before threads without a bot lists it as a hidden bot of the user's: it stays out of its roster.
+    if cfg.plain && !cfg.hidden {
+        bail!("the box of threads without a bot stays hidden");
+    }
     if !cfg.cwd.is_empty() && !std::path::Path::new(&cfg.cwd).is_dir() {
         bail!("workspace folder does not exist: {}", cfg.cwd);
     }

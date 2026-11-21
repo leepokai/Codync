@@ -84,14 +84,15 @@ pub fn add_routine(hub: &Arc<Hub>, bot: &str, routine: &str, run: &str, name: &s
 /// in place of the bot's own, checked as a bot's setup is. Answers the task's id.
 pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, setup: Setup) -> Result<String> {
     let changes = (setup.cwd.is_some(), setup.model.is_some(), setup.approval.is_some());
+    let cfg = hub.store.bot(bot)?.filter(|row| !row.deleted).map(|row| row.config);
+    let plain = cfg.as_ref().is_some_and(|cfg| cfg.plain);
     let outcome = |outcome: &str| {
         let properties = json!({
             "outcome": outcome, "after": false, "source": Source::User.kind(),
-            "folder": changes.0, "model": changes.1, "approval": changes.2,
+            "folder": changes.0, "model": changes.1, "approval": changes.2, "bot": !plain,
         });
         analytics::capture(hub, Event::WorkAdded, properties.as_object().cloned().unwrap_or_default());
     };
-    let cfg = hub.store.bot(bot)?.filter(|row| !row.deleted).map(|row| row.config);
     let text = text.trim();
     let checked = (|| {
         let Some(cfg) = cfg.filter(|cfg| !cfg.is_thread() && !cfg.is_group()) else { bail!("unknown bot") };
@@ -99,6 +100,7 @@ pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, setup: Setup) -> Result
             !text.is_empty() && text.len() <= MAX_BRIEF,
             "a thread starts with a message of at most {MAX_BRIEF} bytes"
         );
+        ensure!(!cfg.plain || setup.backend.is_some(), "a thread without a bot names its agent");
         let full = |cwd: &str| std::path::Path::new(cwd).is_absolute();
         ensure!(setup.cwd.as_deref().is_none_or(full), "a thread's folder is a full path");
         crate::hub::validate(&setup.over(&cfg))

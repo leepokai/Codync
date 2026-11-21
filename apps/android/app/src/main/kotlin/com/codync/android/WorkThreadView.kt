@@ -46,7 +46,11 @@ import com.codync.android.core.isToldToThread
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.codync.android.core.Attachment
 import com.codync.android.core.Bot
+import com.codync.android.core.WireJson
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonArray
 import com.codync.android.core.Entry
 import com.codync.android.core.LinkState
 import com.codync.android.core.WhereLine
@@ -112,8 +116,9 @@ import kotlinx.coroutines.launch
         GlassStage(Modifier.weight(1f).fillMaxWidth(), chrome = {
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { composerHeight = it.height }) {
                 val readOnly = readOnlyLine(task)
-                if (task.talk) ThreadComposer(state, store, threadDraftKey(bot.id, taskId), queued, steer = { store.steerThread(bot.id, taskId, it) },
-                    remove = { store.unqueueThread(bot.id, taskId, it) }) { store.sendToThread(bot.id, taskId, it) }
+                val draftKey = threadDraftKey(bot.id, taskId)
+                if (task.talk) ThreadComposer(state, store, draftKey, queued, steer = { store.steerThread(bot.id, taskId, it) },
+                    remove = { store.unqueueThread(bot.id, taskId, it) }) { store.sendToThread(bot.id, taskId, draftKey, it) }
                 else if (readOnly != null) Text(tr(readOnly), Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
                     style = Type.footnote, color = Palette.tertiary, textAlign = TextAlign.Center)
             }
@@ -130,7 +135,7 @@ import kotlinx.coroutines.launch
                 items(rows, key = { it.id }) { entry ->
                     // The chat's entry stays in the chat, answered and downloaded there.
                     if (entry.botId == bot.id) SharedRow(entry) { openInChat(entry) }
-                    else Box(Modifier.padding(top = 10.dp)) { ThreadRow(entry, unfolded = entry.turn == running) }
+                    else Box(Modifier.padding(top = 10.dp)) { ThreadRow(entry, unfolded = entry.turn == running, state, store) }
                 }
                 items(sends, key = { "send-" + it.nonce }) { send ->
                     PendingBubble(send, groupStart = true, state, store, retry = { store.deliverToThread(taskId, send) },
@@ -199,9 +204,14 @@ import kotlinx.coroutines.launch
  * working steps show it, and what the host told the thread later (a session that starts again) as a quiet quote, never a
  * message of the user's.
  */
-@Composable private fun ThreadRow(entry: Entry, unfolded: Boolean) {
+@Composable private fun ThreadRow(entry: Entry, unfolded: Boolean, state: AppState, store: AppStore) {
+    val attachments = entry.data["attachments"]?.jsonArray?.map { WireJson.decodeFromJsonElement<Attachment>(it) }.orEmpty()
     if (entry.isToldToThread) SelectionContainer {
         Text("“${entry.text}”", Modifier.padding(horizontal = 4.dp), style = Type.subheadline, color = Palette.secondary)
+    } else if (entry.kind == "user" && attachments.isNotEmpty()) Column(Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        AttachmentList(attachments, entry.botId, MessageMenu.of(entry, store, reply = null, trace = null), state, store)
+        if (entry.text.isNotEmpty()) PlainMessageRow(entry)
     } else if (entry.kind == "user" || entry.kind == "agent" && entry.isChat) PlainMessageRow(entry)
     else Box(Modifier.padding(horizontal = 4.dp)) { TraceRow(entry, unfolded) }
 }

@@ -1403,7 +1403,7 @@ async fn a_message_to_a_working_thread_waits_its_turn_and_the_task_reports_once_
     let twice = json!({"botId": bot, "taskId": slow["id"], "text": "also the tests", "clientNonce": nonce});
     assert_eq!(host.call("send", twice).await["entry"]["id"], entry["id"], "sent twice, it is one message");
 
-    // The caller names the bot and its task, never a thread; text only.
+    // The caller names the bot and its task, never a thread; no quote or call.
     let other = host.fixture_bot("Other", "work_agent.py", "").await;
     let (thread, id) = (&slow["id"], &entry["id"]);
     for (method, body, why) in [
@@ -1411,7 +1411,11 @@ async fn a_message_to_a_working_thread_waits_its_turn_and_the_task_reports_once_
         ("send", json!({"botId": other, "taskId": thread, "text": "x"}), "no such task"),
         ("send", json!({"botId": slow["thread"], "text": "x"}), "unknown bot"),
         ("send", json!({"botId": bot, "taskId": thread, "text": ""}), "empty message"),
-        ("send", json!({"botId": bot, "taskId": thread, "text": "x", "replyTo": id}), "a thread takes text only"),
+        (
+            "send",
+            json!({"botId": bot, "taskId": thread, "text": "x", "replyTo": id}),
+            "a thread takes no quotes or calls",
+        ),
         ("steer", json!({"botId": other, "taskId": thread, "entryId": id}), "no such task"),
         ("unqueue", json!({"botId": slow["thread"], "entryId": id}), "unknown bot"),
     ] {

@@ -461,7 +461,7 @@ differs from the text above:
 - **A message to an ended task whose thread now works a task that followed it** goes to that session and waits
   behind its turn; the ended task isn't reopened.
 - **Analytics**: `work_messaged {outcome, reopened, queued}`, or `{outcome: failed, error}` with the refusal's
-  category (`thread::Refused`: `read_only`, `not_started`, `gone`, `text_only`, else `other`); Send now and Remove
+  category (`thread::Refused`: `read_only`, `not_started`, `gone`, `unsupported`, else `other`); Send now and Remove
   in a thread are `work_steered` with `how` `sendNow` / `remove` (`by: user`), and the agent-level
   `message_steered` still says what became of a Send now.
 - **Wording**: the new key is in the ten catalogs, and all four clients read it. `Waiting for usage`, read by none

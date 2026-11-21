@@ -13,12 +13,14 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Bot 設定新增「顧問模式」：thread 可以用自己的 agent、模型和備用列表。
 - 等你回覆的 thread 不再佔名額，下一件 task 可以先開始。
 - 你補充正在進行的 task，Bot 會轉給它的 thread。
+- 寫給 thread 的訊息也能附照片和檔案。
 
 ### en-US
 - Some agents, such as Hermes, ask you questions mid-reply. These now wait for you on the chat's choice card, and Approve automatically no longer picks their first option for you. A question with options takes one of them, so its card has no Something else row.
 - Advisor mode: a bot's threads can run on their own agent, model and fallbacks.
 - A thread waiting for you frees its place for the next task.
 - The bot passes what you add about a task on to its thread.
+- Messages to a thread can carry photos and files.
 
 ## 2.51.0
 ### zh-Hant

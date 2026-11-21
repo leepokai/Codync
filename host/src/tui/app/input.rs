@@ -17,6 +17,14 @@ impl App {
             return;
         }
         let s = s.replace("\r\n", "\n").replace('\r', "\n");
+        // A file dragged onto the terminal while writing to a thread: attach it there.
+        if let Some(Overlay::Thread(sheet)) = self.overlays.last_mut()
+            && sheet.typing
+            && let Some(paths) = dropped_files(&s)
+        {
+            sheet.files.extend(paths);
+            return;
+        }
         if let Some(ed) = self.top_editor() {
             ed.insert(&s);
         } else if !self.paste_find(&s)

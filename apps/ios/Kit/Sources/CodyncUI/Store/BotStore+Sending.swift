@@ -46,7 +46,7 @@ extension BotStore {
 
     /// Transfer to the outbox now; an eventual acknowledgement must not erase a newer draft.
     /// `draft`: whose draft it is (the chat's when nil). `replyTo`: the chat message it quotes. `thread`: the task's
-    /// thread it goes to instead of the chat, as text alone.
+    /// thread it goes to instead of the chat.
     @discardableResult
     func sendComposerDraft(to botId: String, draft key: String? = nil, replyTo: ReplyQuote? = nil,
                            files: [OutgoingFile] = [], thread: WorkThread? = nil) -> Bool {
@@ -55,7 +55,7 @@ extension BotStore {
         guard !retired, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty else { return false }
         let pasted = composerPasted[key] ?? []
         if let thread {
-            send(text, to: thread)
+            send(text, to: thread, files: files)
         } else {
             send(text, to: botId, replyTo: replyTo, nonce: UUID().uuidString, files: files, pasted: pasted)
         }
@@ -266,7 +266,7 @@ extension BotStore {
     }
 
     /// Files are kept only in memory: a message whose files went with the app can't go again, or it would go half sent.
-    private func filesGone(_ entry: Entry) -> Bool {
+    func filesGone(_ entry: Entry) -> Bool {
         entry.data.attachments?.isEmpty == false && entry.data.clientNonce.flatMap { outgoingFiles[$0] } == nil
     }
 
@@ -308,15 +308,15 @@ extension BotStore {
         return URL.cachesDirectory.appending(path: "codync-attachments").appending(path: uuid.uuidString)
     }
 
-    private static func cacheAttachment(_ id: String, _ data: Data) {
+    static func cacheAttachment(_ id: String, _ data: Data) {
         guard let url = attachmentCache(id) else { return }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: url)
     }
 
     public func discard(_ entry: Entry, in thread: WorkThread? = nil) {
-        if let thread { return dropThreadEntry(entry.id, thread: thread.threadId) }
         if let nonce = entry.data.clientNonce { outgoingFiles[nonce] = nil }
+        if let thread { return dropThreadEntry(entry.id, thread: thread.threadId) }
         entries[entry.botId]?.removeAll { $0.id == entry.id }
         scheduleSave()
     }

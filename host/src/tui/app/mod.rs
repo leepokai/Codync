@@ -75,7 +75,7 @@ struct PendingSend {
 #[allow(clippy::struct_excessive_bools, reason = "independent UI flags, not a state machine")]
 pub struct App {
     pub client: Client,
-    pub(super) tx: UnboundedSender<Msg>,
+    pub(in crate::tui) tx: UnboundedSender<Msg>,
     pub url: String,
     /// Whether the host is this computer's. Attached with `--url` nothing tells: a tunnel's address looks local.
     pub on_this_computer: bool,

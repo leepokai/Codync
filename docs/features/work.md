@@ -161,9 +161,12 @@ The user writes to the thread that works, or worked, one of the bot's **own** ta
 thread is a bot with an actor, so the message is a user entry in the thread's own transcript and goes through the
 chat's own queue: nothing here is a second copy of it.
 
-- **`send {botId, taskId, text, clientNonce?}`** → `{entry, reopened, queued}`. The caller names the bot and its
+- **`send {botId, taskId, text, attachments?, clientNonce?}`** → `{entry, reopened, queued}`. The caller names the bot and its
   task, never a thread: the task must be in that bot's box, and `send`, `steer` and `unqueue` refuse a thread's own id
-  as `botId` (`unknown bot`). Text only (`a thread takes text only` for attachments, `replyTo` or `call`). `entry`
+  as `botId` (`unknown bot`). Files go as in a chat: each is first sent with `upload {botId, taskId, …}`, which
+  puts it in the thread's own uploads (`uploads::root` of the thread bot, under the host's data folder, never in a
+  worktree), and the thread's agent gets their paths. `readUpload` reads one back by the entry's `botId` (the
+  thread's). No quote or call (`a thread takes no quotes or calls`). `entry`
   is the message as the transcript holds it (`botId` is the thread's id); the same `clientNonce` again answers the
   same entry, with `reopened` and `queued` null.
 - **While the thread's turn runs** the entry is `status: queued`, as in a chat, and leaves as `threadEntry` events like

@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 /// The message box under a chat: send, or stop while the bot (or the group) is working
 /// there. A leading `/` lists commands (a group's act on its bots); in a group, typing `@`
-/// lists its bots. Under a task's thread (`workThread`) it takes text alone: no files, dictation, commands or call.
+/// lists its bots. Under a task's thread (`workThread`) it takes text and files: no dictation, commands or call.
 struct Composer: View {
     let botId: String
     /// The message the next send quotes, shown above the field until sent or cancelled.
@@ -54,7 +54,7 @@ struct Composer: View {
         return !isEmpty && (model.connection == .online || ((model.canQueue || model.holdsOnPhone) && files.isEmpty))
     }
 
-    private var canAttach: Bool { bot != nil && thread == nil }
+    private var canAttach: Bool { bot != nil }
 
     private var placeholder: String {
         let name = bot?.name ?? ""

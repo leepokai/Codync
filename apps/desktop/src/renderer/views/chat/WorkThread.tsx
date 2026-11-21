@@ -8,9 +8,11 @@ import { useTr } from '../../lib/use-language'
 import { useScreenViewed } from '../../store/analytics'
 import type { ThreadRef } from '../../store/bot-store'
 import { useStore } from '../../store/context'
+import { AddFilesButton, ComposerFiles } from './Composer'
 import { ComposerField } from './ComposerField'
 import { useFollowEnd } from './follow-end'
 import { StopWorkDialog, WORK_MARK, WorkDot } from './WorkDialogs'
+import { useComposerFiles } from './use-composer-files'
 import { Timer } from './WorkingIndicator'
 import { WorkThreadTranscript } from './WorkThreadTranscript'
 import { WorkWhere } from './WorkWhere'
@@ -116,7 +118,7 @@ function WhereCopy({ task }: { task: WorkTask }) {
   )
 }
 
-/** The chat's message box, text only: Return sends to the thread, where the message waits while the thread's turn runs. */
+/** The chat's message box, with files as in the chat: Return sends to the thread, where the message waits while the thread's turn runs. */
 function ThreadComposer({ thread, threadId, onSent }: { thread: ThreadRef; threadId: string; onSent: () => void }) {
   const tr = useTr()
   const store = useStore()
@@ -127,20 +129,24 @@ function ThreadComposer({ thread, threadId, onSent }: { thread: ThreadRef; threa
   const draft = useSyncExternalStore(drafts.subscribe, () => drafts.get(key))
   const field = useRef<HTMLTextAreaElement>(null)
   const label = tr('Message this thread')
-  const canSend = !!draft.trim() && !store.isOffline
+  const attach = useComposerFiles(true)
+  const canSend = (!!draft.trim() || attach.files.length > 0) && !store.isOffline
   useEffect(() => field.current?.focus({ preventScroll: true }), [])
   const submit = () => {
     if (!canSend) return
     onSent()
-    store.sendToThread(thread, threadId, draft)
+    store.sendToThread(thread, threadId, draft, { files: attach.files })
     drafts.set(key, '')
+    attach.clear()
     field.current?.focus()
   }
   return (
-    <div className="composer work-thread-composer">
+    <div className="composer work-thread-composer" {...attach.drop}>
       <div className="composer-surface">
+        <ComposerFiles files={attach.files} remove={attach.remove} />
         <div className="composer-box">
-          <ComposerField field={field} value={draft} placeholder={label} label={label} onChange={(text) => drafts.set(key, text)} onSend={submit} />
+          <AddFilesButton pick={attach.pick} />
+          <ComposerField field={field} value={draft} placeholder={label} label={label} onChange={(text) => drafts.set(key, text)} onSend={submit} onPaste={attach.paste} />
           <button className="press composer-send" disabled={!canSend} aria-label={tr('Send')} title={tr('Send')} onClick={submit}>
             <span aria-hidden="true" className="composer-symbol active">
               <Icon name="arrow.up" size={14} weight="bold" />

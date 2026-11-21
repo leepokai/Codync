@@ -89,6 +89,7 @@ pub(super) fn unheard(store: &Store, thread: &str) -> bool {
 /// its thread and no turn took yet goes with the task, as what they said since.
 pub(super) fn carry(store: &Store, task: &mut Task, thread: &str) {
     // What its chat passed on is with the task already (`tell`).
+    // ponytail: a waiting message's files stay behind (only its words go); carry their paths if users miss them.
     for entry in waiting(store, thread).into_iter().filter(|e| e.data["relay"] != true) {
         note(&mut task.notes, entry.data["text"].as_str().unwrap_or_default());
     }
@@ -125,12 +126,12 @@ fn reopen(hub: &Hub, owner: &BotConfig, task: &mut Task, thread: &mut BotConfig)
     Ok(())
 }
 
-/// The user writes `text` to the thread of `bot`'s task `id`. A turn that runs there makes it wait, as in a chat;
+/// The user writes `text` to the thread of `bot`'s task `id`, with the files uploaded to that thread (`uploads`, their ids). A turn that runs there makes it wait, as in a chat;
 /// a task that ended is reopened and its thread's actor started again, which resumes its session where the agent
 /// can. `nonce`: the client's, so a message sent twice is one. Answers `{entry, reopened, queued}`: the message as
 /// the thread's transcript holds it, whether it reopened the task, and whether it waits behind a running turn
 /// (both null for a message sent before).
-pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, nonce: &str) -> Result<Value> {
+pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, uploads: &[String], nonce: &str) -> Result<Value> {
     let owner = hub.store.bot(bot)?.filter(|row| !row.deleted).ok_or_else(|| anyhow!("unknown bot"))?.config;
     // Under the box's lock to the end: the task's end and the dispatcher's look at its thread come before all of
     // this or after it, so neither ends a thread a message is on its way to.
@@ -146,7 +147,12 @@ pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, nonce: &str) -> 
         if reopened {
             reopen(hub, &owner, tasks::find(tasks, id)?, &mut thread)?;
         }
-        let data = json!({"text": text, "clientNonce": nonce, "attachments": []});
+        let root = crate::chat::uploads::root(&thread);
+        let attachments = uploads
+            .iter()
+            .map(|upload| crate::chat::uploads::resolve(&root, upload).map(|(_, meta)| meta))
+            .collect::<Result<Vec<_>>>()?;
+        let data = json!({"text": text, "clientNonce": nonce, "attachments": attachments});
         let (entry, queued) = post_to(hub, &thread, data)?;
         Ok((entry, Some(reopened), Some(queued)))
     })?;
@@ -281,6 +287,23 @@ mod tests {
             refused(&task(&json!({"status": "waiting", "thread": null}))),
             "\"Fix login\" hasn't started yet: there is nothing to write to"
         );
+    }
+
+    #[tokio::test]
+    async fn files_sent_to_a_thread_are_its_own_uploads() {
+        let hub = hub();
+        hub.store.save_bot(&bot("b1", "Mika", "/tmp")).expect("saved");
+        let thread = BotConfig { thread_of: Some("b1".into()), ..bot("thread-1", "Mika", "/tmp") };
+        hub.store.save_bot(&thread).expect("saved");
+        crate::chat::work::put_working_for_test(&hub.store, "b1", "thread-1");
+        let root = crate::chat::uploads::root(&thread);
+        let upload = uuid::Uuid::new_v4().to_string();
+        crate::chat::uploads::append(&root, &upload, "shot.png", 0, b"png", true).expect("uploaded");
+        let sent = message(&hub, "b1", "i1", "", std::slice::from_ref(&upload), "n1").expect("sent");
+        assert_eq!(sent["entry"]["botId"], "thread-1");
+        assert_eq!(sent["entry"]["data"]["attachments"][0]["name"], "shot.png");
+        let unknown = [uuid::Uuid::new_v4().to_string()];
+        assert!(message(&hub, "b1", "i1", "", &unknown, "n2").is_err(), "only the thread's own uploads");
     }
 
     #[test]

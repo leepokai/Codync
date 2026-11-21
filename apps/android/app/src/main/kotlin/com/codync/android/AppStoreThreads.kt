@@ -3,9 +3,15 @@ package com.codync.android
 import com.codync.android.core.*
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 
 // A thread's own transcript, read and written to from its page ([WorkThreadView]). Its entries never enter a chat
 // (`AppState.entries`) nor the mirror: they are held per thread id while the thread is open.
@@ -33,13 +39,17 @@ internal fun AppStore.receiveThreads(events: List<MirrorEvent>) = mutableState.u
 }
 
 /**
- * The user writes [text] to the thread of [botId]'s task [taskId]. It shows at once (`AppState.threadSends`), and one
- * the computer refuses (a task that takes no message, one that ended too long ago) stays with why, to send again or drop.
+ * The user writes [text] to the thread of [botId]'s task [taskId], with the files of its box's draft [draftKey], which
+ * leaves the draft. It shows at once (`AppState.threadSends`), and one the computer refuses (a task that takes no
+ * message, one that ended too long ago) stays with why, to send again or drop.
  */
-internal fun AppStore.sendToThread(botId: String, taskId: String, text: String) {
-    if (text.isBlank()) return
-    val send = PendingSend(UUID.randomUUID().toString(), botId, text.trim(), System.currentTimeMillis())
+internal fun AppStore.sendToThread(botId: String, taskId: String, draftKey: String, text: String) {
+    val files = state.value.drafts[draftKey]?.files.orEmpty()
+    if (text.isBlank() && files.isEmpty()) return
+    val send = PendingSend(UUID.randomUUID().toString(), botId, text.trim(), System.currentTimeMillis(), files = files)
     lastSentNonce = send.nonce
+    mutableState.update { it.copy(drafts = it.drafts - draftKey) }
+    persistDrafts()
     deliverToThread(taskId, send)
 }
 
@@ -48,9 +58,21 @@ internal fun AppStore.deliverToThread(taskId: String, send: PendingSend) {
     mutableState.update { it.holdingThreadSend(taskId, send.copy(status = SendStatus.Sending, error = null)) }
     contextScope.launch {
         try {
-            val reply = hostCall("send", body("botId" to send.botId, "taskId" to taskId, "text" to send.text, "clientNonce" to send.nonce), 30_000)
+            // Each attempt uploads again under new ids, as the chat's sends do.
+            val connection = ready()
+            val ids = send.files.map { file ->
+                UUID.randomUUID().toString().also { id ->
+                    HostFiles(connection).upload(send.botId, id, file, taskId)
+                    withContext(Dispatchers.IO) { attachments.cache(id, file) }
+                }
+            }
+            val reply = connection.call("send", buildJsonObject {
+                put("botId", send.botId); put("taskId", taskId); put("text", send.text); put("clientNonce", send.nonce)
+                if (ids.isNotEmpty()) put("attachments", JsonArray(ids.map(::JsonPrimitive)))
+            }, 30_000)
             val entry = Entry.decode(reply.jsonObject.getValue("entry").jsonObject)
             mutableState.update { it.withoutThreadSend(taskId, send.nonce).receivingThreadEntry(entry) }
+            withContext(Dispatchers.IO) { send.files.forEach(attachments::discard) }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) {
             mutableState.update { it.holdingThreadSend(taskId, send.copy(status = SendStatus.Failed, error = error.message ?: "Couldn't send.")) }
@@ -59,7 +81,11 @@ internal fun AppStore.deliverToThread(taskId: String, send: PendingSend) {
 }
 
 /** A message to [taskId]'s thread that didn't go is dropped. */
-internal fun AppStore.discardThreadSend(taskId: String, nonce: String) = mutableState.update { it.withoutThreadSend(taskId, nonce) }
+internal fun AppStore.discardThreadSend(taskId: String, nonce: String) {
+    val files = state.value.threadSends[taskId].orEmpty().firstOrNull { it.nonce == nonce }?.files.orEmpty()
+    mutableState.update { it.withoutThreadSend(taskId, nonce) }
+    if (files.isNotEmpty()) contextScope.launch(Dispatchers.IO) { files.forEach(attachments::discard) }
+}
 
 /** A message waiting in [taskId]'s thread goes now, as a chat's does ([steer]); the caller names the bot's task, never its thread. */
 internal fun AppStore.steerThread(botId: String, taskId: String, entry: Entry) =

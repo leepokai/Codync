@@ -275,11 +275,12 @@ export class HostClient {
   /** Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message. */
   static uploadChunk = 384 * 1024
 
-  async upload(botId: string, uploadId: string, name: string, data: Uint8Array) {
+  /** One file for a message, in chunks: to `botId`'s chat, or with `taskId` to the thread of that task of the bot's. */
+  async upload(botId: string, uploadId: string, name: string, data: Uint8Array, taskId?: string) {
     let offset = 0
     do {
       const end = Math.min(offset + HostClient.uploadChunk, data.length)
-      await this.call('upload', { botId, uploadId, name, data: toBase64(data.subarray(offset, end)), offset, done: end === data.length }, 60_000)
+      await this.call('upload', { botId, ...(taskId ? { taskId } : {}), uploadId, name, data: toBase64(data.subarray(offset, end)), offset, done: end === data.length }, 60_000)
       offset = end
     } while (offset < data.length)
   }

@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};
 
-use super::super::app::{App, Editor, Entry, Focus, Overlay, Queued, WorkTask, shared_line};
+use super::super::app::{After, App, Editor, Entry, Focus, Overlay, Queued, WorkTask, shared_line};
 use super::scroll::up_from_end;
 use super::{Reply, ctrl};
 
@@ -69,6 +69,8 @@ pub struct ThreadSheet {
     pub draft: Editor,
     /// Keys go to the draft (`i` or `↵`) until esc.
     pub typing: bool,
+    /// Files dragged onto the terminal while typing, sent with the next message (`⌫` on an empty draft drops the last).
+    pub files: Vec<std::path::PathBuf>,
     /// The message on its way to the host: the draft stays until it is delivered.
     pub sending: Option<String>,
     /// The line of what the thread put in the bot's chat that `↵` shows there (`tab` picks one): that entry's id.
@@ -88,6 +90,7 @@ impl ThreadSheet {
             page: Cell::default(),
             draft: Editor::default(),
             typing: false,
+            files: Vec::new(),
             sending: None,
             pick: None,
         }
@@ -209,6 +212,7 @@ impl App {
                 && s.draft.text.trim() == sent
             {
                 s.draft.clear();
+                s.files.clear();
             }
         }
         if let Err(error) = answer {
@@ -220,7 +224,7 @@ impl App {
     /// and reopens a task that ended.
     fn send_to_thread(&mut self, s: &mut ThreadSheet) {
         let text = s.draft.text.trim().to_owned();
-        if text.is_empty() {
+        if text.is_empty() && s.files.is_empty() {
             return;
         }
         if s.sending.is_some() {
@@ -231,7 +235,12 @@ impl App {
         // the nonce with the draft as the chat does if that shows.
         let nonce = uuid::Uuid::new_v4().to_string();
         let body = json!({"botId": s.bot, "taskId": s.task, "text": text, "clientNonce": nonce});
-        self.sheet("send", body, Reply::ThreadSent(s.task.clone()));
+        let after = Reply::ThreadSent(s.task.clone());
+        if s.files.is_empty() {
+            self.sheet("send", body, after);
+        } else {
+            self.client.spawn_send_files(body, s.files.clone(), After::Sheet(after), self.tx.clone());
+        }
         s.sending = Some(text);
         s.scroll.set(0);
     }
@@ -276,6 +285,9 @@ impl App {
             KeyCode::Enter if newline => s.draft.insert("\n"),
             KeyCode::Char('j') if ctrl(k) => s.draft.insert("\n"),
             KeyCode::Enter => self.send_to_thread(s),
+            KeyCode::Backspace if s.draft.text.is_empty() => {
+                s.files.pop();
+            }
             _ => {
                 s.draft.key(k);
             }
@@ -413,6 +425,29 @@ mod tests {
             Some(Overlay::Thread(s)) => s,
             _ => panic!("no transcript is open"),
         }
+    }
+
+    #[tokio::test]
+    async fn a_file_dropped_while_writing_to_a_thread_goes_with_the_next_message() {
+        let mut app = test_app();
+        let work = json!([{"id": "i", "title": "Fix login", "status": "working", "thread": "thread-1", "talk": true}]);
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "a", "name": "A", "work": work}})));
+        let own = app.bots["a"].work[0].clone();
+        app.open_thread("a", &own);
+        key(&mut app, 'i');
+        let file = std::env::temp_dir().join(format!("codync-thread-{}.png", uuid::Uuid::new_v4()));
+        std::fs::write(&file, b"png").expect("written");
+        app.on_paste(&file.display().to_string());
+        assert_eq!(sheet(&app).files, std::slice::from_ref(&file), "attached, not typed");
+        assert!(sheet(&app).draft.text.is_empty());
+        app.on_key(KeyEvent::from(KeyCode::Backspace));
+        assert!(sheet(&app).files.is_empty(), "⌫ on an empty draft drops it");
+        app.on_paste(&file.display().to_string());
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(sheet(&app).sending.as_deref(), Some(""), "a file alone is a message");
+        app.thread_sent("i", Ok(()));
+        assert!(sheet(&app).files.is_empty(), "delivered: it leaves the box");
+        let _ = std::fs::remove_file(file);
     }
 
     #[tokio::test]

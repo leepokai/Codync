@@ -215,9 +215,10 @@ class WorkTest {
     }
 
     @Test fun `the host says which tasks take a message`() {
-        val tasks = work("""[{"id":"a","status":"working","thread":"t","talk":true,"folder":"/Users/kai/code/app"},
+        val tasks = work("""[{"id":"a","status":"working","thread":"t","talk":true,"talkFiles":true,"folder":"/Users/kai/code/app"},
             {"id":"b","status":"working","thread":"t2","talk":false,"source":{"kind":"routine","id":"r"}}, {"id":"c","status":"waiting","folder":null}]""")
         assertEquals(listOf(true, false, false), tasks.map { it.talk })
+        assertEquals(listOf(true, false, false), tasks.map { it.talkFiles })
         assertEquals(listOf("/Users/kai/code/app", null, null), tasks.map { it.folder })
     }
 

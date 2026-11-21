@@ -161,9 +161,14 @@ The user writes to the thread that works, or worked, one of the bot's **own** ta
 thread is a bot with an actor, so the message is a user entry in the thread's own transcript and goes through the
 chat's own queue: nothing here is a second copy of it.
 
-- **`send {botId, taskId, text, clientNonce?}`** → `{entry, reopened, queued}`. The caller names the bot and its
+- **`send {botId, taskId, text, attachments?, clientNonce?}`** → `{entry, reopened, queued}`. The caller names the bot and its
   task, never a thread: the task must be in that bot's box, and `send`, `steer` and `unqueue` refuse a thread's own id
-  as `botId` (`unknown bot`). Text only (`a thread takes text only` for attachments, `replyTo` or `call`). `entry`
+  as `botId` (`unknown bot`). Files go as in a chat: each is first sent with `upload {botId, taskId, …}`, which
+  puts it in the thread's own uploads (`uploads::root` of the thread bot, under the host's data folder, never in a
+  worktree, and deleted with the thread bot), and the thread's agent gets their paths. `readUpload` reads one back by
+  the entry's `botId` (the thread's); the task's report and a session that picks the task up name the files after
+  the user's words (`[sent files: …]`). `work[].talkFiles` says a thread takes files: clients show their + (and take
+  drops and pastes) only then. No quote or call (`a thread takes no quotes or calls`). `entry`
   is the message as the transcript holds it (`botId` is the thread's id); the same `clientNonce` again answers the
   same entry, with `reopened` and `queued` null.
 - **While the thread's turn runs** the entry is `status: queued`, as in a chat, and leaves as `threadEntry` events like
@@ -607,8 +612,10 @@ per thread and reason in a row. Never a title or text. The bot's turn is `turn_f
 
 - A thread never changes or takes out a line of memory, the bot's own tasks included, also in a turn the user's
   message to the thread started. What the user asks the bot to forget, the bot does in the chat.
-- A thread takes text only: no files, no quoted message, no voice. A message sent right as a host restart comes is
-  marked failed and has to be sent again.
+- A thread takes text and files, but no quoted message, voice or command. A message sent right as a host restart
+  comes is marked failed and has to be sent again.
+- A waiting message's files stay with the thread a task leaves (it gave way, or got a new brief): the task starts
+  again with the message's words and the names of its files, not the files.
 - A turn that ended with a message of the user's still waiting reports nothing of its own: its last message stays
   in the transcript, and the report is the last turn's.
 - No subagent rows.

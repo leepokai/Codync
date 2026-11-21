@@ -17,6 +17,16 @@ impl App {
             return;
         }
         let s = s.replace("\r\n", "\n").replace('\r', "\n");
+        // A file dragged onto the terminal while writing to a thread that takes files: attach it there.
+        let takes_files = matches!(self.overlays.last(), Some(Overlay::Thread(sheet))
+            if sheet.typing && sheet.task(self).is_some_and(|task| task.talk_files));
+        if takes_files
+            && let Some(paths) = dropped_files(&s)
+            && let Some(Overlay::Thread(sheet)) = self.overlays.last_mut()
+        {
+            sheet.files.extend(paths);
+            return;
+        }
         if let Some(ed) = self.top_editor() {
             ed.insert(&s);
         } else if !self.paste_find(&s)
@@ -144,12 +154,7 @@ impl App {
                 if let Some(pasted) = self.pasted.get(&key).filter(|p| !p.is_empty()) {
                     body["pasted"] = json!(pasted);
                 }
-                let after = After::Sent(key);
-                if files.is_empty() {
-                    self.call("send", body, after);
-                } else {
-                    self.client.spawn_send_files(body, files, after, self.tx.clone());
-                }
+                self.send_message(body, files, After::Sent(key));
                 self.flash("Sending… Your draft stays here until delivered.");
             }
             KeyCode::Backspace if draft.text.is_empty() => {

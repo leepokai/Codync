@@ -37,8 +37,17 @@ struct QueuedMessages: View {
     }
 
     private func row(_ entry: Entry) -> some View {
-        HStack(spacing: 2) {
-            Text(MessagePreview.text(entry.replyQuote.text))
+        let files = entry.data.attachments ?? []
+        return HStack(spacing: 2) {
+            // Its files show as a symbol, and by name when it has no words.
+            if !files.isEmpty {
+                Image(systemName: files.allSatisfy(\.isImage) ? "photo" : "doc")
+                    .font(.footnote)
+                    .foregroundStyle(Palette.secondary)
+                    .accessibilityHidden(true)
+                    .padding(.trailing, 4)
+            }
+            Text(MessagePreview.text(entry.replyQuote.text.isEmpty ? files.map(\.name).joined(separator: ", ") : entry.replyQuote.text))
                 .font(.subheadline)
                 .foregroundStyle(Palette.text)
                 .lineLimit(1)

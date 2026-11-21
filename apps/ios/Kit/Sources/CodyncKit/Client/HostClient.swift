@@ -303,7 +303,8 @@ public extension HostClient {
     /// `replyTo`: the chat message this one quotes. `replyPart`: the part of it the user selected.
     /// `pasted`: what the user pasted rather than typed, which memory never takes as their own words.
     /// `call`: the voice call it was said in (on-device or speech to text).
-    /// `taskId`: the bot's task whose thread it is for (text only); the entry that comes back is in that thread's transcript.
+    /// `taskId`: the bot's task whose thread it is for (no quote or call); the entry that comes back is in that thread's
+    /// transcript.
     func send(botId: String, text: String, clientNonce: String, replyTo: String? = nil, replyPart: String? = nil,
               attachments: [String]? = nil, pasted: [String]? = nil, call: String? = nil, taskId: String? = nil) async throws -> Entry {
         struct Body: Encodable {
@@ -321,14 +322,15 @@ public extension HostClient {
     static let uploadChunk = 384 * 1024
 
     /// Uploads a message's `files` for its `send`: their upload ids, in order. Each attempt takes fresh ids, so a retry never
-    /// appends to a half-sent file. `sent` hears the bytes of all of them sent so far.
-    func upload(botId: String, files: [OutgoingFile], sent: @Sendable (Int) -> Void = { _ in }) async throws -> [String] {
+    /// appends to a half-sent file. `sent` hears the bytes of all of them sent so far. `taskId`: for the thread of that
+    /// task of the bot's instead of its chat.
+    func upload(botId: String, taskId: String? = nil, files: [OutgoingFile], sent: @Sendable (Int) -> Void = { _ in }) async throws -> [String] {
         var ids: [String] = []
         var done = 0
         for file in files {
             let id = UUID().uuidString
             let before = done
-            try await upload(botId: botId, id: id, name: file.name, data: file.data) { sent(before + $0) }
+            try await upload(botId: botId, taskId: taskId, id: id, name: file.name, data: file.data) { sent(before + $0) }
             done += file.data.count
             ids.append(id)
         }
@@ -336,13 +338,13 @@ public extension HostClient {
     }
 
     /// Sends one file in chunks for a later `send`; `id` names the upload there. `sent` hears the bytes sent so far.
-    private func upload(botId: String, id: String, name: String, data: Data, sent: @Sendable (Int) -> Void) async throws {
-        struct Body: Encodable { var botId, uploadId, name, data: String; var offset: Int; var done: Bool }
+    private func upload(botId: String, taskId: String?, id: String, name: String, data: Data, sent: @Sendable (Int) -> Void) async throws {
+        struct Body: Encodable { var botId: String; var taskId: String?; var uploadId, name, data: String; var offset: Int; var done: Bool }
         var offset = 0
         repeat {
             let end = min(offset + Self.uploadChunk, data.count)
             let chunk = data.subdata(in: offset..<end).base64EncodedString()
-            let _: Empty = try await call("upload", Body(botId: botId, uploadId: id, name: name, data: chunk, offset: offset, done: end == data.count), timeout: 60)
+            let _: Empty = try await call("upload", Body(botId: botId, taskId: taskId, uploadId: id, name: name, data: chunk, offset: offset, done: end == data.count), timeout: 60)
             offset = end
             sent(offset)
         } while offset < data.count

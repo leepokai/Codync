@@ -5,7 +5,7 @@ import { allWork, canCutIn, canRetry, capsuleLabel, gitState, givesWay, isThread
 
 const same = (text: string) => text
 const task = (id: string, status: WorkStatus = 'working', change: Partial<WorkTask> = {}): WorkTask => ({
-  id, title: `Title ${id}`, status, activity: '', thread: null, wait: null, cutIn: false, createdAt: 1000, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, seat: null, ...change,
+  id, title: `Title ${id}`, status, activity: '', thread: null, wait: null, cutIn: false, createdAt: 1000, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, talkFiles: false, seat: null, ...change,
 })
 const ids = (tasks: WorkTask[]) => tasks.map((t) => t.id)
 
@@ -26,10 +26,10 @@ test('a bot from a host before the box has no work and no ceiling, and one with 
   ]
   const work = normalizeBot({ id: 'b', work: raw as WorkTask[] }).work
   assert.deepEqual(work, [
-    { id: 'i1', title: 'Audit', status: 'needsYou', activity: 'Reading', thread: 'thread-1', wait: null, cutIn: true, createdAt: 3, startedAt: 5, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, seat: null },
-    { id: 'i2', title: '', status: 'waiting', activity: '', thread: null, wait: { kind: 'behind', ahead: 2 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, seat: null },
-    { id: 'i3', title: '', status: 'waiting', activity: '', thread: null, wait: null, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, seat: null },
-    { id: 'i4', title: '', status: 'waiting', activity: '', thread: null, wait: { kind: 'behind', ahead: 1 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, seat: null },
+    { id: 'i1', title: 'Audit', status: 'needsYou', activity: 'Reading', thread: 'thread-1', wait: null, cutIn: true, createdAt: 3, startedAt: 5, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, talkFiles: false, seat: null },
+    { id: 'i2', title: '', status: 'waiting', activity: '', thread: null, wait: { kind: 'behind', ahead: 2 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, talkFiles: false, seat: null },
+    { id: 'i3', title: '', status: 'waiting', activity: '', thread: null, wait: null, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, talkFiles: false, seat: null },
+    { id: 'i4', title: '', status: 'waiting', activity: '', thread: null, wait: { kind: 'behind', ahead: 1 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, talkFiles: false, seat: null },
   ], 'a status this app does not know, or none, leaves the task out; a reason it does not know reads as none')
 })
 
@@ -303,9 +303,11 @@ test('a task that needs the user opens at its newest waiting card', () => {
 })
 
 test('the host says which threads take a message, and a read-only one says whose it is', () => {
-  const [own, old] = normalizeWork([{ id: 'a', status: 'working', talk: true }, { id: 'b', status: 'working' }])
+  const [own, old] = normalizeWork([{ id: 'a', status: 'working', talk: true, talkFiles: true }, { id: 'b', status: 'working' }])
   assert.equal(own!.talk, true)
+  assert.equal(own!.talkFiles, true)
   assert.equal(old!.talk, false, 'a host from before threads names none')
+  assert.equal(old!.talkFiles, false, 'nor files')
   assert.equal(readOnlyReason(task('a', 'working', { talk: true })), null)
   assert.equal(readOnlyReason(task('a', 'working', { source: { kind: 'routine', id: 'r1' } })), "Read only: a routine's run")
   assert.equal(readOnlyReason(task('a', 'done', { source: { kind: 'request', id: null } })), "Read only: another bot's request")

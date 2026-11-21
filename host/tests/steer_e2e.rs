@@ -311,10 +311,11 @@ async fn a_message_the_agent_leaves_for_later_goes_before_other_work() {
         return;
     }
     let host = Host::start().await;
-    let bot = host.fixture_bot("Ahead", "steer_agent.py", "next 3").await;
-    turn_running(&host, &bot).await;
+    let bot = host.fixture_bot("Ahead", "steer_agent.py", "next 5").await;
     let body = json!({"botId": bot, "name": "Other work", "instruction": "Other work", "triggers": [{"type": "webhook"}], "timeoutSeconds": 60});
     let routine = host.call("saveRoutine", body).await["routine"]["id"].clone();
+    // Everything from here lands before the first turn ends on its own, or the routine takes the next turn.
+    turn_running(&host, &bot).await;
     host.call("runRoutine", json!({"botId": bot, "id": routine})).await;
     let second = host.call("send", json!({"botId": bot, "text": "second"})).await["entry"]["id"].clone();
     host.call("steer", json!({"botId": bot, "entryId": second})).await;

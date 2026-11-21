@@ -34,7 +34,7 @@ The agent it leaves then rests: every bot on the computer skips it for a while, 
 
 | The chat says the agent… | Bots skip it until |
 | --- | --- |
-| reached its usage limit | the reset time the agent reported (an hour if it gave none) |
+| reached its usage limit | the reset time the agent reported, capped at 7 days for durations read from messages (an hour if it gave none) |
 | is out of credits | 6 hours have passed |
 | is rate limited, or is overloaded | 1, 5, 25, then 60 minutes, growing with failures in a row |
 | is signed out | it's signed in again (Codync also looks again after an hour, or after 10 minutes for an agent it doesn't know by name) |
@@ -44,9 +44,9 @@ The agent it leaves then rests: every bot on the computer skips it for a while, 
 
 A rest also ends early when any turn on that agent finishes normally. **Switch back** ends the rest of the bot's own agent.
 
-These don't move a bot on: you stopping it, the agent refusing, output or step limits, a routine's time limit, or the agent compacting a full context.
+These don't move a bot on: you stopping it, the agent refusing (except Antigravity's quota notice below), output or step limits, a routine's time limit, or the agent compacting a full context.
 
-Codex currently reports its rate limits and overloads as ordinary reply text, so for Codex only a usage limit moves the bot on. For Pi, a model request its provider turned down as busy (HTTP 5xx) or rate limited (HTTP 429) moves the bot on; any other error Pi ends a turn in shows as a notice in the chat.
+Codex currently reports its rate limits and overloads as ordinary reply text, so for Codex only a usage limit moves the bot on. For Pi, a model request its provider turned down as busy (HTTP 5xx) or rate limited (HTTP 429) moves the bot on; any other error Pi ends a turn in shows as a notice in the chat. For Google Antigravity, running out of quota streams a "Usage Limit Reached" / "You have reached your current quota" notice and ends as a refusal instead of an error; Codync treats that notice on Antigravity as a usage limit, caps any reset duration read from it at 7 days, and moves on to the next fallback (other agents' refusals never fall back).
 
 ## What the next agent knows
 

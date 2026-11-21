@@ -36,8 +36,8 @@ export function GoalBanner({ bot }: { bot: Bot }) {
       <Text size="compactBody" tone="secondary">{goal.turns}/{goal.maxTurns} · {tr('Maximum minutes')}: {goal.maxMinutes} · {tr(goal.stopped ? reasons[goal.stopped] ?? 'Stopped' : 'Working')}</Text>
       {error ? <Text size="compactBody" tone="danger" role="alert">{error}</Text> : null}
     </VStack>
-    {!goal.stopped ? <Button disabled={store.isOffline || busy} onClick={() => void stop()}>Stop goal</Button> : null}
-    {goal.stopped ? <Button disabled={store.isOffline || busy} onClick={() => void stop(true)}>Clear goal</Button> : null}
+    {!goal.stopped ? <Button disabled={store.isOffline || busy} onClick={() => void stop()}>{tr('Stop goal')}</Button> : null}
+    {goal.stopped ? <Button disabled={store.isOffline || busy} onClick={() => void stop(true)}>{tr('Clear goal')}</Button> : null}
   </HStack>
 }
 
@@ -75,7 +75,7 @@ export function GoalSection({ bot }: { bot: Bot }) {
       </VStack>
     </HStack>
     <Text as="div" size="compactBody" tone="secondary" className="goal-explanation">{tr('Continues until complete, needs you, or reaches a limit. Your next message stops continuation.')}</Text>
-    <Button kind="primary" disabled={!valid || store.isOffline || busy} onClick={() => void start()}>Start goal</Button>
+    <Button kind="primary" disabled={!valid || store.isOffline || busy} onClick={() => void start()}>{tr('Start goal')}</Button>
     {error ? <Text as="div" size="compactBody" tone="danger" role="alert">{error}</Text> : null}
   </section>
 }

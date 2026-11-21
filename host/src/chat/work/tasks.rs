@@ -341,6 +341,8 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
                     "result": task.result.map(|r| crate::agent::acp::truncate(&r, WIRE_RESULT)),
                     // The user may write to its thread: the bot's own work, whose thread is still there.
                     "talk": task.source.is_bot() && cwd.is_some(),
+                    // It takes one of the bot's seats: one waiting on the user gives its seat up (`dispatch::seats`).
+                    "seat": status == Status::Working,
                 });
                 if let Some(folder) = folder {
                     row["folder"] = folder.clone().into();

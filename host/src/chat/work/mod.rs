@@ -150,6 +150,9 @@ pub struct Work {
     /// Task → the request of another bot it answers (`sources`), which owns the exchange's notices and the reply.
     /// Gone with the host process: a request is never replayed.
     requests: Mutex<HashMap<String, crate::chat::team::BotRequest>>,
+    /// Bots one of whose threads began to wait on the user, so gave its seat up: each box is looked over again.
+    freed: Mutex<Vec<String>>,
+    seat_freed: tokio::sync::Notify,
 }
 
 impl Work {
@@ -160,6 +163,30 @@ impl Work {
     fn hops(&self, bot: &str) -> u8 {
         self.chain.locked().get(bot).copied().unwrap_or(0)
     }
+
+    /// A thread of `bot`'s began to wait on the user (`Hub::set_runtime`): its seat is free for the next task. Called
+    /// where no `Arc<Hub>` is at hand; the look runs on the task [`restore`] starts.
+    pub fn seat_freed(&self, bot: &str) {
+        self.freed.locked().push(bot.to_owned());
+        self.seat_freed.notify_one();
+    }
+}
+
+/// Looks over each box one of whose threads gave its seat up ([`Work::seat_freed`]), for as long as the host runs.
+fn look_when_seats_free(hub: &Arc<Hub>) {
+    let Ok(runtime) = tokio::runtime::Handle::try_current() else { return };
+    let hub = hub.clone();
+    runtime.spawn(async move {
+        loop {
+            hub.work.seat_freed.notified().await;
+            let mut bots = std::mem::take(&mut *hub.work.freed.locked());
+            bots.sort();
+            bots.dedup();
+            for bot in bots {
+                dispatch(&hub, &bot);
+            }
+        }
+    });
 }
 
 /// `bot`'s thread bots.
@@ -477,6 +504,7 @@ pub fn reported(hub: &Hub, bot: &str, delivered: &[String]) {
 
 /// At host start: old tasks go, and the others pick up where the last process left them.
 pub fn restore(hub: &Arc<Hub>) {
+    look_when_seats_free(hub);
     let lives = |bot: &str| hub.store.bot(bot).ok().flatten().is_some_and(|r| !r.deleted);
     let threads = hub.store.thread_bots().unwrap_or_default();
     for thread in threads.iter().filter(|thread| !thread.config.thread_of.as_deref().is_some_and(lives)) {

@@ -77,8 +77,20 @@ class WorkTest {
         // More running than the ceiling (it was just lowered): none free, and the heading says what is true, `3 / 2`.
         assertEquals(0 to 2, workSections(work, 2).let { it.free to it.atOnce })
         // A host that sends no ceiling counts as three.
-        assertEquals(WorkSections(emptyList(), 3, emptyList(), emptyList()), workSections(emptyList(), null))
+        assertEquals(WorkSections(emptyList(), 0, 3, emptyList(), emptyList()), workSections(emptyList(), null))
         assertEquals(0 to 3, workSections(work, null).let { it.free to it.atOnce })
+    }
+
+    @Test fun `a thread waiting on the user gives its seat up, as the host says`() {
+        val work = work("""[{"id":"a","status":"working","seat":true},{"id":"b","status":"needsYou","seat":false},{"id":"c","status":"waiting","seat":false}]""")
+        val sections = workSections(work, 2)
+        assertEquals(Triple(2, 1, 1), Triple(sections.threads.size, sections.inUse, sections.free))
+        // A seat is free: nothing has to give way.
+        assertFalse(canCutIn(work, 2))
+        // An older host says nothing: every live task takes one.
+        val old = listOf(task("a", WorkStatus.Working), task("b", WorkStatus.NeedsYou), task("c", WorkStatus.Waiting))
+        assertEquals(2, workSections(old, 2).inUse)
+        assertTrue(canCutIn(old, 2))
     }
 
     @Test fun `only the tasks a thread has are live`() {

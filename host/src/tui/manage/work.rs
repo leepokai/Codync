@@ -58,12 +58,14 @@ impl DetailsPage {
     pub fn sections<'a>(&'a self, work: &'a [WorkTask], max_threads: Option<u8>) -> Vec<DetailSection<'a>> {
         let Sections { threads, waiting, recent } = Sections::of(work);
         let (running, waits, most) = (threads.len(), waiting.len(), threads_at_once(max_threads));
+        // A thread waiting on the user takes no seat.
+        let taken = work.iter().filter(|i| i.takes_seat()).count();
         let section = |title, count, rows| DetailSection { title, count, rows, free: 0 };
         let mut out = vec![];
         if running + waits > 0 {
             let rows = threads.into_iter().map(DetailRow::Thread).collect();
-            let free = most.saturating_sub(running);
-            out.push(DetailSection { title: "Threads", count: format!("{running} / {most}"), rows, free });
+            let free = most.saturating_sub(taken);
+            out.push(DetailSection { title: "Threads", count: format!("{taken} / {most}"), rows, free });
         }
         if waits > 0 {
             let rows = waiting.into_iter().enumerate().map(|(i, task)| DetailRow::Waiting(i + 1, task)).collect();

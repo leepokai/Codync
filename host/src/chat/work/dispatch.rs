@@ -141,6 +141,16 @@ pub(super) fn thread_state(hub: &Hub, thread: &str, over: Option<&str>) -> Threa
     }
 }
 
+/// The seats of a bot that runs at most `most` threads: how many a new thread may still take, and how many are taken.
+/// `live`: its threads that have a task or are still stopping; `asking`: those of them that wait on the user (a card,
+/// a sign-in). One that waits gives its seat up, so other work goes on meanwhile; the user's answer then takes it back
+/// past the ceiling, so every live thread counts toward one more than it.
+fn seats(most: u8, live: usize, asking: usize) -> (usize, usize) {
+    let most = usize::from(most);
+    let taken = live.saturating_sub(asking);
+    (most.saturating_sub(taken).min((most + 1).saturating_sub(live)), taken)
+}
+
 /// What `cfg`'s waiting tasks can count on now. `tasks`: its box.
 pub(super) fn capacity(hub: &Hub, cfg: &BotConfig, tasks: &[Task], over: Option<&str>) -> Capacity {
     // A thread told to stop (its task stopped, gave way or was replaced) still works until its turn ends.
@@ -148,18 +158,19 @@ pub(super) fn capacity(hub: &Hub, cfg: &BotConfig, tasks: &[Task], over: Option<
         .iter()
         .filter(|thread| tasks::of_thread(tasks, &thread.id).is_none() && turn_runs(hub, &thread.id, over))
         .count();
-    let running = tasks::working(tasks) + stopping;
+    let asking = tasks
+        .iter()
+        .filter(|i| i.status == Status::Working)
+        .filter_map(|i| i.thread.as_deref())
+        .filter(|thread| hub.runtime(thread).status == BotStatus::NeedsInput)
+        .count();
+    let (free, running) = seats(cfg.max_threads, tasks::working(tasks) + stopping, asking);
     // A turn the last host process left cut off is resumed by the bot's actor: it runs, though nothing says so yet.
     let chat_free = over == Some(cfg.id.as_str())
         || !(turn_runs(hub, &cfg.id, None) || crate::agent::bot::resumable(&hub.store, &cfg.id));
     // The limit of the agent a new thread starts on: past a resting one, its fallback's.
     let starts_on = crate::agent::fallback::starting(&hub.store, cfg, now_ms());
-    Capacity {
-        free: usize::from(cfg.max_threads).saturating_sub(running),
-        running,
-        near_limit: crate::usage::near_limit(hub, &starts_on),
-        chat_free,
-    }
+    Capacity { free, running, near_limit: crate::usage::near_limit(hub, &starts_on), chat_free }
 }
 
 /// What a pass decided, done once the box is saved.
@@ -426,6 +437,16 @@ mod tests {
         );
         let none = stand(&tasks, capacity(0, 1), ThreadState::Gone);
         assert_eq!(none[0], ("a".into(), Standing::Wait(Wait::Next)), "nothing is refused for being over the ceiling");
+    }
+
+    #[test]
+    fn a_thread_waiting_on_the_user_gives_its_seat_up_but_one_past_the_ceiling_is_the_most() {
+        assert_eq!(seats(3, 3, 0), (0, 3), "every seat taken");
+        assert_eq!(seats(3, 3, 1), (1, 2), "one waits on the user: its seat is free");
+        assert_eq!(seats(3, 4, 1), (0, 3), "the one that took it: four live threads, one past the ceiling");
+        assert_eq!(seats(3, 4, 2), (0, 2), "never two past it, however many wait");
+        assert_eq!(seats(1, 1, 1), (1, 0));
+        assert_eq!(seats(2, 4, 0), (0, 4), "the ceiling was lowered: nothing new starts");
     }
 
     #[test]

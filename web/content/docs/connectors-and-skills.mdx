@@ -65,7 +65,7 @@ A bot can search the registry and ask you to connect something. The request show
 - **Connect a connector:** press **Connect**. The setup and sign-in open as if you'd picked it in Extensions. When it's done, the connector is turned on for that bot and the bot is told.
 - **Provide a secret:** the card names the connector and the field the bot needs. Type the value (or a 1Password `op://` reference) and press **Connect**. The value goes to that connector, is saved on the computer, and never appears in the conversation or reaches the bot.
 
-The cards themselves hold no credentials. You can answer them in the iPhone app, the desktop app, or the terminal UI (pick the card and press ↵). A request can be answered for 24 hours; after that, ask the bot for a new one.
+The cards themselves hold no credentials. You can answer them in the phone app, the desktop app, or the terminal UI (pick the card and press ↵). A request can be answered for 24 hours; after that, ask the bot for a new one.
 
 ## Where credentials are kept
 
@@ -106,7 +106,7 @@ A skill is a folder with a `SKILL.md` file: a name, a line saying when to use it
 Type `/` at the start of a message to see that bot's commands: built-in ones first (such as `/fast` for [Fast mode](/docs/agents), when the bot's agent offers it), then the skills the bot has on, then the commands of the bot's agent, marked with its logo ([Commands](/docs/conversations#commands)). Picking a skill fills in `/<skill id>`; write the rest of your message and send it. The bot is told to read that skill first.
 
 - **Desktop app:** the list floats above the message box. Use ↑ and ↓, then Tab or Return. Escape hides it.
-- **iPhone:** the list sits above the message box. Tap a command.
+- **iPhone and Android:** the list sits above the message box. Tap a command.
 - **Terminal UI:** the list appears over the transcript. Use ↑ and ↓, then Tab or ↵.
 
 Any other `/command` goes to the agent as you typed it, so your agent's own commands keep working. In a [group chat](/docs/groups), the list shows every member's skills, and a skill message reaches each member that has it on.

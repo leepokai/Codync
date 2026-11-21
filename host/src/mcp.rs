@@ -402,4 +402,14 @@ mod tests {
         assert!(refuse_bot(Some("bot-1".into())).is_some_and(|v| v["isError"] == true));
         assert!(refuse_bot(None).is_none());
     }
+
+    /// The chat server words its instructions here, so it must keep how to ask the user to choose (`#415` review).
+    #[test]
+    fn the_chat_server_keeps_the_choice_rules() {
+        let words = plain_instructions(Server::Chat, false);
+        assert!(words.contains(crate::chat::outbox::INSTRUCTIONS), "the send rules are there");
+        assert!(words.contains(crate::chat::decision::INSTRUCTIONS), "so are the choice rules");
+        let thread_words = plain_instructions(Server::Chat, true);
+        assert!(thread_words.contains(crate::chat::decision::INSTRUCTIONS), "a thread keeps the choice rules too");
+    }
 }

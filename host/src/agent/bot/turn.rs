@@ -521,21 +521,25 @@ impl Actor {
         self.hub.team.end_turn(&self.cfg.id);
         // A room turn's news comes from the group once the room is done (see `group`).
         let more = self.queue.iter().any(|q| matches!(q, Queued::User { .. }));
-        // The turn left the user nothing to read, whatever woke it (a bot's reply, a follow-up, a task's reports): its
-        // end tells them nothing either (#486); a card or approval it asked already pushed when it was asked. Their next
-        // message being already queued keeps it quiet as well.
-        let quiet = more || !delivered(final_text.as_deref(), &reacted);
-        if !self.stop_requested
-            && !delegated
-            && !grouped
-            && host_turn.is_none_or(HostTurn::alerts)
-            && let Some(kind) = turn_alert(failed, &stop_reason, quiet)
-        {
-            let body = final_text.unwrap_or_else(|| match (kind, reacted) {
-                (AlertKind::Done, Reacted::With(emoji)) => format!("Reacted {emoji} to your message"),
-                _ => "The agent didn't finish.".into(),
-            });
-            push::notify(&self.hub, &self.cfg, None, &self.cfg.name, &body, kind);
+        if !self.stop_requested && !delegated && !grouped && host_turn.is_none_or(HostTurn::alerts) {
+            // What the turn left the user to read; with nothing new, what an earlier turn left while their next
+            // message was already queued (#486). A turn that left nothing, a card or approval it asked having pushed
+            // already, ends without a push.
+            let reaction = match reacted {
+                Reacted::With(emoji) => Some(format!("Reacted {emoji} to your message")),
+                _ => None,
+            };
+            let news = final_text.clone().or(reaction).or(self.unannounced.take());
+            match (turn_alert(failed, &stop_reason, more || news.is_none()), news) {
+                (Some(AlertKind::Failed), _) => {
+                    let body = final_text.unwrap_or_else(|| "The agent didn't finish.".into());
+                    push::notify(&self.hub, &self.cfg, None, &self.cfg.name, &body, AlertKind::Failed);
+                }
+                (Some(kind), Some(body)) => push::notify(&self.hub, &self.cfg, None, &self.cfg.name, &body, kind),
+                // Their next message is queued: its turn announces this once the queue is answered.
+                (None, news) if more => self.unannounced = news,
+                _ => {}
+            }
         }
     }
 }
@@ -627,16 +631,9 @@ impl Actor {
     }
 }
 
-/// Whether a finished turn left the user something to read: its reply — which also carries a message it sent while
-/// working, a shared file, an artifact card — or a reaction they can see. A turn that delivered neither ends without a
-/// push (#486).
-fn delivered(final_text: Option<&str>, reacted: &Reacted) -> bool {
-    final_text.is_some() || matches!(reacted, Reacted::With(_))
-}
-
 /// A finished turn alerts once the user's work is done: not when it's `quiet` (their next message is
-/// already queued, or the turn left them nothing to read or answer). A turn that ended short of
-/// `end_turn` always reports the failure.
+/// already queued, or there is nothing to tell them). A turn that ended short of `end_turn` always
+/// reports the failure.
 fn turn_alert(failed: bool, stop_reason: &str, quiet: bool) -> Option<AlertKind> {
     if failed || !matches!(stop_reason, "end_turn" | "cancelled") {
         return Some(AlertKind::Failed);
@@ -651,7 +648,7 @@ mod tests {
     #[test]
     fn only_finished_threads_alert() {
         assert_eq!(turn_alert(false, "end_turn", false), Some(AlertKind::Done));
-        assert_eq!(turn_alert(false, "end_turn", true), None, "next message queued, or nothing delivered");
+        assert_eq!(turn_alert(false, "end_turn", true), None, "next message queued, or nothing to tell");
         assert_eq!(turn_alert(false, "cancelled", false), None);
         assert_eq!(turn_alert(false, "max_turn_requests", false), Some(AlertKind::Failed));
         assert_eq!(turn_alert(true, "error", true), Some(AlertKind::Failed));

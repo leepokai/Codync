@@ -150,6 +150,21 @@ async fn a_turn_that_only_shared_a_file_alerts_once_with_the_file() {
 }
 
 #[tokio::test]
+async fn a_reply_answered_while_the_next_message_waits_alerts_once_the_queue_is_done() {
+    let host = Host::start().await;
+    let bot = alerting_bot(&host, "worker", "team_agent.py").await;
+    let mut alerts = Alerts::listen(&host).await;
+
+    // The user's "ok" waits behind the real answer; its turn passes, so the answer is what the user has to read.
+    host.call("send", json!({"botId": bot, "text": "BLOCK work"})).await;
+    wait_for(&host, &bot, |e| e["kind"] == "user" && e["data"]["text"] == "BLOCK work").await;
+    host.call("send", json!({"botId": bot, "text": "OK"})).await;
+    std::fs::write(host.home.join("worker/release"), "").unwrap();
+    wait_finished(&host).await;
+    assert_eq!(alerts.of(&bot).await, [alert("done", "reply: BLOCK work")]);
+}
+
+#[tokio::test]
 async fn a_turn_waiting_on_an_approval_alerts_only_for_the_approval() {
     let host = Host::start().await;
     let bot = alerting_bot(&host, "editor", "team_agent.py").await;

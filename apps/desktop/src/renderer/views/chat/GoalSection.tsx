@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Bot } from '@shared/models'
-import { Button } from '../../components/Controls'
+import { Button, IconButton } from '../../components/Controls'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
@@ -36,8 +36,8 @@ export function GoalBanner({ bot }: { bot: Bot }) {
       <Text size="compactBody" tone="secondary">{goal.turns}/{goal.maxTurns} · {tr('Maximum minutes')}: {goal.maxMinutes} · {tr(goal.stopped ? reasons[goal.stopped] ?? 'Stopped' : 'Working')}</Text>
       {error ? <Text size="compactBody" tone="danger" role="alert">{error}</Text> : null}
     </VStack>
-    {!goal.stopped ? <Button disabled={store.isOffline || busy} onClick={() => void stop()}>{tr('Stop goal')}</Button> : null}
-    {goal.stopped ? <Button disabled={store.isOffline || busy} onClick={() => void stop(true)}>{tr('Clear goal')}</Button> : null}
+    {!goal.stopped ? <IconButton title="Stop goal" icon="stop.fill" disabled={store.isOffline || busy} onClick={() => void stop()} /> : null}
+    {goal.stopped ? <IconButton title="Clear goal" icon="trash" disabled={store.isOffline || busy} onClick={() => void stop(true)} /> : null}
   </HStack>
 }
 

@@ -109,8 +109,15 @@ The decisions are one pure function (`dispatch::standings`), which the wire's `w
   (read only, as [their thread](#talking-to-a-thread) is), and under a ceiling, as `add_task` is.
 - `work_status {}` → `{tasks: […]}`: every task that is working or waiting, and those ended in the last day: status, what its thread
   does now, why it waits, seconds, result.
+- `recall_task {task?, query?, before?}` (`work::tools::recall`): the bot looks back at its tasks, ended ones too, from
+  its box and its past tasks (kv `work-past.<bot>`: tasks that left the box at host start, kept until 30 days after
+  they ended, the newest 200). With `task`: its brief, `usersWords`, `usersNotes`, `chatPassedOn`, whole result,
+  `after`, `followedBy`, local times, and a page of 30 of its thread's steps (user, agent, notice, tool and card lines,
+  each cut at 600 bytes) with `earlierSteps`, the `before` for the page before; none once the thread is gone. With
+  `query`: the tasks whose title, brief or result has it (any case); with neither, the latest; 20 at most, each result
+  cut at 280 bytes. Read only: allowed under a ceiling.
 
-Refused in a thread: these four and changes to the bot's profile or fallbacks (`work::refuse_chat_only`, the `chat`
+Refused in a thread: these five and changes to the bot's profile or fallbacks (`work::refuse_chat_only`, the `chat`
 server's), and the `routines`, `team` and `manage` tools (`work::acting_as`, `work::refuse_in_thread`). The refusal
 says to put what it needs in its report. `request_decision`, `send_file` and artifacts work from a thread
 ([below](#asking-and-sharing-from-a-thread)). A thread on a routine's run or another bot's request has that turn's own
@@ -531,7 +538,8 @@ absent on an older host, where the feature doesn't show.
 
 ## Restart and cleanup
 
-At host start (`work::restore`): tasks ended over 7 days ago are deleted; a working task whose thread's turn was cut
+At host start (`work::restore`): tasks ended over 7 days ago leave the box for the bot's past tasks (`recall_task`),
+and their threads go at the next dispatcher pass; a working task whose thread's turn was cut
 off and can be resumed (`agent::bot::resumable`: a restart mark under an hour old) stays working, and its thread's
 actor resumes the turn; one whose thread can't goes back to waiting once, as a task that was cut in on, and fails with
 a report the second time. An ended task's undelivered report is sent again: to the bot, or, for a routine's run,

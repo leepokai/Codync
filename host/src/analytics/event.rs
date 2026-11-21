@@ -100,6 +100,8 @@ pub enum Event {
     WorkNeedsSignIn,
     /// A bot's `tell_task` finished (`outcome`): where the words went (`to`) or why not (`error`), and `now`.
     WorkTold,
+    /// A bot's `recall_task` finished (`outcome`), looking up one task, a query or the latest (`by`).
+    WorkRecalled,
     /// The user wrote to a task's thread (`chat::work::thread`): whether it reopened the task, and whether it waits.
     WorkMessaged,
     /// A bot's `start_dev_server` ended (`outcome`).
@@ -267,6 +269,7 @@ impl Event {
             Self::WorktreesTidied => "worktrees_tidied",
             Self::WorkNeedsSignIn => "work_needs_sign_in",
             Self::WorkTold => "work_told",
+            Self::WorkRecalled => "work_recalled",
             Self::WorkMessaged => "work_messaged",
             Self::DevServerStarted => "dev_server_started",
             Self::DevServerStopped => "dev_server_stopped",

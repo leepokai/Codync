@@ -1,5 +1,5 @@
-//! The `chat` server's work tools (`add_task`, `steer_task`, `tell_task`, `work_status`), and what a thread itself
-//! may not call.
+//! The `chat` server's work tools (`add_task`, `steer_task`, `tell_task`, `work_status`, `recall_task`), and what a
+//! thread itself may not call.
 
 use super::steer::{self, Steer};
 use super::tasks::{self, Shown, Status, Task};
@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 /// The `chat` server's tools that are the box's.
-pub const TOOLS: [&str; 4] = ["add_task", "steer_task", "tell_task", "work_status"];
+pub const TOOLS: [&str; 5] = ["add_task", "steer_task", "tell_task", "work_status", "recall_task"];
 
 /// A thread can't do what only makes sense from the chat. `what`: the tool, as the refusal names it.
 pub fn refuse_in_thread(hub: &Hub, bot: &str, what: &str) -> Result<()> {
@@ -87,6 +87,16 @@ pub fn tools() -> Vec<Value> {
             "inputSchema": {"type": "object", "properties": {}},
             "annotations": {"readOnlyHint": true},
         }),
+        json!({
+            "name": "recall_task",
+            "description": "Look back at your tasks, ended ones too, up to 30 days. With task: its brief, what the user said and your chat passed on about it, its whole result, the tasks it follows and that follow it, and a page of its thread's steps (a thread is kept a week; for the page before, pass before: the earlierSteps it gave). With query: the tasks whose title, brief or result has those words. With neither: the latest ones.",
+            "inputSchema": {"type": "object", "properties": {
+                "task": {"type": "string", "description": "A task's id."},
+                "query": {"type": "string", "description": "Words to find in a task's title, brief or result."},
+                "before": {"type": "integer", "description": "With task: the earlierSteps of the page you have, for the one before it."},
+            }},
+            "annotations": {"readOnlyHint": true},
+        }),
     ]
 }
 
@@ -96,6 +106,7 @@ pub fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value
         "steer_task" => steer_task(hub, bot, args),
         "tell_task" => tell(hub, bot, args),
         "work_status" => status(hub, bot),
+        "recall_task" => recall(hub, bot, args),
         _ => bail!("unknown work tool: {name}"),
     }
 }
@@ -261,6 +272,95 @@ fn told(hub: &Arc<Hub>, bot: &str, args: &Value, now: bool) -> Result<(String, T
     Ok((id.to_owned(), thread::tell(hub, bot, id, words, now)?))
 }
 
+/// Steps of a thread one `recall_task` page holds.
+const STEPS: i64 = 30;
+/// How much of one step a page carries.
+const STEP: usize = 600;
+/// Tasks a `recall_task` list holds at most, and how much of each result.
+const LISTED: usize = 20;
+const GIST: usize = 280;
+
+fn recall(hub: &Hub, bot: &str, args: &Value) -> Result<Value> {
+    let by = ["task", "query"].into_iter().find(|key| args[*key].is_string()).unwrap_or("latest");
+    let recalled = recalled(hub, bot, args);
+    let outcome = match &recalled {
+        Ok(found) if found["tasks"].as_array().is_some_and(Vec::is_empty) => "none",
+        Ok(_) => "found",
+        Err(_) => "failed",
+    };
+    let properties = json!({"by": by, "outcome": outcome});
+    analytics::capture(hub, Event::WorkRecalled, properties.as_object().cloned().unwrap_or_default());
+    recalled
+}
+
+/// What `recall_task` finds in `bot`'s box and its past tasks (`tasks::past`).
+fn recalled(hub: &Hub, bot: &str, args: &Value) -> Result<Value> {
+    let now = now_ms();
+    let mut all = tasks::load(&hub.store, bot);
+    all.extend(tasks::past(&hub.store, bot, now));
+    let text = |key: &str| args[key].as_str().map(str::trim).filter(|t| !t.is_empty());
+    if let Some(id) = text("task") {
+        let task = all.iter().find(|i| i.id == id);
+        let task = task.ok_or_else(|| anyhow!("no task {id} in the last 30 days: recall_task with query finds one"))?;
+        let followed_by: Vec<&str> =
+            all.iter().filter(|i| i.after.as_deref() == Some(id)).map(|i| i.id.as_str()).collect();
+        let (steps, earlier) = match &task.thread {
+            Some(thread) => steps(&hub.store, thread, args["before"].as_i64().unwrap_or(i64::MAX))?,
+            None => (Vec::new(), None),
+        };
+        return Ok(json!({
+            "taskId": task.id, "title": task.title, "status": task.status, "brief": task.brief,
+            "usersWords": task.words, "usersNotes": task.notes, "chatPassedOn": task.relayed, "result": task.result,
+            "after": task.after, "followedBy": followed_by, "created": when(task.created_at),
+            "started": task.started_at.map(when), "ended": task.ended_at.map(when), "steps": steps,
+            "earlierSteps": earlier,
+        }));
+    }
+    let query = text("query").map(str::to_lowercase);
+    let has = |i: &Task| {
+        let fields = [Some(&i.title), Some(&i.brief), i.result.as_ref()];
+        query.as_deref().is_none_or(|q| fields.into_iter().flatten().any(|t| t.to_lowercase().contains(q)))
+    };
+    let mut found: Vec<&Task> = all.iter().filter(|i| has(i)).collect();
+    // What still runs or waits first, then the latest to end.
+    found.sort_by_key(|i| std::cmp::Reverse(i.ended_at.unwrap_or(i64::MAX)));
+    let tasks: Vec<Value> = found
+        .into_iter()
+        .take(LISTED)
+        .map(|i| {
+            let gist = i.result.as_deref().map(|r| crate::agent::acp::truncate(r, GIST));
+            json!({"taskId": i.id, "title": i.title, "status": i.status, "ended": i.ended_at.map(when), "result": gist})
+        })
+        .collect();
+    Ok(json!({"tasks": tasks}))
+}
+
+/// A page of `thread`'s steps before the seq `before`, oldest first, and the `before` for the page before it.
+fn steps(store: &crate::store::Store, thread: &str, before: i64) -> Result<(Vec<Value>, Option<i64>)> {
+    let page = store.history(thread, before, STEPS)?;
+    let earlier = page.first().map(|e| e.seq).filter(|_| page.len() == usize::try_from(STEPS).unwrap_or(0));
+    let steps = page
+        .iter()
+        .filter_map(|e| {
+            let text = match e.kind.as_str() {
+                "user" | "agent" | "notice" => e.data["text"].as_str()?,
+                "tool" | "permission" => e.data["title"].as_str()?,
+                _ => return None,
+            };
+            let text = crate::agent::acp::truncate(text, STEP);
+            Some(json!({"kind": e.kind, "text": text, "status": e.data["status"]}))
+        })
+        .collect();
+    Ok((steps, earlier))
+}
+
+/// A moment as the bot reads it: the computer's local date and time.
+fn when(ms: i64) -> String {
+    chrono::DateTime::from_timestamp_millis(ms)
+        .map(|t| t.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+        .unwrap_or_default()
+}
+
 fn status(hub: &Hub, bot: &str) -> Result<Value> {
     let cfg = hub.store.bot(bot)?.ok_or_else(|| anyhow!("unknown bot"))?.config;
     let now = now_ms();
@@ -359,6 +459,55 @@ mod tests {
         assert!(refuse_chat_only(&hub, "thread-1", "tell_task").is_err(), "a thread can't tell its siblings");
         hub.ceilings.set("b1", codync_network::Access::Ask);
         assert!(hub.ceilings.check_tool("b1", "tell_task").is_err(), "it acts later: held under a ceiling");
+    }
+
+    #[test]
+    fn recall_task_finds_a_task_ended_weeks_ago_what_follows_it_and_its_threads_steps() {
+        use crate::chat::calls::context::tests::{bot, hub};
+        let hub = hub();
+        hub.store.save_bot(&bot("b1", "Mika", "/tmp")).expect("saved");
+        let (now, day) = (now_ms(), 24 * 60 * 60 * 1000);
+        let recent = json!([{"id": "i2", "title": "Fix login", "brief": "Go on", "status": "done", "order": 0,
+            "createdAt": now - day, "endedAt": now - day, "after": "i1", "thread": "thread-2", "result": "Fixed"}]);
+        hub.store.kv_set(&format!("{}b1", tasks::PREFIX), &recent.to_string()).expect("saved");
+        let ended = |id: &str, ago: i64| -> Task {
+            serde_json::from_value(
+                json!({"id": id, "title": "Audit", "brief": "Audit the login flow", "status": "done",
+                "order": 0, "createdAt": 0, "endedAt": now - ago * day, "result": "Found 3 bugs", "thread": "gone"}),
+            )
+            .expect("a task")
+        };
+        tasks::put_past(&hub.store, "b1", vec![ended("i1", 20), ended("i0", 40)], now).expect("kept");
+        let thread = crate::store::Lane::main("thread-2");
+        for n in 0..35 {
+            let step = json!({"text": format!("step {n}")});
+            hub.store.insert_entry(&thread, crate::store::EntryKind::Agent, 1, &step).expect("a step");
+        }
+        let recall = |args: Value| call(&hub, "b1", "recall_task", &args);
+        let ids = |found: Value| -> Vec<String> {
+            found["tasks"]
+                .as_array()
+                .expect("a list")
+                .iter()
+                .map(|i| i["taskId"].as_str().unwrap().to_owned())
+                .collect()
+        };
+
+        let audit = recall(json!({"task": "i1"})).expect("20 days back");
+        assert_eq!((audit["result"].as_str(), &audit["followedBy"]), (Some("Found 3 bugs"), &json!(["i2"])));
+        assert_eq!(audit["steps"], json!([]), "its thread went after a week");
+        let login = recall(json!({"task": "i2"})).expect("its thread is still here");
+        assert_eq!(login["steps"].as_array().map(Vec::len), Some(30));
+        assert_eq!(login["steps"][29]["text"], "step 34", "the latest page first");
+        let before = login["earlierSteps"].as_i64().expect("steps before it");
+        let first = recall(json!({"task": "i2", "before": before})).expect("the page before");
+        assert_eq!((first["steps"].as_array().map(Vec::len), first["earlierSteps"].is_null()), (Some(5), true));
+        assert!(recall(json!({"task": "i0"})).is_err(), "past 30 days");
+
+        assert_eq!(ids(recall(json!({"query": "LOGIN flow"})).expect("found")), ["i1"]);
+        assert_eq!(ids(recall(json!({})).expect("the latest")), ["i2", "i1"]);
+        hub.ceilings.set("b1", codync_network::Access::Ask);
+        assert!(hub.ceilings.check_tool("b1", "recall_task").is_ok(), "it only reads: allowed under a ceiling");
     }
 
     /// #386: work added too often in a row leaves the user one Continue notice a turn, as the handoff limit does.

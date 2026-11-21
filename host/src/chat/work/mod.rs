@@ -54,7 +54,8 @@ const MAX_HOPS: u8 = 8;
 const _: () = assert!(MAX_HOPS == 8, "chat::team::limit::NOTICE and its translations say 8");
 /// Tasks a box holds waiting at most.
 const MAX_WAITING: usize = 20;
-/// An ended task, and a thread's transcript with its last task, are kept this long.
+/// An ended task stays in its box, and a thread's transcript with its last task, this long; `recall_task` still reads
+/// the task for [`tasks::PAST_MS`].
 const KEEP_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 const MAX_TITLE: usize = 80;
 const MAX_BRIEF: usize = 32_000;
@@ -538,7 +539,12 @@ pub fn restore(hub: &Arc<Hub>) {
 fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
     let (resumed, failed, undelivered, recheck) = tasks::change(hub, bot, |tasks| {
         let now = now_ms();
-        tasks.retain(|i| i.ended_at.is_none_or(|at| now - at <= KEEP_MS));
+        let (old, kept) =
+            std::mem::take(tasks).into_iter().partition(|i| i.ended_at.is_some_and(|at| now - at > KEEP_MS));
+        *tasks = kept;
+        if let Err(error) = tasks::put_past(&hub.store, bot, old, now) {
+            tracing::warn!(bot, error = format!("{error:#}"), "couldn't keep a bot's past tasks");
+        }
         let recheck = worktree::recheck(tasks);
         // A request lived in the last process (its notices already say it was interrupted): it is never replayed.
         tasks.retain(|i| i.status.ended() || !matches!(i.source, Source::Request { .. }));
@@ -595,6 +601,26 @@ pub fn entries(hub: &Hub, bot: &str, id: &str, limit: i64) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn at_host_start_a_task_ended_over_a_week_ago_leaves_the_box_and_stays_for_recall() {
+        use crate::chat::calls::context::tests::{bot, hub};
+        let hub = hub();
+        hub.store.save_bot(&bot("b1", "Mika", "/tmp")).expect("saved");
+        hub.set_runtime("b1", |rt| rt.status = crate::hub::BotStatus::Working);
+        let (now, day) = (now_ms(), 24 * 60 * 60 * 1000);
+        let ended = |id: &str, ago: i64| {
+            json!({"id": id, "title": id, "brief": "x", "status": "done", "order": 0, "createdAt": 0,
+                "endedAt": now - ago * day})
+        };
+        let tasks = json!([ended("old", 8), ended("new", 1)]);
+        hub.store.kv_set(&format!("{}b1", tasks::PREFIX), &tasks.to_string()).expect("saved");
+
+        pick_up(&hub, "b1").expect("picked up");
+        let ids = |tasks: Vec<Task>| tasks.into_iter().map(|i| i.id).collect::<Vec<_>>();
+        assert_eq!(ids(tasks::load(&hub.store, "b1")), ["new"]);
+        assert_eq!(ids(tasks::past(&hub.store, "b1", now)), ["old"]);
+    }
 
     fn working(id: &str, thread: &str) -> Task {
         serde_json::from_value(json!({

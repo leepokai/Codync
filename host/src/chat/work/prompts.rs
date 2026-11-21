@@ -13,7 +13,8 @@ chat; its report comes back to you as a message, and you tell the user what it f
 tasks wait their turn in your event box, and how many threads run at once is the user's setting. For more of the same \
 work, add a task with after: the id of the one it continues. steer_task moves a task first, starts it now, replaces \
 its brief or stops it. tell_task passes words on to a task without starting it again: what the user adds about work \
-under way, a fact it needs. Only quick answers and work of a few tool calls you do here yourself.";
+under way, a fact it needs. recall_task looks back at your tasks, ended ones too, up to 30 days: what one was asked, \
+what it found and its thread's steps. Only quick answers and work of a few tool calls you do here yourself.";
 
 /// Said with each message in the bot's own chat: with the instructions alone, a real agent (Claude, 2026-11-15) did
 /// 90 seconds of reading in the chat's turn instead of handing the work on.

@@ -235,11 +235,45 @@ pub(super) fn change<T>(hub: &Hub, bot: &str, change: impl FnOnce(&mut Vec<Task>
     Ok(out)
 }
 
-/// A deleted bot's box goes with it.
+/// A deleted bot's box goes with it, and its past tasks.
 pub(super) fn forget(store: &Store, bot: &str) {
-    if let Err(error) = store.kv_delete(&key(bot)) {
-        tracing::warn!(bot, error = format!("{error:#}"), "couldn't drop a bot's work");
+    for key in [key(bot), past_key(bot)] {
+        if let Err(error) = store.kv_delete(&key) {
+            tracing::warn!(bot, error = format!("{error:#}"), "couldn't drop a bot's work");
+        }
     }
+}
+
+/// Where a bot's tasks that ended over a week ago wait for `recall_task`: out of its box, which the wire and every
+/// change read whole.
+const PAST_PREFIX: &str = "work-past.";
+/// How long an ended task can still be recalled.
+pub(super) const PAST_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+/// Past tasks a bot keeps at most, the newest.
+const PAST_MOST: usize = 200;
+
+fn past_key(bot: &str) -> String {
+    format!("{PAST_PREFIX}{bot}")
+}
+
+/// `bot`'s tasks that left its box, ended within [`PAST_MS`].
+pub(super) fn past(store: &Store, bot: &str, now: i64) -> Vec<Task> {
+    let all: Vec<Task> =
+        store.kv_get(&past_key(bot)).and_then(|json| serde_json::from_str(&json).ok()).unwrap_or_default();
+    all.into_iter().filter(|i| i.ended_at.is_some_and(|at| now - at <= PAST_MS)).collect()
+}
+
+/// Keeps `old`, ended tasks leaving `bot`'s box, for `recall_task`, with the past ones still young enough.
+pub(super) fn put_past(store: &Store, bot: &str, old: Vec<Task>, now: i64) -> Result<()> {
+    if old.is_empty() {
+        return Ok(());
+    }
+    let mut all = past(store, bot, now);
+    all.extend(old.into_iter().map(|task| Task { report: None, ..task }));
+    all.retain(|i| i.ended_at.is_some_and(|at| now - at <= PAST_MS));
+    all.sort_by_key(|i| std::cmp::Reverse(i.ended_at));
+    all.truncate(PAST_MOST);
+    store.kv_set(&past_key(bot), &serde_json::to_string(&all)?)
 }
 
 /// An order before every waiting task's.

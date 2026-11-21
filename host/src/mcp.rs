@@ -56,7 +56,7 @@ fn plain_instructions(server: Server) -> String {
         Server::Connectors => crate::market::requests::INSTRUCTIONS,
         Server::Computer => INSTRUCTIONS,
         Server::Routines => crate::routines::INSTRUCTIONS,
-        Server::Chat => crate::chat::outbox::INSTRUCTIONS,
+        Server::Chat => return crate::chat::outbox::instructions(),
         // The host's answer, or the bot's own setting when it can't be read for long.
         Server::Team => return crate::chat::team::instructions(crate::store::Permission::Ask),
         Server::Manage => crate::chat::manage::INSTRUCTIONS,
@@ -308,4 +308,17 @@ pub async fn serve_local(connector: String, port: u16) -> Result<()> {
         anyhow::bail!("Connector exited unsuccessfully");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The chat server words its instructions here, so it must keep how to ask the user to choose (`#415` review).
+    #[test]
+    fn the_chat_server_keeps_the_choice_rules() {
+        let words = plain_instructions(Server::Chat);
+        assert!(words.contains(crate::chat::outbox::INSTRUCTIONS), "the send rules are there");
+        assert!(words.contains(crate::chat::decision::INSTRUCTIONS), "so are the choice rules");
+    }
 }

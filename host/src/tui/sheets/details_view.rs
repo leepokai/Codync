@@ -1,4 +1,4 @@
-//! A bot's Details page: what it does. Threads (the items its agents work on now), the event box (what waits for
+//! A bot's Details page: what it does. Threads (the tasks its threads work on now), the event box (what waits for
 //! one), what it does later, its routines, and what ended in the last day (`docs/plans/event-box.md`).
 
 use serde_json::Value;
@@ -46,7 +46,7 @@ fn parts<'a>(l: &DetailsPage, sections: &'a [DetailSection<'a>]) -> Vec<Part<'a>
         out.extend((0..section.free).map(|_| Part::Free));
         if section.title == "Routines" && section.rows.is_empty() {
             let none = "No routines. n sets one up here, or ask the bot in chat.";
-            out.push(Part::Note(if l.items.is_some() { none } else { "Loading…" }));
+            out.push(Part::Note(if l.routines.is_some() { none } else { "Loading…" }));
         }
     }
     out
@@ -70,8 +70,8 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, l: &DetailsPage) {
     let title = name_of(app, &l.bot);
     let inner = frame_box(buf, r, t.text, t.panel, Some((&title, t.text)));
     let inner = page_tabs(buf, inner, Page::Details);
-    let (work, max_agents) = app.box_of(&l.bot);
-    let sections = l.sections(work, max_agents);
+    let (work, max_threads) = app.box_of(&l.bot);
+    let sections = l.sections(work, max_threads);
     let parts = parts(l, &sections);
     // The page can outgrow the sheet: it starts as far down as keeps the picked row in sight.
     let room = usize::from(inner.height.saturating_sub(2));
@@ -115,7 +115,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, l: &DetailsPage) {
         Part::Row(at, row) if *at == l.cursor => Some(*row),
         _ => None,
     });
-    footer(buf, inner, None, &keys(picked, can_cut_in(work, max_agents)));
+    footer(buf, inner, None, &keys(picked, can_cut_in(work, max_threads)));
 }
 
 /// A follow-up the bot set for itself: a clock where a routine has its on/off dot, and when it happens.
@@ -190,7 +190,7 @@ mod tests {
             "triggerDescriptions": ["Every day at 09:00"]});
         let list = DetailsPage {
             bot: "b".into(),
-            items: Some(vec![routine]),
+            routines: Some(vec![routine]),
             follow_ups: vec![json!({"id": "f", "at": 0, "note": "Check the build\nthen the deploy"})],
             ..Default::default()
         };
@@ -212,16 +212,16 @@ mod tests {
     async fn the_page_is_the_timeline_of_what_the_bot_does() {
         let mut app = test_app();
         let work = json!([
-            {"id": "w", "title": "Write docs", "status": "working", "activity": "Reading files", "task": "task-w"},
-            {"id": "n", "title": "Fix login", "status": "needsYou", "task": "task-n"},
+            {"id": "w", "title": "Write docs", "status": "working", "activity": "Reading files", "thread": "thread-w"},
+            {"id": "n", "title": "Fix login", "status": "needsYou", "thread": "thread-n"},
             {"id": "q1", "title": "Refactor", "status": "waiting", "wait": {"kind": "next"}},
             {"id": "q2", "title": "Cleanup", "status": "waiting", "wait": {"kind": "behind", "ahead": 1}},
             {"id": "q3", "title": "Notes", "status": "waiting", "wait": {"kind": "after"}},
-            {"id": "d", "title": "Old", "status": "done", "task": "task-d"},
+            {"id": "d", "title": "Old", "status": "done", "thread": "thread-d"},
             {"id": "f", "title": "Broken", "status": "failed", "result": "it could not start"},
         ]);
-        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "b", "name": "B", "work": work, "maxAgents": 3}})));
-        let mut list = DetailsPage { bot: "b".into(), items: Some(vec![]), ..Default::default() };
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "b", "name": "B", "work": work, "maxThreads": 3}})));
+        let mut list = DetailsPage { bot: "b".into(), routines: Some(vec![]), ..Default::default() };
         let lines = page(&app, &list);
         let at = |text: &str| lines.iter().position(|line| line.contains(text)).unwrap_or_else(|| panic!("{text}"));
         let threads = at("Threads  2 / 3");
@@ -249,7 +249,7 @@ mod tests {
         list.cursor = 6;
         assert!(page(&app, &list).iter().any(|line| line.contains("D Drop · A Try again · esc")));
         let mut full = app.bots["b"].clone();
-        full.max_agents = Some(2);
+        full.max_threads = Some(2);
         app.bots.insert("b".into(), full);
         list.cursor = 2;
         let lines = page(&app, &list);
@@ -266,7 +266,7 @@ mod tests {
             .map(|i| json!({"id": format!("q{i}"), "title": format!("Item {i}"), "status": "waiting"}))
             .collect();
         app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "b", "name": "B", "work": work}})));
-        let mut list = DetailsPage { bot: "b".into(), items: Some(vec![]), ..Default::default() };
+        let mut list = DetailsPage { bot: "b".into(), routines: Some(vec![]), ..Default::default() };
         assert!(page(&app, &list).iter().any(|line| line.contains("Threads  0 / 3")), "from the top");
         list.cursor = 39;
         let lines = page(&app, &list);

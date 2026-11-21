@@ -8,7 +8,7 @@ use crate::agent::fallback::Reason;
 
 use super::model::{Mark, Status};
 use super::tilde;
-use super::work::{self, WorkItem};
+use super::work::{self, WorkTask};
 
 /// The harness's own memory as the bot's Memory screen shows it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -33,7 +33,7 @@ pub struct Bot {
     pub cwd: String,
     pub managed_workspace: bool,
     pub auto: bool,
-    /// The agent mode it works in (`agent::modes`); none for the agent's default.
+    /// The agent mode it works in (`codync_agent::modes`); none for the agent's default.
     pub mode: Option<String>,
     pub model: Option<String>,
     /// The model's own settings (effort, fast…): option id → value.
@@ -71,6 +71,10 @@ pub struct Bot {
     pub fallbacks: Vec<crate::store::Fallback>,
     /// The bot may set its own fallbacks.
     pub self_fallbacks: bool,
+    /// Advisor mode: the agent its threads run on; `None`: off.
+    pub thread_agent: Option<crate::store::Fallback>,
+    /// The threads' fallbacks; `None`: the host has no Advisor mode.
+    pub thread_fallbacks: Option<Vec<crate::store::Fallback>>,
     /// The fallback agent it's on now; `None` on its own.
     pub agent_step: Option<String>,
     /// The login profile of that agent the step runs on; `None`: its default one.
@@ -96,17 +100,17 @@ pub struct Bot {
     pub members: Vec<String>,
     /// Where the running turn talks: a chat (`None` = its own).
     pub working_chat: Option<String>,
-    /// Its event box: the working items, then the waiting in the order they will be taken, then those ended in the
+    /// Its event box: the working tasks, then the waiting in the order they will be taken, then those ended in the
     /// last day. Its own `status` stays the chat's.
-    pub work: Vec<WorkItem>,
-    /// The most agents it runs at once; `None` from a host before the box.
-    pub max_agents: Option<u8>,
+    pub work: Vec<WorkTask>,
+    /// The most threads it runs at once; `None` from a host before the box.
+    pub max_threads: Option<u8>,
     /// How it stands outside its chat (`bot.outside.status`); `None` from a host before it.
     pub outside: Option<Status>,
-    /// A task that starts beside another in the same git repository gets a worktree of its own; `None` from a host
+    /// A thread that starts beside another in the same git repository gets a worktree of its own; `None` from a host
     /// before worktrees.
-    pub task_worktrees: Option<bool>,
-    /// Its folder is in a git repository: where `task_worktrees` matters.
+    pub thread_worktrees: Option<bool>,
+    /// Its folder is in a git repository: where `thread_worktrees` matters.
     pub git_repo: bool,
     /// The host can run git; true from a host that doesn't say.
     pub git_installed: bool,
@@ -250,6 +254,8 @@ impl Bot {
             compaction_sizes: serde_json::from_value(v["compactionTokens"].clone()).ok().flatten(),
             fallbacks: serde_json::from_value(v["fallbacks"].clone()).unwrap_or_default(),
             self_fallbacks: v["selfFallbacks"].as_bool().unwrap_or(true),
+            thread_agent: serde_json::from_value(v["threadAgent"].clone()).ok().flatten(),
+            thread_fallbacks: serde_json::from_value(v["threadFallbacks"].clone()).ok(),
             agent_step: v["agentStep"]["agent"].as_str().map(str::to_owned),
             step_login_profile: v["agentStep"]["loginProfile"].as_str().map(str::to_owned),
             resting: serde_json::from_value(v["resting"].clone()).unwrap_or_default(),
@@ -277,9 +283,9 @@ impl Bot {
             group: v["kind"] == "group",
             members: strs(&v["members"]),
             working_chat: v["workingChat"].as_str().map(str::to_owned),
-            work: WorkItem::list(&v["work"]),
-            max_agents: work::max_agents(&v["maxAgents"]),
-            task_worktrees: v["taskWorktrees"].as_bool(),
+            work: WorkTask::list(&v["work"]),
+            max_threads: work::max_threads(&v["maxThreads"]),
+            thread_worktrees: v["threadWorktrees"].as_bool(),
             git_repo: v["gitRepo"] == true,
             git_installed: v["gitInstalled"] != false,
         })
@@ -287,7 +293,7 @@ impl Bot {
 
     /// What Settings says under its folder; nothing from a host before worktrees, which doesn't tell.
     pub fn git_line(&self) -> Option<&'static str> {
-        self.task_worktrees?;
+        self.thread_worktrees?;
         Some(match (self.git_installed, self.git_repo) {
             (false, _) => "Git isn't installed on this computer",
             (true, true) => "Git repository",
@@ -326,7 +332,7 @@ impl Bot {
     }
 
     /// What its row in the roster shows: how it stands outside its chat, where its box counts too (it works while
-    /// an item works or waits, and needs you while one waits on a card). The chat's own on a host before `outside`.
+    /// a task works or waits, and needs you while one waits on a card). The chat's own on a host before `outside`.
     pub fn roster_mark(&self) -> Mark {
         self.mark_of(self.outside.unwrap_or(self.status))
     }

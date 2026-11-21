@@ -10,6 +10,8 @@ pub enum Event {
     AppOpened,
     WindowOpened,
     HostStarted,
+    /// The watchdog aborted the last host process, which had stopped answering, and the service started this one.
+    HostRestartedStuck,
     OnboardingCompleted,
     ComputerAccessFinished,
     SignInStarted,
@@ -41,6 +43,8 @@ pub enum Event {
     MessageSteered,
     /// The user sent one of the agent's own `/` commands (`agent::bot::commands`).
     AgentCommandSent,
+    /// A bot's new Codex session was put in Codex's own Codync section, or wasn't (`agent::bot::codex_section`).
+    CodexSessionFiled,
     QueuedMessageRemoved,
     TurnStopped,
     TurnFinished,
@@ -65,6 +69,8 @@ pub enum Event {
     DecisionExpired,
     /// The user's choice was saved but its tool call had already stopped waiting.
     DecisionFailed,
+    /// An agent's own question (`elicitation/create`) got its reply (`action`; why it was declined: `reason`).
+    ElicitationReplied,
     ReactionAdded,
     HandoffAnswered,
     RoutineSaved,
@@ -84,18 +90,25 @@ pub enum Event {
     FollowUpFired,
     /// A follow-up was dropped before it began (`by`).
     FollowUpCancelled,
-    /// A bot's `add_work` ended (`outcome`).
+    /// A bot's `add_task` ended (`outcome`).
     WorkAdded,
-    /// An item of a bot's box ended (`outcome`), and how its task's session had begun.
+    /// A task of a bot's box ended (`outcome`), and how its thread's session had begun.
     WorkFinished,
-    /// An item was moved, cut in, replaced, stopped, dropped or tried again (`how`), by the bot or the user (`by`).
+    /// A task was moved, cut in, replaced, stopped, dropped or tried again (`how`), by the bot or the user (`by`).
     WorkSteered,
-    /// At host start, worktrees no item knew any more went, their work merged (`removed`).
+    /// At host start, worktrees no task knew any more went, their work merged (`removed`).
     WorktreesTidied,
-    /// An item's turn couldn't go on until the user signs in to its agent, so it waits for them (`agent`, `source`).
+    /// A task's turn couldn't go on until the user signs in to its agent, so it waits for them (`agent`, `source`).
     WorkNeedsSignIn,
-    /// The user wrote to an item's thread (`chat::tasks::thread`): whether it reopened the item, and whether it waits.
+    /// A bot's `tell_task` finished (`outcome`): where the words went (`to`) or why not (`error`), and `now`.
+    WorkTold,
+    /// A bot's `recall_task` finished (`outcome`), looking up one task, a query or the latest (`by`).
+    WorkRecalled,
+    /// The user wrote to a task's thread (`chat::work::thread`): whether it reopened the task, and whether it waits.
     WorkMessaged,
+    /// The watchdog found one of a bot's own tasks looking stuck (`signal`) and woke the bot, reminded the user of a
+    /// card, or let it be (`action`, `reason`) (`chat::work::watch`).
+    WatchdogFlagged,
     /// A bot's `start_dev_server` ended (`outcome`).
     DevServerStarted,
     /// A dev server ended (`by`).
@@ -167,6 +180,10 @@ pub enum Event {
     /// An important release's highlights were on screen (docs/features/whats-new.md; desktop and terminal UI here,
     /// phones send their own).
     WhatsNewShown,
+    /// The desktop app's system notifications were turned on or off (Settings → General → System).
+    DesktopNotificationsSet,
+    /// A desktop system notification was clicked, opening its chat.
+    DesktopNotificationOpened,
     /// A Codync Cloud computer's host started: how its keeper stood, and whether its agents could still use sudo.
     CloudKeeperChecked,
     /// A Codync Cloud computer's host, idle long enough, asked the cloud to put it to sleep (`remote::managed`).
@@ -191,6 +208,7 @@ impl Event {
             Self::AppOpened => "app_opened",
             Self::WindowOpened => "window_opened",
             Self::HostStarted => "host_started",
+            Self::HostRestartedStuck => "host_restarted_stuck",
             Self::OnboardingCompleted => "onboarding_completed",
             Self::ComputerAccessFinished => "computer_access_finished",
             Self::SignInStarted => "sign_in_started",
@@ -220,6 +238,7 @@ impl Event {
             Self::MessageSent => "message_sent",
             Self::MessageSteered => "message_steered",
             Self::AgentCommandSent => "agent_command_sent",
+            Self::CodexSessionFiled => "codex_session_filed",
             Self::QueuedMessageRemoved => "queued_message_removed",
             Self::TurnStopped => "turn_stopped",
             Self::TurnFinished => "turn_finished",
@@ -236,6 +255,7 @@ impl Event {
             Self::DecisionAnswered => "decision_answered",
             Self::DecisionExpired => "decision_expired",
             Self::DecisionFailed => "decision_failed",
+            Self::ElicitationReplied => "elicitation_replied",
             Self::ReactionAdded => "reaction_added",
             Self::HandoffAnswered => "handoff_answered",
             Self::RoutineSaved => "routine_saved",
@@ -254,7 +274,10 @@ impl Event {
             Self::WorkSteered => "work_steered",
             Self::WorktreesTidied => "worktrees_tidied",
             Self::WorkNeedsSignIn => "work_needs_sign_in",
+            Self::WorkTold => "work_told",
+            Self::WorkRecalled => "work_recalled",
             Self::WorkMessaged => "work_messaged",
+            Self::WatchdogFlagged => "watchdog_flagged",
             Self::DevServerStarted => "dev_server_started",
             Self::DevServerStopped => "dev_server_stopped",
             Self::DevServerAction => "dev_server_action",
@@ -299,6 +322,8 @@ impl Event {
             Self::KofiInviteShown => "kofi_invite_shown",
             Self::KofiInviteAnswered => "kofi_invite_answered",
             Self::WhatsNewShown => "whats_new_shown",
+            Self::DesktopNotificationsSet => "desktop_notifications_set",
+            Self::DesktopNotificationOpened => "desktop_notification_opened",
             Self::CloudKeeperChecked => "cloud_keeper_checked",
             Self::CloudSleepAsked => "cloud_sleep_asked",
             Self::JoinFromPhoneAnswered => "join_from_phone_answered",

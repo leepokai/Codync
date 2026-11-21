@@ -14,14 +14,14 @@
 //!   environment on every launch (on a Codync Cloud computer, provider keys through its keeper: `proxied`).
 
 use crate::LockExt;
-use crate::agent::acp::{self, AUTH_REQUIRED, Incoming, RpcError};
-use crate::agent::backends;
-use crate::agent::registry::{Cmd, env_prefix};
 use crate::keeper::client::Grants;
 use crate::remote::managed::is_managed;
-use crate::shell::quote as shell_quote;
 use crate::store::Store;
 use anyhow::{Result, bail};
+use codync_agent::acp::{self, AUTH_REQUIRED, Incoming, RpcError};
+use codync_agent::backends;
+use codync_agent::registry::{Cmd, env_prefix};
+use codync_agent::shell::quote as shell_quote;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -38,7 +38,7 @@ pub use agent::authenticate;
 use agent::start;
 pub(crate) use agent::{Started, authenticate_account, start_with};
 pub use models::{InFlight, check_options, models, shared_models};
-pub(crate) use models::{model_config, model_ids};
+pub(crate) use models::{cursor_variant, model_config, model_ids};
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -108,7 +108,7 @@ fn visible(store: &Store, slot: &str) -> Result<BTreeMap<String, String>> {
 pub(crate) fn env_changes(vars: &Map<String, Value>) -> Result<Vec<(String, Option<String>)>> {
     let mut changes = Vec::new();
     for (k, v) in vars {
-        if !crate::shell::is_env_name(k) {
+        if !codync_agent::shell::is_env_name(k) {
             bail!("`{k}` isn't an environment variable name");
         }
         changes.push((k.clone(), v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)));
@@ -348,7 +348,7 @@ fn methods(backend: &str, init: &Value, cmd: &Cmd) -> Vec<Method> {
                     .iter()
                     .filter_map(|v| {
                         let name = text(&v["name"])?;
-                        crate::shell::is_env_name(&name).then(|| EnvVar {
+                        codync_agent::shell::is_env_name(&name).then(|| EnvVar {
                             label: text(&v["label"]).unwrap_or_else(|| name.clone()),
                             secret: v["secret"].as_bool().unwrap_or(true),
                             optional: v["optional"].as_bool().unwrap_or(false),

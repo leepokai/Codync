@@ -74,8 +74,11 @@ impl Hub {
             if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&before) {
                 crate::chat::memory::changed(self, Some(&id));
             }
-            if cfg.fallbacks != before.fallbacks {
-                crate::chat::tasks::fallbacks_changed(self, &cfg);
+            if cfg.fallbacks != before.fallbacks
+                || cfg.thread_agent != before.thread_agent
+                || cfg.thread_fallbacks != before.thread_fallbacks
+            {
+                crate::chat::work::fallbacks_changed(self, &cfg);
             }
             self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
         }
@@ -85,9 +88,9 @@ impl Hub {
     }
 
     pub fn delete_bot(&self, id: &str) -> Result<()> {
-        // Its tasks go first: they are the bot's own work. Its box goes below.
-        for task in crate::chat::tasks::of(&self.store, id) {
-            self.delete_bot(&task.id)?;
+        // Its threads go first: they are the bot's own work. Its box goes below.
+        for thread in crate::chat::work::of(&self.store, id) {
+            self.delete_bot(&thread.id)?;
         }
         self.routines.disable_bot(&self.store, id)?;
         self.team.end_turn(id);
@@ -100,16 +103,17 @@ impl Hub {
         {
             let _g = self.emit_lock.locked();
             let rev = self.store.delete_bot(id)?;
-            // No client ever listed a task bot, so none hears it go.
-            if !crate::store::is_task_id(id) {
+            // No client ever listed a thread bot, so none hears it go.
+            if !crate::store::is_thread_id(id) {
                 let deleted = json!({"type": "bot", "rev": rev, "bot": {"id": id, "deleted": true, "rev": rev}});
                 let _ = self.events.send(deleted);
             }
         }
-        crate::chat::tasks::forget(self, id);
+        crate::chat::work::forget(self, id);
         crate::network::publish(self);
-        // Its shared files and artifacts are unreachable once the bot is deleted.
-        let folders = [crate::chat::files::root(id), crate::chat::artifacts::root(id)];
+        // Its shared files, artifacts and the files sent to it (a thread's, a group's) are unreachable once it is deleted.
+        let folders =
+            [crate::chat::files::root(id), crate::chat::artifacts::root(id), crate::chat::uploads::data_root(id)];
         let bot = id.to_owned();
         tokio::task::spawn_blocking(move || {
             crate::chat::memory::files::remove_bot(&bot);

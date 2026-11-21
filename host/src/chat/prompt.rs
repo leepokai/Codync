@@ -24,6 +24,8 @@ pub fn of_entry(hub: &Hub, bot: &BotConfig, e: &Entry) -> String {
     let text = data["text"].as_str().unwrap_or_default();
     let attachments = data["attachments"].as_array().map_or(&[][..], Vec::as_slice);
     let asked = of_message(&hub.store, &bot.skills, &uploads::root(bot), text, attachments);
+    // What a bot's chat passed on to its task's thread (`tell_task`) says so to the thread.
+    let asked = if data["relay"] == true { crate::chat::work::relayed(&asked) } else { asked };
     let id = (!asked.starts_with('/') && data["from"] != "host").then(|| format!("[Codync: message {}]", e.id));
     let note = replies::note(hub, &bot.id, &data["replyTo"]);
     [id, note, Some(asked)].into_iter().flatten().collect::<Vec<_>>().join("\n")
@@ -57,5 +59,15 @@ mod tests {
         assert_eq!(of_entry(&hub, &bot, &command), "/compact keep notes");
         let brief = hub.add_entry(&chat, EntryKind::User, 5, &json!({"text": "[Task] x", "from": "host"})).unwrap();
         assert_eq!(of_entry(&hub, &bot, &brief), "[Task] x", "a task's brief isn't a message to quote");
+    }
+
+    #[test]
+    fn what_a_chat_passes_on_to_a_thread_says_so() {
+        let hub = hub();
+        let bot = bot("thread-1", "Ann", "/tmp");
+        hub.store.save_bot(&bot).unwrap();
+        let data = json!({"text": "Also the API page.", "from": "host", "relay": true});
+        let relayed = hub.add_entry(&Lane::main("thread-1"), EntryKind::User, 1, &data).unwrap();
+        assert_eq!(of_entry(&hub, &bot, &relayed), crate::chat::work::relayed("Also the API page."));
     }
 }

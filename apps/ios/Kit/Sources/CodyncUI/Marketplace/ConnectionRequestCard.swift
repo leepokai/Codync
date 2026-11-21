@@ -30,7 +30,7 @@ struct ConnectionRequestCard: View {
                 Spacer(minLength: 8)
                 trailing
             }
-            TaskLine(data: entry.data)
+            WorkThreadLine(data: entry.data)
             // The card has no fill, so each field gets one.
             if pending, request.kind == "login" {
                 TextField(L10n.tr("Username or email"), text: $username)

@@ -72,10 +72,10 @@ pub fn tools() -> Vec<Value> {
     ]
 }
 
-/// `caller`: the bot whose agent calls. A task's servers are its bot's: the user sees and stops them there, and
+/// `caller`: the bot whose agent calls. A thread's servers are its bot's: the user sees and stops them there, and
 /// they count toward its limit.
 pub async fn call(hub: &Arc<Hub>, caller: &str, name: &str, args: &Value) -> Result<Value> {
-    let bot = &crate::chat::tasks::owner(&hub.store, caller);
+    let bot = &crate::chat::work::owner(&hub.store, caller);
     match name {
         START => start(hub, caller, bot, args).await,
         "list_dev_servers" => Ok(json!({"servers": hub.dev_servers.wire(bot)})),

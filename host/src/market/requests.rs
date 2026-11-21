@@ -188,7 +188,7 @@ pub async fn finish(hub: &Arc<Hub>, args: &Value) -> Result<Value> {
             text(args, "value")?,
         )?;
         let note = format!(
-            "[Login for {} saved as `{}`{}. Type it with the computer tool type_login; the password is never shown to you. Continue the task.]",
+            "[Login for {} saved as `{}`{}. Type it with the computer tool type_login; the password is never shown to you. Continue your work.]",
             login.site,
             login.id,
             if login.username.is_empty() { String::new() } else { format!(" (username {})", login.username) }
@@ -234,7 +234,7 @@ pub async fn finish(hub: &Arc<Hub>, args: &Value) -> Result<Value> {
     hub.update_bot(&json!({"id":bot,"connectors":enabled}))?;
     hub.send_cmd(bot, Cmd::RefreshTools)?;
     let note = format!(
-        "[Connection setup completed: {}. Credentials were submitted securely and are not in this conversation. Continue the task.]",
+        "[Connection setup completed: {}. Credentials were submitted securely and are not in this conversation. Continue your work.]",
         request["title"].as_str().unwrap_or("Connector")
     );
     complete(hub, &e, id, note)
@@ -272,7 +272,7 @@ pub(super) mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open(Path::new(":memory:")).unwrap();
         let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
-        let cfg: BotConfig = serde_json::from_value(json!({"id":"bot","name":"bot","backend":"fixture","cwd":dir,"command":crate::shell::python(&agent),"notify":false})).unwrap();
+        let cfg: BotConfig = serde_json::from_value(json!({"id":"bot","name":"bot","backend":"fixture","cwd":dir,"command":codync_agent::shell::python(&agent),"notify":false})).unwrap();
         store.save_bot(&cfg).unwrap();
         let python = if cfg!(windows) { "python" } else { "python3" };
         let c: super::super::Connector = serde_json::from_value(json!({"id":"fixture","name":"Fixture","command":python,"args":[PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/credential_mcp.py")]})).unwrap();

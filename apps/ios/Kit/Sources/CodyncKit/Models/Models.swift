@@ -35,6 +35,21 @@ public struct Entry: Codable, Identifiable, Hashable, Sendable {
         self.updatedAt = updatedAt
     }
 
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        seq = try c.decode(Int64.self, forKey: .seq)
+        botId = try c.decode(String.self, forKey: .botId)
+        rev = try c.decode(Int64.self, forKey: .rev)
+        kind = try c.decode(String.self, forKey: .kind)
+        turn = try c.decode(Int64.self, forKey: .turn)
+        data = try c.decode(EntryData.self, forKey: .data)
+        createdAt = try c.decode(Int64.self, forKey: .createdAt)
+        updatedAt = try c.decode(Int64.self, forKey: .updatedAt)
+        // Hosts before 2.51.0: goes when minHost reaches 2.51.0.
+        if let old = try? c.decode(OldHostWire.EntryRefs.self, forKey: .data) { data.adopt(old) }
+    }
+
     /// Chat-visible (Grok Bot model): user messages, final replies, approval cards, notices. Of memory and context,
     /// only a fresh conversation gets a line: memory lives in the bot's memory settings, a summary keeps the same
     /// conversation going, and a kept handoff changed nothing.
@@ -130,6 +145,8 @@ public struct UsageProvider: Codable, Hashable, Sendable, Identifiable {
     public var windows: [UsageWindow]
     public var source: String
     public var updatedAt: Int64
+    /// Since when the default login's checks fail, which leaves `windows` from before. Nil while they work.
+    public var failedAt: Int64? = nil
     /// The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it.
     public var registry: String? = nil
     /// What the default login is called, when the host knows. Only sent beside `loginProfiles`.
@@ -148,6 +165,7 @@ public extension UsageProvider {
         windows = try values.decode([UsageWindow].self, forKey: .windows)
         source = try values.decode(String.self, forKey: .source)
         updatedAt = try values.decode(Int64.self, forKey: .updatedAt)
+        failedAt = try values.decodeIfPresent(Int64.self, forKey: .failedAt)
         registry = try values.decodeIfPresent(String.self, forKey: .registry)
         defaultLoginProfile = try values.decodeIfPresent(String.self, forKey: .defaultLoginProfile)
         loginProfiles = try values.decodeIfPresent([UsageLoginProfile].self, forKey: .loginProfiles) ?? []
@@ -155,8 +173,8 @@ public extension UsageProvider {
 
     /// The agent's logins, the default one first. A single entry for an agent with one login.
     var logins: [UsageLogin] {
-        [UsageLogin(id: nil, name: defaultLoginProfile, windows: windows)]
-            + loginProfiles.map { UsageLogin(id: $0.id, name: $0.name, windows: $0.windows) }
+        [UsageLogin(id: nil, name: defaultLoginProfile, windows: windows, failedAt: failedAt)]
+            + loginProfiles.map { UsageLogin(id: $0.id, name: $0.name, windows: $0.windows, failedAt: $0.failedAt) }
     }
 
     /// The login closest to a plan limit, which is what a compact view shows: the default login when none has a
@@ -172,6 +190,11 @@ public struct UsageLogin: Identifiable, Hashable, Sendable {
     public var id: String?
     public var name: String?
     public var windows: [UsageWindow]
+    /// Since when its checks fail, which leaves `windows` from before. Nil while they work.
+    public var failedAt: Int64? = nil
+
+    /// Shown, but not current: its last check failed.
+    public var isOutOfDate: Bool { failedAt != nil && !windows.isEmpty }
 
     /// Plan windows. A note (today's tokens, a dollar balance) is not a limit.
     public var limits: [UsageWindow] { windows.filter { $0.text == nil } }
@@ -185,6 +208,8 @@ public struct UsageLoginProfile: Codable, Hashable, Sendable, Identifiable {
     public var name: String
     public var windows: [UsageWindow]
     public var updatedAt: Int64
+    /// Since when its checks fail, which leaves `windows` from before. Nil while they work.
+    public var failedAt: Int64? = nil
 }
 
 public struct UsageWindow: Codable, Hashable, Sendable, Identifiable {
@@ -413,6 +438,10 @@ public struct BotDraft: Codable, Hashable, Sendable {
     /// Nil where the host has none (an older one), so it isn't sent.
     public var fallbacks: [BotFallback]?
     public var selfFallbacks: Bool?
+    /// Advisor mode's agent for the threads; nil turns it off (sent as null by `BotUpdate`).
+    public var threadAgent: BotFallback?
+    /// Nil where the host has no Advisor mode (an older one), so neither it nor `threadAgent` is sent.
+    public var threadFallbacks: [BotFallback]?
     public var pinned: Bool?
     public var hidden: Bool?
     public var notify: Bool?
@@ -430,9 +459,9 @@ public struct BotDraft: Codable, Hashable, Sendable {
     /// Nil where the host offers no setting (a new bot, an agent it can't ask), so it isn't sent.
     public var compaction: CompactionThreshold?
     /// Nil where the host has no box (an older one, a new bot), so it isn't sent.
-    public var maxAgents: Int?
+    public var maxThreads: Int?
     /// Nil where the host has no such setting, so it isn't sent.
-    public var taskWorktrees: Bool?
+    public var threadWorktrees: Bool?
 
     public init(name: String = "", description: String = "", avatarColor: String = AvatarPalette.colors.randomElement()!.id,
                 avatarShape: String = AvatarPalette.shapes.randomElement()!, backend: String = "claude", cwd: String = "",
@@ -464,6 +493,8 @@ public struct BotDraft: Codable, Hashable, Sendable {
         fastMode = bot.fastMode
         fallbacks = bot.fallbacks
         selfFallbacks = bot.selfFallbacks
+        threadAgent = bot.threadAgent
+        threadFallbacks = bot.threadFallbacks
         pinned = bot.pinned
         hidden = bot.hidden
         notify = bot.notify
@@ -474,8 +505,8 @@ public struct BotDraft: Codable, Hashable, Sendable {
         offeredToNetwork = bot.offeredToNetwork
         reachableByAssistants = bot.reachableByAssistants
         compaction = bot.compaction
-        maxAgents = bot.maxAgents
-        taskWorktrees = bot.taskWorktrees
+        maxThreads = bot.maxThreads
+        threadWorktrees = bot.threadWorktrees
     }
 
     /// This draft with each field it hasn't changed from `base` (the bot as the form loaded it) taken from `fresh`
@@ -488,10 +519,10 @@ public struct BotDraft: Codable, Hashable, Sendable {
         }
         follow(\.name); follow(\.description); follow(\.avatarColor); follow(\.avatarShape); follow(\.backend)
         follow(\.command); follow(\.loginProfile); follow(\.cwd); follow(\.permission); follow(\.mode); follow(\.model); follow(\.modelOptions)
-        follow(\.fastMode); follow(\.fallbacks); follow(\.selfFallbacks); follow(\.pinned); follow(\.hidden)
+        follow(\.fastMode); follow(\.fallbacks); follow(\.selfFallbacks); follow(\.threadAgent); follow(\.threadFallbacks); follow(\.pinned); follow(\.hidden)
         follow(\.notify); follow(\.connectors); follow(\.skills); follow(\.computer); follow(\.manageTeam)
         follow(\.sharedMemory); follow(\.harnessMemory); follow(\.offeredToNetwork); follow(\.reachableByAssistants)
-        follow(\.compaction); follow(\.maxAgents); follow(\.taskWorktrees)
+        follow(\.compaction); follow(\.maxThreads); follow(\.threadWorktrees)
         return draft
     }
 }

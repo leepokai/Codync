@@ -2,10 +2,10 @@
 
 use super::{Started, probe_dir, start, text};
 use crate::LockExt;
-use crate::agent::acp::Incoming;
 use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::{Context, Result, bail};
+use codync_agent::acp::Incoming;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -42,7 +42,7 @@ pub async fn shared_models(hub: &Hub, backend: &str) -> Result<Value> {
 /// Discover the agent's advertised models in an isolated, prompt-free session.
 /// This uses the same credentials as actual bot sessions and never reads project files.
 pub async fn models(store: &Store, backend: &str) -> Result<Value> {
-    if crate::agent::backends::agent_checks_off() {
+    if codync_agent::backends::agent_checks_off() {
         bail!("agent checks are off on this host");
     }
     let Started { acp, mut inbox, .. } = start(store, backend).await?;
@@ -69,7 +69,7 @@ pub async fn models(store: &Store, backend: &str) -> Result<Value> {
         };
         let mut catalog = model_catalog(&session, &options);
         catalog["modes"] =
-            crate::agent::modes::Modes::from_session(&session, backend).map_or(json!([]), |m| m.catalog());
+            codync_agent::modes::Modes::from_session(&session, backend).map_or(json!([]), |m| m.catalog());
         if backend != "cursor" {
             discover_options(&acp, &session, &mut catalog).await?;
         }
@@ -81,7 +81,7 @@ pub async fn models(store: &Store, backend: &str) -> Result<Value> {
 }
 
 /// Probe model-dependent settings in the disposable discovery session, never in a bot's session.
-async fn discover_options(acp: &crate::agent::acp::Acp, session: &Value, catalog: &mut Value) -> Result<()> {
+async fn discover_options(acp: &codync_agent::acp::Acp, session: &Value, catalog: &mut Value) -> Result<()> {
     let Some(sid) = session["sessionId"].as_str() else { return Ok(()) };
     let Some(config) = model_config(session).and_then(|c| c["id"].as_str()) else { return Ok(()) };
     let current = catalog["currentModelId"].clone();
@@ -191,7 +191,7 @@ fn model_catalog(session: &Value, options: &Value) -> Value {
     }
     json!({"models": models, "currentModelId": current,
         "defaultModelOptions": true,
-        "fastMode": crate::agent::config::fast_mode_config(session).is_some()})
+        "fastMode": codync_agent::config::fast_mode_config(session).is_some()})
 }
 
 /// One model's options as `[{id, name, values: [{id, name}], default}]`, from Cursor's
@@ -199,6 +199,13 @@ fn model_catalog(session: &Value, options: &Value) -> Value {
 fn model_options(options: &Value, model: &str) -> Vec<Value> {
     let entry = options["models"].as_array().into_iter().flatten().find(|m| m["value"] == model);
     entry.and_then(|m| m["configOptions"].as_array()).into_iter().flatten().filter_map(parse_select_option).collect()
+}
+
+/// Cursor names a model variant `grok-4.7[reasoning_effort=high,fast=true]`: the model and its settings.
+pub(crate) fn cursor_variant(model: &str) -> Option<(&str, Vec<(&str, &str)>)> {
+    let (name, params) = model.strip_suffix(']')?.split_once('[')?;
+    let params = params.split(',').filter(|p| !p.is_empty()).map(|p| p.split_once('=')).collect::<Option<_>>()?;
+    Some((name, params))
 }
 
 /// Checks that `options` (option id → value) are ones `model` (none: the agent's current default) lists in `catalog`
@@ -209,7 +216,10 @@ pub fn check_options<'a>(
     options: impl IntoIterator<Item = (&'a str, &'a str)>,
 ) -> Result<()> {
     let model = model.or_else(|| catalog["currentModelId"].as_str()).unwrap_or_default();
-    let entry = catalog["models"].as_array().into_iter().flatten().find(|m| m["id"] == model);
+    // A saved Cursor model carries its settings; the list names the bare model.
+    let bare = cursor_variant(model).map_or(model, |(name, _)| name);
+    let models = catalog["models"].as_array().map_or(&[][..], Vec::as_slice);
+    let entry = models.iter().find(|m| m["id"] == model).or_else(|| models.iter().find(|m| m["id"] == bare));
     let Some(entry) = entry else {
         bail!("model {model} isn't in the agent's model list, so its settings can't be checked")
     };
@@ -284,8 +294,8 @@ mod tests {
     #[tokio::test]
     async fn an_unavailable_model_keeps_other_models_and_their_options() {
         let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/model_options_agent.py");
-        let command = crate::shell::python(&fixture);
-        let (acp, _inbox) = crate::agent::acp::Acp::spawn(&command, env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
+        let command = codync_agent::shell::python(&fixture);
+        let (acp, _inbox) = codync_agent::acp::Acp::spawn(&command, env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
         let session = json!({"sessionId": "s1", "configOptions": [{"id": "model", "category": "model",
             "type": "select", "currentValue": "first", "options": [
                 {"value": "first"}, {"value": "unavailable"}, {"value": "second"}]}]});
@@ -315,6 +325,8 @@ mod tests {
         );
         assert!(check(Some("gpt"), "effort", "low").unwrap_err().contains("isn't in the agent's model list"));
         assert!(check_options(&catalog, Some("gpt"), []).is_err(), "an unknown model");
+        // A saved Cursor model carries its settings; the list has the bare one.
+        assert!(check(Some("opus[effort=low,fast=true]"), "effort", "high").is_ok(), "a saved Cursor model");
     }
 
     #[test]

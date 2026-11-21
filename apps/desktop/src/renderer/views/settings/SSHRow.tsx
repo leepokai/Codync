@@ -21,23 +21,15 @@ export function SSHRow({ profile, status, edit, attached = true }: { profile: SS
   const line = (() => {
     switch (status.kind) {
       case 'idle':
-        return `${target} · Not connected`
-      case 'connecting':
-        return status.step
-      case 'installing':
-        return tr(status.step)
       case 'confirmHostKey':
-        return `${target} · Confirm the host key`
       case 'connected':
-        return `${target} · ${sshStatusDetail(status, attached)}`
-      case 'retrying':
-        return `${status.message} Retrying…`
-      case 'failed':
-        return status.message
+        return `${target} · ${sshStatusDetail(status, attached, tr)}`
       case 'notInstalled':
         if (dev) return named('Install Codync Dev on {name} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.')
         if (windows) return named('Install the Codync app on {name} and open it once: it brings codync-host with it.')
         return named(status.failure ? "Couldn't install codync-host on {name}." : "codync-host isn't installed on {name}.")
+      default:
+        return sshStatusDetail(status, attached, tr)
     }
   })()
   const problem = status.kind === 'retrying' || status.kind === 'failed' || status.kind === 'notInstalled'

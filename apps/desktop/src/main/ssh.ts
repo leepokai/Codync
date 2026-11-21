@@ -6,7 +6,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
 import { dataDir } from './host-controller'
-import { isWindowsShell, type SSHAttachment, type SSHProfile, type SSHState, type SSHStatus } from '../shared/ssh'
+import { isWindowsShell, type SSHAttachment, type SSHMessage, type SSHProfile, type SSHState, type SSHStatus, sshMessage } from '../shared/ssh'
 import { codyncKnownHosts, infoArguments, installArguments, installOutput, installSteps, keyscanArguments, knownHostsFiles, needsLinger, probeArguments, resolveArguments, tunnelArguments } from './ssh-command'
 import { authRefused, consistent, hostKeys, knownHostsLines, knownHostsName, parseConfig, parseInfo, usesProxy } from './ssh-parse'
 import { KEYGEN, KEYSCAN, SSH, killOrphanTunnels, lastLine, missingTools, run, scanHostKeys, sshListens } from './ssh-process'
@@ -45,13 +45,13 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 // MARK: the manager
 
-type Outcome = { kind: 'attached' } | { kind: 'stop'; status: SSHStatus } | { kind: 'retry'; message: string }
+type Outcome = { kind: 'attached' } | { kind: 'stop'; status: SSHStatus } | { kind: 'retry'; message: SSHMessage }
 interface Token {
   cancelled: boolean
 }
 
 const signInRefused = (p: SSHProfile) =>
-  `${p.host} refused the key. Codync signs in with an SSH key (ssh-agent or the key file) and can't type a password or passphrase; make \`ssh ${p.host}\` work in Terminal without prompting, then connect again.`
+  sshMessage("{name} refused the key. Codync signs in with an SSH key (ssh-agent or the key file) and can't type a password or passphrase; make `ssh {name}` work in Terminal without prompting, then connect again.", { name: p.host })
 
 class SSHComputers {
   profiles: SSHProfile[] = []
@@ -150,7 +150,7 @@ class SSHComputers {
       await fs.mkdir(dataDir, { recursive: true, mode: 0o700 })
       await fs.appendFile(codyncKnownHosts(dataDir), lines.join('\n') + '\n', { mode: 0o600 })
     } catch (e) {
-      return this.setStatus(id, { kind: 'failed', message: `Couldn't save the host key: ${e instanceof Error ? e.message : String(e)}` })
+      return this.setStatus(id, { kind: 'failed', message: sshMessage("Couldn't save the host key.", {}, e instanceof Error ? e.message : String(e)) })
     }
     this.pendingKeys.delete(id)
     this.connect(id)
@@ -215,26 +215,26 @@ class SSHComputers {
     const stop = (status: SSHStatus): Outcome => ({ kind: 'stop', status })
     const idle = stop({ kind: 'idle' })
     const problem = missingTools() ?? validate(profile)
-    if (problem) return stop({ kind: 'failed', message: problem })
+    if (problem) return stop({ kind: 'failed', message: sshMessage(problem) })
     this.setStatus(id, { kind: 'connecting', step: 'Reading SSH settings…' })
     const config = await run(SSH, resolveArguments(profile))
     if (token.cancelled) return idle
     const resolved = config.status === 0 ? parseConfig(config.stdout) : null
-    if (!resolved) return stop({ kind: 'failed', message: `SSH couldn't read the settings for ${profile.host}. ${lastLine(config.stderr)}` })
+    if (!resolved) return stop({ kind: 'failed', message: sshMessage("SSH couldn't read the settings for {name}.", { name: profile.host }, lastLine(config.stderr)) })
     const name = knownHostsName(resolved)
 
     // Host key (never by reading ssh's error text).
     const recorded = await this.recordedKeys(name)
     if (recorded.size === 0) {
       if (usesProxy(resolved)) {
-        return stop({ kind: 'failed', message: `${profile.host} goes through a jump host. Connect once with ssh in Terminal to confirm its host key, then try again.` })
+        return stop({ kind: 'failed', message: sshMessage('{name} goes through a jump host. Connect once with ssh in Terminal to confirm its host key, then try again.', { name: profile.host }) })
       }
       this.setStatus(id, { kind: 'connecting', step: 'Reading the host key…' })
       const lines = knownHostsLines(await scanHostKeys(resolved), name)
-      if (lines.length === 0) return { kind: 'retry', message: `Can't reach ${resolved.hostname}:${resolved.port}.` }
+      if (lines.length === 0) return { kind: 'retry', message: sshMessage("Can't reach {address}.", { address: `${resolved.hostname}:${resolved.port}` }) }
       const prints = await run(KEYGEN, ['-l', '-f', '-'], lines.join('\n') + '\n')
       const fingerprints = prints.stdout.split(/\r?\n/).filter(Boolean)
-      if (prints.status !== 0 || fingerprints.length === 0) return stop({ kind: 'failed', message: `Couldn't read the host key of ${profile.host}.` })
+      if (prints.status !== 0 || fingerprints.length === 0) return stop({ kind: 'failed', message: sshMessage("Couldn't read the host key of {name}.", { name: profile.host }) })
       this.pendingKeys.set(id, lines)
       return stop({ kind: 'confirmHostKey', name, fingerprints })
     }
@@ -253,10 +253,10 @@ class SSHComputers {
         // Only plain host keys can be compared: a `@cert-authority` key is never what keyscan returns.
         const pinned = await this.recordedKeys(name, false)
         if (current.size > 0 && pinned.size > 0 && ![...current].some((k) => pinned.has(k))) {
-          return stop({ kind: 'failed', message: `The host key of ${profile.host} changed. This can mean someone is intercepting the connection. Codync won't connect until the old key is removed from known_hosts.` })
+          return stop({ kind: 'failed', message: sshMessage("The host key of {name} changed. This can mean someone is intercepting the connection. Codync won't connect until the old key is removed from known_hosts.", { name: profile.host }) })
         }
       }
-      return { kind: 'retry', message: `SSH couldn't connect to ${profile.host}. ${lastLine(result.stderr)}` }
+      return { kind: 'retry', message: sshMessage("SSH couldn't connect to {name}.", { name: profile.host }, lastLine(result.stderr)) }
     }
     if (result.status === 127) return stop({ kind: 'notInstalled', shell })
     const info = parseInfo(result.stdout)
@@ -264,23 +264,23 @@ class SSHComputers {
       if (result.status === 0) return stop({ kind: 'notInstalled', shell })
       // The computer's default shell may have changed since the probe: ask again on the next attempt.
       this.shells.forget(id)
-      return stop({ kind: 'failed', message: `codync-host on ${profile.host} couldn't report its identity. Run \`codync-host install\` there. ${lastLine(result.stderr)}` })
+      return stop({ kind: 'failed', message: sshMessage("codync-host on {name} couldn't report its identity. Run `codync-host install` there.", { name: profile.host }, lastLine(result.stderr)) })
     }
-    if (!consistent(info.computerId, info.signKey)) return stop({ kind: 'failed', message: `${profile.host} reported an invalid identity.` })
+    if (!consistent(info.computerId, info.signKey)) return stop({ kind: 'failed', message: sshMessage('{name} reported an invalid identity.', { name: profile.host }) })
     if (profile.computerId && profile.computerId !== info.computerId) {
-      return stop({ kind: 'failed', message: `${profile.host} is now a different computer than the one saved. If it was reinstalled, remove it and add it again.` })
+      return stop({ kind: 'failed', message: sshMessage('{name} is now a different computer than the one saved. If it was reinstalled, remove it and add it again.', { name: profile.host }) })
     }
     if (!profile.computerId) this.remember(id, info.computerId, info.name)
-    if (!info.running) return { kind: 'retry', message: `codync-host is installed on ${info.name} but not running. Run \`codync-host install\` there.` }
+    if (!info.running) return { kind: 'retry', message: sshMessage('codync-host is installed on {name} but not running. Run `codync-host install` there.', { name: info.name }) }
 
     // Tunnel: a free loopback port each attempt; a port taken in between just makes ssh exit (ExitOnForwardFailure).
-    let lastProblem = ''
+    let tunnelFailure = sshMessage("Couldn't open the tunnel to {name}.", { name: profile.host })
     for (let attempt = 0; attempt < 3; attempt++) {
       const port = await freeLocalPort()
-      if (port === null) return { kind: 'retry', message: 'No free local port for the tunnel.' }
+      if (port === null) return { kind: 'retry', message: sshMessage('No free local port for the tunnel.') }
       this.setStatus(id, { kind: 'connecting', step: 'Opening the tunnel…' })
       const tunnel = this.startTunnel(profile, port)
-      if (!tunnel) return stop({ kind: 'failed', message: "Couldn't start ssh." })
+      if (!tunnel) return stop({ kind: 'failed', message: sshMessage("Couldn't start ssh.") })
       const { child, tail } = tunnel
       const alive = () => child.exitCode === null && child.signalCode === null
       const baseURL = `http://127.0.0.1:${port}`
@@ -296,12 +296,12 @@ class SSHComputers {
       }
       if (!health) {
         if (alive()) child.kill()
-        else lastProblem = await tail.lastLine()
+        else tunnelFailure = sshMessage("Couldn't open the tunnel to {name}.", { name: profile.host }, await tail.lastLine())
         continue
       }
       if (health.computerId !== info.computerId) {
         child.kill()
-        return stop({ kind: 'failed', message: `The tunnel to ${profile.host} reached a different computer than expected.` })
+        return stop({ kind: 'failed', message: sshMessage('The tunnel to {name} reached a different computer than expected.', { name: profile.host }) })
       }
       // /health is public, so the answer alone doesn't prove it came through ssh: another
       // local user could have taken the port. Only a listener ssh owns gets the token.
@@ -314,7 +314,7 @@ class SSHComputers {
       if (!listens || !alive()) {
         console.error(`ssh: tunnel port ${port} answered by something other than ssh`)
         child.kill()
-        lastProblem = 'Another program answered on the tunnel\'s local port.'
+        tunnelFailure = sshMessage("Couldn't open the tunnel to {name}. Another program answered on its local port.", { name: profile.host })
         continue
       }
       this.watch(child, id, tail)
@@ -329,8 +329,8 @@ class SSHComputers {
       this.setStatus(id, { kind: 'connected', localPort: port })
       return { kind: 'attached' }
     }
-    if (authRefused(lastProblem)) return stop({ kind: 'failed', message: signInRefused(profile) })
-    return { kind: 'retry', message: `Couldn't open the tunnel to ${profile.host}. ${lastProblem}` }
+    if (authRefused(tunnelFailure.detail ?? '')) return stop({ kind: 'failed', message: signInRefused(profile) })
+    return { kind: 'retry', message: tunnelFailure }
   }
 
   private async recordedKeys(name: string, certAuthorities = true) {
@@ -376,7 +376,7 @@ class SSHComputers {
         const since = this.connectedAt.get(id)
         if (since !== undefined && Date.now() - since >= 60_000) this.backoff.delete(id)
         this.stopTunnel(id)
-        this.setStatus(id, { kind: 'retrying', message: `The SSH connection dropped. ${detail}` })
+        this.setStatus(id, { kind: 'retrying', message: sshMessage('The SSH connection dropped.', {}, detail) })
         this.connect(id)
       })
     })

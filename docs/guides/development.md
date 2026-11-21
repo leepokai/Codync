@@ -69,7 +69,7 @@ Code CLI can finish saving a refreshed login. What is still left in its session
 after that ends from its leaves up: a process whose children have all ended gets
 3 seconds to finish by itself (a `PyInstaller` launcher removes its unpacked
 folder then), and after at most 15 seconds the rest is killed, every process
-group in the session, an MCP server's of its own too (`host/src/agent/process.rs`). The host waits for this before it exits; launchd
+group in the session, an MCP server's of its own too (`host/crates/agent/src/process.rs`). The host waits for this before it exits; launchd
 gives it 40 seconds (`ExitTimeOut`), and `codync-host install` and `stop` wait as
 long for the old host.
 Processes that detach into their own sessions and unrelated hosts using other
@@ -205,7 +205,7 @@ To bump, set `version` in `host/crates/memory/Cargo.toml` (patch for fixes, mino
 
 `codync-network` (`host/crates/network`) ships the same way as codync-mem, through `.github/workflows/network-crate.yml`: a pull request into `main` that changes it must raise its 0.x `version`, and the push to `main` mirrors it to [leepokai/codync-network](https://github.com/leepokai/codync-network) (deploy key in `CODYNC_NETWORK_DEPLOY_KEY`) and publishes the version on crates.io by trusted publishing (`leepokai/Codync`, `network-crate.yml`). Bump with `cargo check -p codync-network` in `host/`. Its `.github` folder is the mirror's own CI and pull-request redirect, inert in Codync.
 
-`codync-accounts` (`host/crates/accounts`, the account kind of [login profiles](../features/login-profiles.md)) ships the same way through `.github/workflows/accounts-crate.yml`: mirror [leepokai/codync-accounts](https://github.com/leepokai/codync-accounts), deploy key in `CODYNC_ACCOUNTS_DEPLOY_KEY`, trusted publishing for `leepokai/Codync` with `accounts-crate.yml`. Bump with `cargo check -p codync-accounts` in `host/`. Its first release needs a hand: trusted publishing can only be set up for a crate crates.io already has, so before the first dev → main merge that carries it, publish 0.1.0 once with a token and set its trusted publisher (`leepokai/Codync`, `accounts-crate.yml`), as was done for codync-network.
+`codync-agent` (`host/crates/agent`: finding, installing and starting the agents, ACP, their process trees, and the account kind of [login profiles](../features/login-profiles.md)) ships the same way through `.github/workflows/agent-crate.yml`: mirror [leepokai/codync-agent](https://github.com/leepokai/codync-agent), deploy key in `CODYNC_AGENT_DEPLOY_KEY`, trusted publishing for `leepokai/Codync` with `agent-crate.yml`. Bump with `cargo check -p codync-agent` in `host/`. It replaced `codync-accounts` (0.1.0, yanked; its mirror is archived).
 
 The mirror only fast-forwards: the crate's commits must reach `main` as they are. Merge a branch that touches a crate (no rebase or squash after its commits were mirrored or published), or the next push to the mirror is refused. 0.1.0 was published and mirrored by hand from `feat/codync-network` on 2026-10-26, ahead of its Codync release.
 

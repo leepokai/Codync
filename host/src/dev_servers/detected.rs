@@ -4,12 +4,12 @@
 use super::ports::{self, Listening, Port};
 use super::{Status, View, platform, report};
 use crate::LockExt;
-use crate::agent::acp::Acp;
-use crate::agent::backends;
-use crate::agent::process::{self, JobProcess, program_name};
 use crate::analytics::Event;
 use crate::hub::Hub;
 use anyhow::{Context, Result, bail};
+use codync_agent::acp::Acp;
+use codync_agent::backends;
+use codync_agent::process::{self, JobProcess, program_name};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -155,7 +155,7 @@ pub async fn scan(hub: &Hub, agents: &[RunningAgent], listening: &[Listening], m
             };
         }
         if !servers.is_empty() {
-            // A bot's agent and its tasks' agents share one list.
+            // A bot's agent and its threads' agents share one list.
             found.entry(agent.bot.clone()).or_default().extend(servers);
         }
     }

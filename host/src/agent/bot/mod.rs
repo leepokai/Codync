@@ -19,9 +19,11 @@
 mod background_work;
 mod cmd;
 mod codex_names;
+mod codex_section;
 mod commands;
 mod compaction;
 mod decisions;
+mod elicitations;
 mod fallback;
 mod fast_mode;
 mod files;
@@ -47,14 +49,14 @@ use inflight::Inflight;
 pub(crate) use inflight::resumable;
 pub(crate) use launch::{launch_commands, select_model, start_agent, start_first, system_prompt};
 
-use crate::agent::acp::{self, Acp, Incoming};
-use crate::agent::config::FastModeSupport;
 use crate::chat::context::{Identity, Snapshot};
 use crate::chat::group::GroupTurn;
 use crate::chat::memory;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, Entry, EntryKind, Lane};
 use anyhow::{Result, anyhow};
+use codync_agent::acp::{self, Acp, Incoming};
+use codync_agent::config::FastModeSupport;
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -82,9 +84,9 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     // The agent its main session runs on: one of its fallbacks, if it was on one when the host stopped.
     let cfg = fallback::resume_step(&hub, &base);
     let interrupted = resumable(&hub.store, &cfg.id).then(|| Lane::main(&cfg.id));
-    // A task's chat is its bot's own work, not the user's words: only the bot dreams, over its own chat.
+    // A thread's chat is its bot's own work, not the user's words: only the bot dreams, over its own chat.
     let dreamer =
-        if cfg.is_task() { mpsc::unbounded_channel().0 } else { memory::spawn_dreamer(hub.clone(), cfg.id.clone()) };
+        if cfg.is_thread() { mpsc::unbounded_channel().0 } else { memory::spawn_dreamer(hub.clone(), cfg.id.clone()) };
     let lane = Lane::main(&cfg.id);
     let fast_support = FastModeSupport::from_stored(hub.store.kv_get(&fast_mode::stored_key(&cfg.id)).as_deref());
     let support = fast_support.clone();
@@ -106,6 +108,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         routine_timed_out: false,
         routine_completion: None,
         session_fresh: false,
+        unfiled: codex_section::Unfiled::default(),
         profile_resend: HashSet::new(),
         compacting: None,
         raw_prompt: false,
@@ -125,7 +128,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         steers_in_flight: HashMap::new(),
         held_done: None,
         active_request: None,
-        task_source: crate::chat::tasks::Source::Bot,
+        task_source: crate::chat::work::Source::Bot,
         reply_hops: None,
         host_turn: None,
         reports: Vec::new(),
@@ -137,6 +140,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         sent: Vec::new(),
         reacted: Reacted::No,
         joined: false,
+        unheard: Vec::new(),
         files: files::FileShares::default(),
         perms: HashMap::new(),
         asked: HashMap::new(),
@@ -172,7 +176,7 @@ struct SessionCaps {
     additional_directories: bool,
     /// `_session/steering` (not in ACP v1 yet): a message joins the running turn (see `steer`).
     steering: bool,
-    /// `session/fork`: a new session that starts as a copy of another, which a task's does (`chat::tasks`).
+    /// `session/fork`: a new session that starts as a copy of another, which a thread's does (`chat::work`).
     fork: bool,
     /// `session/delete`: a background job's session leaves the agent's saved history (`chat::oneshot`).
     delete: bool,
@@ -199,6 +203,18 @@ pub(crate) enum Adapter {
     Other,
 }
 
+/// Whether a turn checks that Codync's MCP servers still run under the agent: OpenCode 2.x drops them from its
+/// sessions once it has been idle a while (#508, `Actor::servers_dropped`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum ServerWatch {
+    /// The agent keeps them.
+    Off,
+    /// Not seen under this process yet, so their absence says nothing: they may run elsewhere, or never have started.
+    Unseen,
+    /// Seen running under it: once none does, the agent dropped them.
+    Seen,
+}
+
 #[allow(clippy::struct_excessive_bools, reason = "independent facts about the agent process")]
 pub(crate) struct Conn {
     pub(crate) acp: Arc<Acp>,
@@ -207,6 +223,7 @@ pub(crate) struct Conn {
     pub(crate) adapter: Adapter,
     /// An OpenCode older than 2, which never ends a turn its model refused: `start_first` keeps it as a last resort.
     superseded: bool,
+    servers: ServerWatch,
     /// Sessions already created or loaded in this process, and when each was last used.
     loaded: HashMap<String, Instant>,
     /// A finished routine run's session it couldn't close is still open, with its MCP servers (`release_spent`).
@@ -218,7 +235,7 @@ pub(crate) struct Conn {
     /// Each live session's Fast mode option, as the agent last listed it.
     fast_options: HashMap<String, Value>,
     /// Each live session's modes, as the agent last listed them, and the sessions already switched to the bot's.
-    modes: HashMap<String, crate::agent::modes::Modes>,
+    modes: HashMap<String, codync_agent::modes::Modes>,
     mode_set: HashSet<String>,
     /// The agent reports compactions (`compaction_update`); until it does, a fall in usage stands in for them.
     reports_compaction: bool,
@@ -229,6 +246,8 @@ pub(crate) struct Conn {
     renamed: HashMap<String, codex_names::Renamed>,
     /// The login profile the process runs on, which isn't removed meanwhile.
     on_profile: Option<crate::agent::login_profiles::Running>,
+    /// The `CODEX_HOME` the process started with, when it isn't Codex's own default.
+    codex_home: Option<String>,
 }
 
 impl Conn {
@@ -294,6 +313,8 @@ struct Actor {
     routine_completion: Option<RoutineCompletion>,
     /// True until the first prompt of a new ACP session has been sent.
     session_fresh: bool,
+    /// The new Codex sessions that aren't in Codex's Codync section yet.
+    unfiled: codex_section::Unfiled,
     /// Sessions that compacted away the `<bot-profile>` their first message carried; their next prompt carries
     /// a fresh one.
     profile_resend: HashSet<String>,
@@ -329,15 +350,15 @@ struct Actor {
     /// How the running turn ended, while the agent still owes an answer to a steer (`turn_ended`).
     held_done: Option<Done>,
     active_request: Option<crate::chat::team::BotRequest>,
-    /// A task's running turn works an item that came from here (`chat::tasks`): a routine's run and another bot's
+    /// A thread's running turn works a task that came from here (`chat::work`): a routine's run and another bot's
     /// request keep the rules those turns have in a chat. Anything else: the bot's own.
-    task_source: crate::chat::tasks::Source,
+    task_source: crate::chat::work::Source,
     /// During a turn that takes bot replies: the hops of their chain (see `chat::team::BotReply`).
     reply_hops: Option<u8>,
     /// The running turn is one the host started, with no message of the user's (`Cmd::Prompt`, `Cmd::FollowUp`).
     host_turn: Option<HostTurn>,
     /// The reports the running turn answers (`HostTurn::TaskReport`), kept until it ends (`end_host_turn`).
-    reports: Vec<crate::chat::tasks::Report>,
+    reports: Vec<crate::chat::work::Report>,
     /// The call the next host-started turn opens (`Cmd::Prompt`), whose replies are that call's.
     prompt_call: Option<String>,
     seg: Seg,
@@ -353,10 +374,15 @@ struct Actor {
     // ponytail: the host can't tell which message a send answered, so a closing note after one shows too; a bubble too
     // many beats a reply lost.
     joined: bool,
+    /// Messages that joined this turn (`steer`) with nothing from the agent since: a turn its agent then cancels on its
+    /// own drops them (Codex, on a refused card), so they go out again (`requeue_unheard`).
+    // ponytail: any text or tool call counts as the agent's word on them, so a card from the step already under way when
+    // one joined, refused, still drops it; ACP doesn't say which step read the message.
+    unheard: Vec<Queued>,
     files: files::FileShares,
     /// permission entry id -> who waits for the answer
     perms: HashMap<String, updates::Answer>,
-    /// Decision card id -> the live tool call waiting for this turn's choice.
+    /// Decision card id -> the live tool call or agent question (`elicitations`) waiting for this turn's choice.
     asked: HashMap<String, decisions::Asked>,
     /// The chat's choice card whose call stopped waiting: the user's press or next message still answers it.
     open_card: Option<String>,
@@ -415,8 +441,8 @@ impl Actor {
         let failed = done.as_ref().is_err_and(acp::may_end_session);
         self.finish_turn(&done);
         match session {
-            // A task's session is spent like a run's; an item that follows reopens it.
-            Some(sid) if routine || self.cfg.is_task() => self.release_spent(&sid).await,
+            // A thread's session is spent like a run's; a task that follows reopens it.
+            Some(sid) if routine || self.cfg.is_thread() => self.release_spent(&sid).await,
             Some(sid) if failed => self.close_reopenable(&sid).await,
             _ => {}
         }
@@ -473,13 +499,13 @@ impl Actor {
         self.hub.team.end_turn(&self.cfg.id);
         self.complete_request(Err(anyhow!("recipient shut down")), true);
         self.complete_group(Err(anyhow!("bot shut down")));
-        // Its cards may sit in another chat (a group's, a task's parent's), which outlives it.
+        // Its cards may sit in another chat (a group's, a thread's parent's), which outlives it.
         self.expire_perms();
         if let Some(c) = self.conn.take() {
             c.acp.kill().await;
         }
-        // Unless the task runs again already: the user wrote to its thread as this actor was on its way out.
-        if self.cfg.is_task() && !self.hub.has_actor(&self.cfg.id) {
+        // Unless the thread runs again already: the user wrote to its thread as this actor was on its way out.
+        if self.cfg.is_thread() && !self.hub.has_actor(&self.cfg.id) {
             self.hub.forget_runtime(&self.cfg.id);
         }
     }
@@ -529,7 +555,7 @@ impl Actor {
 }
 
 /// Told to a bot whose turn the previous host process cut off (Grok Bot's upgrade resume).
-const RESUME_PROMPT: &str = "[Codync restarted on this computer and interrupted you mid-task. You've been resumed with your full conversation intact. Continue exactly where you left off and finish what you were doing. If your previous step already completed an action, do NOT repeat it — just carry on from there.]";
+const RESUME_PROMPT: &str = "[Codync restarted on this computer and interrupted you mid-turn. You've been resumed with your full conversation intact. Continue exactly where you left off and finish what you were doing. If your previous step already completed an action, do NOT repeat it — just carry on from there.]";
 
 /// How long a cancelled turn may take to wind down before its agent process is stopped.
 const CANCEL_GRACE: Duration = Duration::from_secs(15);

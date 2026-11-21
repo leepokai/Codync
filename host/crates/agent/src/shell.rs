@@ -1,0 +1,300 @@
+//! Command lines: the one place Unix and Windows differ in how agents and other
+//! commands start. Unix runs a line with `sh -c`, Windows with `cmd /c`.
+//!
+//! Windows hands the line to `cmd` through an environment variable: `cmd`
+//! expands `%VAR%` before it parses, so the line's own quotes survive whatever
+//! argument quoting the spawner (std, tokio, the PTY) applies to `cmd`'s arguments.
+
+use std::fmt::Write as _;
+use std::path::PathBuf;
+
+/// A program, its arguments and extra environment that run one command line.
+pub struct Shell {
+    pub program: &'static str,
+    pub args: Vec<String>,
+    /// An empty value takes the variable away ([`apply_env`]).
+    pub env: Vec<(String, String)>,
+}
+
+impl Shell {
+    pub fn std(&self) -> std::process::Command {
+        let mut command = std::process::Command::new(self.program);
+        apply_env(command.args(&self.args), &self.env);
+        command
+    }
+
+    pub fn tokio(&self) -> tokio::process::Command {
+        let mut command = tokio::process::Command::new(self.program);
+        apply_env(command.args(&self.args).as_std_mut(), &self.env);
+        command
+    }
+}
+
+/// Gives `command` the variables of `env`. An empty value takes the variable away instead: the process doesn't
+/// inherit this one's.
+pub fn apply_env(command: &mut std::process::Command, env: &[(String, String)]) {
+    for (name, value) in env {
+        if value.is_empty() {
+            command.env_remove(name);
+        } else {
+            command.env(name, value);
+        }
+    }
+}
+
+#[cfg(unix)]
+pub fn line(line: &str) -> Shell {
+    Shell { program: "/bin/sh", args: vec!["-c".into(), line.into()], env: vec![] }
+}
+
+#[cfg(windows)]
+const LINE_VAR: &str = "CODYNC_COMMAND_LINE";
+
+/// `cmd` has no `KEY=value cmd` syntax, so leading assignments become the environment.
+#[cfg(windows)]
+pub fn line(line: &str) -> Shell {
+    let (mut env, rest) = split_env(line);
+    env.push((LINE_VAR.into(), rest.into()));
+    Shell { program: "cmd.exe", args: vec!["/d".into(), "/c".into(), format!("%{LINE_VAR}%")], env }
+}
+
+/// Runs `command` in place of the shell where the shell can do that (`exec`), so
+/// signals and exit codes reach the program itself.
+pub fn exec(command: &str) -> Shell {
+    if cfg!(windows) { line(command) } else { line(&format!("exec {command}")) }
+}
+
+/// The PATH a fresh login would get, for finding CLIs installed after this process started.
+#[cfg(unix)]
+pub fn user_path() -> Option<String> {
+    String::from_utf8(login_shell_output(&login_shell(), "printf '%s' \"$PATH\"")?).ok()
+}
+
+/// The variables a fresh login would get, read only when the user imports some into a login profile.
+#[cfg(unix)]
+pub fn user_env() -> Option<Vec<(String, String)>> {
+    login_shell_output(&login_shell(), "env -0").map(|dump| parse_env(&dump))
+}
+
+/// Windows: the host's own. A process started at sign-in already has the user's variables.
+#[cfg(windows)]
+#[allow(clippy::unnecessary_wraps)] // the Unix signature
+pub fn user_env() -> Option<Vec<(String, String)>> {
+    Some(std::env::vars().collect())
+}
+
+#[cfg(unix)]
+fn login_shell() -> String {
+    std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into())
+}
+
+/// What `script` prints in the login shell (`shell -ilc`), with a timeout (nvm/conda can make shells slow). The
+/// shell writes it to a file, since a background job started by an rc file can hold a stdout pipe open long after
+/// the shell exits. It can hold secrets, so the file sits in a folder only this user can open; the shell creates
+/// the file itself, so an rc file's `noclobber` doesn't block it.
+#[cfg(unix)]
+fn login_shell_output(shell: &str, script: &str) -> Option<Vec<u8>> {
+    use std::os::unix::fs::DirBuilderExt as _;
+    use std::time::{Duration, Instant};
+    let dir = std::env::temp_dir().join(format!("codync-shell-{}", uuid::Uuid::new_v4()));
+    std::fs::DirBuilder::new().mode(0o700).create(&dir).ok()?;
+    let file = dir.join("out");
+    let target = file.to_string_lossy().replace('\'', r"'\''");
+    let child = std::process::Command::new(shell)
+        .args(["-ilc", &format!("{script} > '{target}'")])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    let Ok(mut child) = child else {
+        let _ = std::fs::remove_dir_all(&dir);
+        return None;
+    };
+    let deadline = Instant::now() + Duration::from_secs(8);
+    let exited = loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break true,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(50)),
+            _ => {
+                let _ = child.kill();
+                break false;
+            }
+        }
+    };
+    let out = std::fs::read(&file).ok().filter(|d| exited && !d.is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+    out
+}
+
+/// `env -0` output: `KEY=value` entries ended by NUL; entries that aren't UTF-8 are skipped.
+#[cfg(unix)]
+fn parse_env(dump: &[u8]) -> Vec<(String, String)> {
+    dump.split(|b| *b == 0)
+        .filter_map(|entry| std::str::from_utf8(entry).ok()?.split_once('='))
+        .filter(|(k, _)| !k.is_empty())
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect()
+}
+
+/// Windows: the user's and the machine's PATH from the registry. A running process keeps the
+/// PATH it started with, so a CLI whose installer just added its folder is only seen there.
+#[cfg(windows)]
+pub fn user_path() -> Option<String> {
+    use std::os::windows::process::CommandExt as _;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let read = "[Environment]::GetEnvironmentVariable('Path','User') + ';' + [Environment]::GetEnvironmentVariable('Path','Machine')";
+    let out = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", read])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+    let path = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    (out.status.success() && !path.is_empty()).then_some(path)
+}
+
+/// Quotes one word for [`line`].
+pub fn quote(s: &str) -> String {
+    let plain = |c: char| c.is_ascii_alphanumeric() || "-_./=@:+,".contains(c) || (cfg!(windows) && c == '\\');
+    if !s.is_empty() && s.chars().all(plain) {
+        s.to_owned()
+    } else if cfg!(windows) {
+        // `cmd` has no escape for a quote inside quotes; Windows paths can't hold one.
+        format!("\"{}\"", s.replace('"', ""))
+    } else {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    }
+}
+
+/// Whether `name` can name an environment variable Codync sets.
+pub fn is_env_name(name: &str) -> bool {
+    !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// `KEY=value ` assignments before a command. Unix goes through `env` so the result
+/// still works after `exec`; Windows' [`line`] lifts them into the environment. An empty value takes the
+/// variable away ([`apply_env`]): `-u NAME` on Unix, ahead of the assignments, where `env` stops reading options.
+pub fn env_prefix<'a>(pairs: impl IntoIterator<Item = (&'a str, &'a str)>) -> String {
+    let (mut unset, mut set) = (String::new(), String::new());
+    for (k, v) in pairs.into_iter().filter(|(k, _)| is_env_name(k)) {
+        if v.is_empty() && cfg!(unix) {
+            let _ = write!(unset, "-u {k} ");
+        } else {
+            // Windows' `line` hands an empty value to `apply_env`.
+            let _ = write!(set, "{k}={} ", quote(v));
+        }
+    }
+    let pairs = unset + &set;
+    if pairs.is_empty() || cfg!(windows) { pairs } else { format!("env {pairs}") }
+}
+
+/// `program` as spawnable: its full path when it's on the search path. Windows
+/// needs this for npm's `.cmd` shims, which `CreateProcess` won't find by name.
+pub fn program(name: &str) -> PathBuf {
+    crate::backends::which(name).unwrap_or_else(|| name.into())
+}
+
+/// The command that runs a Python test fixture.
+#[cfg(any(test, feature = "test-support"))]
+pub fn python(script: &std::path::Path) -> String {
+    let python = if cfg!(windows) { "python" } else { "python3" };
+    format!("{python} -u {}", quote(&script.to_string_lossy()))
+}
+
+/// Leading `KEY=value` words (an optional `env` first), and the command after them.
+#[cfg(any(windows, test))]
+fn split_env(line: &str) -> (Vec<(String, String)>, &str) {
+    let mut env = vec![];
+    let mut rest = line.trim_start();
+    rest = rest.strip_prefix("env ").map_or(rest, str::trim_start);
+    while let Some((key, after)) = rest.split_once('=') {
+        if !is_env_name(key) {
+            break;
+        }
+        let (value, after) = match after.strip_prefix(['"', '\'']) {
+            Some(quoted) => {
+                let close = after.chars().next().unwrap_or('"');
+                let Some(end) = quoted.find(close) else { break };
+                (&quoted[..end], &quoted[end + 1..])
+            }
+            None => after.split_once(' ').unwrap_or((after, "")),
+        };
+        env.push((key.to_owned(), value.to_owned()));
+        rest = after.trim_start();
+    }
+    (env, rest)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn splits_leading_assignments() {
+        let (env, rest) = split_env("env K=v Q=\"a b\" npx -y x --flag=1");
+        assert_eq!(env, [("K".to_owned(), "v".to_owned()), ("Q".to_owned(), "a b".to_owned())]);
+        assert_eq!(rest, "npx -y x --flag=1");
+        let (env, rest) = split_env("NO_BROWSER=true \"C:\\a b\\gemini.cmd\"");
+        assert_eq!(env, [("NO_BROWSER".to_owned(), "true".to_owned())]);
+        assert_eq!(rest, "\"C:\\a b\\gemini.cmd\"");
+        assert_eq!(split_env("claude --x=1").1, "claude --x=1");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn quotes_for_sh() {
+        assert_eq!(quote("/usr/bin/x"), "/usr/bin/x");
+        assert_eq!(quote("a b'c"), "'a b'\\''c'");
+        assert_eq!(env_prefix([("K", "v"), ("BAD;rm", "x")]), "env K=v ");
+        assert_eq!(env_prefix([("K", "v"), ("GONE", "")]), "env -u GONE K=v ", "`env` reads no option after K=v");
+        // An empty value takes a variable away from the process, in the command line and in `env`.
+        let has = |shell: Shell| shell.std().env("CODYNC_T", "1").status().unwrap().success();
+        assert!(has(line("printenv CODYNC_T")));
+        let prefix = env_prefix([("CODYNC_K", "v"), ("CODYNC_T", "")]);
+        assert!(!has(line(&format!("{prefix}printenv CODYNC_T"))));
+        assert!(has(line(&format!("{prefix}printenv CODYNC_K"))), "the command still runs");
+        let mut command = line("printenv CODYNC_T").std();
+        apply_env(command.env("CODYNC_T", "1"), &[("CODYNC_T".to_owned(), String::new())]);
+        assert!(!command.status().unwrap().success());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn parses_env_dump() {
+        let dump = b"A=1\0MULTI=x\ny=z\0=bad\0\xff=skip\0EMPTY=\0";
+        let pairs: Vec<(&str, &str)> = [("A", "1"), ("MULTI", "x\ny=z"), ("EMPTY", "")].into();
+        let want: Vec<(String, String)> = pairs.into_iter().map(|(k, v)| (k.to_owned(), v.to_owned())).collect();
+        assert_eq!(parse_env(dump), want);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reads_a_login_shell_with_noclobber() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = std::env::temp_dir().join(format!("codync-shell-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let shell = dir.join("shell");
+        std::fs::write(&shell, "#!/bin/sh\nset -C\nexport CODYNC_SHELL_TEST=yes\neval \"$2\"\n").unwrap();
+        std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let run = |script| login_shell_output(&shell.to_string_lossy(), script).expect("the shell's output");
+        assert!(parse_env(&run("env -0")).contains(&("CODYNC_SHELL_TEST".to_owned(), "yes".to_owned())));
+        assert_eq!(run("printf '%s' \"$CODYNC_SHELL_TEST\""), b"yes");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn quotes_for_cmd() {
+        assert_eq!(quote("C:\\x\\y.exe"), "C:\\x\\y.exe");
+        assert_eq!(quote("C:\\Program Files\\y.exe"), "\"C:\\Program Files\\y.exe\"");
+        assert_eq!(env_prefix([("K", "a b")]), "K=\"a b\" ");
+    }
+
+    #[tokio::test]
+    async fn runs_a_line_with_its_environment() {
+        let out = line(&format!("{}FOO=1 echo hi", env_prefix([("BAR", "two words")]))).tokio().output().await.unwrap();
+        assert!(out.status.success());
+        assert!(String::from_utf8_lossy(&out.stdout).contains("hi"));
+    }
+}

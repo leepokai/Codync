@@ -43,6 +43,11 @@ impl Host {
         Self { child, home, base, token, env }
     }
 
+    /// How the host process ended, if it has.
+    pub fn exited(&mut self) -> Option<std::process::ExitStatus> {
+        self.child.try_wait().ok().flatten()
+    }
+
     /// Kills the host outright, as a crash would. `restart` starts it again.
     pub fn crash(&mut self) {
         let _ = self.child.kill();
@@ -158,8 +163,8 @@ impl Host {
         self.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned()
     }
 
-    /// From here `bot` takes its routine runs and other bots' requests as turns in its chat, not as items in its
-    /// box: it manages the team, which a task can't.
+    /// From here `bot` takes its routine runs and other bots' requests as turns in its chat, not as tasks in its
+    /// box: it manages the team, which a thread can't.
     pub async fn works_in_chat(&self, bot: &str) {
         self.call("updateBot", json!({"id": bot, "manageTeam": true})).await;
     }

@@ -3,10 +3,11 @@
 use super::fast_mode::Listing;
 use super::tool_entry::{activity, mark_bookkeeping, merge_tool_content};
 use super::{Actor, Reacted, Seg, SegKind};
-use crate::agent::acp::{self, Incoming};
+use crate::agent::elicitation::{self, Declined};
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{BotConfig, Entry, EntryKind, Lane};
+use codync_agent::acp::{self, Incoming};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
@@ -40,13 +41,12 @@ impl Actor {
                 }
             }
             Some(Incoming::Notification { .. }) => {}
-            Some(Incoming::Request { id, method, params }) => {
-                if method == "session/request_permission" && self.turn.is_some() {
-                    self.on_permission(id, params).await;
-                } else {
-                    self.answer_outside_turn(id, &method, &params).await;
-                }
-            }
+            Some(Incoming::Request { id, method, params }) => match method.as_str() {
+                "session/request_permission" if self.turn.is_some() => self.on_permission(id, params).await,
+                // A question for the user, never a permission: the approval setting doesn't answer it.
+                elicitation::METHOD if self.turn.is_some() => self.on_elicitation(id, &params).await,
+                _ => self.answer_outside_turn(id, &method, &params).await,
+            },
         }
     }
 
@@ -64,12 +64,18 @@ impl Actor {
         true
     }
 
-    /// A request no turn handles: a permission gets `answer_background`, anything else isn't supported.
+    /// A request no turn handles: a permission gets `answer_background`, a question is declined (no card can wait for
+    /// it), anything else isn't supported.
     pub(super) async fn answer_outside_turn(&self, rpc_id: Value, method: &str, params: &Value) {
-        if method == "session/request_permission" {
-            self.answer_background(rpc_id, params).await;
-        } else if let Some(conn) = &self.conn {
-            let _ = conn.acp.respond_error(rpc_id, -32601, &format!("{method} is not supported by Codync")).await;
+        match method {
+            "session/request_permission" => self.answer_background(rpc_id, params).await,
+            elicitation::METHOD => self.decline_elicitation(rpc_id, Declined::NoTurn).await,
+            _ => {
+                if let Some(conn) = &self.conn {
+                    let _ =
+                        conn.acp.respond_error(rpc_id, -32601, &format!("{method} is not supported by Codync")).await;
+                }
+            }
         }
     }
 
@@ -82,6 +88,7 @@ impl Actor {
                     self.agent_error = Some(error.to_owned());
                     return;
                 }
+                self.unheard.clear();
                 self.append(SegKind::Text, &t);
                 self.set_activity("Writing a reply…");
             }
@@ -91,6 +98,7 @@ impl Actor {
                 self.set_activity("Thinking…");
             }
             "tool_call" => {
+                self.unheard.clear();
                 self.close_seg();
                 let tool_id = u["toolCallId"].as_str().unwrap_or_default().to_owned();
                 let mut data = json!({
@@ -239,17 +247,17 @@ impl Actor {
         self.show_card(title, data, Answer::Codync(reply));
     }
 
-    /// An entry the user must see or act on, in the running turn: in its lane, or, from a task, where the user is,
-    /// its bot's chat, named by the item it works on.
+    /// An entry the user must see or act on, in the running turn: in its lane, or, from a thread, where the user is,
+    /// its bot's chat, named by the task it works on.
     pub(super) fn add_for_user(&self, kind: EntryKind, mut data: Value) -> Option<Entry> {
-        let Some(mark) = crate::chat::tasks::mark(&self.hub.store, &self.cfg) else {
+        let Some(mark) = crate::chat::work::mark(&self.hub.store, &self.cfg) else {
             return self.add(kind, self.turn.unwrap_or(0), data);
         };
         mark.apply(&mut data);
         self.hub.add_entry(&Lane::main(&mark.bot), kind, self.hub.store.max_turn(&mark.bot), &data)
     }
 
-    /// The chat `entry` is in, for an alert that opens it: the group, for a room turn; its bot's chat, for a task.
+    /// The chat `entry` is in, for an alert that opens it: the group, for a room turn; its bot's chat, for a thread.
     pub(super) fn chat_of(&self, entry: &Entry) -> BotConfig {
         self.hub.store.bot(&entry.bot_id).ok().flatten().map_or_else(|| self.cfg.clone(), |row| row.config)
     }
@@ -269,7 +277,7 @@ impl Actor {
         push::notify(
             &self.hub,
             &target,
-            (!self.cfg.is_task()).then_some(self.cfg.id.as_str()),
+            (!self.cfg.is_thread()).then_some(self.cfg.id.as_str()),
             &format!("{} needs you", self.cfg.name),
             title,
             AlertKind::NeedsInput,

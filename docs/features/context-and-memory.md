@@ -9,7 +9,7 @@ conversation and compaction. The design, including what is still to come, is in
 | | Where | Owner | Lifetime |
 |---|---|---|---|
 | Transcript | SQLite `entries` | Codync | One persistent chat per bot; replies quote the message they answer |
-| Model context | ACP session (`bots.session_id`) | The harness | Until *New session* (the bot's menu), a rollover (Fresh conversations), a failed resume, or an agent/command/folder change; each [fallback agent](agent-fallback.md) keeps its own, parked while another answers |
+| Model context | ACP session (`bots.session_id`) | The harness | Until *New session* (the bot's menu), a rollover (Fresh conversations), a failed resume, an agent/model/command/folder change, or a sign-in the agent can't carry over; each [fallback agent](agent-fallback.md) keeps its own, parked while another answers |
 | Long-term memory | Markdown files per layer (`MEMORY.md` and notes); versions and who wrote what in SQLite `memory_*` tables | Codync: the bots, through their tools or their own file tools, and dreaming | Forever, across sessions |
 
 Codync never replays the transcript into a session. Each turn sends only the new message(s); the harness keeps
@@ -30,10 +30,10 @@ its own context and compacts it itself.
     (`append`) on `session/new`, `session/load` and `session/fork`, and keeps it across compaction.
   - **Every other harness** receives it in the first message of each session (`<bot-profile>…</bot-profile>`; repeated with each message until one carrying it succeeds, the snapshot's `unprompted`, kept across a host restart),
     and once more, marked as replacing the earlier one, on the first message after a compaction.
-- A [background task](background-tasks.md)'s session is a fork of the bot's main one where the agent can
+- A [thread](work.md)'s session is a fork of the bot's main one where the agent can
   (`session/fork`): it is sent the main session's snapshot as it is, adopts it under its own session id
-  (`context.<bot>` is the bot's, a task has none of its own) and counts as already prompted, so nothing is sent
-  twice. A task that starts from a new session gets a fresh snapshot like any session.
+  (`context.<bot>` is the bot's, a thread has none of its own) and counts as already prompted, so nothing is sent
+  twice. A thread that starts from a new session gets a fresh snapshot like any session.
 - **Compaction epoch:** Codync advertises `clientCapabilities.session.compaction`. Each completed
   `compaction_update` (deduplicated by `compactionId`) increments `context.epoch.<bot>`; for an agent that has
   never sent one, so does its `usage_update.used` falling below half of a previous value of at least 20k (a
@@ -206,8 +206,10 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
 - Messages sent while the agent works wait above the composer and are folded into one next turn, joined by blank
   lines. *Send now* (`steer`) hands one to the agent at once: an agent with `_session/steering` (Claude, Codex, omp)
   takes it into the running turn of the user's own chat, and the message joins that turn (its `turn`, its reply,
-  memory, a fallback's retry). The turn's end waits for the agent's answer, at most 15 seconds, so a late `injected`
-  still counts as joined and the bot stays working until then. Another agent's turn in the user's chat stops for it,
+  memory, a fallback's retry). An agent that then ends that turn `cancelled` on its own, before writing anything
+  after the message, has dropped it (Codex, on a refused card): it goes back to `queued`, first in line
+  (`requeue_unheard`, [Codex's row](../upstream-agents/codex-acp.md)). The turn's end waits for the agent's answer,
+  at most 15 seconds, so a late `injected` still counts as joined and the bot stays working until then. Another agent's turn in the user's chat stops for it,
   with no `Stopped.` line (drawn under the message it would read as the message's), and behind a routine, a room or another bot's request it goes first in line. *Remove* (`unqueue`) takes it back: it
   never goes out, its files are deleted and the chat hides it (`removed`).
 - Bot-to-bot requests and the replies to them occupy separate turns in the same queue (replies waiting together are one turn); user messages are only folded together up to the next request or reply. Neither feeds dreaming. See [bot collaboration](bot-collaboration.md).
@@ -217,9 +219,9 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   stopped. Connector or computer changes restart an agent that can resume sessions before its next turn; one
   that can't keeps its session, and its next new session gets them. An edit to a connector the bot has on restarts
   that one too, once its turn ends, told the conversation so far ([connector credentials](connector-credentials.md)).
-- *New session* (`newSession`) cancels the running turn as Stop does (a routine's run in the chat too; items that
+- *New session* (`newSession`) cancels the running turn as Stop does (a routine's run in the chat too; tasks that
   turn added to the event box are dropped) but keeps the queue: waiting messages and follow-ups run in the new
-  session, waiting routines each in their own, and running tasks report into it. A handoff card still in draft is
+  session, waiting routines each in their own, and running threads report into it. A handoff card still in draft is
   withdrawn, so no summary of the old conversation is carried in.
 - `turn.inflight.<bot>` records when the running turn in the bot's chat started. If the host stops mid-turn (update, crash, restart), the next
   start resumes that session with a hidden "you were interrupted, don't repeat finished steps" prompt. If the

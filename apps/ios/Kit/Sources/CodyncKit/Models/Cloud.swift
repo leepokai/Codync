@@ -77,6 +77,11 @@ public struct CloudMachine: Decodable, Hashable, Sendable, Identifiable {
     /// Created, but not in the account yet (nor failed): it's booting and installing the host.
     public var isPreparing: Bool { computerId == nil && hosting.state != .failed }
 
+    /// How far a first run waiting for it got: still preparing, in the account and letting this device in, or failed.
+    public enum Start: Sendable { case preparing, connecting, failed }
+
+    public var start: Start { hosting.state == .failed ? .failed : isPreparing ? .preparing : .connecting }
+
     private enum CodingKeys: String, CodingKey { case cloudComputerId, name, computerId, snapshots }
 
     public init(from decoder: any Decoder) throws {

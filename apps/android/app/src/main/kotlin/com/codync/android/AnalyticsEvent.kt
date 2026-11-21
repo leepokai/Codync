@@ -199,9 +199,9 @@ internal enum class NotificationAccess(override val wire: String) : CatalogValue
     }
 }
 
-internal enum class OnboardingStep(override val wire: String) : CatalogValue { Welcome("welcome"), Choose("choose"), Install("install"), Scan("scan") }
+internal enum class OnboardingStep(override val wire: String) : CatalogValue { Welcome("welcome"), Choose("choose"), Install("install"), Scan("scan"), Cloud("cloud") }
 
-internal enum class OnboardingVia(override val wire: String) : CatalogValue { Paired("paired"), Account("account"), Skipped("skipped") }
+internal enum class OnboardingVia(override val wire: String) : CatalogValue { Paired("paired"), Account("account"), Cloud("cloud"), Skipped("skipped") }
 
 internal enum class SignInProvider(override val wire: String) : CatalogValue { Apple("apple"), Google("google"), GitHub("github"), Hosted("hosted") }
 
@@ -374,5 +374,5 @@ internal enum class AnalyticsScreen(override val wire: String) : CatalogValue {
     Bots("bots"), State("state"), Chat("chat"), Trace("trace"), BotDetails("bot_details"), Memory("memory"),
     Routines("routines"), Marketplace("marketplace"), Settings("settings"), Computers("computers"), Usage("usage"),
     Account("account"), Pairing("pairing"), VoiceSettings("voice_settings"), RemoteScreen("remote_screen"),
-    Library("library"), Artifact("artifact"), Network("network"), BotComputer("bot_computer"), Task("task"), AllWork("all_work"),
+    Library("library"), Artifact("artifact"), Network("network"), BotComputer("bot_computer"), Thread("thread"), AllWork("all_work"),
 }

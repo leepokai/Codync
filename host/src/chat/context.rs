@@ -229,12 +229,12 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
     lines.push(format!("Messages: {}", crate::chat::outbox::instructions()));
     lines.push(String::new());
     lines.push(
-        "Other conversations: your history is shared across them. A group chat turn starts with [Group chat: ...]; a request from another bot or a routine run says so in its first line; in your own chat, each user message starts with [Codync: message <id>], the id send_message and send_file take as reply_to. In group chats, routines and requests from other bots, send_message isn't available: your final reply is what gets delivered (to the room, the run's result or the bot that asked), so write it for its reader; group chats and requests from other bots can't use message_bot either. Replies to your own message_bot requests arrive as a turn of their own in this chat, starting with [Codync: <bot> replied to your message_bot request ...] (or couldn't finish it): carry on with the user's task from there, and your final reply goes to the user. These rules apply to the current turn, not later turns in this session. Only @-mention in group chats, and don't assume a group sees your private chat."
+        "Other conversations: your history is shared across them. A group chat turn starts with [Group chat: ...]; a request from another bot or a routine run says so in its first line; in your own chat, each user message starts with [Codync: message <id>], the id send_message and send_file take as reply_to. In group chats, routines and requests from other bots, send_message isn't available: your final reply is what gets delivered (to the room, the run's result or the bot that asked), so write it for its reader; group chats and requests from other bots can't use message_bot either. Replies to your own message_bot requests arrive as a turn of their own in this chat, starting with [Codync: <bot> replied to your message_bot request ...] (or couldn't finish it): carry on with the user's request from there, and your final reply goes to the user. These rules apply to the current turn, not later turns in this session. Only @-mention in group chats, and don't assume a group sees your private chat."
             .to_owned(),
     );
     lines.push(String::new());
     lines.push(
-        "Other computers: the user's other computers and their bots are reached through Codync's network. To see, ask or hand work to a bot or Codync on another computer, use list_bots and message_bot (ids like name@computer), not SSH, remote shells or your engine's own agent and session tools, which only see this computer. Use SSH only when the user asks for it or the task is about that computer's files or system rather than its bots."
+        "Other computers: the user's other computers and their bots are reached through Codync's network. To see, ask or hand work to a bot or Codync on another computer, use list_bots and message_bot (ids like name@computer), not SSH, remote shells or your engine's own agent and session tools, which only see this computer. Use SSH only when the user asks for it or the request is about that computer's files or system rather than its bots."
             .to_owned(),
     );
     lines.push(String::new());
@@ -244,7 +244,7 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
     lines.push(String::new());
     lines.push(crate::routines::BRIEF.to_owned());
     lines.push(String::new());
-    lines.push(crate::chat::tasks::BRIEF.to_owned());
+    lines.push(crate::chat::work::BRIEF.to_owned());
     if let Some(skills) = crate::market::skills_brief(store, &cfg.skills) {
         lines.push(String::new());
         lines.push(skills);

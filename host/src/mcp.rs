@@ -137,7 +137,7 @@ pub(crate) fn chat_tools() -> Value {
         list.push(crate::chat::reactions::tool());
         list.push(crate::chat::skills::tool());
         list.extend(crate::dev_servers::tools());
-        list.extend(crate::chat::tasks::tools());
+        list.extend(crate::chat::work::tools());
     }
     tools
 }
@@ -235,7 +235,7 @@ pub async fn serve_local(connector: String, port: u16) -> Result<()> {
     }
     let v: Value = res.json().await?;
     let command = v["command"].as_str().ok_or_else(|| anyhow::anyhow!("Not a local connector"))?;
-    let mut child = tokio::process::Command::new(crate::shell::program(command));
+    let mut child = tokio::process::Command::new(codync_agent::shell::program(command));
     child.args(v["args"].as_array().into_iter().flatten().filter_map(Value::as_str));
     for (k, v) in v["env"].as_object().into_iter().flatten() {
         if let Some(v) = v.as_str() {

@@ -2,11 +2,11 @@ import type { BotDraft } from '@shared/models'
 
 /**
  * Swift's `JSONEncoder` with `.prettyPrinted, .sortedKeys, .withoutEscapingSlashes`; nil fields are left out, and so
- * are fallbacks (they depend on the agents a computer has) and who reaches the bot and the login profile it runs on (those belong to its computer).
+ * are fallbacks and Advisor mode's threads' agent (they depend on the agents a computer has) and who reaches the bot and the login profile it runs on (those belong to its computer).
  */
 export function encodeTemplate(draft: BotDraft): string {
   const {
-    id: _id, pinned: _pinned, hidden: _hidden, fallbacks: _fallbacks, selfFallbacks: _selfFallbacks,
+    id: _id, pinned: _pinned, hidden: _hidden, fallbacks: _fallbacks, selfFallbacks: _selfFallbacks, threadAgent: _threadAgent, threadFallbacks: _threadFallbacks,
     offeredToNetwork: _offered, reachableByAssistants: _reachable, loginProfile: _loginProfile, ...rest
   } = draft
   const sorted = Object.fromEntries(

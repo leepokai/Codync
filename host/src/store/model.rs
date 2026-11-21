@@ -84,7 +84,7 @@ pub struct BotConfig {
     pub cwd: String,
     #[serde(default)]
     pub permission: Permission,
-    /// The agent mode to work in (see `agent::modes`): its own id, or `auto` for its Auto mode under any id (an agent
+    /// The agent mode to work in (see `codync_agent::modes`): its own id, or `auto` for its Auto mode under any id (an agent
     /// without one keeps its own). None: the mode its sessions open in, the agent's default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
@@ -99,6 +99,13 @@ pub struct BotConfig {
     /// Agents that carry on, in order, when the bot's own can't answer (see `agent::fallback`).
     #[serde(default)]
     pub fallbacks: Vec<Fallback>,
+    /// Advisor mode: the agent the bot's threads run on when it isn't the chat's own (`agent::fallback::threads`);
+    /// none: the chat's, with the chat's fallbacks.
+    #[serde(default)]
+    pub thread_agent: Option<Fallback>,
+    /// In Advisor mode, the agents that carry on, in order, when the threads' own can't answer.
+    #[serde(default)]
+    pub thread_fallbacks: Vec<Fallback>,
     /// The bot may set its own fallbacks (`chat` server's `set_fallbacks`). On unless the user turns it off.
     #[serde(default = "yes")]
     pub self_fallbacks: bool,
@@ -158,39 +165,44 @@ pub struct BotConfig {
     /// until the user renames it.
     #[serde(default)]
     pub auto_name: bool,
-    /// Set on a task bot: the bot whose work it does away from the chat (see `chat::tasks`). It has its own actor,
+    /// Set on a thread bot: the bot whose work it does away from the chat (see `chat::work`). It has its own actor,
     /// agent process, session and transcript; clients never see it as a bot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub task_of: Option<String>,
-    /// The most tasks that work on the bot's box at once (see `chat::tasks`): 1 to [`MAX_AGENTS`].
-    #[serde(default = "default_max_agents")]
-    pub max_agents: u8,
-    /// A task that starts while another of the bot's works in the same git repository gets a worktree of its own
-    /// (see `chat::tasks::worktree`). Only matters where the workspace is in a repository.
+    pub thread_of: Option<String>,
+    /// The most threads that work on the bot's box at once (see `chat::work`): 1 to [`MAX_THREADS`].
+    #[serde(default = "default_max_threads")]
+    pub max_threads: u8,
+    /// A thread that starts while another of the bot's works in the same git repository gets a worktree of its own
+    /// (see `chat::work::worktree`). Only matters where the workspace is in a repository.
     #[serde(default = "yes")]
-    pub task_worktrees: bool,
+    pub thread_worktrees: bool,
     #[serde(default)]
     pub created_at: i64,
 }
 
-/// The most tasks a bot may be set to run at once.
-pub const MAX_AGENTS: u8 = 6;
-/// The tasks a bot runs at once unless the user changed it.
-pub const DEFAULT_AGENTS: u8 = 3;
+/// The most threads a bot may be set to run at once.
+pub const MAX_THREADS: u8 = 6;
+/// The threads a bot runs at once unless the user changed it.
+pub const DEFAULT_THREADS: u8 = 3;
 
-fn default_max_agents() -> u8 {
-    DEFAULT_AGENTS
+fn default_max_threads() -> u8 {
+    DEFAULT_THREADS
 }
 
-/// A task bot's id starts with this; a bot's and a group's are plain UUIDs.
-pub const TASK_PREFIX: &str = "task-";
+/// A thread bot's id starts with this; a bot's and a group's are plain UUIDs.
+pub const THREAD_PREFIX: &str = "thread-";
 
-/// [`TASK_PREFIX`] as SQLite's `GLOB` matches it, for the queries that keep task bots and their transcripts apart.
-pub(super) const TASK_GLOB: &str = "task-*";
+/// A thread bot started before this release keeps the id it had: its transcript, session and cards are keyed by it.
+const OLD_THREAD_PREFIX: &str = "task-";
 
-/// Whether `id` is a task bot's (and so a chat no client lists).
-pub fn is_task_id(id: &str) -> bool {
-    id.starts_with(TASK_PREFIX)
+/// SQL for "`column` is a thread bot's id", for the queries that keep thread bots and their transcripts apart.
+pub(super) fn thread_ids(column: &str) -> String {
+    format!("({column} GLOB '{THREAD_PREFIX}*' OR {column} GLOB '{OLD_THREAD_PREFIX}*')")
+}
+
+/// Whether `id` is a thread bot's (and so a chat no client lists).
+pub fn is_thread_id(id: &str) -> bool {
+    id.starts_with(THREAD_PREFIX) || id.starts_with(OLD_THREAD_PREFIX)
 }
 
 impl BotConfig {
@@ -198,20 +210,30 @@ impl BotConfig {
         self.kind == BotKind::Group
     }
 
-    pub fn is_task(&self) -> bool {
-        self.task_of.is_some()
+    pub fn is_thread(&self) -> bool {
+        self.thread_of.is_some()
     }
 
-    /// The bot it is to the user: a task's bot, else itself.
+    /// The bot it is to the user: a thread's bot, else itself.
     pub fn owner(&self) -> &str {
-        self.task_of.as_deref().unwrap_or(&self.id)
+        self.thread_of.as_deref().unwrap_or(&self.id)
     }
 
-    /// This config under its owner's id: what memory and the instruction snapshot key on, so a task reads and
+    /// This config under its owner's id: what memory and the instruction snapshot key on, so a thread reads and
     /// writes its bot's.
     #[must_use]
     pub fn as_owner(&self) -> Self {
-        Self { id: self.owner().to_owned(), task_of: None, ..self.clone() }
+        Self { id: self.owner().to_owned(), thread_of: None, ..self.clone() }
+    }
+
+    /// The steps the bot runs besides its own agent: its fallbacks and, in Advisor mode, its threads' agent and theirs.
+    pub fn fallback_steps(&self) -> impl Iterator<Item = &Fallback> {
+        self.fallbacks.iter().chain(&self.thread_agent).chain(&self.thread_fallbacks)
+    }
+
+    /// [`Self::fallback_steps`], to change.
+    pub fn fallback_steps_mut(&mut self) -> impl Iterator<Item = &mut Fallback> {
+        self.fallbacks.iter_mut().chain(&mut self.thread_agent).chain(&mut self.thread_fallbacks)
     }
 }
 
@@ -322,8 +344,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_task_glob_matches_what_the_prefix_names() {
-        assert_eq!(TASK_GLOB, format!("{TASK_PREFIX}*"));
+    fn a_thread_bot_is_known_by_its_id_new_or_from_before_this_release() {
+        assert!(is_thread_id("thread-1") && is_thread_id("task-1") && !is_thread_id("b1"));
+        assert_eq!(thread_ids("id"), "(id GLOB 'thread-*' OR id GLOB 'task-*')");
+    }
+
+    #[test]
+    fn the_old_names_of_a_bots_thread_settings_are_no_longer_read() {
+        // Stored bots were renamed once (`schema::migrate_9`); `updateBot` takes only the new names.
+        let old = serde_json::json!({"id": "b", "name": "B", "backend": "claude", "taskOf": "b1",
+            "maxAgents": 5, "taskWorktrees": false});
+        let cfg: BotConfig = serde_json::from_value(old).expect("a bot");
+        assert_eq!((cfg.thread_of, cfg.max_threads, cfg.thread_worktrees), (None, DEFAULT_THREADS, true));
     }
 
     #[test]

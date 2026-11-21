@@ -17,7 +17,7 @@ The name is always "login profile", never "profile": a bot has a profile of its 
 
 Code: `host/src/agent/login_profiles.rs` is Codync's side: the records, both kinds, the sign-in check, names,
 removal and the processes that run on a profile; `login_profiles/account.rs` holds an account profile's folder and
-sign-in, `login_profiles/keys.rs` an API key profile's variables and the import from the login shell. The `codync-accounts` crate (`host/crates/accounts`) holds what is true of the
+sign-in, `login_profiles/keys.rs` an API key profile's variables and the import from the login shell. The `codync-agent` crate's `accounts` module (`host/crates/agent/src/accounts.rs`) holds what is true of the
 agents and no app, for the account kind: `agents.rs` (how each agent keeps a login in a folder), `slot.rs` (what a
 slot shares), `identity.rs` (who a login is) and the `Account` record. Clients: one **Login profiles** section in
 the agent's setup sheet (the default one first, then the others; each can be named), a **Login profile** choice
@@ -148,7 +148,7 @@ its fallbacks, on `agentStep`, on each `resting` entry and on a sign-in card. Al
 
 ## Tests
 
-- **Host**: `host/src/agent/login_profiles/tests.rs` and the `codync-accounts` crate's own tests, on scratch folders.
+- **Host**: `host/src/agent/login_profiles/tests.rs` and the `codync-agent` crate's `accounts` tests, on scratch folders.
 - **Desktop, every time**: `apps/desktop/e2e/login-profiles.spec.ts` walks the screens on a stand-in Devin CLI, so
   it starts no real agent and touches no real account: what it walks and how the stand-in works is in
   [stand-in agents](../guides/test-stack.md#stand-in-agents). `e2e/usage-logins.spec.ts` checks the limits per login

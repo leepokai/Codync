@@ -73,8 +73,8 @@ public final class BotStore {
     public internal(set) var cloudHosting: CloudHosting?
     public internal(set) var bots: [String: Bot] = [:]
     public internal(set) var entries: [String: [Entry]] = [:]
-    /// Background tasks' transcripts as they come in, by task id: never part of a chat, and gone with the task.
-    public internal(set) var taskEntries: [String: [Entry]] = [:]
+    /// Threads' transcripts as they come in, by thread id: never part of a chat, and gone with the thread.
+    public internal(set) var threadEntries: [String: [Entry]] = [:]
     public internal(set) var usage: Usage
     /// The newest order still to send, and the task sending them (`setUsageOrder`).
     @ObservationIgnored var usageOrderWaiting: [String]?
@@ -102,11 +102,11 @@ public final class BotStore {
     /// A bot whose details its conversation should open (from the view of all bots' work), consumed by it.
     public internal(set) var detailsRequest: String?
 
-    /// An item whose card its bot's conversation should bring into view, consumed by it.
-    public internal(set) var cardRequest: (botId: String, item: WorkItem)?
+    /// A task whose card its bot's conversation should bring into view, consumed by it.
+    public internal(set) var cardRequest: (botId: String, task: WorkTask)?
 
-    /// An item whose thread its bot's conversation should open, in the bot's details; consumed by it.
-    public internal(set) var threadRequest: (botId: String, item: WorkItem)?
+    /// A task whose thread its bot's conversation should open, in the bot's details; consumed by it.
+    public internal(set) var threadRequest: (botId: String, task: WorkTask)?
 
     /// A Shortcuts request, consumed by the matching conversation.
     public internal(set) var voiceCallRequest: String?

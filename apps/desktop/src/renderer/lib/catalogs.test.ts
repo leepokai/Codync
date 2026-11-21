@@ -70,7 +70,7 @@ test('every literal tr() / trNow() phrase in the desktop source has a catalog en
   const keys = new Set<string>()
   for (const file of files) {
     const text = readFileSync(new URL(file, src), 'utf8')
-    for (const [, , literal] of text.matchAll(/\btr(?:Now)?\((['"`])((?:\\.|(?!\1|\$\{)[^\\\n])+)\1[,)]/g)) {
+    for (const [, , literal] of text.matchAll(/\b(?:tr|trNow|sshMessage)\((['"`])((?:\\.|(?!\1|\$\{)[^\\\n])+)\1[,)]/g)) {
       keys.add(literal.replace(/\\(.)/g, (_, char: string) => (char === 'n' ? '\n' : char)))
     }
   }

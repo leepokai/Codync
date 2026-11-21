@@ -22,7 +22,7 @@ reaching the end of a history response determines when there are no earlier mess
 
 | Path | |
 |---|---|
-| `src/main/` | Main process: host service (`host-controller.ts`), loopback HTTP/SSE proxy (`host-proxy.ts`), menu bar/tray, windows, account sign-in (Clerk Frontend API, `account.ts`), cloud API and device key (`cloud.ts`), updates (`updates.ts`), SSH tunnels (`ssh.ts`), Codync Screen agent (`screen.ts`), on-device speech (`speech.ts`) and its [voice input shortcut](../features/voice-call.md#voice-input-shortcut) (`voice-shortcut.ts`), browser sign-in callbacks (`auth.ts`), the [notch island](../features/notch-island.md) window (`island.ts`), [error tracking](../features/analytics.md#error-tracking) (`error-reports.ts`) and reloading a crashed window (`renderer-recovery.ts`) |
+| `src/main/` | Main process: host service (`host-controller.ts`), loopback HTTP/SSE proxy (`host-proxy.ts`), menu bar/tray, windows, account sign-in (Clerk Frontend API, `account.ts`), cloud API and device key (`cloud.ts`), updates (`updates.ts`), SSH tunnels (`ssh.ts`), Codync Screen agent (`screen.ts`), on-device speech (`speech.ts`) and its [voice input shortcut](../features/voice-call.md#voice-input-shortcut) (`voice-shortcut.ts`), browser sign-in callbacks (`auth.ts`), the [notch island](../features/notch-island.md) window (`island.ts`), system notifications for host alerts (`notifications.ts`, [desktop notifications](../design/push-and-live-activity.md#desktop-app)), [error tracking](../features/analytics.md#error-tracking) (`error-reports.ts`) and reloading a crashed window (`renderer-recovery.ts`) |
 | `src/preload/` | The `window.codync` bridge (types in `src/shared/ipc.ts`) |
 | `src/renderer/store/` | `BotStore` (port of kit's; `bot-store.ts` actions over `bot-sync.ts` events stream and `bot-mirror.ts` state), `AppModel` (window state, approvals), `CloudModel` (claims, cloud default), `AccountSession`, `ScreenSession` (another computer's screen over WebRTC, `screen-session.ts`) |
 | `src/renderer/components/` | Design system: controls, overlays (sheets, dialogs, menus), SF Symbol icons, character avatars, thinking orbs |
@@ -96,7 +96,7 @@ The TUI connects to one host at a time, so it keeps its single roster.
   windowless launcher that runs the host with a hidden console (the agents share it, so none
   opens a window) and restarts it when it exits. One launcher runs per data folder (a second one,
   say from the Run key and the app at once, exits). App updates stop the host first, as on macOS.
-  Agents start through `cmd /c` (`host/src/shell.rs`), setup terminals use ConPTY
+  Agents start through `cmd /c` (`host/crates/agent/src/shell.rs`), setup terminals use ConPTY
   (`portable-pty`), and the vault key lives in Credential Manager. Not on Windows yet: Remote
   screen and the `computer` MCP (no screen helper), on-device speech, the Claude Code status
   line hook (usage still comes from `claude -p /usage`, ACP and each agent's own report), and `curl | bash` installers (npm installs and Claude Code's PowerShell installer

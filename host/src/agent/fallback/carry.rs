@@ -7,8 +7,8 @@
 pub mod ledger;
 
 use super::Reason;
-use crate::agent::acp::truncate;
 use crate::store::{Entry, EntryKind, message_text};
+use codync_agent::acp::truncate;
 
 /// Longest message quoted, in bytes: a pasted document mustn't fill the new session.
 const QUOTE: usize = 2_000;

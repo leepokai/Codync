@@ -1,6 +1,6 @@
 //! The `entries` table: the transcript of every chat.
 
-use super::model::{Entry, EntryKind, Lane, TASK_GLOB};
+use super::model::{Entry, EntryKind, Lane, thread_ids};
 use super::{Store, logged, next_rev, now_ms};
 use crate::LockExt;
 use anyhow::{Result, ensure};
@@ -28,6 +28,9 @@ const ENTRY_COLS: &str = "seq, id, bot_id, rev, kind, turn, data, created_at, up
 const LIVE_CHAT: &str = "WHERE NOT EXISTS (SELECT 1 FROM bots WHERE id = ?2 AND deleted = 1)";
 /// Leaves out a message the user took back before it went out (`unqueue`): no bot, model or list reads it.
 pub(super) const NOT_REMOVED: &str = "json_extract(data, '$.removed') IS NOT 1";
+/// An approval or choice card still waiting on the user.
+const OPEN_CARD: &str = "(kind = 'permission' AND json_extract(data, '$.status') = 'pending')
+  OR (kind = 'notice' AND json_extract(data, '$.decision') = 1 AND json_extract(data, '$.status') = 'pending')";
 
 /// What `expire_pending` closed out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,21 +167,20 @@ impl Store {
         )?)
     }
 
-    /// Entries changed after `since`, in the chats clients list: a task's transcript is fetched by itself
-    /// (`taskEntries`). A fresh client (`since == 0`) only gets the
+    /// Entries changed after `since`, in the chats clients list: a thread's transcript is fetched by itself
+    /// (`threadEntries`). A fresh client (`since == 0`) only gets the
     /// newest `cap` entries per bot and pages older ones in with `history`.
     pub fn entries_since(&self, since: i64, cap: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
+        let threads = thread_ids("bot_id");
         let sql = if since == 0 {
             format!(
                 "SELECT {ENTRY_COLS} FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY bot_id ORDER BY seq DESC) AS rn FROM entries
-                   WHERE bot_id NOT GLOB '{TASK_GLOB}')
+                   WHERE NOT {threads})
                  WHERE rn <= ?2 AND rev > ?1 ORDER BY seq"
             )
         } else {
-            format!(
-                "SELECT {ENTRY_COLS} FROM entries WHERE rev > ?1 AND ?2 > 0 AND bot_id NOT GLOB '{TASK_GLOB}' ORDER BY seq"
-            )
+            format!("SELECT {ENTRY_COLS} FROM entries WHERE rev > ?1 AND ?2 > 0 AND NOT {threads} ORDER BY seq")
         };
         let mut st = c.prepare(&sql)?;
         Ok(st.query_map(params![since, cap], row_entry)?.collect::<rusqlite::Result<_>>()?)
@@ -209,14 +211,14 @@ impl Store {
         Ok(st.query_map(params![bot_id, limit], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// The user's own messages in `bot_id`'s chat that still wait for their turn (not what the host wrote there),
-    /// oldest first.
+    /// The user's own messages in `bot_id`'s chat that still wait for their turn (not what the host wrote there, but
+    /// what a thread's chat passed on to it: `relay`), oldest first.
     pub fn queued_messages(&self, bot_id: &str) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
             "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND kind = 'user'
                AND json_extract(data, '$.status') = 'queued'
-               AND COALESCE(json_extract(data, '$.from'), '') != 'host'
+               AND (COALESCE(json_extract(data, '$.from'), '') != 'host' OR json_extract(data, '$.relay') = 1)
              ORDER BY seq"
         ))?;
         Ok(st.query_map([bot_id], row_entry)?.collect::<rusqlite::Result<_>>()?)
@@ -234,6 +236,20 @@ impl Store {
              ORDER BY rev"
         ))?;
         Ok(st.query_map([backend], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The approval and choice cards thread `thread` put in `bot_id`'s chat that still wait on the user, oldest
+    /// first.
+    // ponytail: scans the chat's entries without an index; the watchdog asks every few minutes, only while the thread
+    // works. Add one if it shows up in profiles.
+    pub fn open_cards(&self, bot_id: &str, thread: &str) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND ({OPEN_CARD})
+               AND json_extract(data, '$.thread.id') = ?2
+             ORDER BY seq"
+        ))?;
+        Ok(st.query_map([bot_id, thread], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
     /// Chat-visible messages (the user's, final replies) in `bot_id`'s chat that
@@ -352,13 +368,12 @@ impl Store {
     pub fn expire_pending(&self) -> Result<Expired> {
         let ids: Vec<String> = {
             let c = self.db.locked();
-            let mut st = c.prepare(
-                "SELECT id FROM entries WHERE (kind = 'permission' AND json_extract(data, '$.status') = 'pending')
-                  OR (kind = 'notice' AND json_extract(data, '$.decision') = 1 AND json_extract(data, '$.status') = 'pending')
+            let mut st = c.prepare(&format!(
+                "SELECT id FROM entries WHERE {OPEN_CARD}
                   OR (kind = 'user' AND json_extract(data, '$.status') = 'queued')
                   OR (kind = 'notice' AND json_extract(data, '$.delegationId') IS NOT NULL
-                      AND json_extract(data, '$.status') IN ('queued', 'sent'))",
-            )?;
+                      AND json_extract(data, '$.status') IN ('queued', 'sent'))"
+            ))?;
             st.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
         };
         let mut decisions = 0;

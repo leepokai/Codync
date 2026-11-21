@@ -50,7 +50,7 @@ export function ComputerFilterHeader({ hidden, setHidden, manage, compact = fals
     }
     for (const p of pending) {
       const status = ssh.status(p.id)
-      const detail = sshStatusDetail(status, false)
+      const detail = sshStatusDetail(status, false, tr)
       list.push({ title: p.name || p.host, verbatim: true, detail, icon: 'network', action: manage })
     }
     if (stores.length) list.push({ title: 'Reconnect', icon: 'arrow.clockwise', divider: true, action: () => stores.forEach((s) => s.restartStream()) })

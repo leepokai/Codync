@@ -25,7 +25,7 @@ mod thread;
 mod tools;
 mod worktree;
 
-pub use dispatch::{Wait, dispatch};
+pub use dispatch::{Wait, dispatch, threads_config};
 pub use prompts::{BRIEF, in_thread, relayed, reminder, report_notice, report_prompt};
 pub use sources::{access_of, add_request, add_routine, boxed, from_chat, routines_changed, source_of};
 pub use steer::{Steer, cut_in, drop_task, first, retry, stop};
@@ -207,8 +207,14 @@ pub fn of(store: &Store, bot: &str) -> Vec<BotConfig> {
 pub fn fallbacks_changed(hub: &Hub, cfg: &BotConfig) {
     let _g = hub.emit_lock.locked();
     let mut threads = of(&hub.store, &cfg.id);
+    // A thread keeps the agent it started on: it gets the chain that starts there (the threads' own in Advisor mode,
+    // else the chat's), and one that started on another keeps its own.
+    let chains = [threads_config(cfg), cfg.clone()];
+    let login = crate::agent::fallback::login::of;
     for thread in &mut threads {
-        thread.fallbacks.clone_from(&cfg.fallbacks);
+        if let Some(chain) = chains.iter().find(|chain| login(chain) == login(thread)) {
+            thread.fallbacks.clone_from(&chain.fallbacks);
+        }
     }
     if let Err(error) = hub.store.save_bots(&threads) {
         tracing::warn!(bot = %cfg.id, error = format!("{error:#}"), "couldn't give its threads the bot's fallbacks");

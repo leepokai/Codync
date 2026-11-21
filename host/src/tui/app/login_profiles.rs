@@ -35,6 +35,8 @@ impl App {
             Field::LoginProfile => self.login_profiles(&f.backend).is_some(),
             Field::MaxThreads => f.max_threads.is_some(),
             Field::ThreadWorktrees => f.thread_worktrees.is_some(),
+            Field::Advisor => f.advisor,
+            Field::ThreadAgent | Field::ThreadFallbacks => f.thread_agent.is_some(),
             _ => true,
         }
     }

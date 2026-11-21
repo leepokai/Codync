@@ -1,7 +1,7 @@
 """Deterministic ACP agent for the tests of a bot's box: a bot that adds and steers work, and the thread that does it.
 
 In the chat: `ADD title|brief[|hold][|after=<title>]`, `STEER how|title[|brief, or the title that gives way]`,
-`STATUS`, `MESSAGE <bot id>|<request>` (asks another bot). In a thread, the brief says what it does: `HOLD:<name>`
+`TELL title|words[|now]` (passes words on to a task), `STATUS`, `MESSAGE <bot id>|<request>` (asks another bot). In a thread, the brief says what it does: `HOLD:<name>`
 works until a `release-<name>` file is in its folder, `PERMISSION` asks for an approval, `ASK` asks the user to
 choose, `SHARE` sends a file (`QUOTE`: quoting the chat message that added the task), `ARTIFACT` publishes one,
 `NEST` tries what a thread may not, `REMEMBER` adds a line to `MEMORY.md` with `edit_memory` and `FORGET` tries to take
@@ -11,11 +11,14 @@ A routine run and another bot's request read the same words in the routine's ins
 `SEND` (a message to the user), `PROGRESS` (saves the routine's progress note), `FOLLOW` (sets a follow-up) and
 `PASS` (nothing to tell).
 
+What the chat passes on to a working task's thread is a turn of its own unless it joins the running one: it answers
+`Heard <the words>`.
+
 What the user writes to a thread is a turn of its own: it answers `Thread <their words>: <notes>`, where the
 notes say whether the session is the one that did the work (`same session`) or a new one told of it (`picked up`),
 and the words may hold `HOLD:<name>`, `NEST` and `ASK` as a brief does.
 
-Arguments: `no-fork`: the agent doesn't advertise `session/fork`. `no-load`: nor `session/load`, so a session can't
+Arguments: `as=<name>`: a task's report says `on <name>` (which agent did it). `no-fork`: the agent doesn't advertise `session/fork`. `no-load`: nor `session/load`, so a session can't
 be picked up again. `steer`: it takes a message into its running turn (`_session/steering`), and the turn's reply
 ends with `joined <the message>`. A `no-start` file in its folder: it doesn't start.
 A `signedout` file: every prompt fails asking to sign in (ACP's -32000). `thread-signedout` / `thread-limit`: a thread's
@@ -41,6 +44,7 @@ if pathlib.Path("no-start").exists():
 CAN_FORK = "no-fork" not in sys.argv
 CAN_LOAD = "no-load" not in sys.argv
 CAN_STEER = "steer" in sys.argv
+AGENT = next((arg.removeprefix("as=") for arg in sys.argv if arg.startswith("as=")), None)
 # What the user's messages steered into the running turn said.
 joined = []
 SIGNED_OUT = {"code": -32000, "message": "Authentication required"}
@@ -182,6 +186,8 @@ def work(text, session):
         notes.append(said(server_tool("memory", "edit_memory", arguments), "Forgot: ")[:60])
     if joined:
         notes.append("joined " + " + ".join(joined))
+    if AGENT:
+        notes.append("on " + AGENT)
     return f"Report {title}: " + "; ".join(notes)
 
 
@@ -201,6 +207,8 @@ def answer(text, session):
     """What this turn replies."""
     if "[Codync: your task" in text:
         return relayed(text)
+    if "[Codync: your chat passed this on" in text:
+        return "Heard " + text.split("\n\n[Codync: your chat passed this on", 1)[0].strip().splitlines()[-1]
     if "in this task's thread" in text:
         return thread(text)
     if "[Task]" in text:
@@ -209,7 +217,7 @@ def answer(text, session):
         return elsewhere("Routine", text)
     if "sent you this request" in text:
         return elsewhere("Request", text)
-    command = re.search(r"^(ADD|STEER|STATUS|MESSAGE)\b ?(.*)$", text, re.M)
+    command = re.search(r"^(ADD|STEER|TELL|STATUS|MESSAGE)\b ?(.*)$", text, re.M)
     if not command:
         return "reply: " + text.strip().splitlines()[-1]
     name, rest = command.groups()
@@ -237,6 +245,10 @@ def answer(text, session):
         elif more:
             arguments["insteadOf"] = task_id(more[0])
         return said(chat_tool("steer_task", arguments), "Steered: ")
+    if name == "TELL":
+        title, words, *flags = rest.split("|")
+        arguments = {"task": task_id(title), "text": words, "now": "now" in flags}
+        return said(chat_tool("tell_task", arguments), "Told: ")
     return said(chat_tool("work_status", {}), "Status: ")
 
 

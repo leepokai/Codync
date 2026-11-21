@@ -175,8 +175,9 @@ impl Actor {
         if let Some(mut e) = self.hub.store.entry(entry_id) {
             e.data["status"] = json!(RequestStatus::Sent);
             self.hub.set_entry_turn(entry_id, self.turn, &e.data);
-            // What the user wrote to a thread is in its task's next report, as when it starts a turn.
-            if self.cfg.is_thread() {
+            // What the user wrote to a thread is in its task's next report, as when it starts a turn (what its chat
+            // passed on is not theirs).
+            if self.cfg.is_thread() && e.data["from"] != "host" {
                 let words = e.data["text"].as_str().unwrap_or_default().to_owned();
                 crate::chat::work::heard(&self.hub, &self.cfg, &[words]);
             }

@@ -99,6 +99,13 @@ pub struct BotConfig {
     /// Agents that carry on, in order, when the bot's own can't answer (see `agent::fallback`).
     #[serde(default)]
     pub fallbacks: Vec<Fallback>,
+    /// Advisor mode: the agent the bot's threads run on when it isn't the chat's own (`chat::work::threads_config`);
+    /// none: the chat's, with the chat's fallbacks.
+    #[serde(default)]
+    pub thread_agent: Option<Fallback>,
+    /// In Advisor mode, the agents that carry on, in order, when the threads' own can't answer.
+    #[serde(default)]
+    pub thread_fallbacks: Vec<Fallback>,
     /// The bot may set its own fallbacks (`chat` server's `set_fallbacks`). On unless the user turns it off.
     #[serde(default = "yes")]
     pub self_fallbacks: bool,

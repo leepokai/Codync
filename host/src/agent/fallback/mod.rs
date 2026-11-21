@@ -72,6 +72,13 @@ pub fn step_of(cfg: &BotConfig, login: &str) -> Option<usize> {
 pub fn tidy(cfg: &mut BotConfig) {
     let mut seen = HashSet::from([login::of(cfg)]);
     cfg.fallbacks.retain(|f| seen.insert(step_login(f)));
+    // Advisor mode: the threads' chain starts at their own agent, and there is none without it.
+    let Some(threads) = cfg.thread_agent.as_ref().map(step_login) else {
+        cfg.thread_fallbacks.clear();
+        return;
+    };
+    let mut seen = HashSet::from([threads]);
+    cfg.thread_fallbacks.retain(|f| seen.insert(step_login(f)));
 }
 
 fn step_login(f: &Fallback) -> String {
@@ -91,20 +98,32 @@ pub fn saved_steps<'a>(saved: &'a [Fallback], agents: &[&str]) -> Vec<Option<&'a
 
 /// The agents of `cfg`'s chain that are resting at `now` (`resting` on the bot's wire shape).
 pub fn resting(store: &Store, cfg: &BotConfig, now: i64) -> Vec<Value> {
-    (0..steps(cfg))
-        .filter_map(|s| {
-            let r = rest::get(store, &login(cfg, s), now)?;
-            let on = fallback_at(cfg, s).map_or(cfg.login_profile.as_ref(), |f| f.login_profile.as_ref());
-            Some(json!({"agent": backend(cfg, s), "loginProfile": on, "until": r.until, "reason": r.reason}))
-        })
-        .collect()
+    let mut out = Vec::new();
+    // Advisor mode's threads' chain as well, so its rows say so too.
+    for cfg in chains(cfg) {
+        for s in 0..steps(&cfg) {
+            let Some(r) = rest::get(store, &login(&cfg, s), now) else { continue };
+            let on = fallback_at(&cfg, s).map_or(cfg.login_profile.as_ref(), |f| f.login_profile.as_ref());
+            let rests = json!({"agent": backend(&cfg, s), "loginProfile": on, "until": r.until, "reason": r.reason});
+            if !out.contains(&rests) {
+                out.push(rests);
+            }
+        }
+    }
+    out
+}
+
+/// `cfg`'s chain, and in Advisor mode its threads' too.
+fn chains(cfg: &BotConfig) -> Vec<BotConfig> {
+    let threads = cfg.thread_agent.is_some().then(|| crate::chat::work::threads_config(cfg));
+    std::iter::once(cfg.clone()).chain(threads).collect()
 }
 
 /// Login `rested` started or stopped resting: every bot that uses it shows it.
 pub fn tell_bots(hub: &Hub, rested: &str) {
     let Ok(rows) = hub.store.bots() else { return };
     for row in rows.iter().filter(|r| !r.deleted && !r.config.is_group()) {
-        if (0..steps(&row.config)).any(|s| login(&row.config, s) == rested) {
+        if chains(&row.config).iter().any(|cfg| (0..steps(cfg)).any(|s| login(cfg, s) == rested)) {
             hub.emit_bot(&row.config.id);
         }
     }
@@ -197,6 +216,23 @@ mod tests {
         cfg.login_profile = Some("a1".into());
         tidy(&mut cfg);
         assert_eq!(cfg.fallbacks.len(), 2, "the step on the bot's own login profile goes");
+    }
+
+    #[test]
+    fn advisor_modes_chain_starts_at_the_threads_agent_and_goes_with_it() {
+        let mut cfg = bot(&[]);
+        cfg.thread_agent = Some(Fallback { backend: "codex".into(), ..Fallback::default() });
+        cfg.thread_fallbacks = bot(&[("claude", None), ("codex", None), ("gemini", None), ("gemini", None)]).fallbacks;
+        tidy(&mut cfg);
+        let steps: Vec<_> = cfg.thread_fallbacks.iter().map(|f| f.backend.as_str()).collect();
+        assert_eq!(
+            steps,
+            ["claude", "gemini"],
+            "the chat's agent may carry the threads on; the threads' own is theirs"
+        );
+        cfg.thread_agent = None;
+        tidy(&mut cfg);
+        assert!(cfg.thread_fallbacks.is_empty(), "off: no threads' chain is kept");
     }
 
     #[test]

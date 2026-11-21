@@ -168,8 +168,9 @@ pub(super) fn capacity(hub: &Hub, cfg: &BotConfig, tasks: &[Task], over: Option<
     // A turn the last host process left cut off is resumed by the bot's actor: it runs, though nothing says so yet.
     let chat_free = over == Some(cfg.id.as_str())
         || !(turn_runs(hub, &cfg.id, None) || crate::agent::bot::resumable(&hub.store, &cfg.id));
-    // The limit of the agent a new thread starts on: past a resting one, its fallback's.
-    let starts_on = crate::agent::fallback::starting(&hub.store, cfg, now_ms());
+    // The limit of the agent a new thread starts on (the threads' own in Advisor mode): past a resting one, its
+    // fallback's.
+    let starts_on = crate::agent::fallback::starting(&hub.store, &threads_config(cfg), now_ms());
     Capacity { free, running, near_limit: crate::usage::near_limit(hub, &starts_on), chat_free }
 }
 
@@ -301,7 +302,7 @@ fn plan(hub: &Hub, cfg: &BotConfig, tasks: &mut Vec<Task>, over: Option<&str>) -
             // A routine's run starts as it did in the chat: a new session that knows only its own prompt.
             // ponytail: a thread in a worktree starts from a brief, not a fork: a fork is taken in another folder
             // than its session's, which no agent is checked to honor. Fork there once one is (stage 10's spikes).
-            let forks = sources::from_chat(&task.source) && task.place == Place::Folder;
+            let forks = sources::from_chat(&task.source) && task.place == Place::Folder && threads_fork(cfg);
             task.fork_from = forks.then(|| fork_source(hub, &cfg.id)).flatten();
             task.thread = Some(thread.id.clone());
             {
@@ -348,6 +349,38 @@ fn begin(hub: &Arc<Hub>, bot: &str, thread: &BotConfig, task: &Task, first: bool
 }
 
 /// A thread bot for `cfg`: its config, without what stays with the chat.
+/// The bot as its threads run it: in Advisor mode on its threads' agent (`thread_agent`) and their fallbacks, as a
+/// fallback step on that agent runs (`agent::fallback::effective`), everything else the bot's; otherwise the bot as
+/// it is. A picked mode of the chat's agent becomes Auto on another, as a client's edit makes it.
+pub fn threads_config(cfg: &BotConfig) -> BotConfig {
+    let Some(agent) = &cfg.thread_agent else { return cfg.clone() };
+    let other = agent.backend != cfg.backend;
+    let mode = if other && cfg.mode.as_deref().is_some_and(|m| m != crate::agent::modes::AUTO) {
+        Some(crate::agent::modes::AUTO.into())
+    } else {
+        cfg.mode.clone()
+    };
+    BotConfig {
+        backend: agent.backend.clone(),
+        command: agent.command.clone(),
+        login_profile: agent.login_profile.clone(),
+        model: agent.model.clone(),
+        model_options: agent.model_options.clone(),
+        // A model option of the chat's agent; another agent's turns start without it.
+        fast_mode: cfg.fast_mode && !other,
+        mode,
+        fallbacks: cfg.thread_fallbacks.clone(),
+        ..cfg.clone()
+    }
+}
+
+/// Whether `cfg`'s threads run on the chat's own agent and login, so a thread may start as a fork of the chat's
+/// session (its model may differ: a forked session takes the thread's model like a new one).
+fn threads_fork(cfg: &BotConfig) -> bool {
+    let threads = threads_config(cfg);
+    (&threads.backend, &threads.command, &threads.login_profile) == (&cfg.backend, &cfg.command, &cfg.login_profile)
+}
+
 fn thread_bot(cfg: &BotConfig) -> BotConfig {
     BotConfig {
         id: format!("{THREAD_PREFIX}{}", uuid::Uuid::new_v4()),
@@ -368,7 +401,10 @@ fn thread_bot(cfg: &BotConfig) -> BotConfig {
         manage_team: false,
         // As its bot's, wherever the thread works (a worktree isn't the bot's own folder).
         shared_memory: Some(crate::chat::memory::shared(cfg)),
-        ..cfg.clone()
+        // A thread runs no threads of its own.
+        thread_agent: None,
+        thread_fallbacks: Vec::new(),
+        ..threads_config(cfg)
     }
 }
 
@@ -447,6 +483,38 @@ mod tests {
         assert_eq!(seats(3, 4, 2), (0, 2), "never two past it, however many wait");
         assert_eq!(seats(1, 1, 1), (1, 0));
         assert_eq!(seats(2, 4, 0), (0, 4), "the ceiling was lowered: nothing new starts");
+    }
+
+    #[test]
+    fn in_advisor_mode_threads_run_on_their_own_agent_and_fallbacks() {
+        use crate::store::Fallback;
+        let base: BotConfig =
+            serde_json::from_value(json!({"id": "b", "name": "B", "backend": "claude", "model": "opus",
+            "mode": "acceptEdits", "fastMode": true, "fallbacks": [{"backend": "codex"}]}))
+            .expect("a bot");
+        assert_eq!(threads_config(&base).backend, "claude", "off: the chat's own agent");
+        assert!(threads_fork(&base));
+        let step = |backend: &str, model: &str| Fallback {
+            backend: backend.into(),
+            model: Some(model.into()),
+            ..Fallback::default()
+        };
+        let advisor = BotConfig {
+            thread_agent: Some(step("codex", "gpt-5")),
+            thread_fallbacks: vec![step("gemini", "pro")],
+            ..base.clone()
+        };
+        let threads = threads_config(&advisor);
+        assert_eq!(
+            (threads.backend.as_str(), threads.model.as_deref(), threads.mode.as_deref(), threads.fast_mode),
+            ("codex", Some("gpt-5"), Some(crate::agent::modes::AUTO), false),
+            "another agent: its own model, Auto for the chat's picked mode, no fast mode"
+        );
+        assert_eq!(threads.fallbacks, [step("gemini", "pro")], "the threads' fallbacks, not the chat's");
+        assert!(!threads_fork(&advisor), "another agent can't take the chat's session");
+        let lighter = BotConfig { thread_agent: Some(step("claude", "haiku")), ..base };
+        assert_eq!(threads_config(&lighter).mode.as_deref(), Some("acceptEdits"), "the same agent keeps the mode");
+        assert!(threads_fork(&lighter), "only the model differs: a fork takes the thread's model");
     }
 
     #[test]

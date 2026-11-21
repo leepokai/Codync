@@ -322,6 +322,8 @@ fn folder_of<'a>(task: &Task, cwd: Option<&'a String>) -> Option<&'a String> {
 /// The bot's `work` on the wire.
 pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
     let shown = shown(hub, cfg);
+    // The one seat a thread waiting on the user lends: past it, one more waiting gives nothing (`dispatch::seats`).
+    let mut lent = false;
     // Where each thread works: a worktree's folder, or the bot's as it was when the thread began.
     let folders: HashMap<String, String> = if shown.is_empty() {
         HashMap::new()
@@ -341,8 +343,12 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
                     "result": task.result.map(|r| crate::agent::acp::truncate(&r, WIRE_RESULT)),
                     // The user may write to its thread: the bot's own work, whose thread is still there.
                     "talk": task.source.is_bot() && cwd.is_some(),
-                    // It takes one of the bot's seats: one waiting on the user gives its seat up (`dispatch::seats`).
-                    "seat": status == Status::Working,
+                    // It takes one of the bot's seats.
+                    "seat": match status {
+                        Status::Working => true,
+                        Status::NeedsYou => std::mem::replace(&mut lent, true),
+                        _ => false,
+                    },
                 });
                 if let Some(folder) = folder {
                     row["folder"] = folder.clone().into();
@@ -567,6 +573,25 @@ mod tests {
         task("stopped", json!({"endedAt": 10}));
         hub.set_runtime(&cfg.id, |r| r.status = BotStatus::Idle);
         assert_eq!(stands(), BotStatus::Idle);
+    }
+
+    #[test]
+    fn only_one_thread_waiting_on_the_user_lends_its_seat() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let cfg = crate::chat::calls::context::tests::bot("b-seat", "Mika", "/tmp");
+        hub.store.save_bot(&cfg).expect("saved");
+        let task = |id: &str, at: i64| {
+            json!({"id": id, "title": id, "brief": "x", "status": "working", "order": 1, "createdAt": at,
+                "startedAt": at, "thread": format!("thread-{id}")})
+        };
+        let tasks = json!([task("a", 1), task("b", 2), task("c", 3)]);
+        hub.store.kv_set(&key(&cfg.id), &tasks.to_string()).expect("saved");
+        let seats =
+            || -> Vec<Value> { wire(&hub, &cfg).as_array().expect("rows").iter().map(|r| r["seat"].clone()).collect() };
+        assert_eq!(seats(), [true, true, true]);
+        hub.set_runtime("thread-a", |r| r.status = BotStatus::NeedsInput);
+        hub.set_runtime("thread-b", |r| r.status = BotStatus::NeedsInput);
+        assert_eq!(seats(), [false, true, true], "one seat is lent, as the dispatcher counts it");
     }
 
     #[test]

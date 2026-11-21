@@ -219,8 +219,10 @@ fn used_agents(store: &Store) -> HashSet<&'static str> {
     bots.iter()
         .filter(|bot| !bot.deleted)
         .flat_map(|bot| {
-            let fallbacks = bot.config.fallbacks.iter().map(|fallback| fallback.backend.as_str());
-            std::iter::once(bot.config.backend.as_str()).chain(fallbacks)
+            // Advisor mode: the threads' agent and fallbacks run too.
+            let c = &bot.config;
+            let steps = c.fallbacks.iter().chain(&c.thread_agent).chain(&c.thread_fallbacks);
+            std::iter::once(c.backend.as_str()).chain(steps.map(|step| step.backend.as_str()))
         })
         .filter_map(|backend| backends::harness_of(backend).map(|harness| harness.id))
         .collect()

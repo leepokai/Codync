@@ -387,6 +387,63 @@ async fn a_replaced_brief_is_what_the_task_starts_from_waiting_or_working() {
 }
 
 #[tokio::test]
+async fn the_chat_passes_words_on_to_a_task_and_its_one_report_comes_after_them() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "steer").await;
+    host.call("updateBot", json!({"id": bot, "maxThreads": 1})).await;
+    host.reply(&bot, "ADD Working|HOLD:working").await;
+    task(&host, &bot, "Working", "working").await;
+    host.reply(&bot, "ADD Waiting|x").await;
+    task(&host, &bot, "Waiting", "waiting").await;
+
+    // A waiting task reads it when it starts.
+    host.reply(&bot, "TELL Waiting|the API page too").await;
+    assert!(reply(&host, &bot, "Told:").await.contains("It reads this when it starts."));
+    // A working one: now, into its running turn; or after it, as a turn of its own before it reports.
+    host.reply(&bot, "TELL Working|mind the docs|now").await;
+    host.reply(&bot, "TELL Working|and the tests").await;
+    let told: Vec<String> =
+        history(&host, &bot).await.into_iter().filter_map(|e| e["data"]["text"].as_str().map(str::to_owned)).collect();
+    assert!(told.iter().any(|t| t.contains("before it reports")), "{told:?}");
+    release(&host, &bot, "working");
+    task(&host, &bot, "Working", "done").await;
+    task(&host, &bot, "Waiting", "done").await;
+    wait("both reports", async || (relayed(&host, &bot).await.len() == 2).then_some(())).await;
+    assert_eq!(
+        relayed(&host, &bot).await,
+        ["Relayed: Heard and the tests", "Relayed: Report Waiting: forked; no chat"],
+        "one report a task: the last turn's"
+    );
+    let heard = logged(&host.workspace(&bot), "prompts.jsonl");
+    let in_thread = |t: &&str| t.contains("and the tests") && !t.contains("TELL");
+    let relay = heard.iter().find_map(|p| p["text"].as_str().filter(in_thread)).unwrap();
+    assert!(
+        relay.contains("[Codync: your chat passed this on to you") && !relay.contains("[Codync: message "),
+        "{relay}"
+    );
+    let waiting = task_prompts(&host, &bot, "Waiting")[0]["text"].as_str().unwrap().to_owned();
+    assert!(waiting.contains("the API page too"), "{waiting}");
+}
+
+#[tokio::test]
+async fn in_advisor_mode_tasks_run_on_the_threads_agent() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 2).await;
+    let worker = common::fixture_command("work_agent.py", "as=worker");
+    host.call("updateBot", json!({"id": bot, "threadAgent": {"backend": "custom", "command": worker}})).await;
+    host.reply(&bot, "ADD Fix|x").await;
+    wait("its report", async || (relayed(&host, &bot).await.len() == 1).then_some(())).await;
+    // Another agent can't take the chat's session: it starts from a brief that tells it the chat.
+    assert_eq!(relayed(&host, &bot).await, ["Relayed: Report Fix: briefed; saw the chat; on worker"]);
+
+    // Off: the chat's own agent again, on a fork of its session.
+    host.call("updateBot", json!({"id": bot, "threadAgent": null})).await;
+    host.reply(&bot, "ADD Again|x").await;
+    wait("its report", async || (relayed(&host, &bot).await.len() == 2).then_some(())).await;
+    assert_eq!(relayed(&host, &bot).await[1], "Relayed: Report Again: forked; no chat");
+}
+
+#[tokio::test]
 async fn a_task_that_follows_another_runs_in_its_session_when_it_is_done() {
     let host = Host::start().await;
     let bot = bot_with(&host, 1).await;

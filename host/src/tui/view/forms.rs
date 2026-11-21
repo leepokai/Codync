@@ -65,6 +65,13 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
         Field::SelfFallbacks => {
             tr("Let the bot change its fallbacks: it can set this list itself, for example when you ask it to.").into_owned()
         }
+        Field::Advisor => {
+            tr("The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.").into_owned()
+        }
+        Field::ThreadFallbacks => {
+            let agent = f.thread_agent.as_ref().map(|a| app.agent_name(&a.backend)).unwrap_or_default();
+            tr("If {agent} runs out of usage or can't answer, threads carry on with the next one.").replace("{agent}", &agent)
+        }
         Field::Approvals => {
             let choice = app.approval(f);
             [choice.note.unwrap_or_default(), tr(choice.detail).into_owned()].join(" ").trim().to_owned()
@@ -137,6 +144,9 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::Fast => "Fast mode",
             Field::Fallbacks => "Fallbacks",
             Field::SelfFallbacks => "Bot edits",
+            Field::Advisor => "Advisor mode",
+            Field::ThreadAgent => "Threads' agent",
+            Field::ThreadFallbacks => "Threads' fallbacks",
             Field::Folder => "Workspace",
             Field::MaxThreads => "Threads at once",
             Field::ThreadWorktrees => "Worktree per thread",
@@ -271,11 +281,14 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     rput(buf, inner.right(), y, &tr("Not signed in"), t.amber.patch(base));
                 }
             }
-            Field::Fallbacks => {
+            Field::Fallbacks | Field::ThreadFallbacks => {
                 let bot = app.bots.get(&f.bot_id);
+                // "In use" is the chat's step: Advisor mode's threads each run their own.
+                let chat = *field == Field::Fallbacks;
+                let list = if chat { &f.fallbacks } else { &f.thread_fallbacks };
                 let mut items: Vec<String> =
-                    f.fallbacks.iter().enumerate().map(|(j, x)| super::fallbacks::step_item(app, bot, j, x)).collect();
-                if f.fallbacks.len() < crate::agent::fallback::MAX_FALLBACKS {
+                    list.iter().enumerate().map(|(j, x)| super::fallbacks::step_item(app, bot, j, x, chat)).collect();
+                if list.len() < crate::agent::fallback::MAX_FALLBACKS {
                     items.push("+ add".into());
                 }
                 let mut x = vx;
@@ -291,6 +304,22 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::SelfFallbacks => {
                 let s = if f.self_fallbacks { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
                 put(buf, vx, y, vw, s, t.text.patch(base));
+            }
+            Field::Advisor => {
+                let s = if f.thread_agent.is_some() { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
+                put(buf, vx, y, vw, s, t.text.patch(base));
+            }
+            Field::ThreadAgent => {
+                if let Some(agent) = &f.thread_agent {
+                    let label = super::fallbacks::step_label(app, agent);
+                    put(buf, vx, y, vw, &format!("‹ {label} ›"), t.text.patch(base));
+                    let bot = app.bots.get(&f.bot_id);
+                    if let Some(note) =
+                        bot.and_then(|b| super::fallbacks::rest_note(b, &agent.backend, agent.login_profile.as_deref()))
+                    {
+                        rput(buf, inner.right(), y, &note, t.amber.patch(base));
+                    }
+                }
             }
             Field::Folder => {
                 put(
@@ -424,9 +453,13 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         Field::Agent => "←→ change · ↵ install / sign in · tab next",
         Field::LoginProfile => "←→ change · ↵ add login profile · tab next",
         Field::Model => "←→ pick a model · or type its id",
-        Field::Fallbacks => "←→ pick · space add / model · a agent · c login profile · [ ] move · x remove",
+        Field::Fallbacks | Field::ThreadFallbacks => {
+            "←→ pick · space add / model · a agent · c login profile · [ ] move · x remove"
+        }
+        Field::ThreadAgent => "←→ agent · space model · c login profile · tab next",
         Field::Fast
         | Field::SelfFallbacks
+        | Field::Advisor
         | Field::MaxThreads
         | Field::ThreadWorktrees
         | Field::Color

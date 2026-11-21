@@ -73,6 +73,11 @@ task:
 3. **Otherwise it waits**: `wait: next` for the first in line, `behind` with how many are `ahead` for the rest.
    Nothing is refused for being over the ceiling.
 
+**A thread waiting on the user gives its seat up** (`dispatch::seats`): while its runtime is `needsInput` (an approval,
+a choice, a sign-in) it doesn't count toward `maxThreads`, so the next task can start meanwhile; the user's answer
+lets it go on even past the ceiling. Every live thread still counts toward `maxThreads + 1`, so only one seat is ever
+lent. A thread that begins to wait on the user looks its bot's box over again (`Work::seat_freed`).
+
 A new thread waits for any turn of the bot to end, a routine run's or a room's too (they share its actor); that turn's
 end looks over the box again.
 
@@ -91,10 +96,16 @@ The decisions are one pure function (`dispatch::standings`), which the wire's `w
 - `steer_task {task, how, brief?, insteadOf?}` → `{taskId, status}`: `first` (a waiting task moves to the front), `now` (it cuts in),
   `replace` (a new brief), `stop`. The user's own words of the running turn are added to the task's `notes`.
   Refused under a ceiling, as `add_task` is.
+- `tell_task {task, text, now?}` → `{taskId, status, note}`: passes words on to a task without starting it again (what
+  the user adds about work under way, a fact it needs). A waiting task gets them in its `notes`, read when it starts.
+  A working one gets them as a message in its [thread](#talking-to-a-thread), from the host (`data.from: host`,
+  `data.relay`): it waits behind the running turn as the user's does (with `now`, into that turn at its next step
+  where the agent can, else the turn stops for it), and keeps the task going until a turn takes it, so the chat
+  still gets one report. Refused for a task that ended (add a new one) and under a ceiling, as `add_task` is.
 - `work_status {}` → `{tasks: […]}`: every task that is working or waiting, and those ended in the last day: status, what its thread
   does now, why it waits, seconds, result.
 
-Refused in a thread: these three and changes to the bot's profile or fallbacks (`work::refuse_chat_only`, the `chat`
+Refused in a thread: these four and changes to the bot's profile or fallbacks (`work::refuse_chat_only`, the `chat`
 server's), and the `routines`, `team` and `manage` tools (`work::acting_as`, `work::refuse_in_thread`). The refusal
 says to put what it needs in its report. `request_decision`, `send_file` and artifacts work from a thread
 ([below](#asking-and-sharing-from-a-thread)). A thread on a routine's run or another bot's request has that turn's own
@@ -148,6 +159,9 @@ chat's own queue: nothing here is a second copy of it.
   agent can (`_session/steering`), else the turn is stopped for it. **`unqueue {botId, taskId, entryId}`** takes it
   back (`status: cancelled`, `removed: true`; `threadEntries` no longer lists it). With no turn running the message
   starts one. The statuses are the chat's: `queued`, `sent`, `cancelled`, `failed`.
+- **What the chat passes on** (`tell_task`) is a message in the thread too, the host's (`from: host`, `relay: true`):
+  the thread reads it marked as passed on from its chat, and it never counts as the user's own words in the task's
+  report. Clients quote it as what the thread was told.
 - **The task isn't over while a message waits.** A turn that ends (done, failed, or stopped for Send now) with a
   message of the user's still queued ends nothing (`work::finished`): the task stays `working`, the message's turn
   runs, and that turn's last message is the task's result and its one report.
@@ -241,8 +255,9 @@ A thread runs its bot's [fallback chain](agent-fallback.md) with the same actor 
 out of usage, is rate limited, signed out or won't start, the same turn goes on with the next agent. Rests are the
 computer's, so the chat and every thread skip a resting login together.
 
-- **The chain is the bot's.** A thread copies it when it starts; a change to the bot's fallbacks reaches its threads at
-  once (`work::fallbacks_changed`, from `Hub::update_bot`), for their next agent.
+- **The chain is the bot's** (its threads' own in [Advisor mode](#advisor-mode)). A thread copies it when it starts; a
+  change reaches its threads at once (`work::fallbacks_changed`, from `Hub::update_bot`), for their next agent: each
+  gets the chain that starts at the agent it started on, and one that started on another keeps its own.
 - **A new session on another agent hears the chat.** A thread forked from the chat, or told it, keeps that only in
   the session it began; when it falls back to a new session elsewhere, that agent is told the chat so far
   (`work::chat_so_far`) before the recap of the thread's own transcript. Not for a routine's run.
@@ -275,6 +290,27 @@ it comes first, as what the running turn waits on. In the task's
 [thread](#talking-to-a-thread) the sign-in card is one quiet line beside that transcript line, as the card stands
 (`Needs <agent> sign-in`, then `Signed in` or `Cancelled`), which opens the chat at the card; the failure that offers
 **Add a fallback** has no line there, since the transcript holds the failure itself.
+
+## Advisor mode
+
+The bot's chat plans and hands work on; its threads may run on another agent, model or login, with fallbacks of their
+own: a strong model in the chat and a cheaper or faster one for the work, or another vendor's. Bot settings → Agent →
+**Advisor mode** sets `threadAgent` (a fallback-shaped step; null: off, the threads run on the bot's own) and
+`threadFallbacks` (`updateBot`; `threadAgent: null` turns it off, and the host then keeps no threads' chain).
+Turning it on in the apps starts the threads on the bot's own agent, model and fallbacks, for the user to change.
+
+- **`work::threads_config`** is the bot as its threads run it: that agent, model, options and login, its chain, and
+  Auto for a mode the chat's agent named (the chat's Fast mode only on the same agent). Every thread starts from it,
+  routine runs and other bots' requests too.
+- **A fork only on the chat's own agent and login.** A thread that may start as a fork of the chat's session
+  (`dispatch::plan`) does so only when its agent and login are the chat's; its model may differ, which the forked
+  session takes as a new one does. On another agent it starts from a brief that tells it the chat
+  ([how a thread's session begins](#how-a-threads-session-begins)).
+- **A thread keeps the agent it started on.** Turning Advisor mode on or off, or picking another threads' agent,
+  reaches new threads; running ones keep theirs, and their chain follows the one that starts there.
+- **Both chains count**: the host validates the threads' chain as a bot's own (each login once, at most three
+  fallbacks), settles and protects its login profiles, reads usage for its agents and shows its rests (`resting`).
+- `bot_updated` carries `advisorMode` and `threadAgent` ([analytics](../reference/analytics-events.md)).
 
 ## Asking and sharing from a thread
 
@@ -430,7 +466,7 @@ A task's end sends no alert of its own: its report is a turn of the bot's, whose
 
 - Bot: `work: [task]`: every working task (oldest first), then the waiting in dispatch order, then the tasks ended
   in the last 24 hours (newest first, at most 20). Task: `{id, title, status, activity, thread, wait, cutIn,
-  createdAt, startedAt, endedAt, result, talk, folder?, source?, worktree?}`; `activity` is its thread's, `thread` the thread bot that has or had it (null while it waits), `talk` whether the user may write to its [thread](#talking-to-a-thread) (the bot's own task whose thread bot is there), `folder` where its thread works (the worktree's folder for one in a worktree, else the bot's folder as it was when the thread began; absent before a thread took it, and once its worktree was removed with nothing in it), `wait`
+  createdAt, startedAt, endedAt, result, talk, seat, folder?, source?, worktree?}`; `seat` whether it takes one of the bot's seats (a working task's thread; one waiting on the user lends its own, [the dispatcher](#the-dispatcher)), absent on an older host, where every live task takes one; `activity` is its thread's, `thread` the thread bot that has or had it (null while it waits), `talk` whether the user may write to its [thread](#talking-to-a-thread) (the bot's own task whose thread bot is there), `folder` where its thread works (the worktree's folder for one in a worktree, else the bot's folder as it was when the thread began; absent before a thread took it, and once its worktree was removed with nothing in it), `wait`
   is `{kind: next | behind | after | usage, ahead?}` on a waiting task and null otherwise, `result` at most 280
   characters. `source` is `{kind: routine, id: <routine id>}` or `{kind: request, id?: <asking bot id>}`, and absent
   on a task the bot added, so a client that doesn't know it shows the row as before. `worktree` is
@@ -441,6 +477,7 @@ A task's end sends no alert of its own: its report is a turn of the bot's, whose
   offer **Add a fallback** (`data.addFallback`, without the `stopReason` of the thread's own), file messages
   (`data.files`) and artifact cards (`data.artifact`).
 - Bot: `maxThreads`, set with `updateBot` (1 to 6).
+- Bot: `threadAgent` and `threadFallbacks` ([Advisor mode](#advisor-mode)), set with `updateBot`. Absent on an older host.
 - Bot: `outside: {status, startedAt}`: how the bot stands [outside its chat](#outside-the-chat) (`idle`, `working`,
   `needsInput`, `error`), where `status` is the chat's alone. Absent on an older host: `status` then.
 - Bot: `threadWorktrees` (true unless set; `updateBot`), and `gitRepo`: whether the bot's folder is in a git

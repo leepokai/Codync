@@ -83,7 +83,8 @@ pub(super) fn unheard(store: &Store, thread: &str) -> bool {
 /// `task`'s thread is closed for the task to start again (it gave way, or got a new brief): what the user wrote to
 /// its thread and no turn took yet goes with the task, as what they said since.
 pub(super) fn carry(store: &Store, task: &mut Task, thread: &str) {
-    for entry in waiting(store, thread) {
+    // What its chat passed on is in its notes already (`relay`).
+    for entry in waiting(store, thread).into_iter().filter(|e| e.data["relay"] != true) {
         note(&mut task.notes, entry.data["text"].as_str().unwrap_or_default());
     }
 }

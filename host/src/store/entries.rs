@@ -208,14 +208,14 @@ impl Store {
         Ok(st.query_map(params![bot_id, limit], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// The user's own messages in `bot_id`'s chat that still wait for their turn (not what the host wrote there),
-    /// oldest first.
+    /// The user's own messages in `bot_id`'s chat that still wait for their turn (not what the host wrote there, but
+    /// what a thread's chat passed on to it: `relay`), oldest first.
     pub fn queued_messages(&self, bot_id: &str) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
             "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND kind = 'user'
                AND json_extract(data, '$.status') = 'queued'
-               AND COALESCE(json_extract(data, '$.from'), '') != 'host'
+               AND (COALESCE(json_extract(data, '$.from'), '') != 'host' OR json_extract(data, '$.relay') = 1)
              ORDER BY seq"
         ))?;
         Ok(st.query_map([bot_id], row_entry)?.collect::<rusqlite::Result<_>>()?)

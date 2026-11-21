@@ -3,7 +3,7 @@
 //! build that Codync adds into `~/.codync/node` when the user asks (an agent's setup, or
 //! installing an npm CLI).
 
-use crate::agent::{backends, registry};
+use crate::{backends, registry};
 use anyhow::{Context, Result, ensure};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -27,12 +27,12 @@ fn archive(os: &str, arch: &str) -> Option<(&'static str, &'static str)> {
 
 /// `~/.codync/node/<version>`: Codync's Node.
 fn root() -> PathBuf {
-    crate::service::data_dir().join("node").join(VERSION)
+    super::setup::get().data_dir.join("node").join(VERSION)
 }
 
 /// Where `npm install -g` puts CLIs when it runs on Codync's Node; outlives Node updates.
 fn global_prefix() -> PathBuf {
-    crate::service::data_dir().join("node").join("global")
+    super::setup::get().data_dir.join("node").join("global")
 }
 
 /// The commands under an npm prefix: Windows keeps them at the top.
@@ -112,7 +112,7 @@ async fn install(progress: &impl Fn(&str)) -> Result<()> {
     let name = format!("node-v{VERSION}-{platform}");
     let file = format!("{name}.{}", if cfg!(windows) { "zip" } else { "tar.gz" });
     progress("Downloading Node.js…");
-    let mut response = crate::http()
+    let mut response = (super::setup::get().http)()
         .get(format!("https://nodejs.org/dist/v{VERSION}/{file}"))
         .timeout(Duration::from_mins(10))
         .send()

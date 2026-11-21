@@ -439,7 +439,7 @@ mod tests {
         let path = file.display().to_string();
         app.on_paste(&path);
         assert_eq!(sheet(&app).files, std::slice::from_ref(&file), "attached, not typed");
-        assert!(sheet(&app).draft.text.is_empty());
+        assert_eq!(sheet(&app).draft.text, "");
         app.on_key(KeyEvent::from(KeyCode::Backspace));
         assert!(sheet(&app).files.is_empty(), "⌫ on an empty draft drops it");
         app.on_paste(&path);

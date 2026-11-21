@@ -12,7 +12,7 @@ fn ps() -> std::process::Command {
 }
 
 /// Every process on this computer.
-pub(crate) async fn list_processes() -> Result<Vec<JobProcess>> {
+pub async fn list_processes() -> Result<Vec<JobProcess>> {
     listed(&tokio::process::Command::from(ps()).output().await?)
 }
 
@@ -22,7 +22,7 @@ fn listed(output: &std::process::Output) -> Result<Vec<JobProcess>> {
 }
 
 /// `pid`'s session, or `None` once it's gone (a zombie's too, on macOS).
-pub(crate) fn session(pid: u32) -> Option<libc::pid_t> {
+pub fn session(pid: u32) -> Option<libc::pid_t> {
     let pid = libc::pid_t::try_from(pid).ok()?;
     // SAFETY: getsid only reads the process table.
     let sid = unsafe { libc::getsid(pid) };

@@ -1,7 +1,8 @@
 //! Background services started alongside the host API.
 
 use crate::remote::{claim, managed, relay};
-use crate::{agent::registry, hub::Hub, market, screen, update, usage, voice};
+use crate::{hub::Hub, market, screen, update, usage, voice};
+use codync_agent::registry;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;

@@ -1,8 +1,8 @@
 //! Codex's own API (`codex app-server`, JSON-RPC on stdio), for what the host asks Codex itself without a model
 //! turn: the account's plan windows (`usage::codex`) and where a bot's session is listed (`bot::codex_section`).
 
-use crate::agent::acp::Acp;
 use anyhow::{Context, Result};
+use codync_agent::acp::Acp;
 use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
@@ -10,9 +10,9 @@ use std::time::Duration;
 /// Starts the installed Codex CLI's API (blocking: looks the program up). `None`: Codex isn't installed.
 /// `env` points it at another `CODEX_HOME`; empty for the computer's own.
 pub fn start(env: &[(String, String)]) -> Result<Option<Arc<Acp>>> {
-    let Some(bin) = crate::agent::backends::which("codex") else { return Ok(None) };
+    let Some(bin) = codync_agent::backends::which("codex") else { return Ok(None) };
     let home = dirs::home_dir().context("locating the host user's home directory")?;
-    let command = format!("{} app-server", crate::shell::quote(&bin.to_string_lossy()));
+    let command = format!("{} app-server", codync_agent::shell::quote(&bin.to_string_lossy()));
     let (client, _events) = Acp::spawn(&command, &home.to_string_lossy(), env)?;
     Ok(Some(client))
 }
@@ -48,7 +48,7 @@ async fn initialize(client: &Acp) -> Result<()> {
 pub fn fixture(script: &str, mode: &str) -> impl FnOnce() -> Result<Option<Arc<Acp>>> + Send + 'static {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script = root.join("tests/fixtures").join(script);
-    let command = format!("{} {}", crate::shell::python(&script), crate::shell::quote(mode));
+    let command = format!("{} {}", codync_agent::shell::python(&script), codync_agent::shell::quote(mode));
     move || {
         let (client, _events) = Acp::spawn(&command, &root.to_string_lossy(), &[])?;
         Ok(Some(client))

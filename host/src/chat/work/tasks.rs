@@ -387,7 +387,7 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
                     "id": task.id, "title": task.title, "status": status, "activity": activity, "thread": task.thread,
                     "wait": wait, "cutIn": task.cut_in, "createdAt": task.created_at, "startedAt": task.started_at,
                     "endedAt": task.ended_at,
-                    "result": task.result.map(|r| crate::agent::acp::truncate(&r, WIRE_RESULT)),
+                    "result": task.result.map(|r| codync_agent::acp::truncate(&r, WIRE_RESULT)),
                     // The user may write to its thread: the bot's own work, whose thread is still there; with files
                     // too, which a host from before them doesn't say.
                     "talk": talk,

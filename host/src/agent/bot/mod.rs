@@ -49,14 +49,14 @@ use inflight::Inflight;
 pub(crate) use inflight::resumable;
 pub(crate) use launch::{launch_commands, select_model, start_agent, start_first, system_prompt};
 
-use crate::agent::acp::{self, Acp, Incoming};
-use crate::agent::config::FastModeSupport;
 use crate::chat::context::{Identity, Snapshot};
 use crate::chat::group::GroupTurn;
 use crate::chat::memory;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, Entry, EntryKind, Lane};
 use anyhow::{Result, anyhow};
+use codync_agent::acp::{self, Acp, Incoming};
+use codync_agent::config::FastModeSupport;
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -235,7 +235,7 @@ pub(crate) struct Conn {
     /// Each live session's Fast mode option, as the agent last listed it.
     fast_options: HashMap<String, Value>,
     /// Each live session's modes, as the agent last listed them, and the sessions already switched to the bot's.
-    modes: HashMap<String, crate::agent::modes::Modes>,
+    modes: HashMap<String, codync_agent::modes::Modes>,
     mode_set: HashSet<String>,
     /// The agent reports compactions (`compaction_update`); until it does, a fall in usage stands in for them.
     reports_compaction: bool,

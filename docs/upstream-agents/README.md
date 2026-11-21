@@ -1,6 +1,6 @@
 # Upstream agent bugs
 
-Codync drives every agent through its ACP adapter (`host/src/agent/acp.rs`, `host/src/agent/bot/`). Some adapters and
+Codync drives every agent through its ACP adapter (`host/crates/agent/src/acp.rs`, `host/src/agent/bot/`). Some adapters and
 the agents behind them have bugs, ignore part of the protocol or behave in their own way. This folder records them, one
 page per agent: what goes wrong, how the host patches around it (or that it doesn't), where upstream tracks it, and when
 the patch can go. When enough of an agent's rows are gone, we can reconsider how Codync uses it, or replace it with

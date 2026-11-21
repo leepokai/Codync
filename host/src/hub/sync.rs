@@ -35,7 +35,7 @@ impl Hub {
         let rt = if cfg.is_group() {
             // A group has no agent: Fast mode belongs to its members.
             crate::hub::Runtime {
-                fast_mode: crate::agent::config::FastModeSupport::default(),
+                fast_mode: codync_agent::config::FastModeSupport::default(),
                 ..self.group_runtime(cfg)
             }
         } else {
@@ -71,7 +71,7 @@ impl Hub {
             Some(_) => l.text.clone(),
             None => format!("You: {}", l.text),
         });
-        v["lastMessage"] = preview.map(|p| crate::agent::acp::truncate(&p, 280)).into();
+        v["lastMessage"] = preview.map(|p| codync_agent::acp::truncate(&p, 280)).into();
         v["lastAt"] = last.map_or(cfg.created_at, |l| l.at).into();
         v
     }

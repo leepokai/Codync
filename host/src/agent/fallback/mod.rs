@@ -61,7 +61,7 @@ pub fn threads(cfg: &BotConfig) -> BotConfig {
     let other = agent.backend != cfg.backend;
     BotConfig {
         fast_mode: cfg.fast_mode && !other,
-        mode: if other { crate::agent::modes::on_other_agent(cfg.mode.as_deref()) } else { cfg.mode.clone() },
+        mode: if other { codync_agent::modes::on_other_agent(cfg.mode.as_deref()) } else { cfg.mode.clone() },
         fallbacks: cfg.thread_fallbacks.clone(),
         ..on(cfg, agent)
     }
@@ -174,7 +174,7 @@ pub fn check(cfg: &BotConfig) -> Result<()> {
     let mut seen = HashSet::from([login::of(cfg)]);
     for f in &cfg.fallbacks {
         let custom = f.command.as_deref().is_some_and(|c| !c.trim().is_empty());
-        if !custom && !crate::agent::backends::is_known(&f.backend) {
+        if !custom && !codync_agent::backends::is_known(&f.backend) {
             bail!("unknown fallback agent {}", f.backend);
         }
         if !seen.insert(step_login(f)) {
@@ -189,10 +189,10 @@ pub fn name(backend: &str) -> String {
     if backend == "custom" {
         return "Custom command".into();
     }
-    if let Some(h) = crate::agent::backends::harness(backend) {
+    if let Some(h) = codync_agent::backends::harness(backend) {
         return h.name.into();
     }
-    crate::agent::registry::agent(backend)
+    codync_agent::registry::agent(backend)
         .and_then(|a| a["name"].as_str().map(str::to_owned))
         .unwrap_or_else(|| backend.to_owned())
 }
@@ -254,7 +254,7 @@ mod tests {
         let on = threads(&advisor);
         assert_eq!(
             (on.backend.as_str(), on.model.as_deref(), on.mode.as_deref(), on.fast_mode),
-            ("codex", Some("gpt-5"), Some(crate::agent::modes::AUTO), false),
+            ("codex", Some("gpt-5"), Some(codync_agent::modes::AUTO), false),
             "another agent: its own model, Auto for the chat's picked mode, no fast mode"
         );
         assert_eq!(on.fallbacks, [step("gemini", "pro")], "the threads' fallbacks, not the chat's");
@@ -321,6 +321,7 @@ mod tests {
 
     #[test]
     fn the_chain_names_each_agent_once() {
+        crate::agent::init_runtime();
         assert!(check(&bot(&[("codex", None), ("gemini", None)])).is_ok());
         assert!(check(&bot(&[("claude", Some("sonnet"))])).is_err(), "the bot's own agent again");
         assert!(check(&bot(&[("codex", None), ("codex", Some("o3"))])).is_err());

@@ -1,8 +1,8 @@
 //! Current Codex plan windows, read through the CLI's account API without a model turn.
 
-use crate::agent::acp::Acp;
 use crate::agent::codex_app;
 use anyhow::{Context, Result};
+use codync_agent::acp::Acp;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration;
@@ -108,7 +108,7 @@ mod tests {
 
     async fn fixture(mode: &str, timeout: Duration) -> Result<Option<Vec<Window>>> {
         let result = read_live(codex_app::fixture("codex_usage.py", mode), timeout).await;
-        crate::agent::acp::stopped().await;
+        codync_agent::acp::stopped().await;
         result
     }
 
@@ -151,7 +151,7 @@ mod tests {
             release.send(()).unwrap();
         };
         let (result, ()) = tokio::join!(probe, resume);
-        crate::agent::acp::stopped().await;
+        codync_agent::acp::stopped().await;
         assert!(result.unwrap().is_some());
     }
 

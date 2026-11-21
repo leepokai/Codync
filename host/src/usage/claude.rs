@@ -31,7 +31,7 @@ const USAGE_ARGS: [&str; 11] = [
 /// `env` points it at a login profile's folder; empty for the default login.
 pub(super) async fn collect(env: Vec<(String, String)>) -> Option<Vec<Window>> {
     let mut command = tokio::process::Command::new(super::command::program("claude")?);
-    crate::shell::apply_env(command.as_std_mut(), &env);
+    codync_agent::shell::apply_env(command.as_std_mut(), &env);
     let out = tokio::time::timeout(
         std::time::Duration::from_mins(1),
         command
@@ -229,7 +229,7 @@ echo '{"type":"assistant","usage_report":{"rate_limits":{"limits":[{"kind":"week
         )
         .unwrap();
         std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let _path = crate::agent::backends::TestSearchPath::set(dir.clone());
+        let _path = codync_agent::backends::TestSearchPath::set(dir.clone());
         let routed = vec![
             ("ANTHROPIC_AUTH_TOKEN".to_owned(), "gateway-token".to_owned()),
             ("CLAUDE_CODE_USE_BEDROCK".to_owned(), "1".to_owned()),

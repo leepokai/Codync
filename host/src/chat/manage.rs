@@ -194,7 +194,7 @@ async fn create(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     let cfg = crate::agent::new_bot::with_defaults(hub, body).await?;
     // A mode is its agent's: on another agent, the new bot would work in that one's default, which may ask less.
     if cfg.backend != source.backend
-        && let Some(mode) = source.mode.as_deref().filter(|m| *m != crate::agent::modes::AUTO)
+        && let Some(mode) = source.mode.as_deref().filter(|m| *m != codync_agent::modes::AUTO)
     {
         bail!(
             "you work in your agent's {mode} mode, which {} may not have: create this bot on {}, or ask the user to",

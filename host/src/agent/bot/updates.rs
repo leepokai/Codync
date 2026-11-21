@@ -3,11 +3,11 @@
 use super::fast_mode::Listing;
 use super::tool_entry::{activity, mark_bookkeeping, merge_tool_content};
 use super::{Actor, Reacted, Seg, SegKind};
-use crate::agent::acp::{self, Incoming};
 use crate::agent::elicitation::{self, Declined};
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{BotConfig, Entry, EntryKind, Lane};
+use codync_agent::acp::{self, Incoming};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;

@@ -3,7 +3,7 @@
 #[cfg(unix)]
 use super::process_unix::{Tree, end_groups, in_session};
 #[cfg(unix)]
-pub(crate) use super::process_unix::{list_processes, session};
+pub use super::process_unix::{list_processes, session};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -19,22 +19,21 @@ const POLL: Duration = Duration::from_millis(100);
 const PARENT_GRACE: Duration = Duration::from_secs(3);
 /// The longest a tree unwinds that way before what is left is killed at once: [`PARENT_GRACE`] for each of a few levels
 /// of parents that outlive their children, like an agent under its launcher and an MCP server under the agent.
-pub(crate) const UNWIND: Duration = Duration::from_secs(15);
+pub const UNWIND: Duration = Duration::from_secs(15);
 /// The console window Windows gives a process started without one: no work of its own, and no child that keeps its
 /// parent going.
 const CONSOLE_HOST: &str = "conhost.exe";
 
 /// One process in an agent's tree: on Windows its job, on Unix what `ps` lists under it.
 #[derive(Clone)]
-pub(crate) struct JobProcess {
-    pub(crate) pid: u32,
-    pub(crate) parent: u32,
-    pub(crate) name: String,
+pub struct JobProcess {
+    pub pid: u32,
+    pub parent: u32,
+    pub name: String,
 }
 
 /// Rows of `ps -o pid=,ppid=,comm=`; a name may hold spaces.
-#[cfg(any(unix, test))]
-pub(crate) fn parse_ps(listed: &str) -> Vec<JobProcess> {
+pub fn parse_ps(listed: &str) -> Vec<JobProcess> {
     listed
         .lines()
         .filter_map(|line| {
@@ -49,8 +48,7 @@ pub(crate) fn parse_ps(listed: &str) -> Vec<JobProcess> {
 }
 
 /// Everything under `leader` in `rows`, without it.
-#[cfg(any(unix, test))]
-pub(crate) fn descendants(rows: &[JobProcess], leader: u32) -> Vec<JobProcess> {
+pub fn descendants(rows: &[JobProcess], leader: u32) -> Vec<JobProcess> {
     let mut found: Vec<JobProcess> = Vec::new();
     let mut parents = vec![leader];
     while let Some(parent) = parents.pop() {
@@ -65,13 +63,13 @@ pub(crate) fn descendants(rows: &[JobProcess], leader: u32) -> Vec<JobProcess> {
 }
 
 /// Whether `process` is a console window ([`CONSOLE_HOST`]).
-pub(crate) fn is_console(process: &JobProcess) -> bool {
+pub fn is_console(process: &JobProcess) -> bool {
     process.name.eq_ignore_ascii_case(CONSOLE_HOST)
 }
 
 /// Whether nothing in `tree` runs under `process` but a console window. A pid listed as its own parent (a reused pid)
 /// isn't its child.
-pub(crate) fn starts_nothing(tree: &[JobProcess], process: &JobProcess) -> bool {
+pub fn starts_nothing(tree: &[JobProcess], process: &JobProcess) -> bool {
     !tree.iter().any(|child| child.parent == process.pid && child.pid != process.pid && !is_console(child))
 }
 
@@ -88,13 +86,13 @@ fn due(tree: &[JobProcess], ends_at: &mut HashMap<u32, Instant>, now: Instant) -
 }
 
 /// A process's program name without its folder.
-pub(crate) fn program_name(name: &str) -> &str {
+pub fn program_name(name: &str) -> &str {
     name.rsplit(['/', '\\']).next().unwrap_or(name)
 }
 
 /// Tells whether a process in `tree` is `program`, or something it started. Every step stays inside `tree`, so `take`
 /// reaches every ancestor and ends pid links that loop (reused pids).
-pub(crate) fn under_program<'a>(tree: &'a [JobProcess], program: &'a str) -> impl Fn(&JobProcess) -> bool + 'a {
+pub fn under_program<'a>(tree: &'a [JobProcess], program: &'a str) -> impl Fn(&JobProcess) -> bool + 'a {
     let by_pid: HashMap<u32, &JobProcess> = tree.iter().map(|p| (p.pid, p)).collect();
     move |process| {
         std::iter::successors(Some(process), |c| by_pid.get(&c.parent).copied())
@@ -106,7 +104,7 @@ pub(crate) fn under_program<'a>(tree: &'a [JobProcess], program: &'a str) -> imp
 /// Sets `command` up so [`Process::new`] can own everything it starts: a session of its own on Unix, which what it
 /// starts stays in even in a process group of its own (Codex's MCP servers), suspended until its job holds it on
 /// Windows.
-pub(crate) fn own_tree(command: &mut tokio::process::Command) {
+pub fn own_tree(command: &mut tokio::process::Command) {
     #[cfg(unix)]
     // SAFETY: the hook runs in the forked child before exec and only calls setsid, which is async-signal-safe.
     unsafe {
@@ -121,7 +119,7 @@ pub(crate) fn own_tree(command: &mut tokio::process::Command) {
     command.creation_flags(windows_sys::Win32::System::Threading::CREATE_SUSPENDED);
 }
 
-pub(crate) struct Process {
+pub struct Process {
     // Drop the tree before Child can reap the leader and make its PID reusable.
     tree: Tree,
     child: Child,
@@ -129,7 +127,7 @@ pub(crate) struct Process {
 }
 
 impl Process {
-    pub(crate) fn new(child: Child) -> Result<Self> {
+    pub fn new(child: Child) -> Result<Self> {
         let tree = Tree::new(&child)?;
         let owned = Self { tree, child, stopping: false };
         #[cfg(windows)]
@@ -170,7 +168,7 @@ impl Process {
     }
 
     #[cfg(unix)]
-    pub(crate) fn exited(&self) -> std::io::Result<bool> {
+    pub fn exited(&self) -> std::io::Result<bool> {
         let Some(pid) = self.child.id() else { return Ok(true) };
         // SAFETY: zero is a valid siginfo value; waitid writes only into this object.
         let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
@@ -194,7 +192,7 @@ impl Process {
     }
 
     #[cfg(windows)]
-    pub(crate) fn exited(&self) -> std::io::Result<bool> {
+    pub fn exited(&self) -> std::io::Result<bool> {
         use windows_sys::Win32::Foundation::{WAIT_FAILED, WAIT_OBJECT_0};
         let Some(handle) = self.child.raw_handle() else { return Ok(true) };
         // SAFETY: the child owns this valid process handle; a zero timeout cannot block.
@@ -268,25 +266,25 @@ impl Process {
 
     /// Which of `candidates` belong to this program's tree ([`Self::in_session`]).
     #[cfg(unix)]
-    pub(crate) fn members(&self, candidates: &[u32]) -> Vec<u32> {
+    pub fn members(&self, candidates: &[u32]) -> Vec<u32> {
         candidates.iter().copied().filter(|pid| self.in_session(*pid)).collect()
     }
 
     /// Which of `candidates` belong to this program's job.
     #[cfg(windows)]
-    pub(crate) fn members(&self, candidates: &[u32]) -> Vec<u32> {
+    pub fn members(&self, candidates: &[u32]) -> Vec<u32> {
         let members = self.job_members().unwrap_or_default();
         candidates.iter().copied().filter(|pid| members.contains(pid)).collect()
     }
 
     /// How the leader ended, once it was reaped; `None` for a signal.
-    pub(crate) fn exit_code(&mut self) -> Option<i32> {
+    pub fn exit_code(&mut self) -> Option<i32> {
         self.child.try_wait().ok().flatten().and_then(|status| status.code())
     }
 
     /// Ends a program that takes no input: asks it to stop and gives it `grace` to (Windows has no such request for a
     /// program without a console of ours, so there it unwinds at once).
-    pub(crate) async fn stop_gracefully(&mut self, grace: Duration) {
+    pub async fn stop_gracefully(&mut self, grace: Duration) {
         #[cfg(unix)]
         self.tree.interrupt();
         self.stop_within(if cfg!(windows) { Duration::ZERO } else { grace }).await;
@@ -333,7 +331,7 @@ impl Process {
         }
     }
 
-    pub(crate) async fn kill(&mut self) {
+    pub async fn kill(&mut self) {
         #[cfg(unix)]
         if let Some(session) = self.tree.session.take() {
             match list_processes().await {

@@ -2,8 +2,8 @@
 //! where the login is stored, how it is signed in, and which files belong to the account and not to the user's
 //! shared setup.
 
-use crate::slot::{self, Shared};
-use crate::{ACCOUNT_VAR, Error, identity};
+use crate::accounts::slot::{self, Shared};
+use crate::accounts::{ACCOUNT_VAR, Error, identity};
 use std::path::Path;
 
 /// How an account of the agent is signed in.

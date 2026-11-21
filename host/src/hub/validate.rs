@@ -18,11 +18,11 @@ pub(crate) fn validate(cfg: &BotConfig) -> Result<()> {
         bail!("workspace folder does not exist: {}", cfg.cwd);
     }
     if cfg.command.as_deref().map(str::trim).unwrap_or_default().is_empty()
-        && !crate::agent::backends::is_known(&cfg.backend)
+        && !codync_agent::backends::is_known(&cfg.backend)
     {
         bail!("unknown backend {}", cfg.backend);
     }
-    // An id the agent listed (`agent::modes`), sent back to it as is.
+    // An id the agent listed (`codync_agent::modes`), sent back to it as is.
     if cfg.mode.as_deref().is_some_and(|m| m.trim().is_empty() || m.len() > 64) {
         bail!("mode must be one of the agent's mode ids, or null for its default");
     }
@@ -34,7 +34,7 @@ pub(crate) fn validate(cfg: &BotConfig) -> Result<()> {
     // Advisor mode: the threads' agent and its fallbacks hold to the rules a bot's own do.
     if let Some(agent) = &cfg.thread_agent
         && agent.command.as_deref().map(str::trim).unwrap_or_default().is_empty()
-        && !crate::agent::backends::is_known(&agent.backend)
+        && !codync_agent::backends::is_known(&agent.backend)
     {
         bail!("unknown threads' agent {}", agent.backend);
     }

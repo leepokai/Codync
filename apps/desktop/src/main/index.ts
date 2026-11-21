@@ -138,10 +138,12 @@ function openPairing() {
   void pairing.loadURL(rendererURL('pairing'))
 }
 
+/** Returns whether a chat window took the command (none exists before the first one opens). */
 export function send(command: WindowCommand, show = true) {
   const window = show ? openChat() : chat
   if (show) activate()
   window?.webContents.send('app:command', command)
+  return window !== null
 }
 
 function registerIPC(tray: Tray) {

@@ -55,7 +55,7 @@ import { moveToSectionItems, sectionHeaderItems } from './section-menus'
 import { makeLeadItems, offersDelete, voiceTarget } from './lead-menus'
 import { NameDialog, type Naming } from './NameDialog'
 import { useTraySummary } from './tray-summary'
-import { useIslandSummary } from './island-summary'
+import { answerIslandCall, useIslandSummary } from './island-summary'
 import { useSSH, useSSHAttachments } from './settings/ssh-model'
 import { useCloudAttachments } from '../store/cloud-attachments'
 import './chat-window.css'
@@ -97,6 +97,8 @@ export function ChatWindow() {
             return setConfirmReset(true)
           case 'upToDate':
             return setUpToDate(true)
+          case 'islandCall':
+            return void answerIslandCall(app, c)
           case 'reviewApprovals':
             return app.reviewApprovals()
           case 'setTextSize':
@@ -288,6 +290,7 @@ function ChatSplitView() {
         // Without a conversation open there is nothing to find in: ⌘F searches the bots instead.
         if (c.kind === 'find') app.selection ? find.open() : setSearching(true)
         if (c.kind === 'networkSettings') setSettings('network')
+        if (c.kind === 'voiceSettings') setSettings('voice')
         if (c.kind === 'toggleSidebar') setCompact(!prefs.sidebarCompact.get())
         if (c.kind === 'voiceKey') {
           if (c.key === 'double' && !app.selection) app.select(voiceTarget(roster)?.ref ?? null)

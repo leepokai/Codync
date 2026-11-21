@@ -69,7 +69,10 @@ slide to their new places.
   sends bots and pending permission cards when they change; the island window renders them
   (`views/island/`, state in `IslandModel`, pure rules in `shared/island.ts`). Buttons travel back
   as `WindowCommand`s (`openBot`, `respondPermission`, `sendMessage`) to the chat window, which
-  calls the host. The island has no host connection of its own. It takes the keyboard when
+  calls the host. The island has no host connection of its own: dictation's host calls (a
+  provider or the computer's speech server) go the same way as an `islandCall`, to the host of the
+  computer the message field's bot was on when recording started, and come back through main
+  (`island.answer`). It takes the keyboard when
   the message field opens (`setFocusable`) and gives it back once the island has folded
   (giving it back takes the window off screen for a moment on macOS); ⌥Y / ⌥N are global
   shortcuts only while an approval shows.

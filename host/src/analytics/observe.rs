@@ -220,6 +220,9 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         }
         // A bot's `send_file` with text: a voice note inside its message; never the file or the text.
         "chatCall" if b["name"] == "send_file" && b["arguments"]["text"].is_string() => Event::VoiceNoteSent,
+        // Never the server's address, its model, the audio or the transcript. An empty address unlinks.
+        "setSpeechServer" if b["url"].as_str().is_some_and(|u| !u.trim().is_empty()) => Event::SpeechServerLinked,
+        "voiceTranscribe" if b["provider"] == "local" => Event::LocalDictationTranscribed,
         // A bot's message quoting another (`reply_to`; a quoted voice note counts as the voice note); never the id.
         "chatCall"
             if matches!(b["name"].as_str(), Some("send_message" | "send_file"))
@@ -325,8 +328,8 @@ pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Opti
 
 /// What only the answer tells: how many connectors or bots an import added, whether a Composio app is
 /// connected yet (its sign-in is polled until the connection is active), whether a published
-/// artifact's card went into its bot's chat, whether a connector edit needed a check, and whether a follow-up was
-/// still there to cancel. `None`: not an event.
+/// artifact's card went into its bot's chat, whether a connector edit needed a check, whether a speech server
+/// linked or heard words, and whether a follow-up was still there to cancel. `None`: not an event.
 pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Option<Map<String, Value>> {
     match event {
         Event::ConnectorsImported => {
@@ -348,6 +351,14 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
         }
         Event::ConnectorUpdated => {
             p.insert("outcome".into(), if answer["verify"].is_null() { "saved" } else { "ready" }.into());
+        }
+        Event::SpeechServerLinked => {
+            p.insert("outcome".into(), "linked".into());
+        }
+        // No speech: a quiet recording (never sent to the server) or only Whisper's markers for sounds.
+        Event::LocalDictationTranscribed => {
+            let heard = answer["text"].as_str().is_some_and(|t| !t.is_empty());
+            p.insert("outcome".into(), if heard { "transcribed" } else { "silent" }.into());
         }
         // An id it couldn't quote: the message went out without the quote.
         Event::BotQuoted => {
@@ -376,9 +387,9 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 }
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
-/// `action`) as `network_failed` with `stage` `action`, a connector edit, a login profile, a voice server, a team
-/// change and a message to a task's thread report their category and a credentials reset or a computer rename `other`, never the message; other
-/// failures report nothing.
+/// `action`) as `network_failed` with `stage` `action`, a connector edit, a login profile, a voice server, a
+/// speech server, a team change and a message to a task's thread report their category and a credentials
+/// reset or a computer rename `other`, never the message; other failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     match event {
         Event::NetworkJoined | Event::NetworkChanged => {
@@ -422,6 +433,12 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
         }
         Event::SettingChanged if p.get("setting").and_then(Value::as_str) == Some(VOICE_SERVER) => {
             let category = error.downcast_ref::<crate::voice::ServerRefused>().map_or("other", |e| e.category);
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
+        }
+        Event::SpeechServerLinked | Event::LocalDictationTranscribed => {
+            let category = error.downcast_ref::<crate::voice::local::SpeechFailed>().map_or("other", |e| e.category());
             p.insert("outcome".into(), "failed".into());
             p.insert("error".into(), category.into());
             Some((event, p))

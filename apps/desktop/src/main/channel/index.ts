@@ -11,6 +11,8 @@ import { RelayChannel, unreachable, type ChannelError, type Socket } from './rel
 
 const channels = new Map<string, RelayChannel>()
 const streams = new Map<string, () => void>()
+/** Computers an island call keeps connected while the chat window is hidden, and how many calls hold each. */
+const holds = new Map<string, number>()
 
 function closeAll() {
   for (const stop of streams.values()) stop()
@@ -46,7 +48,7 @@ async function channelFor(account: AccountService, computerId: string, signKey: 
       for (const w of BrowserWindow.getAllWindows()) w.webContents.send('channel:presence', { computerId, presence })
     },
   })
-  channel.setAttended(isAttended())
+  channel.setAttended(isAttended() || holds.has(computerId))
   channels.set(key, channel)
   return channel
 }
@@ -77,6 +79,25 @@ function openStream(account: AccountService, sender: WebContents, id: string, co
   }, (error: ChannelError) => end(error))
 }
 
+/**
+ * Keeps `computerId`'s channel connected for an island call while the chat window is hidden; returns
+ * the release. The channel opens when its call starts, whether or not anyone looks at the window.
+ */
+export function holdChannel(computerId: string): () => void {
+  holds.set(computerId, (holds.get(computerId) ?? 0) + 1)
+  attend(computerId, true)
+  return () => {
+    const left = (holds.get(computerId) ?? 1) - 1
+    if (left > 0) return void holds.set(computerId, left)
+    holds.delete(computerId)
+    attend(computerId, isAttended())
+  }
+}
+
+function attend(computerId: string, on: boolean) {
+  for (const channel of channels.values()) if (channel.computerId === computerId) channel.setAttended(on)
+}
+
 export function registerChannels(account: AccountService) {
   ipcMain.handle('channel:call', async (_e, computerId: string, signKey: string, method: string, body: unknown, timeoutMs: number) => {
     try {
@@ -94,7 +115,7 @@ export function registerChannels(account: AccountService) {
     stop?.()
   })
   onAttention((on) => {
-    for (const channel of channels.values()) channel.setAttended(on)
+    for (const channel of channels.values()) channel.setAttended(on || holds.has(channel.computerId))
   })
   // Another account (or none): this one's channels go.
   let user = account.state.user?.userId ?? null

@@ -74,9 +74,12 @@ import kotlinx.coroutines.launch
                 ProviderVoiceSettings(provider, speech, state, store, choices) { speechOnly = choices.speechOnly(provider); speech = choices.speechMode(provider) }
             }
             // Dictation on another provider than calls still needs that provider's key and speech-to-text model.
-            val dictation = remember { choices.dictation }
-            if (dictation != null && dictation != provider) key("dictation-${dictation.id}") {
-                ProviderVoiceSettings(dictation, false, state, store, choices, dictationOnly = true)
+            when (val dictation = remember { choices.dictation }) {
+                is DictationEngine.Cloud -> if (dictation.provider != provider) key("dictation-${dictation.id}") {
+                    ProviderVoiceSettings(dictation.provider, false, state, store, choices, dictationOnly = true)
+                }
+                DictationEngine.Local -> key("dictation-local") { LocalDictationSettings(state, store) }
+                else -> { }
             }
         }
     }
@@ -111,7 +114,7 @@ import kotlinx.coroutines.launch
 @Composable private fun ProviderVoiceSettings(provider: VoiceProvider, speech: Boolean, state: AppState, store: AppStore, choices: VoiceChoices,
     dictationOnly: Boolean = false, onStatus: () -> Unit = {}) {
     // Speech mode and dictation with this provider both use its speech-to-text model.
-    val transcribes = dictationOnly || speech || choices.dictation == provider
+    val transcribes = dictationOnly || speech || (choices.dictation as? DictationEngine.Cloud)?.provider == provider
     var googleSearch by remember { mutableStateOf(choices.googleSearch) }
     var supportsSearch by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -215,5 +218,25 @@ import kotlinx.coroutines.launch
             }
             row { ValueRow("This month", "≈ ${choices.minutes(provider)} min", Modifier.graphicsLayer { alpha = if (hasKey) 1f else .55f }) }
         }
+    }
+}
+
+/**
+ * The computer's speech server picked for dictation, titled with the computer's name (the phone isn't where it
+ * runs): no key and nothing to pick. The phone can't link a speech server (the host takes `setSpeechServer` from
+ * loopback only), so it shows only whether one is linked, plus the computer's message when it isn't; the check
+ * runs again when the computer (re)connects.
+ */
+@Composable private fun LocalDictationSettings(state: AppState, store: AppStore) {
+    val host = state.hostName
+    val online = state.actualConnection is LinkState.Ready
+    val model = remember(online) { LocalDictationModel(host) { store.localDictation() } }
+    LaunchedEffect(online) { model.load(online) }
+    val body = tr("Your speech model transcribes what you say. Codync sends the audio only to the speech server you link " +
+        "on your computer or your own network, so it never leaves your computers.")
+    val note = (model.local?.takeUnless { it.ready }?.reason() ?: model.error)?.let { " ${tr(it)}" }.orEmpty()
+    CardSection(DictationEngine.Local.title(host), footer = body + note,
+        modifier = Modifier.animateContentSize(Motion.layoutSize)) {
+        model.local?.let { row { ValueRow("Speech server", if (it.ready) "Linked" else "Not linked") } }
     }
 }

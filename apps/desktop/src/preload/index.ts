@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { sshBridge } from './ssh'
-import type { CallError, CodyncBridge, HostSnapshot, TraySummary, WindowCommand } from '../shared/ipc'
+import type { CallError, CallResult, CodyncBridge, HostSnapshot, TraySummary, WindowCommand } from '../shared/ipc'
 
 let streamId = 0
 const streams = new Map<string, { onData: (line: string) => void; onEnd: (error: CallError | null) => void }>()
@@ -141,6 +141,13 @@ const bridge: CodyncBridge = {
     openBot: (ref) => ipcRenderer.send('island:openBot', ref),
     newBot: () => ipcRenderer.send('island:newBot'),
     openApp: () => ipcRenderer.send('island:openApp'),
+    openVoiceSettings: () => ipcRenderer.send('island:openVoiceSettings'),
+    async call(ref, method, body, timeoutMs) {
+      const result = (await ipcRenderer.invoke('island:call', ref, method, body, timeoutMs)) as CallResult
+      if (!result.ok) throw result.error
+      return result.value
+    },
+    answer: (id, result) => ipcRenderer.send('island:answer', id, result),
   },
   cloud: {
     request: (method, path, body, signed) => ipcRenderer.invoke('cloud:request', method, path, body, signed),

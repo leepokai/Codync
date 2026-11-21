@@ -9,6 +9,8 @@ repository = "https://github.com/leepokai/Codync"
 readme = "README.md"
 keywords = ["agent", "acp", "claude", "codex", "cli"]
 categories = ["development-tools"]
+# The mirror's CI, not part of the package.
+exclude = [".github"]
 
 [dependencies]
 anyhow = "1.0.104"

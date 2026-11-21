@@ -266,7 +266,7 @@ private struct ThreadRow: View {
                 .padding(.leading, 12)
                 .overlay(alignment: .leading) { Capsule().fill(Palette.tertiary).frame(width: 2) }
                 .padding(.vertical, 8)
-        case "user": UserBubble(entry: entry).padding(.top, 8)
+        case "user": UserBubble(entry: entry).swipeToReply(.left, margin: 56, reply: nil).padding(.top, 8)
         case "agent" where entry.isThreadMessage: AgentBubble(entry: entry, openTrace: {}).padding(.top, 8)
         default: TraceRow(entry: entry, unfolded: unfolded).padding(.vertical, 5)
         }

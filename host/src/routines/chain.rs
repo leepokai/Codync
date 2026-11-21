@@ -2,7 +2,7 @@
 //! routines whose `routine` event trigger names it are queued, with its outcome as their trigger data.
 //! The events never leave the host, so these triggers need no webhook.
 
-use super::{State, Status, Trigger, busy, json, new_run};
+use super::{State, Status, Trigger, json, new_run};
 use anyhow::{Result, bail};
 use std::collections::{BTreeMap, HashSet};
 
@@ -80,7 +80,7 @@ pub(super) fn emit(s: &mut State, i: usize, reply: Option<&str>) {
     // A failure always has something to report: why it failed, carried as `error` and, when the run left
     // no reply of its own, as `text` too.
     let error = if event == "failed" { run.detail.as_deref().unwrap_or("The run did not finish") } else { "" };
-    let reply = reply.filter(|r| !crate::chat::group::is_pass(r));
+    let reply = reply.filter(|r| !crate::chat::group::ends_in_pass(r));
     let passed = event == "succeeded" && reply.is_none();
     let text = reply.unwrap_or(error);
     let payload = json!({
@@ -107,7 +107,7 @@ pub(super) fn emit(s: &mut State, i: usize, reply: Option<&str>) {
         // `depth` counts the routines before the one it would queue, so that one is number `depth + 1`.
         let skipped = if depth >= MAX_DEPTH {
             Some(format!("Did not run after \"{name}\": a chain runs at most {MAX_DEPTH} routines in a row"))
-        } else if busy(s, &s.routines[j].id) {
+        } else if s.runs.iter().any(|run| run.routine_id == s.routines[j].id && run.status.active()) {
             Some(format!("Did not run after \"{name}\": it was still running or queued"))
         } else {
             None

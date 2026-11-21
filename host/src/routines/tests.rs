@@ -194,7 +194,11 @@ fn queued(s: &State, routine: &str) -> Vec<Value> {
 }
 #[test]
 fn a_finished_run_queues_the_routines_after_it_with_its_result() {
-    let mut s = State { routines: vec![routine(), after("next", "routine", "succeeded", &[])], runs: vec![] };
+    let mut s = State {
+        routines: vec![routine(), after("next", "routine", "succeeded", &[])],
+        runs: vec![],
+        follow_ups: vec![],
+    };
     s.runs.push(new_run(&s.routines[0], json!({"source":"schedule"}), None));
     finish(&mut s, 0, Status::Succeeded, Some("CRIT: disk full"));
     let events = queued(&s, "next");
@@ -212,9 +216,10 @@ fn filters_pick_the_outcome_and_the_result() {
             after("failed", "routine", "failed", &[]),
         ],
         runs: vec![],
+        follow_ups: vec![],
     };
     s.runs.push(new_run(&s.routines[0], Value::Null, None));
-    finish(&mut s, 0, Status::Succeeded, Some("(pass)"));
+    finish(&mut s, 0, Status::Succeeded, Some("Quiet check completed.\n(pass)"));
     assert!(s.runs.len() == 1, "a pass has nothing to report and no CRIT");
     s.runs.push(new_run(&s.routines[0], Value::Null, None));
     finish(&mut s, 1, Status::Succeeded, Some("WARN only"));
@@ -222,7 +227,8 @@ fn filters_pick_the_outcome_and_the_result() {
 }
 #[test]
 fn only_a_final_failure_counts_and_a_cancelled_run_triggers_nothing() {
-    let mut s = State { routines: vec![routine(), after("next", "routine", "failed", &[])], runs: vec![] };
+    let mut s =
+        State { routines: vec![routine(), after("next", "routine", "failed", &[])], runs: vec![], follow_ups: vec![] };
     s.runs.push(new_run(&s.routines[0], Value::Null, None));
     s.runs[0].retry_at = Some(now_ms() + 60_000);
     finish(&mut s, 0, Status::Failed, None);
@@ -238,8 +244,11 @@ fn only_a_final_failure_counts_and_a_cancelled_run_triggers_nothing() {
 }
 #[test]
 fn any_outcome_with_something_to_report_matches_a_failure() {
-    let mut s =
-        State { routines: vec![routine(), after("next", "routine", "*", &[("passed", "false")])], runs: vec![] };
+    let mut s = State {
+        routines: vec![routine(), after("next", "routine", "*", &[("passed", "false")])],
+        runs: vec![],
+        follow_ups: vec![],
+    };
     s.runs.push(new_run(&s.routines[0], Value::Null, None));
     finish(&mut s, 0, Status::Failed, None);
     s.runs.push(new_run(&s.routines[0], Value::Null, None));
@@ -252,7 +261,11 @@ fn any_outcome_with_something_to_report_matches_a_failure() {
 fn a_busy_or_paused_routine_is_skipped_and_a_long_chain_stops() {
     let mut paused = after("paused", "routine", "succeeded", &[]);
     paused.enabled = false;
-    let mut s = State { routines: vec![routine(), after("next", "routine", "succeeded", &[]), paused], runs: vec![] };
+    let mut s = State {
+        routines: vec![routine(), after("next", "routine", "succeeded", &[]), paused],
+        runs: vec![],
+        follow_ups: vec![],
+    };
     s.runs.push(new_run(&s.routines[1], Value::Null, None));
     s.runs.push(new_run(&s.routines[0], Value::Null, None));
     finish(&mut s, 1, Status::Succeeded, Some("done"));
@@ -271,7 +284,8 @@ fn a_busy_or_paused_routine_is_skipped_and_a_long_chain_stops() {
 }
 #[test]
 fn saving_rejects_an_unknown_upstream_and_a_loop() {
-    let s = State { routines: vec![routine(), after("b", "routine", "succeeded", &[])], runs: vec![] };
+    let s =
+        State { routines: vec![routine(), after("b", "routine", "succeeded", &[])], runs: vec![], follow_ups: vec![] };
     let triggers = |up: &str| after("x", up, "succeeded", &[]).triggers;
     assert!(chain::check_links(&s, None, &triggers("missing"), &[]).is_err());
     assert!(chain::check_links(&s, None, &triggers("b"), &[]).is_ok());
@@ -287,6 +301,7 @@ fn routine_triggers_need_no_webhook_and_read_with_the_upstream_name() {
     let s = State {
         routines: vec![routine(), after("next", "routine", "succeeded", &[("passed", "false")])],
         runs: vec![],
+        follow_ups: vec![],
     };
     assert_eq!(hook_set(&s).iter().map(|h| h.id.as_str()).collect::<Vec<_>>(), Vec::<&str>::new());
     assert_eq!(

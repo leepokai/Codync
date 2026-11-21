@@ -38,5 +38,5 @@ pub(crate) fn validate(cfg: &BotConfig) -> Result<()> {
     {
         bail!("unknown threads' agent {}", agent.backend);
     }
-    crate::agent::fallback::check(&crate::chat::work::threads_config(cfg))
+    crate::agent::fallback::check(&crate::agent::fallback::threads(cfg))
 }

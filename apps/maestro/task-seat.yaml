@@ -1,0 +1,87 @@
+# A thread waiting on the user gives its seat up, on the phones: with two threads at once, a task whose approval card is
+# up takes none, so the next task starts beside the one already working and Threads reads `2 / 2` over three rows, none
+# Free and no Event box. The bot passes words on to a working task (`tell_task`): in that task's thread they read as
+# what it was told, never as the user's message waiting with Send now. The card answered, the first task reports. The
+# phone must already be signed in and paired with the host (a worktree's sandbox,
+# docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose clearState undoes that; the flow
+# makes its own bot there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags tasks \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e TASK_AGENT="$PWD/host/tests/fixtures/work_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - tasks
+onFlowComplete:
+  - runScript:
+      file: tasks.js
+      env:
+        CLEANUP: "true"
+---
+# The bot, with "Audit the repo" working; two threads at once; a task that asks for approval, then one more.
+- runScript: tasks.js
+- runScript:
+    file: tasks.js
+    env:
+      MAX: "2"
+- runScript:
+    file: tasks.js
+    env:
+      ADD: "Asks first|PERMISSION"
+- runScript:
+    file: tasks.js
+    env:
+      ADD: "Goes next|HOLD:next"
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+- extendedWaitUntil:
+    visible: "Work · Asks first"
+    timeout: 20000
+# The capsule opens the bot's details: the asking thread takes no seat, so both others work in the two.
+# The capsule reads as one element on iPhone; on Android its lead is a text of its own. Not the card's line.
+- tapOn: "Work · (Needs you.*)?"
+- extendedWaitUntil:
+    visible: "2 / 2"
+    timeout: 10000
+- assertVisible: ".*Asks first.*"
+- assertVisible: ".*Audit the repo.*"
+- assertVisible: ".*Goes next.*"
+- assertNotVisible: "Free"
+- assertNotVisible: "Event box"
+- takeScreenshot: task-seat-threads
+- tapOn: "Close details"
+# The bot passes words on to the task under way.
+- runScript:
+    file: tasks.js
+    env:
+      SAY: "TELL Goes next|and the tests"
+- extendedWaitUntil:
+    visible: "Told:.*"
+    timeout: 20000
+- tapOn: "Work · (Needs you.*)?"
+- tapOn: ".*Goes next.*"
+- extendedWaitUntil:
+    visible: "Message this thread"
+    timeout: 10000
+- assertVisible: ".*and the tests.*"
+- assertNotVisible: "Send now"
+- takeScreenshot: task-seat-told
+- tapOn: "Back to details"
+- tapOn: "Close details"
+# Answered, the asking task goes on and reports.
+- tapOn: "Allow once"
+- extendedWaitUntil:
+    visible: "Relayed: Report Asks first.*"
+    timeout: 20000

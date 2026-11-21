@@ -128,7 +128,11 @@ struct BotSettingsForm: View {
 
     /// Only from a host that has fallbacks (its bots say).
     @ViewBuilder private var fallbackList: some View {
-        if draft.fallbacks != nil { FallbackList(draft: $draft, bot: bot) }
+        if draft.fallbacks != nil {
+            FallbackList(draft: $draft, bot: bot)
+            SwitchRow("Let the bot change its fallbacks", detail: "It can set this list itself, for example when you ask it to.",
+                      isOn: Binding(get: { draft.selfFallbacks ?? true }, set: { draft.selfFallbacks = $0 }))
+        }
     }
 
     /// Advisor mode, from a host that has it: its threads' agent and fallbacks show once it's on.

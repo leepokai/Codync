@@ -99,7 +99,7 @@ pub struct BotConfig {
     /// Agents that carry on, in order, when the bot's own can't answer (see `agent::fallback`).
     #[serde(default)]
     pub fallbacks: Vec<Fallback>,
-    /// Advisor mode: the agent the bot's threads run on when it isn't the chat's own (`chat::work::threads_config`);
+    /// Advisor mode: the agent the bot's threads run on when it isn't the chat's own (`agent::fallback::threads`);
     /// none: the chat's, with the chat's fallbacks.
     #[serde(default)]
     pub thread_agent: Option<Fallback>,
@@ -224,6 +224,16 @@ impl BotConfig {
     #[must_use]
     pub fn as_owner(&self) -> Self {
         Self { id: self.owner().to_owned(), thread_of: None, ..self.clone() }
+    }
+
+    /// The steps the bot runs besides its own agent: its fallbacks and, in Advisor mode, its threads' agent and theirs.
+    pub fn fallback_steps(&self) -> impl Iterator<Item = &Fallback> {
+        self.fallbacks.iter().chain(&self.thread_agent).chain(&self.thread_fallbacks)
+    }
+
+    /// [`Self::fallback_steps`], to change.
+    pub fn fallback_steps_mut(&mut self) -> impl Iterator<Item = &mut Fallback> {
+        self.fallbacks.iter_mut().chain(&mut self.thread_agent).chain(&mut self.thread_fallbacks)
     }
 }
 

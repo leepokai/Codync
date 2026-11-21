@@ -51,14 +51,18 @@ so. An agent without such a mode is not held. Spike results: [below](#spike).
 starts. A working one gets them in its thread, marked as passed on from the chat (`from: host`, `relay`): after its
 current step's turn, or with `now` at its next step where the agent takes messages mid-turn (otherwise its current
 turn stops for them). Like the user's, a passed-on message that waits keeps the task going until a turn takes it, so
-the chat gets one report, the last turn's. It is ## 4. Seats
+the chat gets one report, the last turn's. Kept with the task (`relayed`), the words reach a session that starts it
+again as the chat's, never as the user's. Refused for an ended task, a routine's run and another bot's request.
 
-`dispatch::seats`: a working task whose thread waits on the user (its runtime `needsInput`) takes no seat, but every
+## 4. Seats
+
+`dispatch::free_seats`: a working task whose thread waits on the user (its runtime `needsInput`) takes no seat, but every
 live thread counts toward a hard bound of `maxThreads + 1`, so only one seat is ever lent. A thread that starts to
 wait on the user looks the box over again (`Work::seat_freed`). Each task row carries `seat` on the wire (the one
 waiting task that lent its seat says `false`); clients show `in use / maxThreads`, Free rows and Cut in from it
-(older hosts: every live task takes one). The bot carries `seats` (threads in use) on the wire; clients show `seats / maxThreads` and Free rows from it,
-and decide Cut in by it (older hosts: the live count, as before).
+(older hosts: every live task takes one). Near the usage limit a waiting thread still counts as running. Where the
+next thread gets no worktree (no repository, Worktree per thread off, the bot's own folder) it shares the waiting one's
+folder, even at `maxThreads` 1, which the manual says ([working folders](../../web/content/docs/working-folders.mdx)).
 
 ## 5. `recall_task`
 
@@ -71,7 +75,7 @@ under a network ceiling. Ended tasks stay 30 days (at most 200 a bot); a thread 
 
 Bot settings → Agent → Advisor mode: the bot's threads run on an agent of their own, with their own fallbacks, while
 the chat stays on the bot's agent (a strong model that plans and routes, a cheaper or faster one that does the work, or
-another vendor's). `BotConfig.thread_agent` (none: off) and `thread_fallbacks`; `work::threads_config` is the bot
+another vendor's). `BotConfig.thread_agent` (none: off) and `thread_fallbacks`; `agent::fallback::threads` is the bot
 as its threads run it (that agent, model and login, its fallbacks, Auto for a mode the chat's agent named). A thread
 starts as a fork of the chat's session only on the chat's own agent and login (a model of its own is fine); on
 another it starts from a brief that tells it the chat. A thread keeps the agent it started on: a change of the chain

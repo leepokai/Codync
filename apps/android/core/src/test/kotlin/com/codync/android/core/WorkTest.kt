@@ -312,4 +312,17 @@ class WorkTest {
         assertEquals(ThreadTranscript(null, listOf(tool)), threadTranscript(listOf(tool)))
         assertEquals(ThreadTranscript(null, emptyList()), threadTranscript(emptyList()))
     }
+
+    @Test fun `what the chat passed on is quoted in the thread, never queued over its composer`() {
+        fun entry(id: String, data: String) =
+            Entry(id, id.drop(1).toLong(), "thread-1", 1, "user", data = Json.parseToJsonElement(data).jsonObject)
+        val told = entry("e1", """{"text":"Fix login","from":"host"}""")
+        val mine = entry("e2", """{"text":"Also the docs","status":"queued"}""")
+        val passed = entry("e3", """{"text":"And the tests","from":"host","relay":true,"status":"queued"}""")
+        val thread = threadTranscript(listOf(told, mine, passed))
+        assertEquals(listOf(mine), thread.queue(working = true))
+        assertEquals(listOf(passed), thread.hidingQueue(working = true))
+        assertEquals(emptyList<Entry>(), thread.queue(working = false))
+        assertEquals(listOf(mine, passed), thread.hidingQueue(working = false))
+    }
 }

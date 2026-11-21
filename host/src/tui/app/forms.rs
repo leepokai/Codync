@@ -198,7 +198,7 @@ impl App {
                             let own = f.backend.clone();
                             f.fallbacks.retain(|x| x.backend != own || x.login_profile.is_some());
                             // Nor its mode ids: a picked mode becomes the new agent's Auto mode (or, without one, asking).
-                            f.mode = f.mode.take().map(|_| crate::agent::modes::AUTO.to_owned());
+                            f.mode = crate::agent::modes::on_other_agent(f.mode.as_deref());
                             self.want_models(&f.backend);
                         }
                     }
@@ -206,7 +206,11 @@ impl App {
                     Field::Fast => f.fast = !f.fast,
                     Field::SelfFallbacks => f.self_fallbacks = !f.self_fallbacks,
                     Field::Advisor => self.toggle_advisor(&mut f),
-                    Field::ThreadAgent if space => self.cycle_thread_model(&mut f),
+                    Field::ThreadAgent if space => {
+                        if let Some(agent) = f.thread_agent.as_mut() {
+                            self.cycle_step_model(agent);
+                        }
+                    }
                     Field::ThreadAgent => self.cycle_thread_agent(&mut f, d),
                     Field::ThreadWorktrees => f.thread_worktrees = f.thread_worktrees.map(|on| !on),
                     Field::MaxThreads if !space => {

@@ -27,7 +27,7 @@ and the report, `queue.rs` for `turn_over`, `updates.rs` for cards). Git is run 
 
 One piece of work: `id, title, brief, source` (where it came from: the bot, a routine's run, another bot's request),
 `words` (the user's own, word for word), `notes` (what the user said about it
-since), `status, order, after, thread, cutIn, hops, createdAt, startedAt, endedAt, result, report, failure, worktree,
+since), `relayed` (what the bot's chat passed on to it since, `tell_task`), `status, order, after, thread, cutIn, hops, createdAt, startedAt, endedAt, result, report, failure, worktree,
 told` (what the user wrote to its thread since its last report), `said` (what it reported before the user wrote to
 it again). A bot's tasks are one
 JSON list in kv `work.<bot>`; every change to a box is made under one lock (`tasks::change`).
@@ -73,10 +73,13 @@ task:
 3. **Otherwise it waits**: `wait: next` for the first in line, `behind` with how many are `ahead` for the rest.
    Nothing is refused for being over the ceiling.
 
-**A thread waiting on the user gives its seat up** (`dispatch::seats`): while its runtime is `needsInput` (an approval,
+**A thread waiting on the user gives its seat up** (`dispatch::free_seats`): while its runtime is `needsInput` (an approval,
 a choice, a sign-in) it doesn't count toward `maxThreads`, so the next task can start meanwhile; the user's answer
 lets it go on even past the ceiling. Every live thread still counts toward `maxThreads + 1`, so only one seat is ever
-lent. A thread that begins to wait on the user looks its bot's box over again (`Work::seat_freed`).
+lent. A thread that begins to wait on the user looks its bot's box over again (`Work::seat_freed`). Near the usage
+limit it still counts as running, so nothing else starts. Where the next thread gets no worktree of its own (a folder
+that isn't a Git repository, **Worktree per thread** off, the bot's own folder) it works in the same folder as the
+one that waits, even at `maxThreads` 1.
 
 A new thread waits for any turn of the bot to end, a routine run's or a room's too (they share its actor); that turn's
 end looks over the box again.
@@ -97,11 +100,13 @@ The decisions are one pure function (`dispatch::standings`), which the wire's `w
   `replace` (a new brief), `stop`. The user's own words of the running turn are added to the task's `notes`.
   Refused under a ceiling, as `add_task` is.
 - `tell_task {task, text, now?}` → `{taskId, status, note}`: passes words on to a task without starting it again (what
-  the user adds about work under way, a fact it needs). A waiting task gets them in its `notes`, read when it starts.
+  the user adds about work under way, a fact it needs). The task keeps them in `relayed`, which a session that starts
+  it, or starts it again, reads as what its chat passed on, never as the user's words.
   A working one gets them as a message in its [thread](#talking-to-a-thread), from the host (`data.from: host`,
   `data.relay`): it waits behind the running turn as the user's does (with `now`, into that turn at its next step
   where the agent can, else the turn stops for it), and keeps the task going until a turn takes it, so the chat
-  still gets one report. Refused for a task that ended (add a new one) and under a ceiling, as `add_task` is.
+  still gets one report. Refused for a task that ended (add a new one), for a routine's run and another bot's request
+  (read only, as [their thread](#talking-to-a-thread) is), and under a ceiling, as `add_task` is.
 - `work_status {}` → `{tasks: […]}`: every task that is working or waiting, and those ended in the last day: status, what its thread
   does now, why it waits, seconds, result.
 
@@ -299,7 +304,7 @@ own: a strong model in the chat and a cheaper or faster one for the work, or ano
 `threadFallbacks` (`updateBot`; `threadAgent: null` turns it off, and the host then keeps no threads' chain).
 Turning it on in the apps starts the threads on the bot's own agent, model and fallbacks, for the user to change.
 
-- **`work::threads_config`** is the bot as its threads run it: that agent, model, options and login, its chain, and
+- **`agent::fallback::threads`** is the bot as its threads run it: that agent, model, options and login, its chain, and
   Auto for a mode the chat's agent named (the chat's Fast mode only on the same agent). Every thread starts from it,
   routine runs and other bots' requests too.
 - **A fork only on the chat's own agent and login.** A thread that may start as a fork of the chat's session

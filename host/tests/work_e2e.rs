@@ -224,6 +224,40 @@ async fn a_threads_approval_card_is_answered_in_the_chat_and_it_cannot_add_task(
 }
 
 #[tokio::test]
+async fn a_thread_waiting_on_the_user_gives_its_seat_to_the_next_task_and_both_report() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.call("updateBot", json!({"id": bot, "permission": "ask"})).await;
+    host.reply(&bot, "ADD Asks|PERMISSION:asks").await;
+    task(&host, &bot, "Asks", "working").await;
+    host.reply(&bot, "ADD Next|HOLD:next").await;
+    task(&host, &bot, "Next", "waiting").await;
+
+    // Its card raised, the thread lends its seat and the next task starts beside it.
+    release(&host, &bot, "asks");
+    let card = wait("the thread's card", async || {
+        history(&host, &bot).await.into_iter().find(|e| e["kind"] == "permission" && e["data"]["status"] == "pending")
+    })
+    .await;
+    task(&host, &bot, "Next", "working").await;
+    let seats: Vec<(Value, Value)> =
+        work(&host, &bot).await.iter().map(|i| (i["title"].clone(), i["seat"].clone())).collect();
+    assert_eq!(seats, [(json!("Asks"), json!(false)), (json!("Next"), json!(true))], "one seat in use");
+
+    // Answered, it goes on past the ceiling, and each task reports once.
+    host.call("respondPermission", json!({"entryId": card["id"], "optionId": "allow"})).await;
+    release(&host, &bot, "next");
+    task(&host, &bot, "Asks", "done").await;
+    task(&host, &bot, "Next", "done").await;
+    let reports = wait("both reports", async || {
+        let relayed = relayed(&host, &bot).await.join(" | ");
+        (relayed.matches("Report ").count() == 2).then_some(relayed)
+    })
+    .await;
+    assert!(reports.contains("Report Asks:") && reports.contains("Report Next:"), "{reports}");
+}
+
+#[tokio::test]
 async fn tasks_wait_their_turn_in_order_and_one_moved_first_starts_first() {
     let host = Host::start().await;
     for agents in [0, 7] {

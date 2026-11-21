@@ -15,6 +15,7 @@ use crate::hub::Hub;
 use crate::store::{BotConfig, Fallback, Store};
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 /// Most fallbacks a bot has.
@@ -37,15 +38,33 @@ pub fn backend(cfg: &BotConfig, step: usize) -> &str {
 
 /// The bot as step `step` runs it: that step's agent and model, everything else the bot's.
 pub fn effective(cfg: &BotConfig, step: usize) -> BotConfig {
-    let mut out = cfg.clone();
-    if let Some(f) = fallback_at(cfg, step) {
-        out.backend.clone_from(&f.backend);
-        out.command.clone_from(&f.command);
-        out.login_profile.clone_from(&f.login_profile);
-        out.model.clone_from(&f.model);
-        out.model_options.clone_from(&f.model_options);
+    fallback_at(cfg, step).map_or_else(|| cfg.clone(), |f| on(cfg, f))
+}
+
+/// The bot on step `f`: its agent, login and model, everything else the bot's.
+fn on(cfg: &BotConfig, f: &Fallback) -> BotConfig {
+    BotConfig {
+        backend: f.backend.clone(),
+        command: f.command.clone(),
+        login_profile: f.login_profile.clone(),
+        model: f.model.clone(),
+        model_options: f.model_options.clone(),
+        ..cfg.clone()
     }
-    out
+}
+
+/// The bot as its threads run it: in Advisor mode on its threads' agent (`thread_agent`) and their fallbacks, as a
+/// step on that agent runs, everything else the bot's; otherwise the bot as it is. A picked mode of the chat's agent
+/// becomes Auto on another, as a client's edit makes it, and the chat's Fast mode (a model option) stays with it.
+pub fn threads(cfg: &BotConfig) -> BotConfig {
+    let Some(agent) = &cfg.thread_agent else { return cfg.clone() };
+    let other = agent.backend != cfg.backend;
+    BotConfig {
+        fast_mode: cfg.fast_mode && !other,
+        mode: if other { crate::agent::modes::on_other_agent(cfg.mode.as_deref()) } else { cfg.mode.clone() },
+        fallbacks: cfg.thread_fallbacks.clone(),
+        ..on(cfg, agent)
+    }
 }
 
 /// The first step, in order, whose login `passed` doesn't pass over and that isn't resting at `now`.
@@ -103,8 +122,9 @@ pub fn resting(store: &Store, cfg: &BotConfig, now: i64) -> Vec<Value> {
     for cfg in chains(cfg) {
         for s in 0..steps(&cfg) {
             let Some(r) = rest::get(store, &login(&cfg, s), now) else { continue };
-            let on = fallback_at(&cfg, s).map_or(cfg.login_profile.as_ref(), |f| f.login_profile.as_ref());
-            let rests = json!({"agent": backend(&cfg, s), "loginProfile": on, "until": r.until, "reason": r.reason});
+            let profile = fallback_at(&cfg, s).map_or(cfg.login_profile.as_ref(), |f| f.login_profile.as_ref());
+            let rests =
+                json!({"agent": backend(&cfg, s), "loginProfile": profile, "until": r.until, "reason": r.reason});
             if !out.contains(&rests) {
                 out.push(rests);
             }
@@ -114,16 +134,15 @@ pub fn resting(store: &Store, cfg: &BotConfig, now: i64) -> Vec<Value> {
 }
 
 /// `cfg`'s chain, and in Advisor mode its threads' too.
-fn chains(cfg: &BotConfig) -> Vec<BotConfig> {
-    let threads = cfg.thread_agent.is_some().then(|| crate::chat::work::threads_config(cfg));
-    std::iter::once(cfg.clone()).chain(threads).collect()
+fn chains(cfg: &BotConfig) -> impl Iterator<Item = Cow<'_, BotConfig>> {
+    std::iter::once(Cow::Borrowed(cfg)).chain(cfg.thread_agent.is_some().then(|| Cow::Owned(threads(cfg))))
 }
 
 /// Login `rested` started or stopped resting: every bot that uses it shows it.
 pub fn tell_bots(hub: &Hub, rested: &str) {
     let Ok(rows) = hub.store.bots() else { return };
     for row in rows.iter().filter(|r| !r.deleted && !r.config.is_group()) {
-        if chains(&row.config).iter().any(|cfg| (0..steps(cfg)).any(|s| login(cfg, s) == rested)) {
+        if chains(&row.config).any(|cfg| (0..steps(&cfg)).any(|s| login(&cfg, s) == rested)) {
             hub.emit_bot(&row.config.id);
         }
     }
@@ -216,6 +235,31 @@ mod tests {
         cfg.login_profile = Some("a1".into());
         tidy(&mut cfg);
         assert_eq!(cfg.fallbacks.len(), 2, "the step on the bot's own login profile goes");
+    }
+
+    #[test]
+    fn in_advisor_mode_threads_run_on_their_own_agent_and_fallbacks() {
+        let step = |backend: &str, model: &str| Fallback {
+            backend: backend.into(),
+            model: Some(model.into()),
+            ..Fallback::default()
+        };
+        let base = BotConfig { mode: Some("acceptEdits".into()), fast_mode: true, ..bot(&[("codex", None)]) };
+        assert_eq!(threads(&base).backend, "claude", "off: the chat's own agent");
+        let advisor = BotConfig {
+            thread_agent: Some(step("codex", "gpt-5")),
+            thread_fallbacks: vec![step("gemini", "pro")],
+            ..base.clone()
+        };
+        let on = threads(&advisor);
+        assert_eq!(
+            (on.backend.as_str(), on.model.as_deref(), on.mode.as_deref(), on.fast_mode),
+            ("codex", Some("gpt-5"), Some(crate::agent::modes::AUTO), false),
+            "another agent: its own model, Auto for the chat's picked mode, no fast mode"
+        );
+        assert_eq!(on.fallbacks, [step("gemini", "pro")], "the threads' fallbacks, not the chat's");
+        let lighter = BotConfig { thread_agent: Some(step("claude", "haiku")), ..base };
+        assert_eq!(threads(&lighter).mode.as_deref(), Some("acceptEdits"), "the same agent keeps the mode");
     }
 
     #[test]

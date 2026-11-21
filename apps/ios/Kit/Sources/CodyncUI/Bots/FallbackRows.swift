@@ -36,8 +36,8 @@ struct FallbackBanner: View {
     }
 }
 
-/// The fallbacks (a header with ⓘ and +, a row per fallback, the caption) and whether the bot may change them. Each
-/// fallback is picked in place like the bot's own agent, and moved or removed from its menu.
+/// The fallbacks (a header with ⓘ and +, a row per fallback, the caption). Each fallback is picked in place like the
+/// bot's own agent, and moved or removed from its menu.
 struct FallbackList: View {
     @Binding var draft: BotDraft
     /// The saved bot: the fallback it's on and the agents resting.
@@ -90,10 +90,6 @@ struct FallbackList: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .codyncSheet(isPresented: $explaining) { FallbackInfoSheet() }
-        if !threads {
-            SwitchRow("Let the bot change its fallbacks", detail: "It can set this list itself, for example when you ask it to.",
-                      isOn: Binding(get: { draft.selfFallbacks ?? true }, set: { draft.selfFallbacks = $0 }))
-        }
     }
 
     private var header: some View {

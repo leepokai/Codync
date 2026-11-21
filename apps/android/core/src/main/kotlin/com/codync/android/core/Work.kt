@@ -273,6 +273,16 @@ fun threadTranscript(entries: List<Entry>): ThreadTranscript {
     return ThreadTranscript(told, kept.filterNot { it === told })
 }
 
+/** A message of the user's that waits in the thread: what the host told it, the chat passing words on included, never does. */
+private val Entry.waitsInThread: Boolean get() = isQueued && !isToldToThread
+
+/** While the thread works, the user's messages that wait above the composer, oldest first (iOS `ThreadTranscript.queue`).
+ *  What the host told it stays quoted where it came. */
+fun ThreadTranscript.queue(working: Boolean): List<Entry> = if (working) rest.filter { it.waitsInThread }.sortedBy(Entry::seq) else emptyList()
+
+/** [ThreadTranscript.rest] without that queue. */
+fun ThreadTranscript.hidingQueue(working: Boolean): List<Entry> = if (working) rest.filterNot { it.waitsInThread } else rest
+
 /** One quiet line of a thread for what it put in the bot's chat ([sharedLine]): an SF Symbol name and its words. */
 data class SharedLine(val symbol: String, val text: String)
 

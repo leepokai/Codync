@@ -407,6 +407,24 @@ pub(in crate::tui) mod tests {
     }
 
     #[test]
+    fn a_thread_waiting_on_the_user_gives_its_seat_up() {
+        let page = DetailsPage::default();
+        let task = |id: &str, status: &str, seat: Option<bool>| json!({"id": id, "title": "Fix login", "status": status, "thread": format!("thread-{id}"), "seat": seat});
+        let work = WorkTask::list(&json!([
+            task("w", "working", Some(true)),
+            task("n", "needsYou", Some(false)),
+            task("q", "waiting", None)
+        ]));
+        let threads = |work: &[WorkTask]| {
+            let sections = page.sections(work, Some(2));
+            (sections[0].count.clone(), sections[0].free, can_cut_in(work, Some(2)))
+        };
+        assert_eq!(threads(&work), ("1 / 2".into(), 1, false), "a free seat: nothing has to give way");
+        let older: Vec<WorkTask> = work.into_iter().map(|i| WorkTask { seat: None, ..i }).collect();
+        assert_eq!(threads(&older), ("2 / 2".into(), 0, true), "an older host's: every live task takes one");
+    }
+
+    #[test]
     fn each_row_offers_its_own_keys() {
         use WorkAct::{CutIn, Drop, First, Open, Retry, Stop};
         let task = |status: &str, thread: bool| {

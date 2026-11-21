@@ -19,6 +19,11 @@ use super::time::{MONTHS, local, month_day};
 use codync_mem::compaction::Threshold;
 
 /// A compaction threshold as the apps name it: a choice, or the size as "120K".
+/// A switch field's value.
+fn switch(on: bool) -> &'static str {
+    if on { "◉ On   ○ Off" } else { "○ On   ◉ Off" }
+}
+
 fn compaction_label(at: Threshold) -> String {
     match at {
         Threshold::Off => tr("Auto (default)").into_owned(),
@@ -215,7 +220,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 }
             }
             Field::Fast => {
-                let s = if f.fast { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
+                let s = switch(f.fast);
                 // Known once the agent's model list loads, or once the bot's own sessions say.
                 let saved = app.bots.get(&f.bot_id).filter(|b| b.backend == f.backend);
                 let offered = match app.models.get(&f.backend) {
@@ -302,12 +307,10 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 }
             }
             Field::SelfFallbacks => {
-                let s = if f.self_fallbacks { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
-                put(buf, vx, y, vw, s, t.text.patch(base));
+                put(buf, vx, y, vw, switch(f.self_fallbacks), t.text.patch(base));
             }
             Field::Advisor => {
-                let s = if f.thread_agent.is_some() { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
-                put(buf, vx, y, vw, s, t.text.patch(base));
+                put(buf, vx, y, vw, switch(f.thread_agent.is_some()), t.text.patch(base));
             }
             Field::ThreadAgent => {
                 if let Some(agent) = &f.thread_agent {
@@ -349,8 +352,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 put(buf, vx, y, vw, &format!("‹ {n} ›"), t.text.patch(base));
             }
             Field::ThreadWorktrees => {
-                let s = if f.thread_worktrees == Some(true) { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
-                put(buf, vx, y, vw, s, t.text.patch(base));
+                put(buf, vx, y, vw, switch(f.thread_worktrees == Some(true)), t.text.patch(base));
             }
             Field::Approvals => {
                 let label = app.approval(f).label;
@@ -364,16 +366,12 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 put(buf, vx, y, vw, &value, style.patch(base));
             }
             Field::Computer => {
-                let s = if f.computer { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
+                let s = switch(f.computer);
                 let status = super::computer_access::status(&app.screen, app.online);
                 put(buf, vx, y, vw, &format!("{s}  · {status}"), t.text.patch(base));
             }
             Field::Team => {
-                let s = match f.manage_team {
-                    Some(true) => "◉ On   ○ Off",
-                    Some(false) => "○ On   ◉ Off",
-                    None => "Needs a newer Codync host",
-                };
+                let s = f.manage_team.map_or("Needs a newer Codync host", switch);
                 put(buf, vx, y, vw, s, t.text.patch(base));
             }
             Field::Network | Field::Assistants => {
@@ -382,11 +380,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 } else {
                     (f.reachable_by_assistants, app.network["assistants"] == true, "cloud assistants are off here")
                 };
-                let s = match on {
-                    Some(true) => "◉ On   ○ Off",
-                    Some(false) => "○ On   ◉ Off",
-                    None => "Needs a newer Codync host",
-                };
+                let s = on.map_or("Needs a newer Codync host", switch);
                 let s = if on.is_some() && !applies { format!("{s}  · {}", tr(off_here)) } else { s.into() };
                 put(buf, vx, y, vw, &s, t.text.patch(base));
             }

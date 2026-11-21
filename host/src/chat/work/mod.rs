@@ -25,7 +25,7 @@ mod thread;
 mod tools;
 mod worktree;
 
-pub use dispatch::{Wait, dispatch, threads_config};
+pub use dispatch::{Wait, dispatch};
 pub use prompts::{BRIEF, in_thread, relayed, reminder, report_notice, report_prompt};
 pub use sources::{access_of, add_request, add_routine, boxed, from_chat, routines_changed, source_of};
 pub use steer::{Steer, cut_in, drop_task, first, retry, stop};
@@ -45,7 +45,7 @@ use crate::store::{BotConfig, Entry, Store, now_ms};
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 use tasks::Task;
 
@@ -151,7 +151,7 @@ pub struct Work {
     /// Gone with the host process: a request is never replayed.
     requests: Mutex<HashMap<String, crate::chat::team::BotRequest>>,
     /// Bots one of whose threads began to wait on the user, so gave its seat up: each box is looked over again.
-    freed: Mutex<Vec<String>>,
+    freed: Mutex<BTreeSet<String>>,
     seat_freed: tokio::sync::Notify,
 }
 
@@ -167,7 +167,7 @@ impl Work {
     /// A thread of `bot`'s began to wait on the user (`Hub::set_runtime`): its seat is free for the next task. Called
     /// where no `Arc<Hub>` is at hand; the look runs on the task [`restore`] starts.
     pub fn seat_freed(&self, bot: &str) {
-        self.freed.locked().push(bot.to_owned());
+        self.freed.locked().insert(bot.to_owned());
         self.seat_freed.notify_one();
     }
 }
@@ -179,9 +179,7 @@ fn look_when_seats_free(hub: &Arc<Hub>) {
     runtime.spawn(async move {
         loop {
             hub.work.seat_freed.notified().await;
-            let mut bots = std::mem::take(&mut *hub.work.freed.locked());
-            bots.sort();
-            bots.dedup();
+            let bots = std::mem::take(&mut *hub.work.freed.locked());
             for bot in bots {
                 dispatch(&hub, &bot);
             }
@@ -209,7 +207,7 @@ pub fn fallbacks_changed(hub: &Hub, cfg: &BotConfig) {
     let mut threads = of(&hub.store, &cfg.id);
     // A thread keeps the agent it started on: it gets the chain that starts there (the threads' own in Advisor mode,
     // else the chat's), and one that started on another keeps its own.
-    let chains = [threads_config(cfg), cfg.clone()];
+    let chains = [crate::agent::fallback::threads(cfg), cfg.clone()];
     let login = crate::agent::fallback::login::of;
     for thread in &mut threads {
         if let Some(chain) = chains.iter().find(|chain| login(chain) == login(thread)) {

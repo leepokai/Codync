@@ -42,14 +42,7 @@ impl App {
                     chain_mut(f).push(step);
                 }
             }
-            KeyCode::Char(' ') => {
-                let step = &mut chain_mut(f)[at];
-                self.want_models(&step.backend);
-                if let Some(model) = self.cycle_model(&step.backend, step.model.as_deref().unwrap_or_default(), 1) {
-                    step.model = (!model.is_empty()).then_some(model);
-                    step.model_options.clear();
-                }
-            }
+            KeyCode::Char(' ') => self.cycle_step_model(&mut chain_mut(f)[at]),
             KeyCode::Char('a') if at < len => {
                 // The agents after this step's, around to the ones before it.
                 let own = chain(f)[at].backend.clone();
@@ -125,13 +118,12 @@ impl App {
         f.thread_agent = Some(Fallback { backend, ..Fallback::default() });
     }
 
-    /// Space on Threads' agent: its next model.
-    pub(super) fn cycle_thread_model(&mut self, f: &mut Form) {
-        let Some(agent) = f.thread_agent.as_mut() else { return };
-        self.want_models(&agent.backend);
-        if let Some(model) = self.cycle_model(&agent.backend, agent.model.as_deref().unwrap_or_default(), 1) {
-            agent.model = (!model.is_empty()).then_some(model);
-            agent.model_options.clear();
+    /// Space on a fallback or on Threads' agent: its next model.
+    pub(super) fn cycle_step_model(&mut self, step: &mut Fallback) {
+        self.want_models(&step.backend);
+        if let Some(model) = self.cycle_model(&step.backend, step.model.as_deref().unwrap_or_default(), 1) {
+            step.model = (!model.is_empty()).then_some(model);
+            step.model_options.clear();
         }
     }
 

@@ -104,6 +104,9 @@ pub(super) struct Task {
     /// What the user said about it since, word for word.
     #[serde(default)]
     pub notes: Vec<String>,
+    /// What the bot's chat passed on to it since (`tell_task`), word for word: never the user's own.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub relayed: Vec<String>,
     pub status: Status,
     /// Its place among the waiting, lowest first.
     pub order: i64,
@@ -176,6 +179,7 @@ impl Task {
             source: Source::Bot,
             words,
             notes: Vec::new(),
+            relayed: Vec::new(),
             status: Status::Waiting,
             order: 0,
             after: after.map(str::to_owned),
@@ -303,10 +307,7 @@ pub(super) fn shown(hub: &Hub, cfg: &BotConfig) -> Vec<Shown> {
         .map(|task| {
             let rt =
                 task.thread.as_deref().filter(|_| task.status == Status::Working).map(|thread| hub.runtime(thread));
-            let status = match &rt {
-                Some(rt) if rt.status == BotStatus::NeedsInput => Status::NeedsYou,
-                _ => task.status,
-            };
+            let status = if asks_user(hub, &task) { Status::NeedsYou } else { task.status };
             let wait = waits.remove(&task.id);
             Shown { status, activity: rt.map(|rt| rt.activity).unwrap_or_default(), wait, task }
         })
@@ -322,7 +323,7 @@ fn folder_of<'a>(task: &Task, cwd: Option<&'a String>) -> Option<&'a String> {
 /// The bot's `work` on the wire.
 pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
     let shown = shown(hub, cfg);
-    // The one seat a thread waiting on the user lends: past it, one more waiting gives nothing (`dispatch::seats`).
+    // The one seat a thread waiting on the user lends: past it, one more waiting gives nothing (`dispatch::free_seats`).
     let mut lent = false;
     // Where each thread works: a worktree's folder, or the bot's as it was when the thread began.
     let folders: HashMap<String, String> = if shown.is_empty() {
@@ -334,6 +335,12 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
         shown
             .into_iter()
             .map(|Shown { task, status, activity, wait }| {
+                // It takes one of the bot's seats.
+                let seat = match status {
+                    Status::Working => true,
+                    Status::NeedsYou => std::mem::replace(&mut lent, true),
+                    _ => false,
+                };
                 let cwd = task.thread.as_ref().and_then(|thread| folders.get(thread));
                 let folder = folder_of(&task, cwd);
                 let mut row = json!({
@@ -343,12 +350,7 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
                     "result": task.result.map(|r| crate::agent::acp::truncate(&r, WIRE_RESULT)),
                     // The user may write to its thread: the bot's own work, whose thread is still there.
                     "talk": task.source.is_bot() && cwd.is_some(),
-                    // It takes one of the bot's seats.
-                    "seat": match status {
-                        Status::Working => true,
-                        Status::NeedsYou => std::mem::replace(&mut lent, true),
-                        _ => false,
-                    },
+                    "seat": seat,
                 });
                 if let Some(folder) = folder {
                     row["folder"] = folder.clone().into();
@@ -392,6 +394,13 @@ pub fn doing(hub: &Hub, cfg: &BotConfig) -> Vec<Doing> {
     at_work.collect()
 }
 
+/// Whether `task` works and its thread waits on the user (a card, a sign-in): it needs them, and lends its seat
+/// (`dispatch::free_seats`).
+pub(super) fn asks_user(hub: &Hub, task: &Task) -> bool {
+    task.status == Status::Working
+        && task.thread.as_deref().is_some_and(|thread| hub.runtime(thread).status == BotStatus::NeedsInput)
+}
+
 /// How `cfg` stands to what shows it outside its chat (a Live Activity, an ongoing notification), given its
 /// chat's own runtime: it needs the user while one of its tasks does, and works while its box holds anything
 /// that isn't over: a task working or waiting, or one whose report its chat hasn't taken yet. Otherwise the
@@ -400,11 +409,7 @@ pub fn outside(hub: &Hub, cfg: &BotConfig, chat: &crate::hub::Runtime) -> (BotSt
     let tasks = load(&hub.store, &cfg.id);
     let open: Vec<&Task> =
         tasks.iter().filter(|i| !i.status.ended() || (i.source.is_bot() && i.report.is_some())).collect();
-    let asks = |i: &&Task| {
-        i.status == Status::Working
-            && i.thread.as_deref().is_some_and(|t| hub.runtime(t).status == BotStatus::NeedsInput)
-    };
-    let status = if chat.status == BotStatus::NeedsInput || open.iter().copied().any(|i| asks(&i)) {
+    let status = if chat.status == BotStatus::NeedsInput || open.iter().any(|i| asks_user(hub, i)) {
         BotStatus::NeedsInput
     } else if open.is_empty() {
         chat.status

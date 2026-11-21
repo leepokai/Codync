@@ -98,7 +98,7 @@ pub enum Event {
     WorktreesTidied,
     /// A task's turn couldn't go on until the user signs in to its agent, so it waits for them (`agent`, `source`).
     WorkNeedsSignIn,
-    /// A bot passed words on to one of its tasks (`tell_task`): where they went (`to`), handed over now or not (`now`).
+    /// A bot's `tell_task` finished (`outcome`): where the words went (`to`) or why not (`error`), and `now`.
     WorkTold,
     /// The user wrote to a task's thread (`chat::work::thread`): whether it reopened the task, and whether it waits.
     WorkMessaged,

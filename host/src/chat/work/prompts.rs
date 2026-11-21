@@ -37,10 +37,7 @@ pub(super) fn task_prompt(task: &Task, first: bool) -> String {
     } else {
         "[Task] Next, in this same thread, with what you did before in mind"
     };
-    let mut said = task.words.as_deref().map(|w| format!("\n\n[The user's own words: «{w}»]")).unwrap_or_default();
-    for note in &task.notes {
-        let _ = write!(said, "\n\n[The user said since: «{note}»]");
-    }
+    let mut said = said(task);
     if task.cut_in {
         said.push_str(
             "\n\n[Codync: this work was begun before in another thread and set aside. See what is already done \
@@ -56,6 +53,19 @@ pub(super) fn task_prompt(task: &Task, first: bool) -> String {
          message another bot from here: say in your report what you need.]",
         task.title, task.brief
     )
+}
+
+/// What was said about `task`, each on its own paragraph: the user's own words that led to it, what they said since,
+/// and what the bot's chat passed on (`tell_task`), which is never theirs.
+fn said(task: &Task) -> String {
+    let mut said = task.words.as_deref().map(|w| format!("\n\n[The user's own words: «{w}»]")).unwrap_or_default();
+    for note in &task.notes {
+        let _ = write!(said, "\n\n[The user said since: «{note}»]");
+    }
+    for passed in &task.relayed {
+        let _ = write!(said, "\n\n[Your chat passed on: «{passed}»]");
+    }
+    said
 }
 
 /// How many of the user's messages to a thread its report carries, the newest, and how much of each.
@@ -86,10 +96,7 @@ pub fn in_thread(text: &str, picked_up: Option<String>) -> String {
 /// What a new session is told before the user's message to `task`'s thread, when the session that did the work
 /// can't be picked up: the work, what the user said about it, and what it reported.
 pub(super) fn picked_up(task: &Task) -> String {
-    let mut said = task.words.as_deref().map(|w| format!("\n\n[The user's own words: «{w}»]")).unwrap_or_default();
-    for note in &task.notes {
-        let _ = write!(said, "\n\n[The user said since: «{note}»]");
-    }
+    let said = said(task);
     let reported = task.said.as_deref().map_or_else(
         || "[Codync: it ended without a report.]".to_owned(),
         |text| format!("[Codync: what you reported when it ended:]\n{}", crate::agent::acp::truncate(text, 2_000)),
@@ -228,6 +235,7 @@ mod tests {
         let mut task: Task = serde_json::from_value(json!({
             "id": "i1", "title": "Fix login", "brief": "The redirect drops the path.", "status": "working",
             "order": 1, "createdAt": 0, "words": "fix the login thing", "notes": ["and keep the query"],
+            "relayed": ["the API page too"],
         }))
         .expect("a task");
         let prompt = task_prompt(&task, true);
@@ -236,7 +244,8 @@ mod tests {
         );
         assert!(prompt.contains(
             "The redirect drops the path.\n\n[The user's own words: «fix the login thing»]\n\n\
-             [The user said since: «and keep the query»]\n\n[Codync: work until"
+             [The user said since: «and keep the query»]\n\n[Your chat passed on: «the API page too»]\n\n\
+             [Codync: work until"
         ));
         task.cut_in = true;
         assert!(task_prompt(&task, true).contains("set aside"));

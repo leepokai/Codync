@@ -3,7 +3,8 @@
 
 use super::steer::{self, Steer};
 use super::tasks::{self, Shown, Status, Task};
-use super::{MAX_BRIEF, MAX_HOPS, MAX_TITLE, MAX_WAITING, dispatch, sources, thread};
+use super::thread::{self, Told};
+use super::{MAX_BRIEF, MAX_HOPS, MAX_TITLE, MAX_WAITING, dispatch, sources};
 use crate::LockExt;
 use crate::analytics::{self, Event};
 use crate::hub::Hub;
@@ -224,46 +225,40 @@ fn steer_task(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     Ok(json!({"taskId": id, "status": status}))
 }
 
-/// Where `tell_task`'s words went: `work_told`'s `to`.
-#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "camelCase")]
-enum Told {
-    /// A note the waiting task reads when it starts.
-    Waiting,
-    /// The working task's thread, behind its running turn or at its next step.
-    Working,
-}
-
 fn tell(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
-    let text = |key: &str| args[key].as_str().map(str::trim).filter(|t| !t.is_empty());
-    let id = text("task").ok_or_else(|| anyhow!("task is required: its id, from work_status"))?;
-    let words = text("text").ok_or_else(|| anyhow!("text is required: what to pass on"))?;
-    if words.len() > MAX_BRIEF {
-        bail!("text is at most {MAX_BRIEF} bytes");
-    }
     let now = args["now"] == true;
-    let task = tasks::load(&hub.store, bot).into_iter().find(|i| i.id == id).ok_or_else(|| anyhow!("no such task"))?;
-    let (to, note) = match task.status {
-        Status::Waiting => {
-            thread::note_waiting(hub, bot, id, words)?;
-            (Told::Waiting, "It reads this when it starts.")
-        }
-        Status::Working => {
-            let queued = thread::relay(hub, bot, id, words, now)?;
-            let note = match (queued, now) {
-                (false, _) => "Its thread takes it now.",
-                (true, true) => "It takes this at its next step.",
-                (true, false) => "It takes this once its current turn ends, before it reports.",
-            };
-            (Told::Working, note)
-        }
-        _ => {
-            bail!("\"{}\" has ended: its report came to you already. For more of that work, add a new task", task.title)
+    let told = told(hub, bot, args, now);
+    let properties = match &told {
+        Ok((_, Told::Waiting)) => json!({"outcome": "told", "to": "waiting", "now": now}),
+        Ok((_, Told::Working { .. })) => json!({"outcome": "told", "to": "working", "now": now}),
+        Err(error) => {
+            let category = error.downcast_ref::<thread::Refused>().map_or("other", |refused| refused.category);
+            json!({"outcome": "failed", "error": category, "now": now})
         }
     };
-    let properties = json!({"to": to, "now": now});
     analytics::capture(hub, Event::WorkTold, properties.as_object().cloned().unwrap_or_default());
-    Ok(json!({"taskId": id, "status": task.status, "note": note}))
+    let (id, to) = told?;
+    let (status, note) = match to {
+        Told::Waiting => (Status::Waiting, "It reads this when it starts."),
+        Told::Working { queued: false } => (Status::Working, "Its thread takes it now."),
+        Told::Working { queued: true } if now => (Status::Working, "It takes this at its next step."),
+        Told::Working { queued: true } => {
+            (Status::Working, "It takes this once its current turn ends, before it reports.")
+        }
+    };
+    Ok(json!({"taskId": id, "status": status, "note": note}))
+}
+
+/// Passes `tell_task`'s words on to the task its arguments name: that task's id, and where they went.
+fn told(hub: &Arc<Hub>, bot: &str, args: &Value, now: bool) -> Result<(String, Told)> {
+    let text = |key: &str| args[key].as_str().map(str::trim).filter(|t| !t.is_empty());
+    let invalid = |why: String| thread::Refused::error("invalid", why);
+    let id = text("task").ok_or_else(|| invalid("task is required: its id, from work_status".into()))?;
+    let words = text("text").ok_or_else(|| invalid("text is required: what to pass on".into()))?;
+    if words.len() > MAX_BRIEF {
+        return Err(invalid(format!("text is at most {MAX_BRIEF} bytes")));
+    }
+    Ok((id.to_owned(), thread::tell(hub, bot, id, words, now)?))
 }
 
 fn status(hub: &Hub, bot: &str) -> Result<Value> {
@@ -327,13 +322,15 @@ mod tests {
     }
 
     #[test]
-    fn tell_task_notes_a_waiting_task_refuses_an_ended_one_and_is_the_chats_alone() {
+    fn tell_task_notes_a_waiting_task_refuses_an_ended_one_or_anothers_and_is_the_chats_alone() {
         use crate::chat::calls::context::tests::{bot, hub};
         let hub = hub();
         hub.store.save_bot(&bot("b1", "Mika", "/tmp")).expect("saved");
         let tasks = json!([
             {"id": "i1", "title": "Docs", "brief": "x", "status": "waiting", "order": 1, "createdAt": 0},
             {"id": "i2", "title": "Login", "brief": "x", "status": "done", "order": 0, "createdAt": 0, "endedAt": 1},
+            {"id": "i3", "title": "Morning", "brief": "x", "status": "waiting", "order": 2, "createdAt": 0,
+                "source": {"kind": "routine", "id": "r", "run": "u"}},
         ]);
         hub.store.kv_set(&format!("{}b1", tasks::PREFIX), &tasks.to_string()).expect("saved");
 
@@ -342,12 +339,20 @@ mod tests {
             (told["status"].as_str(), told["note"].as_str()),
             (Some("waiting"), Some("It reads this when it starts."))
         );
-        let notes = tasks::load(&hub.store, "b1").remove(0).notes;
-        assert_eq!(notes, ["also the API page"], "its thread reads it when it starts");
+        let docs = tasks::load(&hub.store, "b1").remove(0);
+        assert_eq!(docs.relayed, ["also the API page"], "its thread reads it when it starts");
+        assert!(docs.notes.is_empty(), "never as the user's own words");
 
+        let category = |error: anyhow::Error| error.downcast_ref::<thread::Refused>().map(|refused| refused.category);
         let ended = call(&hub, "b1", "tell_task", &json!({"task": "i2", "text": "more"})).expect_err("it ended");
         assert!(ended.to_string().starts_with("\"Login\" has ended"), "{ended}");
-        assert!(call(&hub, "b1", "tell_task", &json!({"task": "i1"})).is_err(), "nothing to pass on");
+        assert_eq!(category(ended), Some("ended"));
+        let run = call(&hub, "b1", "tell_task", &json!({"task": "i3", "text": "skip staging"})).expect_err("a run");
+        assert_eq!(run.to_string(), "\"Morning\" is a routine's run: it can be read and stopped, not written to");
+        assert_eq!(category(run), Some("read_only"));
+        assert!(tasks::load(&hub.store, "b1")[2].relayed.is_empty(), "nothing it would never read");
+        let empty = call(&hub, "b1", "tell_task", &json!({"task": "i1"})).expect_err("nothing to pass on");
+        assert_eq!(category(empty), Some("invalid"));
 
         let thread = crate::store::BotConfig { thread_of: Some("b1".into()), ..bot("thread-1", "Mika", "/tmp") };
         hub.store.save_bot(&thread).expect("saved");

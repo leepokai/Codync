@@ -2,7 +2,8 @@
 
 In the chat: `ADD title|brief[|hold][|after=<title>]`, `STEER how|title[|brief, or the title that gives way]`,
 `TELL title|words[|now]` (passes words on to a task), `STATUS`, `MESSAGE <bot id>|<request>` (asks another bot). In a thread, the brief says what it does: `HOLD:<name>`
-works until a `release-<name>` file is in its folder, `PERMISSION` asks for an approval, `ASK` asks the user to
+works until a `release-<name>` file is in its folder, `PERMISSION` asks for an approval (`PERMISSION:<name>`: once
+`release-<name>` is there), `ASK` asks the user to
 choose, `SHARE` sends a file (`QUOTE`: quoting the chat message that added the task), `ARTIFACT` publishes one,
 `NEST` tries what a thread may not, `REMEMBER` adds a line to `MEMORY.md` with `edit_memory` and `FORGET` tries to take
 one out (both once it is released), `TOUCH` writes `made.txt` in its folder.
@@ -170,6 +171,9 @@ def work(text, session):
     if "TOUCH" in brief:
         pathlib.Path("made.txt").write_text("made by a thread", encoding="utf-8")
     if "PERMISSION" in brief:
+        later = re.search(r"PERMISSION:(\w+)", brief)
+        if later:
+            hold("HOLD:" + later.group(1))
         send({"id": "permission", "method": "session/request_permission", "params": {
             "sessionId": session, "toolCall": {"toolCallId": "edit", "title": "Run the tests"},
             "options": [{"optionId": "allow", "name": "Allow", "kind": "allow_once"}],

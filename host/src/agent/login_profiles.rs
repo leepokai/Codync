@@ -327,7 +327,7 @@ pub async fn remove(hub: &Hub, id: &str) -> Result<()> {
 /// the profile is gone (`settle`).
 fn users(store: &Store, id: &str) -> Result<Vec<String>> {
     let uses = |cfg: &BotConfig| {
-        cfg.login_profile.as_deref() == Some(id) || cfg.fallbacks.iter().any(|f| f.login_profile.as_deref() == Some(id))
+        cfg.login_profile.as_deref() == Some(id) || cfg.fallback_steps().any(|f| f.login_profile.as_deref() == Some(id))
     };
     // A thread keeps the login its bot had when it started, whatever the bot is set to since.
     let threads = crate::chat::work::working_threads(store);
@@ -474,11 +474,11 @@ pub fn name_of(store: &Store, backend: &str, profile: Option<&str>) -> Option<St
     Some(resolve(store, backend, profile).ok()??.called())
 }
 
-/// Keeps the profiles a bot names its agents' own, for the bot's agent and each fallback: an agent changed to
+/// Keeps the profiles a bot names its agents' own, for the bot's agent and each other step: an agent changed to
 /// another, or run by a custom command, leaves its profile behind. A profile that is gone is an error.
 pub fn settle(store: &Store, cfg: &mut BotConfig) -> Result<()> {
     cfg.login_profile = settled(store, &cfg.backend, cfg.command.as_deref(), cfg.login_profile.take())?;
-    for step in &mut cfg.fallbacks {
+    for step in cfg.fallback_steps_mut() {
         step.login_profile = settled(store, &step.backend, step.command.as_deref(), step.login_profile.take())?;
     }
     Ok(())

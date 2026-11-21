@@ -45,8 +45,8 @@ export function AgentStepBanner({ bot }: { bot: Bot }) {
 }
 
 /** The Agent card's Fallbacks: the agents that carry on in order, each picked in place like the bot's own, added with +,
- * moved and removed from its menu, saved with the form. */
-export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: Bot; onChange: (update: (d: BotDraft) => BotDraft) => void }) {
+ * moved and removed from its menu, saved with the form. `threads`: Advisor mode's, after the threads' own agent. */
+export function FallbacksRow({ draft, bot, onChange, threads = false }: { draft: BotDraft; bot: Bot; onChange: (update: (d: BotDraft) => BotDraft) => void; threads?: boolean }) {
   const store = useStore()
   const tr = useTr()
   const [about, setAbout] = useState(false)
@@ -54,12 +54,16 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
   const [added, setAdded] = useState<number | null>(null)
   // Bumped when a move or removal renumbers the rows, so each starts afresh on the step now in its place.
   const [order, setOrder] = useState(0)
-  const list = draft.fallbacks ?? []
+  const key = threads ? 'threadFallbacks' : 'fallbacks'
+  const list = draft[key] ?? []
+  const head: Login = (threads ? draft.threadAgent : null) ?? draft
   const backends = store.hello?.backends ?? []
-  // Each login is in the chain once, the bot's own included: an agent comes again only on another of its login profiles.
-  const takenBut = (index: number): Login[] => [draft, ...list.filter((_, j) => j !== index)]
+  // Each login is in the chain once, its first agent's included: an agent comes again only on another of its login profiles.
+  const takenBut = (index: number): Login[] => [head, ...list.filter((_, j) => j !== index)]
   const choices = stepAgents(backends, takenBut(list.length))
-  const update = (change: (list: Fallback[]) => Fallback[]) => onChange((d) => ({ ...d, fallbacks: change(d.fallbacks ?? []) }))
+  const update = (change: (list: Fallback[]) => Fallback[]) => onChange((d) => ({ ...d, [key]: change(d[key] ?? []) }))
+  // The chat's step; Advisor mode's threads each run their own.
+  const step = threads ? null : stepLogin(bot)
   const add = () => {
     const agent = choices.find((b) => b.available) ?? choices[0]
     if (!agent) return
@@ -73,9 +77,9 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
   }
   const now = Date.now()
   return (
-    <VStack gap={8}>
+    <VStack gap={8} className={threads ? 'fade-in' : undefined}>
       <HStack gap={2}>
-        <Text tone="text">{tr(`Fallbacks`)}</Text>
+        <Text tone="text">{tr(threads ? "Threads' fallbacks" : 'Fallbacks')}</Text>
         <IconButton title="About fallbacks" icon="info.circle" size={22} onClick={() => setAbout(true)} />
         <Spacer />
         {list.length < MAX_FALLBACKS && choices.length ? <IconButton title="Add fallback" icon="plus" className="fade-in" onClick={add} /> : null}
@@ -89,6 +93,7 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
             index={i}
             count={list.length}
             bot={bot}
+            inUse={!!step && sameLogin(step, f)}
             now={now}
             backends={backends}
             taken={takenBut(i)}
@@ -102,7 +107,9 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
         <Text tone="secondary">{tr(`No fallbacks yet.`)}</Text>
       )}
       <Text size="caption" tone="secondary">
-        {tr('If {agent} runs out of usage or can\'t answer, the bot carries on with the next one. Chat, memory and workspace carry over.').replace('{agent}', store.backendName(draft.backend))}
+        {tr(threads
+          ? "If {agent} runs out of usage or can't answer, threads carry on with the next one."
+          : 'If {agent} runs out of usage or can\'t answer, the bot carries on with the next one. Chat, memory and workspace carry over.').replace('{agent}', store.backendName(head.backend))}
       </Text>
       <Dialog open={about} title={tr('Fallbacks')} message={tr(ABOUT)} actions={[]} cancel="OK" onClose={() => setAbout(false)} />
     </VStack>
@@ -110,11 +117,13 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
 }
 
 /** One fallback: its place, its agent, model and login picked in place, whether it's resting or in use, and its menu. */
-function FallbackRow({ fallback, index, count, bot, now, backends, taken, expanded, onChange, move, remove }: {
+function FallbackRow({ fallback, index, count, bot, inUse, now, backends, taken, expanded, onChange, move, remove }: {
   fallback: Fallback
   index: number
   count: number
   bot: Bot
+  /** The bot runs on it right now. */
+  inUse: boolean
   now: number
   backends: Backend[]
   /** The rest of the chain's logins. */
@@ -138,7 +147,6 @@ function FallbackRow({ fallback, index, count, bot, now, backends, taken, expand
     return b.id === fallback.backend && profile ? { ...choice, label: `${choice.label} (${profile.name ?? tr('New login profile')})` } : choice
   })
   const rest = restOf(bot, fallback, now)
-  const step = stepLogin(bot)
   return (
     <VStack gap={2} className="fade-in">
       <HStack gap={8} align="flex-start">
@@ -166,7 +174,7 @@ function FallbackRow({ fallback, index, count, bot, now, backends, taken, expand
             {agent?.loginProfiles ? <LoginProfileRow backend={agent} loginProfile={loginProfile} free={stepLogins(agent, fallback, taken)} onChange={(id) => onChange({ ...fallback, loginProfile: id })} /> : null}
           </AgentModelPicker>
         </VStack>
-        {step && sameLogin(step, fallback) ? <Text size="caption" weight="medium" tone="text" className="fallback-chip fade-in">{tr(`In use`)}</Text> : null}
+        {inUse ? <Text size="caption" weight="medium" tone="text" className="fallback-chip fade-in">{tr(`In use`)}</Text> : null}
         <DropdownMenu
           className="icon-button fallback-menu"
           title={tr('More')}

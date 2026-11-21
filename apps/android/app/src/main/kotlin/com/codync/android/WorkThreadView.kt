@@ -51,6 +51,8 @@ import com.codync.android.core.Entry
 import com.codync.android.core.LinkState
 import com.codync.android.core.WhereLine
 import com.codync.android.core.WorkTask
+import com.codync.android.core.hidingQueue
+import com.codync.android.core.queue
 import com.codync.android.core.sharedLine
 import com.codync.android.core.sharing
 import com.codync.android.core.threadDraftKey
@@ -96,8 +98,8 @@ import kotlinx.coroutines.launch
     val all = state.threadEntries[threadId].orEmpty()
     val thread = threadTranscript(all)
     // As in a chat: while the thread's turn runs, what the user wrote waits over the composer, not among the rows.
-    val queued = queuedMessages(thread.rest, live)
-    val own = if (live) thread.rest.filterNot(Entry::isQueued) else thread.rest
+    val queued = thread.queue(live)
+    val own = thread.hidingQueue(live)
     val rows = if (threadId == null) own else sharing(own, state.entries.filter { it.botId == bot.id && !it.isRemoved }, threadId)
     val sends = state.threadSends[taskId].orEmpty().filter { send -> all.none { it.clientNonce == send.nonce } }
     val running = runningTurn(all, live)

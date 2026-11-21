@@ -44,6 +44,8 @@ onFlowComplete:
 - scrollUntilVisible:
     element: "Summarize long chats"
     centerElement: true
+# The page can still be moving: a pill tapped where it was a moment ago never opens.
+- waitForAnimationToEnd
 - tapOn: "Auto \\(default\\)"
 - assertVisible: "Early"
 - assertVisible: "Near the limit"
@@ -62,6 +64,16 @@ onFlowComplete:
 - eraseText
 # Rounded to the nearest 10K.
 - inputText: "354"
+# Maestro's typing hides the iPhone keyboard for about a second; coming back, it lifts the dialog, so Save is tapped
+# once it's back, not where it was before.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - extendedWaitUntil:
+          visible:
+            id: "delete"
+          timeout: 5000
 - tapOn: "Save"
 - assertVisible: "350K"
 - takeScreenshot: compaction-size
@@ -83,6 +95,7 @@ onFlowComplete:
 - scrollUntilVisible:
     element: "Summarize long chats"
     centerElement: true
+- waitForAnimationToEnd
 - tapOn: "Early"
 - tapOn: "Auto \\(default\\)"
 - assertVisible: "Auto \\(default\\)"

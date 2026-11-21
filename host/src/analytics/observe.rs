@@ -308,6 +308,14 @@ pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Opti
                     let picked = Threshold::deserialize(&b["compaction"]).unwrap_or_default();
                     p.insert("compaction".into(), picked.kind().into());
                 }
+                // Advisor mode turned on or off, and the agent its threads run on.
+                if fields.iter().any(|f| f == "threadAgent") {
+                    let agent = b["threadAgent"]["backend"].as_str();
+                    p.insert("advisorMode".into(), agent.is_some().into());
+                    if let Some(agent) = agent {
+                        p.insert("threadAgent".into(), agent.into());
+                    }
+                }
                 p.insert("fields".into(), fields.into());
             }
         }

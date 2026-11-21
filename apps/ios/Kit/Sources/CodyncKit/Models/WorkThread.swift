@@ -157,6 +157,17 @@ public struct SharedLine: Equatable, Sendable {
 public struct ThreadTranscript: Equatable, Sendable {
     public var told: Entry?
     public var rest: [Entry]
+
+    /// While the thread works, the user's messages that wait above the composer (`queue(working:)`). What the host told
+    /// it, the chat passing words on included, is never one of them: it stays quoted where it came.
+    public func queue(working: Bool) -> [Entry] {
+        rest.filter { !$0.isToldToThread }.queue(working: working)
+    }
+
+    /// `rest` without that queue.
+    public func hidingQueue(working: Bool) -> [Entry] {
+        working ? rest.filter { !$0.isQueued || $0.isToldToThread } : rest
+    }
 }
 
 public extension Array where Element == Entry {

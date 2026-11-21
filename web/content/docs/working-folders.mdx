@@ -68,7 +68,7 @@ Codync can keep versions and give threads their own copies only with Git. In bot
 
 A project folder may not be a Git repository. (A bot's own folder becomes one by itself once Git is installed.) Choose one of these:
 
-- **Keep to one at a time.** Set **Threads at once**, under **Workspace** in the bot's **Settings**, to 1. Further tasks wait their turn.
+- **Keep to one at a time.** Set **Threads at once**, under **Workspace** in the bot's **Settings**, to 1. Further tasks wait their turn, except while a thread waits for you (an approval, a choice or a sign-in): then the next task starts in the same folder, and once you answer, both work there at once. To keep them apart even then, make the folder a repository.
 - **Make the folder a repository.** A copy starts from a commit, so the folder needs at least one:
 
 ```sh

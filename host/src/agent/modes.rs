@@ -9,6 +9,11 @@ use serde_json::{Value, json};
 /// Claude's id: an agent that calls it something else (Codex's `agent`, "Auto review") is listed under it.
 pub const AUTO: &str = "auto";
 
+/// A mode a bot picked, as it carries over to another agent, whose mode ids are its own: a picked one becomes Auto.
+pub fn on_other_agent(mode: Option<&str>) -> Option<String> {
+    mode.map(|_| AUTO.to_owned())
+}
+
 /// One mode, with the agent's own id and words.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Mode {

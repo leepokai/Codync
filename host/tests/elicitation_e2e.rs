@@ -1,6 +1,7 @@
 //! An agent's own question (`elicitation/create`, as Hermes sends its clarify prompts) through a real host and a
 //! fixture agent: it waits on a choice card even when the bot approves tool requests automatically, the user's answer
-//! goes back as `accept`, Stop as `cancel`, and a form no card can show faithfully is declined.
+//! goes back as `accept`, Stop as `cancel`, and a form no card can show faithfully is declined. A conversation goal
+//! stops at that question, and answering it does not hand the goal its next step.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -56,6 +57,11 @@ async fn idle(host: &Host, bot: &str) {
         common::bot(&host.snapshot().await, bot)["status"] == "idle"
     })
     .await;
+}
+
+/// The goal the snapshot reports for `bot`.
+async fn goal(host: &Host, bot: &str) -> Value {
+    common::bot(&host.snapshot().await, bot)["goal"].clone()
 }
 
 #[tokio::test]
@@ -136,4 +142,36 @@ async fn a_question_no_card_can_answer_never_hangs() {
     host.call("stop", json!({"botId": bot})).await;
     assert_eq!(reply(&host, &bot, 3).await["result"], json!({"action": "cancel"}));
     idle(&host, &bot).await;
+}
+
+#[tokio::test]
+async fn a_goal_stops_for_the_agents_own_question_and_its_answer_does_not_resume_it() {
+    let host = Host::start().await;
+    let bot = auto_bot(&host).await;
+
+    // The goal's step asks the agent to continue; the agent stops to ask the user instead.
+    host.call("setGoal", json!({"botId": bot, "goal": "ASK_CHOICE pick the database", "maxTurns": 4})).await;
+    let asked = card(&host, &bot).await;
+    assert_eq!(asked["data"]["choices"], json!(["sqlite", "postgres"]), "{asked}");
+    common::eventually("the goal stops for the user", Duration::from_secs(20), async || {
+        goal(&host, &bot).await["stopped"] == "needsUser"
+    })
+    .await;
+
+    // The press answers the agent's question, and the turn ends there: the goal prompts no next step.
+    host.call("respondDecision", json!({"entryId": asked["id"], "option": "sqlite"})).await;
+    assert_eq!(reply(&host, &bot, 0).await["result"], json!({"action": "accept", "content": {"answer": "sqlite"}}));
+    idle(&host, &bot).await;
+    common::eventually("no second goal prompt", Duration::from_secs(10), async || host.prompts(&bot).len() == 1).await;
+
+    // The goal stays stopped at the step that asked, and its end is what the chat shows.
+    let state = goal(&host, &bot).await;
+    assert_eq!(state["stopped"], "needsUser", "{state}");
+    assert_eq!(state["turns"], 1, "{state}");
+    let history = host.call("history", json!({"botId": bot})).await;
+    let ended: Vec<&Value> =
+        history["entries"].as_array().unwrap().iter().filter(|e| e["data"]["goalEnded"].is_string()).collect();
+    assert_eq!(ended.len(), 1, "{history}");
+    assert_eq!(ended[0]["data"]["goalEnded"], "needsUser", "{history}");
+    assert_eq!(host.prompts(&bot).len(), 1, "only the goal's step prompted the agent");
 }

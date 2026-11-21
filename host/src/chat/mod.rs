@@ -7,6 +7,7 @@ pub mod context;
 pub mod decision;
 pub mod fallbacks;
 pub mod files;
+pub mod goal;
 pub mod group;
 pub mod handoff;
 pub mod lead;

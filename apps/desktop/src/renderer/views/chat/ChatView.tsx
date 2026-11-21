@@ -22,6 +22,7 @@ import { DevServerTitle } from './DevServersSection'
 import { WorkingTransition } from './WorkingTransition'
 import { RoutineNotice } from './RoutineNotice'
 import { Composer } from './Composer'
+import { GoalBanner } from './GoalSection'
 import { QueuedMessages } from './QueuedMessages'
 import { WorkCapsule } from './WorkCapsule'
 import { fill } from '@shared/fill'
@@ -243,6 +244,7 @@ export const ChatView = memo(function ChatView({ botId, request = null }: { botI
             <>
               <WorkCapsule botId={botId} open={openWork} />
               <QueuedMessages botId={botId} />
+              {bot ? <GoalBanner bot={bot} /> : null}
               <Composer
                 botId={botId}
                 reply={replyTo}

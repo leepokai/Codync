@@ -137,6 +137,8 @@ impl Store {
         )?;
         // Its artifacts' details (`chat::artifacts`).
         c.execute("DELETE FROM kv WHERE k GLOB ?1", [format!("artifact.{id}.*")])?;
+        // Its bounded conversation goal (`chat::goal`).
+        c.execute("DELETE FROM kv WHERE k = ?1", [format!("goal.{id}")])?;
         Ok(rev)
     }
 
@@ -323,12 +325,16 @@ mod tests {
             s.kv_set(k, "1").unwrap();
         }
         s.kv_set("context.window.b10", "1").unwrap();
+        s.kv_set("goal.b1", "1").unwrap();
+        s.kv_set("goal.b10", "1").unwrap();
         s.insert_entry(&Lane::main("b1"), EntryKind::Agent, 3, &reply).unwrap();
         assert_eq!(s.total_unread(), 1);
         s.delete_bot("b1").unwrap();
         assert_eq!(s.total_unread(), 0, "a deleted bot isn't on the phone's roster");
         assert_eq!((s.kv_get("fallback.session.b1.codex"), s.kv_get("fallback.on.b1")), (None, None));
         assert!(compaction.iter().all(|k| s.kv_get(k).is_none()), "its compaction records");
+        assert!(s.kv_get("goal.b1").is_none(), "its goal record");
+        assert!(s.kv_get("goal.b10").is_some(), "another bot's goal");
         assert!(s.kv_get("context.window.b10").is_some(), "another bot's window");
         assert!(s.kv_get("fallback.on.b10").is_some(), "another bot's");
         assert!(s.insert_entry(&Lane::main("b1"), EntryKind::Notice, 3, &reply).is_err());

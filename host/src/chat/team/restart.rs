@@ -5,7 +5,8 @@
 //! `Store::expire_pending` leaves them.
 
 use super::{
-    Back, BotReply, MessageLifetime, REQUEST_QUOTE_BYTES, RequestStatus, relayed, request_prompt, visible_bot,
+    Back, BotReply, MessageLifetime, REQUEST_QUOTE_BYTES, RequestStatus, finish_entry, relayed, request_prompt,
+    visible_bot,
 };
 use crate::agent::acp::truncate;
 use crate::agent::bot::Cmd;
@@ -45,6 +46,21 @@ fn requests(notices: Vec<Entry>) -> Vec<Vec<Entry>> {
 
 /// One request left open: sent again if it never started, else failed. Either way its sender hears how it ends.
 fn settle(hub: &Arc<Hub>, notices: &[Entry]) {
+    let status = |notice: &Entry| serde_json::from_value::<RequestStatus>(notice.data["status"].clone()).ok();
+    let open = |notice: &&Entry| matches!(status(notice), Some(RequestStatus::Queued | RequestStatus::Sent));
+    // It ended, but the last process stopped before saving all its notices: the rest end the same way. Its sender
+    // already heard, or hears from its notice (`relay`).
+    if let Some(ended) = notices.iter().find(|notice| !open(notice))
+        && let Some(outcome) = status(ended)
+    {
+        let detail =
+            ended.data["text"].as_str().and_then(|text| text.split_once('\n')).map_or("", |(_, detail)| detail);
+        let reply = ended.data["botMessage"]["reply"].as_str();
+        for notice in notices.iter().filter(open) {
+            finish_entry(hub, &notice.id, outcome, detail, reply, false);
+        }
+        return;
+    }
     let data = &notices[0].data;
     let message = &data["botMessage"];
     let (Some(id), Some(source), Some(target), Some(text)) = (

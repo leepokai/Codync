@@ -305,11 +305,12 @@ impl Actor {
                     self.hub.ceilings.set(&self.cfg.id, access);
                     self.reply_hops = replies.iter().map(crate::chat::team::BotReply::hops).max();
                     let prompt = crate::chat::team::reply_prompt(&replies, access);
-                    // From here a host restart resumes this turn, which holds them.
-                    crate::chat::team::relayed(&self.hub, &replies);
                     if let Err(e) = self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
                         self.start_error(e, done_tx).await;
                     }
+                    // Only once the agent has the prompt (or the turn failed where the user sees it): a host restart
+                    // before that relays them again from their notices.
+                    crate::chat::team::relayed(&self.hub, &replies);
                     continue;
                 }
                 Some(Queued::TaskReport(_)) => {

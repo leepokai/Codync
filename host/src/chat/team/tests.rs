@@ -680,6 +680,28 @@ async fn a_reply_waiting_for_a_busy_sender_survives_a_restart() {
     f.shutdown().await;
 }
 
+#[tokio::test]
+async fn a_restart_between_a_requests_two_notices_keeps_the_outcome_saved_first() {
+    let f = Fixture::new();
+    f.send_to("a", "BLOCK user work").await;
+    f.until(|| f.prompts_of("a").len() == 1).await;
+    let receipt = f.message("work").unwrap();
+    f.until(|| f.took("b", 1)).await;
+    // The last process saved the sender's notice and stopped before the recipient's.
+    let recipient = f.notices(&receipt).into_iter().find(|e| e.bot_id == "b").unwrap();
+    let mut data = recipient.data.clone();
+    data["status"] = "sent".into();
+    f.hub.store.update_entry(&recipient.id, &data).unwrap();
+    let f = f.restart().await;
+    let id = receipt["requestId"].as_str().unwrap().to_owned();
+    let replied = |p: &String| p.contains(&format!("b replied to your message_bot request {id}"));
+    f.until(|| f.idle("a") && f.prompts_of("a").iter().any(replied)).await;
+    assert!(f.prompts_of("a").iter().all(|p| !p.contains(crate::store::INTERRUPTED)), "no second outcome");
+    assert!(f.notices(&receipt).iter().all(|e| e.data["status"] == "completed"));
+    assert_eq!(f.prompts().len(), 1, "the request itself never ran again");
+    f.shutdown().await;
+}
+
 #[test]
 fn restart_marks_remote_requests_interrupted_and_leaves_local_ones_to_settle() {
     let store = Store::open(std::path::Path::new(":memory:")).unwrap();

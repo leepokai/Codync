@@ -353,10 +353,14 @@ impl Store {
         logged("last spoke", n).unwrap_or(0)
     }
 
-    /// The exchange notices of requests between this computer's bots that hadn't ended (`queued`, `sent`), oldest
-    /// first, so a request's sender's notice comes before its recipient's.
+    /// Every exchange notice of requests between this computer's bots that one of them shows still open (`queued`,
+    /// `sent`), oldest first, so a request's sender's notice comes before its recipient's. Ended ones too: a host
+    /// that stopped between saving a request's two notices left only one of them ended.
     pub fn unfinished_requests(&self) -> Result<Vec<Entry>> {
-        self.local_requests("json_extract(data, '$.status') IN ('queued', 'sent')")
+        self.local_requests(&format!(
+            "json_extract(data, '$.delegationId') IN (SELECT json_extract(data, '$.delegationId') FROM entries
+              WHERE {LOCAL_REQUEST} AND json_extract(data, '$.status') IN ('queued', 'sent'))"
+        ))
     }
 
     /// Local senders' exchange notices whose outcome their reply turn never took (`relaying`), oldest first.

@@ -368,6 +368,8 @@ public struct Hello: Codable, Sendable {
     public var canJoinAccount: Bool?
     /// A bot with a new message moves to the top of the roster (missing from older hosts).
     public var autoOrder: Bool?
+    /// Groups can carry a shared workspace folder; missing from hosts that predate them (editors keep it hidden).
+    public var groupWorkspace: Bool?
 }
 
 public struct RecentWorkspace: Codable, Sendable, Identifiable {
@@ -401,6 +403,10 @@ public struct GroupDraft: Codable, Hashable, Sendable {
     public var description = ""
     public var members: [String]
     public var pinned: Bool?
+    /// The team's shared workspace folder. Sent only when set; nil keeps the saved one.
+    public var workspace: String?
+    /// Clears the team's shared folder, sent as explicit null (only with `workspace` nil).
+    public var clearWorkspace = false
 
     public init(name: String, description: String = "", members: [String]) {
         self.name = name
@@ -414,6 +420,25 @@ public struct GroupDraft: Codable, Hashable, Sendable {
         description = group.description
         members = group.members
         pinned = group.pinned
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, name, description, members, pinned, workspace
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(id, forKey: .id)
+        try c.encode(kind, forKey: .kind)
+        try c.encode(name, forKey: .name)
+        try c.encode(description, forKey: .description)
+        try c.encode(members, forKey: .members)
+        try c.encodeIfPresent(pinned, forKey: .pinned)
+        if let workspace {
+            try c.encode(workspace, forKey: .workspace)
+        } else if clearWorkspace {
+            try c.encodeNil(forKey: .workspace)
+        }
     }
 }
 

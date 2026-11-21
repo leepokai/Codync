@@ -34,7 +34,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.Bot
 import com.codync.android.core.GroupDraft
+import com.codync.android.core.folderName
 import com.codync.android.design.*
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Change a group chat's name, what it's for and who's in it (iOS `GroupEditorView`); new groups start in [NewGroupView].
@@ -46,7 +50,9 @@ import com.codync.android.design.*
     var query by remember { mutableStateOf("") }
     var adding by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var folders by remember { mutableStateOf(false) }
     val saving = "editor" in state.busy
+    val online = state.actualConnection is com.codync.android.core.LinkState.Ready
     val picked = draft.members.mapNotNull { id -> state.bots.firstOrNull { it.id == id } }
     val candidates = roster(state.bots).filter { it.kind != "group" && it.id !in draft.members && it.name.contains(query.trim(), ignoreCase = true) }
     val defaultName = picked.joinToString(", ") { it.name }.ifEmpty { "Name" }
@@ -69,6 +75,28 @@ import com.codync.android.design.*
                     style = Type.title2.semibold.copy(textAlign = TextAlign.Center))
                 PlainTextField(draft.description, { draft = draft.copy(description = it) }, Modifier.fillMaxWidth(), "What this group works on",
                     style = Type.subheadline.copy(textAlign = TextAlign.Center, color = Palette.secondary), maxLines = 4)
+            }
+            // The team's shared folder (only from a host with group workspaces; iOS GroupEditorView).
+            if (state.hello?.get("groupWorkspace")?.jsonPrimitive?.booleanOrNull == true) {
+                CardSection("Workspace") {
+                    row {
+                        ValueRow("Workspace", detail = if (draft.workspace == null) tr("Each keeps its own folder")
+                            else tr("Members are asked to keep joint output in this folder.")) {
+                            DropdownMenu({ listOf(
+                                MenuItem("Each keeps its own folder", selected = draft.workspace == null)
+                                    { draft = draft.copy(workspace = null, clearWorkspace = initial.workspace != null) },
+                                MenuItem("Choose project folder…", selected = draft.workspace != null) { folders = true },
+                            ) }, label = "Workspace") {
+                                Row(Modifier.outline().pill(androidx.compose.ui.graphics.Color.Transparent), verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(draft.workspace?.let(::folderName) ?: tr("Each keeps its own folder"),
+                                        style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Symbol("chevron.down", size = 13.dp, tint = Palette.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
             }
             Column(Modifier.fillMaxWidth().animateContentSize(Motion.layoutSize)) {
                 Text("Members", Modifier.padding(bottom = 4.dp), style = Type.subheadline.semibold, color = Palette.secondary)
@@ -95,6 +123,13 @@ import com.codync.android.design.*
         }
     }
     val group = state.bots.firstOrNull { it.id == draft.id }
+    CodyncSheet(folders, { folders = false }) {
+        FolderPicker(draft.workspace ?: state.hello?.get("home")?.jsonPrimitive?.contentOrNull, online,
+            state.hello?.get("name")?.jsonPrimitive?.contentOrNull ?: "Computer", store::listDirs, store::selectWorkspace) {
+            draft = draft.copy(workspace = it, clearWorkspace = false)
+            folders = false
+        }
+    }
     CodyncDialog("Delete ${group?.name ?: "group chat"}?", confirmDelete, { confirmDelete = false }, "Its bots and their own chats stay.") {
         listOf(DialogAction("Delete group chat", destructive = true) { group?.let { store.deleteBot(it) { dismiss() } } })
     }

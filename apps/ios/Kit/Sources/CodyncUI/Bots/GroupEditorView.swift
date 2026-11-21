@@ -10,8 +10,10 @@ public struct GroupEditorView: View {
     @State private var name: String
     @State private var about: String
     @State private var members: [String]
+    @State private var workspace: String?
     @State private var query = ""
     @State private var adding = false
+    @State private var pickingFolder = false
     @State private var saving = false
     @State private var error: String?
     @State private var confirmDelete: Bot?
@@ -21,6 +23,7 @@ public struct GroupEditorView: View {
         _name = State(initialValue: group.name)
         _about = State(initialValue: group.description)
         _members = State(initialValue: group.members)
+        _workspace = State(initialValue: group.workspace)
     }
 
     private var picked: [Bot] { members.compactMap { model.bots[$0] } }
@@ -60,6 +63,35 @@ public struct GroupEditorView: View {
                             .multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity)
+                    if model.hello?.groupWorkspace == true {
+                        CardSection("Workspace") {
+                            ValueRow(
+                                "Workspace",
+                                detail: workspace == nil
+                                    ? "Each keeps its own folder"
+                                    : "Members are asked to keep joint output in this folder."
+                            ) {
+                                DropdownMenu {
+                                    [
+                                        MenuItem("Each keeps its own folder", selected: workspace == nil) {
+                                            withAnimation(Motion.layout) { workspace = nil }
+                                        },
+                                        MenuItem("Choose project folder…", selected: workspace != nil) {
+                                            withAnimation(Motion.layout) { pickingFolder = true }
+                                        },
+                                    ]
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Text(workspace?.folderBaseName ?? L10n.tr("Each keeps its own folder")).lineLimit(1)
+                                        Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(Palette.secondary)
+                                    }
+                                    .foregroundStyle(Palette.text)
+                                    .outlinedPill()
+                                }
+                                .help(workspace ?? "")
+                            }
+                        }
+                    }
                     VStack(alignment: .leading, spacing: 0) {
                         Text(L10n.tr("Members"))
                             .font(.subheadline.weight(.semibold))
@@ -119,6 +151,12 @@ public struct GroupEditorView: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .background(Palette.background)
+        .codyncSheet(isPresented: $pickingFolder) {
+            FolderPicker(start: workspace ?? model.hello?.home) { picked in
+                withAnimation(Motion.layout) { workspace = picked }
+                pickingFolder = false
+            }
+        }
         .deleteBotConfirmation($confirmDelete) { dismiss() }
     }
 
@@ -158,6 +196,12 @@ public struct GroupEditorView: View {
                 var draft = GroupDraft(name: finalName, description: about, members: members)
                 draft.id = groupId
                 draft.pinned = model.bots[groupId]?.pinned
+                // The saved folder it came in with; only a real change is sent (a cleared one as explicit null).
+                let original = model.bots[groupId]?.workspace
+                if workspace != original {
+                    draft.workspace = workspace
+                    draft.clearWorkspace = workspace == nil && original != nil
+                }
                 try await model.updateGroup(draft)
                 dismiss()
             } catch {

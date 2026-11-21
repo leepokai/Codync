@@ -99,6 +99,9 @@ pub struct App {
     pub pairing_requests: Vec<Value>,
     pub backends: Vec<Value>,
     pub custom_icons: bool,
+    /// The host lets a group carry a shared workspace folder (`hello.groupWorkspace`; older hosts: the group
+    /// editor keeps no row for it).
+    pub group_workspace: bool,
     pub selected: Option<String>,
     pub focus: Focus,
     pub typing: bool,
@@ -208,6 +211,7 @@ impl App {
             pairing_requests: vec![],
             backends: vec![],
             custom_icons: false,
+            group_workspace: false,
             selected: None,
             focus: Focus::Roster,
             typing: false,

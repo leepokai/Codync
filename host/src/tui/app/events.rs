@@ -271,6 +271,7 @@ impl App {
                 self.analytics_hello(&v);
                 self.auto_order = v["autoOrder"].as_bool();
                 self.credentials_reset = v["credentialsReset"].as_bool().unwrap_or(false);
+                self.group_workspace = v["groupWorkspace"].as_bool().unwrap_or(false);
                 self.screen = v["screen"].clone();
                 // A thread's entries aren't in a connection's catch-up: the open transcripts ask for what they
                 // missed, now that the host's version says which name `threadEntries` goes by.

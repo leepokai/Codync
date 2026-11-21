@@ -26,6 +26,7 @@ impl App {
                 group_id: Some(b.id.clone()),
                 name: Editor::with(&b.name),
                 about: Editor::with(&b.description),
+                workspace: b.workspace.clone().unwrap_or_default(),
                 members: b.members.clone(),
                 field: GroupField::Name,
                 cursor: 0,

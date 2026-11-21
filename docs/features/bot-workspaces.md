@@ -1,6 +1,6 @@
 # Bot workspaces
 
-New agent bots get their own persistent folder automatically (**Own folder** in the apps). Creating a bot does not require choosing a project. An omitted or empty `cwd` in `createBot` allocates `<CODYNC_HOME>/bots/<bot-id>/workspace` (normally `~/.codync/bots/<bot-id>/workspace`). Groups do not allocate folders. An omitted or empty `backend` gets Claude when it runs on the computer, else the first runnable agent Codync knows (the terminal UI relies on this; the apps still pick it themselves for older hosts), and omitted `connectors`/`skills` turn on every installed one.
+New agent bots get their own persistent folder automatically (**Own folder** in the apps). Creating a bot does not require choosing a project. An omitted or empty `cwd` in `createBot` allocates `<CODYNC_HOME>/bots/<bot-id>/workspace` (normally `~/.codync/bots/<bot-id>/workspace`). Groups never get an allocated folder; they may carry one the user picks ([group workspaces](group-workspace.md)). An omitted or empty `backend` gets Claude when it runs on the computer, else the first runnable agent Codync knows (the terminal UI relies on this; the apps still pick it themselves for older hosts), and omitted `connectors`/`skills` turn on every installed one.
 
 The host persists the resolved absolute directory in `cwd` and exposes `managedWorkspace` in bot responses. Empty `cwd` in `updateBot` selects the same bot's own folder again. Existing explicit project directories remain unchanged, must already exist, and can still be selected in settings. Templates for bots in their own folder send an empty cwd so a new bot gets its own directory.
 
@@ -20,7 +20,7 @@ Changing the default project in settings deliberately reconfigures the agent ses
 - Deleting a bot leaves its workspace files on disk. There is no automatic cleanup.
 - Existing bots are not silently moved out of their configured project directories.
 
-Settings on every client offer **Own folder** or **Choose project folder…**; desktop quick creation and the terminal's new-bot flow default to Own folder. Directory selection is optional. Separate workspaces do not prevent conflicts when multiple bots edit the same external project.
+Settings on every client offer **Own folder** or **Choose project folder…**; desktop quick creation and the terminal's new-bot flow default to Own folder. Directory selection is optional. Separate workspaces do not prevent conflicts when multiple bots edit the same external project; a group chat's bots can be pointed at one shared folder instead: [group workspaces](group-workspace.md).
 
 ## Versions
 

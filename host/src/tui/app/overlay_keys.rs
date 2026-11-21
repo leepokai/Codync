@@ -356,8 +356,10 @@ impl App {
         if path.is_empty() {
             return;
         }
-        if let Some(Overlay::Form(f)) = self.overlays.last_mut() {
-            f.cwd = path;
+        match self.overlays.last_mut() {
+            Some(Overlay::Form(f)) => f.cwd = path,
+            Some(Overlay::Group(g)) => g.workspace = path,
+            _ => {}
         }
     }
 }

@@ -62,6 +62,10 @@ pub struct BotConfig {
     /// A group's bots, in the order they were added.
     #[serde(default)]
     pub members: Vec<String>,
+    /// A group's shared workspace folder (access, not relocation: members keep their own folder; the path
+    /// reaches their sessions through ACP `additionalDirectories` and their room prompts). Groups only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
     pub name: String,
     #[serde(default)]
     pub description: String,

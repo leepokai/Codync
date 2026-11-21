@@ -546,6 +546,8 @@
   "Avatar": "头像",
   "Name": "名称",
   "Workspace": "工作区",
+  "Each keeps its own folder": "各自使用自己的文件夹",
+  "Members are asked to keep joint output in this folder.": "成员会被告知把共同产出放在这个文件夹。",
   "Permissions": "权限",
   "Ask me": "每次询问",
   "The agent decides what's safe and asks you about the rest.": "Agent 自己判断哪些安全，其余的再问你。",

@@ -4,10 +4,13 @@ import Foundation
 
 public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var id: String
-    /// `agent`, or `group`: several bots and the user in one chat (it has no agent, folder or harness).
+    /// `agent`, or `group`: several bots and the user in one chat (no agent or harness of its own; it may share one
+    /// folder, `workspace`).
     public var kind: String
     /// A group's bots.
     public var members: [String]
+    /// A group's shared workspace folder (docs/features/group-workspace.md); nil for none (or an older host).
+    public var workspace: String?
     public var name: String
     public var description: String
     public var avatarColor: String
@@ -118,6 +121,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var lastAt: Int64
 
     public var isGroup: Bool { kind == "group" }
+    /// A group's shared folder's name, when it has one (both separators: a Windows host's folders).
+    public var workspaceName: String? { workspace?.folderBaseName }
     public var isWorking: Bool { status == "working" || status == "needsInput" }
     /// Working right now in this chat (not in a group it's in, or the reverse).
     public func isWorking(in chat: String) -> Bool {
@@ -130,6 +135,14 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var folderName: String { managedWorkspace ? L10n.tr("Own folder") : (cwd as NSString).lastPathComponent }
 }
 
+public extension String {
+    /// The last part of a folder path, both separators (a Windows host's folders).
+    var folderBaseName: String {
+        let name = split(whereSeparator: { $0 == "/" || $0 == "\\" }).last.map(String.init)
+        return name?.isEmpty == false ? name! : self
+    }
+}
+
 extension Bot {
     /// Lenient: a host that is a little newer or older than the app still yields a usable bot.
     public init(from decoder: Decoder) throws {
@@ -137,6 +150,7 @@ extension Bot {
         id = try c.decode(String.self, forKey: .id)
         kind = try c.decodeIfPresent(String.self, forKey: .kind) ?? "agent"
         members = try c.decodeIfPresent([String].self, forKey: .members) ?? []
+        workspace = try c.decodeIfPresent(String.self, forKey: .workspace)
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Bot"
         description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
         avatarColor = try c.decodeIfPresent(String.self, forKey: .avatarColor) ?? "blue"

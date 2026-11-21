@@ -199,6 +199,34 @@ impl Room {
 }
 
 #[tokio::test]
+async fn a_group_workspace_reaches_member_prompts() {
+    let room = Room::new();
+    let shared = room.dir.join("team");
+    std::fs::create_dir_all(&shared).unwrap();
+    let listed = room.hub.update_bot(&json!({"id": room.group, "workspace": shared.to_string_lossy()})).unwrap();
+    assert_eq!(listed["workspace"], json!(shared.to_string_lossy().as_ref()), "clients see it on the group");
+
+    room.send("hello team", None).await;
+    room.settle().await;
+    let prompts = std::fs::read_to_string(room.dir.join("a").join("prompts.jsonl")).unwrap();
+    assert!(
+        prompts.contains(&format!("The team shares the folder {}", shared.display())),
+        "a member is told about the shared folder: {prompts}"
+    );
+
+    // The folder gone: members are told it is missing and keep working.
+    std::fs::remove_dir(&shared).unwrap();
+    room.send("and now?", None).await;
+    room.settle().await;
+    let prompts = std::fs::read_to_string(room.dir.join("a").join("prompts.jsonl")).unwrap();
+    assert!(
+        prompts.contains(&format!("shared folder {} is missing right now", shared.display())),
+        "a missing folder is said as such: {prompts}"
+    );
+    room.shutdown().await;
+}
+
+#[tokio::test]
 async fn room_turns_follow_mentions_and_end_when_everyone_passes() {
     let room = Room::new();
     let row = room.hub.store.bot(&room.group).unwrap().unwrap();

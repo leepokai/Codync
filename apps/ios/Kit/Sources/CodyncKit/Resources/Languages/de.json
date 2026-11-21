@@ -546,6 +546,8 @@
   "Avatar": "Avatar",
   "Name": "Name",
   "Workspace": "Arbeitsbereich",
+  "Each keeps its own folder": "Jeder behält seinen eigenen Ordner",
+  "Members are asked to keep joint output in this folder.": "Mitglieder werden gebeten, gemeinsame Ergebnisse in diesem Ordner abzulegen.",
   "Permissions": "Berechtigungen",
   "Ask me": "Mich fragen",
   "The agent decides what's safe and asks you about the rest.": "Der Agent entscheidet, was sicher ist, und fragt dich beim Rest.",

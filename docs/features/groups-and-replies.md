@@ -11,13 +11,15 @@ quotes itself.
   or a bot's final reply). It stays in the chat, in time order, and carries a quote of the
   message it answers, or of the part of it the user selected.
 - **Group**: a roster row (`kind: "group"`) holding several bots and the user. It has a
-  transcript but no agent, folder or harness of its own.
+  transcript but no agent or harness of its own; it may carry one shared folder
+  ([group workspaces](group-workspace.md)).
 - **Lane**: where a turn talks: a bot's own chat or a group's. `host/src/store/model.rs` `Lane`.
 
 ## Data (all over the existing sync: `bot` and `entry` events)
 
 - Bot: `kind` (`agent` | `group`), `members` (group: one or more distinct agent bot IDs on the
-  same computer; no nested groups), `workingChat` (where the running turn talks). A group's
+  same computer; no nested groups), `workspace` (group: an optional shared project folder,
+  [group workspaces](group-workspace.md); omitted where none), `workingChat` (where the running turn talks). A group's
   `status` / `activity` are its busy member's (`"Alice: Writing a reply…"`); its `lastMessage`
   names who spoke (`"Alice: …"`).
 - Entry: `data.author` (the bot that wrote it; every agent-made entry has one); on a reply,
@@ -35,8 +37,8 @@ quotes itself.
 | Method | Body | Notes |
 |---|---|---|
 | `send` | `botId, text, clientNonce, replyTo?` | `botId` is a bot or a group. `replyTo`: the id of a user message or final reply in that chat; anything else is refused. Works in the relay mailbox too. |
-| `createBot` | `{kind:"group", name, description?, members}` | Returns the existing group when these exact bots already share one. |
-| `updateBot` | `{id, name?, members?, pinned?, hidden?, section?}` | A group can't become a bot or the reverse. `section`: a name, or `null` for none. |
+| `createBot` | `{kind:"group", name, description?, members, workspace?}` | Returns the existing group when these exact bots already share one. |
+| `updateBot` | `{id, name?, members?, pinned?, hidden?, section?, workspace?}` | A group can't become a bot or the reverse. `section`: a name, or `null` for none. `workspace`: an absolute folder, or `null` to clear (a field the host doesn't know is kept as-is; older hosts drop it). |
 | `deleteBot` | `botId` | A group's bots stay. A deleted bot leaves its groups. |
 | `reorderBots` | `ids` | The roster as the user dragged it, top first; groups count as rows. See [bot order](computer-order.md#bot-order). |
 | `renameSection` | `from, to` | Every row in section `from` moves to `to`, groups too; an existing name merges them, `null` removes the section. See [bot order](computer-order.md#bot-order). |

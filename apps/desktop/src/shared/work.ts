@@ -58,6 +58,14 @@ export interface WorkItem {
   talk: boolean
 }
 
+/** What a thread the user starts changes from its bot's setup, for its own task (`startThread`'s `setup`): the folder
+ * it works in, its model with that model's settings, and how it is approved. What it leaves out is the bot's. */
+export interface ThreadSetup {
+  cwd?: string
+  model?: { id: string | null; options: Record<string, string> }
+  approval?: { permission: string; mode: string | null }
+}
+
 type Translate = (text: string) => string
 type Raw = Partial<Omit<WorkItem, 'wait' | 'source' | 'worktree'>> & { worktree?: { branch?: string; path?: string } | null } & { wait?: Partial<WorkWait> | null; source?: { kind?: string; id?: string | null } | null }
 
@@ -96,36 +104,60 @@ export const normalizeMaxAgents = (raw: unknown): number | null =>
 /** A task has it: working, or waiting on the user's approval. */
 export const isLive = (item: WorkItem) => item.status === 'working' || item.status === 'needsYou'
 
-const THREAD_GROUPS: { title: string; has: (status: WorkStatus) => boolean }[] = [
-  { title: 'Needs you', has: (s) => s === 'needsYou' },
-  { title: 'Working', has: (s) => s === 'working' },
-  { title: 'Waiting', has: (s) => s === 'waiting' },
-  { title: 'Recent', has: (s) => s === 'done' || s === 'failed' || s === 'stopped' },
-]
+/** How the Threads page groups what doesn't need the user: under the folder (or routine) it works for, under its
+ * bot, under its computer, or not at all. */
+export type ThreadGrouping = 'folder' | 'bot' | 'computer' | 'none'
 
-const statusRank = (status: WorkStatus) => THREAD_GROUPS.findIndex((g) => g.has(status))
-
-/** One heading of the Threads page and the items under it. `named`: the title is a computer's name, shown as it is. */
-export interface ThreadGroup<T> {
-  title: string
-  named: boolean
-  rows: { of: T; item: WorkItem }[]
+export interface ThreadRowOf<T> {
+  of: T
+  item: WorkItem
 }
 
-/** All bots' work as one list (the Threads page), the bots of `roster` in the order its rows are on screen. `byStatus`
- * alone: a heading a status (what needs the user, what works, what waits, then what ended in the last day). With
- * `computerOf` (grouped by computer): a heading a computer, its items by status under it when `byStatus`. With neither:
- * one group without a title. A group with no item is left out. `working` is how many items are worked on in all (the
- * count on the rail's Threads). */
-export function allThreads<T extends { bot: { work: WorkItem[] } }>(roster: T[], byStatus = true, computerOf?: (of: T) => string): { groups: ThreadGroup<T>[]; working: number } {
+/** One group of the Threads page: a folder a thread works in outside its bot's own, a routine's runs, a bot, or a
+ * computer. */
+export interface ThreadGroup<T> {
+  key: string
+  kind: 'folder' | 'routine' | 'bot' | 'computer'
+  /** The folder's last name, the routine's, the bot's or the computer's. */
+  title: string
+  rows: ThreadRowOf<T>[]
+}
+
+/**
+ * All bots' work as the Threads page lists it, newest first: what needs the user on top, then the groups `grouping`
+ * makes (a folder a thread works in outside its bot's own, a worktree of it being the bot's; a routine's runs; or a
+ * group per bot, in `roster`'s order, which is the bot list's; or a group per computer, `computerOf` naming it, in
+ * the order the computers come), then the rest. `keyOf` tells the bots apart. `working` is how many items are worked on in all (the count on the rail's Threads).
+ */
+export function threadSections<T extends { bot: { work: WorkItem[]; name: string; cwd?: string } }>(roster: T[], grouping: ThreadGrouping, keyOf: (of: T) => string, computerOf: (of: T) => string = () => ''): {
+  needsYou: ThreadRowOf<T>[]
+  groups: ThreadGroup<T>[]
+  recent: ThreadRowOf<T>[]
+  working: number
+} {
+  const newest = (a: ThreadRowOf<T>, b: ThreadRowOf<T>) => b.item.createdAt - a.item.createdAt
   const rows = roster.flatMap((of) => of.bot.work.map((item) => ({ of, item })))
-  const sorted = (list: typeof rows) => (byStatus ? [...list].sort((a, b) => statusRank(a.item.status) - statusRank(b.item.status)) : list)
-  const groups: ThreadGroup<T>[] = computerOf
-    ? [...new Set(rows.map((r) => computerOf(r.of)))].map((title) => ({ title, named: true, rows: sorted(rows.filter((r) => computerOf(r.of) === title)) }))
-    : byStatus
-      ? THREAD_GROUPS.map(({ title, has }) => ({ title, named: false, rows: rows.filter((r) => has(r.item.status)) }))
-      : [{ title: '', named: false, rows }]
-  return { groups: groups.filter((g) => g.rows.length > 0), working: rows.filter((r) => r.item.status === 'working').length }
+  const needsYou = rows.filter((r) => r.item.status === 'needsYou').sort(newest)
+  const rest = rows.filter((r) => r.item.status !== 'needsYou').sort(newest)
+  const groups = new Map<string, ThreadGroup<T>>()
+  const recent: ThreadRowOf<T>[] = []
+  for (const row of rest) {
+    const { of, item } = row
+    const path = wherePath(item)
+    const group: Omit<ThreadGroup<T>, 'rows'> | null =
+      grouping === 'bot' ? { key: `bot:${keyOf(of)}`, kind: 'bot', title: of.bot.name }
+      : grouping === 'computer' ? { key: `computer:${computerOf(of)}`, kind: 'computer', title: computerOf(of) }
+      : grouping === 'none' ? null
+      : item.source?.kind === 'routine' ? { key: `routine:${keyOf(of)}:${item.source.id ?? item.title}`, kind: 'routine', title: item.title }
+      : path && !item.worktree && path !== of.bot.cwd ? { key: `folder:${path}`, kind: 'folder', title: path.split(/[\\/]/).filter(Boolean).pop() ?? path }
+      : null
+    if (!group) recent.push(row)
+    else (groups.get(group.key) ?? groups.set(group.key, { ...group, rows: [] }).get(group.key)!).rows.push(row)
+  }
+  // A bot's group keeps the bot list's order, a computer's the computers'; the others come newest first, as their rows do.
+  const ordered = grouping === 'bot' ? roster.map((of) => `bot:${keyOf(of)}`) : grouping === 'computer' ? roster.map((of) => `computer:${computerOf(of)}`) : null
+  const byBot = ordered ? [...new Set(ordered)].flatMap((key) => groups.get(key) ?? []) : [...groups.values()]
+  return { needsYou, groups: byBot, recent, working: rows.filter((r) => r.item.status === 'working').length }
 }
 
 /** Where a bot stands in a list sorted by status: it needs the user, it works, it has work in the background, the rest. */

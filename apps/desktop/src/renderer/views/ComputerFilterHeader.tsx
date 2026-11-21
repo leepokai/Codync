@@ -28,7 +28,7 @@ export function computerSelection(all: string[], hidden: string) {
   }
 }
 
-/** The list's filter button: its menu holds the list's own choices (`options`: how it is grouped and sorted), then which computers show, with each one's connection; its tip is the connection summary. */
+/** The list's filter button: its menu holds the list's own choices (`options`: how it is grouped and sorted), then which computers show, with each one's connection (one still connecting over SSH leads to the Computers page, `manage`); its tip is the connection summary. */
 export function ComputerFilterHeader({ hidden, setHidden, manage, options = [] }: { hidden: string; setHidden: (v: string) => void; manage: () => void; options?: MenuItem[] }) {
   const tr = useTr()
   const app = useApp()
@@ -52,10 +52,8 @@ export function ComputerFilterHeader({ hidden, setHidden, manage, options = [] }
       const detail = sshStatusDetail(status, false)
       list.push({ title: p.name || p.host, verbatim: true, detail, icon: 'network', action: manage })
     }
-    if (stores.length) list.push({ title: 'Reconnect', icon: 'arrow.clockwise', divider: true, action: () => stores.forEach((s) => s.restartStream()) })
-    if (app.host.state.kind === 'notInstalled') list.push({ title: tr('Install host on this {device}').replaceAll('{device}', () => window.codync.platform === 'darwin' ? tr('Mac') : tr('computer')), icon: 'desktopcomputer', action: () => window.codync.host.install() })
-    if (app.host.state.kind === 'failed') list.push({ title: 'Try again on this computer', icon: 'arrow.clockwise', action: () => window.codync.host.restart() })
-    list.push({ title: 'Manage computers', icon: 'desktopcomputer', action: manage })
+    if (app.host.state.kind === 'notInstalled') list.push({ title: tr('Install host on this {device}').replaceAll('{device}', () => window.codync.platform === 'darwin' ? tr('Mac') : tr('computer')), icon: 'desktopcomputer', divider: true, action: () => window.codync.host.install() })
+    if (app.host.state.kind === 'failed') list.push({ title: 'Try again on this computer', icon: 'arrow.clockwise', divider: true, action: () => window.codync.host.restart() })
     return list
   }
   // Marked while some computer is filtered out.

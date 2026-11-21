@@ -3,7 +3,7 @@ import type { WindowCommand } from '@shared/ipc'
 import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startup'
 import { detailMinWidth, railWidth, sidebarMinWidth } from '@shared/chat-layout'
 import { draftOf, isGroup, type Bot, type BotDraft } from '@shared/models'
-import { allThreads, isLive } from '@shared/work'
+import { isLive, threadSections } from '@shared/work'
 import { CharacterAvatar } from '../components/Avatar'
 import { Button, IconButton, ResizeHandle } from '../components/Controls'
 import { Dialog, ModalHeader, Sheet } from '../components/Overlay'
@@ -24,7 +24,7 @@ import { BotRoster } from './BotRoster'
 import { NavRail, type AppPage } from './NavRail'
 import { ThreadDetail, ThreadList, type ThreadPick } from './ThreadsPage'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
-import { ThreadView, type Reveal } from './thread/ThreadView'
+import { ThreadView } from './thread/ThreadView'
 import { queueVoiceKey } from './thread/voice-shortcut-keys'
 import { NewBotView, NewGroupView } from './bots/NewBotView'
 import { ImportBotsSheet } from './bots/ImportBotsView'
@@ -210,8 +210,7 @@ function ChatSplitView() {
   const [listHidden, setListHidden] = usePref(prefs.listHidden)
   const [botsByComputer, setBotsByComputer] = usePref(prefs.botsByComputer)
   const [botsByStatus, setBotsByStatus] = usePref(prefs.botsByStatus)
-  const [threadsByComputer, setThreadsByComputer] = usePref(prefs.threadsByComputer)
-  const [threadsByStatus, setThreadsByStatus] = usePref(prefs.threadsByStatus)
+  const [threadsGroup, setThreadsGroup] = usePref(prefs.threadsGroup)
   const [sidebarWidth, setSidebarWidth] = usePref(prefs.sidebarWidth)
   const [hidden, setHidden] = usePref(prefs.hiddenComputers)
   const [searching, setSearching] = useState(false)
@@ -239,8 +238,12 @@ function ChatSplitView() {
   const [workflowFocus, setWorkflowFocus] = useState<string | null>(null)
   // The thread the Threads page shows.
   const [picked, setPicked] = useState<ThreadPick | null>(null)
-  // What the Threads page asked a bot's chat to show, and which asking it was.
-  const [shownRequest, setShownRequest] = useState<({ ref: string; count: number } & Reveal) | null>(null)
+  // The bot a new thread starts with, where the user chose one; the page it starts from shows with no thread picked.
+  const [starting, setStarting] = useState<BotRef | null>(null)
+  const startThread = (ref: BotRef | null) => {
+    setStarting(ref)
+    setPicked(null)
+  }
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight })
   const newButton = useRef<HTMLButtonElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -267,21 +270,14 @@ function ChatSplitView() {
   const localOnline = !!app.local && onlineStores.includes(app.local)
   const roster = useComputerRoster(app, shown)
   const visibleRoster = roster.items
-  const threads = allThreads(roster.ordered)
+  const threads = threadSections(roster.ordered, threadsGroup, (of) => refKey(of.ref), (of) => of.store.hostName)
   /** A bot's chat, on the Bots page. */
   const openBot = (ref: BotRef) => {
     app.select(ref)
     setPage('bots')
   }
-  /** From the Threads page: the bot's chat at the card an item waits on, or at one of its entries. */
-  const showInChat = (ref: BotRef, reveal: Reveal) => {
-    openBot(ref)
-    setShownRequest((last) => ({ ref: refKey(ref), count: (last?.count ?? 0) + 1, ...reveal }))
-  }
-  // Asked once: coming back to that bot later opens its chat as it was left.
-  const selectionKey = app.selection ? refKey(app.selection) : null
-  useEffect(() => setShownRequest((asked) => (asked && asked.ref !== selectionKey ? null : asked)), [selectionKey])
   // Back and Forward: the pages shown, and on Bots each bot.
+  const selectionKey = app.selection ? refKey(app.selection) : null
   type Place = { page: AppPage; ref: BotRef | null }
   const [visits, setVisits] = useState(noVisits<Place>)
   useEffect(() => {
@@ -434,7 +430,7 @@ function ChatSplitView() {
   if (selected && selectedStore && selectedBot) {
     detail = (
       <StoreContext.Provider value={selectedStore}>
-        <ThreadView key={refKey(selected)} botId={selected.botId} request={shownRequest?.ref === refKey(selected) ? shownRequest : null} />
+        <ThreadView key={refKey(selected)} botId={selected.botId} />
       </StoreContext.Provider>
     )
   } else if (!onlineStores.length && ssh.state.profiles.length) {
@@ -459,17 +455,33 @@ function ChatSplitView() {
 
   const width = listHidden ? 0 : sidebarWidth
   const listed = page === 'bots' || page === 'threads'
-  // How the list shown is laid out, each list its own choice.
-  const [byComputer, setByComputer, byStatus, setByStatus] = page === 'threads'
-    ? [threadsByComputer, setThreadsByComputer, threadsByStatus, setThreadsByStatus] as const
-    : [botsByComputer, setBotsByComputer, botsByStatus, setBotsByStatus] as const
-  const layOut = (option: 'computer' | 'status', on: boolean) => {
+  // How the list shown is laid out, each list its own choice: the Threads list one grouping at a time.
+  const layOut = (option: 'folder' | 'bot' | 'computer' | 'status', on: boolean) => {
     analytics.track({ event: 'list_layout_changed', list: page === 'threads' ? 'threads' : 'bots', option, on })
-    ;(option === 'computer' ? setByComputer : setByStatus)(on)
+    if (page === 'threads') setThreadsGroup(on && option !== 'status' ? option : 'none')
+    else if (option === 'status') setBotsByStatus(on)
+    else setBotsByComputer(on)
   }
+  // The computers shown that can move a bot with a new message to the top (hosts before 2.45.1 can't): theirs to
+  // keep, so the choice reaches every device, unlike the two above.
+  const ordering = page === 'bots'
+    ? [...shown].flatMap((id) => app.store(id) ?? []).filter((s) => s.autoOrder != null && s.shownConnection.kind === 'online')
+    : []
+  const byActivity = ordering.length > 0 && ordering.every((s) => s.autoOrder)
   const listOptions: MenuItem[] = [
-    { title: 'Group by computer', selected: byComputer, keepsOpen: true, action: () => layOut('computer', !byComputer) },
-    { title: 'Sort by status', selected: byStatus, keepsOpen: true, action: () => layOut('status', !byStatus) },
+    ...(page === 'threads'
+      ? (['folder', 'bot', 'computer'] as const).map((by) => ({ title: ({ folder: 'Group by folder', bot: 'Group by bot', computer: 'Group by computer' } as const)[by], selected: threadsGroup === by, keepsOpen: true, action: () => layOut(by, threadsGroup !== by) }))
+      : [
+          { title: 'Group by computer', selected: botsByComputer, keepsOpen: true, action: () => layOut('computer', !botsByComputer) },
+          { title: 'Sort by status', selected: botsByStatus, keepsOpen: true, action: () => layOut('status', !botsByStatus) },
+        ]),
+    ...(ordering.length ? [{
+      title: 'Sort by last active', selected: byActivity, keepsOpen: true,
+      action: () => {
+        analytics.track({ event: 'list_layout_changed', list: 'bots', option: 'activity', on: !byActivity })
+        for (const store of ordering) void store.setAutoOrder(!byActivity)
+      },
+    }] : []),
   ]
   const settingsPages: Partial<Record<AppPage, SettingsPage>> = { computers: 'computers', network: 'network', usage: 'usage', settings: settingsPage }
   return (
@@ -518,7 +530,7 @@ function ChatSplitView() {
               </div>
             ) : (
               <div className="roster">
-                <ThreadList roster={roster.ordered} many={app.computers.length > 1} picked={picked} pick={setPicked} openCard={(ref, itemId) => showInChat(ref, { itemId })} />
+                <ThreadList roster={roster.ordered} picked={picked} pick={setPicked} start={startThread} />
               </div>
             )}
           </aside>
@@ -535,7 +547,9 @@ function ChatSplitView() {
       </main>
       {page === 'threads' ? (
         <main className="detail">
-          <ThreadDetail roster={roster.ordered} picked={picked} showInChat={(ref, entryId) => showInChat(ref, { entryId })} />
+          <WindowBarSlots.Provider value={{ title: barTitle, end: barEnd }}>
+            <ThreadDetail roster={roster.ordered} picked={picked} pick={setPicked} starting={starting} start={setStarting} />
+          </WindowBarSlots.Provider>
         </main>
       ) : page === 'workflows' && workflowStore && workflows ? (
         <main className="detail">

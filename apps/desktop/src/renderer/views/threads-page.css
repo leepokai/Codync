@@ -1,35 +1,50 @@
-/* The Threads page (ThreadsPage.tsx): every bot's work by status in the list column, a thread beside it. */
-.thread-group + .thread-group {
-  margin-top: 12px;
+/* The Threads page (ThreadsPage.tsx): a chat app's sidebar of threads in the list column, a thread beside it. */
+/* A small grey label over each part of the list: Needs you, Folders, Routines, Bots, Recent. */
+.thread-label {
+  padding: 14px 10px 4px;
 }
-.thread-group-heading {
-  padding: 6px 10px 4px;
-}
+/* A row: a thread's title and its mark at the end; a group's heading and New thread are rows too. */
 .thread-row {
-  border-radius: var(--radius-m);
+  width: 100%;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: var(--text-body);
+  text-align: left;
+  border-radius: var(--radius-s);
   transition: background-color var(--hover);
 }
-.thread-row:hover {
-  background: var(--bubble-agent);
+.thread-row:hover:not(:disabled) {
+  background: var(--field);
 }
 .thread-row.selected {
   background: var(--roster-selected);
 }
 .thread-row + .thread-row {
-  margin-top: 2px;
+  margin-top: 1px;
 }
-/* The list is narrower than a bot's Details: the row's own inset is enough. */
-.thread-row .work-row {
+.thread-new:disabled {
+  opacity: 0.4;
+}
+/* A group's threads sit under its name. */
+.thread-group-rows .thread-row {
+  padding-left: 30px;
+}
+/* A bot's group: a `+` beside its heading shows while the heading is hovered or has the keyboard. */
+.thread-section-heading {
   padding-right: 4px;
 }
-.thread-row .work-row-open {
-  padding-left: 10px;
+.thread-section-toggle {
+  flex: 1;
+  min-width: 0;
 }
-.thread-detail {
-  position: relative;
-  height: 100%;
+.thread-section-new {
+  opacity: 0;
+  transition: opacity var(--hover);
 }
-/* The list's header takes the first 54 points; the thread's header lines up with it. */
-.thread-detail .work-thread-header {
-  padding-left: 16px;
+.thread-section-heading:hover .thread-section-new,
+.thread-section-new:focus-visible {
+  opacity: 1;
 }

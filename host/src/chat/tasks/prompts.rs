@@ -1,7 +1,7 @@
 //! What tasks are told, and what a bot is told about its box.
 
 use super::Report;
-use super::items::Item;
+use super::items::{Item, Source};
 use std::fmt::Write as _;
 
 /// What a bot is told about its box, in its instructions (and each turn, for a session opened before it).
@@ -72,9 +72,17 @@ pub fn in_thread(text: &str, picked_up: Option<String>) -> String {
     picked_up.map_or(written.clone(), |work| format!("{work}\n\n{written}"))
 }
 
+/// What a thread the user started is told before their first message.
+const OPENED: &str = "[Task] You are the same bot, away from your chat: the user opened this thread to work with you \
+directly, and reads it here. It starts without your chat's conversation.";
+
 /// What a new session is told before the user's message to `item`'s thread, when the session that did the work
 /// can't be picked up: the work, what the user said about it, and what it reported.
 pub(super) fn picked_up(item: &Item) -> String {
+    // A thread the user started hears its first message: there is no earlier work to tell it of.
+    if item.source == Source::User && item.said.is_none() && item.notes.is_empty() {
+        return OPENED.to_owned();
+    }
     let mut said = item.words.as_deref().map(|w| format!("\n\n[The user's own words: «{w}»]")).unwrap_or_default();
     for note in &item.notes {
         let _ = write!(said, "\n\n[The user said since: «{note}»]");

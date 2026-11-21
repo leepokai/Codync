@@ -7,73 +7,76 @@
   background: var(--bubble-agent);
   border-radius: var(--radius-xl);
 }
-/* A settled approval: one line, the request and how it ended; a click opens the card again. */
-.permission-card.settled {
+/* A settled approval, or several that ended alike: one quiet line, its symbol, name, source and ending; a click opens
+   it (the card, or the run's own lines). */
+.request-line {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
-  padding: 8px 12px;
-  border-radius: var(--radius-l);
-  text-align: left;
-}
-.permission-card-outcome {
-  flex: none;
-}
-/* What kind of thing is asked, in a tile beside the headline. */
-.permission-card-kind {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
+  width: calc(100% + 16px);
+  min-height: 28px;
+  margin-inline: -8px;
+  padding: 4px 8px;
   border-radius: var(--radius-s);
+  text-align: start;
+  transition: background-color var(--hover);
+}
+.request-line:hover {
   background: var(--field);
+}
+.request-line > * {
+  flex: none;
+}
+.request-line > .truncate {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* How it ended, at the line's far end. */
+.request-line-end {
+  margin-left: auto;
+  padding-left: 8px;
+}
+/* The run's own lines, under its line and tight together, each as wide as the run. */
+.request-run-list {
+  padding: 2px 0 0 20px;
+}
+.request-run-list .chat-row {
+  padding-top: 0;
+}
+.request-run-list .agent-inset {
+  padding-right: 0;
 }
 .permission-card-title {
   overflow-wrap: anywhere;
 }
-/* The request itself, in a well. */
-.permission-card-request {
+/* The approval card, in the choice card's form: the question, where it runs with Details, the request, the answers. */
+/* The request, quoted in a well under the question, as the choice card's question is never boxed. */
+.approval-card .permission-card-title {
+  margin-top: 4px;
   padding: 8px 10px;
+  line-height: 1.45;
   border-radius: var(--radius-s);
-  background: var(--background);
+  background: var(--field);
 }
-.permission-card-details {
-  padding-top: 6px;
+.approval-card-meta {
+  min-width: 0;
 }
-/* The answers in a row: allowing leads, refusing is quiet words at the far end. */
-.permission-card-options {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.permission-card .styled-button.secondary {
-  background: var(--background);
-}
-.permission-option.refuses {
+.approval-card-details {
+  flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: calc(30px * var(--scale));
-  margin-left: auto;
-  padding: 0 8px;
-  border-radius: var(--radius-pill);
-  color: var(--danger);
-  font-size: var(--text-body);
-  font-weight: 500;
+  gap: 4px;
+  margin: -3px -6px;
+  padding: 3px 6px;
+  border-radius: var(--radius-xs);
   transition: background-color var(--hover);
 }
-.permission-option.refuses + .permission-option.refuses {
-  margin-left: 0;
-}
-.permission-option.refuses:hover:not(:disabled) {
+.approval-card-details:hover {
   background: rgba(var(--text-rgb), 0.06);
 }
-/* The other answers while one is on its way. */
-.permission-option.dimmed {
-  opacity: 0.4;
+.approval-card-details:focus:not(:focus-visible),
+.request-line:focus:not(:focus-visible) {
+  outline: none;
 }
 
 /* A choice card: the question, a numbered row per option and one for the user's own words, then what was picked. */
@@ -168,4 +171,15 @@ button.decision-option:hover:not(:disabled),
 /* Under a message a task put in the chat (TaskLine): which item it comes from. */
 .message > .task-line {
   padding: 3px 2px 0;
+}
+/* The run's line says how they all ended. */
+.request-run-list .request-line-end {
+  display: none;
+}
+/* What a settled request asked with, under its line, where its name starts. */
+.request-detail {
+  padding: 2px 0 6px 20px;
+}
+.request-run-list .request-line .disclosure-chevron {
+  margin-left: auto;
 }

@@ -135,6 +135,17 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             tasks::refuse_in_task(hub, bot, name)?;
             crate::chat::manage::call(hub, bot, name, &b["arguments"]).await?
         }
+        // A thread the user starts with a bot themselves: its first message, as an item of the bot's box.
+        "startThread" => {
+            let (hub, bot, text) = (hub.clone(), str_arg(&b, "botId")?.to_owned(), str_arg(&b, "text")?.to_owned());
+            // One that can't be read is refused: a thread never starts on other approvals than the user chose.
+            let setup: tasks::Setup = match &b["setup"] {
+                Value::Null => tasks::Setup::default(),
+                setup => serde_json::from_value(setup.clone()).context("a thread's setup")?,
+            };
+            let id = tokio::task::spawn_blocking(move || tasks::add_thread(&hub, &bot, &text, setup)).await??;
+            json!({"itemId": id})
+        }
         // A task's transcript, for its details: no chat an app holds has it.
         "taskEntries" => tasks::entries(hub, str_arg(&b, "botId")?, str_arg(&b, "taskId")?, 500)?,
         "history" => {

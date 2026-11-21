@@ -357,12 +357,14 @@ pub enum ListName {
     Other,
 }
 
-/// Which of a list's two layout choices changed.
+/// Which of a list's layout choices changed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ListOption {
+    Bot,
     Computer,
     Status,
+    Activity,
     #[serde(other)]
     Other,
 }

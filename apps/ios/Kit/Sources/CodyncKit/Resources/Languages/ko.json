@@ -2381,5 +2381,13 @@
   "Web address": "웹 주소",
   "Enter an address to preview a page here": "주소를 입력하면 여기에 페이지가 표시됩니다",
   "That is not a web address": "웹 주소가 아닙니다",
-  "Forward": "앞으로"
+  "Forward": "앞으로",
+  "Sort by last active": "최근 활동순으로 정렬",
+  "Group by bot": "봇별로 묶기",
+  "New thread": "새 thread",
+  "New thread with {name}": "{name}와(과) 새 thread",
+  "What should it work on?": "무엇을 작업할까요?",
+  "{count} tool requests": "도구 요청 {count}개",
+  "Group by folder": "폴더별로 그룹화",
+  "Show more": "더 보기"
 }

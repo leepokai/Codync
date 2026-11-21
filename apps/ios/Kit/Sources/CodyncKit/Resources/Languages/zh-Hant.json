@@ -2381,5 +2381,13 @@
   "Web address": "網址",
   "Enter an address to preview a page here": "輸入網址即可在這裡預覽頁面",
   "That is not a web address": "這不是網址",
-  "Forward": "前進"
+  "Forward": "前進",
+  "Sort by last active": "依最近活動排序",
+  "Group by bot": "依 Bot 分組",
+  "New thread": "新 thread",
+  "New thread with {name}": "與 {name} 的新 thread",
+  "What should it work on?": "要它處理什麼？",
+  "{count} tool requests": "{count} 個工具請求",
+  "Group by folder": "依資料夾分組",
+  "Show more": "顯示更多"
 }

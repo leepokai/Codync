@@ -2381,5 +2381,13 @@
   "Web address": "Веб-адрес",
   "Enter an address to preview a page here": "Введите адрес, чтобы показать страницу здесь",
   "That is not a web address": "Это не веб-адрес",
-  "Forward": "Вперёд"
+  "Forward": "Вперёд",
+  "Sort by last active": "Сортировать по последней активности",
+  "Group by bot": "Группировать по ботам",
+  "New thread": "Новый thread",
+  "New thread with {name}": "Новый thread с {name}",
+  "What should it work on?": "Над чем ему работать?",
+  "{count} tool requests": "Запросов к инструментам: {count}",
+  "Group by folder": "Группировать по папкам",
+  "Show more": "Показать ещё"
 }

@@ -2381,5 +2381,13 @@
   "Web address": "Endereço da web",
   "Enter an address to preview a page here": "Digite um endereço para ver uma página aqui",
   "That is not a web address": "Isso não é um endereço da web",
-  "Forward": "Avançar"
+  "Forward": "Avançar",
+  "Sort by last active": "Ordenar por última atividade",
+  "Group by bot": "Agrupar por bot",
+  "New thread": "Novo thread",
+  "New thread with {name}": "Novo thread com {name}",
+  "What should it work on?": "No que ele deve trabalhar?",
+  "{count} tool requests": "{count} solicitações de ferramentas",
+  "Group by folder": "Agrupar por pasta",
+  "Show more": "Mostrar mais"
 }

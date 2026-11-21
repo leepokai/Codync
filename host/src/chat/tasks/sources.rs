@@ -3,8 +3,8 @@
 //! `maxAgents`. Their result takes no turn of the bot's: a run's last message is the routine's message in the chat,
 //! as a run in the chat posted it, and a request's is the reply the asking bot gets.
 
-use super::items::{self, Item, Source, Status};
-use super::{Failure, MAX_TITLE, NOT_STARTED, dispatch, end, ended};
+use super::items::{self, Item, Setup, Source, Status};
+use super::{Failure, MAX_BRIEF, MAX_TITLE, NOT_STARTED, dispatch, end, ended};
 use crate::LockExt;
 use crate::agent::bot::Cmd;
 use crate::analytics::errors::host_error;
@@ -13,7 +13,7 @@ use crate::chat::team::{BotRequest, no_reply};
 use crate::hub::Hub;
 use crate::routines;
 use crate::store::{BotConfig, EntryKind, Lane, Store};
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail, ensure};
 use codync_network::Access;
 use serde_json::json;
 use std::sync::Arc;
@@ -48,7 +48,7 @@ pub fn access_of(hub: &Hub, cfg: &BotConfig) -> Access {
 /// far). A routine's run doesn't: in the chat it had a session of its own with only its prompt, and it costs and
 /// sees the same here.
 pub fn from_chat(source: &Source) -> bool {
-    !matches!(source, Source::Routine { .. })
+    !matches!(source, Source::Routine { .. } | Source::User)
 }
 
 /// `work_added` for an item that came from `source`.
@@ -77,6 +77,42 @@ pub fn add_routine(hub: &Arc<Hub>, bot: &str, routine: &str, run: &str, name: &s
     }
     dispatch(hub, bot);
     Ok(())
+}
+
+/// A thread the user starts with `bot` themselves (`startThread`): `text`, their first message, waits in its box as
+/// an item of its own, named by its first line, and starts when a place is free. `setup`: what its task runs with
+/// in place of the bot's own, checked as a bot's setup is. Answers the item's id.
+pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, setup: Setup) -> Result<String> {
+    let changes = (setup.cwd.is_some(), setup.model.is_some(), setup.approval.is_some());
+    let outcome = |outcome: &str| {
+        let properties = json!({
+            "outcome": outcome, "after": false, "source": Source::User.kind(),
+            "folder": changes.0, "model": changes.1, "approval": changes.2,
+        });
+        analytics::capture(hub, Event::WorkAdded, properties.as_object().cloned().unwrap_or_default());
+    };
+    let cfg = hub.store.bot(bot)?.filter(|row| !row.deleted).map(|row| row.config);
+    let text = text.trim();
+    let checked = (|| {
+        let Some(cfg) = cfg.filter(|cfg| !cfg.is_task() && !cfg.is_group()) else { bail!("unknown bot") };
+        ensure!(
+            !text.is_empty() && text.len() <= MAX_BRIEF,
+            "a thread starts with a message of at most {MAX_BRIEF} bytes"
+        );
+        let full = |cwd: &str| std::path::Path::new(cwd).is_absolute();
+        ensure!(setup.cwd.as_deref().is_none_or(full), "a thread's folder is a full path");
+        crate::hub::validate(&setup.over(&cfg))
+    })();
+    if let Err(error) = checked {
+        outcome("invalid");
+        return Err(error);
+    }
+    let item = Item { source: Source::User, setup, ..Item::waiting(&title(text), text, None, None, 0) };
+    let id = item.id.clone();
+    put(hub, bot, item)?;
+    outcome("added");
+    dispatch(hub, bot);
+    Ok(id)
 }
 
 /// Another bot's request waits in `bot`'s box. One that can't be saved is dropped, which tells the asking bot it
@@ -110,7 +146,7 @@ pub fn routines_changed(hub: &Arc<Hub>, bot: &str) {
 /// deleted), or its request went with the last host process.
 pub(super) fn withdrawn(hub: &Hub, item: &Item) -> bool {
     match &item.source {
-        Source::Bot => false,
+        Source::Bot | Source::User => false,
         Source::Routine { run, .. } => !hub.routines.waits(run),
         Source::Request { .. } => !hub.tasks.requests.locked().contains_key(&item.id),
     }
@@ -128,7 +164,7 @@ pub(super) enum Begin {
 /// A task is about to take `item`: its source is told, and a routine run gets its prompt and its line in the chat.
 pub(super) fn begin(hub: &Hub, bot: &str, item: &mut Item) -> Result<Begin> {
     match &item.source {
-        Source::Bot => {}
+        Source::Bot | Source::User => {}
         // The host is stopping: the run stays queued for the next start.
         Source::Routine { .. } if hub.routines.stopping() => return Ok(Begin::Later),
         Source::Routine { run, .. } => {
@@ -190,7 +226,7 @@ pub(super) fn resumed(hub: &Arc<Hub>, cfg: &BotConfig) {
 /// if not, its report stays for the next host start.
 pub(super) fn deliver(hub: &Hub, bot: &str, item: &Item) -> bool {
     match &item.source {
-        Source::Bot => true,
+        Source::Bot | Source::User => true,
         Source::Routine { run, .. } => routine_result(hub, bot, item, run)
             .inspect_err(|error| host_error!(hub, "couldn't save a run's result", run, error = format!("{error:#}")))
             .is_ok(),
@@ -260,7 +296,7 @@ pub(super) fn forget_requests(hub: &Hub, items: &[Item]) {
 /// request can't, since the bot that asked already has its answer.
 pub(super) fn run_again(hub: &Arc<Hub>, bot: &str, item: &Item) -> Result<()> {
     match &item.source {
-        Source::Bot => Ok(()),
+        Source::Bot | Source::User => Ok(()),
         Source::Routine { id, run } => {
             let again = hub.routines.run_again(hub, bot, id, run)?;
             items::change(hub, bot, |items| {

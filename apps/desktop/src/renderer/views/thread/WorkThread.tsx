@@ -82,7 +82,7 @@ export function WorkThread({ botId, item, openArtifact, showInChat, close }: { b
 
 /** Where the item works, as a button that copies the full path and says so for a moment. Nothing for an item whose
  * folder the host doesn't name. */
-function WhereCopy({ item }: { item: WorkItem }) {
+export function WhereCopy({ item }: { item: WorkItem }) {
   const tr = useTr()
   const store = useStore()
   const where = whereLine(item, store.hello?.home ?? '')
@@ -120,21 +120,39 @@ function WhereCopy({ item }: { item: WorkItem }) {
 function ThreadComposer({ thread, taskId, onSent }: { thread: ThreadRef; taskId: string; onSent: () => void }) {
   const tr = useTr()
   const store = useStore()
-  const drafts = store.composerDrafts
-  // Under the bot's key, so the draft goes with the bot (`removeBot`).
   // ponytail: a draft left for an item that is gone stays saved until then; drop it with the item if they pile up.
-  const key = `${thread.botId}/thread/${thread.itemId}`
+  return (
+    <TextComposer draftKey={`${thread.botId}/thread/${thread.itemId}`} label={tr('Message this thread')} send={(text) => {
+      onSent()
+      store.sendToThread(thread, taskId, text)
+    }} />
+  )
+}
+
+/**
+ * A message box for text only, its draft kept under `draftKey` (the bot's key first, so the draft goes with the bot,
+ * `removeBot`): Return hands the text to `send`. Where `send` answers a promise the box waits for it, and keeps the
+ * text when it fails.
+ */
+function TextComposer({ draftKey: key, label, send }: { draftKey: string; label: string; send: (text: string) => void | Promise<void> }) {
+  const tr = useTr()
+  const store = useStore()
+  const drafts = store.composerDrafts
   const draft = useSyncExternalStore(drafts.subscribe, () => drafts.get(key))
   const field = useRef<HTMLTextAreaElement>(null)
-  const label = tr('Message this thread')
-  const canSend = !!draft.trim() && !store.isOffline
-  useEffect(() => field.current?.focus({ preventScroll: true }), [])
+  const [busy, setBusy] = useState(false)
+  const canSend = !!draft.trim() && !store.isOffline && !busy
+  useEffect(() => field.current?.focus({ preventScroll: true }), [key])
   const submit = () => {
     if (!canSend) return
-    onSent()
-    store.sendToThread(thread, taskId, draft)
-    drafts.set(key, '')
-    field.current?.focus()
+    const sent = send(draft)
+    if (!sent) {
+      drafts.set(key, '')
+      field.current?.focus()
+      return
+    }
+    setBusy(true)
+    void sent.then(() => drafts.set(key, ''), () => {}).finally(() => setBusy(false))
   }
   return (
     <div className="composer work-thread-composer">

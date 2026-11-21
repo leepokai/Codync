@@ -16,7 +16,7 @@ export type AppPage = 'bots' | 'threads' | 'workflows' | 'computers' | 'network'
 
 const ENTRIES: { id: AppPage; title: string; icon: string }[] = [
   { id: 'bots', title: 'Bots', icon: 'bubble.left.and.bubble.right' },
-  { id: 'threads', title: 'Threads', icon: 'tray.full' },
+  { id: 'threads', title: 'Threads', icon: 'checklist' },
   { id: 'workflows', title: 'Workflows', icon: 'flowchart' },
   { id: 'computers', title: 'Computers', icon: 'desktopcomputer' },
   { id: 'network', title: 'Network', icon: 'codync.network' },

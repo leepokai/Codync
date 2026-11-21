@@ -26,11 +26,10 @@ test('closing the tab shown shows its neighbor, then the chooser', () => {
 
 test('a stored layout is drawn only as far as it makes sense', () => {
   const views = ['details', 'memory', 'settings']
-  assert.deepEqual(panelLayout(null, views), [{ tabs: views, shown: 'details' }], 'nothing stored: every view this computer has')
+  assert.deepEqual(panelLayout(null, views), [{ tabs: [], shown: null }], 'nothing stored: one pane on its chooser')
   assert.deepEqual(panelLayout([{ tabs: ['memory', 'library', 'memory'], shown: 'library' }, { tabs: ['memory', 'details'], shown: 'details' }, { tabs: ['settings'] }], views),
     [{ tabs: ['memory'], shown: null }, { tabs: ['details'], shown: 'details' }], 'unknown and repeated views go, and a third pane')
-  assert.deepEqual(panelLayout([{ tabs: 'x' }], views), [{ tabs: [], shown: null }])
-  assert.equal(panelLayout(DEFAULT_PANEL, views)[0]?.tabs.includes('library'), false)
+  assert.deepEqual(panelLayout([{ tabs: 'x' }], views), DEFAULT_PANEL)
 })
 
 test('the browser shows web pages only, and never the app in itself', () => {

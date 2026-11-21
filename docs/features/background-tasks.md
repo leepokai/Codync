@@ -182,7 +182,9 @@ chat's own queue: nothing here is a second copy of it.
   `Approved: <title>`, `Denied: <title>` or `Answered: <choice>` once answered, `Not answered: <…>` when it
   expired, `Sent a file: <name>`, `Sent a voice note`, `Made an artifact: <title>`; its agent's
   [sign-in](#fallbacks-and-sign-in) card reads `Needs <agent> sign-in`, then `Signed in` (or `Cancelled`). The
-  line opens the chat at that entry; the thread has no card to answer.
+  line opens the chat at that entry; the thread has no card to answer. The desktop's Threads page shows a thread in
+  the chat's form instead: there each of these is the chat's own row, the same entry of the bot's chat, answered,
+  downloaded and opened in the thread as in the chat ([UI conventions](../design/ui-conventions.md)).
 
 With the rest:
 
@@ -308,6 +310,23 @@ A permission card follows the same rows, except that a typed message never touch
 never taken for lost by the hourly look: its turn runs.
 
 ## Other sources
+
+**A thread the user starts** (`startThread {botId, text, setup?}` → `{itemId}`, `sources::add_thread`;
+`Source::User`): the
+user's first message is an item of the bot's box, named by its first line, that waits for a place like any other and
+may get a worktree like the bot's own work. Its task opens with that message as the user's own (no `from: "host"`),
+in a new session that is told it is a thread the user opened and gets nothing of the chat (no fork, no chat so far).
+It is the bot's own work everywhere else: it takes messages ([talking to a thread](#talking-to-a-thread)), can be
+steered, stopped and tried again, and on the wire it has no `source`. **Its result takes no turn of the bot's**: the
+user reads it in the thread. Only a bot starts one (not a group, not a task), with at most 32,000 bytes. `hello`
+says `startThread: true` on a host that has the method.
+
+`setup` is what the thread's task runs with in place of the bot's own (`items::Setup`, kept on the item and applied
+to its task bot's config, `Setup::over`): `cwd` (a full path to a folder that exists), `model` (`{id, options}`: a
+model with its own settings, `id` null for the agent's default) and `approval` (`{permission, mode}`). What it leaves
+out is the bot's; the bot's setup never changes, and its memory stays the bot's wherever the task works. It is checked
+as a bot's setup is (`hub::validate`), and one that can't be read starts nothing. A thread in another folder gets a
+worktree there by the same rule as in the bot's.
 
 A run of one of the bot's routines and another bot's `message_bot` request are items in the bot's box
 (`sources.rs`), so the chat stays free while they work and they wait for a place under `maxAgents` like anything
@@ -457,6 +476,8 @@ An item's end sends no alert of its own: its report is a turn of the bot's, whos
   user's own message to the thread (no `from`; `data.status` `queued`, `sent`, `cancelled` or `failed`, as in a chat).
 - `send {botId, itemId, text, clientNonce?}` → `{entry, reopened, queued}`, `steer {botId, itemId, entryId}`,
   `unqueue {botId, itemId, entryId}`: [talking to a thread](#talking-to-a-thread).
+- `startThread {botId, text, setup?: {cwd?, model?: {id, options}, approval?: {permission, mode}}}` → `{itemId}`:
+  [a thread the user starts](#other-sources).
 - `workFirst {botId, itemId}`, `workCutIn {botId, itemId, insteadOf?}`, `dropWork {botId, itemId}`,
   `stopWork {botId, itemId?}`, `retryWork {botId, itemId}`.
 

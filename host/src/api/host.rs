@@ -94,6 +94,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "rev": hub.store.current_rev(),
                 "screen": hub.screen.state(),
                 "analytics": hub.analytics.state(),
+                // The user can start a thread with a bot themselves (`startThread`).
+                "startThread": true,
                 // Whether a bot with a new message moves to the top of the roster (`setAutoOrder`).
                 "autoOrder": hub.auto_order(),
                 // `resetCredentials` can be used here (a Codync Cloud computer's keeper holds its credentials).

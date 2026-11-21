@@ -1,3 +1,4 @@
+import type { ThreadGrouping } from '@shared/work'
 import { DEFAULT_PANEL, type PanelLayout } from '../../shared/panel-layout.ts'
 import type { AppLanguage } from './l10n'
 import { useSyncExternalStore } from 'react'
@@ -69,8 +70,8 @@ export const prefs = {
   /** How the Bots list and the Threads list are laid out: under their computer's heading, and by status. */
   botsByComputer: pref('botsByComputer', true),
   botsByStatus: pref('botsByStatus', false),
-  threadsByComputer: pref('threadsByComputer', false),
-  threadsByStatus: pref('threadsByStatus', true),
+  /** How the Threads list groups what doesn't need the user: by folder (and routine), by bot, or not at all. */
+  threadsGroup: pref<ThreadGrouping>('threadsGroup', 'folder'),
   /** The list beside the rail (the bots, the threads) is folded away. */
   listHidden: pref('listHidden', false),
   sidebarWidth: pref('desktopSidebarWidth', 266),
@@ -84,6 +85,8 @@ export const prefs = {
   /** Folded roster sections, by name: on this device only. */
   rosterSectionOrder: pref<Record<string, string[]>>('rosterSectionOrder', {}),
   collapsedRosterSections: pref<string[]>('collapsedRosterSections', []),
+  /** Folded groups of the Threads list, by the group's key: on this device only. */
+  foldedThreadSections: pref<string[]>('foldedThreadSections', []),
   usageIconStyle: pref<'character' | 'original'>('usageIconStyle', 'character'),
   /** The roster marks each bot with its agent's logo while the bots run more than one agent. */
   agentLogos: pref('showAgentLogos', true),

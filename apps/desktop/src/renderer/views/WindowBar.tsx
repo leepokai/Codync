@@ -9,7 +9,7 @@ export const WindowBarSlots = createContext<{ title: HTMLElement | null; end: HT
 
 /**
  * The bar across the top of the window, which also moves it: Back and Forward through the places the window has shown
- * (null at either end), the list's toggle on a page that has a list, then what the conversation puts there.
+ * (null at either end), the list's toggle on a page that has a list, and at the far end what the conversation puts there.
  */
 export function WindowBar({ back, forward, toggleList, setTitle, setEnd }: {
   back: (() => void) | null
@@ -25,8 +25,8 @@ export function WindowBar({ back, forward, toggleList, setTitle, setEnd }: {
         <IconButton title="Forward" icon="chevron.right" size={28} disabled={!forward} onClick={() => forward?.()} />
         {toggleList ? <IconButton title="Toggle Sidebar" icon="sidebar.left" size={28} onClick={toggleList} /> : null}
       </HStack>
-      <div className="window-bar-title no-drag" ref={setTitle} />
       <span className="window-bar-space" />
+      <div className="window-bar-title no-drag" ref={setTitle} />
       <div className="window-bar-end no-drag" ref={setEnd} />
     </header>
   )

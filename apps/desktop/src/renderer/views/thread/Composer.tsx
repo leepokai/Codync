@@ -27,16 +27,30 @@ import { useSubmitAfterRender, useVoiceShortcut } from './voice-shortcut-keys'
 
 type Trailing = 'interrupt' | 'stop' | 'call' | 'send'
 
+/** Where the box writes in place of the bot's chat: one of the bot's threads, or the one its first message starts. */
+export interface ThreadBox {
+  /** The draft's key: the bot's id first, so the draft goes with the bot (`removeBot`). */
+  draftKey: string
+  placeholder: string
+  /** A turn runs there: the empty box stops it (`stop`). */
+  working: boolean
+  /** A promise makes the box wait, and keep the words when it fails. */
+  send: (text: string) => void | Promise<unknown>
+  stop?: () => void
+}
+
 /**
  * The message box under a chat: send, or stop while the bot (or the group) is working there. A leading `/` lists
  * the commands (a group's are its bots'); in a group, typing `@` lists its bots. While `reply` is set, the
  * message it quotes sits at the top of the box and goes out with the next send. Under an artifact, `about` is the
- * artifact: the box keeps a draft of its own, and every message replies to the artifact's card.
+ * artifact: the box keeps a draft of its own, and every message replies to the artifact's card. For a `thread` it is
+ * the same box, writing there: text and dictation, without what only the chat takes (files, replies, calls, Fast).
  */
-export function Composer({ botId, reply = null, about = null, cancelReply, onCall, onInterrupt }: {
+export function Composer({ botId, reply = null, about = null, thread = null, cancelReply, onCall, onInterrupt }: {
   botId: string
   reply?: ReplyQuote | null
   about?: Artifact | null
+  thread?: ThreadBox | null
   cancelReply?: () => void
   /** Starts a voice call; while the box is empty it takes the send button's place. */
   onCall?: (() => void) | null
@@ -45,19 +59,19 @@ export function Composer({ botId, reply = null, about = null, cancelReply, onCal
 }) {
   const store = useStore()
   // Remount transient editor state (selection, attachments, IME) when its destination changes.
-  return <DestinationComposer key={JSON.stringify([store.contextId, store.computer.id, botId, about?.id])}
-    botId={botId} reply={reply} about={about} cancelReply={cancelReply} onCall={onCall} onInterrupt={onInterrupt} />
+  return <DestinationComposer key={JSON.stringify([store.contextId, store.computer.id, botId, about?.id, thread?.draftKey])}
+    botId={botId} reply={reply} about={about} thread={thread} cancelReply={cancelReply} onCall={onCall} onInterrupt={onInterrupt} />
 }
 
-function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInterrupt }: {
-  botId: string; reply: ReplyQuote | null; about: Artifact | null; cancelReply?: () => void; onCall?: (() => void) | null; onInterrupt?: (() => void) | null
+function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall, onInterrupt }: {
+  botId: string; reply: ReplyQuote | null; about: Artifact | null; thread: ThreadBox | null; cancelReply?: () => void; onCall?: (() => void) | null; onInterrupt?: (() => void) | null
 }) {
   const store = useStore()
   const tr = useTr()
   const plugins = useModel(pluginsFor(store))
   const bot = store.bots.get(botId) ?? null
   const drafts = store.composerDrafts
-  const draftKey = about ? artifactDraftKey(about) : botId
+  const draftKey = thread?.draftKey ?? (about ? artifactDraftKey(about) : botId)
   const draft = useSyncExternalStore(drafts.subscribe, () => drafts.get(draftKey))
   const setDraft = (text: string) => drafts.set(draftKey, text)
   const [files, setFiles] = useState<OutgoingFile[]>([])
@@ -66,15 +80,20 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
   const field = useRef<HTMLTextAreaElement>(null)
   /** Text pasted into this draft since the last send. */
   const pasted = useRef<string[]>([])
-  const working = !!bot && isWorkingIn(bot, botId)
+  const working = thread ? thread.working : !!bot && isWorkingIn(bot, botId)
   const empty = !draft.trim() && !files.length
-  const canSend = !empty && (store.connection.kind === 'online' || (store.canQueue && !files.length))
-  const canAttach = !!bot
+  // A thread's first message waits for the computer's answer (`ThreadBox.send`).
+  const [starting, setStarting] = useState(false)
+  const canSend = !empty && !starting && (store.connection.kind === 'online' || (!thread && store.canQueue && !files.length))
+  // ponytail: a thread takes text only (the host's `send` with `itemId`); files once it takes them.
+  const canAttach = !!bot && !thread
 
   const members = bot && isGroup(bot) ? store.members(bot) : []
 
   const name = bot?.name ?? ''
-  const placeholder = about
+  const placeholder = thread
+    ? thread.placeholder
+    : about
     ? tr('Message about “{title}”').replace('{title}', about.title)
     : reply
     ? tr('Reply…')
@@ -88,6 +107,10 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
   useEffect(() => {
     if (reply) field.current?.focus()
   }, [reply])
+  // A thread opened or about to start is there to be written to.
+  useEffect(() => {
+    if (thread) field.current?.focus({ preventScroll: true })
+  }, [])
 
   const suggestions = mentionSuggestions(draft, members)
   const mention = (member: Bot) => {
@@ -97,7 +120,8 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
   const mentionMenu = useComposerMenu(draft, suggestions, mention, returnMentions)
 
   const slash = slashQuery(draft)
-  const commands = slash === null ? [] : slashCommands(bot, slash, plugins.installedSkills, members)
+  // Fast mode is the bot's own, set from its chat.
+  const commands = slash === null ? [] : slashCommands(bot, slash, plugins.installedSkills, members).filter((c) => !thread || c.action.kind !== 'fast')
 
   const run = (command: SlashCommand) => {
     if (!bot) return
@@ -137,17 +161,23 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
   }
 
   const submit = () => {
-    const command = files.length ? null : builtInCommand(bot, draft, members)
+    const command = files.length || thread ? null : builtInCommand(bot, draft, members)
     if (!command && !canSend) return
     // Sent once the words still on their way are in the box, with what was typed.
     if (dictation.busy) return dictation.finish(submitLater)
     if (command) return run(command)
-    store.send(draft, botId, { files, pasted: pasted.current, replyTo: reply ?? (about && artifactQuote(about)) })
-    cancelReply?.()
-    pasted.current = []
-    setDraft('')
-    setFiles([])
-    field.current?.focus()
+    const sent = () => {
+      cancelReply?.()
+      pasted.current = []
+      setDraft('')
+      setFiles([])
+      field.current?.focus()
+    }
+    if (!thread) store.send(draft, botId, { files, pasted: pasted.current, replyTo: reply ?? (about && artifactQuote(about)) })
+    const waits = thread?.send(draft)
+    if (!waits) return sent()
+    setStarting(true)
+    void waits.then(sent, () => {}).finally(() => setStarting(false))
   }
   const submitLater = useSubmitAfterRender(submit)
   useVoiceShortcut(dictation, draft, submitLater, () => field.current?.focus())
@@ -252,6 +282,7 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
               title={label}
               onClick={() => {
                 if (trailing === 'interrupt') onInterrupt?.()
+                else if (trailing === 'stop' && thread) thread.stop?.()
                 else if (trailing === 'stop') store.stop(botId)
                 else if (trailing === 'call') onCall?.()
                 else submit()

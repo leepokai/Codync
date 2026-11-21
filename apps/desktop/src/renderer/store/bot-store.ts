@@ -17,7 +17,7 @@ import {
 } from '@shared/models'
 import type { CallLine } from '@shared/calls'
 import { localEntryId } from '@shared/tasks'
-import { pendingCards } from '@shared/work'
+import { pendingCards, type ThreadSetup } from '@shared/work'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
 import { errorText } from '../lib/error-text'
@@ -237,6 +237,19 @@ export class BotStore extends BotSync {
     const res = await (await this.ready()).call<{ enabled: boolean }>('setAnalytics', { enabled })
     if (this.hello) this.hello = { ...this.hello, analytics: res.enabled }
     this.changed()
+  }
+
+  /** Whether this computer starts a thread the user asks for themselves; false before hello or on older hosts. */
+  get startsThreads() {
+    return this.hello?.startThread === true
+  }
+
+  /** A thread the user starts with `botId` themselves, opened by `text`, its task on `setup` where that differs from
+   *  the bot's: the id of its item in the bot's work. */
+  async startThread(botId: string, text: string, setup: ThreadSetup = {}): Promise<string> {
+    const { itemId } = await this.withLink((c) => c.call<{ itemId: string }>('startThread', { botId, text: text.trim(), setup }))
+    noteActiveDay()
+    return itemId
   }
 
   /** Whether a bot with a new message moves to the top of this computer's roster; undefined before hello or on older hosts. */

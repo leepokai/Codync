@@ -1,0 +1,65 @@
+/* A thread in the chat's form (ThreadChat.tsx) and the page one starts from (ThreadStart.tsx): the chat's own rows
+   and message box, with what the thread runs on in a row over the box. */
+
+/* Over the box, in its column, starting where its text does. */
+.thread-options {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: var(--column);
+  margin: 0 auto;
+  padding: 0 20px;
+  min-width: 0;
+}
+.thread-options:empty {
+  display: none;
+}
+.thread-option {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-s);
+  color: var(--secondary);
+  transition: background-color var(--hover);
+}
+.thread-option > :not(.truncate) {
+  flex: none;
+}
+.thread-option:not(:disabled):hover,
+.thread-option[aria-expanded='true'] {
+  background: var(--bubble-agent);
+}
+/* Where an open thread works: the same place in the row, a button that copies the path. */
+.thread-options .work-where-copy {
+  margin: 0;
+  padding: 4px 8px;
+}
+/* No button before the field: the text starts where the row over it does. */
+.thread-chat .composer-box {
+  padding-left: 14px;
+}
+/* A card here is this thread's: its line that names the thread says nothing new. */
+.thread-chat .task-line {
+  display: none;
+}
+.thread-start-failed {
+  max-width: var(--column);
+  margin: -6px auto 0;
+  padding: 0 28px 12px;
+}
+/* The user's message as wide as the chat's own bubble. */
+.thread-chat .work-thread-mine {
+  max-width: 100%;
+}
+/* A read-only thread's line, where the box would be. */
+.thread-chat .work-thread-read-only {
+  padding-top: 4px;
+}
+/* The thread's status, after its title in the window's bar. */
+.window-bar-status {
+  flex: none;
+  padding: 0 8px;
+}

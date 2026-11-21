@@ -2381,5 +2381,13 @@
   "Web address": "ウェブアドレス",
   "Enter an address to preview a page here": "アドレスを入力すると、ここにページを表示します",
   "That is not a web address": "ウェブアドレスではありません",
-  "Forward": "進む"
+  "Forward": "進む",
+  "Sort by last active": "最終アクティブ順に並べる",
+  "Group by bot": "ボットごとにまとめる",
+  "New thread": "新しい thread",
+  "New thread with {name}": "{name} との新しい thread",
+  "What should it work on?": "何に取り組みますか？",
+  "{count} tool requests": "{count} 件のツールリクエスト",
+  "Group by folder": "フォルダでグループ化",
+  "Show more": "さらに表示"
 }

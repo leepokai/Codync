@@ -679,6 +679,8 @@ export interface Hello {
   analytics?: boolean
   /** A bot with a new message moves to the top of the roster (`setAutoOrder`). Absent from older hosts. */
   autoOrder?: boolean
+  /** The user can start a thread with a bot themselves (`startThread`). Absent from older hosts. */
+  startThread?: boolean
   /** `resetCredentials` can be used on this computer (absent from older hosts, false on a Codync Cloud computer). */
   credentialsReset?: boolean
   /** The host can store workflows. Missing means it cannot. */

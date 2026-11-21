@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import type { Entry, FileDiff, PermissionOption } from '@shared/models'
-import { Disclosure, Spinner } from '../../components/Controls'
+import { Reveal, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import './permission-card.css'
+import { OptionBadge } from './DecisionCard'
 import { useTr } from '../../lib/use-language'
 import { trNow } from '../../lib/l10n.ts'
 import { fill } from '@shared/fill'
+import { requestDetail, requestIcon, requestName } from './requests'
 
 
 /** What the agent wants, from the tool's kind (also the notch island's headline). */
@@ -57,29 +59,12 @@ export function TaskLine({ entry }: { entry: Entry }) {
   return task ? <Text as="div" size="caption" tone="tertiary" truncate className="task-line">{tr('In the background')} · {task.title}</Text> : null
 }
 
-/** The symbol of what the agent wants, by the tool's kind: it tells one card from the next down a chat. */
-const kindIcon = (toolKind?: string) => {
-  switch (toolKind) {
-    case 'execute':
-      return 'terminal'
-    case 'edit':
-    case 'delete':
-    case 'move':
-      return 'pencil'
-    case 'fetch':
-      return 'globe'
-    case 'read':
-    case 'search':
-      return 'doc.text'
-    default:
-      return 'wrench.and.screwdriver'
-  }
-}
 
 /**
  * An approval in the chat. While it waits: what the agent wants and where it runs, the request itself in a well, its
  * details on demand, then the answers in a row (allowing first, refusing last and quiet). Once it is settled it folds
- * to one line, the request and how it ended, which opens to the same card without the answers.
+ * to one line, the request and how it ended, which opens to where it ran and what it asked with (no card: there is
+ * nothing left to answer); several in a row that ended alike fold into one line of their own (`RequestRun`).
  */
 export function PermissionCard({ entry, hostName, answering, respond }: { entry: Entry; hostName: string; answering: string | null; respond: (option: string | null) => void }) {
   const tr = useTr()
@@ -87,59 +72,68 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
   const [open, setOpen] = useState(false)
   const d = entry.data
   const pending = d.status === 'pending'
-  const hasDetail = !!d.command || !!d.detail || !!d.diffs?.length
+  const detail = requestDetail(d.detail)
+  const hasDetail = !!d.command || !!detail || !!d.diffs?.length
   const options = sortedOptions(d.options ?? [])
   const cwd = d.cwd ? ` · ${d.cwd.split('/').filter(Boolean).pop() ?? d.cwd}` : ''
-  if (!pending && !open) {
+  const where = fill(tr('Runs on {name}{path}'), { name: hostName, path: cwd })
+  // Settled, there is nothing to answer: no card, one line that opens to where it ran and what it asked with.
+  if (!pending) {
     return (
       <div className="agent-inset">
-        <button className="permission-card settled press" aria-expanded={false} onClick={() => setOpen(true)}>
-          <Icon name={kindIcon(d.toolKind)} size={12} color="var(--tertiary)" />
-          <Text size="subheadline" mono tone="secondary" truncate grow>{d.title ?? ''}</Text>
-          <Text size="caption" weight="medium" tone="tertiary" className="permission-card-outcome">{outcome(entry)}</Text>
-        </button>
+        <RequestLine icon={requestIcon(d.toolKind, d.title)} title={d.title ?? ''} end={outcome(entry)} expanded={open} onClick={() => setOpen((o) => !o)} />
+        <Reveal show={open}>
+          <VStack gap={6} className="request-detail">
+            <Text size="caption" tone="tertiary">{where}</Text>
+            {d.command ? <CodeBox text={d.command} /> : null}
+            {detail ? <CodeBox text={detail.slice(0, 2000)} /> : null}
+            {(d.diffs ?? []).map((diff, i) => <DiffView key={i} diff={diff} />)}
+          </VStack>
+        </Reveal>
       </div>
     )
   }
   return (
     <div className="agent-inset">
-      <VStack gap={12} className="permission-card">
-        <HStack gap={10} align="start">
-          <span className="permission-card-kind"><Icon name={kindIcon(d.toolKind)} size={13} weight="medium" color="var(--secondary)" /></span>
-          <VStack gap={2} grow>
-            <Text size="headline" tone="text">{permissionHeadline(d.toolKind)}</Text>
-            <Text size="caption" tone="tertiary">{fill(tr('Runs on {name}{path}'), { name: hostName, path: cwd })}</Text>
+      <VStack gap={14} className="permission-card decision-card approval-card">
+        <VStack gap={4}>
+          <Text size="headline" weight="semibold" tone="text">{permissionHeadline(d.toolKind)}</Text>
+          {/* Where it runs, and the request in full on demand: one quiet line under the question, Details at its end. */}
+          <HStack gap={8} className="approval-card-meta">
+            <Text size="caption" tone="tertiary" truncate grow>{where}</Text>
+            {hasDetail ? (
+              <button className="approval-card-details" aria-expanded={expanded} onClick={() => setExpanded((e) => !e)}>
+                <Text size="caption" weight="medium" tone="secondary">{tr('Details')}</Text>
+                <span className={`disclosure-chevron${expanded ? ' open' : ''}`}><Icon name="chevron.right" size={8} weight="semibold" /></span>
+              </button>
+            ) : null}
+          </HStack>
+          <Text as="div" size="subheadline" mono tone="secondary" lines={expanded ? undefined : 3} className="selectable permission-card-title">
+            {d.title ?? ''}
+          </Text>
+          <TaskLine entry={entry} />
+        </VStack>
+        <Reveal show={expanded && hasDetail}>
+          <VStack gap={8}>
+            {d.command ? <CodeBox text={d.command} /> : null}
+            {detail ? <CodeBox text={detail.slice(0, 2000)} /> : null}
+            {(d.diffs ?? []).map((diff, i) => <DiffView key={i} diff={diff} />)}
           </VStack>
-          {pending ? null : <Text size="caption" weight="medium" tone="secondary" className="permission-card-outcome">{outcome(entry)}</Text>}
-        </HStack>
-        <Text as="div" size="subheadline" mono tone="text" lines={expanded ? undefined : 3} className="selectable permission-card-title permission-card-request">
-          {d.title ?? ''}
-        </Text>
-        <TaskLine entry={entry} />
-        {hasDetail ? (
-          <Disclosure expanded={expanded} onToggle={() => setExpanded((e) => !e)} label={<Text size="caption" weight="medium" tone="secondary">{tr(`Details`)}</Text>}>
-            <VStack gap={8} className="permission-card-details">
-              {d.command ? <CodeBox text={d.command} /> : null}
-              {d.detail ? <CodeBox text={d.detail.slice(0, 2000)} /> : null}
-              {(d.diffs ?? []).map((diff, i) => <DiffView key={i} diff={diff} />)}
-            </VStack>
-          </Disclosure>
-        ) : null}
-        {pending ? (
-          <div className="permission-card-options">
-            {options.map((o) => (
+        </Reveal>
+        {/* The answers as the choice card's rows: one tone, allowing first and leading, refusing last. */}
+        <VStack gap={2} className="decision-options">
+            {options.map((o, i) => (
               <button
                 key={o.optionId}
-                className={`permission-option ${o.kind.startsWith('reject') ? 'refuses' : `styled-button ${o.kind === 'allow_once' ? 'primary' : 'secondary'}`} ${answering === null || answering === o.optionId ? '' : 'dimmed'}`}
+                className={answering === null || answering === o.optionId ? 'decision-option' : 'decision-option dimmed'}
                 disabled={answering !== null}
                 onClick={() => respond(o.optionId)}
               >
-                <span className="permission-option-label">{optionLabel(o)}</span>
-                {answering === o.optionId ? <Spinner size={12} /> : null}
+                <OptionBadge>{answering === o.optionId ? <Spinner size={12} /> : i + 1}</OptionBadge>
+                <Text size="body" weight={i === 0 ? 'medium' : 'regular'} tone="text" className="decision-option-label">{optionLabel(o)}</Text>
               </button>
             ))}
-          </div>
-        ) : null}
+        </VStack>
       </VStack>
     </div>
   )
@@ -200,3 +194,43 @@ export function DiffView({ diff }: { diff: FileDiff }) {
     </VStack>
   )
 }
+
+/** A settled request as one quiet line: what kind it is, its name (and where it comes from), how it ended. */
+function RequestLine({ icon, title, end, expanded, onClick }: { icon: string; title: string; end: string; expanded: boolean; onClick: () => void }) {
+  const { name, source, literal } = requestName(title)
+  return (
+    <button className="request-line" aria-expanded={expanded} onClick={onClick}>
+      <Icon name={icon} size={12} color="var(--secondary)" />
+      <Text size="subheadline" mono={literal} tone="text" truncate>{name}</Text>
+      {source ? <Text size="subheadline" tone="tertiary" truncate>{source}</Text> : null}
+      <Text size="caption" tone="tertiary" className="request-line-end">{end}</Text>
+      <span className={`disclosure-chevron${expanded ? ' open' : ''}`}><Icon name="chevron.right" size={8} weight="semibold" /></span>
+    </button>
+  )
+}
+
+/**
+ * Approvals in a row that ended alike, as one line: how many, where they come from and how they ended, with each one's
+ * own line under it on demand (`row` draws it, the chat's live card).
+ */
+export function RequestRun({ entries, row }: { entries: Entry[]; row: (entry: Entry) => React.ReactNode }) {
+  const tr = useTr()
+  const [open, setOpen] = useState(false)
+  const icons = new Set(entries.map((e) => requestIcon(e.data.toolKind, e.data.title)))
+  const sources = [...new Set(entries.map((e) => requestName(e.data.title ?? '').source).filter((x) => x !== null))]
+  return (
+    <div className="agent-inset">
+      <button className="request-line" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <Icon name={icons.size === 1 ? [...icons][0] : 'wrench.and.screwdriver'} size={12} color="var(--secondary)" />
+        <Text size="subheadline" tone="text">{fill(tr('{count} tool requests'), { count: String(entries.length) })}</Text>
+        {sources.length ? <Text size="subheadline" tone="tertiary" truncate>{sources.join(', ')}</Text> : null}
+        <Text size="caption" tone="tertiary" className="request-line-end">{outcome(entries[0])}</Text>
+        <span className={`disclosure-chevron${open ? ' open' : ''}`}><Icon name="chevron.right" size={8} weight="semibold" /></span>
+      </button>
+      <Reveal show={open}>
+        <div className="request-run-list">{entries.map((e) => <div key={e.id}>{row(e)}</div>)}</div>
+      </Reveal>
+    </div>
+  )
+}
+

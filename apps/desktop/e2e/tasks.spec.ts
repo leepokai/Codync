@@ -530,7 +530,7 @@ test('a working row stops once asked, and a stopped item tries again', async () 
   }
 })
 
-test("the Threads page lists every bot's work by status, and shows a thread beside the list", async () => {
+test("the Threads page groups every bot's work as chosen, shows a thread beside the list and starts one", async () => {
   const { browser, page } = await attach()
   const name = `Work all e2e ${Date.now()}`
   let botId: string | undefined
@@ -545,23 +545,50 @@ test("the Threads page lists every bot's work by status, and shows a thread besi
 
     await openPage(page, 'Threads')
     const list = page.locator('aside.sidebar')
-    const group = (status: string) => list.getByRole('region', { name: status, exact: true })
-    const thread = (status: string, title: string) => group(status).locator(`[data-thread-row="${title}"]`)
-    // One list by status, each row naming its bot.
-    await expect(thread('Working', 'Long job')).toContainText(name)
-    await expect(thread('Waiting', 'Next job')).toContainText('Next up')
+    // New thread leads the list; grouped by bot (the list's options), a group per bot.
+    await expect(list.locator('.thread-row').first()).toHaveText('New thread')
+    await page.locator('.sidebar-header .computer-filter').click()
+    const byBot = page.getByRole('menuitemradio', { name: 'Group by bot', exact: true })
+    if ((await byBot.getAttribute('aria-checked')) !== 'true') await byBot.click()
+    await page.keyboard.press('Escape')
+    const section = list.getByRole('group', { name, exact: true })
+    const thread = (title: string) => section.locator(`[data-thread-row="${title}"]`)
+    await expect(section.locator('[data-thread-row]')).toHaveCount(2)
+    await expect(thread('Long job')).toHaveAttribute('data-work-status', 'working')
+    await expect(thread('Next job')).toHaveAttribute('data-work-status', 'waiting')
 
-    // A row of an item a task has shows its thread beside the list.
-    await thread('Working', 'Long job').locator('.work-row-open').click()
-    const header = page.locator('.thread-detail .work-thread-header')
+    // A row of an item a task has shows its thread beside the list, in the chat's form: its title and status in the
+    // window's bar, the chat's message box under its messages.
+    await thread('Long job').click()
+    const header = page.locator('.window-bar')
+    const shown = page.locator('.thread-chat')
     await expect(header).toContainText('Long job')
+    await expect(header).toContainText('Working')
+    await expect(shown.getByRole('textbox')).toHaveAttribute('placeholder', 'Message this thread')
 
-    // What ends moves to Recent, and its thread stays open.
-    await header.getByRole('button', { name: 'Stop', exact: true }).click()
+    // The empty box stops what works there. What ends stays in its group, and its thread stays open.
+    await shown.getByRole('button', { name: 'Stop', exact: true }).click()
     await page.getByRole('alertdialog').getByRole('button', { name: 'Stop', exact: true }).click()
-    await expect(thread('Recent', 'Long job')).toBeVisible()
-    await expect(group('Working').locator('[data-thread-row="Long job"]')).toHaveCount(0)
+    await expect(thread('Long job')).toHaveAttribute('data-work-status', 'stopped')
     await expect(header).toContainText('Long job')
+
+    // The `+` on a bot's heading starts a thread with it: its message opens the thread, which shows beside the list.
+    await section.locator('.thread-section-toggle').hover()
+    await section.getByRole('button', { name: 'New thread', exact: true }).click()
+    const start = page.locator('.new-thread')
+    await expect(start).toContainText(`New thread with ${name}`)
+    // What it runs on starts as the bot's own, each a menu over the box.
+    await expect(start.locator('.thread-option')).toHaveCount(4)
+    const approval = start.locator('.thread-option[title="Permissions"]')
+    await approval.click()
+    await page.getByRole('menuitemradio', { name: 'Approve automatically' }).click()
+    await expect(approval).toContainText('Approve automatically')
+    await start.getByRole('textbox').fill('Count the files')
+    await start.getByRole('textbox').press('Enter')
+    // The bot's one place is taken (Next job works): the new thread waits for it, picked, its title beside the list.
+    await expect(thread('Count the files')).toHaveClass(/selected/)
+    await expect(thread('Count the files')).toHaveAttribute('data-work-status', 'waiting')
+    await expect(page.locator('.empty-detail')).toContainText('Count the files')
   } finally {
     await openPage(page, 'Bots').catch(() => {})
     await cleanUp(page, botId)

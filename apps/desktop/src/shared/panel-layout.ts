@@ -19,8 +19,8 @@ export const PANEL_VIEWS = [
 
 export type PanelView = (typeof PANEL_VIEWS)[number]['id']
 
-/** A new panel: what a bot is, as tabs. The browser opens from the chooser. */
-export const DEFAULT_PANEL: PanelLayout = [{ tabs: ['details', 'computer', 'library', 'memory', 'settings'], shown: 'details' }]
+/** A new panel: one pane on its chooser, where every view opens from. */
+export const DEFAULT_PANEL: PanelLayout = [{ tabs: [], shown: null }]
 
 /** `pane` without `view`: the tab beside it takes its place when it was the one shown, the chooser with none left. */
 function without(pane: PanelPane, view: string): PanelPane {

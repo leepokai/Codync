@@ -18,9 +18,9 @@ export interface PaneView {
  * One pane of the panel beside a conversation: its views as tabs, each with its own close button (more than fit
  * scroll sideways), then `+`, which shows the chooser in place of a view: every view of the bot, opened by a click or
  * by its key while the pane has the focus. `flush`: the view shown fills the pane itself (a web page). `first`: the
- * pane the sheet gives the focus to, so the keys scroll it.
+ * pane the sheet gives the focus to, so the keys scroll it. `actions`: the panel's own buttons, at the end of the row.
  */
-export function PanelPane({ pane, views, show, close, choose, flush, first, children }: {
+export function PanelPane({ pane, views, show, close, choose, flush, first, actions, children }: {
   pane: Pane
   views: readonly PaneView[]
   show: (view: string) => void
@@ -28,6 +28,7 @@ export function PanelPane({ pane, views, show, close, choose, flush, first, chil
   choose: () => void
   flush: boolean
   first: boolean
+  actions?: ReactNode
   children: ReactNode
 }) {
   const tr = useTr()
@@ -53,6 +54,8 @@ export function PanelPane({ pane, views, show, close, choose, flush, first, chil
           ))}
         </div>
         <IconButton title="Open a view" icon="plus" size={26} onClick={choose} />
+        <span className="panel-tabs-space" />
+        {actions}
       </div>
       {/* The column is the sheet's scroller, so it takes the focus when the sheet opens: the card around it never
           scrolls, and a first PageDown aimed at the card would move nothing. */}

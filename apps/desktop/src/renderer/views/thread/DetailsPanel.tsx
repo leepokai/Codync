@@ -1,5 +1,5 @@
 import { hasLibrary } from '@shared/artifacts'
-import { closeView, PANEL_VIEWS, panelLayout, showChooser, showView, toggleSplit, type PanelLayout, type PanelView } from '@shared/panel-layout'
+import { closeView, PANEL_VIEWS, panelLayout, showChooser, showView, toggleSplit, type PanelView } from '@shared/panel-layout'
 import { isGroup, isWorking, type Bot } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { BotAvatar, GroupAvatar } from '../../components/Avatar'
@@ -20,7 +20,6 @@ import { ComputerTab } from './ComputerTab'
 import { PanelPane } from './PanelPane'
 import { WorkThread } from './WorkThread'
 import { WorkTimeline } from './WorkTimeline'
-import { MacChatButton } from './MacChatButton'
 import { useThreadPage } from './use-thread-page'
 import '../bots/bots.css'
 import './details-panel.css'
@@ -34,16 +33,23 @@ const EVERY_VIEW = PANEL_VIEWS.map((v) => v.id)
 /** Shows `view` of the panel, in the pane that has its tab or as a new tab of the first. */
 export const showPanelView = (view: PanelView) => prefs.panelLayout.set(showView(panelLayout(prefs.panelLayout.get(), EVERY_VIEW), view))
 
+/** Splits the panel into two panes, or joins them. */
+export function splitPanel() {
+  const next = toggleSplit(panelLayout(prefs.panelLayout.get(), EVERY_VIEW))
+  analytics.track({ event: 'panel_split', on: next.length > 1 })
+  prefs.panelLayout.set(next)
+}
+
 /**
- * The panel beside a conversation: the bot and the panel's own buttons on top, then one pane, or two with the second
- * under the first (Split panel). A pane has the bot's views as tabs (what it does in Details, its computer, library and
- * memory, how it is set up in Settings, a web page in Browser), each closing on its own, and `+` for its chooser. A
- * view has one tab, so opening it in a pane takes it from the other. The layout is the same for every bot on this
- * device. `maximize` (docked only) lets the panel take the conversation's place. A row of an item a task has slides the
- * panel to that item's thread (`thread`); its Back returns to the panes as they were left. A group has no panes: its
- * avatar, then its bots.
+ * The panel beside a conversation: one pane, or two with the second under the first (Split panel). A pane has the
+ * bot's views as tabs (what it does in Details, its computer, library and memory, how it is set up in Settings, a web
+ * page in Browser), each closing on its own, and `+` for its chooser, which is all a new panel shows. A view has one
+ * tab, so opening it in a pane takes it from the other. The layout is the same for every bot on this device. Docked,
+ * the window's bar holds the panel's buttons; as a sheet (`docked` false) they end its first row. A row of an item a
+ * task has slides the panel to that item's thread (`thread`); its Back returns to the panes as they were left. A group
+ * has no panes: its avatar, then its bots.
  */
-export function DetailsPanel({ botId, routineId, thread, openThread, closeThread, editGroup, openArtifact, openCard, showInChat, share, close, maximized, maximize }: {
+export function DetailsPanel({ botId, routineId, thread, openThread, closeThread, editGroup, openArtifact, openCard, showInChat, share, close, docked }: {
   botId: string
   routineId: string | null
   /** The item whose thread shows in place of the panes; null for the panes. */
@@ -58,9 +64,8 @@ export function DetailsPanel({ botId, routineId, thread, openThread, closeThread
   showInChat: (entryId: string) => void
   share: () => void
   close: () => void
-  maximized: boolean
-  /** Null where the panel has no conversation beside it to cover (the sheet of a narrow window). */
-  maximize: (() => void) | null
+  /** Beside the conversation, under the window's bar; false for the sheet of a narrow window. */
+  docked: boolean
 }) {
   const store = useStore()
   const bot = store.bots.get(botId) ?? null
@@ -71,10 +76,6 @@ export function DetailsPanel({ botId, routineId, thread, openThread, closeThread
   const views = hasLibrary(store.hostVersion?.version) ? PANEL_VIEWS : PANEL_VIEWS.filter((v) => v.id !== 'library')
   const [stored, setStored] = usePref(prefs.panelLayout)
   const layout = panelLayout(stored, views.map((v) => v.id))
-  const split = (next: PanelLayout) => {
-    analytics.track({ event: 'panel_split', on: next.length > 1 })
-    setStored(next)
-  }
   const view = (id: string) =>
     !bot ? null : id === 'details' ? (
       <WorkTimeline
@@ -100,24 +101,16 @@ export function DetailsPanel({ botId, routineId, thread, openThread, closeThread
   return (
     <div className="details-panel">
       <div className={reading ? 'details-page away' : 'details-page'} inert={reading}>
-        <div className="details-drag" />
-        <div className="details-actions">
-          {bot && !group ? <MacChatButton className="ringed" title="Split panel" icon="rectangle.split.1x2" onClick={() => split(toggleSplit(layout))} /> : null}
-          {maximize ? <MacChatButton className="ringed" title="Maximize panel" icon={maximized ? 'arrow.down.right.and.arrow.up.left' : 'arrow.up.left.and.arrow.down.right'} onClick={maximize} /> : null}
-          {bot && !group ? <MacChatButton className="ringed" title="Create template" icon="square.and.arrow.up" onClick={share} /> : null}
-          <MacChatButton className="ringed" title="Close details" icon="xmark" onClick={close} />
-        </div>
         {bot && group ? (
-          <div className="details-scroll" tabIndex={-1} data-autofocus>
-            <Identity bot={bot} />
-            <GroupMembersList group={bot} editGroup={editGroup} />
-          </div>
+          <>
+            {docked ? null : <div className="details-actions"><IconButton title="Close details" icon="xmark" size={26} onClick={close} /></div>}
+            <div className="details-scroll" tabIndex={-1} data-autofocus>
+              <Identity bot={bot} />
+              <GroupMembersList group={bot} editGroup={editGroup} />
+            </div>
+          </>
         ) : bot ? (
           <>
-            <div className="details-who">
-              <BotAvatar bot={bot} size={24} />
-              <Text size="body" weight="semibold" tone="text" truncate>{bot.name}</Text>
-            </div>
             <div className="details-panes">
               {layout.map((pane, at) => (
                 <PanelPane
@@ -125,6 +118,11 @@ export function DetailsPanel({ botId, routineId, thread, openThread, closeThread
                   pane={pane}
                   views={views}
                   first={at === 0}
+                  actions={at > 0 || docked ? undefined : <>
+                    <IconButton title="Create template" icon="square.and.arrow.up" size={26} onClick={share} />
+                    <IconButton title="Split panel" icon="rectangle.split.1x2" size={26} onClick={splitPanel} />
+                    <IconButton title="Close details" icon="xmark" size={26} onClick={close} />
+                  </>}
                   flush={pane.shown === 'browser'}
                   show={(id) => setStored(showView(layout, id, at))}
                   close={(id) => setStored(closeView(layout, at, id))}

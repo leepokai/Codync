@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { draftOf, normalizeBot, type Entry } from './models.ts'
-import { allThreads, rosterRank, canCutIn, canRetry, capsuleLabel, gitState, givesWay, isThreadMessage, itemLine, normalizeWork, outsideStatus, worksOutside, pendingAsks, pendingCards, readOnlyReason, rosterLine, sharedLine, summaryLine, threadEntries, waitText, whereLine, wherePath, workCounts, workSections, workStatusWord, type WorkItem, type WorkStatus } from './work.ts'
+import { threadSections, rosterRank, canCutIn, canRetry, capsuleLabel, gitState, givesWay, isThreadMessage, itemLine, normalizeWork, outsideStatus, worksOutside, pendingAsks, pendingCards, readOnlyReason, rosterLine, sharedLine, summaryLine, threadEntries, waitText, whereLine, wherePath, workCounts, workSections, workStatusWord, type ThreadGrouping, type WorkItem, type WorkStatus } from './work.ts'
 
 const same = (text: string) => text
 const item = (id: string, status: WorkStatus = 'working', change: Partial<WorkItem> = {}): WorkItem => ({
@@ -170,31 +170,35 @@ test('the first in line can cut in only when every place is taken', () => {
   }
 })
 
-test('the Threads page lists every bot\'s items by status, in roster order, and counts what is worked on', () => {
+test('the Threads page puts what needs the user on top, groups the rest as chosen, and counts what is worked on', () => {
+  const at = (id: string, status: WorkStatus, createdAt: number, change: Partial<WorkItem> = {}) => item(id, status, { createdAt, ...change })
   const roster = [
-    { ref: 'idle', bot: { work: [] } },
-    { ref: 'ended', bot: { work: [item('a', 'done'), item('b', 'stopped'), item('c', 'failed')] } },
-    { ref: 'busy', bot: { work: [item('d', 'working'), item('e', 'working'), item('f', 'waiting'), item('g', 'done')] } },
-    { ref: 'asks', bot: { work: [item('h', 'needsYou')] } },
-    { ref: 'queued', bot: { work: [item('i', 'waiting')] } },
-    { ref: 'one', bot: { work: [item('j', 'working')] } },
+    { ref: 'idle', bot: { name: 'Idle', cwd: '/w/idle', work: [] } },
+    { ref: 'code', bot: { name: 'Code', cwd: '/w/code', work: [
+      at('a', 'done', 1, { folder: '/w/code' }),
+      at('b', 'working', 5, { folder: '/w/other' }),
+      at('c', 'done', 3, { folder: '/w/code/.wt/fix', worktree: { branch: 'fix', path: '/w/code/.wt/fix' } }),
+      at('d', 'needsYou', 2),
+    ] } },
+    { ref: 'ops', bot: { name: 'Ops', cwd: '/w/ops', work: [
+      at('e', 'failed', 4, { title: 'Check in', source: { kind: 'routine', id: 'r1' } }),
+      at('f', 'done', 6, { title: 'Check in', source: { kind: 'routine', id: 'r1' } }),
+      at('g', 'working', 7),
+    ] } },
   ]
-  const all = allThreads(roster)
-  assert.deepEqual(all.groups.map((g) => [g.title, g.rows.map((r) => `${r.of.ref}/${r.item.id}`)]), [
-    ['Needs you', ['asks/h']],
-    ['Working', ['busy/d', 'busy/e', 'one/j']],
-    ['Waiting', ['busy/f', 'queued/i']],
-    ['Recent', ['ended/a', 'ended/b', 'ended/c', 'busy/g']],
-  ])
-  assert.equal(all.working, 3, 'items that need the user or wait are not counted as working')
-  assert.deepEqual(allThreads(roster.slice(0, 1)), { groups: [], working: 0 }, 'a group with no item is left out')
-  assert.equal(allThreads([roster[3]!, roster[4]!]).working, 0, 'the rail shows no count')
-  // Grouped by computer: a heading a computer, its items by status under it, or as they come.
-  const on = (of: { ref: string }) => (of.ref === 'ended' || of.ref === 'busy' ? 'Mac' : 'Mini')
-  const shape = (all: ReturnType<typeof allThreads<(typeof roster)[number]>>) => all.groups.map((g) => [g.title, g.named, g.rows.map((r) => r.item.id).join('')])
-  assert.deepEqual(shape(allThreads(roster, true, on)), [['Mac', true, 'defabcg'], ['Mini', true, 'hji']])
-  assert.deepEqual(shape(allThreads(roster, false, on)), [['Mac', true, 'abcdefg'], ['Mini', true, 'hij']])
-  assert.deepEqual(shape(allThreads(roster, false)), [['', false, 'abcdefghij']], 'neither: one list as the bots come')
+  const shape = (grouping: ThreadGrouping) => {
+    const all = threadSections(roster, grouping, (of) => of.ref)
+    return [ids(all.needsYou.map((r) => r.item)), all.groups.map((g) => `${g.kind}:${g.title}=${ids(g.rows.map((r) => r.item)).join('')}`), ids(all.recent.map((r) => r.item)), all.working]
+  }
+  // By folder: work outside its bot's own folder under that folder (a worktree of it is the bot's), a routine's runs under it.
+  assert.deepEqual(shape('folder'), [['d'], ['routine:Check in=fe', 'folder:other=b'], ['g', 'c', 'a'], 2])
+  // By bot: a group each, in the bot list's order, a bot without work left out.
+  assert.deepEqual(shape('bot'), [['d'], ['bot:Code=bca', 'bot:Ops=gfe'], [], 2])
+  assert.deepEqual(shape('none'), [['d'], [], ['g', 'f', 'b', 'e', 'c', 'a'], 2])
+  // By computer: a group each, in the order the computers come.
+  const computers = threadSections(roster, 'computer', (of) => of.ref, (of) => (of.ref === 'ops' ? 'Mini' : 'Mac'))
+  assert.deepEqual(computers.groups.map((g) => `${g.title}=${ids(g.rows.map((r) => r.item)).join('')}`), ['Mac=bca', 'Mini=gfe'])
+  assert.equal(threadSections(roster.slice(0, 1), 'folder', (of) => of.ref).working, 0, 'the rail shows no count')
   assert.deepEqual(['needsInput', 'working', 'idle'].map((status) => rosterRank({ status, activity: '', work: [] })), [0, 1, 3])
   assert.equal(rosterRank({ status: 'idle', activity: '', work: [item('w', 'working')] }), 2, 'work in the background comes before a bot at rest')
 })

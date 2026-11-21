@@ -2381,5 +2381,13 @@
   "Web address": "网址",
   "Enter an address to preview a page here": "输入网址即可在这里预览页面",
   "That is not a web address": "这不是网址",
-  "Forward": "前进"
+  "Forward": "前进",
+  "Sort by last active": "按最近活动排序",
+  "Group by bot": "按 Bot 分组",
+  "New thread": "新 thread",
+  "New thread with {name}": "与 {name} 的新 thread",
+  "What should it work on?": "要它处理什么？",
+  "{count} tool requests": "{count} 个工具请求",
+  "Group by folder": "按文件夹分组",
+  "Show more": "显示更多"
 }

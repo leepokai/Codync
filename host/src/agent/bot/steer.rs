@@ -186,7 +186,7 @@ impl Actor {
             // What the user wrote to a thread is in its task's next report, as when it starts a turn (what its chat
             // passed on is not theirs).
             if self.cfg.is_thread() && e.data["from"] != "host" {
-                let words = e.data["text"].as_str().unwrap_or_default().to_owned();
+                let words = crate::chat::work::written(&e.data);
                 crate::chat::work::heard(&self.hub, &self.cfg, &[words]);
             }
         }

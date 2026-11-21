@@ -114,6 +114,20 @@ async function typeInThread(details: Locator, text: string) {
   await box.press('Enter')
 }
 
+/** A 1×1 PNG, as base64. */
+const PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+
+/** Drops a picture called `name` on the open thread's box. */
+async function dropImageInThread(details: Locator, name: string) {
+  await threadPanel(details).locator('.work-thread-composer').evaluate((box, [file, pixel]) => {
+    const data = new DataTransfer()
+    data.items.add(new File([Uint8Array.from(atob(pixel!), (c) => c.charCodeAt(0))], file!, { type: 'image/png' }))
+    box.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }))
+  }, [name, PIXEL])
+  // A picture's chip is its thumbnail, named only by its remove button.
+  await expect(threadPanel(details).locator('.file-chips').getByRole('button', { name: `Remove ${name}` })).toBeVisible()
+}
+
 /** A row's icon action, which shows once the row is hovered. */
 async function hoverAction(taskRow: Locator, name: string) {
   await taskRow.hover()
@@ -214,6 +228,16 @@ test('a message to a working thread waits with Send now and Remove, and one to a
     // Taken back, it changed nothing: the task works on, and the bot's chat never had the message.
     expect((await statuses(page, botId))['Audit the repo']).toBe('working')
     await expect(page.locator('.transcript')).not.toContainText('also check the tests')
+
+    // A picture goes with a message, waits with it as a preview, and Remove takes both back.
+    await expect(thread.getByRole('button', { name: 'Add files', exact: true })).toBeVisible()
+    await dropImageInThread(details, 'shot.png')
+    await typeInThread(details, 'see this')
+    const withPicture = thread.locator('.work-thread-mine', { hasText: 'see this' })
+    await expect(withPicture).toHaveAttribute('data-message-status', 'queued')
+    await expect(withPicture.locator('.attachment-image-button img')).toBeVisible()
+    await withPicture.getByRole('button', { name: 'Remove', exact: true }).click()
+    await expect(withPicture).toHaveCount(0)
     await closeThread(details)
 
     // A done task's thread takes a message too: the thread answers it, in the same session.
@@ -225,6 +249,13 @@ test('a message to a working thread waits with Send now and Remove, and one to a
     await expect(thread.locator('.work-thread-mine', { hasText: 'look again' })).toBeVisible()
     await expect(thread.locator('.work-thread-scroll')).toContainText(/Thread look again: (same session|picked up)/)
     // While the turn a message started runs, the task is a thread again: working, back under Threads.
+    await expect.poll(async () => (await statuses(page, botId!))['Quick look']).toBe('done')
+    // A picture alone to the done task reopens it too, and shows in its transcript.
+    await dropImageInThread(details, 'more.png')
+    await threadPanel(details).getByRole('textbox', { name: 'Message this thread' }).press('Enter')
+    await expect(thread.locator('.work-thread-mine .attachment-image-button img')).toBeVisible()
+    // The thread answers it in a turn of its own (the agent answers each message `Thread …`).
+    await expect.poll(async () => (await thread.locator('.work-thread-scroll').innerText()).match(/Thread /g)?.length ?? 0).toBe(2)
     await expect.poll(async () => (await statuses(page, botId!))['Quick look']).toBe('done')
     await typeInThread(details, 'once more HOLD:again')
     await expect(thread.locator('.work-thread-header')).toContainText('Working')

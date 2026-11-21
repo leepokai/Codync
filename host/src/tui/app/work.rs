@@ -59,6 +59,8 @@ pub struct WorkTask {
     pub folder: Option<String>,
     /// The user may write to its thread: the bot's own work, whose thread is still there.
     pub talk: bool,
+    /// Its thread takes files too; a host from before them doesn't say, and the terminal types a dropped path there.
+    pub talk_files: bool,
     /// It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); none from an
     /// older host, where every live task takes one ([`Self::takes_seat`]).
     pub seat: Option<bool>,
@@ -87,6 +89,7 @@ impl WorkTask {
             branch: v["worktree"]["branch"].as_str().filter(|b| !b.is_empty()).map(str::to_owned),
             folder: v["folder"].as_str().filter(|f| !f.is_empty()).map(str::to_owned),
             talk: v["talk"] == true,
+            talk_files: v["talkFiles"] == true,
             seat: v["seat"].as_bool(),
         })
     }

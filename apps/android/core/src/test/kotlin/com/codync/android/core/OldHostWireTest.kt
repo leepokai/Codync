@@ -36,6 +36,12 @@ class OldHostWireTest {
         }
     }
 
+    @Test fun `a message to a thread with files names its task under both names`() {
+        val send = PendingSend("n", "b", "see", 0)
+        assertEquals("send" to json("""{"botId":"b","taskId":"t","text":"see","clientNonce":"n","attachments":["u"],"itemId":"t"}"""),
+            hostCallFor("2.50.0", "send", send.body(listOf("u"), taskId = "t")))
+    }
+
     @Test fun `a thread's transcript is asked for by the host's version`() {
         val asked = json("""{"botId":"b","threadId":"task-1"}""")
         assertEquals("taskEntries" to json("""{"botId":"b","taskId":"task-1"}"""), hostCallFor("2.50.0", "threadEntries", asked))

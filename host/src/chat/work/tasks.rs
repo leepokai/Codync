@@ -382,13 +382,16 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
                 };
                 let cwd = task.thread.as_ref().and_then(|thread| folders.get(thread));
                 let folder = folder_of(&task, cwd);
+                let talk = task.source.is_bot() && cwd.is_some();
                 let mut row = json!({
                     "id": task.id, "title": task.title, "status": status, "activity": activity, "thread": task.thread,
                     "wait": wait, "cutIn": task.cut_in, "createdAt": task.created_at, "startedAt": task.started_at,
                     "endedAt": task.ended_at,
                     "result": task.result.map(|r| crate::agent::acp::truncate(&r, WIRE_RESULT)),
-                    // The user may write to its thread: the bot's own work, whose thread is still there.
-                    "talk": task.source.is_bot() && cwd.is_some(),
+                    // The user may write to its thread: the bot's own work, whose thread is still there; with files
+                    // too, which a host from before them doesn't say.
+                    "talk": talk,
+                    "talkFiles": talk,
                     "seat": seat,
                 });
                 if let Some(folder) = folder {

@@ -15,11 +15,12 @@ pub const MAX_FILE: u64 = 100 * 1024 * 1024;
 /// Inside the bot's own folder, so reading an upload needs no extra approval.
 /// A group (no workspace) keeps its members' shared files in its data folder.
 pub fn root(cfg: &BotConfig) -> PathBuf {
-    if workspace::is_managed(cfg) {
-        Path::new(&cfg.cwd).join("uploads")
-    } else {
-        service::data_dir().join("bots").join(&cfg.id).join("uploads")
-    }
+    if workspace::is_managed(cfg) { Path::new(&cfg.cwd).join("uploads") } else { data_root(&cfg.id) }
+}
+
+/// Where the uploads of a bot without a folder of its own live (a thread, a group, a bot working elsewhere).
+pub fn data_root(bot: &str) -> PathBuf {
+    service::data_dir().join("bots").join(bot).join("uploads")
 }
 
 /// `uploads/<upload id>/`, the id checked so it can't leave the folder.

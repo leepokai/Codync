@@ -5,18 +5,21 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
 - Composer: the **+** button left of the message box. iPhone: a menu with Photos (sent as JPEG) and
   Files (plus Paste when the clipboard has an image); desktop: an open panel. Files and images can
   also be dropped on the box or pasted: ⌘V / Ctrl+V on the desktop takes a copied image or file
-  (`apps/desktop/src/renderer/views/chat/Composer.tsx`); on the iPhone through Paste in the
-  + menu.
+  (`apps/desktop/src/renderer/views/chat/use-composer-files.ts`); on the iPhone through Paste in the
+  + menu. A task's thread box takes files the same way ([talking to a thread](work.md#talking-to-a-thread)), where
+  its host says so (`work[].talkFiles`).
   Other apps' share sheets send files to a bot too, on iPhone and Android ([share to a bot](share-to-bot.md)).
   HEIC/TIFF/BMP become JPEG (`OutgoingFile.prepared`, CodyncKit). Picked files show as chips above
   the text and can be removed; a message can be files only. Group chats take files too: they're
   kept in the group's uploads folder and listed to each member under the message. Up to 100 MB per file.
-- Upload: `upload {botId, uploadId, name, offset, data (base64), done}`, 384 KiB per call so each
+- Upload: `upload {botId, taskId?, uploadId, name, offset, data (base64), done}`, 384 KiB per call so each
   stays under the channel's 1 MiB message limit. A repeated chunk is accepted (retry); anything out
-  of order is refused. Then `send {…, attachments: [uploadId]}`; the text may be empty.
+  of order is refused. Then `send {…, attachments: [uploadId]}`; the text may be empty. With `taskId` both go to
+  the thread of that task of the bot's.
 - Storage (`host/src/chat/uploads.rs`): `<workspace>/uploads/<uploadId>/<name>` for a personal
   workspace (so reading needs no extra approval), otherwise
-  `~/.codync/bots/<bot>/uploads/<uploadId>/<name>`. Only UUID ids and plain file names are accepted.
+  `~/.codync/bots/<bot>/uploads/<uploadId>/<name>`; a thread's files are there under the thread's id, and go
+  when the thread bot is deleted. Only UUID ids and plain file names are accepted.
 - The agent gets the message text plus an "Attached files" list of absolute paths and reads them with
   its own tools (Claude and Codex read images too). The entry keeps `attachments: [{id, name, size}]`
   for display.
@@ -52,7 +55,7 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
 - Terminal UI: has no full-size viewer, zoom or Copy image: a terminal can't draw a picture, and the
   clipboard it reaches is text only. A picture shows as a file line like any other file, and `f` saves a
   bot-shared one, which is how the terminal downloads it. Dragging a file onto the terminal pastes its path, which becomes an attachment (⌫ on
-  an empty draft removes the last one); sent files show as `▤ name size` lines. It uploads with the
+  an empty draft removes the last one), in a chat or while writing to a thread that takes files; sent files show as `▤ name size` lines. It uploads with the
   same `upload` chunks.
 - A files-only message previews in the roster as its file names.
 

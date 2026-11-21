@@ -266,6 +266,15 @@ impl App {
         self.client.spawn_call(method, body, after, self.tx.clone());
     }
 
+    /// `send` `body`, with `files` uploaded first when there are any; to an older host as `call` maps it.
+    pub(in crate::tui) fn send_message(&self, body: Value, files: Vec<std::path::PathBuf>, after: After) {
+        if files.is_empty() {
+            return self.call("send", body, after);
+        }
+        let (_, body) = super::net::old_host::outgoing(&self.host_version, "send", body);
+        self.client.spawn_send_files(body, files, after, self.tx.clone());
+    }
+
     // ---------- derived ----------
 
     pub fn bot(&self) -> Option<&Bot> {

@@ -117,7 +117,7 @@ impl Client {
     }
 
     /// Uploads `files` in 384 KiB chunks (under the channel's message limit, like the apps), then sends
-    /// `body` with them attached. The reply comes back as `Msg::Reply(after, …)`.
+    /// `body` with them attached; a `taskId` in it puts them in that task's thread. The reply comes back as `Msg::Reply(after, …)`.
     pub fn spawn_send_files(&self, mut body: Value, files: Vec<PathBuf>, after: After, tx: UnboundedSender<Msg>) {
         use base64::Engine as _;
         const CHUNK: usize = 384 * 1024;
@@ -140,7 +140,7 @@ impl Client {
                         let done = end == data.len();
                         c.call(
                             "upload",
-                            &json!({"botId": body["botId"], "uploadId": id, "name": name,
+                            &json!({"botId": body["botId"], "taskId": body["taskId"], "uploadId": id, "name": name,
                                     "offset": offset, "data": chunk, "done": done}),
                         )
                         .await?;

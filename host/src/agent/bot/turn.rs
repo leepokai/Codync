@@ -319,7 +319,7 @@ impl Actor {
             return Vec::new();
         }
         let entries = entry_ids.iter().filter_map(|id| self.hub.store.entry(id)).filter(|e| e.data["from"] != "host");
-        entries.filter_map(|e| e.data["text"].as_str().map(str::to_owned)).collect()
+        entries.map(|e| work::written(&e.data)).collect()
     }
 
     /// A thread's turn for what the user wrote to its thread (`written`) begins: its task keeps their words for its

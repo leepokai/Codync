@@ -1,13 +1,15 @@
 """Deterministic ACP agent for the tests of a bot's box: a bot that adds and steers work, and the thread that does it.
 
 In the chat: `ADD title|brief[|hold][|after=<title>]`, `STEER how|title[|brief, or the title that gives way]`,
-`TELL title|words[|now]` (passes words on to a task), `STATUS`, `MESSAGE <bot id>|<request>` (asks another bot). In a thread, the brief says what it does: `HOLD:<name>`
+`TELL title|words[|now]` (passes words on to a task), `STATUS`, `MESSAGE <bot id>|<request>` (asks another bot),
+`RECALL words` (looks back at the first task `recall_task` finds with them: its status, result and thread's steps). In a thread, the brief says what it does: `HOLD:<name>`
 works until a `release-<name>` file is in its folder, `PERMISSION` asks for an approval (`PERMISSION:<name>`: once
 `release-<name>` is there), `ASK` asks the user to
 choose, `SHARE` sends a file (`QUOTE`: quoting the chat message that added the task), `ARTIFACT` publishes one,
 `NEST` tries what a thread may not, `REMEMBER` adds a line to `MEMORY.md` with `edit_memory` and `FORGET` tries to take
 one out (both once it is released), `TOUCH` writes `made.txt` in its folder, `LOOP` makes the same tool call six
-times. The watchdog's turn in the chat answers `Watchdog: <why the task looks stuck>`.
+times. The watchdog's turn in the chat answers `Watchdog: <why the task looks stuck>`, or `(pass)` for a task whose title
+has `PASS`.
 
 A routine run and another bot's request read the same words in the routine's instruction or the request, and also
 `SEND` (a message to the user), `PROGRESS` (saves the routine's progress note), `FOLLOW` (sets a follow-up) and
@@ -94,7 +96,7 @@ def server_tool(name, tool, arguments):
 
         rpc(1, "initialize", {"protocolVersion": "2025-06-18"})
         listed = {t["name"] for t in rpc(2, "tools/list", {})["result"]["tools"]}
-        assert name != "chat" or {"add_task", "steer_task", "work_status"} <= listed, listed
+        assert name != "chat" or {"add_task", "steer_task", "tell_task", "work_status", "recall_task"} <= listed, listed
         response = rpc(3, "tools/call", {"name": tool, "arguments": arguments})
         mcp.stdin.close()
         return response["result"]
@@ -215,7 +217,7 @@ def thread(text):
 def answer(text, session):
     """What this turn replies."""
     if "[Codync watchdog]" in text:
-        return "Watchdog: " + text.split("looks stuck: ", 1)[1].split(". Look at it", 1)[0]
+        return "(pass)" if "PASS" in text else "Watchdog: " + text.split("looks stuck: ", 1)[1].split(". Look at it", 1)[0]
     if "[Codync: your task" in text:
         return relayed(text)
     if "[Codync: your chat passed this on" in text:
@@ -228,7 +230,7 @@ def answer(text, session):
         return elsewhere("Routine", text)
     if "sent you this request" in text:
         return elsewhere("Request", text)
-    command = re.search(r"^(ADD|STEER|TELL|STATUS|MESSAGE)\b ?(.*)$", text, re.M)
+    command = re.search(r"^(ADD|STEER|TELL|STATUS|MESSAGE|RECALL)\b ?(.*)$", text, re.M)
     if not command:
         return "reply: " + text.strip().splitlines()[-1]
     name, rest = command.groups()
@@ -260,6 +262,12 @@ def answer(text, session):
         title, words, *flags = rest.split("|")
         arguments = {"task": task_id(title), "text": words, "now": "now" in flags}
         return said(chat_tool("tell_task", arguments), "Told: ")
+    if name == "RECALL":
+        found = json.loads(chat_tool("recall_task", {"query": rest})["content"][0]["text"])["tasks"]
+        if not found:
+            return "Recalled nothing"
+        task = json.loads(chat_tool("recall_task", {"task": found[0]["taskId"]})["content"][0]["text"])
+        return f"Recalled {task['title']}: {task['status']} | {task['result']} | {len(task['steps'])} steps"
     return said(chat_tool("work_status", {}), "Status: ")
 
 

@@ -23,7 +23,11 @@ impl Actor {
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
             Cmd::FollowUp(id) => self.enqueue(Queued::FollowUp(id), done_tx).await,
             Cmd::TaskReport(report) => self.enqueue(Queued::TaskReport(report), done_tx).await,
-            Cmd::Watchdog(stuck) => self.enqueue(Queued::Watchdog(stuck), done_tx).await,
+            Cmd::Watchdog(stuck) => {
+                // A newer look at the thread stands for one still waiting.
+                self.queue.retain(|q| !matches!(q, Queued::Watchdog(s) if s.thread() == stuck.thread()));
+                self.enqueue(Queued::Watchdog(stuck), done_tx).await;
+            }
             Cmd::Send { lane, entry_id, mut text } => {
                 // What the user writes to a thread waits behind the turn its card holds: only a press
                 // answers a thread's card, and a message neither answers nor ends it.

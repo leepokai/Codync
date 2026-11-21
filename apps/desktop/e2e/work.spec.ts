@@ -680,3 +680,23 @@ test('the bot passes words on to a working task: its thread shows them as told, 
     await browser.close()
   }
 })
+
+test('the bot looks back at a finished task: its status, result and thread steps', async () => {
+  const { browser, page } = await attach()
+  const name = `Work recall e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name)
+    await addWork(page, botId, 'Quick look', 'nothing to wait for')
+    await expect.poll(async () => (await statuses(page, botId!))['Quick look']).toBe('done')
+
+    // The fixture's recall_task: by words for the task, then by its id for the whole of it.
+    await typeMessage(page, 'RECALL Quick look')
+    const recalled = page.locator('.transcript .message.agent', { hasText: 'Recalled' })
+    await expect(recalled).toContainText('Recalled Quick look: done | Report Quick look:')
+    await expect(recalled).toContainText(/\| [1-9]\d* steps/)
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})

@@ -98,12 +98,17 @@ impl Actor {
         true
     }
 
-    /// Moves what waits at `at` first in line; a compaction that is due still goes before it.
+    /// Moves what waits at `at` first in line.
     fn move_first(&mut self, at: usize) {
         let Some(item) = self.queue.remove(at) else { return };
+        self.put_first(item);
+        self.renumber_waiting();
+    }
+
+    /// Puts `item` first in line; a compaction that is due still goes before it.
+    fn put_first(&mut self, item: Queued) {
         let first = self.queue.iter().position(|q| !matches!(q, Queued::Compact { .. })).unwrap_or(self.queue.len());
         self.queue.insert(first, item);
-        self.renumber_waiting();
     }
 
     /// Hands the waiting messages' turn numbers out again in their new order: a batch runs as its last message's turn
@@ -189,17 +194,26 @@ impl Actor {
     }
 
     /// The agent cancelled its turn on its own before a word on what joined it (`unheard`): those messages go first in
-    /// line again, waiting as before.
+    /// line again, waiting as before, and what the user wrote to a thread is its task's again once their turn comes.
     pub(super) fn requeue_unheard(&mut self) {
-        for item in std::mem::take(&mut self.unheard).into_iter().rev() {
-            if let Queued::User { entry_id, .. } = &item
-                && let Some(mut e) = self.hub.store.entry(entry_id)
-            {
-                e.data["status"] = json!(RequestStatus::Queued);
-                self.hub.set_entry(entry_id, &e.data);
+        let unheard = std::mem::take(&mut self.unheard);
+        let mut words = Vec::new();
+        for item in &unheard {
+            let Queued::User { entry_id, .. } = item else { continue };
+            let Some(mut e) = self.hub.store.entry(entry_id) else { continue };
+            e.data["status"] = json!(RequestStatus::Queued);
+            self.hub.set_entry(entry_id, &e.data);
+            // What `steered` passed on to the task as heard, which their turn passes on again.
+            if self.cfg.is_thread() && e.data["from"] != "host" {
+                words.push(e.data["text"].as_str().unwrap_or_default().to_owned());
             }
-            self.queue.push_back(item);
-            self.move_first(self.queue.len() - 1);
+        }
+        for item in unheard.into_iter().rev() {
+            self.put_first(item);
+        }
+        self.renumber_waiting();
+        if !words.is_empty() {
+            crate::chat::work::unhear(&self.hub, &self.cfg, &words);
         }
     }
 

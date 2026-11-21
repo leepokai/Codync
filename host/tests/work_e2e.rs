@@ -134,6 +134,29 @@ async fn a_thread_that_makes_one_call_again_and_again_gets_its_bot_one_watchdog_
 }
 
 #[tokio::test]
+async fn a_watchdog_turn_that_passes_leaves_nothing_in_the_chat() {
+    let host = Host::start_with(&[("CODYNC_WORK_WATCH_SECS", OsStr::new("1"))]).await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Tail PASS|LOOP HOLD:tail").await;
+    let replies = || async {
+        let entries = history(&host, &bot).await;
+        entries.into_iter().filter(|e| e["kind"] == "agent" && e["data"]["final"] == true).count()
+    };
+    let before = replies().await;
+
+    wait("the watchdog's turn", async || {
+        let prompts = logged(&host.workspace(&bot), "prompts.jsonl");
+        prompts.iter().any(|p| p["text"].as_str().is_some_and(|t| t.contains("[Codync watchdog]"))).then_some(())
+    })
+    .await;
+    wait("the chat to be idle", async || common::steer::idle(&host, &bot).await.then_some(())).await;
+    assert_eq!(replies().await, before, "(pass) says nothing");
+
+    release(&host, &bot, "tail");
+    reply(&host, &bot, "Relayed: Report Tail PASS").await;
+}
+
+#[tokio::test]
 async fn a_task_forks_the_chat_and_its_report_comes_back_as_a_turn() {
     let host = Host::start().await;
     let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
@@ -232,7 +255,9 @@ async fn a_threads_approval_card_is_answered_in_the_chat_and_it_cannot_add_task(
     for (method, tool) in [
         ("chatCall", "set_name"),
         ("chatCall", "steer_task"),
+        ("chatCall", "tell_task"),
         ("chatCall", "work_status"),
+        ("chatCall", "recall_task"),
         ("teamCall", "message_bot"),
         ("routineCall", "follow_up"),
         ("manageCall", "create_bot"),

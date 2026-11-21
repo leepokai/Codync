@@ -8,8 +8,8 @@ use crate::LockExt;
 use crate::hub::Hub;
 use crate::store::now_ms;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 /// How often the runtime says it is alive, and how often the watchdog looks at most.
@@ -48,7 +48,7 @@ fn verdict(now: i64, beaten: i64, restarted: Option<i64>, stall: Duration) -> Ve
 
 /// Whether a nap of `look` from `before` to `now` (wall clock, ms) took the computer's sleep with it: the thread's
 /// clock stops while the computer sleeps, the wall clock doesn't.
-fn slept(before: i64, now: i64, look: Duration) -> bool {
+pub fn slept(before: i64, now: i64, look: Duration) -> bool {
     now - before > 2 * ms(look)
 }
 
@@ -77,56 +77,61 @@ pub fn start(hub: &Arc<Hub>, data: PathBuf, service: bool) {
     }
     let stall = stall.unwrap_or(STALL);
     BEATEN.store(now_ms(), Ordering::Relaxed);
-    let hub = Arc::downgrade(hub);
-    tokio::spawn(async move {
-        let mut beat = tokio::time::interval(BEAT.min(stall / 2));
-        loop {
-            beat.tick().await;
-            let Some(hub) = hub.upgrade() else { return };
-            // The lock every event leaves under: one that never comes free stops the beat too.
-            let emitted = tokio::task::spawn_blocking(move || drop(hub.emit_lock.locked())).await;
-            if emitted.is_ok() && !hangs_for_test() {
-                BEATEN.store(now_ms(), Ordering::Relaxed);
-            }
-        }
-    });
-    let look = LOOK.min(stall / 2);
-    let spawned = std::thread::Builder::new().name("watchdog".into()).spawn(move || {
-        let mut told = false;
-        loop {
-            let before = now_ms();
-            std::thread::sleep(look);
-            let now = now_ms();
-            // The nap ran long by the wall clock: the computer slept, and the runtime with it. The wait starts over.
-            if slept(before, now, look) {
-                BEATEN.store(now, Ordering::Relaxed);
-                continue;
-            }
-            let restarted = std::fs::read_to_string(data.join(LAST)).ok().and_then(|at| at.trim().parse().ok());
-            match verdict(now, BEATEN.load(Ordering::Relaxed), restarted, stall) {
-                Verdict::Fine => told = false,
-                Verdict::StuckAgain if !told => {
-                    told = true;
-                    tracing::error!(
-                        stalled_ms = now - BEATEN.load(Ordering::Relaxed),
-                        "the host is stuck again soon after a restart"
-                    );
-                }
-                Verdict::StuckAgain => {}
-                Verdict::Restart => {
-                    tracing::error!(
-                        stalled_ms = now - BEATEN.load(Ordering::Relaxed),
-                        "the host stopped answering: restarting it"
-                    );
-                    let _ = std::fs::write(data.join(MARK), now.to_string());
-                    std::process::abort();
-                }
-            }
-        }
-    });
-    if let Err(error) = spawned {
+    tokio::spawn(beat(Arc::downgrade(hub), stall));
+    if let Err(error) = std::thread::Builder::new().name("watchdog".into()).spawn(move || watch(&data, stall)) {
         tracing::warn!(error = format!("{error:#}"), "couldn't start the watchdog");
     }
+}
+
+/// Beats for as long as the runtime and the hub's emit lock answer.
+async fn beat(hub: Weak<Hub>, stall: Duration) {
+    let mut beat = tokio::time::interval(BEAT.min(stall / 2));
+    loop {
+        beat.tick().await;
+        let Some(hub) = hub.upgrade() else { return };
+        // The lock every event leaves under: one that never comes free stops the beat too.
+        let emitted = tokio::task::spawn_blocking(move || drop(hub.emit_lock.locked())).await;
+        if emitted.is_ok() && !hangs_for_test() {
+            BEATEN.store(now_ms(), Ordering::Relaxed);
+        }
+    }
+}
+
+/// The watchdog's own thread, outside the runtime: looks at the last beat until the host has to restart.
+fn watch(data: &Path, stall: Duration) {
+    let look = LOOK.min(stall / 2);
+    let mut told = false;
+    loop {
+        let before = now_ms();
+        std::thread::sleep(look);
+        let now = now_ms();
+        // The nap ran long by the wall clock: the computer slept, and the runtime with it. The wait starts over.
+        if slept(before, now, look) {
+            BEATEN.store(now, Ordering::Relaxed);
+            continue;
+        }
+        let restarted = std::fs::read_to_string(data.join(LAST)).ok().and_then(|at| at.trim().parse().ok());
+        let beaten = BEATEN.load(Ordering::Relaxed);
+        match verdict(now, beaten, restarted, stall) {
+            Verdict::Fine => told = false,
+            Verdict::StuckAgain => {
+                if !std::mem::replace(&mut told, true) {
+                    tracing::error!(stalled_ms = now - beaten, "the host is stuck again soon after a restart");
+                }
+            }
+            Verdict::Restart => restart(data, now, now - beaten),
+        }
+    }
+}
+
+/// Leaves the mark the next start reports, and aborts.
+fn restart(data: &Path, now: i64, stalled_ms: i64) -> ! {
+    tracing::error!(stalled_ms, "the host stopped answering: restarting it");
+    if let Err(error) = std::fs::write(data.join(MARK), now.to_string()) {
+        // Restarted all the same: the next start just won't report it, nor hold back a second stall soon after.
+        tracing::error!(error = format!("{error:#}"), "couldn't leave the watchdog's mark");
+    }
+    std::process::abort();
 }
 
 /// A debug build told to act hung (`CODYNC_WATCHDOG_TEST_HANG`), for the end-to-end test.

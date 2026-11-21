@@ -179,8 +179,9 @@ impl HostTurn {
     /// What `turn_finished` reports as its source.
     pub(super) fn source(self) -> TurnSource {
         match self {
-            Self::Opening | Self::TaskReport | Self::Watchdog => TurnSource::Host,
+            Self::Opening | Self::TaskReport => TurnSource::Host,
             Self::FollowUp => TurnSource::FollowUp,
+            Self::Watchdog => TurnSource::Watchdog,
         }
     }
 }

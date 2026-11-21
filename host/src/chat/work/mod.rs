@@ -12,11 +12,13 @@
 //! they see `work` on the bot and fetch a thread's transcript by id.
 //!
 //! Here: a thread's life from its turn's end to its report. [`steer`] has what the user and the bot do to a task,
-//! [`tools`] the bot's tools, [`prompts`] the words, [`worktree`] the git worktree of a thread that works beside
-//! another in one repository, [`watch`] the watchdog that wakes the bot for a thread that looks stuck.
+//! [`tools`] the bot's tools ([`recall`] the one that looks back), [`prompts`] the words, [`worktree`] the git
+//! worktree of a thread that works beside another in one repository, [`watch`] the watchdog that wakes the bot for a
+//! thread that looks stuck.
 
 mod dispatch;
 mod prompts;
+mod recall;
 mod sources;
 mod steer;
 mod sweep;
@@ -33,7 +35,7 @@ pub use steer::{Steer, cut_in, drop_task, first, retry, stop};
 #[cfg(test)]
 pub use tasks::put_working_for_test;
 pub use tasks::{Source, Status, doing, lines, outside, wire, working_threads};
-pub use thread::{Refused as ThreadRefused, heard, message, picked_up, thread as thread_of};
+pub use thread::{Refused as ThreadRefused, heard, message, picked_up, thread as thread_of, unhear};
 pub use tools::{TOOLS, acting_as, call, refuse_chat_only, refuse_in_thread, tools};
 pub use watch::Stuck;
 pub use worktree::{Worktree, enter as enter_worktree, in_repo};
@@ -523,8 +525,7 @@ pub fn restore(hub: &Arc<Hub>) {
         }
     }
     // Every bot with a box, or with a thread bot left to clear away.
-    let mut bots: Vec<String> =
-        hub.store.kv_prefix(tasks::PREFIX).iter().map(|key| key.trim_start_matches(tasks::PREFIX).to_owned()).collect();
+    let mut bots = tasks::bots(&hub.store);
     bots.extend(threads.into_iter().filter_map(|thread| thread.config.thread_of));
     bots.sort();
     bots.dedup();

@@ -221,6 +221,11 @@ fn key(bot: &str) -> String {
     format!("{PREFIX}{bot}")
 }
 
+/// Every bot with a box.
+pub(super) fn bots(store: &Store) -> Vec<String> {
+    store.kv_prefix(PREFIX).iter().filter_map(|key| key.strip_prefix(PREFIX)).map(str::to_owned).collect()
+}
+
 pub(super) fn load(store: &Store, bot: &str) -> Vec<Task> {
     store.kv_get(&key(bot)).and_then(|json| serde_json::from_str(&json).ok()).unwrap_or_default()
 }

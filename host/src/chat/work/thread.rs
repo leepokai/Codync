@@ -224,6 +224,20 @@ pub fn heard(hub: &Hub, cfg: &BotConfig, words: &[String]) {
     });
 }
 
+/// What [`heard`] kept of `words` goes: those messages went back to wait (the agent dropped them with its turn), and
+/// their own turn hears them again.
+pub fn unhear(hub: &Hub, cfg: &BotConfig, words: &[String]) {
+    super::update(hub, cfg, "what the user wrote to it", |task| {
+        for words in words.iter().rev().map(|words| words.trim()) {
+            for kept in [&mut task.told, &mut task.notes] {
+                if kept.last().is_some_and(|last| last == words) {
+                    kept.pop();
+                }
+            }
+        }
+    });
+}
+
 /// What a new session of thread `cfg` is told before the user's message, when the session that did its task can't
 /// be picked up: the task, what the user said about it and what it reported.
 pub fn picked_up(store: &Store, cfg: &BotConfig) -> Option<String> {
@@ -293,5 +307,21 @@ mod tests {
         let task = tasks::load(&hub.store, "b1").remove(0);
         assert_eq!(task.told.len(), TOLD_KEPT, "the newest are kept");
         assert_eq!((task.told[0].as_str(), task.notes[0].as_str()), ("word 1", "word 0"));
+    }
+
+    #[test]
+    fn words_that_went_back_to_wait_are_the_tasks_once() {
+        let hub = hub();
+        let cfg = BotConfig { thread_of: Some("b1".into()), ..bot("thread-1", "Mika", "/tmp") };
+        crate::chat::work::put_working_for_test(&hub.store, "b1", "thread-1");
+        let words = |said: &[&str]| said.iter().map(|w| (*w).to_owned()).collect::<Vec<_>>();
+        heard(&hub, &cfg, &words(&["earlier"]));
+        // Two messages joined a turn its agent dropped: their own turn hears them again.
+        heard(&hub, &cfg, &words(&["one", "two"]));
+        unhear(&hub, &cfg, &words(&["one", "two"]));
+        heard(&hub, &cfg, &words(&["one", "two"]));
+        let task = tasks::load(&hub.store, "b1").remove(0);
+        assert_eq!(task.told, words(&["earlier", "one", "two"]));
+        assert_eq!(task.notes, words(&["earlier", "one", "two"]));
     }
 }

@@ -14,7 +14,7 @@ use crate::hub::{BotStatus, Hub};
 use crate::remote::push::{self, AlertKind};
 use crate::store::{BotConfig, Entry, EntryKind, Store, now_ms};
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{Map, Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -37,17 +37,15 @@ const RECENT: i64 = 50;
 /// How much of a tool call's title the bot is told.
 const TITLE: usize = 120;
 
-/// What looks wrong with a working thread.
+/// What looks wrong with a working thread's turn.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Signal {
-    /// Its turn's last [`LOOP`] tool calls have this one title.
+    /// Its turn's last [`LOOP`] tool calls are one call with one result, of this title.
     Looping(String),
     /// Its turn's last [`FAILS`] tool calls failed: their titles, oldest first.
     Failing(Vec<String>),
     /// Its turn has shown no new step for so many minutes, with no tool call running.
     Quiet(i64),
-    /// A card of its has waited on the user for [`CARD`] or more: the card's id, and what it asks.
-    Card { id: String, asks: String },
 }
 
 impl Signal {
@@ -57,7 +55,6 @@ impl Signal {
             Self::Looping(_) => "looping",
             Self::Failing(_) => "failing",
             Self::Quiet(_) => "quiet",
-            Self::Card { .. } => "card",
         }
     }
 
@@ -70,7 +67,6 @@ impl Signal {
                 format!("its last {} tool calls failed ({})", titles.len(), titles.join(", "))
             }
             Self::Quiet(minutes) => format!("its turn has shown no new step for {minutes} minutes"),
-            Self::Card { asks, .. } => format!("its card \"{asks}\" has waited on the user for two hours"),
         }
     }
 }
@@ -87,15 +83,31 @@ enum Skip {
     NearLimit,
 }
 
-/// What a flag did (`watchdog_flagged`'s `action`).
-#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "snake_case")]
+/// What a flag did.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Action {
     /// A turn in the bot's chat.
     Woke,
     /// A push to the user.
     Reminded,
-    Skipped,
+    /// Neither, for this reason.
+    Skipped(Skip),
+}
+
+impl Action {
+    /// `watchdog_flagged`'s properties for a flag of `signal` that did this.
+    fn properties(self, signal: &str) -> Map<String, Value> {
+        let (action, reason) = match self {
+            Self::Woke => ("woke", None),
+            Self::Reminded => ("reminded", None),
+            Self::Skipped(reason) => ("skipped", Some(reason)),
+        };
+        let mut properties = Map::from_iter([("signal".into(), signal.into()), ("action".into(), action.into())]);
+        if let Some(reason) = reason {
+            properties.insert("reason".into(), json!(reason));
+        }
+        properties
+    }
 }
 
 /// What the watchdog remembers while the host runs (`Work::watch`).
@@ -118,6 +130,11 @@ pub struct Stuck {
 }
 
 impl Stuck {
+    /// The thread that looks stuck.
+    pub fn thread(&self) -> &str {
+        &self.thread
+    }
+
     /// The prompt of `bot`'s turn for it and the hops a task added there carries on; none once the task no longer
     /// works on that thread (it ended, or was set aside), which leaves nothing to look at.
     pub fn turn(&self, store: &Store, bot: &str) -> Option<(String, u8)> {
@@ -133,7 +150,6 @@ pub(super) fn start(hub: &Arc<Hub>) {
     let Ok(runtime) = tokio::runtime::Handle::try_current() else { return };
     let every =
         std::env::var("CODYNC_WORK_WATCH_SECS").ok().and_then(|s| s.parse().ok()).map_or(EVERY, Duration::from_secs);
-    let gap = i64::try_from(every.as_millis()).unwrap_or(i64::MAX).saturating_mul(2);
     let hub = Arc::downgrade(hub);
     runtime.spawn(async move {
         let mut awake = now_ms();
@@ -142,8 +158,8 @@ pub(super) fn start(hub: &Arc<Hub>) {
             tokio::time::sleep(every).await;
             let Some(hub) = hub.upgrade() else { return };
             let now = now_ms();
-            // The clock jumped past the wait: the computer slept, and a turn shows nothing while it does.
-            if now - last > gap {
+            // A turn shows nothing while the computer sleeps.
+            if crate::watchdog::slept(last, now, every) {
                 awake = now;
             }
             last = now;
@@ -158,16 +174,15 @@ pub(super) fn start(hub: &Arc<Hub>) {
 fn look(hub: &Hub, awake: i64) {
     let now = now_ms();
     let (mut threads, mut cards) = (HashSet::new(), HashSet::new());
-    for key in hub.store.kv_prefix(tasks::PREFIX) {
-        let bot = key.trim_start_matches(tasks::PREFIX);
-        let Some(cfg) = hub.store.bot(bot).ok().flatten().filter(|row| !row.deleted).map(|row| row.config) else {
+    for bot in tasks::bots(&hub.store) {
+        let Some(cfg) = hub.store.bot(&bot).ok().flatten().filter(|row| !row.deleted).map(|row| row.config) else {
             continue;
         };
         let watched =
-            tasks::load(&hub.store, bot).into_iter().filter(|i| i.status == Status::Working && i.source.is_bot());
+            tasks::load(&hub.store, &bot).into_iter().filter(|i| i.status == Status::Working && i.source.is_bot());
         for task in watched {
             let Some(thread) = task.thread.clone() else { continue };
-            let open = hub.store.open_cards(bot, &thread).unwrap_or_else(|error| {
+            let open = hub.store.open_cards(&bot, &thread).unwrap_or_else(|error| {
                 tracing::warn!(thread, error = format!("{error:#}"), "couldn't read a thread's cards");
                 Vec::new()
             });
@@ -176,8 +191,11 @@ fn look(hub: &Hub, awake: i64) {
                 let memory = hub.work.watch.locked();
                 open.into_iter().filter(|card| !memory.reminded.contains(&card.id)).collect()
             };
-            let signal = see(hub, &task, &thread, &open, awake, now);
-            act(hub, &cfg, &task, &thread, signal, now);
+            if let Some((card, asks)) = overdue_card(&open, now) {
+                remind(hub, &cfg, card, &asks);
+            } else {
+                act(hub, &cfg, &task, &thread, see(hub, &task, &thread, awake, now), now);
+            }
             threads.insert(thread);
         }
     }
@@ -188,8 +206,8 @@ fn look(hub: &Hub, awake: i64) {
     memory.reminded.retain(|card| cards.contains(card));
 }
 
-/// What looks wrong with `task`'s `thread` now, if anything. `cards`: its cards the user wasn't reminded of.
-fn see(hub: &Hub, task: &Task, thread: &str, cards: &[Entry], awake: i64, now: i64) -> Option<Signal> {
+/// What looks wrong with `task`'s `thread` now, if anything.
+fn see(hub: &Hub, task: &Task, thread: &str, awake: i64, now: i64) -> Option<Signal> {
     let rt = hub.runtime(thread);
     let turn = rt.started_at.filter(|_| matches!(rt.status, BotStatus::Working | BotStatus::NeedsInput));
     let entries = hub
@@ -197,26 +215,28 @@ fn see(hub: &Hub, task: &Task, thread: &str, cards: &[Entry], awake: i64, now: i
         .history(thread, i64::MAX, RECENT)
         .inspect_err(|error| tracing::warn!(thread, error = format!("{error:#}"), "couldn't read a thread's steps"))
         .ok()?;
-    signal(&entries, turn, tasks::asks_user(hub, task), cards, awake, now)
+    signal(&entries, turn, tasks::asks_user(hub, task), awake, now)
 }
 
 /// What looks wrong with a working thread at `now`, if anything. `entries`: its newest transcript entries, oldest
 /// first; `turn`: when its running turn began (none while no turn runs); `waits`: it waits on the user (a card, a
-/// sign-in); `cards`: its cards in its bot's chat that wait on the user and haven't reminded them, oldest first;
-/// `awake`: since when the computer has been awake.
-fn signal(entries: &[Entry], turn: Option<i64>, waits: bool, cards: &[Entry], awake: i64, now: i64) -> Option<Signal> {
-    if let Some(card) = cards.iter().find(|card| now - card.created_at >= CARD) {
-        let asks = card.data["title"].as_str().or_else(|| card.data["question"].as_str()).unwrap_or_default();
-        return Some(Signal::Card { id: card.id.clone(), asks: crate::agent::acp::truncate(asks, TITLE) });
-    }
+/// sign-in); `awake`: since when the computer has been awake.
+fn signal(entries: &[Entry], turn: Option<i64>, waits: bool, awake: i64, now: i64) -> Option<Signal> {
     // Waiting on the user is no sign of anything, and a thread between turns has nothing running to look at.
     let start = turn.filter(|_| !waits)?;
     let steps: Vec<&Entry> = entries.iter().filter(|e| e.created_at >= start).collect();
     let calls: Vec<&Entry> = steps.iter().copied().filter(|e| e.kind == EntryKind::Tool.as_str()).collect();
     let last = |n: usize| calls.get(calls.len().saturating_sub(n)..).filter(|last| last.len() == n);
     let title = |e: &Entry| crate::agent::acp::truncate(e.data["title"].as_str().unwrap_or_default(), TITLE);
+    // One call with one result: a title can leave the call's arguments out (an MCP tool's is its name alone), and a
+    // call with no title of its own (`agent::bot::updates` names it "Tool") is no call in particular.
+    // ponytail: a call run again whose output changes each time (a timing, a temporary path) isn't seen looping; a hash
+    // of the call's `rawInput` kept on its entry would tell the same call by its arguments.
+    let same =
+        |a: &Entry, b: &Entry| ["title", "output", "diffs", "locations"].iter().all(|k| a.data[*k] == b.data[*k]);
     if let Some(repeated) = last(LOOP)
-        && repeated.iter().all(|e| e.data["title"] == repeated[0].data["title"])
+        && repeated[0].data["title"] != "Tool"
+        && repeated.iter().all(|e| same(e, repeated[0]))
     {
         return Some(Signal::Looping(title(repeated[0])));
     }
@@ -231,53 +251,52 @@ fn signal(entries: &[Entry], turn: Option<i64>, waits: bool, cards: &[Entry], aw
     (!running && now - shown >= QUIET).then(|| Signal::Quiet((now - shown) / MINUTE))
 }
 
-/// Acts on what the look at `task`'s `thread` saw: a card reminds the user, the rest wake the bot.
+/// The first of a thread's `cards` (in its bot's chat, waiting on the user, not reminded of yet, oldest first) that
+/// has waited for [`CARD`] at `now`: its id, and what it asks.
+fn overdue_card(cards: &[Entry], now: i64) -> Option<(&str, String)> {
+    let card = cards.iter().find(|card| now - card.created_at >= CARD)?;
+    let asks = card.data["title"].as_str().or_else(|| card.data["question"].as_str()).unwrap_or_default();
+    Some((&card.id, crate::agent::acp::truncate(asks, TITLE)))
+}
+
+/// Reminds the user, once, of card `id` (asking `asks`), from the bot's chat, where the card is: a thread alerts no
+/// one itself.
+fn remind(hub: &Hub, cfg: &BotConfig, id: &str, asks: &str) {
+    hub.work.watch.locked().reminded.insert(id.to_owned());
+    push::notify(hub, cfg, None, &format!("{} needs you", cfg.name), asks, AlertKind::NeedsInput);
+    analytics::capture(hub, Event::WatchdogFlagged, Action::Reminded.properties("card"));
+}
+
+/// Acts on what the look at `task`'s `thread` saw: something wrong wakes the bot.
 fn act(hub: &Hub, cfg: &BotConfig, task: &Task, thread: &str, signal: Option<Signal>, now: i64) {
     let Some(signal) = signal else {
         // Fine again: a later flag's reason to wait is counted anew.
         hub.work.watch.locked().skipped.remove(thread);
         return;
     };
-    let done = if let Signal::Card { id, asks } = &signal {
-        hub.work.watch.locked().reminded.insert(id.clone());
-        // The bot's chat, where the card is: a thread alerts no one itself.
-        push::notify(hub, cfg, None, &format!("{} needs you", cfg.name), asks, AlertKind::NeedsInput);
-        Some((Action::Reminded, None))
-    } else {
-        wake(hub, cfg, task, thread, &signal, now)
-    };
-    let Some((action, reason)) = done else { return };
-    let mut properties = json!({"signal": signal.name(), "action": action});
-    if let Some(reason) = reason {
-        properties["reason"] = json!(reason);
+    if let Some(action) = wake(hub, cfg, task, thread, &signal, now) {
+        analytics::capture(hub, Event::WatchdogFlagged, action.properties(signal.name()));
     }
-    analytics::capture(hub, Event::WatchdogFlagged, properties.as_object().cloned().unwrap_or_default());
 }
 
 /// Wakes `cfg` for `task`, whose `thread` looks stuck: a turn in its chat, behind what the user wrote there.
 /// Answers what to count: the wake, or what held it back the first time in a row; none when it couldn't be handed
 /// over (logged).
-fn wake(
-    hub: &Hub,
-    cfg: &BotConfig,
-    task: &Task,
-    thread: &str,
-    signal: &Signal,
-    now: i64,
-) -> Option<(Action, Option<Skip>)> {
+fn wake(hub: &Hub, cfg: &BotConfig, task: &Task, thread: &str, signal: &Signal, now: i64) -> Option<Action> {
     if let Some(skip) = held(hub, cfg, thread, now) {
         let again = hub.work.watch.locked().skipped.insert(thread.to_owned(), skip) == Some(skip);
-        return (!again).then_some((Action::Skipped, Some(skip)));
+        return (!again).then_some(Action::Skipped(skip));
     }
     let stuck = Stuck { task: task.id.clone(), thread: thread.to_owned(), evidence: signal.evidence() };
     if let Err(error) = hub.send_cmd(&cfg.id, Cmd::Watchdog(stuck)) {
-        tracing::warn!(bot = %cfg.id, task = task.id, error = format!("{error:#}"), "couldn't wake a bot for a stuck task");
+        let error = format!("{error:#}");
+        tracing::warn!(bot = %cfg.id, task = task.id, error, "couldn't wake a bot for a stuck task");
         return None;
     }
     let mut memory = hub.work.watch.locked();
     memory.woke.insert(thread.to_owned(), now);
     memory.skipped.remove(thread);
-    Some((Action::Woke, None))
+    Some(Action::Woke)
 }
 
 /// Why `cfg` isn't woken for `thread` at `now`, if it isn't: it was within the hour, the chat's own agent rests,
@@ -299,7 +318,6 @@ mod tests {
     use super::*;
     use crate::chat::calls::context::tests::{bot, hub};
     use crate::store::Lane;
-    use serde_json::Value;
 
     const HOUR: i64 = 60 * MINUTE;
     /// When the turn under test began, and the look's time.
@@ -332,7 +350,7 @@ mod tests {
     }
 
     fn look_at(entries: &[Entry]) -> Option<Signal> {
-        signal(entries, Some(START), false, &[], START, NOW)
+        signal(entries, Some(START), false, START, NOW)
     }
 
     #[test]
@@ -343,9 +361,16 @@ mod tests {
         let mut varied = same;
         varied[2].0 = "Edit main.rs";
         assert_eq!(look_at(&calls(&varied)), None);
+        // One tool with other arguments each time: an MCP tool's title is its name alone.
+        let mut queries = calls(&[("mcp__posthog__exec", "completed"); LOOP]);
+        for (n, query) in queries.iter_mut().enumerate() {
+            query.data["output"] = json!(format!("{n} rows"));
+        }
+        assert_eq!(look_at(&queries), None);
+        assert_eq!(look_at(&calls(&[("Tool", "completed"); LOOP])), None, "no title of its own");
         // The same calls in the turn before this one don't count.
         let before = calls(&same);
-        assert_eq!(signal(&before, Some(NOW), false, &[], START, NOW), None);
+        assert_eq!(signal(&before, Some(NOW), false, START, NOW), None);
     }
 
     #[test]
@@ -376,27 +401,22 @@ mod tests {
         let building = vec![Entry { created_at: NOW - 2 * HOUR, updated_at: NOW - 2 * HOUR, ..building[0].clone() }];
         assert_eq!(look_at(&building), None);
         // A thread waiting on the user, or between turns, has nothing to say.
-        assert_eq!(signal(&silent, Some(START), true, &[], START, NOW), None);
-        assert_eq!(signal(&silent, None, false, &[], START, NOW), None);
+        assert_eq!(signal(&silent, Some(START), true, START, NOW), None);
+        assert_eq!(signal(&silent, None, false, START, NOW), None);
         // The computer woke 10 minutes ago: the hour counts from there.
-        assert_eq!(signal(&silent, Some(START), false, &[], NOW - 10 * MINUTE, NOW), None);
+        assert_eq!(signal(&silent, Some(START), false, NOW - 10 * MINUTE, NOW), None);
         // A turn that never showed a step is timed from its start.
         assert_eq!(look_at(&[]), Some(Signal::Quiet(180)));
     }
 
     #[test]
-    fn a_card_left_two_hours_reminds_the_user() {
+    fn a_card_left_two_hours_is_overdue() {
         let card = |at: i64| entry(EntryKind::Permission, at, json!({"title": "Run the tests", "status": "pending"}));
         let waited = [card(NOW - 2 * HOUR)];
-        let reminded = Signal::Card { id: waited[0].id.clone(), asks: "Run the tests".into() };
-        assert_eq!(signal(&[], Some(START), true, &waited, START, NOW), Some(reminded));
-        assert_eq!(signal(&[], Some(START), true, &[card(NOW - HOUR)], START, NOW), None, "an hour is not yet");
-        let question = entry(EntryKind::Notice, NOW - 3 * HOUR, json!({"decision": true, "question": "Which?"}));
-        let asks = signal(&[], None, true, &[question], START, NOW);
-        assert!(
-            matches!(asks, Some(Signal::Card { asks, .. }) if asks == "Which?"),
-            "a choice card, during a sign-in wait too"
-        );
+        assert_eq!(overdue_card(&waited, NOW), Some((waited[0].id.as_str(), "Run the tests".into())));
+        assert_eq!(overdue_card(&[card(NOW - HOUR)], NOW), None, "an hour is not yet");
+        let question = [entry(EntryKind::Notice, NOW - 3 * HOUR, json!({"decision": true, "question": "Which?"}))];
+        assert_eq!(overdue_card(&question, NOW).map(|(_, asks)| asks), Some("Which?".into()), "a choice card");
     }
 
     #[test]
@@ -405,7 +425,15 @@ mod tests {
         let failing = Signal::Failing(vec!["a".into(), "b".into()]);
         assert_eq!(failing.evidence(), "its last 2 tool calls failed (\"a\", \"b\")");
         assert_eq!(Signal::Quiet(75).evidence(), "its turn has shown no new step for 75 minutes");
-        assert_eq!(json!(Skip::NearLimit), "near_limit");
+    }
+
+    #[test]
+    fn a_flag_counts_its_signal_what_it_did_and_why_not() {
+        let counted = |action: Action, signal: &str| Value::Object(action.properties(signal));
+        assert_eq!(counted(Action::Woke, "looping"), json!({"signal": "looping", "action": "woke"}));
+        assert_eq!(counted(Action::Reminded, "card"), json!({"signal": "card", "action": "reminded"}));
+        let held = json!({"signal": "quiet", "action": "skipped", "reason": "near_limit"});
+        assert_eq!(counted(Action::Skipped(Skip::NearLimit), "quiet"), held);
     }
 
     /// Bot `b1` with a working task on `thread-1` (`source`: its kind, none for its own), whose turn has made the
@@ -479,7 +507,7 @@ mod tests {
         assert_eq!(held(&hub, &cfg, "thread-1", now), Some(Skip::Cooldown));
         let task = tasks::load(&hub.store, "b1").remove(0);
         let signal = Signal::Looping("Read build.log".into());
-        let skipped = Some((Action::Skipped, Some(Skip::Cooldown)));
+        let skipped = Some(Action::Skipped(Skip::Cooldown));
         assert_eq!(wake(&hub, &cfg, &task, "thread-1", &signal, now), skipped);
         assert_eq!(wake(&hub, &cfg, &task, "thread-1", &signal, now), None, "counted once in a row");
         hub.work.watch.locked().woke.insert("thread-1".into(), now - 61 * MINUTE);

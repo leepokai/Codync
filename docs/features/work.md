@@ -19,7 +19,7 @@ Design: [the event box](../plans/event-box.md); why a thread is a bot of its own
 [the first design](../archive/background-tasks-plan-2026-11-15.md). Code: `host/src/chat/work/` (`tasks.rs`: the box, its wire shape and what the bot reads of it;
 `dispatch.rs`: which task a thread takes next; `steer.rs`: first, cut in, replace, stop, drop, retry; `mod.rs`: a
 thread's turn end, the report, host start; `sources.rs`: routine runs and other bots' requests as tasks; `thread.rs`: the user's messages to a task's thread;
-`tools.rs`: the bot's tools and what a thread may not call; `sweep.rs`: the hourly look; `watch.rs`: the [watchdog](#watchdog); `worktree.rs`: a thread's git worktree;
+`tools.rs`: the bot's tools and what a thread may not call; `recall.rs`: `recall_task`; `sweep.rs`: the hourly look; `watch.rs`: the [watchdog](#watchdog); `worktree.rs`: a thread's git worktree;
 `prompts.rs`: the words); the actor's side is in `host/src/agent/bot/` (`session.rs` for the fork, `turn.rs` for the box in the prompt, the worktree
 and the report, `queue.rs` for `turn_over`, `updates.rs` for cards). Git is run through `host/src/git.rs`.
 
@@ -109,7 +109,7 @@ The decisions are one pure function (`dispatch::standings`), which the wire's `w
   (read only, as [their thread](#talking-to-a-thread) is), and under a ceiling, as `add_task` is.
 - `work_status {}` → `{tasks: […]}`: every task that is working or waiting, and those ended in the last day: status, what its thread
   does now, why it waits, seconds, result.
-- `recall_task {task?, query?, before?}` (`work::tools::recall`): the bot looks back at its tasks, ended ones too, from
+- `recall_task {task?, query?, before?}` (`work/recall.rs`): the bot looks back at its tasks, ended ones too, from
   its box and its past tasks (kv `work-past.<bot>`: tasks that left the box at host start, kept until 30 days after
   they ended, the newest 200). With `task`: its brief, `usersWords`, `usersNotes`, `chatPassedOn`, whole result,
   `after`, `followedBy`, local times, and a page of 30 of its thread's steps (user, agent, notice, tool and card lines,
@@ -562,7 +562,9 @@ of each thread that works on one of a bot's own tasks: its newest 50 entries sin
 `startedAt`), and its cards in the bot's chat (`Store::open_cards`). A routine's run and another bot's request
 aren't watched: their result has an owner other than the bot's chat. What it flags:
 
-- **looping**: the turn's last 6 tool calls have one title.
+- **looping**: the turn's last 6 tool calls are one call with one result: the same title, output, diffs and
+  locations (a title can leave the arguments out: an MCP tool's is its name). Calls with no title of their own
+  (`Tool`) never loop, nor does a call run again whose output changes each time (a timing, a temporary path).
 - **failing**: its last 5 tool calls ended `failed`.
 - **quiet**: no entry of the turn was created or changed for 60 minutes, while no tool call is `pending` or
   `in_progress` (a long build isn't stuck). The hour counts from when the computer last woke, if that is later: a
@@ -583,7 +585,8 @@ carries the stuck task's hops on, as a report's turn does. A host restart doesn'
 **Limits.** A thread wakes its bot at most once an hour (kept in memory, so a host restart forgets it). No wake
 while the chat's own agent rests (`agent::fallback::rest`, its login) or is near its usage limit
 (`usage::near_limit`, as the dispatcher counts it); the next look tries again. A Stop in the chat drops a wake-up
-that waits there.
+that waits there, and a newer one for the same thread takes the place of one still waiting (the chat was busy for
+over an hour).
 
 **The host itself** (`host/src/watchdog.rs`). Under the service (`service::started_by_service`), a beat goes through
 the runtime and the hub's emit lock every 10 seconds, and an OS thread outside the runtime looks every 30. No beat for
@@ -597,8 +600,8 @@ A nap of the thread that runs long by the wall clock means the computer slept: t
 
 **Analytics.** `watchdog_flagged`: `signal` (`looping`, `failing`, `quiet`, `card`), `action` (`woke`,
 `reminded`, `skipped`) and, when skipped, `reason` (`cooldown`, `rests`, `near_limit`); a skip is counted once
-per thread and reason in a row. Never a title or text. `CODYNC_WORK_WATCH_SECS` sets the period for the end-to-end
-test (`work_e2e`).
+per thread and reason in a row. Never a title or text. The bot's turn is `turn_finished` `source: watchdog`.
+`CODYNC_WORK_WATCH_SECS` sets the period for the end-to-end test (`work_e2e`).
 
 ## Limits of this version
 
@@ -654,16 +657,26 @@ waiting behind a thread's card without answering it; Stop dropping what waited; 
 thread taking a message afterwards; what waited going with a task that gives way; a thread's sign-in asked in the
 chat and its task going on in the same thread once signed in, a thread moving past a signed-out agent and its next
 agent told the chat, a thread's offer to add a fallback in the chat and new fallbacks reaching a running thread, a thread
-that starts on a fallback never forking the chat's session); `memory_files_e2e` (a line a
+that starts on a fallback never forking the chat's session; the watchdog's turn in the chat for a thread that makes one
+call again and again, once an hour, and its `(pass)` leaving nothing; `recall_task` and `tell_task` refused in a
+thread); `watchdog_e2e` (a hung host aborted with its mark, the next start reporting it, a second stall within 30
+minutes only logged); `memory_files_e2e` (a line a
 routine's run in a thread takes out with a shell command is put back); unit tests of a worktree made, removed, kept,
 removed once merged and never touched when it isn't Codync's, the kept ones looked over again at a restart
 (`recheck`), the walk that removes only merged worktrees no task knows (`tidy_orphans`), and an inherited worktree
 known after its earlier task is gone (`known`) (`worktree.rs`), how a bot stands outside its chat (`tasks.rs`), a box stored before the rename read and saved under the new names (`tasks.rs`, `store/model.rs`) and schema 9's rewrite of stored entries (`store/schema.rs`), unit tests of the dispatch order and the `wait` reasons
-(`dispatch.rs`), the agent a new thread starts on (`agent/fallback/mod.rs`), a thread's held message sent again however
+(`dispatch.rs`), the watchdog's signals (looping, failing, quiet, a card overdue), its hourly hold and its reasons,
+only the bot's own tasks watched, a wake-up dropped once its task moved on and its analytics (`watch.rs`), the host
+watchdog's verdict, a computer that slept and the mark reported once (`watchdog.rs`), `recall_task` by id, query and
+latest, its pages of steps and 30 days (`recall.rs`), a task ended over a week ago leaving the box for the past ones
+at host start (`mod.rs`), the user's words a dropped turn gave back heard once (`thread.rs`), the agent a new thread starts on (`agent/fallback/mod.rs`), a thread's held message sent again however
 old and not once its task ended (`market/agent_sign_in.rs`), a task's end and the restart rule, also for a run and a request (`mod.rs`), a source on the wire (`tasks.rs`), which bots keep runs in the chat (`sources.rs`), the 20 waiting tasks and the title and brief lengths (`tools.rs`), the prompts and the box's lines. Not
 covered by a test: a reopened task's kept worktree becoming its folder again and a removed one's thread moving to the bot's folder end to end (the unit test covers the folder), a message to a task whose thread is on a task that followed it, a message that arrives as the task's turn ends (the lock that orders them), a real agent resuming a reopened session, a replaced brief carrying what waited, a worktree reused by a task that starts again, one inherited by a task that follows, a
 stopped task's worktree looked over, a task stopped while it waits for a sign-in ending its thread, a worktree's dev server and artifact, git failing, a real agent in a worktree, the host-start reclaim end to end (`tidy` spawning
 `tidy_orphans`, `pick_up` settling what `recheck` took),
 the Live Activity push itself (the relay isn't in the tests), a routine's time limit in a thread, a lost run or request at the hourly look, a run the box lost at host start, a request from another computer or the cloud assistant as a task, `message_bot` from a run's thread, a thread's voice note, a choice card's timeout and its end at a host restart, the usage and in-a-row limits, the desktop's Add a fallback opening Settings, `add_task` refused in a room or a bot's request (a routine run is: `routines/tests.rs`), a report turn that fails, a
-thread's dev server, a task sent back to waiting by a restart end to end, the 7-day purge, and the box's lines in a
+thread's dev server, a task sent back to waiting by a restart end to end, a task moving to the past ones end to end,
+`recall_task` end to end, a Stop dropping a waiting watchdog wake-up, one dropped because its task ended before its
+turn end to end, a newer wake-up taking a waiting one's place, the card reminder's push, a thread's message given back to its task
+by a dropped turn end to end (`requeue_unheard` in a thread), and the box's lines in a
 known harness's prompt.

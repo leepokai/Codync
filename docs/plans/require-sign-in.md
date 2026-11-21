@@ -204,4 +204,3 @@ Phase 2 and 3 need these once per cloud, before the hosts that ask for them ship
 
 - Honor the 15-minute lease when the relay drops; today account devices are refused until the cloud state syncs again.
 - Renames: `local`, `owner`, the desktop's "{name} can use".
-- Desktop apps as devices (the encrypted channel on the desktop), so one computer can use another's bots.

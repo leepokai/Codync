@@ -7,6 +7,7 @@ import { undoOnFailure } from '../lib/undo-on-failure'
 import { account } from './account'
 import { analytics } from './analytics'
 import { BotStore } from './bot-store'
+import { AccountComputers } from './account-computers'
 import { CloudModel } from './cloud'
 import { CloudComputerModel } from './cloud-computer'
 import { DeviceComputerOrder } from './computer-order'
@@ -76,6 +77,8 @@ export class AppModel extends Observable {
   readonly computerAccess: ComputerAccess
   readonly computerOrder: DeviceComputerOrder
   readonly cloud: CloudModel
+  /** Requests for access to the account's other computers (their bots open through `useCloudAttachments`). */
+  readonly accountComputers: AccountComputers
   /** The account's Codync Cloud computer (Settings → Computers & devices). */
   readonly cloudComputer: CloudComputerModel
 
@@ -84,6 +87,7 @@ export class AppModel extends Observable {
     this.computerAccess = new ComputerAccess(this)
     this.computerOrder = new DeviceComputerOrder()
     this.cloud = new CloudModel(this)
+    this.accountComputers = new AccountComputers(this)
     this.cloudComputer = new CloudComputerModel(this)
     account.subscribe(() => this.noteAccount())
   }

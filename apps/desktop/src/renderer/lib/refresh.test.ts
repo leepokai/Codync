@@ -25,6 +25,7 @@ Object.assign(globalThis, {
 })
 const { AppModel } = await import('../store/app-model.ts')
 const { BotSync } = await import('../store/bot-sync.ts')
+const { HostError } = await import('../client/host-client.ts')
 
 function deferred() {
   let resolve!: () => void
@@ -103,6 +104,21 @@ test('an unresponsive host cannot leave manual refresh spinning forever', async 
   const rejected = assert.rejects(refresh, /Connection timed out/)
   t.mock.timers.tick(20_000)
   await rejected
+  store.retire()
+})
+
+test('a computer that refuses this device shows No access and stops retrying', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  let streams = 0
+  const store = sync({
+    call: async () => ({ version: '2.29.0', name: 'Test', backends: [] }),
+    stream: (_sub, _onData, onEnd) => { streams++; onEnd(new HostError(401, 'Refused')); return () => {} },
+  })
+  await store.refreshStream().catch(() => {})
+  t.mock.timers.tick(60_000)
+  await new Promise((r) => setImmediate(r))
+  assert.equal(store.connection.kind, 'unauthorized')
+  assert.equal(streams, 1)
   store.retire()
 })
 

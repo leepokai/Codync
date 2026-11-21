@@ -4,7 +4,7 @@ import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { SANDBOX_PREFIX } from '../src/shared/dev-sandbox.ts'
-import { attach, sandbox } from './sandbox.ts'
+import { attach, openLocalExtensions, sandbox } from './sandbox.ts'
 
 test('a sandbox keeps a saved sign-in under a key in its own folder and leaves Keychain alone', async () => {
   const { browser, page } = await attach()
@@ -13,7 +13,7 @@ test('a sandbox keeps a saved sign-in under a key in its own folder and leaves K
   const row = page.getByText(site, { exact: true })
   try {
     await page.reload()
-    await page.getByRole('button', { name: /Extensions/ }).click()
+    await openLocalExtensions(page)
     await page.getByRole('button', { name: 'Credentials' }).click()
     await page.getByPlaceholder('github.com').fill(site)
     await page.getByPlaceholder('name@example.com').fill('e2e')

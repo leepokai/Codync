@@ -5,13 +5,14 @@ use super::{
     Actor, CANCEL_GRACE, Cmd, Done, HostTurn, Inflight, NoticeStyle, Queued, RESUME_PROMPT, RoutineCompletion,
 };
 use crate::agent::own_memory;
+use crate::analytics::{self, Event};
 use crate::chat::memory;
 use crate::chat::work::{self, Failure, Outcome};
 use crate::hub::BotStatus;
 use crate::store::{Lane, now_ms};
 use anyhow::{Result, anyhow};
 use codync_network::Access;
-use serde_json::json;
+use serde_json::{Map, json};
 use std::time::Instant;
 use tokio::sync::mpsc;
 
@@ -486,6 +487,7 @@ impl Actor {
         if std::mem::take(&mut self.spent_carry) {
             self.hub.team.restore_dropped_wake(&self.cfg.id);
         }
+        let hop_lift_failed = matches!(self.host_turn, Some(HostTurn::HopLift));
         self.end_host_turn(false);
         memory::turns::drop_turn(&self.cfg.id);
         if self.routine_completion.is_none() {
@@ -507,6 +509,14 @@ impl Actor {
         self.hub.team.end_turn_in_control(&self.cfg.id);
         if was_control {
             self.hub.team.abandon_open_ask(&self.cfg.id);
+        }
+        if hop_lift_failed {
+            let action = if was_control { "ask" } else { "reset" };
+            analytics::capture(
+                &self.hub,
+                Event::HopLiftFinished,
+                Map::from_iter([("action".into(), action.into()), ("outcome".into(), "start_failed".into())]),
+            );
         }
     }
 

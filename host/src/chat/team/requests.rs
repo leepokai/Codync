@@ -52,7 +52,6 @@ pub(super) struct RequestState {
     /// Next refusal id. `0` is never issued.
     next_refusal: u64,
     actors: HashMap<String, ActorState>,
-    audit: Vec<Audit>,
 }
 
 impl Default for RequestState {
@@ -65,7 +64,6 @@ impl Default for RequestState {
             hop_limit: MAX_REQUEST_HOPS,
             next_refusal: 1,
             actors: HashMap::new(),
-            audit: Vec::new(),
         }
     }
 }
@@ -123,13 +121,6 @@ enum AuditKind {
     Answer,
     Reset,
     Deny,
-}
-
-/// Ids of one hop-limit decision. No message text.
-struct Audit {
-    kind: AuditKind,
-    refusal: u64,
-    actor: String,
 }
 
 /// A hop-limit rejection. [`HopLimited::generation`] is the actor's generation under the same lock as the rejection,
@@ -245,8 +236,8 @@ impl Requests {
     /// so the lead may ask again.
     pub fn abandon_open_ask_by_refusal(&self, refusal: u64) {
         let mut state = self.0.locked();
-        if let Some(lift) = state.actors.values_mut().find_map(|entry| entry.lift.as_mut())
-            && lift.id == refusal
+        if let Some(lift) =
+            state.actors.values_mut().find_map(|entry| entry.lift.as_mut().filter(|lift| lift.id == refusal))
             && lift.asked
         {
             lift.asked = false;
@@ -293,7 +284,7 @@ impl Requests {
         state.next_refusal = state.next_refusal.saturating_add(1);
         state.actors.entry(actor.to_owned()).or_default().lift =
             Some(Lift { id, sender: sender.to_owned(), generation, asked: false, explanation: None, answer: None });
-        state.record(AuditKind::Notice, id, actor);
+        RequestState::record(AuditKind::Notice, id);
         Some(id)
     }
 
@@ -341,7 +332,7 @@ impl Requests {
             lift.explanation = Some(stored.clone());
             stored
         };
-        state.record(AuditKind::Explain, refusal, actor);
+        RequestState::record(AuditKind::Explain, refusal);
         Ok(stored)
     }
 
@@ -358,7 +349,7 @@ impl Requests {
             }
             lift.asked = true;
         }
-        state.record(AuditKind::Ask, refusal, &owner);
+        RequestState::record(AuditKind::Ask, refusal);
         Ok(())
     }
 
@@ -377,8 +368,8 @@ impl Requests {
             lift.asked = false;
             true
         };
-        if state.audit.last().is_some_and(|row| matches!(row.kind, AuditKind::Ask) && row.refusal == refusal) {
-            state.audit.pop();
+        if aborted {
+            tracing::debug!(refusal, "hop-limit ask refunded");
         }
         aborted
     }
@@ -409,7 +400,7 @@ impl Requests {
             lift.answer = Some(stored.clone());
             stored
         };
-        state.record(AuditKind::Answer, refusal, actor);
+        RequestState::record(AuditKind::Answer, refusal);
         Ok(stored)
     }
 
@@ -440,7 +431,7 @@ impl Requests {
         actor.resets += 1;
         actor.lift = None;
         actor.grant = Some(Grant { refusal, sender, generation });
-        state.record(AuditKind::Reset, refusal, &actor_id);
+        RequestState::record(AuditKind::Reset, refusal);
         Ok(())
     }
 
@@ -456,8 +447,8 @@ impl Requests {
             lift.explanation = None;
             true
         };
-        if state.audit.last().is_some_and(|row| matches!(row.kind, AuditKind::Explain) && row.refusal == refusal) {
-            state.audit.pop();
+        if aborted {
+            tracing::debug!(refusal, "hop-limit explanation refunded");
         }
         aborted
     }
@@ -474,8 +465,8 @@ impl Requests {
             lift.answer = None;
             true
         };
-        if state.audit.last().is_some_and(|row| matches!(row.kind, AuditKind::Answer) && row.refusal == refusal) {
-            state.audit.pop();
+        if aborted {
+            tracing::debug!(refusal, "hop-limit answer refunded");
         }
         aborted
     }
@@ -492,8 +483,8 @@ impl Requests {
             entry.resets = entry.resets.saturating_sub(1);
             true
         };
-        if state.audit.last().is_some_and(|row| matches!(row.kind, AuditKind::Reset) && row.refusal == refusal) {
-            state.audit.pop();
+        if aborted {
+            tracing::debug!(refusal, "hop-limit reset refunded");
         }
         aborted
     }
@@ -562,7 +553,7 @@ impl Requests {
             entry.lift = None;
             entry.denied = true;
         }
-        state.record(AuditKind::Deny, refusal, &owner);
+        RequestState::record(AuditKind::Deny, refusal);
         Ok(())
     }
 
@@ -575,9 +566,7 @@ impl Requests {
         {
             entry.lift = None;
         }
-        if state.audit.last().is_some_and(|row| matches!(row.kind, AuditKind::Notice) && row.refusal == refusal) {
-            state.audit.pop();
-        }
+        tracing::debug!(refusal, "hop-limit notice delivery finished");
     }
 
     #[cfg(test)]
@@ -635,9 +624,15 @@ impl Requests {
         true
     }
 
+    /// Whether `actor` still has its own explanation or answer waiting to reach the lead.
     #[cfg(test)]
-    pub fn audit_len(&self) -> usize {
-        self.0.locked().audit.len()
+    fn lift_text_pending(&self, actor: &str, refusal: u64) -> bool {
+        self.0
+            .locked()
+            .actors
+            .get(actor)
+            .and_then(|entry| entry.lift.as_ref())
+            .is_some_and(|lift| lift.id == refusal && (lift.explanation.is_some() || lift.answer.is_some()))
     }
 
     /// The actor that owns this open lift.
@@ -689,11 +684,9 @@ impl RequestState {
         self.actors.values().find_map(|actor| actor.lift.as_ref().filter(|lift| lift.id == refusal))
     }
 
-    fn record(&mut self, kind: AuditKind, refusal: u64, actor: &str) {
-        self.audit.push(Audit { kind, refusal, actor: actor.to_owned() });
-        if let Some(row) = self.audit.last() {
-            tracing::debug!(actor = %row.actor, refusal = row.refusal, kind = ?row.kind, "hop-limit");
-        }
+    /// Logs a decision with its refusal id; lift history is never retained.
+    fn record(kind: AuditKind, refusal: u64) {
+        tracing::debug!(refusal, ?kind, "hop-limit");
     }
 }
 
@@ -810,11 +803,9 @@ mod tests {
         assert!(requests.open_lift("sender", "a", 0).is_none());
         assert!(requests.open_lift("other", "a", 0).is_none());
         assert!(requests.lift_open("a"));
-        assert_eq!(requests.audit_len(), 1);
         let other = requests.open_lift("sender", "b", 0).unwrap();
         assert_ne!(first, other);
         assert!(requests.lift_open("b"));
-        assert_eq!(requests.audit_len(), 2);
     }
 
     #[test]
@@ -838,7 +829,7 @@ mod tests {
         assert!(requests.open_lift("sender", "a", 0).is_none());
         assert!(matches!(requests.0.locked().active.get("a"), Some(&Turn::Chat(MAX_REQUEST_HOPS))));
         assert!(!requests.take_grant_for_chat_start("a", 0, None));
-        assert_eq!(requests.audit_len(), 5);
+        assert!(!requests.lift_text_pending("a", refusal));
         assert_eq!(requests.0.locked().messages, 0);
 
         requests.user_message_started("a");
@@ -927,10 +918,11 @@ mod tests {
         }
         requests.start_turn("a", Turn::Chat(requests.hop_limit()));
         let refusal = requests.open_lift("sender", "a", 0).unwrap();
-        let before = requests.audit_len();
+        let resets = requests.0.locked().actors.get("a").unwrap().resets;
         let err = requests.approve(refusal).unwrap_err().to_string();
         assert!(err.contains("hop reset limit (3)"));
-        assert_eq!(requests.audit_len(), before);
+        assert_eq!(requests.0.locked().actors.get("a").unwrap().resets, resets);
+        assert!(!requests.grant_is_pending("a"));
         assert!(requests.lift_open("a"));
         assert!(matches!(requests.0.locked().active.get("a"), Some(&Turn::Chat(MAX_REQUEST_HOPS))));
         let blocked = requests.reserve_message("a").unwrap_err().to_string();
@@ -982,7 +974,6 @@ mod tests {
         let ids: Vec<u64> = opened.into_iter().flatten().collect();
         assert_eq!(ids.len(), 1);
         assert!(requests.lift_open("a"));
-        assert_eq!(requests.audit_len(), 1);
         assert!(requests.open_lift("sender", "a", 0).is_none());
     }
 
@@ -1024,7 +1015,7 @@ mod tests {
         assert_eq!(answered, "answer text");
         assert_eq!(requests.answer_text(refusal).as_deref(), Some("answer text"));
         assert_eq!(requests.explanation(refusal).as_deref(), Some("the user asked for this exact handoff"));
-        assert_eq!(requests.audit_len(), 4);
+        assert!(requests.lift_text_pending("a", refusal));
     }
 
     #[test]
@@ -1081,13 +1072,12 @@ mod tests {
     fn an_unsent_reset_releases_the_grant_and_the_budget() {
         let requests = Requests::default();
         let refusal = requests.open_lift("sender", "a", 0).unwrap();
-        let before = requests.audit_len();
         requests.approve(refusal).unwrap();
         assert!(!requests.abort_unsent_reset("a", refusal + 1));
         assert!(requests.grant_is_pending("a"));
         assert!(requests.abort_unsent_reset("a", refusal));
         assert!(!requests.grant_is_pending("a"));
-        assert_eq!(requests.audit_len(), before);
+        assert_eq!(requests.0.locked().actors.get("a").unwrap().resets, 0);
         // The aborted reset did not count, and it does not block the next refusal.
         for _ in 0..3 {
             let id = requests.open_lift("sender", "a", 0).unwrap();
@@ -1106,13 +1096,11 @@ mod tests {
     fn a_failed_delivery_leaves_the_explanation_and_the_answer_for_a_retry() {
         let requests = Requests::default();
         let refusal = requests.open_lift("sender", "a", 0).unwrap();
-        let before = requests.audit_len();
         requests.explain("a", refusal, "because").unwrap();
         assert!(requests.explain("a", refusal, "again").is_err());
         assert!(requests.abort_unsent_explanation("a", refusal));
         assert!(!requests.abort_unsent_explanation("a", refusal));
         assert_eq!(requests.explanation(refusal), None);
-        assert_eq!(requests.audit_len(), before);
         assert_eq!(requests.explain("a", refusal, "because").unwrap(), "because");
         assert!(requests.explain("a", refusal, "again").unwrap_err().to_string().contains("already explained"));
 

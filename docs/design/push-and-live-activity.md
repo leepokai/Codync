@@ -12,7 +12,7 @@ Updated: 2026-11-20. This describes the implemented notification contract and it
 | Working | No alert for each tool call | Bot identity and working orb |
 | Work away from the chat ([tasks](../features/work.md#outside-the-chat)) while the chat is idle | No alert when a task ends: its report is the bot's message, which alerts as a reply does | Working while the box holds a task that is working or waiting, or a report the chat hasn't taken; Needs you while a task waits on its card. The activity doesn't end with the chat's turn, and ends (Done) once the box is empty and the chat idle |
 | Input or permission needed | Bot name, “Response needed”, request summary; “Review request” action | Needs you; keep the activity alive |
-| Completed (sent once the last queued message is answered) | Bot name, “Task complete”, final reply preview; “Open conversation” action | Done, then dismiss after 60 seconds |
+| Completed and it left the user a reply, file or artifact card (sent once the last queued message is answered; a turn that left nothing, or only a choice or approval that already alerted, ends without one) | Bot name, “Task complete”, final reply preview; “Open conversation” action | Done, then dismiss after 60 seconds |
 | Failed (an error, or the turn stopped short: output/step limit, refusal) | Bot name, “Task failed”, failure summary; “Open conversation” action | Error state, then dismiss after 60 seconds |
 | No fresh update for 15 minutes | No synthetic failure alert | Update delayed; never infer completion |
 

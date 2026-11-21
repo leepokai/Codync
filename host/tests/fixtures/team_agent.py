@@ -189,6 +189,14 @@ def prompt(request):
         update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "(pass)"}})
         send({"id": request["id"], "result": {"stopReason": "end_turn"}})
         return
+    if text.split("\n\n")[-1].startswith("ASK_THEN_END "):
+        # ASK_THEN_END <question>|<option>|<option>: puts a card up, then ends with no text once `release` exists.
+        fields = text.split("\n\n")[-1].split(" ", 1)[1].split("|")
+        threading.Thread(target=mcp_call, args=("chat", "request_decision", {"question": fields[0], "options": fields[1:]}), daemon=True).start()
+        while not pathlib.Path("release").exists() and not cancel.wait(0.01):
+            pass
+        send({"id": request["id"], "result": {"stopReason": "end_turn"}})
+        return
     if text.split("\n\n")[-1] == "THANKS":
         response = mcp_call("chat", "react", {"emoji": "❤️"})
         reply = "Held back a reaction" if response.get("isError") else "Reacted with a heart"

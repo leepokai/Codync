@@ -521,7 +521,8 @@ The rules are one set, written three times: `apps/desktop/src/shared/work.ts` (`
   to it (`showInChat`, by `data-entry-id`); the phones close the details sheet and bring it into view, as a
   needs-you row does (iPhone `BotDetailsView.openInChat`, Android `openCard`). Only the chat's loaded messages are
   looked at, as for a needs-you row.
-- **Composer**: the chat's, text only (`Message this thread`): no files, dictation, commands, reply or call. Each
+- **Composer**: the chat's (`Message this thread`), with its + and file chips where the host takes files
+  (`talkFiles`), but no dictation, commands, reply or call. Each
   client keeps a draft per task, under the bot's (desktop `<bot>/thread/<task>`, phones `<bot>/task/<task>`), so it
   goes with the bot. Off while the computer is offline.
 - **Messages that wait.** Desktop: the bubble stays in the transcript with `Queued`, **Send now** and **Remove**

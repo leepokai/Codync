@@ -73,7 +73,7 @@ export function WorkThread({ botId, task, openArtifact, showInChat, close }: { b
         <WorkThreadTranscript thread={thread} task={task} openArtifact={openArtifact} showInChat={showInChat} />
       </div>
       {talks ? (
-        <ThreadComposer thread={thread} threadId={threadId} onSent={follow.toEnd} />
+        <ThreadComposer thread={thread} threadId={threadId} takesFiles={task.talkFiles} onSent={follow.toEnd} />
       ) : readOnly ? (
         <Text as="div" size="caption" tone="tertiary" className="work-thread-read-only">{tr(readOnly)}</Text>
       ) : null}
@@ -118,8 +118,9 @@ function WhereCopy({ task }: { task: WorkTask }) {
   )
 }
 
-/** The chat's message box, with files as in the chat: Return sends to the thread, where the message waits while the thread's turn runs. */
-function ThreadComposer({ thread, threadId, onSent }: { thread: ThreadRef; threadId: string; onSent: () => void }) {
+/** The chat's message box, with files as in the chat where the host takes them (`takesFiles`): Return sends to the
+ * thread, where the message waits while the thread's turn runs. */
+function ThreadComposer({ thread, threadId, takesFiles, onSent }: { thread: ThreadRef; threadId: string; takesFiles: boolean; onSent: () => void }) {
   const tr = useTr()
   const store = useStore()
   const drafts = store.composerDrafts
@@ -129,7 +130,7 @@ function ThreadComposer({ thread, threadId, onSent }: { thread: ThreadRef; threa
   const draft = useSyncExternalStore(drafts.subscribe, () => drafts.get(key))
   const field = useRef<HTMLTextAreaElement>(null)
   const label = tr('Message this thread')
-  const attach = useComposerFiles(true)
+  const attach = useComposerFiles(takesFiles)
   const canSend = (!!draft.trim() || attach.files.length > 0) && !store.isOffline
   useEffect(() => field.current?.focus({ preventScroll: true }), [])
   const submit = () => {
@@ -145,7 +146,7 @@ function ThreadComposer({ thread, threadId, onSent }: { thread: ThreadRef; threa
       <div className="composer-surface">
         <ComposerFiles files={attach.files} remove={attach.remove} />
         <div className="composer-box">
-          <AddFilesButton pick={attach.pick} />
+          {takesFiles ? <AddFilesButton pick={attach.pick} /> : null}
           <ComposerField field={field} value={draft} placeholder={label} label={label} onChange={(text) => drafts.set(key, text)} onSend={submit} onPaste={attach.paste} />
           <button className="press composer-send" disabled={!canSend} aria-label={tr('Send')} title={tr('Send')} onClick={submit}>
             <span aria-hidden="true" className="composer-symbol active">

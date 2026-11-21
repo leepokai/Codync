@@ -31,12 +31,7 @@ extension BotStore {
             do {
                 // Safe to repeat: the computer answers a nonce it already has with the same entry.
                 let e = try await withLink(replay: true) { client in
-                    var ids: [String]?
-                    if let files = self.outgoingFiles[nonce] {
-                        let uploaded = try await client.upload(botId: thread.botId, taskId: thread.taskId, files: files)
-                        for (id, file) in zip(uploaded, files) { Self.cacheAttachment(id, file.data) }
-                        ids = uploaded
-                    }
+                    let ids = try await self.uploadOutgoing(nonce, botId: thread.botId, taskId: thread.taskId, with: client)
                     return try await client.send(botId: thread.botId, text: trimmed, clientNonce: nonce, attachments: ids,
                                                  taskId: thread.taskId)
                 }
@@ -53,13 +48,9 @@ extension BotStore {
         }
     }
 
-    /// Resend on a message that failed here; one the computer failed (a restart) goes again as a new message.
-    func resend(_ entry: Entry, to thread: WorkThread) {
-        guard !filesGone(entry) else {
-            lastError = "This message's files aren't on this device anymore. Delete it and attach them again."
-            return
-        }
-        let files = entry.data.clientNonce.flatMap { outgoingFiles[$0] } ?? []
+    /// Resend on a message that failed here, with the `files` this app still holds for it; one the computer failed (a
+    /// restart) goes again as a new message.
+    func resend(_ entry: Entry, to thread: WorkThread, files: [OutgoingFile]) {
         let local = entry.data.clientNonce.map(Entry.localId) == entry.id
         if local { dropThreadEntry(entry.id, thread: thread.threadId) }
         send(entry.data.text ?? "", to: thread, files: files, nonce: (local ? entry.data.clientNonce : nil) ?? UUID().uuidString)

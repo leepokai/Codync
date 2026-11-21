@@ -303,7 +303,8 @@ public extension HostClient {
     /// `replyTo`: the chat message this one quotes. `replyPart`: the part of it the user selected.
     /// `pasted`: what the user pasted rather than typed, which memory never takes as their own words.
     /// `call`: the voice call it was said in (on-device or speech to text).
-    /// `taskId`: the bot's task whose thread it is for (text only); the entry that comes back is in that thread's transcript.
+    /// `taskId`: the bot's task whose thread it is for (no quote or call); the entry that comes back is in that thread's
+    /// transcript.
     func send(botId: String, text: String, clientNonce: String, replyTo: String? = nil, replyPart: String? = nil,
               attachments: [String]? = nil, pasted: [String]? = nil, call: String? = nil, taskId: String? = nil) async throws -> Entry {
         struct Body: Encodable {

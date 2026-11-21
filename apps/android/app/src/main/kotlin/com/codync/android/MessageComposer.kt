@@ -208,13 +208,14 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
 }
 
 /**
- * The chat's box under a task's thread, with its + for files but no microphone: [send] takes what was typed (the draft's
- * files go with it), only while the computer is there to take it. What is typed and added is saved under [draftKey], as a
- * chat's draft is. The messages waiting behind the thread's turn show on top as a chat's do ([queued], with [steer] and [remove]).
+ * The chat's box under a task's thread, with its + for files where the computer takes them ([takesFiles]) but no
+ * microphone: [send] takes what was typed (the draft's files go with it), only while the computer is there to take it.
+ * What is typed and added is saved under [draftKey], as a chat's draft is. The messages waiting behind the thread's turn
+ * show on top as a chat's do ([queued], with [steer] and [remove]).
  */
 @OptIn(ExperimentalFoundationApi::class)
-@Composable internal fun ThreadComposer(state: AppState, store: AppStore, draftKey: String, queued: List<Entry>, steer: (Entry) -> Unit,
-    remove: (Entry) -> Unit, send: (String) -> Unit) {
+@Composable internal fun ThreadComposer(state: AppState, store: AppStore, draftKey: String, takesFiles: Boolean, queued: List<Entry>,
+    steer: (Entry) -> Unit, remove: (Entry) -> Unit, send: (String) -> Unit) {
     val text = rememberTextFieldState(initialText = state.drafts[draftKey]?.text.orEmpty())
     LaunchedEffect(text, draftKey) { snapshotFlow { text.text.toString() }.collect { store.editDraft(draftKey, it) } }
     val placeholder = tr("Message this thread")
@@ -223,14 +224,14 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     val canSend = (text.text.isNotBlank() || files.isNotEmpty()) && !importing && state.actualConnection is LinkState.Ready
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         // Over the box, past the + button.
-        QueuedMessages(queued, state, store, Modifier.padding(start = 16.dp + FIELD_HEIGHT + 8.dp, end = 16.dp), steer, remove)
+        QueuedMessages(queued, state, store, Modifier.padding(start = 16.dp + (if (takesFiles) FIELD_HEIGHT + 8.dp else 0.dp), end = 16.dp), steer, remove)
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 16.dp), verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AddFilesButton(store, draftKey, enabled = true)
+            if (takesFiles) AddFilesButton(store, draftKey, enabled = true)
             Column(Modifier.weight(1f).glass(RoundedRectangle(24.dp)).animateContentSize(Motion.layoutSize)) {
                 DraftFiles(files, store, draftKey)
                 ComposerInput(text, placeholder, Trailing.Send, canSend,
-                    field = Modifier.semantics { contentDescription = placeholder }.contentReceiver(fileReceiver(store, draftKey, importing))) {
+                    field = Modifier.semantics { contentDescription = placeholder }.contentReceiver(fileReceiver(store, draftKey, importing || !takesFiles))) {
                     send(text.text.toString())
                     text.clearText()
                 }

@@ -89,9 +89,28 @@ pub(super) fn unheard(store: &Store, thread: &str) -> bool {
 /// its thread and no turn took yet goes with the task, as what they said since.
 pub(super) fn carry(store: &Store, task: &mut Task, thread: &str) {
     // What its chat passed on is with the task already (`tell`).
-    // ponytail: a waiting message's files stay behind (only its words go); carry their paths if users miss them.
+    // ponytail: a waiting message's files stay behind (only their names go); move them to the new thread if users
+    // miss them.
     for entry in waiting(store, thread).into_iter().filter(|e| e.data["relay"] != true) {
-        note(&mut task.notes, entry.data["text"].as_str().unwrap_or_default());
+        note(&mut task.notes, &carried(&entry.data));
+    }
+}
+
+/// A waiting message as the task that starts again keeps it: its words and the names of the files left behind.
+fn carried(data: &Value) -> String {
+    let left = data["attachments"].as_array().is_some_and(|a| !a.is_empty());
+    format!("{}{}", written(data), if left { " (those files stayed behind)" } else { "" })
+}
+
+/// One message the user wrote to a thread, as its task keeps it: the words, and the names of the files sent with them.
+pub fn written(data: &Value) -> String {
+    let text = data["text"].as_str().unwrap_or_default().trim();
+    let names: Vec<&str> =
+        data["attachments"].as_array().into_iter().flatten().filter_map(|a| a["name"].as_str()).collect();
+    match (text.is_empty(), names.is_empty()) {
+        (_, true) => text.to_owned(),
+        (true, false) => format!("[sent files: {}]", names.join(", ")),
+        (false, false) => format!("{text} [sent files: {}]", names.join(", ")),
     }
 }
 
@@ -126,11 +145,11 @@ fn reopen(hub: &Hub, owner: &BotConfig, task: &mut Task, thread: &mut BotConfig)
     Ok(())
 }
 
-/// The user writes `text` to the thread of `bot`'s task `id`, with the files uploaded to that thread (`uploads`, their ids). A turn that runs there makes it wait, as in a chat;
-/// a task that ended is reopened and its thread's actor started again, which resumes its session where the agent
-/// can. `nonce`: the client's, so a message sent twice is one. Answers `{entry, reopened, queued}`: the message as
-/// the thread's transcript holds it, whether it reopened the task, and whether it waits behind a running turn
-/// (both null for a message sent before).
+/// The user writes `text` to the thread of `bot`'s task `id`, with the files uploaded to that thread (`uploads`,
+/// their ids). A turn that runs there makes it wait, as in a chat; a task that ended is reopened and its thread's
+/// actor started again, which resumes its session where the agent can. `nonce`: the client's, so a message sent
+/// twice is one. Answers `{entry, reopened, queued}`: the message as the thread's transcript holds it, whether it
+/// reopened the task, and whether it waits behind a running turn (both null for a message sent before).
 pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, uploads: &[String], nonce: &str) -> Result<Value> {
     let owner = hub.store.bot(bot)?.filter(|row| !row.deleted).ok_or_else(|| anyhow!("unknown bot"))?.config;
     // Under the box's lock to the end: the task's end and the dispatcher's look at its thread come before all of
@@ -221,9 +240,9 @@ pub fn tell(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, now: bool) -> Resul
 /// report ends with them, and a session that starts the task again reads them.
 pub fn heard(hub: &Hub, cfg: &BotConfig, words: &[String]) {
     super::update(hub, cfg, "what the user wrote to it", |task| {
-        for words in words {
+        for words in words.iter().map(|w| w.trim()).filter(|w| !w.is_empty()) {
             note(&mut task.notes, words);
-            task.told.push(words.trim().to_owned());
+            task.told.push(words.to_owned());
         }
         let over = task.told.len().saturating_sub(TOLD_KEPT);
         task.told.drain(..over);
@@ -287,6 +306,17 @@ mod tests {
             refused(&task(&json!({"status": "waiting", "thread": null}))),
             "\"Fix login\" hasn't started yet: there is nothing to write to"
         );
+    }
+
+    #[test]
+    fn a_message_of_files_alone_is_told_by_their_names() {
+        let files = json!([{"name": "shot.png"}, {"name": "log.txt"}]);
+        assert_eq!(written(&json!({"text": "", "attachments": files})), "[sent files: shot.png, log.txt]");
+        assert_eq!(written(&json!({"text": " see ", "attachments": files})), "see [sent files: shot.png, log.txt]");
+        assert_eq!(written(&json!({"text": "see", "attachments": []})), "see");
+        let carried_files = carried(&json!({"text": "see", "attachments": files}));
+        assert_eq!(carried_files, "see [sent files: shot.png, log.txt] (those files stayed behind)");
+        assert_eq!(carried(&json!({"text": "see"})), "see");
     }
 
     #[tokio::test]

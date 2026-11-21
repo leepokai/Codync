@@ -12,7 +12,7 @@ use super::super::l10n::tr;
 use super::super::manage::{Fetched, ThreadSheet};
 use super::super::md::{self, truncate};
 use super::buffer::{centered, frame_box, hline, put, put_line, rput, u};
-use super::chat::composer_lines;
+use super::chat::{composer_lines, file_names};
 use super::queue::{QueueKeys, queued_rows};
 use super::set_cursor;
 use super::style::theme;
@@ -86,15 +86,10 @@ fn thread_composer(buf: &mut Buffer, inner: Rect, app: &App, s: &ThreadSheet, bo
     let top = if s.files.is_empty() {
         top
     } else {
-        let names: Vec<String> = s
-            .files
-            .iter()
-            .map(|p| format!("▤ {}", p.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()))
-            .collect();
         let row = top.saturating_sub(1);
         let hint = if s.typing && s.draft.text.is_empty() { "⌫ removes" } else { "" };
         let room = rput(buf, inner.right(), row, hint, t.dim.patch(t.panel)).saturating_sub(inner.x + 2);
-        put(buf, inner.x + 2, row, room, &names.join("  "), t.secondary.patch(t.panel));
+        put(buf, inner.x + 2, row, room, &file_names(&s.files), t.secondary.patch(t.panel));
         row
     };
     let keys = if s.typing { QueueKeys::AfterEsc } else { QueueKeys::Ready };

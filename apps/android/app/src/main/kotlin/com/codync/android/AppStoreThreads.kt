@@ -7,11 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.put
 
 // A thread's own transcript, read and written to from its page ([WorkThreadView]). Its entries never enter a chat
 // (`AppState.entries`) nor the mirror: they are held per thread id while the thread is open.
@@ -58,18 +54,11 @@ internal fun AppStore.deliverToThread(taskId: String, send: PendingSend) {
     mutableState.update { it.holdingThreadSend(taskId, send.copy(status = SendStatus.Sending, error = null)) }
     contextScope.launch {
         try {
-            // Each attempt uploads again under new ids, as the chat's sends do.
             val connection = ready()
-            val ids = send.files.map { file ->
-                UUID.randomUUID().toString().also { id ->
-                    HostFiles(connection).upload(send.botId, id, file, taskId)
-                    withContext(Dispatchers.IO) { attachments.cache(id, file) }
-                }
-            }
-            val reply = connection.call("send", buildJsonObject {
-                put("botId", send.botId); put("taskId", taskId); put("text", send.text); put("clientNonce", send.nonce)
-                if (ids.isNotEmpty()) put("attachments", JsonArray(ids.map(::JsonPrimitive)))
-            }, 30_000)
+            val ids = uploadFiles(connection, send, taskId)
+            // Hosts before 2.51.0 ([hostCallFor]): goes when MIN_HOST reaches 2.51.0.
+            val (method, body) = hostCallFor(state.value.hello?.text("version"), "send", send.body(ids, taskId))
+            val reply = connection.call(method, body, 30_000)
             val entry = Entry.decode(reply.jsonObject.getValue("entry").jsonObject)
             mutableState.update { it.withoutThreadSend(taskId, send.nonce).receivingThreadEntry(entry) }
             withContext(Dispatchers.IO) { send.files.forEach(attachments::discard) }

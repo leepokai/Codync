@@ -75,7 +75,7 @@ struct PendingSend {
 #[allow(clippy::struct_excessive_bools, reason = "independent UI flags, not a state machine")]
 pub struct App {
     pub client: Client,
-    pub(in crate::tui) tx: UnboundedSender<Msg>,
+    pub(super) tx: UnboundedSender<Msg>,
     pub url: String,
     /// Whether the host is this computer's. Attached with `--url` nothing tells: a tunnel's address looks local.
     pub on_this_computer: bool,
@@ -264,6 +264,15 @@ impl App {
         // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
         let (method, body) = super::net::old_host::outgoing(&self.host_version, method, body);
         self.client.spawn_call(method, body, after, self.tx.clone());
+    }
+
+    /// `send` `body`, with `files` uploaded first when there are any; to an older host as `call` maps it.
+    pub(in crate::tui) fn send_message(&self, body: Value, files: Vec<std::path::PathBuf>, after: After) {
+        if files.is_empty() {
+            return self.call("send", body, after);
+        }
+        let (_, body) = super::net::old_host::outgoing(&self.host_version, "send", body);
+        self.client.spawn_send_files(body, files, after, self.tx.clone());
     }
 
     // ---------- derived ----------

@@ -189,6 +189,10 @@ pub enum Event {
     NetworkChanged,
     /// A network step failed (`NetworkStage`): starting a node, a letter, or a `network*` call.
     NetworkFailed,
+    /// A bot reads another bot, or an explicitly approved action is applied to it.
+    BotInspected,
+    /// How `answer_approval` or `stop_bot` ended, including declined, stale, invalid and failed calls.
+    BotInspectOutcome,
     /// Error tracking (`errors`): a panic or an uncaught error.
     Exception,
 }
@@ -319,6 +323,8 @@ impl Event {
             Self::NetworkJoined => "network_joined",
             Self::NetworkChanged => "network_changed",
             Self::NetworkFailed => "network_failed",
+            Self::BotInspected => "bot_inspected",
+            Self::BotInspectOutcome => "bot_inspect_outcome",
             Self::Exception => "$exception",
         }
     }

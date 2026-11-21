@@ -371,6 +371,7 @@ impl Actor {
             *used = Instant::now();
         }
         let stopped = self.stop_requested || matches!(&done, Ok(v) if v["stopReason"] == "cancelled");
+        let card_open = self.open_card.is_some();
         self.close_attempt(stopped || done.is_err());
         let mut final_text = None;
         let routine = self.active_routine.is_some();
@@ -521,15 +522,18 @@ impl Actor {
         self.hub.team.end_turn(&self.cfg.id);
         // A room turn's news comes from the group once the room is done (see `group`).
         let more = self.queue.iter().any(|q| matches!(q, Queued::User { .. }));
-        // It held back its only answer, a reaction: it said nothing, so there is nothing to tell either.
-        let held_back = final_text.is_none() && matches!(reacted, Reacted::Refused);
-        // A turn the host started that found nothing worth saying (a follow-up's `(pass)`): the same.
-        let passed = final_text.is_none() && host_turn.is_some();
+        // A choice card the turn's end left waiting on the user; one already open when the turn ended is
+        // old news, not this turn's.
+        let waiting = !card_open && self.open_card.is_some();
+        // The turn left the user nothing to read or answer, whatever woke it (a bot's reply, a follow-up, a
+        // task's reports): its end tells them nothing either (#486). Their next message being already queued
+        // keeps it quiet as well.
+        let quiet = more || !delivered(final_text.as_deref(), &reacted, waiting);
         if !self.stop_requested
             && !delegated
             && !grouped
             && host_turn.is_none_or(HostTurn::alerts)
-            && let Some(kind) = turn_alert(failed, &stop_reason, more || held_back || passed)
+            && let Some(kind) = turn_alert(failed, &stop_reason, quiet)
         {
             let body = final_text.unwrap_or_else(|| match (kind, reacted) {
                 (AlertKind::Done, Reacted::With(emoji)) => format!("Reacted {emoji} to your message"),
@@ -628,9 +632,16 @@ impl Actor {
     }
 }
 
-/// A finished turn alerts once the user's work is done: not when it's `quiet` (their next message
-/// is already queued, or it said nothing on purpose). A turn that ended short of `end_turn` always
-/// reports the failure.
+/// Whether a finished turn left the user something to read or answer: its reply — which also carries a
+/// message it sent while working, a shared file, an artifact card — a reaction they can see, or a choice
+/// card its end left waiting on them. A turn that delivered none of that ends without a push (#486).
+fn delivered(final_text: Option<&str>, reacted: &Reacted, waiting: bool) -> bool {
+    final_text.is_some() || matches!(reacted, Reacted::With(_)) || waiting
+}
+
+/// A finished turn alerts once the user's work is done: not when it's `quiet` (their next message is
+/// already queued, or the turn left them nothing to read or answer). A turn that ended short of
+/// `end_turn` always reports the failure.
 fn turn_alert(failed: bool, stop_reason: &str, quiet: bool) -> Option<AlertKind> {
     if failed || !matches!(stop_reason, "end_turn" | "cancelled") {
         return Some(AlertKind::Failed);
@@ -645,9 +656,28 @@ mod tests {
     #[test]
     fn only_finished_threads_alert() {
         assert_eq!(turn_alert(false, "end_turn", false), Some(AlertKind::Done));
-        assert_eq!(turn_alert(false, "end_turn", true), None, "next message queued, or a reaction held back");
+        assert_eq!(turn_alert(false, "end_turn", true), None, "next message queued, or nothing delivered");
         assert_eq!(turn_alert(false, "cancelled", false), None);
         assert_eq!(turn_alert(false, "max_turn_requests", false), Some(AlertKind::Failed));
         assert_eq!(turn_alert(true, "error", true), Some(AlertKind::Failed));
+    }
+
+    #[test]
+    fn a_turn_alerts_only_when_it_left_the_user_something() {
+        // Nothing delivered (#486: a turn woken by a bot's reply that passed, a follow-up that found
+        // nothing, a held-back reaction): no push.
+        for reacted in [&Reacted::No, &Reacted::Refused] {
+            assert_eq!(turn_alert(false, "end_turn", !delivered(None, reacted, false)), None);
+        }
+        // Its reply (a sent message, a shared file, an artifact card all become it), a reaction they can
+        // see, a choice card the turn's end left waiting: one push.
+        assert!(delivered(Some("Done."), &Reacted::No, false), "a reply");
+        assert!(delivered(Some("Sent a file."), &Reacted::No, false), "only a file");
+        assert!(delivered(None, &Reacted::With("❤️".into()), false), "a visible reaction");
+        assert!(delivered(None, &Reacted::No, true), "a card waiting on them");
+        assert_eq!(
+            turn_alert(false, "end_turn", !delivered(Some("Done."), &Reacted::No, false)),
+            Some(AlertKind::Done)
+        );
     }
 }

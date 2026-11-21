@@ -76,10 +76,13 @@ def prompt(request):
         return
     if REPLIES_END in text:
         # Replies to requests this bot sent: relay what they said (whatever words they carry),
-        # or pass on a chain the peer handed back.
+        # pass on a chain the peer handed back, or go quiet when the answer says so.
         parts = text.split(REPLIES_END, 1)[0].split("\n\n")
         relayed = [p.split(".]\n", 1)[1] if ".]\n" in p else "failed" for p in parts]
-        reply = chain() if any("CHAIN" in r for r in relayed) else "Relayed: " + " | ".join(relayed)
+        if any("SILENT" in r for r in relayed):
+            reply = "(pass)"
+        else:
+            reply = chain() if any("CHAIN" in r for r in relayed) else "Relayed: " + " | ".join(relayed)
         update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})
         # A text update can reach sync before the host handles turn completion.
         # Keep that interval deterministic when the bounded chain stops.

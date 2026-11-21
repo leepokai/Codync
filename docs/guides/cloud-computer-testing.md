@@ -131,7 +131,11 @@ computers and the computer's own name follow, in the other apps already connecte
 other provider beside it, and neither key removable while its computer exists; at the limit (3) "+" opens with Create
 off and why, its keys still in reach; a key turned down for the plan still lets Create try again, one revoked or
 expired doesn't; delete the computer (*Delete {name}?*) → gone from every app and
-at its provider. Backups and a cold wake (stopped over 30 minutes) are in the scripted long run
+at its provider. On the phones' first run, signed in to an account with no computer: the install page's **Start a cloud
+computer** → New cloud computer → Create → *Starting your cloud computer* (Preparing your cloud computer…, then
+Connecting…) → the bots (Maestro tag `cloud-first-run`); **Skip** there → the tabs, and the computer shows up by
+itself; **Back** there → the install page, not waiting for it again; an account with a computer shows the row on the
+choose page too, and the pairing sheet from Computers never does. Backups and a cold wake (stopped over 30 minutes) are in the scripted long run
 (`CODYNC_E2E_COLD=1`; backups need a paid Boat plan). A restore from a backup happens only once Boat drops a
 stopped machine's own snapshot (14 days), so the long run has a pass-through to Boat answer one resume with
 `409 snapshot_data_expired`; everything else, the new machine included, is the real Boat.

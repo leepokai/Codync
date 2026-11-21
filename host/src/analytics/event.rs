@@ -67,6 +67,8 @@ pub enum Event {
     DecisionExpired,
     /// The user's choice was saved but its tool call had already stopped waiting.
     DecisionFailed,
+    /// An agent's own question (`elicitation/create`) got its reply (`action`; why it was declined: `reason`).
+    ElicitationReplied,
     ReactionAdded,
     HandoffAnswered,
     RoutineSaved,
@@ -169,6 +171,10 @@ pub enum Event {
     /// An important release's highlights were on screen (docs/features/whats-new.md; desktop and terminal UI here,
     /// phones send their own).
     WhatsNewShown,
+    /// The desktop app's system notifications were turned on or off (Settings → General → System).
+    DesktopNotificationsSet,
+    /// A desktop system notification was clicked, opening its chat.
+    DesktopNotificationOpened,
     /// A Codync Cloud computer's host started: how its keeper stood, and whether its agents could still use sudo.
     CloudKeeperChecked,
     /// A Codync Cloud computer's host, idle long enough, asked the cloud to put it to sleep (`remote::managed`).
@@ -243,6 +249,7 @@ impl Event {
             Self::DecisionAnswered => "decision_answered",
             Self::DecisionExpired => "decision_expired",
             Self::DecisionFailed => "decision_failed",
+            Self::ElicitationReplied => "elicitation_replied",
             Self::ReactionAdded => "reaction_added",
             Self::HandoffAnswered => "handoff_answered",
             Self::RoutineSaved => "routine_saved",
@@ -306,6 +313,8 @@ impl Event {
             Self::KofiInviteShown => "kofi_invite_shown",
             Self::KofiInviteAnswered => "kofi_invite_answered",
             Self::WhatsNewShown => "whats_new_shown",
+            Self::DesktopNotificationsSet => "desktop_notifications_set",
+            Self::DesktopNotificationOpened => "desktop_notification_opened",
             Self::CloudKeeperChecked => "cloud_keeper_checked",
             Self::CloudSleepAsked => "cloud_sleep_asked",
             Self::JoinFromPhoneAnswered => "join_from_phone_answered",

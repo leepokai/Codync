@@ -172,7 +172,7 @@ impl Actor {
 
     /// Stops the agent with everything it started, to give that back; the next turn starts it again and reopens its
     /// session.
-    async fn retire(&mut self, reason: Retired) {
+    pub(super) async fn retire(&mut self, reason: Retired) {
         let Some(conn) = self.conn.take() else { return };
         tracing::info!(bot = %self.cfg.id, ?reason, "stopping the agent");
         crate::analytics::agent_retired(&self.hub, &self.cfg.backend, reason);

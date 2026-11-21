@@ -9,7 +9,7 @@ conversation and compaction. The design, including what is still to come, is in
 | | Where | Owner | Lifetime |
 |---|---|---|---|
 | Transcript | SQLite `entries` | Codync | One persistent chat per bot; replies quote the message they answer |
-| Model context | ACP session (`bots.session_id`) | The harness | Until *New session* (the bot's menu), a rollover (Fresh conversations), a failed resume, or an agent/command/folder change; each [fallback agent](agent-fallback.md) keeps its own, parked while another answers |
+| Model context | ACP session (`bots.session_id`) | The harness | Until *New session* (the bot's menu), a rollover (Fresh conversations), a failed resume, an agent/model/command/folder change, or a sign-in the agent can't carry over; each [fallback agent](agent-fallback.md) keeps its own, parked while another answers |
 | Long-term memory | Markdown files per layer (`MEMORY.md` and notes); versions and who wrote what in SQLite `memory_*` tables | Codync: the bots, through their tools or their own file tools, and dreaming | Forever, across sessions |
 
 Codync never replays the transcript into a session. Each turn sends only the new message(s); the harness keeps

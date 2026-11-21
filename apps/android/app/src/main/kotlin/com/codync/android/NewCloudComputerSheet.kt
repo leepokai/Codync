@@ -48,13 +48,14 @@ private sealed interface CloudStep {
 }
 
 /**
- * Computers → Codync Cloud → "+" (iOS `NewCloudComputerSheet`), one sheet that walks its steps in place: the provider the
- * computer runs on (each with what it costs, or its key), its key on the provider's site when it has none that works
- * ([CloudKeyForm]), then the computer's name (empty, the suggested one). A row's `⋯` opens a saved key, or removes it
- * ([openKey]). Create closes the sheet once the computer is made; a refusal shows there, and at the account's limit why
- * it's off. It opens on the providers every time.
+ * Computers → Codync Cloud → "+", or Start a cloud computer on the first-run pages (iOS `NewCloudComputerSheet`), one sheet
+ * that walks its steps in place: the provider the computer runs on (each with what it costs, or its key), its key on the
+ * provider's site when it has none that works ([CloudKeyForm]), then the computer's name (empty, the suggested one). A
+ * row's `⋯` opens a saved key, or removes it ([openKey]). Create closes the sheet once the computer is made, after
+ * [created]; a refusal shows there, and at the account's limit why it's off. It opens on the providers every time.
  */
-@Composable internal fun NewCloudComputerSheet(offer: CloudOffer, state: AccountContext, store: AccountStore, openKey: (String) -> Unit) {
+@Composable internal fun NewCloudComputerSheet(offer: CloudOffer, state: AccountContext, store: AccountStore, created: () -> Unit = {},
+    openKey: (String) -> Unit) {
     DisposableEffect(store) {
         store.cloudSheetShown(true)
         onDispose { store.cloudSheetShown(false) }
@@ -88,7 +89,7 @@ private sealed interface CloudStep {
                     CardForm { CloudKeyForm(provider, offer, state, store) { go(CloudStep.Name(provider.provider)) } }
                 }
                 is CloudStep.Name -> offer.providers.firstOrNull { it.provider == shown.provider }?.let { provider ->
-                    NameStep(provider, name, { name = it.take(CLOUD_NAME_LIMIT) }, offer, state, store, canGoBack, back)
+                    NameStep(provider, name, { name = it.take(CLOUD_NAME_LIMIT) }, offer, state, store, canGoBack, back, created)
                 }
             }
         }
@@ -159,15 +160,15 @@ private fun AccountContext.cloudBusy(offer: CloudOffer) =
     }
 }
 
-/** The computer's [name] (empty, the suggested one) and where it will run; Create in the header. */
+/** The computer's [name] (empty, the suggested one) and where it will run; Create in the header, [created] once it's made. */
 @Composable private fun NameStep(provider: CloudProvider, name: String, rename: (String) -> Unit, offer: CloudOffer, state: AccountContext,
-    store: AccountStore, canGoBack: Boolean, back: () -> Unit) {
+    store: AccountStore, canGoBack: Boolean, back: () -> Unit, created: () -> Unit) {
     val dismiss = LocalDismissModal.current
     val suggested = offer.suggestedName(tr("Cloud computer"), tr("Cloud computer {n}"))
     val limit = offer.limitNote()
     // Its key can be turned down or removed meanwhile.
     val ready = provider.usable && !state.cloudBusy(offer) && limit == null
-    val create = { if (ready) store.createCloudComputer(provider.provider, name.trim().ifEmpty { suggested }, dismiss) }
+    val create = { if (ready) store.createCloudComputer(provider.provider, name.trim().ifEmpty { suggested }) { created(); dismiss() } }
     ModalHeader({ StepTitle(tr("New cloud computer"), canGoBack, back) }) {
         if (CLOUD_CREATE in state.busy) Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Spinner() }
         else IconButton("Create", "checkmark", enabled = ready) { create() }

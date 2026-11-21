@@ -28,6 +28,7 @@ import { registerSSH } from './ssh'
 import { registerSSHConfig } from './ssh-config'
 import { QuitLifecycle } from './quit-lifecycle'
 import { Island } from './island'
+import { registerNotifications } from './notifications'
 import { registerErrorReports } from './error-reports'
 import { registerRendererRecovery } from './renderer-recovery'
 import { reportHostSetupFailure } from './analytics'
@@ -55,7 +56,7 @@ if (!app.isPackaged && process.env.CODYNC_REMOTE_DEBUG) {
 }
 
 const host = new HostController()
-registerErrorReports(host)
+const reportError = registerErrorReports(host)
 registerRendererRecovery(host)
 host.on('setupFailed', reportHostSetupFailure)
 const account = new AccountService()
@@ -251,6 +252,7 @@ if (yieldsToInstall()) {
     updates.on('upToDate', () => send({ kind: 'upToDate' }))
     registerIPC(tray)
     island.register()
+    registerNotifications(send, reportError)
     // Voice input goes to the island while it's on, else to the chat window's composer.
     new VoiceShortcutKeys((key) => (island.enabled ? island.voiceKey(key) : send({ kind: 'voiceKey', key }, key === 'double'))).register()
     registerAuthIPC()

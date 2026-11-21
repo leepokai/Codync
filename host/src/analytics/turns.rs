@@ -141,6 +141,9 @@ pub enum Retired {
     RoutineFinished,
     /// A routine run ended and the agent couldn't close its session, which holds MCP servers (Cursor can't close one).
     SessionNotClosed,
+    /// The agent dropped Codync's MCP servers from a live session (OpenCode 2.x after an idle while, #508), so it
+    /// started again and reopened the session with them.
+    ServersLost,
 }
 
 /// `agent_retired`: a bot's `agent` stopped to give back its processes, and why.

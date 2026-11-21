@@ -424,6 +424,8 @@ export interface EntryData {
   choices?: string[]
   /** decision: which choice the bot suggests (`choices`' index). */
   recommended?: number | null
+  /** decision: `false` when only an option answers it (an agent's own question); missing: own words answer it too. */
+  ownWords?: boolean
   command?: string
   detail?: string
   cwd?: string

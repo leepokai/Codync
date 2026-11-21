@@ -171,7 +171,7 @@ pub fn can_cut_in(work: &[WorkTask], max_threads: Option<u8>) -> bool {
 
 /// The Details page's sections of tasks, each in the order its rows show.
 pub struct Sections<'a> {
-    /// The agent sessions that run now: tasks that need the user, then the working ones.
+    /// The threads that run now: tasks that need the user, then the working ones.
     pub threads: Vec<&'a WorkTask>,
     /// What waits for a thread, in the order it will be taken.
     pub waiting: Vec<&'a WorkTask>,

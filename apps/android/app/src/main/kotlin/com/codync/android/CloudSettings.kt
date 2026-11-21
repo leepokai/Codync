@@ -102,13 +102,6 @@ private val CloudMachine.stateLabel: String get() = when {
     }
 }
 
-/** [item] while it's set, else the last one: a dialog keeps its words while it fades away. */
-@Composable private fun <T : Any> lastOf(item: T?): T? {
-    var last by remember { mutableStateOf(item) }
-    if (item != null) last = item
-    return last
-}
-
 /** A cloud computer: its provider's logo, its name, where it runs and how it is (or what to fix while its provider turns
  * the key down: [problem], nothing wakes or sleeps it until then); its menu, or a spinner while one of its actions runs. */
 @Composable private fun MachineRow(machine: CloudMachine, problem: String?, busy: Boolean, menu: () -> List<MenuItem>) {

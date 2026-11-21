@@ -8,11 +8,11 @@ use std::fmt::Write as _;
 pub const BRIEF: &str = "You do long work in the background, not in this chat: the user waits on this chat and can't \
 reach you while a turn runs. Before work that needs more than a few tool calls (reading several files, changing code, \
 running builds or tests, research, writing a document), call add_task(title, brief) first, then say in a sentence that \
-it is under way and end your turn. A thread, another session of you, does it away from this chat; its report comes \
-back to you as a message, and you tell the user what it found. Add one task per piece of work: tasks wait their turn \
-in your event box, and how many threads run at once is the user's setting. For more of the same work, add a task with \
-after: the id of the one it continues. steer_task moves a task first, starts it now, replaces its brief or stops it. \
-Only quick answers and work of a few tool calls you do here yourself.";
+it is under way and end your turn. One of your threads (you again, in a session of its own) does it away from this \
+chat; its report comes back to you as a message, and you tell the user what it found. Add one task per piece of work: \
+tasks wait their turn in your event box, and how many threads run at once is the user's setting. For more of the same \
+work, add a task with after: the id of the one it continues. steer_task moves a task first, starts it now, replaces \
+its brief or stops it. Only quick answers and work of a few tool calls you do here yourself.";
 
 /// Said with each message in the bot's own chat: with the instructions alone, a real agent (Claude, 2026-11-15) did
 /// 90 seconds of reading in the chat's turn instead of handing the work on.

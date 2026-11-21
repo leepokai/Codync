@@ -1,6 +1,6 @@
 # Notifications, Live Activities and Dynamic Island
 
-Updated: 2026-09-27. This describes the implemented notification contract and its delivery limits. Deployment and real-device acceptance are separate from local tests.
+Updated: 2026-11-20. This describes the implemented notification contract and its delivery limits. Deployment and real-device acceptance are separate from local tests.
 
 ## Experience
 
@@ -21,6 +21,10 @@ The encrypted title is limited to 80 characters and the body to 400 characters. 
 Notification actions open the scoped conversation. Permission approval still requires the normal in-app permission card. An account mismatch does not navigate into another account. Only the selected account's notifications should show, on iOS as on Android: [accounts on a phone](../architecture/connections.md#accounts-on-a-phone). Notifications are grouped by computer plus bot. Muted and hidden bots do not alert. The existing host-wide suppression while an iOS event connection is open remains in place; independent foreground suppression for multiple phones is not implemented.
 
 Each computer's card in Computer management has a Push notifications switch: off saves it with that computer on this phone and calls `unregisterDevice` on that computer only, so it drops its alert ticket while the others keep theirs (Live Activities are unaffected; Android saves the switch with each computer the same way). Settings → Notifications requests access or opens the system notification settings. Per-bot notification preferences remain in the bot editor. State → Live Activity controls automatic activity creation and shows system authorization. Turning it off ends this phone's activities. State → Dynamic Island shows the same switch: iOS renders one activity in both places and offers no island-only opt-out. Under the bot's row (above Review when the bot needs you), the Lock Screen card shows a progress line, four segments in the state's color that fill as the task moves (one while sending or queued, two while working, three when the bot needs you, four once it ends), the same line as Android's Live update. The expanded island centers the bot name and current step under the camera, between the avatar and the orb (both vertically centered), so no text reaches the island's 44 pt corners. Its bottom row shows the elapsed time (from `startedAt`, counted by the system) or, when the bot needs you, a Review button that opens the conversation.
+
+## Desktop app
+
+The desktop app shows the same alerts as system notifications, off by default (a phone paired to the same computer gets each as a push, so both on alert twice): Settings → General → System → Notifications, saved in the main process's preferences (`systemNotifications`). `push::notify` sends each alert that passes the bot's `notify`, hidden and throttle checks as a live-only `alert` event (`{"type": "alert", "alert": {botId, kind, title, body}}`, no rev, so no catch-up replays it), whether or not a phone is connected; the events stream drops it for `client=ios|android`. The chat window's store for each computer (`bot-sync.ts`) passes it on unless that bot's chat is on screen in a focused window, and the main process (`main/notifications.ts`) shows it only while the setting is on; a click opens the chat (`openAlert`). The terminal UI keeps its own in-terminal toasts. Analytics: `desktop_notifications_set`, `desktop_notification_opened`; one the system fails to show goes to error tracking (`NotificationFailed`). On Windows the app sets its AppUserModelID to the installer's `appId`, which the toast needs.
 
 ## Responsibilities and privacy
 

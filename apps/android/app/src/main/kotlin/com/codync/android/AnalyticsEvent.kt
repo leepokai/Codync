@@ -199,9 +199,9 @@ internal enum class NotificationAccess(override val wire: String) : CatalogValue
     }
 }
 
-internal enum class OnboardingStep(override val wire: String) : CatalogValue { Welcome("welcome"), Choose("choose"), Install("install"), Scan("scan") }
+internal enum class OnboardingStep(override val wire: String) : CatalogValue { Welcome("welcome"), Choose("choose"), Install("install"), Scan("scan"), Cloud("cloud") }
 
-internal enum class OnboardingVia(override val wire: String) : CatalogValue { Paired("paired"), Account("account"), Skipped("skipped") }
+internal enum class OnboardingVia(override val wire: String) : CatalogValue { Paired("paired"), Account("account"), Cloud("cloud"), Skipped("skipped") }
 
 internal enum class SignInProvider(override val wire: String) : CatalogValue { Apple("apple"), Google("google"), GitHub("github"), Hosted("hosted") }
 

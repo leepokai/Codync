@@ -6,18 +6,27 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.52.0
+### zh-Hant
+- 有些 agent（例如 Hermes）會在回覆中途問你問題，現在這些問題會顯示在聊天的選擇卡片上，等你回答，不會再被「自動核准」替你選第一個選項。有選項的問題只能選其中一個，卡片上不再顯示「其他答案」那一列。
+
+### en-US
+- Some agents, such as Hermes, ask you questions mid-reply. These now wait for you on the chat's choice card, and Approve automatically no longer picks their first option for you. A question with options takes one of them, so its card has no Something else row.
+
 ## 2.51.0
 ### zh-Hant
-- Bot 離開聊天做的事現在有兩個清楚的名稱：一件工作叫 task，被啟動來做 task 的那段工作階段叫 thread。一個 thread 一次做一件 task，做完可以接下一件。
+- Bot 離開聊天做的事現在有兩個清楚的名稱：一件工作叫 task，Bot 做 task 的地方叫 thread，有自己的工作階段。一個 thread 一次做一件 task，做完可以接下一件。
 - 聊天上方的「背景」那一行改名為「工作」，和「工作」頁同名。
 - thread 都在忙、要選一件讓位時，提示改成「所有 thread 都在忙」；停止一件工作時問的是「停止這個 task？」。
 - 配對說明改成「配對手機」，和電腦選單上的名稱一致：同一個碼 iPhone 和 Android 手機都能配。
+- 第一次設定手機時，可以直接建立一臺 Codync Cloud 雲端電腦，不用先在自己的電腦上安裝 Codync；設定會等它準備好，再進到你的 Bot。
 
 ### en-US
-- What a bot does away from the chat now has two clear names: a task is one piece of work, and a thread is the session started to do tasks. A thread does one task at a time and may go on to the next.
+- What a bot does away from the chat now has two clear names: a task is one piece of work, and a thread is where the bot does tasks, with a session of its own. A thread does one task at a time and may go on to the next.
 - The "In the background" line above the chat is now "Work", like the Work page.
 - When every thread is busy and one task has to give way, the prompt says so; stopping one asks "Stop this task?".
 - The pairing instructions now say Pair phone, the name the computer's menu uses, since the same code pairs iPhone and Android phones.
+- First-time setup can start a Codync Cloud computer instead of installing Codync on one of yours, then waits until it's ready and opens your bots.
 
 ## 2.50.0
 ### zh-Hant

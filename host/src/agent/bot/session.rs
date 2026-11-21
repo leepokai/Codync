@@ -2,10 +2,11 @@
 
 use super::fast_mode::Listing;
 use super::launch::{claude_meta, launch_commands, select_model, start_agent, start_first, system_prompt};
-use super::{Actor, Adapter, Conn, Instructions, codex_names, pi_tools};
+use super::{Actor, Adapter, Conn, Instructions, ServerWatch, background_work, codex_names, pi_tools};
 use crate::agent::acp::{self, Incoming};
 use crate::agent::own_memory;
 use crate::agent::registry::Candidate;
+use crate::analytics::Retired;
 use crate::chat::{context, memory};
 use crate::store::run_session_key;
 use anyhow::{Context, Result, anyhow, bail};
@@ -233,8 +234,12 @@ impl Actor {
             let prompt_current =
                 snapshot.as_ref().is_none_or(|s| self.applied_system.get(&sid).is_some_and(|t| *t == s.system));
             if conn.loaded.contains_key(&sid) && prompt_current {
-                self.turn_session = Some(sid);
-                return Ok(());
+                if !self.servers_dropped().await {
+                    self.turn_session = Some(sid);
+                    return Ok(());
+                }
+                self.retire(Retired::ServersLost).await;
+                return Box::pin(self.ensure_session(slot)).await;
             }
             let Some(reopen) = conn.sessions.reopen else {
                 tracing::info!(bot = %self.cfg.id, "the agent can't resume sessions; starting a fresh one");
@@ -275,6 +280,7 @@ impl Actor {
                     };
                     conn.loaded.insert(sid.clone(), Instant::now());
                     conn.renamed.insert(sid.clone(), renamed);
+                    watch_servers(conn).await;
                     self.note_options(&sid, &res, Listing::Session);
                     for update in &about_agent {
                         self.on_session_wide(update);
@@ -346,6 +352,7 @@ impl Actor {
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone(), Instant::now());
         conn.renamed.insert(sid.clone(), renamed);
+        watch_servers(conn).await;
         self.unfiled.opened(conn.adapter, &sid);
         let options = select_model(&conn.acp, res, &sid, &self.cfg).await?;
         self.note_options(&sid, &options, Listing::Session);
@@ -439,6 +446,29 @@ impl Actor {
     /// Drops the main ACP session so the next turn starts a fresh one.
     pub(super) fn forget_session(&mut self) {
         self.set_session(None, None);
+    }
+
+    /// Whether the agent dropped Codync's MCP servers from its sessions (OpenCode 2.x once it has been idle a while,
+    /// #508), so it must start again to get them back: loading a session again in the same process doesn't, OpenCode
+    /// registers a session's servers once. Not while stopping it would end work it runs detached: the next turn looks
+    /// again.
+    async fn servers_dropped(&self) -> bool {
+        let Some(conn) = &self.conn else { return false };
+        if conn.servers != ServerWatch::Seen || background_work::codync_servers_run(&conn.acp).await {
+            return false;
+        }
+        if background_work::holds_restart(&conn.acp).await {
+            tracing::warn!(bot = %self.cfg.id, "the agent dropped Codync's MCP servers; keeping it for the work it runs detached");
+            return false;
+        }
+        true
+    }
+}
+
+/// Marks Codync's MCP servers seen once a session opened with them shows them under the agent (`ServerWatch`).
+async fn watch_servers(conn: &mut Conn) {
+    if conn.servers == ServerWatch::Unseen && background_work::codync_servers_run(&conn.acp).await {
+        conn.servers = ServerWatch::Seen;
     }
 }
 

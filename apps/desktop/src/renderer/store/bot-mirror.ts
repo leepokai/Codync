@@ -1,3 +1,4 @@
+import type { HostAlert } from '@shared/alerts'
 import { checkVersions, isBelow, type VersionMismatch } from '@shared/compat'
 import { mixesAgents } from '@shared/fallbacks'
 import {
@@ -108,6 +109,8 @@ export class BotMirror extends Observable {
   answering = new Map<string, string>()
 
   onRosterChanged: (() => void) | null = null
+  /** The host's alerts for bots no chat on screen shows (a system notification, if the user turned those on). */
+  onAlert: ((alert: HostAlert) => void) | null = null
   onComputerChanged: ((c: Computer) => void) | null = null
 
   protected waiting = 0

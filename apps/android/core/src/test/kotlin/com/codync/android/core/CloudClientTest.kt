@@ -251,6 +251,27 @@ class CloudClientTest {
         assertEquals("You can have up to 3 cloud computers. Delete one to make another.", CloudOffer(three, true).limitNote())
     }
 
+    @Test fun `a first run waits for the cloud computer still preparing, or the one it made`() {
+        fun machine(id: String, state: String, computerId: String?) = CloudMachine(id, "Cloud computer", "boat", "Boat", "EU", state, computerId)
+        val running = machine("cm_0", "running", "c0")
+        val preparing = machine("cm_1", "starting", null)
+        // The one preparing, wherever it was made.
+        val offer = CloudOffer(listOf(running, preparing), true)
+        assertEquals(preparing, offer.starting(false))
+        assertEquals(CloudMachine.Start.Preparing, offer.starting(true)?.start)
+        // Left with Back, it isn't waited for again.
+        assertNull(offer.starting(false, passed = setOf("cm_1")))
+        // In the account: only a first run that made it waits on, while this device is let in.
+        val claimed = CloudOffer(listOf(running, preparing.copy(state = "running", computerId = "c1")), true)
+        assertNull(claimed.starting(false))
+        assertEquals("cm_1" to CloudMachine.Start.Connecting, claimed.starting(true)?.let { it.cloudComputerId to it.start })
+        // Failed: waited on only once it made it there, and then it says so.
+        val failed = CloudOffer(listOf(machine("cm_2", "failed", null)), true)
+        assertNull(failed.starting(false))
+        assertEquals(CloudMachine.Start.Failed, failed.starting(true)?.start)
+        assertNull(CloudOffer(available = true).starting(true))
+    }
+
     @Test fun `a key stays while any cloud computer runs on its provider`() {
         val offer = CloudOffer(listOf("running", "starting").map { CloudMachine("cm_$it", it, "boat", "Boat", "EU", it) }, true)
         assertFalse(offer.canRemoveKey("boat"))

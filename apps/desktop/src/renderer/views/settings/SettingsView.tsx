@@ -13,7 +13,7 @@ import { appLanguages, languageTitle } from '../../lib/l10n'
 import { useTr } from '../../lib/use-language'
 import { DEFAULT_TEXT_SIZE, prefs, TEXT_SIZES, usePref } from '../../lib/prefs'
 import { useAccount } from '../../store/account'
-import { useScreenViewed } from '../../store/analytics'
+import { analytics, useScreenViewed } from '../../store/analytics'
 import { StoreContext, useApp } from '../../store/context'
 import { SwitchRow } from '../bots/parts'
 import { ComputerBadge } from '../ComputerBadge'
@@ -139,6 +139,8 @@ function GeneralSettings() {
   useEffect(() => void window.codync.app.showInDock().then(setShowInDock), [])
   const [launchAtLogin, setLaunchAtLogin] = useState(false)
   useEffect(() => void window.codync.app.launchAtLogin().then(setLaunchAtLogin), [])
+  const [notifications, setNotifications] = useState(false)
+  useEffect(() => void window.codync.notifications.enabled().then(setNotifications), [])
   const [island, setIsland] = useState(false)
   useEffect(() => void window.codync.island.enabled().then(setIsland), [])
   const [voiceShortcut, setVoiceShortcut] = useState<VoiceShortcut>('off')
@@ -218,6 +220,17 @@ function GeneralSettings() {
       </CardSection>
       <CardSection title="System">
         {window.codync.platform === 'darwin' ? <Switch on={showInDock} onChange={(on) => void window.codync.app.setShowInDock(on).then(setShowInDock)}>Show in Dock</Switch> : null}
+        {window.codync.notifications.supported ? (
+          <SwitchRow
+            title="Notifications"
+            detail="Alerts you when a bot is done, needs you or hits an error, unless its chat is open. A phone with Codync gets the same alerts, so this starts off."
+            on={notifications}
+            onChange={(on) => {
+              analytics.track({ event: 'desktop_notifications_set', on })
+              void window.codync.notifications.setEnabled(on).then(setNotifications)
+            }}
+          />
+        ) : null}
         {window.codync.island.supported ? (
           <Switch on={island} onChange={(on) => void window.codync.island.setEnabled(on).then(setIsland)}>
             {islandLabel(window.codync.platform)}

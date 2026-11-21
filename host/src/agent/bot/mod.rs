@@ -23,6 +23,7 @@ mod codex_section;
 mod commands;
 mod compaction;
 mod decisions;
+mod elicitations;
 mod fallback;
 mod fast_mode;
 mod files;
@@ -139,6 +140,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         sent: Vec::new(),
         reacted: Reacted::No,
         joined: false,
+        unheard: Vec::new(),
         files: files::FileShares::default(),
         perms: HashMap::new(),
         asked: HashMap::new(),
@@ -201,6 +203,18 @@ pub(crate) enum Adapter {
     Other,
 }
 
+/// Whether a turn checks that Codync's MCP servers still run under the agent: OpenCode 2.x drops them from its
+/// sessions once it has been idle a while (#508, `Actor::servers_dropped`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum ServerWatch {
+    /// The agent keeps them.
+    Off,
+    /// Not seen under this process yet, so their absence says nothing: they may run elsewhere, or never have started.
+    Unseen,
+    /// Seen running under it: once none does, the agent dropped them.
+    Seen,
+}
+
 #[allow(clippy::struct_excessive_bools, reason = "independent facts about the agent process")]
 pub(crate) struct Conn {
     pub(crate) acp: Arc<Acp>,
@@ -209,6 +223,7 @@ pub(crate) struct Conn {
     pub(crate) adapter: Adapter,
     /// An OpenCode older than 2, which never ends a turn its model refused: `start_first` keeps it as a last resort.
     superseded: bool,
+    servers: ServerWatch,
     /// Sessions already created or loaded in this process, and when each was last used.
     loaded: HashMap<String, Instant>,
     /// A finished routine run's session it couldn't close is still open, with its MCP servers (`release_spent`).
@@ -359,10 +374,15 @@ struct Actor {
     // ponytail: the host can't tell which message a send answered, so a closing note after one shows too; a bubble too
     // many beats a reply lost.
     joined: bool,
+    /// Messages that joined this turn (`steer`) with nothing from the agent since: a turn its agent then cancels on its
+    /// own drops them (Codex, on a refused card), so they go out again (`requeue_unheard`).
+    // ponytail: any text or tool call counts as the agent's word on them, so a card from the step already under way when
+    // one joined, refused, still drops it; ACP doesn't say which step read the message.
+    unheard: Vec<Queued>,
     files: files::FileShares,
     /// permission entry id -> who waits for the answer
     perms: HashMap<String, updates::Answer>,
-    /// Decision card id -> the live tool call waiting for this turn's choice.
+    /// Decision card id -> the live tool call or agent question (`elicitations`) waiting for this turn's choice.
     asked: HashMap<String, decisions::Asked>,
     /// The chat's choice card whose call stopped waiting: the user's press or next message still answers it.
     open_card: Option<String>,

@@ -116,6 +116,12 @@ const bridge: CodyncBridge = {
     setCalling: (on) => ipcRenderer.send('voice:calling', on),
   },
   ssh: sshBridge,
+  notifications: {
+    supported: ipcRenderer.sendSync('notifications:supported') as boolean,
+    enabled: () => ipcRenderer.invoke('notifications:enabled'),
+    setEnabled: (on) => ipcRenderer.invoke('notifications:setEnabled', on),
+    show: (alert) => ipcRenderer.send('notifications:show', alert),
+  },
   island: {
     supported: ipcRenderer.sendSync('island:supported') as boolean,
     enabled: () => ipcRenderer.invoke('island:enabled'),

@@ -26,10 +26,12 @@ pub enum TurnSource {
     Routine,
     Group,
     Bot,
-    /// The host's own turn, with no message of the user's (the lead opening a call).
+    /// The host's own turn, with no message of the user's: the lead opening a call, the reports of the bot's tasks.
     Host,
     /// A follow-up the bot set for itself came due.
     FollowUp,
+    /// The watchdog's look at one of the bot's tasks that seems stuck.
+    Watchdog,
 }
 
 /// A turn that ended, as its actor knows it (`turn_finished`).
@@ -65,6 +67,7 @@ pub fn turn_finished(hub: &Hub, bot: &BotConfig, turn: TurnEnd<'_>) {
         TurnSource::Bot => "bot",
         TurnSource::Host => "host",
         TurnSource::FollowUp => "follow_up",
+        TurnSource::Watchdog => "watchdog",
     };
     let mut p = json!({"agent": bot.backend, "outcome": outcome, "stop_reason": stop_reason, "source": source, "seconds": ms.max(0) / 1000});
     let access = hub.ceilings.access(&bot.id);
@@ -141,6 +144,9 @@ pub enum Retired {
     RoutineFinished,
     /// A routine run ended and the agent couldn't close its session, which holds MCP servers (Cursor can't close one).
     SessionNotClosed,
+    /// The agent dropped Codync's MCP servers from a live session (OpenCode 2.x after an idle while, #508), so it
+    /// started again and reopened the session with them.
+    ServersLost,
 }
 
 /// `agent_retired`: a bot's `agent` stopped to give back its processes, and why.

@@ -236,7 +236,8 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact, plain = fal
     ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
     ...(openTrace ? [{ title: 'Show what it did', icon: 'list.bullet', action: openTrace }] : []),
   ]
-  // A shared picture or voice note has the same menu as the bubble: reactions, Reply and what it did, its own items in place of Copy.
+  // A shared picture has the same menu as the bubble: reactions, Reply and what it did, its own items in place of Copy.
+  // A voice note's player keeps the message's Copy (its text), as on the phones.
   const menu: MessageMenu = { items: rest, reactions }
   const download = (file: SharedFile) => downloadItem(store.fileDownloads.states.get(file.id), () => store.fileDownloads.toggle(store.client, entry.id, file))
   // Copy, then Download for each voice note (inside the message or sent on its own): the bubble's and the "…" menu's.
@@ -255,7 +256,7 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact, plain = fal
             <ArtifactCard botId={entry.botId} card={entry.data.artifact} open={() => openArtifact?.(entry.data.artifact!.id)} />
           ) : voiceNote ? (
             <>
-              <VoiceNotePlayer entry={entry} file={voiceNote} menu={menu} />
+              <VoiceNotePlayer entry={entry} file={voiceNote} menu={{ ...menu, items: () => [...messageCopyItems(store, entry), ...rest()] }} />
               <MarkdownText text={entry.data.text ?? ''} findable />
             </>
           ) : entry.data.files?.length ? (

@@ -209,12 +209,33 @@ internal val AccountContext.preparingCloud: Set<String>
 /**
  * Codync Cloud computers approve this phone by themselves: each one it can't use yet is asked once per app session,
  * through the same request and code exchange as a tap on "Ask for access"; a request that failed or ended unapproved is
- * asked again on the next refresh (iOS `askCloudComputers`).
+ * asked again on the next refresh. So is one listed as asked ("pending") that this phone has no request for: the cloud
+ * kept a request whose answer the network lost, and a new one replaces it there (iOS `askCloudComputers`).
  */
 internal fun AccountStore.askCloudComputers(computers: List<CloudComputer>) {
+    val context = state.value
     for (computer in computers) {
-        if (computer.cloud == null || computer.access != "none" || store(computer.computerId) != null) continue
-        if (askedCloud.add(computer.computerId)) requestAccess(computer)
+        val id = computer.computerId
+        if (computer.cloud == null || store(id) != null) continue
+        val lost = computer.access == "pending" && id !in context.access && "access:$id" !in context.busy
+        if ((computer.access == "none" || lost) && askedCloud.add(id)) requestAccess(computer, quiet = true)
+    }
+}
+
+/** How often a first run's wait asks the account again about a cloud computer this phone can't use yet. */
+internal const val CLOUD_REACH_INTERVAL = 5_000L
+
+/**
+ * First run, waiting on cloud computer [computerId] now that it's in the account: asks the account again every [every]
+ * ms until this phone uses it, so a lookup or an access request lost to the network doesn't leave the wait standing. It
+ * ends with the waiting page, whose effect this is. An error on screen is read first: asking again would clear it (iOS
+ * `reachCloudComputer`).
+ */
+// ponytail: a fixed interval for as long as the page shows; back off if a wait ever lasts hours.
+internal suspend fun AccountStore.reachCloudComputer(computerId: String, every: Long = CLOUD_REACH_INTERVAL) {
+    while (store(computerId) == null) {
+        delay(every)
+        if (store(computerId) == null && state.value.error == null) refreshCloud()
     }
 }
 

@@ -25,7 +25,7 @@ All the bot's threads work in its own folder, side by side, so two of them can c
 
 ## Where threads work in a project folder
 
-A thread is another session of the same bot that does tasks away from the chat.
+A thread is where the bot does tasks away from the chat, with a session of its own.
 
 - **The first one works in the bot's folder**, as the chat does.
 - **Each further one that starts while another is still working gets its own copy**, when the folder is in a Git repository and **Worktree per thread** is on. The copy is a Git worktree: a separate checkout under `~/.codync/worktrees`, on a new branch named `codync/` and its task's title (for example `codync/fix-login`), started from the commit your folder is on. The threads never overwrite each other, and none of them touches your folder.
@@ -68,7 +68,7 @@ Codync can keep versions and give threads their own copies only with Git. In bot
 
 A project folder may not be a Git repository. (A bot's own folder becomes one by itself once Git is installed.) Choose one of these:
 
-- **Keep to one at a time.** Set **Threads at once**, under **Workspace** in the bot's **Settings**, to 1. Further tasks wait their turn.
+- **Keep to one at a time.** Set **Threads at once**, under **Workspace** in the bot's **Settings**, to 1. Further tasks wait their turn, except while a thread waits for you (an approval, a choice or a sign-in): then the next task starts in the same folder, and once you answer, both work there at once. To keep them apart even then, make the folder a repository.
 - **Make the folder a repository.** A copy starts from a commit, so the folder needs at least one:
 
 ```sh

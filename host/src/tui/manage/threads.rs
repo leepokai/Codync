@@ -1,6 +1,6 @@
-//! A task's thread, opened from its row on the Details page: its thread's own transcript (the agent session working
-//! the task), a line for each thing the thread put in the bot's chat, which `↵` shows there, and its composer: the user
-//! writes to the thread of the bot's own task as to a chat.
+//! A task's thread, opened from its row on the Details page: its thread's own transcript (everything the thread did,
+//! whatever session it was in), a line for each thing the thread put in the bot's chat, which `↵` shows there, and its
+//! composer: the user writes to the thread of the bot's own task as to a chat.
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};

@@ -7,9 +7,10 @@ const ENDED_FROM_OUTSIDE = new Set(['clean-exit', 'killed'])
 
 /**
  * Error tracking: uncaught errors in the main process and the windows, and windows or helpers
- * that crashed, go to the host's loopback `reportError` (shared/error-report.ts).
+ * that crashed, go to the host's loopback `reportError` (shared/error-report.ts). Returns the sender, for
+ * failures other modules notice.
  */
-export function registerErrorReports(host: HostController) {
+export function registerErrorReports(host: HostController): (report: ErrorReport) => void {
   const send = (report: ErrorReport) => {
     host.call('reportError', report).catch(() => {})
   }
@@ -28,4 +29,5 @@ export function registerErrorReports(host: HostController) {
     const softwareRendering = details.type === 'GPU' && details.reason === 'launch-failed'
     if (!ENDED_FROM_OUTSIDE.has(details.reason) && !softwareRendering) send({ process: 'desktop-main', type: `${details.type}Gone`, mechanism: 'child-process-gone', value: details.reason, frames: [] })
   })
+  return send
 }

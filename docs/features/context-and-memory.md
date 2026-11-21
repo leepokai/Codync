@@ -9,7 +9,7 @@ conversation and compaction. The design, including what is still to come, is in
 | | Where | Owner | Lifetime |
 |---|---|---|---|
 | Transcript | SQLite `entries` | Codync | One persistent chat per bot; replies quote the message they answer |
-| Model context | ACP session (`bots.session_id`) | The harness | Until *New session* (the bot's menu), a rollover (Fresh conversations), a failed resume, or an agent/command/folder change; each [fallback agent](agent-fallback.md) keeps its own, parked while another answers |
+| Model context | ACP session (`bots.session_id`) | The harness | Until *New session* (the bot's menu), a rollover (Fresh conversations), a failed resume, an agent/model/command/folder change, or a sign-in the agent can't carry over; each [fallback agent](agent-fallback.md) keeps its own, parked while another answers |
 | Long-term memory | Markdown files per layer (`MEMORY.md` and notes); versions and who wrote what in SQLite `memory_*` tables | Codync: the bots, through their tools or their own file tools, and dreaming | Forever, across sessions |
 
 Codync never replays the transcript into a session. Each turn sends only the new message(s); the harness keeps
@@ -206,8 +206,10 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
 - Messages sent while the agent works wait above the composer and are folded into one next turn, joined by blank
   lines. *Send now* (`steer`) hands one to the agent at once: an agent with `_session/steering` (Claude, Codex, omp)
   takes it into the running turn of the user's own chat, and the message joins that turn (its `turn`, its reply,
-  memory, a fallback's retry). The turn's end waits for the agent's answer, at most 15 seconds, so a late `injected`
-  still counts as joined and the bot stays working until then. Another agent's turn in the user's chat stops for it,
+  memory, a fallback's retry). An agent that then ends that turn `cancelled` on its own, before writing anything
+  after the message, has dropped it (Codex, on a refused card): it goes back to `queued`, first in line
+  (`requeue_unheard`, [Codex's row](../upstream-agents/codex-acp.md)). The turn's end waits for the agent's answer,
+  at most 15 seconds, so a late `injected` still counts as joined and the bot stays working until then. Another agent's turn in the user's chat stops for it,
   with no `Stopped.` line (drawn under the message it would read as the message's), and behind a routine, a room or another bot's request it goes first in line. *Remove* (`unqueue`) takes it back: it
   never goes out, its files are deleted and the chat hides it (`removed`).
 - Bot-to-bot requests and the replies to them occupy separate turns in the same queue (replies waiting together are one turn); user messages are only folded together up to the next request or reply. Neither feeds dreaming. See [bot collaboration](bot-collaboration.md).

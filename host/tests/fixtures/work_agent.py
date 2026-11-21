@@ -1,21 +1,28 @@
 """Deterministic ACP agent for the tests of a bot's box: a bot that adds and steers work, and the thread that does it.
 
 In the chat: `ADD title|brief[|hold][|after=<title>]`, `STEER how|title[|brief, or the title that gives way]`,
-`STATUS`, `MESSAGE <bot id>|<request>` (asks another bot). In a thread, the brief says what it does: `HOLD:<name>`
-works until a `release-<name>` file is in its folder, `PERMISSION` asks for an approval, `ASK` asks the user to
+`TELL title|words[|now]` (passes words on to a task), `STATUS`, `MESSAGE <bot id>|<request>` (asks another bot),
+`RECALL words` (looks back at the first task `recall_task` finds with them: its status, result and thread's steps). In a thread, the brief says what it does: `HOLD:<name>`
+works until a `release-<name>` file is in its folder, `PERMISSION` asks for an approval (`PERMISSION:<name>`: once
+`release-<name>` is there), `ASK` asks the user to
 choose, `SHARE` sends a file (`QUOTE`: quoting the chat message that added the task), `ARTIFACT` publishes one,
 `NEST` tries what a thread may not, `REMEMBER` adds a line to `MEMORY.md` with `edit_memory` and `FORGET` tries to take
-one out (both once it is released), `TOUCH` writes `made.txt` in its folder.
+one out (both once it is released), `TOUCH` writes `made.txt` in its folder, `LOOP` makes the same tool call six
+times. The watchdog's turn in the chat answers `Watchdog: <why the task looks stuck>`, or `(pass)` for a task whose title
+has `PASS`.
 
 A routine run and another bot's request read the same words in the routine's instruction or the request, and also
 `SEND` (a message to the user), `PROGRESS` (saves the routine's progress note), `FOLLOW` (sets a follow-up) and
 `PASS` (nothing to tell).
 
+What the chat passes on to a working task's thread is a turn of its own unless it joins the running one: it answers
+`Heard <the words>`.
+
 What the user writes to a thread is a turn of its own: it answers `Thread <their words>: <notes>`, where the
 notes say whether the session is the one that did the work (`same session`) or a new one told of it (`picked up`),
 and the words may hold `HOLD:<name>`, `NEST` and `ASK` as a brief does.
 
-Arguments: `no-fork`: the agent doesn't advertise `session/fork`. `no-load`: nor `session/load`, so a session can't
+Arguments: `as=<name>`: a task's report says `on <name>` (which agent did it). `no-fork`: the agent doesn't advertise `session/fork`. `no-load`: nor `session/load`, so a session can't
 be picked up again. `steer`: it takes a message into its running turn (`_session/steering`), and the turn's reply
 ends with `joined <the message>`. A `no-start` file in its folder: it doesn't start.
 A `signedout` file: every prompt fails asking to sign in (ACP's -32000). `thread-signedout` / `thread-limit`: a thread's
@@ -41,6 +48,7 @@ if pathlib.Path("no-start").exists():
 CAN_FORK = "no-fork" not in sys.argv
 CAN_LOAD = "no-load" not in sys.argv
 CAN_STEER = "steer" in sys.argv
+AGENT = next((arg.removeprefix("as=") for arg in sys.argv if arg.startswith("as=")), None)
 # What the user's messages steered into the running turn said.
 joined = []
 SIGNED_OUT = {"code": -32000, "message": "Authentication required"}
@@ -88,7 +96,7 @@ def server_tool(name, tool, arguments):
 
         rpc(1, "initialize", {"protocolVersion": "2025-06-18"})
         listed = {t["name"] for t in rpc(2, "tools/list", {})["result"]["tools"]}
-        assert name != "chat" or {"add_task", "steer_task", "work_status"} <= listed, listed
+        assert name != "chat" or {"add_task", "steer_task", "tell_task", "work_status", "recall_task"} <= listed, listed
         response = rpc(3, "tools/call", {"name": tool, "arguments": arguments})
         mcp.stdin.close()
         return response["result"]
@@ -165,7 +173,14 @@ def work(text, session):
         notes.append(said(chat_tool("add_task", {"title": "Inner", "brief": "x"}), "Nested: ")[:60])
     if "TOUCH" in brief:
         pathlib.Path("made.txt").write_text("made by a thread", encoding="utf-8")
+    if "LOOP" in brief:
+        for n in range(6):
+            send({"method": "session/update", "params": {"sessionId": session, "update": {
+                "sessionUpdate": "tool_call", "toolCallId": f"loop-{n}", "title": "Read the log", "status": "completed"}}})
     if "PERMISSION" in brief:
+        later = re.search(r"PERMISSION:(\w+)", brief)
+        if later:
+            hold("HOLD:" + later.group(1))
         send({"id": "permission", "method": "session/request_permission", "params": {
             "sessionId": session, "toolCall": {"toolCallId": "edit", "title": "Run the tests"},
             "options": [{"optionId": "allow", "name": "Allow", "kind": "allow_once"}],
@@ -182,6 +197,8 @@ def work(text, session):
         notes.append(said(server_tool("memory", "edit_memory", arguments), "Forgot: ")[:60])
     if joined:
         notes.append("joined " + " + ".join(joined))
+    if AGENT:
+        notes.append("on " + AGENT)
     return f"Report {title}: " + "; ".join(notes)
 
 
@@ -199,8 +216,12 @@ def thread(text):
 
 def answer(text, session):
     """What this turn replies."""
+    if "[Codync watchdog]" in text:
+        return "(pass)" if "PASS" in text else "Watchdog: " + text.split("looks stuck: ", 1)[1].split(". Look at it", 1)[0]
     if "[Codync: your task" in text:
         return relayed(text)
+    if "[Codync: your chat passed this on" in text:
+        return "Heard " + text.split("\n\n[Codync: your chat passed this on", 1)[0].strip().splitlines()[-1]
     if "in this task's thread" in text:
         return thread(text)
     if "[Task]" in text:
@@ -209,7 +230,7 @@ def answer(text, session):
         return elsewhere("Routine", text)
     if "sent you this request" in text:
         return elsewhere("Request", text)
-    command = re.search(r"^(ADD|STEER|STATUS|MESSAGE)\b ?(.*)$", text, re.M)
+    command = re.search(r"^(ADD|STEER|TELL|STATUS|MESSAGE|RECALL)\b ?(.*)$", text, re.M)
     if not command:
         return "reply: " + text.strip().splitlines()[-1]
     name, rest = command.groups()
@@ -237,6 +258,16 @@ def answer(text, session):
         elif more:
             arguments["insteadOf"] = task_id(more[0])
         return said(chat_tool("steer_task", arguments), "Steered: ")
+    if name == "TELL":
+        title, words, *flags = rest.split("|")
+        arguments = {"task": task_id(title), "text": words, "now": "now" in flags}
+        return said(chat_tool("tell_task", arguments), "Told: ")
+    if name == "RECALL":
+        found = json.loads(chat_tool("recall_task", {"query": rest})["content"][0]["text"])["tasks"]
+        if not found:
+            return "Recalled nothing"
+        task = json.loads(chat_tool("recall_task", {"task": found[0]["taskId"]})["content"][0]["text"])
+        return f"Recalled {task['title']}: {task['status']} | {task['result']} | {len(task['steps'])} steps"
     return said(chat_tool("work_status", {}), "Status: ")
 
 

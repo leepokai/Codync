@@ -14,6 +14,8 @@ use std::time::{Duration, Instant};
 pub const TOOL: &str = "request_decision";
 pub(crate) const WAIT: Duration = Duration::from_secs(270);
 const MAX_OPTIONS: usize = 12;
+/// The longest question a card asks, in characters.
+pub(crate) const MAX_QUESTION: usize = 2000;
 
 pub const INSTRUCTIONS: &str = "When the user should pick among a few ways forward, use request_decision(question, \
 options, recommended?) instead of repeating the question in a message. One card waits at a time. The user's \
@@ -48,8 +50,8 @@ pub fn tool() -> Value {
         "name": TOOL,
         "description": "Ask the user to choose on a card in your own chat. Their choice returns to this call and is recorded as their reply; when they write their own answer instead, it comes back with custom: true. Ask one question at a time; do not repeat it in a message. Older clients can reply with the full option or its number.",
         "inputSchema": {"type": "object", "properties": {
-            "question": {"type": "string", "minLength": 1, "maxLength": 2000},
-            "options": {"type": "array", "minItems": 2, "maxItems": 12,
+            "question": {"type": "string", "minLength": 1, "maxLength": MAX_QUESTION},
+            "options": {"type": "array", "minItems": 2, "maxItems": MAX_OPTIONS,
                 "items": {"type": "string", "minLength": 1, "maxLength": 200}},
             "recommended": {"type": "string", "description": "Optional suggested option, exactly as written in options. Never selected automatically."}
         }, "required": ["question", "options"]},
@@ -59,19 +61,12 @@ pub fn tool() -> Value {
 
 fn card_data(args: &Value) -> Result<Value> {
     let question = args["question"].as_str().unwrap_or_default().trim();
-    ensure!(!question.is_empty() && question.chars().count() <= 2000, "question must have 1 to 2000 characters");
+    ensure!(
+        !question.is_empty() && question.chars().count() <= MAX_QUESTION,
+        "question must have 1 to {MAX_QUESTION} characters"
+    );
     let raw = args["options"].as_array().ok_or_else(|| anyhow!("options must be an array of strings"))?;
-    ensure!((2..=MAX_OPTIONS).contains(&raw.len()), "options must hold 2 to 12 different choices");
-    let mut choices = Vec::new();
-    for value in raw {
-        let choice = value.as_str().ok_or_else(|| anyhow!("each option must be a string"))?.trim();
-        ensure!(!choice.is_empty() && choice.chars().count() <= 200, "each option must have 1 to 200 characters");
-        ensure!(
-            !choices.iter().any(|old: &String| old.to_lowercase() == choice.to_lowercase()),
-            "options must be different"
-        );
-        choices.push(choice.to_owned());
-    }
+    let choices = options(raw.iter().map(Value::as_str))?;
     let recommended = match args.get("recommended").filter(|v| !v.is_null()) {
         Some(value) => Some(
             choices
@@ -81,26 +76,81 @@ fn card_data(args: &Value) -> Result<Value> {
         ),
         None => None,
     };
+    Ok(card(question, &choices, recommended, Answers::OptionsOrOwnWords))
+}
+
+/// A card's options, checked: 2 to 12 different strings of 1 to 200 characters (`None`: not a string).
+pub(crate) fn options<'a>(raw: impl ExactSizeIterator<Item = Option<&'a str>>) -> Result<Vec<String>> {
+    ensure!((2..=MAX_OPTIONS).contains(&raw.len()), "options must hold 2 to {MAX_OPTIONS} different choices");
+    let mut choices = Vec::new();
+    for value in raw {
+        let choice = value.ok_or_else(|| anyhow!("each option must be a string"))?.trim();
+        ensure!(!choice.is_empty() && choice.chars().count() <= 200, "each option must have 1 to 200 characters");
+        ensure!(
+            !choices.iter().any(|old: &String| old.to_lowercase() == choice.to_lowercase()),
+            "options must be different"
+        );
+        choices.push(choice.to_owned());
+    }
+    Ok(choices)
+}
+
+/// What answers a card besides a press on one of its options.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Answers {
+    /// An option, its number, or the user's own words (`request_decision`; an agent's free-text question has no
+    /// options, so only the user's words answer it).
+    OptionsOrOwnWords,
+    /// Only an option or its number: an agent's question whose answer must be one of them (`agent::elicitation`).
+    OptionsOnly,
+}
+
+impl Answers {
+    /// How a card's text tells a client without buttons to answer.
+    fn hint(self, has_options: bool) -> &'static str {
+        match (self, has_options) {
+            (Self::OptionsOrOwnWords, true) => TYPED_HINT,
+            (Self::OptionsOrOwnWords, false) => OWN_WORDS_HINT,
+            (Self::OptionsOnly, _) => OPTIONS_HINT,
+        }
+    }
+
+    /// What a card with `data` takes; a card without the field takes own words, as every card did before it.
+    pub fn of(data: &Value) -> Self {
+        if data["ownWords"] == false { Self::OptionsOnly } else { Self::OptionsOrOwnWords }
+    }
+}
+
+/// A pending card's data: the question, its numbered options and the suggested one, and how to answer it in a
+/// message, for clients that show only its text.
+pub(crate) fn card(question: &str, choices: &[String], recommended: Option<usize>, answers: Answers) -> Value {
     let mut text = question.to_owned();
     for (i, choice) in choices.iter().enumerate() {
         let _ = write!(text, "\n{}. {choice}", i + 1);
     }
-    if let Some(i) = recommended {
-        let _ = write!(text, "\n\nSuggested: {}", choices[i]);
+    if let Some(choice) = recommended.and_then(|i| choices.get(i)) {
+        let _ = write!(text, "\n\nSuggested: {choice}");
     }
-    text.push_str(TYPED_HINT);
-    Ok(json!({"decision": true, "text": text, "question": question, "choices": choices,
-        "recommended": recommended, "status": Status::Pending, "selected": Value::Null}))
+    text.push_str(answers.hint(!choices.is_empty()));
+    let mut data = json!({"decision": true, "text": text, "question": question, "choices": choices,
+        "recommended": recommended, "status": Status::Pending, "selected": Value::Null});
+    if answers == Answers::OptionsOnly {
+        data["ownWords"] = false.into();
+    }
+    data
 }
 
-/// How a card's text tells a client without buttons to answer.
+/// How a card's text tells a client without buttons to answer it: options or own words, own words alone, options alone.
 const TYPED_HINT: &str =
     "\n\nReply with the full option, its number or your own answer. Exact option text takes priority over a number.";
+const OWN_WORDS_HINT: &str = "\n\nReply with your answer.";
+const OPTIONS_HINT: &str = "\n\nReply with the full option or its number.";
 
 /// A card's data for a card only a press answers (a thread's, in its bot's chat): its text doesn't ask for a typed
 /// reply, which would go to the bot in the chat.
 pub fn pressed_only(mut data: Value) -> Value {
-    if let Some(text) = data["text"].as_str().and_then(|text| text.strip_suffix(TYPED_HINT)) {
+    let text = data["text"].as_str().unwrap_or_default();
+    if let Some(text) = [TYPED_HINT, OWN_WORDS_HINT, OPTIONS_HINT].iter().find_map(|hint| text.strip_suffix(hint)) {
         data["text"] = text.to_owned().into();
     }
     data
@@ -134,6 +184,16 @@ pub fn pick(choices: &[String], wanted: &str, numbered: bool) -> Option<String> 
     None
 }
 
+/// Who asked a card's question; the `asker` of `decision_asked`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Asker {
+    /// The bot's `request_decision` tool call.
+    Tool,
+    /// The agent's own question, `elicitation/create` (`agent::elicitation`).
+    Agent,
+}
+
 /// How the user answered a card; the `via` of `decision_answered` (never which option or the words).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -159,14 +219,20 @@ impl Via {
     }
 }
 
-/// A press must name an option. A typed reply may also give its number, or else is the user's own words,
-/// unless it is empty or a `/command`, which runs as its own message.
-pub fn answer(choices: &[String], wanted: &str, typed: bool) -> Option<(String, Via)> {
+/// A press must name an option. A typed reply may also give its number, or else is the user's own words where the
+/// card takes them, unless it is empty or a `/command`, which runs as its own message.
+fn answer(choices: &[String], answers: Answers, wanted: &str, typed: bool) -> Option<(String, Via)> {
     if let Some(choice) = pick(choices, wanted, typed) {
         return Some((choice, if typed { Via::Text } else { Via::Button }));
     }
     let own = wanted.trim();
-    (typed && !own.is_empty() && crate::market::slash_command(own).is_none()).then(|| (own.to_owned(), Via::Custom))
+    (typed && answers == Answers::OptionsOrOwnWords && !own.is_empty() && crate::market::slash_command(own).is_none())
+        .then(|| (own.to_owned(), Via::Custom))
+}
+
+/// `answer` on `card`, with its options and what else it takes.
+pub fn answer_card(card: &Entry, wanted: &str, typed: bool) -> Option<(String, Via)> {
+    answer(&choices(card), Answers::of(&card.data), wanted, typed)
 }
 
 pub async fn ask(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
@@ -312,13 +378,39 @@ mod tests {
     #[test]
     fn typed_words_that_name_no_option_are_the_users_own_answer() {
         let choices = vec!["Left".into(), "Right".into()];
-        assert_eq!(answer(&choices, "Right", false), Some(("Right".into(), Via::Button)));
-        assert_eq!(answer(&choices, "2", true), Some(("Right".into(), Via::Text)));
-        assert_eq!(answer(&choices, " Neither, go up ", true), Some(("Neither, go up".into(), Via::Custom)));
-        assert_eq!(answer(&choices, "Neither", false), None, "a press must name an option");
+        let any = Answers::OptionsOrOwnWords;
+        assert_eq!(answer(&choices, any, "Right", false), Some(("Right".into(), Via::Button)));
+        assert_eq!(answer(&choices, any, "2", true), Some(("Right".into(), Via::Text)));
+        assert_eq!(answer(&choices, any, " Neither, go up ", true), Some(("Neither, go up".into(), Via::Custom)));
+        assert_eq!(answer(&choices, any, "Neither", false), None, "a press must name an option");
         for value in ["", "  ", "/pdf merge these", "/compact"] {
-            assert_eq!(answer(&choices, value, true), None, "{value:?} runs as its own message");
+            assert_eq!(answer(&choices, any, value, true), None, "{value:?} runs as its own message");
         }
+    }
+
+    #[test]
+    fn a_card_that_takes_only_its_options_leaves_other_words_to_the_chat() {
+        let choices = vec!["Left".into(), "Right".into()];
+        let only = Answers::OptionsOnly;
+        assert_eq!(answer(&choices, only, "left", true), Some(("Left".into(), Via::Text)));
+        assert_eq!(answer(&choices, only, "2", true), Some(("Right".into(), Via::Text)));
+        assert_eq!(answer(&choices, only, "Neither, go up", true), None, "own words are an ordinary message");
+        let data = card("Which way?", &choices, None, only);
+        assert_eq!(data["ownWords"], false);
+        assert!(data["text"].as_str().unwrap().ends_with(OPTIONS_HINT));
+        assert!(!pressed_only(data)["text"].as_str().unwrap().contains("Reply"));
+    }
+
+    #[test]
+    fn a_card_without_options_is_answered_in_the_users_own_words() {
+        let data = card("What should the release be called?", &[], None, Answers::OptionsOrOwnWords);
+        assert_eq!(data["choices"], json!([]));
+        assert!(data.get("ownWords").is_none(), "clients and older hosts read a missing field as own words");
+        assert!(data["text"].as_str().unwrap().ends_with(OWN_WORDS_HINT));
+        let any = Answers::OptionsOrOwnWords;
+        assert_eq!(answer(&[], any, "1", true), Some(("1".into(), Via::Custom)), "a number names no option here");
+        assert_eq!(answer(&[], any, "Aurora", true), Some(("Aurora".into(), Via::Custom)));
+        assert_eq!(answer(&[], any, "Aurora", false), None, "there is nothing to press");
     }
 
     #[test]

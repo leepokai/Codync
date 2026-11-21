@@ -305,14 +305,15 @@ async fn registers_webhooks_and_runs_public_deliveries_once() {
             (Some(true), None, None),
             (Some(true), None, None),
             (Some(false), Some(false), Some("unauthorized")),
-            (Some(false), Some(true), Some("busy")),
+            (Some(true), None, None),
         ],
-        "a redelivery reuses its run; a wrong key is dropped; a busy routine is retried later"
+        "a redelivery reuses its run; a wrong key is dropped; a delivery behind a queued run waits its turn"
     );
     let runs = hub.routines.list(&bot_id)["runs"].as_array().unwrap().clone();
-    assert_eq!(runs.len(), 1);
-    assert_eq!(runs[0]["event"], json!({"text": "deploy failed"}));
-    assert_eq!(runs[0]["deliveryId"], "d1");
+    let mut ids: Vec<&str> = runs.iter().filter_map(|r| r["deliveryId"].as_str()).collect();
+    ids.sort_unstable();
+    assert_eq!(ids, ["d1", "d3"], "one run per delivery");
+    assert!(runs.iter().all(|r| r["event"] == json!({"text": "deploy failed"})));
 
     // Pausing changes what the relay should refuse: the set goes out again.
     hub.routines.set_enabled(&hub.store, &bot_id, &id, false).unwrap();

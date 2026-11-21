@@ -1,6 +1,6 @@
 // The event box (host/src/chat/work/): what a bot works on away from its chat is a task in its box, and a bounded
 // number of its threads take tasks from it. The chat shows one capsule above the composer; the bot's Details lists
-// the tasks. A thread is the agent session working a task (`threads.ts` reads its transcript).
+// the tasks. A thread is where a task is worked, with its own session (`threads.ts` reads its transcript).
 
 import { fill } from './fill.ts'
 import type { Entry } from './models'
@@ -56,6 +56,9 @@ export interface WorkTask {
   folder: string | null
   /** Its thread takes the user's messages, as the host says: the bot's own task whose thread still exists. */
   talk: boolean
+  /** It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); null from an older
+   * host, where every live task takes one. */
+  seat: boolean | null
 }
 
 type Translate = (text: string) => string
@@ -84,6 +87,7 @@ export function normalizeWork(raw: unknown): WorkTask[] {
           source: t.source?.kind === 'routine' || t.source?.kind === 'request' ? { kind: t.source.kind, id: t.source.id ?? null } : null,
           folder: t.folder || null,
           talk: t.talk ?? false,
+          seat: typeof t.seat === 'boolean' ? t.seat : null,
         }]
       : [],
   )
@@ -95,6 +99,9 @@ export const normalizeMaxThreads = (raw: unknown): number | null =>
 
 /** A thread has it: working, or waiting on the user's approval. */
 export const isLive = (task: WorkTask) => task.status === 'working' || task.status === 'needsYou'
+
+/** It takes one of the bot's seats (`maxThreads`): the host's word, else a live task. */
+export const takesSeat = (task: WorkTask) => task.seat ?? isLive(task)
 
 /** Still in the box's hands: a thread has it, or it waits for one. */
 export const isOpen = (task: WorkTask) => isLive(task) || task.status === 'waiting'
@@ -133,9 +140,11 @@ export function worksOutside(bot: { status: string; outside: OutsideStatus | nul
 
 /** The Details timeline's sections of tasks, each in the order its rows show. */
 export interface WorkSections {
-  /** Threads, the agent sessions that run now: tasks that need the user, then the working ones. */
+  /** The threads that run now: tasks that need the user, then the working ones. */
   threads: WorkTask[]
-  /** The most threads allowed (the heading's `2 / 3`; `2 / 1` right after the ceiling was lowered). */
+  /** The seats taken (the heading's `2` of `2 / 3`): a thread waiting on the user takes none. */
+  inUse: number
+  /** The most threads allowed (the heading's `3` of `2 / 3`; `2 / 1` right after the ceiling was lowered). */
   atOnce: number
   /** The threads not in use, a `Free` row each. */
   free: number
@@ -149,10 +158,12 @@ export function workSections(work: WorkTask[], maxThreads: number | null): WorkS
   const of = (status: WorkStatus) => work.filter((t) => t.status === status)
   const threads = [...of('needsYou'), ...of('working')]
   const atOnce = maxThreads ?? DEFAULT_THREADS
+  const inUse = work.filter(takesSeat).length
   return {
     threads,
+    inUse,
     atOnce,
-    free: Math.max(0, atOnce - threads.length),
+    free: Math.max(0, atOnce - inUse),
     box: of('waiting'),
     recent: work.filter((t) => t.status === 'done' || t.status === 'failed' || t.status === 'stopped'),
   }
@@ -271,12 +282,12 @@ export const canRetry = (task: WorkTask) => (task.status === 'failed' || task.st
  * bot's request is stopped, never set aside. */
 export const givesWay = (task: WorkTask) => isLive(task) && task.source === null
 
-/** Every thread is busy, so the task first in line can only start now if a thread gives way, and one may. Not one that
+/** Every seat is taken, so the task first in line can only start now if a thread gives way, and one may. Not one that
  * follows unfinished work or waits for usage: a freed thread wouldn't start it. */
 export function canCutIn(work: WorkTask[], maxThreads: number | null): boolean {
   const first = work.find((t) => t.status === 'waiting')
   const held = first?.wait?.kind === 'after' || first?.wait?.kind === 'usage'
-  return !!first && !held && work.some(givesWay) && work.filter(isLive).length >= (maxThreads ?? DEFAULT_THREADS)
+  return !!first && !held && work.some(givesWay) && work.filter(takesSeat).length >= (maxThreads ?? DEFAULT_THREADS)
 }
 
 /** A card of a thread's waiting in the chat for the user: an approval, a choice, or a sign-in its agent needs. */

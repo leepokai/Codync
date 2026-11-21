@@ -43,6 +43,11 @@ impl Host {
         Self { child, home, base, token, env }
     }
 
+    /// How the host process ended, if it has.
+    pub fn exited(&mut self) -> Option<std::process::ExitStatus> {
+        self.child.try_wait().ok().flatten()
+    }
+
     /// Kills the host outright, as a crash would. `restart` starts it again.
     pub fn crash(&mut self) {
         let _ = self.child.kill();

@@ -15,6 +15,8 @@ struct BotTemplateView: View {
         template.hidden = nil
         template.fallbacks = nil
         template.selfFallbacks = nil
+        template.threadAgent = nil
+        template.threadFallbacks = nil
         // Who reaches a bot and the login profile it runs on belong to its computer, not its setup.
         template.offeredToNetwork = nil
         template.reachableByAssistants = nil

@@ -254,11 +254,13 @@ public final class AccountStore {
 
     /// Codync Cloud computers approve this device by themselves: each one it can't use yet is asked once per
     /// session, through the same request and code exchange as a tap on "Ask for access"; a request that failed or
-    /// ended unapproved is asked again on the next refresh.
+    /// ended unapproved is asked again on the next refresh. So is one listed as asked ("pending") that this device has
+    /// no request for: the cloud kept a request whose answer the network lost, and a new one replaces it there.
     private func askCloudComputers() {
-        for computer in cloudComputers where computer.cloud != nil && computer.access == "none" && stores[computer.computerId] == nil {
+        for computer in cloudComputers where computer.cloud != nil && stores[computer.computerId] == nil {
             let id = computer.computerId
-            guard askedCloud.insert(id).inserted else { continue }
+            let lost = computer.access == "pending" && pendingAccess[id] == nil && asks[id] == nil
+            guard computer.access == "none" || lost, askedCloud.insert(id).inserted else { continue }
             Task { [weak self] in
                 do {
                     try await self?.requestAccess(id)
@@ -267,6 +269,19 @@ public final class AccountStore {
                     self?.askedCloud.remove(id)
                 }
             }
+        }
+    }
+
+    /// First run, waiting on cloud computer `id` now that it's in the account: asks the account again every `interval`
+    /// until this device uses it, so a lookup or an access request lost to the network doesn't leave the wait standing.
+    /// It ends with the waiting page, whose task this is. An error on screen is read first: asking again would only
+    /// show it again.
+    // ponytail: a fixed interval for as long as the page shows; back off if a wait ever lasts hours.
+    public func reachCloudComputer(_ id: ComputerID, every interval: Duration = .seconds(5)) async {
+        while !Task.isCancelled, !retired, stores[id] == nil {
+            try? await Task.sleep(for: interval)
+            guard !Task.isCancelled, !retired, stores[id] == nil else { return }
+            if lastError == nil { await refreshCloud() }
         }
     }
 

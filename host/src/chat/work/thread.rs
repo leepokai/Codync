@@ -1,12 +1,13 @@
 //! Talking to a thread: the user writes to the thread that works, or worked, one of the bot's own tasks, as to a
 //! chat. The thread is a bot with an actor, so the message is a message in the thread's own chat: it waits behind a
 //! running turn, can be sent now or removed, and starts a turn when none runs. A task that ended is reopened by
-//! the first message, and reports again when that turn ends. A routine's run and another bot's request take none:
-//! their result has an owner already.
+//! the first message, and reports again when that turn ends. The bot's chat passes words on to a task here too
+//! (`tell`). A routine's run and another bot's request take none: their result has an owner already.
 
 use super::tasks::{self, Source, Status, Task};
 use super::{prompts, worktree};
 use crate::LockExt;
+use crate::agent::bot::Cmd;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, Entry, Store, now_ms};
 use anyhow::{Result, anyhow};
@@ -38,17 +39,22 @@ impl std::fmt::Display for Refused {
 
 impl std::error::Error for Refused {}
 
+/// Whether `task` takes words at all: the bot's own work does; a routine's run and another bot's request have an
+/// owner for their result already.
+fn writable(task: &Task) -> Result<()> {
+    let whose = match &task.source {
+        Source::Bot => return Ok(()),
+        Source::Routine { .. } => "a routine's run",
+        Source::Request { .. } => "another bot's request",
+    };
+    let why = format!("\"{}\" is {whose}: it can be read and stopped, not written to", task.title);
+    Err(Refused::error("read_only", why))
+}
+
 /// The thread that takes the user's messages for `task`, or why it takes none.
 fn thread_of(store: &Store, task: &Task) -> Result<BotConfig> {
+    writable(task)?;
     let title = &task.title;
-    let read_only = |whose: &str| {
-        Refused::error("read_only", format!("\"{title}\" is {whose}: it can be read and stopped, not written to"))
-    };
-    match &task.source {
-        Source::Bot => {}
-        Source::Routine { .. } => return Err(read_only("a routine's run")),
-        Source::Request { .. } => return Err(read_only("another bot's request")),
-    }
     let Some(thread) = task.thread.as_deref() else {
         let why = format!("\"{title}\" hasn't started yet: there is nothing to write to");
         return Err(Refused::error("not_started", why));
@@ -82,7 +88,8 @@ pub(super) fn unheard(store: &Store, thread: &str) -> bool {
 /// `task`'s thread is closed for the task to start again (it gave way, or got a new brief): what the user wrote to
 /// its thread and no turn took yet goes with the task, as what they said since.
 pub(super) fn carry(store: &Store, task: &mut Task, thread: &str) {
-    for entry in waiting(store, thread) {
+    // What its chat passed on is with the task already (`tell`).
+    for entry in waiting(store, thread).into_iter().filter(|e| e.data["relay"] != true) {
         note(&mut task.notes, entry.data["text"].as_str().unwrap_or_default());
     }
 }
@@ -139,18 +146,69 @@ pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, nonce: &str) -> 
         if reopened {
             reopen(hub, &owner, tasks::find(tasks, id)?, &mut thread)?;
         }
-        if !hub.has_actor(&thread.id) {
-            hub.spawn_bot(thread.clone());
-        }
-        let queued = matches!(hub.runtime(&thread.id).status, BotStatus::Working | BotStatus::NeedsInput);
         let data = json!({"text": text, "clientNonce": nonce, "attachments": []});
-        Ok((crate::chat::messages::post(hub, &thread, data)?, Some(reopened), Some(queued)))
+        let (entry, queued) = post_to(hub, &thread, data)?;
+        Ok((entry, Some(reopened), Some(queued)))
     })?;
     if reopened == Some(true) {
         // It shows under Threads again, and what follows the bot from outside its chat counts it working.
         super::dispatch(hub, bot);
     }
     Ok(json!({"entry": entry, "reopened": reopened, "queued": queued}))
+}
+
+/// Posts `data` to `thread`'s chat as a message, its actor started again if it ended. Answers the entry, and whether
+/// it waits behind a running turn.
+fn post_to(hub: &Arc<Hub>, thread: &BotConfig, data: Value) -> Result<(Entry, bool)> {
+    if !hub.has_actor(&thread.id) {
+        hub.spawn_bot(thread.clone());
+    }
+    let queued = matches!(hub.runtime(&thread.id).status, BotStatus::Working | BotStatus::NeedsInput);
+    Ok((crate::chat::messages::post(hub, thread, data)?, queued))
+}
+
+/// Where words passed on to a task went (`tell`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Told {
+    /// With the waiting task, for its thread to read when it starts.
+    Waiting,
+    /// A message in the working task's thread; `queued`: it waits behind a running turn.
+    Working { queued: bool },
+}
+
+/// The bot passes `text` on to its task `id` (`tell_task`), which keeps it (`Task::relayed`) so a session that
+/// starts the task, or starts it again, reads it. A working task also gets it as a message in its thread from the chat
+/// (`from: host`, `relay`; every client quotes it there, as what the thread was told), which waits behind a running
+/// turn as the user's does and keeps the task going until it is taken. `now` hands it to that turn at its next step,
+/// or stops the turn for it where the agent takes no message mid-turn (`agent::bot::steer`).
+pub fn tell(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, now: bool) -> Result<Told> {
+    let (told, steer) = tasks::change(hub, bot, |tasks| {
+        let task = tasks::find(tasks, id)?;
+        writable(task)?;
+        match task.status {
+            Status::Waiting => {
+                note(&mut task.relayed, text);
+                Ok((Told::Waiting, None))
+            }
+            Status::Working => {
+                let thread = thread_of(&hub.store, task)?;
+                note(&mut task.relayed, text);
+                let (entry, queued) = post_to(hub, &thread, json!({"text": text, "from": "host", "relay": true}))?;
+                Ok((Told::Working { queued }, (now && queued).then_some((thread.id, entry.id))))
+            }
+            _ => {
+                let why = format!(
+                    "\"{}\" has ended: its report came to you already. For more of that work, add a new task",
+                    task.title
+                );
+                Err(Refused::error("ended", why))
+            }
+        }
+    })?;
+    if let Some((thread, entry_id)) = steer {
+        hub.send_cmd(&thread, Cmd::Steer { entry_id })?;
+    }
+    Ok(told)
 }
 
 /// A turn of thread `cfg` begins for what the user wrote to its thread (`words`, each message's): the task's next
@@ -163,6 +221,20 @@ pub fn heard(hub: &Hub, cfg: &BotConfig, words: &[String]) {
         }
         let over = task.told.len().saturating_sub(TOLD_KEPT);
         task.told.drain(..over);
+    });
+}
+
+/// What [`heard`] kept of `words` goes: those messages went back to wait (the agent dropped them with its turn), and
+/// their own turn hears them again.
+pub fn unhear(hub: &Hub, cfg: &BotConfig, words: &[String]) {
+    super::update(hub, cfg, "what the user wrote to it", |task| {
+        for words in words.iter().rev().map(|words| words.trim()) {
+            for kept in [&mut task.told, &mut task.notes] {
+                if kept.last().is_some_and(|last| last == words) {
+                    kept.pop();
+                }
+            }
+        }
     });
 }
 
@@ -235,5 +307,21 @@ mod tests {
         let task = tasks::load(&hub.store, "b1").remove(0);
         assert_eq!(task.told.len(), TOLD_KEPT, "the newest are kept");
         assert_eq!((task.told[0].as_str(), task.notes[0].as_str()), ("word 1", "word 0"));
+    }
+
+    #[test]
+    fn words_that_went_back_to_wait_are_the_tasks_once() {
+        let hub = hub();
+        let cfg = BotConfig { thread_of: Some("b1".into()), ..bot("thread-1", "Mika", "/tmp") };
+        crate::chat::work::put_working_for_test(&hub.store, "b1", "thread-1");
+        let words = |said: &[&str]| said.iter().map(|w| (*w).to_owned()).collect::<Vec<_>>();
+        heard(&hub, &cfg, &words(&["earlier"]));
+        // Two messages joined a turn its agent dropped: their own turn hears them again.
+        heard(&hub, &cfg, &words(&["one", "two"]));
+        unhear(&hub, &cfg, &words(&["one", "two"]));
+        heard(&hub, &cfg, &words(&["one", "two"]));
+        let task = tasks::load(&hub.store, "b1").remove(0);
+        assert_eq!(task.told, words(&["earlier", "one", "two"]));
+        assert_eq!(task.notes, words(&["earlier", "one", "two"]));
     }
 }

@@ -177,3 +177,30 @@ async fn what_a_calls_voice_should_say_reaches_only_the_device_holding_it() {
     }
     assert_eq!(heard, [true, false, false]);
 }
+
+#[tokio::test]
+async fn an_alert_reaches_a_desktop_app_but_not_a_phone_which_gets_it_as_a_push() {
+    let f = Fixture::new();
+    let phone = Caller::Device { key: "phone".into(), scopes: vec![] };
+    let desktop = Box::pin(events_stream(&f.hub, i64::MAX, None, &Caller::Local).unwrap());
+    let phone = Box::pin(events_stream(&f.hub, i64::MAX, Some("ios"), &phone).unwrap());
+    let config = |id: &str, notify: bool| -> BotConfig {
+        serde_json::from_value(json!({"id": id, "name": id, "backend": "fixture", "cwd": f.dir, "notify": notify}))
+            .unwrap()
+    };
+    let kind = crate::remote::push::AlertKind::Done;
+    crate::remote::push::notify(&f.hub, &config("alert-muted", false), None, "Muted", "Not shown.", kind);
+    crate::remote::push::notify(&f.hub, &config("alert-on", true), None, "Builder", "All tests pass.", kind);
+    let mut alerts = Vec::new();
+    for mut stream in [desktop, phone] {
+        let mut got = Vec::new();
+        while let Ok(Some(event)) = tokio::time::timeout(std::time::Duration::from_millis(50), stream.next()).await {
+            if event["type"] == "alert" {
+                got.push(event["alert"].clone());
+            }
+        }
+        alerts.push(got);
+    }
+    let shown = json!({"botId": "alert-on", "kind": "done", "title": "Builder", "body": "All tests pass."});
+    assert_eq!(alerts, [vec![shown], vec![]]);
+}

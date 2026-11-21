@@ -49,7 +49,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Login profiles](features/login-profiles.md) (more than one login per agent, by account or API key; each bot picks its own)
 - [Agent fallbacks](features/agent-fallback.md) (the next agent carries a turn on when the bot's own runs out of usage)
 - [Routines](features/routines.md)
-- [Work: tasks and threads](features/work.md) (a bot puts long work in its event box as tasks, other sessions of itself take them, and the chat stays free to answer; plan: [plans/event-box.md](plans/event-box.md))
+- [Work: tasks and threads](features/work.md) (a bot puts long work in its event box as tasks, its threads take them, and the chat stays free to answer; plan: [plans/event-box.md](plans/event-box.md))
 - [Follow-ups](features/follow-ups.md) (a bot sets itself one later turn in its chat, to look at something again)
 - [Dev servers](features/dev-servers.md) (programs a bot keeps running: the host runs them, every client shows their port)
 - [Voice calls](features/voice-call.md)

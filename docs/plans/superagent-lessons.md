@@ -43,7 +43,8 @@ advance, and moving the agent loop off the user's computer.
 While the bot's box holds a working or waiting task, a turn in its own chat runs its agent in a mode that asks before
 editing or running commands (`modes::under`, as a network ceiling does), and Codync refuses those requests itself
 (edit, delete, move, execute) with no card. Reading, searching and Codync's own tools work. The bot's instructions say
-so. An agent without such a mode is not held. Spike results: [below](#spike).
+so. An agent without such a mode is not held. **Not built**: on real Claude and Codex the refusal reaches the user as a
+question or a card instead of a task ([spike](#spike)).
 
 ## 3. `tell_task`
 
@@ -70,6 +71,8 @@ folder, even at `maxThreads` 1, which the manual says ([working folders](../../w
 it relates to (`after`, what follows it, its thread) and a page of its thread's steps (`before`: an entry id for the
 page before); with `query`, the tasks of the last 30 days whose title, brief or result has it. Read only, so allowed
 under a network ceiling. Ended tasks stay 30 days (at most 200 a bot); a thread and its transcript still go after 7.
+Built: at host start a task ended over a week ago leaves the box (which the wire and every change read whole) for kv
+`work-past.<bot>`, which only `recall_task` reads; `work_recalled` counts its use.
 
 ## 6. Advisor mode
 
@@ -84,5 +87,25 @@ on the threads' agent. Usage, rests and login profiles count both chains. `bot_u
 
 ## Spike
 
-To fill in: `add_task` / `tell_task` / `work_status` under the lowered mode on Claude and Codex, a quick question
-answered, the mode back once the box is empty.
+2026-11-21, real agents on an isolated host (claude-acp 0.109.0 on Sonnet 5.5, codex-acp on 6.2 Sol), a git repo with a
+README, a task working in the box (checked right before the turn), then "Edit README.md: add a section …, then show
+me git diff" in the chat, its edit and shell cards refused:
+
+- **Claude, a fresh bot whose instructions say Codync refuses its edits and commands while the box has work, and to
+  hand the request on with `add_task` when that happens.** It did the edit itself ("Small job; do it directly"),
+  tried again with its Edit tool after the first refusal, then asked the user to allow writing. No `add_task`.
+  Without that rule in its instructions it also asked the user; only a note steered in after the refusal got a task
+  added, after a confused "refused" reply.
+- **Codex.** In its `read-only` mode, the mode that would hold it, Codync's own tools (`add_task`, `send_message`) each
+  raise a card; in `auto` they don't. A refused card ends its turn, and a message steered into that turn was lost:
+  a Codex bug, now patched for every chat (a re-queue, [codex-acp](../upstream-agents/codex-acp.md)).
+- **What the chat did is what `EACH_TURN` asks.** A two-call edit is "work of a few tool calls", which the chat may do
+  itself; the failure that prompt was written for (2026-11-15: 90 seconds of reading in the chat's turn) is reading,
+  which a lowered mode allows anyway.
+- **Advisor mode, same agent and a lighter model** (Sonnet chat, Haiku threads): the task's thread forked from the
+  chat's session (`start: fork`), switched to Haiku (it wrote `claude-haiku-5-5` when asked for its model id) and
+  reported. Not tried: a threads' model with a smaller context window than the chat's.
+
+Recommendation: don't hold the chat by mode. It blocks the small edits the user wants done now, not the long reading
+it was meant for, and on both agents a refusal reaches the user as a question or a card. If the chat should still be
+held, the hook that fits the measured failure is the watchdog seeing the chat's own long turn while its box has work.

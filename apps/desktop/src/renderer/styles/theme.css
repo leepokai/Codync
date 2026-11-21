@@ -264,6 +264,9 @@ a {
 }
 .truncate {
   min-width: 0;
+  /* Never wider than its box: in a column that doesn't stretch it (align flex-start), a nowrap line would
+     otherwise be as wide as its text and run over what sits beside the column. */
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

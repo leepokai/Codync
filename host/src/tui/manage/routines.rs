@@ -1,4 +1,4 @@
-//! A bot's Details page (its items' keys: `work.rs`) with its routines, and the routine form (what's typed for
+//! A bot's Details page (its tasks' keys: `work.rs`) with its routines, and the routine form (what's typed for
 //! when: `when.rs`).
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -38,10 +38,10 @@ impl App {
             Err(l) => l,
         };
         let bot = l.bot.clone();
-        let (work, max_agents) = self.box_of(&bot);
+        let (work, max_threads) = self.box_of(&bot);
         let work = work.to_vec();
-        let n = l.rows(&work, max_agents).len();
-        match (k.code, l.picked(&work, max_agents)) {
+        let n = l.rows(&work, max_threads).len();
+        match (k.code, l.picked(&work, max_threads)) {
             (KeyCode::Esc | KeyCode::Char('q' | 'R'), _) => return None,
             // The row stays until the host answers: a cancel that failed leaves a follow-up that still happens.
             (KeyCode::Char('x'), Some(DetailRow::FollowUp(f))) => {
@@ -99,7 +99,7 @@ impl App {
                     json!({"botId": bot, "id": id, "enabled": on}),
                     Reply::Routines(bot.clone()),
                 );
-                if let Some(item) = l.items.iter_mut().flatten().find(|item| item["id"] == id) {
+                if let Some(item) = l.routines.iter_mut().flatten().find(|item| item["id"] == id) {
                     item["enabled"] = on.into();
                 }
             }

@@ -214,7 +214,7 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
               <IconButton title="Screen" icon="display" disabled={!app.canOpenScreen(store)} onClick={() => app.openScreen(store.computer.id)} />
             ) : null}
             <IconButton title="Reconnect" icon="arrow.clockwise" onClick={() => store.restartStream()} />
-            <IconButton title="Pair iPhone" icon="qrcode" selected={showPairing} disabled={!online} onClick={() => setShowPairing((s) => !s)} />
+            <IconButton title="Pair phone" icon="qrcode" selected={showPairing} disabled={!online} onClick={() => setShowPairing((s) => !s)} />
           </div>,
           // Until the host gives its cloud status, there's no way to tell its relay or account.
           ...(cloud
@@ -295,7 +295,7 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
         </StoreContext.Provider>
       </Sheet>
       <Sheet open={showPairing} onClose={() => setShowPairing(false)} width={340}>
-        <ModalHeader icon="qrcode" title={tr('Pair iPhone with {name}').replaceAll('{name}', name)} />
+        <ModalHeader icon="qrcode" title={tr('Pair phone with {name}').replaceAll('{name}', name)} />
         <PairingPanel store={store} />
       </Sheet>
       <Dialog
@@ -363,7 +363,7 @@ function accountComputerStatus(computer: CloudComputer, olderCopy: boolean): Sta
   return line(computer.lastSeenAt ? `Older copy · last seen ${relativeDay(new Date(computer.lastSeenAt))}` : 'Older copy')
 }
 
-/** "Pair iPhone" for a computer this app manages, through its store. */
+/** "Pair phone" for a computer this app manages, through its store. */
 function PairingPanel({ store }: { store: BotStore }) {
   useModel(store)
   const requestCode = useCallback(async () => {
@@ -403,7 +403,7 @@ function SSHProfileEditor({ profile: initial, isNew }: { profile: SSHProfile; is
       remotePort: Number(remote),
     }
     const found = await bridge.save(p)
-    if (found) return setProblem(found)
+    if (found) return setProblem(tr(found))
     dismiss()
   }
 

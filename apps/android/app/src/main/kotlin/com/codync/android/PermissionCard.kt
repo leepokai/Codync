@@ -47,20 +47,26 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Under what a task put in the chat (its approval or choice card, a file, a voice note, an artifact): that it comes
- * from the background, and which item. Nothing for the chat's own.
+ * Under what a thread put in the chat (its approval or choice card, a file, a voice note, an artifact): that it comes
+ * from the bot's work, and which task. Nothing for the chat's own.
  */
-@Composable internal fun TaskLine(entry: Entry, modifier: Modifier = Modifier) {
-    val title = (entry.data["task"] as? JsonObject)?.let { (it["title"] as? JsonPrimitive)?.contentOrNull }?.takeIf(String::isNotEmpty) ?: return
+@Composable internal fun WorkThreadLine(entry: Entry, modifier: Modifier = Modifier) {
+    val title = (entry.data["thread"] as? JsonObject)?.let { (it["title"] as? JsonPrimitive)?.contentOrNull }?.takeIf(String::isNotEmpty) ?: return
     // A clock leads it, as the computer leads "Runs on" (iOS `Label(…, systemImage: "clock")`).
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Symbol("clock", size = 14.dp, tint = Palette.tertiary)
-        Text(tr("In the background") + " · " + title, style = Type.caption, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(tr("Work") + " · " + title, style = Type.caption, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
-/** One of the bot's tasks put [this] in the chat. */
-internal val Entry.fromTask: Boolean get() = data["task"] is JsonObject
+/** One of the bot's threads put [this] in the chat (iOS `EntryData.isFromThread`): it names its thread's task, by title or by id. */
+internal val Entry.isFromThread: Boolean
+    get() = !((data["thread"] as? JsonObject)?.get("title") as? JsonPrimitive)?.contentOrNull.isNullOrEmpty() || !(data["task"] as? JsonPrimitive)?.contentOrNull.isNullOrEmpty()
+
+/** A choice card takes the user's own words (iOS `EntryData.takesOwnWords`): not a thread's, nor one only an option
+ *  answers (`ownWords: false`, an agent's own question). */
+internal val Entry.takesOwnWords: Boolean
+    get() = !isFromThread && (data["ownWords"] as? JsonPrimitive)?.booleanOrNull != false
 
 /** Approval card in the choice card's form: what the agent wants, where it runs, and the answers as the choice card's
  *  numbered rows, in one tone. */
@@ -101,7 +107,7 @@ internal val Entry.fromTask: Boolean get() = data["task"] is JsonObject
                 .background(Palette.text.copy(alpha = 0.06f)).padding(horizontal = 10.dp, vertical = 8.dp),
                 style = Type.subheadline.monospaced, color = Palette.secondary, maxLines = if (expanded) Int.MAX_VALUE else 3)
         }
-        TaskLine(entry, Modifier.padding(horizontal = 8.dp))
+        WorkThreadLine(entry, Modifier.padding(horizontal = 8.dp))
         AnimatedVisibility(hasDetail && expanded, Modifier.padding(horizontal = 8.dp), enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
             exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

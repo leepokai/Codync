@@ -91,7 +91,8 @@ data class Entry(
             text.trim().trim('"', '.', '*').lowercase().let { it.isEmpty() || it == "(pass)" || it == "pass" }
 
         fun decode(value: JsonObject): Entry {
-            val entry = WireJson.decodeFromJsonElement<Entry>(value)
+            // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
+            val entry = WireJson.decodeFromJsonElement<Entry>(value).threadNamed()
             require(entry.id.isNotBlank() && entry.botId.isNotBlank() && entry.kind.isNotBlank() && entry.seq >= 0 && entry.rev >= 0) {
                 "The computer sent an invalid conversation update."
             }
@@ -204,8 +205,8 @@ sealed interface MirrorEvent {
     ) : MirrorEvent
     data class BotChanged(val bot: Bot) : MirrorEvent
     data class EntryChanged(val entry: Entry) : MirrorEvent
-    /** An entry of a background task's own transcript ([task]: its id), never a chat's: live only, never a checkpoint. */
-    data class TaskEntryChanged(val task: String, val entry: Entry) : MirrorEvent
+    /** An entry of a thread's own transcript ([thread]: its id), never a chat's: live only, never a checkpoint. */
+    data class ThreadEntryChanged(val thread: String, val entry: Entry) : MirrorEvent
     data class Usage(val value: JsonObject) : MirrorEvent
     data class Screen(val value: JsonObject) : MirrorEvent
     /** An artifact was published, updated or renamed (the catch-up replays it too), never a checkpoint. */
@@ -233,8 +234,9 @@ sealed interface MirrorEvent {
                 runCatching { value["workflows"]?.jsonPrimitive?.booleanOrNull }.getOrNull() == true)
             "bot" -> BotChanged(HostClient.decode(value.getValue("bot").jsonObject))
             "entry" -> EntryChanged(Entry.decode(value.getValue("entry").jsonObject))
-            // One this app can't read is passed over: the catch-up carries none, and the task's details fetch them again.
-            "taskEntry" -> runCatching { TaskEntryChanged(requireNotNull(value.text("task")), Entry.decode(value.getValue("entry").jsonObject)) }
+            // One this app can't read is passed over: the catch-up carries none, and the thread's page fetches them again.
+            // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0 (`taskEntry`, [threadOfEntryEvent]).
+            "threadEntry", "taskEntry" -> runCatching { ThreadEntryChanged(requireNotNull(value.threadOfEntryEvent()), Entry.decode(value.getValue("entry").jsonObject)) }
                 .getOrDefault(Ignored)
             "usage" -> Usage(value.getValue("usage").jsonObject)
             "screen" -> Screen(value.getValue("screen").jsonObject)

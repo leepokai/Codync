@@ -52,6 +52,16 @@ data class CloudMachine(val cloudComputerId: String,
     val failed: Boolean get() = state == "failed"
     /** Created, and not yet in the account (nor failed): it's booting and installing the host. */
     val preparing: Boolean get() = computerId == null && !failed
+
+    /** How far a first run waiting for it got: still preparing, in the account and letting this device in, or failed
+     * (iOS `CloudMachine.Start`). */
+    enum class Start { Preparing, Connecting, Failed }
+
+    val start: Start get() = when {
+        failed -> Start.Failed
+        preparing -> Start.Preparing
+        else -> Start.Connecting
+    }
 }
 
 /**
@@ -63,6 +73,11 @@ data class CloudOffer(@SerialName("cloudComputers") val machines: List<CloudMach
     val limit: Int = 3, val providers: List<CloudProvider> = emptyList()) {
     /** A key can go unless a cloud computer runs on that provider (the cloud needs it to put them to sleep). */
     fun canRemoveKey(provider: String) = machines.none { it.provider == provider }
+
+    /** The one a first run waits for: the newest still preparing (whichever device made it) that it didn't leave with
+     * Back ([passed]), else, once [started] there, the newest (iOS `CloudMachineStore.starting`). */
+    fun starting(started: Boolean, passed: Set<String> = emptySet()): CloudMachine? =
+        machines.lastOrNull { it.preparing && it.cloudComputerId !in passed } ?: machines.lastOrNull()?.takeIf { started }
 
     /** Why Create is off at the account's limit, for the app to translate (iOS `CloudMachineStore.limitNote`). */
     fun limitNote(): String? = "You can have up to $limit cloud computers. Delete one to make another.".takeIf { machines.size >= limit }

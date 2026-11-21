@@ -6,7 +6,7 @@ import { useModels } from '../lib/observable'
 import { refKey, type AppModel, type RosterItem } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import { botDetail } from './tray-summary'
-import { optionLabel, permissionHeadline, sortedOptions } from './thread/PermissionCard'
+import { optionLabel, permissionHeadline, sortedOptions } from './chat/PermissionCard'
 import { trNow } from '../lib/l10n.ts'
 
 /** Tool calls in the island's ticker. */

@@ -3,7 +3,7 @@ import { CardForm, CardSection } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader } from '../../components/Overlay'
 import type { MemoryFile, MemoryFileDetail, MemoryFiles, MemoryStore } from '../../store/memory-store'
-import { relativeTime } from '../thread/chat-items'
+import { relativeTime } from '../chat/chat-items'
 import { useTr } from '../../lib/use-language'
 
 /** The note a sheet opens. */

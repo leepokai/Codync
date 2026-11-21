@@ -121,10 +121,15 @@ fn faces(hub: &Hub, bot: &BotConfig, from: Option<&str>) -> Vec<Value> {
         .collect()
 }
 
+/// An alert's title and body as a phone's push and a desktop notification show them: cut to fit.
+fn alert_text(title: &str, body: &str) -> (String, String) {
+    (crate::agent::acp::truncate(title, 80), crate::agent::acp::truncate(body, 400))
+}
+
 /// What an alert seals for the phone: its text, the faces to draw and the unread total for the app icon.
 fn sealed_alert(hub: &Hub, bot: &BotConfig, from: Option<&str>, title: &str, subtitle: &str, body: &str) -> Value {
-    let mut secret = json!({"title": crate::agent::acp::truncate(title, 80), "subtitle": subtitle,
-        "body": crate::agent::acp::truncate(body, 400)});
+    let (title, body) = alert_text(title, body);
+    let mut secret = json!({"title": title, "subtitle": subtitle, "body": body});
     if let Some(from) = from.filter(|f| *f != bot.id) {
         secret["from"] = from.into();
     }
@@ -132,6 +137,12 @@ fn sealed_alert(hub: &Hub, bot: &BotConfig, from: Option<&str>, title: &str, sub
     // The phone adds its other computers' counts and badges the app icon with the sum.
     secret["unread"] = hub.store.total_unread().into();
     secret
+}
+
+/// The `alert` event: what a desktop app shows as a system notification, the same text a phone's push opens to.
+fn alert_event(bot: &BotConfig, title: &str, body: &str, kind: AlertKind) -> Value {
+    let (title, body) = alert_text(title, body);
+    json!({"type": "alert", "alert": {"botId": bot.id, "kind": kind, "title": title, "body": body}})
 }
 
 /// `bot` is the chat the alert opens; `from` is the member bot speaking when that chat is a group.
@@ -145,14 +156,20 @@ pub fn notify(
     link: Option<&WorkflowLink>,
 ) {
     purge_dead_tickets(hub);
-    if bot.notify == Some(false) || bot.hidden || hub.phone_connected() {
+    if bot.notify == Some(false) || bot.hidden {
         return;
     }
-    if let Some(link) = link {
-        if throttled_in(&WORKFLOW_SENT, (link.step.clone(), kind), Duration::from_secs(5)) {
-            return;
-        }
-    } else if throttled((bot.id.clone(), kind), Duration::from_secs(5)) {
+    // A workflow step's alerts are throttled per step, so two steps of one bot both arrive.
+    let repeated = match link {
+        Some(link) => throttled_in(&WORKFLOW_SENT, (link.step.clone(), kind), Duration::from_secs(5)),
+        None => throttled((bot.id.clone(), kind), Duration::from_secs(5)),
+    };
+    if repeated {
+        return;
+    }
+    // Live only (no rev, so no catch-up replays it): a desktop app shows it if its user turned that on.
+    let _ = hub.events.send(alert_event(bot, title, body, kind));
+    if hub.phone_connected() {
         return;
     }
     let Some(relay) = relay_url(hub) else { return };

@@ -18,8 +18,8 @@ private val ENDED = setOf("idle", "error")
 
 /**
  * This watch after [bot] changed, or null when there is nothing new to show: as the bot stands outside its chat
- * (`Bot.outsideStatus`), so it goes on while items work after the chat's turn ended and ends once the box is empty
- * and the chat idle, never when one item does. [line] is what it says ([outsideLine]).
+ * (`Bot.outsideStatus`), so it goes on while tasks work after the chat's turn ended and ends once the box is empty
+ * and the chat idle, never when one task does. [line] is what it says ([outsideLine]).
  */
 internal fun TaskWatch.after(bot: Bot, line: String, now: Long = System.currentTimeMillis()): TaskWatch? {
     val status = bot.outsideStatus

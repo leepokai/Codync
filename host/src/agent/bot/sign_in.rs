@@ -1,20 +1,20 @@
 //! A turn its agent refused until the user signs in: the sign-in card that asks them to, in the chat they are in (a
-//! background task's goes to its bot's chat, marked as its item's, with a line in the task's own transcript), holding
-//! the turn's messages until they have. A task's item isn't over then: it waits, needing the user, and goes on in
-//! the same task once they've signed in.
+//! background thread's goes to its bot's chat, marked as its task's, with a line in the thread's own transcript), holding
+//! the turn's messages until they have. A thread's task isn't over then: it waits, needing the user, and goes on in
+//! the same thread once they've signed in.
 
 use super::{Actor, NoticeStyle};
 use crate::agent::login_profiles::Login;
 use crate::analytics::{self, Event};
-use crate::chat::tasks::Outcome;
+use crate::chat::work::Outcome;
 use crate::market::agent_sign_in;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{Lane, now_ms};
 use serde_json::json;
 use std::time::Duration;
 
-/// What became of the messages of a turn that failed for a sign-in. A task's item goes on with them, so the end of
-/// that turn doesn't end the item.
+/// What became of the messages of a turn that failed for a sign-in. A thread's task goes on with them, so the end of
+/// that turn doesn't end the task.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Held {
     /// They went out again at once, to a new agent process.
@@ -24,7 +24,7 @@ pub(super) enum Held {
 }
 
 impl Held {
-    /// What a task whose item waits on this reads as its activity: the sign-in it needs. None once its messages went
+    /// What a thread whose task waits on this reads as its activity: the sign-in it needs. None once its messages went
     /// out again.
     pub(super) fn needs(&self) -> Option<String> {
         match self {
@@ -84,13 +84,13 @@ impl Actor {
         conn.started.elapsed() > turn_age
     }
 
-    /// `login`'s sign-in card where the user is, holding `entries`: in the chat, or, from a task, in its bot's chat
-    /// with a line in the task's own saying so. Whether it's there.
+    /// `login`'s sign-in card where the user is, holding `entries`: in the chat, or, from a thread, in its bot's chat
+    /// with a line in the thread's own saying so. Whether it's there.
     pub(super) fn sign_in_card(&mut self, login: &Login, entries: &[String]) -> bool {
         if crate::agent::backends::harness(&login.backend).is_none() {
             return false;
         }
-        let mark = crate::chat::tasks::mark(&self.hub.store, &self.cfg);
+        let mark = crate::chat::work::mark(&self.hub.store, &self.cfg);
         let (bot, lane) = match &mark {
             Some(mark) => (mark.bot.as_str(), Lane::main(&mark.bot)),
             None => (self.cfg.id.as_str(), self.lane.clone()),
@@ -109,18 +109,18 @@ impl Actor {
         true
     }
 
-    /// The turn is over: a task's item ends with `outcome` (its last message is its report to its bot), unless it
+    /// The turn is over: a thread's task ends with `outcome` (its last message is its report to its bot), unless it
     /// goes on past a sign-in, which this returns (its message held for one, or sent again). The bot's own turns
     /// always end.
-    pub(super) fn end_item(&mut self, outcome: impl FnOnce() -> Outcome) -> Option<Held> {
-        let held = self.relay.held.take().filter(|_| self.cfg.is_task());
+    pub(super) fn end_task(&mut self, outcome: impl FnOnce() -> Outcome) -> Option<Held> {
+        let held = self.relay.held.take().filter(|_| self.cfg.is_thread());
         if held.is_none() {
             self.turn_over(outcome());
         }
         held
     }
 
-    /// After a task's turn ended (its runtime reads `held.needs()`): an item that waits for a sign-in needs the
+    /// After a thread's turn ended (its runtime reads `held.needs()`): a task that waits for a sign-in needs the
     /// user, who is told so in its bot's chat.
     pub(super) fn wait_for_sign_in(&self, held: Option<&Held>) {
         let Some(held @ Held::SignIn { backend, .. }) = held else { return };

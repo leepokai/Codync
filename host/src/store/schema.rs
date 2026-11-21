@@ -8,7 +8,7 @@ use std::sync::Mutex;
 
 /// Current schema version (kv `schema`). `hello` carries it: a migration may rewrite or delete rows in place, so
 /// a client whose copy was synced under another schema fetches the conversation again.
-pub const SCHEMA: i64 = 12;
+pub const SCHEMA: i64 = 13;
 
 /// 3: authorized devices (keys, not push tickets) with their push and Live Activity
 /// tickets. The old ticket-only `devices` table is dropped; phones re-register on connect.
@@ -19,10 +19,11 @@ pub const SCHEMA: i64 = 12;
 /// 7: each device records the account it was let in for (`devices.account`), so a computer that changes
 /// accounts drops the old account's devices.
 /// 8: a phone that paired with no account is told apart from a device paired before 2.36.0 (`devices.no_account`).
-/// 9: workflows (a graph, its runs and its webhook secrets) live in their own tables.
-/// 10: a workflow is also a script. Runs remember which executor started them.
-/// 11: a workflow a bot creates records that bot. User-created workflows have no owner.
-/// 12: a saved version records whether it was a graph or a script.
+/// 9: what a thread put in its bot's chat names its thread and its task by their new names (see [`rename_threads`]).
+/// 10: workflows (a graph, its runs and its webhook secrets) live in their own tables.
+/// 11: a workflow is also a script. Runs remember which executor started them.
+/// 12: a workflow a bot creates records that bot. User-created workflows have no owner.
+/// 13: a saved version records whether it was a graph or a script.
 fn migrate(c: &Connection) -> Result<()> {
     let version: i64 =
         c.query_row("SELECT CAST(v AS INTEGER) FROM kv WHERE k = 'schema'", [], |r| r.get(0)).optional()?.unwrap_or(0);
@@ -44,15 +45,10 @@ fn migrate(c: &Connection) -> Result<()> {
     if version < 7 {
         migrate_7(c)?;
     }
-    // A database built on the workflow branch used 8–11 for workflow tables and never
-    // added `no_account`. The check is cheap and safe to repeat.
+    // A database built on the workflow branch used 8–12 for workflow tables, never added `no_account` and never
+    // renamed tasks to threads. Each step below checks for itself, so repeating one is cheap and safe.
     ensure_no_account(c)?;
-    if version < 8 {
-        c.execute_batch("INSERT INTO kv(k, v) VALUES('schema', '8') ON CONFLICT(k) DO UPDATE SET v = '8';")?;
-    }
-    if version < 9 {
-        migrate_9(c)?;
-    }
+    rename_threads(c)?;
     if version < 10 {
         migrate_10(c)?;
     }
@@ -62,6 +58,10 @@ fn migrate(c: &Connection) -> Result<()> {
     if version < 12 {
         migrate_12(c)?;
     }
+    if version < 13 {
+        migrate_13(c)?;
+    }
+    c.execute("INSERT INTO kv(k, v) VALUES('schema', ?1) ON CONFLICT(k) DO UPDATE SET v = ?1", [SCHEMA.to_string()])?;
     Ok(())
 }
 
@@ -184,36 +184,55 @@ fn ensure_no_account(c: &Connection) -> Result<()> {
     Ok(())
 }
 
-fn migrate_9(c: &Connection) -> Result<()> {
+/// The entries a thread put in its bot's chat (cards, files, artifacts) were marked `data.task = {id, title}` (the
+/// session) and `data.item` (the piece of work). They become `data.thread` and `data.task`, as new ones are written,
+/// so the host and every client read one shape. Revs stay: the schema number in `hello` makes a client fetch again.
+/// A bot's stored config is renamed the same way (`taskOf`, `maxAgents`, `taskWorktrees` become `threadOf`,
+/// `maxThreads`, `threadWorktrees`), so nothing reads the old names afterwards, `updateBot` included.
+fn rename_threads(c: &Connection) -> Result<()> {
+    c.execute_batch(
+        "BEGIN;
+         UPDATE entries SET data = json_remove(
+             json_set(data, '$.thread', json_extract(data, '$.task'), '$.task', json_extract(data, '$.item')), '$.item')
+           WHERE json_valid(data) AND json_type(data, '$.task') = 'object';
+         UPDATE bots SET config = json_remove(json_set(config, '$.threadOf', json_extract(config, '$.taskOf')), '$.taskOf')
+           WHERE json_valid(config) AND json_type(config, '$.taskOf') = 'text';
+         UPDATE bots SET config = json_remove(json_set(config, '$.maxThreads', json_extract(config, '$.maxAgents')), '$.maxAgents')
+           WHERE json_valid(config) AND json_type(config, '$.maxAgents') = 'integer';
+         UPDATE bots SET config = json_remove(json_set(config, '$.threadWorktrees',
+             json(CASE json_type(config, '$.taskWorktrees') WHEN 'false' THEN 'false' ELSE 'true' END)), '$.taskWorktrees')
+           WHERE json_valid(config) AND json_type(config, '$.taskWorktrees') IN ('true', 'false');
+         COMMIT;",
+    )?;
+    Ok(())
+}
+
+fn migrate_10(c: &Connection) -> Result<()> {
     if table_exists(c, "workflows")? {
-        c.execute("INSERT INTO kv(k, v) VALUES('schema', '9') ON CONFLICT(k) DO UPDATE SET v = '9'", [])?;
         return Ok(());
     }
     c.execute_batch(include_str!("schema_7.sql"))?;
     Ok(())
 }
 
-fn migrate_10(c: &Connection) -> Result<()> {
+fn migrate_11(c: &Connection) -> Result<()> {
     if column_exists(c, "source")? {
-        c.execute("INSERT INTO kv(k, v) VALUES('schema', '10') ON CONFLICT(k) DO UPDATE SET v = '10'", [])?;
         return Ok(());
     }
     c.execute_batch(include_str!("schema_8.sql"))?;
     Ok(())
 }
 
-fn migrate_11(c: &Connection) -> Result<()> {
+fn migrate_12(c: &Connection) -> Result<()> {
     if column_exists(c, "owner_bot_id")? {
-        c.execute("INSERT INTO kv(k, v) VALUES('schema', '11') ON CONFLICT(k) DO UPDATE SET v = '11'", [])?;
         return Ok(());
     }
     c.execute_batch(include_str!("schema_9.sql"))?;
     Ok(())
 }
 
-fn migrate_12(c: &Connection) -> Result<()> {
+fn migrate_13(c: &Connection) -> Result<()> {
     if version_column(c, "source")? {
-        c.execute("INSERT INTO kv(k, v) VALUES('schema', '12') ON CONFLICT(k) DO UPDATE SET v = '12'", [])?;
         return Ok(());
     }
     c.execute_batch(include_str!("schema_10.sql"))?;
@@ -311,7 +330,7 @@ mod tests {
         }
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty());
-        assert_eq!(s.kv_get("schema").as_deref(), Some("12"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("13"));
         drop(s);
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty(), "reopening keeps the new table");
@@ -334,7 +353,52 @@ mod tests {
         let s = Store::open(&db).unwrap();
         let chat: Vec<String> = s.history("b", i64::MAX, 10).unwrap().into_iter().map(|e| e.id).collect();
         assert_eq!(chat, ["info"]);
-        assert_eq!(s.kv_get("schema").as_deref(), Some("12"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("13"));
+    }
+
+    #[test]
+    fn stored_bots_and_what_a_thread_put_in_the_chat_are_renamed_from_task_and_item() {
+        let db = temp_db();
+        {
+            let c = Connection::open(&db).unwrap();
+            Store::open(&db).unwrap();
+            c.execute_batch(
+                "UPDATE kv SET v = '8' WHERE k = 'schema';
+                 INSERT INTO entries(id, bot_id, rev, kind, turn, data, created_at, updated_at) VALUES
+                   ('card', 'b', 1, 'permission', 1, '{\"status\":\"pending\",\"author\":\"b\",\"task\":{\"id\":\"task-1\",\"title\":\"Fix login\"},\"item\":\"i1\"}', 0, 0),
+                   ('file', 'b', 2, 'agent', 1, '{\"files\":[],\"task\":{\"id\":\"task-1\",\"title\":\"Fix login\"},\"item\":null}', 0, 0),
+                   ('own', 'b', 3, 'agent', 1, '{\"text\":\"hi\",\"final\":true}', 0, 0),
+                   ('cut', 'b', 4, 'agent', 1, '{\"task\":{\"id\":', 0, 0);
+                 INSERT INTO bots(id, rev, config) VALUES
+                   ('b', 1, '{\"id\":\"b\",\"name\":\"B\",\"backend\":\"claude\",\"maxAgents\":2,\"taskWorktrees\":true}'),
+                   ('task-1', 2, '{\"id\":\"task-1\",\"name\":\"B\",\"backend\":\"claude\",\"taskOf\":\"b\",\"maxAgents\":5,\"taskWorktrees\":false}');",
+            )
+            .unwrap();
+        }
+        // `cut` isn't JSON: the store still opens, and the row stays as it was.
+        let s = Store::open(&db).unwrap();
+        let cut: String =
+            s.db.lock().unwrap().query_row("SELECT data FROM entries WHERE id = 'cut'", [], |r| r.get(0)).unwrap();
+        assert_eq!(cut, "{\"task\":{\"id\":");
+        let thread = s.bot("task-1").unwrap().expect("the thread bot").config;
+        assert_eq!((thread.thread_of.as_deref(), thread.max_threads, thread.thread_worktrees), (Some("b"), 5, false));
+        assert!(s.thread_bots().unwrap().iter().any(|row| row.config.id == "task-1"), "known by the id it had");
+        let own = s.bot("b").unwrap().expect("the bot").config;
+        assert_eq!((own.thread_of, own.max_threads, own.thread_worktrees), (None, 2, true));
+        let stored: String =
+            s.db.lock().unwrap().query_row("SELECT config FROM bots WHERE id = 'task-1'", [], |r| r.get(0)).unwrap();
+        assert!(
+            !stored.contains("taskOf") && !stored.contains("maxAgents") && !stored.contains("taskWorktrees"),
+            "{stored}"
+        );
+        let card = s.entry("card").unwrap();
+        assert_eq!(card.data["thread"], serde_json::json!({"id": "task-1", "title": "Fix login"}));
+        assert_eq!(card.data["task"], "i1");
+        assert!(card.data.get("item").is_none() && card.rev == 1, "{:?}", card.data);
+        let file = s.entry("file").unwrap().data;
+        assert!(file["thread"]["id"] == "task-1" && file["task"].is_null() && file.get("item").is_none(), "{file}");
+        assert_eq!(s.entry("own").unwrap().data, serde_json::json!({"text": "hi", "final": true}));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("13"));
     }
 
     #[test]

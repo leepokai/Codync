@@ -15,8 +15,8 @@ pub enum Cmd {
     Routine(String),
     /// A follow-up the bot set for itself is due (`routines::follow_up`): a turn in its own chat.
     FollowUp(String),
-    /// One of the bot's tasks ended (`chat::tasks`): its report, for a turn in the bot's chat.
-    TaskReport(crate::chat::tasks::Report),
+    /// One of the bot's tasks ended (`chat::work`): its report, for a turn in the bot's chat.
+    TaskReport(crate::chat::work::Report),
     /// One assistant step of a workflow. `step_id` is `workflow_steps.id`.
     WorkflowStep {
         step_id: String,
@@ -128,7 +128,7 @@ pub enum Cmd {
 pub(super) enum Queued {
     Routine(String),
     FollowUp(String),
-    TaskReport(crate::chat::tasks::Report),
+    TaskReport(crate::chat::work::Report),
     WorkflowStep(String),
     User {
         lane: Lane,
@@ -158,7 +158,7 @@ pub(super) enum HostTurn {
     /// and is resumed after a restart as the follow-up it is.
     FollowUp,
     /// The reports of the bot's tasks (`Cmd::TaskReport`): the bot tells the user what they found, which alerts like
-    /// a reply. A restart doesn't resume it: the reports it didn't answer come again (`tasks::restore`).
+    /// a reply. A restart doesn't resume it: the reports it didn't answer come again (`work::restore`).
     TaskReport,
 }
 

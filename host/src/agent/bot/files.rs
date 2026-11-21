@@ -70,7 +70,7 @@ impl Actor {
         }
         self.files.pending.push(cancelled.clone());
         let epoch = self.files.epoch;
-        // A task's file is its bot's: it shows in that chat, and outlives the task.
+        // A thread's file is its bot's: it shows in that chat, and outlives the thread.
         let root = files::root(self.cfg.owner());
         let cwd = PathBuf::from(&self.cfg.cwd);
         let tx = self.files.tx.clone();

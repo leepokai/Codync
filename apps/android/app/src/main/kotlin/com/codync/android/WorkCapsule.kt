@@ -27,23 +27,23 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
-import com.codync.android.core.WorkItem
+import com.codync.android.core.WorkTask
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
 
 /**
- * The bot's work away from the chat, directly above the composer, while any item is live or waiting: how many work
- * and wait, or what the one working item does and for how long. The text opens the bot's details ([open]); Stop, with
- * one item a task has, asks once, then stops it ([stop]).
+ * The bot's work away from the chat, directly above the composer, while any task is live or waiting: how many work
+ * and wait, or what the one working task does and for how long. The text opens the bot's details ([open]); Stop, with
+ * one task a thread has, asks once, then stops it ([stop]).
  */
-@Composable internal fun WorkCapsule(bot: Bot, stopping: Boolean, open: () -> Unit, stop: (WorkItem) -> Unit, modifier: Modifier = Modifier) {
+@Composable internal fun WorkCapsule(bot: Bot, stopping: Boolean, open: () -> Unit, stop: (WorkTask) -> Unit, modifier: Modifier = Modifier) {
     val label = capsuleLabel(bot.work, translator())
     // The capsule keeps its last words while it folds away.
     var shown by remember { mutableStateOf(label) }
     if (label != null && label != shown) shown = label
     var confirming by remember { mutableStateOf(false) }
-    // The item Stop asked about: the one it stops, whatever started since.
-    var asked by remember { mutableStateOf<WorkItem?>(null) }
+    // The task Stop asked about: the one it stops, whatever started since.
+    var asked by remember { mutableStateOf<WorkTask?>(null) }
     AnimatedVisibility(label != null, modifier, enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
         exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
         val words = shown ?: return@AnimatedVisibility
@@ -55,7 +55,7 @@ import com.kyant.shapes.Capsule
                 WorkMark(words.mark)
                 // The lead and the time stay whole; the middle gives way.
                 Row(Modifier.weight(1f, fill = false)) {
-                    Text(tr("In the background") + " · ", style = Type.subheadline, color = Palette.text, maxLines = 1)
+                    Text(tr("Work") + " · ", style = Type.subheadline, color = Palette.text, maxLines = 1)
                     Text(words.text, Modifier.weight(1f, fill = false), style = Type.subheadline, color = Palette.secondary,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -73,9 +73,9 @@ import com.kyant.shapes.Capsule
     StopWorkDialog(confirming, { confirming = false }) { asked?.let(stop) }
 }
 
-/** Asked once before a working item stops. */
+/** Asked once before a working task stops. */
 @Composable internal fun StopWorkDialog(isPresented: Boolean, dismiss: () -> Unit, stop: () -> Unit) {
-    CodyncDialog("Stop the background work?", isPresented, dismiss, message = "What it already changed stays.") {
+    CodyncDialog("Stop this task?", isPresented, dismiss, message = "What it already changed stays.") {
         listOf(DialogAction("Stop", destructive = true, action = stop))
     }
 }

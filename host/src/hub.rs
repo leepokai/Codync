@@ -91,7 +91,7 @@ pub struct Hub {
     pub workflows: crate::workflows::Workflows,
     pub team: crate::chat::team::Requests,
     pub ceilings: crate::chat::team::Ceilings,
-    pub tasks: crate::chat::tasks::Tasks,
+    pub work: crate::chat::work::Work,
     pub groups: crate::chat::group::Rooms,
     /// The user's other computers (codync-network), once this one is in a network.
     pub network: crate::network::Network,
@@ -139,11 +139,11 @@ pub struct Hub {
     pub dev_servers: crate::dev_servers::DevServers,
 }
 
-/// What tells clients of a saved entry. A task bot's transcript goes out under a type of its own: an app from before
-/// tasks skips it, and the others keep it out of the chats they list.
+/// What tells clients of a saved entry. A thread bot's transcript goes out under a type of its own: an app from before
+/// threads skips it, and the others keep it out of the chats they list.
 fn entry_event(e: &Entry) -> Value {
-    if crate::store::is_task_id(&e.bot_id) {
-        json!({"type": "taskEntry", "rev": e.rev, "task": e.bot_id, "entry": e})
+    if crate::store::is_thread_id(&e.bot_id) {
+        json!({"type": "threadEntry", "rev": e.rev, "thread": e.bot_id, "entry": e})
     } else {
         json!({"type": "entry", "rev": e.rev, "entry": e})
     }
@@ -164,7 +164,7 @@ impl Hub {
             workflows: crate::workflows::Workflows::default(),
             team: crate::chat::team::Requests::default(),
             ceilings: crate::chat::team::Ceilings::default(),
-            tasks: crate::chat::tasks::Tasks::default(),
+            work: crate::chat::work::Work::default(),
             groups: crate::chat::group::Rooms::default(),
             network: crate::network::Network::default(),
             waiting: crate::chat::team::remote::Waiting::default(),
@@ -212,7 +212,7 @@ impl Hub {
                 self.spawn_bot(row.config);
             }
         }
-        crate::chat::tasks::restore(self);
+        crate::chat::work::restore(self);
         crate::chat::calls::rewatch(self);
         crate::routines::start(self);
         crate::workflows::start(self);
@@ -257,7 +257,7 @@ impl Hub {
         }
     }
 
-    /// A task's actor is gone: what it was doing goes with it.
+    /// A thread's actor is gone: what it was doing goes with it.
     pub(crate) fn forget_runtime(&self, bot_id: &str) {
         self.runtime.locked().remove(bot_id);
         self.update_keep_awake();
@@ -276,9 +276,9 @@ impl Hub {
     }
 
     /// Marks what the user has seen as read. Nothing new there is a no-op (a waiting approval card stays counted
-    /// until answered), so clients may call it whenever a chat is on screen. So is a task bot: no client lists it, so it has no unread to show.
+    /// until answered), so clients may call it whenever a chat is on screen. So is a thread bot: no client lists it, so it has no unread to show.
     pub fn mark_read(&self, id: &str) -> Result<()> {
-        if crate::store::is_task_id(id) {
+        if crate::store::is_thread_id(id) {
             return Ok(());
         }
         let Some(row) = self.store.bot(id)? else { bail!("unknown bot") };
@@ -317,13 +317,13 @@ impl Hub {
         Ok(())
     }
 
-    /// Bumps the bot's rev and broadcasts its current state. A task bot isn't a bot to any client: its bot's state,
+    /// Bumps the bot's rev and broadcasts its current state. A thread bot isn't a bot to any client: its bot's state,
     /// which lists it, goes out instead.
     pub fn emit_bot(&self, id: &str) {
-        let task = crate::store::is_task_id(id);
-        let owner = if task { self.store.bot(id).ok().flatten().and_then(|b| b.config.task_of) } else { None };
-        let Some(id) = owner.as_deref().or((!task).then_some(id)) else {
-            return; // a task bot that is gone
+        let thread = crate::store::is_thread_id(id);
+        let owner = if thread { self.store.bot(id).ok().flatten().and_then(|b| b.config.thread_of) } else { None };
+        let Some(id) = owner.as_deref().or((!thread).then_some(id)) else {
+            return; // a thread bot that is gone
         };
         let _g = self.emit_lock.locked();
         if self.store.touch_bot(id).is_ok()
@@ -356,9 +356,9 @@ impl Hub {
             }
             self.update_keep_awake();
         }
-        if before.status != after.status && crate::store::is_task_id(id) {
-            // A task's status is its bot's to what follows the bot from outside its chat.
-            if let Some(owner) = self.store.bot(id).ok().flatten().and_then(|row| row.config.task_of) {
+        if before.status != after.status && crate::store::is_thread_id(id) {
+            // A thread's status is its bot's to what follows the bot from outside its chat.
+            if let Some(owner) = self.store.bot(id).ok().flatten().and_then(|row| row.config.thread_of) {
                 self.outside_changed(&owner);
             }
         } else if before.status != after.status {
@@ -377,17 +377,17 @@ impl Hub {
     }
 
     /// A bot's runtime as what shows it outside its chat reads it (a Live Activity, an ongoing notification): its
-    /// chat's, with the status and start its work in the background gives it (`chat::tasks::outside`).
+    /// chat's, with the status and start its work in the background gives it (`chat::work::outside`).
     pub fn outside_runtime(&self, cfg: &BotConfig) -> Runtime {
         let chat = self.runtime(&cfg.id);
-        let (status, started_at) = crate::chat::tasks::outside(self, cfg, &chat);
+        let (status, started_at) = crate::chat::work::outside(self, cfg, &chat);
         Runtime { status, started_at, ..chat }
     }
 
     /// `bot`'s chat or its box changed: its Live Activities hear how it stands now, when that is new to them. So
-    /// one doesn't end while items work, and ends once the box is empty and the chat idle.
+    /// one doesn't end while tasks work, and ends once the box is empty and the chat idle.
     pub fn outside_changed(&self, bot: &str) {
-        let row = self.store.bot(bot).ok().flatten().filter(|row| !row.config.is_group() && !row.config.is_task());
+        let row = self.store.bot(bot).ok().flatten().filter(|row| !row.config.is_group() && !row.config.is_thread());
         let Some(row) = row else { return };
         let rt = self.outside_runtime(&row.config);
         let before = self.outside.locked().insert(bot.to_owned(), rt.status);

@@ -1,4 +1,4 @@
-A bot works in a folder on your computer. In its own folder, Codync uses Git to keep a version before and after each turn. In a project folder, when the bot runs several [threads](/docs/conversations#threads) at once, Git decides whether they can stay out of each other's way. This page says where each one works, what Codync leaves behind, and what to do when the folder isn't a Git repository or Git isn't installed.
+A bot works in a folder on your computer. In its own folder, Codync uses Git to keep a version before and after each turn. In a project folder, when the bot runs several [threads](/docs/conversations#work) at once, Git decides whether they can stay out of each other's way. This page says where each one works, what Codync leaves behind, and what to do when the folder isn't a Git repository or Git isn't installed.
 
 ## A bot's working folder
 
@@ -25,10 +25,10 @@ All the bot's threads work in its own folder, side by side, so two of them can c
 
 ## Where threads work in a project folder
 
-A thread is another session of the same bot that works away from the chat.
+A thread is where the bot does tasks away from the chat, with a session of its own.
 
 - **The first one works in the bot's folder**, as the chat does.
-- **Each further one that starts while another is still working gets its own copy**, when the folder is in a Git repository and **Worktree per thread** is on. The copy is a Git worktree: a separate checkout under `~/.codync/worktrees`, on a new branch named `codync/` and the thread's title (for example `codync/fix-login`), started from the commit your folder is on. The threads never overwrite each other, and none of them touches your folder.
+- **Each further one that starts while another is still working gets its own copy**, when the folder is in a Git repository and **Worktree per thread** is on. The copy is a Git worktree: a separate checkout under `~/.codync/worktrees`, on a new branch named `codync/` and its task's title (for example `codync/fix-login`), started from the commit your folder is on. The threads never overwrite each other, and none of them touches your folder.
 
 A copy holds what is committed. Changes in your folder that aren't committed aren't in it, and neither is what Git ignores there, such as installed packages.
 
@@ -68,7 +68,7 @@ Codync can keep versions and give threads their own copies only with Git. In bot
 
 A project folder may not be a Git repository. (A bot's own folder becomes one by itself once Git is installed.) Choose one of these:
 
-- **Keep to one at a time.** Set **Threads at once**, under **Workspace** in the bot's **Settings**, to 1. Further threads wait their turn.
+- **Keep to one at a time.** Set **Threads at once**, under **Workspace** in the bot's **Settings**, to 1. Further tasks wait their turn.
 - **Make the folder a repository.** A copy starts from a commit, so the folder needs at least one:
 
 ```sh
@@ -95,7 +95,7 @@ Then restart Codync on that computer, so it finds Git.
 
 ## Where the apps show it
 
-- **Under each thread that is or was worked on**, in the bot's **Details** and in **Work**, a line says where it works: the folder when it works in the bot's folder, the branch when it has a copy of its own. Your home folder is written as `~`. On the desktop, hold the pointer over the line to see the full path.
-- **At the top of a thread** (tap or click its row), the same line is a button: tap or click it to copy the full path. It reads **Path copied** for a moment.
+- **Under each task that is or was worked on**, in the bot's **Details** and in **Work**, a line says where its thread works: the folder when it works in the bot's folder, the branch when it has a copy of its own. Your home folder is written as `~`. On the desktop, hold the pointer over the line to see the full path.
+- **At the top of a thread** (tap or click its task's row), the same line is a button: tap or click it to copy the full path. It reads **Path copied** for a moment.
 - **Settings > Workspace** says under the folder which case the bot is in: **Git repository**, **Not a git repository** or **Git isn't installed on this computer**. On iPhone, Android and the desktop, the information button beside it opens this page. It describes the folder the bot has saved.
-- **Terminal UI:** the same words are in dim text under **Workspace** in the bot's settings, with no button. A thread's row has no such line; the heading of its steps shows its branch or folder, and doesn't copy.
+- **Terminal UI:** the same words are in dim text under **Workspace** in the bot's settings, with no button. A task's row has no such line; the heading of its thread's steps shows its branch or folder, and doesn't copy.

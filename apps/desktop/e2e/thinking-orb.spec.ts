@@ -2,24 +2,12 @@ import { test, expect, type Locator, type Page } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fixtureCommand } from './fixture-command.ts'
-import { api, attach, setPref } from './sandbox.ts'
+import { api, attach, setPref, toolCallAgent } from './sandbox.ts'
 
 // A scripted agent whose turn runs a search, a fetch and an edit and stays on them until it is stopped.
-const busyAgent = `import json,sys
-def send(m): sys.stdout.write(json.dumps(m)+"\\n"); sys.stdout.flush()
-def upd(u): send({"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":u}})
-turn=[None]
-for line in sys.stdin:
-    m=json.loads(line)
-    meth=m.get("method")
-    if meth=="initialize": send({"jsonrpc":"2.0","id":m["id"],"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":False}}})
-    elif meth=="session/new": send({"jsonrpc":"2.0","id":m["id"],"result":{"sessionId":"s1"}})
-    elif meth=="session/prompt":
-        turn[0]=m["id"]
-        for i,(kind,title) in enumerate([("search","Search the docs"),("fetch","Fetch the page"),("edit","Edit a.txt")]):
-            upd({"sessionUpdate":"tool_call","toolCallId":"t%d"%i,"title":title,"kind":kind,"status":"in_progress"})
-    elif meth=="session/cancel" and turn[0] is not None: send({"jsonrpc":"2.0","id":turn[0],"result":{"stopReason":"cancelled"}})
-`
+const busyAgent = toolCallAgent([
+  { kind: 'search', title: 'Search the docs' }, { kind: 'fetch', title: 'Fetch the page' }, { kind: 'edit', title: 'Edit a.txt' },
+])
 // A scripted agent that asks before editing a.txt (host/tests/fake_agent.py).
 const askAgent = join(resolve(__dirname, '../../..'), 'host/tests/fake_agent.py')
 // An orb's canvas (the avatars draw on a canvas too, without an ink color).
@@ -112,9 +100,10 @@ test('thinking orbs are halftone discs that animate, and hold still with Reduce 
     for (const title of ['Search the docs', 'Fetch the page', 'Edit a.txt']) {
       await expect(steps).toContainText(title)
       const canvas = steps.locator('*', { hasText: title }).filter({ has: page.locator(ORB) }).last().locator(ORB)
+      // The pill widens as it unfolds, so a step's orb may not have drawn its first frame yet.
+      await expect.poll(async () => (await orb(canvas)).ink).toBeGreaterThan(0)
       const picture = await orb(canvas)
       expect(picture.size).toBe(16)
-      expect(picture.ink).toBeGreaterThan(0)
       expect(picture.corners).toBe(0)
       expect(await animates(canvas)).toBe(true)
     }

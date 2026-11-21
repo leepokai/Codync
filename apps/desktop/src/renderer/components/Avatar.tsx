@@ -227,7 +227,7 @@ export function drawCharacter(
   }
 }
 
-/** A bot's face, as it stands outside its chat: its items at work and their cards count (iPhone `Bot.mood`). */
+/** A bot's face, as it stands outside its chat: its tasks at work and their cards count (iPhone `Bot.mood`). */
 export function moodOf(bot: Bot, animated = true): Mood {
   if (!animated) return 'idle'
   const status = outsideStatus(bot)

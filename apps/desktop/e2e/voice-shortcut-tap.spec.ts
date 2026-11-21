@@ -11,7 +11,7 @@ import { api, attach, echoBot, openGeneralSettings, openPage, pick, setPref } fr
 /** Hands the composer a tap of the shortcut, through the module instance the window itself loaded. */
 async function voiceKey(page: Page, key: 'double' | 'tap') {
   await page.evaluate(async (key) => {
-    const url = performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes('/thread/voice-shortcut-keys.ts'))
+    const url = performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes('/chat/voice-shortcut-keys.ts'))
     if (!url) throw new Error('voice-shortcut-keys.ts is not loaded')
     const { queueVoiceKey } = (await import(url)) as { queueVoiceKey: (key: string) => void }
     queueVoiceKey(key)

@@ -131,5 +131,4 @@ CREATE TABLE workflow_steps (
 CREATE UNIQUE INDEX workflow_steps_attempt
   ON workflow_steps(run_id, node_id, attempt) WHERE run_id IS NOT NULL;
 CREATE INDEX workflow_steps_open ON workflow_steps(status) WHERE status IN ('running','approval');
-INSERT INTO kv(k, v) VALUES('schema', '9') ON CONFLICT(k) DO UPDATE SET v = '9';
 COMMIT;

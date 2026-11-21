@@ -199,7 +199,7 @@
   opacity: 0.4;
 }
 
-/* Floating layers cover the title bar's drag regions (sidebar header, thread chrome), which
+/* Floating layers cover the title bar's drag regions (sidebar header, chat chrome), which
    would turn clicks on them into window drags. Those strips are not ancestors of a portal, so
    a no-drag on the card does not cancel them. `overlay-open` is set while a sheet, dialog, or
    menu is mounted and takes the strips down for that time. */

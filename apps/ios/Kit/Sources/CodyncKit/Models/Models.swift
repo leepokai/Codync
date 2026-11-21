@@ -35,6 +35,21 @@ public struct Entry: Codable, Identifiable, Hashable, Sendable {
         self.updatedAt = updatedAt
     }
 
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        seq = try c.decode(Int64.self, forKey: .seq)
+        botId = try c.decode(String.self, forKey: .botId)
+        rev = try c.decode(Int64.self, forKey: .rev)
+        kind = try c.decode(String.self, forKey: .kind)
+        turn = try c.decode(Int64.self, forKey: .turn)
+        data = try c.decode(EntryData.self, forKey: .data)
+        createdAt = try c.decode(Int64.self, forKey: .createdAt)
+        updatedAt = try c.decode(Int64.self, forKey: .updatedAt)
+        // Hosts before 2.51.0: goes when minHost reaches 2.51.0.
+        if let old = try? c.decode(OldHostWire.EntryRefs.self, forKey: .data) { data.adopt(old) }
+    }
+
     /// Chat-visible (Grok Bot model): user messages, final replies, approval cards, notices. Of memory and context,
     /// only a fresh conversation gets a line: memory lives in the bot's memory settings, a summary keeps the same
     /// conversation going, and a kept handoff changed nothing.
@@ -442,9 +457,9 @@ public struct BotDraft: Codable, Hashable, Sendable {
     /// Nil where the host offers no setting (a new bot, an agent it can't ask), so it isn't sent.
     public var compaction: CompactionThreshold?
     /// Nil where the host has no box (an older one, a new bot), so it isn't sent.
-    public var maxAgents: Int?
+    public var maxThreads: Int?
     /// Nil where the host has no such setting, so it isn't sent.
-    public var taskWorktrees: Bool?
+    public var threadWorktrees: Bool?
 
     public init(name: String = "", description: String = "", avatarColor: String = AvatarPalette.colors.randomElement()!.id,
                 avatarShape: String = AvatarPalette.shapes.randomElement()!, backend: String = "claude", cwd: String = "",
@@ -486,8 +501,8 @@ public struct BotDraft: Codable, Hashable, Sendable {
         offeredToNetwork = bot.offeredToNetwork
         reachableByAssistants = bot.reachableByAssistants
         compaction = bot.compaction
-        maxAgents = bot.maxAgents
-        taskWorktrees = bot.taskWorktrees
+        maxThreads = bot.maxThreads
+        threadWorktrees = bot.threadWorktrees
     }
 
     /// This draft with each field it hasn't changed from `base` (the bot as the form loaded it) taken from `fresh`
@@ -503,7 +518,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
         follow(\.fastMode); follow(\.fallbacks); follow(\.selfFallbacks); follow(\.pinned); follow(\.hidden)
         follow(\.notify); follow(\.connectors); follow(\.skills); follow(\.computer); follow(\.manageTeam)
         follow(\.sharedMemory); follow(\.harnessMemory); follow(\.offeredToNetwork); follow(\.reachableByAssistants)
-        follow(\.compaction); follow(\.maxAgents); follow(\.taskWorktrees)
+        follow(\.compaction); follow(\.maxThreads); follow(\.threadWorktrees)
         return draft
     }
 }

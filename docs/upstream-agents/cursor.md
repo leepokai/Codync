@@ -11,4 +11,4 @@ Runs as `cursor-agent acp`. Rules: [README](README.md).
 
 ## Fork
 
-Checked 2026-11-15 for background tasks ([spikes](../archive/background-tasks-plan-2026-11-15.md#spikes)). `initialize` advertises no `sessionCapabilities.fork` (cursor-agent 2026.10.22, `cursor-agent acp`; it has `list` only), and `session/fork` answers `-32601 "Method not found": session/fork`, so a background task starts from a brief. Not a defect: the capability is optional.
+Checked 2026-11-15 for threads ([spikes](../archive/background-tasks-plan-2026-11-15.md#spikes)). `initialize` advertises no `sessionCapabilities.fork` (cursor-agent 2026.10.22, `cursor-agent acp`; it has `list` only), and `session/fork` answers `-32601 "Method not found": session/fork`, so a thread starts from a brief. Not a defect: the capability is optional.

@@ -12,11 +12,11 @@ use super::{
 const DELAYS: [i64; 3] = [60, 300, 900];
 
 /// Whether run `id` used a tool that may have changed something. A run that never began didn't;
-/// one whose check fails counts as acted. `task`: the task that worked it in the box, whose one turn is the run
+/// one whose check fails counts as acted. `thread`: the thread that worked it in the box, whose one turn is the run
 /// (a run in the chat is the turn its line took).
-pub fn acted(hub: &Hub, id: &str, task: Option<&str>) -> bool {
-    let turn = match task {
-        Some(task) => Some((task.to_owned(), hub.store.max_turn(task))),
+pub fn acted(hub: &Hub, id: &str, thread: Option<&str>) -> bool {
+    let turn = match thread {
+        Some(thread) => Some((thread.to_owned(), hub.store.max_turn(thread))),
         None => hub.store.entry(&notice_id(id)).map(|notice| (notice.bot_id, notice.turn)),
     };
     let Some((chat, turn)) = turn else { return false };

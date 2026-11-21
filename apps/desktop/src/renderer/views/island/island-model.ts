@@ -5,8 +5,8 @@ import {
 import { VOICE_SHORTCUT_KEYS, type VoiceKey, type VoiceShortcut } from '@shared/voice-shortcut'
 import { Observable } from '../../lib/observable'
 import { pref, prefs } from '../../lib/prefs'
-import { Dictation } from '../thread/dictation'
-import { dictationPlatform } from '../thread/dictation-platform'
+import { Dictation } from '../chat/dictation'
+import { dictationPlatform } from '../chat/dictation-platform'
 
 /** The bare notch peeks at once and opens after a rest; the compact island opens sooner. */
 const OPEN_FROM_PEEK_MS = 650

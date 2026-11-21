@@ -1,5 +1,5 @@
 {
-  "minApp": "2.49.0",
+  "minApp": "2.51.0",
   "shapes": {
     "event:bot": "object",
     "event:bot.bot": "object",
@@ -51,7 +51,7 @@
     "event:bot.bot.lead": "bool",
     "event:bot.bot.manageTeam": "bool",
     "event:bot.bot.managedWorkspace": "bool",
-    "event:bot.bot.maxAgents": "number",
+    "event:bot.bot.maxThreads": "number",
     "event:bot.bot.members": "array",
     "event:bot.bot.memoryRev": "number",
     "event:bot.bot.mode": "string",
@@ -75,7 +75,7 @@
     "event:bot.bot.skills": "array",
     "event:bot.bot.startedAt": "null",
     "event:bot.bot.status": "string",
-    "event:bot.bot.taskWorktrees": "bool",
+    "event:bot.bot.threadWorktrees": "bool",
     "event:bot.bot.unread": "number",
     "event:bot.bot.waiting": "number",
     "event:bot.bot.work": "array",

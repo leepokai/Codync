@@ -10,7 +10,7 @@ use super::buffer::{centered, frame_box, put, u};
 use super::overlay::field_line;
 use super::style::theme;
 
-/// The key of the page of every bot's work: listed only while some bot has a live or waiting item.
+/// The key of the page of every bot's work: listed only while some bot has a live or waiting task.
 const WORK_KEY: &str = "E";
 
 const HELP: [(&str, &str, &str); 87] = [
@@ -33,7 +33,7 @@ const HELP: [(&str, &str, &str); 87] = [
     ("CHAT", "S", "send the next queued message now"),
     ("CHAT", "D", "take back the last queued message"),
     ("CHAT", "B", "details: what the bot does in the background"),
-    ("CHAT", "X", "stop the one item in the background"),
+    ("CHAT", "X", "stop the one task in the background"),
     ("CHAT", ">", "show / hide the working turn's steps (thinking details on)"),
     ("CHAT", "o", "last turn's steps"),
     ("CHAT", "c", "copy the last reply"),
@@ -71,16 +71,16 @@ const HELP: [(&str, &str, &str); 87] = [
     ("BOTS", "J K", "move bot down / up"),
     ("BOTS", "w", "move to section"),
     ("BOTS", "W", "rename / remove section"),
-    ("BOTS", WORK_KEY, "work: every bot's items"),
+    ("BOTS", WORK_KEY, "work: every bot's tasks"),
     ("BOTS", "z", "fold / unfold section"),
     ("BOTS", "M", "memory"),
     ("BOTS", "^k session", "new session: fresh agent context; the chat stays"),
     ("BOTS", "R", "details: threads, event box, routines, recent"),
     ("BOTS", "f", "workflows"),
-    ("BOTS", "↵ X", "details, on an item: its transcript / stop"),
-    ("BOTS", "F C D A", "details, on an item: first / cut in / drop / try again"),
-    ("BOTS", "i S D", "an item's transcript: write to it / send now / take back"),
-    ("BOTS", "tab ↵", "an item's transcript: pick what it put in the chat / show it there"),
+    ("BOTS", "↵ X", "details, on a task: its thread / stop"),
+    ("BOTS", "F C D A", "details, on a task: first / cut in / drop / try again"),
+    ("BOTS", "i S D", "a task's thread: write to it / send now / take back"),
+    ("BOTS", "tab ↵", "a task's thread: pick what it put in the chat / show it there"),
     ("BOTS", "b", "settings, on Agent: switch back to the bot's own agent"),
     ("BOTS", "O", "computer: where it runs, use the computer"),
     ("BOTS", "L", "library: artifacts and files; open, save, rename"),
@@ -103,7 +103,7 @@ const HELP: [(&str, &str, &str); 87] = [
     ("MOUSE", "wheel", "scroll under pointer"),
 ];
 
-/// The keys; `work`: some bot has a live or waiting item, so `E` has a page to open.
+/// The keys; `work`: some bot has a live or waiting task, so `E` has a page to open.
 pub(super) fn help(buf: &mut Buffer, area: Rect, filter: &Editor, work: bool) {
     let t = theme();
     // Two columns fit everything from 42 rows up; shorter windows get a third.

@@ -23,7 +23,7 @@ macOS: Apple Silicon + Intel (DMG) · Windows: x64 installer · Linux: AppImage 
 [![App Store](https://img.shields.io/badge/App_Store-iOS-0D96F6?logo=apple&logoColor=white)](https://apps.apple.com/app/codync/id6760984418)
 [![Homebrew](https://img.shields.io/badge/Homebrew-codync-FBB040?logo=homebrew&logoColor=white)](https://github.com/leepokai/homebrew-codync)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/KBAX3Qznxh)
-[![Telegram China](https://img.shields.io/badge/Telegram-China_community-26A5E4?logo=telegram&logoColor=white)](https://t.me/+e5egWrp5z4BlOWNl)
+[![Feishu China](https://img.shields.io/badge/Feishu-China_community-3370FF)](https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=49eq6f1e-ef72-40d8-aaf9-9864ee289ba3)
 [![Release](https://img.shields.io/github/v/release/leepokai/Codync?color=black)](https://github.com/leepokai/Codync/releases/latest)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 <br>
@@ -94,7 +94,7 @@ Host notifications → APNs worker (relay/) → iPhone
 - **Group chats** hold several bots and you. Each message starts a short room turn: the bots you @-mention (or everyone) reply one at a time, each in its own session, and can react to each other, up to 3 rounds. See [group chats and replies](docs/features/groups-and-replies.md).
 - **Bots can ask each other for help.** Tell one “ask Reviewer to check these changes.” The built-in `team` MCP server lets it discover your other visible bots and message one; the reply comes back to it as a new turn, and it answers you then. Requests appear in both chats; each recipient keeps its own agent, folder and approvals. Native subagents stay under the coding agent's control. See [bot collaboration](docs/features/bot-collaboration.md).
 - **The chat only shows what matters**: your messages, each turn's final reply, approval cards and notices. Every tool call, diff, plan and thought is one tap away in *Full conversation*. While a bot works, its row shows what it's doing right now.
-- **Agents are detected automatically**: the host hydrates PATH from your login shell (plus Homebrew, ~/.local/bin, nvm, bun, volta, asdf, mise, pnpm…), finds every harness you have installed, and prefers its native ACP mode. Anything else in the official [ACP registry](https://agentclientprotocol.com/registry) can be picked too — Codync fetches it on first use (npx, uvx or a checksummed binary).
+- **Agents are detected automatically**: the host hydrates PATH from your login shell (plus Homebrew, ~/.local/bin, nvm, bun, volta, asdf, mise, pnpm…), finds every agent you have installed, and prefers its native ACP mode. Anything else in the official [ACP registry](https://agentclientprotocol.com/registry) can be picked too — Codync fetches it on first use (npx, uvx or a checksummed binary).
 - **codync-host** (Rust, macOS, Windows and Linux) runs on your computer. It speaks the [Agent Client Protocol](https://agentclientprotocol.com) to each agent, keeps transcripts in SQLite, and serves the phone. Every change carries a global `rev`, so the phone reconnects with `since: rev` and never misses anything.
 - **Usage limits** are read on your computer, without a model call, for the agents your bots run and any others you turn on in the Usage screen. The phone, widgets and menu bar see the resulting limits. See [usage limits](docs/features/usage-limits.md).
 - **Push** goes through a tiny relay that holds the APNs key. The phone trades its device token for an encrypted ticket; the host only ever holds tickets.
@@ -119,11 +119,11 @@ brew install --cask leepokai/codync/codync
 
 All three install the same signed, notarized app.
 
-Open Codync: it sets up the host on first launch. **Open Codync** opens the full window; **Pair iPhone…** shows the QR code.
+Open Codync: it sets up the host on first launch. **Open Codync** opens the full window; **Pair phone…** shows the QR code.
 
 **Windows** — [download codync-windows-x64.exe](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe) and run it. It installs for your user and starts the host at sign-in. The installer isn't code-signed yet, so SmartScreen asks you to confirm it once (**More info → Run anyway**). Not on Windows yet: remote screen, on-device speech and the Claude Code status line hook. Details: [desktop app](docs/architecture/desktop-app.md#platform-notes).
 
-**iPhone and Android** — [get Codync on the App Store](https://apps.apple.com/app/codync/id6760984418) (iOS 26+, free) or [on Google Play](https://play.google.com/store/apps/details?id=com.pokai.Codync.android) (Android 10+, free), then scan the QR code from **Pair iPhone…** on the Mac, the Windows or Linux app, or `codync-host pair`.
+**iPhone and Android** — [get Codync on the App Store](https://apps.apple.com/app/codync/id6760984418) (iOS 26+, free) or [on Google Play](https://play.google.com/store/apps/details?id=com.pokai.Codync.android) (Android 10+, free), then scan the QR code from **Pair phone…** on the Mac, the Windows or Linux app, or `codync-host pair`.
 
 > **Why the iPhone app can be a version behind:** every iPhone release goes through Apple's App Review first, which usually takes a day or more, so the App Store version can trail the Mac, Windows, Linux and host releases. Your computer accounts for that: an update that needs a newer phone app waits until the App Store has the iPhone version and Google Play has the Android version, then installs, and the iPhone app shows a reminder when a newer version is available.
 
@@ -246,14 +246,14 @@ Clients and the host each name the oldest version of the other they still work w
 
 ## Community
 
-| Discord | Telegram · China community |
+| Discord | Feishu · China community |
 | --- | --- |
-| [Join Discord](https://discord.gg/KBAX3Qznxh) for questions, help and feedback. | [Join the Telegram group](https://t.me/+e5egWrp5z4BlOWNl), a community for Codync users in China to share tips, ask questions and give feedback. |
+| [Join Discord](https://discord.gg/KBAX3Qznxh) for questions, help and feedback. Can't reach Discord? [Join the Telegram group](https://t.me/+e5egWrp5z4BlOWNl) instead. | [Join the Feishu group](https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=49eq6f1e-ef72-40d8-aaf9-9864ee289ba3), a community for Codync users in China to share tips, ask questions and give feedback. |
 
 ## Contact
 
 - Email: [kevin@codync.dev](mailto:kevin@codync.dev)
-- Questions and bug reports: [GitHub Issues](https://github.com/leepokai/Codync/issues), [Discord](https://discord.gg/KBAX3Qznxh) or [Telegram (China)](https://t.me/+e5egWrp5z4BlOWNl)
+- Questions and bug reports: [GitHub Issues](https://github.com/leepokai/Codync/issues), [Discord](https://discord.gg/KBAX3Qznxh) ([Telegram](https://t.me/+e5egWrp5z4BlOWNl) if Discord is blocked) or [Feishu (China)](https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=49eq6f1e-ef72-40d8-aaf9-9864ee289ba3)
 - Security issues: report privately as described in [SECURITY.md](SECURITY.md) (GitHub private reporting or email)
 - Community rules: [Code of Conduct](CODE_OF_CONDUCT.md)
 

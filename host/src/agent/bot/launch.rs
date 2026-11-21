@@ -1,7 +1,7 @@
 //! The agent process: which commands start it, the ACP handshake, the bot's model, and how its instructions are
 //! attached to a session request.
 
-use super::{Adapter, Conn, SessionCaps};
+use super::{Adapter, Conn, ServerWatch, SessionCaps};
 use crate::agent::acp::{self, Acp};
 use crate::agent::backends;
 use crate::agent::registry::{Candidate, Cmd};
@@ -184,12 +184,14 @@ pub(crate) async fn start_agent(
             json!({
                 "protocolVersion": 1,
                 // `session.compaction`: tell us when the agent summarizes its context.
+                // `elicitation`: the agent's own questions come as forms the user answers on a card.
                 // `parameterizedModelPicker`: Cursor lists plain models with their options
                 // (effort, fast…) instead of one fixed variant each; model discovery asks the same.
                 "clientCapabilities": {
                     "fs": {"readTextFile": false, "writeTextFile": false},
                     "terminal": false,
                     "session": {"compaction": {}},
+                    "elicitation": crate::agent::elicitation::capability(),
                     "_meta": {"parameterizedModelPicker": true},
                 },
                 "clientInfo": {"name": "codync", "title": "Codync", "version": env!("CARGO_PKG_VERSION")},
@@ -231,6 +233,7 @@ pub(crate) async fn start_agent(
         sessions,
         adapter: adapter(&init),
         superseded: superseded(&init),
+        servers: if drops_servers(&init) { ServerWatch::Unseen } else { ServerWatch::Off },
         loaded: HashMap::new(),
         spent: false,
         started: Instant::now(),
@@ -266,6 +269,11 @@ fn superseded(init: &Value) -> bool {
             .is_some_and(|v| v.major < 2)
 }
 
+/// OpenCode 2.x drops the MCP servers a session was opened with once it has been idle a while (#508).
+fn drops_servers(init: &Value) -> bool {
+    init["agentInfo"]["name"] == "OpenCode" && !superseded(init)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -278,6 +286,8 @@ mod tests {
         assert!(!superseded(&init("OpenCode", "dev")));
         assert!(!superseded(&init("Kilo", "1.0.0")));
         assert!(!superseded(&json!({})));
+        assert!(drops_servers(&init("OpenCode", "2.3.2")) && !drops_servers(&init("OpenCode", "1.19.5")));
+        assert!(!drops_servers(&init("Kilo", "2.0.0")));
     }
 
     #[tokio::test]

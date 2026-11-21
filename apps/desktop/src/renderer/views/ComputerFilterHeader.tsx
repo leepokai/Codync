@@ -49,7 +49,7 @@ export function ComputerFilterHeader({ hidden, setHidden, manage, options = [] }
     }
     for (const p of pending) {
       const status = ssh.status(p.id)
-      const detail = sshStatusDetail(status, false)
+      const detail = sshStatusDetail(status, false, tr)
       list.push({ title: p.name || p.host, verbatim: true, detail, icon: 'network', action: manage })
     }
     if (app.host.state.kind === 'notInstalled') list.push({ title: tr('Install host on this {device}').replaceAll('{device}', () => window.codync.platform === 'darwin' ? tr('Mac') : tr('computer')), icon: 'desktopcomputer', divider: true, action: () => window.codync.host.install() })

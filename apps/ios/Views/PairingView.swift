@@ -11,6 +11,9 @@ struct PairingView<Leading: View>: View {
     var onSkip: (() -> Void)? = nil
     /// On past the install page: the user is pairing this way now.
     var onContinue: (() -> Void)? = nil
+    /// The first run's other way, on the install page: New cloud computer. Nil while Codync Cloud isn't open to this
+    /// account, and when pairing another computer later (Computers has the Codync Cloud card).
+    var startCloud: (() -> Void)? = nil
     /// Top-left on the first page (back to the welcome, the account switcher).
     @ViewBuilder var leading: Leading
 
@@ -38,7 +41,7 @@ struct PairingView<Leading: View>: View {
             ZStack {
                 switch step {
                 case .install:
-                    InstallPage(os: $os) { onContinue?(); go(.scan) }
+                    InstallPage(os: $os, startCloud: startCloud) { onContinue?(); go(.scan) }
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 case .scan:
                     ScanPage(os: os) { if inModal { dismissModal() } }
@@ -101,6 +104,7 @@ private struct InstallPage: View {
     private static let websiteLink = "https://www.codync.dev"
 
     @Binding var os: ComputerOS
+    let startCloud: (() -> Void)?
     let next: () -> Void
     @Environment(AccountSession.self) private var account
     @State private var linkCopied = false
@@ -126,6 +130,8 @@ private struct InstallPage: View {
                             .font(.body)
                             .foregroundStyle(Palette.secondary)
                     }
+
+                    if let startCloud { StartCloudButton(action: startCloud) }
 
                     VStack(alignment: .leading, spacing: 10) {
                         Hint("Open the website on your computer to download Codync")
@@ -265,7 +271,7 @@ private struct ScanPage: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(L10n.tr("Scan the pairing code")).pageTitle()
                     Text(os == .mac
-                         ? L10n.tr("On your Mac, click Codync in the menu bar, then Pair iPhone.")
+                         ? L10n.tr("On your Mac, click Codync in the menu bar, then Pair phone.")
                          : L10n.tr("On your computer, run this in a terminal:"))
                         .font(.body)
                         .foregroundStyle(Palette.secondary)

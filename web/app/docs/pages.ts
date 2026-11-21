@@ -9,7 +9,7 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
       {
         slug: "getting-started",
         title: "Getting started",
-        description: "Install Codync on your computer, pair your iPhone, create your first bot and send it a message.",
+        description: "Install Codync on your computer, pair your phone, create your first bot and send it a message.",
       },
     ],
   },
@@ -36,7 +36,7 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
         slug: "conversations",
         title: "Conversations",
         description:
-          "Chatting with a bot: messages and files, approval cards, threads, stopping, replies, reactions, commands, fresh conversations and notifications.",
+          "Chatting with a bot: messages and files, approval cards, tasks and threads, stopping, replies, reactions, commands, fresh conversations and notifications.",
       },
       {
         slug: "groups",

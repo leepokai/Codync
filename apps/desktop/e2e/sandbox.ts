@@ -13,10 +13,27 @@ const root = resolve(__dirname, '../../..')
 const steerAgent = join(root, 'host/tests/fixtures/steer_agent.py')
 // A scripted agent that answers each message with its text (host/tests/fixtures/mode_agent.py).
 const echoAgent = join(root, 'host/tests/fixtures/mode_agent.py')
-// A scripted agent that puts items in its box and is the task that works them (host/tests/fixtures/task_agent.py).
-export const taskAgent = join(root, 'host/tests/fixtures/task_agent.py')
+// A scripted agent that puts tasks in its box and is the thread that works them (host/tests/fixtures/work_agent.py).
+export const workAgent = join(root, 'host/tests/fixtures/work_agent.py')
 // The stand-in agent CLIs a `--cdp` sandbox's host finds first on its PATH (host/tests/fixtures/bin/README.md).
 const standIns = join(root, 'host/tests/fixtures/bin')
+
+/** A scripted agent whose turn starts each of `calls` and stays on them until it is stopped. */
+export const toolCallAgent = (calls: { kind: string; title: string }[]) => `import json,sys
+def send(m): sys.stdout.write(json.dumps(m)+"\\n"); sys.stdout.flush()
+def upd(u): send({"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":u}})
+turn=[None]
+for line in sys.stdin:
+    m=json.loads(line)
+    meth=m.get("method")
+    if meth=="initialize": send({"jsonrpc":"2.0","id":m["id"],"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":False}}})
+    elif meth=="session/new": send({"jsonrpc":"2.0","id":m["id"],"result":{"sessionId":"s1"}})
+    elif meth=="session/prompt":
+        turn[0]=m["id"]
+        for i,c in enumerate(json.loads(${JSON.stringify(JSON.stringify(calls))})):
+            upd({"sessionUpdate":"tool_call","toolCallId":"t%d"%i,"title":c["title"],"kind":c["kind"],"status":"in_progress"})
+    elif meth=="session/cancel" and turn[0] is not None: send({"jsonrpc":"2.0","id":turn[0],"result":{"stopReason":"cancelled"}})
+`
 
 /** This worktree's sandbox: its name, data folder, host port, DevTools port (`npm run dev -- --cdp` opens port + 10000) and whether it runs headless. */
 export function sandbox() {
@@ -97,11 +114,11 @@ export async function echoBot(page: Page, name: string, cwd?: string) {
   return bot
 }
 
-/** A bot on the scripted agent that adds an item to its box for `ADD <title>|<brief>`; it asks before it acts. As
+/** A bot on the scripted agent that adds a task to its box for `ADD <title>|<brief>`; it asks before it acts. As
  * `backend` (an agent the host knows by name gets that agent's sign-in card when it needs one). */
-export async function taskBot(page: Page, name: string, backend = 'custom') {
+export async function workBot(page: Page, name: string, backend = 'custom') {
   const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-    name, backend, command: fixtureCommand(taskAgent), connectors: [], skills: [], notify: false,
+    name, backend, command: fixtureCommand(workAgent), connectors: [], skills: [], notify: false,
   })
   await api(page, 'updateBot', { id: bot.id, permission: 'ask' })
   return bot

@@ -75,8 +75,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case shareSent(ShareSent)
 
     public enum Notifications: String, Sendable { case allowed, denied, notAsked = "not_asked" }
-    public enum OnboardingStep: String, Sendable { case welcome, choose, install, scan }
-    public enum OnboardingVia: String, Sendable { case paired, account, skipped }
+    public enum OnboardingStep: String, Sendable { case welcome, choose, install, scan, cloud }
+    public enum OnboardingVia: String, Sendable { case paired, account, cloud, skipped }
     public enum SignInProvider: String, Sendable { case apple, google, github }
     public enum SignInFailure: String, Sendable { case cancelled, verification, error }
     public enum MovedKeys: String, Sendable { case moved, rescan }
@@ -126,7 +126,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum Screen: String, Sendable {
         case bots, state, chat, trace, botDetails = "bot_details", botComputer = "bot_computer", memory, routines, marketplace
         case settings, computers, usage, account, pairing, voiceSettings = "voice_settings", remoteScreen = "remote_screen"
-        case library, artifact, network, task, allWork = "all_work"
+        case library, artifact, network, thread, allWork = "all_work"
         case workflows, workflow, workflowRun, workflowEditor
     }
 

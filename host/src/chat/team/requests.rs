@@ -41,7 +41,7 @@ impl Requests {
         self.reserve_message_in(from, from)
     }
 
-    /// Takes one of `from`'s places for a message it sends from `turn`'s running turn: its own, or that of a task of
+    /// Takes one of `from`'s places for a message it sends from `turn`'s running turn: its own, or that of a thread of
     /// its that acts as it. The chain's hops so far are that turn's.
     pub(super) fn reserve_message_in(&self, from: &str, turn: &str) -> Result<u8> {
         let mut state = self.0.locked();

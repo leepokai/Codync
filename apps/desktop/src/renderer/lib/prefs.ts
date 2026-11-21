@@ -97,7 +97,7 @@ export const prefs = {
   starAsk: pref<StarAsk>('githubStarAsk', { kind: 'never' }),
   /** Prompts this computer delivered, voice calls aside; they bring the second star ask. */
   promptsSent: pref('promptsSent', 0),
-  /** Days this computer sent a prompt on, voice calls and task threads included; they bring the Ko-fi invitation. */
+  /** Days this computer sent a prompt on, voice calls and threads included; they bring the Ko-fi invitation. */
   activeDays: pref<ActiveDays>('activeDays', { count: 0, last: '' }),
   kofiAsk: pref<KofiAsk>('kofiAsk', { asked: 0, day: 0 }),
   appLanguage: pref<AppLanguage>('appLanguage', 'system'),

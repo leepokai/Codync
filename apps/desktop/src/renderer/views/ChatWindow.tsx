@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { alertAnalyticsKind } from '@shared/alerts'
 import type { WindowCommand } from '@shared/ipc'
 import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startup'
 import { detailMinWidth, railWidth, sidebarMinWidth } from '@shared/chat-layout'
@@ -17,15 +18,15 @@ import { prefs, stepTextSize, usePref, DEFAULT_TEXT_SIZE } from '../lib/prefs'
 import { limitSectionName, sectionName } from '../lib/roster-sections'
 import { useApp, StoreContext } from '../store/context'
 import { analytics } from '../store/analytics'
-import { refKey, sameRef, parseRef, type BotRef } from '../store/app-model'
+import { refKey, sameRef, parseRef, type AppModel, type BotRef } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
 import { BotRoster } from './BotRoster'
 import { NavRail, type AppPage } from './NavRail'
 import { ThreadDetail, ThreadList, type ThreadPick } from './ThreadsPage'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
-import { ThreadView } from './thread/ThreadView'
-import { queueVoiceKey } from './thread/voice-shortcut-keys'
+import { ChatView } from './chat/ChatView'
+import { queueVoiceKey } from './chat/voice-shortcut-keys'
 import { NewBotView, NewGroupView } from './bots/NewBotView'
 import { ImportBotsSheet } from './bots/ImportBotsView'
 import { BotEditorView } from './bots/BotEditorView'
@@ -62,6 +63,12 @@ import './chat-window.css'
 import './sidebar-header.css'
 import { useTr } from '../lib/use-language'
 
+
+/** Opens the bot the tray or a notification names (`computerId/botId`). */
+function openRef(app: AppModel, key: string) {
+  const ref = parseRef(key)
+  if (ref) app.select(ref)
+}
 
 /** The chat window: the rail of its pages on the left, then the page (Bots: the roster and the conversation). */
 const NO_SLOTS = { title: null, end: null }
@@ -101,11 +108,11 @@ export function ChatWindow() {
             return prefs.textSize.set(c.up === null ? DEFAULT_TEXT_SIZE : stepTextSize(prefs.textSize.get(), c.up))
           case 'setUsageIconStyle':
             return prefs.usageIconStyle.set(c.style)
-          case 'openBot': {
-            const ref = parseRef(c.ref)
-            if (ref) app.select(ref)
-            return
-          }
+          case 'openBot':
+            return openRef(app, c.ref)
+          case 'openAlert':
+            analytics.track({ event: 'desktop_notification_opened', kind: alertAnalyticsKind(c.alert) })
+            return openRef(app, c.ref)
           case 'stopBot': {
             const ref = parseRef(c.ref)
             const store = ref && app.store(ref.computerId)
@@ -430,7 +437,7 @@ function ChatSplitView() {
   if (selected && selectedStore && selectedBot) {
     detail = (
       <StoreContext.Provider value={selectedStore}>
-        <ThreadView key={refKey(selected)} botId={selected.botId} />
+        <ChatView key={refKey(selected)} botId={selected.botId} />
       </StoreContext.Provider>
     )
   } else if (!onlineStores.length && ssh.state.profiles.length) {

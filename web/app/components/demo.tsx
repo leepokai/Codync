@@ -1,9 +1,11 @@
 import Halftone from "./halftone";
+import LivePhones from "./live-phone/live-phones";
 import MacWindow from "./mac-window";
 import Reveal from "./reveal";
 import { FILM } from "../links";
 
-// The real desktop app in a Mac window straight under the hero, then the launch film for those who'd rather watch.
+// The real desktop app in a Mac window straight under the hero (the live iPhone app on a phone-sized screen),
+// then the launch film for those who'd rather watch.
 export default function Demo() {
   return (
     <section id="product" className="relative scroll-mt-16 overflow-x-clip px-4 pb-24 sm:px-6 md:pb-32">
@@ -11,10 +13,19 @@ export default function Demo() {
       <Halftone corner="bottom-right" className="w-[40rem] max-w-[80vw] text-neutral-50 opacity-[0.1]" />
       <div className="relative mx-auto max-w-6xl">
         <Reveal>
-          <MacWindow />
-          <p className="mt-5 text-center text-sm text-neutral-500">
-            The real Codync desktop app, running in your browser, with bots on a MacBook Pro and a Mac mini. Click a bot, open a room, send a message.
-          </p>
+          {/* A hidden MacWindow measures 0 wide, so phones never load the desktop app. */}
+          <div className="hidden md:block">
+            <MacWindow />
+            <p className="mt-5 text-center text-sm text-neutral-500">
+              The real Codync desktop app, running in your browser, with bots on a MacBook Pro and a Mac mini. Click a bot, open a room, send a message.
+            </p>
+          </div>
+          <div className="md:hidden">
+            <div className="relative mx-auto w-full max-w-[24rem] pb-16">
+              <LivePhones />
+            </div>
+            <p className="mt-5 text-center text-sm text-neutral-500">The Codync iPhone app, running in your browser. Tap a bot, open its chat, send a message.</p>
+          </div>
         </Reveal>
         <Reveal className="mt-20 grid grid-cols-1 items-center gap-8 md:mt-28 md:grid-cols-[1fr_1.6fr] md:gap-16">
           <div>

@@ -108,7 +108,7 @@ pub struct Run {
     /// This failed run can be retried by the user, so it keeps its event until then.
     #[serde(default)]
     pub retryable: bool,
-    /// It is an item in its bot's box (`chat::tasks`), which says where it stands, not a turn in the chat.
+    /// It is a task in its bot's box (`chat::work`), which says where it stands, not a turn in the chat.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub boxed: bool,
 }
@@ -183,7 +183,7 @@ impl Routines {
         for run in &mut state.runs {
             match run.status {
                 Status::Starting => run.status = Status::Pending,
-                // A run in the box is its task's to resume (`chat::tasks::restore`).
+                // A run in the box is its thread's to resume (`chat::work::restore`).
                 Status::Running | Status::Recovering if !run.boxed => {
                     run.status = Status::Recovering;
                     run.finished_at = None;
@@ -480,10 +480,20 @@ fn may_run(routine: &Routine, event: &Value) -> bool {
     routine.enabled || event["source"] == "test"
 }
 
-/// Whether `routine` has a run under way or queued; a retry waiting for its time doesn't count.
+/// Most runs one routine holds queued and not yet started (webhook deliveries waiting for a busy bot, retries).
+// ponytail: fixed ceiling per routine, whatever the payload sizes; make it a setting if a sender bursts more.
+pub const MAX_QUEUED: usize = 16;
+
+/// Whether `routine` takes no new run now: one of its runs has started, or `MAX_QUEUED` wait to. Queued runs
+/// alone don't block: each runs once, in the order it came, when its bot is free (issue #502).
 fn busy(s: &State, routine: &str) -> bool {
-    let now = now_ms();
-    s.runs.iter().any(|r| r.routine_id == routine && r.status.active() && !r.waiting(now))
+    started(s, routine)
+        || s.runs.iter().filter(|r| r.routine_id == routine && r.status == Status::Pending).count() >= MAX_QUEUED
+}
+
+/// Whether a run of `routine` has started and not ended: its other runs wait for it (one at a time, in order).
+fn started(s: &State, routine: &str) -> bool {
+    s.runs.iter().any(|r| r.routine_id == routine && r.status.active() && r.status != Status::Pending)
 }
 
 fn cancel_run(run: &mut Run) {
@@ -509,7 +519,7 @@ pub fn notice_id(run_id: &str) -> String {
     format!("routine-{run_id}")
 }
 
-/// The reply of a run that worked in the box, which the host posts for it (`chat::tasks`).
+/// The reply of a run that worked in the box, which the host posts for it (`chat::work`).
 pub fn reply_id(run_id: &str) -> String {
     format!("routine-reply-{run_id}")
 }

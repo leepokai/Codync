@@ -80,7 +80,7 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
             );
             [about.into_owned(), sizes].join(" ")
         }
-        Field::TaskWorktrees => {
+        Field::ThreadWorktrees => {
             tr("Threads that work at once in this repository each get their own branch.").into_owned()
         }
         Field::Team => {
@@ -138,8 +138,8 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::Fallbacks => "Fallbacks",
             Field::SelfFallbacks => "Bot edits",
             Field::Folder => "Workspace",
-            Field::MaxAgents => "Threads at once",
-            Field::TaskWorktrees => "Worktree per thread",
+            Field::MaxThreads => "Threads at once",
+            Field::ThreadWorktrees => "Worktree per thread",
             Field::Approvals => "Approvals",
             Field::Compaction => "Summarize",
             Field::Notify => "Notify",
@@ -315,12 +315,12 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     put(buf, vx, y + 1, vw, &tr(line), t.dim.patch(t.panel));
                 }
             }
-            Field::MaxAgents => {
-                let n = f.max_agents.unwrap_or_default();
+            Field::MaxThreads => {
+                let n = f.max_threads.unwrap_or_default();
                 put(buf, vx, y, vw, &format!("‹ {n} ›"), t.text.patch(base));
             }
-            Field::TaskWorktrees => {
-                let s = if f.task_worktrees == Some(true) { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
+            Field::ThreadWorktrees => {
+                let s = if f.thread_worktrees == Some(true) { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
                 put(buf, vx, y, vw, s, t.text.patch(base));
             }
             Field::Approvals => {
@@ -427,8 +427,8 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         Field::Fallbacks => "←→ pick · space add / model · a agent · c login profile · [ ] move · x remove",
         Field::Fast
         | Field::SelfFallbacks
-        | Field::MaxAgents
-        | Field::TaskWorktrees
+        | Field::MaxThreads
+        | Field::ThreadWorktrees
         | Field::Color
         | Field::Shape
         | Field::Approvals

@@ -16,5 +16,4 @@ CREATE TABLE IF NOT EXISTS workflow_run_notes (
   at INTEGER NOT NULL,
   PRIMARY KEY(run_id, position)
 );
-INSERT INTO kv(k, v) VALUES('schema', '10') ON CONFLICT(k) DO UPDATE SET v = '10';
 COMMIT;

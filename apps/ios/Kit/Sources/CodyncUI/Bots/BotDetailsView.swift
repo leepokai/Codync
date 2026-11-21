@@ -14,8 +14,8 @@ struct DetailsRequest: Identifiable {
     var routineId: String?
     /// Another bot's details than the chat's: a group member's, from its notice.
     var botId: String?
-    /// An item whose thread the details open on (from the view of all bots' work).
-    var thread: WorkItem?
+    /// A task whose thread the details open on (from the view of all bots' work).
+    var thread: WorkTask?
 
     /// Where a bot's fallbacks are set (the chat's "Add a fallback"): the Agent card, on Settings.
     static func fallbacks(of botId: String) -> DetailsRequest {
@@ -24,15 +24,15 @@ struct DetailsRequest: Identifiable {
 }
 
 /// A bot's details (Grok Bot's): who it is, then what it does (Details), its computer, library, memory and how it
-/// is set up (Settings). A Threads or Recent row pushes its item's thread inside the sheet, under a header of its own
+/// is set up (Settings). A Threads or Recent row pushes its task's thread inside the sheet, under a header of its own
 /// (Back to details) with the system's swipe back.
 /// Settings save as you edit.
 struct BotDetailsView: View {
     let botId: String
     let routineId: String?
-    /// Shows the card in the bot's chat that an item waits on; nil where the details aren't over that chat.
-    let openCard: ((WorkItem) -> Void)?
-    /// Shows the bot's chat at an entry an item's task put there, from its thread; nil as `openCard`.
+    /// Shows the card in the bot's chat that a task waits on; nil where the details aren't over that chat.
+    let openCard: ((WorkTask) -> Void)?
+    /// Shows the bot's chat at an entry a task's thread put there, from that thread; nil as `openCard`.
     let openInChat: ((Entry) -> Void)?
     /// An artifact picked in the Library, for the chat's viewer.
     let openArtifact: (ArtifactTarget) -> Void
@@ -45,10 +45,10 @@ struct BotDetailsView: View {
     @State private var presence = PagePresence()
     @State private var saving: Task<Void, Never>?
     @State private var template: EditorRequest?
-    /// The item whose thread is pushed over the pages.
-    @State private var thread: WorkItem?
+    /// The task whose thread is pushed over the pages.
+    @State private var thread: WorkTask?
 
-    init(botId: String, request: DetailsRequest, openCard: ((WorkItem) -> Void)? = nil, openInChat: ((Entry) -> Void)? = nil,
+    init(botId: String, request: DetailsRequest, openCard: ((WorkTask) -> Void)? = nil, openInChat: ((Entry) -> Void)? = nil,
          openArtifact: @escaping (ArtifactTarget) -> Void) {
         self.botId = botId
         self.openCard = openCard
@@ -65,7 +65,7 @@ struct BotDetailsView: View {
         NavigationStack {
             pages
                 .hidesSystemNavigationBar()
-                .navigationDestination(item: $thread) { WorkThreadView(botId: botId, item: $0, openInChat: openInChat) }
+                .navigationDestination(item: $thread) { WorkThreadView(botId: botId, task: $0, openInChat: openInChat) }
         }
         // What the computer refused here (a message to a thread, a row's action) shows over this sheet, not under it
         // at the root, where the same error clears with this one.

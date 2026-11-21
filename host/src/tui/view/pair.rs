@@ -14,6 +14,9 @@ use super::super::md::{width as w, wrap};
 use super::buffer::{centered, frame_box, put, put_line, u};
 use super::style::theme;
 
+/// The sheet's title, the desktop's word for the same QR code.
+const TITLE: &str = "Pair phone";
+
 pub(super) fn pair(buf: &mut Buffer, area: Rect, app: &App, code: &PairCode) {
     if let Some(request) = app.pairing_requests.first() {
         return ask(buf, area, request);
@@ -29,7 +32,7 @@ pub(super) fn pair(buf: &mut Buffer, area: Rect, app: &App, code: &PairCode) {
         PairCode::Failed(e) => (e.as_str(), t.red),
     };
     let r = centered(area, 56, 6);
-    let inner = frame_box(buf, r, t.text, t.panel, Some(("Pair a phone", t.text)));
+    let inner = frame_box(buf, r, t.text, t.panel, Some((tr(TITLE).as_ref(), t.text)));
     put(buf, inner.x, inner.y + 1, inner.width, text, style.patch(t.panel));
     if matches!(code, PairCode::Failed(_)) {
         put(buf, inner.x, inner.bottom() - 1, inner.width, "r try again · esc close", t.dim.patch(t.panel));
@@ -72,7 +75,7 @@ fn ask(buf: &mut Buffer, area: Rect, request: &Value) {
         lines.extend(note(text, 52, t.amber.patch(t.panel)));
     }
     let r = centered(area, 56, u(lines.len() + 5));
-    let inner = frame_box(buf, r, t.text, t.panel, Some(("Pair a phone", t.text)));
+    let inner = frame_box(buf, r, t.text, t.panel, Some((tr(TITLE).as_ref(), t.text)));
     for (y, line) in (inner.y + 1..).zip(&lines) {
         put_line(buf, inner.x, y, inner.width, line);
     }
@@ -93,11 +96,11 @@ fn qr(buf: &mut Buffer, area: Rect, url: &str, short_code: Option<&str>, outside
     // Under the QR, each in full: how to scan, the link, the code to type, and that the computer is in no account.
     let below = |width: usize| {
         let scan = if url.starts_with("codync-dev:") {
-            "Scan with Codync Dev on your iPhone:"
+            tr("Scan with Codync Dev on your phone:")
         } else {
-            "Scan with the Codync iPhone app, or open on the phone:"
+            tr("Scan with the Codync app, or open on the phone:")
         };
-        let mut below = note(scan.to_owned(), width, t.secondary.patch(t.panel));
+        let mut below = note(scan.into_owned(), width, t.secondary.patch(t.panel));
         below.extend(note(url.to_owned(), width, t.dim.patch(t.panel)));
         if let Some(code) = short_code {
             let text = tr("Or type this code in the app's pairing screen: {code}").replace("{code}", code);
@@ -115,7 +118,7 @@ fn qr(buf: &mut Buffer, area: Rect, url: &str, short_code: Option<&str>, outside
     let fits = u(lines.len() + 4 + wide.len()) <= area.height && u(qw + 4) <= area.width;
     let (bw, qr_rows, below) = if fits { (u(qw.max(50) + 4), lines.len(), wide) } else { (70, 1, below(66)) };
     let r = centered(area, bw, u(qr_rows + 4 + below.len()));
-    let inner = frame_box(buf, r, t.text, t.panel, Some(("Pair a phone", t.text)));
+    let inner = frame_box(buf, r, t.text, t.panel, Some((tr(TITLE).as_ref(), t.text)));
     let mut y = inner.y;
     if fits {
         // The QR needs light modules on dark ones regardless of the terminal theme.

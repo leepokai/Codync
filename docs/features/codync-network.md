@@ -197,8 +197,8 @@ A letter that came in under a ceiling carries it (`Message::access`), and the tu
 under it (`chat::team::Ceilings`, the one place that says which ceiling a bot works under, keyed by whoever's turn
 runs): the request's turn, and for an answer to one of this computer's own requests, the turn that reads it (answers
 waiting together share a turn only at the same level, so one that can't start takes no other bot's answer with it).
-A request is an item in the recipient's [box](background-tasks.md#other-sources), so a task of the recipient takes
-it, held to the request's ceiling from its turn's start (`tasks::access_of`); a recipient that keeps requests in
+A request is a task in the recipient's [box](work.md#other-sources), so a thread of the recipient takes
+it, held to the request's ceiling from its turn's start (`work::access_of`); a recipient that keeps requests in
 its chat (computer use, Manage the team) takes it there under the same ceiling. An answer is a turn in the sender's
 chat. An answer that gets past a `deny` rule comes in at `ask`. The ceiling stands until the next thing in that
 queue, past the turn's end.
@@ -220,8 +220,8 @@ queue, past the turn's end.
 - Such a turn calls only the host tools that read or speak to the user in this turn (`chat::team::ceilings`
   `UNDER_CEILING`, checked once for every server at the API against the calling turn, `Ceilings::check_tool`):
   messages, files, choice cards and reactions to the user, artifacts, and the listings and reads (bots, team, agents, routines, progress, dev
-  servers and their logs, background work, memory). Everything else is refused, and so is any tool added later until
-  it is listed: routines, follow-ups, `message_bot`, background work, the bot's name, instructions, skills,
+  servers and their logs, work, memory). Everything else is refused, and so is any tool added later until
+  it is listed: routines, follow-ups, `message_bot`, new tasks, the bot's name, instructions, skills,
   fallbacks and memory, dev servers, and `manage`. What the bot's Approve automatically would wave through for work
   that outlives the turn shows its card (`Ceilings::approves_by_itself`).
 - A turn under a ceiling isn't resumed after a host restart: the ceiling lives in memory, so the turn that picked it
@@ -233,7 +233,7 @@ queue, past the turn's end.
   on (a Claude Code or Codex session), an answer to that session's own request included (also one past a `deny`
   rule, which would come in at `ask`): its sender gets the same refusal. The standalone daemon prints the level with a letter to its terminal
   (`← lead@cloud (ask) […]`).
-- Not covered: the turn still starts from the bot's conversation (a task forks the main session where the agent
+- Not covered: the turn still starts from the bot's conversation (a thread forks the main session where the agent
   can; an answer, and a request to a bot that keeps them in its chat, runs in the main session), so it sees that
   conversation, and an answer's text stays in it; what the agent's own settings allow without asking (an allow list in its config) never reaches Codync; and
   work the agent goes on with past the next thing in the bot's queue is answered as the bot is set again.

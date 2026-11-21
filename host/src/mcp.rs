@@ -141,7 +141,7 @@ pub(crate) fn chat_tools() -> Value {
         list.push(crate::chat::reactions::tool());
         list.push(crate::chat::skills::tool());
         list.extend(crate::dev_servers::tools());
-        list.extend(crate::chat::tasks::tools());
+        list.extend(crate::chat::work::tools());
     }
     tools
 }

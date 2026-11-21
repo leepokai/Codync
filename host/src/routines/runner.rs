@@ -1,6 +1,6 @@
 //! The actor claims work only when it reaches the front of its queue. A run talks in
 //! the bot's chat from a session of its own (`session_slot`); the durable outbox
-//! reports its outcome separately, so restarting never needs to rerun a task merely
+//! reports its outcome separately, so restarting never needs to rerun the work merely
 //! to tell the user how it went.
 use super::{
     Arc, Context, EntryKind, Hub, Lane, LockExt, Result, Routines, Run, Status, Store, Value, bail, cancel_run,
@@ -31,8 +31,8 @@ pub fn could_not_start(why: impl std::fmt::Display) -> String {
 pub struct Ran<'a> {
     /// It hit its time limit, so it isn't tried again on its own.
     pub timed_out: bool,
-    /// The task that worked it in the box; none for a run in the chat.
-    pub task: Option<&'a str>,
+    /// The thread that worked it in the box; none for a run in the chat.
+    pub thread: Option<&'a str>,
 }
 
 impl Routines {
@@ -88,14 +88,20 @@ impl Routines {
         self.state.locked().runs.iter().any(|r| r.id == id && r.status == Status::Pending)
     }
 
-    /// Run `run` waits in its bot's box from here (`chat::tasks`), not in the bot's queue.
+    /// Whether run `id` waits for another run of its routine that has started: a thread doesn't take it yet.
+    pub fn waits_its_turn(&self, id: &str) -> bool {
+        let s = self.state.locked();
+        s.runs.iter().find(|r| r.id == id).is_some_and(|run| super::started(&s, &run.routine_id))
+    }
+
+    /// Run `run` waits in its bot's box from here (`chat::work`), not in the bot's queue.
     pub fn put_in_box(&self, hub: &Arc<Hub>, run: &Run) -> Result<()> {
         let name = self.state.locked().routines.iter().find(|r| r.id == run.routine_id).map(|r| r.name.clone());
         // Marked first: a host that stops in between finds a run the box doesn't hold and queues it again, where
-        // an unmarked run its task already began would be taken for one cut off in the chat.
+        // an unmarked run its thread already began would be taken for one cut off in the chat.
         self.set_boxed(&hub.store, &run.id, true)?;
         let name = name.unwrap_or_default();
-        crate::chat::tasks::add_routine(hub, &run.bot_id, &run.routine_id, &run.id, &name).inspect_err(|_| {
+        crate::chat::work::add_routine(hub, &run.bot_id, &run.routine_id, &run.id, &name).inspect_err(|_| {
             if let Err(error) = self.set_boxed(&hub.store, &run.id, false) {
                 tracing::warn!(run = run.id, error = format!("{error:#}"), "couldn't queue a run again");
             }
@@ -116,7 +122,7 @@ impl Routines {
         self.set_boxed(store, id, false)
     }
 
-    /// The runs that are items in a box and haven't ended: their bot, their id, and whether they still wait.
+    /// The runs that are tasks in a box and haven't ended: their bot, their id, and whether they still wait.
     pub fn boxed_runs(&self) -> Vec<(String, String, bool)> {
         let state = self.state.locked();
         let boxed = state.runs.iter().filter(|r| r.boxed && r.status.active());
@@ -200,7 +206,7 @@ impl Routines {
     ) -> Result<()> {
         let failed = matches!(status, Status::Failed | Status::Interrupted);
         // A run that hit its time limit could hold the bot that long again.
-        let safe = failed && !ran.timed_out && !retry::acted(hub, id, ran.task);
+        let safe = failed && !ran.timed_out && !retry::acted(hub, id, ran.thread);
         let (bot, withdrawn) = self.change(&hub.store, |s| {
             let i = s.runs.iter().position(|r| r.id == id).context("routine run not found")?;
             let mut withdrawn = Vec::new();
@@ -230,11 +236,13 @@ impl Routines {
 
     /// The bot's Stop: cancels the runs queued behind its turn. A retry waiting for later isn't queued yet, so
     /// it stays (pausing or deleting the routine cancels it); so does a run in the box, which the box's own Stop
-    /// stops.
+    /// stops, and a webhook delivery, which its sender was already told was taken.
     pub fn cancel_queued(&self, store: &Store, bot: &str) -> Result<()> {
         let now = now_ms();
         self.change(store, |s| {
-            let queued = |r: &&mut Run| r.bot_id == bot && !r.boxed && r.status == Status::Pending && !r.waiting(now);
+            let queued = |r: &&mut Run| {
+                r.bot_id == bot && !r.boxed && r.status == Status::Pending && !r.waiting(now) && r.delivery_id.is_none()
+            };
             for r in s.runs.iter_mut().filter(queued) {
                 cancel_run(r);
             }
@@ -274,7 +282,7 @@ impl Routines {
         })
     }
 
-    /// Retry reporting independently of task execution: a successful run's reply is already in the chat and only
+    /// Retry reporting independently of the run itself: a successful run's reply is already in the chat and only
     /// alerts; a failed one leaves a notice, which alerts unless the run is tried again on its own. The entry ID
     /// deduplicates a crash after SQLite inserted the notice but before this ack.
     fn publish(&self, hub: &Hub) -> Result<()> {
@@ -404,8 +412,8 @@ fn tick(hub: &Arc<Hub>) -> Result<()> {
             hub.routines.disable_bot(&hub.store, &run.bot_id)?;
             continue;
         };
-        // An item in the bot's box: it waits its turn there, and the chat stays free.
-        if crate::chat::tasks::boxed(&bot.config) {
+        // A task in the bot's box: it waits its turn there, and the chat stays free.
+        if crate::chat::work::boxed(&bot.config) {
             hub.routines.put_in_box(hub, &run)?;
             continue;
         }
@@ -413,7 +421,7 @@ fn tick(hub: &Arc<Hub>) -> Result<()> {
             continue;
         }
         if let Err(error) = hub.send_cmd(&run.bot_id, crate::agent::bot::Cmd::Routine(run.id.clone())) {
-            let ran = Ran { timed_out: false, task: None };
+            let ran = Ran { timed_out: false, thread: None };
             let detail = Some(format!("Could not queue routine: {error:#}"));
             hub.routines.complete(hub, &run.id, Status::Failed, detail, None, &ran)?;
         }
@@ -502,7 +510,8 @@ mod tests {
             .change(&store, |s| {
                 let mut retry = new_run(&routine, Value::Null, None);
                 retry.not_before = Some(now_ms() + 60_000);
-                s.runs.extend([new_run(&routine, Value::Null, None), retry]);
+                let delivery = new_run(&routine, Value::Null, Some("d1".into()));
+                s.runs.extend([new_run(&routine, Value::Null, None), retry, delivery]);
                 s.routines.push(routine);
                 Ok(())
             })
@@ -510,5 +519,6 @@ mod tests {
         routines.cancel_queued(&store, "bot").unwrap();
         let state = routines.state.locked();
         assert!(state.runs[0].status == Status::Cancelled && state.runs[1].status == Status::Pending);
+        assert!(state.runs[2].status == Status::Pending, "a webhook delivery its sender was told was taken stays");
     }
 }

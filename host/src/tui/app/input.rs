@@ -52,7 +52,7 @@ impl App {
                 _ => None,
             },
             Overlay::Market(m) => Some(&mut m.query),
-            Overlay::Task(s) if s.typing => Some(&mut s.draft),
+            Overlay::Thread(s) if s.typing => Some(&mut s.draft),
             Overlay::Fields(f) => f.current().map(|i| &mut i.ed),
             Overlay::Workflows(sheet) => sheet.text_editor(),
             Overlay::Routine(f) => Some(match f.field {

@@ -15,14 +15,22 @@ final class SharedAudio {
     private(set) var state = State.idle
     /// Seconds the sound runs, known once its first load decoded.
     private(set) var duration: TimeInterval?
+    /// The length the preload read off the fetched bytes; the clock falls back to it when the player drops.
+    @ObservationIgnored private var known: TimeInterval?
     /// Seconds into the sound; ticks about four times a second while it plays.
     private(set) var elapsed: TimeInterval = 0
     @ObservationIgnored private var player: AVAudioPlayer?
     @ObservationIgnored private var done: PlayDone?
+    /// Where a seek made before the player opened wants it to start (seconds), applied as it opens.
+    @ObservationIgnored private var pendingSeek: TimeInterval?
     /// Whether this player turned the audio session on (a call or dictation keeps its own).
     @ObservationIgnored private var ownsSession = false
     /// Bumped by `stop()`: a load still running when the card went doesn't start playing.
     @ObservationIgnored private var generation = 0
+    /// The fetch of the sound's bytes now running, shared by every asker: the card's preload and a tap all wait
+    /// on it. Dropped once it answers, so a card holds no bytes it isn't playing; the store keeps them on disk
+    /// for the next ask.
+    @ObservationIgnored private var fetched: Task<Data?, Never>?
     /// Ticks `elapsed` while the sound plays.
     @ObservationIgnored private var clock: Timer?
     /// A call or Siri taking the audio pauses the note, as the user's own pause would.
@@ -79,8 +87,44 @@ final class SharedAudio {
         }
     }
 
+    /// The sound's bytes, ready to play before the first tap: fetched as the card shows (the card skips the fetch
+    /// when the network is off or costly for its size), their length read off them so the bar and clock show at
+    /// once. The fetch is the tap's, so a tap during it only waits, and its answer never downloads again; a fetch
+    /// that fails stays quiet: the tap retries and reports it. `generation` guards the fetch's users, so a card
+    /// stopped while it runs plays nothing and shows no clock.
+    func preload(_ file: SharedFile, entryId: String, model: BotStore) async {
+        let started = generation
+        // A tap already on these bytes, or a sound once played, says its length itself.
+        guard let data = await bytes(file, entryId: entryId, model: model),
+              generation == started, state == .idle, duration == nil,
+              let sound = try? AVAudioPlayer(data: data) else { return }
+        known = sound.duration
+        duration = known
+    }
+
+    /// Whether the card preloads a sound as it shows: the computer online, and the fetch never costly — under
+    /// `preloadLimit` even on an expensive network (cellular, a hotspot). A network not yet known (`nil`, before
+    /// the path's first report) counts as expensive, so a big note never starts fetching on cellular in that moment.
+    static func preloads(online: Bool, expensive: Bool?, bytes: Int64) -> Bool {
+        online && (expensive == false || bytes < preloadLimit)
+    }
+
+    /// The sound size the card still preloads on an expensive network (2 MiB).
+    static let preloadLimit: Int64 = 2 * 1024 * 1024
+
+    /// The sound's bytes: the fetch running now if there is one, so askers share a single download; once it answers
+    /// it is forgotten, and the next ask reads them from the store's disk cache (or fetches again after a failure).
+    private func bytes(_ file: SharedFile, entryId: String, model: BotStore) async -> Data? {
+        let task = fetched ?? Task { await load(model, file, entryId) }
+        fetched = task
+        let data = await task.value
+        if fetched == task { fetched = nil }
+        return data
+    }
+
     func stop() {
         generation += 1
+        pendingSeek = nil
         player?.stop()
         player?.currentTime = 0
         interruptions?.stop()
@@ -88,11 +132,13 @@ final class SharedAudio {
         finish()
     }
 
-    /// Moves a loaded sound's playhead, held to its length; playing or paused, it stays so.
+    /// Moves the playhead, held to the sound's length; playing or paused, it stays so. Before the first play, the
+    /// preloaded length shows the move and the player opens there.
     func seek(to seconds: TimeInterval) {
-        guard let player, let duration else { return }
-        player.currentTime = min(max(seconds, 0), duration)
-        elapsed = player.currentTime
+        guard let duration else { return }
+        let target = min(max(seconds, 0), duration)
+        elapsed = target
+        if let player { player.currentTime = target } else { pendingSeek = target }
     }
 
     private func pause() {
@@ -114,8 +160,9 @@ final class SharedAudio {
 
     /// The sound or the session failed: the player is dropped so the next tap fetches and decodes again.
     private func fail() {
-        (player, done) = (nil, nil)
-        duration = nil
+        (player, done, fetched) = (nil, nil, nil)
+        pendingSeek = nil
+        duration = known
         elapsed = 0
         stopClock()
         state = .failed
@@ -134,7 +181,7 @@ final class SharedAudio {
     /// changes anything, so a newer tap's player and state stay.
     private func prepared(_ file: SharedFile, entryId: String, model: BotStore, for started: Int) async throws -> AVAudioPlayer {
         if let player { return player }
-        let data = await load(model, file, entryId)
+        let data = await bytes(file, entryId: entryId, model: model)
         guard generation == started else { throw CancellationError() }
         guard let data else { throw CocoaError(.fileReadUnknown) }
         let player = try AVAudioPlayer(data: data)
@@ -142,6 +189,10 @@ final class SharedAudio {
         let done = PlayDone { [weak self] played in Task { @MainActor in played ? self?.finish() : self?.fail() } }
         player.delegate = done
         (self.player, self.done) = (player, done)
+        if let pendingSeek {
+            player.currentTime = pendingSeek
+            self.pendingSeek = nil
+        }
         return player
     }
 

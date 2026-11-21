@@ -19,27 +19,30 @@ import { useTr } from '../../lib/use-language'
 import './attachments.css'
 
 export function FileDownloadCard({ entry, file, menu }: { entry: Entry; file: SharedFile; menu: MessageMenu }) {
-  return file.playsInChat ? <AudioFileCard entry={entry} file={file} menu={menu} /> : <FileCard entry={entry} file={file} menu={menu} />
+  return file.playsInChat ? <VoiceNotePlayer entry={entry} file={file} menu={menu} named /> : <FileCard entry={entry} file={file} menu={menu} />
 }
 
-/** A voice note's card: its play state (and a spinner while it loads) in place of the file icon. */
-function AudioFileCard({ entry, file, menu }: { entry: Entry; file: SharedFile; menu: MessageMenu }) {
-  const { snapshot, toggle, seek } = useSharedAudio(file, entry.id)
-  return <FileCard entry={entry} file={file} menu={menu} audio={snapshot} toggle={toggle} seek={seek} icon={<AudioIcon snapshot={snapshot} toggle={toggle} />} />
-}
-
-/** A message's voice note, at the top of its bubble: the play button, the progress bar and the clock on one row. */
-export function VoiceNotePlayer({ entry, file, menu }: { entry: Entry; file: SharedFile; menu: MessageMenu }) {
+/**
+ * A voice note's player, the same for one inside a message (at the top of its bubble, the text follows) and one sent
+ * on its own (`named`: a bubble of its own, the file's name under the row): play, the bar and the clock. Download is
+ * in the message's menu, not a button of its own.
+ */
+export function VoiceNotePlayer({ entry, file, menu, named = false }: { entry: Entry; file: SharedFile; menu: MessageMenu; named?: boolean }) {
   const tr = useTr()
-  const { snapshot, toggle, seek } = useSharedAudio(file, entry.id)
+  const { snapshot, toggle, seek, card } = useSharedAudio(file, entry.id)
   const stop = useFileStop(entry, file, menu, snapshot, toggle, seek)
   return <>
-    <div className="voice-note" {...stop.props} aria-label={`${tr('Voice note')}, ${stop.detail}`}>
-      <HStack gap={10} aria-hidden>
-        <AudioIcon snapshot={snapshot} toggle={toggle} />
-        <AudioProgress snapshot={snapshot} seek={seek} />
-        <Text as="div" size="caption2" tone={stop.failed ? 'danger' : 'secondary'} className="file-card-detail">{stop.detail}</Text>
-      </HStack>
+    <div className={named ? 'voice-note bubble agent' : 'voice-note'} ref={card} {...stop.props} aria-label={[named ? file.name : tr('Voice note'), stop.detail].filter(Boolean).join(', ')}>
+      <VStack gap={4} aria-hidden>
+        <HStack gap={10}>
+          <AudioIcon snapshot={snapshot} toggle={toggle} />
+          {stop.playFailed ? <Text as="div" size="caption2" tone="danger" className="file-card-detail voice-note-error" grow>{stop.detail}</Text> : <>
+            <AudioProgress snapshot={snapshot} seek={seek} />
+            <Text as="div" size="caption2" tone={stop.failed ? 'danger' : 'secondary'} className="file-card-detail">{stop.detail}</Text>
+          </>}
+        </HStack>
+        {named ? <Text as="div" size="subheadline" weight="semibold" truncate title={file.name}>{file.name}</Text> : null}
+      </VStack>
     </div>
     {stop.overlays}
   </>
@@ -51,10 +54,8 @@ export function VoiceNotePlayer({ entry, file, menu }: { entry: Entry; file: Sha
  * VoiceOver's Show menu) offers all of them, then the message's own (Reply, Copy, reactions).
  * The buttons and bar inside are for the pointer only.
  */
-function FileCard({ entry, file, menu, audio, toggle, seek, icon }: {
-  entry: Entry; file: SharedFile; menu: MessageMenu; audio?: AudioSnapshot; toggle?: () => void; seek?: (seconds: number) => void; icon?: React.ReactNode
-}) {
-  const stop = useFileStop(entry, file, menu, audio, toggle, seek)
+function FileCard({ entry, file, menu }: { entry: Entry; file: SharedFile; menu: MessageMenu }) {
+  const stop = useFileStop(entry, file, menu)
   return <>
     <div className="file-card" {...stop.props} aria-label={`${file.name}, ${stop.detail}`}>
       <VStack gap={12} aria-hidden>
@@ -64,11 +65,10 @@ function FileCard({ entry, file, menu, audio, toggle, seek, icon }: {
           </button>
         </ImageContextMenu> : null}
         <HStack gap={12}>
-          {icon ?? <Icon name={attachmentSymbol(file.name)} size={24} color="var(--secondary)" />}
+          <Icon name={attachmentSymbol(file.name)} size={24} color="var(--secondary)" />
           <VStack grow>
             <Text as="div" size="subheadline" weight="semibold" truncate title={file.name}>{file.name}</Text>
             <Text as="div" size="caption2" tone={stop.failed ? 'danger' : 'secondary'} className="file-card-detail">{stop.detail}</Text>
-            {audio && seek ? <AudioProgress snapshot={audio} seek={seek} /> : null}
           </VStack>
           <IconButtonBase title={downloadAction(stop.state)} icon={stop.busy ? 'xmark' : 'arrow.down.to.line'} size={36} tabIndex={-1} onClick={stop.download} />
         </HStack>
@@ -106,6 +106,7 @@ function useFileStop(entry: Entry, file: SharedFile, message: MessageMenu, audio
     state,
     busy,
     failed: state?.kind === 'failed' || audio?.phase === 'failed',
+    playFailed: audio?.phase === 'failed',
     detail: cardDetail(state, file, audio, tr),
     image,
     view,
@@ -149,12 +150,13 @@ function ViewerDownloadButton({ entry, file }: { entry: Entry; file: SharedFile 
   return <IconButtonBase title={downloadAction(state)} icon={busy ? 'xmark' : 'arrow.down.to.line'} size={28} onClick={() => void start()} />
 }
 
-/** The play/pause button, or the spinner while the sound comes over, in the file icon's 24 px slot. */
+/** The outline play/pause glyph on a soft round chip while the pointer is on it, or the spinner while the sound
+ *  comes over, in the file icon's 24 px slot. */
 function AudioIcon({ snapshot, toggle }: { snapshot: AudioSnapshot; toggle: () => void }) {
   return <div className="file-card-play">
     {snapshot.phase === 'loading'
       ? <Spinner size={18} />
-      : <IconButtonBase title={snapshot.phase === 'playing' ? 'Pause' : 'Play'} icon={snapshot.phase === 'playing' ? 'pause.circle' : 'play.circle'} size={36} tabIndex={-1} onClick={toggle} />}
+      : <IconButtonBase title={snapshot.phase === 'playing' ? 'Pause' : 'Play'} icon={snapshot.phase === 'playing' ? 'pause.circle' : 'play.circle'} size={36} tabIndex={-1} className="voice-note-glyph" onClick={toggle} />}
   </div>
 }
 

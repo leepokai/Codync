@@ -2,7 +2,7 @@ import CodyncKit
 import SwiftUI
 
 /// A shared sound's play/pause: a spinner while it loads, and the 44 pt tap target of every card-sized control.
-/// Both a file card and a bubble's voice note show it.
+/// Both a file card and a bubble's voice note show it; a plain glyph, its only tile the soft chip a press fills.
 struct AudioPlayButton: View {
     let state: SharedAudio.State
     let action: () -> Void
@@ -21,7 +21,29 @@ struct AudioPlayButton: View {
             .frame(width: 44, height: 44)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AudioPlayStyle())
+    }
+}
+
+/// A phone's answer to hover: a soft round chip fills behind the glyph while it's held, as `IconButtonStyle`'s
+/// rounded square does on Mac. Reduce Motion drops the fade with every other duration.
+private struct AudioPlayStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        AudioPlayBody(configuration: configuration)
+    }
+
+    private struct AudioPlayBody: View {
+        let configuration: Configuration
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        var body: some View {
+            configuration.label
+                .background(
+                    Palette.text.opacity(configuration.isPressed ? 0.14 : 0),
+                    in: Circle().inset(by: 4)
+                )
+                .animation(Motion.reduced(Motion.press, reduceMotion), value: configuration.isPressed)
+        }
     }
 }
 

@@ -6,11 +6,12 @@ Once stopped, Clear goal removes the banner and returns to an ordinary conversat
 The host owns continuation. Defaults are 20 turns and 60 minutes; accepted limits
 are 1–200 turns and 1–1440 minutes. A new goal replaces the previous one.
 
-The host stops automatically on an affirmative closing completion marker, a question
-or NEEDS_USER marker, an approval card, an agent error, a user message (including
-voice), or a limit. Queued steps carry a generation id so stopping or replacing a
-goal invalidates them. Ordinary call openings, rooms, routines and delegated turns
-cannot drive the loop. The agent is told to close with GOAL_COMPLETE only on success.
+The host stops automatically on an affirmative closing completion marker (bold or
+followed by a period still counts), a question or NEEDS_USER marker, an approval card,
+an agent error, a user message (including voice), or a limit. Queued steps carry a
+generation id so stopping or replacing a goal invalidates them. Ordinary call openings,
+rooms, routines and delegated turns cannot drive the loop. The agent is told to close
+with GOAL_COMPLETE only on success.
 
 Before each step, the host checks its existing subscription usage protection
 (over 75% of a reported plan window). Providers without usage readings still have

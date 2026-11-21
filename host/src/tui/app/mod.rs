@@ -154,12 +154,12 @@ pub struct App {
     pub market: (Vec<Toggle>, Vec<Toggle>),
     /// Installed connectors and skills as the host lists them.
     pub plugins: (Vec<Value>, Vec<Value>),
-    /// Models each agent offers (`None` while loading).
-    pub models: HashMap<String, Option<Vec<AgentModel>>>,
-    /// Agents whose model list came with Fast mode.
-    pub fast_mode: HashSet<String>,
-    /// The modes each agent's model list came with.
-    pub modes: HashMap<String, Vec<crate::agent::modes::Mode>>,
+    /// Models each agent (and login profile) offers (`None` while loading).
+    pub models: HashMap<(String, Option<String>), Option<Vec<AgentModel>>>,
+    /// Agent/login-profile pairs whose model list came with Fast mode.
+    pub fast_mode: HashSet<(String, Option<String>)>,
+    /// The modes each agent's (and login profile's) model list came with.
+    pub modes: HashMap<(String, Option<String>), Vec<crate::agent::modes::Mode>>,
     /// A setup terminal holding the screen.
     pub shell: Option<Shell>,
     /// Chats marked read since their bot's unread count last changed.

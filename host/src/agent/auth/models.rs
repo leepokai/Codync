@@ -52,6 +52,7 @@ pub async fn shared_models(hub: &Hub, backend: &str, login_profile: Option<&str>
 /// This uses the same credentials as actual bot sessions and never reads project files.
 pub async fn models(store: &Store, backend: &str, login_profile: Option<&str>) -> Result<Value> {
     let login_profile = login_profile.filter(|s| !s.is_empty());
+    let running = crate::agent::login_profiles::hold(store, backend, login_profile)?;
     let Started { acp, mut inbox, .. } = start_with(store, backend, login_profile, &[]).await?;
     let result = tokio::time::timeout(Duration::from_mins(1), async {
         let request = acp.request("session/new", json!({"cwd": probe_dir(), "mcpServers": []}));
@@ -84,6 +85,7 @@ pub async fn models(store: &Store, backend: &str, login_profile: Option<&str>) -
     })
     .await;
     acp.kill().await;
+    drop(running);
     result.context("the agent's model list timed out")?
 }
 
@@ -454,5 +456,55 @@ mod tests {
         ]});
         assert_eq!(model_config(&session).unwrap()["id"], "engine");
         assert!(model_config(&json!({"configOptions": [{"id": "model", "type": "boolean"}]})).is_none());
+    }
+
+    #[tokio::test]
+    async fn models_holds_and_releases_login_profile_across_errors_and_concurrent_guards() {
+        use crate::agent::login_profiles::{self, Kind, Refused};
+
+        let dir = std::env::temp_dir().join(format!("codync-models-hold-unit-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let store = Store::open(std::path::Path::new(":memory:")).expect("memory store");
+        let own = login_profiles::add(&store, "not-installed-test-agent", Kind::ApiKey).await.expect("own profile");
+        let own_id = own["id"].as_str().expect("own id").to_owned();
+        let other = login_profiles::add(&store, "claude", Kind::ApiKey).await.expect("other profile");
+        let other_id = other["id"].as_str().expect("other id").to_owned();
+        let identity = crate::remote::identity::Identity::load_or_create(&dir).expect("identity");
+        let hub = Hub::new(store, "models-hold-unit".into(), identity, "test".into(), 0);
+
+        // Missing profile fails cleanly with the same message as `start_with`.
+        let missing_err = models(&hub.store, "not-installed-test-agent", Some("missing-profile"))
+            .await
+            .expect_err("missing profile should fail");
+        assert!(missing_err.to_string().contains("removed from this computer"), "{missing_err:#}");
+
+        // Default (`None`), empty (`""` filtered by `models`), and another agent's profile hold no guard.
+        assert!(login_profiles::hold(&hub.store, "not-installed-test-agent", None).expect("none").is_none());
+        let cross = login_profiles::hold(&hub.store, "not-installed-test-agent", Some(&other_id)).expect("cross");
+        assert!(cross.is_none(), "another agent's profile runs on default login without holding");
+
+        // `models()` acquires `Running` in `hold`, then drops it when `start_with` fails so removal succeeds.
+        let start_err = models(&hub.store, "not-installed-test-agent", Some(&own_id))
+            .await
+            .expect_err("unknown backend should fail in start_with");
+        assert!(start_err.to_string().contains("isn't set up"), "{start_err:#}");
+
+        // Concurrent/nested `hold` guards keep `remove` refused until every guard drops (no self-lock or early release).
+        let first = login_profiles::hold(&hub.store, "not-installed-test-agent", Some(&own_id))
+            .expect("first hold")
+            .expect("guard");
+        let second = login_profiles::hold(&hub.store, "not-installed-test-agent", Some(&own_id))
+            .expect("second hold")
+            .expect("guard");
+        let err = login_profiles::remove(&hub, &own_id).await.expect_err("held by two guards");
+        assert_eq!(err.downcast_ref::<Refused>().map(|r| r.category), Some("in_use"));
+        drop(first);
+        let err = login_profiles::remove(&hub, &own_id).await.expect_err("still held by second guard");
+        assert_eq!(err.downcast_ref::<Refused>().map(|r| r.category), Some("in_use"));
+        drop(second);
+
+        login_profiles::remove(&hub, &own_id).await.expect("all guards dropped");
+        login_profiles::remove(&hub, &other_id).await.expect("other profile was never held");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

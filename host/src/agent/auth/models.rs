@@ -1,6 +1,6 @@
 //! The models an agent offers, read from a session it opens for that alone.
 
-use super::{Started, probe_dir, start, text};
+use super::{Started, probe_dir, start_with, text};
 use crate::LockExt;
 use crate::hub::Hub;
 use crate::store::Store;
@@ -12,21 +12,29 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::OnceCell;
 
-/// Model lists being fetched, by agent: a settings screen asks for one from several places at once (the model
-/// picker, Approvals), and each would otherwise start the agent. An ask after one came fetches afresh.
+type InFlightKey = (String, Option<String>);
+
+/// Model lists being fetched, by agent and login profile: a settings screen asks for one from several places at once
+/// (the model picker, Approvals), and each would otherwise start the agent. An ask after one came fetches afresh.
 #[derive(Default)]
-pub struct InFlight(Mutex<HashMap<String, Slot>>);
+pub struct InFlight(Mutex<HashMap<InFlightKey, Slot>>);
 
 /// One fetch's answer, for every ask that came while it ran (a failure as its text).
 type Slot = Arc<OnceCell<Result<Value, String>>>;
 
 impl InFlight {
-    async fn get(&self, agent: &str, fetch: impl Future<Output = Result<Value>>) -> Result<Value> {
-        let slot = self.0.locked().entry(agent.to_owned()).or_default().clone();
+    async fn get(
+        &self,
+        backend: &str,
+        login_profile: Option<&str>,
+        fetch: impl Future<Output = Result<Value>>,
+    ) -> Result<Value> {
+        let key = (backend.to_owned(), login_profile.filter(|s| !s.is_empty()).map(str::to_owned));
+        let slot = self.0.locked().entry(key.clone()).or_default().clone();
         let answer = slot
             .get_or_init(|| async {
                 let answer = fetch.await.map_err(|e| format!("{e:#}"));
-                self.0.locked().remove(agent);
+                self.0.locked().remove(&key);
                 answer
             })
             .await;
@@ -34,15 +42,17 @@ impl InFlight {
     }
 }
 
-/// [`models`], shared with the asks for the same agent meanwhile.
-pub async fn shared_models(hub: &Hub, backend: &str) -> Result<Value> {
-    hub.model_lists.get(backend, models(&hub.store, backend)).await
+/// [`models`], shared with the asks for the same agent and login profile meanwhile.
+pub async fn shared_models(hub: &Hub, backend: &str, login_profile: Option<&str>) -> Result<Value> {
+    let login_profile = login_profile.filter(|s| !s.is_empty());
+    Box::pin(hub.model_lists.get(backend, login_profile, Box::pin(models(&hub.store, backend, login_profile)))).await
 }
 
 /// Discover the agent's advertised models in an isolated, prompt-free session.
 /// This uses the same credentials as actual bot sessions and never reads project files.
-pub async fn models(store: &Store, backend: &str) -> Result<Value> {
-    let Started { acp, mut inbox, .. } = start(store, backend).await?;
+pub async fn models(store: &Store, backend: &str, login_profile: Option<&str>) -> Result<Value> {
+    let login_profile = login_profile.filter(|s| !s.is_empty());
+    let Started { acp, mut inbox, .. } = start_with(store, backend, login_profile, &[]).await?;
     let result = tokio::time::timeout(Duration::from_mins(1), async {
         let request = acp.request("session/new", json!({"cwd": probe_dir(), "mcpServers": []}));
         tokio::pin!(request);
@@ -280,11 +290,42 @@ mod tests {
                 if ok { Ok(json!({"models": []})) } else { Err(anyhow::anyhow!("signed out")) }
             }
         };
-        let (a, b) = tokio::join!(lists.get("claude", fetch(true)), lists.get("claude", fetch(true)));
+        let (a, b) = tokio::join!(lists.get("claude", None, fetch(true)), lists.get("claude", None, fetch(true)));
         assert_eq!((a.unwrap(), b.unwrap()), (json!({"models": []}), json!({"models": []})));
         assert_eq!(started.load(std::sync::atomic::Ordering::SeqCst), 1);
-        assert_eq!(lists.get("claude", fetch(false)).await.unwrap_err().to_string(), "signed out", "a refresh fetches");
-        assert!(lists.get("claude", fetch(true)).await.is_ok());
+        assert_eq!(
+            lists.get("claude", None, fetch(false)).await.unwrap_err().to_string(),
+            "signed out",
+            "a refresh fetches"
+        );
+        assert!(lists.get("claude", None, fetch(true)).await.is_ok());
+        assert_eq!(started.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn login_profiles_do_not_share_in_flight_slots() {
+        let lists = InFlight::default();
+        let started = std::sync::atomic::AtomicUsize::new(0);
+        let fetch = |label: &'static str| {
+            let started = &started;
+            async move {
+                started.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(25)).await;
+                Ok(json!({"models": [{"id": label}]}))
+            }
+        };
+        let (d1, d2, p1_a, p1_b, p2) = tokio::join!(
+            lists.get("gemini", None, fetch("default")),
+            lists.get("gemini", Some(""), fetch("default-empty")),
+            lists.get("gemini", Some("pro-7"), fetch("pro")),
+            lists.get("gemini", Some("pro-7"), fetch("pro-dup")),
+            lists.get("gemini", Some("ultra-8"), fetch("ultra")),
+        );
+        assert_eq!(d1.unwrap()["models"][0]["id"], "default");
+        assert_eq!(d2.unwrap()["models"][0]["id"], "default");
+        assert_eq!(p1_a.unwrap()["models"][0]["id"], "pro");
+        assert_eq!(p1_b.unwrap()["models"][0]["id"], "pro");
+        assert_eq!(p2.unwrap()["models"][0]["id"], "ultra");
         assert_eq!(started.load(std::sync::atomic::Ordering::SeqCst), 3);
     }
 

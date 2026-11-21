@@ -116,7 +116,7 @@ pub enum Reply {
         to: Option<String>,
     },
     SignIn,
-    Models(String),
+    Models(String, Option<String>),
     Downloaded,
     /// Something changed: every open sheet loads again.
     Changed,
@@ -409,17 +409,44 @@ impl App {
 
     // ---------- model picker ----------
 
-    /// Loads the models `backend` offers, once per run.
-    pub(super) fn want_models(&mut self, backend: &str) {
-        if !backend.is_empty() && !self.models.contains_key(backend) {
-            self.models.insert(backend.to_owned(), None);
-            self.sheet("agentModels", json!({"backend": backend}), Reply::Models(backend.to_owned()));
+    pub(in crate::tui) fn model_key(backend: &str, login_profile: Option<&str>) -> (String, Option<String>) {
+        (backend.to_owned(), login_profile.filter(|s| !s.is_empty()).map(str::to_owned))
+    }
+
+    pub(in crate::tui) fn models_for(
+        &self,
+        backend: &str,
+        login_profile: Option<&str>,
+    ) -> Option<&Option<Vec<super::app::AgentModel>>> {
+        self.models.get(&Self::model_key(backend, login_profile))
+    }
+
+    pub(in crate::tui) fn has_fast_mode(&self, backend: &str, login_profile: Option<&str>) -> bool {
+        self.fast_mode.contains(&Self::model_key(backend, login_profile))
+    }
+
+    /// Loads the models `backend` (on `login_profile`, if any) offers, once per run.
+    pub(super) fn want_models(&mut self, backend: &str, login_profile: Option<&str>) {
+        let key = Self::model_key(backend, login_profile);
+        if !backend.is_empty() && !self.models.contains_key(&key) {
+            self.models.insert(key.clone(), None);
+            let body = match key.1.as_deref() {
+                Some(id) => json!({"backend": backend, "loginProfile": id}),
+                None => json!({"backend": backend}),
+            };
+            self.sheet("agentModels", body, Reply::Models(key.0, key.1));
         }
     }
 
     /// ←→ on the model field: "default", then each advertised model.
-    pub(super) fn cycle_model(&self, backend: &str, current: &str, d: isize) -> Option<String> {
-        let list = self.models.get(backend)?.as_ref()?;
+    pub(super) fn cycle_model(
+        &self,
+        backend: &str,
+        login_profile: Option<&str>,
+        current: &str,
+        d: isize,
+    ) -> Option<String> {
+        let list = self.models_for(backend, login_profile)?.as_ref()?;
         let mut ids = vec![String::new()];
         ids.extend(list.iter().filter(|m| !m.id.is_empty()).map(|m| m.id.clone()));
         let i = ids.iter().position(|x| x == current).unwrap_or(0);
@@ -427,8 +454,13 @@ impl App {
     }
 
     /// The settings (effort, fast…) `backend`'s `model` offers.
-    pub(crate) fn model_settings(&self, backend: &str, model: &str) -> &[super::app::ModelOption] {
-        let list = self.models.get(backend).and_then(Option::as_ref);
+    pub(crate) fn model_settings(
+        &self,
+        backend: &str,
+        login_profile: Option<&str>,
+        model: &str,
+    ) -> &[super::app::ModelOption] {
+        let list = self.models_for(backend, login_profile).and_then(Option::as_ref);
         list.and_then(|l| l.iter().find(|m| m.id == model)).map_or(&[], |m| &m.options)
     }
 }

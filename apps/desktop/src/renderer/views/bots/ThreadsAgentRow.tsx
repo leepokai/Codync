@@ -13,7 +13,7 @@ import { LoginProfileRow } from './LoginProfileRow'
 export function ThreadsAgentRow({ agent, bot, onChange }: { agent: Fallback; bot: Bot; onChange: (update: (d: BotDraft) => BotDraft) => void }) {
   const tr = useTr()
   const store = useStore()
-  const models = useAgentModels(agent.backend)
+  const models = useAgentModels(agent.backend, agent.loginProfile)
   const backends = store.hello?.backends ?? []
   const backend = backends.find((b) => b.id === agent.backend)
   const set = (change: Partial<Fallback>) => onChange((d) => (d.threadAgent ? { ...d, threadAgent: { ...d.threadAgent, ...change } } : d))

@@ -233,7 +233,7 @@ impl App {
                     });
                 }
             }
-            Reply::Models(backend) => {
+            Reply::Models(backend, login_profile) => {
                 let mut list: Vec<_> =
                     v["models"].as_array().into_iter().flatten().filter_map(AgentModel::parse).collect();
                 if v["defaultModelOptions"] == true
@@ -254,11 +254,12 @@ impl App {
                         },
                     );
                 }
+                let key = (backend, login_profile);
                 if v["fastMode"] == true {
-                    self.fast_mode.insert(backend.clone());
+                    self.fast_mode.insert(key.clone());
                 }
-                self.modes.insert(backend.clone(), crate::tui::app::parse_modes(&v));
-                self.models.insert(backend, Some(list));
+                self.modes.insert(key.clone(), crate::tui::app::parse_modes(&v));
+                self.models.insert(key, Some(list));
             }
             Reply::Downloaded => {
                 let paths: Vec<String> =
@@ -276,8 +277,8 @@ impl App {
 
     fn sheet_error(&mut self, r: &Reply, e: String) {
         match r {
-            Reply::Models(backend) => {
-                self.models.insert(backend.clone(), Some(vec![]));
+            Reply::Models(backend, login_profile) => {
+                self.models.insert((backend.clone(), login_profile.clone()), Some(vec![]));
             }
             Reply::RoutineSaved => {
                 if let Some(Overlay::Routine(f)) = self.overlays.last_mut() {

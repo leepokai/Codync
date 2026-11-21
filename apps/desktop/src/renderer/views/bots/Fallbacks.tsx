@@ -134,7 +134,7 @@ function FallbackRow({ fallback, index, count, bot, inUse, now, backends, taken,
   remove: () => void
 }) {
   const tr = useTr()
-  const models = useAgentModels(fallback.backend)
+  const models = useAgentModels(fallback.backend, fallback.loginProfile)
   // The step as it was on its own agent while another is picked: picking that agent again brings back its model and login.
   const [own, setOwn] = useState<Fallback | null>(null)
   const choices = stepAgents(backends, taken, [fallback, own])

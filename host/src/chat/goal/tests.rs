@@ -48,6 +48,19 @@ fn closing_markers_do_not_match_negation_or_quoted_instructions() {
 }
 
 #[test]
+fn a_marker_set_off_in_markdown_or_finished_with_a_period_still_closes() {
+    for text in ["All shipped.\n**GOAL_COMPLETE**", "`GOAL_COMPLETE`", "GOAL_COMPLETE.", "目标已完成。"] {
+        assert!(done(text), "{text:?} is the closing marker");
+    }
+    for text in ["**NEEDS_USER**", "NEEDS_USER.", "请确认发布权限？"] {
+        assert!(asks_user(text), "{text:?} asks the user");
+    }
+    for text in ["> **GOAL_COMPLETE**", "The goal is not complete.", "Say **GOAL_COMPLETE** when done."] {
+        assert!(!done(text), "{text:?} only talks about the marker");
+    }
+}
+
+#[test]
 fn invalid_limits_are_rejected_instead_of_silently_changed() {
     assert_eq!(limit(&json!({}), "maxTurns", 20, 200).unwrap(), 20);
     for n in [json!(0), json!(-1), json!(201), json!("2"), json!(null)] {

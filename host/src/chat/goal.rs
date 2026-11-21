@@ -202,7 +202,7 @@ pub fn begin(hub: &Hub, agent: &BotConfig, id: &str) -> Result<Option<String>> {
 /// Only an affirmative closing line completes a goal; negated/quoted prose does not.
 pub fn done(reply: &str) -> bool {
     matches!(
-        last_line(reply).to_lowercase().as_str(),
+        marker(last_line(reply)).as_str(),
         "goal_complete" | "goal met" | "goal complete" | "目标已完成" | "目標已完成" | "目标已达成" | "目標已達成"
     )
 }
@@ -211,10 +211,22 @@ fn last_line(reply: &str) -> &str {
     reply.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or_default().trim()
 }
 
+/// The line as the marker it may be: emphasis and sentence punctuation are the model's, not the marker's.
+/// Leading Markdown is not stripped past emphasis, so a quoted `> GOAL_COMPLETE` still doesn't count.
+fn marker(line: &str) -> String {
+    line.trim()
+        .trim_end_matches(['.', '!', '。', '！', '*', '_', '`', ' ', '\t'])
+        .trim_start_matches(['*', '_', '`'])
+        .to_lowercase()
+}
+
 pub fn asks_user(reply: &str) -> bool {
-    let last = last_line(reply).to_lowercase();
+    let last = last_line(reply);
+    if last.ends_with(['?', '？']) {
+        return true;
+    }
+    let last = marker(last);
     last == "needs_user"
-        || last.ends_with(['?', '？'])
         || [
             "let me know",
             "please confirm",

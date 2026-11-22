@@ -73,6 +73,10 @@ task:
 3. **Otherwise it waits**: `wait: next` for the first in line, `behind` with how many are `ahead` for the rest.
    Nothing is refused for being over the ceiling.
 
+A task that can't start now whatever is free (`dispatch::held`: a routine run while a run of its routine is under way
+or the host is stopping, a task whose worktree is still being looked over) takes no place: it reports `wait: next`
+and the tasks behind it may start first.
+
 **A thread waiting on the user gives its seat up** (`dispatch::free_seats`): while its runtime is `needsInput` (an approval,
 a choice, a sign-in) it doesn't count toward `maxThreads`, so the next task can start meanwhile; the user's answer
 lets it go on even past the ceiling. Every live thread still counts toward `maxThreads + 1`, so only one seat is ever
@@ -142,7 +146,8 @@ bot can say what it is doing and place an `after` without a tool call.
   waits at the front, behind the task that cut in, with `cutIn` set. It starts again later in a new thread and session,
   told that the work was begun before. With a thread free, cutting in is moving first; so it is for a task that
   wouldn't start on the freed thread (it follows unfinished work, or waits for usage), and the clients don't offer
-  Cut in on such a row.
+  Cut in on such a row. A held task (a routine run behind its routine's run, a task whose worktree is being looked
+  over) still shows Cut in, which only moves it to the front.
 - **Replace** (`steer_task replace`): the brief is replaced. A working task's thread is closed the same way and the
   task starts again from the new brief, at the front (`cutIn` stays as it was).
 - **Stop** (`stopWork`, `steer_task stop`): the task is `stopped`; a working one's thread is stopped. Without a task,

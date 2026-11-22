@@ -193,7 +193,7 @@ impl Actor {
                 // A task's report is news the user still wants.
                 Queued::TaskReport(report) => self.queue.push_back(Queued::TaskReport(report)),
                 // Its notice keeps the outcome; a host restart doesn't bring back what the user stopped.
-                Queued::BotReply(reply) => crate::chat::team::relayed(&self.hub, std::slice::from_ref(&reply)),
+                Queued::BotReply(reply) => crate::chat::team::relayed(&self.hub, std::slice::from_ref(&reply), &[]),
                 Queued::User { entry_id, .. } => {
                     if let Some(mut e) = self.hub.store.entry(&entry_id) {
                         e.data["status"] = "cancelled".into();
@@ -315,11 +315,10 @@ impl Actor {
                         self.start_error(e, done_tx).await;
                     }
                     // Only once the agent has the prompt (or the turn failed where the user sees it): a host restart
-                    // before that relays them again from their notices. From then on a restart resumes the turn.
-                    crate::chat::team::relayed(&self.hub, &replies);
-                    if started && self.resumes() {
-                        self.set_inflight(true);
-                    }
+                    // before that relays them again from their notices. From then on a restart resumes the turn: the
+                    // one write that takes them also marks it running.
+                    let running = (started && self.resumes()).then(|| self.inflight_row(true));
+                    crate::chat::team::relayed(&self.hub, &replies, running.as_slice());
                     continue;
                 }
                 Some(Queued::TaskReport(_)) => {
@@ -623,13 +622,19 @@ impl Actor {
     /// Marks a turn in the bot's own chat as running across host restarts (see [`Self::resume_interrupted`]); a
     /// follow-up's turn is marked as one, with its place in its chain.
     pub(super) fn set_inflight(&self, on: bool) {
+        let (key, mark) = self.inflight_row(on);
+        if let Err(error) = self.hub.store.kv_set(&key, &mark) {
+            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the running turn");
+        }
+    }
+
+    /// The kv row [`Self::set_inflight`] saves, for a write that saves it with others.
+    pub(super) fn inflight_row(&self, on: bool) -> (String, String) {
         let turn = on.then(|| {
             let follow_up = (self.host_turn == Some(HostTurn::FollowUp))
                 .then(|| self.hub.routines.follow_up_chain(&self.cfg.id).unwrap_or(0));
             Inflight { started: now_ms(), follow_up }
         });
-        if let Err(error) = Inflight::save(&self.hub.store, &self.cfg.id, turn) {
-            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the running turn");
-        }
+        Inflight::row(&self.cfg.id, turn)
     }
 }

@@ -132,6 +132,6 @@ fn relay(hub: &Hub, notice: &Entry) {
     if let Err(cmd) = hub.offer_cmd(sender, Cmd::BotReply(reply))
         && let Cmd::BotReply(reply) = *cmd
     {
-        relayed(hub, &[reply]);
+        relayed(hub, &[reply], &[]);
     }
 }

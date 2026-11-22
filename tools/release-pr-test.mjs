@@ -6,7 +6,11 @@ const src = readFileSync(new URL('../.claude/workflows/release-pr.js', import.me
 const AsyncFunction = (async () => {}).constructor
 const body = new AsyncFunction('args', 'agent', 'parallel', 'phase', 'log', 'workflow', src)
 
-// Each agent label gets the answer of the longest key it starts with; an array answers its calls in turn.
+// A gate fix's after-change run that reviewed and walked it: one e2e check, nothing failed.
+const afterChange = { e2e: { checks: [{ result: 'pass' }] }, review: { confirmed: [] }, fix: {} }
+
+// Each agent label gets the answer of the longest key it starts with; an array answers its calls in turn. The
+// 'after-change' answer is that workflow's report (afterChange when not given).
 const run = async (answers, args = {}) => {
   const calls = []
   const seen = {}
@@ -19,7 +23,8 @@ const run = async (answers, args = {}) => {
     seen[key] = (seen[key] ?? 0) + 1
     return a[seen[key] - 1] ?? null
   }
-  const r = await body(args, agent, async () => [], () => {}, () => {}, async () => null)
+  const workflow = async () => (Object.hasOwn(answers, 'after-change') ? answers['after-change'] : afterChange)
+  const r = await body(args, agent, async () => [], () => {}, () => {}, workflow)
   return { r, calls }
 }
 
@@ -51,6 +56,10 @@ const capture = (answer) => { const f = (p) => { f.prompt = p; return answer }; 
 {
   const { r, calls } = await run({ ...base, 'gate:': [notReady, ready], 'fix:': [{ ...fixed, applied: [], rerun: ['run 1'] }] })
   check(r.outcome === 'released' && gates(calls) === 2, 'a rerun alone takes another round')
+}
+for (const [report, why] of [[null, 'did not finish'], [{ e2e: { checks: [] } }, 'ran no e2e check'], [{ e2e: { checks: [{ result: 'fail' }] } }, 'failed an e2e check']]) {
+  const { r, calls } = await run({ ...base, 'gate:': [notReady, ready], 'fix:': [fixed], 'after-change': report })
+  check(r.outcome === 'stopped' && r.why.endsWith(why) && gates(calls) === 1 && !calls.includes('merge'), 'gate fixes whose after-change ' + why + ' stop before the next round')
 }
 {
   const { r, calls } = await run({ ...base, 'gate:': [notReady, ready], 'fix:': [{ ...fixed, applied: [], refuted: [{ item: 'clippy', why: 'no' }] }] })

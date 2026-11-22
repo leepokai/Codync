@@ -196,19 +196,21 @@ impl BotReply {
 }
 
 /// `replies` reached their sender's turn, or the user stopped it before they did: their notices stop waiting for
-/// one, so a host restart doesn't send them again.
-pub fn relayed(hub: &Hub, replies: &[BotReply]) {
+/// one, so a host restart doesn't send them again. `running`: the kv row (if any) marking that turn as running
+/// (`turn.inflight`), saved in the same write, so a crash leaves the replies either to be relayed again or in a turn
+/// that resumes, never neither nor both.
+pub fn relayed(hub: &Hub, replies: &[BotReply], running: &[(String, String)]) {
+    let mut taken = Vec::new();
     for id in replies.iter().filter_map(|reply| reply.entry.as_deref()) {
         if let Some(mut e) = hub.store.entry(id)
             && let Some(data) = e.data.as_object_mut()
             && data.remove(RELAYING).is_some()
         {
-            if let Err(error) = hub.store.kv_delete(&relaying_key(id)) {
-                tracing::warn!(entry = id, error = format!("{error:#}"), "couldn't drop a relayed reply");
-            }
-            hub.set_entry(id, &e.data);
+            taken.push((id.to_owned(), e.data));
         }
     }
+    let kept: Vec<String> = taken.iter().map(|(id, _)| relaying_key(id)).collect();
+    hub.set_entries_with_kv(&taken, &kept, running);
 }
 
 /// On a local sender's exchange notice: the outcome waits for the sender's reply turn ([`BotReply::entry`]).

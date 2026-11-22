@@ -116,6 +116,37 @@ impl Store {
         Ok(c.query_row(&format!("SELECT {ENTRY_COLS} FROM entries WHERE id = ?1"), [id], row_entry).optional()?)
     }
 
+    /// Updates `entries` (each stamped with the next rev), deletes the `delete` kv rows and saves the `set` ones in one
+    /// transaction, so a crash keeps all of it or none; the entries as updated.
+    pub fn update_entries_kv(
+        &self,
+        entries: &[(String, Value)],
+        delete: &[String],
+        set: &[(String, String)],
+    ) -> Result<Vec<Entry>> {
+        let mut c = self.db.locked();
+        let tx = c.transaction()?;
+        let mut updated = Vec::with_capacity(entries.len());
+        for (id, data) in entries {
+            let rev = next_rev(&tx)?;
+            tx.execute(
+                "UPDATE entries SET rev = ?2, data = ?3, updated_at = ?4 WHERE id = ?1",
+                params![id, rev, data.to_string(), now_ms()],
+            )?;
+            updated.extend(
+                tx.query_row(&format!("SELECT {ENTRY_COLS} FROM entries WHERE id = ?1"), [id], row_entry).optional()?,
+            );
+        }
+        for k in delete {
+            tx.execute("DELETE FROM kv WHERE k = ?1", [k])?;
+        }
+        for (k, v) in set {
+            tx.execute("INSERT INTO kv(k, v) VALUES(?1, ?2) ON CONFLICT(k) DO UPDATE SET v = ?2", params![k, v])?;
+        }
+        tx.commit()?;
+        Ok(updated)
+    }
+
     /// Moves an entry back in time, for tests of what happens to old entries.
     #[cfg(test)]
     pub fn backdate_entry(&self, id: &str, created_at: i64) {

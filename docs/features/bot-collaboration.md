@@ -41,9 +41,9 @@ heading and rendered text remain unchanged for clients that display plain notice
 Clients read the structured data directly; they do not parse display strings.
 
 Existing notices remain ordinary notices. There is no startup rewrite, data
-migration or transcript-cache reset. The existing restart cleanup still marks
-unfinished requests failed and adds the failure detail to their structured data,
-when present. It never replays work.
+migration or transcript-cache reset. At restart, unfinished requests settle as
+[Stops, failures and restart](#stops-failures-and-restart) says: one between this
+computer's bots that never started is sent again; started work is never replayed.
 
 `botConversation {botId, peerId}` returns `{entries}`: the newest 200 main-chat
 notices containing structured messages with that peer, oldest first. It requires
@@ -67,11 +67,12 @@ The team tools add no task scheduler or isolated worktrees. Give bots explicit f
 
 ## Stops, failures and restart
 
+- Every request that returned `queued` ends with its sender hearing how: a reply, a failure or a cancellation comes back as a reply turn (`couldn't finish …`), and nothing leaves a request waiting forever.
 - Accepted requests survive the sender's completion, Stop, disconnection and deletion. Stop on the sender drops replies still queued for it; a deleted sender's replies are dropped (both notices still show the outcome).
-- Stopping a request's task in the recipient's box (Stop on its row, or stopping all of its work), dropping it while it waits, or deleting the recipient cancels the request; started work may have left partial changes. Stop in the recipient's chat stops only the chat's turn (for a recipient that answers in its chat: its queued requests and running work, as before). A cancellation the user caused doesn't wake the sender; its notices show it. A request's task can't be tried again: the sender asks again.
+- Stopping a request's task in the recipient's box (Stop on its row, or stopping all of its work), dropping it while it waits, or deleting the recipient cancels the request; started work may have left partial changes. Stop in the recipient's chat stops only the chat's turn (for a recipient that answers in its chat: its queued requests and running work, as before). The sender is woken with the cancellation, as for a failure, and tells the user; a request stopped on another computer comes back the same way. A request's task can't be tried again: the sender asks again.
 - Recipient startup failures, crashes, refusals and empty replies mark both notices failed and come back to the sender as a failed reply.
-- Pending request notices are persisted with IDs and statuses. After host restart they become interrupted errors and their tasks leave the box; requests are not automatically replayed. Check partial work before retrying. There is no automatic retry. Ordinary user turns and running reply turns retain their existing session-resume behavior.
-- A reply still queued for a busy sender lives only in memory: a host restart drops it, and the sender never relays it. Both notices are already completed and keep the reply (`botMessage.reply`), so it stays readable in the conversation sheet.
+- Host restart (`host/src/chat/team/restart.rs`, run once the bots' actors and boxes are back): a request between this computer's bots that hadn't started (both notices still `queued`) is sent again, with its notices, its sender's slot and its chain's hops (`hops` on the notice); one that had started (`sent`) fails with "Interrupted by host restart", since its work may be half done, and its sender is woken with that; one whose recipient was deleted or hidden meanwhile fails the same way. A host shutting down leaves its requests' notices as they are for this (`Routines::stopping`), instead of marking them cancelled. A request whose notices a stopping host left half saved (one ended, the other not) ends the other one the same way, with no second outcome for the sender. Requests to or from another computer, or the cloud assistant, are still marked interrupted at start (`Store::expire_pending`) and not replayed. Ordinary user turns and running reply turns retain their existing session-resume behavior.
+- A reply on its way to a local sender is marked on the sender's notice (`relaying`) until the sender's reply turn has handed it to the agent (or the user stops the sender, which drops it). A host restart in between sends it to the sender again from that notice, whole: the notice shows only its first 4,000 bytes, so the host keeps the reply itself until the sender's turn takes it. The sender's reply turn is marked to resume after a restart only once its prompt has gone out, so a reply is never both sent again and resumed. A reply from another computer isn't kept this way: the ceiling it came under doesn't outlive the host.
 
 ## Limits
 

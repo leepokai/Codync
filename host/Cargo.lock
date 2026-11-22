@@ -727,7 +727,7 @@ dependencies = [
 
 [[package]]
 name = "codync-agent"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -735,6 +735,7 @@ dependencies = [
  "futures",
  "libc",
  "reqwest",
+ "semver",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -746,7 +747,7 @@ dependencies = [
 
 [[package]]
 name = "codync-host"
-version = "2.52.0"
+version = "2.53.0"
 dependencies = [
  "anyhow",
  "axum",

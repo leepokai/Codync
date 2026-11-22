@@ -31,6 +31,12 @@ public struct EntryData: Codable, Hashable, Sendable {
     /// tool: whether it's the bot's own bookkeeping (composing its message, keeping its memory), left out of the
     /// working steps; `nil` from a host older than 2.25.0.
     public var bookkeeping: Bool?
+    /// tool: the agent's id for the call.
+    public var toolCallId: String?
+    /// tool: the call that launched the subagent making this one (Claude Code only).
+    public var parent: String?
+    /// tool: what a subagent's launch says about it (Claude Code only).
+    public var subagent: Subagent?
     public var output: String?
     public var diffs: [FileDiff]?
     public var locations: [Location]?

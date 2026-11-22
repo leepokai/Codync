@@ -50,10 +50,10 @@ pub async fn models(store: &Store, backend: &str) -> Result<Value> {
             tokio::select! {
                 result = &mut request => break result?,
                 incoming = inbox.recv() => match incoming {
-                    Some(Incoming::Request { id, .. }) => {
-                        acp.respond_error(id, -32601, "not supported during model discovery").await?;
+                    Some(Incoming::Request(request)) => {
+                        request.refuse(codync_agent::acp::METHOD_NOT_FOUND, "not supported during model discovery").await?;
                     }
-                    Some(Incoming::Notification { .. }) => {}
+                    Some(Incoming::Notification { .. } | Incoming::Update(_)) => {}
                     Some(Incoming::Closed { .. }) | None => bail!("agent closed during model discovery"),
                 }
             }

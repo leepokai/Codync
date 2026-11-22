@@ -2273,5 +2273,8 @@
   "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.": "Der Chat plant und gibt Arbeit weiter; Threads laufen auf einem eigenen Agenten mit eigenen Ersatzagenten.",
   "Threads' agent": "Agent der Threads",
   "Threads' fallbacks": "Ersatzagenten der Threads",
-  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "Wenn {agent} kein Kontingent mehr hat oder nicht antworten kann, machen die Threads mit dem nächsten weiter."
+  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "Wenn {agent} kein Kontingent mehr hat oder nicht antworten kann, machen die Threads mit dem nächsten weiter.",
+  "in background": "im Hintergrund",
+  "{count} s": "{count} s",
+  "{count} min": "{count} Min."
 }

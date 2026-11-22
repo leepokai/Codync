@@ -7,8 +7,6 @@ use crate::hub::Hub;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
-pub const METHOD: &str = "elicitation/create";
-
 /// What `initialize` advertises: questions as forms, not as URLs to open.
 pub fn capability() -> Value {
     json!({"form": {}})

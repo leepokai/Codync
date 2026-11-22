@@ -410,7 +410,7 @@ private struct WorkingSteps: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     if steps.isEmpty { Text(L10n.tr("Nothing yet.")).foregroundStyle(Palette.tertiary) }
-                    ForEach(steps) { TraceRow(entry: $0, unfolded: true) }
+                    ForEach(Entry.nested(steps), id: \.entry.id) { TraceRow(entry: $0.entry, unfolded: true).nested($0.depth) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

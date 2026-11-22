@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,7 +36,7 @@ import kotlinx.serialization.json.jsonPrimitive
     val turns = all.groupBy { it.turn }.toSortedMap().toList()
     // The running turn's thoughts start unfolded.
     val running = runningTurn(all, bot.isWorking(bot.id))
-    val list = rememberLazyListState()
+    val list = rememberConversationListState(if (turns.isEmpty()) 1 else turns.size)
     // Opens at the end and follows any new step there (in whichever turn) until the reader scrolls up.
     rememberFollowing(list, turns.lastOrNull()?.first?.toString(), all.maxOfOrNull { it.rev }, working = false, bottom = 0.dp)
     Column(Modifier.fillMaxSize()) {

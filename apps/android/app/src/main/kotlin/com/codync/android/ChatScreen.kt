@@ -32,7 +32,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -317,7 +316,7 @@ private fun AppState.chatItems(bot: Bot) =
     val floor = state.entries.filter { it.botId == bot.id }.minOfOrNull { it.seq } ?: Long.MAX_VALUE
     val more = Residency.needsEarlier(shown, bot.id in state.historyEnd)
     val details by ThinkingDetails.enabled.collectAsStateWithLifecycle()
-    val list = rememberLazyListState()
+    val list = rememberConversationListState((if (more) 1 else 0) + (if (items.isEmpty()) 1 else items.size) + (if (working) 1 else 0))
     var settled by remember { mutableStateOf(false) }
     val paging = remember { EarlierPaging() }
     // Pull to refresh reconnects, like Reconnect in the roster's computer menu, until the link is back.
@@ -329,8 +328,8 @@ private fun AppState.chatItems(bot: Bot) =
         if (more) item("earlier") {
             Box(Modifier.fillMaxWidth().padding(vertical = 14.dp).clearAndSetSemantics { contentDescription = "Loading earlier messages" },
                 contentAlignment = Alignment.Center) { Spinner(14.dp) }
-            // The list opens on the newest message, and this row is composed on that first frame. Page only after that
-            // scroll has finished and the row is still showing: a short chat never scrolls, so the row staying up is the trigger.
+            // Page only after the open scroll has settled and this row is still on screen. A short chat fits,
+            // so the row staying up is the trigger. A long chat opens on the newest row and does not page.
             val loading = historyKey(bot.id) in state.busy
             val visible by remember { derivedStateOf { list.layoutInfo.visibleItemsInfo.any { it.key == "earlier" } } }
             LaunchedEffect(shown, floor, loading, settled, visible) {

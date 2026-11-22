@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -78,13 +79,28 @@ import kotlinx.coroutines.launch
 /** A row ([id], now at [index]) to bring into view: each new [step] scrolls to it again (find's next match). */
 internal data class ConversationReveal(val id: String, val index: Int, val step: Int)
 
+/**
+ * First layout index for a conversation. An empty list keeps [Int.MAX_VALUE], which the list clamps to
+ * the newest row on its first non-empty measure. A known count starts on that newest row, offset 0, so
+ * the measure fills backward through the latest screenful. A scroll offset of [Int.MAX_VALUE] is left
+ * to the later pin: on the first measure it overflows the layout math.
+ */
+internal fun firstLayoutIndex(itemCount: Int): Int = if (itemCount <= 0) Int.MAX_VALUE else itemCount - 1
+
+/** Follow the newest row only while the reader has not taken the list. */
+internal fun followNewest(following: Boolean, touched: Boolean): Boolean = following && !touched
+
+/** A list that opens on the newest row. [itemCount] is read only while the state is first created. */
+@Composable internal fun rememberConversationListState(itemCount: Int): LazyListState =
+    rememberLazyListState(initialFirstVisibleItemIndex = firstLayoutIndex(itemCount))
+
 /** Stays on the newest message until the reader scrolls away; scrolling back down follows again. */
 @Composable internal fun rememberFollowing(list: LazyListState, last: String?, rev: Long?, working: Boolean, bottom: Dp,
     onOpened: () -> Unit = {}): MutableState<Boolean> {
     val following = remember { mutableStateOf(true) }
     // The reader's drag and its fling, until it settles: a new step never pulls it back down meanwhile.
     val touched = remember { mutableStateOf(false) }
-    fun follows() = following.value && !touched.value
+    fun follows() = followNewest(following.value, touched.value)
     LaunchedEffect(list) {
         // Only the reader's own scroll decides: new content arriving (even while Codync is in the background) keeps the follow.
         launch { list.interactionSource.interactions.collect { if (it is DragInteraction.Start) touched.value = true } }

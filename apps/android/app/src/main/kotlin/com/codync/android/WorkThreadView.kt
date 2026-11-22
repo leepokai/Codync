@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -103,7 +102,8 @@ import kotlinx.coroutines.launch
     val rows = if (threadId == null) own else sharing(own, state.entries.filter { it.botId == bot.id && !it.isRemoved }, threadId)
     val sends = state.threadSends[taskId].orEmpty().filter { send -> all.none { it.clientNonce == send.nonce } }
     val running = runningTurn(all, live)
-    val list = rememberLazyListState()
+    val list = rememberConversationListState(
+        (if (thread.told != null) 1 else 0) + (if (error != null || !loaded || all.isEmpty()) 1 else 0) + rows.size + sends.size)
     var confirming by remember { mutableStateOf(false) }
     var composerHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current

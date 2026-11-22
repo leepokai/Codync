@@ -36,6 +36,8 @@ Everyday tests use the fake agents, which only answer the way we expect. Run the
 2. A change touches how the host talks to an agent: ACP methods, sessions, turns.
 3. Before a release.
 
+Each check ends by stopping the host: no agent process may outlive it, except a daemon an agent detaches on purpose and shares with its other clients, which its [upstream page](../upstream-agents/README.md) lists (Hermes's `gateway run --idle-exit`).
+
 ## Desktop: Playwright
 
 Playwright attaches to the worktree's running sandbox over the DevTools protocol. It doesn't launch Electron itself: the sandbox already owns the host, data, sign-in and single-instance lock, and an app launched without them would open against the shared Codync Dev.

@@ -3,7 +3,11 @@ import type { Entry, Subagent } from '../../../shared/models.ts'
 /** A bot's entries grouped by turn, oldest turn first, each turn's entries in their order. */
 export function traceTurns(entries: Entry[]): [number, Entry[]][] {
   const turns = new Map<number, Entry[]>()
-  for (const e of entries) turns.set(e.turn, [...(turns.get(e.turn) ?? []), e])
+  for (const e of entries) {
+    const turn = turns.get(e.turn)
+    if (turn) turn.push(e)
+    else turns.set(e.turn, [e])
+  }
   return [...turns.entries()].sort((a, b) => a[0] - b[0])
 }
 
@@ -43,7 +47,12 @@ export function nestedSteps(steps: Entry[]): { entry: Entry; depth: number }[] {
   const ids = new Set(steps.filter((e) => e.data.toolCallId).map((e) => key(e, e.data.toolCallId)))
   const launched = (e: Entry) => !!e.data.parent && e.data.parent !== e.data.toolCallId && ids.has(key(e, e.data.parent))
   const children = new Map<string, Entry[]>()
-  for (const e of steps) if (launched(e)) children.set(key(e, e.data.parent), [...(children.get(key(e, e.data.parent)) ?? []), e])
+  for (const e of steps) {
+    if (!launched(e)) continue
+    const list = children.get(key(e, e.data.parent))
+    if (list) list.push(e)
+    else children.set(key(e, e.data.parent), [e])
+  }
   const out: { entry: Entry; depth: number }[] = []
   const visit = (entry: Entry, depth: number) => {
     out.push({ entry, depth })

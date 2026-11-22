@@ -131,7 +131,7 @@ const bumpStep = bumps
     ? `no shipped code (apps/, host/, packaging/) changed since ${facts.latest_tag}: no bump, so no tag and no release runs; version stays ${facts.version}.`
     : `the version ${facts.version} is already ahead of ${facts.latest_tag}: leave it.`
 const realAgentsStep = facts.ships_code
-  ? `Real agents (docs/guides/test-stack.md#real-agents) on the worktree's head: build the host there (\`cargo build --bin codync-host\`), start it isolated (\`CODYNC_HOME=<short scratch dir> codync-host serve --port 19431\`), list backends with POST /api/hello (call it twice: the registry loads late), then one bot per installed agent on its cheapest model, one turn each and one at a time (\`codync-host send --port 19431 --bot <id> --wait --json "Reply with exactly the word: ok"\`; an agent that answers through the chat tool raises a card: approve it with POST /api/respondPermission, read cards with POST /api/history). SIGTERM the host and check none of its agent processes outlive it. An agent that isn't installed or logged in is skipped and named; one that is and fails, or a process left alive, is status real_agents_failed: stop and push nothing.`
+  ? `Real agents (docs/guides/test-stack.md#real-agents) on the worktree's head: build the host there (\`cargo build --bin codync-host\`), start it isolated (\`CODYNC_HOME=<short scratch dir> codync-host serve --port 19431\`), list backends with POST /api/hello (call it twice: the registry loads late), then one bot per installed agent on its cheapest model, one turn each and one at a time (\`codync-host send --port 19431 --bot <id> --wait --json "Reply with exactly the word: ok"\`; an agent that answers through the chat tool raises a card: approve it with POST /api/respondPermission, read cards with POST /api/history). SIGTERM the host and check none of its agent processes outlive it (a daemon an agent detaches on purpose and shares with its other clients, listed on that agent's docs/upstream-agents page, such as Hermes's \`gateway run --idle-exit\`, doesn't count). An agent that isn't installed or logged in is skipped and named; one that is and fails, or a process left alive, is status real_agents_failed: stop and push nothing.`
   : 'Real agents: skipped, no shipped code changed (say so in the PR body).'
 const supersede = fromDev.length
   ? ` Then close each release PR opened straight from dev (${fromDev.map((p) => '#' + p.number).join(', ')}) with \`gh pr close <n> --repo ${REPO} --comment "Superseded by #<this PR>"\`.`
@@ -182,6 +182,19 @@ for (let round = 1; round <= MAX_ROUNDS; round++) {
   fixes.push(fixed)
   if (fixed.needs_maintainer.length) {
     return end({ outcome: 'ask', pr, gate, fixes, why: 'findings that need a decision: ' + fixed.needs_maintainer.join('; '), next: 'Ask the user about these; once decided (fixed on the release branch, or left as it is), reply to and resolve each such Greptile thread, then rerun.' })
+  }
+  // The fixes are our own code change: reviewed and walked end to end before the next round commits and merges them.
+  if (fixed.applied.length) {
+    const report = await workflow('after-change', { change: `Gate fixes on release PR #${pr}: ${fixed.applied.join('; ')}. ${UNTRUSTED}`, base: gate.head, dir: worktree, e2e: 'minimal' })
+    fixed.afterChange = report
+    const checks = report?.e2e?.checks ?? []
+    // As review-issue-pr's afterChangeGap: a change with nothing to walk still reports one not_run check.
+    const gap = !report ? 'did not finish'
+      : !checks.length ? 'ran no e2e check'
+      : checks.some((c) => c.result === 'fail') ? 'failed an e2e check'
+      : report.review?.confirmed?.length && !report.fix?.applied ? 'left its confirmed findings unfixed'
+      : null
+    if (gap) return end({ outcome: 'stopped', pr, gate, fixes, why: `after-change on the gate fixes ${gap}`, next: 'The fixes are uncommitted in the release worktree. Report the after-change result to the user; once fixed, rerun.' })
   }
   // Nothing fixed or rerun leaves the head and the gate as they are: a ready head whose findings were all refuted merges, a failing one stops.
   if (!fixed.applied.length && !fixed.rerun.length) { ready = gate.status === 'ready'; break }

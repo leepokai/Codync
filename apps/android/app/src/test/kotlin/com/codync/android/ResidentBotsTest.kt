@@ -7,8 +7,8 @@ import org.junit.Test
 
 class ResidentBotsTest {
     @Test fun `a chat window never shrinks below the default and never passes the ceiling`() {
-        val residency = Residency(setOf("a"), windows = mapOf("a" to 500, "b" to 10, "c" to 1_000_000))
-        assertEquals(500, residency.limit("a"))
+        val residency = Residency(setOf("a"), windows = mapOf("a" to 200, "b" to 10, "c" to 1_000_000))
+        assertEquals(200, residency.limit("a"))
         assertEquals(Residency.DEFAULT_WINDOW, residency.limit("b"))
         assertEquals(Residency.DEFAULT_WINDOW, residency.limit("none"))
         assertEquals(Residency.MAX_WINDOW, residency.limit("c"))
@@ -22,9 +22,26 @@ class ResidentBotsTest {
     }
 
     @Test fun `a sixth open chat drops the least recently used`() {
-        val residents = ResidentBots()
+        val residents = ResidentBots(5)
         repeat(6) { residents.touch("b$it") }
         assertEquals((1..5).map { "b$it" }.toSet(), residents.full(null))
+    }
+
+    @Test fun `the default set keeps only the open chat`() {
+        val residents = ResidentBots()
+        residents.touch("a")
+        residents.touch("b")
+        assertEquals(emptySet<String>(), residents.full(null))
+        assertEquals(setOf("b"), residents.full("b"))
+    }
+
+    @Test fun `remembered ids stay a preview order when nothing else is resident`() {
+        val residents = ResidentBots()
+        repeat(10) { residents.touch("b$it") }
+        assertEquals(emptySet<String>(), residents.full(null))
+        assertEquals(setOf("b9"), residents.full("b9"))
+        assertEquals((9 downTo 2).map { "b$it" }, residents.previewPriority())
+        assertTrue(residents.previewPriority().none { it in residents.full(null) })
     }
 
     @Test fun `opening a chat again keeps it and drops the one that became oldest`() {

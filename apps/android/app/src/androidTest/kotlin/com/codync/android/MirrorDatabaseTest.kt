@@ -242,13 +242,21 @@ class MirrorDatabaseTest {
         mirror.receive((1L..600L).map(::big))
         val small = mirror.snapshot(Residency(setOf("big"), window = 300)).entries.filter { it.botId == "big" }
         val wide = mirror.snapshot(Residency(setOf("big"), window = 500, windows = mapOf("big" to 500))).entries.filter { it.botId == "big" }
-        assertTrue("a chat of large rows stays inside its byte budget", small.size < 300)
-        assertTrue("and a wider window can't grow past it", wide.size <= 24_000_000 / 60_000)
+        assertEquals("the row cap still applies when each large row is only a stub", 300, small.size)
+        assertEquals(500, wide.size)
         assertEquals(600L, small.maxOf { it.seq })
+        assertEquals(600L, wide.maxOf { it.seq })
+        assertTrue(small.sumOf { it.text.length } < 80_000)
+        assertTrue(wide.sumOf { it.text.length } < 80_000)
+        assertTrue(small.all { filler !in it.text && it.text.length < 200 && notedLength(it.text) > 60_000 })
+        assertTrue(wide.all { filler !in it.text && it.text.length < 200 && notedLength(it.text) > 60_000 })
         val preview = mirror.snapshot(Residency(emptySet(), window = 300, preview = 30)).entries.filter { it.botId == "big" }
-        assertTrue("a preview of large rows is cut short but keeps the newest row", preview.size in 1..29)
+        assertEquals("a preview keeps the newest stubs and not the 60k filler", 30, preview.size)
         assertEquals(600L, preview.maxOf { it.seq })
+        assertTrue(preview.all { filler !in it.text && it.text.length < 200 && notedLength(it.text) > 60_000 })
     }
+
+    private fun notedLength(text: String) = text.substringAfter("(", "").substringBefore(" ", "").toLongOrNull() ?: 0L
 
     private fun chat(bot: String, seq: Long): Entry = Entry("e-$bot-$seq", seq, bot, rev = seq, kind = "user",
         data = buildJsonObject { put("text", "$bot-$seq"); put("clientNonce", "n-$bot-$seq") })

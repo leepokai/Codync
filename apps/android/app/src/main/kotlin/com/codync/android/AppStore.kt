@@ -75,7 +75,7 @@ class AppStore internal constructor(
     internal var pluginsRefreshAgain = false
     /** The host version an undecodable event already made the mirror fetch everything again for. */
     internal var rewoundFor: String? = null
-    /** The open chat and the few opened last load deeply; the rest keep a short preview. Not saved. */
+    /** The open chat loads deeply. Recently opened chats are remembered only so their previews come first. Not saved. */
     internal val residents = ResidentBots()
     /** Rows each resident chat loads, grown while its reader pages back through history already on the phone. */
     internal val windows = ConcurrentHashMap<String, Int>()
@@ -87,7 +87,11 @@ class AppStore internal constructor(
     private val refreshes = Mutex()
 
     /** How much of each chat the next snapshot loads. Never every row: the phone's heap is fixed. */
-    internal fun residency(): Residency = Residency(residents.full(state.value.selectedBot), windows = windows.toMap())
+    internal fun residency(): Residency = Residency(
+        residents.full(state.value.selectedBot),
+        windows = windows.toMap(),
+        previewPriority = residents.previewPriority(),
+    )
 
     /** Opens the mirror and the drafts this phone keeps for the computer; nothing connects yet. */
     internal suspend fun open() {
@@ -179,6 +183,8 @@ class AppStore internal constructor(
 
     private suspend fun publishSnapshot() {
         val mirror = database ?: return
+        val selected = state.value.selectedBot
+        if (selected == null) windows.clear() else windows.keys.retainAll(setOf(selected))
         val wanted = residency()
         val snapshot = withContext(Dispatchers.IO) { mirror.snapshot(wanted) }
         // Updated in place, never emptied, so a page loading meanwhile doesn't read a chat as having no oldest row.

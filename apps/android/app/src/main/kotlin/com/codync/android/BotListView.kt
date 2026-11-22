@@ -185,12 +185,13 @@ private class ComputerRoster(private val context: Context, val key: String) {
         }
         }
     }
-    val deleting = confirmDelete?.second
-    CodyncDialog("Delete ${deleting?.name ?: "bot"}?", deleting != null, { confirmDelete = null },
+    val target = lastOf(confirmDelete)
+    val deleting = target?.second
+    CodyncDialog("Delete ${deleting?.name ?: "bot"}?", confirmDelete != null, { confirmDelete = null },
         message = if (deleting?.kind == "group") "Its bots and their own chats stay." else "Files it changed on your computer stay as they are.") {
-        // Taken now: the dialog dismisses (clearing it) before it runs the action.
-        listOfNotNull(confirmDelete?.let { (id, bot) ->
-            DialogAction(if (deleting?.kind == "group") "Delete group chat" else "Delete bot and its conversation", destructive = true) {
+        // lastOf keeps the target through the fade-out and the press (dismiss clears confirmDelete first).
+        listOfNotNull(target?.let { (id, bot) ->
+            DialogAction(if (bot.kind == "group") "Delete group chat" else "Delete bot and its conversation", destructive = true) {
                 accounts.store(id)?.deleteBot(bot) {}
             }
         })

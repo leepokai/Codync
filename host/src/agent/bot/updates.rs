@@ -191,13 +191,13 @@ impl Actor {
                 self.hub.store.entry(eid)?.data["title"].as_str().map(str::to_owned)
             })
             .unwrap_or_else(|| "Use a tool".into());
-        let options: Vec<Value> = permission
-            .options
-            .iter()
-            .map(|o| json!({"optionId": o.id, "name": o.name, "kind": o.kind}))
-            .collect();
+        let options: Vec<Value> =
+            permission.options.iter().map(|o| json!({"optionId": o.id, "name": o.name, "kind": o.kind})).collect();
         let asked = json!({"toolKind": tool.kind.as_deref().unwrap_or("other"), "title": title});
-        if let Some(session) = permission.session.as_deref()
+        // A ceiling means this computer's rules ask the user: a saved "always allow" answers for a session on
+        // a trusted computer, and must not answer in the ceiling's place (Greptile P1 on #403).
+        if !self.hub.ceilings.holds(&self.cfg.id)
+            && let Some(session) = permission.session.as_deref()
             && let Some(option) = self.always_allowed.pick(session, &asked, &options)
         {
             let _ = request.choose(Some(option)).await;
@@ -301,9 +301,6 @@ impl Actor {
         }
     }
 
-    pub(super) async fn answer_permission(&mut self, entry_id: &str, option_id: Option<String>) {
-        let Some(answer) = self.perms.remove(entry_id) else { return };
-        let mut status = if option_id.is_some() { "answered" } else { "cancelled" };
     pub(super) async fn answer_permission(&mut self, entry_id: &str, option_id: Option<String>) {
         let Some(answer) = self.perms.remove(entry_id) else { return };
         let mut status = if option_id.is_some() { "answered" } else { "cancelled" };

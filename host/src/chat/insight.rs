@@ -57,7 +57,7 @@ pub fn said(hub: &Hub, cfg: &BotConfig, count: i64, chars: usize) -> Result<Vec<
         .map(|e| {
             let who =
                 writer(e).map_or_else(|| hub.bot_name(e.data["author"].as_str().unwrap_or(&cfg.id)), str::to_owned);
-            (who, crate::agent::acp::truncate(e.data["text"].as_str().unwrap_or_default(), chars))
+            (who, codync_agent::acp::truncate(e.data["text"].as_str().unwrap_or_default(), chars))
         })
         .collect())
 }

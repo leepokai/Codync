@@ -36,7 +36,7 @@ pub use steer::{Steer, cut_in, drop_task, first, retry, stop};
 #[cfg(test)]
 pub use tasks::put_working_for_test;
 pub use tasks::{Setup, Source, Status, doing, lines, outside, wire, working_threads};
-pub use thread::{Refused as ThreadRefused, heard, message, picked_up, thread as thread_of, unhear};
+pub use thread::{Refused as ThreadRefused, heard, message, picked_up, thread as thread_of, unhear, written};
 pub use tools::{TOOLS, acting_as, call, refuse_chat_only, refuse_in_thread, tools};
 pub use watch::Stuck;
 pub use worktree::{Worktree, enter as enter_worktree, in_repo};
@@ -412,7 +412,7 @@ fn end(tasks: &mut [Task], thread: &str, outcome: Outcome) -> Option<Task> {
             // A report to the bot's own turn carries only so much; a routine run's or a request's result is posted
             // whole, as its message.
             let most = if task.source.own() { MAX_REPORT } else { usize::MAX };
-            let text = text.map(|t| crate::agent::acp::truncate(t.trim(), most)).filter(|t| !t.is_empty());
+            let text = text.map(|t| codync_agent::acp::truncate(t.trim(), most)).filter(|t| !t.is_empty());
             match text {
                 Some(text) => (Status::Done, Some(Ok(text)), None),
                 // A routine run with nothing to tell says nothing (`(pass)`).

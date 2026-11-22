@@ -114,8 +114,9 @@ impl Hub {
         }
         crate::chat::work::forget(self, id);
         crate::network::publish(self);
-        // Its shared files and artifacts are unreachable once the bot is deleted.
-        let folders = [crate::chat::files::root(id), crate::chat::artifacts::root(id)];
+        // Its shared files, artifacts and the files sent to it (a thread's, a group's) are unreachable once it is deleted.
+        let folders =
+            [crate::chat::files::root(id), crate::chat::artifacts::root(id), crate::chat::uploads::data_root(id)];
         let bot = id.to_owned();
         tokio::task::spawn_blocking(move || {
             crate::chat::memory::files::remove_bot(&bot);

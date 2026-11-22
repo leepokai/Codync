@@ -6,7 +6,7 @@ Under the open section, one line says where that section comes from: agents from
 
 | Capability | Implementation | Behavior |
 | --- | --- | --- |
-| Agents | `host/src/agent/backends.rs`, `host/src/agent/registry.rs`, `host/src/agent/node.rs` | Detect installed harnesses, resolve ACP registry adapters, provide Node.js for npm agents |
+| Agents | `host/crates/agent/src/backends.rs`, `host/crates/agent/src/registry.rs`, `host/crates/agent/src/node.rs` | Detect installed harnesses, resolve ACP registry adapters, provide Node.js for npm agents |
 | Connectors | `host/src/market/mod.rs`, `registry.rs`, `install.rs`, `custom.rs` | Discover MCP servers or add one manually; install per computer; on for every bot unless a bot turns it off |
 | Connected apps | `host/src/market/composio.rs` | Expose connected Composio apps as connectors |
 | Skills | `host/src/market/skills.rs` | Instruction folders containing `SKILL.md`, stored under `~/.codync/skills/<id>`; on for every bot unless a bot turns it off |
@@ -147,7 +147,7 @@ Clients show Fast mode for an agent bot unless its runtime says `unsupported` (a
 
 ## Agent modes
 
-Agents list how they ask before acting as session modes: a `configOptions` entry with category `mode`, or the older `modes` field (`agent/modes.rs`). Claude's adapter offers Manual (`default`), Accept edits, Plan, Auto and, where allowed, Bypass permissions; Codex's offers Read-only, Workspace access, Auto review (`agent`) and Full access. ACP itself has no classifier: Claude's Auto is Claude Code's auto mode, Codex's Auto review its guardian reviewer.
+Agents list how they ask before acting as session modes: a `configOptions` entry with category `mode`, or the older `modes` field (`crates/agent/src/modes.rs`). Claude's adapter offers Manual (`default`), Accept edits, Plan, Auto and, where allowed, Bypass permissions; Codex's offers Read-only, Workspace access, Auto review (`agent`) and Full access. ACP itself has no classifier: Claude's Auto is Claude Code's auto mode, Codex's Auto review its guardian reviewer.
 
 A bot's `mode` names the one it works in: the agent's own id, or `auto` for the agent's Auto mode whatever its id (Claude's `auto`, or the one named "Auto review"; another agent's `auto`, like Goose's that approves every tool call, isn't it and isn't offered), so the choice carries over to another agent or a fallback that has one. Unset keeps the mode the session opened in (the agent's default). `agentModels` lists the modes as `modes: [{id, name, description}]`, the Auto mode first and under `auto`. Clients show them as the Permissions choices, then Approve automatically; an agent without modes shows Ask me instead, and one whose list hasn't loaded shows Auto, Ask me and Approve automatically (`ApprovalChoice` on iOS and Android, `shared/approvals.ts` on the desktop, `tui/app/approvals.rs`). A bot without a mode, or in Auto on an agent without one, shows as Ask me, and one in a mode the list lacks as that mode's id, never as more careful than it is. `permission` stays what Codync does with a request that still reaches it: `ask` (a card) or `auto` (approve).
 

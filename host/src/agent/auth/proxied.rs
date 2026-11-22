@@ -225,13 +225,13 @@ mod tests {
         let (vars, grants) = env_without(&store, &env_slot("claude"), &[]).unwrap();
         let base = vars.iter().find(|(k, _)| k == "GOOGLE_GEMINI_BASE_URL").unwrap().1.clone();
         let token = base.rsplit('/').next().unwrap().to_owned();
-        let (acp, _inbox) = crate::agent::acp::Acp::spawn("cat", env!("CARGO_MANIFEST_DIR"), &vars).unwrap();
-        acp.hold(grants);
-        assert!(acp.holds_grants());
+        let (acp, _inbox) = codync_agent::acp::Acp::spawn("cat", env!("CARGO_MANIFEST_DIR"), &vars).unwrap();
+        grants.held_by(&acp);
+        assert!(acp.holds());
         assert!(k.keeper.granted(&token).is_some());
         acp.kill().await;
         assert!(k.keeper.granted(&token).is_none(), "revoked as the agent stops");
-        assert!(!acp.holds_grants());
+        assert!(!acp.holds());
     }
 
     #[tokio::test(flavor = "multi_thread")]

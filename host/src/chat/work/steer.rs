@@ -125,7 +125,12 @@ pub fn cut_in(hub: &Arc<Hub>, bot: &str, id: &str, instead_of: Option<&str>) -> 
         // The bot's own turn (it may be the one steering) only delays the start, and so does the closed thread's
         // while it stops.
         let capacity = Capacity { chat_free: true, ..dispatch::capacity(hub, &cfg, &freed, closed.as_deref()) };
-        let standings = dispatch::standings(&freed, &capacity, |thread| dispatch::thread_state(hub, thread, None));
+        let standings = dispatch::standings(
+            &freed,
+            &capacity,
+            |thread| dispatch::thread_state(hub, thread, None),
+            |task| dispatch::held(hub, task),
+        );
         let starts = standings.iter().any(|(task, standing)| task == id && *standing == Standing::Start);
         give_way(hub, tasks, id, gives_way.as_deref().filter(|_| starts))
     })?;

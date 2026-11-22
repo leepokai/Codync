@@ -12,12 +12,14 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - Bot 設定的 Agent 卡片新增「顧問模式」：聊天負責規劃與分派工作，thread 可以改用別的 agent、模型或登入設定檔，也有自己的備用列表。
 - 等你核准或選擇的 thread 不再佔名額，下一件 task 可以先開始；你回覆後它會接著做。
 - 你在聊天裡補充正在進行的 task，Bot 會把話轉給那個 thread，task 做完仍只回報一次。
+- 寫給 thread 的訊息也可以附上照片和檔案，和聊天一樣。
 
 ### en-US
 - Some agents, such as Hermes, ask you questions mid-reply. These now wait for you on the chat's choice card, and Approve automatically no longer picks their first option for you. A question with options takes one of them, so its card has no Something else row.
 - Advisor mode in a bot's Agent settings: the chat plans and hands work on, and its threads can run on another agent, model or login profile, with fallbacks of their own.
 - A thread waiting for your approval or choice no longer holds a place, so the next task can start; it carries on once you answer.
 - What you add in the chat about a task under way, the bot passes on to its thread, and the task still reports once.
+- Messages to a thread can carry photos and files too, as in the chat.
 
 ## 2.51.0
 ### zh-Hant

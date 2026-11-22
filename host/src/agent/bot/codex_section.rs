@@ -4,10 +4,11 @@
 //! the user moves it after that. A section the user removed comes back with the next new session.
 
 use super::{Actor, Adapter};
-use crate::agent::acp::{Acp, RpcError};
-use crate::agent::{backends, codex_app};
+use crate::agent::codex_app;
 use crate::analytics::{self, Event};
 use anyhow::{Context, Result};
+use codync_agent::acp::{Acp, METHOD_NOT_FOUND, RpcError};
+use codync_agent::backends;
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -18,8 +19,7 @@ const SECTION: &str = "Codync";
 const TIMEOUT: Duration = Duration::from_secs(20);
 /// One at a time: two sessions filed at once would each make the section.
 static FILING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-/// JSON-RPC's "method not found" and "invalid request".
-const METHOD_NOT_FOUND: i64 = -32601;
+/// JSON-RPC's "invalid request".
 const INVALID_REQUEST: i64 = -32600;
 
 /// The new Codex sessions that aren't in the section yet.
@@ -181,7 +181,7 @@ mod tests {
 
     async fn fixture(mode: &str, timeout: Duration) -> Outcome {
         let outcome = file_with(codex_app::fixture("codex_sections.py", mode), "thread-1", timeout).await;
-        crate::agent::acp::stopped().await;
+        codync_agent::acp::stopped().await;
         outcome
     }
 

@@ -283,7 +283,7 @@ pub struct Form {
     pub max_threads: Option<u8>,
     /// A worktree per thread; `None`: the host has no worktrees, or the bot's folder is in no git repository.
     pub thread_worktrees: Option<bool>,
-    /// Approvals: Codync approves what still asks, and the agent mode (`agent::modes`).
+    /// Approvals: Codync approves what still asks, and the agent mode (`codync_agent::modes`).
     pub auto: bool,
     pub mode: Option<String>,
     pub notify: bool,

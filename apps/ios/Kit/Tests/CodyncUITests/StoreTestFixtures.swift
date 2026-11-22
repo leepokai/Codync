@@ -50,6 +50,8 @@ actor FakeRemote: RemoteTransport {
     private(set) var calls: [String] = []
     /// What the newest call of each method carried, where it was all text.
     private(set) var bodies: [String: [String: String]] = [:]
+    /// What the newest call of each method carried, as sent.
+    private(set) var rawBodies: [String: Data] = [:]
     /// A method the computer refuses, with its sentence.
     private var refusals: [String: String] = [:]
     func refuse(_ method: String, _ sentence: String?) { refusals[method] = sentence }
@@ -107,6 +109,7 @@ actor FakeRemote: RemoteTransport {
         calls.append(method)
         record(.called(method))
         bodies[method] = (try? JSONSerialization.jsonObject(with: body)) as? [String: String]
+        rawBodies[method] = body
         if let sentence = refusals[method] { throw HostError.http(400, sentence) }
         if let left = failures[method], left > 0 {
             failures[method] = left - 1

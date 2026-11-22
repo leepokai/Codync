@@ -439,7 +439,7 @@ fn line(hub: &Hub, group: &BotConfig, e: &Entry, me: &BotConfig) -> String {
         );
     }
     let author = e.data["author"].as_str().unwrap_or_default();
-    let text = crate::agent::acp::truncate(text, LINE_CHARS);
+    let text = codync_agent::acp::truncate(text, LINE_CHARS);
     if author == me.id {
         format!("{} (you): {text}{reacted}", me.name)
     } else {

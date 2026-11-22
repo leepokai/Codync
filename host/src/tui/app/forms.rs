@@ -198,7 +198,7 @@ impl App {
                             let own = f.backend.clone();
                             f.fallbacks.retain(|x| x.backend != own || x.login_profile.is_some());
                             // Nor its mode ids: a picked mode becomes the new agent's Auto mode (or, without one, asking).
-                            f.mode = crate::agent::modes::on_other_agent(f.mode.as_deref());
+                            f.mode = codync_agent::modes::on_other_agent(f.mode.as_deref());
                             self.want_models(&f.backend);
                         }
                     }

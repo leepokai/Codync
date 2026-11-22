@@ -7,10 +7,13 @@ import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { useScreenViewed } from '../../store/analytics'
 import type { ThreadRef } from '../../store/bot-store'
+import type { OutgoingFile } from '../../store/outgoing-files'
 import { useStore } from '../../store/context'
+import { AddFilesButton, ComposerFiles } from './Composer'
 import { ComposerField } from './ComposerField'
 import { useFollowEnd } from './follow-end'
 import { StopWorkDialog, WORK_MARK, WorkDot } from './WorkDialogs'
+import { useComposerFiles } from './use-composer-files'
 import { Timer } from './WorkingIndicator'
 import { WorkThreadTranscript } from './WorkThreadTranscript'
 import { WorkWhere } from './WorkWhere'
@@ -56,7 +59,7 @@ export function WorkThread({ botId, task, openArtifact, showInChat }: { botId: s
         <WorkThreadTranscript thread={thread} task={task} openArtifact={openArtifact} showInChat={showInChat} />
       </div>
       {talks ? (
-        <ThreadComposer thread={thread} threadId={threadId} onSent={follow.toEnd} />
+        <ThreadComposer thread={thread} threadId={threadId} takesFiles={task.talkFiles} onSent={follow.toEnd} />
       ) : readOnly ? (
         <Text as="div" size="caption" tone="tertiary" className="work-thread-read-only">{tr(readOnly)}</Text>
       ) : null}
@@ -101,49 +104,57 @@ export function WhereCopy({ task }: { task: WorkTask }) {
   )
 }
 
-/** The chat's message box, text only: Return sends to the thread, where the message waits while the thread's turn runs. */
-function ThreadComposer({ thread, threadId, onSent }: { thread: ThreadRef; threadId: string; onSent: () => void }) {
+/** The chat's message box, with files as in the chat where the host takes them (`takesFiles`): Return sends to the
+ * thread, where the message waits while the thread's turn runs. */
+function ThreadComposer({ thread, threadId, takesFiles, onSent }: { thread: ThreadRef; threadId: string; takesFiles: boolean; onSent: () => void }) {
   const tr = useTr()
   const store = useStore()
   // ponytail: a draft left for a task that is gone stays saved until then; drop it with the task if they pile up.
   return (
-    <TextComposer draftKey={`${thread.botId}/thread/${thread.taskId}`} label={tr('Message this thread')} send={(text) => {
+    <TextComposer draftKey={`${thread.botId}/thread/${thread.taskId}`} label={tr('Message this thread')} takesFiles={takesFiles} send={(text, files) => {
       onSent()
-      store.sendToThread(thread, threadId, text)
+      store.sendToThread(thread, threadId, text, { files })
     }} />
   )
 }
 
 /**
- * A message box for text only, its draft kept under `draftKey` (the bot's key first, so the draft goes with the bot,
+ * A message box for text, and files where `takesFiles`, its draft kept under `draftKey` (the bot's key first, so the draft goes with the bot,
  * `removeBot`): Return hands the text to `send`. Where `send` answers a promise the box waits for it, and keeps the
  * text when it fails.
  */
-function TextComposer({ draftKey: key, label, send }: { draftKey: string; label: string; send: (text: string) => void | Promise<void> }) {
+function TextComposer({ draftKey: key, label, takesFiles, send }: { draftKey: string; label: string; takesFiles: boolean; send: (text: string, files: OutgoingFile[]) => void | Promise<void> }) {
   const tr = useTr()
   const store = useStore()
   const drafts = store.composerDrafts
   const draft = useSyncExternalStore(drafts.subscribe, () => drafts.get(key))
   const field = useRef<HTMLTextAreaElement>(null)
+  const attach = useComposerFiles(takesFiles)
   const [busy, setBusy] = useState(false)
-  const canSend = !!draft.trim() && !store.isOffline && !busy
+  const canSend = (!!draft.trim() || attach.files.length > 0) && !store.isOffline && !busy
   useEffect(() => field.current?.focus({ preventScroll: true }), [key])
   const submit = () => {
     if (!canSend) return
-    const sent = send(draft)
-    if (!sent) {
+    const done = () => {
       drafts.set(key, '')
+      attach.clear()
+    }
+    const sent = send(draft, attach.files)
+    if (!sent) {
+      done()
       field.current?.focus()
       return
     }
     setBusy(true)
-    void sent.then(() => drafts.set(key, ''), () => {}).finally(() => setBusy(false))
+    void sent.then(done, () => {}).finally(() => setBusy(false))
   }
   return (
-    <div className="composer work-thread-composer">
+    <div className="composer work-thread-composer" {...attach.drop}>
       <div className="composer-surface">
+        <ComposerFiles files={attach.files} remove={attach.remove} />
         <div className="composer-box">
-          <ComposerField field={field} value={draft} placeholder={label} label={label} onChange={(text) => drafts.set(key, text)} onSend={submit} />
+          {takesFiles ? <AddFilesButton pick={attach.pick} /> : null}
+          <ComposerField field={field} value={draft} placeholder={label} label={label} onChange={(text) => drafts.set(key, text)} onSend={submit} onPaste={attach.paste} />
           <button className="press composer-send" disabled={!canSend} aria-label={tr('Send')} title={tr('Send')} onClick={submit}>
             <span aria-hidden="true" className="composer-symbol active">
               <Icon name="arrow.up" size={14} weight="bold" />

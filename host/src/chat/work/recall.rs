@@ -21,7 +21,9 @@ const GIST: usize = 280;
 pub(super) fn call(hub: &Hub, bot: &str, args: &Value) -> Result<Value> {
     let text = |key: &str| args[key].as_str().map(str::trim).filter(|t| !t.is_empty());
     let mut all = tasks::load(&hub.store, bot);
-    all.extend(tasks::past(&hub.store, bot, now_ms()));
+    let now = now_ms();
+    all.retain(|i| i.ended_at.is_none_or(|at| tasks::within_past(at, now)));
+    all.extend(tasks::past(&hub.store, bot, now));
     let (by, recalled) = if let Some(id) = text("task") {
         ("task", one(&hub.store, &all, id, args["before"].as_i64().unwrap_or(i64::MAX)))
     } else {
@@ -70,7 +72,7 @@ fn list(all: &[Task], query: Option<&str>) -> Value {
         .into_iter()
         .take(LISTED)
         .map(|i| {
-            let gist = i.result.as_deref().map(|r| crate::agent::acp::truncate(r, GIST));
+            let gist = i.result.as_deref().map(|r| codync_agent::acp::truncate(r, GIST));
             let ended = i.ended_at.map(local_time);
             json!({"taskId": i.id, "title": i.title, "status": i.status, "ended": ended, "result": gist})
         })
@@ -90,7 +92,7 @@ fn steps(store: &Store, thread: &str, before: i64) -> Result<(Vec<Value>, Option
                 "tool" | "permission" => e.data["title"].as_str()?,
                 _ => return None,
             };
-            let text = crate::agent::acp::truncate(text, STEP);
+            let text = codync_agent::acp::truncate(text, STEP);
             Some(json!({"kind": e.kind, "text": text, "status": e.data["status"]}))
         })
         .collect();
@@ -108,7 +110,9 @@ mod tests {
         hub.store.save_bot(&bot("b1", "Mika", "/tmp")).expect("saved");
         let (now, day) = (now_ms(), 24 * 60 * 60 * 1000);
         let recent = json!([{"id": "i2", "title": "Fix login", "brief": "Go on", "status": "done", "order": 0,
-            "createdAt": now - day, "endedAt": now - day, "after": "i1", "thread": "thread-2", "result": "Fixed"}]);
+            "createdAt": now - day, "endedAt": now - day, "after": "i1", "thread": "thread-2", "result": "Fixed"},
+        {"id": "i3", "title": "Audit", "brief": "Audit the login flow", "status": "done", "order": 1, "createdAt": 0,
+            "endedAt": now - 40 * day}]);
         hub.store.kv_set(&format!("{}b1", tasks::PREFIX), &recent.to_string()).expect("saved");
         let ended = |id: &str, ago: i64| -> Task {
             serde_json::from_value(
@@ -143,6 +147,7 @@ mod tests {
         let first = recall(json!({"task": "i2", "before": before})).expect("the page before");
         assert_eq!((first["steps"].as_array().map(Vec::len), first["earlierSteps"].is_null()), (Some(5), true));
         assert!(recall(json!({"task": "i0"})).is_err(), "past 30 days");
+        assert!(recall(json!({"task": "i3"})).is_err(), "past 30 days, though still in the box");
 
         assert_eq!(ids(recall(json!({"query": "LOGIN flow"})).expect("found")), ["i1"]);
         assert_eq!(ids(recall(json!({})).expect("the latest")), ["i2", "i1"]);

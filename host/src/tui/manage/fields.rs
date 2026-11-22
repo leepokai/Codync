@@ -111,7 +111,7 @@ impl App {
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .chars()
-                    .take(codync_accounts::LABEL_MAX)
+                    .take(codync_agent::accounts::LABEL_MAX)
                     .collect();
                 let mut body = json!({"backend": backend, "name": name});
                 if let Some(login_profile) = login_profile {

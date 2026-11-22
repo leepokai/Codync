@@ -40,7 +40,7 @@ impl Actor {
     /// A process older than the turn may hold a sign-in replaced since: a new one tries its messages first.
     pub(super) fn invite_sign_in(&mut self, e: &anyhow::Error) -> bool {
         let backend = self.cfg.backend.clone();
-        if crate::agent::backends::harness(&backend).is_none() || !crate::agent::acp::needs_sign_in(e) {
+        if codync_agent::backends::harness(&backend).is_none() || !codync_agent::acp::needs_sign_in(e) {
             return false;
         }
         // The process keeps the credentials it started with (Claude's revoked token).
@@ -70,8 +70,8 @@ impl Actor {
                 crate::usage::login_profiles_changed(&self.hub);
             }
         } else {
-            crate::agent::backends::set_signed_in(&login.backend, Some(false));
-            crate::agent::backends::note_prompt_refused(&login.backend);
+            codync_agent::backends::set_signed_in(&login.backend, Some(false));
+            codync_agent::backends::note_prompt_refused(&login.backend);
         }
     }
 
@@ -87,7 +87,7 @@ impl Actor {
     /// `login`'s sign-in card where the user is, holding `entries`: in the chat, or, from a thread, in its bot's chat
     /// with a line in the thread's own saying so. Whether it's there.
     pub(super) fn sign_in_card(&mut self, login: &Login, entries: &[String]) -> bool {
-        if crate::agent::backends::harness(&login.backend).is_none() {
+        if codync_agent::backends::harness(&login.backend).is_none() {
             return false;
         }
         let mark = crate::chat::work::mark(&self.hub.store, &self.cfg);

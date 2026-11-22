@@ -2,10 +2,10 @@
 
 use super::{Started, probe_dir, start, text};
 use crate::LockExt;
-use crate::agent::acp::Incoming;
 use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::{Context, Result, bail};
+use codync_agent::acp::Incoming;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -50,10 +50,10 @@ pub async fn models(store: &Store, backend: &str) -> Result<Value> {
             tokio::select! {
                 result = &mut request => break result?,
                 incoming = inbox.recv() => match incoming {
-                    Some(Incoming::Request { id, .. }) => {
-                        acp.respond_error(id, -32601, "not supported during model discovery").await?;
+                    Some(Incoming::Request(request)) => {
+                        request.refuse(codync_agent::acp::METHOD_NOT_FOUND, "not supported during model discovery").await?;
                     }
-                    Some(Incoming::Notification { .. }) => {}
+                    Some(Incoming::Notification { .. } | Incoming::Update(_)) => {}
                     Some(Incoming::Closed { .. }) | None => bail!("agent closed during model discovery"),
                 }
             }
@@ -66,7 +66,7 @@ pub async fn models(store: &Store, backend: &str) -> Result<Value> {
         };
         let mut catalog = model_catalog(&session, &options);
         catalog["modes"] =
-            crate::agent::modes::Modes::from_session(&session, backend).map_or(json!([]), |m| m.catalog());
+            codync_agent::modes::Modes::from_session(&session, backend).map_or(json!([]), |m| m.catalog());
         if backend != "cursor" {
             discover_options(&acp, &session, &mut catalog).await?;
         }
@@ -78,7 +78,7 @@ pub async fn models(store: &Store, backend: &str) -> Result<Value> {
 }
 
 /// Probe model-dependent settings in the disposable discovery session, never in a bot's session.
-async fn discover_options(acp: &crate::agent::acp::Acp, session: &Value, catalog: &mut Value) -> Result<()> {
+async fn discover_options(acp: &codync_agent::acp::Acp, session: &Value, catalog: &mut Value) -> Result<()> {
     let Some(sid) = session["sessionId"].as_str() else { return Ok(()) };
     let Some(config) = model_config(session).and_then(|c| c["id"].as_str()) else { return Ok(()) };
     let current = catalog["currentModelId"].clone();
@@ -188,7 +188,7 @@ fn model_catalog(session: &Value, options: &Value) -> Value {
     }
     json!({"models": models, "currentModelId": current,
         "defaultModelOptions": true,
-        "fastMode": crate::agent::config::fast_mode_config(session).is_some()})
+        "fastMode": codync_agent::config::fast_mode_config(session).is_some()})
 }
 
 /// One model's options as `[{id, name, values: [{id, name}], default}]`, from Cursor's
@@ -291,8 +291,8 @@ mod tests {
     #[tokio::test]
     async fn an_unavailable_model_keeps_other_models_and_their_options() {
         let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/model_options_agent.py");
-        let command = crate::shell::python(&fixture);
-        let (acp, _inbox) = crate::agent::acp::Acp::spawn(&command, env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
+        let command = codync_agent::shell::python(&fixture);
+        let (acp, _inbox) = codync_agent::acp::Acp::spawn(&command, env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
         let session = json!({"sessionId": "s1", "configOptions": [{"id": "model", "category": "model",
             "type": "select", "currentValue": "first", "options": [
                 {"value": "first"}, {"value": "unavailable"}, {"value": "second"}]}]});

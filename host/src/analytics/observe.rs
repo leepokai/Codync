@@ -128,7 +128,10 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         }
         "deleteBot" => Event::BotDeleted,
         // To a task's thread: what came of it is the answer's to say (`answered`). Never the text.
-        "send" if b["taskId"].is_string() => Event::WorkMessaged,
+        "send" if b["taskId"].is_string() => {
+            p.insert("attachments".into(), b["attachments"].as_array().map_or(0, Vec::len).into());
+            Event::WorkMessaged
+        }
         // Send now and Remove on a message that waits in a task's thread.
         "steer" | "unqueue" if b["taskId"].is_string() => {
             p.insert("how".into(), (if method == "steer" { "sendNow" } else { "remove" }).into());
@@ -416,7 +419,7 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
             Some((event, p))
         }
         // `read_only`: a routine's run or another bot's request. `not_started`, `gone`: no thread to write to.
-        // `text_only`: files, a quote or a call.
+        // `unsupported`: a quote or a call.
         Event::WorkMessaged => {
             let category = error.downcast_ref::<crate::chat::work::ThreadRefused>().map_or("other", |e| e.category);
             p.insert("outcome".into(), "failed".into());

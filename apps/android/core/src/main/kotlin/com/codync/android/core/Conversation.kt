@@ -176,9 +176,9 @@ data class PendingSend(
     /** What came from another app rather than the user (iOS `EntryData.pasted`), which memory never takes as their own words. */
     val pasted: List<String> = emptyList(),
 ) {
-    /** The `send` request for it (the relay mailbox's too), with the ids of its uploaded files. */
-    fun body(attachments: List<String> = emptyList()): JsonObject = buildJsonObject {
-        put("botId", botId); put("text", text); put("clientNonce", nonce)
+    /** The `send` request for it (the relay mailbox's too), with the ids of its uploaded files; with [taskId], to that task's thread. */
+    fun body(attachments: List<String> = emptyList(), taskId: String? = null): JsonObject = buildJsonObject {
+        put("botId", botId); taskId?.let { put("taskId", it) }; put("text", text); put("clientNonce", nonce)
         replyTo?.let { put("replyTo", it.id); if (it.part) put("replyPart", it.text) }
         call?.let { put("call", it) }
         if (pasted.isNotEmpty()) put("pasted", JsonArray(pasted.map(::JsonPrimitive)))

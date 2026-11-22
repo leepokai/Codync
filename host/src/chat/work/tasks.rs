@@ -343,7 +343,12 @@ fn past_key(bot: &str) -> String {
 pub(super) fn past(store: &Store, bot: &str, now: i64) -> Vec<Task> {
     let all: Vec<Task> =
         store.kv_get(&past_key(bot)).and_then(|json| serde_json::from_str(&json).ok()).unwrap_or_default();
-    all.into_iter().filter(|i| i.ended_at.is_some_and(|at| now - at <= PAST_MS)).collect()
+    all.into_iter().filter(|i| i.ended_at.is_some_and(|at| within_past(at, now))).collect()
+}
+
+/// Whether a task that ended `at` can still be recalled `now`.
+pub(super) fn within_past(at: i64, now: i64) -> bool {
+    now - at <= PAST_MS
 }
 
 /// Keeps `old`, ended tasks leaving `bot`'s box, for `recall_task`, with the past ones still young enough.
@@ -353,7 +358,7 @@ pub(super) fn put_past(store: &Store, bot: &str, old: Vec<Task>, now: i64) -> Re
     }
     let mut all = past(store, bot, now);
     all.extend(old.into_iter().map(|task| Task { report: None, ..task }));
-    all.retain(|i| i.ended_at.is_some_and(|at| now - at <= PAST_MS));
+    all.retain(|i| i.ended_at.is_some_and(|at| within_past(at, now)));
     all.sort_by_key(|i| std::cmp::Reverse(i.ended_at));
     all.truncate(PAST_MOST);
     store.kv_set(&past_key(bot), &serde_json::to_string(&all)?)
@@ -398,9 +403,13 @@ pub(super) fn shown(hub: &Hub, cfg: &BotConfig) -> Vec<Shown> {
     let tasks = load(&hub.store, &cfg.id);
     let mut waits: HashMap<String, Wait> = HashMap::new();
     if tasks.iter().any(|i| i.status == Status::Waiting) {
-        let standings = dispatch::standings(&tasks, &dispatch::capacity(hub, cfg, &tasks, None), |thread| {
-            dispatch::thread_state(hub, thread, None)
-        });
+        let capacity = dispatch::capacity(hub, cfg, &tasks, None);
+        let standings = dispatch::standings(
+            &tasks,
+            &capacity,
+            |thread| dispatch::thread_state(hub, thread, None),
+            |task| dispatch::held(hub, task),
+        );
         waits.extend(standings.into_iter().map(|(id, standing)| {
             let wait = match standing {
                 Standing::Wait(wait) => wait,
@@ -460,13 +469,16 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
                 };
                 let cwd = task.thread.as_ref().and_then(|thread| folders.get(thread));
                 let folder = folder_of(&task, cwd);
+                let talk = task.source.own() && cwd.is_some();
                 let mut row = json!({
                     "id": task.id, "title": task.title, "status": status, "activity": activity, "thread": task.thread,
                     "wait": wait, "cutIn": task.cut_in, "createdAt": task.created_at, "startedAt": task.started_at,
                     "endedAt": task.ended_at,
-                    "result": task.result.map(|r| crate::agent::acp::truncate(&r, WIRE_RESULT)),
-                    // The user may write to its thread: the bot's own work, whose thread is still there.
-                    "talk": task.source.own() && cwd.is_some(),
+                    "result": task.result.map(|r| codync_agent::acp::truncate(&r, WIRE_RESULT)),
+                    // The user may write to its thread: the bot's own work, whose thread is still there; with files
+                    // too, which a host from before them doesn't say.
+                    "talk": talk,
+                    "talkFiles": talk,
                     "seat": seat,
                 });
                 if let Some(folder) = folder {

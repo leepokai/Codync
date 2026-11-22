@@ -32,6 +32,13 @@ pub(super) const NOT_REMOVED: &str = "json_extract(data, '$.removed') IS NOT 1";
 const OPEN_CARD: &str = "(kind = 'permission' AND json_extract(data, '$.status') = 'pending')
   OR (kind = 'notice' AND json_extract(data, '$.decision') = 1 AND json_extract(data, '$.status') = 'pending')";
 
+/// A request between this computer's bots (no other side named), which `chat::team::restart` settles at start.
+const LOCAL_REQUEST: &str = "kind = 'notice' AND json_extract(data, '$.delegationId') IS NOT NULL
+    AND json_extract(data, '$.botMessage') IS NOT NULL AND json_extract(data, '$.botMessage.peerName') IS NULL";
+
+/// Why a request that was running when the host stopped has no reply.
+pub const INTERRUPTED: &str = "Interrupted by host restart. Partial work may have happened; check before retrying.";
+
 /// What `expire_pending` closed out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Expired {
@@ -363,8 +370,32 @@ impl Store {
         logged("last spoke", n).unwrap_or(0)
     }
 
+    /// Every exchange notice of requests between this computer's bots that one of them shows still open (`queued`,
+    /// `sent`), oldest first, so a request's sender's notice comes before its recipient's. Ended ones too: a host
+    /// that stopped between saving a request's two notices left only one of them ended.
+    pub fn unfinished_requests(&self) -> Result<Vec<Entry>> {
+        self.local_requests(&format!(
+            "json_extract(data, '$.delegationId') IN (SELECT json_extract(data, '$.delegationId') FROM entries
+              WHERE {LOCAL_REQUEST} AND json_extract(data, '$.status') IN ('queued', 'sent'))"
+        ))
+    }
+
+    /// Local senders' exchange notices whose outcome their reply turn never took (`relaying`), oldest first.
+    pub fn unrelayed_replies(&self) -> Result<Vec<Entry>> {
+        self.local_requests("json_extract(data, '$.relaying') = 1")
+    }
+
+    // ponytail: scans notices without an index, once per host start.
+    fn local_requests(&self, condition: &str) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st =
+            c.prepare(&format!("SELECT {ENTRY_COLS} FROM entries WHERE {LOCAL_REQUEST} AND {condition} ORDER BY seq"))?;
+        Ok(st.query_map([], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Permission and choice cards left `pending` (and sends left `queued`) by a crash or restart
-    /// can never be honored; returns how many were closed out.
+    /// can never be honored; returns how many were closed out. Requests between this computer's bots are left to
+    /// `chat::team::restart`, which sends them again or tells their senders.
     pub fn expire_pending(&self) -> Result<Expired> {
         let ids: Vec<String> = {
             let c = self.db.locked();
@@ -372,7 +403,7 @@ impl Store {
                 "SELECT id FROM entries WHERE {OPEN_CARD}
                   OR (kind = 'user' AND json_extract(data, '$.status') = 'queued')
                   OR (kind = 'notice' AND json_extract(data, '$.delegationId') IS NOT NULL
-                      AND json_extract(data, '$.status') IN ('queued', 'sent'))"
+                      AND json_extract(data, '$.status') IN ('queued', 'sent') AND NOT ({LOCAL_REQUEST}))"
             ))?;
             st.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
         };
@@ -386,16 +417,9 @@ impl Store {
                     continue;
                 } else if e.kind == EntryKind::Notice.as_str() {
                     let heading = e.data["heading"].as_str().unwrap_or("Bot request");
-                    e.data["text"] = format!(
-                        "{heading}\nInterrupted by host restart. Partial work may have happened; check before retrying."
-                    )
-                    .into();
+                    e.data["text"] = format!("{heading}\n{INTERRUPTED}").into();
                     if let Some(message) = e.data.get_mut("botMessage").and_then(Value::as_object_mut) {
-                        message.insert(
-                            "detail".into(),
-                            "Interrupted by host restart. Partial work may have happened; check before retrying."
-                                .into(),
-                        );
+                        message.insert("detail".into(), INTERRUPTED.into());
                     }
                     e.data["style"] = "error".into();
                     "failed"

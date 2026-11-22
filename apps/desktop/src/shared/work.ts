@@ -58,6 +58,8 @@ export interface WorkTask {
   talk: boolean
   /** The agent a thread the user started runs on, where it isn't its bot's (always without a bot). */
   agent: string | null
+  /** Its thread takes files with the user's messages too; false from a host before them, where its box has no +. */
+  talkFiles: boolean
   /** It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); null from an older
    * host, where every live task takes one. */
   seat: boolean | null
@@ -100,6 +102,7 @@ export function normalizeWork(raw: unknown): WorkTask[] {
           folder: t.folder || null,
           talk: t.talk ?? false,
           agent: typeof t.agent === 'string' ? t.agent : null,
+          talkFiles: t.talkFiles ?? false,
           seat: typeof t.seat === 'boolean' ? t.seat : null,
         }]
       : [],

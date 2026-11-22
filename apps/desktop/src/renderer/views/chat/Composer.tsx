@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } fro
 import { groupFastMode } from '@shared/fast-mode'
 import { artifactDraftKey, artifactQuote, type Artifact } from '@shared/artifacts'
 import { isGroup, isWorkingIn, type Bot, type ReplyQuote } from '@shared/models'
-import type { PickedFile } from '@shared/ipc'
 import { Icon } from '../../components/Icon'
 import { IconButton } from '../../components/Controls'
 import { RecordingPill } from '../../components/RecordingPill'
@@ -10,15 +9,15 @@ import { Sheet, usePresence } from '../../components/Overlay'
 import { VoiceChatSettingsView } from '../settings/VoiceChatSettingsView'
 import { HStack, VStack } from '../../components/Stack'
 import { useModel } from '../../lib/observable'
+import type { OutgoingFile } from '../../store/outgoing-files'
 import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
-import { MAX_FILE_SIZE, type OutgoingFile } from '../../store/outgoing-files'
 import { pluginsFor } from '../marketplace/plugins'
-import { pastedFiles, readPicked } from './composer-files'
 import { ComposerField } from './ComposerField'
 import { BotRunOptions } from './RunOptions'
 import { CommandMenu, MentionMenu, useComposerMenu } from './ComposerMenu'
 import { ComposerAttachment } from './ComposerAttachment'
+import { useComposerFiles } from './use-composer-files'
 import { QuoteRow } from './ChatRows'
 import { useDictation } from './dictation-platform'
 import { DictationEngineMenu } from './DictationEngineMenu'
@@ -77,19 +76,20 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
   const draftKey = thread?.draftKey ?? (about ? artifactDraftKey(about) : botId)
   const draft = useSyncExternalStore(drafts.subscribe, () => drafts.get(draftKey))
   const setDraft = (text: string) => drafts.set(draftKey, text)
-  const [files, setFiles] = useState<OutgoingFile[]>([])
   const [voiceSettings, setVoiceSettings] = useState(false)
   const dictation = useDictation((change) => drafts.set(draftKey, change(drafts.get(draftKey))), () => setVoiceSettings(true))
   const field = useRef<HTMLTextAreaElement>(null)
   /** Text pasted into this draft since the last send. */
   const pasted = useRef<string[]>([])
   const working = thread ? thread.working : !!bot && isWorkingIn(bot, botId)
+  // ponytail: a thread takes text only (the host's `send` with `itemId`); files once it takes them.
+  const canAttach = !!bot && !thread
+  const attach = useComposerFiles(canAttach)
+  const files = attach.files
   const empty = !draft.trim() && !files.length
   // A thread's first message waits for the computer's answer (`ThreadBox.send`).
   const [starting, setStarting] = useState(false)
   const canSend = !empty && !starting && (store.connection.kind === 'online' || (!thread && store.canQueue && !files.length))
-  // ponytail: a thread takes text only (the host's `send` with `itemId`); files once it takes them.
-  const canAttach = !!bot && !thread
 
   const members = bot && isGroup(bot) ? store.members(bot) : []
 
@@ -150,19 +150,6 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
   }
   const commandMenu = useComposerMenu(draft, commands, run, returnRuns)
 
-  const append = (incoming: PickedFile[]) => {
-    if (!canAttach) return
-    const accepted: OutgoingFile[] = []
-    for (const f of incoming) {
-      if (f.data.length > MAX_FILE_SIZE) {
-        store.setError(tr('{name} is larger than 100 MB.').replaceAll('{name}', () => f.name))
-        continue
-      }
-      accepted.push({ id: crypto.randomUUID(), name: f.name, data: f.data })
-    }
-    setFiles((list) => [...list, ...accepted])
-  }
-
   const submit = () => {
     const command = files.length || thread ? null : builtInCommand(bot, draft, members)
     if (!command && !canSend) return
@@ -173,7 +160,7 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
       cancelReply?.()
       pasted.current = []
       setDraft('')
-      setFiles([])
+      attach.clear()
       field.current?.focus()
     }
     if (!thread) store.send(draft, botId, { files, pasted: pasted.current, replyTo: reply ?? (about && artifactQuote(about)) })
@@ -196,17 +183,7 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
 
   return (
     <VStack>
-      <div
-        className="composer"
-        onDragOver={(e) => {
-          if (canAttach && e.dataTransfer.types.includes('Files')) e.preventDefault()
-        }}
-        onDrop={(e) => {
-          if (!canAttach) return
-          e.preventDefault()
-          void readPicked([...e.dataTransfer.files]).then(append)
-        }}
-      >
+      <div className="composer" {...attach.drop}>
         <div className="composer-surface">
           <CommandMenu menu={commandMenu} agent={{ registry: (id) => store.agentRegistry(id), name: (id) => store.backendName(id) }} />
           <MentionMenu menu={mentionMenu} />
@@ -218,13 +195,7 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
               </HStack>
             ) : null}
           </ComposerReveal>
-          <ComposerReveal open={files.length > 0}>
-            <div className="file-chips">
-              {files.map((f) => (
-                <ComposerAttachment key={f.id} file={f} remove={() => setFiles((list) => list.filter((x) => x.id !== f.id))} />
-              ))}
-            </div>
-          </ComposerReveal>
+          <ComposerFiles files={files} remove={attach.remove} />
           <div className="composer-box">
             {/* The field on top; under it a row of what it sends with: files, what the bot runs on, the mic and send /
                 stop / call. */}
@@ -247,23 +218,13 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
                 return true
               }}
               onPaste={(e) => {
-                const types = [...e.clipboardData.types]
-                const hasFiles = types.includes('Files')
                 // Pasted text is sent marked as pasted: memory never takes it as the user's own words.
-                if (types.includes('text/plain') && !e.clipboardData.files.length) pasted.current.push(e.clipboardData.getData('text/plain'))
-                // ⌘V with a copied file or image: attach it (the field alone would paste a name).
-                if (!canAttach) return
-                if (!hasFiles || (types.includes('text/plain') && !e.clipboardData.files.length)) return
-                e.preventDefault()
-                void pastedFiles(window.codync.app.readClipboardFiles, [...e.clipboardData.files]).then(append)
+                if (e.clipboardData.types.includes('text/plain') && !e.clipboardData.files.length) pasted.current.push(e.clipboardData.getData('text/plain'))
+                attach.paste(e)
               }}
             />
             <div className="composer-toolbar">
-            {canAttach ? (
-              <button className="press composer-add" aria-label={tr('Add files')} title={tr('Add files')} onClick={() => void window.codync.app.pickFiles().then(append)}>
-                <Icon name="plus" size={13} weight="medium" color="var(--text)" />
-              </button>
-            ) : null}
+            {canAttach ? <AddFilesButton pick={attach.pick} /> : null}
             <span className="composer-toolbar-space" />
             {thread ? thread.controls : bot && !isGroup(bot) ? <BotRunOptions bot={bot} /> : null}
             {dictation.listening || dictation.transcribing ? (
@@ -309,6 +270,27 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
         <VoiceChatSettingsView />
       </Sheet>
     </VStack>
+  )
+}
+
+/** The files going with the next message, each with its remove button. */
+export function ComposerFiles({ files, remove }: { files: OutgoingFile[]; remove: (id: string) => void }) {
+  return (
+    <ComposerReveal open={files.length > 0}>
+      <div className="file-chips">
+        {files.map((f) => <ComposerAttachment key={f.id} file={f} remove={() => remove(f.id)} />)}
+      </div>
+    </ComposerReveal>
+  )
+}
+
+/** The box's + : pick files to send. */
+export function AddFilesButton({ pick }: { pick: () => void }) {
+  const tr = useTr()
+  return (
+    <button className="press composer-add" aria-label={tr('Add files')} title={tr('Add files')} onClick={pick}>
+      <Icon name="plus" size={13} weight="medium" color="var(--text)" />
+    </button>
   )
 }
 

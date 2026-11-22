@@ -11,7 +11,7 @@ import json
 import os
 import sys
 
-# Set only for a login profile, with its data folder in XDG_DATA_HOME (codync-accounts: `devin`).
+# Set only for a login profile, with its data folder in XDG_DATA_HOME (`codync_agent::accounts`: `devin`).
 PROFILE = os.environ.get("CODYNC_AGENT_ACCOUNT")
 # The login file of that login profile. None on the computer's own login, whose files the stand-in never reads or
 # writes: a real Devin's login there must not count.

@@ -4,10 +4,10 @@
 //! terminal is the user's login shell in the bot's folder.
 
 use crate::LockExt;
-use crate::agent::backends;
 use anyhow::{Result, anyhow, bail};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
+use codync_agent::backends;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtyPair, PtySize, native_pty_system};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -147,7 +147,9 @@ impl Terms {
         let h = backends::harness(backend);
         let name = h.map_or(backend, |h| h.name);
         let command = match step {
-            Step::Node => format!("{} node", crate::shell::quote(&crate::service::current_exe()?.to_string_lossy())),
+            Step::Node => {
+                format!("{} node", codync_agent::shell::quote(&crate::service::current_exe()?.to_string_lossy()))
+            }
             Step::Install => {
                 let h = h.ok_or_else(|| anyhow!("Codync downloads {name} by itself"))?;
                 h.install.and_then(backends::Install::command).ok_or_else(|| anyhow!("{}", h.setup))?
@@ -240,7 +242,7 @@ fn without_cursor_query(chunk: &[u8]) -> Option<Vec<u8>> {
 
 /// `command` as the platform's shell runs one line.
 fn command_line(command: &str) -> CommandBuilder {
-    let shell = crate::shell::line(command);
+    let shell = codync_agent::shell::line(command);
     let mut builder = CommandBuilder::new(shell.program);
     builder.args(&shell.args);
     for (k, v) in &shell.env {

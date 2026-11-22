@@ -113,6 +113,8 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
     public var worktree: Worktree?
     /// Its thread takes the user's messages (`WorkThread.swift`). False from an older host.
     public var talk: Bool
+    /// Its thread takes files with the user's messages too. False from a host before them, where the composer has no +.
+    public var talkFiles: Bool
     /// The folder its thread works in on the computer; nil before a thread took it, and from an older host.
     public var folder: String?
     /// It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); nil from an
@@ -121,7 +123,7 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
 
     public init(id: String, title: String, status: Status, activity: String = "", thread: String? = nil, wait: Wait? = nil,
                 cutIn: Bool = false, createdAt: Int64 = 0, startedAt: Int64? = nil, endedAt: Int64? = nil, result: String = "",
-                source: Source? = nil, worktree: Worktree? = nil, talk: Bool = false, folder: String? = nil, seat: Bool? = nil) {
+                source: Source? = nil, worktree: Worktree? = nil, talk: Bool = false, talkFiles: Bool = false, folder: String? = nil, seat: Bool? = nil) {
         self.id = id
         self.title = title
         self.status = status
@@ -136,6 +138,7 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
         self.source = source
         self.worktree = worktree
         self.talk = talk
+        self.talkFiles = talkFiles
         self.folder = folder
         self.seat = seat
     }
@@ -159,6 +162,7 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
         source = try? c.decodeIfPresent(Source.self, forKey: .source)
         worktree = try? c.decodeIfPresent(Worktree.self, forKey: .worktree)
         talk = (try? c.decodeIfPresent(Bool.self, forKey: .talk)) ?? false
+        talkFiles = (try? c.decodeIfPresent(Bool.self, forKey: .talkFiles)) ?? false
         folder = try? c.decodeIfPresent(String.self, forKey: .folder)
         seat = try? c.decodeIfPresent(Bool.self, forKey: .seat)
     }

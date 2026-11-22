@@ -5,11 +5,12 @@
 //! would reach the model and spend the plan it was meant to read. One session per agent is resumed
 //! for every reading, as each new session leaves a conversation behind on the computer.
 
-use crate::agent::acp::{Acp, Incoming};
 use crate::agent::auth::{self, Started};
 use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::{Context, Result, bail};
+use codync_agent::acp::{Acp, Capabilities, Incoming};
+use codync_agent::events::Event;
 use serde_json::{Value, json};
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -114,7 +115,7 @@ impl Talk<'_> {
         let wait = async {
             while self.commands.is_none() {
                 let Some(incoming) = self.inbox.recv().await else { return };
-                if self.take(incoming).await.is_err() {
+                if self.take(incoming).is_err() {
                     return;
                 }
             }
@@ -131,46 +132,39 @@ impl Talk<'_> {
             tokio::select! {
                 answered = &mut answer => break answered,
                 incoming = self.inbox.recv() => match incoming {
-                    Some(incoming) => self.take(incoming).await?,
+                    Some(incoming) => self.take(incoming)?,
                     None => bail!("the agent closed"),
                 }
             }
         };
         // The answer can overtake the updates sent before it.
         while let Ok(incoming) = self.inbox.try_recv() {
-            self.take(incoming).await?;
+            self.take(incoming)?;
         }
         answered
     }
 
-    async fn take(&mut self, incoming: Incoming) -> Result<()> {
+    fn take(&mut self, incoming: Incoming) -> Result<()> {
         match incoming {
-            Incoming::Notification { method, params } if method == "session/update" => self.note(&params["update"]),
-            Incoming::Notification { .. } => {}
-            Incoming::Request { id, .. } => {
-                self.acp.respond_error(id, -32601, "not supported in a usage check").await?;
-            }
+            Incoming::Update(update) => self.note(update.event),
+            // A request dropped unanswered refuses itself.
+            Incoming::Notification { .. } | Incoming::Request(_) => {}
             Incoming::Closed { .. } => bail!("the agent closed"),
         }
         Ok(())
     }
 
-    fn note(&mut self, update: &Value) {
-        match update["sessionUpdate"].as_str() {
-            Some("available_commands_update") => self.commands = Some(command_names(update)),
-            Some("agent_message_chunk") => self.text.push_str(update["content"]["text"].as_str().unwrap_or_default()),
+    fn note(&mut self, event: Event) {
+        match event {
+            Event::Commands(commands) => self.commands = Some(commands.into_iter().map(|c| c.name).collect()),
+            Event::Text { text, .. } => self.text.push_str(&text),
             _ => {}
         }
     }
 }
 
 fn can_resume(init: &Value) -> bool {
-    init["agentCapabilities"]["sessionCapabilities"]["resume"].is_object()
-}
-
-fn command_names(update: &Value) -> Vec<String> {
-    let commands = update["availableCommands"].as_array().into_iter().flatten();
-    commands.filter_map(|command| command["name"].as_str().map(str::to_owned)).collect()
+    Capabilities::from_initialize(init).resume
 }
 
 #[cfg(test)]
@@ -182,12 +176,6 @@ mod tests {
         assert!(can_resume(&json!({"agentCapabilities": {"sessionCapabilities": {"resume": {}}}})));
         assert!(!can_resume(&json!({"agentCapabilities": {"sessionCapabilities": {"list": {}}}})));
         assert!(!can_resume(&json!({})));
-    }
-
-    #[test]
-    fn the_advertised_commands_are_read_by_name() {
-        let update = json!({"availableCommands": [{"name": "plan"}, {"name": "usage", "description": "x"}, {}]});
-        assert_eq!(command_names(&update), ["plan", "usage"]);
     }
 
     /// A fake agent's scratch folder, and the host's memory of its session.
@@ -214,7 +202,7 @@ mod tests {
                 ("USAGE_AGENT_COMMAND".to_owned(), advertises.to_owned()),
             ];
             let (acp, mut inbox) =
-                Acp::spawn(&crate::shell::python(&fixture), env!("CARGO_MANIFEST_DIR"), &env).unwrap();
+                Acp::spawn(&codync_agent::shell::python(&fixture), env!("CARGO_MANIFEST_DIR"), &env).unwrap();
             let init = acp.request("initialize", json!({"protocolVersion": 1})).await.unwrap();
             let mut talk = Talk { acp: &acp, inbox: &mut inbox, commands: None, text: String::new() };
             let outcome = talk.run(&self.store, &init, "test-agent", "usage").await;

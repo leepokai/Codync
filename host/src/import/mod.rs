@@ -53,7 +53,7 @@ pub async fn apply(hub: &Arc<Hub>, b: &Value) -> Result<Value> {
         if plan.bots.is_empty() {
             bail!("pick at least one agent to import");
         }
-        let agents = crate::agent::backends::list()
+        let agents = codync_agent::backends::list()
             .into_iter()
             .filter(|a| a["available"] == true)
             .filter_map(|a| a["id"].as_str().map(str::to_owned))

@@ -2,7 +2,6 @@
 
 use super::sign_in::Held;
 use super::{Actor, Conn, Done, HostTurn, Instructions, NoticeStyle, Queued, Reacted, Seg};
-use crate::agent::acp::{self, Incoming};
 use crate::analytics::{self, TurnEnd, TurnOutcome, TurnSource};
 use crate::chat::context::{self, Snapshot};
 use crate::chat::memory;
@@ -12,6 +11,7 @@ use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{BotConfig, EntryKind, Lane, now_ms};
 use anyhow::{Result, anyhow};
+use codync_agent::acp::{self, Incoming, StopReason};
 use serde_json::json;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -82,7 +82,7 @@ impl Actor {
         if remind_follow_ups && own_chat {
             prompt = format!("{prompt}\n\n[Codync: {}]", crate::routines::BRIEF);
         }
-        let known = crate::agent::backends::harness(&self.cfg.backend).is_some();
+        let known = codync_agent::backends::harness(&self.cfg.backend).is_some();
         let own_box = own_chat && !self.cfg.is_thread();
         if let Some(about) = work::reminder(briefed_on_threads, known).filter(|_| own_box) {
             prompt = format!("{prompt}\n\n[Codync: {about}]");
@@ -259,9 +259,9 @@ impl Actor {
         // chatter, what is about the agent (its commands, options) counts.
         while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
             match inc {
-                Incoming::Request { id, method, params } => self.answer_outside_turn(id, &method, &params).await,
-                Incoming::Notification { method, params } if method == "session/update" => {
-                    self.on_session_wide(&params);
+                Incoming::Request(request) => self.answer_outside_turn(request).await,
+                Incoming::Update(update) => {
+                    self.on_session_wide(&update);
                 }
                 _ => {}
             }
@@ -291,10 +291,7 @@ impl Actor {
         };
         self.hub.set_runtime(&self.id(), |r| r.activity = "Thinking…".into());
         let acp = self.conn.as_ref().ok_or_else(|| anyhow!("agent not running"))?.acp.clone();
-        let params = json!({
-            "sessionId": sid,
-            "prompt": [{"type": "text", "text": prompt}],
-        });
+        let prompt = json!([{"type": "text", "text": prompt}]);
         if let Some(id) = &self.active_routine {
             self.hub.routines.mark_started(&self.hub.store, id)?;
             self.set_inflight(true);
@@ -307,7 +304,7 @@ impl Actor {
         let asked = self.hub.runtime(&self.cfg.id).message.filter(|_| !self.cfg.is_thread());
         memory::turns::begin_turn(&self.cfg, &sid, asked);
         // Written before this returns, so a Stop right after is sent after the prompt.
-        let answer = acp.send("session/prompt", params).await?;
+        let answer = acp.session(&sid).prompt(prompt).await?;
         if !self.turn_memory_revision.is_empty()
             && let Err(error) =
                 memory::mark_announced(&self.hub.store, self.cfg.owner(), &sid, &self.turn_memory_revision)
@@ -328,7 +325,7 @@ impl Actor {
             return Vec::new();
         }
         let entries = entry_ids.iter().filter_map(|id| self.hub.store.entry(id)).filter(|e| e.data["from"] != "host");
-        entries.filter_map(|e| e.data["text"].as_str().map(str::to_owned)).collect()
+        entries.map(|e| work::written(&e.data)).collect()
     }
 
     /// A thread's turn for what the user wrote to its thread (`written`) begins: its task keeps their words for its
@@ -380,7 +377,7 @@ impl Actor {
         {
             *used = Instant::now();
         }
-        let cancelled = matches!(&done, Ok(v) if v["stopReason"] == "cancelled");
+        let cancelled = matches!(&done, Ok(v) if StopReason::of(v) == StopReason::Cancelled);
         if cancelled && !self.stop_requested {
             self.requeue_unheard();
         }
@@ -422,7 +419,7 @@ impl Actor {
             final_text = self.files.summary.take();
         }
         let stop_reason = match &done {
-            Ok(v) => v["stopReason"].as_str().unwrap_or("end_turn").to_owned(),
+            Ok(v) => StopReason::of(v).as_str().to_owned(),
             Err(_) => "error".into(),
         };
         match (&done, stop_reason.as_str()) {
@@ -601,15 +598,11 @@ impl Actor {
     /// Expires the permission cards still unanswered: no one can answer them once their turn, or the actor, is
     /// gone, and a pending card would stay in its chat's badge (`Store::badge`).
     pub(super) fn expire_perms(&mut self) {
-        let client = self.conn.as_ref().map(|c| c.acp.clone());
-        for (id, answer) in self.perms.drain() {
+        // The agent would wait on a card no one can answer any more: its request, dropped, answers `cancelled`.
+        for (id, _answer) in self.perms.drain() {
             if let Some(mut e) = self.hub.store.entry(&id) {
                 e.data["status"] = "expired".into();
                 self.hub.set_entry(&id, &e.data);
-            }
-            // The agent would wait on a card no one can answer any more.
-            if let (super::updates::Answer::Agent(rpc_id), Some(client)) = (answer, client.clone()) {
-                tokio::spawn(async move { client.respond(rpc_id, acp::permission_answer(None)).await });
             }
         }
     }

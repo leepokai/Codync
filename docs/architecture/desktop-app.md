@@ -95,7 +95,7 @@ The TUI connects to one host at a time, so it keeps its single roster.
   windowless launcher that runs the host with a hidden console (the agents share it, so none
   opens a window) and restarts it when it exits. One launcher runs per data folder (a second one,
   say from the Run key and the app at once, exits). App updates stop the host first, as on macOS.
-  Agents start through `cmd /c` (`host/src/shell.rs`), setup terminals use ConPTY
+  Agents start through `cmd /c` (`host/crates/agent/src/shell.rs`), setup terminals use ConPTY
   (`portable-pty`), and the vault key lives in Credential Manager. Not on Windows yet: Remote
   screen and the `computer` MCP (no screen helper), on-device speech, the Claude Code status
   line hook (usage still comes from `claude -p /usage`, ACP and each agent's own report), and `curl | bash` installers (npm installs and Claude Code's PowerShell installer

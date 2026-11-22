@@ -227,7 +227,7 @@ fn signal(entries: &[Entry], turn: Option<i64>, waits: bool, awake: i64, now: i6
     let steps: Vec<&Entry> = entries.iter().filter(|e| e.created_at >= start).collect();
     let calls: Vec<&Entry> = steps.iter().copied().filter(|e| e.kind == EntryKind::Tool.as_str()).collect();
     let last = |n: usize| calls.get(calls.len().saturating_sub(n)..).filter(|last| last.len() == n);
-    let title = |e: &Entry| crate::agent::acp::truncate(e.data["title"].as_str().unwrap_or_default(), TITLE);
+    let title = |e: &Entry| codync_agent::acp::truncate(e.data["title"].as_str().unwrap_or_default(), TITLE);
     // One call with one result: a title can leave the call's arguments out (an MCP tool's is its name alone), and a
     // call with no title of its own (`agent::bot::updates` names it "Tool") is no call in particular.
     // ponytail: a call run again whose output changes each time (a timing, a temporary path) isn't seen looping; a hash
@@ -256,7 +256,7 @@ fn signal(entries: &[Entry], turn: Option<i64>, waits: bool, awake: i64, now: i6
 fn overdue_card(cards: &[Entry], now: i64) -> Option<(&str, String)> {
     let card = cards.iter().find(|card| now - card.created_at >= CARD)?;
     let asks = card.data["title"].as_str().or_else(|| card.data["question"].as_str()).unwrap_or_default();
-    Some((&card.id, crate::agent::acp::truncate(asks, TITLE)))
+    Some((&card.id, codync_agent::acp::truncate(asks, TITLE)))
 }
 
 /// Reminds the user, once, of card `id` (asking `asks`), from the bot's chat, where the card is: a thread alerts no

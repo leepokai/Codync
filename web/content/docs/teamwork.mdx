@@ -48,9 +48,9 @@ In a [group chat](/docs/groups), members don't message each other this way; they
 ## Stopping, limits and restarts
 
 - **Stopping the sender** doesn't cancel what it already sent, but drops answers still waiting for it. Deleting the sender drops its answers too. The rows in both chats still show how each exchange ended.
-- **Stopping a request** in the recipient's **Details** (or all of its work), dropping one that waits, or deleting the recipient cancels it, which may leave partial changes. **Stop** in the recipient's chat stops only the chat.
+- **Stopping a request** in the recipient's **Details** (or all of its work), dropping one that waits, or deleting the recipient cancels it, which may leave partial changes. The sender is told it was cancelled and lets you know. **Stop** in the recipient's chat stops only the chat.
 - **Limits:** a bot can have up to 16 messages queued or running at once, and the computer up to 64 in all. To keep bots from passing work around forever, a chain of requests stops after eight handoffs. The bot's chat then shows a note with a **Continue** button (**F** in the terminal UI): it sends the bot "Continue" from you and starts a new chain. Any message of yours starts a fresh allowance too.
-- **Restarts:** if the host restarts while requests are pending, they're marked as failed and not run again. Check what the bots already did before you ask again. An answer still waiting for a busy sender is lost on a restart, but stays readable in the conversation sheet.
+- **Restarts:** if the host restarts (an update, say) while requests between bots on this computer are pending, one that hadn't started yet is sent again, and one that was running is marked as failed and its sender is told, so check what that bot already did before you ask again. An answer still waiting for a busy sender reaches it after the restart. Requests to or from other computers are marked as failed and not run again.
 
 ## Bots on your other computers
 

@@ -1403,7 +1403,7 @@ async fn a_message_to_a_working_thread_waits_its_turn_and_the_task_reports_once_
     let twice = json!({"botId": bot, "taskId": slow["id"], "text": "also the tests", "clientNonce": nonce});
     assert_eq!(host.call("send", twice).await["entry"]["id"], entry["id"], "sent twice, it is one message");
 
-    // The caller names the bot and its task, never a thread; text only.
+    // The caller names the bot and its task, never a thread; no quote or call.
     let other = host.fixture_bot("Other", "work_agent.py", "").await;
     let (thread, id) = (&slow["id"], &entry["id"]);
     for (method, body, why) in [
@@ -1411,7 +1411,11 @@ async fn a_message_to_a_working_thread_waits_its_turn_and_the_task_reports_once_
         ("send", json!({"botId": other, "taskId": thread, "text": "x"}), "no such task"),
         ("send", json!({"botId": slow["thread"], "text": "x"}), "unknown bot"),
         ("send", json!({"botId": bot, "taskId": thread, "text": ""}), "empty message"),
-        ("send", json!({"botId": bot, "taskId": thread, "text": "x", "replyTo": id}), "a thread takes text only"),
+        (
+            "send",
+            json!({"botId": bot, "taskId": thread, "text": "x", "replyTo": id}),
+            "a thread takes no quotes or calls",
+        ),
         ("steer", json!({"botId": other, "taskId": thread, "entryId": id}), "no such task"),
         ("unqueue", json!({"botId": slow["thread"], "entryId": id}), "unknown bot"),
     ] {
@@ -1451,6 +1455,64 @@ async fn a_message_to_a_working_thread_waits_its_turn_and_the_task_reports_once_
         threads.iter().any(|thread| slow["thread"] == thread.as_str()),
         "the thread's entries are threadEntry events"
     );
+}
+
+/// Uploads a small file for a message to the thread of `task`: its upload id.
+async fn upload_to_thread(host: &Host, bot: &str, task: &Value, name: &str) -> String {
+    let upload = uuid::Uuid::new_v4().to_string();
+    let chunk = json!({"botId": bot, "taskId": task["id"], "uploadId": upload, "name": name, "offset": 0,
+        "data": "aGk=", "done": true});
+    host.call("upload", chunk).await;
+    upload
+}
+
+#[tokio::test]
+async fn files_sent_to_a_thread_are_its_own_and_go_with_it() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "ADD Slow|HOLD:slow").await;
+    let slow = task(&host, &bot, "Slow", "working").await;
+    assert_eq!(slow["talkFiles"], true, "its thread takes files");
+
+    // A file alone waits behind the running turn, read back by the thread's id; taken back, the file goes too.
+    let upload = upload_to_thread(&host, &bot, &slow, "shot.png").await;
+    let body = json!({"botId": bot, "taskId": slow["id"], "text": "", "attachments": [upload], "clientNonce": "n1"});
+    let sent = host.call("send", body).await;
+    assert_eq!(sent["queued"], true);
+    let entry = &sent["entry"];
+    assert_eq!((&entry["botId"], &entry["data"]["attachments"][0]["name"]), (&slow["thread"], &json!("shot.png")));
+    let read = json!({"botId": entry["botId"], "uploadId": upload, "offset": 0});
+    assert!(host.post("readUpload", &read).await.0, "the file is there while it waits");
+    let file = host.home.join("bots").join(slow["thread"].as_str().unwrap()).join("uploads").join(&upload);
+    assert!(file.exists(), "in the thread's own uploads");
+    host.call("unqueue", json!({"botId": bot, "taskId": slow["id"], "entryId": entry["id"]})).await;
+    wait("its file to leave the thread", async || (!file.exists()).then_some(())).await;
+    assert!(!host.post("readUpload", &read).await.0, "nor can a client read it");
+
+    // With words: the task's report names the file with them.
+    let upload = upload_to_thread(&host, &bot, &slow, "log.txt").await;
+    let body = json!({"botId": bot, "taskId": slow["id"], "text": "see this", "attachments": [upload]});
+    host.call("send", body).await;
+    release(&host, &bot, "slow");
+    let done = result(&host, &bot, "Slow", "Thread").await;
+    let relayed = reply(&host, &bot, "Relayed:").await;
+    assert!(relayed.contains("«see this [sent files: log.txt]»"), "{relayed}");
+
+    // A file to the ended task reopens it.
+    let upload = upload_to_thread(&host, &bot, &done, "more.png").await;
+    let body = json!({"botId": bot, "taskId": done["id"], "text": "", "attachments": [upload]});
+    assert_eq!(host.call("send", body).await["reopened"], true);
+    wait("the reopened task to end again", async || {
+        let task = work(&host, &bot).await.into_iter().find(|t| t["title"] == "Slow")?;
+        (task["status"] == "done" && task["endedAt"].as_i64() > done["endedAt"].as_i64()).then_some(())
+    })
+    .await;
+
+    // Its files go with the thread.
+    let uploads = host.home.join("bots").join(done["thread"].as_str().unwrap()).join("uploads");
+    assert!(uploads.join(&upload).exists(), "{}", uploads.display());
+    host.call("dropWork", json!({"botId": bot, "taskId": done["id"]})).await;
+    wait("the thread's files to go with it", async || (!uploads.exists()).then_some(())).await;
 }
 
 #[tokio::test]

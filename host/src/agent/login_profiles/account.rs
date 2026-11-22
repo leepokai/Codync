@@ -1,12 +1,12 @@
 //! An account login profile's side: the folder (its slot) the agent keeps that sign-in in, the sign-in itself, and
-//! who each agent's default login is signed in as. What each agent needs for it is the `codync-accounts` crate's.
+//! who each agent's default login is signed in as. What each agent needs for it is in `codync_agent::accounts`.
 
 use super::{accounts_of, find_account};
 use crate::LockExt;
-use crate::agent::backends;
 use crate::store::Store;
 use anyhow::{Context, Result, anyhow};
-use codync_accounts::{Account, Agent, SignedIn};
+use codync_agent::accounts::{Account, Agent, SignedIn};
+use codync_agent::backends;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -28,7 +28,7 @@ pub async fn refresh_default() {
     let Some(home) = dirs::home_dir() else { return };
     let read = move || {
         let named = |agent: &'static Agent| agent.own_identity(&home).map(|email| (agent.id, email));
-        codync_accounts::agents().iter().filter_map(named).collect::<Vec<_>>()
+        codync_agent::accounts::agents().iter().filter_map(named).collect::<Vec<_>>()
     };
     match tokio::task::spawn_blocking(read).await {
         Ok(found) => *DEFAULT.locked() = found,
@@ -77,7 +77,7 @@ pub(super) async fn remove(account: &Account) -> Result<()> {
 pub async fn login_command(store: &Store, id: &str) -> Result<String> {
     let account = find_account(store, id)?;
     let env = env(&account)?;
-    let prefix = crate::shell::env_prefix(env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+    let prefix = codync_agent::shell::env_prefix(env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
     Ok(format!("{prefix}{}", backends::login_command(&account.agent).await?))
 }
 

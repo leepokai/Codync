@@ -176,6 +176,21 @@ fn unix_open_err() -> &'static str {
 }
 
 #[cfg(unix)]
+fn is_unix_symlink(parent: Option<&std::fs::File>, c_part: &std::ffi::CStr) -> bool {
+    use std::os::unix::io::AsRawFd;
+
+    let mut buf: [libc::c_char; 1] = [0];
+    // SAFETY: `c_part` is NUL-terminated and `buf` holds 1 byte; `readlink`/`readlinkat` succeeds (`>= 0`) only on a symlink.
+    let rc = unsafe {
+        match parent {
+            Some(dir) => libc::readlinkat(dir.as_raw_fd(), c_part.as_ptr(), buf.as_mut_ptr(), buf.len()),
+            None => libc::readlink(c_part.as_ptr(), buf.as_mut_ptr(), buf.len()),
+        }
+    };
+    rc >= 0
+}
+
+#[cfg(unix)]
 fn open_unix_dir(parent: Option<&std::fs::File>, part: &std::ffi::OsStr) -> Result<std::fs::File, &'static str> {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
@@ -191,7 +206,12 @@ fn open_unix_dir(parent: Option<&std::fs::File>, part: &std::ffi::OsStr) -> Resu
         }
     };
     if fd < 0 {
-        return Err(unix_open_err());
+        let err = std::io::Error::last_os_error().raw_os_error();
+        // Linux returns `ENOTDIR` when `O_DIRECTORY | O_NOFOLLOW` meets a symlink instead of `ELOOP`.
+        if err == Some(libc::ELOOP) || (err == Some(libc::ENOTDIR) && is_unix_symlink(parent, &c_part)) {
+            return Err("outside allowed folders");
+        }
+        return Err("file unavailable");
     }
     // SAFETY: `fd` is a newly opened descriptor owned solely by this `File`.
     Ok(unsafe { std::fs::File::from_raw_fd(fd) })

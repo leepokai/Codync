@@ -119,7 +119,7 @@ import kotlinx.coroutines.launch
                     style = Type.footnote, color = Palette.tertiary, textAlign = TextAlign.Center)
             }
         }) {
-            ConversationList(list, last = sends.lastOrNull()?.nonce ?: rows.lastOrNull()?.id, rev = all.maxOfOrNull { it.rev }, working = live,
+            ConversationList(list, first = rows.firstOrNull()?.id, last = sends.lastOrNull()?.nonce ?: rows.lastOrNull()?.id, rev = all.maxOfOrNull { it.rev }, working = live,
                 padding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = with(density) { composerHeight.toDp() } + 8.dp)) {
                 thread.told?.let { told -> item("told") { Told(told.text) } }
                 val failure = error

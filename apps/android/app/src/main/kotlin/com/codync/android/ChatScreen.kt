@@ -324,7 +324,8 @@ private fun AppState.chatItems(bot: Bot) =
     // Find's shown match, else the card or quoted message brought into view: its row, after the earlier-messages row when
     // there is one. `revealed` is an entry id, and a user row is keyed by its nonce.
     val reveal = items.rowOf(found ?: revealed)?.let { ConversationReveal(items[it].id, it + if (more) 1 else 0, findStep) }
-    ConversationList(list, items.lastOrNull()?.id, entries.lastOrNull()?.rev, working, padding, store::refreshConnection, indicatorTop,
+    ConversationList(list, first = items.firstOrNull()?.id, last = items.lastOrNull()?.id, rev = entries.lastOrNull()?.rev, working = working,
+        padding = padding, refresh = store::refreshConnection, indicatorTop = indicatorTop,
         reveal = reveal, onOpened = { settled = true }) {
         if (more) item("earlier") {
             Box(Modifier.fillMaxWidth().padding(vertical = 14.dp).clearAndSetSemantics { contentDescription = "Loading earlier messages" },

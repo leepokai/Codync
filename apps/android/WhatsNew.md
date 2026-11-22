@@ -7,6 +7,13 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.52.1
+### zh-Hant
+- 第一次打開很長的聊天時，會直接停在最新的訊息，不會再跳到較早的訊息。
+
+### en-US
+- Opening a long chat for the first time now lands on its newest message instead of earlier ones.
+
 ## 2.52.0
 ### zh-Hant
 - 有些 agent（例如 Hermes）會在回覆中途問你問題，現在這些問題會顯示在聊天的選擇卡片上，等你回答，不會再被「自動核准」替你選第一個選項。有選項的問題只能選其中一個，卡片上不再顯示「其他答案」那一列。

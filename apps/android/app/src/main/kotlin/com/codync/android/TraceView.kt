@@ -39,7 +39,7 @@ import kotlinx.serialization.json.jsonPrimitive
     val running = runningTurn(all, bot.isWorking(bot.id))
     val list = rememberLazyListState()
     // Opens at the end and follows any new step there (in whichever turn) until the reader scrolls up.
-    rememberFollowing(list, turns.lastOrNull()?.first?.toString(), all.maxOfOrNull { it.rev }, working = false, bottom = 0.dp)
+    rememberFollowing(list, turns.firstOrNull()?.first?.toString(), turns.lastOrNull()?.first?.toString(), all.maxOfOrNull { it.rev }, working = false, bottom = 0.dp)
     Column(Modifier.fillMaxSize()) {
         ModalHeader("Full conversation")
         LazyColumn(state = list, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {

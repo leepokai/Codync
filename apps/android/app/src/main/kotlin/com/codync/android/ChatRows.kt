@@ -501,7 +501,7 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
     }
     Column(Modifier.padding(top = 12.dp).heightIn(max = 280.dp).verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (steps.isEmpty()) Text(tr("Nothing yet."), style = Type.body, color = Palette.tertiary)
-        for (entry in steps) key(entry.id) { TraceRow(entry, unfolded = true) }
+        for ((entry, depth) in nestedSteps(steps)) key(entry.id) { Box(Modifier.nested(depth)) { TraceRow(entry, unfolded = true) } }
     }
 }
 

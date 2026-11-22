@@ -15,7 +15,7 @@ const QUERY_BOTH: &str = include_str!("opencode-both.sql");
 const QUERY_SESSION: &str = include_str!("opencode-session.sql");
 const QUERY_MESSAGE: &str = include_str!("opencode-message.sql");
 
-pub(super) fn collect() -> Option<Vec<Window>> {
+pub fn collect() -> Option<Vec<Window>> {
     from_db(&db_path()?)
 }
 

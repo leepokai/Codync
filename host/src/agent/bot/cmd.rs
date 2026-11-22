@@ -32,7 +32,7 @@ pub enum Cmd {
     /// What the agent made of a steered message (`_session/steering`).
     Steered {
         entry_id: String,
-        outcome: Result<Value>,
+        outcome: Result<codync_agent::acp::Steered>,
     },
     /// The user took back a queued message of theirs (`unqueue`).
     Unqueue {

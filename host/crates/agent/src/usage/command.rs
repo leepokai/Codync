@@ -1,17 +1,16 @@
 //! Run an installed CLI for a usage probe. A missing program is silence: the
 //! probe is skipped until the agent is installed.
 
-use crate::hub::Hub;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use super::Window;
-use super::reading::{UsageReadStage, report};
+use super::reading::{Stage, report};
+use super::{App, Window};
 
 /// `name` on the login-shell PATH.
 pub(super) fn program(name: &str) -> Option<PathBuf> {
-    codync_agent::backends::which(name)
+    crate::backends::which(name)
 }
 
 /// Stdout of `program`, with terminal colour removed. Nothing when it isn't
@@ -41,7 +40,7 @@ pub(super) async fn output(
         let _ = input.write_all(text.as_bytes()).await;
     }
     let done = tokio::time::timeout(timeout, child.wait_with_output()).await.ok()?.ok()?;
-    let text = strip_ansi(&String::from_utf8_lossy(&done.stdout));
+    let text = crate::shell::strip_ansi(&String::from_utf8_lossy(&done.stdout));
     (!text.trim().is_empty()).then_some(text)
 }
 
@@ -66,7 +65,7 @@ pub(super) async fn windows(
 /// Nothing printed (not installed, signed out, timed out) or the CLI's words for being signed out are
 /// no reading and no failure.
 pub(super) async fn json_windows(
-    hub: &Hub,
+    app: &dyn App,
     name: &str,
     args: &[&str],
     timeout: Duration,
@@ -74,11 +73,11 @@ pub(super) async fn json_windows(
 ) -> Option<Vec<Window>> {
     let text = output(&program(name)?, args, None, timeout).await?;
     let reading = match serde_json::from_str::<Value>(&text) {
-        Ok(document) => parse(&document).ok_or(UsageReadStage::Parse),
+        Ok(document) => parse(&document).ok_or(Stage::Parse),
         Err(_) if says_signed_out(&text) => return None,
-        Err(_) => Err(UsageReadStage::Parse),
+        Err(_) => Err(Stage::Parse),
     };
-    report(hub, name, &reading);
+    report(app, name, &reading);
     reading.ok()
 }
 
@@ -87,35 +86,9 @@ fn says_signed_out(text: &str) -> bool {
     ["not authenticated", "logged in", "log in", "signed in", "sign in"].iter().any(|words| text.contains(words))
 }
 
-/// Drop CSI colour sequences (`ESC [ … m`). Other characters stay, including
-/// the cursor-position query a Windows console sends.
-pub(crate) fn strip_ansi(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\u{1b}' && chars.peek() == Some(&'[') {
-            chars.next();
-            for d in chars.by_ref() {
-                if d.is_ascii_alphabetic() {
-                    break;
-                }
-            }
-            continue;
-        }
-        out.push(c);
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn colour_codes_drop_out_of_a_usage_line() {
-        let raw = "Credits \u{1b}[32m(12 of 100\u{1b}[0m covered)";
-        assert_eq!(strip_ansi(raw), "Credits (12 of 100 covered)");
-    }
 
     #[test]
     fn a_cli_saying_it_is_signed_out_is_told_from_a_changed_format() {

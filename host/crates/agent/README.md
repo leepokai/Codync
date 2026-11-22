@@ -7,11 +7,15 @@ host that is true of the agents themselves, with no app in it:
   is installed, how to install and update it, how it signs in, and what its exit means when it quits at start.
 - **`registry`** reads the [ACP registry](https://agentclientprotocol.com) and resolves an entry to a command, downloading
   its binary or npm package; **`node`** provides a Node.js for npm agents on a computer without one.
-- **`acp`** speaks the Agent Client Protocol (JSON-RPC on stdio) to a started agent and tells its failures apart
-  (signed out, exited, timed out, a model or mode it lacks); **`process`** owns the process tree each agent starts,
+- **`acp`** speaks the Agent Client Protocol (JSON-RPC on stdio) to a started agent: what it can do (`Capabilities`),
+  a session's controls (`Session`: prompt, cancel, steer) and why a turn ended (`StopReason`), and it tells failures
+  apart (signed out, exited, timed out, a model or mode it lacks); **`events`** types what the agent says (below);
+  **`process`** owns the process tree each agent starts,
   so stopping the agent stops everything under it (a session of its own on Unix, a job object on Windows).
 - **`modes`** reads an agent's permission modes (its Auto among them) and picks the one to switch to.
 - **`accounts`** gives an agent more than one login on the same computer (below).
+- **`usage`** (the `usage` feature) reads each agent's plan limits the way the agent itself reports them (below);
+  **`codex_app`** is Codex's own API (`codex app-server`), which it reads Codex's through.
 
 ```rust,no_run
 use std::path::PathBuf;
@@ -38,6 +42,93 @@ let init = agent.request("initialize", serde_json::json!({"protocolVersion": 1})
 # Ok(())
 # }
 ```
+
+## Events
+
+What an agent sends arrives on the channel `Acp::spawn` returns, as `Incoming`:
+
+- **`Incoming::Update`**: a `session/update` as a typed `events::Event` with the session it is about: reply text,
+  reasoning, tool calls and their changes (`ToolCall`, only what was sent is `Some`; with Claude's adapter also the
+  subagent call that launched it, `parent`, and on a subagent's launch what it reported, `subagent`), the plan, context usage,
+  compactions, modes, config options and `/` commands. A kind this crate doesn't know yet is `Event::Other` with the
+  update as sent, so a newer adapter never breaks reading.
+- **`Incoming::Request`**: a request to the app, such as a permission (`Request::permission`, with the options it offers
+  and `Permission::allow`). It is answered once (`respond`, `refuse`, `choose`); dropped unanswered, it answers by
+  itself (a permission `cancelled`, a question `cancel`, anything else not supported), so an agent never waits on a
+  request no one holds. It holds no agent alive.
+
+Each event is a fact in the agent's own terms: defaults, filters and where it shows are the app's.
+
+```rust,no_run
+use codync_agent::acp::{Acp, Incoming, StopReason};
+use codync_agent::events::Event;
+use serde_json::json;
+
+# async fn run(agent: &Acp, mut updates: tokio::sync::mpsc::UnboundedReceiver<Incoming>) -> anyhow::Result<()> {
+let session = agent.session("the session id");
+let turn = session.prompt(json!([{"type": "text", "text": "Fix the flaky test"}])).await?;
+tokio::spawn(async move {
+    while let Some(incoming) = updates.recv().await {
+        match incoming {
+            Incoming::Update(update) => match update.event {
+                Event::Text { text, .. } => print!("{text}"),
+                Event::ToolStarted(call) => println!("[{}]", call.title.unwrap_or_default()),
+                _ => {}
+            },
+            // Allowed once, where the agent offers it; any other request refuses itself as it drops.
+            Incoming::Request(request) => {
+                if let Some(allow) = request.permission().and_then(|p| p.allow().map(str::to_owned)) {
+                    let _ = request.choose(Some(&allow)).await;
+                }
+            }
+            _ => {}
+        }
+    }
+});
+let ended = StopReason::of(&turn.response().await?);
+# let _ = ended;
+# Ok(())
+# }
+```
+
+## Usage
+
+With the `usage` feature, `codync_agent::usage` reads how much of its plan each agent has used, as `Window`s (an id, a
+label, the share used, when it resets, or a `text` note such as a balance). No reading starts a model turn. Each agent
+has its module and its own `collect`:
+
+| How it reads | Agents |
+|---|---|
+| Files on this computer | OpenCode (its database), Mistral Vibe (its session logs), Junie (the `JetBrains` IDE quota file) |
+| The agent's CLI | Claude Code (`claude -p /usage`), Amp (`amp usage`), Auggie (`auggie account status`), Hermes (`hermes usage`), Kilo (`kilo profile`), Kiro (`kiro-cli` `/usage`), oh-my-pi (`omp usage`), Kimi Code (its `kimi` screen, in a terminal) |
+| The agent's own server, which asks its provider with its own login | Codex (`codex app-server`), GitHub Copilot (its headless server), Grok Build (its ACP billing extension), Google Antigravity (its ACP `/usage` command, or the running app's language server) |
+| The provider's service | Cursor: its saved CLI or app login's token goes to Cursor's dashboard service, or to cursor.com's usage summary for legacy plans. This is the only reader that sends an agent's login anywhere, and the token is never logged |
+
+A reader returns `None` when it has no reading this time (the CLI isn't installed, it's signed out, its report changed);
+Copilot's returns an `Outcome`, which can also be a skip, as it starts its server at most every 30 minutes. The blocking ones (files, Kimi's terminal) are plain functions to run off the async workers. Which agents
+to read, how often, and what to keep and show are the app's. The feature reads SQLite files through `rusqlite` and
+leaves linking SQLite to the app: turn on `rusqlite`'s `bundled` feature, or have a system SQLite.
+
+```rust,no_run
+use codync_agent::usage::{self, Window};
+
+# async fn run() {
+// The computer's own Claude login; a second login passes the variables that point the CLI at its folder.
+if let Some(windows) = usage::claude::collect(Vec::new()).await {
+    for Window { label, percent, resets_at, .. } in windows {
+        println!("{label}: {percent}% used, resets at {resets_at:?}");
+    }
+}
+// A database on this computer: blocking.
+let opencode = tokio::task::spawn_blocking(usage::opencode::collect).await;
+# let _ = opencode;
+# }
+```
+
+The readers that start an agent's ACP server (Antigravity, Grok Build) or tell how a check ended (those and Copilot,
+Auggie, Hermes, Kilo) take the app as `usage::App`: it starts the agent the way the app does (its keys and login), keeps
+the one session an agent's readings share, and is told where a failing check stopped (`Stage`), so a changed report
+format shows up as `Stage::Parse`. `usage::busy` says whether an agent is being read already: one is read at a time.
 
 ## Accounts
 

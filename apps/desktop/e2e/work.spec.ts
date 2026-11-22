@@ -346,6 +346,32 @@ test('with one thread at once the next tasks wait, and First and Drop change the
   }
 })
 
+test("a routine's next runs wait for the one under way without keeping a free thread from the bot's other task", async () => {
+  const { browser, page } = await attach()
+  const name = `Work held runs e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    // Both threads busy, so the routine's runs queue up in the box ahead of the bot's other task.
+    botId = await openBot(page, name, 2)
+    await addWork(page, botId, 'First job', 'HOLD:busy')
+    await addWork(page, botId, 'Second job', 'HOLD:busy')
+    const { routine } = await api<{ routine: { id: string } }>(page, 'saveRoutine', { botId, name: 'Digest', instruction: HOLD, triggers: [{ type: 'webhook' }] })
+    await api(page, 'runRoutine', { botId, id: routine.id })
+    await api(page, 'runRoutine', { botId, id: routine.id })
+    await expect.poll(async () => (await botState(page, botId!)).work.filter((t) => t.title === 'Digest').length).toBe(2)
+    await addWork(page, botId, 'Side job', HOLD)
+
+    // Both threads free up: the first run takes one, the next run waits for it, and the other task takes the second.
+    writeFileSync(join(sandbox().home, 'bots', botId, 'workspace', 'release-busy'), '')
+    await expect.poll(async () => (await statuses(page, botId!))['Side job']).toBe('working')
+    const runs = (await botState(page, botId)).work.filter((t) => t.title === 'Digest').map((t) => t.status)
+    expect(runs.sort()).toEqual(['waiting', 'working'])
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
 test('the first in line cuts in once the working task to give way is picked', async () => {
   const { browser, page } = await attach()
   const name = `Work cut-in e2e ${Date.now()}`

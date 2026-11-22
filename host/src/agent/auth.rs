@@ -450,7 +450,7 @@ mod tests {
             params: json!({"authStatus": {"kind": kind, "label": "x"}}),
         };
         let (tx, mut rx) = mpsc::unbounded_channel();
-        tx.send(Incoming::Notification { method: "session/update".into(), params: json!({}) }).unwrap();
+        tx.send(Incoming::Update(codync_agent::events::Update::parse(&json!({})))).unwrap();
         tx.send(report("none")).unwrap();
         tx.send(report("account")).unwrap();
         assert_eq!(reported_login(&mut rx).await, Some(false));

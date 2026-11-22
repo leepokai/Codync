@@ -5,13 +5,13 @@ use std::time::Duration;
 
 use super::Window;
 
-pub(super) async fn collect() -> Option<Vec<Window>> {
-    let parse = |text: &str| parse(text, crate::store::now_ms());
+pub async fn collect() -> Option<Vec<Window>> {
+    let parse = |text: &str| parse(text, super::now_ms());
     super::command::windows("kiro-cli", &[], Some("/usage\n/quit\n"), Duration::from_secs(30), parse).await
 }
 
 fn parse(text: &str, now_ms: i64) -> Vec<Window> {
-    let text = super::command::strip_ansi(text);
+    let text = crate::shell::strip_ansi(text);
     let mut windows = Vec::new();
     if let Some(w) = pair(&text, "Bonus credits:", "bonus", "Bonus credits", expiry_ms(&text, now_ms)) {
         windows.push(w);

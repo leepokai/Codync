@@ -210,21 +210,31 @@ async fn a_bot_messages_a_bot_on_another_computer_and_relays_its_reply() {
 async fn a_stopped_or_failed_request_ends_the_senders_notice() {
     let (desk, laptop, reviewer, lead) = two_computers().await;
     // The desk's user stops the reviewer while it waits for approval: the lead's notice ends
-    // cancelled, and nothing wakes the lead.
+    // cancelled, and the lead hears so in a reply turn.
     laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk PERMISSION then stop"})).await;
     desk.wait_for(&reviewer, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
     desk.call("stopWork", json!({"botId": reviewer})).await;
     let stopped = laptop.wait_for(&lead, exchange("cancelled")).await;
     assert!(stopped["data"]["botMessage"]["detail"].as_str().unwrap().starts_with("Reviewer on desk was stopped"));
+    laptop.wait_for(&lead, |e| is_final(e) && e["data"]["text"] == "Relayed: failed").await;
 
-    // A turn that fails comes back as a failure, in a reply turn.
+    // A turn that fails comes back as a failure, in a reply turn too.
     laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk FAIL on purpose"})).await;
     laptop.wait_for(&lead, exchange("failed")).await;
-    let relayed = laptop.wait_for(&lead, |e| is_final(e) && e["data"]["text"] != "Message queued").await;
-    assert_eq!(relayed["data"]["text"], "Relayed: failed");
-    let history = laptop.call("history", json!({"botId": lead})).await;
-    let finals = history["entries"].as_array().unwrap().iter().filter(|e| is_final(e)).count();
-    assert_eq!(finals, 3, "two requests and one reply turn: {history}");
+    let relayed = |e: &Value| is_final(e) && e["data"]["text"] == "Relayed: failed";
+    let finals = tokio::time::timeout(Duration::from_secs(40), async {
+        loop {
+            let history = laptop.call("history", json!({"botId": lead})).await;
+            let entries = history["entries"].as_array().unwrap().clone();
+            if entries.iter().filter(|e| relayed(e)).count() == 2 {
+                return entries.iter().filter(|e| is_final(e)).count();
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("the failure's reply turn did not come");
+    assert_eq!(finals, 4, "two requests and two reply turns");
 }
 
 /// The first `network` event on the host's stream that `predicate` accepts. The stream is open

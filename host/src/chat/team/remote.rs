@@ -134,7 +134,7 @@ pub(super) async fn message(
         Ok(hops) => hops,
         Err(error) if super::hop_limit_error(&error) => {
             let peer = peer_name(hub, &to.network, &to.address);
-            return super::on_hop_limit(hub, source, turn, &peer, message, error);
+            return super::on_hop_limit(hub, source, turn, None, &peer, message, error);
         }
         Err(error) => return Err(error),
     };

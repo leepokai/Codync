@@ -104,6 +104,8 @@ struct Lift {
     explanation: Option<String>,
     /// The blocked bot's answer, kept the same way, once and only after the question.
     answer: Option<String>,
+    /// Bot allowed to ask, reset, or deny. Empty until the notice path sets it.
+    judge: String,
 }
 
 /// A reset the running chat did not absorb. Applied once, at a later chat start of the same generation.
@@ -290,10 +292,44 @@ impl Requests {
         }
         let id = state.next_refusal;
         state.next_refusal = state.next_refusal.saturating_add(1);
-        state.actors.entry(actor.to_owned()).or_default().lift =
-            Some(Lift { id, sender: sender.to_owned(), generation, asked: false, explanation: None, answer: None });
+        state.actors.entry(actor.to_owned()).or_default().lift = Some(Lift {
+            id,
+            sender: sender.to_owned(),
+            generation,
+            asked: false,
+            explanation: None,
+            answer: None,
+            judge: String::new(),
+        });
         RequestState::record(AuditKind::Notice, id);
         Some(id)
+    }
+
+    /// The bot that may ask, reset, or deny this open lift. Empty until the notice path sets it.
+    pub fn set_judge(&self, refusal: u64, judge: &str) -> Result<()> {
+        let mut state = self.0.locked();
+        let owner = state.actor_of(refusal)?;
+        let Some(lift) = state.actors.get_mut(&owner).and_then(|entry| entry.lift.as_mut()) else {
+            bail!("no open hop-limit block for this refusal");
+        };
+        if lift.id != refusal {
+            bail!("no open hop-limit block for this refusal");
+        }
+        judge.clone_into(&mut lift.judge);
+        Ok(())
+    }
+
+    /// Who may judge `refusal`. An empty string means the notice path has not chosen one.
+    pub fn judge_of(&self, refusal: u64) -> Result<String> {
+        let state = self.0.locked();
+        let owner = state.actor_of(refusal)?;
+        Ok(state
+            .actors
+            .get(&owner)
+            .and_then(|entry| entry.lift.as_ref())
+            .filter(|lift| lift.id == refusal)
+            .map(|lift| lift.judge.clone())
+            .unwrap_or_default())
     }
 
     /// Generation last reached by a user message. An actor the user has not messaged is at 0.

@@ -556,6 +556,117 @@ async fn hop_review_defaults_off_and_continue_still_works() {
     f.shutdown().await;
 }
 
+fn refusal_id(text: &str) -> u64 {
+    let rest = text.split("refusal ").nth(1).unwrap_or_else(|| panic!("no refusal id in {text}"));
+    rest.chars().take_while(char::is_ascii_digit).collect::<String>().parse().expect("refusal id")
+}
+
+fn continue_notices(f: &Fixture, bot: &str) -> Vec<crate::store::Entry> {
+    f.hub
+        .store
+        .history(bot, i64::MAX, 100)
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == "notice" && !e.data["continueChain"].is_null())
+        .collect()
+}
+
+/// The blocked bot is the lead. Another local bot, not the counterparty, asks and resets.
+#[tokio::test]
+async fn a_blocked_lead_is_lifted_by_another_local_bot() {
+    let f = Fixture::new();
+    f.hub.set_hop_review(true).unwrap();
+    f.hub.make_lead("a").unwrap();
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    let err = call(&f.hub, "a", "a", "message_bot", &json!({"botId": "b", "message": "need a hand"}))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("a judge was notified"), "{err}");
+    let refusal = refusal_id(&err);
+    call(&f.hub, "c", "c", "ask_hop_clarification", &json!({"refusalId": refusal, "botId": "a", "text": "why"}))
+        .unwrap();
+    call(&f.hub, "a", "a", "answer_hop_clarification", &json!({"refusalId": refusal, "text": "real work"})).unwrap();
+    let himself = call(&f.hub, "a", "a", "reset_hop_count", &json!({"refusalId": refusal, "botId": "a"}))
+        .unwrap_err()
+        .to_string();
+    assert!(himself.contains("cannot judge"), "{himself}");
+    let peer = call(&f.hub, "b", "b", "reset_hop_count", &json!({"refusalId": refusal, "botId": "a"}))
+        .unwrap_err()
+        .to_string();
+    assert!(peer.contains("only the judge"), "{peer}");
+    call(&f.hub, "c", "c", "reset_hop_count", &json!({"refusalId": refusal, "botId": "a"})).unwrap();
+    assert_eq!(continue_notices(&f, "a")[0].data["continueChain"], false, "a reset clears Continue");
+    f.shutdown().await;
+}
+
+/// Only the counterparty is left, so nobody may judge, and Continue still starts a fresh chain.
+#[tokio::test]
+async fn no_eligible_judge_leaves_the_lead_stopped_and_continue_works() {
+    let f = Fixture::new();
+    f.hub.set_hop_review(true).unwrap();
+    f.hub.make_lead("a").unwrap();
+    f.hub.update_bot(&json!({"id": "c", "hidden": true})).unwrap();
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    let err = call(&f.hub, "a", "a", "message_bot", &json!({"botId": "b", "message": "need a hand"}))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("hop limit"), "{err}");
+    assert!(!err.contains("notified"), "{err}");
+    let notices = continue_notices(&f, "a");
+    assert_eq!(notices.len(), 1);
+    assert_eq!(notices[0].data["continueChain"], true);
+    let peer =
+        call(&f.hub, "b", "b", "reset_hop_count", &json!({"refusalId": 1, "botId": "a"})).unwrap_err().to_string();
+    assert!(peer.contains("no open hop-limit block"), "{peer}");
+    let sent = crate::api::dispatch(
+        &f.hub,
+        &crate::api::devices::Caller::Local,
+        "continueChain",
+        json!({"entryId": notices[0].id}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(sent["entry"]["data"]["text"], "Continue");
+    assert_eq!(sent["entry"]["kind"], "user");
+    f.shutdown().await;
+}
+
+/// The lead's one question does not spend a hop and does not open `message_bot` past the limit.
+#[tokio::test]
+async fn the_leads_clarification_does_not_consume_a_hop() {
+    let f = Fixture::new();
+    f.hub.set_hop_review(true).unwrap();
+    f.hub.make_lead("c").unwrap();
+    f.hub.team.start_turn("c", Turn::Chat(7));
+    f.hub.team.start_turn("b", Turn::Chat(8));
+    let err =
+        call(&f.hub, "b", "b", "message_bot", &json!({"botId": "a", "message": "stuck"})).unwrap_err().to_string();
+    assert!(err.contains("the lead was notified"), "{err}");
+    let refusal = refusal_id(&err);
+    call(&f.hub, "c", "c", "ask_hop_clarification", &json!({"refusalId": refusal, "botId": "b", "text": "why"}))
+        .unwrap();
+    call(&f.hub, "c", "c", "message_bot", &json!({"botId": "a", "message": "still open"})).unwrap();
+    f.shutdown().await;
+
+    let f = Fixture::new();
+    f.hub.set_hop_review(true).unwrap();
+    f.hub.make_lead("c").unwrap();
+    f.hub.team.start_turn("c", Turn::Chat(8));
+    f.hub.team.start_turn("b", Turn::Chat(8));
+    let err = call(&f.hub, "b", "b", "message_bot", &json!({"botId": "a", "message": "stuck again"}))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("the lead was notified"), "{err}");
+    let refusal = refusal_id(&err);
+    call(&f.hub, "c", "c", "ask_hop_clarification", &json!({"refusalId": refusal, "botId": "b", "text": "why"}))
+        .unwrap();
+    let blocked = call(&f.hub, "c", "c", "message_bot", &json!({"botId": "a", "message": "past the limit"}))
+        .unwrap_err()
+        .to_string();
+    assert!(blocked.contains("hop limit"), "{blocked}");
+    f.shutdown().await;
+}
+
 #[path = "quota_tests.rs"]
 mod quotas;
 

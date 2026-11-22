@@ -63,6 +63,9 @@ pub fn tools() -> Value {
                 },
             },
             "annotations": {"readOnlyHint": true},
+            // Always in the agent's prompt: Claude Code defers MCP tools behind tool search, and a bot then called
+            // these without their schema ("botId is required").
+            "_meta": {"anthropic/alwaysLoad": true},
         },
         {
             "name": "message_bot",
@@ -76,6 +79,7 @@ pub fn tools() -> Value {
                 "required": ["botId", "message"],
             },
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
+            "_meta": {"anthropic/alwaysLoad": true},
         }
     ])
 }

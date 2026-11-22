@@ -621,3 +621,10 @@ fn restart_marks_requests_interrupted_without_replaying_them() {
     assert_eq!(interrupted.data["botMessage"]["text"], "Work");
     assert!(interrupted.data["botMessage"]["detail"].as_str().unwrap().contains("Interrupted by host restart"));
 }
+
+#[test]
+fn the_team_tools_are_never_deferred_behind_tool_search() {
+    for tool in tools().as_array().expect("tools() is a list") {
+        assert_eq!(tool["_meta"]["anthropic/alwaysLoad"], true, "{} is always loaded", tool["name"]);
+    }
+}

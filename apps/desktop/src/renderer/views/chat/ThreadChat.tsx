@@ -90,6 +90,7 @@ export function ThreadChat({ bot, task }: { bot: Bot; task: WorkTask }) {
     return <ChatRow entry={e} groupStart={start} chat={bot} />
   }
 
+  const ownFolder = bot.managedWorkspace && !task.worktree && task.folder === bot.cwd
   return (
     <div className="chat-view thread-chat" data-work-thread={task.id}>
       <div className="conversation" ref={root}>
@@ -97,7 +98,7 @@ export function ThreadChat({ bot, task }: { bot: Bot; task: WorkTask }) {
           <div className="top-fade" />
           {bar.title ? createPortal(<>
             <div className="title-pill" title={task.title}>
-              <HStack as="span" gap={7}>
+              <HStack as="span" gap={7} className="thread-title">
                 {bot.plain ? <AgentIcon registry={store.agentRegistry(task.agent ?? bot.backend)} size={18} /> : <BotAvatar bot={bot} size={22} animated={false} />}
                 <Text size="body" weight="medium" tone="text" truncate>{task.title}</Text>
               </HStack>
@@ -126,8 +127,6 @@ export function ThreadChat({ bot, task }: { bot: Bot; task: WorkTask }) {
           <div className="composer-fade" />
           {artifactId ? null : (
             <>
-              {/* The bot's own folder goes without saying, as in the list. */}
-              <div className="thread-options">{bot.managedWorkspace && !task.worktree && task.folder === bot.cwd ? null : <WhereCopy task={task} />}</div>
               {task.talk ? (
                 <Composer
                   botId={bot.id}
@@ -138,6 +137,8 @@ export function ThreadChat({ bot, task }: { bot: Bot; task: WorkTask }) {
                     working: isLive(task),
                     send: (text) => store.sendToThread(thread, threadId, text),
                     stop: () => setStopping(true),
+                    // Where it works, in the box's row; the bot's own folder goes without saying, as in the list.
+                    controls: ownFolder ? null : <WhereCopy task={task} />,
                   }}
                 />
               ) : readOnly ? (

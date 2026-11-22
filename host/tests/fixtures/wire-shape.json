@@ -134,6 +134,7 @@
     "event:entry(permission).entry.data.selected": "string",
     "event:entry(permission).entry.data.status": "string",
     "event:entry(permission).entry.data.title": "string",
+    "event:entry(permission).entry.data.toolCallId": "string",
     "event:entry(permission).entry.data.toolKind": "string",
     "event:entry(permission).entry.id": "string",
     "event:entry(permission).entry.kind": "string",

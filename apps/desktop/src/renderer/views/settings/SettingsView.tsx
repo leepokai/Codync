@@ -251,12 +251,18 @@ function GeneralSettings() {
       </CardSection>
       <PrivacySettings />
       <HiddenBotsSection />
+      {/* One row a link, as the card's other rows: the card is their fill, so they need none of their own. */}
       <CardSection title="Support">
-        <HStack gap={8} wrap>
-          <Button kind="secondary" onClick={() => openLink('https://github.com/leepokai/codync#readme', 'docs')}>Help & documentation</Button>
-          <Button kind="secondary" onClick={() => openLink('https://github.com/leepokai/codync/issues', 'issues')}>Report an issue</Button>
-          <Button kind="secondary" onClick={() => openLink('https://apps.apple.com/app/id6760984418', 'app_store')}>Get Codync for mobile</Button>
-        </HStack>
+        {([
+          ['Help & documentation', 'https://github.com/leepokai/codync#readme', 'docs'],
+          ['Report an issue', 'https://github.com/leepokai/codync/issues', 'issues'],
+          ['Get Codync for mobile', 'https://apps.apple.com/app/id6760984418', 'app_store'],
+        ] as const).map(([label, url, kind]) => (
+          <button key={kind} className="link-row press" onClick={() => openLink(url, kind)}>
+            <Text grow>{tr(label)}</Text>
+            <Icon name="arrow.up.right.square" size={12} color="var(--tertiary)" />
+          </button>
+        ))}
       </CardSection>
     </CardForm>
   )

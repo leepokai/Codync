@@ -330,7 +330,7 @@ fn agents(hub: &Hub) -> Vec<Value> {
     agents
 }
 
-fn term_size(b: &Value) -> (u16, u16) {
+pub(super) fn term_size(b: &Value) -> (u16, u16) {
     let dim = |k: &str, default: u16| b[k].as_u64().and_then(|v| u16::try_from(v).ok()).unwrap_or(default);
     (dim("cols", 80), dim("rows", 24))
 }

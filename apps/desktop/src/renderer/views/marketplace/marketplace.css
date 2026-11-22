@@ -12,8 +12,6 @@
   flex-direction: column;
   gap: 24px;
   padding: 30px 36px;
-  max-width: 860px;
-  margin: 0 auto;
 }
 .market-installed-body {
   flex: 1;
@@ -327,12 +325,12 @@
 }
 /* What an agent brings: a glyph, the list name, and its count at the chevron. */
 .agent-brings-row {
-  flex: 1;
-  min-width: 0;
-}
-.disclosure-label:has(.agent-brings-row) > .spacer {
-  flex: none;
-  width: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 32px;
+  text-align: start;
 }
 .agent-brings-icon {
   display: grid;
@@ -357,21 +355,6 @@
   font-variant-numeric: tabular-nums;
   text-align: center;
   line-height: 18px;
-}
-.agent-brings-items {
-  display: flex;
-  flex-direction: column;
-  margin-top: 6px;
-  padding-left: 36px;
-}
-.agent-brings-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 0;
-}
-.agent-brings-item + .agent-brings-item {
-  box-shadow: inset 0 0.5px 0 var(--border);
 }
 .agent-auth-detail {
   white-space: pre-wrap;
@@ -466,7 +449,12 @@ textarea.market-field {
 
 .market-heading { display: flex; align-items: center; gap: 12px; padding-right: 10px; flex-wrap: wrap; }
 .market-heading-titles {
+  align-items: center;
   white-space: nowrap;
+}
+/* This computer, when it is the only one: the capsule without a menu. */
+.market-computer {
+  background: var(--field);
 }
 /* "N installed": the first connectors' logos, overlapping, then the count. */
 .market-installed {
@@ -514,4 +502,16 @@ textarea.market-field {
 /* An agent's logo in a sheet's title row, on the same tile as a symbol. */
 .modal-header > .agent-tile {
   background: var(--field);
+}
+
+/* One agent on Login profiles: its logins, then what its default login brings. */
+.agent-logins {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* The search above a kind's items in their modal, in line with the list under it. */
+.agent-brings-search {
+  padding: 0 20px 12px;
 }

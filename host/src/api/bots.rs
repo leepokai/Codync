@@ -205,6 +205,14 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             tokio::task::spawn_blocking(move || hub.rename_section(&from, to.as_deref())).await??;
             json!({})
         }
+        // A terminal in the bot's folder: the user's own shell there (`termInput` / `termResize` / `termClose` and
+        // `/term/<id>` as for a setup terminal). Opening it again while it runs returns the same one.
+        "botTerminal" => {
+            let bot_id = str_arg(&b, "botId")?;
+            let cfg = hub.store.bot(bot_id)?.filter(|row| !row.deleted).map(|row| row.config).context("unknown bot")?;
+            let (cols, rows) = super::host::term_size(&b);
+            json!({"term": hub.terms.shell(bot_id, std::path::Path::new(&cfg.cwd), cols, rows)?})
+        }
         // The apps name a dev server, and never send a command.
         "devServerStop" => {
             crate::dev_servers::stop(hub, str_arg(&b, "botId")?, str_arg(&b, "id")?, "user").await?;

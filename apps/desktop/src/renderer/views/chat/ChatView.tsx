@@ -31,7 +31,6 @@ import { fill } from '@shared/fill'
 import { outsideQueue } from './queued-messages'
 import { ChatSidePanel } from './ChatSidePanel'
 import { WindowBarSlots } from '../WindowBar'
-import { AgentIcon } from '../../components/AgentIcon'
 import { IconButton } from '../../components/Controls'
 import { DetailsPanel, showPanelView, splitPanel, type DetailsTab } from './DetailsPanel'
 import { TraceView } from './TraceView'
@@ -68,9 +67,6 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
   const [showSettings, setShowSettings] = useState(false)
   // The docked panel covers the conversation.
   const [panelFilled, setPanelFilled] = useState(false)
-  // The task whose thread the inspector shows in place of its pages.
-  const [threadTask, setThreadTask] = useState<string | null>(null)
-  const closeThread = useCallback(() => setThreadTask(null), [])
   const [compactDetails, setCompactDetails] = useState(false)
   const [calling, setCalling] = useState(false)
   const [callSpeaking, setCallSpeaking] = useState(false)
@@ -144,7 +140,6 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
 
   const showDetails = useCallback((tab: DetailsTab) => {
     showPanelView(tab)
-    setThreadTask(null)
     setShowSettings(true)
     if (!wide) setCompactDetails(true)
   }, [wide])
@@ -186,9 +181,6 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
       botId={botId}
       routineId={routineId}
       docked={wide}
-      thread={threadTask}
-      openThread={setThreadTask}
-      closeThread={closeThread}
       editGroup={() => setEditingGroup(true)}
       openArtifact={openArtifact}
       openCard={openCard}
@@ -197,7 +189,6 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
       close={() => {
         setShowSettings(false)
         setCompactDetails(false)
-        setThreadTask(null)
       }}
     />
   )
@@ -230,12 +221,6 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
             </HStack>
             {store.shownConnection.kind !== 'online' || store.mismatch ? <ConnectionSubtitle /> : null}
           </button>
-          {bot && !isGroup(bot) ? (
-            <button className="window-bar-agent" title={tr('Agent')} onClick={() => presentAgent(botId)}>
-              <AgentIcon registry={store.agentRegistry(bot.backend)} size={13} />
-              <Text size="body" tone="secondary" truncate>{store.backendName(bot.backend)}{bot.model ? ` · ${bot.model}` : ''}</Text>
-            </button>
-          ) : null}
           </>, bar.title) : null}
         </div>
         {/* An update card takes the composer's place, so there's nothing to reply with. */}

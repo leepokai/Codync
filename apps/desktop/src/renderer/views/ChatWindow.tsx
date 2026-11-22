@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useListFlip } from '../lib/slide'
 import { alertAnalyticsKind } from '@shared/alerts'
 import type { WindowCommand } from '@shared/ipc'
 import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startup'
@@ -22,7 +23,7 @@ import { refKey, sameRef, parseRef, type AppModel, type BotRef } from '../store/
 import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
 import { BotRoster } from './BotRoster'
-import { NavRail, type AppPage } from './NavRail'
+import { NavRail, OpenExtensions, type AppPage } from './NavRail'
 import { ThreadDetail, ThreadList, type ThreadPick } from './ThreadsPage'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
 import { ChatView } from './chat/ChatView'
@@ -30,6 +31,7 @@ import { queueVoiceKey } from './chat/voice-shortcut-keys'
 import { NewBotView, NewGroupView } from './bots/NewBotView'
 import { ImportBotsSheet } from './bots/ImportBotsView'
 import { BotEditorView } from './bots/BotEditorView'
+import type { ExtensionFocus } from './marketplace/market-models'
 import { MarketplaceView } from './marketplace/MarketplaceView'
 import { ScreenViewer } from './screen/ScreenViewer'
 import { SignInCodeDialog } from './marketplace/ConnectorSheets'
@@ -218,6 +220,8 @@ function ChatSplitView() {
   const [botsByComputer, setBotsByComputer] = usePref(prefs.botsByComputer)
   const [botsByStatus, setBotsByStatus] = usePref(prefs.botsByStatus)
   const [threadsGroup, setThreadsGroup] = usePref(prefs.threadsGroup)
+  const [threadsByStatus, setThreadsByStatus] = usePref(prefs.threadsByStatus)
+  const [threadsByActivity, setThreadsByActivity] = usePref(prefs.threadsByActivity)
   const [sidebarWidth, setSidebarWidth] = usePref(prefs.sidebarWidth)
   const [hidden, setHidden] = usePref(prefs.hiddenComputers)
   const [searching, setSearching] = useState(false)
@@ -254,6 +258,7 @@ function ChatSplitView() {
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight })
   const newButton = useRef<HTMLButtonElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const sidebar = useRef<HTMLElement>(null)
   useModels([...app.stores.values()])
 
   useEffect(() => {
@@ -279,7 +284,7 @@ function ChatSplitView() {
   const visibleRoster = roster.items
   // The Threads page lists the boxes of threads without a bot too, of the computers shown.
   const threadRoster = [...roster.ordered, ...app.plainBoxes.filter((r) => shown.has(r.ref.computerId))]
-  const threads = threadSections(threadRoster, threadsGroup, (of) => refKey(of.ref), (of) => of.store.hostName)
+  const threads = threadSections(threadRoster, threadsGroup, (of) => refKey(of.ref), (of) => of.store.hostName, { status: threadsByStatus, active: threadsByActivity })
   /** A bot's chat, on the Bots page. */
   const openBot = (ref: BotRef) => {
     app.select(ref)
@@ -314,8 +319,11 @@ function ChatSplitView() {
     setWorkflowFocus(workflowId ?? null)
     setPage('workflows')
   }
-  const openExtensions = (computerId: string) => {
+  // A new object each time, so opening the same tab again still turns Extensions to it.
+  const [extensionsFocus, setExtensionsFocus] = useState<ExtensionFocus | null>(null)
+  const openExtensions = (computerId: string, focus?: ExtensionFocus) => {
     setExtensionsOf(computerId)
+    setExtensionsFocus(focus ? { ...focus } : null)
     setPage('extensions')
   }
 
@@ -471,6 +479,11 @@ function ChatSplitView() {
     else if (option === 'status') setBotsByStatus(on)
     else setBotsByComputer(on)
   }
+  const sortThreads = (option: 'status' | 'activity', on: boolean) => {
+    analytics.track({ event: 'list_layout_changed', list: 'threads', option, on })
+    if (option === 'status') setThreadsByStatus(on)
+    else setThreadsByActivity(on)
+  }
   // The computers shown that can move a bot with a new message to the top (hosts before 2.45.1 can't): theirs to
   // keep, so the choice reaches every device, unlike the two above.
   const ordering = page === 'bots'
@@ -479,7 +492,12 @@ function ChatSplitView() {
   const byActivity = ordering.length > 0 && ordering.every((s) => s.autoOrder)
   const listOptions: MenuItem[] = [
     ...(page === 'threads'
-      ? (['folder', 'bot', 'computer'] as const).map((by) => ({ title: ({ folder: 'Group by folder', bot: 'Group by bot', computer: 'Group by computer' } as const)[by], selected: threadsGroup === by, keepsOpen: true, action: () => layOut(by, threadsGroup !== by) }))
+      ? [
+          ...(['folder', 'bot', 'computer'] as const).map((by) => ({ title: ({ folder: 'Group by folder', bot: 'Group by bot', computer: 'Group by computer' } as const)[by], selected: threadsGroup === by, keepsOpen: true, action: () => layOut(by, threadsGroup !== by) })),
+          // Beside the grouping: how the rows of each group are ordered.
+          { title: 'Sort by status', divider: true, selected: threadsByStatus, keepsOpen: true, action: () => sortThreads('status', !threadsByStatus) },
+          { title: 'Sort by last active', selected: threadsByActivity, keepsOpen: true, action: () => sortThreads('activity', !threadsByActivity) },
+        ]
       : [
           { title: 'Group by computer', selected: botsByComputer, keepsOpen: true, action: () => layOut('computer', !botsByComputer) },
           { title: 'Sort by status', selected: botsByStatus, keepsOpen: true, action: () => layOut('status', !botsByStatus) },
@@ -492,8 +510,11 @@ function ChatSplitView() {
       },
     }] : []),
   ]
+  // Grouping or sorting the list another way slides its rows to their new places.
+  useListFlip(sidebar, page, page === 'threads' ? `${threadsGroup}/${threadsByStatus}/${threadsByActivity}` : `${botsByComputer}/${botsByStatus}/${byActivity}`)
   const settingsPages: Partial<Record<AppPage, SettingsPage>> = { computers: 'computers', network: 'network', usage: 'usage', settings: settingsPage }
   return (
+    <OpenExtensions.Provider value={openExtensions}>
     <div className={`split ${context ? 'covered' : ''}`}>
       <WindowBar
         back={step(visits, -1) ? () => travel(-1) : null}
@@ -505,7 +526,7 @@ function ChatSplitView() {
       <NavRail page={page} go={go} working={threads.working} approvals={app.approvals.length} workflows={workflows} />
       {listed ? (
         <>
-          <aside className={`sidebar ${resizing ? 'resizing' : ''}`} style={{ width }} inert={listHidden}>
+          <aside ref={sidebar} className={`sidebar ${resizing ? 'resizing' : ''}`} style={{ width }} inert={listHidden}>
             <div className="sidebar-header drag">
               <Text size="title3" weight="semibold" tone="text" truncate className={page === 'bots' ? 'sidebar-title crowded' : 'sidebar-title'}>{tr(page === 'bots' ? 'Bots' : 'Threads')}</Text>
               <Spacer />
@@ -577,7 +598,7 @@ function ChatSplitView() {
             <SettingsView page={settingsPages[page] ?? settingsPage} setPage={setSettingsPage} />
           ) : extensionsStore ? (
             <StoreContext.Provider value={extensionsStore}>
-              <MarketplaceView key={extensionsStore.computer.id} computer={extensionsChoice} />
+              <MarketplaceView key={extensionsStore.computer.id} computer={extensionsChoice} focus={extensionsFocus} />
             </StoreContext.Provider>
           ) : (
             <div className="empty-detail">
@@ -636,5 +657,6 @@ function ChatSplitView() {
       <Dialog open={errorMessage !== null} title={tr('Something went wrong')} message={errorMessage} actions={[]} cancel="OK" onClose={() => app.clearErrors()} />
       <SignInCodeDialog />
     </div>
+    </OpenExtensions.Provider>
   )
 }

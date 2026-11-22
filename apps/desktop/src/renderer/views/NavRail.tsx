@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { createContext, useRef, useState } from 'react'
 import { fill } from '@shared/fill'
 import { IconButton } from '../components/Controls'
 import { Icon } from '../components/Icon'
@@ -9,13 +9,18 @@ import { useAccount } from '../store/account'
 import { useApp } from '../store/context'
 import { ProfileAvatar } from './PanelMenus'
 import { UpdateBadge } from './UpdateButton'
+import type { ExtensionFocus } from './marketplace/market-models'
 import './nav-rail.css'
 
 /** What the chat window shows: one entry of the rail each. */
+/** Opens Extensions on a computer, from deep in a view (the model panel's add agent, a bot's Add login profile…),
+ * optionally on one tab and agent. */
+export const OpenExtensions = createContext<((computerId: string, focus?: ExtensionFocus) => void) | null>(null)
+
 export type AppPage = 'bots' | 'threads' | 'workflows' | 'computers' | 'network' | 'extensions' | 'usage' | 'settings'
 
 const ENTRIES: { id: AppPage; title: string; icon: string }[] = [
-  { id: 'bots', title: 'Bots', icon: 'bubble.left.and.bubble.right' },
+  { id: 'bots', title: 'Bots', icon: 'bot' },
   { id: 'threads', title: 'Threads', icon: 'checklist' },
   { id: 'workflows', title: 'Workflows', icon: 'flowchart' },
   { id: 'computers', title: 'Computers', icon: 'desktopcomputer' },

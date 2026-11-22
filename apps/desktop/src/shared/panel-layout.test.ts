@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { closeView, DEFAULT_PANEL, panelLayout, previewAddress, showChooser, showView, toggleSplit, type PanelLayout } from './panel-layout.ts'
+import { closeView, DEFAULT_PANEL, panelLayout, previewAddress, showChooser, showView, threadTab, toggleSplit, type PanelLayout } from './panel-layout.ts'
 
 const one: PanelLayout = [{ tabs: ['details', 'memory', 'settings'], shown: 'memory' }]
 
@@ -25,11 +25,20 @@ test('closing the tab shown shows its neighbor, then the chooser', () => {
 })
 
 test('a stored layout is drawn only as far as it makes sense', () => {
-  const views = ['details', 'memory', 'settings']
+  const known = ['details', 'memory', 'settings']
+  const views = (t: string) => known.includes(t)
   assert.deepEqual(panelLayout(null, views), [{ tabs: [], shown: null }], 'nothing stored: one pane on its chooser')
   assert.deepEqual(panelLayout([{ tabs: ['memory', 'library', 'memory'], shown: 'library' }, { tabs: ['memory', 'details'], shown: 'details' }, { tabs: ['settings'] }], views),
     [{ tabs: ['memory'], shown: null }, { tabs: ['details'], shown: 'details' }], 'unknown and repeated views go, and a third pane')
   assert.deepEqual(panelLayout([{ tabs: 'x' }], views), DEFAULT_PANEL)
+})
+
+test('a thread opens as a tab, and its tab goes with it', () => {
+  const tab = threadTab('t1')
+  const opened = showView([{ tabs: ['details'], shown: 'details' }], tab)
+  assert.deepEqual(opened, [{ tabs: ['details', tab], shown: tab }])
+  assert.deepEqual(panelLayout(opened, (t) => t === 'details' || t === tab), opened, 'its bot keeps it')
+  assert.deepEqual(panelLayout(opened, (t) => t === 'details'), [{ tabs: ['details'], shown: 'details' }], 'gone, its pane shows the first tab')
 })
 
 test('the browser shows web pages only, and never the app in itself', () => {

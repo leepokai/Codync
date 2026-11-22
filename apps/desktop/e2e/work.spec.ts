@@ -87,24 +87,28 @@ const section = (details: Locator, title: string) =>
 /** A task's row in a section. */
 const row = (details: Locator, title: string, task: string) => section(details, title).locator('.work-row[data-work-status]', { hasText: task })
 
-/** The thread the inspector shows in place of its pages. */
+/** The thread the inspector shows in a tab. */
 const threadPanel = (details: Locator) => details.locator('.work-thread')
 
-/** Opens the thread of a task's row; it takes the place of Details, with no dialog. */
+/** Opens the thread of a task's row: a new tab of the pane, named by the task and shown, with no dialog. */
 async function openThread(details: Locator, taskRow: Locator) {
   await taskRow.locator('.work-row-open').click()
   const thread = threadPanel(details)
   await expect(thread).toBeVisible()
-  await expect(details.locator('.details-page.away')).toHaveCount(1)
+  // A thread's tab carries its task's name as its tip; the views' tabs have none.
+  await expect(details.getByRole('tab', { selected: true })).toHaveAttribute('title', /.+/)
   await expect(details.page().getByRole('dialog')).toHaveCount(0)
   return thread
 }
 
-/** Back to Details from a thread. */
+/** Closes the thread's tab (the pane shows the tab beside it), then back to Details. */
 async function closeThread(details: Locator) {
-  await threadPanel(details).getByRole('button', { name: 'Back to details' }).click()
+  const tab = details.getByRole('tab', { selected: true })
+  const name = (await tab.getAttribute('title')) ?? ''
+  await details.getByRole('button', { name: `Close ${name}` }).click()
   await expect(threadPanel(details)).toHaveCount(0)
-  await expect(details.locator('.details-page.away')).toHaveCount(0)
+  await expect(details.getByRole('tab', { selected: true })).not.toHaveAttribute('title', /.+/)
+  await details.getByRole('tab', { name: 'Details', exact: true }).click()
 }
 
 /** Writes to the open thread. */
@@ -577,12 +581,14 @@ test("the Threads page groups every bot's work as chosen, shows a thread beside 
     await section.getByRole('button', { name: 'New thread', exact: true }).click()
     const start = page.locator('.new-thread')
     await expect(start).toContainText(`New thread with ${name}`)
-    // What it runs on starts as the bot's own, each a menu over the box.
-    await expect(start.locator('.thread-option')).toHaveCount(4)
-    const approval = start.locator('.thread-option[title="Permissions"]')
+    // What it runs on starts as the bot's own, each a chip in the box's row; how it is approved is in the model's panel.
+    await expect(start.locator('.thread-option')).toHaveCount(3)
+    await start.locator('.thread-option[title="Model"]').click()
+    const approval = page.locator('.model-picker-permissions')
     await approval.click()
     await page.getByRole('menuitemradio', { name: 'Approve automatically' }).click()
     await expect(approval).toContainText('Approve automatically')
+    await page.keyboard.press('Escape')
     await start.getByRole('textbox').fill('Count the files')
     await start.getByRole('textbox').press('Enter')
     // The bot's one place is taken (Next job works): the new thread waits for it, picked, its title beside the list.

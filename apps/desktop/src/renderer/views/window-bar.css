@@ -47,18 +47,3 @@ html[data-platform="darwin"] .window-bar {
   background: var(--background);
   box-shadow: none;
 }
-/* What runs the bot; a click shows its settings. */
-.window-bar-agent {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 240px;
-  height: calc(28px * var(--scale));
-  padding: 0 10px;
-  border-radius: var(--radius-pill);
-  transition: background-color var(--hover);
-}
-.window-bar-agent:hover {
-  background: rgba(var(--text-rgb), 0.06);
-}

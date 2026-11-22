@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { isGroup } from '@shared/models'
 import { taskLine, threadSections, type WorkTask } from '@shared/work'
-import { BotAvatar } from '../components/Avatar'
+import { BotAvatar, NoBotAvatar } from '../components/Avatar'
 import { IconButton } from '../components/Controls'
 import { AnchoredMenu, useContextMenu, type MenuItem } from '../components/Menu'
 import { Icon } from '../components/Icon'
@@ -48,15 +48,18 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
   const tr = useTr()
   useScreenViewed('all_work')
   const [grouping] = usePref(prefs.threadsGroup)
+  const [byStatus] = usePref(prefs.threadsByStatus)
+  const [byActivity] = usePref(prefs.threadsByActivity)
   const [folded, setFolded] = usePref(prefs.foldedThreadSections)
   const [more, setMore] = useState(false)
   // A thread's menu asks before Stop and Cut in, with its bot's dialogs.
   const [asking, setAsking] = useState<{ of: RosterItem; task: WorkTask; kind: 'stop' | 'cutIn' } | null>(null)
-  const { needsYou, groups, recent } = threadSections(roster, grouping, (of) => refKey(of.ref), (of) => of.store.hostName)
+  const { needsYou, groups, recent } = threadSections(roster, grouping, (of) => refKey(of.ref), (of) => of.store.hostName, { status: byStatus, active: byActivity })
   const canStart = threadBots(roster).length > 0 || plainStores(roster).length > 0
   const row = ({ of, task }: { of: RosterItem; task: WorkTask }, label = task.title) => (
     <StoreContext.Provider key={`${refKey(of.ref)}/${task.id}`} value={of.store}>
       <ThreadRow
+        flip={`${refKey(of.ref)}/${task.id}`}
         task={task}
         label={label}
         selected={picked !== null && picked.taskId === task.id && sameRef(picked.ref, of.ref)}
@@ -102,7 +105,7 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
                 <div key={group.key} className="thread-group" role="group" aria-label={title}>
                   <HStack gap={2} className="thread-section-heading">
                     <button className="thread-row thread-section-toggle" aria-expanded={!isFolded} onClick={() => setFolded(isFolded ? folded.filter((key) => key !== group.key) : [...folded, group.key])}>
-                      {group.kind === 'bot' && !of.bot.plain ? <BotAvatar bot={of.bot} size={16} animated={false} /> : <Icon name={({ folder: 'folder', routine: 'clock', computer: 'desktopcomputer', bot: 'cpu' } as const)[group.kind]} size={12} color="var(--secondary)" />}
+                      {group.kind === 'bot' ? (of.bot.plain ? <NoBotAvatar size={16} /> : <BotAvatar bot={of.bot} size={16} animated={false} />) : <Icon name={({ folder: 'folder', routine: 'clock', computer: 'desktopcomputer' } as const)[group.kind]} size={12} color="var(--secondary)" />}
                       <Text tone="text" truncate grow>{title}</Text>
                       {loud ? <StatusMark status={loud.task.status} /> : null}
                     </button>
@@ -146,7 +149,7 @@ function StatusMark({ status }: { status: WorkTask['status'] }) {
 
 /** One thread of the list: its title (a routine's run: when it started) and its mark, whose place a `…` takes while the
  * row is hovered; the `…` and a right-click open its menu. */
-function ThreadRow({ task, label, selected, open, items }: { task: WorkTask; label: string; selected: boolean; open?: () => void; items: () => MenuItem[] }) {
+function ThreadRow({ flip, task, label, selected, open, items }: { flip: string; task: WorkTask; label: string; selected: boolean; open?: () => void; items: () => MenuItem[] }) {
   const tr = useTr()
   const store = useStore()
   const context = useContextMenu()
@@ -154,7 +157,7 @@ function ThreadRow({ task, label, selected, open, items }: { task: WorkTask; lab
   const [more, setMore] = useState(false)
   const Open = open ? 'button' : 'div'
   return (
-    <div className={`thread-item ${more || context.open ? 'menu-open' : ''}`} onContextMenu={context.onContextMenu}>
+    <div className={`thread-item ${more || context.open ? 'menu-open' : ''}`} data-flip={flip} onContextMenu={context.onContextMenu}>
       <Open className={`thread-row ${selected ? 'selected' : ''}`} data-thread-row={task.title} data-work-status={task.status} onClick={open} title={task.title}>
         <Text tone="text" truncate grow>{label}</Text>
         <span className="thread-mark"><StatusMark status={task.status} /></span>

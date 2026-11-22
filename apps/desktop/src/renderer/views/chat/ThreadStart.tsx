@@ -1,10 +1,8 @@
-import { useRef, useState, type ReactNode } from 'react'
-import { approvals, withApproval } from '@shared/approvals'
+import { useRef, useState } from 'react'
 import { folderName, type Bot } from '@shared/models'
 import type { ThreadSetup } from '@shared/work'
 import { AgentIcon } from '../../components/AgentIcon'
-import { BotAvatar } from '../../components/Avatar'
-import { DropdownMenu } from '../../components/Controls'
+import { BotAvatar, NoBotAvatar } from '../../components/Avatar'
 import { Icon } from '../../components/Icon'
 import type { MenuItem } from '../../components/Menu'
 import { Sheet } from '../../components/Overlay'
@@ -12,11 +10,12 @@ import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { refKey, sameRef, type BotRef, type RosterItem } from '../../store/app-model'
 import type { BotStore } from '../../store/bot-store'
-import { modelChoices, useAgentModels } from '../bots/agent-models'
+import { useAgentModels } from '../bots/agent-models'
 import { lastPathComponent } from '../bots/drafts'
 import { FolderPicker } from '../bots/FolderPicker'
 import { ChatLog, useDockHeight } from './ChatLog'
 import { Composer } from './Composer'
+import { ModelPicker, Option, useApprovalMenu } from './RunOptions'
 import './chat.css'
 import './composer.css'
 import './chat-controls.css'
@@ -50,7 +49,8 @@ export function ThreadStart({ bots, of, choose, started }: { bots: RosterItem[];
   const change = (part: ThreadSetup) => setSetup((s) => ({ ...s, ...part }))
   const [failed, setFailed] = useState('')
   const [browsing, setBrowsing] = useState(false)
-  const agents = (store.hello?.backends ?? []).filter((b) => b.available)
+  // The agents set up on the computer: installed and not waiting on a sign-in (Extensions adds the rest).
+  const agents = (store.hello?.backends ?? []).filter((b) => b.available && b.signedIn !== false)
   const backend = setup.backend ?? bot?.backend ?? agents.find((b) => b.id === 'claude')?.id ?? agents[0]?.id ?? ''
   const models = useAgentModels(backend)
   const root = useRef<HTMLDivElement>(null)
@@ -64,7 +64,7 @@ export function ThreadStart({ bots, of, choose, started }: { bots: RosterItem[];
       title: r.bot.name, verbatim: true, detail: many ? r.store.hostName : undefined,
       leading: <BotAvatar bot={r.bot} size={22} animated={false} />, selected: bot !== null && sameRef(r.ref, of.ref), action: () => choose(r.ref),
     })),
-    ...(plainOn ? [{ title: 'No bot', icon: 'cpu', divider: bots.length > 0, selected: bot === null, action: () => choose(of.ref, true) }] : []),
+    ...(plainOn ? [{ title: 'No bot', leading: <NoBotAvatar size={22} />, divider: bots.length > 0, selected: bot === null, action: () => choose(of.ref, true) }] : []),
   ]
 
   const home = store.hello?.home ?? ''
@@ -75,33 +75,9 @@ export function ThreadStart({ bots, of, choose, started }: { bots: RosterItem[];
     { title: 'Browse other folders', icon: 'folder', divider: true, action: () => setBrowsing(true) },
   ]
 
-  // Another agent starts from its own defaults: its model and modes are its own.
-  const agentItems = (): MenuItem[] => agents.map((a) => ({
-    title: a.name, verbatim: true, leading: <AgentIcon registry={store.agentRegistry(a.id)} size={16} />, selected: a.id === backend,
-    action: () => (a.id === backend ? undefined : change({ backend: a.id, model: undefined, approval: undefined })),
-  }))
-
   const approval = setup.approval ?? (bot ? { permission: bot.permission, mode: bot.mode } : PLAIN_APPROVAL)
-  const { choices, selected } = approvals(approval, models.catalog)
-  const ways = (): MenuItem[] => choices.map((c) => ({
-    title: c.label, detail: c.note ?? undefined, selected: c.id === selected.id, action: () => change({ approval: withApproval(approval, c.id) }),
-  }))
-
+  const ways = useApprovalMenu(approval, models, (a) => change({ approval: { permission: a.permission, mode: a.mode ?? null } }))
   const model = setup.model ?? (bot ? { id: bot.model ?? null, options: bot.modelOptions } : { id: null, options: {} })
-  const { value, options, modelOptions } = modelChoices(models.catalog, model.id, tr)
-  const chosen = (id: string, fallback?: string | null) => model.options[id] ?? fallback
-  const modelLabel = [
-    options.find((o) => o.id === value)?.label ?? value,
-    ...modelOptions.map((o) => o.values.find((v) => v.id === chosen(o.id, o.default))?.name),
-  ].filter(Boolean).join(' · ')
-  const modelItems = (): MenuItem[] => [
-    // Its settings belong to one model: another starts without any.
-    ...options.map((o) => ({ title: o.label, verbatim: true, selected: o.id === value, action: () => (o.id === value ? undefined : change({ model: { id: o.id || null, options: {} } })) })),
-    ...modelOptions.map((o, at) => ({
-      title: o.name, verbatim: true, divider: at === 0,
-      submenu: o.values.map((v) => ({ title: v.name, verbatim: true, selected: chosen(o.id, o.default) === v.id, action: () => change({ model: { id: model.id, options: { ...model.options, [o.id]: v.id } } }) })),
-    })),
-  ]
 
   const send = (text: string) => {
     setFailed('')
@@ -137,15 +113,18 @@ export function ThreadStart({ bots, of, choose, started }: { bots: RosterItem[];
         />
         <div className="composer-dock" ref={dock}>
           <div className="composer-fade" />
-          <div className="thread-options">
-            {/* Who it is with first; with one bot and no other way there is nothing to choose. */}
-            <Option title="Choose a bot" items={others} disabled={bots.length + (plainOn ? 1 : 0) < 2} leading={bot ? <BotAvatar bot={bot} size={16} animated={false} /> : <Icon name="cpu" size={11} />} label={bot ? bot.name : tr('No bot')} strong />
-            {bot ? null : <Option title="Agent" items={agentItems} disabled={agents.length < 2} leading={<AgentIcon registry={store.agentRegistry(backend)} size={12} />} label={store.backendName(backend)} />}
+          {/* What it runs on, in the box's row as in a bot's chat: who it is with first (with one bot and no other way
+              there is nothing to choose). */}
+          <Composer key={refKey(of.ref) + (bot ? '' : '/plain')} botId={bot?.id ?? ''} thread={{ draftKey, placeholder: tr('What should it work on?'), working: false, send, controls: <>
+            <Option title="Choose a bot" items={others} search={bots.length > 8 ? 'Search bots' : undefined} disabled={bots.length + (plainOn ? 1 : 0) < 2} leading={bot ? <BotAvatar bot={bot} size={16} animated={false} /> : <NoBotAvatar size={16} />} label={bot ? bot.name : tr('No bot')} strong />
             <Option title="Workspace" items={folders} leading={<Icon name="folder" size={11} />} label={setup.cwd ? lastPathComponent(setup.cwd) : ownFolder} />
-            <Option title="Permissions" items={ways} leading={<Icon name="hand.raised" size={11} />} label={tr(selected.label)} />
-            <Option title="Model" items={modelItems} leading={<AgentIcon registry={store.agentRegistry(backend)} size={12} />} label={modelLabel} />
-          </div>
-          <Composer key={refKey(of.ref) + (bot ? '' : '/plain')} botId={bot?.id ?? ''} thread={{ draftKey, placeholder: tr('What should it work on?'), working: false, send }} />
+            {/* Without a bot the agent is a choice too, in the panel's rail; another agent starts from its own defaults. */}
+            <ModelPicker
+              backend={backend} model={model} models={models} set={(m) => change({ model: m })} approval={ways}
+              // ponytail: a thread starts on an agent's default login; its other logins join the rail once a thread can take one.
+              {...(bot ? {} : { seats: agents.map((a) => ({ key: a.id, backend: a.id, name: a.name, on: a.id === backend, pick: () => change({ backend: a.id, model: undefined, approval: undefined }) })) })}
+            />
+          </> }} />
           {failed ? <Text as="div" size="caption" tone="danger" className="thread-start-failed" role="alert">{failed}</Text> : null}
         </div>
       </div>
@@ -159,17 +138,5 @@ export function ThreadStart({ bots, of, choose, started }: { bots: RosterItem[];
         />
       </Sheet>
     </div>
-  )
-}
-
-/** One thing the thread runs on, as a chip that opens its choices. */
-function Option({ title, items, leading, label, disabled = false, strong = false }: { title: string; items: () => MenuItem[]; leading: ReactNode; label: string; disabled?: boolean; strong?: boolean }) {
-  const tr = useTr()
-  return (
-    <DropdownMenu items={items} title={tr(title)} className="thread-option" disabled={disabled}>
-      {leading}
-      <Text size="caption" tone={strong ? 'text' : 'secondary'} truncate>{label}</Text>
-      {disabled ? null : <Icon name="chevron.down" size={8} color="var(--tertiary)" />}
-    </DropdownMenu>
   )
 }

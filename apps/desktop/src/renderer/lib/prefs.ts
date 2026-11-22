@@ -72,6 +72,9 @@ export const prefs = {
   botsByStatus: pref('botsByStatus', false),
   /** How the Threads list groups what doesn't need the user: by folder (and routine), by bot, or not at all. */
   threadsGroup: pref<ThreadGrouping>('threadsGroup', 'folder'),
+  /** How the Threads list orders the rows of each group, beside how it groups them. */
+  threadsByStatus: pref('threadsByStatus', false),
+  threadsByActivity: pref('threadsByActivity', false),
   /** The list beside the rail (the bots, the threads) is folded away. */
   listHidden: pref('listHidden', false),
   sidebarWidth: pref('desktopSidebarWidth', 266),
@@ -87,6 +90,8 @@ export const prefs = {
   collapsedRosterSections: pref<string[]>('collapsedRosterSections', []),
   /** Folded groups of the Threads list, by the group's key: on this device only. */
   foldedThreadSections: pref<string[]>('foldedThreadSections', []),
+  /** Folded sections of a settings form (a bot's), by the section's key: on this device only. */
+  foldedCardSections: pref<string[]>('foldedCardSections', []),
   usageIconStyle: pref<'character' | 'original'>('usageIconStyle', 'character'),
   /** The roster marks each bot with its agent's logo while the bots run more than one agent. */
   agentLogos: pref('showAgentLogos', true),

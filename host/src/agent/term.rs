@@ -1,6 +1,7 @@
-//! Setup terminals: installing an agent's CLI or signing in to it runs in a
-//! real PTY on this computer, streamed to the client that started it. The
-//! host picks the command (from `backends::HARNESSES`); clients only type.
+//! Terminals: installing an agent's CLI or signing in to it runs in a real PTY on
+//! this computer, streamed to the client that started it; the host picks the
+//! command (from `backends::HARNESSES`) and clients only type. A bot's own
+//! terminal is the user's login shell in the bot's folder.
 
 use crate::LockExt;
 use crate::agent::backends;
@@ -12,6 +13,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::io::{Read as _, Write as _};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
@@ -28,6 +30,9 @@ pub enum Step {
     /// Codync's Node.js, for agents that run on it (one terminal for every agent).
     Node,
     Login,
+    /// A bot's own shell, in its folder (`shell`); never asked for by name.
+    #[serde(skip)]
+    Shell,
 }
 
 enum Input {
@@ -41,7 +46,7 @@ struct Output {
     exit: Option<i32>,
 }
 
-/// What a terminal is for: an agent, the step, and the account login profile a sign-in is for.
+/// What a terminal is for: an agent (a bot, for its shell), the step, and the account login profile a sign-in is for.
 type Key = (String, Step, Option<String>);
 
 pub struct Term {
@@ -87,8 +92,9 @@ impl Term {
 pub struct Terms(Mutex<HashMap<String, Arc<Term>>>);
 
 impl Terms {
+    /// A setup still running: a bot's shell stays open as long as its tab does, and holds nothing up.
     pub fn busy(&self) -> bool {
-        self.0.locked().values().any(|term| term.output.locked().exit.is_none())
+        self.0.locked().values().any(|term| term.key.1 != Step::Shell && term.output.locked().exit.is_none())
     }
 
     pub fn get(&self, id: &str) -> Option<Arc<Term>> {
@@ -110,7 +116,22 @@ impl Terms {
         cols: u16,
         rows: u16,
     ) -> Result<String> {
-        self.spawn((backend.to_owned(), Step::Login, Some(id.to_owned())), command, cols, rows)
+        self.spawn(
+            (backend.to_owned(), Step::Login, Some(id.to_owned())),
+            command_line(command),
+            Some(command),
+            home(),
+            cols,
+            rows,
+        )
+    }
+
+    /// The user's login shell in bot `bot`'s folder `cwd`, or the one already open there.
+    pub fn shell(self: &Arc<Self>, bot: &str, cwd: &Path, cols: u16, rows: u16) -> Result<String> {
+        if !cwd.is_dir() {
+            bail!("{} is not a folder on this computer", cwd.display());
+        }
+        self.spawn((bot.to_owned(), Step::Shell, None), login_shell(), None, cwd.to_owned(), cols, rows)
     }
 
     /// Starts `step` for `backend` (a sign-in `method` the agent advertised, or
@@ -138,25 +159,30 @@ impl Terms {
                     .ok_or_else(|| anyhow!("That sign-in option is gone; check {name} again"))?,
                 None => backends::login_command(backend).await?,
             },
+            Step::Shell => bail!("a shell opens from its bot"),
         };
-        self.spawn((backend.to_owned(), step, None), &command, cols, rows)
+        self.spawn((backend.to_owned(), step, None), command_line(&command), Some(&command), home(), cols, rows)
     }
 
-    fn spawn(self: &Arc<Self>, key: Key, command: &str, cols: u16, rows: u16) -> Result<String> {
+    /// Runs `builder` in `cwd` on a new PTY, its `banner` (the command) shown first, or returns the open terminal for
+    /// `key`.
+    fn spawn(
+        self: &Arc<Self>,
+        key: Key,
+        mut builder: CommandBuilder,
+        banner: Option<&str>,
+        cwd: PathBuf,
+        cols: u16,
+        rows: u16,
+    ) -> Result<String> {
         let mut map = self.0.locked();
         if let Some((id, _)) = map.iter().find(|(_, t)| t.key == key && t.output.locked().exit.is_none()) {
             return Ok(id.clone());
         }
         let PtyPair { master, slave } = native_pty_system().openpty(size(cols, rows))?;
-        let shell = crate::shell::line(command);
-        let mut builder = CommandBuilder::new(shell.program);
-        builder.args(&shell.args);
-        for (k, v) in &shell.env {
-            if v.is_empty() { builder.env_remove(k) } else { builder.env(k, v) }
-        }
         builder.env("TERM", "xterm-256color");
         builder.env("COLORTERM", "truecolor");
-        builder.cwd(dirs::home_dir().unwrap_or_else(|| "/".into()));
+        builder.cwd(cwd);
         let child = slave.spawn_command(builder)?;
         // Only the child may hold the terminal side, or the output never ends.
         drop(slave);
@@ -167,7 +193,9 @@ impl Terms {
             output: Mutex::new(Output { scrollback: vec![], exit: None }),
             events: broadcast::channel(256).0,
         });
-        term.push(format!("\x1b[2m$ {command}\x1b[0m\r\n").as_bytes());
+        if let Some(command) = banner {
+            term.push(format!("\x1b[2m$ {command}\x1b[0m\r\n").as_bytes());
+        }
         let id = uuid::Uuid::new_v4().to_string();
         map.insert(id.clone(), term.clone());
         tracing::info!(backend = term.key.0, step = ?term.key.1, term = %id, "setup terminal started");
@@ -208,6 +236,35 @@ const CURSOR_REPLY: &[u8] = b"\x1b[2;1R";
 fn without_cursor_query(chunk: &[u8]) -> Option<Vec<u8>> {
     let at = chunk.windows(CURSOR_QUERY.len()).position(|w| w == CURSOR_QUERY)?;
     Some([&chunk[..at], &chunk[at + CURSOR_QUERY.len()..]].concat())
+}
+
+/// `command` as the platform's shell runs one line.
+fn command_line(command: &str) -> CommandBuilder {
+    let shell = crate::shell::line(command);
+    let mut builder = CommandBuilder::new(shell.program);
+    builder.args(&shell.args);
+    for (k, v) in &shell.env {
+        if v.is_empty() { builder.env_remove(k) } else { builder.env(k, v) }
+    }
+    builder
+}
+
+/// The user's own interactive shell: `$SHELL` as a login shell on Unix, PowerShell on Windows.
+fn login_shell() -> CommandBuilder {
+    if cfg!(windows) {
+        let mut builder = CommandBuilder::new("powershell.exe");
+        builder.arg("-NoLogo");
+        return builder;
+    }
+    let fallback = if cfg!(target_os = "macos") { "/bin/zsh" } else { "/bin/bash" };
+    let mut builder =
+        CommandBuilder::new(std::env::var("SHELL").ok().filter(|s| !s.is_empty()).as_deref().unwrap_or(fallback));
+    builder.arg("-l");
+    builder
+}
+
+fn home() -> PathBuf {
+    dirs::home_dir().unwrap_or_else(|| "/".into())
 }
 
 fn size(cols: u16, rows: u16) -> PtySize {
@@ -309,7 +366,9 @@ mod tests {
         } else {
             ("[ -t 0 ] && echo tty; read x; echo got-$x", "\n")
         };
-        let id = terms.spawn(("test".into(), Step::Login, None), command, 80, 24).unwrap();
+        let id = terms
+            .spawn(("test".into(), Step::Login, None), command_line(command), Some(command), home(), 80, 24)
+            .unwrap();
         let term = terms.get(&id).unwrap();
         let (_, mut rx) = term.attach();
         terms.write(&id, &B64.encode(format!("hi{enter}"))).unwrap();
@@ -327,5 +386,28 @@ mod tests {
         let (head, _) = term.attach();
         let text = String::from_utf8(B64.decode(head[0]["data"].as_str().unwrap()).unwrap()).unwrap();
         assert!(text.contains("tty") && text.contains("got-hi"), "{text}");
+    }
+
+    /// A bot's shell opens in its folder, and a second open while it runs is the same terminal.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_bot_shell_opens_in_its_folder() {
+        let terms = Arc::new(Terms::default());
+        let dir = std::env::temp_dir().join(format!("codync-term-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let id = terms.shell("bot", &dir, 80, 24).unwrap();
+        assert_eq!(terms.shell("bot", &dir, 80, 24).unwrap(), id);
+        assert!(!terms.busy(), "an open shell holds nothing up");
+        let term = terms.get(&id).unwrap();
+        let (_, mut rx) = term.attach();
+        terms.write(&id, &B64.encode("pwd; exit\n")).unwrap();
+        tokio::time::timeout(Duration::from_secs(10), async { while rx.recv().await.unwrap()["type"] != "exit" {} })
+            .await
+            .unwrap();
+        let (head, _) = term.attach();
+        let text = String::from_utf8(B64.decode(head[0]["data"].as_str().unwrap()).unwrap()).unwrap();
+        let name = dir.file_name().unwrap().to_string_lossy().into_owned();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(text.contains(&name), "{text}");
     }
 }

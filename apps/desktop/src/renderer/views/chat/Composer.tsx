@@ -16,6 +16,7 @@ import { MAX_FILE_SIZE, type OutgoingFile } from '../../store/outgoing-files'
 import { pluginsFor } from '../marketplace/plugins'
 import { pastedFiles, readPicked } from './composer-files'
 import { ComposerField } from './ComposerField'
+import { BotRunOptions } from './RunOptions'
 import { CommandMenu, MentionMenu, useComposerMenu } from './ComposerMenu'
 import { ComposerAttachment } from './ComposerAttachment'
 import { QuoteRow } from './ChatRows'
@@ -37,6 +38,8 @@ export interface ThreadBox {
   /** A promise makes the box wait, and keep the words when it fails. */
   send: (text: string) => void | Promise<unknown>
   stop?: () => void
+  /** What the thread runs on, as chips in the box's row (the bot's chat shows its own). */
+  controls?: ReactNode
 }
 
 /**
@@ -223,12 +226,8 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
             </div>
           </ComposerReveal>
           <div className="composer-box">
-            {/* One capsule: attachments, the field, and send / stop / call. */}
-            {canAttach ? (
-              <button className="press composer-add" aria-label={tr('Add files')} title={tr('Add files')} onClick={() => void window.codync.app.pickFiles().then(append)}>
-                <Icon name="plus" size={13} weight="medium" color="var(--text)" />
-              </button>
-            ) : null}
+            {/* The field on top; under it a row of what it sends with: files, what the bot runs on, the mic and send /
+                stop / call. */}
             <ComposerField
               field={field}
               value={draft}
@@ -259,6 +258,14 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
                 void pastedFiles(window.codync.app.readClipboardFiles, [...e.clipboardData.files]).then(append)
               }}
             />
+            <div className="composer-toolbar">
+            {canAttach ? (
+              <button className="press composer-add" aria-label={tr('Add files')} title={tr('Add files')} onClick={() => void window.codync.app.pickFiles().then(append)}>
+                <Icon name="plus" size={13} weight="medium" color="var(--text)" />
+              </button>
+            ) : null}
+            <span className="composer-toolbar-space" />
+            {thread ? thread.controls : bot && !isGroup(bot) ? <BotRunOptions bot={bot} /> : null}
             {dictation.listening || dictation.transcribing ? (
               <RecordingPill
                 startedAt={dictation.startedAt}
@@ -294,6 +301,7 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
                 </span>
               ))}
             </button>
+            </div>
           </div>
         </div>
       </div>

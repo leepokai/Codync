@@ -165,6 +165,7 @@
 "waveform",
 "wifi",
 "wifi.slash",
+"wrench.adjustable",
 "wrench.and.screwdriver",
 "xmark",
 "xmark.circle",
@@ -172,5 +173,10 @@
 "house.fill",
 "bubble.left.fill",
 "line.3.horizontal",
-"heart.fill"
+"heart.fill",
+"shield",
+"checkmark.shield",
+"exclamationmark.shield",
+"list.bullet.clipboard",
+"app.dashed"
 ]

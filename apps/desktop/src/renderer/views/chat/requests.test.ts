@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Entry } from '@shared/models'
-import { requestDetail, requestIcon, requestName, settledAs } from './requests.ts'
+import { requestDetail, requestIcon, requestName, requestParams, settledAs } from './requests.ts'
 
 test('an MCP tool reads as its name in words and its server', () => {
   assert.deepEqual(requestName('memory-read_memory: read_memory'), { name: 'Read memory', source: 'memory', literal: false })
@@ -25,7 +25,7 @@ test('a request of no kind takes its symbol from its verb', () => {
   assert.equal(requestIcon('execute', '`date`'), 'terminal')
   assert.equal(requestIcon('other', 'memory-search_history: search_history'), 'magnifyingglass')
   assert.equal(requestIcon(undefined, 'connectors-list_connectors: list_connectors'), 'list.bullet')
-  assert.equal(requestIcon(undefined, 'anything'), 'wrench.and.screwdriver')
+  assert.equal(requestIcon(undefined, 'anything'), 'wrench.adjustable')
 })
 
 test('a request shows its detail without the fence, and nothing for no arguments', () => {
@@ -33,4 +33,13 @@ test('a request shows its detail without the fence, and nothing for no arguments
   assert.equal(requestDetail('```json\n{"id": 3}\n```'), '{"id": 3}')
   assert.equal(requestDetail('Not in allowlist: date'), 'Not in allowlist: date')
   assert.equal(requestDetail(undefined), null)
+})
+
+test("a request's JSON object reads as name and value rows; anything else stays a block", () => {
+  assert.deepEqual(requestParams('{"limit": 20, "query": "foo", "shared": true, "tags": ["a"]}'), [['limit', '20'], ['query', 'foo'], ['shared', 'true'], ['tags', '["a"]']])
+  assert.equal(requestParams('{}'), null)
+  assert.equal(requestParams('[1, 2]'), null)
+  assert.equal(requestParams('ls -la'), null)
+  assert.equal(requestParams('{not json'), null)
+  assert.equal(requestParams(null), null)
 })

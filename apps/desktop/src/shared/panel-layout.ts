@@ -1,3 +1,5 @@
+import { isBelow } from './compat.ts'
+
 /** One pane of the panel beside a conversation: the views open as its tabs, and the one it shows (null: its chooser). */
 export interface PanelPane {
   tabs: string[]
@@ -15,9 +17,18 @@ export const PANEL_VIEWS = [
   { id: 'memory', label: 'Memory', icon: 'brain', key: 'm' },
   { id: 'settings', label: 'Settings', icon: 'gearshape', key: 's' },
   { id: 'browser', label: 'Browser', icon: 'globe', key: 'b' },
+  { id: 'terminal', label: 'Terminal', icon: 'terminal', key: 't' },
 ] as const
 
 export type PanelView = (typeof PANEL_VIEWS)[number]['id']
+
+/** The first host with a terminal in the bot's folder (`botTerminal`). */
+export const TERMINAL_HOST = '2.52.0'
+export const hasTerminal = (hostVersion: string | undefined) => !!hostVersion && !isBelow(hostVersion, TERMINAL_HOST)
+
+/** The tab of a task's thread: it opens beside the bot's views, from a row of Details. */
+export const threadTab = (taskId: string) => `thread:${taskId}`
+export const isThreadTab = (tab: string) => tab.startsWith('thread:')
 
 /** A new panel: one pane on its chooser, where every view opens from. */
 export const DEFAULT_PANEL: PanelLayout = [{ tabs: [], shown: null }]
@@ -52,15 +63,17 @@ export function toggleSplit(layout: PanelLayout): PanelLayout {
   return [{ tabs: [...first.tabs, ...second.tabs], shown: first.shown ?? second.shown }]
 }
 
-/** The layout as stored, made safe to draw: one or two panes, each view once and only those of `views` (a view this
- * computer has no page for is left out), a pane showing one of its own tabs or its chooser. */
-export function panelLayout(raw: unknown, views: readonly string[]): PanelLayout {
+/** The layout as stored, made safe to draw: one or two panes, each tab once and only those it `keeps` (a view this
+ * computer has no page for, a thread that is gone or another bot's are left out), a pane showing one of its own tabs or
+ * its chooser. A pane whose thread was left out shows its first tab instead. */
+export function panelLayout(raw: unknown, keeps: (tab: string) => boolean): PanelLayout {
   const seen = new Set<string>()
   const panes = (Array.isArray(raw) ? raw : []).slice(0, 2).map((pane: Partial<PanelPane> | null): PanelPane => {
-    const tabs = (Array.isArray(pane?.tabs) ? pane.tabs : []).filter((t) => views.includes(t) && !seen.has(t) && !!seen.add(t))
-    return { tabs, shown: tabs.find((t) => t === pane?.shown) ?? null }
+    const tabs = (Array.isArray(pane?.tabs) ? pane.tabs : []).filter((t) => typeof t === 'string' && keeps(t) && !seen.has(t) && !!seen.add(t))
+    const gone = typeof pane?.shown === 'string' && isThreadTab(pane.shown)
+    return { tabs, shown: tabs.find((t) => t === pane?.shown) ?? (gone ? (tabs[0] ?? null) : null) }
   })
-  return panes.length ? panes : panelLayout(DEFAULT_PANEL, views)
+  return panes.length ? panes : panelLayout(DEFAULT_PANEL, keeps)
 }
 
 /** The address a typed line previews, or null when it is not a web address: `localhost:3000` and `example.com` get

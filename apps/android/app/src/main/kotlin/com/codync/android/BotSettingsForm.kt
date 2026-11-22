@@ -55,20 +55,20 @@ import androidx.compose.ui.semantics.semantics
     val bot = state.bots.firstOrNull { it.id == draft.id }
     LaunchedEffect(online) { if (online) store.refreshPlugins() }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(30.dp)) {
-        CardSection("Instructions") { instructionsRow(draft, change) }
-        CardSection("Agent") {
+        CardSection("Instructions", fold = "bot.instructions") { instructionsRow(draft, change) }
+        CardSection("Agent", fold = "bot.agent") {
             fallbackBanner(state, store, bot)
             agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ })
             compactionRow(bot, draft, change)
         }
-        CardSection("Profile") {
+        CardSection("Profile", fold = "bot.profile") {
             avatarRows(state, store, draft, change, pickingAvatar) { pickingAvatar = !pickingAvatar }
             nameRow(draft, change); createdByRow(state, bot)
         }
-        CardSection("Workspace") {
+        CardSection("Workspace", fold = "bot.workspace") {
             computerRow(state, online); placeRows(state, store, draft, change, modelReload) { folders = true }
         }
-        CardSection("Activity") {
+        CardSection("Activity", fold = "bot.activity") {
             notifyRow(draft, change)
             if (!inDetails) computerUseRow(state, draft, change)
             manageTeamRow(state, draft, change); reachRows(state, draft, change)

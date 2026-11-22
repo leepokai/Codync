@@ -5,7 +5,7 @@ import { Icon } from '../../components/Icon'
 import { Dialog, SheetPage } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import { useStore } from '../../store/context'
+import { useApp, useStore } from '../../store/context'
 import { useScreenViewed } from '../../store/analytics'
 import type { ComputerChoice } from '../bots/NewBotView'
 import { ComputerBadge } from '../ComputerBadge'
@@ -16,7 +16,8 @@ import { SetupTerminalView } from './SetupTerminal'
 import { SkillSheet, type SkillRef } from './SkillSheet'
 import { useModel } from '../../lib/observable'
 import { ConnectorCatalog } from './connector-catalog'
-import { errorText, market, needsSignIn, type ExtensionSection, type MarketConnector, type MarketSkill } from './market-models'
+import { errorText, market, needsSignIn, type ExtensionFocus, type ExtensionSection, type MarketConnector, type MarketSkill } from './market-models'
+import { LoginProfilesPanel } from './LoginProfilesPanel'
 import { AgentsPanel, ConnectorsPanel, MarketPanel, SkillsPanel } from './MarketplacePanel'
 import { AppLogo, ExtensionTabs, FormSheet, ItemGrid, ItemRow, MarketSection, ScreenHeader, ServiceLogo, SkillGlyph, SlideStack } from './pieces'
 import { usePlugins } from './plugins'
@@ -30,8 +31,9 @@ import { fill } from '@shared/fill'
  * turns connectors and skills on in its settings. Each computer has its own: the heading names it, and with
  * several online (`computer`) picks another's.
  */
-export function MarketplaceView({ computer }: { computer: ComputerChoice | null }) {
+export function MarketplaceView({ computer, focus = null }: { computer: ComputerChoice | null; focus?: ExtensionFocus | null }) {
   const store = useStore()
+  const app = useApp()
   const tr = useTr()
   const plugins = usePlugins(store)
   useScreenViewed('marketplace')
@@ -52,7 +54,13 @@ export function MarketplaceView({ computer }: { computer: ComputerChoice | null 
   const [viewingSkill, setViewingSkill] = useState<SkillRef | null>(null)
   const [agent, setAgent] = useState<Backend | null>(null)
   const [addingNode, setAddingNode] = useState(false)
-  const [section, setSection] = useState<ExtensionSection>('agents')
+  const [section, setSection] = useState<ExtensionSection>(focus?.section ?? 'agents')
+  // Sent here from elsewhere (a bot's Add login profile…): that tab, over whatever sheet was open.
+  useEffect(() => {
+    if (!focus) return
+    setSection(focus.section)
+    setAgent(null)
+  }, [focus])
   const [showInstalled, setShowInstalled] = useState(false)
   const [showCredentials, setShowCredentials] = useState(false)
 
@@ -98,17 +106,19 @@ export function MarketplaceView({ computer }: { computer: ComputerChoice | null 
 
   const header = (
     <div className="market-heading">
-      {/* Everything here lives on one computer; say which. */}
-      <HStack gap={10} shrink>
-        <ComputerBadge computer={store.computer} size={32} />
-        <VStack shrink className="market-heading-titles">
-          <Text size="title" weight="semibold" tone="text">{tr(`Extensions`)}</Text>
-          {computer ? (
-            <ChoicePicker selection={computer.selection} options={computer.options} onChange={computer.onChange} />
-          ) : (
-            <Text size="subheadline" tone="secondary" truncate>{store.hostName}</Text>
-          )}
-        </VStack>
+      {/* Everything here lives on one computer: which, in a capsule beside the title, its menu the others. */}
+      <HStack gap={10} shrink className="market-heading-titles">
+        <Text size="title" weight="semibold" tone="text">{tr(`Extensions`)}</Text>
+        {computer ? (
+          <ChoicePicker
+            selection={computer.selection}
+            options={computer.options.map((o) => ({ ...o, leading: <ComputerBadge computer={app.store(o.id)?.computer ?? null} size={16} /> }))}
+            onChange={computer.onChange}
+            fill="var(--field)"
+          />
+        ) : (
+          <span className="choice-picker market-computer"><ComputerBadge computer={store.computer} size={16} /><span className="choice-label">{store.hostName}</span></span>
+        )}
       </HStack>
       <Spacer />
       <Button kind="secondary" onClick={() => setShowCredentials(true)}><Icon name="lock.shield" size={12} />{tr('Credentials')}</Button>
@@ -178,6 +188,8 @@ export function MarketplaceView({ computer }: { computer: ComputerChoice | null 
               onAddNode={() => setAddingNode(true)}
               onAgent={setAgent}
             />
+          ) : section === 'logins' ? (
+            <LoginProfilesPanel agents={agents} query={query} focus={focus?.agent} onAgent={setAgent} />
           ) : section === 'connectors' ? (
             <ConnectorsPanel
               catalog={connectors}

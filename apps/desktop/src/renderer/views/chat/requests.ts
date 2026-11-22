@@ -26,11 +26,24 @@ export function requestIcon(toolKind?: string, title?: string): string {
   if (toolKind && byKind[toolKind]) return byKind[toolKind]
   const verb = /^(.+)-(\w+): \2$/.exec(title?.trim() ?? '')?.[2].split('_')[0]
   const byVerb: Record<string, string> = { read: 'doc.text', get: 'doc.text', search: 'magnifyingglass', find: 'magnifyingglass', list: 'list.bullet', write: 'pencil', edit: 'pencil', update: 'pencil', create: 'pencil', add: 'pencil', save: 'pencil', delete: 'trash', remove: 'trash', fetch: 'globe', open: 'globe', run: 'terminal' }
-  return (verb && byVerb[verb]) || 'wrench.and.screwdriver'
+  return (verb && byVerb[verb]) || 'wrench.adjustable'
 }
 
 /** A request's detail as worth showing: without the Markdown fence agents wrap it in, and nothing when it is empty. */
 export function requestDetail(text?: string): string | null {
   const bare = (text ?? '').trim().replace(/^```[\w-]*\n([\s\S]*?)\n?```$/, '$1').trim()
   return bare === '' || bare === '{}' || bare === '[]' ? null : bare
+}
+
+/** A request's arguments as name and value rows, when its detail is a JSON object; null otherwise. */
+export function requestParams(detail: string | null): [string, string][] | null {
+  if (!detail?.startsWith('{')) return null
+  try {
+    const value: unknown = JSON.parse(detail)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+    const rows = Object.entries(value).map(([k, v]): [string, string] => [k, typeof v === 'string' ? v : JSON.stringify(v)])
+    return rows.length ? rows : null
+  } catch {
+    return null
+  }
 }

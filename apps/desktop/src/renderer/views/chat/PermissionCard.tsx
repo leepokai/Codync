@@ -1,15 +1,14 @@
 import { useState } from 'react'
-import type { Entry, FileDiff, PermissionOption } from '@shared/models'
+import type { Entry, EntryData, FileDiff, PermissionOption } from '@shared/models'
 import { Reveal, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { HStack, VStack } from '../../components/Stack'
+import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import './permission-card.css'
-import { OptionBadge } from './DecisionCard'
 import { useTr } from '../../lib/use-language'
 import { trNow } from '../../lib/l10n.ts'
 import { fill } from '@shared/fill'
-import { requestDetail, requestIcon, requestName } from './requests'
+import { requestDetail, requestIcon, requestName, requestParams } from './requests'
 
 
 /** What the agent wants, from the tool's kind (also the notch island's headline). */
@@ -66,14 +65,20 @@ export function ThreadLine({ entry }: { entry: Entry }) {
  * to one line, the request and how it ended, which opens to where it ran and what it asked with (no card: there is
  * nothing left to answer); several in a row that ended alike fold into one line of their own (`RequestRun`).
  */
-export function PermissionCard({ entry, hostName, answering, respond }: { entry: Entry; hostName: string; answering: string | null; respond: (option: string | null) => void }) {
+export function PermissionCard({ entry, hostName, answering, respond, result }: {
+  entry: Entry
+  hostName: string
+  answering: string | null
+  respond: (option: string | null) => void
+  /** Once allowed: the tool entry of the call it asked for, with what it returned. */
+  result?: EntryData
+}) {
   const tr = useTr()
   const [expanded, setExpanded] = useState(false)
   const [open, setOpen] = useState(false)
   const d = entry.data
   const pending = d.status === 'pending'
   const detail = requestDetail(d.detail)
-  const hasDetail = !!d.command || !!detail || !!d.diffs?.length
   const options = sortedOptions(d.options ?? [])
   const cwd = d.cwd ? ` · ${d.cwd.split('/').filter(Boolean).pop() ?? d.cwd}` : ''
   const where = fill(tr('Runs on {name}{path}'), { name: hostName, path: cwd })
@@ -86,56 +91,104 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
           <VStack gap={6} className="request-detail">
             <Text size="caption" tone="tertiary">{where}</Text>
             {d.command ? <CodeBox text={d.command} /> : null}
-            {detail ? <CodeBox text={detail.slice(0, 2000)} /> : null}
+            {requestParams(detail) ? <ParamRows params={requestParams(detail) ?? []} clamp={false} /> : detail ? <CodeBox text={detail.slice(0, 2000)} /> : null}
             {(d.diffs ?? []).map((diff, i) => <DiffView key={i} diff={diff} />)}
+            {result?.output || result?.diffs?.length ? (
+              <VStack gap={6}>
+                <Text size="caption" weight="medium" tone="secondary">{tr('Output')}</Text>
+                {(result.diffs ?? []).map((diff, i) => <DiffView key={i} diff={diff} />)}
+                {result.output ? <CodeBox text={result.output.slice(0, 4000)} /> : null}
+              </VStack>
+            ) : null}
           </VStack>
         </Reveal>
       </div>
     )
   }
+  const { name, source, literal } = requestName(d.title ?? '')
+  const params = requestParams(detail)
+  const shownParams = expanded ? params : params?.slice(0, 4)
+  // Rows past the first four: counted on Details while folded, and Details stays so they fold back.
+  const extraParams = Math.max(0, (params?.length ?? 0) - 4)
+  const hiddenParams = expanded ? 0 : extraParams
+  // Anything params rows don't already show sits behind Details.
+  const command = d.command && d.command !== name ? d.command : null
+  const hasMore = !!command || (!params && !!detail) || !!d.diffs?.length || extraParams > 0
+  const sides = answerSides(options)
+  const answer = (o: PermissionOption, primary: boolean) => (
+    <button
+      key={o.optionId}
+      className={`styled-button approval-answer${primary ? ' primary' : ''}`}
+      disabled={answering !== null}
+      onClick={() => respond(o.optionId)}
+    >
+      {answering === o.optionId ? <Spinner size={12} /> : optionLabel(o)}
+    </button>
+  )
   return (
     <div className="agent-inset">
-      <VStack gap={14} className="permission-card decision-card approval-card">
-        <VStack gap={4}>
-          <Text size="headline" weight="semibold" tone="text">{permissionHeadline(d.toolKind)}</Text>
-          {/* Where it runs, and the request in full on demand: one quiet line under the question, Details at its end. */}
-          <HStack gap={8} className="approval-card-meta">
-            <Text size="caption" tone="tertiary" truncate grow>{where}</Text>
-            {hasDetail ? (
-              <button className="approval-card-details" aria-expanded={expanded} onClick={() => setExpanded((e) => !e)}>
-                <Text size="caption" weight="medium" tone="secondary">{tr('Details')}</Text>
-                <span className={`disclosure-chevron${expanded ? ' open' : ''}`}><Icon name="chevron.right" size={8} weight="semibold" /></span>
-              </button>
-            ) : null}
+      <VStack gap={12} className="permission-card approval-card">
+        <VStack gap={8}>
+          {/* What asks (its kind, or the server a tool comes from), then the request itself, then where it runs. */}
+          <HStack gap={6}>
+            <Icon name={requestIcon(d.toolKind, d.title)} size={12} color="var(--secondary)" />
+            <Text size="caption" tone="secondary" truncate grow>{source ?? permissionHeadline(d.toolKind)}</Text>
           </HStack>
-          <Text as="div" size="subheadline" mono tone="secondary" lines={expanded ? undefined : 3} className="selectable permission-card-title">
-            {d.title ?? ''}
-          </Text>
-          <ThreadLine entry={entry} />
+          <VStack gap={2}>
+            {literal ? (
+              <Text as="div" size="subheadline" mono tone="secondary" lines={expanded ? undefined : 3} className="selectable permission-card-title">{name}</Text>
+            ) : (
+              <Text as="div" size="body" weight="medium" tone="text" className="permission-card-title">{name}</Text>
+            )}
+            <HStack gap={8} className="approval-card-meta">
+              <Text size="caption" tone="tertiary" truncate grow>{where}</Text>
+              {hasMore ? (
+                <button className="approval-card-details" aria-expanded={expanded} onClick={() => setExpanded((e) => !e)}>
+                  <Text size="caption" weight="medium" tone="secondary">{hiddenParams > 0 ? `${tr('Details')} · ${hiddenParams}` : tr('Details')}</Text>
+                  <span className={`disclosure-chevron${expanded ? ' open' : ''}`}><Icon name="chevron.right" size={8} weight="semibold" /></span>
+                </button>
+              ) : null}
+            </HStack>
+            <ThreadLine entry={entry} />
+          </VStack>
+          {shownParams?.length ? <ParamRows params={shownParams} clamp={!expanded} /> : null}
         </VStack>
-        <Reveal show={expanded && hasDetail}>
+        <Reveal show={expanded && (!!command || (!params && !!detail) || !!d.diffs?.length)}>
           <VStack gap={8}>
-            {d.command ? <CodeBox text={d.command} /> : null}
-            {detail ? <CodeBox text={detail.slice(0, 2000)} /> : null}
+            {command ? <CodeBox text={command} /> : null}
+            {!params && detail ? <CodeBox text={detail.slice(0, 2000)} /> : null}
             {(d.diffs ?? []).map((diff, i) => <DiffView key={i} diff={diff} />)}
           </VStack>
         </Reveal>
-        {/* The answers as the choice card's rows: one tone, allowing first and leading, refusing last. */}
-        <VStack gap={2} className="decision-options">
-            {options.map((o, i) => (
-              <button
-                key={o.optionId}
-                className={answering === null || answering === o.optionId ? 'decision-option' : 'decision-option dimmed'}
-                disabled={answering !== null}
-                onClick={() => respond(o.optionId)}
-              >
-                <OptionBadge>{answering === o.optionId ? <Spinner size={12} /> : i + 1}</OptionBadge>
-                <Text size="body" weight={i === 0 ? 'medium' : 'regular'} tone="text" className="decision-option-label">{optionLabel(o)}</Text>
-              </button>
-            ))}
-        </VStack>
+        {/* The answers as buttons: lasting ones at the start, refusing and allowing once at the end, allowing filled. */}
+        <HStack gap={8} className="approval-answers">
+          {sides.start.map((o) => answer(o, false))}
+          <Spacer />
+          {sides.end.map((o) => answer(o, o.kind === 'allow_once'))}
+        </HStack>
       </VStack>
     </div>
+  )
+}
+
+/** Where each answer sits: the lasting ones (always, never) at the start, deny then allow-once at the end. */
+export function answerSides(options: PermissionOption[]): { start: PermissionOption[]; end: PermissionOption[] } {
+  const end = (o: PermissionOption) => o.kind === 'allow_once' || o.kind === 'reject_once'
+  const sorted = sortedOptions(options)
+  return { start: sorted.filter((o) => !end(o)), end: sorted.filter(end).reverse() }
+}
+
+/** Arguments as a quiet two-column list: the name, then its value (clamped to a few lines until opened). */
+function ParamRows({ params, clamp }: { params: [string, string][]; clamp: boolean }) {
+  return (
+    <dl className="param-rows">
+      {params.map(([k, v]) => (
+        <div key={k} className="param-row">
+          <Text as="div" size="caption" tone="tertiary" truncate className="param-row-name">{k}</Text>
+          <Text as="div" size="caption" mono tone="secondary" lines={clamp ? 3 : undefined} className="selectable param-row-value">{v}</Text>
+        </div>
+      ))}
+    </dl>
   )
 }
 
@@ -160,7 +213,7 @@ function outcome(entry: Entry) {
     case 'cancelled':
       return trNow('Cancelled')
     default:
-      return trNow('Expired — the agent moved on')
+      return trNow('Expired')
   }
 }
 
@@ -195,14 +248,13 @@ export function DiffView({ diff }: { diff: FileDiff }) {
   )
 }
 
-/** A settled request as one quiet line: what kind it is, its name (and where it comes from), how it ended. */
+/** A settled request as one quiet line: what kind it is, what it did (where it comes from in its tip), how it ended. */
 function RequestLine({ icon, title, end, expanded, onClick }: { icon: string; title: string; end: string; expanded: boolean; onClick: () => void }) {
   const { name, source, literal } = requestName(title)
   return (
-    <button className="request-line" aria-expanded={expanded} onClick={onClick}>
+    <button className="request-line" aria-expanded={expanded} title={source ?? undefined} onClick={onClick}>
       <Icon name={icon} size={12} color="var(--secondary)" />
-      <Text size="subheadline" mono={literal} tone="text" truncate>{name}</Text>
-      {source ? <Text size="subheadline" tone="tertiary" truncate>{source}</Text> : null}
+      <Text size="subheadline" mono={literal} tone="secondary" truncate>{name}</Text>
       <Text size="caption" tone="tertiary" className="request-line-end">{end}</Text>
       <span className={`disclosure-chevron${expanded ? ' open' : ''}`}><Icon name="chevron.right" size={8} weight="semibold" /></span>
     </button>
@@ -210,20 +262,20 @@ function RequestLine({ icon, title, end, expanded, onClick }: { icon: string; ti
 }
 
 /**
- * Approvals in a row that ended alike, as one line: how many, where they come from and how they ended, with each one's
- * own line under it on demand (`row` draws it, the chat's live card).
+ * Approvals in a row that ended alike, as one line: what they did, in a sentence of their names, how many and how they
+ * ended, with each one's own line under it on demand (`row` draws it, the chat's live card).
  */
 export function RequestRun({ entries, row }: { entries: Entry[]; row: (entry: Entry) => React.ReactNode }) {
   const tr = useTr()
   const [open, setOpen] = useState(false)
   const icons = new Set(entries.map((e) => requestIcon(e.data.toolKind, e.data.title)))
-  const sources = [...new Set(entries.map((e) => requestName(e.data.title ?? '').source).filter((x) => x !== null))]
+  const names = [...new Set(entries.map((e) => requestName(e.data.title ?? '').name))]
   return (
     <div className="agent-inset">
       <button className="request-line" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <Icon name={icons.size === 1 ? [...icons][0] : 'wrench.and.screwdriver'} size={12} color="var(--secondary)" />
-        <Text size="subheadline" tone="text">{fill(tr('{count} tool requests'), { count: String(entries.length) })}</Text>
-        {sources.length ? <Text size="subheadline" tone="tertiary" truncate>{sources.join(', ')}</Text> : null}
+        <Icon name={icons.size === 1 ? [...icons][0] : 'wrench.adjustable'} size={12} color="var(--secondary)" />
+        <Text size="subheadline" tone="secondary" truncate title={fill(tr('{count} tool requests'), { count: String(entries.length) })}>{names.join(', ')}</Text>
+        <Text size="subheadline" tone="tertiary">{`· ${entries.length}`}</Text>
         <Text size="caption" tone="tertiary" className="request-line-end">{outcome(entries[0])}</Text>
         <span className={`disclosure-chevron${open ? ' open' : ''}`}><Icon name="chevron.right" size={8} weight="semibold" /></span>
       </button>

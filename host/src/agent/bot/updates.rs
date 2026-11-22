@@ -206,6 +206,8 @@ impl Actor {
         });
         let data = json!({
             "title": title,
+            // The call it asks for: once allowed, its tool entry holds what it returned.
+            "toolCallId": tool["toolCallId"],
             "toolKind": tool["kind"].as_str().unwrap_or("other"),
             "command": command,
             "detail": detail["output"],

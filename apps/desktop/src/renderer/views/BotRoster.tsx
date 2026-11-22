@@ -205,6 +205,7 @@ export function BotRoster({ roster, onContext, onSectionContext, openExtensions,
         title={many ? `${item.bot.name} · ${item.store.hostName}` : item.bot.name}
         selected={isSelected}
         dragKey={key}
+        flipKey={key}
         onHover={(on) => setHovered((h) => (on ? key : h === key ? null : h))}
         onClick={() => app.select(item.ref)}
         onContext={(x, y) => onContext(item.bot, item.store, x, y)}
@@ -276,7 +277,7 @@ function RosterBotRow({ item, agent }: { item: RosterItem; agent: string | null 
 }
 
 /** One roster button: drags to reorder, and slides when the others move. */
-function RosterRow({ hovered, lifted, label, title, selected, dragKey, onHover, onClick, onContext, drag, children }: {
+function RosterRow({ hovered, lifted, label, title, selected, dragKey, flipKey, onHover, onClick, onContext, drag, children }: {
   hovered: boolean
   /** Its copy is under the pointer: the row keeps its slot empty. */
   lifted: boolean
@@ -284,6 +285,8 @@ function RosterRow({ hovered, lifted, label, title, selected, dragKey, onHover, 
   title: string
   selected: boolean
   dragKey: string
+  /** Its id for the slide when the list is laid out another way (`useListFlip`). */
+  flipKey: string
   onHover: (on: boolean) => void
   onClick: () => void
   onContext: (x: number, y: number) => void
@@ -298,6 +301,7 @@ function RosterRow({ hovered, lifted, label, title, selected, dragKey, onHover, 
       className={`roster-row ${hovered ? 'hovered' : ''} ${selected ? 'selected' : ''} ${lifted ? 'lifted' : ''}`}
       aria-label={label}
       aria-current={selected || undefined}
+      data-flip={flipKey}
       title={title}
       data-roster-row={dragKey}
       onMouseEnter={() => onHover(true)}

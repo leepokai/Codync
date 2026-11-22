@@ -39,11 +39,10 @@
   background: rgba(var(--text-rgb), 0.08);
 }
 /* A row's leading icon, centered in a fixed column so the labels line up. */
-/* A page reads as a column: no wider however wide the window. */
+/* A page takes the whole width beside the rail. */
 .settings-main {
   flex: 1;
   min-width: 0;
-  max-width: 760px;
   display: flex;
   flex-direction: column;
 }

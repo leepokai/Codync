@@ -22,8 +22,11 @@
 .thread-row.selected {
   background: var(--roster-selected);
 }
-.thread-row + .thread-row {
-  margin-top: 1px;
+/* Two highlighted rows never touch: a gap between every row, a group's heading and its threads too. */
+.thread-row + .thread-row,
+.thread-group + .thread-group,
+.thread-group-rows {
+  margin-top: 2px;
 }
 .thread-new:disabled {
   opacity: 0.4;

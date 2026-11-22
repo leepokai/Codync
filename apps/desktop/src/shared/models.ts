@@ -417,6 +417,8 @@ export interface EntryData {
   clientNonce?: string
   title?: string
   toolKind?: string
+  /** tool and permission: the agent's id for the call, so an approval finds the tool entry with what it returned. */
+  toolCallId?: string
   /** tool: whether it's the bot's own bookkeeping (composing its message, keeping its memory), left out of the
    * working steps; a host older than 2.25.0 leaves it out, and the steps then leave out the call too. */
   bookkeeping?: boolean

@@ -58,6 +58,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import android.content.Context
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.rotate
@@ -269,14 +273,30 @@ class CardRows internal constructor() {
  * rounded group whose rows are split by inset hairlines (ChatGPT's desktop settings).
  */
 @Composable fun CardSection(title: String? = null, footer: String? = null, modifier: Modifier = Modifier,
-    accessory: @Composable RowScope.() -> Unit = {}, rows: CardRows.() -> Unit) {
+    fold: String? = null, accessory: @Composable RowScope.() -> Unit = {}, rows: CardRows.() -> Unit) {
     val list = CardRows().apply(rows).rows
+    // A section that folds (`fold`, its key): its title is the toggle, kept folded on this device.
+    val context = LocalContext.current
+    val store = remember { context.applicationContext.getSharedPreferences("codync-ui", Context.MODE_PRIVATE) }
+    var foldedKeys by remember { mutableStateOf(store.getStringSet("foldedCardSections", emptySet()).orEmpty()) }
+    val folded = fold != null && fold in foldedKeys
+    val turn by animateFloatAsState(if (folded) -90f else 0f, Motion.layout(), label = "fold")
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (title != null) Row(Modifier.padding(start = 2.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SectionHeading(title, Modifier.weight(1f))
-            accessory()
+            if (fold != null) Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.plainButton {
+                    foldedKeys = if (folded) foldedKeys - fold else foldedKeys + fold
+                    store.edit().putStringSet("foldedCardSections", foldedKeys).apply()
+                }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SectionHeading(title)
+                    Symbol("chevron.down", Modifier.rotate(turn), size = 10.dp, tint = Palette.tertiary)
+                }
+            } else SectionHeading(title, Modifier.weight(1f))
+            if (!folded) accessory()
         }
+        AnimatedVisibility(!folded, enter = expandVertically(Motion.layout()) + fadeIn(Motion.fade()), exit = shrinkVertically(Motion.layout()) + fadeOut(Motion.fade())) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (list.isNotEmpty()) Column(Modifier.fillMaxWidth().cardGroup()) {
             for ((index, row) in list.withIndex()) {
                 val open = row.onClick
@@ -291,6 +311,8 @@ class CardRows internal constructor() {
         }
         if (footer != null) Text(tr(footer), Modifier.padding(horizontal = 2.dp), style = Type.caption.copy(lineHeight = Type.caption.lineHeight * 1.12f),
             color = Palette.secondary)
+        }
+        }
     }
 }
 

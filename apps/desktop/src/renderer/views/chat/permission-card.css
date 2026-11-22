@@ -13,7 +13,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  width: calc(100% + 16px);
+  /* The hover fill hugs the line's words, not the whole column. */
+  width: fit-content;
+  max-width: calc(100% + 16px);
   min-height: 28px;
   margin-inline: -8px;
   padding: 4px 8px;
@@ -31,17 +33,22 @@
   flex: 0 1 auto;
   min-width: 0;
 }
-/* How it ended, at the line's far end. */
+/* How it ended, right after its name, the chevron beside it (never pushed to the far end). */
 .request-line-end {
-  margin-left: auto;
-  padding-left: 8px;
+  padding-left: 4px;
 }
 /* The run's own lines, under its line and tight together, each as wide as the run. */
 .request-run-list {
   padding: 2px 0 0 20px;
 }
-.request-run-list .chat-row {
+.request-run-list .chat-row,
+.request-run-list .chat-row.group-start {
   padding-top: 0;
+}
+/* Under a run its lines sit as a list: one short line each. */
+.request-run-list .request-line {
+  min-height: 24px;
+  padding-block: 2px;
 }
 .request-run-list .agent-inset {
   padding-right: 0;
@@ -51,7 +58,7 @@
 }
 /* The approval card, in the choice card's form: the question, where it runs with Details, the request, the answers. */
 /* The request, quoted in a well under the question, as the choice card's question is never boxed. */
-.approval-card .permission-card-title {
+.approval-card .permission-card-title.selectable {
   margin-top: 4px;
   padding: 8px 10px;
   line-height: 1.45;
@@ -60,6 +67,63 @@
 }
 .approval-card-meta {
   min-width: 0;
+}
+/* A waiting approval spans the chat column: what asks, the request, its arguments, then the answers as buttons. */
+.permission-card.approval-card {
+  width: 100%;
+  max-width: 560px;
+  padding: 16px;
+}
+.approval-card .permission-card-title {
+  overflow-wrap: anywhere;
+}
+.approval-answers {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+/* Answers that don't allow once: outlined, no fill (fill or border, never both). */
+.styled-button.approval-answer:not(.primary) {
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--stroke-strong);
+  transition: background-color var(--hover);
+}
+.styled-button.approval-answer:not(.primary):hover:not(:disabled) {
+  background: var(--field);
+}
+.styled-button.approval-answer {
+  max-width: 100%;
+  min-width: 0;
+}
+/* A narrow card stacks the answers, each as wide as the card. */
+@container (max-width: 360px) {
+  .approval-answers {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .approval-answers .spacer {
+    display: none;
+  }
+}
+.approval-card {
+  container-type: inline-size;
+}
+/* A request's arguments: name and value per row, the names in one column. */
+.param-rows {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 4px;
+  margin: 0;
+}
+.param-row {
+  display: contents;
+}
+.param-row-name {
+  max-width: 140px;
+}
+.param-row-value {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 .approval-card-details {
   flex: none;
@@ -179,7 +243,4 @@ button.decision-option:hover:not(:disabled),
 /* What a settled request asked with, under its line, where its name starts. */
 .request-detail {
   padding: 2px 0 6px 20px;
-}
-.request-run-list .request-line .disclosure-chevron {
-  margin-left: auto;
 }

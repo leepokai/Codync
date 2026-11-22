@@ -19,9 +19,12 @@ Code: `host/src/agent/login_profiles.rs` is Codync's side: the records, both kin
 removal and the processes that run on a profile; `login_profiles/account.rs` holds an account profile's folder and
 sign-in, `login_profiles/keys.rs` an API key profile's variables and the import from the login shell. The `codync-accounts` crate (`host/crates/accounts`) holds what is true of the
 agents and no app, for the account kind: `agents.rs` (how each agent keeps a login in a folder), `slot.rs` (what a
-slot shares), `identity.rs` (who a login is) and the `Account` record. Clients: one **Login profiles** section in
-the agent's setup sheet (the default one first, then the others; each can be named), a **Login profile** choice
-under Agent in a bot's settings, and the same choice on a fallback. The section shows for every agent, installed
+slot shares), `identity.rs` (who a login is) and the `Account` record. Clients: on the desktop, a **Login profiles** tab of
+Extensions (one card per agent that takes them: the default one first, then the others; each can be named;
+`LoginProfilesPanel.tsx`), which the agent's setup sheet links to and a bot's **Add login profile…** (and the bot
+model panel's `+`) opens at that agent; the phones still keep the section in the agent's setup sheet. A
+**Login profile** choice under Agent in a bot's settings, and the same choice on a fallback. A chat's sign-in
+card for one login profile still opens that agent's sheet on it. The section shows for every agent, installed
 or not: any agent takes an API key, while **Add account** needs the agent's own CLI on the computer.
 
 ## An account is one folder

@@ -32,9 +32,15 @@ module; this page says how to use them. Placement rules (which control, which me
 No green or blue in UI chrome (diff `added`/`removed` excepted), no gradients, no status dots beside every row, no
 tinted backgrounds for emphasis. Both themes are designed, not inverted: each token has its dark value in the same file.
 
+The desktop palette is a quiet neutral set (`styles/theme.css`): light ground `#ffffff`, list column `#f6f6f6`, ink
+`#1a1c1f`; dark ground `#181818`, list column `#141414`, ink `#dfdfdf`, menus `#2d2d2d`, sheets `#363636`. `secondary`
+and `tertiary` are the ink at about 70% and 50%; hairlines are the ink at 8% (`border`) and 12–16% (`stroke-strong`,
+the line around a text field); hover and chosen fills are the ink at 5–8% (`field`). The primary button is an ink
+pill (`accent-fill`) with the ground's color as its text.
+
 ## Type
 
-The ramp is the platform's (macOS / iOS text styles; desktop `--text-*`, scaled by the user's text size):
+The ramp is the platform's (macOS / iOS text styles; desktop `--text-*`, scaled by the user's text size; on the desktop body 14, callout and menus 13, caption 12, section titles 16–18, page titles 20, body weight 430):
 
 | Role | Style | Weight |
 |---|---|---|
@@ -59,11 +65,15 @@ A 4-point grid: **2, 4, 8, 12, 16, 24, 32**.
 - Card padding: 14 on the desktop, 16 on the phones; rows run 8 wider than the card's text so their badges line up
   under it.
 - Between cards in a conversation: the transcript's own gap; never extra margins on a card.
+- Pages take the whole width beside the rail. A scrolling page or panel blurs and fades what scrolls past its top or
+  bottom edge into the ground, only while there is more that way (desktop: the scroll-edge rule in
+  `styles/theme.css`; add a new scroller to its list).
 
 ## Shape
 
-`radius-xs` 6 (badges, keys) · `radius-s` 10 (rows, wells, fields) · `radius-m` 12 · `radius-l` 16 (a settled, folded
-card) · `radius-xl` 22 (cards, bubbles) · pill (chips, the message box). A shape nested in another uses the smaller
+`radius-xs` 6 (badges, keys; desktop 7.5) · `radius-s` 10 (rows, wells, fields) · `radius-m` 12 (desktop 12.5: a bordered
+list box) · `radius-l` 16 (a settled, folded card; desktop 15: sheets, dialogs and menu rows) · `radius-xl` 22 (cards,
+bubbles; desktop 20: menus) · pill (chips, the message box). A shape nested in another uses the smaller
 step. Shadows only on what floats (`shadow-s` … `shadow-xl`); nothing in the page casts one.
 
 ## The card

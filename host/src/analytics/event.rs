@@ -150,6 +150,8 @@ pub enum Event {
     /// Every saved credential deleted, for a computer whose key is gone (`outcome`).
     CredentialsReset,
     AgentSetupStarted,
+    /// A bot's terminal opened (or shown again) in its folder.
+    BotTerminalOpened,
     AgentSignedIn,
     /// A login profile was added, renamed or removed, or got its keys (`action`); never its name, who it signs in or
     /// its variables.
@@ -313,6 +315,7 @@ impl Event {
             Self::CredentialSaved => "credential_saved",
             Self::CredentialsReset => "credentials_reset",
             Self::AgentSetupStarted => "agent_setup_started",
+            Self::BotTerminalOpened => "bot_terminal_opened",
             Self::AgentSignedIn => "agent_signed_in",
             Self::LoginProfileChanged => "login_profile_changed",
             Self::SettingChanged => "setting_changed",

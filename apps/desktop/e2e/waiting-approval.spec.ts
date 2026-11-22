@@ -53,8 +53,8 @@ test('a bot waiting on an approval card keeps its badge until the card is answer
 
     // Answered (the reply read in its open chat), it leaves the badge.
     await row.click()
-    await page.locator('.permission-card .decision-option').last().click() // the deny answer
-    await expect(page.locator('.permission-card')).toContainText('Denied')
+    await page.locator('.permission-card').getByRole('button', { name: 'Deny' }).click()
+    await expect(page.locator('.request-line').last()).toContainText('Denied') // folded to its quiet line
     await page.locator('.roster-row', { hasText: other }).click()
     await expect(row.locator('.unread-badge')).toHaveCount(0)
   } finally {

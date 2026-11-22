@@ -117,6 +117,18 @@ export const isLive = (task: WorkTask) => task.status === 'working' || task.stat
  * bot, under its computer, or not at all. */
 export type ThreadGrouping = 'folder' | 'bot' | 'computer' | 'none'
 
+/** How the Threads list orders its rows inside each group: working ones first (`status`), and by when each last moved
+ * (`active`: ended, else started, else added) instead of when it was added. Both can be on. */
+export interface ThreadSort {
+  status?: boolean
+  active?: boolean
+}
+
+/** Where a thread stands in a list sorted by status: working, then waiting for a thread, then the ended ones. */
+const threadRank = (status: WorkStatus) => (status === 'working' ? 0 : status === 'waiting' ? 1 : 2)
+/** When a thread last moved: it ended, else it started, else it was added. */
+const lastActive = (t: WorkTask) => t.endedAt ?? t.startedAt ?? t.createdAt
+
 /** It takes one of the bot's seats (`maxThreads`): the host's word, else a live task. */
 export const takesSeat = (task: WorkTask) => task.seat ?? isLive(task)
 
@@ -139,18 +151,20 @@ export interface ThreadGroup<T> {
 }
 
 /**
- * All bots' work as the Threads page lists it, newest first: what needs the user on top, then the groups `grouping`
+ * All bots' work as the Threads page lists it, newest first (or as `sort` says, inside each group): what needs the user on top, then the groups `grouping`
  * makes (a folder a thread works in outside its bot's own, a worktree of it being the bot's; a routine's runs; or a
  * group per bot, in `roster`'s order, which is the bot list's; or a group per computer, `computerOf` naming it, in
  * the order the computers come), then the rest. `keyOf` tells the bots apart. `working` is how many tasks are worked on in all (the count on the rail's Threads).
  */
-export function threadSections<T extends { bot: { work: WorkTask[]; name: string; cwd?: string } }>(roster: T[], grouping: ThreadGrouping, keyOf: (of: T) => string, computerOf: (of: T) => string = () => ''): {
+export function threadSections<T extends { bot: { work: WorkTask[]; name: string; cwd?: string } }>(roster: T[], grouping: ThreadGrouping, keyOf: (of: T) => string, computerOf: (of: T) => string = () => '', sort: ThreadSort = {}): {
   needsYou: ThreadRowOf<T>[]
   groups: ThreadGroup<T>[]
   recent: ThreadRowOf<T>[]
   working: number
 } {
-  const newest = (a: ThreadRowOf<T>, b: ThreadRowOf<T>) => b.task.createdAt - a.task.createdAt
+  const time = sort.active ? lastActive : (t: WorkTask) => t.createdAt
+  const newest = (a: ThreadRowOf<T>, b: ThreadRowOf<T>) =>
+    (sort.status ? threadRank(a.task.status) - threadRank(b.task.status) : 0) || time(b.task) - time(a.task)
   const rows = roster.flatMap((of) => of.bot.work.map((task) => ({ of, task })))
   const needsYou = rows.filter((r) => r.task.status === 'needsYou').sort(newest)
   const rest = rows.filter((r) => r.task.status !== 'needsYou').sort(newest)

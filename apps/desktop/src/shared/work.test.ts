@@ -210,6 +210,10 @@ test('the Threads page puts what needs the user on top, groups the rest as chose
   const computers = threadSections(roster, 'computer', (of) => of.ref, (of) => (of.ref === 'ops' ? 'Mini' : 'Mac'))
   assert.deepEqual(computers.groups.map((g) => `${g.title}=${ids(g.rows.map((r) => r.task)).join('')}`), ['Mac=bca', 'Mini=gfe'])
   assert.equal(threadSections(roster.slice(0, 1), 'folder', (of) => of.ref).working, 0, 'the rail shows no count')
+  // Sorted beside the grouping: working rows first inside each group, the rest newest first.
+  const sorted = threadSections(roster, 'bot', (of) => of.ref, undefined, { status: true })
+  assert.deepEqual(sorted.groups.map((g) => ids(g.rows.map((r) => r.task)).join('')), ['bca', 'gfe'])
+  assert.deepEqual(ids(threadSections(roster, 'none', (of) => of.ref, undefined, { status: true }).recent.map((r) => r.task)), ['g', 'b', 'f', 'e', 'c', 'a'])
   assert.deepEqual(['needsInput', 'working', 'idle'].map((status) => rosterRank({ status, activity: '', work: [] })), [0, 1, 3])
   assert.equal(rosterRank({ status: 'idle', activity: '', work: [task('w', 'working')] }), 2, 'work in the background comes before a bot at rest')
 })

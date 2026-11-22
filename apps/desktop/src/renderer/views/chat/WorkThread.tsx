@@ -21,12 +21,11 @@ import './work.css'
 const COPIED_MS = 1600
 
 /**
- * The thread of one task, in the inspector in place of Details: its title, status, time and where it works, the
- * thread's transcript, and a box to write to it (the bot's own tasks; a routine's run or another bot's request says it
- * is read only). `close` goes back to Details; Escape does too while the panel has the keyboard. The Threads page
- * shows it beside its list and gives none. `showInChat` brings an entry of the bot's chat into view.
+ * The thread of one task, as a tab of the inspector: its title, status, time and where it works, the thread's
+ * transcript, and a box to write to it (the bot's own tasks; a routine's run or another bot's request says it is read
+ * only). `showInChat` brings an entry of the bot's chat into view.
  */
-export function WorkThread({ botId, task, openArtifact, showInChat, close }: { botId: string; task: WorkTask; openArtifact: (artifactId: string) => void; showInChat: (entryId: string) => void; close?: () => void }) {
+export function WorkThread({ botId, task, openArtifact, showInChat }: { botId: string; task: WorkTask; openArtifact: (artifactId: string) => void; showInChat: (entryId: string) => void }) {
   const tr = useTr()
   const store = useStore()
   const threadId = task.thread ?? ''
@@ -35,25 +34,11 @@ export function WorkThread({ botId, task, openArtifact, showInChat, close }: { b
   useEffect(() => store.watchThread(threadId), [store, threadId])
   const [stopping, setStopping] = useState(false)
   const follow = useFollowEnd()
-  const back = useRef<HTMLButtonElement>(null)
   const talks = task.talk
   const readOnly = readOnlyReason(task)
-  // Without a box to type in, the keyboard starts on Back.
-  useEffect(() => {
-    if (!talks) back.current?.focus({ preventScroll: true })
-  }, [talks])
   return (
-    <div
-      className="work-thread"
-      data-work-thread={task.id}
-      onKeyDown={(e) => {
-        if (!close || e.key !== 'Escape' || e.defaultPrevented || e.nativeEvent.isComposing) return
-        e.stopPropagation()
-        close()
-      }}
-    >
+    <div className="work-thread" data-work-thread={task.id}>
       <HStack gap={8} className="work-thread-header">
-        {close ? <IconButton buttonRef={back} title="Back to details" icon="chevron.left" onClick={close} /> : null}
         <VStack gap={2} grow shrink>
           <Text as="div" size="body" weight="semibold" tone="text" truncate title={task.title}>{task.title}</Text>
           <HStack gap={8} className="work-thread-meta">

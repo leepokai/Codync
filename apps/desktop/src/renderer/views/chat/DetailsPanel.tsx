@@ -1,5 +1,5 @@
 import { hasLibrary } from '@shared/artifacts'
-import { closeView, PANEL_VIEWS, panelLayout, showChooser, showView, toggleSplit, type PanelView } from '@shared/panel-layout'
+import { closeView, hasTerminal, isThreadTab, PANEL_VIEWS, panelLayout, showChooser, showView, threadTab, toggleSplit, type PanelView } from '@shared/panel-layout'
 import { isGroup, isWorking, type Bot } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { BotAvatar, GroupAvatar } from '../../components/Avatar'
@@ -16,11 +16,11 @@ import { RoutinesView } from '../routines/RoutinesView'
 import { LibraryView } from '../library/LibraryView'
 import { DevServersSection } from './DevServersSection'
 import { BrowserTab } from './BrowserTab'
+import { TerminalTab } from './TerminalTab'
 import { ComputerTab } from './ComputerTab'
-import { PanelPane } from './PanelPane'
+import { PanelPane, type PaneView } from './PanelPane'
 import { WorkThread } from './WorkThread'
 import { WorkTimeline } from './WorkTimeline'
-import { useThreadPage } from './use-thread-page'
 import '../bots/bots.css'
 import './details-panel.css'
 import { prefs, usePref } from '../../lib/prefs'
@@ -28,14 +28,15 @@ import { useTr } from '../../lib/use-language'
 
 export type DetailsTab = PanelView
 
-const EVERY_VIEW = PANEL_VIEWS.map((v) => v.id)
+/** Every view, and the threads' tabs (the panel itself knows which are this bot's). */
+const anyTab = (tab: string) => isThreadTab(tab) || PANEL_VIEWS.some((v) => v.id === tab)
 
 /** Shows `view` of the panel, in the pane that has its tab or as a new tab of the first. */
-export const showPanelView = (view: PanelView) => prefs.panelLayout.set(showView(panelLayout(prefs.panelLayout.get(), EVERY_VIEW), view))
+export const showPanelView = (view: PanelView) => prefs.panelLayout.set(showView(panelLayout(prefs.panelLayout.get(), anyTab), view))
 
 /** Splits the panel into two panes, or joins them. */
 export function splitPanel() {
-  const next = toggleSplit(panelLayout(prefs.panelLayout.get(), EVERY_VIEW))
+  const next = toggleSplit(panelLayout(prefs.panelLayout.get(), anyTab))
   analytics.track({ event: 'panel_split', on: next.length > 1 })
   prefs.panelLayout.set(next)
 }
@@ -46,16 +47,12 @@ export function splitPanel() {
  * page in Browser), each closing on its own, and `+` for its chooser, which is all a new panel shows. A view has one
  * tab, so opening it in a pane takes it from the other. The layout is the same for every bot on this device. Docked,
  * the window's bar holds the panel's buttons; as a sheet (`docked` false) they end its first row. A row of a task a
- * thread has slides the panel to that task's thread (`thread`); its Back returns to the panes as they were left. A group
- * has no panes: its avatar, then its bots.
+ * thread has opens that thread as a tab of its pane, named by the task, beside the views; it closes like them and goes
+ * when its task leaves the box. A group has no panes: its avatar, then its bots.
  */
-export function DetailsPanel({ botId, routineId, thread, openThread, closeThread, editGroup, openArtifact, openCard, showInChat, share, close, docked }: {
+export function DetailsPanel({ botId, routineId, editGroup, openArtifact, openCard, showInChat, share, close, docked }: {
   botId: string
   routineId: string | null
-  /** The task whose thread shows in place of the panes; null for the panes. */
-  thread: string | null
-  openThread: (taskId: string) => void
-  closeThread: () => void
   editGroup: () => void
   openArtifact: (artifactId: string) => void
   /** Shows the chat at the approval card of a task that needs the user. */
@@ -71,21 +68,17 @@ export function DetailsPanel({ botId, routineId, thread, openThread, closeThread
   const bot = store.bots.get(botId) ?? null
   const group = !!bot && isGroup(bot)
   useScreenViewed('bot_details')
-  const { reading, page, shown, opening } = useThreadPage(thread, bot, closeThread)
-  // A view this computer's Codync has no page for (the Library, on an older host) is not offered.
-  const views = hasLibrary(store.hostVersion?.version) ? PANEL_VIEWS : PANEL_VIEWS.filter((v) => v.id !== 'library')
+  // A view this computer's Codync has no page for (the Library or the Terminal, on an older host) is not offered.
+  const host = store.hostVersion?.version
+  const own = PANEL_VIEWS.filter((v) => (v.id !== 'library' || hasLibrary(host)) && (v.id !== 'terminal' || hasTerminal(host)))
+  // The bot's threads open as tabs too, named by their task; a thread's tab goes with its task.
+  const threads = (bot?.work ?? []).filter((t) => t.thread)
+  const views: PaneView[] = [...own, ...threads.map((t) => ({ id: threadTab(t.id), label: t.title, icon: 'arrow.triangle.branch', verbatim: true }))]
   const [stored, setStored] = usePref(prefs.panelLayout)
-  const layout = panelLayout(stored, views.map((v) => v.id))
-  const view = (id: string) =>
+  const layout = panelLayout(stored, (tab) => views.some((v) => v.id === tab))
+  const view = (id: string, at: number) =>
     !bot ? null : id === 'details' ? (
-      <WorkTimeline
-        bot={bot}
-        openCard={openCard}
-        openThread={(itemId) => {
-          opening()
-          openThread(itemId)
-        }}
-      >
+      <WorkTimeline bot={bot} openCard={openCard} openThread={(taskId) => setStored(showView(layout, threadTab(taskId), at))}>
         <RoutinesView botId={botId} initialId={routineId} />
         <DevServersSection bot={bot} />
       </WorkTimeline>
@@ -98,9 +91,10 @@ export function DetailsPanel({ botId, routineId, thread, openThread, closeThread
     ) : (
       <BotSettingsPanel botId={botId} />
     )
+  const thread = (tab: string | null) => (tab && isThreadTab(tab) ? threads.find((t) => threadTab(t.id) === tab) : undefined)
   return (
     <div className="details-panel">
-      <div className={reading ? 'details-page away' : 'details-page'} inert={reading}>
+      <div className="details-page">
         {bot && group ? (
           <>
             {docked ? null : <div className="details-actions"><IconButton title="Close details" icon="xmark" size={26} onClick={close} /></div>}
@@ -112,7 +106,9 @@ export function DetailsPanel({ botId, routineId, thread, openThread, closeThread
         ) : bot ? (
           <>
             <div className="details-panes">
-              {layout.map((pane, at) => (
+              {layout.map((pane, at) => {
+                const task = thread(pane.shown)
+                return (
                 <PanelPane
                   key={at}
                   pane={pane}
@@ -123,23 +119,22 @@ export function DetailsPanel({ botId, routineId, thread, openThread, closeThread
                     <IconButton title="Split panel" icon="rectangle.split.1x2" size={26} onClick={splitPanel} />
                     <IconButton title="Close details" icon="xmark" size={26} onClick={close} />
                   </>}
-                  flush={pane.shown === 'browser'}
+                  flush={pane.shown === 'browser' || pane.shown === 'terminal' || !!task}
                   show={(id) => setStored(showView(layout, id, at))}
                   close={(id) => setStored(closeView(layout, at, id))}
                   choose={() => setStored(showChooser(layout, at))}
                 >
-                  {pane.shown === 'browser' ? <BrowserTab key={bot.id} bot={bot} /> : pane.shown ? <div key={pane.shown} className="details-tab fade-in">{view(pane.shown)}</div> : null}
+                  {pane.shown === 'browser' ? <BrowserTab key={bot.id} bot={bot} />
+                    : pane.shown === 'terminal' ? <TerminalTab key={bot.id} bot={bot} />
+                    : task ? <WorkThread key={task.id} botId={botId} task={task} openArtifact={openArtifact} showInChat={showInChat} />
+                    : pane.shown ? <div key={pane.shown} className="details-tab fade-in">{view(pane.shown, at)}</div> : null}
                 </PanelPane>
-              ))}
+                )
+              })}
             </div>
           </>
         ) : null}
       </div>
-      {page.mounted && shown ? (
-        <div className={page.shown && reading ? 'details-page thread shown' : 'details-page thread'} inert={!reading}>
-          <WorkThread key={shown.id} botId={botId} task={shown} openArtifact={openArtifact} showInChat={showInChat} close={closeThread} />
-        </div>
-      ) : null}
     </div>
   )
 }

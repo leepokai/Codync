@@ -188,8 +188,8 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
   return (
     <div className="bot-form">
       <div className="bot-form-content">
-        <CardSection title="Instructions">{instructions}</CardSection>
-        <CardSection title="Agent">
+        <CardSection title="Instructions" fold="bot.instructions">{instructions}</CardSection>
+        <CardSection title="Agent" fold="bot.agent">
           {step}
           {agent}
           {loginProfile}
@@ -197,7 +197,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
           {advisor}
           {compaction}
         </CardSection>
-        <CardSection title="Profile">
+        <CardSection title="Profile" fold="bot.profile">
           <ValueRow label="Avatar">
             <button ref={avatarRef} className="avatar-button small" title={tr('Edit Bot avatar')} aria-label={tr('Edit Bot avatar')} onClick={() => setPickingAvatar((p) => !p)}>
               <CharacterAvatar shape={draft.avatarShape} color={draft.avatarColor} size={24} customIcon={draft.id ? store.icons[`bot:${draft.id}`] : undefined} />
@@ -216,7 +216,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
           {saved?.createdBy ? <CreatedBy bot={saved} creator={saved.createdBy} /> : null}
         </CardSection>
 
-        <CardSection title="Workspace">
+        <CardSection title="Workspace" fold="bot.workspace">
           <ValueRow label="Computer">
             <Text truncate>{store.hostName}</Text>
           </ValueRow>
@@ -264,7 +264,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
           ) : null}
         </CardSection>
 
-        <CardSection title="Activity">
+        <CardSection title="Activity" fold="bot.activity">
           <SwitchRow title="Notifications" detail="Get notified when this bot finishes or needs you" on={draft.notify ?? true} onChange={(on) => set('notify', on)} />
           {store.screen && !inspector ? (
             <SwitchRow

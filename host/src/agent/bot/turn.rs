@@ -2,7 +2,6 @@
 
 use super::sign_in::Held;
 use super::{Actor, Conn, Done, HostTurn, Instructions, NoticeStyle, Queued, Reacted, Seg};
-use crate::agent::acp::{self, Incoming};
 use crate::analytics::{self, TurnEnd, TurnOutcome, TurnSource};
 use crate::chat::context::{self, Snapshot};
 use crate::chat::memory;
@@ -12,6 +11,7 @@ use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{BotConfig, EntryKind, Lane, now_ms};
 use anyhow::{Result, anyhow};
+use codync_agent::acp::{self, Incoming};
 use serde_json::json;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -77,7 +77,7 @@ impl Actor {
         if remind_follow_ups && own_chat {
             prompt = format!("{prompt}\n\n[Codync: {}]", crate::routines::BRIEF);
         }
-        let known = crate::agent::backends::harness(&self.cfg.backend).is_some();
+        let known = codync_agent::backends::harness(&self.cfg.backend).is_some();
         let own_box = own_chat && !self.cfg.is_thread();
         if let Some(about) = work::reminder(briefed_on_threads, known).filter(|_| own_box) {
             prompt = format!("{prompt}\n\n[Codync: {about}]");
@@ -167,6 +167,7 @@ impl Actor {
         self.sent.clear();
         self.reacted = Reacted::No;
         self.joined = false;
+        self.unheard.clear();
         self.files.summary = None;
         self.files.cancel();
         if hidden {
@@ -318,7 +319,7 @@ impl Actor {
             return Vec::new();
         }
         let entries = entry_ids.iter().filter_map(|id| self.hub.store.entry(id)).filter(|e| e.data["from"] != "host");
-        entries.filter_map(|e| e.data["text"].as_str().map(str::to_owned)).collect()
+        entries.map(|e| work::written(&e.data)).collect()
     }
 
     /// A thread's turn for what the user wrote to its thread (`written`) begins: its task keeps their words for its
@@ -370,7 +371,11 @@ impl Actor {
         {
             *used = Instant::now();
         }
-        let stopped = self.stop_requested || matches!(&done, Ok(v) if v["stopReason"] == "cancelled");
+        let cancelled = matches!(&done, Ok(v) if v["stopReason"] == "cancelled");
+        if cancelled && !self.stop_requested {
+            self.requeue_unheard();
+        }
+        let stopped = self.stop_requested || cancelled;
         self.close_attempt(stopped || done.is_err());
         let mut final_text = None;
         let routine = self.active_routine.is_some();

@@ -211,7 +211,7 @@ fn transcript(raw: &Value) -> Vec<CallLine> {
             let text = line.text.trim();
             (!text.is_empty()).then(|| CallLine {
                 from: line.from,
-                text: crate::agent::acp::truncate(text, MAX_LINE_CHARS),
+                text: codync_agent::acp::truncate(text, MAX_LINE_CHARS),
                 at: line.at,
                 id: line.id.filter(|id| checked(id).is_ok()),
             })

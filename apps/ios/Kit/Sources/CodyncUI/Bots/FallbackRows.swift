@@ -36,12 +36,14 @@ struct FallbackBanner: View {
     }
 }
 
-/// The fallbacks (a header with ⓘ and +, a row per fallback, the caption) and whether the bot may change them. Each
-/// fallback is picked in place like the bot's own agent, and moved or removed from its menu.
+/// The fallbacks (a header with ⓘ and +, a row per fallback, the caption). Each fallback is picked in place like the
+/// bot's own agent, and moved or removed from its menu.
 struct FallbackList: View {
     @Binding var draft: BotDraft
     /// The saved bot: the fallback it's on and the agents resting.
     let bot: Bot?
+    /// Advisor mode's, after the threads' own agent.
+    var threads = false
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The step + just added: it opens on its pickers.
@@ -50,12 +52,15 @@ struct FallbackList: View {
     @State private var order = 0
     @State private var explaining = false
 
-    private var fallbacks: [BotFallback] { draft.fallbacks ?? [] }
+    private var key: WritableKeyPath<BotDraft, [BotFallback]?> { threads ? \.threadFallbacks : \.fallbacks }
+    private var fallbacks: [BotFallback] { draft[keyPath: key] ?? [] }
+    /// The chain's first agent: the threads' own in Advisor mode, else the bot's.
+    private var head: AgentLogin { (threads ? draft.threadAgent?.login : nil) ?? draft.login }
 
-    /// Each login is in the chain once, the bot's own included: an agent comes again only on another of its login profiles.
-    /// Step `i` keeps its own login.
+    /// Each login is in the chain once, its first agent's included: an agent comes again only on another of its login
+    /// profiles. Step `i` keeps its own login.
     private func taken(but i: Int) -> [AgentLogin] {
-        [draft.login] + fallbacks.enumerated().filter { $0.offset != i }.map(\.element.login)
+        [head] + fallbacks.enumerated().filter { $0.offset != i }.map(\.element.login)
     }
 
     /// The agents a new step can use.
@@ -69,24 +74,27 @@ struct FallbackList: View {
             }
             // By place, not login: picking another agent keeps the row (and its open picker) where it is.
             ForEach(Array(fallbacks.indices), id: \.self) { i in
-                FallbackRow(fallback: step(i), number: i + 1, taken: taken(but: i), bot: bot, expanded: added == i) { menu(at: i) }
+                // The chat's step; Advisor mode's threads each run their own.
+                FallbackRow(fallback: step(i), number: i + 1, taken: taken(but: i), bot: bot, inUse: threads ? nil : bot?.stepLogin,
+                            expanded: added == i) { menu(at: i) }
                     .id(order)
                     .transition(.opacity)
             }
-            Text(L10n.tr("If {agent} runs out of usage or can't answer, the bot carries on with the next one. Chat, memory and workspace carry over.").replacingOccurrences(of: "{agent}", with: model.backendName(draft.backend)))
+            Text(L10n.tr(threads
+                    ? "If {agent} runs out of usage or can't answer, threads carry on with the next one."
+                    : "If {agent} runs out of usage or can't answer, the bot carries on with the next one. Chat, memory and workspace carry over.")
+                .replacingOccurrences(of: "{agent}", with: model.backendName(head.backend)))
                 .font(.caption)
                 .foregroundStyle(Palette.secondary)
                 .lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .codyncSheet(isPresented: $explaining) { FallbackInfoSheet() }
-        SwitchRow("Let the bot change its fallbacks", detail: "It can set this list itself, for example when you ask it to.",
-                  isOn: Binding(get: { draft.selfFallbacks ?? true }, set: { draft.selfFallbacks = $0 }))
     }
 
     private var header: some View {
         HStack(spacing: 4) {
-            Text(L10n.tr("Fallbacks")).foregroundStyle(Palette.text)
+            Text(L10n.tr(threads ? "Threads' fallbacks" : "Fallbacks")).foregroundStyle(Palette.text)
             IconButton("About fallbacks", systemImage: "info.circle") { explaining = true }
             Spacer(minLength: 8)
             if fallbacks.count < BotFallback.limit, !choices.isEmpty {
@@ -106,7 +114,7 @@ struct FallbackList: View {
     /// Step `i` in the draft, for its row.
     private func step(_ i: Int) -> Binding<BotFallback> {
         Binding(get: { fallbacks.indices.contains(i) ? fallbacks[i] : BotFallback(backend: "") },
-                set: { new in if draft.fallbacks?.indices.contains(i) == true { draft.fallbacks?[i] = new } })
+                set: { new in if draft[keyPath: key]?.indices.contains(i) == true { draft[keyPath: key]?[i] = new } })
     }
 
     private func menu(at i: Int) -> [MenuItem] {
@@ -126,7 +134,7 @@ struct FallbackList: View {
     private func change(_ edit: (inout [BotFallback]) -> Void) {
         var list = fallbacks
         edit(&list)
-        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.fallbacks = list }
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft[keyPath: key] = list }
     }
 }
 
@@ -138,6 +146,8 @@ private struct FallbackRow: View {
     /// The rest of the chain's logins.
     let taken: [AgentLogin]
     let bot: Bot?
+    /// The step the bot runs on right now, which shows "In use"; nil where none does.
+    let inUse: AgentLogin?
     let expanded: Bool
     let menu: () -> [MenuItem]
     @Environment(BotStore.self) private var model
@@ -169,7 +179,7 @@ private struct FallbackRow: View {
                         LoginProfileRow(backend: agent, loginProfile: $fallback.loginProfile, free: agent.logins(for: fallback.login, taken: taken))
                     }
                 }
-                if bot?.stepLogin == fallback.login {
+                if inUse == fallback.login {
                     Text(L10n.tr("In use"))
                         .font(.caption.weight(.medium))
                         .foregroundStyle(Palette.text)

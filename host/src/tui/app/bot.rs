@@ -33,7 +33,7 @@ pub struct Bot {
     pub cwd: String,
     pub managed_workspace: bool,
     pub auto: bool,
-    /// The agent mode it works in (`agent::modes`); none for the agent's default.
+    /// The agent mode it works in (`codync_agent::modes`); none for the agent's default.
     pub mode: Option<String>,
     pub model: Option<String>,
     /// The model's own settings (effort, fast…): option id → value.
@@ -71,6 +71,10 @@ pub struct Bot {
     pub fallbacks: Vec<crate::store::Fallback>,
     /// The bot may set its own fallbacks.
     pub self_fallbacks: bool,
+    /// Advisor mode: the agent its threads run on; `None`: off.
+    pub thread_agent: Option<crate::store::Fallback>,
+    /// The threads' fallbacks; `None`: the host has no Advisor mode.
+    pub thread_fallbacks: Option<Vec<crate::store::Fallback>>,
     /// The fallback agent it's on now; `None` on its own.
     pub agent_step: Option<String>,
     /// The login profile of that agent the step runs on; `None`: its default one.
@@ -250,6 +254,8 @@ impl Bot {
             compaction_sizes: serde_json::from_value(v["compactionTokens"].clone()).ok().flatten(),
             fallbacks: serde_json::from_value(v["fallbacks"].clone()).unwrap_or_default(),
             self_fallbacks: v["selfFallbacks"].as_bool().unwrap_or(true),
+            thread_agent: serde_json::from_value(v["threadAgent"].clone()).ok().flatten(),
+            thread_fallbacks: serde_json::from_value(v["threadFallbacks"].clone()).ok(),
             agent_step: v["agentStep"]["agent"].as_str().map(str::to_owned),
             step_login_profile: v["agentStep"]["loginProfile"].as_str().map(str::to_owned),
             resting: serde_json::from_value(v["resting"].clone()).unwrap_or_default(),

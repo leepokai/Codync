@@ -4,8 +4,8 @@
 //! here: standing rules reach every session through the bot's memory, and the handoff repeats the user's own
 //! messages. Design: `docs/features/agent-fallback.md`.
 
-use crate::agent::acp::truncate;
 use crate::store::Entry;
+use codync_agent::acp::truncate;
 
 /// Files, commands and dev servers a ledger lists at most; the rest is counted.
 const FILES: usize = 10;

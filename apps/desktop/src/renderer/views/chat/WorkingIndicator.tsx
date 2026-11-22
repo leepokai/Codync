@@ -18,7 +18,7 @@ export function WorkingIndicator({ bot, steps }: { bot: Bot; steps: Entry[] }) {
   const [expanded, setExpanded] = useState(false)
   const open = details && expanded
   const status = (
-    <HStack as="span" gap={8}>
+    <HStack as="span" gap={8} className="working-status">
       <ThinkingOrb state={waiting ? 'listening' : 'working'} size={16} color={waiting ? 'var(--warning)' : 'var(--secondary)'} />
       <Text size="subheadline" tone={waiting ? 'attention' : 'secondary'} truncate grow>{tr(bot.activity || 'Working…')}</Text>
       {bot.startedAt ? <Timer since={bot.startedAt} /> : null}

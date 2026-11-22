@@ -73,8 +73,11 @@ const CHECKS = {
   required: ['checks'],
 }
 
-// Review and verification always run on Opus or above, whatever model started the session.
-const REVIEW_MODEL = 'opus'
+// Review and verification run on Fable, whatever model started the session; agent() returns null
+// when Fable fails for good (out of tokens, rate limit after retries), so that agent reruns on Opus.
+const reviewAgent = async (prompt, opts) =>
+  (await agent(prompt, { ...opts, model: 'fable' })) ??
+  agent(prompt, { ...opts, model: 'opus', label: `${opts.label} (opus)` })
 
 const REVIEWERS = [
   { name: 'correctness', text: 'Lens: correctness: bugs, regressions, broken edge cases, error handling, data loss, security, and compatibility with older clients and hosts (docs/reference/compatibility.md). Report only real defects with a concrete failure scenario; style nits are not findings.' },
@@ -84,19 +87,19 @@ const REVIEWERS = [
 
 phase('Review')
 const reviews = await parallel(REVIEWERS.map((r) => () =>
-  agent(`Review a code change, read-only (edit nothing). ${r.text}
+  reviewAgent(`Review a code change, read-only (edit nothing). ${r.text}
 ${scope}
 Most important first. Return an empty list when there is nothing.`,
-    { label: `review:${r.name}`, phase: 'Review', schema: FINDINGS, model: REVIEW_MODEL })))
+    { label: `review:${r.name}`, phase: 'Review', schema: FINDINGS })))
 const [bugs, gaps, refactors] = reviews.map((r) => r?.findings ?? [])
 const found = [...bugs, ...gaps]
 let confirmed = []
 let refuted = []
 if (found.length) {
-  const verdict = await agent(`Verify review findings on a code change, read-only. For each finding, read the code and try to refute it: is the failure scenario real in this code? Default to refuted when you can't reproduce the reasoning. Merge duplicates.
+  const verdict = await reviewAgent(`Verify review findings on a code change, read-only. For each finding, read the code and try to refute it: is the failure scenario real in this code? Default to refuted when you can't reproduce the reasoning. Merge duplicates.
 ${scope}
 Findings:
-${JSON.stringify(found, null, 2)}`, { label: 'verify', phase: 'Review', schema: VERDICTS, model: REVIEW_MODEL })
+${JSON.stringify(found, null, 2)}`, { label: 'verify', phase: 'Review', schema: VERDICTS })
   confirmed = verdict?.confirmed ?? found
   refuted = verdict?.refuted ?? []
 }

@@ -270,18 +270,10 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
             }
         }
         val connection = ready()
-        val ids = mutableListOf<String>()
-        var completed = 0L
         val total = send.files.sumOf { it.size }
-        for (file in send.files) {
-            val id = UUID.randomUUID().toString()
-            HostFiles(connection).upload(send.botId, id, file) { offset ->
-                val percent = if (total == 0L) 100 else ((completed + offset) * 100 / total).toInt()
-                mutableState.update { it.copy(uploadProgress = it.uploadProgress + (send.nonce to percent)) }
-            }
-            completed += file.size
-            ids.add(id)
-            withContext(Dispatchers.IO) { attachments.cache(id, file) }
+        val ids = uploadFiles(connection, send) { sent ->
+            val percent = if (total == 0L) 100 else (sent * 100 / total).toInt()
+            mutableState.update { it.copy(uploadProgress = it.uploadProgress + (send.nonce to percent)) }
         }
         val result = connection.call("send", send.body(ids))
         val entry = Entry.decode(result.jsonObject.getValue("entry").jsonObject)
@@ -303,6 +295,22 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
     } finally {
         sends.remove(send.nonce)
         mutableState.update { it.copy(uploadProgress = it.uploadProgress - send.nonce) }
+    }
+}
+
+/**
+ * Uploads [send]'s files for its `send` (to [taskId]'s thread when given), each cached as sent: their upload ids. Each
+ * attempt takes new ids, so a retry never appends to a half-sent file. [progress] hears the bytes of all of them sent so far.
+ */
+internal suspend fun AppStore.uploadFiles(connection: EncryptedChannel, send: PendingSend, taskId: String? = null,
+    progress: (Long) -> Unit = {}): List<String> {
+    var completed = 0L
+    return send.files.map { file ->
+        UUID.randomUUID().toString().also { id ->
+            HostFiles(connection).upload(send.botId, id, file, taskId) { offset -> progress(completed + offset) }
+            completed += file.size
+            withContext(Dispatchers.IO) { attachments.cache(id, file) }
+        }
     }
 }
 

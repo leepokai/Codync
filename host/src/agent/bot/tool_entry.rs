@@ -2,9 +2,9 @@
 //! and which calls are the bot's own bookkeeping.
 
 use super::codex_names::{Renamed, name_of};
-use crate::agent::acp;
 use crate::chat::memory::files;
 use crate::store::BotConfig;
+use codync_agent::acp;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 

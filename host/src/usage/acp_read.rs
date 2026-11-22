@@ -5,11 +5,11 @@
 //! would reach the model and spend the plan it was meant to read. One session per agent is resumed
 //! for every reading, as each new session leaves a conversation behind on the computer.
 
-use crate::agent::acp::{Acp, Incoming};
 use crate::agent::auth::{self, Started};
 use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::{Context, Result, bail};
+use codync_agent::acp::{Acp, Incoming};
 use serde_json::{Value, json};
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -214,7 +214,7 @@ mod tests {
                 ("USAGE_AGENT_COMMAND".to_owned(), advertises.to_owned()),
             ];
             let (acp, mut inbox) =
-                Acp::spawn(&crate::shell::python(&fixture), env!("CARGO_MANIFEST_DIR"), &env).unwrap();
+                Acp::spawn(&codync_agent::shell::python(&fixture), env!("CARGO_MANIFEST_DIR"), &env).unwrap();
             let init = acp.request("initialize", json!({"protocolVersion": 1})).await.unwrap();
             let mut talk = Talk { acp: &acp, inbox: &mut inbox, commands: None, text: String::new() };
             let outcome = talk.run(&self.store, &init, "test-agent", "usage").await;

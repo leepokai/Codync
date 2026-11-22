@@ -42,6 +42,7 @@ You can also ask a bot in its chat to rename itself or change its own instructio
 - **Model:** **Default** or one of the models the agent lists. Some models have their own options, such as reasoning effort, each with its own row.
 - **Fast mode:** shown when the agent offers it for the model (Claude Code and Codex do). Faster replies for more usage.
 - **Fallbacks:** other agents that carry on when this one runs out of usage or can't answer. See [Agent fallbacks](/docs/agent-fallbacks).
+- **Advisor mode:** the bot's [threads](/docs/conversations#work) run on an agent of their own, set under **Threads' agent** with its model and login profile, and carry on along **Threads' fallbacks**, while the chat stays on the agent above. Turning it on starts the threads on the bot's own agent, model and fallbacks.
 
 Changing the agent or the model starts a new agent session. The chat history stays.
 
@@ -93,7 +94,7 @@ For a Claude Code or Codex bot, **Summarize long chats** decides who summarizes 
 | **Near the limit** | Just before the window fills: 40K short of it (960K on a 1M window), and never sooner than Early. |
 | **Set a size** | At the size you pick: 100K, 200K and so on up to the largest the window allows, or **Custom size…** to type your own, in thousands of tokens (from 50K, rounded to 10K). |
 
-With Near the limit or a size, nothing summarizes the chat or starts it over before it reaches that size, except that a chat already summarized three times starts fresh after eight hours away. The sizes appear once the bot has replied and its agent has said how large its window is. A size larger than a new model's window counts as that window's largest. A longer chat costs more usage on every turn, because the agent reads all of it each time. In the terminal UI this field is called **Summarize** and sits under the fallbacks: ←/→ goes through the same choices, then each listed size, and typing digits sets a size of your own in K.
+With Near the limit or a size, nothing summarizes the chat or starts it over before it reaches that size, except that a chat already summarized three times starts fresh after eight hours away. The sizes appear once the bot has replied and its agent has said how large its window is. A size larger than a new model's window counts as that window's largest. A longer chat costs more usage on every turn, because the agent reads all of it each time. In the terminal UI this field is called **Summarize** and sits under the fallbacks and Advisor mode: ←/→ goes through the same choices, then each listed size, and typing digits sets a size of your own in K.
 
 ## Activity
 

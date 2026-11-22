@@ -32,6 +32,17 @@ class HostFilesTest {
         } finally { root.deleteRecursively() }
     }
 
+    @Test fun `a file for a thread names its task`() = runBlocking {
+        val source = Files.createTempFile("codync-files", ".png").toFile().apply { writeBytes(byteArrayOf(1)) }
+        try {
+            val tasks = mutableListOf<String?>()
+            val files = HostFiles { _, body, _ -> tasks += body["taskId"]?.jsonPrimitive?.content; JsonObject(emptyMap()) }
+            files.upload("bot", "u1", OutgoingFile(source.path, "shot.png", 1), taskId = "t1")
+            files.upload("bot", "u2", OutgoingFile(source.path, "shot.png", 1))
+            assertEquals(listOf("t1", null), tasks)
+        } finally { source.delete() }
+    }
+
     @Test fun `truncated downloads cannot publish a partial cache file`() = runBlocking {
         val root = Files.createTempDirectory("codync-files").toFile()
         try {

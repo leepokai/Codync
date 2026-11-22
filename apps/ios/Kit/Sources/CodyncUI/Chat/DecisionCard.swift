@@ -41,8 +41,8 @@ struct DecisionCard: View {
                     ForEach(Array((d.choices ?? []).enumerated()), id: \.offset) { index, choice in
                         option(choice, index: index)
                     }
-                    // Typing in the chat doesn't answer a thread's card: only its options do.
-                    if !d.isFromThread {
+                    // Typing in the chat doesn't answer a thread's card, nor one only an option answers.
+                    if d.takesOwnWords {
                         OwnAnswer(reply: reply)
                             .disabled(answering != nil).opacity(answering == nil ? 1 : 0.4)
                     }

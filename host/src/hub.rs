@@ -53,7 +53,7 @@ pub struct Runtime {
     pub message: Option<String>,
     /// The ACP session the running turn prompts. A memory write made there is one that session already knows.
     pub session: Option<String>,
-    pub fast_mode: crate::agent::config::FastModeSupport,
+    pub fast_mode: codync_agent::config::FastModeSupport,
     /// The fallback the bot is on; `None` on its own agent (see `agent::fallback`).
     pub agent_step: Option<AgentStep>,
 }
@@ -155,6 +155,8 @@ impl Hub {
     }
 
     pub fn new(store: Store, host_id: String, identity: Identity, token: String, port: u16) -> Arc<Self> {
+        #[cfg(test)]
+        crate::agent::init_runtime();
         let (events, _) = broadcast::channel(1024);
         let screen = Arc::new(Screen::new(Screen::load_enabled(&store), events.clone()));
         Arc::new(Self {
@@ -357,6 +359,10 @@ impl Hub {
             // A thread's status is its bot's to what follows the bot from outside its chat.
             if let Some(owner) = self.store.bot(id).ok().flatten().and_then(|row| row.config.thread_of) {
                 self.outside_changed(&owner);
+                // Waiting on the user, it gives its seat up (`work::dispatch`).
+                if after.status == BotStatus::NeedsInput {
+                    self.work.seat_freed(&owner);
+                }
             }
         } else if before.status != after.status {
             self.outside_changed(id);

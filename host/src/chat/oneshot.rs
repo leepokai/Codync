@@ -1,11 +1,11 @@
 //! Background jobs on the bot's own harness (dreaming, automatic naming, call titles): one prompt to a throwaway
 //! agent.
 
-use crate::agent::acp::{self, Acp, Incoming};
 use crate::agent::bot::{Adapter, Instructions};
 use crate::hub::Hub;
 use crate::store::BotConfig;
 use anyhow::{Result, anyhow, bail};
+use codync_agent::acp::{self, Acp, Incoming};
 use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
@@ -35,7 +35,7 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
         crate::agent::bot::start_agent(&cfg.backend, &command[0], workspace, &env, Duration::from_mins(1)).await
     })
     .await?;
-    conn.acp.hold(grants);
+    grants.held_by(&conn.acp);
     let acp = conn.acp.clone();
     let mut opened = None;
     let result = async {

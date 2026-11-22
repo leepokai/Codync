@@ -78,9 +78,16 @@ data class WorkTask(
     val worktree: Worktree? = null,
     /** It takes the user's messages ([canTalk]): the bot's own task whose thread still exists. False from an older host. */
     val talk: Boolean = false,
+    /** Its thread takes files with the user's messages too. False from a host before them, where the box has no +. */
+    val talkFiles: Boolean = false,
     /** Where its thread works (a worktree's folder for one in a worktree); null for one no thread has taken, and from an older host. */
     val folder: String? = null,
-)
+    /** It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); null from an older host ([takesSeat]). */
+    val seat: Boolean? = null,
+) {
+    /** It takes one of the bot's seats (`maxThreads`): the host's word, else a live task. */
+    val takesSeat: Boolean get() = seat ?: status.live
+}
 
 /** The most threads a bot may run at once. */
 const val MAX_THREADS = 6
@@ -159,20 +166,22 @@ fun <T> allWork(roster: List<T>, work: (T) -> List<WorkTask>): AllWork<T> {
 data class WorkSections(
     /** The threads that run now: tasks that need the user, then the working ones. */
     val threads: List<WorkTask>,
-    /** The most the bot runs at once: the Threads heading's `2 / 3` is how many run of this (`2 / 1` right after it was lowered). */
+    /** The seats taken: the Threads heading's `2` of `2 / 3` (a thread waiting on the user takes none). */
+    val inUse: Int,
+    /** The most the bot runs at once: the Threads heading's `3` of `2 / 3` (`2 / 1` right after it was lowered). */
     val atOnce: Int,
     /** What waits for a thread, in the order it will be taken. */
     val box: List<WorkTask>,
     /** Tasks that ended in the last day, newest first. */
     val recent: List<WorkTask>,
 ) {
-    /** The threads the bot could still start: the ceiling less the ones that run. */
-    val free: Int get() = maxOf(0, atOnce - threads.size)
+    /** The threads the bot could still start: the ceiling less the seats taken. */
+    val free: Int get() = maxOf(0, atOnce - inUse)
 }
 
 fun workSections(work: List<WorkTask>, maxThreads: Int?): WorkSections {
     val threads = work.filter { it.status == WorkStatus.NeedsYou } + work.filter { it.status == WorkStatus.Working }
-    return WorkSections(threads, atOnce = maxThreads ?: DEFAULT_MAX_THREADS,
+    return WorkSections(threads, inUse = work.count { it.takesSeat }, atOnce = maxThreads ?: DEFAULT_MAX_THREADS,
         box = work.filter { it.status == WorkStatus.Waiting }, recent = work.filter { it.status.ended })
 }
 
@@ -189,7 +198,7 @@ fun givesWay(task: WorkTask): Boolean = task.status.live && task.source == null
  */
 fun canCutIn(work: List<WorkTask>, maxThreads: Int?): Boolean {
     val held = work.firstOrNull { it.status == WorkStatus.Waiting }?.wait?.kind.let { it == WaitKind.After || it == WaitKind.Usage }
-    return !held && work.any(::givesWay) && work.count { it.status.live } >= (maxThreads ?: DEFAULT_MAX_THREADS)
+    return !held && work.any(::givesWay) && work.count { it.takesSeat } >= (maxThreads ?: DEFAULT_MAX_THREADS)
 }
 
 /** What the user can do to a task from its row (iOS `WorkAction`): a phrase to look up and its symbol. */
@@ -265,6 +274,16 @@ fun threadTranscript(entries: List<Entry>): ThreadTranscript {
     val told = kept.firstOrNull(Entry::isToldToThread)
     return ThreadTranscript(told, kept.filterNot { it === told })
 }
+
+/** A message of the user's that waits in the thread: what the host told it, the chat passing words on included, never does. */
+private val Entry.waitsInThread: Boolean get() = isQueued && !isToldToThread
+
+/** While the thread works, the user's messages that wait above the composer, oldest first (iOS `ThreadTranscript.queue`).
+ *  What the host told it stays quoted where it came. */
+fun ThreadTranscript.queue(working: Boolean): List<Entry> = if (working) rest.filter { it.waitsInThread }.sortedBy(Entry::seq) else emptyList()
+
+/** [ThreadTranscript.rest] without that queue. */
+fun ThreadTranscript.hidingQueue(working: Boolean): List<Entry> = if (working) rest.filterNot { it.waitsInThread } else rest
 
 /** One quiet line of a thread for what it put in the bot's chat ([sharedLine]): an SF Symbol name and its words. */
 data class SharedLine(val symbol: String, val text: String)

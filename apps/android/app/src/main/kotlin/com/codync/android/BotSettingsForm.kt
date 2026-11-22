@@ -135,7 +135,7 @@ private fun CardRows.computerRow(state: AppState, online: Boolean) = row {
     }
 }
 
-/** The agent, its model and the fallbacks that carry on for it. */
+/** The agent, its model, the fallbacks that carry on for it and Advisor mode's for its threads. */
 private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, bot: Bot?, modelReload: Int,
     reloadModels: () -> Unit) {
     row {
@@ -159,6 +159,7 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
         SwitchRow("Let the bot change its fallbacks", "It can set this list itself, for example when you ask it to.", draft.selfFallbacks != false,
             { change(draft.copy(selfFallbacks = it)) })
     }
+    advisorRow(state, store, draft, change, bot)
 }
 
 /** Where the bot works, how many of its threads work at once and what it may do there without asking. */

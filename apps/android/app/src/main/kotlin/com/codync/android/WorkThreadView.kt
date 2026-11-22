@@ -51,6 +51,8 @@ import com.codync.android.core.Entry
 import com.codync.android.core.LinkState
 import com.codync.android.core.WhereLine
 import com.codync.android.core.WorkTask
+import com.codync.android.core.hidingQueue
+import com.codync.android.core.queue
 import com.codync.android.core.sharedLine
 import com.codync.android.core.sharing
 import com.codync.android.core.threadDraftKey
@@ -96,8 +98,8 @@ import kotlinx.coroutines.launch
     val all = state.threadEntries[threadId].orEmpty()
     val thread = threadTranscript(all)
     // As in a chat: while the thread's turn runs, what the user wrote waits over the composer, not among the rows.
-    val queued = queuedMessages(thread.rest, live)
-    val own = if (live) thread.rest.filterNot(Entry::isQueued) else thread.rest
+    val queued = thread.queue(live)
+    val own = thread.hidingQueue(live)
     val rows = if (threadId == null) own else sharing(own, state.entries.filter { it.botId == bot.id && !it.isRemoved }, threadId)
     val sends = state.threadSends[taskId].orEmpty().filter { send -> all.none { it.clientNonce == send.nonce } }
     val running = runningTurn(all, live)
@@ -110,8 +112,9 @@ import kotlinx.coroutines.launch
         GlassStage(Modifier.weight(1f).fillMaxWidth(), chrome = {
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { composerHeight = it.height }) {
                 val readOnly = readOnlyLine(task)
-                if (task.talk) ThreadComposer(state, store, threadDraftKey(bot.id, taskId), queued, steer = { store.steerThread(bot.id, taskId, it) },
-                    remove = { store.unqueueThread(bot.id, taskId, it) }) { store.sendToThread(bot.id, taskId, it) }
+                val draftKey = threadDraftKey(bot.id, taskId)
+                if (task.talk) ThreadComposer(state, store, draftKey, task.talkFiles, queued, steer = { store.steerThread(bot.id, taskId, it) },
+                    remove = { store.unqueueThread(bot.id, taskId, it) }) { store.sendToThread(bot.id, taskId, draftKey, it) }
                 else if (readOnly != null) Text(tr(readOnly), Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
                     style = Type.footnote, color = Palette.tertiary, textAlign = TextAlign.Center)
             }
@@ -128,7 +131,7 @@ import kotlinx.coroutines.launch
                 items(rows, key = { it.id }) { entry ->
                     // The chat's entry stays in the chat, answered and downloaded there.
                     if (entry.botId == bot.id) SharedRow(entry) { openInChat(entry) }
-                    else Box(Modifier.padding(top = 10.dp)) { ThreadRow(entry, unfolded = entry.turn == running) }
+                    else Box(Modifier.padding(top = 10.dp)) { ThreadRow(entry, unfolded = entry.turn == running, state, store) }
                 }
                 items(sends, key = { "send-" + it.nonce }) { send ->
                     PendingBubble(send, groupStart = true, state, store, retry = { store.deliverToThread(taskId, send) },
@@ -197,10 +200,10 @@ import kotlinx.coroutines.launch
  * working steps show it, and what the host told the thread later (a session that starts again) as a quiet quote, never a
  * message of the user's.
  */
-@Composable private fun ThreadRow(entry: Entry, unfolded: Boolean) {
+@Composable private fun ThreadRow(entry: Entry, unfolded: Boolean, state: AppState, store: AppStore) {
     if (entry.isToldToThread) SelectionContainer {
         Text("“${entry.text}”", Modifier.padding(horizontal = 4.dp), style = Type.subheadline, color = Palette.secondary)
-    } else if (entry.kind == "user" || entry.kind == "agent" && entry.isChat) PlainMessageRow(entry)
+    } else if (entry.kind == "user" || entry.kind == "agent" && entry.isChat) PlainMessageRow(entry, state, store)
     else Box(Modifier.padding(horizontal = 4.dp)) { TraceRow(entry, unfolded) }
 }
 

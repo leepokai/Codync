@@ -22,11 +22,11 @@ pub async fn with_defaults(hub: &Arc<Hub>, mut b: Value) -> Result<BotConfig> {
     }
     // A bot works in its agent's Auto mode and asks about the rest, unless the client picked how it approves.
     if b["permission"].is_null() && b["mode"].is_null() && b["kind"] != "group" {
-        b["mode"] = crate::agent::modes::AUTO.into();
+        b["mode"] = codync_agent::modes::AUTO.into();
     }
     // And the agent, when the client names none.
     if b["backend"].as_str().is_none_or(str::is_empty) && b["kind"] != "group" {
-        let agents = tokio::task::spawn_blocking(super::backends::list).await?;
+        let agents = tokio::task::spawn_blocking(codync_agent::backends::list).await?;
         b["backend"] = default_backend(&agents).into();
     }
     serde_json::from_value(b).context("invalid bot")

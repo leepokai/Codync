@@ -285,7 +285,7 @@ impl Reply {
             asker: asker.into(),
             request: request.into(),
             bot: bot.into(),
-            quote: crate::agent::acp::truncate(message, super::REQUEST_QUOTE_BYTES),
+            quote: codync_agent::acp::truncate(message, super::REQUEST_QUOTE_BYTES),
             status: RequestStatus::Queued,
             text: None,
             at: now_ms(),

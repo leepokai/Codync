@@ -1,4 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
+import { resolve } from 'node:path'
+import { fixtureCommand } from './fixture-command.ts'
 import { canSteer } from '../src/renderer/views/chat/queued-messages.ts'
 import { api, attach, steerBot, typeMessage } from './sandbox.ts'
 
@@ -85,6 +87,38 @@ test('a message sent while the bot works waits above the composer, then goes out
     await expect(transcript).not.toContainText('never sent')
     const { entries } = await api<History>(page, 'history', { botId })
     expect(entries.find((e) => e.data.text === 'never sent')).toBeUndefined()
+  } finally {
+    if (botId) {
+      await api(page, 'stop', { botId }).catch(() => {})
+      await api(page, 'deleteBot', { botId }).catch(() => {})
+    }
+    await browser.close()
+  }
+})
+
+test('a message that joined a turn its agent then drops without a word goes out again as the next turn', async () => {
+  const { browser, page } = await attach()
+  const name = `Queue drop e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    // Like Codex on a refused card: it takes the steered message in, then ends the turn as cancelled, saying nothing.
+    const agent = resolve(__dirname, '../../../host/tests/fixtures/steer_agent.py')
+    const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
+      name, backend: 'custom', command: `${fixtureCommand(agent)} drops 30`, connectors: [], skills: [], notify: false,
+    })
+    botId = bot.id
+    await page.locator('.roster-row', { hasText: name }).click()
+    const queued = page.locator('.queued-row')
+
+    await api(page, 'send', { botId, text: 'first' })
+    await expect.poll(() => started(page, bot.id, 'first')).toBe(true)
+    await typeMessage(page, 'second')
+    await queued.filter({ hasText: 'second' }).getByRole('button', { name: 'Send now' }).click()
+    // Not lost: the next turn answers it.
+    await expect(page.locator('.transcript .message.agent', { hasText: 'Got: ' })).toContainText('second')
+    await expect(queued).toHaveCount(0)
+    const { entries } = await api<History>(page, 'history', { botId })
+    expect(entries.filter((e) => e.kind === 'user' && e.data.text === 'second').map((e) => e.data.status)).toEqual(['sent'])
   } finally {
     if (botId) {
       await api(page, 'stop', { botId }).catch(() => {})

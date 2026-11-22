@@ -4,12 +4,12 @@
 use super::ports::{self, Listening, Port};
 use super::{Status, View, platform, report};
 use crate::LockExt;
-use crate::agent::acp::Acp;
-use crate::agent::backends;
-use crate::agent::process::{self, JobProcess, program_name};
 use crate::analytics::Event;
 use crate::hub::Hub;
 use anyhow::{Context, Result, bail};
+use codync_agent::acp::Acp;
+use codync_agent::backends;
+use codync_agent::process::{self, JobProcess, program_name};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;

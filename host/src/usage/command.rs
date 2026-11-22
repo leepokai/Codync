@@ -11,7 +11,7 @@ use super::reading::{UsageReadStage, report};
 
 /// `name` on the login-shell PATH.
 pub(super) fn program(name: &str) -> Option<PathBuf> {
-    crate::agent::backends::which(name)
+    codync_agent::backends::which(name)
 }
 
 /// Stdout of `program`, with terminal colour removed. Nothing when it isn't

@@ -187,6 +187,20 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         #expect(sections(task("a", .waiting)).free(maxThreads: nil) == 3)
     }
 
+    @Test func aThreadWaitingOnTheUserGivesItsSeatUpAsTheHostSays() throws {
+        var working = task("a"), asking = task("b", .needsYou)
+        working.seat = true
+        asking.seat = false
+        let work = sections(working, asking, task("c", .waiting))
+        #expect(work.threadsCount(maxThreads: 2) == "1 / 2")
+        #expect(work.free(maxThreads: 2) == 1)
+        #expect(!work.canCutIn(maxThreads: 2), "a seat is free: nothing has to give way")
+        // An older host says nothing: every live task takes one.
+        #expect(sections(task("a"), task("b", .needsYou)).threadsCount(maxThreads: 2) == "2 / 2")
+        let wire = try bot(#","work":[{"id":"b","status":"needsYou","seat":false}]"#)
+        #expect(wire.work.first?.seat == false)
+    }
+
     @Test func everyThreadIsBusyOnlyWhenAsManyAreLiveAsMayBe() {
         #expect(!sections(task("a", .waiting)).isFull(maxThreads: 1))
         #expect(sections(task("a"), task("b", .needsYou)).isFull(maxThreads: 2))
@@ -411,6 +425,10 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         // The chat's own card keeps the row for the user's own words.
         #expect(try !data(#"{"decision":true,"question":"Which?"}"#).isFromThread)
         #expect(try !data(#"{"decision":true,"question":"Which?","thread":"thread-1","task":7}"#).isFromThread)
+        // Own words answer the chat's card unless only an option does (an agent's own question).
+        #expect(try data(#"{"decision":true,"question":"Which?"}"#).takesOwnWords)
+        #expect(try !data(#"{"decision":true,"question":"Which?","ownWords":false}"#).takesOwnWords)
+        #expect(try !data(#"{"decision":true,"question":"Which?","task":"i1"}"#).takesOwnWords)
     }
 
     // MARK: worktrees

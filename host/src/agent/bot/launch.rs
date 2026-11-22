@@ -2,11 +2,11 @@
 //! attached to a session request.
 
 use super::{Adapter, Conn, ServerWatch, SessionCaps};
-use crate::agent::acp::{self, Acp};
-use crate::agent::backends;
-use crate::agent::registry::{Candidate, Cmd};
 use crate::store::BotConfig;
 use anyhow::{Result, anyhow};
+use codync_agent::acp::{self, Acp};
+use codync_agent::backends;
+use codync_agent::registry::{Candidate, Cmd};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -75,7 +75,7 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
             current = answer;
         }
     }
-    // The older `modes` field comes only with the session (`agent::modes`).
+    // The older `modes` field comes only with the session (`codync_agent::modes`).
     if current.get("modes").is_none()
         && let Some(modes) = res.get("modes")
     {
@@ -184,12 +184,14 @@ pub(crate) async fn start_agent(
             json!({
                 "protocolVersion": 1,
                 // `session.compaction`: tell us when the agent summarizes its context.
+                // `elicitation`: the agent's own questions come as forms the user answers on a card.
                 // `parameterizedModelPicker`: Cursor lists plain models with their options
                 // (effort, fast…) instead of one fixed variant each; model discovery asks the same.
                 "clientCapabilities": {
                     "fs": {"readTextFile": false, "writeTextFile": false},
                     "terminal": false,
                     "session": {"compaction": {}},
+                    "elicitation": crate::agent::elicitation::capability(),
                     "_meta": {"parameterizedModelPicker": true},
                 },
                 "clientInfo": {"name": "codync", "title": "Codync", "version": env!("CARGO_PKG_VERSION")},
@@ -290,6 +292,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_outdated_agent_that_quits_at_start_is_told_to_update() {
+        crate::agent::init_runtime();
         let python = if cfg!(windows) { "python" } else { "python3" };
         let command = format!(
             r#"{python} -c "import sys; sys.stderr.write('Error: profile acp does not exist\n'); sys.exit(1)""#

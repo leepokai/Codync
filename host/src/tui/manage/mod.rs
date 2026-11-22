@@ -436,5 +436,5 @@ impl App {
 /// Opens `url` in this computer's browser, when the host is this computer.
 pub(super) fn open_browser(url: &str, host: &str) -> bool {
     let local = ["//127.0.0.1", "//localhost", "//[::1]"].iter().any(|h| host.contains(h));
-    local && !url.is_empty() && crate::shell::open(std::ffi::OsStr::new(url))
+    local && !url.is_empty() && crate::service::open(std::ffi::OsStr::new(url))
 }

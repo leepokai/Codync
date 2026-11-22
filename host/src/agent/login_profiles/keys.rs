@@ -24,7 +24,7 @@ fn slot(id: &str) -> String {
 
 /// A variable the user may keep in a profile: a name of their own, never Codync's.
 fn offered(name: &str) -> bool {
-    crate::shell::is_env_name(name)
+    codync_agent::shell::is_env_name(name)
         && !name.starts_with("CODYNC_")
         && !name.starts_with("LC_")
         && !NOT_KEYS.contains(&name)
@@ -61,7 +61,9 @@ pub async fn shell_names() -> Result<Vec<String>> {
 
 /// The login shell's variables, as a fresh terminal has them.
 async fn shell_env() -> Result<Vec<(String, String)>> {
-    tokio::task::spawn_blocking(crate::shell::user_env).await?.context("couldn't read your login shell's variables")
+    tokio::task::spawn_blocking(codync_agent::shell::user_env)
+        .await?
+        .context("couldn't read your login shell's variables")
 }
 
 /// Sets API key profile `id`'s variables: `typed` (name → value; an empty value removes it) and `import`, names
@@ -103,7 +105,7 @@ pub async fn set(store: &Store, id: &str, typed: &Map<String, Value>, import: &[
         Ok(profile.clone())
     })?;
     // New keys are a new sign-in: the prompt the old ones got refused no longer counts.
-    crate::agent::backends::clear_prompt_refused(id);
+    codync_agent::backends::clear_prompt_refused(id);
     Ok(profile)
 }
 

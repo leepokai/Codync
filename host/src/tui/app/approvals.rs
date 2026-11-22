@@ -1,10 +1,10 @@
-//! The bot form's Approvals: the agent's modes, its Auto mode first (`agent::modes`), then Codync approving
+//! The bot form's Approvals: the agent's modes, its Auto mode first (`codync_agent::modes`), then Codync approving
 //! everything. An agent without modes offers Ask me instead; one whose list hasn't come yet, Auto and Ask me. A bot
 //! without a mode (or in Auto on an agent without one) shows as Ask me, and one in a mode the list lacks as that
 //! mode's id: never as more careful than it is.
 
 use super::{App, Form, cycle};
-use crate::agent::modes::{AUTO, Mode};
+use codync_agent::modes::{AUTO, Mode};
 
 const ASKS: &str = "Anything the agent still asks about comes to you as an approval card.";
 

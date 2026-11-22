@@ -2,7 +2,7 @@
 //! the adapter's category (`errorKind`, codex-acp's `codexErrorInfo`), and the host's own `Failure`. The agents
 //! retry what is worth retrying before they answer with an error, so Codync never asks the same agent again.
 
-use crate::agent::acp::{AUTH_REQUIRED, Failure, FailureKind, RpcError};
+use codync_agent::acp::{Failure, FailureKind, RpcError, signed_out};
 use serde::{Deserialize, Serialize};
 
 /// Why an agent couldn't answer, and how long it rests for it (see `rest`).
@@ -77,7 +77,7 @@ pub fn of(error: &anyhow::Error) -> Option<Reason> {
 
 /// Why an agent's error answer moves the bot on (see [`of`]).
 pub fn of_rpc(r: &RpcError) -> Option<Reason> {
-    if r.code == AUTH_REQUIRED {
+    if signed_out(r) {
         return Some(Reason::SignedOut);
     }
     let usage_text = USAGE_LIMIT_TEXT.iter().any(|t| r.message.contains(t));
@@ -95,7 +95,6 @@ pub fn of_rpc(r: &RpcError) -> Option<Reason> {
             | "internal_server_error"
             | "response_too_many_failed_attempts",
         ) => Reason::Overloaded,
-        Some("authentication_failed" | "oauth_org_not_allowed" | "unauthorized" | "auth") => Reason::SignedOut,
         Some("model_not_found") => Reason::ModelMissing,
         _ if usage_text => Reason::UsageLimit,
         _ => return None,
@@ -105,6 +104,7 @@ pub fn of_rpc(r: &RpcError) -> Option<Reason> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use codync_agent::acp::AUTH_REQUIRED;
 
     fn rpc(code: i64, message: &str, kind: Option<&str>) -> anyhow::Error {
         RpcError { code, message: message.into(), kind: kind.map(Into::into) }.into()

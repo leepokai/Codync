@@ -93,6 +93,18 @@ private func entry(_ id: String, seq: Int64, kind: String = "agent", data: Strin
         #expect(Array(entries[1..<5]).threadTranscript.told == nil)
     }
 
+    @Test func whatTheChatPassedOnIsQuotedNeverQueued() throws {
+        let entries = [
+            try entry("e1", seq: 1, kind: "user", data: #"{"text":"Fix it","from":"host"}"#),
+            try entry("e2", seq: 2, kind: "user", data: #"{"text":"Also the docs","status":"queued"}"#),
+            try entry("e3", seq: 3, kind: "user", data: #"{"text":"And the tests","from":"host","relay":true,"status":"queued"}"#),
+        ].threadTranscript
+        #expect(entries.queue(working: true).map(\.id) == ["e2"])
+        #expect(entries.hidingQueue(working: true).map(\.id) == ["e3"])
+        #expect(entries.queue(working: false).isEmpty)
+        #expect(entries.hidingQueue(working: false).map(\.id) == ["e2", "e3"])
+    }
+
     @Test func aThreadShowsWhatItPutInTheChatWhereItCame() throws {
         let thread = #""thread":{"id":"thread-1","title":"Fix login"}"#
         let own = [try entry("t1", seq: 1, kind: "tool", at: 10), try entry("t2", seq: 2, data: #"{"final":true}"#, at: 30)]

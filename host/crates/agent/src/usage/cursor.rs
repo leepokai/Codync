@@ -22,7 +22,7 @@ enum Route {
     Summary,
 }
 
-pub(super) async fn collect() -> Option<Vec<Window>> {
+pub async fn collect() -> Option<Vec<Window>> {
     let token = tokio::task::spawn_blocking(read_token).await.ok().flatten()?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
@@ -90,7 +90,7 @@ fn read_token() -> Option<String> {
 }
 
 /// The app or CLI left a login file here. Whether it's still valid only a reading tells.
-pub(super) fn login_saved() -> bool {
+pub fn login_saved() -> bool {
     [cli_auth_path(), app_db_path()].into_iter().flatten().any(|path| path.is_file())
 }
 
@@ -130,7 +130,7 @@ fn token_text(raw: &str) -> String {
 }
 
 fn jwt_sub(token: &str) -> Option<String> {
-    let claims = codync_agent::accounts::jwt_claims(token)?;
+    let claims = crate::accounts::jwt_claims(token)?;
     let sub = claims["sub"].as_str().filter(|s| !s.is_empty())?;
     Some(sub.to_owned())
 }

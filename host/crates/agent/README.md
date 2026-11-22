@@ -14,6 +14,8 @@ host that is true of the agents themselves, with no app in it:
   so stopping the agent stops everything under it (a session of its own on Unix, a job object on Windows).
 - **`modes`** reads an agent's permission modes (its Auto among them) and picks the one to switch to.
 - **`accounts`** gives an agent more than one login on the same computer (below).
+- **`usage`** (the `usage` feature) reads each agent's plan limits the way the agent itself reports them (below);
+  **`codex_app`** is Codex's own API (`codex app-server`), which it reads Codex's through.
 
 ```rust,no_run
 use std::path::PathBuf;
@@ -88,6 +90,45 @@ let ended = StopReason::of(&turn.response().await?);
 # Ok(())
 # }
 ```
+
+## Usage
+
+With the `usage` feature, `codync_agent::usage` reads how much of its plan each agent has used, as `Window`s (an id, a
+label, the share used, when it resets, or a `text` note such as a balance). No reading starts a model turn. Each agent
+has its module and its own `collect`:
+
+| How it reads | Agents |
+|---|---|
+| Files on this computer | OpenCode (its database), Mistral Vibe (its session logs), Junie (the `JetBrains` IDE quota file) |
+| The agent's CLI | Claude Code (`claude -p /usage`), Amp (`amp usage`), Auggie (`auggie account status`), Hermes (`hermes usage`), Kilo (`kilo profile`), Kiro (`kiro-cli` `/usage`), oh-my-pi (`omp usage`), Kimi Code (its `kimi` screen, in a terminal) |
+| The agent's own server, which asks its provider with its own login | Codex (`codex app-server`), GitHub Copilot (its headless server), Grok Build (its ACP billing extension), Google Antigravity (its ACP `/usage` command, or the running app's language server) |
+| The provider's service | Cursor: its saved CLI or app login's token goes to Cursor's dashboard service, or to cursor.com's usage summary for legacy plans. This is the only reader that sends an agent's login anywhere, and the token is never logged |
+
+A reader returns `None` when it has no reading this time (the CLI isn't installed, it's signed out, its report changed);
+Copilot's returns an `Outcome`, which can also be a skip, as it starts its server at most every 30 minutes. The blocking ones (files, Kimi's terminal) are plain functions to run off the async workers. Which agents
+to read, how often, and what to keep and show are the app's. The feature reads SQLite files through `rusqlite` and
+leaves linking SQLite to the app: turn on `rusqlite`'s `bundled` feature, or have a system SQLite.
+
+```rust,no_run
+use codync_agent::usage::{self, Window};
+
+# async fn run() {
+// The computer's own Claude login; a second login passes the variables that point the CLI at its folder.
+if let Some(windows) = usage::claude::collect(Vec::new()).await {
+    for Window { label, percent, resets_at, .. } in windows {
+        println!("{label}: {percent}% used, resets at {resets_at:?}");
+    }
+}
+// A database on this computer: blocking.
+let opencode = tokio::task::spawn_blocking(usage::opencode::collect).await;
+# let _ = opencode;
+# }
+```
+
+The readers that start an agent's ACP server (Antigravity, Grok Build) or tell how a check ended (those and Copilot,
+Auggie, Hermes, Kilo) take the app as `usage::App`: it starts the agent the way the app does (its keys and login), keeps
+the one session an agent's readings share, and is told where a failing check stopped (`Stage`), so a changed report
+format shows up as `Stage::Parse`. `usage::busy` says whether an agent is being read already: one is read at a time.
 
 ## Accounts
 

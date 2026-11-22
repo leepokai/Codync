@@ -1,8 +1,8 @@
 //! Current Codex plan windows, read through the CLI's account API without a model turn.
 
-use crate::agent::codex_app;
+use crate::acp::Acp;
+use crate::codex_app::{self, ClientInfo};
 use anyhow::{Context, Result};
-use codync_agent::acp::Acp;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,9 +11,9 @@ use super::Window;
 
 const READ_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// `env` points it at a login profile's folder; empty for the default login.
-pub(super) async fn collect(env: Vec<(String, String)>) -> Option<Vec<Window>> {
-    let reading = read_live(move || codex_app::start(&env), READ_TIMEOUT).await;
+/// `env` points it at a login profile's folder; empty for the default login. `client` is who asks.
+pub async fn collect(env: Vec<(String, String)>, client: ClientInfo) -> Option<Vec<Window>> {
+    let reading = read_live(move || codex_app::start(&env), client, READ_TIMEOUT).await;
     // A failed sign-in or an unavailable CLI must not leave an expired snapshot on screen.
     match reading {
         Ok(windows) => Some(windows.unwrap_or_default()),
@@ -26,10 +26,11 @@ pub(super) async fn collect(env: Vec<(String, String)>) -> Option<Vec<Window>> {
 
 async fn read_live(
     start: impl FnOnce() -> Result<Option<Arc<Acp>>> + Send + 'static,
+    client: ClientInfo,
     timeout: Duration,
 ) -> Result<Option<Vec<Window>>> {
-    let limits = codex_app::session(start, timeout, read_limits).await?;
-    Ok(limits.map(|limits| parse(&limits, crate::store::now_ms())))
+    let limits = codex_app::session(start, client, timeout, read_limits).await?;
+    Ok(limits.map(|limits| parse(&limits, super::now_ms())))
 }
 
 async fn read_limits(client: &Acp) -> Result<Value> {
@@ -106,9 +107,15 @@ mod tests {
         assert_eq!(parse(&json!({"rateLimits": {"primary": {"resetsAt": 300}}}), 200_000), Vec::new());
     }
 
+    const CLIENT: ClientInfo = ClientInfo { name: "codync", title: "Codync", version: "0" };
+
+    fn script() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex_usage.py")
+    }
+
     async fn fixture(mode: &str, timeout: Duration) -> Result<Option<Vec<Window>>> {
-        let result = read_live(codex_app::fixture("codex_usage.py", mode), timeout).await;
-        codync_agent::acp::stopped().await;
+        let result = read_live(codex_app::fixture(&script(), mode), CLIENT, timeout).await;
+        crate::acp::stopped().await;
         result
     }
 
@@ -138,12 +145,13 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn slow_startup_does_not_stall_other_host_work() {
         let (release, waiting) = std::sync::mpsc::channel();
-        let start = codex_app::fixture("codex_usage.py", "ready");
+        let start = codex_app::fixture(&script(), "ready");
         let probe = read_live(
             move || {
                 waiting.recv_timeout(Duration::from_secs(5)).context("async work could not release startup")?;
                 start()
             },
+            CLIENT,
             Duration::from_secs(10),
         );
         let resume = async {
@@ -151,7 +159,7 @@ mod tests {
             release.send(()).unwrap();
         };
         let (result, ()) = tokio::join!(probe, resume);
-        codync_agent::acp::stopped().await;
+        crate::acp::stopped().await;
         assert!(result.unwrap().is_some());
     }
 
@@ -159,6 +167,7 @@ mod tests {
     async fn startup_errors_retain_their_cause_and_context() {
         let result = read_live(
             || Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "probe denied").into()),
+            CLIENT,
             Duration::from_secs(10),
         )
         .await;

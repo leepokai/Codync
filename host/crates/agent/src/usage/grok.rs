@@ -2,23 +2,20 @@
 //! session and no prompt. Signed out or on an API key, it answers with an error.
 //! Field names are from the 1.0.75 binary; no signed-in computer has run it yet.
 
-use crate::agent::auth::Started;
-use crate::hub::Hub;
-use crate::store::Store;
 use serde_json::{Value, json};
 use std::time::Duration;
 
-use super::reading::{self, UsageReadStage};
-use super::{Window, acp_read, iso_ms};
+use super::reading::{self, Stage};
+use super::{App, Started, Window, acp_read, iso_ms};
 
 const READ_TIMEOUT: Duration = Duration::from_secs(20);
 
-pub(super) async fn collect(hub: &Hub) -> Option<Vec<Window>> {
-    reading::guarded(hub, "grok", read(&hub.store)).await
+pub async fn collect(app: &dyn App) -> Option<Vec<Window>> {
+    reading::guarded(app, "grok", read(app)).await
 }
 
-async fn read(store: &Store) -> Result<Vec<Window>, UsageReadStage> {
-    let Started { acp, inbox: _inbox, .. } = acp_read::start(store, "grok").await?;
+async fn read(app: &dyn App) -> Result<Vec<Window>, Stage> {
+    let Started { acp, inbox: _inbox, .. } = acp_read::start(app, "grok").await?;
     // ACP's extension methods take a leading underscore, which not every build expects.
     let ask = async {
         match acp.request("x.ai/billing", json!({})).await {
@@ -28,9 +25,9 @@ async fn read(store: &Store) -> Result<Vec<Window>, UsageReadStage> {
     };
     let reply = tokio::time::timeout(READ_TIMEOUT, ask).await;
     acp.kill().await;
-    let reply = reply.map_err(|_| UsageReadStage::Timeout)?.map_err(|_| UsageReadStage::Prompt)?;
+    let reply = reply.map_err(|_| Stage::Timeout)?.map_err(|_| Stage::Prompt)?;
     let windows = parse(&reply);
-    if windows.is_empty() { Err(UsageReadStage::Parse) } else { Ok(windows) }
+    if windows.is_empty() { Err(Stage::Parse) } else { Ok(windows) }
 }
 
 fn parse(reply: &Value) -> Vec<Window> {

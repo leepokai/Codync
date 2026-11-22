@@ -262,8 +262,8 @@ fn waiting(entries: &[Entry], omitted: &mut Vec<String>) -> Vec<String> {
     out
 }
 
-fn is_queued_user(entry: &Entry) -> bool {
-    entry.kind == EntryKind::User.as_str() && entry.data["status"] == "queued"
+fn is_unstarted_user(entry: &Entry) -> bool {
+    entry.kind == EntryKind::User.as_str() && matches!(entry.data["status"].as_str(), Some("queued" | "cancelled"))
 }
 
 /// The new message is already in the prompt; current tools win, otherwise use the last started turn.
@@ -274,7 +274,7 @@ fn scoped(mut entries: Vec<Entry>, fresh: i64, current: &[String]) -> (Vec<Entry
         .rev()
         .find(|e| {
             !current.contains(&e.id)
-                && !is_queued_user(e)
+                && !is_unstarted_user(e)
                 && matches!(e.kind.as_str(), "user" | "agent" | "tool" | "permission")
         })
         .map(|e| e.turn);

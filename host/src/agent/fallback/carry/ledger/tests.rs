@@ -360,3 +360,54 @@ fn thread_memory_roots_use_parent_bot_folder() {
     assert!(roots.contains(&crate::chat::memory::files::folder(Some("parent-bot"))));
     assert!(!roots.contains(&crate::chat::memory::files::folder(Some("thread-123"))));
 }
+
+#[test]
+fn cancelled_messages_do_not_hide_the_latest_work_turn() {
+    let entries = vec![
+        read(1, 1, "worked.txt"),
+        entry(2, 1, EntryKind::Agent, json!({"text":"done","final":true})),
+        entry(3, 2, EntryKind::User, json!({"text":"cancelled follow-up","status":"cancelled","removed":true})),
+        entry(4, 3, EntryKind::User, json!({"text":"current prompt","status":"sent"})),
+        entry(5, 4, EntryKind::User, json!({"text":"queued next","status":"queued"})),
+    ];
+    let (_, work) = scoped(entries, 0, &["e4".into()]);
+    assert_eq!(work.len(), 2);
+    assert!(work.iter().all(|e| e.turn == 1));
+}
+
+#[test]
+fn open_regular_rejects_paths_resolving_outside_allowed_root() {
+    let root = Temp::new();
+    let outside = Temp::new();
+    let secret = outside.path().join("secret.txt");
+    std::fs::write(&secret, "secret").unwrap();
+
+    let canonical_root = root.path().canonicalize().unwrap();
+    let canonical_secret = secret.canonicalize().unwrap();
+    assert_eq!(files::open_regular(&canonical_root, &canonical_secret).unwrap_err(), "outside allowed folders");
+
+    #[cfg(windows)]
+    {
+        // Simulate an ancestor directory being swapped with an NTFS junction after `resolve()`.
+        let junction = root.path().join("sub");
+        let status = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(&junction)
+            .arg(outside.path())
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let swapped = canonical_root.join("sub").join("secret.txt");
+        assert_eq!(files::open_regular(&canonical_root, &swapped).unwrap_err(), "outside allowed folders");
+        let _ = std::fs::remove_dir(&junction);
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        let link_dir = root.path().join("sub");
+        symlink(outside.path(), &link_dir).unwrap();
+        let swapped = canonical_root.join("sub").join("secret.txt");
+        assert_eq!(files::open_regular(&canonical_root, &swapped).unwrap_err(), "outside allowed folders");
+    }
+}

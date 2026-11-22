@@ -98,7 +98,7 @@ fn chosen_kind(entry: &Entry) -> Option<&str> {
 }
 
 /// Refuse traversal and Windows device/stream syntax before touching the filesystem.
-fn resolve(path: &str, cwd: &Path, roots: &[PathBuf]) -> Result<PathBuf, &'static str> {
+fn resolve(path: &str, cwd: &Path, roots: &[PathBuf]) -> Result<(PathBuf, PathBuf), &'static str> {
     let path = Path::new(path);
     if path.components().any(|c| c == Component::ParentDir) {
         return Err("outside allowed folders");
@@ -122,10 +122,12 @@ fn resolve(path: &str, cwd: &Path, roots: &[PathBuf]) -> Result<PathBuf, &'stati
         return Err("not a regular file");
     }
     let canonical = candidate.canonicalize().map_err(|_| "file unavailable")?;
-    if !roots.iter().any(|root| root.canonicalize().is_ok_and(|root| canonical.starts_with(root))) {
-        return Err("outside allowed folders");
-    }
-    Ok(canonical)
+    let canonical_root = roots
+        .iter()
+        .filter_map(|root| root.canonicalize().ok())
+        .find(|root| canonical.starts_with(root))
+        .ok_or("outside allowed folders")?;
+    Ok((canonical_root, canonical))
 }
 
 fn inspect(file: &mut Touched, cwd: &Path, roots: &[PathBuf], hash: bool, deadline: Instant) {
@@ -145,7 +147,7 @@ fn inspect_inner(
     if Instant::now() >= deadline {
         return Err("inspection skipped: time limit");
     }
-    let path = resolve(&file.path, cwd, roots)?;
+    let (root, path) = resolve(&file.path, cwd, roots)?;
     let meta = path.metadata().map_err(|_| "file unavailable")?;
     file.bytes = Some(meta.len());
     if !hash {
@@ -157,26 +159,133 @@ fn inspect_inner(
     if Instant::now() >= deadline {
         return Err("hash skipped: time limit");
     }
-    let (mut reader, before) = open_regular(&path)?;
+    let (mut reader, before) = open_regular(&root, &path)?;
     let (read, sha) = hash_checked(&mut reader, &before, deadline)?;
     file.bytes = Some(read);
     file.sha256 = Some(sha);
     Ok(())
 }
 
-fn open_regular(path: &Path) -> Result<(std::fs::File, std::fs::Metadata), &'static str> {
+#[cfg(unix)]
+fn unix_open_err() -> &'static str {
+    if std::io::Error::last_os_error().raw_os_error() == Some(libc::ELOOP) {
+        "outside allowed folders"
+    } else {
+        "file unavailable"
+    }
+}
+
+#[cfg(unix)]
+fn open_unix_dir(parent: Option<&std::fs::File>, part: &std::ffi::OsStr) -> Result<std::fs::File, &'static str> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::io::{AsRawFd, FromRawFd};
+
+    let c_part = CString::new(part.as_bytes()).map_err(|_| "file unavailable")?;
+    let flags = libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+    // SAFETY: `c_part` is NUL-terminated and `parent` is an open directory fd when provided; `O_NOFOLLOW` blocks symlink traversal.
+    let fd = unsafe {
+        match parent {
+            Some(dir) => libc::openat(dir.as_raw_fd(), c_part.as_ptr(), flags),
+            None => libc::open(c_part.as_ptr(), flags),
+        }
+    };
+    if fd < 0 {
+        return Err(unix_open_err());
+    }
+    // SAFETY: `fd` is a newly opened descriptor owned solely by this `File`.
+    Ok(unsafe { std::fs::File::from_raw_fd(fd) })
+}
+
+#[cfg(unix)]
+pub(super) fn open_regular(root: &Path, path: &Path) -> Result<(std::fs::File, std::fs::Metadata), &'static str> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::io::{AsRawFd, FromRawFd};
+
+    let rel = path.strip_prefix(root).map_err(|_| "outside allowed folders")?;
+    let mut components = rel.components();
+    let Some(last) = components.next_back() else {
+        return Err("not a regular file");
+    };
+    let mut dir = open_unix_dir(None, root.as_os_str())?;
+    for comp in components {
+        let Component::Normal(part) = comp else {
+            return Err("outside allowed folders");
+        };
+        dir = open_unix_dir(Some(&dir), part)?;
+    }
+    let Component::Normal(leaf) = last else {
+        return Err("outside allowed folders");
+    };
+    let leaf_c = CString::new(leaf.as_bytes()).map_err(|_| "file unavailable")?;
+    // SAFETY: `dir` is an open directory fd inside `root`, `leaf_c` is NUL-terminated, and `O_NOFOLLOW | O_NONBLOCK` blocks leaf symlinks and FIFO stalls.
+    let fd = unsafe {
+        libc::openat(
+            dir.as_raw_fd(),
+            leaf_c.as_ptr(),
+            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
+        )
+    };
+    if fd < 0 {
+        return Err(unix_open_err());
+    }
+    // SAFETY: `fd` is a newly opened descriptor owned solely by this `File`.
+    let reader = unsafe { std::fs::File::from_raw_fd(fd) };
+    let before = reader.metadata().map_err(|_| "file unavailable")?;
+    if !before.is_file() {
+        return Err("not a regular file");
+    }
+    Ok((reader, before))
+}
+
+#[cfg(windows)]
+pub(super) fn open_regular(root: &Path, path: &Path) -> Result<(std::fs::File, std::fs::Metadata), &'static str> {
+    use std::os::windows::ffi::OsStringExt;
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{GetFinalPathNameByHandleW, VOLUME_NAME_DOS};
+
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
-    // A replaced FIFO must not block open, even after the initial regular-file check.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-    }
+    // Open reparse points themselves so a swapped final component is rejected by `is_file`.
+    options.custom_flags(0x0020_0000); // FILE_FLAG_OPEN_REPARSE_POINT
     let reader = options.open(path).map_err(|_| "file unavailable")?;
     let before = reader.metadata().map_err(|_| "file unavailable")?;
     if !before.is_file() {
         return Err("not a regular file");
+    }
+    let handle = reader.as_raw_handle();
+    // SAFETY: `handle` is an open file handle owned by `reader`; passing null/0 queries the required UTF-16 length.
+    let needed = unsafe { GetFinalPathNameByHandleW(handle, std::ptr::null_mut(), 0, VOLUME_NAME_DOS) };
+    if needed == 0 {
+        return Err("file unavailable");
+    }
+    let len = usize::try_from(needed).map_err(|_| "file unavailable")?;
+    let mut buf = vec![0u16; len];
+    // SAFETY: `handle` is valid and `buf` can hold `needed` UTF-16 code units including the trailing NUL.
+    let written = unsafe { GetFinalPathNameByHandleW(handle, buf.as_mut_ptr(), needed, VOLUME_NAME_DOS) };
+    if written == 0 || written >= needed {
+        return Err("file unavailable");
+    }
+    let written = usize::try_from(written).map_err(|_| "file unavailable")?;
+    let final_path = PathBuf::from(std::ffi::OsString::from_wide(&buf[..written]));
+    if !final_path.starts_with(root) {
+        return Err("outside allowed folders");
+    }
+    Ok((reader, before))
+}
+
+#[cfg(not(any(unix, windows)))]
+pub(super) fn open_regular(root: &Path, path: &Path) -> Result<(std::fs::File, std::fs::Metadata), &'static str> {
+    let reader = std::fs::OpenOptions::new().read(true).open(path).map_err(|_| "file unavailable")?;
+    let before = reader.metadata().map_err(|_| "file unavailable")?;
+    if !before.is_file() {
+        return Err("not a regular file");
+    }
+    let canonical = path.canonicalize().map_err(|_| "file unavailable")?;
+    if !canonical.starts_with(root) {
+        return Err("outside allowed folders");
     }
     Ok((reader, before))
 }

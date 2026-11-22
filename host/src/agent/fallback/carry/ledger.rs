@@ -498,7 +498,7 @@ fn build_blocking(
     ledger.references = references(&entries, &mut ledger.omitted);
     ledger.files = files::collect(&work, Path::new(&cfg.cwd), &roots, &mut ledger.omitted);
     ledger.commands = commands(&work, &mut ledger.omitted);
-    ledger.running = running(&hub.dev_servers.wire(&cfg.id), &hub.routines.list(&cfg.id), &mut ledger.omitted);
+    ledger.running = running(&hub.dev_servers.wire(&cfg.id), &hub.routines.active_runs(&cfg.id), &mut ledger.omitted);
     ledger.waiting = waiting(&entries, &mut ledger.omitted);
     Ok(ledger)
 }

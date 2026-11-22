@@ -418,3 +418,74 @@ fn thread_memory_roots_use_parent_bot_folder() {
     assert!(roots.contains(&crate::chat::memory::files::folder(Some("parent-bot"))));
     assert!(!roots.contains(&crate::chat::memory::files::folder(Some("thread-123"))));
 }
+
+#[test]
+fn render_reclaims_replaced_label_bytes_when_expanding_rows() {
+    let file = Touched {
+        path: format!("src/{}/target.rs", "x".repeat(40)),
+        bytes: Some(123),
+        sha256: Some("a".repeat(64)),
+        why: "modified",
+        unavailable: None,
+    };
+    let ledger = Ledger {
+        files: vec![file],
+        omitted: vec!["collection overflow (9 B; collection limit)".into()],
+        ..Ledger::default()
+    };
+    let expanded_only = render(&ledger, 4096).expect("full manifest fits");
+    assert!(expanded_only.contains("sha256 "));
+    // Tight budget equals the actual rendered length (where the file's label was replaced by its body),
+    // which is strictly smaller than `fixed + body.len()`.
+    let tight = expanded_only.len();
+    let text = render(&ledger, tight).expect("replacing a label with its body fits the tight budget");
+    assert!(text.len() <= tight);
+    assert!(text.contains("sha256 "), "row stayed omitted instead of reclaiming its label quota: {text}");
+}
+
+#[test]
+fn older_active_routine_runs_past_200_finished_runs_are_still_collected() {
+    let dir = Temp::new();
+    let store = crate::store::Store::open(&dir.path().join("store.db")).unwrap();
+    let mut runs = vec![json!({
+        "id": "run-old-active",
+        "routineId": "r-active",
+        "botId": "b1",
+        "status": "pending",
+        "createdAt": 1,
+        "finishedAt": null,
+        "detail": null,
+        "event": null,
+        "deliveryId": null,
+        "notBefore": 9_999_999_999_999_i64
+    })];
+    for i in 0..210 {
+        runs.push(json!({
+            "id": format!("run-done-{i}"),
+            "routineId": "r-done",
+            "botId": "b1",
+            "status": "succeeded",
+            "createdAt": 100 + i,
+            "finishedAt": 101 + i,
+            "detail": null,
+            "event": null,
+            "deliveryId": null
+        }));
+    }
+    let state = json!({
+        "routines": [
+            {"id": "r-active", "botId": "b1", "name": "long-retry", "instruction": "do", "triggers": [], "enabled": true, "createdAt": 1, "updatedAt": 1, "nextRuns": [], "webhookKey": "k1", "deleted": false},
+            {"id": "r-done", "botId": "b1", "name": "frequent", "instruction": "do", "triggers": [], "enabled": true, "createdAt": 1, "updatedAt": 1, "nextRuns": [], "webhookKey": "k2", "deleted": false}
+        ],
+        "runs": runs,
+        "followUps": []
+    });
+    store.kv_set("routines.v1", &state.to_string()).unwrap();
+    let routines = crate::routines::Routines::default();
+    routines.restore(&store).unwrap();
+    assert_eq!(running(&json!([]), &routines.list("b1"), &mut Vec::new()), Vec::<String>::new());
+    let mut omitted = Vec::new();
+    let collected = running(&json!([]), &routines.active_runs("b1"), &mut omitted);
+    assert_eq!(collected, ["routine long-retry (pending)"]);
+    assert_eq!(omitted, Vec::<String>::new());
+}

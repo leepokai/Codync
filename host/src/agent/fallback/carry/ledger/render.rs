@@ -71,12 +71,14 @@ fn expand_rows(rows: &[(String, String)], fixed: usize, budget: usize) -> (Vec<&
     let mut used = fixed;
     let mut details = Vec::new();
     let mut omitted_rows = vec![true; rows.len()];
-    for (index, (body, _)) in rows.iter().enumerate() {
-        let cost = body.len() + usize::from(!details.is_empty());
-        if cost > budget.saturating_sub(used) {
+    for (index, (body, label)) in rows.iter().enumerate() {
+        let added = body.len() + usize::from(!details.is_empty());
+        let freed = label.len() + 1;
+        let net = added.saturating_sub(freed);
+        if net > budget.saturating_sub(used) {
             continue;
         }
-        used += cost;
+        used = used.saturating_add(added).saturating_sub(freed);
         details.push(body.as_str());
         omitted_rows[index] = false;
     }
@@ -100,7 +102,7 @@ pub fn render(ledger: &Ledger, budget: usize) -> Result<String> {
     }
     let labels: Vec<&str> =
         ledger.omitted.iter().map(String::as_str).chain(rows.iter().map(|(_, label)| label.as_str())).collect();
-    let label_bytes: usize = labels.iter().map(|label| label.len() + 1).sum();
+    let label_bytes: usize = labels.iter().map(|label| label.len() + 1).sum::<usize>().saturating_sub(1);
     let fixed = OPEN.len() + CLOSE.len() + omission_header(total).len() + label_bytes;
     if fixed > budget {
         bail!("the {budget}-byte handoff allowance cannot name all {total} manifest items; no prompt was sent");

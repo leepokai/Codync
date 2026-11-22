@@ -10,6 +10,8 @@ import threading
 sessions = 0
 asked = 100
 waiting = {}  # request id -> (event, answer holder)
+cancel_waiters = []
+last_outcome = "none"
 
 
 def send(value):
@@ -17,7 +19,17 @@ def send(value):
 
 
 def turn(rid, session, text):
-    global asked
+    global asked, last_outcome
+    if "REPORT_LAST" in text:
+        update = {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": f"{session} last={last_outcome}"}}
+        send({"method": "session/update", "params": {"sessionId": session, "update": update}})
+        send({"id": rid, "result": {"stopReason": "end_turn"}})
+        return
+    if "AFTER_CANCEL" in text:
+        cancelled = threading.Event()
+        cancel_waiters.append(cancelled)
+        send({"method": "session/update", "params": {"sessionId": session, "update": {"sessionUpdate": "agent_thought_chunk", "content": {"type": "text", "text": "waiting_for_cancel"}}}})
+        cancelled.wait(timeout=10)
     asked += 1
     kind, title = ("edit", "Edit a.txt") if "EDIT" in text else ("execute", "Run a command")
     tool = {"toolCallId": f"t{asked}", "title": title, "kind": kind}
@@ -28,12 +40,14 @@ def turn(rid, session, text):
     waiting[asked] = (done, holder)
     send({"id": asked, "method": "session/request_permission",
           "params": {"sessionId": session, "toolCall": tool, "options": options}})
-    done.wait()
+    done.wait(timeout=10)
     outcome = holder.get("outcome", {})
     chosen = outcome.get("optionId") if outcome.get("outcome") == "selected" else "cancelled"
+    last_outcome = chosen
     update = {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": f"{session} {chosen}"}}
     send({"method": "session/update", "params": {"sessionId": session, "update": update}})
-    send({"id": rid, "result": {"stopReason": "end_turn"}})
+    stop_reason = "cancelled" if "AFTER_CANCEL" in text else "end_turn"
+    send({"id": rid, "result": {"stopReason": stop_reason}})
 
 
 for line in sys.stdin:
@@ -55,6 +69,8 @@ for line in sys.stdin:
         text = " ".join(b.get("text", "") for b in params.get("prompt", []))
         threading.Thread(target=turn, args=(rid, params.get("sessionId"), text)).start()
     elif method == "session/cancel":
+        while cancel_waiters:
+            cancel_waiters.pop().set()
         for done, holder in list(waiting.values()):
             holder["outcome"] = {"outcome": "cancelled"}
             done.set()

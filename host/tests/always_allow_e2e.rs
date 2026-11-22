@@ -110,3 +110,63 @@ async fn a_restarted_agent_asks_again_before_the_same_session_id() {
     let fresh = card(send(&host, &bot, "ls").await, "a command after the agent restarted");
     assert_eq!(answer(&host, &bot, &fresh, "once").await, "s1 once", "a fresh conversation inherited an approval");
 }
+
+#[tokio::test]
+async fn in_flight_permission_after_stop_is_rejected_without_saved_approval() {
+    if common::python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.fixture_bot("MiniMax", "always_allow_agent.py", "").await;
+
+    // Remember an "always allow" for commands in session s1.
+    let first = card(send(&host, &bot, "ls").await, "the first command");
+    assert_eq!(answer(&host, &bot, &first, "always").await, "s1 always");
+
+    // Start a turn whose agent waits until session/cancel arrives, then emits a permission request
+    // for the same always-allowed action while stop_requested is set.
+    let before_notices = host.call("history", json!({"botId": bot})).await["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["kind"] == "notice")
+        .count();
+    let nonce = uuid::Uuid::new_v4().to_string();
+    host.call("send", json!({"botId": bot, "text": "AFTER_CANCEL", "clientNonce": nonce})).await;
+
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let history = host.call("history", json!({"botId": bot})).await;
+        let ready = history["entries"].as_array().unwrap().iter().any(|e| {
+            e["kind"] == "thought" && e["data"]["text"].as_str().unwrap_or_default().contains("waiting_for_cancel")
+        });
+        if ready {
+            break;
+        }
+        assert!(Instant::now() < deadline, "agent never reached waiting_for_cancel: {history}");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    host.call("stop", json!({"botId": bot})).await;
+
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let history = host.call("history", json!({"botId": bot})).await;
+        let entries = history["entries"].as_array().unwrap();
+        assert!(
+            !entries.iter().any(|e| e["kind"] == "permission" && e["data"]["status"] == "pending"),
+            "no permission card may open after Stop: {history}"
+        );
+        let notices = entries.iter().filter(|e| e["kind"] == "notice").count();
+        if notices > before_notices {
+            break;
+        }
+        assert!(Instant::now() < deadline, "stopped turn never wrapped up: {history}");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    match send(&host, &bot, "REPORT_LAST").await {
+        Outcome::Reply(reply) => assert_eq!(reply, "s1 last=cancelled"),
+        Outcome::Card(card) => panic!("REPORT_LAST should not ask for permission: {card}"),
+    }
+}

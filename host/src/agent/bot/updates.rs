@@ -175,6 +175,10 @@ impl Actor {
     }
 
     pub(super) async fn on_permission(&mut self, request: Request, permission: Permission) {
+        if self.stop_requested {
+            let _ = request.choose(None).await;
+            return;
+        }
         if self.hub.ceilings.approves_by_itself(&self.cfg)
             && let Some(option) = permission.allow()
         {
@@ -237,7 +241,7 @@ impl Actor {
 
     /// `Cmd::Approve`: Allow or Deny on a card, with what the tool will do in its details.
     pub(super) fn ask_approval(&mut self, title: &str, detail: &str, reply: oneshot::Sender<bool>) {
-        if self.turn.is_none() {
+        if self.turn.is_none() || self.stop_requested {
             return; // dropping `reply` refuses: no turn waits on it
         }
         let data = json!({

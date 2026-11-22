@@ -23,8 +23,8 @@ test('an approval card reads in the app language, its answers and outcome too', 
     const card = page.locator('.permission-card')
     await expect(card).toContainText('想要修改文件')
     await expect(card).toContainText('Edit a.txt') // what the agent wrote stays as it wrote it
-    // Lasting answers at the start, then deny and the filled allow-once.
-    await expect(card.locator('.approval-answer')).toHaveText(['始终允许', '拒绝', '允许一次'])
+    // The answers as numbered rows: allow before deny, once before always.
+    await expect(card.locator('.approval-answer .decision-option-label')).toHaveText(['允许一次', '始终允许', '拒绝'])
 
     await card.getByRole('button', { name: '拒绝' }).click()
     // Answered, the card folds to its quiet line, how it ended at the end.

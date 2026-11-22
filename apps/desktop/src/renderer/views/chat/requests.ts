@@ -26,7 +26,7 @@ export function requestIcon(toolKind?: string, title?: string): string {
   if (toolKind && byKind[toolKind]) return byKind[toolKind]
   const verb = /^(.+)-(\w+): \2$/.exec(title?.trim() ?? '')?.[2].split('_')[0]
   const byVerb: Record<string, string> = { read: 'doc.text', get: 'doc.text', search: 'magnifyingglass', find: 'magnifyingglass', list: 'list.bullet', write: 'pencil', edit: 'pencil', update: 'pencil', create: 'pencil', add: 'pencil', save: 'pencil', delete: 'trash', remove: 'trash', fetch: 'globe', open: 'globe', run: 'terminal' }
-  return (verb && byVerb[verb]) || 'wrench.adjustable'
+  return (verb && byVerb[verb]) || 'terminal'
 }
 
 /** A request's detail as worth showing: without the Markdown fence agents wrap it in, and nothing when it is empty. */

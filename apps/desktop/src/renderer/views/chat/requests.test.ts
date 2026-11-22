@@ -25,7 +25,7 @@ test('a request of no kind takes its symbol from its verb', () => {
   assert.equal(requestIcon('execute', '`date`'), 'terminal')
   assert.equal(requestIcon('other', 'memory-search_history: search_history'), 'magnifyingglass')
   assert.equal(requestIcon(undefined, 'connectors-list_connectors: list_connectors'), 'list.bullet')
-  assert.equal(requestIcon(undefined, 'anything'), 'wrench.adjustable')
+  assert.equal(requestIcon(undefined, 'anything'), 'terminal')
 })
 
 test('a request shows its detail without the fence, and nothing for no arguments', () => {

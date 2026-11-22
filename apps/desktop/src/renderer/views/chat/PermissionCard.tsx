@@ -2,13 +2,14 @@ import { useState } from 'react'
 import type { Entry, EntryData, FileDiff, PermissionOption } from '@shared/models'
 import { Reveal, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { HStack, Spacer, VStack } from '../../components/Stack'
+import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import './permission-card.css'
 import { useTr } from '../../lib/use-language'
 import { trNow } from '../../lib/l10n.ts'
 import { fill } from '@shared/fill'
 import { requestDetail, requestIcon, requestName, requestParams } from './requests'
+import { OptionBadge } from './DecisionCard'
 
 
 /** What the agent wants, from the tool's kind (also the notch island's headline). */
@@ -114,17 +115,6 @@ export function PermissionCard({ entry, hostName, answering, respond, result }: 
   // Anything params rows don't already show sits behind Details.
   const command = d.command && d.command !== name ? d.command : null
   const hasMore = !!command || (!params && !!detail) || !!d.diffs?.length || extraParams > 0
-  const sides = answerSides(options)
-  const answer = (o: PermissionOption, primary: boolean) => (
-    <button
-      key={o.optionId}
-      className={`styled-button approval-answer${primary ? ' primary' : ''}`}
-      disabled={answering !== null}
-      onClick={() => respond(o.optionId)}
-    >
-      {answering === o.optionId ? <Spinner size={12} /> : optionLabel(o)}
-    </button>
-  )
   return (
     <div className="agent-inset">
       <VStack gap={12} className="permission-card approval-card">
@@ -160,22 +150,23 @@ export function PermissionCard({ entry, hostName, answering, respond, result }: 
             {(d.diffs ?? []).map((diff, i) => <DiffView key={i} diff={diff} />)}
           </VStack>
         </Reveal>
-        {/* The answers as buttons: lasting ones at the start, refusing and allowing once at the end, allowing filled. */}
-        <HStack gap={8} className="approval-answers">
-          {sides.start.map((o) => answer(o, false))}
-          <Spacer />
-          {sides.end.map((o) => answer(o, o.kind === 'allow_once'))}
-        </HStack>
+        {/* The answers as the choice card's numbered rows: allow before deny, once before always. */}
+        <VStack gap={2} className="decision-options">
+          {options.map((o, i) => (
+            <button
+              key={o.optionId}
+              className={answering === null || answering === o.optionId ? 'decision-option approval-answer' : 'decision-option approval-answer dimmed'}
+              disabled={answering !== null}
+              onClick={() => respond(o.optionId)}
+            >
+              <OptionBadge>{answering === o.optionId ? <Spinner size={12} /> : i + 1}</OptionBadge>
+              <Text size="body" tone="text" className="decision-option-label">{optionLabel(o)}</Text>
+            </button>
+          ))}
+        </VStack>
       </VStack>
     </div>
   )
-}
-
-/** Where each answer sits: the lasting ones (always, never) at the start, deny then allow-once at the end. */
-export function answerSides(options: PermissionOption[]): { start: PermissionOption[]; end: PermissionOption[] } {
-  const end = (o: PermissionOption) => o.kind === 'allow_once' || o.kind === 'reject_once'
-  const sorted = sortedOptions(options)
-  return { start: sorted.filter((o) => !end(o)), end: sorted.filter(end).reverse() }
 }
 
 /** Arguments as a quiet two-column list: the name, then its value (clamped to a few lines until opened). */
@@ -273,7 +264,7 @@ export function RequestRun({ entries, row }: { entries: Entry[]; row: (entry: En
   return (
     <div className="agent-inset">
       <button className="request-line" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <Icon name={icons.size === 1 ? [...icons][0] : 'wrench.adjustable'} size={12} color="var(--secondary)" />
+        <Icon name={icons.size === 1 ? [...icons][0] : 'terminal'} size={12} color="var(--secondary)" />
         <Text size="subheadline" tone="secondary" truncate title={fill(tr('{count} tool requests'), { count: String(entries.length) })}>{names.join(', ')}</Text>
         <Text size="subheadline" tone="tertiary">{`· ${entries.length}`}</Text>
         <Text size="caption" tone="tertiary" className="request-line-end">{outcome(entries[0])}</Text>

@@ -217,7 +217,6 @@ const map: Record<string, IconNode> = {
   waveform: L.AudioLines,
   wifi: L.Wifi,
   'wifi.slash': L.WifiOff,
-  'wrench.adjustable': L.Wrench,
   'wrench.and.screwdriver': L.Wrench,
   xmark: L.X,
   'xmark.circle': L.CircleX,

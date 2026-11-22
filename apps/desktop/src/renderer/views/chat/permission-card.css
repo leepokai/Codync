@@ -68,44 +68,8 @@
 .approval-card-meta {
   min-width: 0;
 }
-/* A waiting approval spans the chat column: what asks, the request, its arguments, then the answers as buttons. */
-.permission-card.approval-card {
-  width: 100%;
-  max-width: 560px;
-  padding: 16px;
-}
 .approval-card .permission-card-title {
   overflow-wrap: anywhere;
-}
-.approval-answers {
-  flex-wrap: wrap;
-  row-gap: 8px;
-}
-/* Answers that don't allow once: outlined, no fill (fill or border, never both). */
-.styled-button.approval-answer:not(.primary) {
-  color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--stroke-strong);
-  transition: background-color var(--hover);
-}
-.styled-button.approval-answer:not(.primary):hover:not(:disabled) {
-  background: var(--field);
-}
-.styled-button.approval-answer {
-  max-width: 100%;
-  min-width: 0;
-}
-/* A narrow card stacks the answers, each as wide as the card. */
-@container (max-width: 360px) {
-  .approval-answers {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .approval-answers .spacer {
-    display: none;
-  }
-}
-.approval-card {
-  container-type: inline-size;
 }
 /* A request's arguments: name and value per row, the names in one column. */
 .param-rows {
@@ -144,7 +108,9 @@
 }
 
 /* A choice card: the question, a numbered row per option and one for the user's own words, then what was picked. */
-.permission-card.decision-card {
+/* The approval card has the same form and width. */
+.permission-card.decision-card,
+.permission-card.approval-card {
   width: 100%;
 }
 .decision-card-question {

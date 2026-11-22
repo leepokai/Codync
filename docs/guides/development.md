@@ -176,9 +176,16 @@ Versions are defined in `apps/project.yml` (`MARKETING_VERSION`, also in the gen
 
 ## GitHub releases
 
-Greptile reviews every PR into `dev` or `main` when it opens and on each push (`.greptile/config.json`), and posts a *Greptile Review* check beside CI. Before the release PR merges into `main`, check each finding against the code and have the agent that owns that area fix it. `@greptileai review` on the PR asks for a fresh review.
+Greptile reviews every PR into `dev` or `main` when it opens and on each push (`.greptile/config.json`), and posts a *Greptile Review* check beside CI. `@greptileai review` on the PR asks for a fresh review.
 
-Before a release, run the real agents once ([test stack](test-stack.md#real-agents)).
+A release runs end to end through the `release-pr` workflow (`.claude/workflows/release-pr.js`); the maintainer starts it by saying "pr to main". It:
+
+1. Reads what `dev` holds against `main`: the version, `MIN_APP`, `cloud/`, the crates and the store notes. A `MIN_APP` raise stops it to ask first (rerun with `{allowMinAppRaise: true}`).
+2. Cuts `release/X.Y.Z` from `dev` in the worktree `.claude/worktrees/release`, so other agents' pushes to `dev` don't move the PR's head: what lands on `dev` after the cut ships in the next release. On that branch it bumps the version if needed, raises the crates, writes the missing WhatsNew sections, runs the real agents once ([test stack](test-stack.md#real-agents)) and opens the PR, whose Summary is written for the release page.
+3. Works the gate, at most four rounds: `tools/pr-gate.py` on the head, then every failing check and every Greptile finding on that head (summary and inline comments, not only the check's pass) is checked against the code and fixed on the release branch, not routed to the owning agent; a known flaky test is rerun once. It stops to ask about a finding that needs a product decision, and stops when the gate still fails after four rounds.
+4. Merges with a merge commit (`gh pr merge --merge --match-head-commit`, never squash: the crate mirrors only fast-forward), merges the release branch back into `dev`, runs `npm run deploy:main` when `cloud/` changed, watches the tag's release runs and deletes the release branch and its worktree.
+
+`node tools/release-pr-test.mjs` checks the workflow's routing with canned agent results.
 
 Auto Tag (`.github/workflows/auto-tag.yml`) creates each `v*` release right after pushing the tag, before the host and desktop jobs upload to it. Releases go up without GitHub's *latest* mark: the release gate gives it to the newest fully uploaded release the App Store's iPhone app and Google Play's Android app work with, so downloads, updaters and Homebrew wait for both stores' reviews when a release needs a newer phone app ([holding releases](../reference/compatibility.md#holding-releases-for-the-stores)). Its description comes from `tools/release-notes.sh`: the `## Summary` of the PR that merged the version bump into `main` (or the PR's opening text without that heading), else the `feat`/`fix` commits since the previous tag, followed by GitHub's generated PR list and compare link. Write the release PR's Summary for people reading the release page. The same description is posted to the Discord server's #releases channel through the webhook in the `DISCORD_RELEASES_WEBHOOK` secret (a failed post only leaves a warning on the run); each `@login` there whose GitHub account is linked on the Discord Worker becomes a mention that pings them (`DISCORD_MENTIONS_SECRET`, [discord/README.md](../../discord/README.md)).
 

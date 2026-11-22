@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review-issue-pr',
   description: 'Review issues and pull requests other people open: security and prompt-injection check, confirm the problem end to end, judge the fix, then fix and merge bug fixes or stop for the maintainer (docs/guides/issue-pr-review.md)',
-  whenToUse: 'Before acting on an issue or pull request someone else opened (our own changes use after-change; release pull requests into main follow docs/guides/development.md). args: {items: "pr 280, issue 283" | [{kind: "issue" | "pr", number}], approved?: [numbers the maintainer approved after an ask], e2e?: "minimal" | "full"}',
+  whenToUse: 'Before acting on an issue or pull request someone else opened (our own changes use after-change; release pull requests into main go through release-pr). args: {items: "pr 280, issue 283" | [{kind: "issue" | "pr", number}], approved?: [numbers the maintainer approved after an ask], e2e?: "minimal" | "full"}',
   phases: [
     { title: 'Security', detail: 'read-only, before anything from an item runs: code security and prompt injection' },
     { title: 'Confirm', detail: 'reproduce the problem on dev end to end; judge the fix against Codync\'s architecture and habits' },
@@ -307,7 +307,7 @@ const reviewItem = async (it, sec) => {
   if (sec.verdict === 'stop' || sec.verdict === 'incomplete') return { outcome: 'stop', why: sec.why }
   const { base, external } = sec.facts
   if (it.kind === 'pr' && base !== 'dev' && !(base === 'main' && external)) {
-    return { outcome: 'stop', why: `it targets ${base ?? 'an unknown base'}: this reviews pull requests into dev (an external one into main is retargeted); release pull requests follow docs/guides/development.md "GitHub releases"` }
+    return { outcome: 'stop', why: `it targets ${base ?? 'an unknown base'}: this reviews pull requests into dev (an external one into main is retargeted); release pull requests go through the release-pr workflow` }
   }
 
   phase('Confirm')

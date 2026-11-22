@@ -78,7 +78,7 @@ Reading the current implementation turned up these problems.
   - compaction progress.
   
   Claude also sends `compact_boundary` token counts and the summary. The host reads only
-  `_meta["_claude/rateLimit"]` (`host/src/agent/bot/updates.rs`).
+  `_meta["_claude/rateLimit"]` (`host/crates/agent/src/events.rs`, used in `host/src/agent/bot/updates.rs`).
 - **A second memory runs unseen.** Claude Code's auto memory and auto-dream run inside bot sessions. Auto memory is
   "loaded into the system prompt at session start", and none of it is visible in Codync.
 - **Engram has the wrong shape.** The details are under [Engram](#engram).

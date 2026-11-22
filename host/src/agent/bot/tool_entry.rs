@@ -5,32 +5,25 @@ use super::codex_names::{Renamed, name_of};
 use crate::chat::memory::files;
 use crate::store::BotConfig;
 use codync_agent::acp;
+use codync_agent::events::ToolContent;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
-/// Folds ACP tool-call `content` into `{output, diffs}` on an entry's data.
-pub(super) fn merge_tool_content(data: &mut Value, content: &Value) {
-    let Some(items) = content.as_array() else { return };
+/// Folds a tool call's content, when the update carries it, into `{output, diffs}` on an entry's data.
+pub(super) fn merge_tool_content(data: &mut Value, content: Option<&[ToolContent]>) {
+    let Some(items) = content else { return };
     let mut out = String::new();
     let mut diffs = vec![];
     for item in items {
-        match item["type"].as_str() {
-            Some("diff") => {
-                let path = item["path"].as_str().unwrap_or_default();
-                let old = item["oldText"].as_str().unwrap_or_default();
-                let new = item["newText"].as_str().unwrap_or_default();
-                diffs.push(diff_summary(path, old, new));
-            }
-            Some("terminal") => {}
-            _ => {
-                let t = acp::content_text(item);
-                if !t.is_empty() {
-                    if !out.is_empty() {
-                        out.push('\n');
-                    }
-                    out.push_str(&t);
+        match item {
+            ToolContent::Diff { path, old_text, new_text } => diffs.push(diff_summary(path, old_text, new_text)),
+            ToolContent::Text(t) if !t.is_empty() => {
+                if !out.is_empty() {
+                    out.push('\n');
                 }
+                out.push_str(t);
             }
+            _ => {}
         }
     }
     if !out.is_empty() {
@@ -206,13 +199,11 @@ mod tests {
     #[test]
     fn tool_content_merges_text_and_diffs() {
         let mut data = json!({"output": "", "diffs": []});
-        merge_tool_content(
-            &mut data,
-            &json!([
-                {"type": "content", "content": {"type": "text", "text": "ok"}},
-                {"type": "diff", "path": "/a.rs", "oldText": "", "newText": "x\n"}
-            ]),
-        );
+        let content = [
+            ToolContent::Text("ok".into()),
+            ToolContent::Diff { path: "/a.rs".into(), old_text: String::new(), new_text: "x\n".into() },
+        ];
+        merge_tool_content(&mut data, Some(&content));
         assert_eq!(data["output"], "ok");
         assert_eq!(data["diffs"][0]["isNew"], true);
     }

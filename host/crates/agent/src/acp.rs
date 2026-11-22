@@ -1,9 +1,10 @@
-//! Minimal ACP (Agent Client Protocol) client: JSON-RPC 2.0 over a child
-//! process's stdio. Updates are kept as `serde_json::Value` on purpose so a
-//! newer adapter adding a variant never breaks parsing.
+//! Minimal ACP (Agent Client Protocol) client: JSON-RPC 2.0 over a child process's stdio. `session/update`s arrive
+//! as typed [`events`](crate::events), an unknown kind kept as sent so a newer adapter never breaks reading;
+//! requests from the agent as a [`Request`] that answers itself when dropped unanswered.
 
 use super::process::Process;
 use crate::LockExt;
+use crate::events::Update;
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
@@ -15,9 +16,15 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::ChildStdin;
 use tokio::sync::{mpsc, oneshot};
 
+mod capabilities;
 pub mod codebuddy;
 mod exit;
+mod request;
+mod session;
+pub use capabilities::{Adapter, Capabilities, Reopen};
 pub use exit::{exit_tail, stderr_reason};
+pub use request::{ELICITATION, METHOD_NOT_FOUND, PERMISSION, Permission, PermissionOption, Request};
+pub use session::{Session, Steered, StopReason};
 
 /// stderr lines kept to explain a crash.
 const STDERR_TAIL_LINES: usize = 12;
@@ -29,10 +36,46 @@ static STOPPING: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>> = std::sync:
 /// Every agent started, for the host to stop whichever are left before it exits.
 static STARTED: std::sync::Mutex<Vec<Weak<Acp>>> = std::sync::Mutex::new(Vec::new());
 
+/// What the agent sends the app.
+#[derive(Debug)]
 pub enum Incoming {
+    /// A `session/update`.
+    Update(Update),
+    /// Any other notification.
     Notification { method: String, params: Value },
-    Request { id: Value, method: String, params: Value },
+    /// A request to the app.
+    Request(Request),
+    /// The process ended; the last lines it wrote to stderr.
     Closed { stderr_tail: String },
+}
+
+/// The agent's stdin, which every message to it goes through. `None` once stopped: the closed pipe tells the agent
+/// to exit.
+pub(crate) struct Writer(tokio::sync::Mutex<Option<ChildStdin>>);
+
+impl Writer {
+    /// Closes the agent's stdin; writes fail as stopped after it.
+    async fn close(&self) {
+        self.0.lock().await.take();
+    }
+
+    async fn write(&self, msg: Value) -> Result<()> {
+        let mut line = serde_json::to_vec(&msg)?;
+        line.push(b'\n');
+        let mut stdin = self.0.lock().await;
+        let stdin = stdin.as_mut().ok_or_else(|| Failure::error(FailureKind::Exited, "agent stopped"))?;
+        let written = async {
+            stdin.write_all(&line).await?;
+            stdin.flush().await
+        };
+        match written.await {
+            // The agent exited before reading it.
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
+                Err(Failure::error(FailureKind::Exited, "agent process exited"))
+            }
+            r => Ok(r?),
+        }
+    }
 }
 
 /// In-flight requests by JSON-RPC id. A std mutex: it's never held across an `.await`.
@@ -181,8 +224,7 @@ fn codex_kind(info: &Value) -> Option<String> {
 }
 
 pub struct Acp {
-    /// `None` once stopped: the closed pipe tells the agent to exit.
-    stdin: tokio::sync::Mutex<Option<ChildStdin>>,
+    writer: Arc<Writer>,
     next_id: AtomicI64,
     pending: Pending,
     /// Owns the agent's whole process tree: dropping it kills what the agent started.
@@ -222,6 +264,7 @@ impl Acp {
         // queue would stall this reader, and with it the response — a deadlock.
         let (tx, rx) = mpsc::unbounded_channel();
         let pending = Pending::default();
+        let writer = Arc::new(Writer(tokio::sync::Mutex::new(Some(stdin))));
 
         let tail = Arc::new(std::sync::Mutex::new(VecDeque::<String>::with_capacity(STDERR_TAIL_LINES)));
         let stderr_read = {
@@ -240,6 +283,7 @@ impl Acp {
         };
         {
             let pending = pending.clone();
+            let requests_writer = Arc::downgrade(&writer);
             tokio::spawn(async move {
                 let read = async {
                     let mut lines = BufReader::new(stdout).lines();
@@ -251,7 +295,11 @@ impl Acp {
                         let method = msg["method"].as_str().map(str::to_owned);
                         match (method, msg.get("id").cloned()) {
                             (Some(method), Some(id)) if !id.is_null() => {
-                                let _ = tx.send(Incoming::Request { id, method, params: msg["params"].clone() });
+                                let request = Request::new(id, method, msg["params"].clone(), requests_writer.clone());
+                                let _ = tx.send(Incoming::Request(request));
+                            }
+                            (Some(method), _) if method == "session/update" => {
+                                let _ = tx.send(Incoming::Update(Update::parse(&msg["params"])));
                             }
                             (Some(method), _) => {
                                 let _ = tx.send(Incoming::Notification { method, params: msg["params"].clone() });
@@ -295,7 +343,7 @@ impl Acp {
         }
 
         let acp = Arc::new(Self {
-            stdin: tokio::sync::Mutex::new(Some(stdin)),
+            writer,
             next_id: AtomicI64::new(1),
             pending,
             child,
@@ -329,21 +377,7 @@ impl Acp {
     }
 
     async fn write(&self, msg: Value) -> Result<()> {
-        let mut line = serde_json::to_vec(&msg)?;
-        line.push(b'\n');
-        let mut stdin = self.stdin.lock().await;
-        let stdin = stdin.as_mut().ok_or_else(|| Failure::error(FailureKind::Exited, "agent stopped"))?;
-        let written = async {
-            stdin.write_all(&line).await?;
-            stdin.flush().await
-        };
-        match written.await {
-            // The agent exited before reading it.
-            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
-                Err(Failure::error(FailureKind::Exited, "agent process exited"))
-            }
-            r => Ok(r?),
-        }
+        self.writer.write(msg).await
     }
 
     pub async fn request(&self, method: &str, params: Value) -> Result<Value> {
@@ -366,14 +400,6 @@ impl Acp {
         self.write(json!({"jsonrpc": "2.0", "method": method, "params": params})).await
     }
 
-    pub async fn respond(&self, id: Value, result: Value) -> Result<()> {
-        self.write(json!({"jsonrpc": "2.0", "id": id, "result": result})).await
-    }
-
-    pub async fn respond_error(&self, id: Value, code: i64, message: &str) -> Result<()> {
-        self.write(json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}})).await
-    }
-
     /// Stops the agent and everything it started, without waiting for it. Closing its stdin
     /// lets it exit by itself first: Claude Code killed during an OAuth refresh loses the new
     /// refresh token, and the user's login with it.
@@ -387,7 +413,7 @@ impl Acp {
         }
         let held = self.held.locked().take();
         drop(held);
-        self.stdin.lock().await.take();
+        self.writer.close().await;
         let owned = self.child.clone();
         let mut stopping = STOPPING.locked();
         stopping.retain(|task| !task.is_finished());
@@ -414,14 +440,6 @@ fn note_started(acp: &Arc<Acp>) {
     let mut started = STARTED.locked();
     started.retain(|acp| acp.strong_count() > 0);
     started.push(Arc::downgrade(acp));
-}
-
-/// The result for a `session/request_permission`: the option picked, or `cancelled` without one.
-pub fn permission_answer(option_id: Option<&str>) -> Value {
-    match option_id {
-        Some(id) => json!({"outcome": {"outcome": "selected", "optionId": id}}),
-        None => json!({"outcome": {"outcome": "cancelled"}}),
-    }
 }
 
 /// Plain-text rendering of an ACP content block list / tool-call content list.

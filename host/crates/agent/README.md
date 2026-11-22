@@ -7,8 +7,10 @@ host that is true of the agents themselves, with no app in it:
   is installed, how to install and update it, how it signs in, and what its exit means when it quits at start.
 - **`registry`** reads the [ACP registry](https://agentclientprotocol.com) and resolves an entry to a command, downloading
   its binary or npm package; **`node`** provides a Node.js for npm agents on a computer without one.
-- **`acp`** speaks the Agent Client Protocol (JSON-RPC on stdio) to a started agent and tells its failures apart
-  (signed out, exited, timed out, a model or mode it lacks); **`process`** owns the process tree each agent starts,
+- **`acp`** speaks the Agent Client Protocol (JSON-RPC on stdio) to a started agent: what it can do (`Capabilities`),
+  a session's controls (`Session`: prompt, cancel, steer) and why a turn ended (`StopReason`), and it tells failures
+  apart (signed out, exited, timed out, a model or mode it lacks); **`events`** types what the agent says (below);
+  **`process`** owns the process tree each agent starts,
   so stopping the agent stops everything under it (a session of its own on Unix, a job object on Windows).
 - **`modes`** reads an agent's permission modes (its Auto among them) and picks the one to switch to.
 - **`accounts`** gives an agent more than one login on the same computer (below).
@@ -35,6 +37,53 @@ let command = candidates.into_iter().next().expect("Claude Code is known").resol
 let (agent, _updates) = codync_agent::acp::Acp::spawn(&command.acp(), "/path/to/project", &[])?;
 let init = agent.request("initialize", serde_json::json!({"protocolVersion": 1})).await?;
 # let _ = init;
+# Ok(())
+# }
+```
+
+## Events
+
+What an agent sends arrives on the channel `Acp::spawn` returns, as `Incoming`:
+
+- **`Incoming::Update`**: a `session/update` as a typed `events::Event` with the session it is about: reply text,
+  reasoning, tool calls and their changes (`ToolCall`, only what was sent is `Some`), the plan, context usage,
+  compactions, modes, config options and `/` commands. A kind this crate doesn't know yet is `Event::Other` with the
+  update as sent, so a newer adapter never breaks reading.
+- **`Incoming::Request`**: a request to the app, such as a permission (`Request::permission`, with the options it offers
+  and `Permission::allow`). It is answered once (`respond`, `refuse`, `choose`); dropped unanswered, it answers by
+  itself (a permission `cancelled`, a question `cancel`, anything else not supported), so an agent never waits on a
+  request no one holds. It holds no agent alive.
+
+Each event is a fact in the agent's own terms: defaults, filters and where it shows are the app's.
+
+```rust,no_run
+use codync_agent::acp::{Acp, Incoming, StopReason};
+use codync_agent::events::Event;
+use serde_json::json;
+
+# async fn run(agent: &Acp, mut updates: tokio::sync::mpsc::UnboundedReceiver<Incoming>) -> anyhow::Result<()> {
+let session = agent.session("the session id");
+let turn = session.prompt(json!([{"type": "text", "text": "Fix the flaky test"}])).await?;
+tokio::spawn(async move {
+    while let Some(incoming) = updates.recv().await {
+        match incoming {
+            Incoming::Update(update) => match update.event {
+                Event::Text { text, .. } => print!("{text}"),
+                Event::ToolStarted(call) => println!("[{}]", call.title.unwrap_or_default()),
+                _ => {}
+            },
+            // Allowed once, where the agent offers it; any other request refuses itself as it drops.
+            Incoming::Request(request) => {
+                if let Some(allow) = request.permission().and_then(|p| p.allow().map(str::to_owned)) {
+                    let _ = request.choose(Some(&allow)).await;
+                }
+            }
+            _ => {}
+        }
+    }
+});
+let ended = StopReason::of(&turn.response().await?);
+# let _ = ended;
 # Ok(())
 # }
 ```

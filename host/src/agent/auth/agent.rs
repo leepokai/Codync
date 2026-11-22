@@ -139,7 +139,9 @@ async fn sign_in(acp: &Acp, inbox: &mut mpsc::UnboundedReceiver<Incoming>, metho
         tokio::select! {
             result = &mut request => return result,
             incoming = inbox.recv() => match incoming {
-                Some(Incoming::Request { id, .. }) => acp.respond_error(id, -32601, "not supported during sign-in").await?,
+                Some(Incoming::Request(request)) => {
+                    request.refuse(acp::METHOD_NOT_FOUND, "not supported during sign-in").await?;
+                }
                 Some(Incoming::Closed { .. }) | None => bail!("the agent closed during sign-in"),
                 Some(notification) => {
                     if !opened && let Some(url) = acp::codebuddy::sign_in_url(&notification) {

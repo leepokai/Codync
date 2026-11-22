@@ -168,6 +168,21 @@ async fn turn_with_approval_reaches_a_final_reply() {
 
     let card = host.wait_for(&bot, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
     assert_eq!(card["data"]["title"], "Edit a.txt");
+    // What the apps decode, field for field.
+    let shown =
+        |data: &Value, keys: &[&str]| keys.iter().map(|k| ((*k).to_owned(), data.get(*k).cloned())).collect::<Vec<_>>();
+    let card_keys = ["title", "toolKind", "command", "detail", "diffs", "options", "status", "selected"];
+    assert_eq!(
+        shown(&card["data"], &card_keys),
+        shown(
+            &json!({"title": "Edit a.txt", "toolKind": "edit", "command": "sed -i s/x/y/ a.txt", "detail": "",
+                "diffs": [], "status": "pending", "selected": null, "options": [
+                    {"optionId": "allow", "name": "Allow", "kind": "allow_once"},
+                    {"optionId": "always", "name": "Always", "kind": "allow_always"},
+                    {"optionId": "no", "name": "Reject", "kind": "reject_once"}]}),
+            &card_keys
+        )
+    );
     let bots = common::snapshot(&host.base, &host.token).await;
     assert_eq!(common::bot(&bots, &bot)["status"], "needsInput");
 
@@ -184,6 +199,18 @@ async fn turn_with_approval_reaches_a_final_reply() {
     let tool = entries.iter().find(|e| e["kind"] == "tool").unwrap();
     assert_eq!(tool["data"]["status"], "completed");
     assert_eq!(tool["data"]["diffs"][0]["added"], 1);
+    let tool_keys = ["toolCallId", "title", "toolKind", "status", "output", "locations"];
+    assert_eq!(
+        shown(&tool["data"], &tool_keys),
+        shown(
+            &json!({"toolCallId": "t1", "title": "Edit a.txt", "toolKind": "edit", "status": "completed", "output": "",
+                "locations": null}),
+            &tool_keys
+        )
+    );
+    let plan = entries.iter().find(|e| e["kind"] == "plan").unwrap();
+    assert_eq!(plan["data"]["entries"], json!([{"content": "edit", "status": "completed", "priority": "high"}]));
+    assert_eq!(plan["data"]["author"], bot.as_str());
 
     let synced = common::snapshot(&host.base, &host.token).await;
     assert_eq!(common::bot(&synced, &bot)["status"], "idle");

@@ -202,8 +202,96 @@ async fn request_response_roundtrip() {
     let res = acp.request("initialize", json!({})).await.unwrap();
     assert_eq!(res["ok"], true);
     match rx.recv().await.unwrap() {
-        Incoming::Notification { method, .. } => assert_eq!(method, "session/update"),
-        _ => panic!("expected notification"),
+        Incoming::Update(update) => assert_eq!(update.event, crate::events::Event::Other(Value::Null)),
+        _ => panic!("expected an update"),
     }
     assert!(matches!(rx.recv().await.unwrap(), Incoming::Closed { .. }));
+}
+
+/// A fake agent that asks `method` and then says what it was answered, as a `got` notification.
+#[cfg(unix)]
+fn asking(method: &str) -> (Arc<Acp>, mpsc::UnboundedReceiver<Incoming>) {
+    let ask = format!(r#"{{"jsonrpc":"2.0","id":"r1","method":"{method}","params":{{"sessionId":"s1"}}}}"#);
+    let script = format!(r#"echo '{ask}'; read l; echo "{{\"jsonrpc\":\"2.0\",\"method\":\"got\",\"params\":$l}}""#);
+    Acp::spawn(&format!("sh -c '{}'", script.replace('\'', "'\\''")), "/tmp", &[]).unwrap()
+}
+
+#[cfg(unix)]
+async fn answer_to(rx: &mut mpsc::UnboundedReceiver<Incoming>) -> Value {
+    loop {
+        match tokio::time::timeout(Duration::from_secs(5), rx.recv()).await.unwrap().unwrap() {
+            Incoming::Notification { method, params } if method == "got" => return params,
+            Incoming::Closed { .. } => panic!("no answer"),
+            _ => {}
+        }
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_request_dropped_unanswered_answers_by_itself() {
+    let (_acp, mut rx) = asking(PERMISSION);
+    let Some(Incoming::Request(request)) = rx.recv().await else { panic!("a request") };
+    assert_eq!((request.method(), request.session()), (PERMISSION, Some("s1")));
+    assert!(request.permission().is_some());
+    drop(request);
+    let got = answer_to(&mut rx).await;
+    assert_eq!((got["id"].clone(), got["result"].clone()), (json!("r1"), json!({"outcome": {"outcome": "cancelled"}})));
+
+    let (_acp, mut rx) = asking("fs/read_text_file");
+    let Some(Incoming::Request(request)) = rx.recv().await else { panic!("a request") };
+    assert!(request.permission().is_none());
+    drop(request);
+    assert_eq!(answer_to(&mut rx).await["error"]["code"], METHOD_NOT_FOUND);
+
+    let (_acp, mut rx) = asking(ELICITATION);
+    let Some(Incoming::Request(request)) = rx.recv().await else { panic!("a request") };
+    drop(request);
+    assert_eq!(answer_to(&mut rx).await["result"], json!({"action": "cancel"}));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_request_is_answered_once() {
+    let (_acp, mut rx) = asking(PERMISSION);
+    let Some(Incoming::Request(request)) = rx.recv().await else { panic!("a request") };
+    request.choose(Some("yes")).await.unwrap();
+    let got = answer_to(&mut rx).await;
+    assert_eq!(got["result"], json!({"outcome": {"outcome": "selected", "optionId": "yes"}}));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_held_request_doesnt_keep_the_agent() {
+    let (acp, mut rx) = asking(PERMISSION);
+    let Some(Incoming::Request(request)) = rx.recv().await else { panic!("a request") };
+    let process = Arc::downgrade(&acp);
+    drop(acp);
+    assert!(process.upgrade().is_none(), "the request holds no agent");
+    assert!(request.respond(json!({})).await.is_err(), "nothing is left to answer");
+}
+
+#[test]
+fn a_permission_names_its_call_command_and_answers() {
+    let request = Permission::parse(&json!({"sessionId": "s1",
+        "toolCall": {"toolCallId": "t1", "title": "Run", "kind": "execute", "rawInput": {"command": ["npm", "test"]}},
+        "options": [{"optionId": "no", "name": "Reject", "kind": "reject_once"},
+            {"optionId": "always", "name": "Always", "kind": "allow_always"},
+            {"optionId": "yes", "name": "Allow", "kind": "allow_once"}]}));
+    assert_eq!(request.session.as_deref(), Some("s1"));
+    assert_eq!(request.tool.title.as_deref(), Some("Run"));
+    assert_eq!(request.command.as_deref(), Some("npm test"));
+    assert_eq!(request.allow(), Some("yes"));
+    let unnamed = Permission::parse(&json!({"toolCall": {"rawInput": {"command": "ls"}},
+        "options": [{"optionId": "a"}, {"optionId": "b"}]}));
+    assert_eq!((unnamed.command.as_deref(), unnamed.allow()), (Some("ls"), Some("a")));
+    assert_eq!(Permission::parse(&json!({})).allow(), None);
+}
+
+#[test]
+fn a_stop_reason_defaults_to_end_turn_and_keeps_unknown_ones() {
+    assert_eq!(StopReason::of(&json!({})), StopReason::EndTurn);
+    assert_eq!(StopReason::of(&json!({"stopReason": "cancelled"})), StopReason::Cancelled);
+    let other = StopReason::of(&json!({"stopReason": "paused"}));
+    assert_eq!((&other, other.as_str()), (&StopReason::Other("paused".into()), "paused"));
 }

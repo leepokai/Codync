@@ -3,9 +3,11 @@ import { api, attach, setPref } from './sandbox.ts'
 
 test('in Italian a routine row, its editor, the preview and the run settings read translated', async () => {
   const { browser, page } = await attach()
+  const cdp = await page.context().newCDPSession(page)
   const name = `Routine locale e2e ${Date.now()}`
   let botId: string | undefined
   try {
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1200, height: 760, deviceScaleFactor: 1, mobile: false })
     await setPref(page, 'appLanguage', 'it')
     await page.reload()
     const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', { name, backend: 'custom', command: 'unused', connectors: [], skills: [], notify: false })
@@ -14,11 +16,27 @@ test('in Italian a routine row, its editor, the preview and the run settings rea
       botId, name: 'Daily check', instruction: 'Report once', triggers: [{ type: 'cron', expression: '0 9 * * *', timeZone: 'Europe/Rome' }], timeoutSeconds: 3600,
     })
     await api(page, 'saveRoutine', { botId, name: 'Bot interval', instruction: 'Report once', triggers: [{ type: 'interval', seconds: 600 }], timeoutSeconds: 90 })
+    await api(page, 'saveRoutine', {
+      botId, name: 'GitHub event', instruction: 'Triage', triggers: [{ type: 'event', source: 'github', event: 'pull_request.opened' }, { type: 'cron', expression: '*/15 * * * *', timeZone: 'Europe/Rome' }], timeoutSeconds: 120,
+    })
     await page.locator('.roster-row', { hasText: name }).click()
     await page.locator('.title-pill').click()
+    const detailsPanel = page.locator('.details-panel')
+    await expect(detailsPanel.locator('.panel-choice, [role="tab"]').first()).toBeVisible()
+    const detailsChoice = detailsPanel.locator('.panel-chooser .panel-choice', { hasText: 'Dettagli' })
+    if (await detailsChoice.isVisible()) {
+      await detailsChoice.click()
+    } else {
+      const detailsTab = detailsPanel.getByRole('tab', { name: 'Dettagli', exact: true })
+      if ((await detailsTab.isVisible()) && (await detailsTab.getAttribute('aria-selected')) !== 'true') {
+        await detailsTab.click()
+      }
+    }
 
     const daily = page.locator('.routines-card', { hasText: 'Daily check' })
     await expect(daily).toContainText('Ogni giorno alle 09:00 · Europe/Rome')
+    await expect(page.locator('.routines-card', { hasText: 'Bot interval' })).toContainText('Ogni 10 minuti')
+    await expect(page.locator('.routines-card', { hasText: 'GitHub event' })).toContainText('Quando github attiva pull_request.opened · */15 * * * * · Europe/Rome')
     await daily.locator('.routine-row').click()
 
     const segmented = page.locator('.routine-form .segmented')
@@ -44,10 +62,12 @@ test('in Italian a routine row, its editor, the preview and the run settings rea
 
     await page.locator('.routines-card', { hasText: 'Bot interval' }).locator('.routine-row').click()
     await expect(segmented.getByRole('button', { name: 'Impostato dal bot' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('.routine-note')).toContainText('Ogni 10 minuti')
     await expect(page.locator('.routine-note')).toContainText('Configurato dal bot. Scegli Pianificazione o Webhook per sostituirlo.')
     await expect(page.locator('.routine-advanced')).toContainText('Timeout 90 secondi')
     await page.keyboard.press('Escape')
   } finally {
+    await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {})
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
     await page.evaluate(() => localStorage.removeItem('appLanguage'))
     await page.reload()

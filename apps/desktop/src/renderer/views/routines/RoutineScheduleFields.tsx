@@ -3,7 +3,7 @@ import { CardSection, ChipChoice, ChoicePicker } from '../../components/Controls
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { TimeZonePicker } from './TimeZonePicker'
-import { compiledCron, repeatChoice, repeatChoices, type RepeatChoice, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
+import { compiledCron, repeatChoice, repeatChoices, schedulePreviewLine, type RepeatChoice, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
 import './routines.css'
 import { useIntlLocale, useTr } from '../../lib/use-language'
 
@@ -114,7 +114,7 @@ function SchedulePreview({ preview, error }: { preview: RoutineSchedulePreview |
     <VStack gap={8} className="schedule-preview" aria-live="polite">
       {preview ? (
         <>
-          <Text size="callout" weight="medium" tone="text">{tr(preview.summary)}</Text>
+          <Text size="callout" weight="medium" tone="text">{schedulePreviewLine(preview, tr, dateLocale)}</Text>
           {nextRunAt ? (
             <Text size="callout" tone="secondary">
               {tr('Next {when}').replaceAll('{when}', () => new Date(nextRunAt).toLocaleString(dateLocale, { dateStyle: 'medium', timeStyle: 'short' }))}

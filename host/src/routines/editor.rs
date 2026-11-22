@@ -216,7 +216,7 @@ pub fn preview(body: &Value, now: i64) -> Result<Value> {
         .then(|| format!("Months without day {} are skipped.", draft.month_day));
     Ok(
         json!({"draft":draft,"triggers":triggers,"summary":triggers.iter().map(Trigger::description).collect::<Vec<_>>().join(" · "),
-        "nextRunAt":next,"warning":warning}),
+        "triggerPresentation":Trigger::presentations(&triggers),"nextRunAt":next,"warning":warning}),
     )
 }
 
@@ -230,6 +230,8 @@ mod tests {
         let result = preview(&json!({"timeZone":"Asia/Taipei"}), NOW).unwrap();
         assert_eq!(result["triggers"][0]["type"], "cron");
         assert_eq!(result["triggers"][0]["expression"], "0 9 * * *");
+        assert_eq!(result["triggerPresentation"]["version"], 1);
+        assert_eq!(result["triggerPresentation"]["items"][0]["kind"], "calendar");
         for (style, expression) in [
             ("minutes", "*/15 * * * *"),
             ("hourly", "47 * * * *"),
@@ -243,6 +245,7 @@ mod tests {
             )
             .unwrap();
             assert_eq!(result["triggers"][0]["expression"], expression);
+            assert_eq!(result["triggerPresentation"]["items"][0]["kind"], "cron");
             assert!(result["nextRunAt"].as_i64().is_some_and(|next| next > NOW));
         }
     }

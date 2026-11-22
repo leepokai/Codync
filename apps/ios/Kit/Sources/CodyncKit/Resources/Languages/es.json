@@ -2493,5 +2493,6 @@
   "Threads work in the project itself": "Los threads trabajan en el propio proyecto",
   "A thread gets its own worktree when another thread works in the same repository": "Un thread recibe su propio worktree cuando otro thread trabaja en el mismo repositorio",
   "Every thread works in a worktree of its own; your checkout is never touched": "Cada thread trabaja en su propio worktree; tu checkout nunca se toca",
-  "Its chat, routines and files live here.": "Aquí viven su chat, sus rutinas y sus archivos."
+  "Its chat, routines and files live here.": "Aquí viven su chat, sus rutinas y sus archivos.",
+  "When {source} fires {event}": "Cuando {source} activa {event}"
 }

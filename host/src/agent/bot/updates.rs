@@ -191,6 +191,18 @@ impl Actor {
                 self.hub.store.entry(eid)?.data["title"].as_str().map(str::to_owned)
             })
             .unwrap_or_else(|| "Use a tool".into());
+        let options: Vec<Value> = permission
+            .options
+            .iter()
+            .map(|o| json!({"optionId": o.id, "name": o.name, "kind": o.kind}))
+            .collect();
+        let asked = json!({"toolKind": tool.kind.as_deref().unwrap_or("other"), "title": title});
+        if let Some(session) = permission.session.as_deref()
+            && let Some(option) = self.always_allowed.pick(session, &asked, &options)
+        {
+            let _ = request.choose(Some(option)).await;
+            return;
+        }
         let mut detail = json!({"output": "", "diffs": []});
         merge_tool_content(&mut detail, tool.content.as_deref());
         let data = json!({
@@ -202,7 +214,7 @@ impl Actor {
             "detail": detail["output"],
             "diffs": detail["diffs"],
             "cwd": self.cfg.cwd,
-            "options": permission.options.iter().map(|o| json!({"optionId": o.id, "name": o.name, "kind": o.kind})).collect::<Vec<_>>(),
+            "options": options,
             "status": "pending",
             "selected": Value::Null,
         });
@@ -292,18 +304,30 @@ impl Actor {
     pub(super) async fn answer_permission(&mut self, entry_id: &str, option_id: Option<String>) {
         let Some(answer) = self.perms.remove(entry_id) else { return };
         let mut status = if option_id.is_some() { "answered" } else { "cancelled" };
-        match answer {
+    pub(super) async fn answer_permission(&mut self, entry_id: &str, option_id: Option<String>) {
+        let Some(answer) = self.perms.remove(entry_id) else { return };
+        let mut status = if option_id.is_some() { "answered" } else { "cancelled" };
+        let session = match answer {
             Answer::Agent(request) => {
+                let session = request.session().map(str::to_owned);
                 let _ = request.choose(option_id.as_deref()).await;
+                session
             }
             Answer::Codync(reply) => {
                 // The tool stopped waiting (see `expire_abandoned`): nothing acts on the answer.
                 if reply.send(option_id.as_deref() == Some("allow")).is_err() {
                     status = "expired";
                 }
+                // Its card offers allow once and reject only, so no answer of it covers a kind.
+                None
             }
-        }
+        };
         if let Some(mut e) = self.hub.store.entry(entry_id) {
+            if let (Some(session), Some(option)) = (session.as_deref(), option_id.as_deref())
+                && status == "answered"
+            {
+                self.always_allowed.note(session, &e.data, option);
+            }
             e.data["status"] = status.into();
             e.data["selected"] = option_id.into();
             self.hub.set_entry(entry_id, &e.data);

@@ -16,6 +16,7 @@
 //! written to the group's transcript; see `group`). A routine run talks in its chat
 //! from a session of its own (see `session`).
 
+mod always_allowed;
 mod background_work;
 mod cmd;
 mod codex_section;
@@ -145,6 +146,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         perms: HashMap::new(),
         asked: HashMap::new(),
         open_card: None,
+        always_allowed: always_allowed::AlwaysAllowed::default(),
         stop_requested: false,
         stopped_for_message: false,
         cancel_deadline: None,
@@ -367,6 +369,8 @@ struct Actor {
     asked: HashMap<String, decisions::Asked>,
     /// The chat's choice card whose call stopped waiting: the user's press or next message still answers it.
     open_card: Option<String>,
+    /// What the user chose Always allow for, by session: answered by Codync when the agent asks again.
+    always_allowed: always_allowed::AlwaysAllowed,
     stop_requested: bool,
     /// Send now stopped the turn for a waiting message (`steer`): that message going out says so, not a `Stopped.`
     /// line drawn under it.

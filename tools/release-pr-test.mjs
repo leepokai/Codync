@@ -79,6 +79,11 @@ for (const status of ['timed_out', 'failed']) {
   const refuted = { ...fixed, applied: [], refuted: [{ item: 'P2 naming', why: 'not a defect' }] }
   const { r, calls } = await run({ ...base, 'gate:': [withFinding], 'fix:': [refuted] })
   check(r.outcome === 'released' && gates(calls) === 1, 'a ready head whose findings are all refuted merges as it is')
+  const gate = capture(withFinding)
+  const fix = capture(refuted)
+  await run({ ...base, 'gate:': gate, 'fix:': fix })
+  check(/reviewThreads/.test(gate.prompt) && /isResolved/.test(gate.prompt) && /originalLine/.test(gate.prompt) && !/commit_id is/.test(gate.prompt), 'the gate lists every unresolved Greptile thread, whatever its commit')
+  check(/resolveReviewThread/.test(fix.prompt) && /needs_maintainer thread stays open/.test(fix.prompt), 'the fix round resolves the threads it settled and leaves decisions open')
   const decide = await run({ ...base, 'gate:': [withFinding], 'fix:': [{ ...refuted, needs_maintainer: ['rename the setting?'] }] })
   check(decide.r.outcome === 'ask' && !decide.calls.includes('merge'), 'a finding that needs a decision asks instead of merging')
 }
@@ -110,6 +115,13 @@ for (const status of ['timed_out', 'failed']) {
   const { r, calls } = await run({ ...base, 'follow-up': followUp, cloud, inspect: { ...facts, cloud_changed: true }, 'gate:': [ready] })
   check(r.outcome === 'released' && calls.join() === 'inspect,prepare,gate:1,cloud,merge,follow-up', 'cloud/ is checked before the merge: ' + calls)
   check(followUp.prompt.indexOf('deploy:main') < followUp.prompt.indexOf('back into dev') && followUp.prompt.includes('secret FOO'), 'main\'s cloud deploys before the merge back into dev')
+  const fetched = followUp.prompt.indexOf('git fetch origin')
+  check(fetched >= 0 && fetched < followUp.prompt.indexOf('checkout --detach origin/main') && followUp.prompt.includes('--is-ancestor'), 'main\'s cloud deploys from the merged main, fetched after the merge')
+  const cleanupStep = followUp.prompt.slice(followUp.prompt.indexOf('Cleanup:'))
+  check(!/pull --rebase --autostash/.test(followUp.prompt) && /pull --ff-only origin dev/.test(cleanupStep), 'cleanup never autostashes the shared checkout')
+  const noSha = capture(followed)
+  await run({ ...base, merge: { ...merged, merge_commit: undefined }, 'follow-up': noSha, inspect: { ...facts, cloud_changed: true }, cloud, 'gate:': [ready] })
+  check(noSha.prompt.includes('--is-ancestor $(gh pr view 600 '), 'a merge without its sha still gets a runnable ancestor check')
   const held = await run({ ...base, cloud: { ...cloud, status: 'needs_maintainer', detail: 'secret BAR' }, inspect: { ...facts, cloud_changed: true }, 'gate:': [ready] })
   check(held.r.outcome === 'ask' && !held.calls.includes('merge'), 'a cloud prerequisite only the maintainer can make asks before merging')
 }

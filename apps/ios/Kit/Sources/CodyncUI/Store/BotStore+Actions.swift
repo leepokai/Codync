@@ -328,6 +328,14 @@ extension BotStore {
         Task { await attempt(replay: true, undo: { self.hello?.autoOrder = !on }) { try await $0.setAutoOrder(on) } }
     }
 
+    /// Whether another bot may review a chain stopped at the hop limit. False before hello.
+    public var hopReview: Bool { hello?.hopReview ?? false }
+
+    public func setHopReview(_ on: Bool) {
+        hello?.hopReview = on
+        Task { await attempt(replay: true, undo: { self.hello?.hopReview = !on }) { try await $0.setHopReview(on) } }
+    }
+
     /// Whether the user names this computer here, on a host that takes it: a cloud computer is named in Codync Cloud.
     public var canRename: Bool {
         connection == .online && supportsComputerName && hello.map { $0.device != "cloud" } == true

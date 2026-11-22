@@ -96,6 +96,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "analytics": hub.analytics.state(),
                 // Whether a bot with a new message moves to the top of the roster (`setAutoOrder`).
                 "autoOrder": hub.auto_order(),
+                // Whether another bot may review a chain stopped at the hop limit (`setHopReview`). Off when unset.
+                "hopReview": hub.hop_review_enabled(),
                 // `resetCredentials` can be used here (a Codync Cloud computer's keeper holds its credentials).
                 "credentialsReset": !crate::remote::managed::is_managed(&hub.store),
                 // Before 2.41.0, apps called `joinAccount` when this was true. It takes a certificate now, which they
@@ -304,6 +306,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "setAutoOrder" => {
             hub.set_auto_order(b["enabled"].as_bool().context("enabled must be a boolean")?)?;
             json!({"enabled": hub.auto_order()})
+        }
+        "setHopReview" => {
+            hub.set_hop_review(b["enabled"].as_bool().context("enabled must be a boolean")?)?;
+            json!({"enabled": hub.hop_review_enabled()})
         }
         "setScreenEnabled" => {
             hub.screen.set_enabled(&hub.store, b["enabled"].as_bool().unwrap_or(false)).await?;

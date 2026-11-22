@@ -246,6 +246,22 @@ export class BotStore extends BotSync {
     }
   }
 
+  /** Whether another bot may review a chain stopped at the hop limit; undefined before hello or on older hosts. */
+  get hopReview() {
+    return this.hello?.hopReview
+  }
+
+  /** Shown at once, put back if the computer refuses. */
+  async setHopReview(enabled: boolean) {
+    this.showHopReview(enabled)
+    try {
+      await (await this.ready()).call('setHopReview', { enabled })
+    } catch (e) {
+      this.showHopReview(!enabled)
+      throw e
+    }
+  }
+
   /** The user's name for this computer, empty for its hostname (a cloud computer is named in Codync Cloud). */
   async setComputerName(name: string) {
     try {

@@ -300,6 +300,7 @@ fn refusal_in(text: &str) -> u64 {
 #[tokio::test]
 async fn a_hop_limit_notice_reaches_the_lead_and_a_reset_reopens_the_chain() {
     let host = Host::start().await;
+    host.call("setHopReview", json!({"enabled": true})).await;
     let (lead, lead_name) = auto_lead(&host).await;
     let cwd = host.home.join(&lead_name);
     std::fs::create_dir_all(&cwd).unwrap();

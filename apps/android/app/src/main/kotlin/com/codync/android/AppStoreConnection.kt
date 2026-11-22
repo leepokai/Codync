@@ -190,6 +190,7 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             receiveThreads(batch)
             batch.filterIsInstance<MirrorEvent.Name>().lastOrNull()?.let { setHostName(it.name) }
             batch.filterIsInstance<MirrorEvent.AutoOrder>().lastOrNull()?.let { showAutoOrder(it.enabled) }
+            batch.filterIsInstance<MirrorEvent.HopReview>().lastOrNull()?.let { showHopReview(it.enabled) }
             hearCalls(batch)
             acknowledgeVisible(readAfter(batch, state.value.readingChats))
             readChats(batch, NotificationDisplay.alertKinds(application, local.referenceId, id)).forEach { NotificationDisplay.cancelAlert(application, local.referenceId, id, it) }

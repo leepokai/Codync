@@ -31,13 +31,14 @@ const FIXED: [(&str, Event, &str, &str); 15] = [
 ];
 
 /// Switches the host owns (`setting_changed`): the method and the setting it names.
-const SETTINGS: [(&str, &str); 6] = [
+const SETTINGS: [(&str, &str); 7] = [
     ("setCloud", "remote_access"),
     ("setApproval", "approval"),
     ("setHostAutomaticUpdates", "automatic_updates"),
     ("setScreenEnabled", "remote_screen"),
     ("setAssistants", "cloud_assistants"),
     ("setAutoOrder", "auto_order"),
+    ("setHopReview", "hop_review"),
 ];
 
 /// `setVoiceServer`'s setting, the one switch whose failure is reported (`failed`).

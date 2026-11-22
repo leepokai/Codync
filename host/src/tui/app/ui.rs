@@ -62,6 +62,7 @@ pub enum Action {
     Analytics,
     AboutAnalytics,
     AutoOrder,
+    HopReview,
     ComputerName,
     ResetCredentials,
     Language,
@@ -70,7 +71,7 @@ pub enum Action {
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 23] = [
+pub const ACTIONS: [(&str, &str, Action); 24] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
@@ -80,6 +81,7 @@ pub const ACTIONS: [(&str, &str, Action); 23] = [
     ("New session for this bot…", "", Action::NewSession),
     ("Refresh agents", "", Action::RefreshAgents),
     ("Move active bots to the top", "", Action::AutoOrder),
+    ("Let another bot review a stopped chain.", "", Action::HopReview),
     ("Computer name", "", Action::ComputerName),
     ("Pair phone…", "P", Action::Pair),
     ("Network: your other computers…", "N", Action::Network),

@@ -13,6 +13,7 @@ mod fallbacks;
 mod find;
 mod forms;
 mod group_form;
+mod hop_review;
 mod input;
 mod kofi;
 mod login_profiles;
@@ -178,6 +179,8 @@ pub struct App {
     pub analytics: Option<bool>,
     /// Whether a bot with a new message moves to the top of the roster (`None`: before `hello`, or an older host).
     pub auto_order: Option<bool>,
+    /// Whether another bot may review a stopped chain (`None`: before `hello`, or an older host).
+    pub hop_review: Option<bool>,
     /// Whether `resetCredentials` can be used here (`hello`): not on a Codync Cloud computer or an older host.
     pub credentials_reset: bool,
     /// What usage analytics has reported this run (`app_opened`, `screen_viewed`).
@@ -255,6 +258,7 @@ impl App {
             hint: None,
             analytics: None,
             auto_order: None,
+            hop_review: None,
             credentials_reset: false,
             seen: analytics::Seen::default(),
         }

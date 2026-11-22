@@ -166,6 +166,13 @@ export class BotMirror extends Observable {
     this.changed()
   }
 
+  /** Hop-limit review as the computer has it: switched here, or its `hopReview` event (another device). */
+  showHopReview(on: boolean) {
+    if (!this.hello || this.hello.hopReview === on) return
+    this.hello = { ...this.hello, hopReview: on }
+    this.changed()
+  }
+
   /** A new name for this computer: its host's `name` event, or a cloud computer renamed from here (shown before its host,
    * asleep perhaps, says so). */
   setHostName(name: string) {

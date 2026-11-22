@@ -64,6 +64,7 @@ impl App {
             Action::CheckUpdate => self.call("checkHostUpdate", json!({}), After::Update),
             Action::Analytics => self.toggle_analytics(),
             Action::AutoOrder => self.toggle_auto_order(),
+            Action::HopReview => self.toggle_hop_review(),
             Action::ComputerName => self.ask_computer_name(),
             Action::ResetCredentials => self.ask_reset_credentials(),
             Action::AboutAnalytics => self.overlays.push(Overlay::Analytics(AnalyticsSheet::default())),

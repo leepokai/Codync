@@ -84,6 +84,7 @@ impl App {
                 }
             }
             Some("autoOrder") => self.auto_order = v["enabled"].as_bool(),
+            Some("hopReview") => self.hop_review = v["enabled"].as_bool(),
             Some("pairingRequests") => self.pairing_requests_changed(v),
             Some("bot") => {
                 self.upsert_bot(&v["bot"]);
@@ -270,6 +271,7 @@ impl App {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.analytics_hello(&v);
                 self.auto_order = v["autoOrder"].as_bool();
+                self.hop_review = v["hopReview"].as_bool();
                 self.credentials_reset = v["credentialsReset"].as_bool().unwrap_or(false);
                 self.screen = v["screen"].clone();
                 // A thread's entries aren't in a connection's catch-up: the open transcripts ask for what they
@@ -278,6 +280,7 @@ impl App {
             }
             After::Analytics => self.analytics_set(&v),
             After::AutoOrder => self.auto_order_set(&v),
+            After::HopReview => self.hop_review_set(&v),
             After::CredentialsReset => {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.flash("Saved credentials reset. Enter them again where you use them.");

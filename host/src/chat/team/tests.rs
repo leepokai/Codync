@@ -508,6 +508,54 @@ async fn hop_limit_refusal_leaves_the_user_a_notice() {
     f.shutdown().await;
 }
 
+/// The review stays off until the setting is exactly on. Continue still starts a fresh chain.
+#[tokio::test]
+async fn hop_review_defaults_off_and_continue_still_works() {
+    let f = Fixture::new();
+    assert!(!f.hub.hop_review_enabled());
+    f.hub.store.kv_set("hopReview", "0").unwrap();
+    assert!(!f.hub.hop_review_enabled(), "a stored 0 is not on");
+    f.hub.store.kv_delete("hopReview").unwrap();
+    f.hub.make_lead("c").unwrap();
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    let err =
+        call(&f.hub, "a", "a", "message_bot", &json!({"botId": "b", "message": "stuck"})).unwrap_err().to_string();
+    assert!(err.contains("hop limit"), "{err}");
+    assert!(!err.contains("notified"), "{err}");
+    let lead_headings = f.hub.store.history("c", i64::MAX, 100).unwrap();
+    assert!(lead_headings.iter().all(|e| !e.data["heading"].as_str().unwrap_or("").contains("Hop limit refusal")));
+    let reset =
+        call(&f.hub, "c", "c", "reset_hop_count", &json!({"refusalId": 1, "botId": "a"})).unwrap_err().to_string();
+    assert!(reset.contains("off"), "{reset}");
+    let notices = f
+        .hub
+        .store
+        .history("a", i64::MAX, 100)
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == "notice" && e.data["continueChain"] == true)
+        .collect::<Vec<_>>();
+    assert_eq!(notices.len(), 1, "Continue stays");
+    let sent = crate::api::dispatch(
+        &f.hub,
+        &crate::api::devices::Caller::Local,
+        "continueChain",
+        json!({"entryId": notices[0].id}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(sent["entry"]["kind"], "user");
+    assert_eq!(sent["entry"]["data"]["text"], "Continue");
+    f.hub.set_hop_review(true).unwrap();
+    assert!(f.hub.hop_review_enabled());
+    f.hub.team.start_turn("a", Turn::Chat(8));
+    let on = call(&f.hub, "a", "a", "message_bot", &json!({"botId": "b", "message": "stuck again"}))
+        .unwrap_err()
+        .to_string();
+    assert!(on.contains("the lead was notified"), "{on}");
+    f.shutdown().await;
+}
+
 #[path = "quota_tests.rs"]
 mod quotas;
 

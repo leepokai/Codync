@@ -10,5 +10,7 @@ class AutoOrderEventTest {
     @Test fun theSwitchFromAnotherDeviceIsHeard() {
         assertEquals(MirrorEvent.AutoOrder(true), decode("""{"type":"autoOrder","enabled":true}"""))
         assertEquals(MirrorEvent.Ignored, decode("""{"type":"autoOrder"}"""))
+        assertEquals(MirrorEvent.HopReview(true), decode("""{"type":"hopReview","enabled":true}"""))
+        assertEquals(MirrorEvent.Ignored, decode("""{"type":"hopReview"}"""))
     }
 }

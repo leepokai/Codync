@@ -731,6 +731,9 @@ pub(crate) fn hop_lift_finished(hub: &Hub, action: &str, outcome: &str) {
 }
 
 fn explain_hop_block(hub: &Arc<Hub>, source: &BotConfig, turn: &str, args: &Value) -> Result<Value> {
+    if !hub.hop_review_enabled() {
+        bail!("hop-limit review is off on this computer");
+    }
     let refusal = refusal_arg(args)?;
     let explanation = args["text"].as_str().unwrap_or("").trim();
     if explanation.is_empty() || explanation.len() > MAX_MESSAGE_BYTES {
@@ -752,6 +755,9 @@ fn explain_hop_block(hub: &Arc<Hub>, source: &BotConfig, turn: &str, args: &Valu
 }
 
 fn ask_hop_clarification(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Value> {
+    if !hub.hop_review_enabled() {
+        bail!("hop-limit review is off on this computer");
+    }
     if !source.lead {
         bail!("only the lead bot can ask about a hop-limit block");
     }
@@ -787,6 +793,9 @@ fn ask_hop_clarification(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Re
 }
 
 fn answer_hop_clarification(hub: &Arc<Hub>, source: &BotConfig, turn: &str, args: &Value) -> Result<Value> {
+    if !hub.hop_review_enabled() {
+        bail!("hop-limit review is off on this computer");
+    }
     let refusal = refusal_arg(args)?;
     let answer = args["text"].as_str().unwrap_or("").trim();
     if answer.is_empty() || answer.len() > MAX_MESSAGE_BYTES {
@@ -806,6 +815,9 @@ fn answer_hop_clarification(hub: &Arc<Hub>, source: &BotConfig, turn: &str, args
 }
 
 fn reset_hop_count(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Value> {
+    if !hub.hop_review_enabled() {
+        bail!("hop-limit review is off on this computer");
+    }
     if !source.lead {
         bail!("only the lead bot can reset a hop count");
     }
@@ -836,6 +848,9 @@ fn reset_hop_count(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<V
 }
 
 fn deny_hop_reset(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Value> {
+    if !hub.hop_review_enabled() {
+        bail!("hop-limit review is off on this computer");
+    }
     if !source.lead {
         bail!("only the lead bot can deny a hop reset");
     }
@@ -860,6 +875,9 @@ pub(super) fn on_hop_limit(
     message: &str,
     error: anyhow::Error,
 ) -> Result<Value> {
+    if !hub.hop_review_enabled() {
+        return Err(error);
+    }
     if source.lead {
         return Err(error);
     }

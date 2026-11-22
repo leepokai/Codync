@@ -188,8 +188,11 @@ private class ComputerRoster(private val context: Context, val key: String) {
     val deleting = confirmDelete?.second
     CodyncDialog("Delete ${deleting?.name ?: "bot"}?", deleting != null, { confirmDelete = null },
         message = if (deleting?.kind == "group") "Its bots and their own chats stay." else "Files it changed on your computer stay as they are.") {
-        listOf(DialogAction(if (deleting?.kind == "group") "Delete group chat" else "Delete bot and its conversation", destructive = true) {
-            confirmDelete?.let { (id, bot) -> accounts.store(id)?.deleteBot(bot) {} }
+        // Taken now: the dialog dismisses (clearing it) before it runs the action.
+        listOfNotNull(confirmDelete?.let { (id, bot) ->
+            DialogAction(if (deleting?.kind == "group") "Delete group chat" else "Delete bot and its conversation", destructive = true) {
+                accounts.store(id)?.deleteBot(bot) {}
+            }
         })
     }
     AllWorkSheet(workOpen, work.bots, grouped, accounts) { workOpen = false }

@@ -680,6 +680,22 @@ async fn a_reply_waiting_for_a_busy_sender_survives_a_restart() {
     f.shutdown().await;
 }
 
+/// The notice shows only the start of a long reply; a restart relays the whole of it, as the live path does.
+#[tokio::test]
+async fn a_long_reply_relayed_after_a_restart_is_whole() {
+    let f = Fixture::new();
+    f.send_to("a", "BLOCK user work").await;
+    f.until(|| f.prompts_of("a").len() == 1).await;
+    let long = format!("work {}", "x".repeat(NOTICE_REPLY_BYTES * 2));
+    f.message(&long).unwrap();
+    f.until(|| f.took("b", 1)).await;
+    let f = f.restart().await;
+    let whole = format!("reply: {long}");
+    f.until(|| f.idle("a") && f.prompts_of("a").iter().any(|p| p.contains(&whole))).await;
+    assert!(f.hub.store.unrelayed_replies().unwrap().is_empty());
+    f.shutdown().await;
+}
+
 #[tokio::test]
 async fn a_restart_between_a_requests_two_notices_keeps_the_outcome_saved_first() {
     let f = Fixture::new();

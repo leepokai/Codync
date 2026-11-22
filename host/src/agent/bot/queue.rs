@@ -309,12 +309,17 @@ impl Actor {
                     self.hub.ceilings.set(&self.cfg.id, access);
                     self.reply_hops = replies.iter().map(crate::chat::team::BotReply::hops).max();
                     let prompt = crate::chat::team::reply_prompt(&replies, access);
-                    if let Err(e) = self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
+                    let result = self.start_turn(main.clone(), &[], &prompt, false, done_tx).await;
+                    let started = result.is_ok();
+                    if let Err(e) = result {
                         self.start_error(e, done_tx).await;
                     }
                     // Only once the agent has the prompt (or the turn failed where the user sees it): a host restart
-                    // before that relays them again from their notices.
+                    // before that relays them again from their notices. From then on a restart resumes the turn.
                     crate::chat::team::relayed(&self.hub, &replies);
+                    if started && self.resumes() {
+                        self.set_inflight(true);
+                    }
                     continue;
                 }
                 Some(Queued::TaskReport(_)) => {
@@ -600,6 +605,19 @@ impl Actor {
         if let Err(e) = self.start_turn(lane, &[], &prompt, true, done_tx).await {
             self.start_failed(&e);
         }
+    }
+
+    /// Whether a host restart resumes the turn starting now. A bot request or room turn isn't (the room that waited is
+    /// gone): a request's persisted notices are marked interrupted instead of silently repeating work. Nor is a call's
+    /// opening (the call is over). A reply turn is, and so is a follow-up, which is gone from the list by now. A turn
+    /// under a network rule's ceiling isn't: the ceiling doesn't outlive the host, and the turn that resumed it would
+    /// work on the sender's text as the bot is set.
+    pub(super) fn resumes(&self) -> bool {
+        self.active_request.is_none()
+            && !self.hub.ceilings.holds(&self.cfg.id)
+            && self.active_group.is_none()
+            && self.active_routine.is_none()
+            && self.host_turn.is_none_or(HostTurn::resumed)
     }
 
     /// Marks a turn in the bot's own chat as running across host restarts (see [`Self::resume_interrupted`]); a

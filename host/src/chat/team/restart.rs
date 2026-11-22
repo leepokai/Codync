@@ -5,8 +5,8 @@
 //! `Store::expire_pending` leaves them.
 
 use super::{
-    Back, BotReply, MessageLifetime, REQUEST_QUOTE_BYTES, RequestStatus, finish_entry, relayed, request_prompt,
-    visible_bot,
+    Back, BotReply, MessageLifetime, REQUEST_QUOTE_BYTES, RequestStatus, finish_entry, relayed, relaying_key,
+    request_prompt, visible_bot,
 };
 use crate::agent::bot::Cmd;
 use crate::analytics::errors::host_error;
@@ -64,7 +64,7 @@ fn settle(hub: &Arc<Hub>, notices: &[Entry]) {
             _ => message["detail"].as_str().unwrap_or_default().to_owned(),
         };
         for notice in notices.iter().filter(open) {
-            finish_entry(hub, &notice.id, outcome, &detail, reply, false);
+            finish_entry(hub, &notice.id, outcome, &detail, reply, None);
         }
         return;
     }
@@ -111,7 +111,11 @@ fn relay(hub: &Hub, notice: &Entry) {
         return;
     };
     let outcome = if data["status"] == "completed" {
-        Ok(message["reply"].as_str().unwrap_or_default().to_owned())
+        // The whole reply, not the start the notice shows (that, from a host before the reply was kept whole).
+        Ok(hub
+            .store
+            .kv_get(&relaying_key(&notice.id))
+            .unwrap_or_else(|| message["reply"].as_str().unwrap_or_default().to_owned()))
     } else {
         Err(message["detail"].as_str().unwrap_or("it ended without a reply").to_owned())
     };

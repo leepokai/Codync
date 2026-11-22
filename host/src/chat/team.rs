@@ -203,6 +203,9 @@ pub fn relayed(hub: &Hub, replies: &[BotReply]) {
             && let Some(data) = e.data.as_object_mut()
             && data.remove(RELAYING).is_some()
         {
+            if let Err(error) = hub.store.kv_delete(&relaying_key(id)) {
+                tracing::warn!(entry = id, error = format!("{error:#}"), "couldn't drop a relayed reply");
+            }
             hub.set_entry(id, &e.data);
         }
     }
@@ -210,6 +213,12 @@ pub fn relayed(hub: &Hub, replies: &[BotReply]) {
 
 /// On a local sender's exchange notice: the outcome waits for the sender's reply turn ([`BotReply::entry`]).
 const RELAYING: &str = "relaying";
+/// Where a `relaying` notice's whole reply (up to [`MAX_MESSAGE_BYTES`]) waits for its sender's turn: host-only, as
+/// the notice that clients sync shows only its start.
+// ponytail: a notice deleted while relaying (its chat cleared) leaves this row behind; sweep by prefix if that grows.
+fn relaying_key(entry: &str) -> String {
+    format!("reply.relaying.{entry}")
+}
 
 /// One turn's prompt for the replies that reached a bot while it was busy, oldest first, all from senders this
 /// computer's rules hold to `access`.
@@ -308,7 +317,7 @@ impl MessageLifetime {
 
     fn finish(&mut self, status: RequestStatus, detail: &str, reply: Option<&str>) {
         for id in &self.entries {
-            finish_entry(&self.hub, id, status, detail, reply, false);
+            finish_entry(&self.hub, id, status, detail, reply, None);
         }
         self.finished = true;
     }
@@ -331,7 +340,7 @@ impl MessageLifetime {
         };
         // The sender's notice comes first: it holds the outcome until the sender's turn takes it.
         for (at, id) in self.entries.iter().enumerate() {
-            finish_entry(&self.hub, id, status, detail, reply, at == 0);
+            finish_entry(&self.hub, id, status, detail, reply, (at == 0).then_some(&outcome));
         }
         self.finished = true;
         let reply = BotReply {
@@ -349,8 +358,16 @@ impl MessageLifetime {
 }
 
 /// Ends one exchange notice: its status, the reply it keeps or why it ended. `relaying`: it is a local sender's,
-/// whose reply turn hasn't taken the outcome yet.
-fn finish_entry(hub: &Hub, id: &str, status: RequestStatus, detail: &str, reply: Option<&str>, relaying: bool) {
+/// whose reply turn hasn't taken this outcome yet; it keeps the whole reply (the notice shows only its start) so a
+/// restart sends that.
+fn finish_entry(
+    hub: &Hub,
+    id: &str,
+    status: RequestStatus,
+    detail: &str,
+    reply: Option<&str>,
+    relaying: Option<&std::result::Result<String, String>>,
+) {
     let Some(mut e) = hub.store.entry(id) else { return };
     if let Some(message) = e.data.get_mut("botMessage").and_then(Value::as_object_mut) {
         if let Some(reply) = reply {
@@ -366,8 +383,13 @@ fn finish_entry(hub: &Hub, id: &str, status: RequestStatus, detail: &str, reply:
     if !matches!(status, RequestStatus::Completed) {
         e.data["style"] = "error".into();
     }
-    if relaying {
+    if let Some(outcome) = relaying {
         e.data[RELAYING] = true.into();
+        if let Ok(whole) = outcome
+            && let Err(error) = hub.store.kv_set(&relaying_key(id), whole)
+        {
+            tracing::warn!(entry = id, error = format!("{error:#}"), "couldn't keep a reply for its sender's turn");
+        }
     }
     hub.set_entry(id, &e.data);
 }

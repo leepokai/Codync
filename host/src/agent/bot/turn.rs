@@ -175,18 +175,9 @@ impl Actor {
         } else {
             self.relay_turn(&lane, entry_ids, text).await;
         }
-        // A bot request or room turn isn't resumed after a host restart (the room that waited is gone): a request's
-        // persisted notices are marked interrupted instead of silently repeating work. Nor is a call's opening (the
-        // call is over). A reply turn is resumed, and so is a follow-up, which is gone from the list by now. A turn
-        // under a network rule's ceiling isn't: the ceiling doesn't outlive the host, and the turn that resumed it
-        // would work on the sender's text as the bot is set.
-        self.set_inflight(
-            self.active_request.is_none()
-                && !self.hub.ceilings.holds(&self.cfg.id)
-                && self.active_group.is_none()
-                && self.active_routine.is_none()
-                && self.host_turn.is_none_or(HostTurn::resumed),
-        );
+        // A reply turn is marked only once its prompt is out and its replies are relayed (`queue`): a restart before
+        // that sends them again from their notices, and resuming as well would hand them over twice.
+        self.set_inflight(self.resumes() && self.reply_hops.is_none());
         // A message the host wrote in the user's place (`from: host`) isn't the user asking.
         let typed = |id: &&String| self.hub.store.entry(id).is_some_and(|e| e.data["from"] != "host");
         let message = if from_user { entry_ids.iter().rev().find(typed).cloned() } else { None };

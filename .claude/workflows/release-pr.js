@@ -183,6 +183,19 @@ for (let round = 1; round <= MAX_ROUNDS; round++) {
   if (fixed.needs_maintainer.length) {
     return end({ outcome: 'ask', pr, gate, fixes, why: 'findings that need a decision: ' + fixed.needs_maintainer.join('; '), next: 'Ask the user about these; once decided (fixed on the release branch, or left as it is), reply to and resolve each such Greptile thread, then rerun.' })
   }
+  // The fixes are our own code change: reviewed and walked end to end before the next round commits and merges them.
+  if (fixed.applied.length) {
+    const report = await workflow('after-change', { change: `Gate fixes on release PR #${pr}: ${fixed.applied.join('; ')}. ${UNTRUSTED}`, base: gate.head, dir: worktree, e2e: 'minimal' })
+    fixed.afterChange = report
+    const checks = report?.e2e?.checks ?? []
+    // As review-issue-pr's afterChangeGap: a change with nothing to walk still reports one not_run check.
+    const gap = !report ? 'did not finish'
+      : !checks.length ? 'ran no e2e check'
+      : checks.some((c) => c.result === 'fail') ? 'failed an e2e check'
+      : report.review?.confirmed?.length && !report.fix?.applied ? 'left its confirmed findings unfixed'
+      : null
+    if (gap) return end({ outcome: 'stopped', pr, gate, fixes, why: `after-change on the gate fixes ${gap}`, next: 'The fixes are uncommitted in the release worktree. Report the after-change result to the user; once fixed, rerun.' })
+  }
   // Nothing fixed or rerun leaves the head and the gate as they are: a ready head whose findings were all refuted merges, a failing one stops.
   if (!fixed.applied.length && !fixed.rerun.length) { ready = gate.status === 'ready'; break }
 }

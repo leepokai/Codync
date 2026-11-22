@@ -48,3 +48,41 @@
 .thread-section-new:focus-visible {
   opacity: 1;
 }
+
+/* A thread's row and its `…`: the `…` takes the mark's place while the row is hovered, has the keyboard or its menu is
+   open (ThreadRow). */
+.thread-item {
+  position: relative;
+}
+/* Holds the mark as a box of its own, so its size holds. */
+.thread-mark {
+  display: flex;
+  flex: none;
+}
+.thread-item + .thread-item {
+  margin-top: 1px;
+}
+.thread-more {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  translate: 0 -50%;
+  opacity: 0;
+  transition: opacity var(--hover);
+}
+.thread-item:hover .thread-more,
+.thread-item.menu-open .thread-more,
+.thread-more:focus-visible {
+  opacity: 1;
+}
+.thread-item:hover .thread-mark,
+.thread-item.menu-open .thread-mark {
+  visibility: hidden;
+}
+.thread-item:hover .thread-row,
+.thread-item.menu-open .thread-row {
+  padding-right: 32px;
+}
+.thread-item.menu-open .thread-row {
+  background: var(--field);
+}

@@ -2434,5 +2434,10 @@
   "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.": "聊天负责规划和分派工作；thread 用自己的 agent 和备用运行。",
   "Threads' agent": "Thread 的 agent",
   "Threads' fallbacks": "Thread 的备用",
-  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "如果 {agent} 用量用完或无法回答，thread 会交给下一个继续。"
+  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "如果 {agent} 用量用完或无法回答，thread 会交给下一个继续。",
+  "Open thread": "打开 thread",
+  "Answer in chat": "在聊天中回答",
+  "Open chat": "打开聊天",
+  "Copy title": "复制标题",
+  "Copy folder path": "复制文件夹路径"
 }

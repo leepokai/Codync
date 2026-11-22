@@ -2434,5 +2434,10 @@
   "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.": "Чат планирует и передаёт работу; threads работают на своём агенте со своими резервными агентами.",
   "Threads' agent": "Агент threads",
   "Threads' fallbacks": "Резервные агенты threads",
-  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "Если у {agent} закончится лимит или он не сможет ответить, threads продолжат со следующим."
+  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "Если у {agent} закончится лимит или он не сможет ответить, threads продолжат со следующим.",
+  "Open thread": "Открыть поток",
+  "Answer in chat": "Ответить в чате",
+  "Open chat": "Открыть чат",
+  "Copy title": "Скопировать название",
+  "Copy folder path": "Скопировать путь к папке"
 }

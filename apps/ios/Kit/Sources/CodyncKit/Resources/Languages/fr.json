@@ -2434,5 +2434,10 @@
   "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.": "Le chat planifie et délègue le travail ; les threads tournent sur leur propre agent, avec leurs propres agents de secours.",
   "Threads' agent": "Agent des threads",
   "Threads' fallbacks": "Agents de secours des threads",
-  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "Si {agent} n'a plus d'utilisation ou ne peut pas répondre, les threads continuent avec le suivant."
+  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "Si {agent} n'a plus d'utilisation ou ne peut pas répondre, les threads continuent avec le suivant.",
+  "Open thread": "Ouvrir le fil",
+  "Answer in chat": "Répondre dans le chat",
+  "Open chat": "Ouvrir le chat",
+  "Copy title": "Copier le titre",
+  "Copy folder path": "Copier le chemin du dossier"
 }

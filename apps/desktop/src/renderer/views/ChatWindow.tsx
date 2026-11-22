@@ -539,7 +539,7 @@ function ChatSplitView() {
               </div>
             ) : (
               <div className="roster">
-                <ThreadList roster={threadRoster} picked={picked} pick={setPicked} start={startThread} />
+                <ThreadList roster={threadRoster} picked={picked} pick={setPicked} start={startThread} openChat={(ref) => { app.select(ref); setPage('bots') }} />
               </div>
             )}
           </aside>

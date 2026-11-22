@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { isGroup } from '@shared/models'
 import { taskLine, threadSections, type WorkTask } from '@shared/work'
 import { BotAvatar } from '../components/Avatar'
 import { IconButton } from '../components/Controls'
+import { AnchoredMenu, useContextMenu, type MenuItem } from '../components/Menu'
 import { Icon } from '../components/Icon'
 import { HStack } from '../components/Stack'
 import { Text } from '../components/Text'
@@ -10,9 +11,10 @@ import { prefs, usePref } from '../lib/prefs'
 import { useTr } from '../lib/use-language'
 import { useScreenViewed } from '../store/analytics'
 import { refKey, sameRef, type BotRef, type RosterItem } from '../store/app-model'
-import { StoreContext } from '../store/context'
+import { StoreContext, useStore } from '../store/context'
 import { relativeTime } from './chat/chat-items'
-import { WORK_MARK, WorkDot } from './chat/WorkDialogs'
+import { CutInDialog, StopWorkDialog, WORK_MARK, WorkDot } from './chat/WorkDialogs'
+import { threadMenuItems } from './thread-menu'
 import { ThreadChat } from './chat/ThreadChat'
 import { ThreadStart, type ThreadWith } from './chat/ThreadStart'
 import './computer-roster.css'
@@ -32,19 +34,24 @@ const SHOWN_RECENT = 8
  * routines' runs, a group per bot in the bot list's order, or one per computer), then the rest, newest first, the last of it on demand.
  * A row is a thread's title and one mark at its end for how it stands; a group's heading folds it, and a bot's has a
  * `+` that starts a thread with it (`start`). A row of a task a thread has or had shows its thread beside the list
- * (`pick`). What a task is told to do (first, cut in, drop, try again) stays on its bot's Details.
+ * (`pick`). A row's `…` (shown on hover) and its right-click open its menu (`threadMenuItems`): the thread, its bot's
+ * chat (`openChat`), another thread with the bot, what its bot's Details does with it, and copying its title or folder.
  */
-export function ThreadList({ roster, picked, pick, start }: {
+export function ThreadList({ roster, picked, pick, start, openChat }: {
   roster: RosterItem[]
   picked: ThreadPick | null
   pick: (thread: ThreadPick) => void
   start: (ref: BotRef | null) => void
+  /** Opens a bot's chat on the Bots page. */
+  openChat: (ref: BotRef) => void
 }) {
   const tr = useTr()
   useScreenViewed('all_work')
   const [grouping] = usePref(prefs.threadsGroup)
   const [folded, setFolded] = usePref(prefs.foldedThreadSections)
   const [more, setMore] = useState(false)
+  // A thread's menu asks before Stop and Cut in, with its bot's dialogs.
+  const [asking, setAsking] = useState<{ of: RosterItem; task: WorkTask; kind: 'stop' | 'cutIn' } | null>(null)
   const { needsYou, groups, recent } = threadSections(roster, grouping, (of) => refKey(of.ref), (of) => of.store.hostName)
   const canStart = threadBots(roster).length > 0 || plainStores(roster).length > 0
   const row = ({ of, task }: { of: RosterItem; task: WorkTask }, label = task.title) => (
@@ -54,6 +61,17 @@ export function ThreadList({ roster, picked, pick, start }: {
         label={label}
         selected={picked !== null && picked.taskId === task.id && sameRef(picked.ref, of.ref)}
         open={task.thread ? () => pick({ ref: of.ref, taskId: task.id }) : undefined}
+        items={() => threadMenuItems(of.bot, task, threadBots([of]).length > 0 || plainStores([of]).length > 0, {
+          open: () => pick({ ref: of.ref, taskId: task.id }),
+          openChat: () => openChat(of.ref),
+          startAnother: () => start(of.ref),
+          stop: () => setAsking({ of, task, kind: 'stop' }),
+          cutIn: () => setAsking({ of, task, kind: 'cutIn' }),
+          first: () => of.store.workFirst(of.bot.id, task.id),
+          retry: () => of.store.retryWork(of.bot.id, task.id),
+          drop: () => of.store.dropWork(of.bot.id, task.id),
+          copy: (text) => window.codync.app.copy(text),
+        })}
       />
     </StoreContext.Provider>
   )
@@ -111,6 +129,12 @@ export function ThreadList({ roster, picked, pick, start }: {
           ) : null}
         </section>
       ) : null}
+      {asking ? (
+        <StoreContext.Provider value={asking.of.store}>
+          <StopWorkDialog botId={asking.of.bot.id} taskId={asking.kind === 'stop' ? asking.task.id : null} onClose={() => setAsking(null)} />
+          <CutInDialog bot={asking.of.bot} task={asking.kind === 'cutIn' ? asking.task : null} onClose={() => setAsking(null)} />
+        </StoreContext.Provider>
+      ) : null}
     </>
   )
 }
@@ -120,14 +144,34 @@ function StatusMark({ status }: { status: WorkTask['status'] }) {
   return status === 'done' ? null : <WorkDot mark={WORK_MARK[status]} />
 }
 
-/** One thread of the list: its title (a routine's run: when it started) and its mark. */
-function ThreadRow({ task, label, selected, open }: { task: WorkTask; label: string; selected: boolean; open?: () => void }) {
+/** One thread of the list: its title (a routine's run: when it started) and its mark, whose place a `…` takes while the
+ * row is hovered; the `…` and a right-click open its menu. */
+function ThreadRow({ task, label, selected, open, items }: { task: WorkTask; label: string; selected: boolean; open?: () => void; items: () => MenuItem[] }) {
+  const tr = useTr()
+  const store = useStore()
+  const context = useContextMenu()
+  const moreRef = useRef<HTMLButtonElement>(null)
+  const [more, setMore] = useState(false)
   const Open = open ? 'button' : 'div'
   return (
-    <Open className={`thread-row ${selected ? 'selected' : ''}`} data-thread-row={task.title} data-work-status={task.status} onClick={open} title={task.title}>
-      <Text tone="text" truncate grow>{label}</Text>
-      <StatusMark status={task.status} />
-    </Open>
+    <div className={`thread-item ${more || context.open ? 'menu-open' : ''}`} onContextMenu={context.onContextMenu}>
+      <Open className={`thread-row ${selected ? 'selected' : ''}`} data-thread-row={task.title} data-work-status={task.status} onClick={open} title={task.title}>
+        <Text tone="text" truncate grow>{label}</Text>
+        <span className="thread-mark"><StatusMark status={task.status} /></span>
+      </Open>
+      <IconButton
+        className="thread-more"
+        title={tr('More actions for {name}').replaceAll('{name}', () => task.title)}
+        icon="ellipsis"
+        size={24}
+        buttonRef={moreRef}
+        menuOpen={more}
+        disabled={store.isOffline}
+        onClick={() => setMore(true)}
+      />
+      <AnchoredMenu open={more} onClose={() => setMore(false)} anchor={moreRef} items={items} />
+      <AnchoredMenu open={context.open} onClose={context.close} point={context.point} items={items} />
+    </div>
   )
 }
 

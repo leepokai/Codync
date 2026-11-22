@@ -596,6 +596,59 @@ test("the Threads page groups every bot's work as chosen, shows a thread beside 
   }
 })
 
+test("a thread's menu, from its … on hover or a right-click, offers what applies to it and does it", async () => {
+  const { browser, page } = await attach()
+  const name = `Work menu e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name, 1)
+    await addWork(page, botId, 'Long job', HOLD)
+    await addWork(page, botId, 'Next job', HOLD)
+    await addWork(page, botId, 'Last job', HOLD)
+    await openPage(page, 'Threads')
+    const list = page.locator('aside.sidebar')
+    await page.locator('.sidebar-header .computer-filter').click()
+    const byBot = page.getByRole('menuitemradio', { name: 'Group by bot', exact: true })
+    if ((await byBot.getAttribute('aria-checked')) !== 'true') await byBot.click()
+    await page.keyboard.press('Escape')
+    const section = list.getByRole('group', { name, exact: true })
+    const item = (title: string) => section.locator('.thread-item', { has: page.locator(`[data-thread-row="${title}"]`) })
+    const menu = page.getByRole('menu')
+    const titles = () => menu.getByRole('menuitem').allTextContents()
+
+    // The … shows on hover, in the mark's place, and opens the menu: the last in line can go first.
+    await item('Last job').hover()
+    await item('Last job').getByRole('button', { name: 'More actions for Last job' }).click()
+    expect(await titles()).toEqual(['Open chat', 'New thread', 'First', 'Copy title', 'Drop'])
+    await menu.getByRole('menuitem', { name: 'First' }).click()
+    // Now first in line with every place taken, it can cut in instead.
+    await item('Last job').click({ button: 'right' })
+    expect(await titles()).toEqual(['Open chat', 'New thread', 'Cut in', 'Copy title', 'Drop'])
+    await page.keyboard.press('Escape')
+
+    // A working one stops, asked first; then it can be tried again or dropped.
+    await item('Long job').click({ button: 'right' })
+    expect(await titles()).toEqual(['Open thread', 'Open chat', 'New thread', 'Stop', 'Copy title', 'Copy folder path'])
+    await menu.getByRole('menuitem', { name: 'Stop' }).click()
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Stop', exact: true }).click()
+    await expect(section.locator('[data-thread-row="Long job"]')).toHaveAttribute('data-work-status', 'stopped')
+    await item('Long job').click({ button: 'right' })
+    await expect(menu.getByRole('menuitem', { name: 'Try again' })).toBeVisible()
+    await menu.getByRole('menuitem', { name: 'Drop' }).click()
+    await expect(item('Long job')).toHaveCount(0)
+
+    // Open chat goes to the bot's chat on the Bots page.
+    await item('Next job').click({ button: 'right' })
+    await menu.getByRole('menuitem', { name: 'Open chat' }).click()
+    await expect(page.locator('.roster-row.selected', { hasText: name })).toBeVisible()
+  } finally {
+    // Open chat may already have gone to Bots, whose entry pressed again would fold the list away.
+    if (!(await page.locator('.nav-rail [data-page="bots"][aria-current="page"]').count())) await openPage(page, 'Bots').catch(() => {})
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
 test('Settings holds Instructions and Agent first, and Threads at once steps between 1 and 6', async () => {
   const { browser, page } = await attach()
   const name = `Threads at once e2e ${Date.now()}`

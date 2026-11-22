@@ -1,13 +1,14 @@
 """ACP agent whose turn waits: a steered message joins it, a cancel stops it, or it ends after `seconds`.
 
-Args: `steer|sends|voice|voice-wav|late|sends-late|limit|next|refuse|lingers|plain seconds [answer_delay]`. With `steer` it
+Args: `steer|sends|voice|voice-wav|late|sends-late|limit|next|refuse|lingers|drops|plain seconds [answer_delay]`. With `steer` it
 advertises `_session/steering` (top-level `_meta`, as Claude's and Codex's adapters do) and takes a steered message into
 its running turn; with `sends` it also calls `send_message` before it takes the message and again after, before its
 last text; with `voice` it sends a voice note (`send_file` with text) before it takes the message and ends with no more
 text (`voice-wav`: the same with four seconds of real, silent WAV a player can load); with `late` it ends that turn before answering; `sends-late` does both, calling `send_message` once; with `limit`
 that turn then fails the way Claude's adapter reports a usage limit; with `next` it advertises steering too but always
 answers that the message needs a turn of its own; with `refuse` it answers a steer with an error; with `lingers` it
-takes two seconds to wind down after a cancel. It answers a steer after `answer_delay` seconds, so a turn shorter than
+takes two seconds to wind down after a cancel; with `drops` it ends the turn it took a message into as cancelled, saying
+nothing (Codex on a refused card), and answers its next turn at once. It answers a steer after `answer_delay` seconds, so a turn shorter than
 that ends first. Every request is logged to requests.jsonl in its folder.
 """
 
@@ -60,7 +61,11 @@ def send_message(text):
     chat_tool("send_message", {"text": text})
 
 
-def run(rid):
+def run(rid, prompt):
+    if MODE == "drops" and turn.get("dropped"):
+        say("Got: " + " ".join(p.get("text", "") for p in prompt))
+        send({"id": rid, "result": {"stopReason": "end_turn"}})
+        return
     wake = threading.Event()
     turn.update(wake=wake, steered=None, cancelled=False)
     say("Working")
@@ -79,6 +84,10 @@ def run(rid):
         chat_tool("send_file", {"path": "note.wav", "text": "Listen before it joined"})
     wake.wait(SECONDS)
     turn["wake"] = None
+    if MODE == "drops" and turn["steered"]:
+        turn["dropped"] = True
+        send({"id": rid, "result": {"stopReason": "cancelled"}})
+        return
     if MODE == "sends" and turn["steered"]:
         say("About to send")
         send_message("After it joined")
@@ -128,7 +137,7 @@ with open("requests.jsonl", "a") as log:
             servers[:] = message["params"]["mcpServers"]
             send({"id": message["id"], "result": {"sessionId": SID}})
         elif method == "session/prompt":
-            threading.Thread(target=run, args=(message["id"],)).start()
+            threading.Thread(target=run, args=(message["id"], message["params"]["prompt"])).start()
         elif method == "_session/steering":
             threading.Thread(target=steer, args=(message,)).start()
         elif method == "session/cancel" and turn["wake"] is not None:

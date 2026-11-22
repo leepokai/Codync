@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn reads_who_signed_in_from_the_slots_own_files() {
-        let slot = crate::slot::tests::scratch();
+        let slot = crate::accounts::slot::tests::scratch();
         let named = |names: &Names| names.of(&slot.join(names.in_slot));
         assert_eq!((named(&CLAUDE), named(&CODEX), named(&OPENCODE)), (None, None, None), "a signed-out slot");
         let write = |path: &str, v: Value| {

@@ -3,11 +3,11 @@
 use super::fast_mode::Listing;
 use super::tool_entry::{activity, mark_bookkeeping, merge_tool_content};
 use super::{Actor, Reacted, Seg, SegKind};
-use crate::agent::acp::{self, Incoming};
 use crate::agent::elicitation::{self, Declined};
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{BotConfig, Entry, EntryKind, Lane};
+use codync_agent::acp::{self, Incoming};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
@@ -88,6 +88,7 @@ impl Actor {
                     self.agent_error = Some(error.to_owned());
                     return;
                 }
+                self.unheard.clear();
                 self.append(SegKind::Text, &t);
                 self.set_activity("Writing a reply…");
             }
@@ -97,6 +98,7 @@ impl Actor {
                 self.set_activity("Thinking…");
             }
             "tool_call" => {
+                self.unheard.clear();
                 self.close_seg();
                 let tool_id = u["toolCallId"].as_str().unwrap_or_default().to_owned();
                 let mut data = json!({

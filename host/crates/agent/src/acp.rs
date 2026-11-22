@@ -4,7 +4,6 @@
 
 use super::process::Process;
 use crate::LockExt;
-use crate::agent::fallback::reason::{self, Reason};
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
@@ -69,10 +68,17 @@ impl std::error::Error for RpcError {}
 pub fn needs_sign_in(e: &anyhow::Error) -> bool {
     let says_auth = |text: &str| text.to_lowercase().contains("auth");
     match e.chain().find_map(|c| c.downcast_ref::<RpcError>()) {
-        Some(r) if r.kind.is_some() => reason::of_rpc(r) == Some(Reason::SignedOut),
+        Some(r) if r.kind.is_some() => signed_out(r),
         Some(r) => r.code == AUTH_REQUIRED || says_auth(&r.message) || says_auth(&e.to_string()),
         None => says_auth(&e.to_string()),
     }
+}
+
+/// Whether an agent's error answer says it is signed out: ACP's code, or an adapter's category for it (the Agent
+/// SDK's `authentication_failed`, `CodeBuddy`'s `auth`…).
+pub fn signed_out(r: &RpcError) -> bool {
+    const KINDS: [&str; 4] = ["authentication_failed", "oauth_org_not_allowed", "unauthorized", "auth"];
+    r.code == AUTH_REQUIRED || r.kind.as_deref().is_some_and(|k| KINDS.contains(&k))
 }
 
 /// Whether a failed prompt may have left its session dead in the agent: an internal error the
@@ -184,8 +190,9 @@ pub struct Acp {
     /// The process and process group leader.
     #[cfg(unix)]
     pid: Option<u32>,
-    /// A cloud computer's keeper grants this process started with: revoked once it is stopped, or gone.
-    grants: std::sync::Mutex<crate::keeper::client::Grants>,
+    /// What the embedder ties to this process's life (a cloud computer's keeper grants): dropped once it is stopped,
+    /// or gone.
+    held: std::sync::Mutex<Option<Box<dyn Send>>>,
 }
 
 impl Acp {
@@ -294,7 +301,7 @@ impl Acp {
             child,
             #[cfg(unix)]
             pid,
-            grants: std::sync::Mutex::default(),
+            held: std::sync::Mutex::default(),
         });
         note_started(&acp);
         Ok((acp, rx))
@@ -305,19 +312,19 @@ impl Acp {
         self.pid
     }
 
-    /// Keeps the grants in this process's environment for as long as it runs (`stop` or drop revokes them).
-    pub fn hold(&self, grants: crate::keeper::client::Grants) {
-        *self.grants.locked() = grants;
+    /// Keeps `guard` (the grants in this process's environment) for as long as it runs: `kill` or drop drops it.
+    pub fn hold(&self, guard: impl Send + 'static) {
+        *self.held.locked() = Some(Box::new(guard));
     }
 
-    /// Whether it was started with keeper grants (which a restarted keeper no longer knows).
-    pub fn holds_grants(&self) -> bool {
-        !self.grants.locked().is_empty()
+    /// Whether it holds something from [`hold`](Self::hold).
+    pub fn holds(&self) -> bool {
+        self.held.locked().is_some()
     }
 
     /// Everything still running in the agent's job.
     #[cfg(windows)]
-    pub(crate) async fn job_processes(&self) -> Result<Vec<super::process::JobProcess>> {
+    pub async fn job_processes(&self) -> Result<Vec<super::process::JobProcess>> {
         self.child.lock().await.processes().await
     }
 
@@ -378,8 +385,8 @@ impl Acp {
         if !child.begin_stop() {
             return;
         }
-        let grants = std::mem::take(&mut *self.grants.locked());
-        drop(grants);
+        let held = self.held.locked().take();
+        drop(held);
         self.stdin.lock().await.take();
         let owned = self.child.clone();
         let mut stopping = STOPPING.locked();

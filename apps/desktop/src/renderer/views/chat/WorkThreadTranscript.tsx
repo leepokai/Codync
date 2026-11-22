@@ -10,6 +10,7 @@ import { useFetched } from '../../lib/use-fetched'
 import { useTr } from '../../lib/use-language'
 import type { ThreadRef } from '../../store/bot-store'
 import { useStore } from '../../store/context'
+import { AttachmentList } from './Attachments'
 import { AgentBubble, Bubble } from './ChatRows'
 import { TraceRow } from './TraceView'
 import { runningTurn } from './trace-turns'
@@ -113,9 +114,12 @@ function Mine({ entry, thread }: { entry: Entry; thread: ThreadRef }) {
   const status = entry.data.status
   return (
     <VStack align="flex-end" gap={4} className={status === 'queued' ? 'work-thread-mine queued' : 'work-thread-mine'} data-message-status={status}>
-      <Bubble className="bubble user selectable" items={() => [{ title: 'Copy', icon: 'square.on.square', action: () => copyMessageText(entry) }]}>
-        {entry.data.text}
-      </Bubble>
+      {entry.data.attachments?.length ? <AttachmentList attachments={entry.data.attachments} botId={entry.botId} /> : null}
+      {entry.data.text ? (
+        <Bubble className="bubble user selectable" items={() => [{ title: 'Copy', icon: 'square.on.square', action: () => copyMessageText(entry) }]}>
+          {entry.data.text}
+        </Bubble>
+      ) : null}
       <MineStatus entry={entry} thread={thread} />
     </VStack>
   )
@@ -145,7 +149,7 @@ function MineStatus({ entry, thread }: { entry: Entry; thread: ThreadRef }) {
           {/* Only one that never arrived can go again; one the host failed (a restart) is its record. */}
           {entry.rev === 0 && entry.data.clientNonce ? (
             <>
-              <IconButton title="Resend" icon="arrow.clockwise" size={24} disabled={store.isOffline} onClick={() => store.sendToThread(thread, entry.botId, entry.data.text ?? '', entry.data.clientNonce)} />
+              <IconButton title="Resend" icon="arrow.clockwise" size={24} disabled={store.isOffline} onClick={() => store.resendToThread(thread, entry)} />
               <IconButton title="Delete" icon="trash" size={24} onClick={() => store.discardFromThread(entry)} />
             </>
           ) : null}

@@ -23,8 +23,8 @@ CODYNC_AGENT_ACCOUNT=a1 XDG_DATA_HOME=/tmp/standin host/tests/fixtures/bin/devin
 
 ## Adding a stand-in
 
-1. Pick the agent in the host's catalog (`host/src/agent/backends/catalog.rs`, and for login profiles
-   `host/crates/accounts/src/agents.rs`) whose sign-in and login storage match the screen under test. Prefer one
+1. Pick the agent in the host's catalog (`host/crates/agent/src/backends/catalog.rs`, and for login profiles
+   `host/crates/agent/src/accounts/agents.rs`) whose sign-in and login storage match the screen under test. Prefer one
    that needs no CLI call to tell whether it is signed in (a login file), and that has its own ACP mode (`local`), so
    the host starts the script and not a registry build.
 2. Name the script after the first of the agent's `bins`, start it with `#!/usr/bin/env python3`, and make it

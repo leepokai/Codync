@@ -8,13 +8,13 @@ use super::{
     RequestStatus, STOPPED, check_request, finish_entry, request_prompt, visible_bot,
 };
 use crate::LockExt;
-use crate::agent::acp::truncate;
 use crate::agent::bot::Cmd;
 use crate::analytics::NetworkStage;
 use crate::hub::Hub;
 use crate::network::Target;
 use crate::store::{BotConfig, EntryKind, Lane};
 use anyhow::{Result, anyhow};
+use codync_agent::acp::truncate;
 use codync_network::{Address, Letter, Message, Node, Sent};
 use serde_json::{Value, json};
 use std::collections::HashMap;

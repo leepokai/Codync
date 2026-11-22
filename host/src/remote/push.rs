@@ -106,7 +106,7 @@ fn faces(hub: &Hub, bot: &BotConfig, from: Option<&str>) -> Vec<Value> {
 
 /// An alert's title and body as a phone's push and a desktop notification show them: cut to fit.
 fn alert_text(title: &str, body: &str) -> (String, String) {
-    (crate::agent::acp::truncate(title, 80), crate::agent::acp::truncate(body, 400))
+    (codync_agent::acp::truncate(title, 80), codync_agent::acp::truncate(body, 400))
 }
 
 /// What an alert seals for the phone: its text, the faces to draw and the unread total for the app icon.

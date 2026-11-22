@@ -272,7 +272,7 @@ pub(super) mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open(Path::new(":memory:")).unwrap();
         let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
-        let cfg: BotConfig = serde_json::from_value(json!({"id":"bot","name":"bot","backend":"fixture","cwd":dir,"command":crate::shell::python(&agent),"notify":false})).unwrap();
+        let cfg: BotConfig = serde_json::from_value(json!({"id":"bot","name":"bot","backend":"fixture","cwd":dir,"command":codync_agent::shell::python(&agent),"notify":false})).unwrap();
         store.save_bot(&cfg).unwrap();
         let python = if cfg!(windows) { "python" } else { "python3" };
         let c: super::super::Connector = serde_json::from_value(json!({"id":"fixture","name":"Fixture","command":python,"args":[PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/credential_mcp.py")]})).unwrap();

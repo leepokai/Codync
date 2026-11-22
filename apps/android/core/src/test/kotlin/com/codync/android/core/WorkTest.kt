@@ -77,8 +77,20 @@ class WorkTest {
         // More running than the ceiling (it was just lowered): none free, and the heading says what is true, `3 / 2`.
         assertEquals(0 to 2, workSections(work, 2).let { it.free to it.atOnce })
         // A host that sends no ceiling counts as three.
-        assertEquals(WorkSections(emptyList(), 3, emptyList(), emptyList()), workSections(emptyList(), null))
+        assertEquals(WorkSections(emptyList(), 0, 3, emptyList(), emptyList()), workSections(emptyList(), null))
         assertEquals(0 to 3, workSections(work, null).let { it.free to it.atOnce })
+    }
+
+    @Test fun `a thread waiting on the user gives its seat up, as the host says`() {
+        val work = work("""[{"id":"a","status":"working","seat":true},{"id":"b","status":"needsYou","seat":false},{"id":"c","status":"waiting","seat":false}]""")
+        val sections = workSections(work, 2)
+        assertEquals(Triple(2, 1, 1), Triple(sections.threads.size, sections.inUse, sections.free))
+        // A seat is free: nothing has to give way.
+        assertFalse(canCutIn(work, 2))
+        // An older host says nothing: every live task takes one.
+        val old = listOf(task("a", WorkStatus.Working), task("b", WorkStatus.NeedsYou), task("c", WorkStatus.Waiting))
+        assertEquals(2, workSections(old, 2).inUse)
+        assertTrue(canCutIn(old, 2))
     }
 
     @Test fun `only the tasks a thread has are live`() {
@@ -203,9 +215,10 @@ class WorkTest {
     }
 
     @Test fun `the host says which tasks take a message`() {
-        val tasks = work("""[{"id":"a","status":"working","thread":"t","talk":true,"folder":"/Users/kai/code/app"},
+        val tasks = work("""[{"id":"a","status":"working","thread":"t","talk":true,"talkFiles":true,"folder":"/Users/kai/code/app"},
             {"id":"b","status":"working","thread":"t2","talk":false,"source":{"kind":"routine","id":"r"}}, {"id":"c","status":"waiting","folder":null}]""")
         assertEquals(listOf(true, false, false), tasks.map { it.talk })
+        assertEquals(listOf(true, false, false), tasks.map { it.talkFiles })
         assertEquals(listOf("/Users/kai/code/app", null, null), tasks.map { it.folder })
     }
 
@@ -299,5 +312,18 @@ class WorkTest {
         assertEquals(listOf(true, false, false, true), listOf(told, tool, mine, again).map { it.isToldToThread })
         assertEquals(ThreadTranscript(null, listOf(tool)), threadTranscript(listOf(tool)))
         assertEquals(ThreadTranscript(null, emptyList()), threadTranscript(emptyList()))
+    }
+
+    @Test fun `what the chat passed on is quoted in the thread, never queued over its composer`() {
+        fun entry(id: String, data: String) =
+            Entry(id, id.drop(1).toLong(), "thread-1", 1, "user", data = Json.parseToJsonElement(data).jsonObject)
+        val told = entry("e1", """{"text":"Fix login","from":"host"}""")
+        val mine = entry("e2", """{"text":"Also the docs","status":"queued"}""")
+        val passed = entry("e3", """{"text":"And the tests","from":"host","relay":true,"status":"queued"}""")
+        val thread = threadTranscript(listOf(told, mine, passed))
+        assertEquals(listOf(mine), thread.queue(working = true))
+        assertEquals(listOf(passed), thread.hidingQueue(working = true))
+        assertEquals(emptyList<Entry>(), thread.queue(working = false))
+        assertEquals(listOf(mine, passed), thread.hidingQueue(working = false))
     }
 }

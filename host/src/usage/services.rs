@@ -11,10 +11,11 @@ use super::{
     opencode, vibe,
 };
 use crate::LockExt;
-use crate::agent::{backends, login_profiles};
+use crate::agent::login_profiles;
 use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::{Context, Result};
+use codync_agent::backends;
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use serde::Serialize;
@@ -219,8 +220,8 @@ fn used_agents(store: &Store) -> HashSet<&'static str> {
     bots.iter()
         .filter(|bot| !bot.deleted)
         .flat_map(|bot| {
-            let fallbacks = bot.config.fallbacks.iter().map(|fallback| fallback.backend.as_str());
-            std::iter::once(bot.config.backend.as_str()).chain(fallbacks)
+            let c = &bot.config;
+            std::iter::once(c.backend.as_str()).chain(c.fallback_steps().map(|step| step.backend.as_str()))
         })
         .filter_map(|backend| backends::harness_of(backend).map(|harness| harness.id))
         .collect()

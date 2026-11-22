@@ -15,6 +15,7 @@ use crate::hub::Hub;
 use crate::store::{BotConfig, Fallback, Store};
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 /// Most fallbacks a bot has.
@@ -37,15 +38,33 @@ pub fn backend(cfg: &BotConfig, step: usize) -> &str {
 
 /// The bot as step `step` runs it: that step's agent and model, everything else the bot's.
 pub fn effective(cfg: &BotConfig, step: usize) -> BotConfig {
-    let mut out = cfg.clone();
-    if let Some(f) = fallback_at(cfg, step) {
-        out.backend.clone_from(&f.backend);
-        out.command.clone_from(&f.command);
-        out.login_profile.clone_from(&f.login_profile);
-        out.model.clone_from(&f.model);
-        out.model_options.clone_from(&f.model_options);
+    fallback_at(cfg, step).map_or_else(|| cfg.clone(), |f| on(cfg, f))
+}
+
+/// The bot on step `f`: its agent, login and model, everything else the bot's.
+fn on(cfg: &BotConfig, f: &Fallback) -> BotConfig {
+    BotConfig {
+        backend: f.backend.clone(),
+        command: f.command.clone(),
+        login_profile: f.login_profile.clone(),
+        model: f.model.clone(),
+        model_options: f.model_options.clone(),
+        ..cfg.clone()
     }
-    out
+}
+
+/// The bot as its threads run it: in Advisor mode on its threads' agent (`thread_agent`) and their fallbacks, as a
+/// step on that agent runs, everything else the bot's; otherwise the bot as it is. A picked mode of the chat's agent
+/// becomes Auto on another, as a client's edit makes it, and the chat's Fast mode (a model option) stays with it.
+pub fn threads(cfg: &BotConfig) -> BotConfig {
+    let Some(agent) = &cfg.thread_agent else { return cfg.clone() };
+    let other = agent.backend != cfg.backend;
+    BotConfig {
+        fast_mode: cfg.fast_mode && !other,
+        mode: if other { codync_agent::modes::on_other_agent(cfg.mode.as_deref()) } else { cfg.mode.clone() },
+        fallbacks: cfg.thread_fallbacks.clone(),
+        ..on(cfg, agent)
+    }
 }
 
 /// The first step, in order, whose login `passed` doesn't pass over and that isn't resting at `now`.
@@ -72,6 +91,13 @@ pub fn step_of(cfg: &BotConfig, login: &str) -> Option<usize> {
 pub fn tidy(cfg: &mut BotConfig) {
     let mut seen = HashSet::from([login::of(cfg)]);
     cfg.fallbacks.retain(|f| seen.insert(step_login(f)));
+    // Advisor mode: the threads' chain starts at their own agent, and there is none without it.
+    let Some(threads) = cfg.thread_agent.as_ref().map(step_login) else {
+        cfg.thread_fallbacks.clear();
+        return;
+    };
+    let mut seen = HashSet::from([threads]);
+    cfg.thread_fallbacks.retain(|f| seen.insert(step_login(f)));
 }
 
 fn step_login(f: &Fallback) -> String {
@@ -91,20 +117,32 @@ pub fn saved_steps<'a>(saved: &'a [Fallback], agents: &[&str]) -> Vec<Option<&'a
 
 /// The agents of `cfg`'s chain that are resting at `now` (`resting` on the bot's wire shape).
 pub fn resting(store: &Store, cfg: &BotConfig, now: i64) -> Vec<Value> {
-    (0..steps(cfg))
-        .filter_map(|s| {
-            let r = rest::get(store, &login(cfg, s), now)?;
-            let on = fallback_at(cfg, s).map_or(cfg.login_profile.as_ref(), |f| f.login_profile.as_ref());
-            Some(json!({"agent": backend(cfg, s), "loginProfile": on, "until": r.until, "reason": r.reason}))
-        })
-        .collect()
+    let mut out = Vec::new();
+    // Advisor mode's threads' chain as well, so its rows say so too.
+    for cfg in chains(cfg) {
+        for s in 0..steps(&cfg) {
+            let Some(r) = rest::get(store, &login(&cfg, s), now) else { continue };
+            let profile = fallback_at(&cfg, s).map_or(cfg.login_profile.as_ref(), |f| f.login_profile.as_ref());
+            let rests =
+                json!({"agent": backend(&cfg, s), "loginProfile": profile, "until": r.until, "reason": r.reason});
+            if !out.contains(&rests) {
+                out.push(rests);
+            }
+        }
+    }
+    out
+}
+
+/// `cfg`'s chain, and in Advisor mode its threads' too.
+fn chains(cfg: &BotConfig) -> impl Iterator<Item = Cow<'_, BotConfig>> {
+    std::iter::once(Cow::Borrowed(cfg)).chain(cfg.thread_agent.is_some().then(|| Cow::Owned(threads(cfg))))
 }
 
 /// Login `rested` started or stopped resting: every bot that uses it shows it.
 pub fn tell_bots(hub: &Hub, rested: &str) {
     let Ok(rows) = hub.store.bots() else { return };
     for row in rows.iter().filter(|r| !r.deleted && !r.config.is_group()) {
-        if (0..steps(&row.config)).any(|s| login(&row.config, s) == rested) {
+        if chains(&row.config).any(|cfg| (0..steps(&cfg)).any(|s| login(&cfg, s) == rested)) {
             hub.emit_bot(&row.config.id);
         }
     }
@@ -136,7 +174,7 @@ pub fn check(cfg: &BotConfig) -> Result<()> {
     let mut seen = HashSet::from([login::of(cfg)]);
     for f in &cfg.fallbacks {
         let custom = f.command.as_deref().is_some_and(|c| !c.trim().is_empty());
-        if !custom && !crate::agent::backends::is_known(&f.backend) {
+        if !custom && !codync_agent::backends::is_known(&f.backend) {
             bail!("unknown fallback agent {}", f.backend);
         }
         if !seen.insert(step_login(f)) {
@@ -151,10 +189,10 @@ pub fn name(backend: &str) -> String {
     if backend == "custom" {
         return "Custom command".into();
     }
-    if let Some(h) = crate::agent::backends::harness(backend) {
+    if let Some(h) = codync_agent::backends::harness(backend) {
         return h.name.into();
     }
-    crate::agent::registry::agent(backend)
+    codync_agent::registry::agent(backend)
         .and_then(|a| a["name"].as_str().map(str::to_owned))
         .unwrap_or_else(|| backend.to_owned())
 }
@@ -200,6 +238,48 @@ mod tests {
     }
 
     #[test]
+    fn in_advisor_mode_threads_run_on_their_own_agent_and_fallbacks() {
+        let step = |backend: &str, model: &str| Fallback {
+            backend: backend.into(),
+            model: Some(model.into()),
+            ..Fallback::default()
+        };
+        let base = BotConfig { mode: Some("acceptEdits".into()), fast_mode: true, ..bot(&[("codex", None)]) };
+        assert_eq!(threads(&base).backend, "claude", "off: the chat's own agent");
+        let advisor = BotConfig {
+            thread_agent: Some(step("codex", "gpt-5")),
+            thread_fallbacks: vec![step("gemini", "pro")],
+            ..base.clone()
+        };
+        let on = threads(&advisor);
+        assert_eq!(
+            (on.backend.as_str(), on.model.as_deref(), on.mode.as_deref(), on.fast_mode),
+            ("codex", Some("gpt-5"), Some(codync_agent::modes::AUTO), false),
+            "another agent: its own model, Auto for the chat's picked mode, no fast mode"
+        );
+        assert_eq!(on.fallbacks, [step("gemini", "pro")], "the threads' fallbacks, not the chat's");
+        let lighter = BotConfig { thread_agent: Some(step("claude", "haiku")), ..base };
+        assert_eq!(threads(&lighter).mode.as_deref(), Some("acceptEdits"), "the same agent keeps the mode");
+    }
+
+    #[test]
+    fn advisor_modes_chain_starts_at_the_threads_agent_and_goes_with_it() {
+        let mut cfg = bot(&[]);
+        cfg.thread_agent = Some(Fallback { backend: "codex".into(), ..Fallback::default() });
+        cfg.thread_fallbacks = bot(&[("claude", None), ("codex", None), ("gemini", None), ("gemini", None)]).fallbacks;
+        tidy(&mut cfg);
+        let steps: Vec<_> = cfg.thread_fallbacks.iter().map(|f| f.backend.as_str()).collect();
+        assert_eq!(
+            steps,
+            ["claude", "gemini"],
+            "the chat's agent may carry the threads on; the threads' own is theirs"
+        );
+        cfg.thread_agent = None;
+        tidy(&mut cfg);
+        assert!(cfg.thread_fallbacks.is_empty(), "off: no threads' chain is kept");
+    }
+
+    #[test]
     fn a_new_turn_starts_on_the_first_agent_that_isnt_resting() {
         let store = Store::open(std::path::Path::new(":memory:")).expect("a store");
         let cfg = bot(&[("codex", Some("gpt")), ("gemini", None)]);
@@ -241,6 +321,7 @@ mod tests {
 
     #[test]
     fn the_chain_names_each_agent_once() {
+        crate::agent::init_runtime();
         assert!(check(&bot(&[("codex", None), ("gemini", None)])).is_ok());
         assert!(check(&bot(&[("claude", Some("sonnet"))])).is_err(), "the bot's own agent again");
         assert!(check(&bot(&[("codex", None), ("codex", Some("o3"))])).is_err());

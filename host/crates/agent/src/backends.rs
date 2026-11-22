@@ -8,8 +8,8 @@
 //! is resolved only when it's tried: an installed CLI that starts never downloads
 //! a second copy.
 
-use crate::agent::{acp, node, registry};
 use crate::shell;
+use crate::{acp, node, registry};
 use serde_json::{Value, json};
 use std::path::Path;
 
@@ -18,8 +18,8 @@ mod search_path;
 mod sign_in;
 mod workbuddy;
 pub use catalog::HARNESSES;
-#[cfg(all(test, unix))]
-pub(crate) use search_path::TestSearchPath;
+#[cfg(any(test, feature = "test-support"))]
+pub use search_path::TestSearchPath;
 pub use search_path::{hydrate_path, on_path, which};
 pub use sign_in::{
     SignInCheck, agent_checks_off, apply_prompt_refusal, clear_prompt_refused, cli_signed_in, note_prompt_refused,
@@ -71,8 +71,9 @@ impl Install {
             Self::Script(s) | Self::Scripts { unix: s, .. } if cfg!(unix) => Some(s.to_owned()),
             Self::Script(_) => None,
             Self::Scripts { windows, .. } => Some(windows.to_owned()),
-            Self::Npm(pkg) => crate::service::current_exe()
-                .ok()
+            Self::Npm(pkg) => super::setup::get()
+                .exe
+                .as_ref()
                 .map(|exe| format!("{} npm install -g {pkg}", shell::quote(&exe.to_string_lossy()))),
         }
     }

@@ -32,7 +32,7 @@ pub(super) fn spoken(text: &str, max: usize) -> String {
         out.push_str(&words.join(" "));
         out.push(' ');
     }
-    crate::agent::acp::truncate(out.split_whitespace().collect::<Vec<_>>().join(" ").as_str(), max)
+    codync_agent::acp::truncate(out.split_whitespace().collect::<Vec<_>>().join(" ").as_str(), max)
 }
 
 /// The call's lines, newest last, as many of the newest as fit `cap` characters.

@@ -4,12 +4,12 @@
 //! codync-network (`remote`), and the user's cloud assistant reaches this computer's bots through
 //! the Codync connector (`assistant`).
 
-use crate::agent::acp::truncate;
 use crate::agent::bot::Cmd;
 use crate::hub::Hub;
 use crate::network::Recipient;
 use crate::store::{BotConfig, BotRow, EntryKind, Lane, Store};
 use anyhow::{Result, anyhow, bail};
+use codync_agent::acp::truncate;
 use codync_network::Access;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};

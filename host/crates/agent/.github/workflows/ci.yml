@@ -1,4 +1,4 @@
-# Runs in the codync-accounts mirror, where this folder is the repository root. In Codync it is inert: GitHub reads
+# Runs in the codync-agent mirror, where this folder is the repository root. In Codync it is inert: GitHub reads
 # only the root .github, and Codync's host workflow checks the crate there.
 name: CI
 

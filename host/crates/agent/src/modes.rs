@@ -9,6 +9,11 @@ use serde_json::{Value, json};
 /// Claude's id: an agent that calls it something else (Codex's `agent`, "Auto review") is listed under it.
 pub const AUTO: &str = "auto";
 
+/// A mode a bot picked, as it carries over to another agent, whose mode ids are its own: a picked one becomes Auto.
+pub fn on_other_agent(mode: Option<&str>) -> Option<String> {
+    mode.map(|_| AUTO.to_owned())
+}
+
 /// One mode, with the agent's own id and words.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Mode {
@@ -34,8 +39,8 @@ pub struct Modes {
     pub lowered_from: Option<String>,
 }
 
-/// How freely a turn may work at most, whatever the bot's mode: what the network's rules allow the sender of the
-/// text it works on (`codync_network::Access`).
+/// How freely a turn may work at most, whatever the bot's mode (in Codync, what the network's rules allow the sender
+/// of the text it works on).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ceiling {
     /// The agent asks before every change and command (a read-only mode where it has no such mode: there it asks
@@ -43,16 +48,6 @@ pub enum Ceiling {
     Ask,
     /// The agent's Auto mode at most: it does by itself what it judges safe.
     Auto,
-}
-
-impl Ceiling {
-    pub fn of(access: codync_network::Access) -> Option<Self> {
-        match access {
-            codync_network::Access::Ask => Some(Self::Ask),
-            codync_network::Access::Auto => Some(Self::Auto),
-            codync_network::Access::Allow | codync_network::Access::Deny => None,
-        }
-    }
 }
 
 /// What a session does for the mode a bot wants (see [`switch`]).
@@ -385,8 +380,6 @@ mod tests {
         // A fallback step without the bot's mode: no freer than the bot's, as its stand-in.
         assert_eq!(under(&codex, Some("plan"), Ceiling::Auto).as_deref(), Some("read-only"));
         assert_eq!(under(&codex, Some("build"), Ceiling::Auto), None, "how free the bot's mode is can't be told");
-        assert_eq!(Ceiling::of(codync_network::Access::Allow), None);
-        assert_eq!(Ceiling::of(codync_network::Access::Ask), Some(Ceiling::Ask));
     }
 
     #[test]

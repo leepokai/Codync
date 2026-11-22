@@ -53,12 +53,26 @@ pub fn current_exe() -> std::io::Result<PathBuf> {
     })
 }
 
+/// Opens a link or file with this computer's default app for it (a web page: the browser). Whether it started.
+pub fn open(target: &std::ffi::OsStr) -> bool {
+    let mut command = if cfg!(windows) {
+        let mut c = Command::new("rundll32");
+        c.arg("url.dll,FileProtocolHandler");
+        c
+    } else {
+        Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" })
+    };
+    let opener = command.arg(target).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    // Waited for, so the host, which runs for days, keeps no exited opener around.
+    opener.map(|mut opener| std::thread::spawn(move || opener.wait())).is_ok()
+}
+
 pub fn binary_identity() -> Option<&'static (String, String)> {
     BINARY_IDENTITY.get()
 }
 
 /// How long a stopping host may take: its bots get 5 s, then its agents and dev servers up to 10 s to end by themselves
-/// and 15 s to end from their leaves up (`agent/acp.rs`, `agent/process.rs`), then its analytics are sent (3 s). launchd
+/// and 15 s to end from their leaves up (`codync_agent::acp`, `codync_agent::process`), then its analytics are sent (3 s). launchd
 /// waits as long before it kills the host (`ExitTimeOut`), which would leave its agents running.
 const HOST_EXIT: Duration = Duration::from_secs(40);
 
@@ -456,14 +470,14 @@ mod tests {
     fn run_statusline(cmd: &str) -> String {
         let exe = format!("'{}'", current_exe().unwrap().to_string_lossy());
         let args = cmd.strip_prefix(&exe).expect("our wrapper");
-        let out = crate::shell::line(&format!("printf '%s\\0' {args}")).std().output().unwrap();
+        let out = codync_agent::shell::line(&format!("printf '%s\\0' {args}")).std().output().unwrap();
         let printed = String::from_utf8(out.stdout).unwrap();
         let cli = <crate::Cli as clap::Parser>::try_parse_from(
             std::iter::once("codync-host").chain(printed.split_terminator('\0')),
         )
         .unwrap();
         let Some(crate::Sub::Statusline { command, wrapped, .. }) = cli.cmd else { panic!("not statusline") };
-        let out = crate::shell::line(&command.unwrap_or_else(|| wrapped.join(" "))).std().output().unwrap();
+        let out = codync_agent::shell::line(&command.unwrap_or_else(|| wrapped.join(" "))).std().output().unwrap();
         String::from_utf8(out.stdout).unwrap()
     }
 
@@ -471,7 +485,7 @@ mod tests {
     #[test]
     fn a_wrapped_status_line_keeps_its_shell_quoting() {
         for original in ["printf '%s|' 'a b' c", r#"/bin/sh -c 'X="a  b"; printf "%s|" "$X"' && printf ok"#] {
-            let expected = crate::shell::line(original).std().output().unwrap();
+            let expected = codync_agent::shell::line(original).std().output().unwrap();
             let f = temp_settings(&json!({"statusLine": {"type": "command", "command": original}}).to_string());
             ensure_statusline(&f).unwrap();
             let cmd = read(&f)["statusLine"]["command"].as_str().unwrap().to_owned();

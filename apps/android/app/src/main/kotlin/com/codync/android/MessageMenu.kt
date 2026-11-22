@@ -13,7 +13,7 @@ import com.codync.android.design.ReactionPick
  * (each when the row offers it). A message's text copies with [textCopyItem], followed by Select Text ([textItems]); a
  * picture in it with [imageCopyItems], in the same place.
  */
-internal class MessageMenu(val reactions: ReactionPick, val reply: (() -> Unit)?, val trace: (() -> Unit)?,
+internal class MessageMenu(val reactions: ReactionPick?, val reply: (() -> Unit)?, val trace: (() -> Unit)?,
     val selectText: (() -> Unit)? = null) {
     /** `copy` first, then the rest; `leave` runs before an item that goes elsewhere (the viewer closes itself). */
     fun items(copy: List<MenuItem>, leave: () -> Unit = {}): List<MenuItem> = copy + listOfNotNull(
@@ -27,6 +27,9 @@ internal class MessageMenu(val reactions: ReactionPick, val reply: (() -> Unit)?
     companion object {
         fun of(entry: Entry, store: AppStore, reply: (() -> Unit)?, trace: (() -> Unit)?, selectText: (() -> Unit)? = null) =
             MessageMenu(reactionPick(entry, store), reply, trace, selectText.takeIf { offersSelectText(entry, replyable = reply != null) })
+
+        /** A message of a thread's own transcript: its copy items alone, no reactions, reply or steps. */
+        val copyOnly = MessageMenu(reactions = null, reply = null, trace = null)
 
         /** Select Text goes where Reply does, on a message with text of its own (an artifact card's is only its title). */
         fun offersSelectText(entry: Entry, replyable: Boolean) = replyable && entry.text.isNotBlank() && entry.artifact == null

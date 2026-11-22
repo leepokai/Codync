@@ -1,6 +1,5 @@
-//! Command lines: the one place Unix and Windows differ in how agents, setup
-//! terminals and wrapped status lines start, and in how a link opens. Unix runs a
-//! line with `sh -c`, Windows with `cmd /c`.
+//! Command lines: the one place Unix and Windows differ in how agents and other
+//! commands start. Unix runs a line with `sh -c`, Windows with `cmd /c`.
 //!
 //! Windows hands the line to `cmd` through an environment variable: `cmd`
 //! expands `%VAR%` before it parses, so the line's own quotes survive whatever
@@ -190,33 +189,14 @@ pub fn env_prefix<'a>(pairs: impl IntoIterator<Item = (&'a str, &'a str)>) -> St
     if pairs.is_empty() || cfg!(windows) { pairs } else { format!("env {pairs}") }
 }
 
-/// Opens a link or file with this computer's default app for it (a web page: the browser). Whether it started.
-pub fn open(target: &std::ffi::OsStr) -> bool {
-    let mut command = if cfg!(windows) {
-        let mut c = std::process::Command::new("rundll32");
-        c.arg("url.dll,FileProtocolHandler");
-        c
-    } else {
-        std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" })
-    };
-    let opener = command
-        .arg(target)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
-    // Waited for, so the host, which runs for days, keeps no exited opener around.
-    opener.map(|mut opener| std::thread::spawn(move || opener.wait())).is_ok()
-}
-
 /// `program` as spawnable: its full path when it's on the search path. Windows
 /// needs this for npm's `.cmd` shims, which `CreateProcess` won't find by name.
 pub fn program(name: &str) -> PathBuf {
-    crate::agent::backends::which(name).unwrap_or_else(|| name.into())
+    crate::backends::which(name).unwrap_or_else(|| name.into())
 }
 
 /// The command that runs a Python test fixture.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn python(script: &std::path::Path) -> String {
     let python = if cfg!(windows) { "python" } else { "python3" };
     format!("{python} -u {}", quote(&script.to_string_lossy()))

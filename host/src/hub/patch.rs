@@ -37,11 +37,8 @@ pub(super) fn patched(stored: &BotConfig, patch: &Value) -> Result<BotConfig> {
         cfg.model_options.clear();
     }
     // So do modes, to one agent: on another, a picked mode becomes its Auto mode, as the apps do it.
-    if cfg.backend != stored.backend
-        && patch.get("mode").is_none()
-        && cfg.mode.as_deref().is_some_and(|m| m != crate::agent::modes::AUTO)
-    {
-        cfg.mode = Some(crate::agent::modes::AUTO.into());
+    if cfg.backend != stored.backend && patch.get("mode").is_none() {
+        cfg.mode = codync_agent::modes::on_other_agent(cfg.mode.as_deref());
     }
     if cfg.kind != stored.kind {
         bail!("a bot can't become a group, or a group a bot");

@@ -4,10 +4,10 @@
 use super::devices::Caller;
 use super::str_arg;
 use crate::LockExt;
-use crate::agent::backends;
 use crate::hub::Hub;
 use crate::usage;
 use anyhow::{Context, Result, anyhow, bail};
+use codync_agent::backends;
 use serde_json::{Value, json};
 use std::ops::ControlFlow;
 use std::sync::Arc;

@@ -5,11 +5,11 @@ use super::{
     report, same_server, save,
 };
 use crate::LockExt;
-use crate::agent::process::{self, Process};
 use crate::analytics::Event;
 use crate::hub::Hub;
 use crate::store::now_ms;
 use anyhow::{Context, Result, bail};
+use codync_agent::process::{self, Process};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
@@ -110,7 +110,7 @@ async fn start(hub: Arc<Hub>, saved: Saved) -> Result<()> {
 async fn spawn(hub: &Arc<Hub>, saved: &Saved) -> Result<()> {
     // Not `shell::exec`: a command line may start with variables or chain several commands. The login shell's
     // environment, never the agent's: that one can hold its API keys.
-    let mut command = crate::shell::line(&saved.command).tokio();
+    let mut command = codync_agent::shell::line(&saved.command).tokio();
     command
         .current_dir(&saved.folder)
         .stdin(Stdio::null())

@@ -103,7 +103,7 @@ impl Actor {
     /// A cloud computer's keeper started again (`Cmd::KeeperRestarted`), so the grants the agent started with are gone.
     pub(super) async fn keeper_restarted(&mut self) {
         let Some(conn) = &self.conn else { return };
-        match after_keeper(conn.acp.holds_grants(), conn.sessions.reopen.is_some(), self.turn.is_some()) {
+        match after_keeper(conn.acp.holds(), conn.sessions.reopen.is_some(), self.turn.is_some()) {
             AfterKeeper::Nothing => {}
             AfterKeeper::BeforeNextTurn => self.restart_before_turn = true,
             AfterKeeper::AfterTurn => self.restart_after_turn = true,

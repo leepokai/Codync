@@ -44,6 +44,12 @@ private func updateBody(_ draft: BotDraft) throws -> [String: Any] {
     // Nothing the host doesn't have is sent back.
     let body = try updateBody(BotDraft(older))
     #expect(body["fallbacks"] == nil && body["selfFallbacks"] == nil)
+    // Nor Advisor mode.
+    #expect(older.threadAgent == nil && older.threadFallbacks == nil)
+    #expect(body["threadAgent"] == nil && body["threadFallbacks"] == nil)
+    // An agent it can't read leaves Advisor mode unknown, so saving never turns it off.
+    let unreadable = try bot(#"{"id":"b","threadAgent":{"model":7},"threadFallbacks":[]}"#)
+    #expect(unreadable.threadAgent == nil && unreadable.threadFallbacks == nil)
     let odd = try bot(#"{"id":"b","fallbacks":"x","agentStep":{"step":"one"},"resting":[1]}"#)
     #expect(odd.fallbacks == nil && odd.agentStep == nil && odd.resting.isEmpty)
 }
@@ -72,6 +78,34 @@ private func updateBody(_ draft: BotDraft) throws -> [String: Any] {
     var edited = draft
     edited.notify = false
     #expect(edited.rebased(from: base, onto: fresh).fallbacks == fresh.fallbacks)
+}
+
+@Test func advisorModeStartsTheThreadsOnTheBotsOwnAgentAndChainAndAnotherThreadsAgentDropsItsLoginFromTheirs() throws {
+    let codex = BotFallback(backend: "codex")
+    let draft = BotDraft(try bot(#"{"id":"b","backend":"claude","model":"opus","fallbacks":[{"backend":"codex","model":null}],"threadAgent":null,"threadFallbacks":[]}"#))
+    #expect(draft.threadAgent == nil && draft.threadFallbacks == [])
+    #expect(try updateBody(draft)["threadAgent"] is NSNull, "a host with Advisor mode: off is sent as null")
+    var on = draft
+    on.setAdvisor(true, backends: [])
+    #expect(on.threadAgent == BotFallback(backend: "claude", model: "opus") && on.threadFallbacks == [codex])
+    var moved = on
+    moved.setThreadAgent("codex")
+    #expect(moved.threadAgent == BotFallback(backend: "codex") && moved.threadFallbacks == [])
+    var again = moved
+    again.setThreadAgent("codex")
+    #expect(again == moved)
+    #expect(moved.fallbacks == [codex], "the chat's chain is its own")
+    let body = try updateBody(moved)
+    #expect((body["threadAgent"] as? [String: Any])?["backend"] as? String == "codex")
+    #expect((body["threadFallbacks"] as? [Any])?.isEmpty == true)
+    var off = moved
+    off.setAdvisor(false, backends: [])
+    #expect(off.threadAgent == nil && off.threadFallbacks == [])
+    let gemini = try JSONDecoder().decode(Backend.self, from: Data(#"{"id":"gemini","name":"Gemini","available":true,"command":"gemini","installHint":""}"#.utf8))
+    var custom = draft
+    custom.backend = "custom"
+    custom.setAdvisor(true, backends: [gemini])
+    #expect(custom.threadAgent?.backend == "gemini" && custom.threadFallbacks == [], "the picker has no custom command")
 }
 
 @Test func switchingHarnessResetsModelAndEffortTogether() {

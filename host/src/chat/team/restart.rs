@@ -8,11 +8,11 @@ use super::{
     Back, BotReply, MessageLifetime, REQUEST_QUOTE_BYTES, RequestStatus, finish_entry, relayed, request_prompt,
     visible_bot,
 };
-use crate::agent::acp::truncate;
 use crate::agent::bot::Cmd;
 use crate::analytics::errors::host_error;
 use crate::hub::Hub;
 use crate::store::{Entry, INTERRUPTED};
+use codync_agent::acp::truncate;
 use codync_network::Access;
 use std::sync::Arc;
 

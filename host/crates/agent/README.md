@@ -1,4 +1,45 @@
-# codync-accounts
+# codync-agent
+
+Coding agents on one computer, for an app that runs them. It is the part of [Codync](https://github.com/leepokai/Codync)'s
+host that is true of the agents themselves, with no app in it:
+
+- **`backends`** knows the agent CLIs (Claude Code, Codex, OpenCode, Gemini CLI, Cursor, Devin, Pi, …): where each one
+  is installed, how to install and update it, how it signs in, and what its exit means when it quits at start.
+- **`registry`** reads the [ACP registry](https://agentclientprotocol.com) and resolves an entry to a command, downloading
+  its binary or npm package; **`node`** provides a Node.js for npm agents on a computer without one.
+- **`acp`** speaks the Agent Client Protocol (JSON-RPC on stdio) to a started agent and tells its failures apart
+  (signed out, exited, timed out, a model or mode it lacks); **`process`** owns the process tree each agent starts,
+  so stopping the agent stops everything under it (a session of its own on Unix, a job object on Windows).
+- **`modes`** reads an agent's permission modes (its Auto among them) and picks the one to switch to.
+- **`accounts`** gives an agent more than one login on the same computer (below).
+
+```rust,no_run
+use std::path::PathBuf;
+
+// The app's one HTTP client, set up only once a request goes out.
+fn http() -> &'static reqwest::Client {
+    static CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(reqwest::Client::new);
+    &CLIENT
+}
+
+// Once at start, before any agent runs.
+codync_agent::init(codync_agent::Setup {
+    data_dir: PathBuf::from("/var/app/agents"),
+    exe: std::env::current_exe().ok(),
+    http,
+});
+
+# async fn run() -> anyhow::Result<()> {
+let candidates = codync_agent::backends::launch_candidates("claude")?;
+let command = candidates.into_iter().next().expect("Claude Code is known").resolve(|_| {}).await?;
+let (agent, _updates) = codync_agent::acp::Acp::spawn(&command.acp(), "/path/to/project", &[])?;
+let init = agent.request("initialize", serde_json::json!({"protocolVersion": 1})).await?;
+# let _ = init;
+# Ok(())
+# }
+```
+
+## Accounts
 
 More than one login to the same coding agent on one computer, so several agents can run at once on different
 accounts. It is the part of [Codync](https://github.com/leepokai/Codync)'s login profiles (the account kind) that is true of the agents
@@ -19,7 +60,7 @@ token to use it, never stores one, and never asks a provider who an account is.
 | Gemini CLI (`gemini`) | `GEMINI_CLI_HOME`, `GEMINI_FORCE_ENCRYPTED_FILE_STORAGE=false` | its CLI | everything in `~/.gemini` but its login files and `antigravity-acp` |
 
 ```rust
-use codync_accounts::{Account, agent};
+use codync_agent::accounts::{Account, agent};
 use std::path::Path;
 
 let claude = agent("claude").expect("Claude Code can have accounts");
@@ -31,7 +72,7 @@ claude.share(Path::new("/home/me"), &slot)?;
 
 // The agent's process, and its CLI's sign-in, run with these.
 let env = claude.env(&slot, &account.id);
-# Ok::<(), codync_accounts::Error>(())
+# Ok::<(), codync_agent::accounts::Error>(())
 ```
 
 What stays with the app: where the `Account` records are saved, running the agent's sign-in (`Agent::sign_in`) and

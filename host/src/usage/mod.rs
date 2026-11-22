@@ -194,7 +194,7 @@ impl Usage {
 
     /// The windows of `backend`'s login: `profile`'s, or the default one's.
     pub fn windows(&self, backend: &str, profile: Option<&str>) -> Option<&[Window]> {
-        let id = crate::agent::backends::agent_id(backend);
+        let id = codync_agent::backends::agent_id(backend);
         let provider = self.providers.iter().find(|p| p.id == id)?;
         match profile {
             None => Some(&provider.windows),
@@ -342,7 +342,7 @@ async fn readers(hub: &Arc<Hub>, pick: fn(&Hub) -> Vec<&'static Reader>) -> Vec<
 /// Each reading lands as it comes in: a slow agent doesn't hold back the others. A reader that can read a login
 /// profile reads each one listed under its agent, beside the default login.
 async fn read(hub: &Hub, readers: Vec<&'static Reader>) {
-    if crate::agent::backends::agent_checks_off() {
+    if codync_agent::backends::agent_checks_off() {
         return;
     }
     let mut readings: FuturesUnordered<BoxFuture<'_, ()>> = FuturesUnordered::new();

@@ -79,6 +79,10 @@ Writing to an item's thread adds only: `itemId` on `send`, `steer` and `unqueue`
 read as before, with those entries among the steps, and an item the user reopened elsewhere as working again. A
 host from before it sends no `talk`, so a newer app shows no composer there. It raises no floor.
 
+Files in a message to a thread add only: `taskId` on `upload` and `readUpload`, `attachments` on a `send` with
+`taskId`, and `work[].talkFiles`. A host from before it sends no `talkFiles`, so a newer app shows no + (and takes no
+drop or paste) in a thread's box; an app from before it never attaches there. It raises no floor.
+
 Apps older than 2.39.0 don't read `removed`: a queued message taken back on a newer client (`unqueue`) stays in their
 chat as *Not sent — stopped*. Nothing breaks and the message never went out, so it raises no floor.
 

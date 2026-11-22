@@ -443,7 +443,7 @@ impl Actor {
     /// agent answers them, unless none can: `fall_back`). Signing in there brings the bot back (`fallback::signed_in`).
     /// Once per turn.
     fn left_signed_out(&mut self, login: &Login) {
-        if crate::agent::backends::harness(&login.backend).is_some() && !self.relay.signed_out.contains(login) {
+        if codync_agent::backends::harness(&login.backend).is_some() && !self.relay.signed_out.contains(login) {
             self.relay.signed_out.push(login.clone());
             self.sign_in_card(login, &[]);
         }

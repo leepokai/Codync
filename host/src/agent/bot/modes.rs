@@ -1,4 +1,4 @@
-//! Keeps each live session in the bot's mode (`BotConfig::mode`, see `agent::modes`): set once per session, and
+//! Keeps each live session in the bot's mode (`BotConfig::mode`, see `codync_agent::modes`): set once per session, and
 //! again after the user picks another (none: the mode the session opened in). The agent may leave it during the
 //! session (Plan, once the plan is approved; Auto, on a model without it), and that stands until the next session.
 //! Asked for Auto, an agent without it keeps its own mode and Codync asks about whatever it asks; a mode the agent
@@ -9,10 +9,19 @@
 
 use super::Actor;
 use super::fast_mode::Listing;
-use crate::agent::acp;
-use crate::agent::modes::{Ceiling, Mode, Modes, Switch, switch};
 use anyhow::{Result, bail};
+use codync_agent::acp;
+use codync_agent::modes::{Ceiling, Mode, Modes, Switch, switch};
 use serde_json::{Value, json};
+
+/// The mode a network rule holds a turn to: `Allow` and `Deny` hold none (a denied sender gets no turn).
+fn ceiling(access: codync_network::Access) -> Option<Ceiling> {
+    match access {
+        codync_network::Access::Ask => Some(Ceiling::Ask),
+        codync_network::Access::Auto => Some(Ceiling::Auto),
+        codync_network::Access::Allow | codync_network::Access::Deny => None,
+    }
+}
 
 impl Actor {
     /// Records the session's modes from an agent answer or a `config_option_update`; the one it opened in stays.
@@ -39,7 +48,7 @@ impl Actor {
     /// A fallback step lacking it runs in its stand-in, with a notice; without one, or refused, it's a `ModeMissing`
     /// failure, so the turn moves on to the next agent.
     pub(super) async fn sync_mode(&mut self, sid: &str) -> Result<()> {
-        if let Some(ceiling) = Ceiling::of(self.hub.ceilings.access(&self.cfg.id)) {
+        if let Some(ceiling) = ceiling(self.hub.ceilings.access(&self.cfg.id)) {
             return self.sync_mode_under(sid, ceiling).await;
         }
         let Some(conn) = self.conn.as_ref() else { return Ok(()) };
@@ -149,5 +158,19 @@ impl Actor {
         if let Some(conn) = self.conn.as_mut() {
             conn.mode_set.clear();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use codync_network::Access;
+
+    #[test]
+    fn a_network_rule_holds_a_turn_to_ask_or_auto() {
+        assert_eq!(ceiling(Access::Ask), Some(Ceiling::Ask));
+        assert_eq!(ceiling(Access::Auto), Some(Ceiling::Auto));
+        assert_eq!(ceiling(Access::Allow), None);
+        assert_eq!(ceiling(Access::Deny), None);
     }
 }

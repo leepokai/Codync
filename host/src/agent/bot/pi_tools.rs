@@ -6,8 +6,8 @@
 // stays while the turn-error hook does.
 
 use super::codex_names::{self, Renamed};
-use crate::agent::acp::{INTERNAL_ERROR, RpcError};
 use anyhow::{Context, Result};
+use codync_agent::acp::{INTERNAL_ERROR, RpcError};
 use serde_json::{Map, Value, json};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

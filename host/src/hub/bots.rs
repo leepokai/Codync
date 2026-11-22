@@ -74,7 +74,10 @@ impl Hub {
             if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&before) {
                 crate::chat::memory::changed(self, Some(&id));
             }
-            if cfg.fallbacks != before.fallbacks {
+            if cfg.fallbacks != before.fallbacks
+                || cfg.thread_agent != before.thread_agent
+                || cfg.thread_fallbacks != before.thread_fallbacks
+            {
                 crate::chat::work::fallbacks_changed(self, &cfg);
             }
             self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
@@ -108,8 +111,9 @@ impl Hub {
         }
         crate::chat::work::forget(self, id);
         crate::network::publish(self);
-        // Its shared files and artifacts are unreachable once the bot is deleted.
-        let folders = [crate::chat::files::root(id), crate::chat::artifacts::root(id)];
+        // Its shared files, artifacts and the files sent to it (a thread's, a group's) are unreachable once it is deleted.
+        let folders =
+            [crate::chat::files::root(id), crate::chat::artifacts::root(id), crate::chat::uploads::data_root(id)];
         let bot = id.to_owned();
         tokio::task::spawn_blocking(move || {
             crate::chat::memory::files::remove_bot(&bot);

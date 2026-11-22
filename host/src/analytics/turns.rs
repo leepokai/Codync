@@ -26,10 +26,12 @@ pub enum TurnSource {
     Routine,
     Group,
     Bot,
-    /// The host's own turn, with no message of the user's (the lead opening a call).
+    /// The host's own turn, with no message of the user's: the lead opening a call, the reports of the bot's tasks.
     Host,
     /// A follow-up the bot set for itself came due.
     FollowUp,
+    /// The watchdog's look at one of the bot's tasks that seems stuck.
+    Watchdog,
 }
 
 /// A turn that ended, as its actor knows it (`turn_finished`).
@@ -65,6 +67,7 @@ pub fn turn_finished(hub: &Hub, bot: &BotConfig, turn: TurnEnd<'_>) {
         TurnSource::Bot => "bot",
         TurnSource::Host => "host",
         TurnSource::FollowUp => "follow_up",
+        TurnSource::Watchdog => "watchdog",
     };
     let mut p = json!({"agent": bot.backend, "outcome": outcome, "stop_reason": stop_reason, "source": source, "seconds": ms.max(0) / 1000});
     let access = hub.ceilings.access(&bot.id);
@@ -191,9 +194,9 @@ pub fn agent_command_sent(hub: &Hub, agent: &str) {
 
 /// Why a turn failed, as a category (plus the agent's JSON-RPC error, for its code and own
 /// category): never the error's text, which can hold paths and agent output.
-fn failure_kind(e: &anyhow::Error) -> (&'static str, Option<&crate::agent::acp::RpcError>) {
-    use crate::agent::acp::{Failure, FailureKind, RpcError};
+fn failure_kind(e: &anyhow::Error) -> (&'static str, Option<&codync_agent::acp::RpcError>) {
     use crate::agent::fallback::{Reason, reason};
+    use codync_agent::acp::{Failure, FailureKind, RpcError};
     if let Some(f) = e.chain().find_map(|c| c.downcast_ref::<Failure>()) {
         let kind = match f.kind {
             FailureKind::NotSetUp => "not_installed",
@@ -205,7 +208,7 @@ fn failure_kind(e: &anyhow::Error) -> (&'static str, Option<&crate::agent::acp::
         return (kind, None);
     }
     // The same two tests that put a sign-in card in the chat (`invite_sign_in`, `fall_back`).
-    if crate::agent::acp::needs_sign_in(e) || reason::of(e) == Some(Reason::SignedOut) {
+    if codync_agent::acp::needs_sign_in(e) || reason::of(e) == Some(Reason::SignedOut) {
         return ("sign_in", None);
     }
     for cause in e.chain() {
@@ -262,8 +265,8 @@ mod tests {
 
     #[test]
     fn a_failed_turn_names_its_kind_not_its_text() {
-        use crate::agent::acp::{Failure, FailureKind, RpcError};
         use anyhow::Context as _;
+        use codync_agent::acp::{Failure, FailureKind, RpcError};
         let code = |e: &anyhow::Error| {
             let (kind, rpc) = failure_kind(e);
             (kind, rpc.map(|r| r.code))
@@ -316,7 +319,7 @@ mod tests {
 
     #[test]
     fn a_turn_the_user_must_set_up_is_not_a_failure() {
-        use crate::agent::acp::{AUTH_REQUIRED, Failure, FailureKind, RpcError};
+        use codync_agent::acp::{AUTH_REQUIRED, Failure, FailureKind, RpcError};
         let failed = |e: anyhow::Error| outcome_name(TurnOutcome::Failed, Some(failure_kind(&e).0));
         assert_eq!(failed(Failure::error(FailureKind::NotSetUp, "Codex isn't set up")), "needs_setup");
         assert_eq!(failed(RpcError { code: AUTH_REQUIRED, message: "x".into(), kind: None }.into()), "needs_setup");

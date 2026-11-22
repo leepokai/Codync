@@ -120,6 +120,12 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     @Synchronized internal fun hasNonce(botId: String, nonce: String): Boolean = readableDatabase.rawQuery(
         "SELECT 1 FROM entries WHERE bot_id=? AND nonce=? LIMIT 1", arrayOf(botId, nonce)).use { it.moveToFirst() }
 
+    /** One row's original payload. The snapshot does not decode this when the row is over [PER_MESSAGE_CHARS]. */
+    @Synchronized internal fun storedPayload(botId: String, id: String): String? = readableDatabase.rawQuery(
+        "SELECT payload FROM entries WHERE bot_id=? AND id=? LIMIT 1", arrayOf(botId, id)).use {
+        if (it.moveToFirst()) it.getString(0) else null
+    }
+
     /**
      * Which drafts' message ids the mirror already holds as a sent message, without decoding payloads, so a draft is not
      * offered twice. A draft's key is its chat's id, or "chat/artifact/id" for one of its artifacts: the message is the chat's.

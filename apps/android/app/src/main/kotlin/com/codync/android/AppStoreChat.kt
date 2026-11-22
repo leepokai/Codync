@@ -29,6 +29,12 @@ fun AppStore.openBot(id: String?) {
 }
 fun AppStore.showTrace(show: Boolean) { mutableState.update { it.copy(trace = show) } }
 
+/** The full text of one stored row. Call off the main thread. Does not change the resident snapshot. */
+internal fun AppStore.storedMessageText(entry: Entry): String? = runCatching {
+    val payload = database?.storedPayload(entry.botId, entry.id) ?: return@runCatching null
+    WireJson.decodeFromString<Entry>(payload).threadNamed().storedDisplayText().takeIf { it.isNotBlank() }
+}.getOrNull()
+
 /**
  * Starts a call in [botId]'s open chat once this computer is connected (iOS `requestVoiceCall`); the chat takes it
  * (`takeCallRequest`). A computer that can't be reached is an error instead.

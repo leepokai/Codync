@@ -3,7 +3,11 @@ package com.codync.android
 import com.codync.android.core.Entry
 import com.codync.android.core.WireJson
 import com.codync.android.core.threadNamed
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /** Characters counted for one stored payload, however long the row in SQLite is. */
@@ -129,8 +133,25 @@ private fun boundedEntry(head: String, fullLength: Long): Entry? {
         rev = fields["rev"]?.toLongOrNull() ?: 0L,
         kind = fields["kind"].orEmpty(),
         turn = fields["turn"]?.toLongOrNull() ?: 0L,
-        data = buildJsonObject { put("text", "Large message kept in storage ($fullLength characters).") },
+        data = buildJsonObject {
+            put("text", storedStubText(fullLength))
+            put("storedOnly", true)
+        },
     )
+}
+
+/** The sentence a resident stub shows. The full payload stays in SQLite. */
+internal fun storedStubText(fullLength: Long) = "Large message kept in storage ($fullLength characters)."
+
+/** True only for a row this process built instead of decoding. Never written back to SQLite. */
+internal val Entry.isStoredStub: Boolean
+    get() = data["storedOnly"]?.jsonPrimitive?.booleanOrNull == true
+
+/** Text to show for one decoded payload: the message, or a tool row's output. */
+internal fun Entry.storedDisplayText(): String {
+    if (text.isNotBlank()) return text
+    fun field(key: String) = (data[key] as? JsonPrimitive)?.contentOrNull
+    return field("output")?.takeIf { it.isNotBlank() } ?: field("title").orEmpty()
 }
 
 /** Top-level JSON fields that [head] holds in full. A value cut off at the end is left out. */

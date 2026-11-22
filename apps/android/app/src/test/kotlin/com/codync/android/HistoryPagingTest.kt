@@ -50,7 +50,16 @@ class HistoryPagingTest {
         assertEquals(listOf(10L), kept.map { it.seq })
         assertFalse(filler in kept.single().text)
         assertTrue(kept.single().text.length < 200)
-        assertTrue(kept.single().text.contains(huge.length.toString()))
+        assertTrue(kept.single().isStoredStub)
+        assertEquals(storedStubText(huge.length.toLong()), kept.single().text)
+    }
+
+    @Test fun `a normal row is not a stub and a tool row shows its output`() {
+        val hello = row(1, "user").copy(data = buildJsonObject { put("text", "hello") })
+        assertFalse(hello.isStoredStub)
+        assertEquals("hello", hello.storedDisplayText())
+        val tool = row(2, "tool").copy(data = buildJsonObject { put("output", "tool output") })
+        assertEquals("tool output", tool.storedDisplayText())
     }
 
     @Test fun `an oversized newest row stays a stub and an older row still loads`() {

@@ -12,6 +12,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +38,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -43,6 +47,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -63,7 +68,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.codync.android.core.*
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * One endless conversation with a bot or a group, as iOS `ChatView`: only deliberate messages
@@ -75,6 +83,15 @@ import kotlinx.coroutines.delay
 }
 
 @Composable private fun ChatView(bot: Bot, state: AppState, store: AppStore, editGroup: (Bot) -> Unit) {
+    val storedScope = rememberCoroutineScope()
+    var storedSheetText by remember { mutableStateOf<String?>(null) }
+    val openStoredMessage: (Entry) -> Unit = { entry ->
+        storedScope.launch {
+            val text = withContext(Dispatchers.IO) { store.storedMessageText(entry) }
+            if (text != null) storedSheetText = text
+        }
+    }
+    CompositionLocalProvider(LocalShowStoredMessage provides openStoredMessage) {
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Chat))
     val context = LocalContext.current
     // The bot's details sheet and the page it opens on.
@@ -203,6 +220,18 @@ import kotlinx.coroutines.delay
     CodyncSheet(callLine, { callLine = null }) { CallConversationView(bot.id, it, state, store) }
     CodyncSheet(app, { app = null; setupEntry = null }) { ComposioConnectSheet(it, state, store, setupEntry) { store.refreshPlugins() } }
     CodyncSheet(connector, { connector = null; setupEntry = null }) { InstallConnectorSheet(it, state, store, setupEntry) }
+    CodyncSheet(storedSheetText != null, { storedSheetText = null }) { StoredMessageSheet(storedSheetText.orEmpty()) }
+    }
+}
+
+/** One stored payload, opened from a stub. The string leaves memory when the sheet closes. */
+@Composable private fun StoredMessageSheet(text: String) {
+    Column {
+        ModalHeader("Stored message")
+        Box(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            SelectionContainer { Text(text, style = Type.body, color = Palette.text) }
+        }
+    }
 }
 
 /** The glass back button, the title (tapping it opens the bot's details) and the connection under it. */
@@ -298,7 +327,9 @@ import kotlinx.coroutines.delay
 }
 
 /** [bot]'s chat. What voice calls carried shows in each call's conversation instead. */
-private fun AppState.chatEntries(bot: Bot) = entries.filter { it.botId == bot.id && it.isChat }.hidingCalls()
+private fun AppState.chatEntries(bot: Bot) = entries.filter {
+    it.botId == bot.id && (it.isChat || (it.isStoredStub && it.kind == "agent"))
+}.hidingCalls()
 
 /** [bot]'s rows. A call's message that failed to send stays here, to be sent again; messages waiting behind the bot's
  *  work show above the composer instead. */

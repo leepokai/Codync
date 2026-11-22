@@ -7,11 +7,13 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.52.1
+## 2.53.0
 ### zh-Hant
+- Claude Code 的 Bot 使用 subagent 時，展開的工作步驟、「完整對話」和 task 的 thread 裡，subagent 做的步驟會縮排在啟動它的那一步底下；那一步也會顯示 subagent 的類型、用了多少 token 和花了多久，在背景執行的則顯示「在背景執行」。
 - 第一次打開很長的聊天時，會直接停在最新的訊息，不會再跳到較早的訊息。
 
 ### en-US
+- When a Claude Code bot uses subagents, each subagent's steps sit indented under the step that started it, in the unfolded working steps, Full conversation and a task's thread. That step also shows the subagent's type, the tokens it used and how long it took, or "in background" for one that runs in the background.
 - Opening a long chat for the first time now lands on its newest message instead of earlier ones.
 
 ## 2.52.0

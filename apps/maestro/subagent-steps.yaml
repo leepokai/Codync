@@ -1,0 +1,31 @@
+# A subagent's steps on the phones: in Full conversation each subagent's calls sit indented under the call that launched
+# it, which reads its kind, tokens and time ("general-purpose · 42.3k tokens · 6 s"), or "in background". The phone must
+# already be paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes):
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags subagents \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e SUBAGENT_AGENT="$PWD/host/tests/fixtures/subagent_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - subagents
+onFlowComplete:
+  - runScript:
+      file: subagent-steps.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: subagent-steps.js
+- runFlow: subflows/bot-list.yaml
+- tapOn: "${output.bot.name}.*"
+- extendedWaitUntil:
+    visible: "Both subagents are done."
+    timeout: 30000
+- waitForAnimationToEnd
+- longPressOn: "Both subagents are done."
+- tapOn: "Show what it did"
+- extendedWaitUntil:
+    visible: "general-purpose · 42.3k tokens · 6 s"
+    timeout: 10000
+- assertVisible: "Explore · in background"
+- assertVisible: "ls -la"
+- assertVisible: "pwd"
+- takeScreenshot: subagent-steps-${maestro.platform}

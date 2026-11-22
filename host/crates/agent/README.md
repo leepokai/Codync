@@ -46,7 +46,8 @@ let init = agent.request("initialize", serde_json::json!({"protocolVersion": 1})
 What an agent sends arrives on the channel `Acp::spawn` returns, as `Incoming`:
 
 - **`Incoming::Update`**: a `session/update` as a typed `events::Event` with the session it is about: reply text,
-  reasoning, tool calls and their changes (`ToolCall`, only what was sent is `Some`), the plan, context usage,
+  reasoning, tool calls and their changes (`ToolCall`, only what was sent is `Some`; with Claude's adapter also the
+  subagent call that launched it, `parent`, and on a subagent's launch what it reported, `subagent`), the plan, context usage,
   compactions, modes, config options and `/` commands. A kind this crate doesn't know yet is `Event::Other` with the
   update as sent, so a newer adapter never breaks reading.
 - **`Incoming::Request`**: a request to the app, such as a permission (`Request::permission`, with the options it offers

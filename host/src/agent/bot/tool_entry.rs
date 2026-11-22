@@ -5,7 +5,7 @@ use super::codex_names::{Renamed, name_of};
 use crate::chat::memory::files;
 use crate::store::BotConfig;
 use codync_agent::acp;
-use codync_agent::events::ToolContent;
+use codync_agent::events::{Subagent, ToolContent};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
@@ -31,6 +31,29 @@ pub(super) fn merge_tool_content(data: &mut Value, content: Option<&[ToolContent
     }
     if !diffs.is_empty() {
         data["diffs"] = diffs.into();
+    }
+}
+
+/// Who made a call, and what a subagent's launch says about it: `parent`, the call that launched the subagent making
+/// this one, and on the launch `subagent` (`kind`, `model`, `background`, `tokens`, `toolUses`, `durationMs`), each
+/// field kept until an update sends it again. Nothing is written for other calls, so their data stays as it was.
+pub(super) fn merge_subagent(data: &mut Value, parent: Option<String>, subagent: Option<Subagent>) {
+    if let Some(parent) = parent {
+        data["parent"] = parent.into();
+    }
+    let Some(s) = subagent else { return };
+    let fields = [
+        ("kind", s.kind.map(Value::from)),
+        ("model", s.model.map(Value::from)),
+        ("background", s.background.map(Value::from)),
+        ("tokens", s.tokens.map(Value::from)),
+        ("toolUses", s.tool_uses.map(Value::from)),
+        ("durationMs", s.duration_ms.map(Value::from)),
+    ];
+    for (key, value) in fields {
+        if let Some(value) = value {
+            data["subagent"][key] = value;
+        }
     }
 }
 
@@ -92,11 +115,19 @@ fn keeps_memory(cfg: &BotConfig, renamed: &Renamed, data: &Value) -> bool {
         .any(|path| folders.iter().any(|dir| Path::new(path).starts_with(dir)))
 }
 
-/// Flags whether a call is the bot's own bookkeeping (composing its message, keeping its memory), which the
-/// working steps a chat unfolds leave out. An update can change the title or paths, so the flag follows them.
+/// A Claude subagent handing its report back to the parent (`SubagentHandback`, made by the subagent itself): plumbing,
+/// whose report the parent goes on with.
+fn hands_back(data: &Value) -> bool {
+    data["title"] == "SubagentHandback" && data["parent"].is_string()
+}
+
+/// Flags whether a call is the bot's own bookkeeping (composing its message, keeping its memory, a subagent handing
+/// back), which the working steps a chat unfolds leave out. An update can change the title or paths, so the flag follows them.
 /// Always written, so clients tell an older host's unflagged call from one that isn't bookkeeping.
 pub(super) fn mark_bookkeeping(cfg: &BotConfig, renamed: &Renamed, data: &mut Value) {
-    let flag = sends_message(data["title"].as_str().unwrap_or_default(), renamed) || keeps_memory(cfg, renamed, data);
+    let flag = sends_message(data["title"].as_str().unwrap_or_default(), renamed)
+        || keeps_memory(cfg, renamed, data)
+        || hands_back(data);
     data["bookkeeping"] = flag.into();
 }
 

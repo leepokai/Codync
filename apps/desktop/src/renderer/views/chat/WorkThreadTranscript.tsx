@@ -12,8 +12,8 @@ import type { ThreadRef } from '../../store/bot-store'
 import { useStore } from '../../store/context'
 import { AttachmentList } from './Attachments'
 import { AgentBubble, Bubble } from './ChatRows'
-import { TraceRow } from './TraceView'
-import { runningTurn } from './trace-turns'
+import { Nested, TraceRow } from './TraceView'
+import { nestedSteps, runningTurn } from './trace-turns'
 import { copyMessageText } from './use-image-actions'
 import './trace.css'
 import './work.css'
@@ -57,8 +57,10 @@ export function WorkThreadTranscript({ thread, task, openArtifact, showInChat }:
       ) : null}
       {!failed && fetched === null && entries.length === 0 ? <div className="work-thread-note" aria-label={tr('Loading')}><Spinner /></div> : null}
       {!failed && fetched !== null && entries.length === 0 ? <Text as="div" size="footnote" tone="tertiary" className="work-thread-note">{tr('Nothing yet.')}</Text> : null}
-      {rest.map((entry) => (
-        <Row key={entry.id} entry={entry} thread={thread} unfolded={entry.turn === running} openArtifact={openArtifact} showInChat={showInChat} />
+      {nestedSteps(rest).map(({ entry, depth }) => (
+        <Nested key={entry.id} depth={depth}>
+          <Row entry={entry} thread={thread} unfolded={entry.turn === running} openArtifact={openArtifact} showInChat={showInChat} />
+        </Nested>
       ))}
     </VStack>
   )

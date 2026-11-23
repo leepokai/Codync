@@ -116,6 +116,9 @@ pub fn tools() -> Value {
     setup["hidden"] = json!({"type": "boolean", "description": "Hide it from the user's bot list, or show it again."});
     setup["paused"] = json!({"type": "boolean", "description": "Pause it: it answers nothing and spends nothing until it is resumed (its queued routine runs are cancelled, and messages sent to it are refused with a notice). Resume with false."});
     setup["validateOnly"] = json!({"type": "boolean", "description": "Check the change and return whether it is valid (with the resolved model), without applying anything, without an approval card, and without an audit entry. dryRun is an alias."});
+    // `paused` and the dry-run are update-only: create_bot makes a running bot and checks nothing in advance.
+    let mut update_setup = setup.clone();
+    update_setup["dryRun"] = json!({"type": "boolean", "description": "Alias of validateOnly."});
     json!([
         {
             "name": "list_team",
@@ -173,11 +176,12 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
         }
         "list_models" => {
             // The agent to list: named directly, or else a managed bot's own agent (`botId`).
-            let agent = if let Some(agent) = text(args, "agent")? {
-                agent
+            let (agent, bot_model) = if let Some(agent) = text(args, "agent")? {
+                (agent, None)
             } else {
                 let bot = text(args, "botId")?.context("pass agent, or botId for a managed bot's agent")?;
-                agent_bot(hub, &bot)?.backend
+                let cfg = agent_bot(hub, &bot)?;
+                (cfg.backend, Some(cfg.model))
             };
             let query = text(args, "query")?.map(|q| q.to_ascii_lowercase());
             // A first-ever load can build the agent's model registry, which is slow: cap it at the window
@@ -197,7 +201,7 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
                     id.contains(query) || name.contains(query)
                 });
             }
-            Ok(json!({"agent": agent, "models": models, "currentModelId": catalog["currentModelId"]}))
+            Ok(json!({"agent": agent, "models": models, "currentModelId": catalog["currentModelId"], "botModel": bot_model}))
         }
         "create_bot" => create(hub, &source, args).await,
         "update_bot" => update(hub, &source, args).await,
@@ -212,6 +216,9 @@ async fn create(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         bail!(
             "bots already created {MAX_CREATED} of the user's bots: ask the user to delete some or to create this one"
         );
+    }
+    if !args["paused"].is_null() || !args["validateOnly"].is_null() || !args["dryRun"].is_null() {
+        bail!("create_bot has no paused or dry-run: create the bot, then change it with update_bot");
     }
     let mut fields = setup_patch(args, &[])?;
     if !fields.contains_key("name") {

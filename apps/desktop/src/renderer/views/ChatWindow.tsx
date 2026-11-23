@@ -43,6 +43,7 @@ import { useFindBar } from './use-conversation-find'
 import { SearchPalette } from './SearchPalette'
 import { WorkflowsView } from './workflows/WorkflowsView'
 import { canOpenWorkflows } from './workflows/pins'
+import { computerChoice, firstAmong } from './computer-choice'
 import { AccountWelcomeView, useWelcomeGate } from './AccountWelcomeView'
 import { ComputerAccessView } from './computer-access/ComputerAccessView'
 import { AccessOnboarding } from './computer-access/AccessOnboarding'
@@ -328,12 +329,10 @@ function ChatSplitView() {
 
   const create = (kind: CreateTarget['kind']) => {
     // The selected bot's computer if it's online, else this computer, else any online one.
-    const target = [selectedStore, app.local].find((s) => s && onlineStores.includes(s)) ?? onlineStores[0]
+    const target = firstAmong(onlineStores, [selectedStore, app.local])
     if (target) setCreating({ kind, computerId: target.computer.id })
   }
-  const computerChoice = creating && onlineStores.length > 1
-    ? { options: onlineStores.map((s) => ({ id: s.computer.id, label: s.hostName })), selection: creating.computerId, onChange: (computerId: string) => setCreating({ ...creating, computerId }) }
-    : null
+  const newChoice = creating ? computerChoice(onlineStores, creating.computerId, (computerId) => setCreating({ ...creating, computerId })) : null
 
   useEffect(
     () =>
@@ -388,14 +387,12 @@ function ChatSplitView() {
     ...(localOnline ? [{ title: 'Import bots…', icon: 'square.and.arrow.down', action: () => setImporting(true) }] : []),
   ]
 
-  // The computer asked for by name, else the selected bot's, this one, any online one.
-  // Its computer: the one asked for, else the selected bot's, this one, any online.
-  const workflowStore = (workflowsOf ? app.store(workflowsOf) : null) ?? selectedStore ?? app.local ?? onlineStores[0] ?? null
-  const workflows = !!workflowStore && canOpenWorkflows(workflowStore)
+  // Of the computers offering workflows: the one asked for, else the selected bot's, this one, any.
+  const workflowStores = onlineStores.filter(canOpenWorkflows)
+  const workflowStore = firstAmong(workflowStores, [workflowsOf ? app.store(workflowsOf) : null, selectedStore, app.local])
+  const workflowsChoice = computerChoice(workflowStores, workflowStore?.computer.id, (id) => openWorkflows(id))
   const extensionsStore = (extensionsOf ? app.store(extensionsOf) : null) ?? selectedStore ?? app.local ?? onlineStores[0] ?? null
-  const extensionsChoice = extensionsStore && onlineStores.length > 1
-    ? { options: onlineStores.map((s) => ({ id: s.computer.id, label: s.hostName })), selection: extensionsStore.computer.id, onChange: setExtensionsOf }
-    : null
+  const extensionsChoice = computerChoice(onlineStores, extensionsStore?.computer.id, setExtensionsOf)
 
   // One plain list. The lead stays in sight: no hide.
   const botActions = (bot: Bot, store: BotStore): MenuItem[] => [
@@ -523,7 +520,7 @@ function ChatSplitView() {
         setTitle={setBarTitle}
         setEnd={setBarEnd}
       />
-      <NavRail page={page} go={go} working={threads.working} approvals={app.approvals.length} workflows={workflows} />
+      <NavRail page={page} go={go} working={threads.working} approvals={app.approvals.length} workflows={!!workflowStore} />
       {listed ? (
         <>
           <aside ref={sidebar} className={`sidebar ${resizing ? 'resizing' : ''}`} style={{ width }} inert={listHidden}>
@@ -584,11 +581,11 @@ function ChatSplitView() {
             <ThreadDetail roster={threadRoster} picked={picked} pick={setPicked} starting={starting} start={setStarting} openChat={(ref) => { app.select(ref); setPage('bots') }} />
           </WindowBarSlots.Provider>
         </main>
-      ) : page === 'workflows' && workflowStore && workflows ? (
+      ) : page === 'workflows' && workflowStore ? (
         <main className="detail">
           <StoreContext.Provider value={workflowStore}>
             <WindowBarSlots.Provider value={{ start: barStart, title: null, end: barEnd }}>
-              <WorkflowsView key={workflowStore.computer.id} focusId={workflowFocus} roster={threadRoster} openChat={(ref) => { app.select(ref); setPage('bots') }} />
+              <WorkflowsView key={workflowStore.computer.id} focusId={workflowFocus} computer={workflowsChoice} roster={threadRoster} openChat={(ref) => { app.select(ref); setPage('bots') }} />
             </WindowBarSlots.Provider>
           </StoreContext.Provider>
         </main>
@@ -636,7 +633,7 @@ function ChatSplitView() {
         {creating && createStore ? (
           <StoreContext.Provider value={createStore}>
             {/* A group's bots belong to its computer: another computer starts it over. */}
-            {creating.kind === 'bot' ? <NewBotView computer={computerChoice} /> : <NewGroupView key={creating.computerId} computer={computerChoice} />}
+            {creating.kind === 'bot' ? <NewBotView computer={newChoice} /> : <NewGroupView key={creating.computerId} computer={newChoice} />}
           </StoreContext.Provider>
         ) : null}
       </Sheet>

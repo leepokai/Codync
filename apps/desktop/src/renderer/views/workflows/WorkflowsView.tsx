@@ -12,6 +12,8 @@ import { WindowBarSlots } from '../WindowBar'
 import { useTr } from '../../lib/use-language'
 import { useScreenViewed } from '../../store/analytics'
 import { useStore } from '../../store/context'
+import type { ComputerChoice } from '../computer-choice'
+import { ComputerPicker } from '../ComputerPicker'
 import { createWorkflow, deleteWorkflow, fetchWorkflow, fetchWorkflowRun, renameWorkflow, restoreWorkflowVersion, retryWorkflowStep, runWorkflowStep, saveWorkflowGraph, saveWorkflowScript, setWorkflowEnabled, startWorkflowRun, stopWorkflowRun, stopWorkflowStep, decideWorkflowStep, workflowRuns, workflowVersion, workflowVersions } from './api'
 import { UndoStack } from './history'
 import { isWorkflowPinned, pinWorkflow, workflowTabs } from './pins'
@@ -28,8 +30,11 @@ import './workflows.css'
 
 type Phase = 'begin' | 'change' | 'end' | 'text'
 
-/** `roster` and `openChat`: the bots the chat beside the canvas can be with, and where a bot's chat opens. */
-export function WorkflowsView({ focusId, roster, openChat }: { focusId?: string | null; roster: RosterItem[]; openChat: (ref: BotRef) => void }) {
+/**
+ * `roster` and `openChat`: the bots the chat beside the canvas can be with, and where a bot's chat opens.
+ * `computer`: with several computers offering workflows, the picker before the tabs that shows another's.
+ */
+export function WorkflowsView({ focusId, roster, openChat, computer = null }: { focusId?: string | null; roster: RosterItem[]; openChat: (ref: BotRef) => void; computer?: ComputerChoice | null }) {
   const store = useStore()
   const tr = useTr()
   useModel(store)
@@ -322,7 +327,13 @@ export function WorkflowsView({ focusId, roster, openChat }: { focusId?: string 
     <div className="workflows-page" ref={page}>
     <div className="workflows">
       {bar.end && selected && store.buildsWorkflowsInThreads ? createPortal(<IconButton title={chatting ? 'Hide chat' : 'Show chat'} icon="sidebar.right" size={28} onClick={() => setChatOpen(!chatOpen)} />, bar.end) : null}
-      {bar.start && tabs.length ? createPortal(<WorkflowTabs tabs={tabs} selectedId={selected} onOpen={open} onClose={closeShown} onCreate={() => void create()} />, bar.start) : null}
+      {bar.start && (computer || tabs.length) ? createPortal(
+        <HStack gap={8} shrink>
+          {computer ? <ComputerPicker choice={computer} /> : null}
+          {tabs.length ? <WorkflowTabs tabs={tabs} selectedId={selected} onOpen={open} onClose={closeShown} onCreate={() => void create()} /> : null}
+        </HStack>,
+        bar.start,
+      ) : null}
       {chrome || !selected ? (
       <WorkflowHud
         title={summary?.title ?? ''}

@@ -144,7 +144,7 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
         AgentModelPicker(state, store::agentModels, draft.backend, draft.model, draft.modelOptions, draft.fastMode ?: false, bot,
             { model, options -> change(draft.copy(model = model, modelOptions = options)) }, { change(draft.copy(fastMode = it)) },
             agents = pickerSeats(agentBackends(state), draft.login) + LoginSeat(Login("custom"), tr("Custom command")),
-            chooseAgent = { change((if (it.backend == draft.backend) draft else draft.withAgent(it.backend)).copy(loginProfile = it.loginProfile)) },
+            chooseAgent = { change(draft.withAgent(it)) },
             onReload = reloadModels, loginProfile = draft.loginProfile, store = store) {
                 bot?.restOf(draft.login)?.let { Text(tr(it.line(RelativeTime.clock(it.until))), style = Type.caption, color = Palette.secondary) }
                 backends(state).firstOrNull { it.text("id") == draft.backend && !it.available }?.text("installHint")?.takeIf(String::isNotBlank)?.let {

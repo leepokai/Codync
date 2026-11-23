@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { addAccount, api, attach, loginProfilesOf, openLoginProfiles, standInAgent, typeMessage } from './sandbox.ts'
+import { addAccount, api, attach, loginProfilesOf, openLoginProfiles, openPage, standInAgent, typeMessage } from './sandbox.ts'
 
 // Both tests run on the stand-in Devin CLI of an e2e sandbox (`npm run dev -- --cdp`,
 // docs/guides/test-stack.md#stand-in-agents): its sign-in and its agent are that script, so nothing here starts a
@@ -84,6 +84,37 @@ test('an agent gets another login profile, it signs in, a bot runs on it, and it
     // Its agent runs on the login profile's own sign-in.
     await typeMessage(page, 'hi')
     await expect(page.getByRole('log', { name: 'Messages' }).getByText(`Devin stand-in on ${profileId}, signed in`)).toBeVisible()
+
+    // The chat box's model panel moves the bot to another login in its rail, saved as its settings would.
+    const loginOf = async () => (await api<{ bot: { loginProfile?: string | null } }>(page, 'updateBot', { id: botId })).bot.loginProfile ?? null
+    const railSeat = (login: string) => page.locator(`.model-picker .model-picker-agent[aria-label="${agent.name} · ${login}"]`)
+    await page.locator('.thread-option[title="Model"]').first().click()
+    await railSeat(OWN).click()
+    await expect.poll(loginOf).toBe(null)
+    await railSeat(WORK).click()
+    await expect.poll(loginOf).toBe(profileId)
+    await page.keyboard.press('Escape')
+
+    // A new thread with the bot runs on the login its model panel picks (`setup.loginProfile`); the bot keeps its own.
+    await openPage(page, 'Threads')
+    await page.locator('aside.sidebar .thread-row', { hasText: 'New thread' }).first().click()
+    const start = page.locator('.new-thread')
+    const chooser = start.locator('.thread-option[title="Choose a bot"]')
+    if (await chooser.isEnabled()) {
+      await chooser.click()
+      await page.getByRole('menuitemradio', { name, exact: true }).click()
+    }
+    await expect(start).toContainText(`New thread with ${name}`)
+    await start.locator('.thread-option[title="Model"]').click()
+    await expect(page.locator('.model-picker .model-picker-agent[aria-pressed="true"]')).toHaveAttribute('aria-label', `${agent.name} · ${WORK}`)
+    await railSeat(OWN).click()
+    await page.keyboard.press('Escape')
+    await start.getByRole('textbox').fill('Which login')
+    await start.getByRole('textbox').press('Enter')
+    await expect(page.getByText('Devin stand-in on the default login').first()).toBeVisible()
+    expect(await loginOf()).toBe(profileId)
+    await openPage(page, 'Bots')
+    await page.locator('.roster-row', { hasText: name }).click()
     await page.getByRole('button', { name: `${name}, view details` }).click()
     await page.locator('.details-panel').getByRole('tab', { name: 'Settings' }).click()
     // Its agent's login, shown without opening the panel. The bot's own comes before any fallback's.

@@ -11,8 +11,8 @@ import { useTr } from '../../lib/use-language'
 import { fill } from '@shared/fill'
 import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
-import { ModelPicker } from '../chat/RunOptions'
-import { loginSeats } from '../chat/seats'
+import { ModelPicker } from './ModelPicker'
+import { loginSeats } from './seats'
 import './bots.css'
 
 const ABOUT =
@@ -135,10 +135,11 @@ function FallbackRow({ fallback, index, count, bot, inUse, now, backends, taken,
   // The step as it was on its own agent while another is picked: picking that agent again brings back its model and login.
   const [own, setOwn] = useState<Fallback | null>(null)
   const choices = stepAgents(backends, taken, [fallback, own])
-  // The logins the rest of the chain doesn't have, with its own (and the one it had on an agent before).
+  // The logins the rest of the chain doesn't have, with its own (and the one it had on an agent before, while no other step took it).
   const seats = loginSeats({
     backends: choices, on: fallback, tr,
-    logins: (b) => b.id === fallback.backend ? stepLogins(b, fallback, taken) : b.id === own?.backend ? stepLogins(b, own, taken) : freeLogins(b, taken),
+    logins: (b) => b.id === fallback.backend ? stepLogins(b, fallback, taken)
+      : own?.backend === b.id && !taken.some((t) => sameLogin(t, own)) ? stepLogins(b, own, taken) : freeLogins(b, taken),
     pick: (b, loginProfile) => {
       if (b.id === fallback.backend) return onChange({ ...fallback, loginProfile })
       const step = stepOn(b, taken, own)
@@ -161,7 +162,6 @@ function FallbackRow({ fallback, index, count, bot, inUse, now, backends, taken,
             model={{ id: fallback.model ?? null, options: fallback.modelOptions }}
             set={(m) => onChange({ ...fallback, model: m.id, modelOptions: m.options })}
             seats={seats}
-            adds={choices.find((b) => b.id === fallback.backend)?.loginProfiles ? 'login' : 'agent'}
             startOpen={expanded}
           />
         </VStack>

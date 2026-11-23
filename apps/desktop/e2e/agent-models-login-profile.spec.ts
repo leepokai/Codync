@@ -31,44 +31,7 @@ test('main and fallback model dropdowns refresh with the selected loginProfile a
     expect(await calls()).toContainEqual({ backend: 'antigravity' })
     expect(await calls()).toContainEqual({ backend: 'antigravity', loginProfile: 'pro-7' })
 
-    // Open main model dropdown -> Default tier has only Gemini 3.8 Flash.
-    await root.locator('.model-picker-field').first().click()
-    await expect(list).toContainText('Gemini 3.8 Flash')
-    await expect(list).not.toContainText('Gemini 4 Neon')
-    await expect(list).not.toContainText('Gemini 4 Carbon')
-
-    // Switch main Login profile to Pro #7 -> triggers agentModels with loginProfile: 'pro-7' and refreshes dropdown.
-    await seat('Pro #7').click()
-    await expect.poll(async () => (await calls()).slice(2)).toEqual([
-      { backend: 'antigravity', loginProfile: 'pro-7' },
-    ])
-    await expect(list).toContainText('Gemini 4 Argon')
-    await expect(list).not.toContainText('Gemini 4 Carbon')
-
-    // Switch main Login profile to Ultra #8 -> triggers agentModels with loginProfile: 'ultra-8' and adds Gemini 4 Carbon.
-    await seat('Ultra #8').click()
-    await expect.poll(async () => (await calls()).slice(3)).toEqual([
-      { backend: 'antigravity', loginProfile: 'ultra-8' },
-    ])
-    await expect(list).toContainText('Gemini 4 Carbon')
-    await expect(list).not.toContainText('Gemini 4 Argon')
-
-    // Clicking Refresh model list keeps Ultra #8 loginProfile.
-    await panel.getByRole('button', { name: 'Refresh model list' }).click()
-    await expect.poll(async () => (await calls()).slice(4)).toEqual([
-      { backend: 'antigravity', loginProfile: 'ultra-8' },
-    ])
-
-    // Switch main Login profile back to Default -> omits loginProfile and reverts dropdown.
-    await seat('Default login profile').click()
-    await expect.poll(async () => (await calls()).slice(5)).toEqual([
-      { backend: 'antigravity' },
-    ])
-    await expect(list).toContainText('Gemini 3.8 Flash')
-    await expect(list).not.toContainText('Gemini 4 Carbon')
-
-    // Fallback row #1 starts on Pro #7; opening it shows Pro #7's models, switching to Ultra #8 refreshes it, and Refresh keeps Ultra #8.
-    await page.keyboard.press('Escape')
+    // Fallback row #1 starts on Pro #7 (walked first: the bot moving onto its login would drop it, a login is in the chain once); opening it shows Pro #7's models, switching to Ultra #8 refreshes it, and Refresh keeps Ultra #8.
     const fallbackRow = root.locator('.fallback-number').locator('..')
     await fallbackRow.locator('.model-picker-field').click()
     await expect(list).toContainText('Gemini 4 Argon')
@@ -77,16 +40,54 @@ test('main and fallback model dropdowns refresh with the selected loginProfile a
     // The chain's other login (the bot's own) is no choice for it.
     await expect(seat('Default login profile')).toHaveCount(0)
     await seat('Ultra #8').click()
-    await expect.poll(async () => (await calls()).slice(6)).toEqual([
+    await expect.poll(async () => (await calls()).slice(2)).toEqual([
       { backend: 'antigravity', loginProfile: 'ultra-8' },
     ])
     await expect(list).toContainText('Gemini 4 Carbon')
     await expect(list).not.toContainText('Gemini 4 Argon')
 
     await panel.getByRole('button', { name: 'Refresh model list' }).click()
-    await expect.poll(async () => (await calls()).slice(7)).toEqual([
+    await expect.poll(async () => (await calls()).slice(3)).toEqual([
       { backend: 'antigravity', loginProfile: 'ultra-8' },
     ])
+    await page.keyboard.press('Escape')
+
+    // Open main model dropdown -> Default tier has only Gemini 3.8 Flash.
+    await root.locator('.model-picker-field').first().click()
+    await expect(list).toContainText('Gemini 3.8 Flash')
+    await expect(list).not.toContainText('Gemini 4 Neon')
+    await expect(list).not.toContainText('Gemini 4 Carbon')
+
+    // Switch main Login profile to Pro #7 (free now that the fallback is on Ultra #8) -> triggers agentModels with loginProfile: 'pro-7' and refreshes dropdown.
+    await seat('Pro #7').click()
+    await expect.poll(async () => (await calls()).slice(4)).toEqual([
+      { backend: 'antigravity', loginProfile: 'pro-7' },
+    ])
+    await expect(list).toContainText('Gemini 4 Argon')
+    await expect(list).not.toContainText('Gemini 4 Carbon')
+
+    // Switch main Login profile to Ultra #8 -> triggers agentModels with loginProfile: 'ultra-8' and adds Gemini 4 Carbon (the fallback on it goes).
+    await seat('Ultra #8').click()
+    await expect.poll(async () => (await calls()).slice(5)).toEqual([
+      { backend: 'antigravity', loginProfile: 'ultra-8' },
+    ])
+    await expect(list).toContainText('Gemini 4 Carbon')
+    await expect(list).not.toContainText('Gemini 4 Argon')
+
+    // Clicking Refresh model list keeps Ultra #8 loginProfile.
+    await panel.getByRole('button', { name: 'Refresh model list' }).click()
+    await expect.poll(async () => (await calls()).slice(6)).toEqual([
+      { backend: 'antigravity', loginProfile: 'ultra-8' },
+    ])
+
+    // Switch main Login profile back to Default -> omits loginProfile and reverts dropdown.
+    await seat('Default login profile').click()
+    await expect.poll(async () => (await calls()).slice(7)).toEqual([
+      { backend: 'antigravity' },
+    ])
+    await expect(list).toContainText('Gemini 3.8 Flash')
+    await expect(list).not.toContainText('Gemini 4 Carbon')
+
   } finally {
     await page
       .evaluate((previous) => {

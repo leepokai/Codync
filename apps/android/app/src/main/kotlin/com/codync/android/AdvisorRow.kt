@@ -44,9 +44,7 @@ internal fun CardRows.advisorRow(state: AppState, store: AppStore, draft: BotDra
                 // A row's padding on each side of its hairline, as the card draws them.
                 Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Hairline()
-                    ThreadsAgent(state, store, agent, bot, { edit(draft.copy(threadAgent = it)) }) { login ->
-                        edit(draft.withThreadAgent(login.backend).let { it.copy(threadAgent = it.threadAgent?.copy(loginProfile = login.loginProfile)) })
-                    }
+                    ThreadsAgent(state, store, agent, bot, { edit(draft.copy(threadAgent = it)) }) { edit(draft.withThreadAgent(it)) }
                     Hairline()
                     FallbackList(state, store, agent.login, shown.threadFallbacks.orEmpty(), bot, { edit(draft.copy(threadFallbacks = it)) }, threads = true)
                 }

@@ -17,8 +17,6 @@ struct AgentModelPicker: View {
     /// Each agent once per login; picking one sets both.
     var agents: [LoginSeat] = []
     var onAgentChange: ((AgentLogin) -> Void)?
-    /// The agent whose list ends with "Add login profile…": the picked one, when it has login profiles.
-    var addsLoginTo: Backend?
     var command: Binding<String?>?
     var installHint: String?
     var restLine: String?
@@ -231,8 +229,9 @@ struct AgentModelPicker: View {
         }
     }
 
+    /// The list ends with "Add login profile…" for an agent that has login profiles.
     private var addLoginChoice: [Choice] {
-        guard let addsLoginTo else { return [] }
+        guard let addsLoginTo = store.hello?.backends.first(where: { $0.id == backend && $0.loginProfiles != nil }) else { return [] }
         return [Choice(id: "+", name: L10n.tr("Add login profile…"), on: false) { adding = addsLoginTo }]
     }
 

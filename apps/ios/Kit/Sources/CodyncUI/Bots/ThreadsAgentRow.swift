@@ -16,15 +16,10 @@ struct ThreadsAgentRow: View {
 
     var body: some View {
         let agent = agent
-        let backends = model.hello?.backends ?? []
         Field("Threads' agent") {
             AgentModelPicker(backend: agent.wrappedValue.backend, loginProfile: agent.wrappedValue.loginProfile, selection: agent.model, options: agent.modelOptions,
-                             agents: model.loginSeats(backends, on: agent.wrappedValue.login),
-                             onAgentChange: { login in
-                                 draft.setThreadAgent(login.backend)
-                                 draft.threadAgent?.loginProfile = login.loginProfile
-                             },
-                             addsLoginTo: backends.first { $0.id == agent.wrappedValue.backend && $0.loginProfiles != nil },
+                             agents: model.loginSeats(model.hello?.backends ?? [], on: agent.wrappedValue.login),
+                             onAgentChange: { draft.setThreadAgent($0) },
                              restLine: bot?.rest(of: agent.wrappedValue.login).map { L10n.tr($0.line) })
         }
     }

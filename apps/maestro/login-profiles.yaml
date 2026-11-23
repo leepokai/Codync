@@ -55,9 +55,11 @@ onFlowComplete:
           element: ".*· ${output.profiles.work}.*"
           centerElement: true
       - tapOn: ".*· ${output.profiles.work}.*"
-      - tapOn:
-          text: ".*· ${output.profiles.work}"
-          index: 1
+      - tapOn: ".*· ${output.profiles.work}"
+      # The list has every agent once per login: the agent's default login may sit below the fold.
+      - scrollUntilVisible:
+          element: ".*· ${output.profiles.home}"
+          centerElement: true
       - tapOn: ".*· ${output.profiles.home}"
       - assertVisible: ".*· ${output.profiles.home}.*"
       - runScript:
@@ -66,9 +68,11 @@ onFlowComplete:
             STEP: moved
       # Add login profile…, at the end of the agent list, opens the agent's setup, which lists the account and removes
       # it now that no bot uses it.
-      - tapOn:
-          text: ".*· ${output.profiles.home}"
-          index: 1
+      - tapOn: ".*· ${output.profiles.home}"
+      # Searching keeps it at the end of a short list.
+      - tapOn: "Search agents"
+      - inputText: ${output.profiles.home}
+      - hideKeyboard
       - tapOn: "Add login profile…"
       - scrollUntilVisible:
           element: "Not signed in"
@@ -83,7 +87,18 @@ onFlowComplete:
           index: 0
       - eraseText
       - inputText: ${output.profiles.renamed}
-      - tapOn: "Save"
+      # On the iPhone the card rises above the keyboard after XCUITest reads its frame, so a tap on "Save" can land on
+      # the row behind it: Return runs Save there (the dialog's field submits its first action).
+      - runFlow:
+          when:
+            platform: iOS
+          commands:
+            - pressKey: Enter
+      - runFlow:
+          when:
+            platform: Android
+          commands:
+            - tapOn: "Save"
       - assertVisible: ${output.profiles.renamed}
       - runScript:
           file: login-profiles.js

@@ -15,8 +15,9 @@ import { lastPathComponent } from '../bots/drafts'
 import { FolderPicker } from '../bots/FolderPicker'
 import { ChatLog, useDockHeight } from './ChatLog'
 import { Composer } from './Composer'
-import { ModelPicker, Option, useApprovalMenu } from './RunOptions'
-import { loginSeats } from './seats'
+import { ModelPicker } from '../bots/ModelPicker'
+import { readySeats } from '../bots/seats'
+import { Option, useApprovalMenu } from './RunOptions'
 import './chat.css'
 import './composer.css'
 import './chat-controls.css'
@@ -62,20 +63,16 @@ export function ThreadStart({ bots, of, choose, started, base, folder, heading, 
   const change = (part: ThreadSetup) => setSetup((s) => ({ ...s, ...part }))
   const [failed, setFailed] = useState('')
   const [browsing, setBrowsing] = useState(false)
-  // The agents set up on the computer: installed, each with its logins that aren't waiting on a sign-in (Extensions adds the rest).
-  const agents = (store.hello?.backends ?? []).filter((b) => b.available)
-  const ready = agents.filter((b) => b.signedIn !== false)
+  const ready = (store.hello?.backends ?? []).filter((b) => b.available && b.signedIn !== false)
   const backend = setup.backend ?? bot?.backend ?? ready.find((b) => b.id === 'claude')?.id ?? ready[0]?.id ?? ''
   // Another agent than the bot's starts on its default login.
   const loginProfile = setup.loginProfile !== undefined ? setup.loginProfile || null : backend === bot?.backend ? bot.loginProfile ?? null : null
   const models = useAgentModels(backend, loginProfile)
-  const seats = loginSeats({
-    backends: agents, on: { backend, loginProfile }, tr,
-    logins: (b) => [
-      ...(b.signedIn !== false || (b.id === backend && !loginProfile) ? [null] : []),
-      ...(b.loginProfiles ?? []).filter((p) => p.signedIn || (b.id === backend && p.id === loginProfile)).map((p) => p.id),
-    ],
-    pick: (b, id) => change({ backend: b.id, loginProfile: id ?? '', ...(b.id === backend ? {} : { model: undefined, approval: undefined }) }),
+  // A host that can't start a thread on a login is sent none: each agent stays on its default login, the bot's on its own.
+  const logins = store.startsThreadsOnLogins
+  const seats = readySeats({
+    backends: store.hello?.backends ?? [], on: { backend, loginProfile }, tr, profiles: logins,
+    pick: (b, id) => change({ backend: b.id, ...(logins ? { loginProfile: id ?? '' } : {}), ...(b.id === backend ? {} : { model: undefined, approval: undefined }) }),
   })
   const root = useRef<HTMLDivElement>(null)
   const dock = useRef<HTMLDivElement>(null)
@@ -147,7 +144,6 @@ export function ThreadStart({ bots, of, choose, started, base, folder, heading, 
             {/* The agent and its login are in the panel's rail; another agent starts from its own defaults. */}
             <ModelPicker
               backend={backend} model={model} models={models} set={(m) => change({ model: m })} approval={ways} seats={seats}
-              adds={agents.find((b) => b.id === backend)?.loginProfiles ? 'login' : 'agent'}
             />
           </> }} />
           {failed ? <Text as="div" size="caption" tone="danger" className="thread-start-failed" role="alert">{failed}</Text> : null}

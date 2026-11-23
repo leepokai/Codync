@@ -12,8 +12,8 @@ import { Text } from '../../components/Text'
 import { controlReady } from '../../lib/screen-state'
 import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
-import { ModelPicker } from '../chat/RunOptions'
-import { loginSeats } from '../chat/seats'
+import { ModelPicker } from './ModelPicker'
+import { loginSeats } from './seats'
 import { ApprovalRow } from './ApprovalRow'
 import { CompactionRow } from './CompactionRow'
 import { AgentStepBanner, FallbacksRow } from './Fallbacks'
@@ -142,16 +142,15 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
   const ownRest = saved ? restOf(saved, draft, Date.now()) : null
   const fastShown = (draft.backend !== 'custom' && models.catalog?.fastMode) || draft.fastMode || (saved?.backend === draft.backend && fastModeShown(saved))
   const refusal = saved ? fastModeRefusal(saved) : null
-  // Every agent's logins, then a custom command; another agent is `withBackend`'s.
+  // Every agent's logins, then a custom command.
   const seats = [
-    ...loginSeats({ backends, on: draft, tr, pick: (b, loginProfile) => onChange((d) => ({ ...withBackend(d, b.id), loginProfile })) }),
-    { key: 'custom', backend: 'custom', name: tr('Custom command'), on: draft.backend === 'custom', pick: () => onChange((d) => withBackend(d, 'custom')) },
+    ...loginSeats({ backends, on: draft, tr, pick: (b, loginProfile) => onChange((d) => withBackend(d, { backend: b.id, loginProfile })) }),
+    { key: 'custom', backend: 'custom', name: tr('Custom command'), on: draft.backend === 'custom', pick: () => onChange((d) => withBackend(d, { backend: 'custom' })) },
   ]
   const agent = (
     <ModelPicker key="agent" trigger="row" backend={draft.backend} models={models} seats={seats}
       model={{ id: draft.model ?? null, options: draft.modelOptions ?? {} }} set={(m) => setModel(m.id, m.options)}
-      fast={fastShown ? { on: draft.fastMode ?? false, set: (on) => set('fastMode', on) } : null}
-      adds={backend?.loginProfiles ? 'login' : 'agent'}>
+      fast={fastShown ? { on: draft.fastMode ?? false, set: (on) => set('fastMode', on) } : null}>
       {ownRest && <Text size="caption" tone="secondary">{tr(restLine(ownRest, Date.now()))}</Text>}
       {backend && !backend.available && <Text size="caption" tone="attention">{backend.installHint}</Text>}
       {draft.backend === 'custom' && <input className="field-box bot-command" value={draft.command ?? ''} placeholder={tr('ACP command, e.g. my-agent --acp')} spellCheck={false} onChange={(e) => set('command', e.target.value || null)} />}

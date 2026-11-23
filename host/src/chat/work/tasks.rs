@@ -145,15 +145,18 @@ impl Setup {
     /// `cfg` with what this changes.
     pub fn over(&self, cfg: &BotConfig) -> BotConfig {
         let mut cfg = cfg.clone();
-        // Another agent runs on its own login, without the bot's fallbacks or command.
+        // Another agent runs on its own login, without the bot's fallbacks, command or Fast mode.
         if let Some(backend) = self.backend.as_ref().filter(|b| **b != cfg.backend) {
             backend.clone_into(&mut cfg.backend);
             cfg.login_profile = None;
             cfg.command = None;
+            cfg.fast_mode = false;
             cfg.fallbacks.clear();
         }
+        // A login the bot's chain falls back to is the thread's own now: that step goes.
         if let Some(profile) = &self.login_profile {
             cfg.login_profile = Some(profile.clone()).filter(|p| !p.is_empty());
+            crate::agent::fallback::tidy(&mut cfg);
         }
         if let Some(cwd) = &self.cwd {
             cfg.cwd.clone_from(cwd);
@@ -575,6 +578,22 @@ pub fn working_threads(store: &Store) -> Vec<BotConfig> {
         .collect()
 }
 
+/// The setups the user's waiting threads will run with (`Setup::over` their bot's) where they name a login, each named
+/// by its bot (a thread without one by its title): a login profile they run on must still be there when they start.
+pub fn waiting_threads(store: &Store) -> Vec<BotConfig> {
+    let bots = store.bots().unwrap_or_default().into_iter().filter(|row| !row.deleted);
+    bots.flat_map(|row| {
+        let cfg = row.config;
+        let waiting = load(store, &cfg.id).into_iter();
+        let named = waiting.filter(|t| t.status == Status::Waiting && t.setup.login_profile.is_some());
+        let name = |t: &Task| if cfg.plain { t.title.clone() } else { cfg.name.clone() };
+        named
+            .map(|t| BotConfig { name: name(&t), ..t.setup.over(&crate::agent::fallback::threads(&cfg)) })
+            .collect::<Vec<_>>()
+    })
+    .collect()
+}
+
 /// Puts a task that `thread` works on in `bot`'s box.
 #[cfg(test)]
 pub fn put_working_for_test(store: &Store, bot: &str, thread: &str) {
@@ -624,7 +643,35 @@ mod tests {
         let on =
             |login: &str| Setup { login_profile: Some(login.to_owned()), ..Setup::default() }.over(&bot).login_profile;
         assert_eq!((on("work"), on("")), (Some("work".to_owned()), None), "a login profile, or the default login");
+        // The login it picks leaves the bot's chain; another agent leaves the bot's Fast mode too.
+        let chained = BotConfig {
+            fast_mode: true,
+            fallbacks: vec![
+                serde_json::from_value(json!({"backend": "claude", "loginProfile": "work"})).expect("a step"),
+            ],
+            ..bot.clone()
+        };
+        let work = Setup { login_profile: Some("work".into()), ..Setup::default() }.over(&chained);
+        assert!(work.fallbacks.is_empty() && work.fast_mode, "{work:?}");
+        let codex = Setup { backend: Some("codex".into()), ..Setup::default() }.over(&chained);
+        assert!(!codex.fast_mode && codex.fallbacks.is_empty());
         assert_eq!(serde_json::to_value(Setup::default().over(&bot)).ok(), serde_json::to_value(&bot).ok());
+    }
+
+    #[test]
+    fn a_waiting_thread_on_a_login_is_named_with_it() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let cfg = crate::chat::calls::context::tests::bot("b1", "Mika", "/tmp");
+        hub.store.save_bot(&cfg).expect("saved");
+        let on = |login: Option<&str>, status| Task {
+            setup: Setup { login_profile: login.map(str::to_owned), ..Setup::default() },
+            status,
+            ..Task::waiting("Fix it", "x", None, None, 0)
+        };
+        let tasks = [on(Some("work"), Status::Waiting), on(None, Status::Waiting), on(Some("old"), Status::Done)];
+        hub.store.kv_set(&key("b1"), &serde_json::to_string(&tasks).expect("json")).expect("saved");
+        let waiting: Vec<_> = waiting_threads(&hub.store).into_iter().map(|c| (c.name, c.login_profile)).collect();
+        assert_eq!(waiting, [("Mika".to_owned(), Some("work".to_owned()))]);
     }
 
     #[test]

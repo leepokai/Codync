@@ -156,10 +156,11 @@ private struct FallbackRow: View {
 
     var body: some View {
         let choices = (model.hello?.backends ?? []).usable(taken: taken, keeping: [fallback.login] + (own.map { [$0.login] } ?? []))
-        // The logins the rest of the chain doesn't have, with its own (and the one it had on an agent before).
+        // The logins the rest of the chain doesn't have, with its own (and the one it had on an agent before, while no other
+        // step took it).
         let agents = model.loginSeats(choices, on: fallback.login) { backend in
             if backend.id == fallback.backend { return backend.logins(for: fallback.login, taken: taken) }
-            if let own, backend.id == own.backend { return backend.logins(for: own.login, taken: taken) }
+            if let own, backend.id == own.backend, !taken.contains(own.login) { return backend.logins(for: own.login, taken: taken) }
             return backend.freeLogins(taken: taken)
         }
         let name = agents.first { $0.login == fallback.login }?.name ?? model.backendName(fallback.backend)
@@ -175,7 +176,6 @@ private struct FallbackRow: View {
                                      step.loginProfile = login.loginProfile
                                      fallback = step
                                  },
-                                 addsLoginTo: choices.first { $0.id == fallback.backend && $0.loginProfiles != nil },
                                  expanded: expanded)
                 if inUse == fallback.login {
                     Text(L10n.tr("In use"))

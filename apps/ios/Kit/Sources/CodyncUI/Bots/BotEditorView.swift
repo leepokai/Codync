@@ -110,11 +110,7 @@ struct BotSettingsForm: View {
                          }), bot: bot,
                          agents: model.loginSeats(model.hello?.backends ?? [], on: draft.login)
                              + [LoginSeat(login: AgentLogin(backend: "custom"), name: L10n.tr("Custom command"))],
-                         onAgentChange: { login in
-                             draft.setAgent(login.backend)
-                             draft.loginProfile = login.loginProfile
-                         },
-                         addsLoginTo: model.hello?.backends.first { $0.id == draft.backend && $0.loginProfiles != nil },
+                         onAgentChange: { draft.setAgent($0) },
                          command: $draft.command,
                          installHint: model.hello?.backends.first { $0.id == draft.backend && !$0.available }?.installHint,
                          restLine: bot?.rest(of: draft.login).map { L10n.tr($0.line) }, onReload: { modelReload += 1 })

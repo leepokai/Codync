@@ -55,10 +55,11 @@ onFlowComplete:
 - tapOn:
     text: "Kimi Code.*"
     below: "Threads' agent"
+# The agent list names each agent with its login: "Kimi Code (not installed) · Default login profile".
 - tapOn:
-    text: "Kimi Code \\(not installed\\)"
+    text: "Kimi Code \\(not installed\\) · [^·]*"
     below: "Threads' agent"
-- tapOn: "Claude Code"
+- tapOn: "Claude Code · .*"
 - runScript:
     file: advisor-mode.js
     env:

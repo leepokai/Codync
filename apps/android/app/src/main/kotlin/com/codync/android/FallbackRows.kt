@@ -116,11 +116,11 @@ private fun taken(own: Login, list: List<Fallback>, but: Int): List<Login> = lis
     // The step as it was on its own agent while another is picked: picking that agent again brings back its model and login.
     var own by remember { mutableStateOf<Fallback?>(null) }
     val choices = agentBackends(state).usable(taken, listOfNotNull(fallback.login, own?.login))
-    // The logins the rest of the chain doesn't have, with its own (and the one it had on an agent before).
+    // The logins the rest of the chain doesn't have, with its own (and the one it had on an agent before, while no other step took it).
     val before = own
     val agents = pickerSeats(choices, fallback.login) { backend ->
         if (backend.id == fallback.backend) backend.stepLogins(fallback.login, taken)
-        else before?.takeIf { it.backend == backend.id }?.let { backend.stepLogins(it.login, taken) } ?: backend.freeLogins(taken)
+        else before?.takeIf { it.backend == backend.id && it.login !in taken }?.let { backend.stepLogins(it.login, taken) } ?: backend.freeLogins(taken)
     }
     val name = agents.firstOrNull { it.login == fallback.login }?.name ?: backendName(state, fallback.backend)
     val rest = bot?.restOf(fallback.login)

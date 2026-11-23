@@ -712,6 +712,8 @@ export interface Hello {
   threadsWithoutBot?: boolean
   /** A thread may be started to build one workflow (`startThread` with `setup.workflow`). */
   workflowThreads?: boolean
+  /** A thread may be started on a login of its agent (`startThread` with `setup.loginProfile`). */
+  threadLogins?: boolean
   /** `resetCredentials` can be used on this computer (absent from older hosts, false on a Codync Cloud computer). */
   credentialsReset?: boolean
   /** The host can store workflows. Missing means it cannot. */

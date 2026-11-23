@@ -120,7 +120,8 @@ pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, mut setup: Setup) -> Re
         if let Some(workflow) = &setup.workflow {
             ensure!(crate::workflows::exists(&hub.store, workflow)?, "unknown workflow");
         }
-        let run = setup.over(&cfg);
+        // As its thread will run it (`dispatch`): in Advisor mode on the threads' agent.
+        let run = setup.over(&crate::agent::fallback::threads(&cfg));
         let login = crate::agent::login_profiles::of_bot(&hub.store, &run.backend, &run);
         ensure!(run.login_profile.as_deref() == login, "unknown login profile");
         crate::hub::validate(&run)

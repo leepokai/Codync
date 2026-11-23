@@ -39,6 +39,9 @@ import kotlinx.coroutines.CancellationException
 
 private enum class PickerStage { Closed, Agents, Models, Settings }
 
+/** A row of the agent or model list (iOS `AgentModelPicker.Choice`). */
+private class Choice(val name: String, val on: Boolean, val pick: () -> Unit)
+
 /**
  * Models come from the selected computer's agent, never a bundled list (iOS `AgentModelPicker`).
  * The selected model's settings follow it; Fast mode is its own row while the agent offers it. Without [setFast] (a
@@ -104,20 +107,20 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
                     Box(Modifier.weight(1f)) { PlainTextField(query, { query = it }, prompt = if (stage == PickerStage.Agents) "Search agents" else "Search models", singleLine = true) }
                     if (loading) Spinner(12.dp) else IconButton(if (failure == null) "Refresh model list" else "Retry model list", "arrow.clockwise") { retry++; onReload() }
                 }
-                val rows: List<Triple<String, Boolean, () -> Unit>> = if (stage == PickerStage.Agents) agents.map { seat ->
-                    Triple(seat.name, seat.login == current) { if (seat.login != current) chooseAgent?.invoke(seat.login); open(PickerStage.Models) }
+                val rows = if (stage == PickerStage.Agents) agents.map { seat ->
+                    Choice(seat.name, seat.login == current) { if (seat.login != current) chooseAgent?.invoke(seat.login); open(PickerStage.Models) }
                 } else modelChoices.map { (id, name) ->
-                    Triple(name, id == value) { if (id != value) choose(id.ifEmpty { null }, emptyMap()); open(PickerStage.Settings) }
+                    Choice(name, id == value) { if (id != value) choose(id.ifEmpty { null }, emptyMap()); open(PickerStage.Settings) }
                 }
-                val choices = rows.filter { it.first.contains(query, ignoreCase = true) }
+                val choices = rows.filter { it.name.contains(query, ignoreCase = true) }
                 val scroll = rememberScrollState()
                 // The rows blur under the edges into the card's fill (an outlined card has none: the page shows).
                 val ground = if (LocalCardStyle.current == CardStyle.Outlined) Palette.background else Palette.surface
                 ScrollEdges(scroll, Modifier.heightIn(max = 180.dp), ground) { Column(Modifier.verticalScroll(scroll)) {
-                    for ((name, selected, pick) in choices) Row(Modifier.fillMaxWidth().clickable(onClick = pick)
+                    for (choice in choices) Row(Modifier.fillMaxWidth().clickable(onClick = choice.pick)
                         .padding(horizontal = 6.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(name, Modifier.weight(1f), style = Type.body, color = Palette.text)
-                        if (selected) Symbol("checkmark", size = 12.dp, tint = Palette.text)
+                        Text(choice.name, Modifier.weight(1f), style = Type.body, color = Palette.text)
+                        if (choice.on) Symbol("checkmark", size = 12.dp, tint = Palette.text)
                     }
                     if (choices.isEmpty()) Text("No results", style = Type.caption, color = Palette.secondary)
                     if (stage == PickerStage.Agents && addsLogin != null) Row(Modifier.fillMaxWidth().clickable { adding = true }

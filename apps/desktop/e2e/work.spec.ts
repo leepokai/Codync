@@ -174,7 +174,7 @@ test('a working task shows in the capsule and on Details, opens its thread in th
     await expect(section(details, 'Threads').locator('.work-row.free')).toHaveText(['Free', 'Free'])
     await expect(section(details, 'Event box')).toHaveCount(0)
     await expect(section(details, 'Recent')).toHaveCount(0)
-    await expect(details.locator('.agent-picker')).toHaveCount(0)
+    await expect(details.locator('.model-picker-field')).toHaveCount(0)
 
     // A working row opens its thread in the panel, in the chat's form, not in a dialog: its tab named by the task, its
     // status and time on top, what it was told folded under one line, and the chat's box to write to it, which stops

@@ -11,10 +11,12 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 ### zh-Hant
 - 新增 Workflow：在 Bot 列表的電腦標題上點分支圖示，就能打開這台電腦的 workflow。一個 workflow 由觸發、提示、助理、條件、核准和輸出組成，可以手動執行、排程或用 webhook 啟動，並保留舊版本可以還原。
 - 單一路線的 workflow 會顯示成步驟列表，可以新增、刪除和調整順序；長按 workflow 可以釘選到 Bot 列表上方。
+- 選 agent 時一起選登入設定檔：Bot 設定和 fallback 的 agent 清單裡，每個 agent 依登入設定檔各列一次，清單最後可以新增登入設定檔；原本獨立的「登入設定檔」列已移除。
 
 ### en-US
 - Workflows: tap the branch icon on a computer's heading in the bot list to open that computer's workflows. A workflow chains a trigger, prompts, assistants, a condition, an approval and an output; run it yourself, on a schedule or from a webhook, and restore an older version when you need to.
 - A workflow that is a single chain shows as a list of steps you can add, remove and reorder. Long-press a workflow to pin it above the bots.
+- Pick an agent and its login profile in one step: a bot's and each fallback's agent list shows every agent once per login profile and ends with Add login profile. The separate Login profile row is gone.
 
 ## 2.53.0
 ### zh-Hant

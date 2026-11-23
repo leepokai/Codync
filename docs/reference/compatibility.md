@@ -103,7 +103,8 @@ couldn't get the matching side yet.
   isn't there yet.
 - **Raise `minHost`** when the client's core flows need something older hosts lack. Hosts
   update without review, so this only asks the person to update the computer. An optional
-  feature that needs a newer host hides its control instead. A client's `minHost` never rises to
+  feature that needs a newer host hides its control instead (a new thread's login
+  profiles: without `hello.threadLogins` the desktop lists each agent on its default login only, the bot's on its own). A client's `minHost` never rises to
   a release the gate holds ([below](#holding-releases-for-the-stores)): not in the release that
   raises `MIN_APP`, nor in one published while an earlier raise still waits for a store. Each
   store publishes its app the moment its own review passes, so the faster store's phones would

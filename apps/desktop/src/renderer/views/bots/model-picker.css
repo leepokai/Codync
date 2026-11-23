@@ -171,7 +171,6 @@
   padding: 0 4px;
 }
 .model-effort {
-  --inset: 13px;
   position: relative;
   display: flex;
   justify-content: space-between;
@@ -179,6 +178,9 @@
   padding: 0 4px;
   border-radius: var(--radius-pill);
   background: var(--field);
+  /* The knob is dragged along it, so the page under it isn't selected or scrolled. */
+  touch-action: none;
+  user-select: none;
 }
 /* The steps up to the one chosen, filled with a fine dot grid. */
 .model-effort-fill {

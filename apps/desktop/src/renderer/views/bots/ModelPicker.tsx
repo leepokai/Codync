@@ -1,4 +1,4 @@
-import { useContext, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
+import { useContext, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { AgentIcon } from '../../components/AgentIcon'
 import { DropdownMenu, IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
@@ -7,6 +7,7 @@ import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
 import { OpenExtensions } from '../NavRail'
+import { EffortTrack } from './EffortTrack'
 import { modelChoices, type AgentModelsState, type ModelOption } from './agent-models'
 import type { Seat } from './seats'
 import './model-picker.css'
@@ -69,7 +70,6 @@ export function ModelPicker({ backend, model, models, set, fast, seats, approval
     e.preventDefault()
     choose(at.id)
   }
-  const at = effort ? Math.max(0, effort.values.findIndex((v) => v.id === chosen(effort))) : 0
   const check = <Icon name="checkmark" size={10} weight="semibold" color="var(--text)" />
   const seatName = seats.find((s) => s.on)?.name ?? store.backendName(backend)
   // The rail's `+` adds a login profile of an agent that has them, else another agent.
@@ -149,15 +149,7 @@ export function ModelPicker({ backend, model, models, set, fast, seats, approval
                   <Text size="caption" tone="secondary">{effort.name}</Text>
                   <Text size="caption" tone="text" weight="medium">{effortName}</Text>
                 </div>
-                <div className="model-effort" role="radiogroup" aria-label={effort.name} style={{ '--at': at / (effort.values.length - 1) } as CSSProperties}>
-                  <span className="model-effort-fill" />
-                  <span className="model-effort-knob" />
-                  {effort.values.map((v) => (
-                    <button key={v.id} role="radio" aria-checked={v.id === chosen(effort)} title={v.name} className="model-effort-step" onClick={() => pick(effort, v.id)}>
-                      <span className="model-effort-dot" />
-                    </button>
-                  ))}
-                </div>
+                <EffortTrack option={effort} chosen={chosen(effort)} onPick={(id) => pick(effort, id)} />
               </div>
             ) : null}
             {rest.map((o) => (

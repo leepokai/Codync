@@ -184,6 +184,8 @@ pub enum Event {
     DesktopNotificationsSet,
     /// A desktop system notification was clicked, opening its chat.
     DesktopNotificationOpened,
+    /// The Model Manager applied one agent and model to the bots the user checked (desktop).
+    ModelManagerApplied,
     /// A Codync Cloud computer's host started: how its keeper stood, and whether its agents could still use sudo.
     CloudKeeperChecked,
     /// A Codync Cloud computer's host, idle long enough, asked the cloud to put it to sleep (`remote::managed`).
@@ -324,6 +326,7 @@ impl Event {
             Self::WhatsNewShown => "whats_new_shown",
             Self::DesktopNotificationsSet => "desktop_notifications_set",
             Self::DesktopNotificationOpened => "desktop_notification_opened",
+            Self::ModelManagerApplied => "model_manager_applied",
             Self::CloudKeeperChecked => "cloud_keeper_checked",
             Self::CloudSleepAsked => "cloud_sleep_asked",
             Self::JoinFromPhoneAnswered => "join_from_phone_answered",

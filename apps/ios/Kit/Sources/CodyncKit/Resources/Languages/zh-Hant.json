@@ -2277,4 +2277,12 @@
   "in background": "在背景執行",
   "{count} s": "{count} 秒",
   "{count} min": "{count} 分鐘"
+,
+  "Model Manager": "模型管理員",
+  "Select all": "全選",
+  "Unselect all": "取消全選",
+  "No bots selected": "未選取任何機器人",
+  "Apply": "套用",
+  "Applied": "已套用",
+  "Not available on {computer}": "無法在 {computer} 上使用"
 }

@@ -2277,4 +2277,12 @@
   "in background": "在后台运行",
   "{count} s": "{count} 秒",
   "{count} min": "{count} 分钟"
+,
+  "Model Manager": "模型管理器",
+  "Select all": "全选",
+  "Unselect all": "取消全选",
+  "No bots selected": "未选择任何机器人",
+  "Apply": "应用",
+  "Applied": "已应用",
+  "Not available on {computer}": "无法在 {computer} 上使用"
 }

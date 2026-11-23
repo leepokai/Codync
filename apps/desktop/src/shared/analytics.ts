@@ -96,6 +96,7 @@ export type AnalyticsEvent =
   | { event: 'whats_new_shown' }
   | { event: 'desktop_notifications_set'; on: boolean }
   | { event: 'desktop_notification_opened'; kind: AlertAnalyticsKind }
+  | { event: 'model_manager_applied'; requested: number; applied: number; failed: number }
 
 /** `track`'s body: the event with its properties, from the desktop app. */
 export const trackBody = (event: AnalyticsEvent) => ({ ...event, app: 'desktop' as const })

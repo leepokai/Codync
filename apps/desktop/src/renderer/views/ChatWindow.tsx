@@ -30,6 +30,7 @@ import { queueVoiceKey } from './chat/voice-shortcut-keys'
 import { NewBotView, NewGroupView } from './bots/NewBotView'
 import { ImportBotsSheet } from './bots/ImportBotsView'
 import { BotEditorView } from './bots/BotEditorView'
+import { ModelManagerView } from './bots/ModelManagerView'
 import { MarketplaceView } from './marketplace/MarketplaceView'
 import { ScreenViewer } from './screen/ScreenViewer'
 import { SignInCodeDialog } from './marketplace/ConnectorSheets'
@@ -215,6 +216,7 @@ function ChatSplitView() {
   const [sidebarWidth, setSidebarWidth] = usePref(prefs.sidebarWidth)
   const [hidden, setHidden] = usePref(prefs.hiddenComputers)
   const [searching, setSearching] = useState(false)
+  const [modelManager, setModelManager] = useState(false)
   // Find in the open conversation (⌘F).
   const find = useFindBar(app.selection ? refKey(app.selection) : null)
   const [creating, setCreating] = useState<CreateTarget | null>(null)
@@ -411,6 +413,7 @@ function ChatSplitView() {
         <div className="sidebar-header drag" inert={compact}>
           <Spacer />
           <HStack gap={6} className="no-drag">
+            <IconButton title="Model Manager" icon="slider.horizontal.3" size={32} className="sidebar-header-action" onClick={() => setModelManager(true)} />
             <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setSettings('computers')} compact />
             {workButton(32, 'sidebar-header-action')}
             <IconButton title="Search" icon="magnifyingglass" size={32} className="sidebar-header-action" onClick={() => setSearching(true)} />
@@ -506,6 +509,7 @@ function ChatSplitView() {
         onClose={closeWork}
       />
       <SearchPalette open={searching} items={visibleRoster} onPick={(ref) => app.select(ref)} onClose={() => setSearching(false)} />
+      {modelManager ? <ModelManagerView items={visibleRoster} onClose={() => setModelManager(false)} /> : null}
       <Sheet open={editing !== null} onClose={() => setEditing(null)} width={520} height={Math.min(680, sheetHeight)}>
         {editing ? (
           <StoreContext.Provider value={editing.store}>

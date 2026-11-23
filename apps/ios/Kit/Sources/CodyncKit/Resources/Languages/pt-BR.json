@@ -2277,4 +2277,12 @@
   "in background": "em segundo plano",
   "{count} s": "{count} s",
   "{count} min": "{count} min"
+,
+  "Model Manager": "Gerenciador de modelos",
+  "Select all": "Selecionar tudo",
+  "Unselect all": "Desmarcar tudo",
+  "No bots selected": "Nenhum bot selecionado",
+  "Apply": "Aplicar",
+  "Applied": "Aplicado",
+  "Not available on {computer}": "Indisponível em {computer}"
 }

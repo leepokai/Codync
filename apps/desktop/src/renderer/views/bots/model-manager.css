@@ -1,0 +1,63 @@
+.model-manager {
+  padding: 16px;
+  max-height: min(680px, calc(100vh - 80px));
+}
+
+.model-manager-head {
+  align-items: center;
+}
+
+.model-manager-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.model-manager-body {
+  min-height: 0;
+}
+
+.model-manager-tools {
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.model-manager-list {
+  min-height: 120px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.model-manager-row {
+  align-items: center;
+  gap: 10px;
+}
+
+.model-manager-check {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--separator, rgba(0, 0, 0, 0.18));
+  background: var(--control-background, transparent);
+  color: var(--accent-contrast, #fff);
+}
+
+.model-manager-check.on {
+  border-color: var(--accent, #0a84ff);
+  background: var(--accent, #0a84ff);
+}
+
+.model-manager-status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 40%;
+}
+
+.model-manager-status.bad {
+  color: var(--attention, var(--danger, #c0392b));
+}

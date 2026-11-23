@@ -2277,4 +2277,12 @@
   "in background": "バックグラウンドで実行",
   "{count} s": "{count} 秒",
   "{count} min": "{count} 分"
+,
+  "Model Manager": "モデルマネージャー",
+  "Select all": "すべて選択",
+  "Unselect all": "すべて選択解除",
+  "No bots selected": "ボットが選択されていません",
+  "Apply": "適用",
+  "Applied": "適用しました",
+  "Not available on {computer}": "{computer} では利用できません"
 }

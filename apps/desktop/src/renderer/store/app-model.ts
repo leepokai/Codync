@@ -6,24 +6,15 @@ import { Observable } from '../lib/observable'
 import { undoOnFailure } from '../lib/undo-on-failure'
 import { account } from './account'
 import { analytics } from './analytics'
+import { refKey, type BotRef } from './bot-ref'
 import { BotStore } from './bot-store'
 import { CloudModel } from './cloud'
 import { CloudComputerModel } from './cloud-computer'
 import { DeviceComputerOrder } from './computer-order'
 import { ComputerAccess } from './computer-access'
 
-/** A bot on a computer: bot ids are only unique per computer. */
-export interface BotRef {
-  computerId: string
-  botId: string
-}
-
-export const refKey = (r: BotRef) => `${r.computerId}/${r.botId}`
-export const parseRef = (key: string): BotRef | null => {
-  const at = key.indexOf('/')
-  return at < 0 ? null : { computerId: key.slice(0, at), botId: key.slice(at + 1) }
-}
-export const sameRef = (a: BotRef | null, b: BotRef | null) => !!a && !!b && a.computerId === b.computerId && a.botId === b.botId
+export type { BotRef } from './bot-ref'
+export { parseRef, refKey, sameRef } from './bot-ref'
 
 export interface RosterItem {
   ref: BotRef

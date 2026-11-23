@@ -2277,4 +2277,12 @@
   "in background": "백그라운드에서 실행",
   "{count} s": "{count}초",
   "{count} min": "{count}분"
+,
+  "Model Manager": "모델 관리자",
+  "Select all": "모두 선택",
+  "Unselect all": "모두 선택 해제",
+  "No bots selected": "선택된 봇이 없습니다",
+  "Apply": "적용",
+  "Applied": "적용됨",
+  "Not available on {computer}": "{computer}에서 사용할 수 없습니다"
 }

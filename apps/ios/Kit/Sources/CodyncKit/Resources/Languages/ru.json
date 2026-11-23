@@ -2277,4 +2277,12 @@
   "in background": "в фоне",
   "{count} s": "{count} с",
   "{count} min": "{count} мин"
+,
+  "Model Manager": "Диспетчер моделей",
+  "Select all": "Выбрать все",
+  "Unselect all": "Снять выделение",
+  "No bots selected": "Боты не выбраны",
+  "Apply": "Применить",
+  "Applied": "Применено",
+  "Not available on {computer}": "Недоступно на {computer}"
 }

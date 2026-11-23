@@ -163,13 +163,18 @@ test('nobody looking at the window closes the socket; calls wait until someone l
   ch.close()
 })
 
-test('a socket still opening gets no ping, and is closed if it never opens', () => {
+test('an open socket is pinged; one still opening is not, and is closed if it never opens', () => {
   mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'] })
   try {
     const { ch, relays } = channel()
     void ch.call('hello', {}, 600_000).catch(() => {})
+    const pinged = () => relays[0]!.sent.some((m) => m.t === 'ping')
+    mock.timers.tick(30_000)
+    assert.ok(pinged())
+    relays[0]!.sent = []
     relays[0]!.readyState = WebSocket.CONNECTING
-    mock.timers.tick(61_000)
+    mock.timers.tick(31_000)
+    assert.ok(!pinged())
     assert.equal(relays[0]!.closedWith, null)
     mock.timers.tick(30_000)
     assert.equal(relays[0]!.closedWith, 4000)

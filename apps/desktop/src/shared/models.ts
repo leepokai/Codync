@@ -1,7 +1,7 @@
 import type { ArtifactCard } from './artifacts'
 import type { CallLine } from './calls'
 import { normalizeDevServer, type DevServer } from './dev-servers.ts'
-import { normalizeMaxAgents, normalizeOutside, normalizeWork, type OutsideStatus, type WorkItem } from './work.ts'
+import { normalizeMaxThreads, normalizeOutside, normalizeWork, type OutsideStatus, type WorkTask } from './work.ts'
 
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
@@ -43,6 +43,10 @@ export interface Bot {
   fallbacks: Fallback[]
   /** The bot may set its own fallbacks; null from an older host (no fallbacks there). */
   selfFallbacks: boolean | null
+  /** Advisor mode: the agent its threads run on, null when they run on the bot's own. */
+  threadAgent: Fallback | null
+  /** In Advisor mode, the threads' fallbacks; null from an older host (no Advisor mode there). */
+  threadFallbacks: Fallback[] | null
   /** The fallback the bot is on right now; null on its own agent. */
   agentStep: AgentStep | null
   /** Agents of its chain (its own included) resting now; one whose `until` passed isn't. */
@@ -91,15 +95,15 @@ export interface Bot {
   activity: string
   startedAt?: number | null
   workingChat?: string | null
-  /** Its box (`work.ts`): the live and waiting items in dispatch order, then those ended in the last day; none from
+  /** Its box (`work.ts`): the live and waiting tasks in dispatch order, then those ended in the last day; none from
    * a host before the box. */
-  work: WorkItem[]
-  /** The most agents it runs at once, 1 to 6; null from a host before the box. */
-  maxAgents: number | null
-  /** A task that starts while another of the bot's works in the same git repository gets a worktree of its own;
+  work: WorkTask[]
+  /** The most threads it runs at once, 1 to 6; null from a host before the box. */
+  maxThreads: number | null
+  /** A thread that starts while another of the bot's works in the same git repository gets a worktree of its own;
    * null from a host before worktrees. */
-  taskWorktrees: boolean | null
-  /** The bot's folder is in a git repository: where `taskWorktrees` matters. */
+  threadWorktrees: boolean | null
+  /** The bot's folder is in a git repository: where `threadWorktrees` matters. */
   gitRepo: boolean
   /** Git is on the bot's computer; a host that doesn't say counts as having it. */
   gitInstalled: boolean
@@ -142,6 +146,8 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     fastModeIssue: raw.fastModeIssue ?? null,
     fallbacks: raw.fallbacks ?? [],
     selfFallbacks: raw.selfFallbacks ?? null,
+    threadAgent: raw.threadAgent ?? null,
+    threadFallbacks: raw.threadFallbacks ?? null,
     agentStep: raw.agentStep ?? null,
     agentCommands: raw.agentCommands ?? [],
     resting: raw.resting ?? [],
@@ -174,8 +180,8 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     startedAt: raw.startedAt ?? null,
     workingChat: raw.workingChat ?? null,
     work: normalizeWork(raw.work),
-    maxAgents: normalizeMaxAgents(raw.maxAgents),
-    taskWorktrees: raw.taskWorktrees ?? null,
+    maxThreads: normalizeMaxThreads(raw.maxThreads),
+    threadWorktrees: raw.threadWorktrees ?? null,
     gitRepo: raw.gitRepo ?? false,
     gitInstalled: raw.gitInstalled ?? true,
     outside: normalizeOutside(raw.outside),
@@ -237,6 +243,16 @@ export const isWorkingIn = (b: Bot, chat: string) => isWorking(b) && (b.workingC
 /** Where the bot works, as a list shows it: its own folder, or its project folder's name. */
 export const folderName = (b: Bot, tr: (text: string) => string) =>
   b.managedWorkspace ? tr('Own folder') : (b.cwd.split('/').filter(Boolean).pop() ?? b.cwd)
+
+/** A subagent, as its launching call reports it: the totals once it finished in the foreground. */
+export interface Subagent {
+  kind?: string
+  model?: string
+  background?: boolean
+  tokens?: number
+  toolUses?: number
+  durationMs?: number
+}
 
 export interface FileDiff {
   path: string
@@ -385,6 +401,8 @@ export interface EntryData {
   agentSwitch?: AgentSwitch
   /** notice (error): the bot has no fallbacks and its agent ran out; offers to add one. */
   addFallback?: boolean
+  /** notice: a bot chain stopped at its handoff limit; Continue (`continueChain`) lets it go on, once. */
+  continueChain?: boolean
   heading?: string
   delegationId?: string
   sourceBotId?: string
@@ -409,6 +427,12 @@ export interface EntryData {
   /** tool: whether it's the bot's own bookkeeping (composing its message, keeping its memory), left out of the
    * working steps; a host older than 2.25.0 leaves it out, and the steps then leave out the call too. */
   bookkeeping?: boolean
+  /** tool: the agent's id for the call. */
+  toolCallId?: string
+  /** tool: the call that launched the subagent making this one (Claude Code only). */
+  parent?: string
+  /** tool: what a subagent's launch says about it (Claude Code only). */
+  subagent?: Subagent
   output?: string
   diffs?: FileDiff[]
   locations?: { path: string; line?: number }[]
@@ -422,6 +446,8 @@ export interface EntryData {
   choices?: string[]
   /** decision: which choice the bot suggests (`choices`' index). */
   recommended?: number | null
+  /** decision: `false` when only an option answers it (an agent's own question); missing: own words answer it too. */
+  ownWords?: boolean
   command?: string
   detail?: string
   cwd?: string
@@ -445,12 +471,12 @@ export interface EntryData {
    * messages only in the call's conversation. */
   call?: string
   /** user: `voice` when a call's voice wrote it for the user (`send_to_bot`), `host` when the host did (what a
-   * background task was told). */
+   * thread was told). */
   from?: string
-  /** The background task this chat entry comes from (its approval card). */
-  task?: { id: string; title: string }
-  /** The item of the bot's box that task works on. */
-  item?: string
+  /** The thread this chat entry comes from (its approval card): its id, and the title of the task it works on. */
+  thread?: { id: string; title: string }
+  /** The task of the bot's box that thread works on: its id. */
+  task?: string | null
   /** notice: what was said on a realtime call, oldest first. */
   transcript?: CallLine[]
 }
@@ -530,6 +556,8 @@ export interface UsageLoginProfile {
   name: string
   windows: UsageWindow[]
   updatedAt: number
+  /** Since when its checks fail, which leaves `windows` from before. Absent while they work. */
+  failedAt?: number
 }
 
 export interface UsageProvider {
@@ -539,6 +567,8 @@ export interface UsageProvider {
   windows: UsageWindow[]
   source: string
   updatedAt: number
+  /** Since when the default login's checks fail, which leaves `windows` from before. Absent while they work. */
+  failedAt?: number
   /** The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it. */
   registry?: string
   /** What the default login is called, when the agent has login profiles to tell it from. */
@@ -816,6 +846,9 @@ export interface BotDraft {
   fastMode?: boolean
   fallbacks?: Fallback[]
   selfFallbacks?: boolean
+  /** Left out for a host before Advisor mode; null turns it off. */
+  threadAgent?: Fallback | null
+  threadFallbacks?: Fallback[]
   pinned?: boolean
   /** A name puts the bot in that roster section, null takes it out; left out, the host keeps it. */
   section?: string | null
@@ -831,10 +864,10 @@ export interface BotDraft {
   harnessMemory?: boolean
   /** Left out where the bot has none: the host keeps what it has. */
   compaction?: CompactionThreshold
-  /** The most agents at once, 1 to 6; left out for a host before the box. */
-  maxAgents?: number
+  /** The most threads at once, 1 to 6; left out for a host before the box. */
+  maxThreads?: number
   /** Left out for a host before worktrees. */
-  taskWorktrees?: boolean
+  threadWorktrees?: boolean
 }
 
 export function draftOf(bot: Bot): BotDraft {
@@ -855,6 +888,7 @@ export function draftOf(bot: Bot): BotDraft {
     fastMode: bot.fastMode,
     fallbacks: bot.fallbacks,
     selfFallbacks: bot.selfFallbacks ?? undefined,
+    ...(bot.threadFallbacks === null ? {} : { threadAgent: bot.threadAgent, threadFallbacks: bot.threadFallbacks }),
     pinned: bot.pinned,
     hidden: bot.hidden,
     notify: bot.notify ?? null,
@@ -865,8 +899,8 @@ export function draftOf(bot: Bot): BotDraft {
     offeredToNetwork: bot.offeredToNetwork ?? undefined,
     reachableByAssistants: bot.reachableByAssistants ?? undefined,
     compaction: bot.compaction ?? undefined,
-    maxAgents: bot.maxAgents ?? undefined,
-    taskWorktrees: bot.taskWorktrees ?? undefined,
+    maxThreads: bot.maxThreads ?? undefined,
+    threadWorktrees: bot.threadWorktrees ?? undefined,
   }
 }
 

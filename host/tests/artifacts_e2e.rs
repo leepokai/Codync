@@ -13,14 +13,23 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedReceiver;
 
-/// The bot's chat once its turn has ended with `Done.` and it holds `cards` artifact cards.
-async fn cards(host: &Host, bot: &str, cards: usize) -> Vec<Value> {
+/// A bot on the artifact fixture, working in `<home>/workspace`: that folder and the bot's id.
+async fn artifact_bot(host: &Host) -> (PathBuf, String) {
+    let cwd = host.home.join("workspace");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/artifact_agent.py");
+    let created = host.call("createBot", json!({"name":"Artifacts", "backend":"custom", "cwd":cwd, "command":common::python_agent(&agent), "connectors":[], "notify":false})).await;
+    (cwd, created["bot"]["id"].as_str().unwrap().to_owned())
+}
+
+/// The bot's chat cards once `turns` turns have ended with `Done.` and it holds `cards` artifact cards.
+async fn cards(host: &Host, bot: &str, cards: usize, turns: usize) -> Vec<Value> {
     let waited = tokio::time::timeout(Duration::from_secs(30), async {
         loop {
             let entries = host.call("history", json!({"botId": bot})).await["entries"].as_array().unwrap().clone();
             let artifacts: Vec<Value> = entries.iter().filter(|e| e["data"]["artifact"].is_object()).cloned().collect();
             let done = entries.iter().filter(|e| e["data"]["text"] == "Done." && e["data"]["final"] == true).count();
-            if artifacts.len() == cards && done == cards {
+            if artifacts.len() == cards && done == turns {
                 return artifacts;
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -77,15 +86,12 @@ async fn library_until(host: &Host, bot: &str, ready: impl Fn(&[Value]) -> bool)
 #[tokio::test]
 async fn bots_publish_update_and_the_apps_read_and_rename_artifacts() {
     let host = Host::start().await;
-    let cwd = host.home.join("workspace");
-    std::fs::create_dir_all(&cwd).unwrap();
-    let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/artifact_agent.py");
-    let created = host.call("createBot", json!({"name":"Artifacts", "backend":"custom", "cwd":cwd, "command":common::python_agent(&agent), "connectors":[], "notify":false})).await;
-    let bot = created["bot"]["id"].as_str().unwrap();
+    let (cwd, bot) = artifact_bot(&host).await;
+    let bot = bot.as_str();
     let mut events = host.events().await;
 
     host.call("send", json!({"botId": bot, "text": "make-artifact"})).await;
-    let card = cards(&host, bot, 1).await.remove(0);
+    let card = cards(&host, bot, 1, 1).await.remove(0);
     let made = results(&cwd);
     assert!(made[1]["isError"] == true, "a new artifact needs a title: {}", made[1]);
     let id = card["data"]["artifact"]["id"].as_str().unwrap();
@@ -99,7 +105,7 @@ async fn bots_publish_update_and_the_apps_read_and_rename_artifacts() {
 
     // A reply to the card tells the bot which artifact and where its HTML is; it updates that artifact.
     host.call("send", json!({"botId": bot, "text": "update-artifact", "replyTo": card["id"]})).await;
-    let update = cards(&host, bot, 2).await.remove(1);
+    let update = cards(&host, bot, 2, 2).await.remove(1);
     let prompt = std::fs::read_to_string(cwd.join("last-prompt.txt")).unwrap();
     assert!(prompt.contains(&format!("this is about your artifact \"Weekly report\" (id {id})")), "{prompt}");
     assert_eq!(update["data"]["artifact"]["id"], id, "the same artifact, not a second one");
@@ -180,11 +186,8 @@ async fn bots_publish_update_and_the_apps_read_and_rename_artifacts() {
 #[tokio::test]
 async fn groups_and_other_bots_requests_post_no_artifact_card() {
     let host = Host::start().await;
-    let cwd = host.home.join("workspace");
-    std::fs::create_dir_all(&cwd).unwrap();
-    let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/artifact_agent.py");
-    let created = host.call("createBot", json!({"name":"Artifacts", "backend":"custom", "cwd":cwd, "command":common::python_agent(&agent), "connectors":[], "notify":false})).await;
-    let bot = created["bot"]["id"].as_str().unwrap();
+    let (cwd, bot) = artifact_bot(&host).await;
+    let bot = bot.as_str();
     let group = host.call("createBot", json!({"name":"Group", "kind":"group", "members":[bot]})).await;
     let group = group["bot"]["id"].as_str().unwrap();
     host.call("send", json!({"botId": group, "text": "make-artifact"})).await;
@@ -232,4 +235,31 @@ async fn answer_until(cwd: &Path, ready: impl Fn(&Value) -> bool) -> Value {
 
 async fn library(host: &Host, bot: &str) -> Vec<Value> {
     host.call("library", json!({"botId": bot})).await["items"].as_array().unwrap().clone()
+}
+
+/// An update with `notify: false` (#387) replaces the HTML and refreshes the artifact's existing card and Library entry,
+/// without posting a new card in the chat; a new artifact with `notify: false` still gets its card.
+#[tokio::test]
+async fn a_quiet_update_posts_no_new_card() {
+    let host = Host::start().await;
+    let (cwd, bot) = artifact_bot(&host).await;
+    let bot = bot.as_str();
+    host.call("send", json!({"botId": bot, "text": "quiet-new"})).await;
+    let card = cards(&host, bot, 1, 1).await.remove(0);
+    assert_eq!(library(&host, bot).await[0]["artifact"]["entryId"], card["id"], "a new artifact gets its card");
+    let id = card["data"]["artifact"]["id"].as_str().unwrap().to_owned();
+    std::fs::remove_file(cwd.join("artifact-results.json")).unwrap();
+
+    host.call("send", json!({"botId": bot, "text": "quiet-update"})).await;
+    let answer = answer_until(&cwd, |answer| answer["published"] == true).await;
+    assert!(answer["card"].is_null() && answer["quiet"] == true, "{answer}");
+    let quiet = cards(&host, bot, 1, 2).await.remove(0);
+    assert_eq!(html(&host, bot, &id).await, "<h1>Weekly report</h1><p>Quiet fix</p>");
+    assert_eq!(quiet["id"], card["id"], "no new card in the chat");
+    let items = library(&host, bot).await;
+    assert_eq!(items[0]["artifact"]["entryId"], card["id"], "the Library keeps pointing at the existing card");
+    assert_ne!(
+        quiet["data"]["artifact"]["updatedAt"], card["data"]["artifact"]["updatedAt"],
+        "the existing card shows the new version"
+    );
 }

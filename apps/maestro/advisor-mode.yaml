@@ -1,0 +1,108 @@
+# Advisor mode in a bot's Agent card: turned on, the threads start on the bot's own agent and fallbacks; another agent
+# picked under Threads' agent is theirs alone; + under Threads' fallbacks adds a step to their chain, not the chat's; the app opened again shows it kept; turned off, the host keeps no
+# threads' agent or chain. The phone must already be signed in and paired with the host (a worktree's sandbox,
+# docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose clearState undoes that; the flow
+# makes its own bot there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags advisor \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
+# The iPhone reads a switch row as one element (its title, then its detail), hence the `.*`.
+appId: com.pokai.Codync.ios.dev
+tags:
+  - advisor
+onFlowComplete:
+  - runScript:
+      file: advisor-mode.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: advisor-mode.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+- tapOn: "${output.bot.name}, view details"
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element: "Advisor mode.*"
+- tapOn: "Advisor mode.*"
+# Its rows unfold under the switch, which may sit at the bottom edge.
+- scrollUntilVisible:
+    element: "Threads' fallbacks"
+- runScript:
+    file: advisor-mode.js
+    env:
+      STEP: "on"
+# Another agent for the threads, picked in place under their own heading: the chat keeps its own. On Android the picker
+# it opens would start at the bottom edge: the page moves up first, by its margin, where no row takes the touch.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - swipe:
+          start: 3%, 75%
+          end: 3%, 40%
+- tapOn:
+    text: "Kimi Code.*"
+    below: "Threads' agent"
+- tapOn:
+    text: "Kimi Code \\(not installed\\)"
+    below: "Threads' agent"
+- tapOn: "Claude Code"
+- runScript:
+    file: advisor-mode.js
+    env:
+      STEP: picked
+# Closed again, so the threads' + sits right under their agent.
+- tapOn:
+    text: "Claude Code · .*"
+    below: "Threads' agent"
+- scrollUntilVisible:
+    element: "Threads' fallbacks"
+# The threads' chain's +, beside its own heading under the threads' agent: the chat's is above (`rightOf` alone can
+# pick the chat's, which is right of the heading too).
+- tapOn:
+    text: "Add fallback"
+    below: "Threads' agent"
+- runScript:
+    file: advisor-mode.js
+    env:
+      STEP: added
+# Opened again (the app starts over), the form shows what was kept.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+- tapOn: "${output.bot.name}, view details"
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element: "Threads' agent"
+- tapOn: "Advisor mode.*"
+- extendedWaitUntil:
+    notVisible: "Threads' agent"
+    timeout: 5000
+- runScript:
+    file: advisor-mode.js
+    env:
+      STEP: "off"

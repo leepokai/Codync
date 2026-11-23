@@ -2,6 +2,7 @@ import type { SignInFailure, SignInProvider } from './analytics'
 import type { SharedFile } from './models'
 import type { SSHBridge } from './ssh'
 import type { ScreenAgentState } from './computer-access'
+import type { AlertKind, DesktopAlert } from './alerts'
 import type { IslandRect, IslandScreen, IslandSummary } from './island'
 import type { VoiceKey, VoiceShortcut } from './voice-shortcut'
 import type { ErrorReport } from './error-report'
@@ -137,6 +138,8 @@ export interface TraySummary {
 /** Things the tray menu (or the app menu) asks the window to do. */
 export type WindowCommand =
   | { kind: 'openBot'; ref: string }
+  /** A system notification was clicked: opens its bot (`desktop_notification_opened`). */
+  | { kind: 'openAlert'; ref: string; alert: AlertKind }
   | { kind: 'stopBot'; ref: string }
   | { kind: 'reviewApprovals' }
   | { kind: 'confirmReset' }
@@ -259,6 +262,15 @@ export interface CodyncBridge {
     setCalling(on: boolean): void
   }
   ssh: SSHBridge
+  /** System notifications for hosts' alerts (shared/alerts.ts): off until the user turns them on, since a phone gets the same ones. */
+  notifications: {
+    /** False where the system shows none (a Linux desktop without a notification server). */
+    supported: boolean
+    enabled(): Promise<boolean>
+    setEnabled(on: boolean): Promise<boolean>
+    /** Shown only while turned on; a click opens its bot. */
+    show(alert: DesktopAlert): void
+  }
   /** The notch island (shared/island.ts): its setting, the chat window's summary, and the island window's side. */
   island: {
     /** False where a window can't place itself at the top of the screen (Linux on Wayland). */

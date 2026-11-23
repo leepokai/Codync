@@ -26,10 +26,12 @@ pub enum TurnSource {
     Routine,
     Group,
     Bot,
-    /// The host's own turn, with no message of the user's (the lead opening a call).
+    /// The host's own turn, with no message of the user's: the lead opening a call, the reports of the bot's tasks.
     Host,
     /// A follow-up the bot set for itself came due.
     FollowUp,
+    /// The watchdog's look at one of the bot's tasks that seems stuck.
+    Watchdog,
 }
 
 /// A turn that ended, as its actor knows it (`turn_finished`).
@@ -39,14 +41,14 @@ pub struct TurnEnd<'a> {
     pub stop_reason: &'a str,
     pub failure: Option<&'a anyhow::Error>,
     pub source: TurnSource,
-    /// Where the item a task works came from (`chat::tasks::Source::kind`), as the turn began: the item may have
-    /// ended since (a Stop, a run past its limit). Told only of a task's turn.
+    /// Where the task a thread works came from (`chat::work::Source::kind`), as the turn began: the task may have
+    /// ended since (a Stop, a run past its limit). Told only of a thread's turn.
     pub work: &'static str,
     pub ms: i64,
 }
 
 /// `turn_finished`: the bot's agent, how the turn ended, why it failed, how long it ran, the ceiling a network
-/// rule held it to and, for a task's turn, where its item came from; never its text or the error's.
+/// rule held it to and, for a thread's turn, where its task came from; never its text or the error's.
 pub fn turn_finished(hub: &Hub, bot: &BotConfig, turn: TurnEnd<'_>) {
     let TurnEnd { outcome, stop_reason, failure, source, work, ms } = turn;
     let failure = failure.map(failure_kind);
@@ -65,14 +67,15 @@ pub fn turn_finished(hub: &Hub, bot: &BotConfig, turn: TurnEnd<'_>) {
         TurnSource::Bot => "bot",
         TurnSource::Host => "host",
         TurnSource::FollowUp => "follow_up",
+        TurnSource::Watchdog => "watchdog",
     };
     let mut p = json!({"agent": bot.backend, "outcome": outcome, "stop_reason": stop_reason, "source": source, "seconds": ms.max(0) / 1000});
     let access = hub.ceilings.access(&bot.id);
     if access.is_ceiling() {
         p["ceiling"] = access.word().into();
     }
-    // A task's turn: where the item it works came from, so the work a bot gave away is told from its chat.
-    if bot.is_task() {
+    // A thread's turn: where the task it works came from, so the work a bot gave away is told from its chat.
+    if bot.is_thread() {
         p["work"] = work.into();
     }
     if let Some((kind, rpc)) = failure {
@@ -141,6 +144,9 @@ pub enum Retired {
     RoutineFinished,
     /// A routine run ended and the agent couldn't close its session, which holds MCP servers (Cursor can't close one).
     SessionNotClosed,
+    /// The agent dropped Codync's MCP servers from a live session (OpenCode 2.x after an idle while, #508), so it
+    /// started again and reopened the session with them.
+    ServersLost,
 }
 
 /// `agent_retired`: a bot's `agent` stopped to give back its processes, and why.
@@ -188,9 +194,9 @@ pub fn agent_command_sent(hub: &Hub, agent: &str) {
 
 /// Why a turn failed, as a category (plus the agent's JSON-RPC error, for its code and own
 /// category): never the error's text, which can hold paths and agent output.
-fn failure_kind(e: &anyhow::Error) -> (&'static str, Option<&crate::agent::acp::RpcError>) {
-    use crate::agent::acp::{Failure, FailureKind, RpcError};
+fn failure_kind(e: &anyhow::Error) -> (&'static str, Option<&codync_agent::acp::RpcError>) {
     use crate::agent::fallback::{Reason, reason};
+    use codync_agent::acp::{Failure, FailureKind, RpcError};
     if let Some(f) = e.chain().find_map(|c| c.downcast_ref::<Failure>()) {
         let kind = match f.kind {
             FailureKind::NotSetUp => "not_installed",
@@ -202,7 +208,7 @@ fn failure_kind(e: &anyhow::Error) -> (&'static str, Option<&crate::agent::acp::
         return (kind, None);
     }
     // The same two tests that put a sign-in card in the chat (`invite_sign_in`, `fall_back`).
-    if crate::agent::acp::needs_sign_in(e) || reason::of(e) == Some(Reason::SignedOut) {
+    if codync_agent::acp::needs_sign_in(e) || reason::of(e) == Some(Reason::SignedOut) {
         return ("sign_in", None);
     }
     for cause in e.chain() {
@@ -259,8 +265,8 @@ mod tests {
 
     #[test]
     fn a_failed_turn_names_its_kind_not_its_text() {
-        use crate::agent::acp::{Failure, FailureKind, RpcError};
         use anyhow::Context as _;
+        use codync_agent::acp::{Failure, FailureKind, RpcError};
         let code = |e: &anyhow::Error| {
             let (kind, rpc) = failure_kind(e);
             (kind, rpc.map(|r| r.code))
@@ -285,13 +291,13 @@ mod tests {
     }
 
     #[test]
-    fn a_tasks_turn_says_where_its_item_came_from() {
+    fn a_threads_turn_says_where_its_task_came_from() {
         use crate::LockExt as _;
         use crate::chat::calls::context::tests::{bot, hub};
         let hub = hub();
         let own = bot("b1", "Ada", "/tmp");
-        let task = BotConfig { id: "task-1".into(), task_of: Some("b1".into()), ..own.clone() };
-        // Its box holds no item at work any more: a run the user stopped has ended by the time its turn does.
+        let thread = BotConfig { id: "thread-1".into(), thread_of: Some("b1".into()), ..own.clone() };
+        // Its box holds no task at work any more: a run the user stopped has ended by the time its turn does.
         let turn = TurnEnd {
             outcome: TurnOutcome::Stopped,
             stop_reason: "cancelled",
@@ -300,7 +306,7 @@ mod tests {
             work: "routine",
             ms: 0,
         };
-        for cfg in [&own, &task] {
+        for cfg in [&own, &thread] {
             turn_finished(&hub, cfg, turn);
         }
         let mut rx = hub.analytics.rx.locked().take().expect("nothing read it yet");
@@ -313,7 +319,7 @@ mod tests {
 
     #[test]
     fn a_turn_the_user_must_set_up_is_not_a_failure() {
-        use crate::agent::acp::{AUTH_REQUIRED, Failure, FailureKind, RpcError};
+        use codync_agent::acp::{AUTH_REQUIRED, Failure, FailureKind, RpcError};
         let failed = |e: anyhow::Error| outcome_name(TurnOutcome::Failed, Some(failure_kind(&e).0));
         assert_eq!(failed(Failure::error(FailureKind::NotSetUp, "Codex isn't set up")), "needs_setup");
         assert_eq!(failed(RpcError { code: AUTH_REQUIRED, message: "x".into(), kind: None }.into()), "needs_setup");

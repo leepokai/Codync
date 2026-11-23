@@ -37,11 +37,8 @@ pub(super) fn patched(stored: &BotConfig, patch: &Value) -> Result<BotConfig> {
         cfg.model_options.clear();
     }
     // So do modes, to one agent: on another, a picked mode becomes its Auto mode, as the apps do it.
-    if cfg.backend != stored.backend
-        && patch.get("mode").is_none()
-        && cfg.mode.as_deref().is_some_and(|m| m != crate::agent::modes::AUTO)
-    {
-        cfg.mode = Some(crate::agent::modes::AUTO.into());
+    if cfg.backend != stored.backend && patch.get("mode").is_none() {
+        cfg.mode = codync_agent::modes::on_other_agent(cfg.mode.as_deref());
     }
     if cfg.kind != stored.kind {
         bail!("a bot can't become a group, or a group a bot");
@@ -82,6 +79,19 @@ mod tests {
         assert_eq!(profiles(older), [Some("a1".into()), None, Some("a2".into())], "a list of agents alone");
         let cleared = json!([{"backend": "claude", "loginProfile": null}, {"backend": "claude", "loginProfile": "a1"}]);
         assert_eq!(profiles(cleared), [None, Some("a1".into())], "a step that names its login profile, or none");
+    }
+
+    #[test]
+    fn a_new_model_keeps_only_the_options_sent_with_it() {
+        let stored: BotConfig = serde_json::from_value(
+            json!({"id": "a", "name": "a", "backend": "claude", "model": "opus", "modelOptions": {"effort": "low"}}),
+        )
+        .expect("a bot config");
+        let effort = |patch| patched(&stored, &patch).expect("a valid patch").model_options.get("effort").cloned();
+        assert_eq!(effort(json!({"model": "sonnet"})), None, "left out: the new model's defaults");
+        let sent = json!({"model": "sonnet", "modelOptions": {"effort": "medium"}});
+        assert_eq!(effort(sent).as_deref(), Some("medium"));
+        assert_eq!(effort(json!({"name": "b"})).as_deref(), Some("low"), "same model: kept");
     }
 
     #[test]

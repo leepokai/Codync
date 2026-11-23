@@ -79,7 +79,7 @@ fn status(hub: &Hub, cfg: &BotConfig) -> Value {
         }
     }
     // What it works on away from the chat, and what waits.
-    if let Some(lines) = crate::chat::tasks::lines(hub, cfg, "Its").filter(|_| !cfg.is_group()) {
+    if let Some(lines) = crate::chat::work::lines(hub, cfg, "Its").filter(|_| !cfg.is_group()) {
         out["background"] = lines.into();
     }
     out
@@ -109,7 +109,7 @@ pub(super) fn waiting(recent: &[Entry]) -> Option<Waiting<'_>> {
     let card =
         recent.iter().rev().find(|e| e.kind == EntryKind::Permission.as_str() && e.data["status"] == "pending")?;
     let (request, options) = approval(&card.data);
-    let work = card.data["task"]["title"].as_str().filter(|title| !title.is_empty());
+    let work = card.data["thread"]["title"].as_str().filter(|title| !title.is_empty());
     Some(Waiting { card, request, options, work })
 }
 
@@ -130,7 +130,7 @@ fn answer(hub: &Hub, cfg: &BotConfig, option: &str) -> Result<Value> {
         return Ok(json!({"error": "No such option.", "options": names}));
     };
     // A card in a group belongs to the bot that asked.
-    let owner = crate::chat::tasks::card_actor(card).to_owned();
+    let owner = crate::chat::work::card_actor(card).to_owned();
     let option_id = pick["optionId"].as_str().map(str::to_owned);
     hub.send_cmd(&owner, Cmd::Permission { entry_id: card.id.clone(), option_id })?;
     Ok(json!({"answered": pick["name"]}))
@@ -157,7 +157,7 @@ fn stop(hub: &Arc<Hub>, cfg: &BotConfig) -> Result<Value> {
     } else {
         hub.send_cmd(&cfg.id, Cmd::Stop)?;
         // Its work in the background too: "stop" on a call means all of it.
-        crate::chat::tasks::stop(hub, &cfg.id, None)?;
+        crate::chat::work::stop(hub, &cfg.id, None)?;
     }
     Ok(json!({"stopped": true}))
 }
@@ -198,11 +198,11 @@ mod tests {
             status(&hub, &bot)["approval"],
             json!({"request": "Edit a.txt", "options": ["Allow", "Always", "Reject"]})
         );
-        let from_task = json!({"title": "Run tests", "status": "pending", "options": options(),
-            "task": {"id": "task-1", "title": "Fix login"}});
-        hub.store.insert_entry(&Lane::main("b1"), EntryKind::Permission, 1, &from_task).unwrap();
-        assert_eq!(status(&hub, &bot)["approval"]["work"], "Fix login", "the item that asks");
-        crate::chat::tasks::put_working_for_test(&hub.store, "b1", "task-1");
+        let from_thread = json!({"title": "Run tests", "status": "pending", "options": options(),
+            "thread": {"id": "thread-1", "title": "Fix login"}});
+        hub.store.insert_entry(&Lane::main("b1"), EntryKind::Permission, 1, &from_thread).unwrap();
+        assert_eq!(status(&hub, &bot)["approval"]["work"], "Fix login", "the task that asks");
+        crate::chat::work::put_working_for_test(&hub.store, "b1", "thread-1");
         let background = status(&hub, &bot)["background"].as_str().unwrap().to_owned();
         assert!(background.starts_with("Its work in the background: 1 working, 0 waiting"), "{background}");
         assert!(background.ends_with("- working: \"Work\" (i1)"), "{background}");

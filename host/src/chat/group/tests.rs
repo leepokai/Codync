@@ -111,7 +111,7 @@ impl Room {
             std::fs::create_dir_all(&cwd).unwrap();
             let cfg: BotConfig = serde_json::from_value(json!({
                 "id": id, "name": id, "backend": "fixture", "cwd": cwd,
-                "command": crate::shell::python(&agent), "notify": false,
+                "command": codync_agent::shell::python(&agent), "notify": false,
             }))
             .unwrap();
             store.save_bot(&cfg).unwrap();

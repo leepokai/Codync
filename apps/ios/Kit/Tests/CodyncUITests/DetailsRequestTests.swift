@@ -27,8 +27,8 @@ import Testing
     #expect(!store.takeDetailsRequest(for: "b2"))
     #expect(store.takeDetailsRequest(for: "b1"))
     #expect(!store.takeDetailsRequest(for: "b1"))
-    // The same for the card an item waits on.
-    store.requestCard(of: "b1", item: WorkItem(id: "i1", title: "Fix login", status: .needsYou))
+    // The same for the card a task waits on.
+    store.requestCard(of: "b1", task: WorkTask(id: "i1", title: "Fix login", status: .needsYou))
     #expect(store.takeCardRequest(for: "b2") == nil)
     #expect(store.takeCardRequest(for: "b1")?.id == "i1")
     #expect(store.takeCardRequest(for: "b1") == nil)

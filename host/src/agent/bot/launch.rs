@@ -1,12 +1,12 @@
 //! The agent process: which commands start it, the ACP handshake, the bot's model, and how its instructions are
 //! attached to a session request.
 
-use super::{Adapter, Conn, SessionCaps};
-use crate::agent::acp::{self, Acp};
-use crate::agent::backends;
-use crate::agent::registry::{Candidate, Cmd};
+use super::{Conn, ServerWatch};
 use crate::store::BotConfig;
 use anyhow::{Result, anyhow};
+use codync_agent::acp::{self, Acp, Capabilities};
+use codync_agent::backends;
+use codync_agent::registry::{Candidate, Cmd};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -75,7 +75,7 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
             current = answer;
         }
     }
-    // The older `modes` field comes only with the session (`agent::modes`).
+    // The older `modes` field comes only with the session (`codync_agent::modes`).
     if current.get("modes").is_none()
         && let Some(modes) = res.get("modes")
     {
@@ -103,13 +103,11 @@ fn model_error(model: &str, e: &anyhow::Error) -> anyhow::Error {
     acp::Failure::error(acp::FailureKind::NoModel, format!("Couldn't select model {model}: {e:#}"))
 }
 
-/// Cursor names a model variant `grok-4.7[reasoning_effort=high,fast=true]`. When the agent
-/// lists plain models instead, the bracket becomes options of the plain model.
+/// A Cursor model variant ([`auth::cursor_variant`](crate::agent::auth::cursor_variant)): when the agent lists plain
+/// models instead, the bracket becomes options of the plain model.
 fn split_variant<'a>(res: &Value, model: &'a str) -> (&'a str, Vec<(&'a str, &'a str)>) {
     let listed = |id: &str| crate::agent::auth::model_ids(res).iter().any(|m| m == id);
-    if let Some((name, params)) = model.strip_suffix(']').and_then(|m| m.split_once('['))
-        && let Some(params) =
-            params.split(',').filter(|p| !p.is_empty()).map(|p| p.split_once('=')).collect::<Option<Vec<_>>>()
+    if let Some((name, params)) = crate::agent::auth::cursor_variant(model)
         && !listed(model)
         && listed(name)
     {
@@ -134,7 +132,7 @@ pub(crate) async fn start_first<F: Future<Output = Result<Conn>>>(
     for (i, candidate) in candidates.into_iter().enumerate() {
         let fallback_left = i + 1 < count;
         match start(candidate, env.clone(), fallback_left).await {
-            Ok(conn) if conn.superseded && fallback_left => {
+            Ok(conn) if conn.superseded() && fallback_left => {
                 // A login profile keeps that database with its login: the shared one would sign every one of them in
                 // as whoever signed in last (OpenCode 2 keeps its logins there).
                 let own = env.iter().any(|(name, _)| name == crate::agent::login_profiles::PROFILE_VAR);
@@ -186,12 +184,14 @@ pub(crate) async fn start_agent(
             json!({
                 "protocolVersion": 1,
                 // `session.compaction`: tell us when the agent summarizes its context.
+                // `elicitation`: the agent's own questions come as forms the user answers on a card.
                 // `parameterizedModelPicker`: Cursor lists plain models with their options
                 // (effort, fast…) instead of one fixed variant each; model discovery asks the same.
                 "clientCapabilities": {
                     "fs": {"readTextFile": false, "writeTextFile": false},
                     "terminal": false,
                     "session": {"compaction": {}},
+                    "elicitation": crate::agent::elicitation::capability(),
                     "_meta": {"parameterizedModelPicker": true},
                 },
                 "clientInfo": {"name": "codync", "title": "Codync", "version": env!("CARGO_PKG_VERSION")},
@@ -212,27 +212,12 @@ pub(crate) async fn start_agent(
             return Err(acp::Failure::error(acp::FailureKind::Timeout, message));
         }
     };
-    let reopen = if init["agentCapabilities"]["loadSession"].as_bool().unwrap_or(false) {
-        Some("session/load")
-    } else {
-        init["agentCapabilities"]["sessionCapabilities"]["resume"].is_object().then_some("session/resume")
-    };
-    let sessions = SessionCaps {
-        reopen,
-        close: init["agentCapabilities"]["sessionCapabilities"]["close"].is_object(),
-        system_prompt: init["agentCapabilities"]["sessionCapabilities"]["systemPrompt"].is_object(),
-        additional_directories: init["agentCapabilities"]["sessionCapabilities"]["additionalDirectories"].is_object(),
-        // Claude's, Codex's and omp's adapters say so in the top-level `_meta`.
-        steering: init["_meta"]["steering"]["supported"] == true,
-        fork: init["agentCapabilities"]["sessionCapabilities"]["fork"].is_object(),
-        delete: init["agentCapabilities"]["sessionCapabilities"]["delete"].is_object(),
-    };
+    let sessions = Capabilities::from_initialize(&init);
     Ok(Conn {
         acp,
         rx,
+        servers: if sessions.drops_servers() { ServerWatch::Unseen } else { ServerWatch::Off },
         sessions,
-        adapter: adapter(&init),
-        superseded: superseded(&init),
         loaded: HashMap::new(),
         spent: false,
         started: Instant::now(),
@@ -244,45 +229,17 @@ pub(crate) async fn start_agent(
         usage: HashMap::new(),
         renamed: HashMap::new(),
         on_profile: None,
+        codex_home: None,
     })
-}
-
-fn adapter(init: &Value) -> Adapter {
-    if init["agentCapabilities"]["_meta"]["claudeCode"].is_object() {
-        Adapter::Claude
-    } else if init["agentInfo"]["name"].as_str().is_some_and(|name| name.ends_with("codex-acp")) {
-        Adapter::Codex
-    } else {
-        Adapter::Other
-    }
-}
-
-/// OpenCode 1.x retries a model call its provider refused forever (a used-up free quota, a bad key), so the turn
-/// never ends and the chat stays on "Thinking…" (anomalyco/opencode#41848); 2.x returns the error at once.
-fn superseded(init: &Value) -> bool {
-    init["agentInfo"]["name"] == "OpenCode"
-        && init["agentInfo"]["version"]
-            .as_str()
-            .and_then(|v| semver::Version::parse(v).ok())
-            .is_some_and(|v| v.major < 2)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn only_opencode_before_2_is_superseded() {
-        let init = |name: &str, version: &str| json!({"agentInfo": {"name": name, "version": version}});
-        assert!(superseded(&init("OpenCode", "1.19.5")));
-        assert!(!superseded(&init("OpenCode", "2.2.6")));
-        assert!(!superseded(&init("OpenCode", "dev")));
-        assert!(!superseded(&init("Kilo", "1.0.0")));
-        assert!(!superseded(&json!({})));
-    }
-
     #[tokio::test]
     async fn an_outdated_agent_that_quits_at_start_is_told_to_update() {
+        crate::agent::init_runtime();
         let python = if cfg!(windows) { "python" } else { "python3" };
         let command = format!(
             r#"{python} -c "import sys; sys.stderr.write('Error: profile acp does not exist\n'); sys.exit(1)""#
@@ -313,7 +270,7 @@ mod tests {
         })
         .await
         .unwrap();
-        (conn.superseded, own_db)
+        (conn.superseded(), own_db)
     }
 
     #[cfg(unix)]

@@ -237,7 +237,8 @@ mod daemon {
     pub async fn run() -> Result<()> {
         tracing_subscriber::fmt()
             .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "codync_host=info".into()),
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "codync_host=info,codync_agent=info".into()),
             )
             .log_internal_errors(false)
             .init();

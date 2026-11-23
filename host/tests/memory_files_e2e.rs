@@ -149,7 +149,7 @@ async fn a_shell_edit_is_the_bots_and_outside_the_users_turn_only_adds() {
     }
 
     // A routine's turn isn't one the user started: a line its shell command takes out is put back. The run is an
-    // item in the bot's box, so the turn is its task's.
+    // task in the bot's box, so the turn is its thread's.
     let instruction = format!("SHELL {}\n- Likes tea", main.display());
     let routine = json!({"botId": bot, "name": "Tidy", "instruction": instruction, "triggers": [{"type": "webhook"}]});
     let id = host.call("saveRoutine", routine).await["routine"]["id"].as_str().unwrap().to_owned();
@@ -170,7 +170,7 @@ async fn a_shell_edit_is_the_bots_and_outside_the_users_turn_only_adds() {
     }
     let work =
         host.snapshot().await["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot).unwrap()["work"].clone();
-    assert_eq!(work[0]["source"]["kind"], "routine", "the run worked in a task: {work}");
+    assert_eq!(work[0]["source"]["kind"], "routine", "the run worked in a thread: {work}");
     // The run's own session made that change; the chat, which didn't, isn't told it was put back.
     host.reply(&bot, "hello").await;
     let heard = host.prompts(&bot).last().unwrap().clone();

@@ -19,6 +19,11 @@ use super::time::{MONTHS, local, month_day};
 use codync_mem::compaction::Threshold;
 
 /// A compaction threshold as the apps name it: a choice, or the size as "120K".
+/// A switch field's value.
+fn switch(on: bool) -> &'static str {
+    if on { "◉ On   ○ Off" } else { "○ On   ◉ Off" }
+}
+
 fn compaction_label(at: Threshold) -> String {
     match at {
         Threshold::Off => tr("Auto (default)").into_owned(),
@@ -65,6 +70,13 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
         Field::SelfFallbacks => {
             tr("Let the bot change its fallbacks: it can set this list itself, for example when you ask it to.").into_owned()
         }
+        Field::Advisor => {
+            tr("The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.").into_owned()
+        }
+        Field::ThreadFallbacks => {
+            let agent = f.thread_agent.as_ref().map(|a| app.agent_name(&a.backend)).unwrap_or_default();
+            tr("If {agent} runs out of usage or can't answer, threads carry on with the next one.").replace("{agent}", &agent)
+        }
         Field::Approvals => {
             let choice = app.approval(f);
             [choice.note.unwrap_or_default(), tr(choice.detail).into_owned()].join(" ").trim().to_owned()
@@ -80,7 +92,7 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
             );
             [about.into_owned(), sizes].join(" ")
         }
-        Field::TaskWorktrees => {
+        Field::ThreadWorktrees => {
             tr("Threads that work at once in this repository each get their own branch.").into_owned()
         }
         Field::Team => {
@@ -137,9 +149,12 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::Fast => "Fast mode",
             Field::Fallbacks => "Fallbacks",
             Field::SelfFallbacks => "Bot edits",
+            Field::Advisor => "Advisor mode",
+            Field::ThreadAgent => "Threads' agent",
+            Field::ThreadFallbacks => "Threads' fallbacks",
             Field::Folder => "Workspace",
-            Field::MaxAgents => "Threads at once",
-            Field::TaskWorktrees => "Worktree per thread",
+            Field::MaxThreads => "Threads at once",
+            Field::ThreadWorktrees => "Worktree per thread",
             Field::Approvals => "Approvals",
             Field::Compaction => "Summarize",
             Field::Notify => "Notify",
@@ -205,7 +220,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 }
             }
             Field::Fast => {
-                let s = if f.fast { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
+                let s = switch(f.fast);
                 // Known once the agent's model list loads, or once the bot's own sessions say.
                 let saved = app.bots.get(&f.bot_id).filter(|b| b.backend == f.backend);
                 let offered = match app.models.get(&f.backend) {
@@ -271,11 +286,14 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     rput(buf, inner.right(), y, &tr("Not signed in"), t.amber.patch(base));
                 }
             }
-            Field::Fallbacks => {
+            Field::Fallbacks | Field::ThreadFallbacks => {
                 let bot = app.bots.get(&f.bot_id);
+                // "In use" is the chat's step: Advisor mode's threads each run their own.
+                let chat = *field == Field::Fallbacks;
+                let list = if chat { &f.fallbacks } else { &f.thread_fallbacks };
                 let mut items: Vec<String> =
-                    f.fallbacks.iter().enumerate().map(|(j, x)| super::fallbacks::step_item(app, bot, j, x)).collect();
-                if f.fallbacks.len() < crate::agent::fallback::MAX_FALLBACKS {
+                    list.iter().enumerate().map(|(j, x)| super::fallbacks::step_item(app, bot, j, x, chat)).collect();
+                if list.len() < crate::agent::fallback::MAX_FALLBACKS {
                     items.push("+ add".into());
                 }
                 let mut x = vx;
@@ -289,8 +307,22 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 }
             }
             Field::SelfFallbacks => {
-                let s = if f.self_fallbacks { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
-                put(buf, vx, y, vw, s, t.text.patch(base));
+                put(buf, vx, y, vw, switch(f.self_fallbacks), t.text.patch(base));
+            }
+            Field::Advisor => {
+                put(buf, vx, y, vw, switch(f.thread_agent.is_some()), t.text.patch(base));
+            }
+            Field::ThreadAgent => {
+                if let Some(agent) = &f.thread_agent {
+                    let label = super::fallbacks::step_label(app, agent);
+                    put(buf, vx, y, vw, &format!("‹ {label} ›"), t.text.patch(base));
+                    let bot = app.bots.get(&f.bot_id);
+                    if let Some(note) =
+                        bot.and_then(|b| super::fallbacks::rest_note(b, &agent.backend, agent.login_profile.as_deref()))
+                    {
+                        rput(buf, inner.right(), y, &note, t.amber.patch(base));
+                    }
+                }
             }
             Field::Folder => {
                 put(
@@ -315,13 +347,12 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     put(buf, vx, y + 1, vw, &tr(line), t.dim.patch(t.panel));
                 }
             }
-            Field::MaxAgents => {
-                let n = f.max_agents.unwrap_or_default();
+            Field::MaxThreads => {
+                let n = f.max_threads.unwrap_or_default();
                 put(buf, vx, y, vw, &format!("‹ {n} ›"), t.text.patch(base));
             }
-            Field::TaskWorktrees => {
-                let s = if f.task_worktrees == Some(true) { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
-                put(buf, vx, y, vw, s, t.text.patch(base));
+            Field::ThreadWorktrees => {
+                put(buf, vx, y, vw, switch(f.thread_worktrees == Some(true)), t.text.patch(base));
             }
             Field::Approvals => {
                 let label = app.approval(f).label;
@@ -335,16 +366,12 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 put(buf, vx, y, vw, &value, style.patch(base));
             }
             Field::Computer => {
-                let s = if f.computer { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
+                let s = switch(f.computer);
                 let status = super::computer_access::status(&app.screen, app.online);
                 put(buf, vx, y, vw, &format!("{s}  · {status}"), t.text.patch(base));
             }
             Field::Team => {
-                let s = match f.manage_team {
-                    Some(true) => "◉ On   ○ Off",
-                    Some(false) => "○ On   ◉ Off",
-                    None => "Needs a newer Codync host",
-                };
+                let s = f.manage_team.map_or("Needs a newer Codync host", switch);
                 put(buf, vx, y, vw, s, t.text.patch(base));
             }
             Field::Network | Field::Assistants => {
@@ -353,11 +380,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 } else {
                     (f.reachable_by_assistants, app.network["assistants"] == true, "cloud assistants are off here")
                 };
-                let s = match on {
-                    Some(true) => "◉ On   ○ Off",
-                    Some(false) => "○ On   ◉ Off",
-                    None => "Needs a newer Codync host",
-                };
+                let s = on.map_or("Needs a newer Codync host", switch);
                 let s = if on.is_some() && !applies { format!("{s}  · {}", tr(off_here)) } else { s.into() };
                 put(buf, vx, y, vw, &s, t.text.patch(base));
             }
@@ -424,11 +447,15 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         Field::Agent => "←→ change · ↵ install / sign in · tab next",
         Field::LoginProfile => "←→ change · ↵ add login profile · tab next",
         Field::Model => "←→ pick a model · or type its id",
-        Field::Fallbacks => "←→ pick · space add / model · a agent · c login profile · [ ] move · x remove",
+        Field::Fallbacks | Field::ThreadFallbacks => {
+            "←→ pick · space add / model · a agent · c login profile · [ ] move · x remove"
+        }
+        Field::ThreadAgent => "←→ agent · space model · c login profile · tab next",
         Field::Fast
         | Field::SelfFallbacks
-        | Field::MaxAgents
-        | Field::TaskWorktrees
+        | Field::Advisor
+        | Field::MaxThreads
+        | Field::ThreadWorktrees
         | Field::Color
         | Field::Shape
         | Field::Approvals

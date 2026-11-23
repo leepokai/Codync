@@ -12,10 +12,10 @@ pub fn path(id: &str) -> PathBuf {
 
 /// `cfg` is a bot working in its own folder.
 pub fn is_managed(cfg: &BotConfig) -> bool {
-    !cfg.is_task() && own_folder(cfg).is_some()
+    !cfg.is_thread() && own_folder(cfg).is_some()
 }
 
-/// The bot's own folder, when `cfg` works in it: the bot itself, or a task of its that works there (not in a
+/// The bot's own folder, when `cfg` works in it: the bot itself, or a thread of its that works there (not in a
 /// worktree).
 pub fn own_folder(cfg: &BotConfig) -> Option<PathBuf> {
     let dir = path(cfg.owner());

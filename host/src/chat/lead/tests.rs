@@ -1,6 +1,6 @@
 use super::*;
 use crate::remote::identity::Identity;
-use crate::usage::{Provider, Usage, Window};
+use crate::usage::{Checked, Provider, Usage, Window};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -37,7 +37,7 @@ impl Fixture {
         let store = Store::open(&dir.join("test.db")).unwrap();
         let hub = Hub::new(store, "lead-test".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
         hub.start().unwrap();
-        Self { hub, command: crate::shell::python(&agent), dir }
+        Self { hub, command: codync_agent::shell::python(&agent), dir }
     }
 
     fn cfg(&self, name: &str) -> BotConfig {
@@ -136,7 +136,7 @@ async fn check_ins_wait_while_the_plan_is_nearly_used_up() {
                 text: None,
             }],
             source: "agent",
-            updated_at: 0,
+            checked: Checked::default(),
             default_login_profile: None,
             login_profiles: Vec::new(),
         }],

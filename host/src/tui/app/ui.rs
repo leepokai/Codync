@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use super::super::manage::{
     AgentSetup, AllWork, AnalyticsSheet, BotChatSheet, CutIn, DetailsPage, DevServersSheet, Fields, Gear, KeyImport,
-    Library, Market, MemorySheet, NetworkSheet, RoutineForm, SkillSheet, TaskSheet,
+    Library, Market, MemorySheet, NetworkSheet, RoutineForm, SkillSheet, ThreadSheet,
 };
 use super::{Editor, KofiSheet, Mark, WhatsNew};
 
@@ -81,7 +81,7 @@ pub const ACTIONS: [(&str, &str, Action); 23] = [
     ("Refresh agents", "", Action::RefreshAgents),
     ("Move active bots to the top", "", Action::AutoOrder),
     ("Computer name", "", Action::ComputerName),
-    ("Pair a phone…", "P", Action::Pair),
+    ("Pair phone…", "P", Action::Pair),
     ("Network: your other computers…", "N", Action::Network),
     ("Usage", "U", Action::Usage),
     ("Check for updates", "", Action::CheckUpdate),
@@ -122,10 +122,10 @@ pub enum ConfirmAct {
     ResetCredentials,
     /// Deletes them (`resetCredentials`).
     DeleteCredentials,
-    /// Stops one item of a bot's box.
+    /// Stops one task of a bot's box.
     StopWork {
         bot: String,
-        item: String,
+        task: String,
     },
 }
 
@@ -197,11 +197,17 @@ pub enum Field {
     Fast,
     Fallbacks,
     SelfFallbacks,
+    /// Advisor mode: the bot's threads run on an agent of their own; only on a host that has it.
+    Advisor,
+    /// In Advisor mode, the agent its threads run on.
+    ThreadAgent,
+    /// In Advisor mode, the threads' fallbacks.
+    ThreadFallbacks,
     Folder,
-    /// The most agents it runs at once; only on a host that sends `maxAgents`.
-    MaxAgents,
-    /// A worktree per agent; only for a bot in a git repository, on a host that sends `taskWorktrees`.
-    TaskWorktrees,
+    /// The most threads it runs at once; only on a host that sends `maxThreads`.
+    MaxThreads,
+    /// A worktree per thread; only for a bot in a git repository, on a host that sends `threadWorktrees`.
+    ThreadWorktrees,
     Approvals,
     Compaction,
     Notify,
@@ -215,7 +221,7 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 23] = [
+pub const FIELDS: [Field; 26] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,
@@ -225,10 +231,13 @@ pub const FIELDS: [Field; 23] = [
     Field::Fast,
     Field::Fallbacks,
     Field::SelfFallbacks,
+    Field::Advisor,
+    Field::ThreadAgent,
+    Field::ThreadFallbacks,
     Field::Compaction,
     Field::Folder,
-    Field::MaxAgents,
-    Field::TaskWorktrees,
+    Field::MaxThreads,
+    Field::ThreadWorktrees,
     Field::Approvals,
     Field::Notify,
     Field::Computer,
@@ -262,12 +271,17 @@ pub struct Form {
     /// Agents that carry on, in order, when the bot's own can't answer.
     pub fallbacks: Vec<crate::store::Fallback>,
     pub self_fallbacks: bool,
+    /// The host has Advisor mode.
+    pub advisor: bool,
+    /// In Advisor mode, the agent the threads run on; `None`: off.
+    pub thread_agent: Option<crate::store::Fallback>,
+    pub thread_fallbacks: Vec<crate::store::Fallback>,
     pub cwd: String,
-    /// The most agents it runs at once; `None`: the host has no event box.
-    pub max_agents: Option<u8>,
-    /// A worktree per agent; `None`: the host has no worktrees, or the bot's folder is in no git repository.
-    pub task_worktrees: Option<bool>,
-    /// Approvals: Codync approves what still asks, and the agent mode (`agent::modes`).
+    /// The most threads it runs at once; `None`: the host has no event box.
+    pub max_threads: Option<u8>,
+    /// A worktree per thread; `None`: the host has no worktrees, or the bot's folder is in no git repository.
+    pub thread_worktrees: Option<bool>,
+    /// Approvals: Codync approves what still asks, and the agent mode (`codync_agent::modes`).
     pub auto: bool,
     pub mode: Option<String>,
     pub notify: bool,
@@ -383,9 +397,9 @@ pub enum Overlay {
     Memory(MemorySheet),
     /// A read-only conversation between two bots.
     BotChat(BotChatSheet),
-    /// The transcript of the task working an item, read-only.
-    Task(TaskSheet),
-    /// Which working item gives way to the one that cuts in.
+    /// The transcript of the thread working a task, read-only.
+    Thread(ThreadSheet),
+    /// Which working task gives way to the one that cuts in.
     CutIn(CutIn),
     /// Every bot's work on one page.
     AllWork(AllWork),

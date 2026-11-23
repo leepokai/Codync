@@ -210,21 +210,31 @@ async fn a_bot_messages_a_bot_on_another_computer_and_relays_its_reply() {
 async fn a_stopped_or_failed_request_ends_the_senders_notice() {
     let (desk, laptop, reviewer, lead) = two_computers().await;
     // The desk's user stops the reviewer while it waits for approval: the lead's notice ends
-    // cancelled, and nothing wakes the lead.
+    // cancelled, and the lead hears so in a reply turn.
     laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk PERMISSION then stop"})).await;
     desk.wait_for(&reviewer, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
     desk.call("stopWork", json!({"botId": reviewer})).await;
     let stopped = laptop.wait_for(&lead, exchange("cancelled")).await;
     assert!(stopped["data"]["botMessage"]["detail"].as_str().unwrap().starts_with("Reviewer on desk was stopped"));
+    laptop.wait_for(&lead, |e| is_final(e) && e["data"]["text"] == "Relayed: failed").await;
 
-    // A turn that fails comes back as a failure, in a reply turn.
+    // A turn that fails comes back as a failure, in a reply turn too.
     laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk FAIL on purpose"})).await;
     laptop.wait_for(&lead, exchange("failed")).await;
-    let relayed = laptop.wait_for(&lead, |e| is_final(e) && e["data"]["text"] != "Message queued").await;
-    assert_eq!(relayed["data"]["text"], "Relayed: failed");
-    let history = laptop.call("history", json!({"botId": lead})).await;
-    let finals = history["entries"].as_array().unwrap().iter().filter(|e| is_final(e)).count();
-    assert_eq!(finals, 3, "two requests and one reply turn: {history}");
+    let relayed = |e: &Value| is_final(e) && e["data"]["text"] == "Relayed: failed";
+    let finals = tokio::time::timeout(Duration::from_secs(40), async {
+        loop {
+            let history = laptop.call("history", json!({"botId": lead})).await;
+            let entries = history["entries"].as_array().unwrap().clone();
+            if entries.iter().filter(|e| relayed(e)).count() == 2 {
+                return entries.iter().filter(|e| is_final(e)).count();
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("the failure's reply turn did not come");
+    assert_eq!(finals, 4, "two requests and two reply turns");
 }
 
 /// The first `network` event on the host's stream that `predicate` accepts. The stream is open
@@ -371,9 +381,9 @@ async fn a_rule_at_ask_holds_a_bot_that_approves_by_itself_to_asking() {
     let told = prompts.lines().last().unwrap();
     assert!(told.contains("a computer the user trusts less than this one"), "{told}");
 
-    // A task of the reviewer answers it: only reading and answering the user are left to that task.
-    let task = card["data"]["task"]["id"].as_str().expect("a task's card").to_owned();
-    let tool = |name: &str, arguments: Value| json!({"botId": task, "name": name, "arguments": arguments});
+    // A thread of the reviewer answers it: only reading and answering the user are left to that thread.
+    let thread = card["data"]["thread"]["id"].as_str().expect("a thread's card").to_owned();
+    let tool = |name: &str, arguments: Value| json!({"botId": thread, "name": name, "arguments": arguments});
     let command = format!("{} -c \"import time; time.sleep(300)\"", common::python());
     let server = desk.refused("chatCall", tool("start_dev_server", json!({"command": command}))).await;
     assert!(server.contains("start_dev_server isn't available in this turn"), "{server}");
@@ -382,7 +392,7 @@ async fn a_rule_at_ask_holds_a_bot_that_approves_by_itself_to_asking() {
     desk.call("respondPermission", json!({"entryId": card["id"], "optionId": "allow"})).await;
     laptop.wait_for(&lead, relayed("Relayed: reply: PERMISSION second")).await;
 
-    // The user's own message runs in the chat as the bot is set: only the task's session was held.
+    // The user's own message runs in the chat as the bot is set: only the thread's session was held.
     desk.call("send", json!({"botId": reviewer, "text": "PERMISSION mine"})).await;
     desk.wait_for(&reviewer, relayed("reply: PERMISSION mine")).await;
     assert_eq!(switched(&desk, "Reviewer"), ["default"]);
@@ -399,9 +409,9 @@ async fn a_rule_at_ask_holds_a_bot_that_approves_by_itself_to_asking() {
     let told = prompts.lines().last().unwrap();
     assert!(told.contains("these are bot replies") && told.contains("a computer the user trusts less"), "{told}");
     // The ceiling stands past that turn's end: background work would run without it.
-    let work = json!({"botId": lead, "name": "add_work", "arguments": {"title": "More", "brief": "More"}});
+    let work = json!({"botId": lead, "name": "add_task", "arguments": {"title": "More", "brief": "More"}});
     let refused = laptop.refused("chatCall", work).await;
-    assert!(refused.contains("add_work isn't available in this turn"), "{refused}");
+    assert!(refused.contains("add_task isn't available in this turn"), "{refused}");
 
     // That turn messages no one: the answer's text can't travel on to a bot that isn't held to the ceiling.
     std::fs::write(desk.home.join("Reviewer/handoff.json"), r#"{"target":"lead@laptop"}"#).unwrap();

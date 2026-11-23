@@ -305,14 +305,15 @@ async fn registers_webhooks_and_runs_public_deliveries_once() {
             (Some(true), None, None),
             (Some(true), None, None),
             (Some(false), Some(false), Some("unauthorized")),
-            (Some(false), Some(true), Some("busy")),
+            (Some(true), None, None),
         ],
-        "a redelivery reuses its run; a wrong key is dropped; a busy routine is retried later"
+        "a redelivery reuses its run; a wrong key is dropped; a delivery behind a queued run waits its turn"
     );
     let runs = hub.routines.list(&bot_id)["runs"].as_array().unwrap().clone();
-    assert_eq!(runs.len(), 1);
-    assert_eq!(runs[0]["event"], json!({"text": "deploy failed"}));
-    assert_eq!(runs[0]["deliveryId"], "d1");
+    let mut ids: Vec<&str> = runs.iter().filter_map(|r| r["deliveryId"].as_str()).collect();
+    ids.sort_unstable();
+    assert_eq!(ids, ["d1", "d3"], "one run per delivery");
+    assert!(runs.iter().all(|r| r["event"] == json!({"text": "deploy failed"})));
 
     // Pausing changes what the relay should refuse: the set goes out again.
     hub.routines.set_enabled(&hub.store, &bot_id, &id, false).unwrap();
@@ -615,8 +616,8 @@ async fn an_overflowed_link_reconnects_and_resumes_from_its_rev() {
     let hub = temp_hub();
     let key = phone_key(&hub);
     history(&hub, 1, 1);
-    let mut p = RelayPhone::open(&hub, key, "L1").await;
-    p.hello(&hub).await;
+    let mut p = Box::pin(RelayPhone::open(&hub, key, "L1")).await;
+    Box::pin(p.hello(&hub)).await;
     let (hello, _) = p.catch_up(1, 0).await;
     let rev = hello["ev"]["rev"].as_i64().unwrap();
     // A channel that never reads again: a full queue nobody drains, while the real channel's
@@ -638,7 +639,7 @@ async fn an_overflowed_link_reconnects_and_resumes_from_its_rev() {
     let dk = b64(key.verifying_key().as_bytes());
     session.on_message(&json!({"t": "open", "link": "L2", "dk": dk, "pair": false}).to_string()).await.unwrap();
     let mut p = RelayPhone { key, session, out, sealer: None, opener: None, link: "L2".into() };
-    p.hello(&hub).await;
+    Box::pin(p.hello(&hub)).await;
     let new = hub
         .store
         .insert_entry(&crate::store::Lane::main("b0"), crate::store::EntryKind::User, 1, &json!({"text": "new"}))
@@ -654,8 +655,8 @@ async fn a_link_whose_channel_waits_on_its_answers_stays_open() {
     let hub = temp_hub();
     let key = phone_key(&hub);
     history(&hub, 30, 250);
-    let mut phone = RelayPhone::open(&hub, key, "busy").await;
-    phone.hello(&hub).await;
+    let mut phone = Box::pin(RelayPhone::open(&hub, key, "busy")).await;
+    Box::pin(phone.hello(&hub)).await;
     phone.send(json!({"id": 1, "sub": "events", "b": {"since": 0, "client": "ios"}})).await;
     phone.fill_queues().await;
     // A burst read off the socket at once, each answered: the channel can't read the next one until
@@ -685,8 +686,8 @@ async fn after_a_host_restart_a_reconnecting_iphone_catches_up_only_new_messages
     let hub = open_hub(&dir);
     let key = phone_key(&hub);
     let bots = history(&hub, 30, 250);
-    let mut phone = RelayPhone::open(&hub, key.clone(), "before").await;
-    phone.hello(&hub).await;
+    let mut phone = Box::pin(RelayPhone::open(&hub, key.clone(), "before")).await;
+    Box::pin(phone.hello(&hub)).await;
     let (hello, _) = phone.catch_up(1, 0).await;
     assert_eq!(hello["ev"]["catchUp"], 30 * 201 + 1, "a first sync holds 200 entries and the bot per chat, plus icons");
     let rev = hello["ev"]["rev"].as_i64().unwrap();
@@ -708,8 +709,8 @@ async fn after_a_host_restart_a_reconnecting_iphone_catches_up_only_new_messages
                 .id
         })
         .collect();
-    let mut phone = RelayPhone::open(&hub, key, "after").await;
-    phone.hello(&hub).await;
+    let mut phone = Box::pin(RelayPhone::open(&hub, key, "after")).await;
+    Box::pin(phone.hello(&hub)).await;
     let (hello, events) = phone.catch_up(1, rev).await;
     assert_eq!(hello["ev"]["catchUp"], 3, "the icons snapshot and the two new messages");
     assert_eq!(events[0]["type"], "icons");

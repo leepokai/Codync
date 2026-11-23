@@ -1,0 +1,66 @@
+# First-run setup, signed in to an account with no computer: Start a cloud computer on the install page opens New cloud
+# computer (InstaBox, with INSTABOX_KEY unless the account kept one); once it's created, setup waits on Starting your
+# cloud computer (Preparing your cloud computer…, then Connecting…) and goes on to the bots once this phone is let in.
+# Needs a local cloud with a provider: `npm run cloud:stack` in cloud/ with INSTABOX_API_KEY_FILE
+# (docs/guides/cloud-computer-testing.md; the machine it makes is the stack's own, deleted when the stack stops), the
+# phone signed in with `npm run phone-account` to an account with no computer and pointed at that cloud (as
+# cloud-key.yaml says), and INSTABOX_KEY, a key its InstaBox takes. Each run makes a cloud computer: run the phones one
+# after another, or on accounts of their own, and apart from `smoke`, whose welcome flow clears the sign-in:
+#   SIMCTL_CHILD_CODYNC_CLOUD_URL=<url> maestro --device <udid> test --include-tags cloud-first-run -e INSTABOX_KEY=<key> apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - cloud-first-run
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          stopApp: false
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+          stopApp: false
+- extendedWaitUntil:
+    visible: "Install Codync.*"
+    timeout: 20000
+- extendedWaitUntil:
+    visible: "Start a cloud computer"
+    timeout: 15000
+- tapOn: "Start a cloud computer"
+- extendedWaitUntil:
+    visible: "Provider"
+    timeout: 10000
+- tapOn: "InstaBox.*"
+- extendedWaitUntil:
+    visible: "(Connect InstaBox|Runs on InstaBox · US)"
+    timeout: 10000
+- runFlow:
+    when:
+      visible: "Connect InstaBox"
+    commands:
+      - tapOn: "(InstaBox API key|ibk_…)"
+      - inputText: ${INSTABOX_KEY}
+      - tapOn: "Save"
+- extendedWaitUntil:
+    visible: "Runs on InstaBox · US"
+    timeout: 15000
+- tapOn:
+    text: "Create"
+    enabled: true
+
+# The sheet closes onto the wait, which follows the machine until this phone is in.
+- extendedWaitUntil:
+    visible: "Starting your cloud computer"
+    timeout: 15000
+- assertVisible: "(Preparing your cloud computer…|Connecting…)"
+- assertVisible: "Cloud computer · Runs on InstaBox · US"
+- extendedWaitUntil:
+    notVisible: "Starting your cloud computer"
+    timeout: 240000
+- assertNotVisible: "Cloud computer failed"
+- assertNotVisible: "Install Codync.*"

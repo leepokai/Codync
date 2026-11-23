@@ -1,0 +1,61 @@
+# An agent's own question (ACP elicitation) on both phones, already paired to the isolated dev host, app in English.
+# Tags smoke,decision with HOST_PORT/HOST_TOKEN and ELICITATION_AGENT (absolute fixture path). A question with options
+# has no own-words row; a free-text one has only that row.
+appId: com.pokai.Codync.ios.dev
+tags:
+  - decision
+onFlowComplete:
+  - runScript:
+      file: elicitation.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: elicitation.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+- assertVisible:
+    id: decision-card
+- assertVisible: "Which database?"
+- assertVisible:
+    id: decision-option-1
+- assertNotVisible: "Something else"
+- takeScreenshot: ${maestro.platform}-elicitation-options
+- tapOn:
+    id: decision-option-0
+- assertNotVisible:
+    id: decision-option-0
+- runScript:
+    file: elicitation.js
+    env:
+      REPLIED: 'sqlite'
+- runScript:
+    file: elicitation.js
+    env:
+      SEND: ASK_TEXT
+- assertVisible: "Something else"
+- assertNotVisible:
+    id: decision-option-0
+- takeScreenshot: ${maestro.platform}-elicitation-free-text
+- tapOn:
+    id: decision-own
+- inputText: Postgres please
+- tapOn:
+    id: decision-own-send
+- assertNotVisible: "Something else"
+- runScript:
+    file: elicitation.js
+    env:
+      REPLIED: 'Postgres please'

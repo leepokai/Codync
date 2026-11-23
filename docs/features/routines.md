@@ -112,20 +112,20 @@ next deadlines and run records are saved in SQLite (`routines.v1`). Due triggers
 are coalesced into one run per routine; only one routine per bot is dispatched at a
 time. Bot actors serialize routine work with ordinary conversation work.
 
-A run is an item in the bot's [box](background-tasks.md#other-sources): it waits for a place under the bot's
-`maxAgents` and a task works it, so the chat stays free and a bot's routines may run side by side. When a task takes
-it, the "Routine · <name>" notice goes into the chat and takes a turn there; the run's trace is the task's
-transcript (the item's details), and its reply, which is the result, is posted in the chat as the bot's message in
-that turn when the run ends. Nothing of it is a turn of the bot's own. The task starts in a new session that knows
+A run is a task in the bot's [box](work.md#other-sources): it waits for a free thread under the bot's
+`maxThreads` and a thread works it, so the chat stays free and a bot's routines may run side by side. When a thread takes
+it, the "Routine · <name>" notice goes into the chat and takes a turn there; the run's trace is the thread's
+transcript (the task's details), and its reply, which is the result, is posted in the chat as the bot's message in
+that turn when the run ends. Nothing of it is a turn of the bot's own. The thread starts in a new session that knows
 only the run's prompt, as a run in the chat does (no fork of the chat's session, nothing of the chat), with the
 bot's instructions and memory; what it writes to memory is checked as a routine's turn is (it only adds). The `routines` tools reach
 the bot's routines from it, so `save_progress` and `follow_up` work as before, and `send_message`, `send_file`,
-`request_decision` and `add_work` are refused as before. The run's item can be stopped (the run is cancelled),
+`request_decision` and `add_task` are refused as before. The run's task can be stopped (the run is cancelled),
 dropped while it waits, and tried again (the routine runs again) from the bot's Details; pausing or deleting the
 routine takes a waiting run out of the box. Stop in the chat doesn't cancel it.
 
-A bot with computer use or Manage the team on runs its routines in its chat instead, one at a time, since a task
-has neither (`tasks::boxed`); the rest of this paragraph is that path. A run talks in the bot's chat: a
+A bot with computer use or Manage the team on runs its routines in its chat instead, one at a time, since a thread
+has neither (`work::boxed`); the rest of this paragraph is that path. A run talks in the bot's chat: a
 "Routine · <name>" notice, then the run's trace and
 its reply, which is the result, all in the turn the notice takes when the run begins (a
 message sent meanwhile gets the next one). It runs in a fresh agent session of its own
@@ -147,9 +147,9 @@ Replying to a run's result goes to the bot's main session, with the result quote
 deleting cancels pending runs; work already running can finish. Deleting a bot
 cancels its pending work. Missed intervals coalesce rather than replaying a backlog.
 
-Pending runs survive a restart. A run is claimed only when a task takes it (in the chat: when it reaches the
+Pending runs survive a restart. A run is claimed only when a thread takes it (in the chat: when it reaches the
 front of the bot's queue), using the latest saved instruction. A run in the box that a restart cut off goes on in
-its task's session when the task can resume (its time limit counts again from there); when it can't, or the box
+its thread's session when the thread can resume (its time limit counts again from there); when it can't, or the box
 lost the run, it becomes `interrupted` at once. Runs in the chat interrupted during
 execution become `recovering` and load their existing agent session. If the
 provider cannot load it, they become `interrupted` instead of replaying the task
@@ -160,7 +160,7 @@ an interrupted action.
 ### Failed runs (`routines/retry.rs`)
 
 A failed or interrupted run is tried again only when that can't repeat work. The
-host checks the run's turn (its task's, for a run in the box) for a tool call whose ACP kind isn't `read`, `search`,
+host checks the run's turn (its thread's, for a run in the box) for a tool call whose ACP kind isn't `read`, `search`,
 `fetch` or `think` (an unknown kind counts as acting; `store::acted_in_turn`).
 
 - **Nothing acted** (a rate limit, an agent that didn't start, a session it couldn't
@@ -169,9 +169,9 @@ host checks the run's turn (its task's, for a run in the box) for a tool call wh
   "Trying again in N minutes." with no alert; the routines list shows "Retrying at …"
   (TUI: `retry <when>`). A scheduled fire or a test run while it waits runs it at once,
   and a scheduled run that fails while the next fire is already queued has that fire
-  as its retry ("Trying again now."). A waiting retry doesn't make the routine busy
-  (deliveries queue as usual) and the bot's Stop leaves it; pausing or deleting the
-  routine cancels it. A paused routine (unless it was a test run) isn't retried
+  as its retry ("Trying again now."). A waiting retry doesn't block a delivery (it
+  counts toward the 16 queued; deliveries due earlier run first) and the bot's Stop
+  leaves it; pausing or deleting the routine cancels it. A paused routine (unless it was a test run) isn't retried
   automatically.
 - **It acted, hit its time limit (it could hold the bot that long again; this includes an
   agent whose session setup ran past it), or the three
@@ -181,11 +181,11 @@ host checks the run's turn (its task's, for a run in the box) for a tool call wh
   work again with that event, also for a paused test run, and takes the button off.
   Only a routine's latest such failure keeps its event (an older one's button goes),
   so failed webhook payloads can't pile up; deleting the routine (or its bot) drops the
-  event and the button. Retrying while the routine has an active run is refused
-  (busy); a paused routine is refused until it's resumed.
+  event and the button. Retrying while a run of the routine is under way, or
+  16 wait, is refused (busy); a paused routine is refused until it's resumed.
 
 Each run has a timeout (default one hour, configurable from 1 to 86400 seconds).
-A hung agent is terminated so subsequent work can proceed (a run in the box: its task is stopped, and its process
+A hung agent is terminated so subsequent work can proceed (a run in the box: its thread is stopped, and its process
 ended if it ignores that for 15 seconds). When the time limit cuts
 session setup short, an agent that can reopen sessions is stopped too, so a session it was
 still opening can't stay open unknown to the host; one that can't keeps running with the
@@ -228,9 +228,12 @@ the same checks (`host/src/routines/hooks.rs`); the protocol is
 - **Delivery**: `X-Delivery-Id`, `X-GitHub-Delivery` or `Idempotency-Key`
   deduplicates retries against retained run records. Bodies are limited to 64 KB.
   A paused routine refuses (`409`); a non-matching event is accepted and ignored.
-  While the routine has a run under way or queued (a retry waiting for its time
-  doesn't count), the local endpoint answers `409` and the cloud
-  queue retries later (30 s doubling to 15 min).
+  A delivery while the routine's other runs are only queued (its bot is busy, or a
+  retry waits for its time) is queued as its own run; each runs once, in arrival
+  order, one at a time (a run in the box waits while another of its routine runs).
+  The bot's Stop leaves queued deliveries, since the sender was already answered.
+  While a run of the routine has started, or `MAX_QUEUED` (16) runs of it wait, the local endpoint answers `409` and the cloud queue retries later
+  (30 s doubling to 15 min, for up to 72 h).
 - **Offline**: the cloud keeps public deliveries for up to 72 hours and hands them
   over one at a time once the host is back; the host acknowledges each.
 - **Trust**: deliveries are not end-to-end encrypted. The cloud terminates HTTPS,
@@ -282,7 +285,7 @@ reconstruction of every Grok Bot routine behavior.
 
 ## Validation
 
-`host/tests/tasks_e2e.rs` covers a run as an item (its message in the chat, `(pass)`, progress, stop, try again, a
+`host/tests/work_e2e.rs` covers a run as a task (its message in the chat, `(pass)`, progress, stop, try again, a
 restart). Of the suites below, the tests about a run's own session in the chat (its close, its setup cut short by
 the time limit, an agent that can't close sessions, a run's memory edits) use a bot with Manage the team on; the
 rest run their routines in the box.

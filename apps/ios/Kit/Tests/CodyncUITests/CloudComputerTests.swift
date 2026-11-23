@@ -77,6 +77,76 @@ private final class AutoAccessStub: CloudComputerStub {
     #expect(AutoAccessStub.appHeaders.withLock { $0 } == ["ios/\(AppVersion.current); minHost=\(VersionMismatch.minHost)"])
 }
 
+private let waitedKey = Data(repeating: 6, count: 32)
+
+/// The account lists one cloud computer as asked by this device, which holds no request for it: the answer was lost to
+/// the network. A new request gets its host nonce at once and is never approved.
+private class LostRequestStub: CloudComputerStub {
+    override class func answer(_ request: URLRequest) -> (Int, String) {
+        let path = request.url?.path ?? ""
+        if path.hasSuffix("/v1/computers") {
+            let cloud = #"{"provider":"boat","providerName":"Boat","region":"EU","state":"running"}"#
+            return (200, #"{"computers":[{"computerId":"\#(RelayCrypto.computerId(signKey: waitedKey))","name":"Cloud","signKey":"\#(waitedKey.base64URL)","access":"pending","cloud":\#(cloud)}]}"#)
+        }
+        if path.hasSuffix("/access-requests") { return (200, #"{"requestId":"r2","expiresAt":4102444800000}"#) }
+        if path.hasSuffix("/v1/access-requests/r2") {
+            return (200, #"{"requestId":"r2","status":"pending","hostNonce":"\#(Data(repeating: 9, count: 32).base64URL)"}"#)
+        }
+        return (200, "{}")
+    }
+}
+
+/// `LostRequestStub`, with the cloud too busy for the account's first look.
+private final class LostLookupStub: LostRequestStub {
+    static let lookups = OSAllocatedUnfairLock(initialState: 0)
+
+    override class func answer(_ request: URLRequest) -> (Int, String) {
+        if request.url?.path.hasSuffix("/v1/computers") == true, lookups.withLock({ $0 += 1; return $0 }) == 1 { return (503, "{}") }
+        return super.answer(request)
+    }
+}
+
+/// A first run waiting on a cloud computer asks the account again after a look the network lost, and the computer
+/// again after a request it lost: the cloud still lists that one, and this device has no code for it.
+@MainActor @Test func aWaitForACloudComputerAsksAgainAfterALostLookup() async throws {
+    let suite = "CloudWait.\(UUID().uuidString)"
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let accounts = AccountStore(storage: SharedStore.Context(accountID: "account", suite: suite), cloud: stubbedCloud(LostLookupStub.self))
+    defer { accounts.retire() }
+    let id = RelayCrypto.computerId(signKey: waitedKey)
+
+    await accounts.refreshCloud()
+    #expect(accounts.cloudComputers.isEmpty)
+    let wait = Task { await accounts.reachCloudComputer(id, every: .milliseconds(20)) }
+    defer { wait.cancel() }
+    for _ in 0..<100 where accounts.pendingAccess[id] == nil {
+        try await Task.sleep(for: .milliseconds(50))
+    }
+    #expect(accounts.pendingAccess[id] != nil)
+}
+
+/// The wait leaves an error on screen alone, asks again once it's read, and ends when this device uses the computer.
+@MainActor @Test(.timeLimit(.minutes(1))) func aWaitForACloudComputerHoldsForAnErrorAndEndsOnceTheComputerIsUsed() async throws {
+    let suite = "CloudWait.\(UUID().uuidString)"
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let accounts = AccountStore(storage: SharedStore.Context(accountID: "account", suite: suite), cloud: stubbedCloud(LostRequestStub.self))
+    defer { accounts.retire() }
+    let id = RelayCrypto.computerId(signKey: waitedKey)
+
+    accounts.lastError = "Shown"
+    let wait = Task { await accounts.reachCloudComputer(id, every: .milliseconds(20)) }
+    defer { wait.cancel() }
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(!accounts.cloudListLoaded && accounts.lastError == "Shown")
+    accounts.lastError = nil
+    for _ in 0..<100 where accounts.pendingAccess[id] == nil {
+        try await Task.sleep(for: .milliseconds(50))
+    }
+    #expect(accounts.pendingAccess[id] != nil)
+    accounts.open(Computer(id: id, name: "Cloud", signKey: waitedKey.base64URL))
+    await wait.value
+}
+
 /// No cloud computer, and the account isn't on the list yet.
 private final class UnavailableStub: CloudComputerStub {
     override class func answer(_ request: URLRequest) -> (Int, String) {
@@ -192,11 +262,18 @@ private func machineJSON(_ id: String, _ name: String, provider: String = "boat"
     await store.refresh()
     #expect(store.isPreparing && store.machines.map(\.isPreparing) == [false, true])
     #expect(store.machines.map { store.status(of: $0).text } == ["Running", "Preparing your cloud computer…"])
+    // A first run waits for the one preparing, wherever it was made.
+    #expect(store.starting(started: false)?.id == "cm_1" && store.starting(started: false)?.start == .preparing)
+    // Left with Back, it isn't waited for again.
+    #expect(store.starting(started: false, passed: ["cm_1"]) == nil)
     PreparingStub.claimed.withLock { $0 = true }
     for _ in 0..<100 where store.isPreparing {
         try await Task.sleep(for: .milliseconds(20))
     }
     #expect(!store.isPreparing)
+    // In the account: only a first run that made it waits on, while this device is let in.
+    #expect(store.starting(started: false) == nil)
+    #expect(store.starting(started: true)?.id == "cm_1" && store.starting(started: true)?.start == .connecting)
     for _ in 0..<50 where !changed.withLock({ $0 }) {
         try await Task.sleep(for: .milliseconds(20))
     }
@@ -227,6 +304,8 @@ private final class FailedStub: CloudComputerStub {
     await store.refresh()
     #expect(store.machines.map(\.hosting.state) == [.failed] && !store.isPreparing)
     #expect(store.machines.map { store.status(of: $0).text } == ["Failed"] && store.status(of: store.machines[0]).isError)
+    // A first run waits on it only once it made it there, and then says it failed.
+    #expect(store.starting(started: false) == nil && store.starting(started: true)?.start == .failed)
     try await Task.sleep(for: .milliseconds(200))
     #expect(FailedStub.lookups.withLock { $0 } == 1)
 }

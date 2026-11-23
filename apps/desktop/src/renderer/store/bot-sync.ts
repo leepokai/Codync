@@ -16,7 +16,7 @@ const MISMATCH_RECHECK = 30_000
 /** The mismatch recheck while an update asked from here runs, so the notice leaves soon after. */
 const UPDATE_RECHECK = 5_000
 /** Raise when the app starts to need a field the rows it cached may lack. */
-const MIRROR_FORMAT = 1
+const MIRROR_FORMAT = 2
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const same = (a: Connection, b: Connection) => a.kind === b.kind && JSON.stringify(a) === JSON.stringify(b)
@@ -72,6 +72,7 @@ export class BotSync extends BotMirror {
     this.stopTransport()
     if (this.saveTimer) clearTimeout(this.saveTimer)
     this.onRosterChanged = null
+    this.onAlert = null
     this.onComputerChanged = null
     this.client = null
     this.selection = null
@@ -88,7 +89,7 @@ export class BotSync extends BotMirror {
     this.stopTransport()
     if (this.connection.kind !== 'online') this.setConnection({ kind: 'connecting' })
     const transport = this.makeTransport()
-    this.client = new HostClient(transport)
+    this.client = new HostClient(transport, this.hostVersion?.version)
     this.hostRoute = transport.route ?? null
     // The relay says at once when the computer is away or on its way; a waiting call only says so when it gives up.
     this.closePresence = transport.onPresence?.((p) => this.setConnection(p === 'online' ? { kind: 'connecting' } : absent(p))) ?? null
@@ -313,12 +314,15 @@ export class BotSync extends BotMirror {
         this.bump(event.entry.rev)
         this.acknowledgeVisible(event.entry.botId, event.entry)
         break
-      case 'taskEntry':
-        this.mergeTask(event.task, [event.entry])
+      case 'threadEntry':
+        this.mergeThread(event.thread, [event.entry])
         this.bump(event.entry.rev)
         break
       case 'usage':
         this.usage = event.usage
+        break
+      case 'alert':
+        if (!this.isReading(event.alert.botId)) this.onAlert?.(event.alert)
         break
       case 'artifact':
         this.artifacts.upsert(event.artifact)
@@ -508,9 +512,14 @@ export class BotSync extends BotMirror {
     }
   }
 
+  /** A chat of `botId`'s is on screen in a focused window. */
+  private isReading(botId: string) {
+    return [...this.readingViews.values()].includes(botId)
+  }
+
   private acknowledgeVisible(botId: string, entry?: Entry) {
     if (this.connection.kind !== 'online') return
-    if (![...this.readingViews.values()].includes(botId) || (entry && !isChat(entry))) return
+    if (!this.isReading(botId) || (entry && !isChat(entry))) return
     this.markRead(botId)
   }
 

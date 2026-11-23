@@ -138,3 +138,29 @@ fn a_card_lists_the_routines_before_the_instructions() {
         "Name: Scout\nRoutines:\n• Scan (Every 30 minutes): Scan it\nInstructions:\nWatches the repo."
     );
 }
+
+/// #395: a manager sets a bot's model settings (effort…) the way it sets its model; a card shows them. Checking a
+/// value against the agent's model list (`auth::check_options`) starts the agent, so the calls here set them empty
+/// and the model they'd be checked against is picked by `model_after`.
+#[tokio::test]
+async fn a_manager_sets_a_bots_reasoning_effort() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    hub.update_bot(&json!({"id": "dev", "modelOptions": {"effort": "low"}})).unwrap();
+    call(&hub, "lead", "update_bot", &json!({"botId": "dev", "modelOptions": {}})).await.unwrap();
+    assert!(hub.store.bot("dev").unwrap().unwrap().config.model_options.is_empty(), "back to the model's defaults");
+    let number = json!({"botId": "dev", "modelOptions": {"effort": 1}});
+    let refused = call(&hub, "lead", "update_bot", &number).await.unwrap_err().to_string();
+    assert!(refused.contains("modelOptions must map"), "{refused}");
+    let fields =
+        setup_patch(&json!({"model": "opus", "modelOptions": {"effort": "high", "fast": "true"}}), &[]).unwrap();
+    let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+    assert_eq!(describe(&store, &fields, &[]), "Model: opus\nModel settings: effort high, fast true");
+    assert_eq!(model_after(&fields, Some("sonnet")), Some("opus"), "checked against the new model");
+    let options_only = setup_patch(&json!({"modelOptions": {"effort": "high"}}), &[]).unwrap();
+    assert_eq!(model_after(&options_only, Some("sonnet")), Some("sonnet"), "against the bot's own");
+    let default = setup_patch(&json!({"model": "", "modelOptions": {"effort": "high"}}), &[]).unwrap();
+    assert_eq!(model_after(&default, Some("sonnet")), None, "against the agent's default");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

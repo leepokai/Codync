@@ -14,6 +14,14 @@ MCP clients can cancel a pending call with `notifications/cancelled` and its exa
 
 A press (`respondDecision {entryId, option}`, the option's full text) answers the live call with `{choice}`; the user's own words answer it with `{choice, custom: true}`. The actor records exactly one user message in the same turn (`from: decision`); it never queues another turn (except for the open card above). Text replies reuse their existing user entry. API success requires delivery to the live waiter or the open card's message, so a stale card cannot claim success. Room turns, routines, bot requests and other injected turns ask in a message instead. The actor reports `decision_asked` after publication and `decision_answered` after delivery. Terminal keys F1–F12 reach all choices; keys 1–9 also select the first nine by position while the bot waits on the card (or the card is picked), and otherwise jump to a bot, so an open card never takes a jump key.
 
+### An agent's own questions (ACP elicitation)
+
+An agent can ask the user something mid-turn without the chat MCP server: the host advertises `clientCapabilities.elicitation: {form: {}}` in `initialize`, and an `elicitation/create` (ACP's unstable surface; form mode, for the running turn's session) shows on the same choice card (`host/src/agent/elicitation.rs`, `host/src/agent/bot/elicitations.rs`). Hermes sends its clarify questions this way when the capability is there, and otherwise as a permission request, which **Approve automatically** would answer with its first option. A question is never a permission: the bot's approval setting doesn't answer it, and nothing picks the form's `default`, which shows as the suggested option.
+
+A form with exactly one field and a question of at most 2000 characters (as `request_decision` allows) maps onto the card: a string `enum` (or titled `oneOf`, whose titles show and whose `const` goes back) with 2 to 12 options becomes the options; a `boolean` becomes **Yes** / **No**; a plain string (no `pattern`, `format`, `maxLength` or `minLength` above 1) becomes a card with no options, answered by the user's own words (its own-words row or a plain typed message; every client draws such a card as the question and that row). A card with options takes only an option or its number (`ownWords: false` in its data, so every client hides its own-words row and points to no message box; a missing field keeps the row; its text says so for older clients): own words typed in the message box there are an ordinary message, which expires the card and reaches the bot as the user's next message. Number and integer fields, multi-select arrays, several fields, URL mode, and questions in a room's turn, a routine's run, another bot's request, a host-started turn or while another card waits are declined (`{action: "decline"}`) rather than shown unfaithfully; a thread's card takes presses only, so a thread's free-text question is declined too. Declining rather than a JSON-RPC error lets the agent go on (Hermes takes either reply as a skipped question; an error would leave its question waiting).
+
+The card waits with no time limit: the request stays open until the user answers (`{action: "accept", content: {<field>: <value>}}`: the words, the option's value, or `true`/`false`), and is cancelled (`{action: "cancel"}`) when its card stops waiting unanswered: the user stops the turn or sends a message the card can't take, the turn ends, or the actor or host goes away (the card expires as above). One card waits at a time, so `request_decision` is refused while a question waits. Analytics: `decision_asked` with `asker: agent`, the card's usual `decision_answered` / `decision_expired`, and `elicitation_replied` with what the agent was told.
+
 ## Markdown links
 
 Markdown links in bot replies are underlined on desktop and iPhone so they remain
@@ -80,13 +88,13 @@ it has no pointer tooltip or link-opening action.
   user's own chips; it isn't tappable, and a bot that was deleted drops out. The terminal UI lists
   `❤️ Ann, Ben` after the user's reactions.
 
-## Background tasks in the chat
+## Threads in the chat
 
-A [background task](background-tasks.md)'s own transcript never enters the chat. Three things of it do:
+A [thread](work.md)'s own transcript never enters the chat. Three things of it do:
 
-- **Its approval cards**: a permission entry in the bot's chat with `data.task = {id, title}` (the title is its
-  item's) and `data.item`, the item's id, shown with the line
-  `In the background · <title>` and answered like any card (`respondPermission` reaches the task's actor).
+- **Its approval cards**: a permission entry in the bot's chat with `data.thread = {id, title}` (the title is its
+  task's) and `data.task`, the task's id, shown with the line
+  `Work · <title>` and answered like any card (`respondPermission` reaches the thread's actor).
 - **Its report**: a host-started turn (`HostTurn::TaskReport`) whose reply is the bot's ordinary message. The prompt
   is `from: host`, shows no bubble, and isn't the user's words to memory.
 - **A report the bot didn't answer** (its turn was stopped, failed or never started): an info notice,
@@ -117,6 +125,16 @@ summaries shown (`--thinking-display summarized`, through `claudeCode.options.ex
 `agent/bot/launch.rs`). Whether Claude thinks stays the user's Claude Code setting; when it does, a
 short thought's summary arrives in one piece when the thinking ends, a long one's in parts.
 
+A Claude Code bot's subagents show in the steps (the unfolded pill, Full conversation and a task's thread alike):
+each subagent's tool calls sit indented under the call that launched it, and that call carries a quiet second line
+with the subagent's type, the tokens it used and how long it ran once it finished
+(`general-purpose · 42.3k tokens · 6 s`), or `in background` for one launched in the background, which reports no
+totals. The host stores the facts on the tool entries: `parent` (the `toolCallId` of the launching call) on each of
+the subagent's calls, and `subagent` (`kind`, `model`, `background`, `tokens`, `toolUses`, `durationMs`, each kept
+until an update sends it again) on the launch; other calls carry neither. A step whose launch isn't among the steps
+shown stays where it is. The facts come from Claude's adapter only
+([claude-agent-acp](../upstream-agents/claude-agent-acp.md#subagents)); other agents' steps stay one flat list.
+
 Full conversation remains available through a message's Show what it did (its touch-and-hold
 menu on the iPhone and Android, its actions on the desktop). It contains narration, all
 thoughts, tools and previous turns, and follows new steps until the reader scrolls up.
@@ -129,7 +147,7 @@ once the turn ends, its last message's `↳ N steps` line counts them the same w
 
 - A message arriving while the list follows the newest pops in: 0.24 s,
   `cubic-bezier(.23, 1, .32, 1)`, from 12 pt lower at 94 % scale (iPhone: `ConversationLayout` in
-  `ConversationList.swift`; desktop: `.row-in` in `thread.css`; reduced motion: a 0.12 s fade).
+  `ConversationList.swift`; desktop: `.row-in` in `chat.css`; reduced motion: a 0.12 s fade).
 - The list stays pinned to the bottom while the reader is there; scrolling up releases it and the
   round "Jump to latest" button brings it back. Sending always returns to the bottom.
 - Opening or closing the phone keyboard keeps a bottom-following chat on its latest message;

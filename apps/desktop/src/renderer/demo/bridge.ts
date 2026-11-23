@@ -91,6 +91,12 @@ const bridge: CodyncBridge = {
     configHosts: async () => ({ access: 'denied', hosts: [] }),
     setConfigAccess: async () => ({ access: 'denied', hosts: [] }),
   },
+  notifications: {
+    supported: false,
+    enabled: async () => false,
+    setEnabled: async () => false,
+    show() {},
+  },
   island: {
     supported: false,
     enabled: async () => false,

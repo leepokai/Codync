@@ -30,5 +30,5 @@ cask "codync" do
     "~/Library/Preferences/com.pokai.Codync.plist",
   ]
 
-  caveats "Open Codync to start the host, then choose Pair iPhone… in the menu bar."
+  caveats "Open Codync to start the host, then choose Pair phone… in the menu bar."
 end

@@ -5,15 +5,19 @@
 //! for is never started and its saved login never read. One hidden while a bot still runs it keeps
 //! being read, because background work and fallbacks go by its limits.
 
-use super::{
-    Window, amp, antigravity, auggie, claude, codex, copilot, cursor, grok, hermes, junie, kilo, kimi, kiro, omp,
-    opencode, vibe,
-};
+use super::Window;
 use crate::LockExt;
-use crate::agent::{backends, login_profiles};
+use crate::agent::CODEX_CLIENT;
+use crate::agent::login_profiles;
 use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::{Context, Result};
+use codync_agent::backends;
+use codync_agent::usage::{
+    Outcome, amp, antigravity, auggie, claude, codex, copilot, cursor, grok, hermes, junie, kilo, kimi, kiro, omp,
+    opencode, vibe,
+};
+use futures::FutureExt;
 use futures::future::BoxFuture;
 use serde::Serialize;
 use std::collections::HashSet;
@@ -37,14 +41,14 @@ pub(super) struct Reader {
     pub(super) source: &'static str,
     /// Something to read without the agent's CLI: an app's saved login or quota file.
     pub(super) found_without_cli: Option<fn() -> bool>,
-    pub(super) read: for<'a> fn(&'a Hub) -> BoxFuture<'a, Option<Vec<Window>>>,
+    pub(super) read: for<'a> fn(&'a Hub) -> BoxFuture<'a, Outcome>,
     /// The same reading for a login profile, given the variables that point the agent's CLI at the profile's
     /// folder. Without one, the agent's login profiles list with no reading.
     pub(super) read_profile: Option<ReadProfile>,
 }
 
-fn blocking(read: fn() -> Option<Vec<Window>>) -> BoxFuture<'static, Option<Vec<Window>>> {
-    Box::pin(async move { tokio::task::spawn_blocking(read).await.ok().flatten() })
+fn blocking(read: fn() -> Option<Vec<Window>>) -> BoxFuture<'static, Outcome> {
+    Box::pin(async move { tokio::task::spawn_blocking(read).await.ok().flatten().into() })
 }
 
 /// Every agent the host can read, in the order the chooser lists them.
@@ -54,7 +58,7 @@ pub(super) const READERS: &[Reader] = &[
         name: "Claude",
         source: "claude",
         found_without_cli: None,
-        read: |_| Box::pin(claude::collect(Vec::new())),
+        read: |_| Box::pin(claude::collect(Vec::new()).map(Outcome::from)),
         read_profile: Some(|env| Box::pin(claude::collect(env))),
     },
     Reader {
@@ -62,15 +66,15 @@ pub(super) const READERS: &[Reader] = &[
         name: "Codex",
         source: "Codex CLI",
         found_without_cli: None,
-        read: |_| Box::pin(codex::collect(Vec::new())),
-        read_profile: Some(|env| Box::pin(codex::collect(env))),
+        read: |_| Box::pin(codex::collect(Vec::new(), CODEX_CLIENT).map(Outcome::from)),
+        read_profile: Some(|env| Box::pin(codex::collect(env, CODEX_CLIENT))),
     },
     Reader {
         id: "antigravity",
         name: "Google Antigravity",
         source: "antigravity",
         found_without_cli: None,
-        read: |hub| Box::pin(antigravity::collect(hub)),
+        read: |hub| Box::pin(antigravity::collect(hub).map(Outcome::from)),
         read_profile: None,
     },
     Reader {
@@ -78,7 +82,7 @@ pub(super) const READERS: &[Reader] = &[
         name: "Cursor",
         source: "Cursor",
         found_without_cli: Some(cursor::login_saved),
-        read: |_| Box::pin(cursor::collect()),
+        read: |_| Box::pin(cursor::collect().map(Outcome::from)),
         read_profile: None,
     },
     Reader {
@@ -86,7 +90,7 @@ pub(super) const READERS: &[Reader] = &[
         name: "GitHub Copilot",
         source: "Copilot CLI",
         found_without_cli: None,
-        read: |hub| Box::pin(copilot::collect(hub)),
+        read: |hub| Box::pin(copilot::collect(hub, || copilot_held(hub))),
         read_profile: None,
     },
     Reader {
@@ -94,7 +98,7 @@ pub(super) const READERS: &[Reader] = &[
         name: "Grok Build",
         source: "Grok CLI",
         found_without_cli: None,
-        read: |hub| Box::pin(grok::collect(hub)),
+        read: |hub| Box::pin(grok::collect(hub).map(Outcome::from)),
         read_profile: None,
     },
     Reader {
@@ -102,7 +106,7 @@ pub(super) const READERS: &[Reader] = &[
         name: "Amp",
         source: "amp usage",
         found_without_cli: None,
-        read: |_| Box::pin(amp::collect()),
+        read: |_| Box::pin(amp::collect().map(Outcome::from)),
         read_profile: None,
     },
     Reader {
@@ -110,7 +114,7 @@ pub(super) const READERS: &[Reader] = &[
         name: "Auggie",
         source: "auggie account status",
         found_without_cli: None,
-        read: |hub| Box::pin(auggie::collect(hub)),
+        read: |hub| Box::pin(auggie::collect(hub).map(Outcome::from)),
         read_profile: None,
     },
     Reader {
@@ -118,7 +122,7 @@ pub(super) const READERS: &[Reader] = &[
         name: "Hermes Agent",
         source: "hermes usage",
         found_without_cli: None,
-        read: |hub| Box::pin(hermes::collect(hub)),
+        read: |hub| Box::pin(hermes::collect(hub).map(Outcome::from)),
         read_profile: None,
     },
     Reader {
@@ -134,7 +138,7 @@ pub(super) const READERS: &[Reader] = &[
         name: "Kilo",
         source: "kilo profile",
         found_without_cli: None,
-        read: |hub| Box::pin(kilo::collect(hub)),
+        read: |hub| Box::pin(kilo::collect(hub).map(Outcome::from)),
         read_profile: None,
     },
     Reader {
@@ -150,7 +154,7 @@ pub(super) const READERS: &[Reader] = &[
         name: "Kiro CLI",
         source: "kiro-cli",
         found_without_cli: None,
-        read: |_| Box::pin(kiro::collect()),
+        read: |_| Box::pin(kiro::collect().map(Outcome::from)),
         read_profile: None,
     },
     Reader {
@@ -166,7 +170,7 @@ pub(super) const READERS: &[Reader] = &[
         name: "oh-my-pi",
         source: "omp usage",
         found_without_cli: None,
-        read: |_| Box::pin(omp::collect()),
+        read: |_| Box::pin(omp::collect().map(Outcome::from)),
         read_profile: None,
     },
     Reader {
@@ -178,6 +182,11 @@ pub(super) const READERS: &[Reader] = &[
         read_profile: None,
     },
 ];
+
+/// Whether Copilot's last reading is still held: its reader skips between server starts.
+fn copilot_held(hub: &Hub) -> bool {
+    hub.usage.locked().providers.iter().any(|provider| provider.id == "copilot")
+}
 
 /// The order the user arranged the agents in, as ids.
 const ORDER_KEY: &str = "usage.order";
@@ -217,8 +226,8 @@ fn used_agents(store: &Store) -> HashSet<&'static str> {
     bots.iter()
         .filter(|bot| !bot.deleted)
         .flat_map(|bot| {
-            let fallbacks = bot.config.fallbacks.iter().map(|fallback| fallback.backend.as_str());
-            std::iter::once(bot.config.backend.as_str()).chain(fallbacks)
+            let c = &bot.config;
+            std::iter::once(c.backend.as_str()).chain(c.fallback_steps().map(|step| step.backend.as_str()))
         })
         .filter_map(|backend| backends::harness_of(backend).map(|harness| harness.id))
         .collect()
@@ -250,8 +259,8 @@ pub(super) fn unread_readers(hub: &Hub) -> Vec<&'static Reader> {
     let usage = hub.usage.locked();
     let read = |reader: &Reader| {
         usage.providers.iter().find(|provider| provider.id == reader.id).is_some_and(|provider| {
-            provider.updated_at != 0
-                && (reader.read_profile.is_none() || provider.login_profiles.iter().all(|row| row.updated_at != 0))
+            provider.checked.asked()
+                && (reader.read_profile.is_none() || provider.login_profiles.iter().all(|row| row.checked.asked()))
         })
     };
     wanted.into_iter().filter(|reader| !read(reader)).collect()
@@ -442,7 +451,7 @@ pub(super) mod tests {
         let claude = reader("claude").unwrap();
         hub.update_usage(|usage| usage.land(claude, "claude", Some("a1"), Reading::Unknown));
         assert_eq!(unread_readers(&hub).len(), 1, "listed for its profile, the default login is still unread");
-        hub.update_usage(|usage| usage.providers[0].login_profiles[0].updated_at = 0);
+        hub.update_usage(|usage| usage.providers[0].login_profiles[0].checked.failed_at = None);
         hub.update_usage(|usage| {
             usage.land(claude, "claude", None, Reading::All(vec![Window::new("w", "W", 1.0, None)]));
         });
@@ -466,7 +475,11 @@ pub(super) mod tests {
         let resets = now / 1000 + 3600;
         let statusline = |profile, percent| {
             let five_hour = serde_json::json!({"used_percentage": percent, "resets_at": resets});
-            claude::ingest_statusline(&hub, profile, &serde_json::json!({"rate_limits": {"five_hour": five_hour}}));
+            super::super::ingest_statusline(
+                &hub,
+                profile,
+                &serde_json::json!({"rate_limits": {"five_hour": five_hour}}),
+            );
         };
         statusline(None, 10);
         statusline(Some("a1"), 91);
@@ -480,6 +493,28 @@ pub(super) mod tests {
         assert_eq!(reset(None), None);
         let own = hub.usage.locked().windows("claude", None).map(|windows| windows[0].percent);
         assert_eq!(own, Some(10.0), "the default login's own numbers stay");
+    }
+
+    /// Greptile on #516: between reads Copilot's reader skips on purpose, which mustn't land as a failure and mark
+    /// its numbers out of date.
+    #[tokio::test]
+    async fn waiting_between_reads_isnt_a_failure() {
+        static SKIPS: Reader = Reader {
+            id: "copilot",
+            name: "GitHub Copilot",
+            source: "Copilot CLI",
+            found_without_cli: None,
+            read: |_| Box::pin(async { Outcome::Skipped }),
+            read_profile: None,
+        };
+        let hub = hub();
+        let windows = vec![Window::new("premium_interactions", "Premium requests", 10.0, None)];
+        hub.usage.locked().providers.push(Provider::new("copilot", "Copilot", "copilot", windows.clone()));
+        super::super::read(&hub, vec![&SKIPS]).await;
+        let usage = hub.usage.locked();
+        let copilot = usage.providers.iter().find(|provider| provider.id == "copilot").unwrap();
+        assert_eq!(copilot.checked.failed_at, None, "a skip, not a failure");
+        assert_eq!(copilot.windows, windows, "what it read stands");
     }
 
     /// A reader whose id is no harness's is unreachable: no bot's `backend` finds it, and its CLI is never seen.

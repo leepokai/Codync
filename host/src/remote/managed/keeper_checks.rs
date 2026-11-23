@@ -124,7 +124,7 @@ fn restart_agents(hub: &Hub) {
     }
 }
 
-/// The actors whose agent may hold the keeper's grants: every bot, and the tasks at work (a task's agent holds
+/// The actors whose agent may hold the keeper's grants: every bot, and the threads at work (a thread's agent holds
 /// them as its bot's does).
 fn agents(store: &crate::store::Store) -> Vec<String> {
     let bots = store.bots().unwrap_or_else(|e| {
@@ -132,7 +132,7 @@ fn agents(store: &crate::store::Store) -> Vec<String> {
         Vec::new()
     });
     let bots = bots.into_iter().filter(|row| !row.deleted).map(|row| row.config);
-    bots.chain(crate::chat::tasks::working_tasks(store)).map(|cfg| cfg.id).collect()
+    bots.chain(crate::chat::work::working_threads(store)).map(|cfg| cfg.id).collect()
 }
 
 #[cfg(all(test, unix))]
@@ -141,14 +141,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_task_at_work_restarts_its_agent_with_the_bots() {
+    fn a_thread_at_work_restarts_its_agent_with_the_bots() {
         let store = crate::store::Store::open(std::path::Path::new(":memory:")).unwrap();
         let save = |cfg: serde_json::Value| store.save_bot(&serde_json::from_value(cfg).unwrap()).unwrap();
         save(serde_json::json!({"id": "own", "name": "Own", "backend": "claude"}));
-        save(serde_json::json!({"id": "task-1", "name": "Own", "backend": "claude", "taskOf": "own"}));
-        save(serde_json::json!({"id": "task-2", "name": "Own", "backend": "claude", "taskOf": "own"}));
-        crate::chat::tasks::put_working_for_test(&store, "own", "task-1");
-        assert_eq!(agents(&store), ["own", "task-1"], "a task that ended has no agent");
+        save(serde_json::json!({"id": "thread-1", "name": "Own", "backend": "claude", "threadOf": "own"}));
+        save(serde_json::json!({"id": "thread-2", "name": "Own", "backend": "claude", "threadOf": "own"}));
+        crate::chat::work::put_working_for_test(&store, "own", "thread-1");
+        assert_eq!(agents(&store), ["own", "thread-1"], "a thread that ended has no agent");
     }
 
     #[tokio::test(flavor = "multi_thread")]

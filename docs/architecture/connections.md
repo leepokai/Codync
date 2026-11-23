@@ -48,7 +48,7 @@ The phone finds and pairs every computer itself. A computer the phone hasn't pai
 
 | Where you are | How | The computer |
 | --- | --- | --- |
-| At the computer | Scan the QR it shows (`codync-host pair`, the desktop's **Pair iPhone**, an SSH computer's card), or, signed in, type its short code when scanning a terminal is awkward | In your account: the phone gets in. In no account: asks, with a matching code. A signed-in phone: **Add to account**, **Wi-Fi or Tailscale only** or no (over the relay there is no middle choice: it would have no route afterwards). A signed-out phone: let in or not. In another account, or in any account for a signed-out phone: refuses |
+| At the computer | Scan the QR it shows (`codync-host pair`, the desktop's **Pair phone**, an SSH computer's card), or, signed in, type its short code when scanning a terminal is awkward | In your account: the phone gets in. In no account: asks, with a matching code. A signed-in phone: **Add to account**, **Wi-Fi or Tailscale only** or no (over the relay there is no middle choice: it would have no route afterwards). A signed-out phone: let in or not. In another account, or in any account for a signed-out phone: refuses |
 | Away | Tap it in the account list, compare 6 digits on the computer, Allow (or **Skip the 6-digit check**) | Must already be in your account |
 
 - The host checks a signed-in phone's account from a proof the cloud signed, never from what the phone says. The check works offline (a signature), so computers with the cloud off or on a private relay still pair in person. A phone with no proof is a signed-out phone; a proof that doesn't check out is refused, never treated as none.
@@ -110,7 +110,7 @@ The agents themselves (Claude Code, Codex, …) always sign in over SSH, as the 
 | 2 | Desktop | Settings → Computers → Over SSH → **Add SSH computer**, pick the host from `~/.ssh/config`, compare the host key, **Trust and connect** | Built |
 | 3 | Desktop | **Install** on the card: `install.sh --host-only` and `codync-host install` over SSH. Linger is turned on where the system lets the user do it (Ubuntu 24.04 does); otherwise the card shows `sudo loginctl enable-linger "$USER"` | Built (2.36.0); Codync Dev shows the command instead |
 | 4 | Desktop | The app asks once, then the VPS joins the desktop app's account | Built (2.41.0) |
-| 5 | Phone | The VPS appears in the account list: **Ask for access**, then compare the 6 digits on the desktop and Allow. Or open **Pair iPhone** on the VPS card and scan | Built |
+| 5 | Phone | The VPS appears in the account list: **Ask for access**, then compare the 6 digits on the desktop and Allow. Or open **Pair phone** on the VPS card and scan | Built |
 | 6 | Desktop | Optionally add it to the network in one click | Built |
 
 **Phone only**

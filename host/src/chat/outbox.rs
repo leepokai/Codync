@@ -22,7 +22,7 @@ Use send_file(path, name?) to share a generated regular file (any type, up to 10
 For something the user will read as a whole or come back to (a report, plan, comparison, tracker or dashboard), make an Artifact \
 instead of a long message: write one self-contained HTML file (inline CSS and JS; it may load libraries from a CDN) and \
 publish_artifact(path, title). It shows as a card in your chat and in its Library. To change an artifact, edit a copy of its HTML and \
-publish_artifact(path, artifact: its id); never make a second artifact for the same thing. list_artifacts shows your artifacts and where each one's HTML is. \
+publish_artifact(path, artifact: its id), with notify: false when the change needs no new card in your chat (a routine refresh of a tracker); never make a second artifact for the same thing. list_artifacts shows your artifacts and where each one's HTML is. \
 Reactions are rare: react(emoji) only where a person would (❤️ to thanks, 👍 to a plain OK, 🎉 to big news, 😂 to a real joke), \
 never to a question or a request. When a message needs no words, the reaction is the whole reply; when it needs neither, \
 end your turn by replying exactly \"(pass)\".";
@@ -137,8 +137,8 @@ async fn send_file(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
         Some(value) => Some(message_text(value.as_str().ok_or_else(|| anyhow!("text must be a string"))?)?),
         None => None,
     };
-    // A task's file shows in its bot's chat (`Actor::add_for_user`), so that is the chat it quotes from.
-    let (quote, sent) = reply_quote(hub, &crate::chat::tasks::owner(&hub.store, bot), args);
+    // A thread's file shows in its bot's chat (`Actor::add_for_user`), so that is the chat it quotes from.
+    let (quote, sent) = reply_quote(hub, &crate::chat::work::owner(&hub.store, bot), args);
     let guard = CancelCopy(Arc::new(std::sync::atomic::AtomicBool::new(false)));
     let (reply, delivered) = oneshot::channel();
     hub.send_cmd(bot, Cmd::SendFile { path: path.to_owned(), name, text, quote, cancelled: guard.0.clone(), reply })?;

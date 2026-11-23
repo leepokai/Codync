@@ -442,7 +442,7 @@ pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<
                 for t in v["items"].as_array().into_iter().flatten() {
                     found.push(json!({
                         "slug": t["slug"], "name": t["name"], "app": app.toolkit,
-                        "description": t["description"].as_str().map(|d| crate::agent::acp::truncate(d, 300)),
+                        "description": t["description"].as_str().map(|d| codync_agent::acp::truncate(d, 300)),
                     }));
                 }
             }

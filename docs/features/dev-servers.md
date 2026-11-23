@@ -16,13 +16,13 @@ in that session goes too, and one that detached into a session of its own surviv
 deliberate, and stays right for what an agent starts itself. So that such a server isn't lost, `background_work` keeps
 the agent running while it sees one, with its helpers and memory.
 
-A server started through `start_dev_server` is the host's own child, in a tree of its own (`agent/process.rs`, the same
+A server started through `start_dev_server` is the host's own child, in a tree of its own (`crates/agent/src/process.rs`, the same
 owner agents use), so the agent can be stopped when idle while it runs.
 
 | Event | The server |
 |---|---|
 | Agent stopped when idle, crashed or changed; new session; routine run ended | Keeps running |
-| User or bot stops it | Its whole tree stops: SIGTERM, then what is left after 3 s on Unix; all of it at once on Windows. It ends from its leaves up: a process whose children have ended gets 3 s to finish by itself, and what is left after 15 s is killed (`agent/process.rs`) |
+| User or bot stops it | Its whole tree stops: SIGTERM, then what is left after 3 s on Unix; all of it at once on Windows. It ends from its leaves up: a process whose children have ended gets 3 s to finish by itself, and what is left after 15 s is killed (`crates/agent/src/process.rs`) |
 | It ends by itself | Stopped (exit 0) or failed; it doesn't start again |
 | Bot deleted | Stopped and removed |
 | Host updated or restarted | Stopped, then started again |
@@ -44,7 +44,7 @@ On the existing `chat` helper (`dev_servers/tools.rs`): a new MCP server would a
 | `dev_server_logs {id, lines?}` | The end of its log (200 lines by default, at most 1000) |
 
 - At most 5 run per bot, however they start (a bot or a person); past that the error lists them.
-- A [background task](background-tasks.md)'s servers are its bot's (`tools::call` keys them to the task's owner): they show on the bot, count toward its 5, and outlive the task. Its approval card is the task's own, in the bot's chat.
+- A [thread](work.md)'s servers are its bot's (`tools::call` keys them to the thread's owner): they show on the bot, count toward its 5, and outlive the thread. Its approval card is the thread's own, in the bot's chat.
 - A start finishes in a task of its own, so a request that goes away (a closed connection, a cancelled tool call) can't leave it half started. A stop that comes meanwhile ends it as soon as it's up.
 - The command ends when its first process ends, so bots give it as they'd run it in the foreground.
 - Bots hear about them in the tool's description and one line of their instructions (`BRIEF`). Nothing forces it: see
@@ -118,7 +118,7 @@ white, and color comes from the bots.
   the footer listing those that apply to the selected server. `codync-host tui --url` may be a tunnel, which looks local,
   so its sheet lists the selected server's addresses, one line each, instead of opening a browser.
 
-Each client: desktop `views/thread/DevServersSection.tsx` and `src/shared/dev-servers.ts`; iPhone
+Each client: desktop `views/chat/DevServersSection.tsx` and `src/shared/dev-servers.ts`; iPhone
 `CodyncUI/Bots/DevServersSection.swift`; Android `DevServersSection.kt`; terminal `tui/manage/dev_servers.rs` and
 `tui/view/dev_servers.rs`.
 

@@ -164,3 +164,17 @@ async fn a_manager_sets_a_bots_reasoning_effort() {
     assert_eq!(model_after(&default, Some("sonnet")), None, "against the agent's default");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// `list_models` says what went wrong for an agent this computer doesn't have, and wants its agent named. Checking
+/// ids against a real catalog starts the agent, so like the `modelOptions` checks this is exercised in e2e only.
+#[tokio::test]
+async fn list_models_wants_its_agent_and_says_what_went_wrong() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let missing = call(&hub, "lead", "list_models", &json!({"agent": "no-such-agent"})).await.unwrap_err().to_string();
+    assert!(missing.contains("couldn't list no-such-agent's models"), "{missing}");
+    let none = call(&hub, "lead", "list_models", &json!({})).await.unwrap_err().to_string();
+    assert!(none.contains("agent is required"), "{none}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

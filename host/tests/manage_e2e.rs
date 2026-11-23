@@ -72,6 +72,18 @@ async fn a_lead_creates_a_bot_the_user_allowed_and_not_one_change_they_denied() 
     assert!(reply.starts_with("Refused: ") && reply.contains("didn't allow"), "{reply}");
     assert_eq!(bot(&host.snapshot().await)["hidden"], false);
 
+    // A command-backend bot's model list is its command's to answer: its model goes as it comes, its settings are
+    // refused — there is no list to check them against, and checking would run the command. Nothing probes, so no
+    // card: the refusal comes straight back.
+    let args = json!({"botId": lead, "modelOptions": {"effort": "high"}});
+    host.call("send", json!({"botId": lead, "text": format!("MANAGE update_bot {args}")})).await;
+    wait(&host, &lead, |e| {
+        e["kind"] == "agent"
+            && e["data"]["final"] == true
+            && e["data"]["text"].as_str().is_some_and(|t| t.contains("modelOptions can't be checked"))
+    })
+    .await;
+
     // The lead changes its own model: the turn that asked for it finishes, then the agent starts afresh.
     let reply = manage(&host, &lead, "update_bot", &json!({"botId": lead, "model": "fixture-2"}), "allow", |detail| {
         assert_eq!(detail, "Model: fixture-2");

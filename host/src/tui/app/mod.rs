@@ -72,6 +72,9 @@ struct PendingSend {
     busy: bool,
 }
 
+/// Whose model list it is: the agent and its login profile (`None`: the default login).
+pub type ModelKey = (String, Option<String>);
+
 #[allow(clippy::struct_excessive_bools, reason = "independent UI flags, not a state machine")]
 pub struct App {
     pub client: Client,
@@ -155,11 +158,11 @@ pub struct App {
     /// Installed connectors and skills as the host lists them.
     pub plugins: (Vec<Value>, Vec<Value>),
     /// Models each agent (and login profile) offers (`None` while loading).
-    pub models: HashMap<(String, Option<String>), Option<Vec<AgentModel>>>,
+    pub models: HashMap<ModelKey, Option<Vec<AgentModel>>>,
     /// Agent/login-profile pairs whose model list came with Fast mode.
-    pub fast_mode: HashSet<(String, Option<String>)>,
+    pub fast_mode: HashSet<ModelKey>,
     /// The modes each agent's (and login profile's) model list came with.
-    pub modes: HashMap<(String, Option<String>), Vec<codync_agent::modes::Mode>>,
+    pub modes: HashMap<ModelKey, Vec<codync_agent::modes::Mode>>,
     /// A setup terminal holding the screen.
     pub shell: Option<Shell>,
     /// Chats marked read since their bot's unread count last changed.

@@ -5,25 +5,58 @@
 
 mod common;
 
+use common::host::Host;
 use serde_json::{Value, json};
-use std::path::Path;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 fn write_devin_shim(bin: &Path) {
     std::fs::create_dir_all(bin).unwrap();
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/models_agent.py");
-    if cfg!(windows) {
+    #[cfg(windows)]
+    {
         let cmd = format!("@echo off\r\n{} -X utf8 -u \"{}\" %*\r\n", common::python(), fixture.display());
         std::fs::write(bin.join("devin.cmd"), cmd).unwrap();
-    } else {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            let script = format!("#!/bin/sh\nexec {} -X utf8 -u '{}' \"$@\"\n", common::python(), fixture.display());
-            let file = bin.join("devin");
-            std::fs::write(&file, script).unwrap();
-            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let script = format!("#!/bin/sh\nexec {} -X utf8 -u '{}' \"$@\"\n", common::python(), fixture.display());
+        let file = bin.join("devin");
+        std::fs::write(&file, script).unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
+/// A host whose PATH starts with the stand-in Devin under `shim_root`, the fixture's variables cleared, `extra` set.
+async fn devin_host(shim_root: &Path, extra: &[(&str, &OsStr)]) -> Host {
+    let bin = shim_root.join("bin");
+    write_devin_shim(&bin);
+    let inherited = std::env::var_os("PATH").unwrap_or_default();
+    let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(&inherited))).unwrap();
+    let empty = OsStr::new("");
+    let mut env = vec![
+        ("PATH", path.as_os_str()),
+        ("CODYNC_AGENT_ACCOUNT", empty),
+        ("E2E_MODEL_TIER", empty),
+        ("XDG_DATA_HOME", empty),
+        ("XDG_STATE_HOME", empty),
+    ];
+    env.extend_from_slice(extra);
+    Host::start_with(&env).await
+}
+
+/// The stand-in's flags for a probe on an account that waits: `(started, release)`, files under `shim_root`.
+fn probe_flags(shim_root: &Path) -> (PathBuf, PathBuf) {
+    (shim_root.join("probe.started"), shim_root.join("probe.release"))
+}
+
+async fn add_login_profile(host: &Host, kind: &str) -> String {
+    host.call("addLoginProfile", json!({"backend": "devin", "kind": kind})).await["loginProfile"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
 }
 
 fn model_ids(catalog: &Value) -> Vec<String> {
@@ -36,35 +69,9 @@ async fn agent_models_scopes_discovery_by_login_profile() {
         return;
     }
     let shim_root = std::env::temp_dir().join(format!("codync-agent-models-shim-{}", uuid::Uuid::new_v4()));
-    let bin = shim_root.join("bin");
-    write_devin_shim(&bin);
-
-    let inherited_path = std::env::var_os("PATH").unwrap_or_default();
-    let mut paths = vec![bin];
-    paths.extend(std::env::split_paths(&inherited_path));
-    let path = std::env::join_paths(paths).unwrap();
-
-    let empty = std::ffi::OsStr::new("");
-    let host = common::host::Host::start_with(&[
-        ("PATH", path.as_os_str()),
-        ("CODYNC_AGENT_ACCOUNT", empty),
-        ("E2E_MODEL_TIER", empty),
-        ("XDG_DATA_HOME", empty),
-        ("XDG_STATE_HOME", empty),
-    ])
-    .await;
-
-    let account =
-        host.call("addLoginProfile", json!({"backend": "devin", "kind": "account"})).await["loginProfile"]["id"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-
-    let api_key =
-        host.call("addLoginProfile", json!({"backend": "devin", "kind": "apiKey"})).await["loginProfile"]["id"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+    let host = devin_host(&shim_root, &[]).await;
+    let account = add_login_profile(&host, "account").await;
+    let api_key = add_login_profile(&host, "apiKey").await;
     host.call("setLoginProfileKeys", json!({"loginProfile": api_key, "vars": {"E2E_MODEL_TIER": "ultra"}})).await;
 
     // Machine default (omitted, null, and empty string all map to default).
@@ -98,36 +105,19 @@ async fn agent_models_holds_login_profile_against_removal_until_discovery_finish
         return;
     }
     let shim_root = std::env::temp_dir().join(format!("codync-agent-models-hold-{}", uuid::Uuid::new_v4()));
-    let bin = shim_root.join("bin");
-    write_devin_shim(&bin);
-    let started_flag = shim_root.join("probe.started");
-    let release_flag = shim_root.join("probe.release");
-
-    let inherited_path = std::env::var_os("PATH").unwrap_or_default();
-    let mut paths = vec![bin];
-    paths.extend(std::env::split_paths(&inherited_path));
-    let path = std::env::join_paths(paths).unwrap();
-
-    let empty = std::ffi::OsStr::new("");
-    let host = std::sync::Arc::new(
-        common::host::Host::start_with(&[
-            ("PATH", path.as_os_str()),
-            ("CODYNC_AGENT_ACCOUNT", empty),
-            ("E2E_MODEL_TIER", empty),
-            ("XDG_DATA_HOME", empty),
-            ("XDG_STATE_HOME", empty),
-            ("E2E_HOLD_ACCOUNT", std::ffi::OsStr::new("*")),
-            ("E2E_PROBE_STARTED", started_flag.as_os_str()),
-            ("E2E_PROBE_RELEASE", release_flag.as_os_str()),
-        ])
+    let (started_flag, release_flag) = probe_flags(&shim_root);
+    let host = Arc::new(
+        devin_host(
+            &shim_root,
+            &[
+                ("E2E_HOLD_ACCOUNT", OsStr::new("*")),
+                ("E2E_PROBE_STARTED", started_flag.as_os_str()),
+                ("E2E_PROBE_RELEASE", release_flag.as_os_str()),
+            ],
+        )
         .await,
     );
-
-    let account =
-        host.call("addLoginProfile", json!({"backend": "devin", "kind": "account"})).await["loginProfile"]["id"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+    let account = add_login_profile(&host, "account").await;
     let slot_dir = host.home.join("login-profiles").join("devin").join(&account);
     assert!(slot_dir.exists(), "account slot directory should exist before probe: {}", slot_dir.display());
 
@@ -177,37 +167,20 @@ async fn agent_models_releases_login_profile_when_discovery_fails() {
         return;
     }
     let shim_root = std::env::temp_dir().join(format!("codync-agent-models-fail-{}", uuid::Uuid::new_v4()));
-    let bin = shim_root.join("bin");
-    write_devin_shim(&bin);
-    let started_flag = shim_root.join("probe.started");
-    let release_flag = shim_root.join("probe.release");
-
-    let inherited_path = std::env::var_os("PATH").unwrap_or_default();
-    let mut paths = vec![bin];
-    paths.extend(std::env::split_paths(&inherited_path));
-    let path = std::env::join_paths(paths).unwrap();
-
-    let empty = std::ffi::OsStr::new("");
-    let host = std::sync::Arc::new(
-        common::host::Host::start_with(&[
-            ("PATH", path.as_os_str()),
-            ("CODYNC_AGENT_ACCOUNT", empty),
-            ("E2E_MODEL_TIER", empty),
-            ("XDG_DATA_HOME", empty),
-            ("XDG_STATE_HOME", empty),
-            ("E2E_HOLD_ACCOUNT", std::ffi::OsStr::new("*")),
-            ("E2E_PROBE_STARTED", started_flag.as_os_str()),
-            ("E2E_PROBE_RELEASE", release_flag.as_os_str()),
-            ("E2E_PROBE_FAIL", std::ffi::OsStr::new("1")),
-        ])
+    let (started_flag, release_flag) = probe_flags(&shim_root);
+    let host = Arc::new(
+        devin_host(
+            &shim_root,
+            &[
+                ("E2E_HOLD_ACCOUNT", OsStr::new("*")),
+                ("E2E_PROBE_STARTED", started_flag.as_os_str()),
+                ("E2E_PROBE_RELEASE", release_flag.as_os_str()),
+                ("E2E_PROBE_FAIL", OsStr::new("1")),
+            ],
+        )
         .await,
     );
-
-    let account =
-        host.call("addLoginProfile", json!({"backend": "devin", "kind": "account"})).await["loginProfile"]["id"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+    let account = add_login_profile(&host, "account").await;
     let slot_dir = host.home.join("login-profiles").join("devin").join(&account);
     assert!(slot_dir.exists());
 

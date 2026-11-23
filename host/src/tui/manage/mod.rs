@@ -116,7 +116,7 @@ pub enum Reply {
         to: Option<String>,
     },
     SignIn,
-    Models(String, Option<String>),
+    Models(super::app::ModelKey),
     Downloaded,
     /// Something changed: every open sheet loads again.
     Changed,
@@ -409,10 +409,12 @@ impl App {
 
     // ---------- model picker ----------
 
-    pub(in crate::tui) fn model_key(backend: &str, login_profile: Option<&str>) -> (String, Option<String>) {
+    /// The key a model list is kept under; an empty login profile is the default login.
+    pub(in crate::tui) fn model_key(backend: &str, login_profile: Option<&str>) -> super::app::ModelKey {
         (backend.to_owned(), login_profile.filter(|s| !s.is_empty()).map(str::to_owned))
     }
 
+    /// The model list `backend` on `login_profile` offers: `Some(None)` while it loads.
     pub(in crate::tui) fn models_for(
         &self,
         backend: &str,
@@ -421,6 +423,7 @@ impl App {
         self.models.get(&Self::model_key(backend, login_profile))
     }
 
+    /// Whether that model list came with Fast mode.
     pub(in crate::tui) fn has_fast_mode(&self, backend: &str, login_profile: Option<&str>) -> bool {
         self.fast_mode.contains(&Self::model_key(backend, login_profile))
     }
@@ -430,11 +433,7 @@ impl App {
         let key = Self::model_key(backend, login_profile);
         if !backend.is_empty() && !self.models.contains_key(&key) {
             self.models.insert(key.clone(), None);
-            let body = match key.1.as_deref() {
-                Some(id) => json!({"backend": backend, "loginProfile": id}),
-                None => json!({"backend": backend}),
-            };
-            self.sheet("agentModels", body, Reply::Models(key.0, key.1));
+            self.sheet("agentModels", json!({"backend": backend, "loginProfile": key.1}), Reply::Models(key));
         }
     }
 

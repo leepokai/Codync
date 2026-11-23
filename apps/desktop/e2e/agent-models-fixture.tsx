@@ -121,12 +121,10 @@ export function mount() {
     'e2e-agent-models',
     <AppContext.Provider value={new FakeApp() as unknown as AppModel}>
       <StoreContext.Provider value={store as unknown as BotStore}>
-        <div style={{ width: 520, maxHeight: '90vh', overflow: 'auto', background: 'var(--bg)', padding: 16, borderRadius: 12 }}>
-          <BotSettingsPanel botId="bot-1" />
-        </div>
+        <BotSettingsPanel botId="bot-1" />
       </StoreContext.Provider>
     </AppContext.Provider>,
-    'z-index: 250;',
+    'z-index:250;flex-direction:column;width:520px;overflow:auto;padding:16px;',
   )
   return {
     unmount,

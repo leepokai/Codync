@@ -624,4 +624,24 @@ mod tests {
             assert_eq!(changed.get("offeredToNetwork").cloned(), offered.map(Value::from), "{changed}");
         }
     }
+
+    #[tokio::test]
+    async fn a_bot_on_another_login_asks_for_that_logins_models() {
+        let (base, mut requests) = super::super::recording_host().await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(crate::tui::net::Client::new(&base, Some("token")), tx, String::new());
+        let bot = json!({"id": "b", "backend": "claude", "loginProfile": "pro-7"});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let request = loop {
+            let request = super::super::next_request(&mut requests).await;
+            if request.starts_with("POST /api/agentModels") {
+                break request;
+            }
+        };
+        assert!(request.contains(r#""loginProfile":"pro-7""#), "{request}");
+        assert!(matches!(app.models_for("claude", Some("pro-7")), Some(None)), "its list is loading");
+        assert!(app.models_for("claude", None).is_none(), "the default login's list is another one");
+    }
 }

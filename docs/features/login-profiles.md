@@ -117,6 +117,9 @@ by every slot (its keyring names them by server, not by home).
   custom command, leaves its login profile behind. A bot whose account is gone doesn't start: it never runs on another
   login in silence.
 - Changing a bot's login profile restarts its agent at the next idle point, like a model change.
+- **The model list is the login's own**: `agentModels {backend, loginProfile?}` reads it on the bot's, fallback's or
+  threads' agent's login profile, so an account on another plan shows its own models
+  ([model selection](marketplace.md#model-selection)).
 - **A fallback step names its own login profile** (`fallbacks[].loginProfile`), or none for the default one. A login profile belongs
   to one agent. The chain has each login once, so an agent comes again only on another of its login profiles: Claude Code
   → Claude Code on a second login profile → Codex. Steps, parked sessions and rests go by login
@@ -164,7 +167,6 @@ its fallbacks, on `agentStep`, on each `resting` entry and on a sign-in card. Al
 ## Not built
 
 - **Limits of an account** of an agent other than Claude Code and Codex: its row says **No reading yet**.
-- **Models per login profile.** The model list is read on the computer's own login.
 - **A second real account on each agent.** Only Claude Code has had two accounts signed in at once here. The
   others are checked as far as the table says.
 - **Adopting a folder the user already has** (`~/.claude-work`) without a new sign-in.

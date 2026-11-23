@@ -233,7 +233,7 @@ impl App {
                     });
                 }
             }
-            Reply::Models(backend, login_profile) => {
+            Reply::Models(key) => {
                 let mut list: Vec<_> =
                     v["models"].as_array().into_iter().flatten().filter_map(AgentModel::parse).collect();
                 if v["defaultModelOptions"] == true
@@ -254,7 +254,6 @@ impl App {
                         },
                     );
                 }
-                let key = (backend, login_profile);
                 if v["fastMode"] == true {
                     self.fast_mode.insert(key.clone());
                 }
@@ -277,8 +276,8 @@ impl App {
 
     fn sheet_error(&mut self, r: &Reply, e: String) {
         match r {
-            Reply::Models(backend, login_profile) => {
-                self.models.insert((backend.clone(), login_profile.clone()), Some(vec![]));
+            Reply::Models(key) => {
+                self.models.insert(key.clone(), Some(vec![]));
             }
             Reply::RoutineSaved => {
                 if let Some(Overlay::Routine(f)) = self.overlays.last_mut() {

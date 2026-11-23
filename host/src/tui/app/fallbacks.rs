@@ -138,11 +138,9 @@ impl App {
         let logins = self.logins(&agent.backend);
         let i = logins.iter().position(|l| *l == agent.login_profile).unwrap_or(0);
         agent.login_profile.clone_from(&logins[cycle(i, 1, logins.len())]);
-        let backend = agent.backend.clone();
-        let login_profile = agent.login_profile.clone();
-        let head = (backend.clone(), login_profile.clone());
+        let head = (agent.backend.clone(), agent.login_profile.clone());
         f.thread_fallbacks.retain(|x| (&x.backend, &x.login_profile) != (&head.0, &head.1));
-        self.want_models(&backend, login_profile.as_deref());
+        self.want_models(&head.0, head.1.as_deref());
     }
 
     /// Runnable agents a step can be on, in the pickers' order.

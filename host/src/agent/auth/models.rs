@@ -29,7 +29,7 @@ impl InFlight {
         login_profile: Option<&str>,
         fetch: impl Future<Output = Result<Value>>,
     ) -> Result<Value> {
-        let key = (backend.to_owned(), login_profile.filter(|s| !s.is_empty()).map(str::to_owned));
+        let key = (backend.to_owned(), login_profile.map(str::to_owned));
         let slot = self.0.locked().entry(key.clone()).or_default().clone();
         let answer = slot
             .get_or_init(|| async {
@@ -318,7 +318,7 @@ mod tests {
         };
         let (d1, d2, p1_a, p1_b, p2) = tokio::join!(
             lists.get("gemini", None, fetch("default")),
-            lists.get("gemini", Some(""), fetch("default-empty")),
+            lists.get("gemini", None, fetch("default-dup")),
             lists.get("gemini", Some("pro-7"), fetch("pro")),
             lists.get("gemini", Some("pro-7"), fetch("pro-dup")),
             lists.get("gemini", Some("ultra-8"), fetch("ultra")),

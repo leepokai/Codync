@@ -113,8 +113,9 @@ import kotlinx.serialization.json.put
         accounts.store(state.computer.id)?.let { NetworkSheet(view, it::refreshNetwork) }
     }
     NameDialog(naming, "Name", { naming = null }, { it.take(CLOUD_NAME_LIMIT) }) { it.trim() }
+    val recoloring = lastOf(coloring)
     SwatchPanel(coloring != null, states.firstOrNull { it.computer.id == coloring }?.computer?.color, { coloring = null }) {
-        accounts.store(coloring)?.setColor(it)
+        accounts.store(recoloring)?.setColor(it)
     }
     val forgetting = confirmForget
     CodyncDialog(tr("Remove {name}?").replace("{name}", forgetting?.computer?.name ?: "computer"), forgetting != null, { confirmForget = null },

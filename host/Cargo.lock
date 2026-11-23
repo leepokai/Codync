@@ -880,7 +880,7 @@ dependencies = [
 
 [[package]]
 name = "codync-agent"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -903,7 +903,7 @@ dependencies = [
 
 [[package]]
 name = "codync-host"
-version = "2.53.0"
+version = "2.54.0"
 dependencies = [
  "anyhow",
  "axum",

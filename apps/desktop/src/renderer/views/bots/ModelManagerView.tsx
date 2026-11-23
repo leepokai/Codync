@@ -25,12 +25,14 @@ type Outcome = { ok: boolean; text: string }
 
 /** What the bot is for, plus its computer when the roster spans more than one. */
 const subtitle = ({ bot, store, computer }: RosterItem, oneComputer: boolean) =>
-  [bot.description, oneComputer ? '' : (store.hostName ?? computer.name)].filter(Boolean).join(' ? ')
+  [bot.description, oneComputer ? '' : (store.hostName ?? computer.name)].filter(Boolean).join(' · ')
 
 /** Apply one agent, model and its model options to many bots at once. */
 export function ModelManagerView({ items, onClose }: { items: RosterItem[]; onClose: () => void }) {
   const tr = useTr()
-  const store = items[0]?.store
+  // Groups carry members, not a model of their own; the batch swap targets bots.
+  const bots = items.filter((item) => !isGroup(item.bot))
+  const store = bots[0]?.store
   return (
     <Sheet open onClose={onClose} width={640}>
       <VStack gap={12} className="model-manager">
@@ -41,7 +43,7 @@ export function ModelManagerView({ items, onClose }: { items: RosterItem[]; onCl
         </HStack>
         {store ? (
           <StoreContext.Provider value={store}>
-            <ManagerBody items={items} />
+            <ManagerBody items={bots} />
           </StoreContext.Provider>
         ) : (
           <Text size="caption" tone="secondary">{tr('No bots selected')}</Text>
@@ -64,24 +66,25 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const backends = store.hello?.backends ?? []
   const agents = [...backends.map(agentChoice), { id: 'custom', label: 'Custom command', leading: <AgentIcon registry="custom" size={14} /> }]
   const shown = matchBots(items, query)
-  const keys = allKeys(items)
-  const everyChecked = keys.length > 0 && keys.every((key) => checked.has(key))
+  const shownKeys = allKeys(shown)
+  const everyChecked = shownKeys.length > 0 && shownKeys.every((key) => checked.has(key))
   const oneComputer = !items.some((item) => item.computer.id !== first?.computer.id)
-  const canApply = checked.size > 0 && !applying && (pick.backend === 'custom' || models.catalog !== null)
+  const canApply = checked.size > 0 && !applying && (pick.backend === 'custom' || !pick.model || models.catalog !== null)
 
   const toggle = (key: string, on: boolean) => setChecked((set) => toggleKey(set, key, on))
-  const markAll = (on: boolean) => setChecked((set) => keys.reduce((next, key) => toggleKey(next, key, on), set))
+  const markAll = (on: boolean) => setChecked((set) => shownKeys.reduce((next, key) => toggleKey(next, key, on), set))
 
   const apply = async () => {
     const chosen = filterChecked(items, checked)
     if (!chosen.length || applying) return
     setApplying(true)
     setOutcomes({})
+    const model = pick.model?.trim() || null
     const catalogs: Record<string, AgentModels | null> = {}
     try {
-      if (pick.model) {
+      if (model) {
         for (const item of chosen) {
-          const id = item.computer.id
+          const id = item.ref.computerId
           if (id === store.computer.id || id in catalogs) continue
           catalogs[id] = await item.store
             .ready()
@@ -89,7 +92,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
             .catch(() => null)
         }
       }
-      const plan: ApplyPlan = { items: chosen, backend: pick.backend, model: pick.model, options: pick.modelOptions }
+      const plan: ApplyPlan = { items: chosen, backend: pick.backend, model, options: pick.modelOptions }
       const rows = planRows(plan, (id) => (id === store.computer.id ? models.catalog : catalogs[id] ?? null))
       let applied = 0
       for (const row of rows) {
@@ -98,8 +101,8 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
           setOutcomes((o) => ({ ...o, [key]: { ok: false, text: row.reason ?? tr('Failed') } }))
           continue
         }
-        const draft = normalized({ ...draftOf(row.item.bot), backend: pick.backend, model: pick.model || null, modelOptions: pick.modelOptions })
         try {
+          const draft = normalized({ ...draftOf(row.item.bot), backend: pick.backend, model: model || null, modelOptions: pick.modelOptions })
           await row.item.store.save(draft)
           applied++
           setOutcomes((o) => ({ ...o, [key]: { ok: true, text: tr('Applied') } }))

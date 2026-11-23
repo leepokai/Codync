@@ -2481,5 +2481,8 @@
   "New chat": "新對話",
   "in background": "在背景執行",
   "{count} s": "{count} 秒",
-  "{count} min": "{count} 分鐘"
+  "{count} min": "{count} 分鐘",
+  "Context handoff pending": "脈絡交接待進行",
+  "Context handed off": "脈絡已交接",
+  "Switched": "已切換"
 }

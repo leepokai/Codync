@@ -122,7 +122,9 @@ by every slot (its keyring names them by server, not by home).
 - `loginProfile` on a bot is the id, or absent for the default one. A bot moved to another agent, or given a
   custom command, leaves its login profile behind. A bot whose account is gone doesn't start: it never runs on another
   login in silence.
-- Changing a bot's login profile restarts its agent at the next idle point, like a model change.
+- Changing a bot's login profile restarts its agent at the next idle point, like a model change. Its next message
+  carries a recap of the chat, as on a move down the fallback chain, and a line in the chat says so
+  ([user switches](agent-fallback.md)).
 - **The model list is the login's own**: `agentModels {backend, loginProfile?}` reads it on the bot's, fallback's or
   threads' agent's login profile, so an account on another plan shows its own models
   ([model selection](marketplace.md#model-selection)).

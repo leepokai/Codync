@@ -2481,5 +2481,8 @@
   "New chat": "Новый чат",
   "in background": "в фоне",
   "{count} s": "{count} с",
-  "{count} min": "{count} мин"
+  "{count} min": "{count} мин",
+  "Context handoff pending": "Передача контекста ожидается",
+  "Context handed off": "Контекст передан",
+  "Switched": "Переключено"
 }

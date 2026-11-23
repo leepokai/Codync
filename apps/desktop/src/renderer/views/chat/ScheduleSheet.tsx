@@ -7,9 +7,9 @@ import { useStore } from '../../store/context'
 import type { Entry } from '@shared/models'
 
 /**
- * Pick a time for "Schedule send…": a new message's, or the schedule of one already waiting (`entry`). The
- * input is the browser's local-time picker; the store keeps UTC epoch-ms, so a zone change or DST can't
- * move a message by accident.
+ * Pick a time for "Schedule send…": a new message's, a waiting one's (a time holds it out of the live
+ * queue), or the schedule of one already held (`entry`). The input is the browser's local-time picker; the
+ * store keeps UTC epoch-ms, so a zone change or DST can't move a message by accident.
  */
 export function ScheduleSheet({
   botId,
@@ -19,7 +19,7 @@ export function ScheduleSheet({
   onScheduled,
 }: {
   botId: string
-  /** Editing: the scheduled entry (its text and time prefill, saving updates it in place). */
+  /** A message that hasn't gone out: one waiting in the live queue (a time holds it), or one already held. */
   entry?: Entry | null
   /** New schedule: the draft to hold. */
   draft?: string
@@ -30,7 +30,7 @@ export function ScheduleSheet({
   const store = useStore()
   const tr = useTr()
   const ref = useRef<HTMLInputElement>(null)
-  const editing = entry !== null
+  const held = entry !== null && entry.data.status === 'scheduled'
   const [text, setText] = useState(entry?.data.text ?? draft)
   const [time, setTime] = useState(() => defaultTime(entry?.data.notBefore))
   // A local-time value is only a value once a field was typed into; the picker starts blank.
@@ -38,10 +38,9 @@ export function ScheduleSheet({
   const invalid = useMemo(() => {
     const at = parseLocal(time)
     if (at === null) return tr('Pick a time')
-    if (!editing && at <= Date.now()) return tr('Pick a time in the future')
-    if (editing && at <= Date.now()) return tr('Pick a time in the future')
+    if (at <= Date.now()) return tr('Pick a time in the future')
     return null
-  }, [time, editing, tr])
+  }, [time, tr])
   const ready = text.trim().length > 0 && touched && invalid === null && !store.answering.has(entry?.id ?? '')
   useEffect(() => {
     ref.current?.focus()
@@ -49,11 +48,10 @@ export function ScheduleSheet({
   return (
     <Sheet open onClose={onClose}>
       <VStack gap={3} className="schedule-sheet">
-        <Text size="headline">{editing ? tr('Edit schedule') : tr('Schedule send')}</Text>
+        <Text size="headline">{held ? tr('Edit schedule') : tr('Schedule send…')}</Text>
         <textarea
           className="schedule-text"
           value={text}
-          readOnly={editing}
           placeholder={tr('Message')}
           onChange={(e) => setText(e.target.value)}
         />
@@ -70,6 +68,18 @@ export function ScheduleSheet({
         />
         {invalid ? <Text size="caption" tone="danger">{invalid}</Text> : null}
         <div className="schedule-actions">
+          {held ? (
+            // Back to an ordinary queued message: it goes out as one typed now would.
+            <button
+              className="press schedule-cancel"
+              onClick={() => {
+                store.sendScheduledNow(entry)
+                onClose()
+              }}
+            >
+              {tr('Clear the time')}
+            </button>
+          ) : null}
           <button className="press schedule-cancel" onClick={onClose}>
             {tr('Cancel')}
           </button>
@@ -79,7 +89,7 @@ export function ScheduleSheet({
             onClick={() => {
               const at = parseLocal(time)
               if (at === null) return
-              if (editing) store.updateScheduled(entry, { text: text.trim(), notBefore: at })
+              if (entry) store.updateScheduled(entry, { text: text.trim(), notBefore: at })
               else {
                 store.scheduleSend(text, botId, at, { replyTo: null })
                 onScheduled?.()
@@ -87,7 +97,7 @@ export function ScheduleSheet({
               onClose()
             }}
           >
-            {editing ? tr('Save') : tr('Schedule')}
+            {held ? tr('Save') : tr('Schedule')}
           </button>
         </div>
       </VStack>

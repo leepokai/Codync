@@ -5,7 +5,7 @@
 //!
 //! Pause interplay: this crate has no paused field yet (it lands with PR #572). When it does, the sweep's
 //! due-filter gains `!cfg.paused` so a fire while the target is paused is HELD (stays scheduled, zero
-//! spend) until resumed; until then #572's pause gate refuses such a delivery â€” either way a paused bot is
+//! spend) until resumed; until then #572's pause gate refuses such a delivery — either way a paused bot is
 //! never woken and never spends.
 
 use crate::hub::Hub;
@@ -273,6 +273,52 @@ mod tests {
         assert!(f.prompts()[1].contains("later"), "the scheduled one delivered after: {:#?}", f.prompts());
         assert!(f.hub.store.entry(&scheduled.id).unwrap().turn > live.turn, "its place is its delivery time");
         assert_eq!(f.status_of(&scheduled.id), "sent");
+        f.hub.shutdown().await;
+        let _ = std::fs::remove_dir_all(&f.dir);
+    }
+
+    /// `updateScheduled` on a message waiting in the live queue: its text changes where it waits, and a
+    /// time holds it for later — it leaves the queue, so the ending turn delivers it only at its time,
+    /// with the edited text.
+    #[tokio::test]
+    async fn a_waiting_message_can_be_edited_and_held_for_later() {
+        let f = Fixture::new();
+        // A live send starts a turn; a second message waits behind it.
+        f.send("live now").await;
+        f.until(|| f.prompts().len() == 1).await;
+        f.send("first draft").await;
+        let waiting = f
+            .hub
+            .store
+            .history("b", i64::MAX, 50)
+            .unwrap()
+            .into_iter()
+            .find(|e| e.data["text"] == "first draft")
+            .expect("the waiting message is saved");
+        assert_eq!(f.status_of(&waiting.id), "queued");
+        // The text changes where it waits…
+        crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "updateScheduled",
+            json!({"botId": "b", "entryId": waiting.id, "text": "held and edited"}),
+        )
+        .await
+        .unwrap();
+        // …and a time holds it out of the live queue.
+        crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "updateScheduled",
+            json!({"botId": "b", "entryId": waiting.id, "notBefore": crate::store::now_ms() + 150}),
+        )
+        .await
+        .unwrap();
+        f.until(|| f.status_of(&waiting.id) == "scheduled").await;
+        // The running turn ends with nothing new to deliver: the live queue no longer holds it.
+        f.until(|| f.prompts().len() == 2 && f.prompts()[1].contains("held and edited")).await;
+        assert!(!f.prompts()[1].contains("first draft"), "the queue's copy is the edited one");
+        assert_eq!(f.status_of(&waiting.id), "sent");
         f.hub.shutdown().await;
         let _ = std::fs::remove_dir_all(&f.dir);
     }

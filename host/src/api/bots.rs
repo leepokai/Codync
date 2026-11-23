@@ -444,41 +444,49 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             }
             json!({"entry": crate::chat::messages::save_scheduled(hub, &row.config, data, not_before)?})
         }
-        // Edits a message that is still scheduled (`updateScheduled`): its text and/or its time. Once it has
-        // fired into the queue it is an ordinary queued message (`steer`/`unqueue` territory).
+        // Edits a message that hasn't gone out (`updateScheduled`): one held for a later time takes a new
+        // text and/or time; one waiting in the live queue can be edited too, and a time holds it for then
+        // (it leaves the queue and fires at its time). Once it has gone out, neither applies.
         "updateScheduled" => {
             let bot = str_arg(&b, "botId")?;
             let entry_id = str_arg(&b, "entryId")?;
+            let text = match b["text"].as_str() {
+                Some(text) if text.trim().is_empty() => bail!("the message is empty"),
+                text => text.map(str::trim),
+            };
+            let not_before = match b["notBefore"].as_i64() {
+                Some(at) if at <= crate::store::now_ms() => bail!("the scheduled time must be in the future"),
+                at => at,
+            };
+            if text.is_none() && not_before.is_none() {
+                bail!("nothing to change");
+            }
             let mut e = hub
                 .store
                 .entry(entry_id)
-                .filter(|e| e.bot_id == bot && e.kind == EntryKind::User.as_str() && e.data["status"] == "scheduled")
-                .ok_or_else(|| anyhow!("that message isn't scheduled any more"))?;
-            if let Some(text) = b["text"].as_str() {
-                let text = text.trim();
-                if text.is_empty() {
-                    bail!("the message is empty");
+                .filter(|e| e.bot_id == bot && e.kind == EntryKind::User.as_str())
+                .ok_or_else(|| anyhow!("that message isn't waiting any more"))?;
+            match e.data["status"].as_str() {
+                // The live queue is the actor's: it moves the message, as `steer` and `unqueue` do. The
+                // entry it hands back follows in the store's events.
+                Some("queued") => {
+                    hub.send_cmd(
+                        bot,
+                        Cmd::Hold { entry_id: entry_id.to_owned(), text: text.map(str::to_owned), not_before },
+                    )?;
+                    json!({})
                 }
-                e.data["text"] = text.into();
-                // What the user pasted stays marked only while it is still part of the message.
-                let pasted: Vec<&str> = e.data["pasted"]
-                    .as_array()
-                    .map(|a| a.iter().filter_map(Value::as_str).collect())
-                    .unwrap_or_default();
-                let kept: Vec<Value> = pasted.into_iter().filter(|p| text.contains(*p)).map(Into::into).collect();
-                if kept.is_empty() {
-                    e.data.as_object_mut().map(|o| o.remove("pasted"));
-                } else {
-                    e.data["pasted"] = kept.into();
+                Some("scheduled") => {
+                    if let Some(text) = text {
+                        crate::chat::messages::set_text(&mut e.data, text);
+                    }
+                    if let Some(at) = not_before {
+                        e.data["notBefore"] = at.into();
+                    }
+                    json!({"entry": hub.set_entry(entry_id, &e.data).ok_or_else(|| anyhow!("couldn't save the edit"))?})
                 }
+                _ => bail!("that message isn't waiting any more"),
             }
-            if let Some(not_before) = b["notBefore"].as_i64() {
-                if not_before <= crate::store::now_ms() {
-                    bail!("the scheduled time must be in the future");
-                }
-                e.data["notBefore"] = not_before.into();
-            }
-            json!({"entry": hub.set_entry(entry_id, &e.data).ok_or_else(|| anyhow!("couldn't save the edit"))?})
         }
         // Takes a scheduled message back before it fires (`cancelScheduled`): never delivered.
         "cancelScheduled" => {

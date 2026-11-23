@@ -45,6 +45,22 @@ pub fn hand_on(hub: &Arc<Hub>, cfg: &BotConfig, e: &Entry) -> Result<()> {
     Ok(())
 }
 
+/// A message's new text (`updateScheduled`): what the user pasted stays marked only while it is still part of
+/// the message.
+pub fn set_text(data: &mut Value, text: &str) {
+    data["text"] = text.into();
+    let pasted: Vec<&str> = data["pasted"]
+        .as_array()
+        .map(|a| a.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let kept: Vec<Value> = pasted.into_iter().filter(|p| text.contains(*p)).map(Into::into).collect();
+    if kept.is_empty() {
+        data.as_object_mut().map(|o| o.remove("pasted"));
+    } else {
+        data["pasted"] = kept.into();
+    }
+}
+
 /// A scheduled send (`scheduleSend`): the message is saved now, shown in the chat as scheduled, and delivered
 /// later by the sweep (`chat::schedule`) through the ordinary [`post`] path. A group's sends are immediate, so
 /// they can't be scheduled; the time must be in the future.

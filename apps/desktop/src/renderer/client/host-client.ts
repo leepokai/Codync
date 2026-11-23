@@ -294,9 +294,11 @@ export class HostClient {
     return (await this.call<{ entry: Entry }>('scheduleSend', { botId, text, notBefore, clientNonce, ...reply })).entry
   }
 
-  /** Edits a message that is still scheduled: its text and/or its fire time. */
+  /** Edits a message that hasn't gone out: one held for later takes a new text and/or time; one waiting in
+   * the live queue can be edited too, and a time holds it for then. The host answers with the entry when it
+   * has one (a waiting message's follows in the store's events). */
   async updateScheduled(botId: string, entryId: string, patch: { text?: string; notBefore?: number }) {
-    return (await this.call<{ entry: Entry }>('updateScheduled', { botId, entryId, ...patch })).entry
+    return (await this.call<{ entry?: Entry }>('updateScheduled', { botId, entryId, ...patch })).entry
   }
 
   /** Takes a scheduled message back before it fires: never delivered. */

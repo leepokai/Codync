@@ -390,18 +390,23 @@ export class BotStore extends BotSync {
     })()
   }
 
-  /** Edits a message that is still scheduled: its text and/or its fire time. */
+  /** Edits a message that hasn't gone out: one held for later takes a new text and/or time; one waiting in
+   * the live queue can be edited too, and a time holds it for then. */
   updateScheduled(entry: Entry, patch: { text?: string; notBefore?: number }) {
     const show = (e: Entry) => {
       this.upsert(e)
       this.changed()
     }
-    show({ ...entry, data: { ...entry.data, ...patch } })
+    // A waiting message given a time leaves the live queue: it shows as held right away.
+    const held = patch.notBefore !== undefined && entry.data.status === 'queued'
+    show({ ...entry, data: { ...entry.data, ...patch, ...(held ? { status: 'scheduled' } : {}) } })
     this.perform(
       async (c) => {
         const e = await c.updateScheduled(entry.botId, entry.id, patch)
-        this.upsert(e)
-        this.changed()
+        if (e) {
+          this.upsert(e)
+          this.changed()
+        }
       },
       true,
       () => show(entry),

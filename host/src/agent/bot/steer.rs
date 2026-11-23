@@ -248,6 +248,37 @@ impl Actor {
         }
     }
 
+    /// `updateScheduled` on a message still waiting in the live queue: its text changes where it waits, or it
+    /// leaves the queue to fire at its time (`chat::schedule`). One already with the agent (`steer`) goes out
+    /// as asked: the store then says what became of it.
+    pub(super) fn hold(&mut self, entry_id: &str, text: Option<String>, not_before: Option<i64>) {
+        if self.steers_in_flight.contains_key(entry_id) {
+            return;
+        }
+        let Some(at) = self.queued_at(entry_id) else { return };
+        if let Some(t) = text.as_deref() {
+            // Delivery reads the queue's copy as much as the store's: both say the new text.
+            if let Some(Queued::User { text: waiting, .. }) = self.queue.get_mut(at) {
+                *waiting = t.to_owned();
+            }
+        }
+        if not_before.is_some() {
+            self.queue.remove(at);
+        }
+        if let Some(mut e) = self.hub.store.entry(entry_id) {
+            if let Some(t) = text.as_deref() {
+                crate::chat::messages::set_text(&mut e.data, t);
+            }
+            if let Some(at) = not_before {
+                e.data["status"] = json!("scheduled");
+                e.data["notBefore"] = json!(at);
+            }
+            self.hub.set_entry(entry_id, &e.data);
+            // The roster previews the chat's newest message.
+            self.hub.emit_bot(&self.cfg.id);
+        }
+    }
+
     /// Deletes the files of a message (its saved `data`) that never went out.
     fn delete_uploads(&self, data: &Value) {
         let ids: Vec<String> = data["attachments"]

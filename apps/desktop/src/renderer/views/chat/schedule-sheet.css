@@ -12,6 +12,23 @@
   color: var(--text-tertiary, var(--secondary));
 }
 
+/* The preview line is a control: a click unfolds the whole message, a second one folds it back. */
+.queued-preview {
+  cursor: pointer;
+}
+
+/* Editing a waiting message in place: the composer's field look, sized to the tray's row. */
+.queued-edit {
+  background: var(--surface);
+  border: 1px solid var(--line, color-mix(in oklab, currentColor, transparent 88%));
+  border-radius: var(--radius-m);
+  color: var(--text);
+  font: inherit;
+  min-height: 32px;
+  padding: 6px 10px;
+  width: 100%;
+}
+
 .schedule-sheet {
   min-width: min(520px, 90vw);
   gap: 10px;

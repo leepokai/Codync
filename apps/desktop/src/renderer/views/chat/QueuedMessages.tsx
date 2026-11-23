@@ -78,40 +78,85 @@ function QueuedRow({
   const tr = useTr()
   const answering = store.answering.has(entry.id)
   const fireAt = entry.data.notBefore
+  const text = quoteOf(entry).text
+  // Click shows the whole message; a second click folds it back; a double-click edits it in place.
+  const [expanded, setExpanded] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(text)
+  const startEdit = () => {
+    setDraft(text)
+    setEditing(true)
+  }
+  const commit = () => {
+    setEditing(false)
+    const trimmed = draft.trim()
+    if (trimmed && trimmed !== text) store.updateScheduled(entry, { text: trimmed })
+  }
   return (
     <div className="queued-row" role="listitem">
       <ComposerReveal open={!leaving}>
-        <HStack gap={2} className="queued-row-body">
-          {fireAt !== undefined ? (
-            <span className="queued-scheduled" title={tr('Scheduled')}>
-              <Icon name="clock" size={11} color="var(--secondary)" />
-            </span>
-          ) : null}
-          <Text size="callout" tone="secondary" truncate grow>
-            {messagePreview(quoteOf(entry).text)}
-            {fireAt !== undefined ? (
-              <span className="queued-fire-time">
-                {' '}
-                · {tr('Fires {time}').replaceAll('{time}', () => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(fireAt)))}
+        {editing ? (
+          <input
+            className="queued-edit"
+            autoFocus
+            value={draft}
+            aria-label={tr('Edit')}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commit()
+              if (e.key === 'Escape') setEditing(false)
+            }}
+          />
+        ) : (
+          <HStack gap={2} className="queued-row-body">
+            {scheduling ? (
+              // The row's one time control: it sets a waiting message's time, edits a held one's.
+              <IconButton
+                title={tr(fireAt === undefined ? 'Schedule send…' : 'Edit schedule')}
+                icon="clock"
+                size={26}
+                disabled={answering}
+                onClick={onEdit}
+              />
+            ) : fireAt !== undefined ? (
+              <span className="queued-scheduled" title={tr('Scheduled')}>
+                <Icon name="clock" size={11} color="var(--secondary)" />
               </span>
             ) : null}
-          </Text>
-          {scheduling && fireAt !== undefined ? (
-            <IconButton title={tr('Edit schedule')} icon="pencil" size={26} disabled={answering} onClick={onEdit} />
-          ) : null}
-          {actions && fireAt === undefined ? (
-            <>
-              <IconButton title="Send now" icon="arrow.turn.down.right" size={26} disabled={answering} onClick={() => store.steer(entry)} />
-              <IconButton title="Remove" icon="trash" size={26} disabled={answering} onClick={() => store.unqueue(entry)} />
-            </>
-          ) : null}
-          {scheduling && fireAt !== undefined ? (
-            <>
-              <IconButton title={tr('Send now')} icon="arrow.turn.down.right" size={26} disabled={answering} onClick={() => store.sendScheduledNow(entry)} />
-              <IconButton title={tr('Remove')} icon="trash" size={26} disabled={answering} onClick={() => store.cancelScheduled(entry)} />
-            </>
-          ) : null}
-        </HStack>
+            <Text
+              size="callout"
+              tone="secondary"
+              truncate={!expanded}
+              grow
+              className="queued-preview"
+              onClick={() => setExpanded(!expanded)}
+              onDoubleClick={startEdit}
+            >
+              {expanded ? text : messagePreview(text)}
+              {fireAt !== undefined ? (
+                <span className="queued-fire-time">
+                  {' '}
+                  · {tr('Fires {time}').replaceAll('{time}', () => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(fireAt)))}
+                </span>
+              ) : null}
+            </Text>
+            <IconButton title={tr('Copy')} icon="doc.on.doc" size={26} onClick={() => window.codync.app.copy(text)} />
+            <IconButton title={tr('Edit')} icon="pencil" size={26} disabled={answering} onClick={startEdit} />
+            {actions && fireAt === undefined ? (
+              <>
+                <IconButton title="Send now" icon="arrow.turn.down.right" size={26} disabled={answering} onClick={() => store.steer(entry)} />
+                <IconButton title="Remove" icon="trash" size={26} disabled={answering} onClick={() => store.unqueue(entry)} />
+              </>
+            ) : null}
+            {scheduling && fireAt !== undefined ? (
+              <>
+                <IconButton title={tr('Send now')} icon="arrow.turn.down.right" size={26} disabled={answering} onClick={() => store.sendScheduledNow(entry)} />
+                <IconButton title={tr('Remove')} icon="trash" size={26} disabled={answering} onClick={() => store.cancelScheduled(entry)} />
+              </>
+            ) : null}
+          </HStack>
+        )}
       </ComposerReveal>
     </div>
   )

@@ -377,7 +377,7 @@ async fn check_model_options(
             Err(_) => return Err(Refused::error("catalog", "the agent's model list took too long to load".to_owned())),
         };
     let options = options.iter().map(|(id, value)| (id.as_str(), value.as_str().unwrap_or_default()));
-    crate::agent::auth::check_options(&catalog, model.filter(|m| !m.is_empty()), options)
+    codync_agent::acp::models::check_options(&catalog, model.filter(|m| !m.is_empty()), options)
         .map_err(|e| Refused::error("options", e.to_string()))
 }
 

@@ -260,7 +260,7 @@ function ChatSplitView() {
   const localOnline = !!app.local && onlineStores.includes(app.local)
   const roster = useComputerRoster(app, shown)
   const visibleRoster = roster.items
-  // The Model Manager ignores the sidebar's computer filter: it always sees every computer's bots.
+  // The Bot Manager ignores the sidebar's computer filter: it always sees every computer's bots.
   const fullRoster = useComputerRoster(app, new Set(app.computers.map((c) => c.id)))
   const work = allWork(roster.ordered)
   const closeWork = useCallback(() => setShowWork(false), [])
@@ -416,7 +416,7 @@ function ChatSplitView() {
         <div className="sidebar-header drag" inert={compact}>
           <Spacer />
           <HStack gap={6} className="no-drag">
-            <IconButton title="Model Manager" icon="slider.horizontal.3" size={32} className="sidebar-header-action" onClick={() => setModelManager(true)} />
+            <IconButton title="Bot Manager" icon="slider.horizontal.3" size={32} className="sidebar-header-action" onClick={() => setModelManager(true)} />
             <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setSettings('computers')} compact />
             {workButton(32, 'sidebar-header-action')}
             <IconButton title="Search" icon="magnifyingglass" size={32} className="sidebar-header-action" onClick={() => setSearching(true)} />
@@ -453,7 +453,7 @@ function ChatSplitView() {
         </div>
         {compact ? (
           <div className="rail-actions">
-            <IconButton title="Model Manager" icon="slider.horizontal.3" onClick={() => setModelManager(true)} />
+            <IconButton title="Bot Manager" icon="slider.horizontal.3" onClick={() => setModelManager(true)} />
             <IconButton title="Search" icon="magnifyingglass" onClick={() => setSearching(true)} />
             {workButton(36)}
             <IconButton title="New" icon="plus" size={36} buttonRef={railNewButton} menuOpen={railNewMenu} disabled={!onlineStores.length} onClick={() => setRailNewMenu((o) => !o)} />

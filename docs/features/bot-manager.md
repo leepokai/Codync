@@ -1,15 +1,17 @@
-# Model Manager
+# Bot Manager
 
-One agent, one model and that model's settings applied to many bots at once, on every computer the
-account reaches. Desktop app only for now: batch swapping is a desktop-shaped workflow, and each
-phone's bot editor already picks a model per bot (see *Notes*).
+One agent, one model and that model's settings applied to many bots at once — and many bots
+paused or resumed at once — on every computer the account reaches. Desktop app only for now:
+batch work is a desktop-shaped workflow, and each phone's bot editor already picks a model per
+bot (see *Notes*).
 
 ## Opening it
 
 The sliders button at the top of the bot list, left of the computer filter (`ChatWindow`'s sidebar
 header); in a narrow sidebar, the same sliders button sits in the rail actions under the roster. It
 opens a sheet, top to bottom: the agent and model picker, a search field over the bots, `Select all`
-/ `Unselect all`, the bot list with a checkbox on each row, and `Apply`.
+/ `Unselect all`, `Pause checked` / `Resume checked`, the bot list with a checkbox on each row, and
+`Apply`.
 
 ## Choosing what to apply
 
@@ -21,10 +23,11 @@ models), and the model's own settings under it, such as the reasoning slider. Le
 ## Choosing the bots
 
 The list is every bot on every computer the account reaches — the sidebar's computer filter, hidden
-computers and bots hidden from the roster don't limit it; a bot's computer is named under it when
-the account has more than one. Groups are not listed: they carry members, not a model of their own.
+computers and bots hidden from the roster don't limit it; a bot's computer is named under it when the
+account has more than one. Groups are not listed: they carry members, not a model of their own.
 The search field filters by name, description and last message, reusing the sidebar search's matcher
-(`matchBots`); `Select all` / `Unselect all` act on what the filter is showing.
+(`matchBots`); `Select all` / `Unselect all` act on what the filter is showing. A bot that is paused
+says `Paused` under its name, so a fleet's state reads at a glance.
 
 ## Apply
 
@@ -55,12 +58,32 @@ Cross-computer catalogs load once per computer per apply, so swapping a model on
 one catalog read per computer plus the saves. Choosing the agent's default model skips the catalog
 checks entirely and is allowed on every computer.
 
+## Pause and resume in bulk
+
+`Pause checked` and `Resume checked` act on the same checked bots Apply does — only the checked
+bots the filter still shows, one at a time, each as the same minimal patch the roster's own pause
+toggle sends (`{ id, paused }`, nothing else). The host's pause rules apply exactly as they do from
+the roster: a paused bot answers nothing and spends nothing, messages sent to it are refused with a
+notice, and its queued routine runs are cancelled. A bot that is mid-turn follows the host's own
+pause semantics — nothing new is invented here. Pausing also survives an Apply: a model patch never
+touches the flag unless it names it.
+
+The sheet acts as the user, like Apply, so no team-permission gate applies to these clicks. A bot
+pausing another bot's setup goes through the manage tool's own *Manage the team* gate and approval
+card instead. Every mutation lands on the host's audit trail (actor, target, old→new, timestamp)
+the pause change introduces.
+
+Row results (✓ *Paused*, ✓ *Resumed*, or the save's error) stay on the rows until the sheet closes;
+a bot that was already in the target state is saved the same way, and its row outcome says where
+it ended.
+
 ## Analytics
 
 One `model_manager_applied` per Apply — including a run that ended early (sheet closed, pick
 changed): `requested`, `applied` and `failed` counts. `failed` counts the catalog skips, the
 unverifiable rows and the save errors; rows the run never reached are the remainder
-(`requested - applied - failed`) ([analytics events](../reference/analytics-events.md)).
+(`requested - applied - failed`). One `bot_manager_paused` per bulk pause or resume, with the same
+counts plus `paused` (true when the action paused) ([analytics events](../reference/analytics-events.md)).
 
 ## Notes
 

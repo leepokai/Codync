@@ -15,7 +15,7 @@ import { AgentModelPicker } from './AgentModelPicker'
 import { useAgentModels, type AgentModels } from './agent-models'
 import { errorText } from './drafts'
 import { agentChoice } from './Fallbacks'
-import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
+import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, pausePatch, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
@@ -59,7 +59,7 @@ export function ModelManagerView({ items, onClose }: { items: RosterItem[]; onCl
     <Sheet open onClose={onClose} width={size.width} height={size.height}>
       <VStack gap={12} className="model-manager">
         <HStack gap={8} className="model-manager-head">
-          <Text size="body" tone="text" className="model-manager-title">{tr('Model Manager')}</Text>
+          <Text size="body" tone="text" className="model-manager-title">{tr('Bot Manager')}</Text>
           <Spacer />
           <IconButton title={tr('Close')} icon="xmark" size={28} onClick={onClose} />
         </HStack>
@@ -186,6 +186,52 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
     else setChecked(new Set())
   }
 
+  // Pause or resume every checked bot the filter still shows, one minimal patch each — the same
+  // `{ id, paused }` the roster's own pause toggle sends, so the host keeps every other setting and
+  // its pause rules (answers nothing, spends nothing) apply exactly as they do from the roster.
+  // The sheet acts as the user, like Apply; a bot pausing another goes through the manage tool's
+  // own gate. Mid-batch, the host's own merge keeps an unrelated change from being written back.
+  const setPausedAll = async (paused: boolean) => {
+    const chosen = targets.chosen
+    if (!chosen.length || busy.current) return
+    const myRun = run.current
+    busy.current = true
+    setApplying(true)
+    setOutcomes({})
+    let applied = 0
+    let failed = 0
+    try {
+      for (const item of chosen) {
+        if (!alive.current || run.current !== myRun) return
+        const key = refKey(item.ref)
+        try {
+          await item.store
+            .ready()
+            .then((client) => {
+              // The wait for a reconnect may outlast the run: re-check before anything is sent.
+              if (!alive.current || run.current !== myRun) return 'skipped'
+              return client.call('updateBot', pausePatch(item.ref.botId, paused)).then((): 'sent' | 'skipped' => 'sent')
+            })
+            .then((sent) => {
+              if (sent !== 'sent') return
+              applied++
+              if (alive.current && run.current === myRun) {
+                setOutcomes((o) => ({ ...o, [key]: { ok: true, text: tr(paused ? 'Paused' : 'Resumed') } }))
+              }
+            })
+        } catch (e) {
+          failed++
+          if (alive.current && run.current === myRun) setOutcomes((o) => ({ ...o, [key]: { ok: false, text: errorText(e) } }))
+        }
+      }
+    } finally {
+      // One event per bulk pause or resume, like Apply's one per apply.
+      analytics.track({ event: 'bot_manager_paused', requested: chosen.length, applied, failed, paused })
+      busy.current = false
+      setApplying(false)
+    }
+  }
+
   const apply = async () => {
     // Only the checked bots the filter still shows (pinned by applyTargets' tests): hidden
     // checked bots are left exactly as they are, so nothing the user cannot see is written.
@@ -284,12 +330,14 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
       <HStack gap={8} className="model-manager-tools">
         <Button onClick={() => markAll(true)} disabled={applying || everyChecked || shownKeys.length === 0}>{tr('Select all')}</Button>
         <Button onClick={() => markAll(false)} disabled={applying || checked.size === 0}>{tr('Unselect all')}</Button>
+        <Button onClick={() => void setPausedAll(true)} disabled={!canApply}>{tr('Pause checked')}</Button>
+        <Button onClick={() => void setPausedAll(false)} disabled={!canApply}>{tr('Resume checked')}</Button>
         <Spacer />
         {targets.totalChecked === 0 ? <Text size="caption" tone="secondary">{tr('No bots selected')}</Text> : <Text size="caption" tone="secondary">{tr('Selected: {n}').replace('{n}', () => String(targets.totalChecked))}</Text>}
         <Button onClick={apply} disabled={!canApply}>{tr('Apply')}</Button>
       </HStack>
       {targets.hiddenCount > 0 ? (
-        <Text size="caption" tone="attention">{tr('Bots hidden by the filter: {n} (unchanged by Apply)').replace('{n}', () => String(targets.hiddenCount))}</Text>
+        <Text size="caption" tone="attention">{tr('Bots hidden by the filter: {n} (no action touches them)').replace('{n}', () => String(targets.hiddenCount))}</Text>
       ) : null}
       <div className="palette-list model-manager-list">
         {shown.map((item) => {
@@ -306,6 +354,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
               <AvatarWithStatus bot={item.bot} members={isGroup(item.bot) ? item.store.members(item.bot) : []} size={32} />
               <VStack as="span" gap={2} grow>
                 <Text size="body" tone="text" truncate>{item.bot.name}</Text>
+                {item.bot.paused ? <Text size="caption" tone="attention" truncate>{tr('Paused')}</Text> : null}
                 {modelPath ? <Text size="caption" tone="secondary" truncate className="model-manager-model-path">{modelPath}</Text> : null}
                 {line ? <Text size="subheadline" tone="secondary" truncate>{line}</Text> : null}
               </VStack>

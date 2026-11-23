@@ -3,8 +3,8 @@ import { api, attach, setPref, steerBot } from './sandbox.ts'
 
 type Hello = { backends: { id: string; name: string; available?: boolean; installed?: boolean }[] }
 
-/** The Model Manager drives the shared picker and applies to the checked bots, on the real sandbox app. */
-test('the Model Manager window opens from the header, filters, checks and applies', async () => {
+/** The Bot Manager drives the shared picker and applies to the checked bots, on the real sandbox app. */
+test('the Bot Manager window opens from the header, filters, checks and applies', async () => {
   test.setTimeout(180_000)
   const { browser, page } = await attach()
   // A sandbox with no saved account covers the window with the welcome; mark the choice made, the
@@ -21,8 +21,8 @@ test('the Model Manager window opens from the header, filters, checks and applie
   }
   await expect(page.locator('.model-manager')).toHaveCount(0)
 
-  const nameA = `Model manager e2e A ${Date.now()}`
-  const nameB = `Model manager e2e B ${Date.now()}`
+  const nameA = `Bot manager e2e A ${Date.now()}`
+  const nameB = `Bot manager e2e B ${Date.now()}`
   const created: string[] = []
   try {
     const { backends } = await api<Hello>(page, 'hello', {})
@@ -34,8 +34,8 @@ test('the Model Manager window opens from the header, filters, checks and applie
       created.push((await steerBot(page, nameB, 1)).id)
     })
 
-    await test.step('open the Model Manager from the header button', async () => {
-      await page.locator('button[title="Model Manager"]').first().click()
+    await test.step('open the Bot Manager from the header button', async () => {
+      await page.locator('button[title="Bot Manager"]').first().click()
       const sheet = page.locator('.model-manager')
       await expect(sheet).toBeVisible()
       // The top section is the shared AgentModelPicker, not a copy: same classes, two search stages.
@@ -95,6 +95,21 @@ test('the Model Manager window opens from the header, filters, checks and applie
       // Had the bug survived, A would have been applied too (its outcome would already be set
       // by the time B's shows): the hidden bot stays untouched.
       await expect(rows.filter({ hasText: nameA })).not.toContainText('Applied')
+    })
+
+    await test.step('pause checked pauses both bots, and resume checked resumes them', async () => {
+      await sheet.getByRole('button', { name: 'Unselect all', exact: true }).click()
+      await rows.filter({ hasText: nameA }).click()
+      await rows.filter({ hasText: nameB }).click()
+      await sheet.getByRole('button', { name: 'Pause checked', exact: true }).click()
+      await expect(rows.filter({ hasText: nameA })).toContainText('Paused', { timeout: 30_000 })
+      await expect(rows.filter({ hasText: nameB })).toContainText('Paused', { timeout: 30_000 })
+      await sheet.getByRole('button', { name: 'Resume checked', exact: true }).click()
+      await expect(rows.filter({ hasText: nameA })).toContainText('Resumed', { timeout: 30_000 })
+      await expect(rows.filter({ hasText: nameB })).toContainText('Resumed', { timeout: 30_000 })
+      // The pause is really gone: the host echoed the resume, so no row still says Paused.
+      await expect(rows.filter({ hasText: nameA })).not.toContainText('Paused')
+      await expect(rows.filter({ hasText: nameB })).not.toContainText('Paused')
     })
 
     await test.step('the saves landed: each bot editor shows the chosen agent', async () => {

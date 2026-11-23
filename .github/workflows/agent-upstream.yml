@@ -41,6 +41,10 @@ jobs:
           node-version: "24"
       - working-directory: tools/agent-upstream
         run: npm ci
+      # A harness the host knows by name runs only when its CLI is on the computer: the latest of each, as a user
+      # installing it today gets.
+      - name: Install the agents' CLIs
+        run: npm install -g @anthropic-ai/claude-code @openai/codex
       - name: One turn on each new adapter
         working-directory: tools/agent-upstream
         run: node check.mjs "$GITHUB_WORKSPACE/host/target/debug/codync-host" ${{ github.event_name != 'schedule' && '--all' || '' }}

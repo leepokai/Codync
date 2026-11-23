@@ -532,8 +532,9 @@ public extension HostClient {
     }
 
     /// Starts the agent to see whether it's signed in and how it can be (first run may download it).
-    func agentModels(_ backend: String) async throws -> AgentModels {
-        try await call("agentModels", ["backend": backend], timeout: 300)
+    /// `loginProfile`: the login profile to list them for; nil for the computer's own.
+    func agentModels(_ backend: String, loginProfile: String? = nil) async throws -> AgentModels {
+        try await call("agentModels", AgentModelsRequest(backend: backend, loginProfile: loginProfile), timeout: 300)
     }
 
     func agentAuth(_ backend: String) async throws -> AgentAuth {
@@ -619,4 +620,10 @@ public extension HostClient {
     func termClose(_ term: String) async throws {
         let _: Empty = try await call("termClose", ["term": term])
     }
+}
+
+/// `agentModels`' body: no `loginProfile` (the default login) when it's nil.
+struct AgentModelsRequest: Encodable {
+    var backend: String
+    var loginProfile: String?
 }

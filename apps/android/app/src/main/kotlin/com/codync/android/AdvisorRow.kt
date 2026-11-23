@@ -59,7 +59,7 @@ internal fun CardRows.advisorRow(state: AppState, store: AppStore, draft: BotDra
     Field("Threads' agent") {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             AgentModelPicker(state, store::agentModels, agent.backend, agent.model, agent.modelOptions, false, null,
-                { model, options -> edit(agent.copy(model = model, modelOptions = options)) }, null, agents = agentChoices(state), chooseAgent = chooseAgent) {
+                { model, options -> edit(agent.copy(model = model, modelOptions = options)) }, null, agents = agentChoices(state), chooseAgent = chooseAgent, loginProfile = agent.loginProfile) {
                 if (backend?.loginProfiles != null) LoginProfilePicker(backend, agent.loginProfile, state, store) { edit(agent.copy(loginProfile = it)) }
             }
             if (rest != null) Text(tr(rest.line(RelativeTime.clock(rest.until))), style = Type.caption, color = Palette.secondary)

@@ -11,7 +11,7 @@ public struct AccessoryWidgetCard: View {
     let paired: Bool
 
     public init(kind: Kind, family: Family, bots: [Bot] = [], usage: Usage = Usage(), paired: Bool = true) {
-        self.kind = kind; self.family = family; self.bots = bots.filter { !$0.hidden }
+        self.kind = kind; self.family = family; self.bots = bots.filter(\.showsInWidgets)
         self.usage = usage; self.paired = paired
     }
 

@@ -5,6 +5,8 @@ import SwiftUI
 /// The summary expands into one searchable agent/model picker and its settings.
 struct AgentModelPicker<Details: View>: View {
     let backend: String
+    /// The login profile its models are listed for; nil for the default login.
+    var loginProfile: String?
     @Binding var selection: String?
     /// The selected model's settings (effort, fast…); they belong to one model.
     @Binding var options: [String: String]
@@ -35,7 +37,7 @@ struct AgentModelPicker<Details: View>: View {
     @State private var retry = 0
 
     private var requestKey: String {
-        "\(store.computer.id)/\(backend)/\(store.connection == .online)/\(retry)"
+        "\(store.computer.id)/\(backend)/\(loginProfile ?? "")/\(store.connection == .online)/\(retry)"
     }
 
     /// The agent's own "Default (recommended)" entry is the same choice as leaving the model unset,
@@ -236,7 +238,7 @@ struct AgentModelPicker<Details: View>: View {
     }
 
     @MainActor private func load() async {
-        let scope = "\(store.computer.id)/\(backend)"
+        let scope = "\(store.computer.id)/\(backend)/\(loginProfile ?? "")"
         if catalogScope != scope {
             catalog = nil
             catalogScope = scope
@@ -250,7 +252,7 @@ struct AgentModelPicker<Details: View>: View {
         }
         loading = true
         do {
-            let response = try await client.agentModels(backend)
+            let response = try await client.agentModels(backend, loginProfile: loginProfile)
             try Task.checkCancellation()
             withAnimation(Motion.reduced(Motion.fade, reduceMotion)) { catalog = response }
         } catch {

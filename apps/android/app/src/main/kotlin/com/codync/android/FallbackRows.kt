@@ -142,7 +142,7 @@ private fun taken(own: Login, list: List<Fallback>, but: Int): List<Login> = lis
                             own = if (step == own) null else own ?: fallback
                             edit(step)
                         }
-                    }, expanded = expanded) {
+                    }, expanded = expanded, loginProfile = fallback.loginProfile) {
                     if (agent?.loginProfiles != null) LoginProfilePicker(agent, fallback.loginProfile, state, store, agent.stepLogins(fallback.login, taken)) {
                         edit(fallback.copy(loginProfile = it))
                     }

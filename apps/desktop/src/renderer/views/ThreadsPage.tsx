@@ -5,7 +5,6 @@ import { BotAvatar, NoBotAvatar } from '../components/Avatar'
 import { IconButton } from '../components/Controls'
 import { AnchoredMenu, useContextMenu, type MenuItem } from '../components/Menu'
 import { Icon } from '../components/Icon'
-import { HStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { prefs, usePref } from '../lib/prefs'
 import { useTr } from '../lib/use-language'
@@ -15,6 +14,7 @@ import { StoreContext, useStore } from '../store/context'
 import { relativeTime } from './chat/chat-items'
 import { CutInDialog, StopWorkDialog, WORK_MARK, WorkDot } from './chat/WorkDialogs'
 import { threadMenuItems } from './thread-menu'
+import { ListSectionHeading } from './ListSectionHeading'
 import { ThreadChat } from './chat/ThreadChat'
 import { ThreadStart, type ThreadWith } from './chat/ThreadStart'
 import './computer-roster.css'
@@ -98,14 +98,14 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
               const loud = isFolded ? (group.rows.find((r) => r.task.status === 'failed') ?? group.rows.find((r) => r.task.status === 'working')) : undefined
               return (
                 <div key={group.key} className="thread-group" role="group" aria-label={title}>
-                  <HStack gap={2} className="thread-section-heading">
-                    <button className="thread-row thread-section-toggle" aria-expanded={!isFolded} onClick={() => setFolded(isFolded ? folded.filter((key) => key !== group.key) : [...folded, group.key])}>
-                      {group.kind === 'bot' ? (of.bot.plain ? <NoBotAvatar size={16} /> : <BotAvatar bot={of.bot} size={16} animated={false} />) : <Icon name={({ folder: 'folder', routine: 'clock', computer: 'desktopcomputer' } as const)[group.kind]} size={12} color="var(--secondary)" />}
-                      <Text tone="text" truncate grow>{title}</Text>
-                      {loud ? <StatusMark status={loud.task.status} /> : null}
-                    </button>
-                    {group.kind === 'bot' && (threadBots([of]).length || plainStores([of]).length) ? <IconButton title="New thread" icon="plus" size={24} className="thread-section-new" onClick={() => start(of.ref)} /> : null}
-                  </HStack>
+                  <ListSectionHeading
+                    leading={group.kind === 'bot' ? (of.bot.plain ? <NoBotAvatar size={16} /> : <BotAvatar bot={of.bot} size={16} animated={false} />) : <Icon name={({ folder: 'folder', routine: 'clock', computer: 'desktopcomputer' } as const)[group.kind]} size={12} color="var(--secondary)" />}
+                    title={title}
+                    mark={loud ? <StatusMark status={loud.task.status} /> : null}
+                    folded={isFolded}
+                    onFold={() => setFolded(isFolded ? folded.filter((key) => key !== group.key) : [...folded, group.key])}
+                    add={group.kind === 'bot' && (threadBots([of]).length || plainStores([of]).length) ? { title: 'New thread', action: () => start(of.ref) } : null}
+                  />
                   <div className={`computer-roster-content ${isFolded ? 'collapsed' : ''}`} inert={isFolded} aria-hidden={isFolded}>
                     {/* A routine's runs are told apart by when they started. */}
                     <div className="thread-group-rows">{group.rows.map((r) => row(r, group.kind === 'routine' ? relativeTime.separator(r.task.createdAt, tr) : r.task.title))}</div>

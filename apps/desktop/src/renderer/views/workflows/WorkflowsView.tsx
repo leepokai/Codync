@@ -29,14 +29,23 @@ type Phase = 'begin' | 'change' | 'end' | 'text'
 export type WorkflowFocus = { id: string } | { create: true }
 
 /**
- * One computer's workflow on the canvas. `focus`: what the list asked for; `onShown`: the workflow shown, for the list.
+ * One computer's workflow on the canvas. `focus`: what the list asked for, done once (`onFocused` lets it go);
+ * `shown`: the workflow shown here last, to show again; `onShown`: the workflow shown, for the list.
  * `roster` and `openChat`: the bots the chat beside the canvas can be with, and where a bot's chat opens.
  */
-export function WorkflowsView({ focus, onShown, roster, openChat }: { focus: WorkflowFocus | null; onShown: (id: string | null) => void; roster: RosterItem[]; openChat: (ref: BotRef) => void }) {
+export function WorkflowsView({ focus, onFocused, shown: lastShown, onShown, roster, openChat }: {
+  focus: WorkflowFocus | null
+  onFocused: () => void
+  shown: string | null
+  onShown: (id: string | null) => void
+  roster: RosterItem[]
+  openChat: (ref: BotRef) => void
+}) {
   const store = useStore()
   const tr = useTr()
   useModel(store)
-  const [selected, setSelected] = useState<string | null>(focus && 'id' in focus ? focus.id : null)
+  const [selected, setSelected] = useState<string | null>(() =>
+    focus && 'id' in focus ? focus.id : store.workflows.some((w) => w.id === lastShown) ? lastShown : null)
   const [undoable, setUndoable] = useState({ undo: false, redo: false })
   const [graph, setGraph] = useState<Graph>(emptyGraph())
   const [ready, setReady] = useState(false)
@@ -95,6 +104,7 @@ export function WorkflowsView({ focus, onShown, roster, openChat }: { focus: Wor
 
   useEffect(() => {
     if (!focus) return
+    onFocused()
     if ('create' in focus) void create()
     else open(focus.id)
   }, [focus])

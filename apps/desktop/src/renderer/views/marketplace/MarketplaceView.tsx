@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react'
 import type { Backend } from '@shared/models'
-import { Button, Spinner } from '../../components/Controls'
+import { Button, ChoicePicker, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Dialog, SheetPage } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import { useStore } from '../../store/context'
+import { useApp, useStore } from '../../store/context'
 import { useScreenViewed } from '../../store/analytics'
 import type { ComputerChoice } from '../computer-choice'
 import { ComputerBadge } from '../ComputerBadge'
-import { ComputerPicker } from '../ComputerPicker'
 import { AgentSheet } from './AgentSheet'
 import { CredentialsView } from './CredentialsView'
 import { CustomConnectorSheet, InstallConnectorSheet, NewSkillSheet } from './ConnectorSheets'
@@ -34,6 +33,7 @@ import { fill } from '@shared/fill'
  */
 export function MarketplaceView({ computer, focus = null }: { computer: ComputerChoice | null; focus?: ExtensionFocus | null }) {
   const store = useStore()
+  const app = useApp()
   const tr = useTr()
   const plugins = usePlugins(store)
   useScreenViewed('marketplace')
@@ -110,7 +110,12 @@ export function MarketplaceView({ computer, focus = null }: { computer: Computer
       <HStack gap={10} shrink className="market-heading-titles">
         <Text size="title" weight="semibold" tone="text">{tr(`Extensions`)}</Text>
         {computer ? (
-          <ComputerPicker choice={computer} />
+          <ChoicePicker
+            selection={computer.selection}
+            options={computer.options.map((o) => ({ ...o, leading: <ComputerBadge computer={app.store(o.id)?.computer ?? null} size={16} /> }))}
+            onChange={computer.onChange}
+            fill="var(--field)"
+          />
         ) : (
           <span className="choice-picker market-computer"><ComputerBadge computer={store.computer} size={16} /><span className="choice-label">{store.hostName}</span></span>
         )}

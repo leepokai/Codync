@@ -1,4 +1,4 @@
-// Pinned workflows and open tabs stay on this device. The pin key matches the phone: pinnedWorkflows.{computerId}.
+// Pinned workflows stay on this device. The pin key matches the phone: pinnedWorkflows.{computerId}.
 
 import type { BotStore } from '../../store/bot-store'
 import { pref, type Pref } from '../../lib/prefs'
@@ -40,7 +40,10 @@ export function isWorkflowPinned(computerId: string, id: string) {
   return workflowPins(computerId).get().includes(id)
 }
 
-/** Same reachability rule as Extensions, plus a host that says it has workflows. */
+/** Same reachability rule as Extensions: online, and running a Codync this app can talk to. */
+export const reachable = (store: BotStore) => store.shownConnection.kind === 'online' && !store.mismatch
+
+/** Reachable, and a host that says it has workflows. */
 export function canOpenWorkflows(store: BotStore) {
-  return store.shownConnection.kind === 'online' && !store.mismatch && store.hello?.workflows === true && !store.workflowMethodMissing
+  return reachable(store) && store.hello?.workflows === true && !store.workflowMethodMissing
 }

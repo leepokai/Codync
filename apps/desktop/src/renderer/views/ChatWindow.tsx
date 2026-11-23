@@ -43,7 +43,7 @@ import { FindBar } from './FindBar'
 import { useFindBar } from './use-conversation-find'
 import { SearchPalette } from './SearchPalette'
 import { WorkflowsView, type WorkflowFocus } from './workflows/WorkflowsView'
-import { WorkflowList } from './workflows/WorkflowList'
+import { WorkflowList, type WorkflowPlace } from './workflows/WorkflowList'
 import { canOpenWorkflows } from './workflows/pins'
 import { computerChoice, firstAmong } from './computer-choice'
 import { AccountWelcomeView, useWelcomeGate } from './AccountWelcomeView'
@@ -248,8 +248,8 @@ function ChatSplitView() {
   // The computer whose workflows show, once one was asked for by name (its heading or a pin in the roster), and the workflow to open there.
   const [workflowsOf, setWorkflowsOf] = useState<string | null>(null)
   const [workflowFocus, setWorkflowFocus] = useState<WorkflowFocus | null>(null)
-  // The workflow on the canvas, for the list beside it.
-  const [shownWorkflow, setShownWorkflow] = useState<string | null>(null)
+  // The workflow on the canvas, for the list beside it and to show again when the page comes back.
+  const [shownWorkflow, setShownWorkflow] = useState<WorkflowPlace | null>(null)
   // The thread the Threads page shows.
   const [picked, setPicked] = useState<ThreadPick | null>(null)
   // The bot a new thread starts with, where the user chose one; the page it starts from shows with no thread picked.
@@ -278,7 +278,8 @@ function ChatSplitView() {
   const sheetHeight = Math.max(420, windowSize.height - 76)
   const stores = app.computers.map((c) => app.store(c.id)).filter((s): s is BotStore => !!s)
   const shown = new Set(computerSelection(app.computers.map((c) => c.id), hidden).shown)
-  const onlineStores = stores.filter((s) => shown.has(s.computer.id) && s.connection.kind === 'online' && !s.mismatch)
+  const shownStores = stores.filter((s) => shown.has(s.computer.id))
+  const onlineStores = shownStores.filter((s) => s.connection.kind === 'online' && !s.mismatch)
   const selectedStore = app.selectedStore
   const screenStore = app.screenComputer ? (app.store(app.screenComputer) ?? null) : null
   const createStore = creating ? app.store(creating.computerId) : null
@@ -310,13 +311,12 @@ function ChatSplitView() {
     // A bot deleted since is passed over: the page shows what is selected now.
     if (place.ref && app.store(place.ref.computerId)?.bots.has(place.ref.botId)) app.select(place.ref)
   }
-  const [barStart, setBarStart] = useState<HTMLElement | null>(null)
   const [barTitle, setBarTitle] = useState<HTMLElement | null>(null)
   const [barEnd, setBarEnd] = useState<HTMLElement | null>(null)
   /** The rail: another page, or, on the entry of the page shown, its list folded away and brought back. */
   const go = (next: AppPage) => {
     if (next !== page) setPage(next)
-    else if (next === 'bots' || next === 'threads' || next === 'workflows') setListHidden(!listHidden)
+    else if (listed) setListHidden(!listHidden)
   }
   /** A new workflow on `computerId`, shown once made. */
   const newWorkflow = (computerId: string) => {
@@ -443,7 +443,7 @@ function ChatSplitView() {
   }
 
   const errorMessage = app.errorMessage
-  const mismatchStores = stores.filter((s) => shown.has(s.computer.id) && s.mismatch)
+  const mismatchStores = shownStores.filter((s) => s.mismatch)
   const selected = app.selection
   const selectedBot = selected && selectedStore?.bots.get(selected.botId)
 
@@ -475,7 +475,28 @@ function ChatSplitView() {
   }
 
   const width = listHidden ? 0 : sidebarWidth
-  const listed = page === 'bots' || page === 'threads' || page === 'workflows'
+  // The pages with a list beside their content: its title, its header's +, and what its Search finds.
+  const lists = {
+    bots: {
+      title: 'Bots',
+      add: <IconButton title="New" icon="plus" size={32} className="sidebar-header-action" buttonRef={newButton} menuOpen={newMenu} onClick={() => setNewMenu((o) => !o)} disabled={!onlineStores.length} />,
+      search: { label: 'Search bots', empty: 'No matching bots', items: () => botItems(visibleRoster, openBot) },
+    },
+    threads: {
+      title: 'Threads',
+      add: <IconButton title="New thread" icon="plus" size={32} className="sidebar-header-action" onClick={() => startThread(null)} disabled={!canStartThread(threadRoster)} />,
+      search: { label: 'Search', empty: 'No results', items: () => threadItems(threadRoster, setPicked) },
+    },
+    workflows: {
+      title: 'Workflows',
+      add: <IconButton title="New workflow" icon="plus" size={32} className="sidebar-header-action" onClick={() => workflowStore && newWorkflow(workflowStore.computer.id)} disabled={!workflowStore} />,
+      search: { label: 'Search', empty: 'No results', items: () => workflowItems(shownStores, openWorkflows) },
+    },
+  }
+  const list = page === 'bots' || page === 'threads' || page === 'workflows' ? lists[page] : null
+  const listed = list !== null
+  // Search away from a list (its command) finds the bots.
+  const search = (list ?? lists.bots).search
   // How the list shown is laid out, each list its own choice: the Threads list one grouping at a time.
   const layOut = (option: 'folder' | 'bot' | 'computer' | 'status', on: boolean) => {
     analytics.track({ event: 'list_layout_changed', list: page === 'threads' ? 'threads' : 'bots', option, on })
@@ -524,29 +545,22 @@ function ChatSplitView() {
         back={step(visits, -1) ? () => travel(-1) : null}
         forward={step(visits, 1) ? () => travel(1) : null}
         toggleList={listed ? () => setListHidden(!listHidden) : null}
-        setStart={setBarStart}
         setTitle={setBarTitle}
         setEnd={setBarEnd}
       />
       <NavRail page={page} go={go} working={threads.working} approvals={app.approvals.length} workflows={!!workflowStore} />
-      {listed ? (
+      {list ? (
         <>
           <aside ref={sidebar} className={`sidebar ${resizing ? 'resizing' : ''}`} style={{ width }} inert={listHidden}>
             {/* Keeps its width while the sidebar opens or closes: the list slides under the edge instead of squeezing. */}
             <div className="sidebar-content" style={{ width: sidebarWidth }}>
               <div className="sidebar-header drag">
-                <Text size="title3" weight="semibold" tone="text" truncate className="sidebar-title crowded">{tr(page === 'bots' ? 'Bots' : page === 'threads' ? 'Threads' : 'Workflows')}</Text>
+                <Text size="title3" weight="semibold" tone="text" truncate className="sidebar-title crowded">{tr(list.title)}</Text>
                 <Spacer />
                 <HStack gap={6} className="no-drag">
                   <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setPage('computers')} options={listOptions} />
                   <IconButton title="Search" icon="magnifyingglass" size={32} className="sidebar-header-action" onClick={() => setSearching(true)} />
-                  {page === 'bots' ? (
-                    <IconButton title="New" icon="plus" size={32} className="sidebar-header-action" buttonRef={newButton} menuOpen={newMenu} onClick={() => setNewMenu((o) => !o)} disabled={!onlineStores.length} />
-                  ) : page === 'threads' ? (
-                    <IconButton title="New thread" icon="plus" size={32} className="sidebar-header-action" onClick={() => startThread(null)} disabled={!canStartThread(threadRoster)} />
-                  ) : (
-                    <IconButton title="New workflow" icon="plus" size={32} className="sidebar-header-action" onClick={() => workflowStore && newWorkflow(workflowStore.computer.id)} disabled={!workflowStore} />
-                  )}
+                  {list.add}
                 </HStack>
                 <AnchoredMenu open={newMenu} onClose={() => setNewMenu(false)} anchor={newButton} items={newItems} />
               </div>
@@ -569,7 +583,7 @@ function ChatSplitView() {
                 </div>
               ) : page === 'workflows' ? (
                 <div className="roster">
-                  <WorkflowList stores={stores.filter((s) => shown.has(s.computer.id))} place={workflowStore ? { computerId: workflowStore.computer.id, workflowId: shownWorkflow } : null} open={openWorkflows} create={newWorkflow} />
+                  <WorkflowList stores={shownStores} place={shownWorkflow} open={openWorkflows} create={newWorkflow} />
                 </div>
               ) : (
                 <div className="roster">
@@ -584,22 +598,30 @@ function ChatSplitView() {
       {/* The conversation stays as it is behind another page: its place, its open panel, a call under way. */}
       <main className="detail" hidden={page !== 'bots'}>
         {/* The call bar's settings open the Settings page at Voice chat. */}
-        <WindowBarSlots.Provider value={page === 'bots' ? { start: null, title: barTitle, end: barEnd } : NO_BAR_SLOTS}>
+        <WindowBarSlots.Provider value={page === 'bots' ? { title: barTitle, end: barEnd } : NO_BAR_SLOTS}>
           <OpenVoiceSettings.Provider value={openVoiceSettings}>{detail}</OpenVoiceSettings.Provider>
         </WindowBarSlots.Provider>
         {find.focus !== null && selectedBot ? <FindBar focusKey={find.focus} onClose={find.close} /> : null}
       </main>
       {page === 'threads' ? (
         <main className="detail">
-          <WindowBarSlots.Provider value={{ start: null, title: barTitle, end: barEnd }}>
+          <WindowBarSlots.Provider value={{ title: barTitle, end: barEnd }}>
             <ThreadDetail roster={threadRoster} picked={picked} pick={setPicked} starting={starting} start={setStarting} openChat={(ref) => { app.select(ref); setPage('bots') }} />
           </WindowBarSlots.Provider>
         </main>
       ) : page === 'workflows' && workflowStore ? (
         <main className="detail">
           <StoreContext.Provider value={workflowStore}>
-            <WindowBarSlots.Provider value={{ start: barStart, title: null, end: barEnd }}>
-              <WorkflowsView key={workflowStore.computer.id} focus={workflowsOf === workflowStore.computer.id ? workflowFocus : null} onShown={setShownWorkflow} roster={threadRoster} openChat={(ref) => { app.select(ref); setPage('bots') }} />
+            <WindowBarSlots.Provider value={{ title: null, end: barEnd }}>
+              <WorkflowsView
+                key={workflowStore.computer.id}
+                focus={workflowsOf === workflowStore.computer.id ? workflowFocus : null}
+                onFocused={() => setWorkflowFocus(null)}
+                shown={shownWorkflow?.computerId === workflowStore.computer.id ? shownWorkflow.workflowId : null}
+                onShown={(workflowId) => setShownWorkflow({ computerId: workflowStore.computer.id, workflowId })}
+                roster={threadRoster}
+                openChat={(ref) => { app.select(ref); setPage('bots') }}
+              />
             </WindowBarSlots.Provider>
           </StoreContext.Provider>
         </main>
@@ -639,9 +661,9 @@ function ChatSplitView() {
 
       <SearchPalette
         open={searching}
-        items={page === 'threads' ? threadItems(threadRoster, setPicked) : page === 'workflows' ? workflowItems(stores.filter((s) => shown.has(s.computer.id)), openWorkflows) : botItems(visibleRoster, openBot)}
-        label={page === 'threads' || page === 'workflows' ? 'Search' : 'Search bots'}
-        empty={page === 'threads' || page === 'workflows' ? 'No results' : 'No matching bots'}
+        items={searching ? search.items() : []}
+        label={search.label}
+        empty={search.empty}
         onClose={() => setSearching(false)}
       />
       <Sheet open={editing !== null} onClose={() => setEditing(null)} width={520} height={Math.min(680, sheetHeight)}>

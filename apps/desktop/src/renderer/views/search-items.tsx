@@ -4,7 +4,7 @@ import { Icon } from '../components/Icon'
 import { refKey, type BotRef, type RosterItem } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import type { ThreadPick } from './ThreadsPage'
-import type { PaletteItem } from './SearchPalette'
+import type { PaletteItem } from './palette-items'
 import { canOpenWorkflows } from './workflows/pins'
 
 // What each list's search finds: the rows of that list, matched by what they show.

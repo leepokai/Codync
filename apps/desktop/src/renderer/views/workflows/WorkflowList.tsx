@@ -1,12 +1,11 @@
-import { IconButton } from '../../components/Controls'
-import { HStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useModels } from '../../lib/observable'
 import { useTr } from '../../lib/use-language'
 import type { BotStore } from '../../store/bot-store'
 import { WORK_MARK, WorkDot } from '../chat/WorkDialogs'
 import { ComputerBadge } from '../ComputerBadge'
-import { canOpenWorkflows } from './pins'
+import { ListSectionHeading } from '../ListSectionHeading'
+import { canOpenWorkflows, reachable } from './pins'
 import type { RunStatus } from './workflow'
 import '../threads-page.css'
 
@@ -25,7 +24,8 @@ export function WorkflowList({ stores, place, open, create }: {
 }) {
   const tr = useTr()
   useModels(stores)
-  const listed = stores.filter((s) => canOpenWorkflows(s) || s.shownConnection.kind !== 'online' || s.mismatch)
+  // Every computer but one that is reachable and has no workflows (an older Codync).
+  const listed = stores.filter((s) => canOpenWorkflows(s) || !reachable(s))
   return (
     <>
       {listed.map((store) => {
@@ -33,13 +33,11 @@ export function WorkflowList({ stores, place, open, create }: {
         const ready = canOpenWorkflows(store)
         return (
           <section key={id} className="thread-group" aria-label={store.hostName}>
-            <HStack gap={2} className="thread-section-heading">
-              <div className="thread-row thread-section-toggle">
-                <ComputerBadge computer={store.computer} size={16} />
-                <Text tone="text" truncate grow>{store.hostName}</Text>
-              </div>
-              {ready ? <IconButton title="New workflow" icon="plus" size={24} className="thread-section-new" onClick={() => create(id)} /> : null}
-            </HStack>
+            <ListSectionHeading
+              leading={<ComputerBadge computer={store.computer} size={16} />}
+              title={store.hostName}
+              add={ready ? { title: 'New workflow', action: () => create(id) } : null}
+            />
             <div className="thread-group-rows">
               {!ready ? (
                 <div className="thread-row"><Text tone="tertiary" truncate>{tr(store.connectionLabel)}</Text></div>

@@ -51,7 +51,6 @@ test('the Workflows page lists each computer\'s workflows beside the canvas, lik
     await expect(list.locator('.sidebar-title')).toHaveText('Workflows')
     const local = (await list.locator('section.thread-group').first().getAttribute('aria-label')) ?? ''
     expect(local).not.toBe('')
-    await expect(page.locator('.window-bar-start .workflow-tab')).toHaveCount(0)
 
     // The + on a computer's heading starts a workflow there; its row is the one shown.
     await expect(section(local).locator('button.thread-row')).toHaveCount(before.size)
@@ -60,6 +59,26 @@ test('the Workflows page lists each computer\'s workflows beside the canvas, lik
     await expect(section(local).locator('button.thread-row')).toHaveCount(before.size + 1)
     await expect(section(local).locator('button.thread-row.selected')).toHaveCount(1)
     await expect(page.locator('button.workflow-title[aria-haspopup]')).toBeVisible()
+    // It opens with the hand tool.
+    await expect(page.getByRole('button', { name: 'Pan the canvas', exact: true })).toHaveClass(/selected/)
+
+    // Back on the page after another, nothing new is made and the same workflow shows.
+    const title = `Workflow e2e ${Date.now()}`
+    const made = (await ids()).find((id) => !before.has(id))!
+    await api(page, 'renameWorkflow', { id: made, title })
+    await expect(section(local).locator('button.thread-row.selected')).toHaveText(title)
+    await page.locator('.nav-rail [data-page="bots"]').click()
+    await page.locator('.nav-rail [data-page="workflows"]').click()
+    await expect(section(local).locator('button.thread-row')).toHaveCount(before.size + 1)
+    await expect(section(local).locator('button.thread-row.selected')).toHaveText(title)
+
+    // Search in the header finds a workflow by its name and opens it.
+    if (before.size) await section(local).locator('button.thread-row').filter({ hasNotText: title }).first().click()
+    await page.locator('.sidebar-header').getByRole('button', { name: 'Search', exact: true }).click()
+    await page.getByRole('dialog').getByRole('textbox', { name: 'Search', exact: true }).fill(title)
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(section(local).locator('button.thread-row.selected')).toHaveText(title)
 
     // A second computer gets its own section; a row there opens on that computer, and back.
     await standIn(page, true)

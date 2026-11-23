@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { draftOf, isGroup } from '@shared/models'
-import { withBackend } from '@shared/fallbacks'
+import { isGroup } from '@shared/models'
 import { AvatarWithStatus } from '../../components/Avatar'
 import { Button, IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
@@ -14,7 +13,7 @@ import { StoreContext, useStore } from '../../store/context'
 import { matchBots } from '../SearchPalette'
 import { AgentModelPicker } from './AgentModelPicker'
 import { useAgentModels, type AgentModels } from './agent-models'
-import { errorText, normalized } from './drafts'
+import { errorText } from './drafts'
 import { agentChoice } from './Fallbacks'
 import { allKeys, filterChecked, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
@@ -57,7 +56,9 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const tr = useTr()
   const store = useStore()
   const first = items[0]
-  const [pick, setPick] = useState<Pick>({ backend: first?.bot.backend ?? 'claude', model: null, modelOptions: {} })
+  const backends = store.hello?.backends ?? []
+  const initialBackend = first?.bot.backend && first.bot.backend !== 'custom' ? String(first.bot.backend) : String(backends[0] ?? 'claude')
+  const [pick, setPick] = useState<Pick>({ backend: initialBackend, model: null, modelOptions: {} })
   const [query, setQuery] = useState('')
   const [checked, setChecked] = useState<Set<string>>(() => new Set())
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({})
@@ -67,7 +68,6 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const run = useRef(0)
   useEffect(() => () => { alive.current = false }, [])
   const models = useAgentModels(pick.backend)
-  const backends = store.hello?.backends ?? []
   // A custom command needs the editor's command field, which a batch apply can't supply; the batch
   // swap targets the agents the account's computers offer.
   const agents = backends.map(agentChoice)
@@ -75,7 +75,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const shownKeys = allKeys(shown)
   const everyChecked = shownKeys.length > 0 && shownKeys.every((key) => checked.has(key))
   const oneComputer = !items.some((item) => item.computer.id !== first?.computer.id)
-  const canApply = checked.size > 0 && !applying && (pick.backend === 'custom' || !pick.model || models.catalog !== null)
+  const canApply = checked.size > 0 && !applying
 
   const toggle = (key: string, on: boolean) => setChecked((set) => toggleKey(set, key, on))
   const markAll = (on: boolean) => setChecked((set) => shownKeys.reduce((next, key) => toggleKey(next, key, on), set))
@@ -91,6 +91,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
     setApplying(true)
     setOutcomes({})
     let applied = 0
+    let failed = 0
     const catalogs: Record<string, CatalogCheck> = {}
     try {
       if (model) {
@@ -114,24 +115,36 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
         if (!alive.current || run.current !== myRun) return
         const key = refKey(row.item.ref)
         if (!row.ok) {
+          failed++
           setOutcomes((o) => ({ ...o, [key]: { ok: false, text: row.reason ?? tr('Failed') } }))
           continue
         }
         try {
-          // The bot's state as it is now, so an unrelated change that landed mid-batch is kept:
-          // only the agent, model and model options are this apply's business.
-          const current = row.item.store.bots.get(row.item.ref.botId) ?? row.item.bot
-          const draft = normalized({ ...withBackend(draftOf(current), backend), model: model || null, modelOptions: { ...options } })
-          await row.item.store.save(draft)
-          applied++
-          setOutcomes((o) => ({ ...o, [key]: { ok: true, text: tr('Applied') } }))
+          // A minimal patch: the host merges it over the bot's state as it is at that moment, under
+          // one lock, so an unrelated change that landed mid-batch is never written back. On another
+          // agent the host moves the bot to that agent's Auto mode on its own; the login profile is
+          // cleared here, as the bot editor's agent change does. Fallbacks are not touched.
+          const current = row.item.store.bots.get(row.item.ref.botId)
+          const patch: Record<string, unknown> = { id: row.item.ref.botId, backend, model: model || null, modelOptions: { ...options } }
+          if (current && current.backend !== backend) patch.loginProfile = null
+          await row.item.store
+            .ready()
+            .then((client) => client.call('updateBot', patch))
+            .then(() => {
+              if (alive.current && run.current === myRun) {
+                applied++
+                setOutcomes((o) => ({ ...o, [key]: { ok: true, text: tr('Applied') } }))
+              }
+            })
         } catch (e) {
-          setOutcomes((o) => ({ ...o, [key]: { ok: false, text: errorText(e) } }))
+          failed++
+          if (alive.current && run.current === myRun) setOutcomes((o) => ({ ...o, [key]: { ok: false, text: errorText(e) } }))
         }
       }
     } finally {
       // One event per apply, whatever ended it: closed mid-run, pick changed mid-run, or completed.
-      analytics.track({ event: 'model_manager_applied', requested: chosen.length, applied, failed: chosen.length - applied })
+      // Rows the run never reached are the remainder (requested - applied - failed).
+      analytics.track({ event: 'model_manager_applied', requested: chosen.length, applied, failed })
       busy.current = false
       setApplying(false)
     }

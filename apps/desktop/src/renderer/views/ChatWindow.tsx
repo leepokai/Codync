@@ -452,6 +452,7 @@ function ChatSplitView() {
         </div>
         {compact ? (
           <div className="rail-actions">
+            <IconButton title="Model Manager" icon="slider.horizontal.3" onClick={() => setModelManager(true)} />
             <IconButton title="Search" icon="magnifyingglass" onClick={() => setSearching(true)} />
             {workButton(36)}
             <IconButton title="New" icon="plus" size={36} buttonRef={railNewButton} menuOpen={railNewMenu} disabled={!onlineStores.length} onClick={() => setRailNewMenu((o) => !o)} />

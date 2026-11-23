@@ -27,12 +27,12 @@ filters by name, description and last message, reusing the sidebar search's matc
 
 ## Apply
 
-Each checked bot is saved one at a time, in roster order. The bot's state is read as it is at its
-turn, so an unrelated change that landed while the batch ran is kept — only the agent, model and
-model options are this apply's business. Changing the agent goes through the bot editor's own
-semantics (`withBackend`: the mode becomes the new agent's Auto mode, the old agent's login profile
-and same-agent fallbacks go). The draft is then saved to that bot's own computer, exactly as the bot
-editor's Save does (`BotStore.save`); Fast mode and session notes are not touched.
+Each checked bot is saved one at a time, in roster order, as a **minimal patch**: only the bot's id,
+backend, model and model options (plus `loginProfile: null` when the agent changes, as the bot
+editor's agent change does). The host merges the patch over the bot's state as it is at that moment
+under one lock (`updateBot`'s patched merge), so an unrelated change that landed while the batch ran
+is never written back, and on another agent the bot moves to that agent's Auto mode on the host's
+own rule. Fallbacks are not touched. Fast mode and session notes are not touched either.
 
 Before anything is saved, each involved computer's catalog is read for the chosen model
 (`agentModels`, the same call the picker makes, at the same 300 s patience). A bot on a computer
@@ -50,8 +50,9 @@ checks entirely and is allowed on every computer.
 ## Analytics
 
 One `model_manager_applied` per Apply — including a run that ended early (sheet closed, pick
-changed): `requested`, `applied` and `failed` counts, where catalog skips, unverifiable rows and
-save errors all count in `failed` ([analytics events](../reference/analytics-events.md)).
+changed): `requested`, `applied` and `failed` counts. `failed` counts the catalog skips, the
+unverifiable rows and the save errors; rows the run never reached are the remainder
+(`requested - applied - failed`) ([analytics events](../reference/analytics-events.md)).
 
 ## Notes
 

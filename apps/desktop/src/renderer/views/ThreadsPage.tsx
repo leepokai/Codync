@@ -187,8 +187,8 @@ const plainStores = (roster: RosterItem[]) =>
   roster.filter((r, at) => r.store.startsThreadsWithoutBot && !r.store.isOffline && roster.findIndex((o) => o.ref.computerId === r.ref.computerId) === at)
 
 /**
- * Beside the list: the thread picked there, its title, status, transcript and message box (`WorkThread`); one that
- * still waits for a place says so. `showInChat` brings an entry of its bot's chat into view there. With none picked,
+ * Beside the list: the thread picked there, in the chat's form (`ThreadChat`); one that still waits for a place says
+ * so. With none picked,
  * or one whose task left its bot's box, the page a new thread starts from (`NewThread`, with the bot `starting`
  * names, else the lead bot), or the page's mark where no bot can start one.
  */

@@ -326,3 +326,10 @@
 .model-picker-permissions[aria-expanded='true'] {
   background: var(--field);
 }
+
+/* As a tab of a bot's panel there is no window's bar: the thread's status sits on top of it, its tab names it. */
+.thread-chat-status {
+  position: relative;
+  justify-self: start;
+  display: flex;
+}

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { draftOf, normalizeBot, type Entry } from './models.ts'
-import { threadSections, rosterRank, canCutIn, canRetry, capsuleLabel, gitState, givesWay, isThreadMessage, taskLine, normalizeWork, outsideStatus, worksOutside, pendingAsks, pendingCards, readOnlyReason, rosterLine, sharedLine, summaryLine, threadEntries, waitText, whereLine, wherePath, workCounts, workSections, workStatusWord, type ThreadGrouping, type WorkTask, type WorkStatus } from './work.ts'
+import { threadSections, rosterRank, canCutIn, canRetry, capsuleLabel, gitState, givesWay, taskLine, normalizeWork, outsideStatus, worksOutside, pendingAsks, pendingCards, readOnlyReason, rosterLine, summaryLine, threadEntries, waitText, whereLine, wherePath, workCounts, workSections, workStatusWord, type ThreadGrouping, type WorkTask, type WorkStatus } from './work.ts'
 
 const same = (text: string) => text
 const task = (id: string, status: WorkStatus = 'working', change: Partial<WorkTask> = {}): WorkTask => ({
@@ -371,7 +371,7 @@ test("a thread's transcript folds what the host told the thread first, and leave
   assert.deepEqual(threadEntries([]), { told: null, rest: [] })
 })
 
-test("a thread shows what it put in the chat where it came, and a thread's final replies as messages", () => {
+test("a thread shows what it put in the chat where it came", () => {
   const entry = (id: string, kind: Entry['kind'], data: Entry['data'], createdAt = 0, botId = 'b'): Entry => ({ id, seq: 1, botId, rev: 1, kind, turn: 1, data, createdAt, updatedAt: 0 })
   const thread = { id: 'thread-1', title: 'Fix login' }
   const own = [entry('t1', 'tool', { title: 'ls' }, 10, 'thread-1'), entry('t2', 'agent', { text: 'Done', final: true }, 30, 'thread-1')]
@@ -384,34 +384,5 @@ test("a thread shows what it put in the chat where it came, and a thread's final
   ]
   assert.deepEqual(threadEntries(own, chat, 'thread-1').rest.map((e) => e.id), ['c1', 't1', 'c2', 't2', 'c5'], 'answered cards too; the thread first at the same moment')
   assert.deepEqual(threadEntries(own, chat, 'thread-9').rest.map((e) => e.id), ['t1', 't2'])
-  assert.equal(isThreadMessage(entry('a', 'agent', { text: 'Report', final: true })), true)
-  assert.equal(isThreadMessage(entry('a', 'agent', { text: 'Reading the files' })), false, 'what it says on the way is a step')
-  assert.equal(isThreadMessage(entry('a', 'user', { text: 'typed', final: true })), false)
 })
 
-test('what a thread put in the chat is one line of its thread, saying how it stands', () => {
-  const entry = (kind: Entry['kind'], data: Entry['data']): Entry => ({ id: 'c', seq: 1, botId: 'b', rev: 1, kind, turn: 1, data, createdAt: 0, updatedAt: 0 })
-  const line = (kind: Entry['kind'], data: Entry['data']) => sharedLine(entry(kind, data), same)
-  const options = [{ optionId: 'ok', name: 'Allow', kind: 'allow_once' }, { optionId: 'no', name: 'Deny', kind: 'reject_once' }, { optionId: 'x', name: 'Skip', kind: 'other' }]
-  const approval = (status: string, selected?: string) => line('permission', { status, title: 'npm test', options, selected })
-  assert.deepEqual(approval('pending'), { symbol: 'hand.raised', text: 'Waiting for your approval: npm test' })
-  assert.deepEqual(approval('answered', 'ok'), { symbol: 'checkmark', text: 'Approved: npm test' })
-  assert.deepEqual(approval('answered', 'no'), { symbol: 'xmark', text: 'Denied: npm test' })
-  assert.equal(approval('answered', 'x')?.text, 'Answered: Skip')
-  assert.deepEqual(approval('expired'), { symbol: 'clock', text: 'Not answered: npm test' })
-  const choice = (status: string, selected?: string) => line('notice', { decision: true, status, question: 'Squash?', choices: ['Yes', 'No'], selected })
-  assert.equal(choice('pending')?.text, 'Asked: Squash?')
-  assert.equal(choice('answered', 'No')?.text, 'Answered: No')
-  assert.equal(choice('expired')?.text, 'Not answered: Squash?')
-  const signIn = (status: string) => line('notice', { text: 'Needs you to sign in.', connectionRequest: { kind: 'agent', status, title: 'Kimi Code' } })
-  assert.deepEqual(signIn('pending'), { symbol: 'hand.raised', text: 'Needs Kimi Code sign-in' })
-  assert.deepEqual(signIn('ready'), { symbol: 'checkmark', text: 'Signed in' })
-  assert.deepEqual(signIn('cancelled'), { symbol: 'xmark', text: 'Cancelled' })
-  assert.equal(line('notice', { text: 'Connect', connectionRequest: { kind: 'oauth', status: 'pending', title: 'Linear' } }), null, "a connector's card is not a thread's")
-  const file = { id: 'f', name: 'log.txt', size: 3, sha256: '' }
-  assert.deepEqual(line('agent', { final: true, files: [file] }), { symbol: 'doc', text: 'Sent a file: log.txt' })
-  assert.deepEqual(line('agent', { final: true, files: [file], voiceNote: true, text: 'Hi' }), { symbol: 'waveform', text: 'Sent a voice note' })
-  assert.deepEqual(line('agent', { final: true, artifact: { id: 'a', title: 'Plan', updatedAt: 0 } }), { symbol: 'doc.richtext', text: 'Made an artifact: Plan' })
-  assert.equal(line('agent', { text: 'Just words', final: true }), null)
-  assert.equal(line('notice', { text: 'A notice' }), null)
-})

@@ -34,8 +34,10 @@ export interface ThreadBox {
   placeholder: string
   /** A turn runs there: the empty box stops it (`stop`). */
   working: boolean
+  /** It takes files with a message too, as the chat does. */
+  files?: boolean
   /** A promise makes the box wait, and keep the words when it fails. */
-  send: (text: string) => void | Promise<unknown>
+  send: (text: string, files: OutgoingFile[]) => void | Promise<unknown>
   stop?: () => void
   /** What the thread runs on, as chips in the box's row (the bot's chat shows its own). */
   controls?: ReactNode
@@ -46,7 +48,8 @@ export interface ThreadBox {
  * the commands (a group's are its bots'); in a group, typing `@` lists its bots. While `reply` is set, the
  * message it quotes sits at the top of the box and goes out with the next send. Under an artifact, `about` is the
  * artifact: the box keeps a draft of its own, and every message replies to the artifact's card. For a `thread` it is
- * the same box, writing there: text and dictation, without what only the chat takes (files, replies, calls, Fast).
+ * the same box, writing there: text, dictation and files where the thread takes them, without what only the chat takes
+ * (replies, calls, Fast).
  */
 export function Composer({ botId, reply = null, about = null, thread = null, cancelReply, onCall, onInterrupt }: {
   botId: string
@@ -82,8 +85,7 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
   /** Text pasted into this draft since the last send. */
   const pasted = useRef<string[]>([])
   const working = thread ? thread.working : !!bot && isWorkingIn(bot, botId)
-  // ponytail: a thread takes text only (the host's `send` with `itemId`); files once it takes them.
-  const canAttach = !!bot && !thread
+  const canAttach = !!bot && (!thread || !!thread.files)
   const attach = useComposerFiles(canAttach)
   const files = attach.files
   const empty = !draft.trim() && !files.length
@@ -164,7 +166,7 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
       field.current?.focus()
     }
     if (!thread) store.send(draft, botId, { files, pasted: pasted.current, replyTo: reply ?? (about && artifactQuote(about)) })
-    const waits = thread?.send(draft)
+    const waits = thread?.send(draft, files)
     if (!waits) return sent()
     setStarting(true)
     void waits.then(sent, () => {}).finally(() => setStarting(false))
@@ -203,7 +205,7 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
               field={field}
               value={draft}
               placeholder={placeholder}
-              label={tr(reply ? 'Reply' : 'Message')}
+              label={thread ? thread.placeholder : tr(reply ? 'Reply' : 'Message')}
               onChange={(text) => {
                 setDraft(text)
                 // Starting a command: list the computer's skills again.

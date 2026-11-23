@@ -415,50 +415,6 @@ export function pendingAsks(entries: Entry[], tr: Translate): Map<string, string
   return new Map([...pendingCards(entries)].map(([task, e]) => [task, ask(e)]))
 }
 
-/** An entry of a thread that it shows as the chat's message bubble: a final reply (text, a file, an artifact card), as
- * the chat tells them apart. What it says on the way is a step. */
-export const isThreadMessage = (e: Entry) => e.kind === 'agent' && e.data.final === true
-
-/** One quiet line of a thread for what it put in the bot's chat. */
-export interface SharedLine {
-  symbol: string
-  text: string
-}
-
-/** What the chat entry `e` a thread put in the bot's chat (a card, its agent's sign-in card, a file, a voice note, an
- * artifact) says in that thread: one line with a symbol, where the entry itself stays in the chat, which the
- * line opens. Null for anything else. */
-export function sharedLine(e: Entry, tr: Translate): SharedLine | null {
-  const d = e.data
-  const line = (symbol: string, key: string, values: Record<string, string> = {}) => ({ symbol, text: fill(tr(key), values) })
-  // A sign-in reads as its card does: the needs-you row's words while it waits, then the card's own.
-  const request = d.connectionRequest
-  if (request?.kind === 'agent') {
-    if (request.status === 'pending') return line('hand.raised', 'Needs {agent} sign-in', { agent: String(request.title ?? '') })
-    return request.status === 'ready' ? line('checkmark', 'Signed in') : line('xmark', 'Cancelled')
-  }
-  if (e.kind === 'permission') {
-    const title = d.title ?? ''
-    if (d.status === 'pending') return line('hand.raised', 'Waiting for your approval: {title}', { title })
-    if (d.status !== 'answered') return line('clock', 'Not answered: {text}', { text: title })
-    const chosen = d.options?.find((o) => o.optionId === d.selected)
-    if (chosen?.kind.startsWith('allow')) return line('checkmark', 'Approved: {title}', { title })
-    if (chosen?.kind.startsWith('reject')) return line('xmark', 'Denied: {title}', { title })
-    return line('checkmark', 'Answered: {choice}', { choice: chosen?.name ?? d.selected ?? '' })
-  }
-  if (d.decision) {
-    const question = d.question ?? ''
-    if (d.status === 'pending') return line('hand.raised', 'Asked: {question}', { question })
-    if (d.status === 'answered') return line('checkmark', 'Answered: {choice}', { choice: d.selected ?? '' })
-    return line('clock', 'Not answered: {text}', { text: question })
-  }
-  if (e.kind !== 'agent') return null
-  if (d.artifact) return line('doc.richtext', 'Made an artifact: {title}', { title: d.artifact.title })
-  if (d.voiceNote) return line('waveform', 'Sent a voice note')
-  if (d.files?.length) return line('doc', 'Sent a file: {name}', { name: d.files.map((f) => f.name).join(', ') })
-  return null
-}
-
 /** Why a thread that takes no message is read only, as a catalog key: its result has an owner already. Null for an
  * task that takes messages, and for the bot's own (nothing to explain). */
 export function readOnlyReason(task: Pick<WorkTask, 'talk' | 'source'>): string | null {
@@ -507,7 +463,7 @@ export function gitState(bot: { gitRepo: boolean; gitInstalled: boolean }): GitS
 
 /** A thread's transcript as its panel shows it: what the host told the thread first (`told`, folded at the top), then
  * the rest in order, without the messages the user took back. What the thread `threadId` put in the bot's `chat` (a
- * file, a voice note, an artifact, a card, answered or not) joins the rest where it came, each a `sharedLine`. */
+ * file, a voice note, an artifact, a card, answered or not) joins the rest where it came. */
 export function threadEntries(entries: Entry[], chat: Entry[] = [], threadId = ''): { told: Entry | null; rest: Entry[] } {
   const shown = entries.filter((e) => !e.data.removed)
   const told = shown.find(isTold) ?? null

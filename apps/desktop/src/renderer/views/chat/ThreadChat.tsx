@@ -33,7 +33,7 @@ import { workingSteps } from './trace-turns'
 import { StopWorkDialog, WORK_MARK, WorkDot } from './WorkDialogs'
 import { Timer } from './WorkingIndicator'
 import { WorkingTransition } from './WorkingTransition'
-import { WhereCopy } from './WorkThread'
+import { WhereCopy } from './WorkWhere'
 import { Mine, ThreadReadFailed, Told, useThreadEntries } from './WorkThreadTranscript'
 import './chat.css'
 import './composer.css'
@@ -49,8 +49,9 @@ const NEW_PANE: Pane = { tabs: [], shown: null }
 /**
  * A thread as the window shows it, in the chat's own form: its messages as the chat's bubbles, what its task put in
  * the bot's chat (a card to answer, a file, an artifact) as the chat's own rows, the working line with the turn's
- * steps, and the chat's message box, which writes to the thread. Its title, status and the panel's toggle are in the
- * window's bar; the panel beside it is its bot's own (Details, Computer, Library, Memory, Settings, Browser, Terminal in the thread's
+ * steps, and the chat's message box, which writes to the thread, with the agent it runs on and where it works in the box's
+ * row. Its title, status and the panel's toggle are in the window's bar (as a tab of a bot's panel, with no bar, the
+ * status sits on top and the tab names it); the panel beside it is its bot's own (Details, Computer, Library, Memory, Settings, Browser, Terminal in the thread's
  * folder, Side chat with the bot, its other threads), a thread without a bot's a Browser and a Terminal; what the panel shows in the chat opens the bot's chat; where it works sits over the box. A routine's run or another bot's request says it is read only.
  */
 export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; openChat: () => void }) {
@@ -112,6 +113,14 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
   }
 
   const ownFolder = bot.managedWorkspace && !task.worktree && task.folder === bot.cwd
+  const agent = task.agent ?? bot.backend
+  const status = (
+    <HStack as="span" gap={6} className="window-bar-status">
+      <WorkDot mark={WORK_MARK[task.status]} />
+      <Text size="body" tone="secondary">{tr(workStatusWord(task.status))}</Text>
+      {task.startedAt !== null ? <Timer since={task.startedAt} until={task.endedAt ?? undefined} /> : null}
+    </HStack>
+  )
   return (
     <div className="chat-view thread-chat" data-work-thread={task.id} ref={view}>
       <div className="conversation" ref={root}>
@@ -124,12 +133,8 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
                 <Text size="body" weight="medium" tone="text" truncate>{task.title}</Text>
               </HStack>
             </div>
-            <HStack as="span" gap={6} className="window-bar-status">
-              <WorkDot mark={WORK_MARK[task.status]} />
-              <Text size="body" tone="secondary">{tr(workStatusWord(task.status))}</Text>
-              {task.startedAt !== null ? <Timer since={task.startedAt} until={task.endedAt ?? undefined} /> : null}
-            </HStack>
-          </>, bar.title) : null}
+            {status}
+          </>, bar.title) : <div className="thread-chat-status">{status}</div>}
           {bar.end ? createPortal(<IconButton title="Conversation details" icon="sidebar.right" size={28} onClick={() => setPanelOpen((o) => !o)} />, bar.end) : null}
         </div>
         <ChatLog
@@ -156,10 +161,17 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
                     draftKey: `${bot.id}/thread/${task.id}`,
                     placeholder: tr('Message this thread'),
                     working: isLive(task),
-                    send: (text) => store.sendToThread(thread, threadId, text),
+                    files: task.talkFiles,
+                    send: (text, files) => store.sendToThread(thread, threadId, text, { files }),
                     stop: () => setStopping(true),
-                    // Where it works, in the box's row; the bot's own folder goes without saying, as in the list.
-                    controls: ownFolder ? null : <WhereCopy task={task} />,
+                    // The agent it runs on, then where it works; the bot's own folder goes without saying, as in the list.
+                    controls: <>
+                      <span className="thread-option" title={tr('Agent')}>
+                        <AgentIcon registry={store.agentRegistry(agent)} size={14} />
+                        <Text size="caption" truncate>{store.backendName(agent)}</Text>
+                      </span>
+                      {ownFolder ? null : <WhereCopy task={task} />}
+                    </>,
                   }}
                 />
               ) : readOnly ? (
@@ -194,7 +206,6 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
             editGroup={() => {}}
             openArtifact={setArtifactId}
             openCard={openChat}
-            showInChat={openChat}
             share={() => setTemplateDraft(draftOf(bot))}
             close={() => setPanelOpen(false)}
           />

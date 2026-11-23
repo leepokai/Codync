@@ -154,16 +154,11 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
   const presentAgent = useCallback((id: string) => (id === botId ? showDetails('settings') : setEditingMember(id)), [botId, showDetails])
   // The capsule opens what the bot does.
   const openWork = useCallback(() => showDetails('details'), [showDetails])
-  // The chat beside the panel at the card a task that needs the user waits on (the one its row reads), or at one of
-  // its entries: what a thread says it put there.
+  // The chat beside the panel at the card a task that needs the user waits on (the one its row reads).
   const [reveal, setReveal] = useState<Reveal | null>(null)
   const openCard = useCallback((taskId: string) => {
     setCompactDetails(false)
     setReveal({ taskId })
-  }, [])
-  const showInChat = useCallback((entryId: string) => {
-    setCompactDetails(false)
-    setReveal({ entryId })
   }, [])
   const member = editingMember ? store.bots.get(editingMember) : undefined
 
@@ -184,7 +179,6 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
       editGroup={() => setEditingGroup(true)}
       openArtifact={openArtifact}
       openCard={openCard}
-      showInChat={showInChat}
       share={shareBot}
       close={() => {
         setShowSettings(false)
@@ -358,8 +352,8 @@ export function SideChat({ botId, openArtifact }: { botId: string; openArtifact:
   )
 }
 
-/** Where the chat is brought to: a task's card (`taskId`), or an entry (`entryId`). */
-type Reveal = { taskId: string } | { entryId: string }
+/** Where the chat is brought to: a task's card. */
+type Reveal = { taskId: string }
 
 /** The chat's messages: every loaded one (`ChatLog`), without what voice calls carried and what waits for the bot. */
 const Transcript = memo(function Transcript({ botId, reveal, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact, openCall }: { botId: string; reveal: Reveal | null; openTrace: () => void; onReply?: (quote: ReplyQuote) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
@@ -379,7 +373,7 @@ const Transcript = memo(function Transcript({ botId, reveal, openTrace, onReply,
     if (!reveal) return
     let current = true
     void (async () => {
-      const entryId = 'entryId' in reveal ? reveal.entryId : (await store.cardOf(botId, reveal.taskId))?.id
+      const entryId = (await store.cardOf(botId, reveal.taskId))?.id
       if (current && entryId) setRevealed({ entryId })
     })()
     return () => {

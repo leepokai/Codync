@@ -106,7 +106,7 @@ function FreeRow() {
 }
 
 /**
- * One task: its mark (or `number`, its place in line), its title over `line` and where its thread works, and `time`. `open` makes the row a button. `always` is an action that
+ * One task: its mark (or `number`, its place in line), its title with `line` beside it over where its thread works, and `time`. `open` makes the row a button. `always` is an action that
  * always shows (Cut in, Try again); `onHover` holds the icon actions, out of sight until the row is hovered or
  * holds the focus.
  */
@@ -120,11 +120,14 @@ export function WorkRow({ task, number, line, time, open, always, onHover }: { t
       <Open className="work-row-open" onClick={open}>
         {number ? <Text size="callout" tone="tertiary" tabular className="work-row-number">{number}</Text> : <WorkDot mark={mark} />}
         <VStack as="span" gap={2} align="flex-start" grow shrink>
-          <HStack as="span" gap={5} className="work-row-title">
-            <SourceMark task={task} />
-            <Text tone="text" truncate>{task.title}</Text>
+          {/* The title and how it stands share the first line, a gap apart. */}
+          <HStack as="span" gap={8} className="work-row-title">
+            <HStack as="span" gap={5} shrink>
+              <SourceMark task={task} />
+              <Text tone="text" truncate>{task.title}</Text>
+            </HStack>
+            <Text size="caption" tone={mark === 'danger' ? 'danger' : mark === 'attention' ? 'attention' : 'secondary'} truncate className="work-row-line">{line}</Text>
           </HStack>
-          <Text size="caption" tone={mark === 'danger' ? 'danger' : mark === 'attention' ? 'attention' : 'secondary'} truncate>{line}</Text>
           {where ? <span className="work-row-where" title={wherePath(task) ?? undefined}><WorkWhere where={where} /></span> : null}
         </VStack>
         {time}

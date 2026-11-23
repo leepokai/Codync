@@ -2,7 +2,7 @@ import { test, expect, type Locator } from '@playwright/test'
 import { api, attach, workBot } from './sandbox.ts'
 
 // A thread whose task runs a long shell command (the scripted agent's `COMMAND`, host/tests/fixtures/work_agent.py):
-// the command is the row's second line, and it must end with an ellipsis before the row's time, never run under it.
+// the command sits beside the row's title, and it must end with an ellipsis before the row's time, never run under it.
 const COMMAND = 'agentctl wait'
 
 /** Where a row's line, its text column and its time end or start, and whether the line is ellipsized. */
@@ -10,7 +10,7 @@ const measure = (row: Locator) =>
   row.evaluate((el) => {
     const open = el.querySelector('.work-row-open')!
     const column = open.querySelector(':scope > .vstack')!
-    const line = column.querySelector(':scope > .truncate')!
+    const line = column.querySelector('.work-row-line')!
     const time = open.lastElementChild!
     return {
       lineRight: line.getBoundingClientRect().right,

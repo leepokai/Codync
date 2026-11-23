@@ -90,6 +90,11 @@
   max-width: 100%;
   min-width: 0;
 }
+/* Beside the title, giving way to it first when the row is narrow. */
+.work-row-line {
+  flex: 0 3 auto;
+  min-width: 0;
+}
 /* Its lines start at the leading edge, so each needs the row's width as its own limit to end with an ellipsis. */
 .work-row-open .truncate {
   max-width: 100%;
@@ -131,39 +136,6 @@
   background: rgba(var(--text-rgb), 0.14);
 }
 
-/* A task's thread, in the inspector in place of its pages (WorkThread.tsx): the header, the transcript, the box. */
-.work-thread {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-/* As tall as the band over the pages, and it moves the window like that band; its controls stay clickable. */
-.work-thread-header {
-  flex: none;
-  min-height: 54px;
-  box-sizing: border-box;
-  padding: 8px 11px;
-  box-shadow: inset 0 -0.5px 0 var(--border);
-  -webkit-app-region: drag;
-}
-.work-thread-header .icon-button {
-  -webkit-app-region: no-drag;
-}
-.work-thread-meta {
-  min-width: 0;
-}
-.work-thread-status {
-  flex: none;
-}
-.work-thread-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-.work-thread-content {
-  padding: 14px;
-  font-size: var(--text-callout);
-}
 .work-thread-note {
   text-align: center;
   padding: 16px 0;
@@ -198,27 +170,6 @@
   padding-left: 10px;
   box-shadow: inset 3px 0 0 var(--border);
 }
-/* What the thread put in the bot's chat: one quiet line that shows it there. */
-.work-thread-shared {
-  display: flex;
-  min-width: 0;
-  margin: -2px -6px;
-  padding: 2px 6px;
-  border-radius: var(--radius-xs);
-  text-align: left;
-  transition: background-color var(--hover);
-}
-.work-thread-shared:hover {
-  background: rgba(var(--text-rgb), 0.06);
-}
-.work-thread-shared:active {
-  background: rgba(var(--text-rgb), 0.12);
-}
-/* The thread's reply, as the chat's bubble: the panel is narrow, and nothing sits beside the bubble here. */
-.work-thread-content .message.agent .message-body {
-  max-width: 100%;
-  margin-right: 0;
-}
 /* The user's own message, on the right as in the chat; fainter while it waits for the thread's turn. */
 .work-thread-mine {
   align-self: flex-end;
@@ -240,15 +191,6 @@
   padding: 10px 16px 14px;
   text-align: center;
 }
-.work-thread-composer {
-  flex: none;
-  padding: 8px 12px 12px;
-}
-/* No button before the field: the text starts where a bubble's does. */
-.work-thread-composer .composer-box {
-  padding-left: 14px;
-}
-
 /* A thread not in use: as tall as a task's row, in faint text. */
 .work-row.free {
   min-height: 48px;

@@ -95,8 +95,18 @@
   flex-direction: column;
   overflow: hidden;
   timeline-scope: --roster;
-  container-type: inline-size;
   transition: width var(--layout);
+}
+.sidebar-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+  transition: opacity var(--layout);
+}
+.sidebar[inert] .sidebar-content {
+  opacity: 0;
 }
 /* Beside Search and New, the list's name gives way to them at the narrowest. */
 @container (max-width: 230px) {

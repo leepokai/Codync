@@ -71,7 +71,7 @@ class WidgetConfigurationActivity : ComponentActivity() {
                             CardSection(footer = if (kind == WidgetKind.Team) "Empty spots show the bots that need you first." else "Follows the account selected in Codync.") {
                                 row { ValueRow("Computer", feed.computerName.ifBlank { "No computer yet" }) }
                                 if (kind == WidgetKind.Provider) row {
-                                    val choices = (feed.usage.providers.map { it.id to it.name } + listOf("claude" to "Claude", "codex" to "Codex")).distinctBy { it.first }
+                                    val choices = (feed.usage.providers.map { it.id to it.name } + listOf("claude" to "Claude Code", "codex" to "Codex")).distinctBy { it.first }
                                     ValueRow("Provider") { ChoicePicker(provider, choices, { provider = it }, label = "Provider") }
                                 } else for ((spot, label) in listOf("Top left", "Top right", "Bottom left", "Bottom right").withIndex()) row {
                                     val choices = listOf("" to "Automatic") + feed.bots.map { it.key to it.name }

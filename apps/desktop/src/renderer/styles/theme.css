@@ -319,8 +319,8 @@ h3 {
 /* A scrolling page's edges: what scrolls past its top or bottom blurs and fades into the ground, shown only while
    there is more that way (scroll-driven, so a page that doesn't scroll has none). Each sits in the scroller's flow,
    taking no room. */
-:is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .work-thread-scroll, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::before,
-:is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .work-thread-scroll, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::after {
+:is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::before,
+:is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::after {
   content: '';
   position: sticky;
   z-index: 3;
@@ -333,7 +333,7 @@ h3 {
   animation: linear both;
   animation-timeline: scroll(nearest block);
 }
-:is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .work-thread-scroll, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::before {
+:is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::before {
   top: 0;
   margin-bottom: -28px;
   background: linear-gradient(to bottom, var(--background), transparent);
@@ -342,7 +342,7 @@ h3 {
   animation-name: scroll-edge-in;
   animation-range: 0 24px;
 }
-:is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .work-thread-scroll, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::after {
+:is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::after {
   bottom: 0;
   margin-top: -28px;
   background: linear-gradient(to top, var(--background), transparent);
@@ -359,8 +359,8 @@ h3 {
   to { opacity: 0; }
 }
 @media (prefers-reduced-transparency: reduce) {
-  :is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .work-thread-scroll, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::before,
-  :is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .work-thread-scroll, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::after {
+  :is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::before,
+  :is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::after {
     backdrop-filter: none;
   }
 }

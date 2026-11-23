@@ -41,8 +41,21 @@ static GONE: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// Seconds between the Unix epoch and Swift's `Date` reference date (2001-01-01).
 const SWIFT_REFERENCE_EPOCH: f64 = 978_307_200.0;
 
+/// The push relay's former address: `*.workers.dev` is blocked in mainland China (#570), and phone builds from
+/// before the move still register it.
+const WORKERS_DEV_RELAY: &str = "https://codync-relay.kevin2005ha.workers.dev";
+const RELAY: &str = "https://push.codync.dev";
+
 fn relay_url(hub: &Hub) -> Option<String> {
-    std::env::var("CODYNC_RELAY_URL").ok().or_else(|| hub.store.kv_get("relay_url")).filter(|u| !u.is_empty())
+    std::env::var("CODYNC_RELAY_URL")
+        .ok()
+        .or_else(|| hub.store.kv_get("relay_url").map(reachable_relay))
+        .filter(|u| !u.is_empty())
+}
+
+/// The same relay Worker on its custom domain, which mainland China reaches.
+fn reachable_relay(url: String) -> String {
+    if url == WORKERS_DEV_RELAY { RELAY.to_owned() } else { url }
 }
 
 /// True when `key` was sent less than `min_gap` ago; otherwise records now.
@@ -250,6 +263,12 @@ mod tests {
     use super::*;
     use crate::chat::calls::context::tests::{bot, hub};
     use crate::store::{EntryKind, Lane};
+
+    #[test]
+    fn the_workers_dev_relay_is_reached_on_its_custom_domain() {
+        assert_eq!(reachable_relay(WORKERS_DEV_RELAY.to_owned()), RELAY);
+        assert_eq!(reachable_relay("https://relay.example.com".to_owned()), "https://relay.example.com");
+    }
 
     #[test]
     fn an_alert_seals_the_computers_unread_total() {

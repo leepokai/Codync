@@ -3,7 +3,6 @@ import { fastModeRefusal, fastModeShown } from '@shared/fast-mode'
 import { restLine, restOf, withAdvisor, withBackend } from '@shared/fallbacks'
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { MAX_THREADS } from '@shared/work'
-import { AgentIcon } from '../../components/AgentIcon'
 import { CharacterAvatar } from '../../components/Avatar'
 import { CardSection, DropdownMenu, IconButton, Pill, Spinner, Stepper, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
@@ -13,11 +12,11 @@ import { Text } from '../../components/Text'
 import { controlReady } from '../../lib/screen-state'
 import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
-import { LoginProfileRow } from './LoginProfileRow'
-import { AgentModelPicker } from './AgentModelPicker'
+import { ModelPicker } from './ModelPicker'
+import { loginSeats } from './seats'
 import { ApprovalRow } from './ApprovalRow'
 import { CompactionRow } from './CompactionRow'
-import { agentChoice, AgentStepBanner, FallbacksRow } from './Fallbacks'
+import { AgentStepBanner, FallbacksRow } from './Fallbacks'
 import { ThreadsAgentRow } from './ThreadsAgentRow'
 import { errorText, isValid, lastPathComponent, normalized, useFollowSaved, usePlugins, type Plugins } from './drafts'
 import { FormSheet } from '../marketplace/pieces'
@@ -141,20 +140,24 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
     </Field>
   )
   const ownRest = saved ? restOf(saved, draft, Date.now()) : null
+  const fastShown = (draft.backend !== 'custom' && models.catalog?.fastMode) || draft.fastMode || (saved?.backend === draft.backend && fastModeShown(saved))
+  const refusal = saved ? fastModeRefusal(saved) : null
+  // Every agent's logins, then a custom command.
+  const seats = [
+    ...loginSeats({ backends, on: draft, tr, pick: (b, loginProfile) => onChange((d) => withBackend(d, { backend: b.id, loginProfile })) }),
+    { key: 'custom', backend: 'custom', name: tr('Custom command'), on: draft.backend === 'custom', pick: () => onChange((d) => withBackend(d, { backend: 'custom' })) },
+  ]
   const agent = (
-    <AgentModelPicker key="agent" backend={draft.backend} models={models} selection={draft.model}
-      onChange={setModel} options={draft.modelOptions ?? {}}
-      agents={[...backends.map(agentChoice), { id: 'custom', label: 'Custom command', leading: <AgentIcon registry="custom" size={14} /> }]}
-      onAgentChange={(id) => onChange((d) => withBackend(d, id))} fast={draft.fastMode ?? false}
-      fastControl={((draft.backend !== 'custom' && models.catalog?.fastMode) || draft.fastMode || (saved?.backend === draft.backend && fastModeShown(saved))) ?
-        <SwitchRow title="Fast mode" detail={saved ? fastModeRefusal(saved) : null} on={draft.fastMode ?? false} onChange={(on) => set('fastMode', on)} /> : null}>
+    <ModelPicker key="agent" trigger="row" backend={draft.backend} models={models} seats={seats}
+      model={{ id: draft.model ?? null, options: draft.modelOptions ?? {} }} set={(m) => setModel(m.id, m.options)}
+      fast={fastShown ? { on: draft.fastMode ?? false, set: (on) => set('fastMode', on) } : null}>
       {ownRest && <Text size="caption" tone="secondary">{tr(restLine(ownRest, Date.now()))}</Text>}
       {backend && !backend.available && <Text size="caption" tone="attention">{backend.installHint}</Text>}
       {draft.backend === 'custom' && <input className="field-box bot-command" value={draft.command ?? ''} placeholder={tr('ACP command, e.g. my-agent --acp')} spellCheck={false} onChange={(e) => set('command', e.target.value || null)} />}
-    </AgentModelPicker>
+      {fastShown && refusal ? <Text size="caption" tone="attention">{refusal}</Text> : null}
+      <Text size="caption" tone="secondary">{tr('Changing the model starts a new agent session. Chat history is kept.')}</Text>
+    </ModelPicker>
   )
-  // Its own row under the picker, as on the phones. CardSection gives every child a row, so null when the host has none.
-  const loginProfile = backend?.loginProfiles ? <LoginProfileRow key="login" backend={backend} loginProfile={draft.loginProfile ?? null} onChange={(id) => set('loginProfile', id)} /> : null
   // While the bot runs on a fallback, the Agent card starts with it.
   const step = saved?.agentStep ? <AgentStepBanner key="step" bot={saved} /> : null
   // Only from a host that has them (its bots say).
@@ -192,7 +195,6 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
         <CardSection title="Agent" fold="bot.agent">
           {step}
           {agent}
-          {loginProfile}
           {fallbacks}
           {advisor}
           {compaction}

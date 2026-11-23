@@ -122,7 +122,7 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   layer take turns, so one run tidies it and the others find it tidied. It waits while the plan's usage is above 75%. It writes the files
   compare-and-swap; when one changed meanwhile, the rest waits for the next run. Every run is logged (the lines it
   added and took out, the notes it wrote).
-- **The harness's own memory** is off for every bot and for background jobs (`agent/own_memory.rs`): Claude Code
+- **The harness's own memory** is off for every bot and for background jobs (`agent/own_memory.rs`; how each harness's is switched, `codync_agent::own_memory`): Claude Code
   (`autoMemoryEnabled` and `autoDreamEnabled` false, `CLAUDE_CODE_DISABLE_AUTO_MEMORY`), Copilot (its memory tools
   excluded), CodeBuddy, WorkBuddy (the same switch as CodeBuddy), and Qwen Code (workspace settings, so only in a bot's own workspace: a project folder's
   files are the user's). Gemini CLI, Kilo Code, Kiro and Hermes Agent have no switch Codync can use. Project

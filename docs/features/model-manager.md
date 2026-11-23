@@ -7,8 +7,9 @@ phone's bot editor already picks a model per bot (see *Notes*).
 ## Opening it
 
 The sliders button at the top of the bot list, left of the computer filter (`ChatWindow`'s sidebar
-header). It opens a sheet, top to bottom: the agent and model picker, a search field over the bots,
-`Select all` / `Unselect all`, the bot list with a checkbox on each row, and `Apply`.
+header); in a narrow sidebar, the same sliders button sits in the rail actions under the roster. It
+opens a sheet, top to bottom: the agent and model picker, a search field over the bots, `Select all`
+/ `Unselect all`, the bot list with a checkbox on each row, and `Apply`.
 
 ## Choosing what to apply
 

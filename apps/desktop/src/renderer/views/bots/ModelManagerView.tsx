@@ -19,7 +19,7 @@ import { allKeys, filterChecked, planRows, toggleKey, type ApplyPlan, type Catal
 import '../search-palette.css'
 import './model-manager.css'
 
-type Pick = { backend: string; model: string | null; modelOptions: Record<string, string> }
+type Selection = { backend: string; model: string | null; modelOptions: Record<string, string> }
 type Outcome = { ok: boolean; text: string }
 
 /** What the bot is for, plus its computer when the roster spans more than one. */
@@ -60,7 +60,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const initialBackend = typeof first?.bot.backend === 'string' && first.bot.backend !== 'custom'
     ? first.bot.backend
     : (backends.find((b) => b.id !== 'custom')?.id ?? 'claude')
-  const [pick, setPick] = useState<Pick>({ backend: initialBackend, model: null, modelOptions: {} })
+  const [pick, setPick] = useState<Selection>({ backend: initialBackend, model: null, modelOptions: {} })
   const [query, setQuery] = useState('')
   const [checked, setChecked] = useState<Set<string>>(() => new Set())
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({})

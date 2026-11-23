@@ -90,7 +90,7 @@ test('toggleKey adds and removes without touching the set it was given', () => {
   assert.deepEqual([...toggleKey(before, 'mac/b1', true)], ['mac/b1'])
 })
 
-test('pausePatch sends only the id and the flag, the same minimal patch the roster toggle sends', () => {
+test('pausePatch sends only the id and the flag — more minimal than the roster toggle, on the same updateBot path', () => {
   assert.deepEqual(pausePatch('b1', true), { id: 'b1', paused: true })
   assert.deepEqual(pausePatch('b2', false), { id: 'b2', paused: false })
   // Nothing else rides along: the host keeps every other setting the bot has.

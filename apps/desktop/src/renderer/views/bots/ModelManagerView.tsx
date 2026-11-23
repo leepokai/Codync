@@ -169,8 +169,9 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const models = useAgentModels(pick.backend)
   // A custom command needs the editor's command field, which a batch apply can't supply; the batch
   // swap targets the agents the account's computers offer. The sheet rides the same seat rail the
-  // bot editor's model picker shows, so picking an agent here behaves exactly as it does there.
-  const seats = loginSeats({ backends, on: { backend: pick.backend, loginProfile: null }, tr, pick: (b) => { run.current++; setOutcomes({}); setPick({ backend: b.id, model: null, modelOptions: {} }) } })
+  // bot editor's model picker shows, but one seat per agent — its default login — because a batch
+  // writes no login profile (each bot keeps its own), so that is exactly what it can target.
+  const seats = loginSeats({ backends, on: { backend: pick.backend, loginProfile: null }, logins: () => [null], tr, pick: (b) => { run.current++; setOutcomes({}); setPick({ backend: b.id, model: null, modelOptions: {} }) } })
   const shown = matchWords(items.map((item) => ({ item, words: botWords(item) })), query).map((w) => w.item)
   const shownKeys = allKeys(shown)
   const everyChecked = shownKeys.length > 0 && shownKeys.every((key) => checked.has(key))

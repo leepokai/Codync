@@ -16,11 +16,12 @@ sheet, top to bottom: the agent and model picker, a search field over the bots, 
 ## Choosing what to apply
 
 The top section is the same picker the bot editor uses (`ModelPicker`, not a copy): its rail
-carries the account's agents and logins (`loginSeats` — an agent that isn't installed is named
-"(not installed)" exactly as the editor names it), and the panel picks the model (`Search models`
-— typing `free` lists the free models) with the model's own settings under it, such as the
-reasoning slider. Leaving the model at `Default` applies the agent's default to every checked
-bot, which every computer allows.
+carries the account's agents — one seat per agent, its default login, because a batch writes no
+login profile (each bot keeps its own, per the credential safety policy) — and an agent that isn't
+installed is named "(not installed)" exactly as the editor names it. The panel picks the model
+(`Search models` — typing `free` lists the free models) with the model's own settings under it,
+such as the reasoning slider. Leaving the model at `Default` applies the agent's default to every
+checked bot, which every computer allows.
 
 ## Choosing the bots
 
@@ -29,8 +30,9 @@ computers and bots hidden from the roster don't limit it; a bot's computer is na
 account has more than one. Groups are not listed: they carry members, not a model of their own.
 The search field filters by name, description and last message, through the same word list and
 rule the window's search uses (`botWords` over `matchWords`, extracted from the search palette's
-own bot rows); `Select all` / `Unselect all` act on what the filter is showing. A bot that is paused
-says `Paused` under its name, so a fleet's state reads at a glance.
+own bot rows); `Select all` checks what the filter is showing, and `Unselect all` clears the whole
+selection, hidden bots included. A bot that is paused says `Paused` under its name, so a fleet's
+state reads at a glance.
 
 ## Apply
 
@@ -55,7 +57,7 @@ whose catalog couldn't be read or hasn't loaded yet is not written either — it
 doing nothing. Only the agent's default model (and a custom command, which the manager doesn't
 offer) skips the catalog checks. A closed sheet or a changed pick stops the run: bots already saved
 keep their new model, the rest are left alone. Row results (✓ *Applied*, a skip reason, or the
-save's error) stay on the rows until the sheet closes.
+save's error) stay on the rows until the sheet closes or a new pick clears them.
 
 Cross-computer catalogs load once per computer per apply, so swapping a model onto twenty bots costs
 one catalog read per computer plus the saves. Choosing the agent's default model skips the catalog
@@ -64,8 +66,9 @@ checks entirely and is allowed on every computer.
 ## Pause and resume in bulk
 
 `Pause checked` and `Resume checked` act on the same checked bots Apply does — only the checked
-bots the filter still shows, one at a time, each as the same minimal patch the roster's own pause
-toggle sends (`{ id, paused }`, nothing else). The host's pause rules apply exactly as they do from
+bots the filter still shows, one at a time, each on the same `updateBot` path the roster's own
+pause toggle uses, and more minimal: `{ id, paused }` only, so the host's patched merge keeps every
+other setting the bot has. The host's pause rules apply exactly as they do from
 the roster, in every class: a paused bot never *starts* anything new (no turn, no spend, no
 one-shot work like titling or dreaming), messages sent to it are refused with a notice, its queued
 routine runs are cancelled, a bot that is mid-turn follows the host's own pause semantics — the
@@ -80,9 +83,9 @@ pausing another bot's setup goes through the manage tool's own *Manage the team*
 card instead. The save rides the host's existing `updateBot` path, so it lands on the pause
 change's own audit record (actor, target, old→new, timestamp) — this sheet adds no second trail.
 
-Row results (✓ *Paused*, ✓ *Resumed*, or the save's error) stay on the rows until the sheet closes;
-a bot that was already in the target state is saved the same way, and its row outcome says where
-it ended.
+Row results (✓ *Paused*, ✓ *Resumed*, or the save's error) stay on the rows until the sheet closes
+or a new pick clears them; a bot that was already in the target state is saved the same way, and its
+row outcome says where it ended.
 
 ## Analytics
 

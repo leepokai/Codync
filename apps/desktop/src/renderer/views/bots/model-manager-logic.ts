@@ -82,9 +82,9 @@ export const toggleKey = (checked: Set<string>, key: string, on: boolean) => {
 }
 
 /**
- * The patch a bulk pause or resume writes for one bot: the same minimal `{ id, paused }` the
- * roster's own pause toggle sends (`BotStore.setPaused`), and nothing else — the host's patched
- * merge keeps every other setting the bot has.
+ * The patch a bulk pause or resume writes for one bot: the same `updateBot` path the roster's own
+ * pause toggle uses, and more minimal — `{ id, paused }` only — so the host's patched merge keeps
+ * every other setting the bot has.
  */
 export const pausePatch = (botId: string, paused: boolean) => ({ id: botId, paused })
 

@@ -112,6 +112,26 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
       await expect(rows.filter({ hasText: nameB })).not.toContainText('Paused', { timeout: 30_000 })
     })
 
+    await test.step('a hidden-checked bot is not paused either (the filtered-pause pin)', async () => {
+      await sheet.getByRole('button', { name: 'Unselect all', exact: true }).click()
+      await rows.filter({ hasText: nameA }).click()
+      const search = sheet.getByRole('textbox', { name: 'Search bots' })
+      await search.fill(nameB)
+      await rows.filter({ hasText: nameB }).click()
+      // One checked bot (A) is hidden by the filter: Pause checked must leave it alone, exactly
+      // as Apply does — the wiring is the same targets.chosen, and this step holds it there.
+      await sheet.getByRole('button', { name: 'Pause checked', exact: true }).click()
+      await expect(rows.filter({ hasText: nameB })).toContainText('Paused', { timeout: 30_000 })
+      await search.fill('')
+      await expect(rows.filter({ hasText: nameA })).not.toContainText('Paused', { timeout: 30_000 })
+      // Clean up for whatever comes after: resume B, clear the outcome rows.
+      await sheet.getByRole('button', { name: 'Unselect all', exact: true }).click()
+      await rows.filter({ hasText: nameB }).click()
+      await sheet.getByRole('button', { name: 'Resume checked', exact: true }).click()
+      await expect(rows.filter({ hasText: nameB })).toContainText('Resumed', { timeout: 30_000 })
+      await expect(rows.filter({ hasText: nameB })).not.toContainText('Paused', { timeout: 30_000 })
+    })
+
     await test.step('the saves landed: each bot editor shows the chosen agent', async () => {
       await sheet.locator('.model-manager-head').getByRole('button').click()
       await expect(sheet).toHaveCount(0)

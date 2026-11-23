@@ -189,9 +189,10 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
     else setChecked(new Set())
   }
 
-  // Pause or resume every checked bot the filter still shows, one minimal patch each — the same
-  // `{ id, paused }` the roster's own pause toggle sends, so the host keeps every other setting and
-  // its pause rules (answers nothing, spends nothing) apply exactly as they do from the roster.
+  // Pause or resume every checked bot the filter still shows, one minimal patch each — on the same
+  // `updateBot` path the roster's own pause toggle uses, and more minimal: `{ id, paused }` only, so
+  // the host keeps every other setting and its pause rules (answers nothing, spends nothing) apply
+  // exactly as they do from the roster.
   // The sheet acts as the user, like Apply; a bot pausing another goes through the manage tool's
   // own gate. Mid-batch, the host's own merge keeps an unrelated change from being written back.
   const setPausedAll = async (paused: boolean) => {

@@ -6,11 +6,11 @@
 use super::{Actor, Adapter};
 use crate::agent::CODEX_CLIENT;
 use crate::analytics::{self, Event};
-use anyhow::{Context, Result};
-use codync_agent::acp::{Acp, METHOD_NOT_FOUND, RpcError};
+use anyhow::Result;
+use codync_agent::acp::Acp;
 use codync_agent::backends;
-use codync_agent::codex_app;
-use serde_json::{Value, json};
+use codync_agent::codex_app::{self, SectionStep};
+use serde_json::json;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,8 +20,6 @@ const SECTION: &str = "Codync";
 const TIMEOUT: Duration = Duration::from_secs(20);
 /// One at a time: two sessions filed at once would each make the section.
 static FILING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-/// JSON-RPC's "invalid request".
-const INVALID_REQUEST: i64 = -32600;
 
 /// The new Codex sessions that aren't in the section yet.
 #[derive(Default)]
@@ -89,9 +87,7 @@ enum Failure {
     /// Codex's API didn't start, or refused the handshake.
     Start,
     Timeout,
-    List,
-    Create,
-    Move,
+    Step(SectionStep),
 }
 
 impl Failure {
@@ -99,22 +95,17 @@ impl Failure {
         match self {
             Self::Start => "start",
             Self::Timeout => "timeout",
-            Self::List => "list",
-            Self::Create => "create",
-            Self::Move => "move",
+            Self::Step(step) => step.word(),
         }
     }
 
     /// The step `error` came from: the one it carries, else `codex_app::session`'s own.
     fn of(error: &anyhow::Error) -> Self {
-        let own = if error.is::<Elapsed>() { Self::Timeout } else { Self::Start };
-        error.downcast_ref::<Self>().copied().unwrap_or(own)
-    }
-}
-
-impl std::fmt::Display for Failure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.word())
+        match error.downcast_ref::<SectionStep>() {
+            Some(&step) => Self::Step(step),
+            None if error.is::<Elapsed>() => Self::Timeout,
+            None => Self::Start,
+        }
     }
 }
 
@@ -124,10 +115,13 @@ async fn file_with(
     timeout: Duration,
 ) -> Outcome {
     let _one_at_a_time = FILING.lock().await;
-    let filed =
-        codex_app::session(start, CODEX_CLIENT, timeout, async |client| move_to_section(client, thread).await).await;
+    let filed = codex_app::session(start, CODEX_CLIENT, timeout, async |client| {
+        codex_app::move_to_section(client, thread, SECTION).await
+    })
+    .await;
     match filed {
-        Ok(outcome) => outcome.unwrap_or(Outcome::Unsupported),
+        Ok(Some(true)) => Outcome::Filed,
+        Ok(Some(false) | None) => Outcome::Unsupported,
         Err(error) => {
             let step = Failure::of(&error);
             let error = format!("{error:#}");
@@ -135,46 +129,6 @@ async fn file_with(
             Outcome::Failed(step)
         }
     }
-}
-
-async fn move_to_section(client: &Acp, thread: &str) -> Result<Outcome> {
-    let Some(section) = section(client).await? else { return Ok(Outcome::Unsupported) };
-    let moved = client.request("thread/section/move", json!({"threadId": thread, "sectionId": section})).await;
-    moved.context(Failure::Move)?;
-    Ok(Outcome::Filed)
-}
-
-/// The section's id, made when Codex has none of that name. `None`: a Codex from before sections.
-async fn section(client: &Acp) -> Result<Option<String>> {
-    let mut cursor = Value::Null;
-    loop {
-        let page = match client.request("threadSection/list", json!({"cursor": cursor})).await {
-            Ok(page) => page,
-            Err(error) if unknown_method(&error) => return Ok(None),
-            Err(error) => return Err(error.context(Failure::List)),
-        };
-        let found = page["data"].as_array().into_iter().flatten().find(|section| section["name"] == SECTION);
-        if let Some(id) = found.and_then(|section| section["id"].as_str()) {
-            return Ok(Some(id.to_owned()));
-        }
-        cursor = page["nextCursor"].clone();
-        if cursor.is_null() {
-            break;
-        }
-    }
-    let made = client.request("threadSection/create", json!({"name": SECTION})).await;
-    let made = made.context(Failure::Create)?;
-    let id = made["section"]["id"].as_str().context("Codex returned no section id").context(Failure::Create)?;
-    Ok(Some(id.to_owned()))
-}
-
-/// Whether Codex refused a request because it doesn't know the method. Its parser calls that an invalid request
-/// with an "unknown variant".
-fn unknown_method(error: &anyhow::Error) -> bool {
-    error.downcast_ref::<RpcError>().is_some_and(|refusal| {
-        refusal.code == METHOD_NOT_FOUND
-            || (refusal.code == INVALID_REQUEST && refusal.message.contains("unknown variant"))
-    })
 }
 
 #[cfg(test)]
@@ -238,7 +192,7 @@ mod tests {
         assert_eq!(file_with(denied, "thread-1", PATIENT).await, Outcome::Failed(Failure::Start));
         assert_eq!(fixture("hang", Duration::from_millis(100)).await, Outcome::Failed(Failure::Timeout));
         // Sections Codex has but couldn't list aren't an old Codex.
-        assert_eq!(fixture("busy", PATIENT).await, Outcome::Failed(Failure::List));
-        assert_eq!(fixture("unknown-thread", PATIENT).await, Outcome::Failed(Failure::Move));
+        assert_eq!(fixture("busy", PATIENT).await, Outcome::Failed(Failure::Step(SectionStep::List)));
+        assert_eq!(fixture("unknown-thread", PATIENT).await, Outcome::Failed(Failure::Step(SectionStep::Move)));
     }
 }

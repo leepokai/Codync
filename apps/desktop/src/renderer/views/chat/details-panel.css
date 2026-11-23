@@ -89,9 +89,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* A thread in a tab: the tabs above are its band, so its header neither moves the window nor matches the band. */
-.panel-pane .work-thread-header {
-  min-height: 0;
+/* A thread in a tab: the tabs above are its band, so its top neither moves the window nor blocks a click. */
+.panel-pane .thread-chat .top-chrome {
   -webkit-app-region: no-drag;
 }
 .panel-tab-close {
@@ -185,9 +184,6 @@
 /* In a sheet the panel is a card, not the window's edge: nothing in it moves the window, the identity starts near the
    card's top, a mask fades what scrolls away, and the column, focused so the keys scroll it, draws no ring around the
    card. */
-.modal-content > .details-panel .work-thread-header {
-  -webkit-app-region: no-drag;
-}
 .modal-content > .details-panel .details-identity {
   padding-top: 20px;
 }

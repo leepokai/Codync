@@ -21,7 +21,8 @@ import { BrowserTab } from './BrowserTab'
 import { TerminalTab } from './TerminalTab'
 import { ComputerTab } from './ComputerTab'
 import { PanelPane, type PaneView } from './PanelPane'
-import { WorkThread } from './WorkThread'
+import { ThreadChat } from './ThreadChat'
+import { NO_BAR_SLOTS, WindowBarSlots } from '../WindowBar'
 import { WorkTimeline } from './WorkTimeline'
 import '../bots/bots.css'
 import './details-panel.css'
@@ -57,15 +58,13 @@ export function splitPanel() {
  * (`thread`) the panel leaves that thread's own tab out, its Terminal opens in the thread's folder, and `sideChat`
  * (the bot's chat) is one more view.
  */
-export function DetailsPanel({ botId, routineId, editGroup, openArtifact, openCard, showInChat, share, close, docked, thread, sideChat }: {
+export function DetailsPanel({ botId, routineId, editGroup, openArtifact, openCard, share, close, docked, thread, sideChat }: {
   botId: string
   routineId: string | null
   editGroup: () => void
   openArtifact: (artifactId: string) => void
   /** Shows the chat at the approval card of a task that needs the user. */
   openCard: (taskId: string) => void
-  /** Shows the chat at one of its entries: what a thread put there. */
-  showInChat: (entryId: string) => void
   share: () => void
   close: () => void
   /** Beside the conversation, under the window's bar; false for the sheet of a narrow window. */
@@ -138,7 +137,7 @@ export function DetailsPanel({ botId, routineId, editGroup, openArtifact, openCa
                   {pane.shown === 'browser' ? <BrowserTab key={bot.id} bot={bot} />
                     : pane.shown === 'terminal' ? <TerminalTab key={thread?.thread ?? bot.id} bot={bot} thread={thread?.thread} />
                     : pane.shown === SIDE_CHAT.id ? sideChat
-                    : task ? <WorkThread key={task.id} botId={botId} task={task} openArtifact={openArtifact} showInChat={showInChat} />
+                    : task ? /* No window's bar here: the thread's status shows in the tab. */ <WindowBarSlots.Provider key={task.id} value={NO_BAR_SLOTS}><ThreadChat bot={bot} task={task} openChat={() => openCard(task.id)} /></WindowBarSlots.Provider>
                     : pane.shown ? <div key={pane.shown} className="details-tab fade-in">{view(pane.shown, at)}</div> : null}
                 </PanelPane>
                 )

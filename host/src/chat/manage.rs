@@ -31,7 +31,9 @@ pub const MAX_CARD_DETAIL: usize = 2000;
 pub const INSTRUCTIONS: &str = "You manage the user's team of Codync bots. list_team shows every bot's setup and \
 routines, yours and hidden bots included. create_bot adds a bot, which can manage the team too; update_bot changes a \
 bot's name, instructions, model and its settings (effort…), fallbacks, avatar, routines or visibility, yours included \
-(a new model of your own takes effect after this turn; a new model without modelOptions starts on its defaults). Each \
+(a new model of your own takes effect after this turn; a new model without modelOptions starts on its defaults), and \
+it pauses and resumes a bot: a paused bot answers nothing and spends nothing until it is resumed, so pausing stops \
+its credits. Each \
 bot runs only its own routines: to test another bot's, ask that bot with message_bot to run it with its own \
 run_routine, naming the routine id; don't paste its instructions instead. Its result appears in that bot's chat. A \
 hidden bot can't be messaged: ask the user to run its routine from that bot. Use them for what the user asked, \
@@ -40,7 +42,7 @@ standing instructions: it doesn't share your conversation. The user may approve 
 when they deny one, don't retry it unasked. Deleting bots is the user's.";
 
 /// The setup a manager sets, by wire name, with its label on approval cards and notices.
-const FIELDS: [(&str, &str); 13] = [
+const FIELDS: [(&str, &str); 14] = [
     ("name", "Name"),
     ("backend", "Agent"),
     ("model", "Model"),
@@ -53,6 +55,7 @@ const FIELDS: [(&str, &str); 13] = [
     ("avatarColor", "Color"),
     ("avatarShape", "Shape"),
     ("hidden", "Hidden"),
+    ("paused", "Paused"),
     ("description", "Instructions"),
 ];
 
@@ -106,6 +109,7 @@ pub fn tools() -> Value {
     create["folder"] = json!({"type": "string", "description": "Absolute path of a project folder it starts in; leave out for a workspace of its own."});
     setup["botId"] = json!({"type": "string", "description": "The bot's id from list_team."});
     setup["hidden"] = json!({"type": "boolean", "description": "Hide it from the user's bot list, or show it again."});
+    setup["paused"] = json!({"type": "boolean", "description": "Pause it: it answers nothing and spends nothing until it is resumed (its queued routine runs are cancelled, and messages sent to it are refused with a notice). Resume with false."});
     json!([
         {
             "name": "list_team",
@@ -228,6 +232,9 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     if !args["hidden"].is_null() {
         fields.insert("hidden".into(), args["hidden"].as_bool().context("hidden must be true or false")?.into());
     }
+    if !args["paused"].is_null() {
+        fields.insert("paused".into(), args["paused"].as_bool().context("paused must be true or false")?.into());
+    }
     let (routines, lines) = routines(hub, &id, args)?;
     if fields.is_empty() && routines.is_empty() {
         bail!("nothing to change");
@@ -296,7 +303,7 @@ fn setup(hub: &Hub, cfg: &BotConfig) -> Value {
     json!({
         "id": cfg.id, "name": cfg.name, "instructions": cfg.description, "agent": cfg.backend, "model": cfg.model,
         "modelOptions": cfg.model_options, "fallbacks": crate::chat::fallbacks::wire(&cfg.fallbacks), "avatarColor": cfg.avatar_color, "avatarShape": cfg.avatar_shape,
-        "folder": folder, "hidden": cfg.hidden, "approvals": cfg.permission, "mode": cfg.mode, "manageTeam": cfg.manage_team, "createdBy": cfg.created_by,
+        "folder": folder, "hidden": cfg.hidden, "paused": cfg.paused, "approvals": cfg.permission, "mode": cfg.mode, "manageTeam": cfg.manage_team, "createdBy": cfg.created_by,
         "routines": hub.routines.list(&cfg.id)["routines"],
     })
 }

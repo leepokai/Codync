@@ -156,6 +156,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::MaxThreads => "Threads at once",
             Field::ThreadWorktrees => "Worktree per thread",
             Field::Approvals => "Approvals",
+            Field::Paused => "Paused",
             Field::Compaction => "Summarize",
             Field::Notify => "Notify",
             Field::Computer => "Use computer",
@@ -365,6 +366,10 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 };
                 put(buf, vx, y, vw, &value, style.patch(base));
             }
+            Field::Paused => {
+                let s = switch(f.paused);
+                put(buf, vx, y, vw, s, t.text.patch(base));
+            }
             Field::Computer => {
                 let s = switch(f.computer);
                 let status = super::computer_access::status(&app.screen, app.online);
@@ -459,6 +464,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         | Field::Color
         | Field::Shape
         | Field::Approvals
+        | Field::Paused
         | Field::Compaction
         | Field::Notify
         | Field::Computer

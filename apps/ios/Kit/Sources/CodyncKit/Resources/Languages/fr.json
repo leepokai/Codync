@@ -2276,5 +2276,9 @@
   "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "Si {agent} n'a plus d'utilisation ou ne peut pas répondre, les threads continuent avec le suivant.",
   "in background": "en arrière-plan",
   "{count} s": "{count} s",
-  "{count} min": "{count} min"
+  "{count} min": "{count} min",
+  "Pause bot": "Mettre le bot en pause",
+  "Resume bot": "Reprendre le bot",
+  "Paused": "En pause",
+  "It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled.": "Il ne répond à rien et ne dépense rien tant que vous ne le reprenez pas : les nouveaux messages sont refusés et les exécutions de routines en attente sont annulées."
 }

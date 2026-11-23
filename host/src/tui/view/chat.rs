@@ -59,9 +59,12 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
             (true, false) => " · ⚡ fast",
             _ => "",
         };
-        let cwd =
-            truncate(&b.folder(&app.home), usize::from(room).saturating_sub(w(&b.backend) + w(mode) + w(fast) + 6));
-        put(buf, x, r.y, room, &format!("{} · {cwd} · {mode}{fast}", b.backend), t.secondary);
+        let paused = if b.paused { format!(" · {}", tr("Paused")) } else { String::new() };
+        let cwd = truncate(
+            &b.folder(&app.home),
+            usize::from(room).saturating_sub(w(&b.backend) + w(mode) + w(fast) + w(&paused) + 6),
+        );
+        put(buf, x, r.y, room, &format!("{} · {cwd} · {mode}{fast}{paused}", b.backend), t.secondary);
     }
     let mut top = r.y + 1;
     if !narrow {

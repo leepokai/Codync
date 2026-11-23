@@ -2276,5 +2276,9 @@
   "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "如果 {agent} 用量用完或無法回答，thread 會交給下一個繼續。",
   "in background": "在背景執行",
   "{count} s": "{count} 秒",
-  "{count} min": "{count} 分鐘"
+  "{count} min": "{count} 分鐘",
+  "Pause bot": "暫停 Bot",
+  "Resume bot": "恢復 Bot",
+  "Paused": "已暫停",
+  "It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled.": "在你恢復之前，它不會回答任何訊息，也不會消耗任何用量：新訊息會被拒絕，排隊中的例行任務執行會被取消。"
 }

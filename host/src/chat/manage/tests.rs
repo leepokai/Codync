@@ -164,3 +164,26 @@ async fn a_manager_sets_a_bots_reasoning_effort() {
     assert_eq!(model_after(&default, Some("sonnet")), None, "against the agent's default");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// A manager pauses and resumes a bot; `list_team` says where each bot stands.
+#[tokio::test]
+async fn a_manager_pauses_and_resumes_a_bot() {
+    let dir = std::env::temp_dir().join(format!("codync-manage-pause-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let hub = hub(&dir);
+    let paused = call(&hub, "lead", "update_bot", &json!({"botId": "dev", "paused": true})).await.unwrap();
+    assert_eq!(paused["bot"]["paused"], json!(true));
+    assert!(hub.store.bot("dev").unwrap().unwrap().config.paused);
+    let team = call(&hub, "lead", "list_team", &json!({})).await.unwrap();
+    let dev = team["bots"].as_array().unwrap().iter().find(|b| b["id"] == "dev").unwrap();
+    assert_eq!(dev["paused"], json!(true));
+    assert_eq!(notices(&hub, "lead").last(), Some(&json!("Updated dev: paused")));
+    // Only true and false are accepted.
+    let bad =
+        call(&hub, "lead", "update_bot", &json!({"botId": "dev", "paused": "yes"})).await.unwrap_err().to_string();
+    assert!(bad.contains("paused must be true or false"), "{bad}");
+    let resumed = call(&hub, "lead", "update_bot", &json!({"botId": "dev", "paused": false})).await.unwrap();
+    assert_eq!(resumed["bot"]["paused"], json!(false));
+    assert!(!hub.store.bot("dev").unwrap().unwrap().config.paused);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

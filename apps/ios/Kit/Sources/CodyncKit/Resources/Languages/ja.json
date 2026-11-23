@@ -2276,5 +2276,9 @@
   "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "{agent} の使用量がなくなるか応答できない場合、thread は次のものに引き継ぎます。",
   "in background": "バックグラウンドで実行",
   "{count} s": "{count} 秒",
-  "{count} min": "{count} 分"
+  "{count} min": "{count} 分",
+  "Pause bot": "Botを一時停止",
+  "Resume bot": "Botを再開",
+  "Paused": "一時停止中",
+  "It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled.": "再開するまで、何も答えず何も消費しません。新しいメッセージは拒否され、待機していたルーチンの実行は取り消されます。"
 }

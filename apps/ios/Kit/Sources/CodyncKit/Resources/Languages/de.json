@@ -2276,5 +2276,9 @@
   "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "Wenn {agent} kein Kontingent mehr hat oder nicht antworten kann, machen die Threads mit dem nächsten weiter.",
   "in background": "im Hintergrund",
   "{count} s": "{count} s",
-  "{count} min": "{count} Min."
+  "{count} min": "{count} Min.",
+  "Pause bot": "Bot pausieren",
+  "Resume bot": "Bot fortsetzen",
+  "Paused": "Pausiert",
+  "It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled.": "Er antwortet auf nichts und verbraucht nichts, bis du ihn fortsetzt: Neue Nachrichten werden abgelehnt, und anstehende Routine-Läufe werden abgebrochen."
 }

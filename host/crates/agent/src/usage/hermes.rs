@@ -2,14 +2,13 @@
 //! document it keeps stable for scripts, with no session. A provider it has no reading for exits
 //! non-zero with nothing on stdout.
 
-use crate::hub::Hub;
 use serde_json::Value;
 use std::time::Duration;
 
-use super::{Window, iso_ms, slug};
+use super::{App, Window, iso_ms, slug};
 
-pub(super) async fn collect(hub: &Hub) -> Option<Vec<Window>> {
-    super::command::json_windows(hub, "hermes", &["usage", "--json"], Duration::from_secs(30), parse).await
+pub async fn collect(app: &dyn App) -> Option<Vec<Window>> {
+    super::command::json_windows(app, "hermes", &["usage", "--json"], Duration::from_secs(30), parse).await
 }
 
 /// `None`: neither limits nor a reason why there are none, so the document changed.

@@ -3,12 +3,12 @@
 
 use ratatui::text::{Line, Span};
 
-use super::super::app::{App, Bot, Click, Entry, running_turn, working_steps};
+use super::super::app::{App, Bot, Click, Entry, nested, running_turn, working_steps};
 use super::super::l10n::tr;
 use super::super::md::truncate;
 use super::buffer::u;
 use super::style::{spin, theme};
-use super::trace::push_step;
+use super::trace::push_nested;
 use super::transcript::{Built, gap, name_style};
 
 /// The most lines the unfolded steps take; earlier ones stay in Full conversation.
@@ -42,8 +42,8 @@ pub(super) fn activity(out: &mut Built, app: &App, bot: &Bot, entries: &[&Entry]
             out.lines.push(Line::from(Span::styled(format!("   {}", tr("Nothing yet.")), t.dim)));
         }
         let mut lines = vec![];
-        for e in steps {
-            push_step(&mut lines, app, e, width, false);
+        for (e, depth) in nested(&steps, |e| e) {
+            push_nested(&mut lines, app, e, depth, width, false);
         }
         let earlier = lines.len().saturating_sub(STEP_LINES);
         if earlier > 0 {
@@ -154,5 +154,50 @@ mod tests {
         assert_eq!(buttons, 1);
         app.steps_open = Some(("bot".into(), 1));
         assert!(render(&app, &entries).0.contains("Nothing yet."));
+    }
+
+    #[test]
+    fn a_subagents_steps_unfold_indented_under_its_launch_with_what_it_cost() {
+        let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(Client::new("http://127.0.0.1:1", None), tx, String::new());
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "bot", "name": "Bot", "activity": "Thinking…"}})));
+        let tool = |id: &str, seq, data: serde_json::Value| Entry {
+            id: id.into(),
+            seq,
+            turn: 1,
+            kind: Kind::Tool,
+            data,
+            created_at: 0,
+        };
+        let entries = [
+            tool(
+                "launch",
+                1,
+                json!({"toolCallId": "a1", "title": "Count files", "toolKind": "think",
+                "status": "completed", "bookkeeping": false,
+                "subagent": {"kind": "general-purpose", "tokens": 42310, "durationMs": 6287}}),
+            ),
+            tool(
+                "other",
+                2,
+                json!({"toolCallId": "m1", "title": "Read notes.md", "toolKind": "read",
+                "status": "completed", "bookkeeping": false}),
+            ),
+            tool(
+                "child",
+                3,
+                json!({"toolCallId": "c1", "parent": "a1", "title": "ls -la", "toolKind": "execute",
+                "status": "completed", "bookkeeping": false}),
+            ),
+        ];
+        app.steps_open = Some(("bot".into(), 1));
+        let (text, _) = render(&app, &entries);
+        let lines: Vec<&str> = text.lines().collect();
+        let at =
+            |needle: &str| lines.iter().position(|l| l.contains(needle)).unwrap_or_else(|| panic!("{needle}: {text}"));
+        assert_eq!(at("general-purpose · 42.3k tokens · 6 s"), at("Count files") + 1);
+        assert!(at("ls -la") < at("Read notes.md"));
+        assert!(lines[at("ls -la")].starts_with("   ✓ "), "{text}");
+        assert!(lines[at("Read notes.md")].starts_with(" ✓ "), "{text}");
     }
 }

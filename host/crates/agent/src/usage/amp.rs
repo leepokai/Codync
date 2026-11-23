@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use super::Window;
 
-pub(super) async fn collect() -> Option<Vec<Window>> {
+pub async fn collect() -> Option<Vec<Window>> {
     super::command::windows("amp", &["usage", "--no-color"], None, Duration::from_secs(8), parse).await
 }
 

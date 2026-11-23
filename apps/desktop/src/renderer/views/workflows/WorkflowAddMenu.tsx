@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
-import { SearchField } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { AnchoredMenu } from '../../components/Overlay'
 import { Text } from '../../components/Text'
@@ -30,9 +29,10 @@ const GROUPS: { label: string; kinds: { kind: NodeKind; title: string; icon: str
   },
 ]
 
-export function WorkflowAddMenu({ open, point, anchor, at, link, onAdd, onClose }: {
+export function WorkflowAddMenu({ open, point, side, anchor, at, link, onAdd, onClose }: {
   open?: boolean
   point?: { x: number; y: number } | null
+  side?: 'leading' | 'trailing'
   anchor?: RefObject<HTMLElement | null>
   at?: Point | null
   link?: { from: string; branch?: Branch | null; at: Point } | null
@@ -78,13 +78,13 @@ export function WorkflowAddMenu({ open, point, anchor, at, link, onAdd, onClose 
   }
 
   return (
-    <AnchoredMenu open={shown} point={point} anchor={anchor} onClose={onClose} className="workflow-add-panel">
-      <div className="workflow-add-menu" onKeyDown={onKey}>
-        <div className="workflow-add-search">
-          <SearchField inputRef={input} value={query} prompt="Search nodes" onChange={setQuery} />
-        </div>
-        <div className="workflow-add-list" role="menu">
-          {flat.length === 0 ? <Text size="caption" tone="secondary">{tr('No matches')}</Text> : null}
+    <AnchoredMenu open={shown} point={point} side={side} anchor={anchor} onClose={onClose} width={260}>
+      <div className="menu-panel workflow-add-menu" role="menu" onKeyDown={onKey}>
+        <label className="menu-search">
+          <Icon name="magnifyingglass" size={12} color="var(--tertiary)" />
+          <input ref={input} value={query} placeholder={tr('Search nodes')} aria-label={tr('Search nodes')} spellCheck={false} onChange={(e) => setQuery(e.target.value)} />
+        </label>
+          {flat.length === 0 ? <div className="menu-empty">{tr('No matches')}</div> : null}
           {groups.map((group) => (
             <div key={group.label}>
               <div className="workflow-add-heading"><Text size="caption" tone="secondary">{tr(group.label)}</Text></div>
@@ -99,14 +99,13 @@ export function WorkflowAddMenu({ open, point, anchor, at, link, onAdd, onClose 
                     onMouseEnter={() => setHighlight(index)}
                     onClick={() => { pick(item.kind); onClose() }}
                   >
-                    <span className="workflow-add-icon"><Icon name={item.icon} size={14} /></span>
+                    <span className="menu-icon"><Icon name={item.icon} size={12} /></span>
                     <span className="menu-title">{tr(item.title)}</span>
                   </button>
                 )
               })}
             </div>
           ))}
-        </div>
       </div>
     </AnchoredMenu>
   )

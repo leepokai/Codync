@@ -103,6 +103,7 @@ export type AnalyticsEvent =
   | { event: 'panel_split'; on: boolean }
   | { event: 'panel_maximized'; on: boolean }
   | { event: 'preview_opened'; from: 'address' | 'dev_server' }
+  | { event: 'workflow_tab_closed'; shown: boolean }
   | { event: 'list_layout_changed'; list: 'bots' | 'threads'; option: 'folder' | 'bot' | 'computer' | 'status' | 'activity'; on: boolean }
   | { event: 'desktop_notifications_set'; on: boolean }
   | { event: 'desktop_notification_opened'; kind: AlertAnalyticsKind }

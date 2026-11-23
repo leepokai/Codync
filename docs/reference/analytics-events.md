@@ -76,6 +76,7 @@ host answers and sends it once the host is up.
 | `panel_split` | host `track` (desktop) | The details panel was split into two panes, or joined back | `on` |
 | `panel_maximized` | host `track` (desktop) | The details panel took the conversation's place, or was restored | `on` |
 | `preview_opened` | host `track` (desktop) | A page was opened in the details panel's Browser tab | `from` (`address`: typed; `dev_server`: one of the bot's dev servers) |
+| `workflow_tab_closed` | host `track` (desktop) | A workflow's tab was closed on the Workflows page (opening one is its `workflowEditor` screen) | `shown` (it was the workflow on screen) |
 | `list_layout_changed` | host `track` (desktop) | Group by folder, Group by bot, Group by computer, Sort by status or Sort by last active was switched on a list | `list` (`bots`, `threads`), `option` (`folder`, `bot`, `computer`, `status`, `activity`), `on` |
 | `computer_found_on_network` | iOS, Android | A phone reached a computer in no account at an address it found on the local network | — |
 | `pairing_code_created` | host (`pairing`) | A pairing QR code is made (desktop, terminal UI, `codync-host pair`), including each new one an open pairing screen makes when its code expires: count persons, not events | `client` |

@@ -2463,5 +2463,6 @@
   "From the ACP registry. Codync downloads it the first time it runs.": "ACP 레지스트리 제공. 처음 실행할 때 Codync가 다운로드합니다.",
   "Codync runs the CLI's own ACP mode.": "Codync는 CLI 자체의 ACP 모드를 실행합니다.",
   "Codync runs the ACP build, which uses this CLI.": "Codync는 이 CLI를 사용하는 ACP 빌드를 실행합니다.",
-  "Brought in by default": "기본으로 가져오는 항목"
+  "Brought in by default": "기본으로 가져오는 항목",
+  "All workflows": "모든 워크플로"
 }

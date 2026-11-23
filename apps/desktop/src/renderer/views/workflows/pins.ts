@@ -1,4 +1,4 @@
-// Pinned workflows stay on this device. The key matches the phone: pinnedWorkflows.{computerId}.
+// Pinned workflows and open tabs stay on this device. The pin key matches the phone: pinnedWorkflows.{computerId}.
 
 import type { BotStore } from '../../store/bot-store'
 import { pref, type Pref } from '../../lib/prefs'
@@ -11,6 +11,18 @@ export function workflowPins(computerId: string) {
   if (!stored) {
     stored = pref<string[]>(`pinnedWorkflows.${computerId}`, [])
     cache.set(computerId, stored)
+  }
+  return stored
+}
+
+const tabCache = new Map<string, Pref<string[]>>()
+
+/** The workflows open as tabs on the desktop, in their order (tabs.ts). */
+export function workflowTabs(computerId: string) {
+  let stored = tabCache.get(computerId)
+  if (!stored) {
+    stored = pref<string[]>(`workflowTabs.${computerId}`, [])
+    tabCache.set(computerId, stored)
   }
   return stored
 }

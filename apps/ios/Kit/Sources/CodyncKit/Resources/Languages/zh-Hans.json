@@ -2463,5 +2463,6 @@
   "From the ACP registry. Codync downloads it the first time it runs.": "来自 ACP registry。首次运行时由 Codync 下载。",
   "Codync runs the CLI's own ACP mode.": "Codync 运行 CLI 自己的 ACP 模式。",
   "Codync runs the ACP build, which uses this CLI.": "Codync 运行 ACP 版本，由它调用这个 CLI。",
-  "Brought in by default": "默认带入的项目"
+  "Brought in by default": "默认带入的项目",
+  "All workflows": "所有工作流"
 }

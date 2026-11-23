@@ -28,6 +28,7 @@ html[data-platform="darwin"] .window-bar {
 .window-bar-space {
   flex: 1;
 }
+.window-bar-start,
 .window-bar-title,
 .window-bar-end {
   display: flex;

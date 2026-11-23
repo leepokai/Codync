@@ -217,10 +217,11 @@
   background: var(--sheet);
   color: var(--secondary);
 }
-.workflow-port.in { left: 0; top: 50%; }
-.workflow-port.out { right: 0; top: 50%; }
-.workflow-port.yes { right: 0; top: 32%; }
-.workflow-port.no { right: 0; top: 72%; }
+/* A port stands off its card (PORT_GAP in WorkflowCanvas), so the arrow reads as its own handle, not part of the card's edge. */
+.workflow-port.in { left: -14px; top: 50%; }
+.workflow-port.out { right: -14px; top: 50%; }
+.workflow-port.yes { right: -14px; top: 32%; }
+.workflow-port.no { right: -14px; top: 72%; }
 .workflow-port.bad { background: var(--danger); box-shadow: none; }
 .workflow-port-label {
   position: absolute;
@@ -531,35 +532,9 @@
   font-size: 13px;
 }
 
-.workflow-add-panel { min-width: 248px; }
+.workflow-add-menu { max-height: 400px; }
 
-.workflow-add-search { padding: 8px 8px 0; }
-
-.workflow-add-search .search-field {
-  background: transparent;
-  border-radius: var(--radius-s);
-}
-
-.workflow-add-search .search-field:focus-within { outline: none; }
-
-.workflow-add-list {
-  max-height: 360px;
-  overflow: auto;
-  padding: 4px 6px 8px;
-}
-
-.workflow-add-heading { padding: 10px 10px 2px; }
-
-.workflow-add-icon {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  flex: none;
-  border-radius: 8px;
-  color: var(--text);
-  background: var(--surface);
-}
+.workflow-add-heading { padding: 8px 8px 2px; }
 
 .workflow-tip {
   position: relative;
@@ -725,6 +700,42 @@
   border-radius: 50%;
 }
 .workflow-swatch.on { box-shadow: 0 0 0 2px var(--text); }
+
+/* The open workflows as tabs in the window's bar (WorkflowTabs): the shown one on the page's own color. */
+.workflow-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+.workflow-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 200px;
+  border-radius: var(--radius-m);
+  transition: background-color var(--hover);
+}
+.workflow-tab:hover { background: rgba(var(--text-rgb), 0.05); }
+.workflow-tab.on { background: var(--background); }
+.workflow-tab-open {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 28px 0 10px;
+}
+.workflow-tab-close {
+  position: absolute;
+  right: 6px;
+  opacity: 0;
+  transition: opacity var(--hover);
+}
+.workflow-tab:hover .workflow-tab-close,
+.workflow-tab.on .workflow-tab-close { opacity: 1; }
 
 .workflow-pin {
   width: 100%;

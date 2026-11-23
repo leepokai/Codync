@@ -2463,5 +2463,6 @@
   "From the ACP registry. Codync downloads it the first time it runs.": "Dal registro ACP. Codync lo scarica al primo avvio.",
   "Codync runs the CLI's own ACP mode.": "Codync esegue la modalità ACP propria della CLI.",
   "Codync runs the ACP build, which uses this CLI.": "Codync esegue la build ACP, che usa questa CLI.",
-  "Brought in by default": "Incluso per impostazione predefinita"
+  "Brought in by default": "Incluso per impostazione predefinita",
+  "All workflows": "Tutti i workflow"
 }

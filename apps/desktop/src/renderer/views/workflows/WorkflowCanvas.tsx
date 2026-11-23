@@ -28,6 +28,7 @@ type Size = { width: number; height: number }
 interface MenuAt {
   x: number
   y: number
+  side?: 'leading' | 'trailing'
   at: Point
   link?: { from: string; branch?: Branch | null }
 }
@@ -365,7 +366,11 @@ export function WorkflowCanvas({ workflowId, graph, readOnly, scripted, ready, s
         if (result.error) setHint(result.error)
         else commit(result.graph)
       } else if (!targetInsideChrome(event) && !scripted) {
-        setMenu({ x: event.clientX, y: event.clientY, at: world(event), link: { from: current.from, branch: current.branch } })
+        // Let go of on its own node (a click on the port): the new step goes to the right of it, not on top of it.
+        const spot = besideNode(event, current.from)
+        const box = boxes.get(current.from)
+        const at = spot.side && box ? { x: box.x + box.width + 80, y: box.y } : world(event)
+        setMenu({ ...spot, at, link: { from: current.from, branch: current.branch } })
       }
     } else if (current.kind === 'marquee') {
       const rect = viewport.current?.getBoundingClientRect()
@@ -491,7 +496,7 @@ export function WorkflowCanvas({ workflowId, graph, readOnly, scripted, ready, s
           </Button>
         </div>
       ) : null}
-      <WorkflowAddMenu point={menu ? { x: menu.x, y: menu.y } : null} at={menu?.at} link={menu?.link ? { ...menu.link, at: menu.at } : null} onAdd={place} onClose={() => setMenu(null)} />
+      <WorkflowAddMenu point={menu ? { x: menu.x, y: menu.y } : null} side={menu?.side} at={menu?.at} link={menu?.link ? { ...menu.link, at: menu.at } : null} onAdd={place} onClose={() => setMenu(null)} />
       <AnchoredMenu open={canvasMenu !== null} point={canvasMenu} items={canvasItems} onClose={() => setCanvasMenu(null)} />
     </div>
   )
@@ -530,17 +535,35 @@ function anchorMap(graph: Graph, boxes: Map<string, { x: number; y: number; widt
     const outs = new Map<string, Point>()
     if (ports(node.kind)[1].length) {
       if (node.kind === 'condition') {
-        outs.set('yes', { x: box.x + box.width, y: box.y + box.height * 0.32 })
-        outs.set('no', { x: box.x + box.width, y: box.y + box.height * 0.72 })
-      } else outs.set('', { x: box.x + box.width, y: box.y + box.height / 2 })
+        outs.set('yes', { x: box.x + box.width + PORT_GAP, y: box.y + box.height * 0.32 })
+        outs.set('no', { x: box.x + box.width + PORT_GAP, y: box.y + box.height * 0.72 })
+      } else outs.set('', { x: box.x + box.width + PORT_GAP, y: box.y + box.height / 2 })
     }
-    map.set(node.id, { inn: { x: box.x, y: box.y + box.height / 2 }, outs })
+    map.set(node.id, { inn: { x: box.x - PORT_GAP, y: box.y + box.height / 2 }, outs })
   }
   return map
 }
 
+/** How far a port's center stands off its card's edge (the ports' offset in workflows.css): links run from port to port. */
+const PORT_GAP = 14
 const SAMPLE = 1.5
 const ERASER = 8
+
+/**
+ * Where the add menu opens when a link is let go of without reaching an input: at the pointer, or, let go of on its own
+ * node (a click on the port), beside that node, on the side with room, so the menu never covers the step it adds to.
+ */
+function besideNode(event: { clientX: number; clientY: number }, id: string): { x: number; y: number; side?: 'leading' | 'trailing' } {
+  const box = document.querySelector(`.workflow-node[data-node="${CSS.escape(id)}"]`)?.getBoundingClientRect()
+  const pointer = { x: event.clientX, y: event.clientY }
+  if (!box || pointer.x < box.left || pointer.x > box.right + 30 || pointer.y < box.top || pointer.y > box.bottom) return pointer
+  const gap = 12
+  return window.innerWidth - box.right - gap >= ADD_MENU_WIDTH + 8
+    ? { x: box.right + gap, y: pointer.y, side: 'leading' }
+    : { x: box.left - gap, y: pointer.y, side: 'trailing' }
+}
+
+const ADD_MENU_WIDTH = 260
 
 function targetInsideChrome(event: { clientX: number; clientY: number }) {
   return !!document.elementFromPoint(event.clientX, event.clientY)?.closest('.workflow-tools, .workflow-zoom, .workflow-minimap')

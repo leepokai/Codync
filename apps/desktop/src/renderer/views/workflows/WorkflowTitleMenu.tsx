@@ -6,9 +6,8 @@ import type { AppLanguage } from '../../lib/l10n'
 import { useAppLanguage, useTr } from '../../lib/use-language'
 import { runnableNodes, type Graph, type WorkflowSummary, type WorkflowVersion } from './workflow'
 
-/** The canvas title menu: this computer's workflows, then version history beside it. */
-export function WorkflowTitleMenu({ title, selectedId, workflows, graph, versions, previewId, pinned, onOpen, onCreate, onRename, onDuplicate, onDelete, onPin, onLoadVersions, onPreview, onShowCurrent }: {
-  title: string
+/** The canvas's All workflows menu: this computer's workflows, then the shown one's version history and actions. */
+export function WorkflowTitleMenu({ selectedId, workflows, graph, versions, previewId, pinned, onOpen, onCreate, onRename, onDuplicate, onDelete, onPin, onLoadVersions, onPreview, onShowCurrent }: {
   selectedId: string | null
   workflows: WorkflowSummary[]
   graph: Graph | null
@@ -56,7 +55,9 @@ export function WorkflowTitleMenu({ title, selectedId, workflows, graph, version
           setVersionsOpen(false)
         }}
       >
-        <Text weight="semibold" truncate>{title || tr('Workflows')}</Text>
+        <Icon name="square.grid.2x2" size={12} color="var(--secondary)" />
+        <Text weight="medium" truncate>{tr('All workflows')}</Text>
+        {workflows.length ? <Text size="callout" tone="secondary">{workflows.length}</Text> : null}
         <Icon name="chevron.down" size={11} weight="semibold" color="var(--secondary)" />
       </button>
       <AnchoredMenu open={open} onClose={close} anchor={button} className="workflow-title-panel">
@@ -68,12 +69,9 @@ export function WorkflowTitleMenu({ title, selectedId, workflows, graph, version
               return (
                 <button key={item.id} type="button" className="menu-row" role="menuitemradio" aria-checked={on} onClick={() => choose(() => onOpen(item.id))}>
                   <Mark on={on} />
-                  <span className="menu-title with-detail">
-                    <span className={on && steps > 0 ? 'menu-title with-detail beside' : undefined}>
-                      <span>{item.title}</span>
-                      {on && steps > 0 ? <span className="menu-detail">{tr('{count} steps').replaceAll('{count}', String(steps))}</span> : null}
-                    </span>
-                    <Text size="caption" tone="tertiary" mono truncate>{item.id.slice(0, 8)}</Text>
+                  <span className="menu-title with-detail beside">
+                    <span>{item.title}</span>
+                    {on && steps > 0 ? <span className="menu-detail">{tr('{count} steps').replaceAll('{count}', String(steps))}</span> : null}
                   </span>
                 </button>
               )

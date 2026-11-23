@@ -178,13 +178,13 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight, search, fromEn
  * Where a panel opens beside `rect`: below it or above (whichever has more room), aligned to the
  * anchor's leading or trailing edge and kept on screen. `room` is the height available.
  */
-export function anchorPlacement(rect: DOMRect, wanted = 320) {
+export function anchorPlacement(rect: DOMRect, wanted = 320, side?: 'leading' | 'trailing') {
   const W = window.innerWidth
   const H = window.innerHeight
   const roomBelow = Math.max(0, H - rect.bottom - 14)
   const roomAbove = Math.max(0, rect.top - 14)
   const below = roomBelow >= roomAbove
-  const leading = rect.left + rect.width / 2 < W * 0.6
+  const leading = side ? side === 'leading' : rect.left + rect.width / 2 < W * 0.6
   const width = Math.min(wanted, W - 16)
   const inset = Math.max(8, W - width - 8)
   const style: React.CSSProperties = {
@@ -199,11 +199,13 @@ export function anchorPlacement(rect: DOMRect, wanted = 320) {
  * Presents `MenuPanel` next to `anchor` (or at `point`, for right-clicks), flipping to stay on
  * screen; a click anywhere else closes it (`.codyncMenu` / `.contextActions`).
  */
-export function AnchoredMenu({ open, onClose, anchor, point, items, reactions, children, className, width: wanted, search }: {
+export function AnchoredMenu({ open, onClose, anchor, point, side, items, reactions, children, className, width: wanted, search }: {
   open: boolean
   onClose: () => void
   anchor?: RefObject<HTMLElement | null>
   point?: { x: number; y: number } | null
+  /** Which way the panel grows from the anchor's edge: leading starts there, trailing ends there (default: by where the anchor is). */
+  side?: 'leading' | 'trailing'
   items?: () => MenuItem[]
   reactions?: ReactionPick
   children?: ReactNode
@@ -225,7 +227,7 @@ export function AnchoredMenu({ open, onClose, anchor, point, items, reactions, c
   }, [open, point, anchor])
   useEscape(open, onClose, layer)
   if (!mounted || !rect) return null
-  const { style, width, room, below } = anchorPlacement(rect, wanted)
+  const { style, width, room, below } = anchorPlacement(rect, wanted, side)
   return createPortal(
     <div ref={layer} className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onClose() }}>
       <div className={`anchored-panel ${className ?? ''}`} style={{ ...style, maxWidth: width, ...(search ? { width } : {}) }}>

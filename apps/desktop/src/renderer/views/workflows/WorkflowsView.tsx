@@ -1,19 +1,25 @@
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { Screen } from '@shared/analytics'
 import { Button } from '../../components/Controls'
 import { Dialog } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
+import { usePref } from '../../lib/prefs'
+import { analytics } from '../../store/analytics'
+import { WindowBarSlots } from '../WindowBar'
 import { useTr } from '../../lib/use-language'
 import { useScreenViewed } from '../../store/analytics'
 import { useStore } from '../../store/context'
 import { createWorkflow, deleteWorkflow, fetchWorkflow, fetchWorkflowRun, renameWorkflow, restoreWorkflowVersion, retryWorkflowStep, runWorkflowStep, saveWorkflowGraph, saveWorkflowScript, setWorkflowEnabled, startWorkflowRun, stopWorkflowRun, stopWorkflowStep, decideWorkflowStep, workflowRuns, workflowVersion, workflowVersions } from './api'
 import { UndoStack } from './history'
-import { isWorkflowPinned, pinWorkflow } from './pins'
+import { isWorkflowPinned, pinWorkflow, workflowTabs } from './pins'
+import { closeTab, openTab } from './tabs'
 import { GraphSaver, type FlushResult } from './save'
 import { WorkflowCanvas } from './WorkflowCanvas'
 import { WorkflowHud } from './WorkflowHud'
+import { WorkflowTabs } from './WorkflowTabs'
 import { cloneGraphNewIds, copyTitle, emptyGraph, latestStepByNode, type Graph, type RunDetail, type RunSummary, type WorkflowDetail, type WorkflowStep, type WorkflowVersion } from './workflow'
 import './workflows.css'
 
@@ -59,6 +65,9 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
   const runIdRef = useRef<string | null>(null)
   const followRef = useRef(true)
   graphRef.current = graph
+  const bar = useContext(WindowBarSlots)
+  const [tabIds, setTabIds] = usePref(workflowTabs(store.computer.id))
+  const tabs = tabIds.flatMap((id) => store.workflows.filter((item) => item.id === id))
 
   const summary = store.workflows.find((item) => item.id === selected) ?? null
   const historical = viewed !== null && versionGraph === null
@@ -74,6 +83,9 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
   }, [])
 
   useEffect(() => { if (focusId) { hold.current = false; setSelected(focusId) } }, [focusId])
+
+  // The workflow shown always has a tab.
+  useEffect(() => { if (selected) setTabIds(openTab(tabIds, selected)) }, [selected])
 
   useEffect(() => {
     if (hold.current || selected || !store.workflows.length) return
@@ -286,12 +298,19 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
       setSelected(id)
     })()
   }
+  const closeShown = (id: string) => {
+    const { tabs: rest, next } = closeTab(tabIds.filter((item) => tabs.some((tab) => tab.id === item)), id)
+    analytics.track({ event: 'workflow_tab_closed', shown: id === selected })
+    setTabIds(rest)
+    if (id === selected && next) open(next)
+  }
   const pinned = selected ? isWorkflowPinned(store.computer.id, selected) : false
   const stepMap = latestStepByNode(steps)
   const calls = steps.filter((step) => step.nodeId.startsWith('call-') && !shown.nodes.some((node) => node.id === step.nodeId))
 
   return (
     <div className="workflows">
+      {bar.start && tabs.length ? createPortal(<WorkflowTabs tabs={tabs} selectedId={selected} onOpen={open} onClose={closeShown} onCreate={() => void create()} />, bar.start) : null}
       {chrome || !selected ? (
       <WorkflowHud
         title={summary?.title ?? ''}

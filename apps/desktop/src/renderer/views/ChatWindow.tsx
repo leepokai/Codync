@@ -73,7 +73,7 @@ function openRef(app: AppModel, key: string) {
 }
 
 /** The chat window: the rail of its pages on the left, then the page (Bots: the roster and the conversation). */
-const NO_SLOTS = { title: null, end: null }
+const NO_SLOTS = { start: null, title: null, end: null }
 
 export function ChatWindow() {
   const tr = useTr()
@@ -307,6 +307,7 @@ function ChatSplitView() {
     // A bot deleted since is passed over: the page shows what is selected now.
     if (place.ref && app.store(place.ref.computerId)?.bots.has(place.ref.botId)) app.select(place.ref)
   }
+  const [barStart, setBarStart] = useState<HTMLElement | null>(null)
   const [barTitle, setBarTitle] = useState<HTMLElement | null>(null)
   const [barEnd, setBarEnd] = useState<HTMLElement | null>(null)
   /** The rail: another page, or, on the entry of the page shown, its list folded away and brought back. */
@@ -520,6 +521,7 @@ function ChatSplitView() {
         back={step(visits, -1) ? () => travel(-1) : null}
         forward={step(visits, 1) ? () => travel(1) : null}
         toggleList={listed ? () => setListHidden(!listHidden) : null}
+        setStart={setBarStart}
         setTitle={setBarTitle}
         setEnd={setBarEnd}
       />
@@ -570,21 +572,23 @@ function ChatSplitView() {
       {/* The conversation stays as it is behind another page: its place, its open panel, a call under way. */}
       <main className="detail" hidden={page !== 'bots'}>
         {/* The call bar's settings open the Settings page at Voice chat. */}
-        <WindowBarSlots.Provider value={page === 'bots' ? { title: barTitle, end: barEnd } : NO_SLOTS}>
+        <WindowBarSlots.Provider value={page === 'bots' ? { start: null, title: barTitle, end: barEnd } : NO_SLOTS}>
           <OpenVoiceSettings.Provider value={openVoiceSettings}>{detail}</OpenVoiceSettings.Provider>
         </WindowBarSlots.Provider>
         {find.focus !== null && selectedBot ? <FindBar focusKey={find.focus} onClose={find.close} /> : null}
       </main>
       {page === 'threads' ? (
         <main className="detail">
-          <WindowBarSlots.Provider value={{ title: barTitle, end: barEnd }}>
+          <WindowBarSlots.Provider value={{ start: null, title: barTitle, end: barEnd }}>
             <ThreadDetail roster={threadRoster} picked={picked} pick={setPicked} starting={starting} start={setStarting} openChat={(ref) => { app.select(ref); setPage('bots') }} />
           </WindowBarSlots.Provider>
         </main>
       ) : page === 'workflows' && workflowStore && workflows ? (
         <main className="detail">
           <StoreContext.Provider value={workflowStore}>
-            <WorkflowsView key={workflowStore.computer.id} focusId={workflowFocus} />
+            <WindowBarSlots.Provider value={{ start: barStart, title: null, end: null }}>
+              <WorkflowsView key={workflowStore.computer.id} focusId={workflowFocus} />
+            </WindowBarSlots.Provider>
           </StoreContext.Provider>
         </main>
       ) : listed ? null : (

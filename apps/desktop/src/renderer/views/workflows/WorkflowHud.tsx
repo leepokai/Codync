@@ -73,7 +73,6 @@ export function WorkflowHud({ title, selectedId, workflows, enabled, graph, step
         {title ? <IconButton title="Redo" icon="arrow.uturn.forward" disabled={!canRedo} onClick={onRedo} /> : null}
         <span className="workflow-title-wrap">
           <WorkflowTitleMenu
-            title={title}
             selectedId={selectedId}
             workflows={workflows}
             graph={graph}

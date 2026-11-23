@@ -348,6 +348,8 @@ pub(crate) mod tests {
             pinned: false,
             position: 0,
             hidden: false,
+            plain: false,
+            workflow: None,
             paused: false,
             section: None,
             notify: None,

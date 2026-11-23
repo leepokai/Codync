@@ -153,6 +153,8 @@ pub enum Event {
     /// Every saved credential deleted, for a computer whose key is gone (`outcome`).
     CredentialsReset,
     AgentSetupStarted,
+    /// A bot's terminal opened (or shown again) in its folder.
+    BotTerminalOpened,
     AgentSignedIn,
     /// A login profile was added, renamed or removed, or got its keys (`action`); never its name, who it signs in or
     /// its variables.
@@ -183,6 +185,13 @@ pub enum Event {
     /// An important release's highlights were on screen (docs/features/whats-new.md; desktop and terminal UI here,
     /// phones send their own).
     WhatsNewShown,
+    /// The desktop's details panel was split into two panes or joined, and took the conversation's place or gave
+    /// it back; a page was opened in its Browser tab.
+    PanelSplit,
+    PanelMaximized,
+    PreviewOpened,
+    /// Group by computer or Sort by status was switched on the desktop's Bots or Threads list.
+    ListLayoutChanged,
     /// The desktop app's system notifications were turned on or off (Settings → General → System).
     DesktopNotificationsSet,
     /// A desktop system notification was clicked, opening its chat.
@@ -314,6 +323,7 @@ impl Event {
             Self::CredentialSaved => "credential_saved",
             Self::CredentialsReset => "credentials_reset",
             Self::AgentSetupStarted => "agent_setup_started",
+            Self::BotTerminalOpened => "bot_terminal_opened",
             Self::AgentSignedIn => "agent_signed_in",
             Self::LoginProfileChanged => "login_profile_changed",
             Self::SettingChanged => "setting_changed",
@@ -330,6 +340,10 @@ impl Event {
             Self::KofiInviteShown => "kofi_invite_shown",
             Self::KofiInviteAnswered => "kofi_invite_answered",
             Self::WhatsNewShown => "whats_new_shown",
+            Self::PanelSplit => "panel_split",
+            Self::PanelMaximized => "panel_maximized",
+            Self::PreviewOpened => "preview_opened",
+            Self::ListLayoutChanged => "list_layout_changed",
             Self::DesktopNotificationsSet => "desktop_notifications_set",
             Self::DesktopNotificationOpened => "desktop_notification_opened",
             Self::ModelManagerApplied => "model_manager_applied",

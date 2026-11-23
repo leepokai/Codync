@@ -1,0 +1,64 @@
+/* A web page in a pane of the panel: the address and its two buttons, then the page to the pane's edges. */
+.browser-tab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.browser-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px 8px;
+}
+.browser-form {
+  flex: 1;
+  min-width: 0;
+}
+.browser-address {
+  width: 100%;
+  height: calc(28px * var(--scale));
+  padding: 0 10px;
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--text-body);
+}
+.browser-address::placeholder {
+  color: var(--tertiary);
+}
+.browser-address[aria-invalid='true'] {
+  color: var(--danger);
+}
+.browser-note {
+  padding: 0 14px 8px;
+}
+/* Pages assume a white sheet under them. */
+.browser-frame {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  background: #fff;
+}
+.browser-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 0 24px 24px;
+  text-align: center;
+}
+.browser-servers {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  max-width: 300px;
+  text-align: left;
+}
+.browser-servers > :first-child {
+  padding: 0 10px 2px;
+}

@@ -19,9 +19,15 @@ Code: `host/src/agent/login_profiles.rs` is Codync's side: the records, both kin
 removal and the processes that run on a profile; `login_profiles/account.rs` holds an account profile's folder and
 sign-in, `login_profiles/keys.rs` an API key profile's variables and the import from the login shell. The `codync-agent` crate's `accounts` module (`host/crates/agent/src/accounts.rs`) holds what is true of the
 agents and no app, for the account kind: `agents.rs` (how each agent keeps a login in a folder), `slot.rs` (what a
-slot shares), `identity.rs` (who a login is) and the `Account` record. Clients: one **Login profiles** section in
-the agent's setup sheet (the default one first, then the others; each can be named), a **Login profile** choice
-under Agent in a bot's settings, and the same choice on a fallback. The section shows for every agent, installed
+slot shares), `identity.rs` (who a login is) and the `Account` record. Clients: on the desktop, a **Login profiles** tab of
+Extensions (one card per agent that takes them: the default one first, then the others; each can be named;
+`LoginProfilesPanel.tsx`), which the agent's setup sheet links to and a bot's **Add login profile…** (the
+model panel's `+`) opens at that agent; the phones still keep the section in the agent's setup sheet. Every place
+that picks an agent picks its login with it: the desktop's model panel (`views/bots/ModelPicker.tsx`, its rail's seats from
+`loginSeats` in `views/bots/seats.ts`: a bot's settings, a fallback, Advisor mode's threads' agent, a chat's message
+box, a new thread) and the phones' agent picker list each agent once per login. A new thread sends its pick as
+`startThread`'s `setup.loginProfile` (`""` the default login) where `hello.threadLogins` says the host takes it. A chat's sign-in
+card for one login profile still opens that agent's sheet on it. The section shows for every agent, installed
 or not: any agent takes an API key, while **Add account** needs the agent's own CLI on the computer.
 
 ## An account is one folder
@@ -117,6 +123,9 @@ by every slot (its keyring names them by server, not by home).
   custom command, leaves its login profile behind. A bot whose account is gone doesn't start: it never runs on another
   login in silence.
 - Changing a bot's login profile restarts its agent at the next idle point, like a model change.
+- **The model list is the login's own**: `agentModels {backend, loginProfile?}` reads it on the bot's, fallback's or
+  threads' agent's login profile, so an account on another plan shows its own models
+  ([model selection](marketplace.md#model-selection)).
 - **A fallback step names its own login profile** (`fallbacks[].loginProfile`), or none for the default one. A login profile belongs
   to one agent. The chain has each login once, so an agent comes again only on another of its login profiles: Claude Code
   → Claude Code on a second login profile → Codex. Steps, parked sessions and rests go by login
@@ -164,7 +173,6 @@ its fallbacks, on `agentStep`, on each `resting` entry and on a sign-in card. Al
 ## Not built
 
 - **Limits of an account** of an agent other than Claude Code and Codex: its row says **No reading yet**.
-- **Models per login profile.** The model list is read on the computer's own login.
 - **A second real account on each agent.** Only Claude Code has had two accounts signed in at once here. The
   others are checked as far as the table says.
 - **Adopting a folder the user already has** (`~/.claude-work`) without a new sign-in.

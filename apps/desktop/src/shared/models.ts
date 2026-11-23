@@ -61,6 +61,8 @@ export interface Bot {
   /** The roster section the user put it in (`Work`, `Personal`); none when absent. */
   section?: string
   hidden: boolean
+  /** The computer's box for threads without a bot: an agent on its own. Never a bot to the user. */
+  plain: boolean
   /** Paused by the user (or a managing bot): it answers nothing and spends nothing until it is resumed; missing from an older host reads as not paused. */
   paused: boolean
   notify?: boolean | null
@@ -160,6 +162,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     // A cleared section (null, or an empty name) reads as none.
     section: raw.section || undefined,
     hidden: raw.hidden ?? false,
+    plain: raw.plain === true,
     paused: raw.paused ?? false,
     notify: raw.notify ?? null,
     connectors: raw.connectors ?? [],
@@ -427,11 +430,11 @@ export interface EntryData {
   clientNonce?: string
   title?: string
   toolKind?: string
+  /** tool and permission: the agent's id for the call, so an approval finds the tool entry with what it returned. */
+  toolCallId?: string
   /** tool: whether it's the bot's own bookkeeping (composing its message, keeping its memory), left out of the
    * working steps; a host older than 2.25.0 leaves it out, and the steps then leave out the call too. */
   bookkeeping?: boolean
-  /** tool: the agent's id for the call. */
-  toolCallId?: string
   /** tool: the call that launched the subagent making this one (Claude Code only). */
   parent?: string
   /** tool: what a subagent's launch says about it (Claude Code only). */
@@ -706,8 +709,18 @@ export interface Hello {
   analytics?: boolean
   /** A bot with a new message moves to the top of the roster (`setAutoOrder`). Absent from older hosts. */
   autoOrder?: boolean
+  /** The user can start a thread with a bot themselves (`startThread`). Absent from older hosts. */
+  startThread?: boolean
+  /** A thread may start without a bot, on an agent the user names (`startThread` without `botId`). */
+  threadsWithoutBot?: boolean
+  /** A thread may be started to build one workflow (`startThread` with `setup.workflow`). */
+  workflowThreads?: boolean
+  /** A thread may be started on a login of its agent (`startThread` with `setup.loginProfile`). */
+  threadLogins?: boolean
   /** `resetCredentials` can be used on this computer (absent from older hosts, false on a Codync Cloud computer). */
   credentialsReset?: boolean
+  /** The host can store workflows. Missing means it cannot. */
+  workflows?: boolean
 }
 
 export interface PairingInfo {

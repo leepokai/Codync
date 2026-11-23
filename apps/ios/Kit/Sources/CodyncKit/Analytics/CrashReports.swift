@@ -28,7 +28,7 @@ public final class CrashReports: NSObject, MXMetricManagerSubscriber, Sendable {
 
     /// The `$exception` properties for one crash.
     static func properties(callStack: Data, exceptionType: Int?, signal: Int?, appVersion: String) -> [String: Analytics.Value] {
-        let (frames, images) = stack(callStack)
+        let (frames, images, problem) = stack(callStack)
         let exception: [String: Analytics.Value] = [
             "type": .string(exceptionType.flatMap { machExceptions[$0] } ?? "Crash"),
             "value": .string(signal.flatMap { signals[$0] } ?? ""),
@@ -42,6 +42,8 @@ public final class CrashReports: NSObject, MXMetricManagerSubscriber, Sendable {
             "app_version": .string(appVersion),
         ]
         if !images.isEmpty { properties["$debug_images"] = .array(images) }
+        // Why a crash came without frames or from another thread, so the next one can be read: the JSON's own key names, never a value.
+        if let problem { properties["stack_problem"] = .string(problem) }
         return properties
     }
 
@@ -49,17 +51,40 @@ public final class CrashReports: NSObject, MXMetricManagerSubscriber, Sendable {
     /// last (PostHog's order), and the binaries they ran in. PostHog symbolicates them with the
     /// dSYMs each release uploads (tools/upload-dsyms.py); a frame it can't resolve (the system's)
     /// keeps its `binary + offset` name.
-    static func stack(_ callStack: Data) -> (frames: [Analytics.Value], images: [Analytics.Value]) {
-        guard let tree = try? JSONDecoder().decode(Tree.self, from: callStack),
-              let thread = tree.callStacks.first(where: { $0.threadAttributed == true }) ?? tree.callStacks.first
-        else { return ([], []) }
-        // Root frame is where it crashed; each first sub-frame is its caller.
+    static func stack(_ callStack: Data) -> (frames: [Analytics.Value], images: [Analytics.Value], problem: String?) {
+        let (walk, problem) = crashedThread(callStack)
+        let (frames, images) = appleFrames(walk)
+        return (frames, images, problem)
+    }
+
+    /// The crashed thread from its root frame (where it crashed) through each first sub-frame (its
+    /// caller), and why it isn't simply MetricKit's attributed thread, when it isn't.
+    private static func crashedThread(_ callStack: Data) -> (walk: [Frame], problem: String?) {
+        let tree: Tree
+        do {
+            tree = try JSONDecoder().decode(Tree.self, from: callStack)
+        } catch {
+            return ([], "unreadable: " + decodingPlace(error))
+        }
+        let all = tree.callStacks ?? []
+        let stacks = all.filter { !($0.callStackRootFrames ?? []).isEmpty }
+        guard let first = stacks.first else {
+            return ([], tree.callStacks == nil ? "no callStacks" : "no frames")
+        }
+        // The first thread with frames stands in when MetricKit attributed none, but says so when the attributed one is empty.
+        let attributed = stacks.first { $0.threadAttributed == true }
+        let problem = attributed == nil && all.contains { $0.threadAttributed == true } ? "attributed thread has no frames" : nil
         var walk: [Frame] = []
-        var next = thread.callStackRootFrames.first
+        var next = (attributed ?? first).callStackRootFrames?.first
         while let frame = next, walk.count < maxFrames {
             walk.append(frame)
             next = frame.subFrames?.first
         }
+        return (walk, problem)
+    }
+
+    /// A walk, root frame first, as PostHog `apple` frames (oldest first) and the binaries they ran in.
+    private static func appleFrames(_ walk: [Frame]) -> (frames: [Analytics.Value], images: [Analytics.Value]) {
         var frames: [Analytics.Value] = []
         var images: [Analytics.Value] = []
         var loaded: Set<UInt64> = []
@@ -87,17 +112,31 @@ public final class CrashReports: NSObject, MXMetricManagerSubscriber, Sendable {
         return (frames, images)
     }
 
+    /// Where decoding stopped and why, as key names and a kind (`callStacks.0.callStackRootFrames.0.subFrames: type mismatch`): no value of the payload.
+    private static func decodingPlace(_ error: Error) -> String {
+        guard let error = error as? DecodingError else { return "not JSON" }
+        let (kind, context): (String, DecodingError.Context) = switch error {
+        case .keyNotFound(let key, let c): ("missing \(key.stringValue)", c)
+        case .typeMismatch(_, let c): ("type mismatch", c)
+        case .valueNotFound(_, let c): ("null", c)
+        case .dataCorrupted(let c): ("not JSON", c)
+        @unknown default: ("unknown", DecodingError.Context(codingPath: [], debugDescription: ""))
+        }
+        let path = context.codingPath.map { $0.intValue.map(String.init) ?? $0.stringValue }.joined(separator: ".")
+        return path.isEmpty ? kind : "\(path): \(kind)"
+    }
+
     private static func hex(_ address: UInt64) -> String {
         "0x" + String(address, radix: 16)
     }
 
     private struct Tree: Decodable {
-        let callStacks: [Stack]
+        let callStacks: [Stack]?
     }
 
     private struct Stack: Decodable {
         let threadAttributed: Bool?
-        let callStackRootFrames: [Frame]
+        let callStackRootFrames: [Frame]?
     }
 
     private struct Frame: Decodable {
@@ -106,6 +145,26 @@ public final class CrashReports: NSObject, MXMetricManagerSubscriber, Sendable {
         let address: UInt64?
         let offsetIntoBinaryTextSegment: UInt64?
         let subFrames: [Frame]?
+
+        private enum CodingKeys: String, CodingKey {
+            case binaryName, binaryUUID, address, offsetIntoBinaryTextSegment, subFrames
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            binaryName = try? c.decode(String.self, forKey: .binaryName)
+            binaryUUID = try? c.decode(String.self, forKey: .binaryUUID)
+            address = Self.number(c, .address)
+            offsetIntoBinaryTextSegment = Self.number(c, .offsetIntoBinaryTextSegment)
+            subFrames = try c.decodeIfPresent([Frame].self, forKey: .subFrames)
+        }
+
+        /// An address as a whole number, or as a float when the JSON wrote one: a frame's other fields still count.
+        private static func number(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> UInt64? {
+            if let n = try? c.decode(UInt64.self, forKey: key) { return n }
+            if let d = try? c.decode(Double.self, forKey: key), d >= 0, d < 0x1p64 { return UInt64(d) }
+            return nil
+        }
     }
 
     /// `<mach/exception_types.h>`.

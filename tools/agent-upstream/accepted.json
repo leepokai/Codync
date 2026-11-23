@@ -1,0 +1,13 @@
+{
+  "$comment": "ACP registry adapter versions the daily upstream check (check.mjs) last passed. Raise one after a green run on its new version.",
+  "agents": {
+    "claude-acp": {
+      "backend": "claude",
+      "version": "0.110.0"
+    },
+    "codex-acp": {
+      "backend": "codex",
+      "version": "2.10.0"
+    }
+  }
+}

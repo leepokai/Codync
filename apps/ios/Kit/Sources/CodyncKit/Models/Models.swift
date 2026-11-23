@@ -368,6 +368,8 @@ public struct Hello: Codable, Sendable {
     public var canJoinAccount: Bool?
     /// A bot with a new message moves to the top of the roster (missing from older hosts).
     public var autoOrder: Bool?
+    /// This host serves workflows. Missing on older hosts, which is the same as false.
+    public var workflows: Bool?
 }
 
 public struct RecentWorkspace: Codable, Sendable, Identifiable {

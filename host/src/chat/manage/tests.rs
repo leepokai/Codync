@@ -142,7 +142,7 @@ fn a_card_lists_the_routines_before_the_instructions() {
 }
 
 /// #395: a manager sets a bot's model settings (effort…) the way it sets its model; a card shows them. Checking a
-/// value against the agent's model list (`auth::check_options`) starts the agent, so the calls here set them empty
+/// value against the agent's model list (`acp::models::check_options`) starts the agent, so the calls here set them empty
 /// and the model they'd be checked against is picked by `model_after`.
 #[tokio::test]
 async fn a_manager_sets_a_bots_reasoning_effort() {

@@ -1,7 +1,7 @@
 .styled-button {
   font-size: var(--text-body);
-  font-weight: 600;
-  min-height: calc(30px * var(--scale));
+  font-weight: 500;
+  min-height: calc(32px * var(--scale));
   padding: 0 14px;
   border-radius: var(--radius-pill);
   display: inline-flex;
@@ -15,7 +15,7 @@
   color: var(--on-accent);
 }
 .styled-button.secondary {
-  background: var(--bubble-user);
+  background: var(--field);
   color: var(--text);
 }
 .styled-button.destructive {
@@ -267,6 +267,36 @@
   gap: 8px;
   padding-left: 2px;
 }
+/* A section that folds (`fold`): its title is the toggle, the chevron turns, the rows close up under it. */
+.card-section-fold {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.card-section-chevron {
+  transition: transform var(--layout);
+}
+.card-section.folded .card-section-chevron {
+  transform: rotate(-90deg);
+}
+.card-section-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows var(--layout), opacity var(--layout), margin var(--layout);
+}
+.card-section.folded .card-section-body {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-top: -10px; /* the section's gap */
+}
+.card-section-inner {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 .card-section-rows {
   background: var(--surface);
   --edge-fill: var(--surface);
@@ -375,10 +405,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 10px;
-  background: var(--bubble-agent);
-  border-radius: var(--radius-pill);
-  font-size: var(--text-callout);
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--stroke-strong);
+  border-radius: var(--radius-s);
+  font-size: var(--text-body);
+  transition: border-color var(--hover);
 }
 .search-field input {
   flex: 1;
@@ -404,7 +436,7 @@
 }
 
 .search-field:focus-within {
-  outline: 2px solid var(--secondary);
+  border-color: rgba(var(--text-rgb), 0.5);
 }
 /* The clear button gets a 24 pt target around its small glyph. */
 .search-clear {
@@ -479,4 +511,14 @@
   border-radius: var(--radius-pill);
   background: var(--field);
   color: var(--secondary);
+}
+/* A row that opens a link: the whole row is the button, its label and an out-arrow, nothing filled. */
+.link-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -12px -16px;
+  padding: 12px 16px;
+  min-height: 52px;
+  text-align: left;
 }

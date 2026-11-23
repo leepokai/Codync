@@ -58,6 +58,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import android.content.Context
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.rotate
@@ -229,14 +233,18 @@ import com.kyant.shapes.RoundedRectangle
 
 /** Shows the current choice in a pill with a chevron and opens the menu: `ChoicePicker`. */
 @Composable fun <T> ChoicePicker(selection: T, options: List<Pair<T, String>>, select: (T) -> Unit, modifier: Modifier = Modifier,
-    fill: Color = Color.Transparent, label: String? = null, enabled: Boolean = true) {
+    fill: Color = Color.Transparent, label: String? = null, enabled: Boolean = true, wide: Boolean = false) {
     val rows = options.map { (id, text) -> id to tr(text) }
     val current = rows.firstOrNull { it.first == selection }?.second ?: tr("Choose")
     DropdownMenu({ rows.map { (id, text) -> MenuItem(text, selected = id == selection) { select(id) } } }, modifier,
         enabled = enabled, label = label?.let { "${tr(it)}: $current" }) {
-        Row(Modifier.then(if (fill == Color.Transparent) Modifier.outline() else Modifier).pill(fill),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(current, Modifier.weight(1f, fill = false), style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        val row = if (wide) {
+            Modifier.fillMaxWidth().clip(RoundedRectangle(16.dp)).background(Palette.surface).padding(horizontal = 16.dp, vertical = 16.dp)
+        } else {
+            Modifier.then(if (fill == Color.Transparent) Modifier.outline() else Modifier).pill(fill)
+        }
+        Row(row, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(current, Modifier.weight(1f, fill = wide), style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Symbol("chevron.down", size = 13.dp, tint = Palette.secondary)
         }
     }
@@ -253,8 +261,11 @@ import com.kyant.shapes.RoundedRectangle
 
 /** The rows of a `CardSection`, split by inset hairlines. */
 class CardRows internal constructor() {
-    internal val rows = mutableListOf<@Composable () -> Unit>()
-    fun row(content: @Composable () -> Unit) { rows += content }
+    internal class Entry(val onClick: (() -> Unit)?, val content: @Composable () -> Unit)
+    internal val rows = mutableListOf<Entry>()
+
+    /** `onClick` covers the whole row, including the card's padding. The chevron is only a hint. */
+    fun row(onClick: (() -> Unit)? = null, content: @Composable () -> Unit) { rows += Entry(onClick, content) }
 }
 
 /**
@@ -262,25 +273,46 @@ class CardRows internal constructor() {
  * rounded group whose rows are split by inset hairlines (ChatGPT's desktop settings).
  */
 @Composable fun CardSection(title: String? = null, footer: String? = null, modifier: Modifier = Modifier,
-    accessory: @Composable RowScope.() -> Unit = {}, rows: CardRows.() -> Unit) {
+    fold: String? = null, accessory: @Composable RowScope.() -> Unit = {}, rows: CardRows.() -> Unit) {
     val list = CardRows().apply(rows).rows
+    // A section that folds (`fold`, its key): its title is the toggle, kept folded on this device.
+    val context = LocalContext.current
+    val store = remember { context.applicationContext.getSharedPreferences("codync-ui", Context.MODE_PRIVATE) }
+    var foldedKeys by remember { mutableStateOf(store.getStringSet("foldedCardSections", emptySet()).orEmpty()) }
+    val folded = fold != null && fold in foldedKeys
+    val turn by animateFloatAsState(if (folded) -90f else 0f, Motion.layout(), label = "fold")
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (title != null) Row(Modifier.padding(start = 2.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SectionHeading(title, Modifier.weight(1f))
-            accessory()
+            if (fold != null) Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.plainButton {
+                    foldedKeys = if (folded) foldedKeys - fold else foldedKeys + fold
+                    store.edit().putStringSet("foldedCardSections", foldedKeys).apply()
+                }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SectionHeading(title)
+                    Symbol("chevron.down", Modifier.rotate(turn), size = 10.dp, tint = Palette.tertiary)
+                }
+            } else SectionHeading(title, Modifier.weight(1f))
+            if (!folded) accessory()
         }
+        AnimatedVisibility(!folded, enter = expandVertically(Motion.layout()) + fadeIn(Motion.fade()), exit = shrinkVertically(Motion.layout()) + fadeOut(Motion.fade())) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (list.isNotEmpty()) Column(Modifier.fillMaxWidth().cardGroup()) {
             for ((index, row) in list.withIndex()) {
-                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp).heightIn(min = 32.dp),
+                val open = row.onClick
+                Box(Modifier.fillMaxWidth()
+                    .then(if (open != null) Modifier.plainButton { open() } else Modifier)
+                    .padding(horizontal = 16.dp, vertical = 14.dp).heightIn(min = 32.dp),
                     contentAlignment = Alignment.CenterStart) {
-                    CompositionLocalProvider(LocalTextStyle provides Type.body, LocalContentColor provides Palette.text) { row() }
+                    CompositionLocalProvider(LocalTextStyle provides Type.body, LocalContentColor provides Palette.text) { row.content() }
                 }
                 if (index < list.lastIndex) Hairline(Modifier.padding(horizontal = 16.dp))
             }
         }
         if (footer != null) Text(tr(footer), Modifier.padding(horizontal = 2.dp), style = Type.caption.copy(lineHeight = Type.caption.lineHeight * 1.12f),
             color = Palette.secondary)
+        }
+        }
     }
 }
 

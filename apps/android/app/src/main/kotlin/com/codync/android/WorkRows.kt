@@ -113,7 +113,8 @@ internal fun cardLine(card: Entry?, tr: (String) -> String): String? = card?.dat
                 number = (index + 1).takeIf { numbered }, source = { SourceMark(task, state.bots) }) { run(it, task) }
         }
     }
-    StopWorkDialog(stopping != null, { stopping = null }) { stopping?.let { store.stopWork(bot.id, it.id) } }
+    val target = lastOf(stopping)
+    StopWorkDialog(stopping != null, { stopping = null }) { target?.let { store.stopWork(bot.id, it.id) } }
     CutInDialog(cuttingIn, bot.work.filter(::givesWay), { cuttingIn = null }) { task, insteadOf -> store.workCutIn(bot.id, task.id, insteadOf.id) }
 }
 

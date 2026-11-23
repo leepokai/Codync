@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import type { CloudStatus } from '../src/shared/models.ts'
-import { api, attach, openGeneralSettings } from './sandbox.ts'
+import { api, attach, openPage } from './sandbox.ts'
 
 const status = (page: Page) => api<CloudStatus>(page, 'cloudStatus', {})
 const owner = async (page: Page) => (await status(page)).owner?.userId ?? null
@@ -15,8 +15,7 @@ const forgetClaims = (page: Page) =>
 
 async function openComputers(page: Page) {
   await page.reload()
-  await openGeneralSettings(page)
-  await page.getByRole('dialog').getByRole('button', { name: 'Computers', exact: true }).click()
+  await openPage(page, 'Computers')
 }
 
 test('turning on Reach from anywhere asks to add a computer in no account first', async () => {

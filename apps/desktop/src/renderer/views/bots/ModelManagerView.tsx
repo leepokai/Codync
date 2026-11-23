@@ -118,6 +118,9 @@ function SheetHandle({ kind, label, size, onSize }: {
     onSize(resizeFrom(kind, start.current, e.clientX - start.current.x, e.clientY - start.current.y, window.innerWidth, window.innerHeight))
   }
   const onKeyDown = (e: ReactKeyboardEvent) => {
+    // Tab/Shift+Tab must keep moving focus (the ResizeHandle precedent gates on arrows only);
+    // swallowing them here would trap a keyboard user on a handle with Escape as the only exit.
+    if (!e.key.startsWith('Arrow')) return
     e.preventDefault()
     onSize(stepSize(kind, size, e.key, window.innerWidth, window.innerHeight))
   }

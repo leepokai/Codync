@@ -143,6 +143,7 @@ const map: Record<string, IconNode> = {
   shield: L.Shield,
   'app.dashed': L.SquareDashed,
   'checkmark.shield': L.ShieldCheck,
+  'crown.fill': L.Crown,
   'exclamationmark.shield': L.ShieldAlert,
   'list.bullet.clipboard': L.ClipboardList,
   macmini: L.Server,

@@ -51,19 +51,27 @@
   background: var(--background);
 }
 
+/* The lead's crown, worn on the avatar's top: a gold crown straddling the frame's top edge (LeadAgentBadge). */
 .lead-agent-badge {
   position: absolute;
-  right: 0;
-  bottom: 0;
+  left: 50%;
+  bottom: auto;
+  top: 0;
+  transform: translate(-50%, -44%);
   display: grid;
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 50%;
-  background: var(--warning);
-  color: white;
+  background: none;
+  color: var(--warning);
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.5));
+  overflow: visible;
 }
-.lead-agent-badge.interactive { cursor: pointer; }
+/* The larger details badge sits under the window-drag strip: a smaller overhang keeps the crown's tip clear of it. */
+.lead-agent-badge.interactive {
+  cursor: pointer;
+  transform: translate(-50%, -22%);
+}
 .lead-agent-badge.interactive::after {
   content: '';
   position: absolute;
@@ -71,7 +79,6 @@
   border-radius: 50%;
 }
 .lead-agent-badge.interactive:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
-.lead-avatar > .avatar-badge { bottom: auto; top: 0; }
 
 /* An empty seat: no bot here (NoBotAvatar). */
 .no-bot-avatar {

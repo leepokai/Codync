@@ -23,7 +23,7 @@ export const BotRow = memo(function BotRow({ bot, store, usingComputer, members,
       <VStack gap={2} className="bot-row-text">
         <HStack align="baseline" gap={4} shrink>
           {bot.pinned ? <Icon name="pin.fill" size={10} color="var(--tertiary)" /> : null}
-          <Text size="body" weight={bot.unread > 0 ? 'semibold' : 'medium'} tone="text" truncate>{bot.name}</Text>
+          <Text size="body" weight={bot.lead ? 'bold' : bot.unread > 0 ? 'semibold' : 'medium'} tone="text" truncate>{bot.name}</Text>
           {usingComputer ? <Icon name="cursorarrow.motionlines" size={10} color="var(--accent)" title="Using the computer" /> : null}
         </HStack>
         <HStack gap={6} shrink>

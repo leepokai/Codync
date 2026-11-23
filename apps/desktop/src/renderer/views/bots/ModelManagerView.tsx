@@ -130,17 +130,19 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
           // one lock, so an unrelated change that landed mid-batch is never written back. On another
           // agent the host moves the bot to that agent's Auto mode on its own and drops a login
           // profile that doesn't fit it; the custom command is cleared here, as the bot editor's
-          // agent change does. Fallbacks are not touched.
+          // agent change does. The patch sends no fallback list — the host's own fallback tidy may
+          // still drop a step that duplicates the new primary agent, as on any agent change.
           const patch: Record<string, unknown> = { id: row.item.ref.botId, backend, model: model || null, modelOptions: { ...options } }
           if (backend !== 'custom') patch.command = null
           await row.item.store
             .ready()
             .then((client) => {
               // The wait for a reconnect may outlast the run: re-check before anything is sent.
-              if (!alive.current || run.current !== myRun) return null
-              return client.call('updateBot', patch)
+              if (!alive.current || run.current !== myRun) return 'skipped'
+              return client.call('updateBot', patch).then((): 'sent' | 'skipped' => 'sent')
             })
-            .then(() => {
+            .then((sent) => {
+              if (sent !== 'sent') return
               applied++
               if (alive.current && run.current === myRun) setOutcomes((o) => ({ ...o, [key]: { ok: true, text: tr('Applied') } }))
             })

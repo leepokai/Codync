@@ -36,7 +36,9 @@ the bot moves to that agent's Auto mode on the host's own rule while a login pro
 fit the new agent is dropped by the host's profile settle. The patch itself doesn't send the
 fallback list, but the host's fallback tidy runs on every bot update: a fallback step that would
 duplicate the new primary agent (same backend and login) is dropped then, exactly as the bot
-editor's agent change does. Fast mode and session notes are not touched either.
+editor's agent change does. As with any model change in the bot editor, applying restarts the bot's
+agent session — the chat history stays and the agent starts fresh with the new model. Fast mode is
+not touched.
 
 Before anything is saved, each involved computer's catalog is read for the chosen model
 (`agentModels`, the same call the picker makes, at the same 300 s patience). A bot on a computer
@@ -61,8 +63,7 @@ unverifiable rows and the save errors; rows the run never reached are the remain
 
 ## Notes
 
-- The picker's Fast-mode control is deliberately not wired for batch applies; sessions aren't
-  touched either.
+- The picker's Fast-mode control is deliberately not wired for batch applies.
 - A custom command is not offered as a target: a batch apply has no field for the command a custom
   backend needs; that stays with the bot editor.
 - Phones and the terminal UI keep their per-bot editors; a batch UI there is a possible follow-up,

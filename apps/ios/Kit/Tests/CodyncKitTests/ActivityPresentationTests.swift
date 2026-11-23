@@ -40,6 +40,14 @@ import Testing
     #expect(BotsTeamCard.slots(bots: bots, picks: ["gone"]).first??.id == "preview-review")
 }
 
+@MainActor @Test func teamWidgetLeavesGroupRoomsOut() throws {
+    let room = try JSONDecoder().decode(Bot.self, from: Data(#"{"id":"room","name":"Room","kind":"group","status":"needsInput","lastAt":9}"#.utf8))
+    let bots = Bot.widgetPreview + [room]
+    #expect(!BotsTeamCard.slots(bots: bots, picks: []).contains { $0?.id == "room" })
+    // A room picked before rooms left the widgets falls back to automatic (issue #549).
+    #expect(BotsTeamCard.slots(bots: bots, picks: ["room"]).first??.id == "preview-review")
+}
+
 @Test func aCallShowsOnTheActivityInsteadOfDone() throws {
     let idle = BotActivityPresentation(status: "idle", activity: "Old step", call: .listening)
     #expect(idle.phase == .onCall(.listening))

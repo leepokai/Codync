@@ -36,6 +36,8 @@ Everyday tests use the fake agents, which only answer the way we expect. Run the
 2. A change touches how the host talks to an agent: ACP methods, sessions, turns.
 3. Before a release.
 
+Each check ends by stopping the host: no agent process may outlive it, except a daemon an agent detaches on purpose and shares with its other clients, which its [upstream page](../upstream-agents/README.md) lists (Hermes's `gateway run --idle-exit`).
+
 ## Desktop: Playwright
 
 Playwright attaches to the worktree's running sandbox over the DevTools protocol. It doesn't launch Electron itself: the sandbox already owns the host, data, sign-in and single-instance lock, and an app launched without them would open against the shared Codync Dev.
@@ -90,10 +92,11 @@ The devices are the worktree's own simulator `Codync <sandbox name>` and the sha
 
 A flow past the welcome screen (`agent-logos.yaml`) needs the phone signed in with `npm run phone-account` and keeps the app's state. `welcome.yaml` (`smoke`) clears it. That signs the Android app out, but the iPhone's sign-in stays in the simulator's Keychain, so run `xcrun simctl keychain <device> reset` before `smoke` on a signed-in simulator. `sign-in-cancel.yaml` (`sign-in`) clears it the same way and needs the phone online, since it opens Google's page and leaves it. `signed-out-pairing.yaml` needs a sandbox in no account and the phone signed out, and takes the pairing link as `PAIRING_URL`. Run a flow past the welcome screen in a Maestro run of its own, after the sign-in. Signed in isn't past first-run setup: `agent-logos.yaml` skips the choice page when it's there. The `computer-choice` flows need setup unfinished (fresh app data) and each finishes or changes it, so each gets its own run with its own start: `computer-choice` and `computer-choice-skip` with a computer in the account (`npm run dev -- --cloud`, or the sandbox's own local cloud on a branch that changes `cloud/`), `computer-choice-empty` without one.
 
-Two things that look like failures but aren't the app's:
+Three things that look like failures but aren't the app's:
 
 - A tag no flow carries yet makes Maestro stop with "Include / Exclude tags did not match any Flows" and exit 1. Leave out area tags that have no flows.
 - Right after a cold boot the emulator can cover the app with "Pixel Launcher isn't responding", and the flow fails on its first assertion. Each run keeps a screenshot of the failure in `~/.maestro/tests/<run>/`: when a system dialog covers the app, clear it with `adb -s <serial> shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS` and run again. It happened twice in a row on 2026-11-03 until the dialog was cleared.
+- On iOS, `inputText` types as a hardware keyboard and hides the simulator's keyboard until the next touch brings it back, which lifts the composer: a `tapOn: "Send"` right after the typing can land on the keyboard and send nothing (`reply-part.yaml` failed this way about half the time). Touch the field first and `waitForAnimationToEnd`, as `reply-part.yaml` does, or wait for a keyboard key, as `compaction.yaml` does.
 
 **One Maestro process per Mac.** Two at once break each other: with Maestro 2.1.0, an iPhone run beside an Android run made the Android driver refuse connections on port 7001 in three of three tries, and two runs starting in the same second removed each other's log folder in `~/Library/Logs/maestro`. Shard inside one run instead. Across worktrees, take the lock folder `/private/tmp/claude-$(id -u)/maestro.lock` the way the emulator lock works: `mkdir` it (it fails while another run holds it), write your worktree's path into `owner`, `rm -r` it when done; one older than an hour, or whose worktree is gone, is stale.
 

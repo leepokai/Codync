@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use super::Window;
 
-pub(super) async fn collect() -> Option<Vec<Window>> {
+pub async fn collect() -> Option<Vec<Window>> {
     super::command::windows("omp", &["usage", "--json"], None, Duration::from_secs(30), parse).await
 }
 

@@ -13,11 +13,11 @@ const WAIT: Duration = Duration::from_secs(20);
 /// How long the screen stays unchanged after the first plan row before it is read.
 const SETTLE: Duration = Duration::from_millis(600);
 
-pub(super) fn collect() -> Option<Vec<Window>> {
+pub fn collect() -> Option<Vec<Window>> {
     let bin = super::command::program("kimi")?;
     let dir = probe_dir()?;
     let screen = capture(&bin, &dir)?;
-    let windows = parse(&screen, crate::store::now_ms());
+    let windows = parse(&screen, super::now_ms());
     if windows.is_empty() {
         tracing::debug!("kimi /usage screen had no plan lines");
         None
@@ -104,7 +104,7 @@ fn capture(bin: &Path, dir: &Path) -> Option<String> {
     }
     let _ = child.kill();
     let _ = child.wait();
-    let screen = super::command::strip_ansi(&String::from_utf8_lossy(&raw));
+    let screen = crate::shell::strip_ansi(&String::from_utf8_lossy(&raw));
     (!screen.trim().is_empty()).then_some(screen)
 }
 

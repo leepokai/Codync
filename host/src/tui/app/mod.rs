@@ -42,7 +42,7 @@ pub use model::{After, Entry, Kind, Mark, Msg, Status};
 pub use queue::Queued;
 pub use roster::{RosterLine, cursor_line, rename_fold, roster_lines, stops};
 pub use slash::SlashAction;
-pub(super) use steps::{running_turn, working_steps};
+pub(super) use steps::{nested, running_turn, subagent_line, working_steps};
 pub use ui::{
     ACTIONS, Action, COLORS, Click, Confirm, ConfirmAct, Dir, FIELDS, FILTERS, Field, Focus, FolderMode, FolderPicker,
     Form, Goto, GotoItem, GroupField, GroupForm, Hits, NewBot, NewBotField, Overlay, PairCode, SHAPES, Toast, Toggle,

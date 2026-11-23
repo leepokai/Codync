@@ -89,13 +89,13 @@ struct WorkThreadView: View {
         if error != nil || fetched == nil || (shown.isEmpty && entries.told == nil) {
             rows.append(ConversationRow("state") { state.frame(maxWidth: .infinity).padding(.vertical, 14) })
         }
-        rows += shown.map { entry in
+        rows += Entry.nested(shown).map { entry, depth in
             // The chat's entry stays in the chat, answered and downloaded there.
             if entry.botId == botId {
                 return ConversationRow(entry.id) { SharedRow(entry: entry, open: openInChat.map { open in { open(entry) } }) }
             }
             return ConversationRow(ThreadRow.id(entry), isUserMessage: entry.kind == "user" && !entry.isToldToThread) {
-                ThreadRow(entry: entry, unfolded: entry.turn == running)
+                ThreadRow(entry: entry, unfolded: entry.turn == running).nested(depth)
             }
         }
         return rows

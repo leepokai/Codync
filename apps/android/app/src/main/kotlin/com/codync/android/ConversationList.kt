@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -39,14 +40,14 @@ import kotlinx.coroutines.launch
 
 /**
  * A conversation's scrolling list (iOS `ConversationList`): it opens at the newest message (then `onOpened`) and follows
- * it as messages arrive (`last`, `rev`, `working`) until the reader scrolls away; then a round button
+ * it as messages arrive (`last`, `rev`, `working`) or load above (`first`) until the reader scrolls away; then a round button
  * leads back down. With `refresh`, a pull past the top runs it, its indicator at `indicatorTop`.
  */
-@Composable internal fun ConversationList(list: LazyListState, last: String?, rev: Long?, working: Boolean, padding: PaddingValues,
+@Composable internal fun ConversationList(list: LazyListState, first: String?, last: String?, rev: Long?, working: Boolean, padding: PaddingValues,
     refresh: (suspend () -> Unit)? = null, indicatorTop: Dp = 0.dp, reveal: ConversationReveal? = null, onOpened: () -> Unit = {},
     content: LazyListScope.() -> Unit) {
     val bottom = padding.calculateBottomPadding()
-    val following = rememberFollowing(list, last, rev, working, bottom, onOpened)
+    val following = rememberFollowing(list, first, last, rev, working, bottom, onOpened)
     // Find's shown match: its row a third of the way down, leaving the newest message. Keyed on the row, not its index,
     // so earlier messages loading above don't scroll back to it.
     LaunchedEffect(reveal?.id, reveal?.step) {
@@ -79,7 +80,7 @@ import kotlinx.coroutines.launch
 internal data class ConversationReveal(val id: String, val index: Int, val step: Int)
 
 /** Stays on the newest message until the reader scrolls away; scrolling back down follows again. */
-@Composable internal fun rememberFollowing(list: LazyListState, last: String?, rev: Long?, working: Boolean, bottom: Dp,
+@Composable internal fun rememberFollowing(list: LazyListState, first: String?, last: String?, rev: Long?, working: Boolean, bottom: Dp,
     onOpened: () -> Unit = {}): MutableState<Boolean> {
     val following = remember { mutableStateOf(true) }
     // The reader's drag and its fling, until it settles: a new step never pulls it back down meanwhile.
@@ -111,6 +112,15 @@ internal data class ConversationReveal(val id: String, val index: Int, val step:
     // A new message: glide down to it.
     LaunchedEffect(last, rev, working) {
         if (follows()) list.scrollToEnd(animated = true)
+    }
+    // Rows loaded above (an opened chat's window replacing its preview: hundreds of them) land past where the list looks
+    // for the row it showed, so it would keep that row's index instead, far up the conversation: back to the newest. A new
+    // message that also moves the oldest row out of a long chat's window glides in instead (above).
+    val seen = remember { arrayOf(first, last) }
+    val loadedAbove = first != seen[0] && last == seen[1]
+    SideEffect { seen[0] = first; seen[1] = last }
+    LaunchedEffect(first) {
+        if (loadedAbove && follows()) list.scrollToEnd(animated = false)
     }
     // The box growing (keyboard, more lines) changes on every frame of the keyboard's own animation: ask for the end as
     // the composition is applied, for the layout that follows (a LaunchedEffect would run after it). A glide would

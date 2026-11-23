@@ -2273,5 +2273,8 @@
   "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.": "聊天负责规划和分派工作；thread 用自己的 agent 和备用运行。",
   "Threads' agent": "Thread 的 agent",
   "Threads' fallbacks": "Thread 的备用",
-  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "如果 {agent} 用量用完或无法回答，thread 会交给下一个继续。"
+  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "如果 {agent} 用量用完或无法回答，thread 会交给下一个继续。",
+  "in background": "在后台运行",
+  "{count} s": "{count} 秒",
+  "{count} min": "{count} 分钟"
 }

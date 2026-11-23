@@ -31,7 +31,7 @@ public struct TraceView: View {
                             .foregroundStyle(Palette.text)
                             .padding(.leading, 4)
                         CardSection {
-                            ForEach(entries) { TraceRow(entry: $0, unfolded: turn == running) }
+                            ForEach(Entry.nested(entries), id: \.entry.id) { TraceRow(entry: $0.entry, unfolded: turn == running).nested($0.depth) }
                         }
                     }
                 }
@@ -43,6 +43,14 @@ public struct TraceView: View {
         }
         .background(Palette.background)
         .tracked(.screenViewed(.trace))
+    }
+}
+
+extension View {
+    /// A step a subagent took, indented under the call that launched it. ponytail: one indent for any depth; Claude's
+    /// subagents launch none of their own.
+    func nested(_ depth: Int) -> some View {
+        padding(.leading, depth > 0 ? 24 : 0)
     }
 }
 
@@ -148,7 +156,12 @@ struct ToolRow: View {
         let title = data.title ?? "Tool"
         return HStack(spacing: 8) {
             Image(systemName: icon).frame(width: 18).foregroundStyle(Palette.secondary)
-            Text(title == "Tool" ? L10n.tr("Tool") : title).font(.subheadline).foregroundStyle(Palette.text).lineLimit(2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title == "Tool" ? L10n.tr("Tool") : title).font(.subheadline).foregroundStyle(Palette.text).lineLimit(2)
+                if let line = data.subagent?.line {
+                    Text(line).font(.footnote).foregroundStyle(Palette.tertiary).lineLimit(1)
+                }
+            }
             Spacer(minLength: 4)
             switch data.status {
             case "completed": Image(systemName: "checkmark").foregroundStyle(Palette.accent)

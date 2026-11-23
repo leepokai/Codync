@@ -3,7 +3,6 @@
 //! Its protocol frames messages with `Content-Length` headers, unlike the agents' ACP.
 
 use crate::LockExt;
-use crate::hub::Hub;
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use std::path::Path;
@@ -13,8 +12,8 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, ChildStdout};
 
-use super::reading::{self, Outcome, UsageReadStage};
-use super::{Window, iso_ms};
+use super::reading::{self, Outcome, Stage};
+use super::{App, Window, iso_ms};
 
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 /// ponytail: each start leaves an empty log file in `~/.copilot/logs`, even with `--log-level none`,
@@ -47,18 +46,19 @@ impl LastRead {
     }
 }
 
-pub(super) async fn collect(hub: &Hub) -> Outcome {
+/// `held`: whether the app still holds Copilot's last reading, asked only between server starts.
+pub async fn collect(app: &dyn App, held: impl FnOnce() -> bool) -> Outcome {
     let now = Instant::now();
     if let Some(last) = LAST_READ.locked().as_ref().filter(|last| !last.due(now)) {
-        return last.between_starts(hub.usage.locked().providers.iter().any(|provider| provider.id == "copilot"));
+        return last.between_starts(held());
     }
     let Some(bin) = super::command::program("copilot") else { return Outcome::Failed };
-    let windows = reading::guarded(hub, "copilot", read(&bin)).await;
+    let windows = reading::guarded(app, "copilot", read(&bin)).await;
     *LAST_READ.locked() = Some(LastRead { at: now, windows: windows.clone() });
     windows.into()
 }
 
-async fn read(bin: &Path) -> Result<Vec<Window>, UsageReadStage> {
+async fn read(bin: &Path) -> Result<Vec<Window>, Stage> {
     let mut command = tokio::process::Command::new(bin);
     command
         .args(["--headless", "--no-auto-update", "--log-level", "none", "--stdio"])
@@ -69,18 +69,18 @@ async fn read(bin: &Path) -> Result<Vec<Window>, UsageReadStage> {
     if let Some(home) = dirs::home_dir() {
         command.current_dir(home);
     }
-    let mut child = command.spawn().map_err(|_| UsageReadStage::Start)?;
+    let mut child = command.spawn().map_err(|_| Stage::Start)?;
     let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
-        return Err(UsageReadStage::Start);
+        return Err(Stage::Start);
     };
     let reply = tokio::time::timeout(READ_TIMEOUT, read_quota(stdin, stdout))
         .await
-        .map_err(|_| UsageReadStage::Timeout)?
+        .map_err(|_| Stage::Timeout)?
         .map_err(|error| {
             tracing::debug!(error = format!("{error:#}"), "couldn't read Copilot's quota");
-            UsageReadStage::Prompt
+            Stage::Prompt
         })?;
-    parse(&reply, crate::store::now_ms()).ok_or(UsageReadStage::Parse)
+    parse(&reply, super::now_ms()).ok_or(Stage::Parse)
 }
 
 async fn read_quota(mut stdin: ChildStdin, stdout: ChildStdout) -> Result<Value> {
@@ -128,7 +128,7 @@ async fn read_frame(reader: &mut (impl AsyncBufRead + Unpin)) -> Result<Value> {
 }
 
 /// One bar per capped quota. A plan with none is a note, as Cursor's unlimited plan is.
-/// `None`: not the reply the host knows, so the server's format changed.
+/// `None`: not the reply this reader knows, so the server's format changed.
 fn parse(reply: &Value, now_ms: i64) -> Option<Vec<Window>> {
     let snapshots = reply["quotaSnapshots"].as_object()?;
     let mut windows: Vec<Window> = snapshots.iter().filter_map(|(id, snapshot)| capped(id, snapshot, now_ms)).collect();
@@ -222,22 +222,33 @@ mod tests {
         assert_eq!(LastRead { at: Instant::now(), windows: None }.between_starts(false), Outcome::Failed);
     }
 
-    /// Greptile on #516: between reads Copilot's reader skips on purpose, which mustn't land as a failure and mark
-    /// its numbers out of date.
+    /// Between server starts the app's own reading stands: `collect` asks the app whether it still holds one.
     #[tokio::test]
-    async fn waiting_between_reads_isnt_a_failure() {
-        let hub = super::super::services::tests::hub();
-        let windows = parse(&reply(), NOW).unwrap();
-        let provider = super::super::Provider::new("copilot", "Copilot", "copilot", windows.clone());
-        hub.usage.locked().providers.push(provider);
-        *LAST_READ.locked() = Some(LastRead { at: Instant::now(), windows: Some(windows.clone()) });
-        let reader = super::super::services::reader("copilot").unwrap();
-        super::super::read(&hub, vec![reader]).await;
+    async fn between_reads_the_held_reading_is_skipped_not_read_again() {
+        struct NoApp;
+        impl App for NoApp {
+            fn start<'a>(
+                &'a self,
+                _: &'a str,
+                _: &'a [(&'a str, &'a str)],
+            ) -> futures::future::BoxFuture<'a, Result<super::super::Started>> {
+                Box::pin(async { bail!("not started between reads") })
+            }
+            fn kept_session(&self, _: &str) -> Option<String> {
+                None
+            }
+            fn keep_session(&self, _: &str, _: &str) -> Result<()> {
+                Ok(())
+            }
+            fn report(&self, _: &str, _: Result<(), Stage>) {
+                panic!("nothing is checked between reads");
+            }
+        }
+        let windows = parse(&reply(), NOW);
+        *LAST_READ.locked() = Some(LastRead { at: Instant::now(), windows: windows.clone() });
+        assert_eq!(collect(&NoApp, || true).await, Outcome::Skipped);
+        assert_eq!(collect(&NoApp, || false).await, windows.into());
         *LAST_READ.locked() = None;
-        let usage = hub.usage.locked();
-        let copilot = usage.providers.iter().find(|provider| provider.id == "copilot").unwrap();
-        assert_eq!(copilot.checked.failed_at, None, "a skip, not a failure");
-        assert_eq!(copilot.windows, windows, "what it read stands");
     }
 
     #[tokio::test]

@@ -100,7 +100,7 @@ import kotlinx.coroutines.launch
     // As in a chat: while the thread's turn runs, what the user wrote waits over the composer, not among the rows.
     val queued = thread.queue(live)
     val own = thread.hidingQueue(live)
-    val rows = if (threadId == null) own else sharing(own, state.entries.filter { it.botId == bot.id && !it.isRemoved }, threadId)
+    val rows = nestedSteps(if (threadId == null) own else sharing(own, state.entries.filter { it.botId == bot.id && !it.isRemoved }, threadId))
     val sends = state.threadSends[taskId].orEmpty().filter { send -> all.none { it.clientNonce == send.nonce } }
     val running = runningTurn(all, live)
     val list = rememberLazyListState()
@@ -119,7 +119,7 @@ import kotlinx.coroutines.launch
                     style = Type.footnote, color = Palette.tertiary, textAlign = TextAlign.Center)
             }
         }) {
-            ConversationList(list, last = sends.lastOrNull()?.nonce ?: rows.lastOrNull()?.id, rev = all.maxOfOrNull { it.rev }, working = live,
+            ConversationList(list, first = rows.firstOrNull()?.first?.id, last = sends.lastOrNull()?.nonce ?: rows.lastOrNull()?.first?.id, rev = all.maxOfOrNull { it.rev }, working = live,
                 padding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = with(density) { composerHeight.toDp() } + 8.dp)) {
                 thread.told?.let { told -> item("told") { Told(told.text) } }
                 val failure = error
@@ -128,10 +128,10 @@ import kotlinx.coroutines.launch
                     !loaded -> item("note") { Loading() }
                     all.isEmpty() -> item("note") { Text(tr("Nothing yet."), Modifier.padding(top = 10.dp), style = Type.body, color = Palette.tertiary) }
                 }
-                items(rows, key = { it.id }) { entry ->
+                items(rows, key = { it.first.id }) { (entry, depth) ->
                     // The chat's entry stays in the chat, answered and downloaded there.
                     if (entry.botId == bot.id) SharedRow(entry) { openInChat(entry) }
-                    else Box(Modifier.padding(top = 10.dp)) { ThreadRow(entry, unfolded = entry.turn == running, state, store) }
+                    else Box(Modifier.padding(top = 10.dp).nested(depth)) { ThreadRow(entry, unfolded = entry.turn == running, state, store) }
                 }
                 items(sends, key = { "send-" + it.nonce }) { send ->
                     PendingBubble(send, groupStart = true, state, store, retry = { store.deliverToThread(taskId, send) },

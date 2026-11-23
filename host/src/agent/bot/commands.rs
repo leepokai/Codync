@@ -4,8 +4,8 @@
 
 use super::Actor;
 use crate::store::{BotConfig, Store};
+use codync_agent::events::Command;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::HashSet;
 
 /// Names Codync's own `/` list takes first: Fast mode, and the terminal's dev servers.
@@ -34,20 +34,18 @@ fn key(bot: &str) -> String {
     format!("agent.commands.{bot}")
 }
 
-/// The commands in an `available_commands_update`, each name once; a name with a space can't be typed, so it's left out.
-fn parse(update: &Value) -> Vec<AgentCommand> {
+/// The commands the agent listed, each name once; a name with a space can't be typed, so it's left out.
+fn parse(commands: &[Command]) -> Vec<AgentCommand> {
     let mut seen = HashSet::new();
-    update["availableCommands"]
-        .as_array()
-        .into_iter()
-        .flatten()
+    commands
+        .iter()
         .filter_map(|c| {
-            let name = c["name"].as_str()?.trim().trim_start_matches('/');
+            let name = c.name.trim().trim_start_matches('/');
             let typable = !name.is_empty() && !name.contains(char::is_whitespace);
             (typable && seen.insert(name.to_owned())).then(|| AgentCommand {
                 name: name.to_owned(),
-                description: c["description"].as_str().unwrap_or_default().trim().to_owned(),
-                hint: c["input"]["hint"].as_str().map(str::trim).filter(|h| !h.is_empty()).map(str::to_owned),
+                description: c.description.as_deref().unwrap_or_default().trim().to_owned(),
+                hint: c.hint.as_deref().map(str::trim).filter(|h| !h.is_empty()).map(str::to_owned),
             })
         })
         .collect()
@@ -71,8 +69,8 @@ pub fn listed(store: &Store, cfg: &BotConfig, agent: &str) -> Vec<AgentCommand> 
 
 impl Actor {
     /// Keeps the commands the running agent just listed, and tells the apps when they changed.
-    pub(super) fn note_commands(&self, update: &Value) {
-        let listed = Listed { agent: self.cfg.backend.clone(), commands: parse(update) };
+    pub(super) fn note_commands(&self, commands: &[Command]) {
+        let listed = Listed { agent: self.cfg.backend.clone(), commands: parse(commands) };
         let text = serde_json::to_string(&listed).expect("a command list is plain data and always serializes");
         let key = key(&self.cfg.id);
         if self.hub.store.kv_get(&key).as_deref() == Some(text.as_str()) {
@@ -106,8 +104,11 @@ mod tests {
             {"name": "two words"},
             {"description": "no name"},
         ]});
+        let codync_agent::events::Event::Commands(commands) = codync_agent::events::Event::parse(&update) else {
+            panic!("a command list")
+        };
         assert_eq!(
-            parse(&update),
+            parse(&commands),
             vec![
                 AgentCommand {
                     name: "review".into(),

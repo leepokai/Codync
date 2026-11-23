@@ -11,12 +11,12 @@ use std::path::Path;
 
 use super::Window;
 
-pub(super) fn collect() -> Option<Vec<Window>> {
+pub fn collect() -> Option<Vec<Window>> {
     let root = dirs::home_dir()?.join(".vibe/logs/session");
     if !root.is_dir() {
         return None;
     }
-    let now = crate::store::now_ms();
+    let now = super::now_ms();
     let start = local_midnight(now)?;
     Some(windows_in(&root, start, now))
 }

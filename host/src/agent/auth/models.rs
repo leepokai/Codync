@@ -350,7 +350,7 @@ mod tests {
         assert!(check("opus[effort=low]").is_ok(), "a Cursor variant passes as its bare model");
         assert_eq!(
             check("gpt").unwrap_err(),
-            "model gpt isn't in the agent's model list; it lists: opus, haiku, sonnet, small, fast, large, wide, deep, …"
+            "model gpt isn't in the agent's model list; it lists: opus, haiku, sonnet, small, fast, large, wide, deep, thoughtful"
         );
         assert!(check_model(&json!({}), "anything").is_ok(), "an agent that lists no models accepts any id");
     }

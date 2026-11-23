@@ -15,7 +15,7 @@ import { AgentModelPicker } from './AgentModelPicker'
 import { useAgentModels, type AgentModels } from './agent-models'
 import { errorText } from './drafts'
 import { agentChoice } from './Fallbacks'
-import { allKeys, filterChecked, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
+import { allKeys, applyTargets, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
@@ -77,13 +77,23 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const shownKeys = allKeys(shown)
   const everyChecked = shownKeys.length > 0 && shownKeys.every((key) => checked.has(key))
   const oneComputer = !items.some((item) => item.computer.id !== first?.computer.id)
-  const canApply = checked.size > 0 && !applying
+  // Apply only ever touches what the user can see: checked bots the filter hides stay checked
+  // and untouched, and the counts below say so.
+  const targets = applyTargets(items, shown, checked)
+  const canApply = targets.chosen.length > 0 && !applying
 
   const toggle = (key: string, on: boolean) => setChecked((set) => toggleKey(set, key, on))
-  const markAll = (on: boolean) => setChecked((set) => shownKeys.reduce((next, key) => toggleKey(next, key, on), set))
+  // "Select all" checks the filtered list; "Unselect all" clears the whole selection, hidden
+  // bots included — the label promises all, and the counts below keep it honest.
+  const markAll = (on: boolean) => {
+    if (on) setChecked((set) => shownKeys.reduce((next, key) => toggleKey(next, key, on), set))
+    else setChecked(new Set())
+  }
 
   const apply = async () => {
-    const chosen = filterChecked(items, checked)
+    // Only the checked bots the filter still shows (pinned by applyTargets' tests): hidden
+    // checked bots are left exactly as they are, so nothing the user cannot see is written.
+    const chosen = targets.chosen
     if (!chosen.length || busy.current) return
     const myRun = run.current
     const backend = pick.backend
@@ -176,12 +186,15 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
         <input value={query} placeholder={tr('Search bots')} aria-label={tr('Search bots')} spellCheck={false} onChange={(e) => setQuery(e.target.value)} />
       </div>
       <HStack gap={8} className="model-manager-tools">
-        <Button onClick={() => markAll(true)} disabled={applying || everyChecked}>{tr('Select all')}</Button>
+        <Button onClick={() => markAll(true)} disabled={applying || everyChecked || shownKeys.length === 0}>{tr('Select all')}</Button>
         <Button onClick={() => markAll(false)} disabled={applying || checked.size === 0}>{tr('Unselect all')}</Button>
         <Spacer />
-        {checked.size === 0 ? <Text size="caption" tone="secondary">{tr('No bots selected')}</Text> : null}
+        {targets.totalChecked === 0 ? <Text size="caption" tone="secondary">{tr('No bots selected')}</Text> : <Text size="caption" tone="secondary">{tr('Selected: {n}').replace('{n}', () => String(targets.totalChecked))}</Text>}
         <Button onClick={apply} disabled={!canApply}>{tr('Apply')}</Button>
       </HStack>
+      {targets.hiddenCount > 0 ? (
+        <Text size="caption" tone="attention">{tr('Bots hidden by the filter: {n} (unchanged by Apply)').replace('{n}', () => String(targets.hiddenCount))}</Text>
+      ) : null}
       <div className="palette-list model-manager-list">
         {shown.map((item) => {
           const key = refKey(item.ref)

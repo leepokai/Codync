@@ -2276,15 +2276,15 @@
   "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "Si {agent} n'a plus d'utilisation ou ne peut pas répondre, les threads continuent avec le suivant.",
   "in background": "en arrière-plan",
   "{count} s": "{count} s",
-  "{count} min": "{count} min"
-,
+  "{count} min": "{count} min",
   "Model Manager": "Gestionnaire de modèles",
   "Select all": "Tout sélectionner",
   "Unselect all": "Tout désélectionner",
   "No bots selected": "Aucun bot sélectionné",
   "Apply": "Appliquer",
   "Applied": "Appliqué",
-  "Not available on {computer}": "Indisponible sur {computer}"
-,
-  "Couldn't check {computer}'s models": "Impossible de vérifier les modèles de {computer}"
+  "Not available on {computer}": "Indisponible sur {computer}",
+  "Couldn't check {computer}'s models": "Impossible de vérifier les modèles de {computer}",
+  "Selected: {n}": "Sélection : {n}",
+  "Bots hidden by the filter: {n} (unchanged by Apply)": "Bots masqués par le filtre : {n} (Apply ne les change pas)"
 }

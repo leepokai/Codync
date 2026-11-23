@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { RosterItem } from '../store/app-model'
 import type { AgentModels } from './bots/agent-models'
 import type { ApplyPlan, CatalogCheck } from './bots/model-manager-logic'
-import { allKeys, filterChecked, planRows, toggleKey } from './bots/model-manager-logic.ts'
+import { allKeys, applyTargets, filterChecked, hiddenCheckedCount, planRows, toggleKey } from './bots/model-manager-logic.ts'
 
 /** A roster row carries a store, a bot and a computer; these tests only read ref, bot and computer. */
 const item = (computerId: string, computerName: string, botId: string, name: string, description = ''): RosterItem =>
@@ -36,6 +36,48 @@ test('filterChecked keeps the checked bots in roster order', () => {
 test('Select all checks exactly the roster, because allKeys and filterChecked agree', () => {
   const items = [item('mac', 'Mac', 'b1', 'Alpha'), item('linux', 'Linux', 'b2', 'Beta')]
   assert.deepEqual(filterChecked(items, new Set(allKeys(items))).map((i) => i.bot.name), ['Alpha', 'Beta'])
+})
+
+test('hiddenCheckedCount counts only the checked bots the filter hides', () => {
+  const alpha = item('mac', 'Mac', 'b1', 'Alpha')
+  const beta = item('mac', 'Mac', 'b2', 'Beta')
+  const gamma = item('linux', 'Linux', 'b1', 'Gamma')
+  const checked = new Set(['mac/b1', 'mac/b2', 'linux/b1'])
+  // Beta stays visible, so only Alpha and Gamma are hidden by the filter.
+  assert.equal(hiddenCheckedCount([alpha, beta, gamma], [beta], checked), 2)
+  assert.equal(hiddenCheckedCount([alpha, beta], [alpha, beta], checked), 0)
+  assert.equal(hiddenCheckedCount([alpha, beta], [beta], new Set(['mac/b1', 'mac/b2'])), 1)
+  // A checked key that left the roster entirely is gone, not hidden.
+  assert.equal(hiddenCheckedCount([alpha], [alpha], new Set(['mac/b2'])), 0)
+  assert.equal(hiddenCheckedCount([alpha, beta], [alpha, beta], new Set()), 0)
+})
+
+test('applyTargets gates Apply to what the filter shows (the F1 regression pin)', () => {
+  const alpha = item('mac', 'Mac', 'b1', 'Alpha')
+  const beta = item('mac', 'Mac', 'b2', 'Beta')
+  const gamma = item('linux', 'Linux', 'b1', 'Gamma')
+  // check A -> search B -> check B: both checked, but only Beta is visible.
+  const checked = new Set(['mac/b1', 'mac/b2'])
+  const t = applyTargets([alpha, beta, gamma], [beta], checked)
+  assert.deepEqual(t.chosen.map((i) => i.bot.name), ['Beta'])
+  assert.equal(t.hiddenCount, 1)
+  assert.equal(t.totalChecked, 2)
+})
+
+test('applyTargets with no filter leaves every checked bot as chosen', () => {
+  const items = [item('mac', 'Mac', 'b1', 'Alpha'), item('linux', 'Linux', 'b2', 'Beta')]
+  const t = applyTargets(items, items, new Set(allKeys(items)))
+  assert.equal(t.chosen.length, 2)
+  assert.equal(t.hiddenCount, 0)
+  assert.equal(t.totalChecked, 2)
+})
+
+test('applyTargets treats a checked key that left the roster as gone', () => {
+  const alpha = item('mac', 'Mac', 'b1', 'Alpha')
+  const t = applyTargets([alpha], [alpha], new Set(['mac/b9']))
+  assert.equal(t.chosen.length, 0)
+  assert.equal(t.hiddenCount, 0)
+  assert.equal(t.totalChecked, 0)
 })
 
 test('toggleKey adds and removes without touching the set it was given', () => {

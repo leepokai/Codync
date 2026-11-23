@@ -2276,15 +2276,15 @@
   "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "如果 {agent} 用量用完或无法回答，thread 会交给下一个继续。",
   "in background": "在后台运行",
   "{count} s": "{count} 秒",
-  "{count} min": "{count} 分钟"
-,
+  "{count} min": "{count} 分钟",
   "Model Manager": "模型管理器",
   "Select all": "全选",
   "Unselect all": "取消全选",
   "No bots selected": "未选择任何机器人",
   "Apply": "应用",
   "Applied": "已应用",
-  "Not available on {computer}": "无法在 {computer} 上使用"
-,
-  "Couldn't check {computer}'s models": "无法检查 {computer} 的模型"
+  "Not available on {computer}": "无法在 {computer} 上使用",
+  "Couldn't check {computer}'s models": "无法检查 {computer} 的模型",
+  "Selected: {n}": "已选中：{n} 个",
+  "Bots hidden by the filter: {n} (unchanged by Apply)": "被筛选隐藏的机器人：{n} 个（Apply 不会更改它们）"
 }

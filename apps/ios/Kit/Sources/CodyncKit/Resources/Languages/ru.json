@@ -2276,15 +2276,15 @@
   "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "Если у {agent} закончится лимит или он не сможет ответить, threads продолжат со следующим.",
   "in background": "в фоне",
   "{count} s": "{count} с",
-  "{count} min": "{count} мин"
-,
+  "{count} min": "{count} мин",
   "Model Manager": "Диспетчер моделей",
   "Select all": "Выбрать все",
   "Unselect all": "Снять выделение",
   "No bots selected": "Боты не выбраны",
   "Apply": "Применить",
   "Applied": "Применено",
-  "Not available on {computer}": "Недоступно на {computer}"
-,
-  "Couldn't check {computer}'s models": "Не удалось проверить модели {computer}"
+  "Not available on {computer}": "Недоступно на {computer}",
+  "Couldn't check {computer}'s models": "Не удалось проверить модели {computer}",
+  "Selected: {n}": "Выбрано: {n}",
+  "Bots hidden by the filter: {n} (unchanged by Apply)": "Скрытые фильтром боты: {n} (Apply их не меняет)"
 }

@@ -2276,15 +2276,15 @@
   "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "{agent} の使用量がなくなるか応答できない場合、thread は次のものに引き継ぎます。",
   "in background": "バックグラウンドで実行",
   "{count} s": "{count} 秒",
-  "{count} min": "{count} 分"
-,
+  "{count} min": "{count} 分",
   "Model Manager": "モデルマネージャー",
   "Select all": "すべて選択",
   "Unselect all": "すべて選択解除",
   "No bots selected": "ボットが選択されていません",
   "Apply": "適用",
   "Applied": "適用しました",
-  "Not available on {computer}": "{computer} では利用できません"
-,
-  "Couldn't check {computer}'s models": "{computer} のモデルを確認できませんでした"
+  "Not available on {computer}": "{computer} では利用できません",
+  "Couldn't check {computer}'s models": "{computer} のモデルを確認できませんでした",
+  "Selected: {n}": "選択中: {n} 件",
+  "Bots hidden by the filter: {n} (unchanged by Apply)": "フィルターで非表示のボット: {n} 件（適用しても変更されません）"
 }

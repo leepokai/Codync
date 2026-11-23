@@ -2276,15 +2276,15 @@
   "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "{agent}의 사용량이 소진되거나 응답할 수 없으면 thread가 다음 에이전트로 이어갑니다.",
   "in background": "백그라운드에서 실행",
   "{count} s": "{count}초",
-  "{count} min": "{count}분"
-,
+  "{count} min": "{count}분",
   "Model Manager": "모델 관리자",
   "Select all": "모두 선택",
   "Unselect all": "모두 선택 해제",
   "No bots selected": "선택된 봇이 없습니다",
   "Apply": "적용",
   "Applied": "적용됨",
-  "Not available on {computer}": "{computer}에서 사용할 수 없습니다"
-,
-  "Couldn't check {computer}'s models": "{computer}의 모델을 확인할 수 없습니다"
+  "Not available on {computer}": "{computer}에서 사용할 수 없습니다",
+  "Couldn't check {computer}'s models": "{computer}의 모델을 확인할 수 없습니다",
+  "Selected: {n}": "선택됨: {n}개",
+  "Bots hidden by the filter: {n} (unchanged by Apply)": "필터에 가려진 봇: {n}개 (적용해도 변경되지 않음)"
 }

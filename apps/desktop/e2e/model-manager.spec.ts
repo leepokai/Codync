@@ -81,6 +81,22 @@ test('the Model Manager window opens from the header, filters, checks and applie
       await expect(rows.filter({ hasText: nameB })).toContainText('Applied', { timeout: 30_000 })
     })
 
+    await test.step('apply touches only the bots the filter shows (the hidden-checked pin)', async () => {
+      const search = sheet.getByRole('textbox', { name: 'Search bots' })
+      await sheet.getByRole('button', { name: 'Unselect all', exact: true }).click()
+      await rows.filter({ hasText: nameA }).click()
+      await search.fill(nameB)
+      await rows.filter({ hasText: nameB }).click()
+      // One checked bot (A) is hidden by the filter: the notice says Apply leaves it alone.
+      await expect(sheet.getByText('hidden by the filter')).toBeVisible()
+      await sheet.getByRole('button', { name: 'Apply' }).click()
+      await expect(rows.filter({ hasText: nameB })).toContainText('Applied', { timeout: 30_000 })
+      await search.fill('')
+      // Had the bug survived, A would have been applied too (its outcome would already be set
+      // by the time B's shows): the hidden bot stays untouched.
+      await expect(rows.filter({ hasText: nameA })).not.toContainText('Applied')
+    })
+
     await test.step('the saves landed: each bot editor shows the chosen agent', async () => {
       await sheet.locator('.model-manager-head').getByRole('button').click()
       await expect(sheet).toHaveCount(0)

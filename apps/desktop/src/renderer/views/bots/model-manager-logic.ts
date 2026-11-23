@@ -51,6 +51,28 @@ export const planRows = (plan: ApplyPlan, catalogFor: (computerId: string) => Ca
 /** Every roster key, for `Select all`. */
 export const allKeys = (items: RosterItem[]) => items.map((i) => refKey(i.ref))
 
+/**
+ * How many checked bots the current filter hides. They stay checked, and Apply leaves them
+ * alone: what the user cannot see is never written, so a filtered list can't hide a save.
+ */
+export const hiddenCheckedCount = (items: RosterItem[], shown: RosterItem[], checked: Set<string>) => {
+  const shownKeys = new Set(shown.map((i) => refKey(i.ref)))
+  const itemKeys = new Set(items.map((i) => refKey(i.ref)))
+  return [...checked].filter((key) => !shownKeys.has(key) && itemKeys.has(key)).length
+}
+
+/**
+ * What Apply will do right now: the bots it will write (`chosen` — checked and still visible),
+ * how many checked bots the filter hides (`hiddenCount`, they stay checked and untouched), and
+ * how many checked keys still exist (`totalChecked`, the toolbar count). Apply targets only
+ * `chosen`, so a filtered list can't hide a save.
+ */
+export const applyTargets = (items: RosterItem[], shown: RosterItem[], checked: Set<string>) => ({
+  chosen: filterChecked(shown, checked),
+  hiddenCount: hiddenCheckedCount(items, shown, checked),
+  totalChecked: filterChecked(items, checked).length,
+})
+
 /** `checked` with `key` turned on or off: a new set, so React state stays immutable. */
 export const toggleKey = (checked: Set<string>, key: string, on: boolean) => {
   const next = new Set(checked)

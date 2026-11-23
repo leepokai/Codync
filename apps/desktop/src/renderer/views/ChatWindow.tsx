@@ -527,42 +527,45 @@ function ChatSplitView() {
       {listed ? (
         <>
           <aside ref={sidebar} className={`sidebar ${resizing ? 'resizing' : ''}`} style={{ width }} inert={listHidden}>
-            <div className="sidebar-header drag">
-              <Text size="title3" weight="semibold" tone="text" truncate className={page === 'bots' ? 'sidebar-title crowded' : 'sidebar-title'}>{tr(page === 'bots' ? 'Bots' : 'Threads')}</Text>
-              <Spacer />
-              <HStack gap={6} className="no-drag">
-                <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setPage('computers')} options={listOptions} />
-                {page === 'bots' ? (
-                  <>
-                    <IconButton title="Search" icon="magnifyingglass" size={32} className="sidebar-header-action" onClick={() => setSearching(true)} />
-                    <IconButton title="New" icon="plus" size={32} className="sidebar-header-action" buttonRef={newButton} menuOpen={newMenu} onClick={() => setNewMenu((o) => !o)} disabled={!onlineStores.length} />
-                  </>
-                ) : null}
-              </HStack>
-              <AnchoredMenu open={newMenu} onClose={() => setNewMenu(false)} anchor={newButton} items={newItems} />
+            {/* Keeps its width while the sidebar opens or closes: the list slides under the edge instead of squeezing. */}
+            <div className="sidebar-content" style={{ width: sidebarWidth }}>
+              <div className="sidebar-header drag">
+                <Text size="title3" weight="semibold" tone="text" truncate className={page === 'bots' ? 'sidebar-title crowded' : 'sidebar-title'}>{tr(page === 'bots' ? 'Bots' : 'Threads')}</Text>
+                <Spacer />
+                <HStack gap={6} className="no-drag">
+                  <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setPage('computers')} options={listOptions} />
+                  {page === 'bots' ? (
+                    <>
+                      <IconButton title="Search" icon="magnifyingglass" size={32} className="sidebar-header-action" onClick={() => setSearching(true)} />
+                      <IconButton title="New" icon="plus" size={32} className="sidebar-header-action" buttonRef={newButton} menuOpen={newMenu} onClick={() => setNewMenu((o) => !o)} disabled={!onlineStores.length} />
+                    </>
+                  ) : null}
+                </HStack>
+                <AnchoredMenu open={newMenu} onClose={() => setNewMenu(false)} anchor={newButton} items={newItems} />
+              </div>
+              {page === 'bots' ? (
+                <div className="roster" ref={listRef} tabIndex={0} onKeyDown={onListKey}>
+                  <BotRoster roster={roster}
+                    onContext={(bot, store, x, y) => setContext({ items: botActions(bot, store), x, y })}
+                    onSectionContext={(section, store, x, y) => {
+                      const items = sectionHeaderItems(section, store, setNaming, (to) => roster.renameSection(store, section, to))
+                      if (items.length) setContext({ items, x, y })
+                    }}
+                    openExtensions={openExtensions}
+                    openWorkflows={openWorkflows} />
+                  {visibleRoster.length === 0 && !roster.grouped && mismatchStores.length === 0 ? (
+                    <div className="roster-empty">
+                      <Text as="div" size="body" weight="medium">{onlineStores.length ? tr(`No bots yet`) : tr(`Waiting for a computer`)}</Text>
+                      {onlineStores.length ? <Text as="div" size="callout" tone="secondary">{tr(`Use + to create a bot.`)}</Text> : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="roster">
+                  <ThreadList roster={threadRoster} picked={picked} pick={setPicked} start={startThread} openChat={(ref) => { app.select(ref); setPage('bots') }} />
+                </div>
+              )}
             </div>
-            {page === 'bots' ? (
-              <div className="roster" ref={listRef} tabIndex={0} onKeyDown={onListKey}>
-                <BotRoster roster={roster}
-                  onContext={(bot, store, x, y) => setContext({ items: botActions(bot, store), x, y })}
-                  onSectionContext={(section, store, x, y) => {
-                    const items = sectionHeaderItems(section, store, setNaming, (to) => roster.renameSection(store, section, to))
-                    if (items.length) setContext({ items, x, y })
-                  }}
-                  openExtensions={openExtensions}
-                  openWorkflows={openWorkflows} />
-                {visibleRoster.length === 0 && !roster.grouped && mismatchStores.length === 0 ? (
-                  <div className="roster-empty">
-                    <Text as="div" size="body" weight="medium">{onlineStores.length ? tr(`No bots yet`) : tr(`Waiting for a computer`)}</Text>
-                    {onlineStores.length ? <Text as="div" size="callout" tone="secondary">{tr(`Use + to create a bot.`)}</Text> : null}
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <div className="roster">
-                <ThreadList roster={threadRoster} picked={picked} pick={setPicked} start={startThread} openChat={(ref) => { app.select(ref); setPage('bots') }} />
-              </div>
-            )}
           </aside>
           <ResizeHandle label={tr('Resize sidebar')} width={width} min={0} max={sidebarMax} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />
         </>

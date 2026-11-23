@@ -588,9 +588,19 @@ async fn a_usage_limit_refusal_moves_on_and_rests_until_the_stated_reset() {
     let now =
         i64::try_from(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()).unwrap();
     assert!(until - now > 150 * 3600 * 1000, "rests for the parsed 6d 12h duration: {until} vs {now}");
-    // The quota refusal banner itself is not told to the fallback as partial work done.
+    // The quota refusal banner itself is not told to the fallback as partial work done, and leaves the transcript.
     let prompt = last_prompt(&host, &bot, "standin");
     assert!(!prompt.contains("Usage Limit Reached"), "{prompt}");
+    let history = host.call("history", json!({"botId": bot})).await;
+    assert!(
+        !history["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "agent"
+                && e["data"]["text"].as_str().is_some_and(|t| t.contains("Usage Limit Reached"))),
+        "quota refusal notice must leave the transcript: {history}"
+    );
 }
 
 /// An excessive `"reset in …"` duration in Antigravity's refusal banner is capped at 7 days.
@@ -619,6 +629,67 @@ async fn a_usage_limit_refusal_caps_reset_duration_at_seven_days() {
     let seven_days_ms = 7 * 24 * 3600 * 1000;
     let delta = until - now;
     assert!(delta <= seven_days_ms && delta > seven_days_ms - 60_000, "expected 7-day cap, got delta={delta}");
+}
+
+/// Without a fallback, Antigravity's quota refusal still fails with the error notice, rests until the stated reset,
+/// and removes the streamed banner entry from the transcript so trace views don't duplicate the error.
+#[tokio::test]
+async fn a_usage_limit_refusal_without_fallback_rests_and_removes_banner_entry() {
+    let host = Host::start().await;
+    let bot = json!({
+        "name": "AgySolo", "backend": "antigravity", "command": agent("primary"), "connectors": [], "notify": false,
+    });
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    std::fs::write(folder.join("primary.quotalimit"), "").unwrap();
+
+    host.call("send", json!({"botId": bot, "text": "Ship the patch", "clientNonce": "n-agy-solo"})).await;
+    let notice = wait_for(&host, &bot, "error notice", |e| e["data"]["style"] == "error").await;
+    let text = notice["data"]["text"].as_str().unwrap();
+    assert!(text.contains("Usage Limit Reached"), "{notice}");
+    assert_eq!(notice["data"]["addFallback"], true, "{notice}");
+
+    let on = bot_value(&host, &bot).await;
+    let until = on["resting"][0]["until"].as_i64().expect("resting entry");
+    let now =
+        i64::try_from(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()).unwrap();
+    assert!(until - now > 150 * 3600 * 1000, "rests for the parsed 6d 12h duration: {until} vs {now}");
+
+    let history = host.call("history", json!({"botId": bot})).await;
+    assert!(
+        !history["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "agent"
+                && e["data"]["text"].as_str().is_some_and(|t| t.contains("Usage Limit Reached"))),
+        "quota refusal notice must leave the transcript: {history}"
+    );
+}
+
+/// An ordinary Antigravity refusal (not starting with the quota notice) stays a plain refusal: `"declined"` notice,
+/// final reply preserved, no login rest and no fallback.
+#[tokio::test]
+async fn an_ordinary_antigravity_refusal_still_ends_as_declined() {
+    let host = Host::start().await;
+    let bot = json!({
+        "name": "AgyRefusal", "backend": "antigravity", "command": agent("primary"), "connectors": [],
+        "notify": false, "fallbacks": [{"backend": "codex", "command": agent("standin")}],
+    });
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    std::fs::write(folder.join("primary.quotalimit"), "I cannot help with that request.").unwrap();
+
+    host.reply(&bot, "Do something unsafe").await;
+    let notice = wait_for(&host, &bot, "refusal notice", |e| e["kind"] == "notice").await;
+    assert_eq!(notice["data"]["stopReason"], "refusal", "{notice}");
+    assert!(notice["data"]["text"].as_str().unwrap().contains("declined to continue"), "{notice}");
+    let reply =
+        wait_for(&host, &bot, "final refusal reply", |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
+    assert_eq!(reply["data"]["text"], "I cannot help with that request.");
+    let on = bot_value(&host, &bot).await;
+    assert!(on["resting"].as_array().unwrap().is_empty(), "ordinary refusal must not rest: {on}");
+    assert!(!folder.join("standin.jsonl").exists(), "ordinary refusal must not fall back");
 }
 
 /// A non-antigravity backend streaming the exact same banner on `refusal` must not rest its login or fall back.

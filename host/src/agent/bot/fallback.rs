@@ -377,12 +377,18 @@ impl Actor {
     }
 
     /// The turn's answer `done`, with Antigravity's quota refusal as the usage-limit error it is
-    /// (`acp::antigravity`). The streamed notice is then the error, not partial work to carry into the next agent.
+    /// (`acp::antigravity`). The streamed notice becomes the error itself: it isn't carried to the next agent and
+    /// leaves the transcript (`removed: true`) instead of staying in trace views as narration.
     pub(super) fn quota_refusal(&mut self, done: Done) -> Done {
         let Ok(answer) = done else { return done };
         let done = acp::antigravity::prompt_result(&self.cfg.backend, Ok(answer), self.last_words().as_deref());
         if done.is_err() {
-            self.last_text = None;
+            if let Some(id) = self.last_text.take()
+                && let Some(mut e) = self.hub.store.entry(&id)
+            {
+                e.data["removed"] = true.into();
+                self.hub.set_entry(&id, &e.data);
+            }
             self.seg = Seg::None;
         }
         done

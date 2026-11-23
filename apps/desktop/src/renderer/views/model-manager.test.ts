@@ -80,10 +80,12 @@ test('planRows refuses a computer whose catalog could not be read', () => {
   assert.match(rows[0]?.reason ?? '', /Mac/)
 })
 
-test('planRows leaves a computer with nothing to check against to the host', () => {
+test('planRows refuses a computer whose catalog has not loaded, rather than saving unverified', () => {
   const items = [item('mac', 'Mac', 'b1', 'Alpha')]
   const plan: ApplyPlan = { items, backend: 'claude', model: 'opus', options: {} }
-  assert.deepEqual(planRows(plan, () => no).map((r) => r.ok), [true])
+  const rows = planRows(plan, () => no)
+  assert.deepEqual(rows.map((r) => r.ok), [false])
+  assert.match(rows[0]?.reason ?? '', /Mac/)
 })
 
 test('planRows never checks a custom command, which has no catalog', () => {

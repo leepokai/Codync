@@ -57,7 +57,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const store = useStore()
   const first = items[0]
   const backends = store.hello?.backends ?? []
-  const initialBackend = first?.bot.backend && first.bot.backend !== 'custom' ? String(first.bot.backend) : String(backends[0] ?? 'claude')
+  const initialBackend = typeof first?.bot.backend === 'string' && first.bot.backend !== 'custom' ? first.bot.backend : String(backends[0] ?? 'claude')
   const [pick, setPick] = useState<Pick>({ backend: initialBackend, model: null, modelOptions: {} })
   const [query, setQuery] = useState('')
   const [checked, setChecked] = useState<Set<string>>(() => new Set())
@@ -122,19 +122,17 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
         try {
           // A minimal patch: the host merges it over the bot's state as it is at that moment, under
           // one lock, so an unrelated change that landed mid-batch is never written back. On another
-          // agent the host moves the bot to that agent's Auto mode on its own; the login profile is
-          // cleared here, as the bot editor's agent change does. Fallbacks are not touched.
-          const current = row.item.store.bots.get(row.item.ref.botId)
+          // agent the host moves the bot to that agent's Auto mode on its own and drops a login
+          // profile that doesn't fit it; the custom command is cleared here, as the bot editor's
+          // agent change does. Fallbacks are not touched.
           const patch: Record<string, unknown> = { id: row.item.ref.botId, backend, model: model || null, modelOptions: { ...options } }
-          if (current && current.backend !== backend) patch.loginProfile = null
+          if (backend !== 'custom') patch.command = null
           await row.item.store
             .ready()
             .then((client) => client.call('updateBot', patch))
             .then(() => {
-              if (alive.current && run.current === myRun) {
-                applied++
-                setOutcomes((o) => ({ ...o, [key]: { ok: true, text: tr('Applied') } }))
-              }
+              applied++
+              if (alive.current && run.current === myRun) setOutcomes((o) => ({ ...o, [key]: { ok: true, text: tr('Applied') } }))
             })
         } catch (e) {
           failed++

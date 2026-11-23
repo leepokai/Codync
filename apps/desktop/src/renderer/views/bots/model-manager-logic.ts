@@ -30,20 +30,21 @@ export type CatalogCheck = { kind: 'ok'; catalog: AgentModels } | { kind: 'error
 /**
  * Which bots the plan can save to, decided before anything is written.
  *
- * A bot whose computer advertises a catalog without the model is skipped with a reason, and so is a
- * bot whose computer's catalog could not be read: an unverifiable model is not written. A computer
- * with no catalog to check against (`none`: the agent default, or a custom command) is left to the
- * host — refusing there would make an unreachable check look like a missing model.
+ * With a model chosen, every computer's catalog must have verified it: a computer whose agent
+ * doesn't offer the model is skipped with a reason, and so is a computer whose catalog could not be
+ * read or was not loaded — an unverifiable model is not written. Only the agent's default (no
+ * model) and a custom command, which have nothing to check against, are left to the host.
  */
 export const planRows = (plan: ApplyPlan, catalogFor: (computerId: string) => CatalogCheck): PlanRow[] => {
   const model = plan.model?.trim() ?? ''
   return plan.items.map((item) => {
     if (!model || plan.backend === 'custom') return { item, ok: true }
     const check = catalogFor(item.ref.computerId)
-    if (check.kind === 'error') return { item, ok: false, reason: notCheckable(item.computer.name) }
-    if (check.kind === 'none') return { item, ok: true }
-    const available = check.catalog.models.some((m) => m.id === model)
-    return available ? { item, ok: true } : { item, ok: false, reason: notAvailable(item.computer.name) }
+    if (check.kind === 'ok') {
+      const available = check.catalog.models.some((m) => m.id === model)
+      return available ? { item, ok: true } : { item, ok: false, reason: notAvailable(item.computer.name) }
+    }
+    return { item, ok: false, reason: notCheckable(item.computer.name) }
   })
 }
 

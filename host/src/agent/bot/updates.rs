@@ -83,13 +83,9 @@ impl Actor {
                     self.agent_error = Some(error.to_owned());
                     return;
                 }
-                if let Some(notice) = super::quota_notice::notice_text(&self.cfg.backend, &text) {
-                    self.quota_notice = Some(notice.to_owned());
-                    return;
+                if let Some(reply) = self.quota_notice.push(&self.cfg.backend, text) {
+                    self.reply_text(&reply);
                 }
-                self.unheard.clear();
-                self.append(SegKind::Text, &text);
-                self.set_activity("Writing a reply…");
             }
             Event::Thought { text } => {
                 self.append(SegKind::Thought, &text);
@@ -389,6 +385,12 @@ impl Actor {
     }
 
     // MARK: streaming text segments
+
+    pub(super) fn reply_text(&mut self, text: &str) {
+        self.unheard.clear();
+        self.append(SegKind::Text, text);
+        self.set_activity("Writing a reply…");
+    }
 
     pub(super) fn append(&mut self, kind: SegKind, text: &str) {
         if text.is_empty() {

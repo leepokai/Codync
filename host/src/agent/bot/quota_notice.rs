@@ -12,19 +12,64 @@ const BACKEND: &str = "antigravity";
 /// How the notice starts.
 const STARTS: [&str; 2] = ["Usage Limit Reached", "You have reached your current quota"];
 
-/// `text` when it is Antigravity's quota notice (a reply chunk of an `antigravity` bot).
-pub(super) fn notice_text<'a>(backend: &str, text: &'a str) -> Option<&'a str> {
-    let text = text.trim();
-    (backend == BACKEND && STARTS.iter().any(|s| text.starts_with(s))).then_some(text)
+/// Only the start of a reply can be a quota notice. Once confirmed, keep the rest for the reset time.
+pub(super) enum QuotaNotice {
+    Checking(String),
+    Confirmed(String),
+    Reply,
 }
 
-/// The prompt's answer `done`, failed as a usage limit with `notice` when it was a refusal that came with one.
-pub(super) fn turn_result(done: super::Done, notice: Option<String>) -> super::Done {
-    match notice {
-        Some(message) if done.as_ref().is_ok_and(|v| StopReason::of(v) == StopReason::Refusal) => {
-            Err(RpcError { code: INTERNAL_ERROR, message, kind: Some("usage_limit_exceeded".into()) }.into())
+impl Default for QuotaNotice {
+    fn default() -> Self {
+        Self::Checking(String::new())
+    }
+}
+
+impl QuotaNotice {
+    /// Returns ordinary reply text as soon as the start rules out a notice.
+    pub(super) fn push(&mut self, backend: &str, text: String) -> Option<String> {
+        if backend != BACKEND {
+            return Some(text);
         }
-        _ => done,
+        match self {
+            Self::Reply => Some(text),
+            Self::Confirmed(held) => {
+                held.push_str(&text);
+                None
+            }
+            Self::Checking(held) => {
+                if held.is_empty() {
+                    *held = text;
+                } else {
+                    held.push_str(&text);
+                }
+                let start = held.trim_start();
+                if STARTS.iter().any(|s| start.starts_with(s)) {
+                    *self = Self::Confirmed(std::mem::take(held));
+                } else if !STARTS.iter().any(|s| s.starts_with(start)) {
+                    let reply = std::mem::take(held);
+                    *self = Self::Reply;
+                    return Some(reply);
+                }
+                None
+            }
+        }
+    }
+
+    /// A confirmed notice only becomes a usage limit if the prompt ended with a refusal.
+    pub(super) fn finish(self, done: super::Done) -> (super::Done, String) {
+        match self {
+            Self::Confirmed(text) if done.as_ref().is_ok_and(|v| StopReason::of(v) == StopReason::Refusal) => {
+                let error = RpcError {
+                    code: INTERNAL_ERROR,
+                    message: text.trim().to_owned(),
+                    kind: Some("usage_limit_exceeded".into()),
+                };
+                (Err(error.into()), String::new())
+            }
+            Self::Checking(text) | Self::Confirmed(text) => (done, text),
+            Self::Reply => (done, String::new()),
+        }
     }
 }
 
@@ -33,34 +78,65 @@ mod tests {
     use super::*;
     use serde_json::{Value, json};
 
-    const NOTICE: &str = "Usage Limit Reached\n\nYou have reached your current quota for this period. Your limit will reset in 1 hour, 25 minutes.";
+    const START: &str = "Usage Limit Reached";
+    const RESET: &str = "\nYour limit will reset in 1 hour, 25 minutes.";
 
     fn refusal() -> Value {
         json!({"stopReason": "refusal"})
     }
 
     #[test]
+    fn a_prefix_is_held_until_it_deviates() {
+        let mut notice = QuotaNotice::default();
+        assert_eq!(notice.push(BACKEND, " \n".into()), None);
+        assert_eq!(notice.push(BACKEND, "Usage Li".into()), None);
+        assert_eq!(notice.push(BACKEND, "brary".into()).as_deref(), Some(" \nUsage Library"));
+        assert_eq!(notice.push(BACKEND, START.into()).as_deref(), Some(START));
+        let (done, text) = notice.finish(Ok(refusal()));
+        assert_eq!(done.expect("a plain refusal"), refusal());
+        assert_eq!(text, "");
+    }
+
+    #[test]
     fn only_antigravitys_notice_counts() {
-        assert_eq!(notice_text("antigravity", &format!("  {NOTICE}\n")), Some(NOTICE));
-        assert!(notice_text("antigravity", "I can't help with that.").is_none());
-        assert!(notice_text("antigravity", "I can't help bypass a Usage Limit Reached banner.").is_none());
         for other in ["claude", "codex", "custom"] {
-            assert!(notice_text(other, NOTICE).is_none(), "{other}");
+            let mut notice = QuotaNotice::default();
+            assert_eq!(notice.push(other, START.into()).as_deref(), Some(START), "{other}");
         }
     }
 
     #[test]
-    fn a_refusal_with_the_notice_fails_as_a_usage_limit() {
-        let error = turn_result(Ok(refusal()), Some(NOTICE.into())).expect_err("a usage limit");
+    fn a_refusal_with_the_accumulated_notice_fails_as_a_usage_limit() {
+        let mut notice = QuotaNotice::default();
+        for chunk in ["  Usage Li", "mit Reached", RESET, "\nMore text.  "] {
+            assert_eq!(notice.push(BACKEND, chunk.into()), None);
+        }
+        let (done, text) = notice.finish(Ok(refusal()));
+        assert_eq!(text, "");
+        let error = done.expect_err("a usage limit");
         let rpc = error.downcast_ref::<RpcError>().expect("an RpcError");
-        assert_eq!((rpc.kind.as_deref(), rpc.message.as_str()), (Some("usage_limit_exceeded"), NOTICE));
+        assert_eq!(rpc.kind.as_deref(), Some("usage_limit_exceeded"));
+        assert_eq!(rpc.message, format!("{START}{RESET}\nMore text."));
         assert_eq!(crate::agent::fallback::reason::of(&error), Some(crate::agent::fallback::Reason::UsageLimit));
     }
 
     #[test]
-    fn other_answers_stay() {
-        assert!(turn_result(Ok(refusal()), None).is_ok(), "a plain refusal");
+    fn a_confirmed_notice_on_end_turn_is_released_verbatim() {
+        let mut notice = QuotaNotice::default();
+        assert_eq!(notice.push(BACKEND, "  You have reached your current quota".into()), None);
+        assert_eq!(notice.push(BACKEND, " in this example.\n".into()), None);
         let ended = json!({"stopReason": "end_turn"});
-        assert_eq!(turn_result(Ok(ended.clone()), Some(NOTICE.into())).expect("an answer"), ended);
+        let (done, text) = notice.finish(Ok(ended.clone()));
+        assert_eq!(done.expect("an answer"), ended);
+        assert_eq!(text, "  You have reached your current quota in this example.\n");
+    }
+
+    #[test]
+    fn an_incomplete_prefix_is_released_even_on_refusal() {
+        let mut notice = QuotaNotice::default();
+        assert_eq!(notice.push(BACKEND, " Usage Li".into()), None);
+        let (done, text) = notice.finish(Ok(refusal()));
+        assert_eq!(done.expect("a plain refusal"), refusal());
+        assert_eq!(text, " Usage Li");
     }
 }

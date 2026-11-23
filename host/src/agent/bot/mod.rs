@@ -152,7 +152,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         cancel_deadline: None,
         exit_tail: None,
         agent_error: None,
-        quota_notice: None,
+        quota_notice: quota_notice::QuotaNotice::default(),
         restart_before_turn: false,
         restart_after_turn: false,
         fast_support,
@@ -380,8 +380,8 @@ struct Actor {
     exit_tail: Option<String>,
     /// The error the agent said its turn ended in while answering it as a success (pi, `pi_tools::turn_result`).
     agent_error: Option<String>,
-    /// Antigravity's quota notice, streamed as the reply of a turn it refused (`quota_notice::turn_result`).
-    quota_notice: Option<String>,
+    /// Antigravity's quota notice, streamed as the reply of a turn it refused (`quota_notice::QuotaNotice`).
+    quota_notice: quota_notice::QuotaNotice,
     /// The agent's process is stale (its tools changed, or the grants or sign-in it started with are gone): a new one
     /// starts before the next turn, which reopens its session. An agent that can't reopen one keeps its process.
     restart_before_turn: bool,
@@ -418,7 +418,10 @@ impl Actor {
             }
         }
         let done = pi_tools::turn_result(done, self.agent_error.take());
-        let done = quota_notice::turn_result(done, self.quota_notice.take());
+        let (done, reply) = std::mem::take(&mut self.quota_notice).finish(done);
+        if !reply.is_empty() {
+            self.reply_text(&reply);
+        }
         if let Err(error) = &done
             && self.fall_back(error, done_tx).await
         {

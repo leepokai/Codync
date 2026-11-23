@@ -562,12 +562,40 @@ async fn a_turn_pi_ended_in_an_error_says_so() {
 /// to the fallback instead of asking the exhausted agent again.
 #[tokio::test]
 async fn an_antigravity_quota_refusal_moves_on_and_rests_until_its_reset() {
+    assert_antigravity_quota_fallback("", None).await;
+}
+
+#[tokio::test]
+async fn an_antigravity_quota_banner_split_mid_start_moves_on_and_rests() {
+    let reset = "Your limit will reset in 1 hour, 25 minutes.";
+    for chunks in [
+        ["Usage Li", "mit Reached\n\nYou have reached your current quota for this period. ", reset].join("\x1e"),
+        ["Usage", " Limit", " Reached", "\n\nYou have reached", " your current quota for this period. ", reset]
+            .join("\x1e"),
+    ] {
+        assert_antigravity_quota_fallback(&chunks, None).await;
+    }
+}
+
+#[tokio::test]
+async fn an_antigravity_quota_banner_includes_the_reset_from_a_later_chunk() {
+    let tail = "Please try again later.";
+    let chunks = [
+        "Usage Limit Reached\n\nYou have reached your current quota for this period. ",
+        "Your limit will reset in 1 hour, 25 minutes.\n",
+        tail,
+    ]
+    .join("\x1e");
+    assert_antigravity_quota_fallback(&chunks, Some(tail)).await;
+}
+
+async fn assert_antigravity_quota_fallback(quota: &str, tail: Option<&str>) {
     let host = Host::start().await;
     let bot = json!({"name": "Agy", "backend": "antigravity", "command": agent("primary"), "connectors": [],
         "notify": false, "fallbacks": [{"backend": "codex", "command": agent("standin")}]});
     let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
     let folder = host.home.join("bots").join(&bot).join("workspace");
-    std::fs::write(folder.join("primary.quota"), "").unwrap();
+    std::fs::write(folder.join("primary.quota"), quota).unwrap();
 
     host.reply(&bot, "Fix the login tests").await;
     let reply = wait_for(&host, &bot, "reply", |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
@@ -589,6 +617,20 @@ async fn an_antigravity_quota_refusal_moves_on_and_rests_until_its_reset() {
     host.reply(&bot, "And the signup tests").await;
     assert_eq!(asked(&host), 1, "the next message went straight to the fallback");
     assert!(last_prompt(&host, &bot, "standin").contains("And the signup tests"));
+
+    let history = host.call("history", json!({"botId": bot})).await;
+    let entries = history["entries"].as_array().unwrap();
+    for entry in entries {
+        let text = entry["data"]["text"].as_str().unwrap_or_default();
+        if entry["kind"] == "agent" {
+            let lower = text.to_ascii_lowercase();
+            for leaked in ["usage limit", "quota", "reset in", "declined"] {
+                assert!(!lower.contains(leaked), "quota refusal leaked into chat: {entry}");
+            }
+        }
+        assert_ne!(text, "The agent declined to continue.");
+        assert!(tail.is_none_or(|tail| !text.contains(tail)), "quota notice tail leaked into chat: {entry}");
+    }
 }
 
 /// #552 control: the same refusal from any other agent, and an Antigravity refusal that isn't the notice, are still

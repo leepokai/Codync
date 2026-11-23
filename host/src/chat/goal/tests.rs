@@ -61,6 +61,21 @@ fn a_marker_set_off_in_markdown_or_finished_with_a_period_still_closes() {
 }
 
 #[test]
+fn formatted_questions_ask_the_user() {
+    for text in [
+        "**Which database should I use?**",
+        "_Should I run the migration?_",
+        "`Proceed with deploy?`",
+        "All checks passed.\n**需要現在合併嗎？**",
+    ] {
+        assert!(asks_user(text), "{text:?} ends with a formatted question");
+    }
+    for text in ["**All checks passed.**", "_Continuing._"] {
+        assert!(!asks_user(text), "{text:?} is formatted prose, not a question");
+    }
+}
+
+#[test]
 fn invalid_limits_are_rejected_instead_of_silently_changed() {
     assert_eq!(limit(&json!({}), "maxTurns", 20, 200).unwrap(), 20);
     for n in [json!(0), json!(-1), json!(201), json!("2"), json!(null)] {

@@ -222,7 +222,7 @@ fn marker(line: &str) -> String {
 
 pub fn asks_user(reply: &str) -> bool {
     let last = last_line(reply);
-    if last.ends_with(['?', '？']) {
+    if last.trim_end_matches(['*', '_', '`', ' ', '\t']).ends_with(['?', '？']) {
         return true;
     }
     let last = marker(last);

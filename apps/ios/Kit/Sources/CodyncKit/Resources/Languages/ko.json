@@ -2473,5 +2473,8 @@
   "New chat": "새 채팅",
   "in background": "백그라운드에서 실행",
   "{count} s": "{count}초",
-  "{count} min": "{count}분"
+  "{count} min": "{count}분",
+  "Context handoff pending": "컨텍스트 인계 대기 중",
+  "Context handed off": "컨텍스트 인계됨",
+  "Switched": "전환됨"
 }

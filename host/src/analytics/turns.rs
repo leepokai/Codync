@@ -107,6 +107,13 @@ pub fn agent_fell_back(hub: &Hub, agent: &str, login_profile: bool, reason: crat
     capture(hub, Event::AgentFellBack, p.as_object().cloned().unwrap_or_default());
 }
 
+/// `agent_switched_by_user`: the user moved a bot with a conversation to `agent` (`login_profile`: on a login
+/// profile, never which), and its next message carries a recap.
+pub fn agent_switched_by_user(hub: &Hub, agent: &str, login_profile: bool) {
+    let p = on_login_profile(json!({"agent": agent}), login_profile);
+    capture(hub, Event::AgentSwitchedByUser, p.as_object().cloned().unwrap_or_default());
+}
+
 /// `p` with `loginProfile: true` when a login profile is involved, as the sign-in events mark it (`observe`).
 fn on_login_profile(mut p: Value, login_profile: bool) -> Value {
     if login_profile {

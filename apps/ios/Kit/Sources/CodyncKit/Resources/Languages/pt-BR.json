@@ -2473,5 +2473,8 @@
   "New chat": "Novo chat",
   "in background": "em segundo plano",
   "{count} s": "{count} s",
-  "{count} min": "{count} min"
+  "{count} min": "{count} min",
+  "Context handoff pending": "Passagem de contexto pendente",
+  "Context handed off": "Contexto passado",
+  "Switched": "Trocado"
 }

@@ -62,6 +62,12 @@ private func updateBody(_ draft: BotDraft) throws -> [String: Any] {
     #expect(line.isChat && line.data.agentSwitch?.to == "codex" && line.data.agentSwitch?.carried == "This turn so far")
     let back = try entry(#"{"text":"Back on Claude Code.","style":"info","agentSwitch":{"from":"codex","to":"claude","back":true,"reason":null,"resetsAt":null,"carried":null}}"#)
     #expect(back.data.agentSwitch?.back == true && back.data.agentSwitch?.carried == nil)
+    // An older host's line has none of the fields of a switch the user made.
+    #expect(back.data.agentSwitch?.manual == nil && back.data.agentSwitch?.state == nil && back.data.agentSwitch?.fromName == nil)
+    let manual = try entry(#"{"text":"Context handoff pending: Claude Code → Codex (Work)","style":"info","agentSwitch":{"from":"claude","to":"codex","back":false,"reason":null,"resetsAt":null,"carried":null,"manual":true,"state":"pending","fromName":"Claude Code","toName":"Codex (Work)"}}"#)
+    let change = try #require(manual.data.agentSwitch)
+    #expect(change.manual == true && change.state == .pending && change.fromName == "Claude Code" && change.toName == "Codex (Work)")
+    #expect(try entry(#"{"text":"x","agentSwitch":{"manual":true,"state":"later"}}"#).data.agentSwitch?.state == nil)
     #expect(try entry(#"{"text":"x","agentSwitch":{"to":7,"newer":[1]}}"#).data.agentSwitch?.to == nil)
     #expect(try entry(#"{"text":"Usage limit","style":"error","addFallback":true}"#).data.addFallback == true)
 }

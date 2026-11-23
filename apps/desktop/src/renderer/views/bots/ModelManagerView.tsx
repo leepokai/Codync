@@ -15,7 +15,7 @@ import { AgentModelPicker } from './AgentModelPicker'
 import { useAgentModels, type AgentModels } from './agent-models'
 import { errorText } from './drafts'
 import { agentChoice } from './Fallbacks'
-import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, resizeFrom, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
+import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
@@ -297,12 +297,16 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
           const on = checked.has(key)
           const outcome = outcomes[key]
           const line = subtitle(item, oneComputer)
+          // The bot's current agent -> model path, under the name in the app's muted small text.
+          const agentName = backends.find((b) => b.id === item.bot.backend)?.name ?? null
+          const modelPath = rowModelPath(item.bot, agentName)
           return (
             <button key={key} type="button" role="checkbox" aria-checked={on} className="palette-row model-manager-row" disabled={applying} onClick={() => toggle(key, !on)}>
               <span className={`model-manager-check ${on ? 'on' : ''}`} aria-hidden="true">{on ? <Icon name="checkmark" size={11} /> : null}</span>
               <AvatarWithStatus bot={item.bot} members={isGroup(item.bot) ? item.store.members(item.bot) : []} size={32} />
               <VStack as="span" gap={2} grow>
                 <Text size="body" tone="text" truncate>{item.bot.name}</Text>
+                {modelPath ? <Text size="caption" tone="secondary" truncate className="model-manager-model-path">{modelPath}</Text> : null}
                 {line ? <Text size="subheadline" tone="secondary" truncate>{line}</Text> : null}
               </VStack>
               {outcome ? (

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { RosterItem } from '../store/app-model'
 import type { AgentModels } from './bots/agent-models'
 import type { ApplyPlan, CatalogCheck } from './bots/model-manager-logic'
-import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, planRows, resizeFrom, stepSize, toggleKey } from './bots/model-manager-logic.ts'
+import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, planRows, resizeFrom, rowModelPath, stepSize, toggleKey } from './bots/model-manager-logic.ts'
 
 /** A roster row carries a store, a bot and a computer; these tests only read ref, bot and computer. */
 const item = (computerId: string, computerName: string, botId: string, name: string, description = ''): RosterItem =>
@@ -195,4 +195,23 @@ test('stepSize steps only the axis the handle advertises, toward the drag direct
   // Corners step both axes toward their own outside.
   assert.deepEqual(stepSize('corner-br', size, 'ArrowRight', vw, vh), { width: 656, height: 560 })
   assert.deepEqual(stepSize('corner-bl', size, 'ArrowLeft', vw, vh), { width: 656, height: 560 })
+})
+
+test('rowModelPath shows agent->model, display name when known, nothing when unreadable', () => {
+  // The picker knows the agent: its display name; the model shows its id.
+  assert.equal(rowModelPath({ backend: 'opencode', model: 'open-design/deepseek 4.1 flash' }, 'OpenCode'), 'OpenCode->open-design/deepseek 4.1 flash')
+  // An agent the picker doesn't know falls back to the raw id.
+  assert.equal(rowModelPath({ backend: 'mystery', model: 'some/model' }, null), 'mystery->some/model')
+  // A blank display name is as good as none.
+  assert.equal(rowModelPath({ backend: 'mystery', model: 'some/model' }, '  '), 'mystery->some/model')
+  assert.equal(rowModelPath({ backend: 'mystery', model: 'some/model' }, undefined), 'mystery->some/model')
+  // Custom-command bots (backend not a string) and unreadable models show nothing.
+  assert.equal(rowModelPath({ backend: { command: 'my-bot' }, model: 'x' }, 'OpenCode'), null)
+  assert.equal(rowModelPath({ backend: 'custom', model: 'x' }, 'OpenCode'), null)
+  assert.equal(rowModelPath({ backend: 'opencode', model: null }, 'OpenCode'), null)
+  assert.equal(rowModelPath({ backend: 'opencode', model: '   ' }, 'OpenCode'), null)
+  assert.equal(rowModelPath({ backend: 'opencode', model: 5 }, 'OpenCode'), null)
+  assert.equal(rowModelPath({ backend: 'opencode' }, 'OpenCode'), null)
+  // A padded model id is trimmed into the path.
+  assert.equal(rowModelPath({ backend: 'opencode', model: ' some/model ' }, 'OpenCode'), 'OpenCode->some/model')
 })

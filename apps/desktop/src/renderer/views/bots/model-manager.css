@@ -70,6 +70,12 @@
   color: var(--attention, var(--danger, #c0392b));
 }
 
+/* The bot's current agent -> model path: a tab-like indent under the name, in the muted small
+   text (it is pure data, so it reads through the row's own truncation). */
+.model-manager-model-path {
+  padding-left: 12px;
+}
+
 /* The sheet's draggable edges and corners: hairline strips that sit on the card's rim (inside
    the padding, so they never cover a row or the list's scrollbar). Pointer-captured like the
    app's panel ResizeHandle; the arrows step them too. */

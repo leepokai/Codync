@@ -81,6 +81,19 @@ export const toggleKey = (checked: Set<string>, key: string, on: boolean) => {
   return next
 }
 
+/**
+ * The bot's current agent -> model path for the row's small line, the way Ryan asked to see it:
+ * `opencode->open-design/deepseek 4.1 flash`. The agent shows the display name the picker knows
+ * (else its raw id); the model shows its id. A custom-command bot or one whose model isn't
+ * readable shows nothing rather than a wrong guess.
+ */
+export const rowModelPath = (bot: { backend?: unknown; model?: unknown }, agentName: string | null | undefined): string | null => {
+  if (typeof bot.backend !== 'string' || bot.backend === 'custom') return null
+  if (typeof bot.model !== 'string' || !bot.model.trim()) return null
+  const agent = agentName && agentName.trim() ? agentName.trim() : bot.backend
+  return `${agent}->${bot.model.trim()}`
+}
+
 /** The Model Manager sheet's smallest usable size: every control reachable, list still scrollable. */
 export const SHEET_MIN = { width: 480, height: 420 } as const
 

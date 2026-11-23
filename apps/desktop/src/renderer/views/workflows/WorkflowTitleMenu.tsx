@@ -4,18 +4,14 @@ import { AnchoredMenu } from '../../components/Overlay'
 import { Text } from '../../components/Text'
 import type { AppLanguage } from '../../lib/l10n'
 import { useAppLanguage, useTr } from '../../lib/use-language'
-import { runnableNodes, type Graph, type WorkflowSummary, type WorkflowVersion } from './workflow'
+import type { WorkflowVersion } from './workflow'
 
-/** The canvas's All workflows menu: this computer's workflows, then the shown one's version history and actions. */
-export function WorkflowTitleMenu({ selectedId, workflows, graph, versions, previewId, pinned, onOpen, onCreate, onRename, onDuplicate, onDelete, onPin, onLoadVersions, onPreview, onShowCurrent }: {
-  selectedId: string | null
-  workflows: WorkflowSummary[]
-  graph: Graph | null
+/** The shown workflow's title, whose menu holds its version history and actions. */
+export function WorkflowTitleMenu({ title, versions, previewId, pinned, onRename, onDuplicate, onDelete, onPin, onLoadVersions, onPreview, onShowCurrent }: {
+  title: string
   versions: WorkflowVersion[]
   previewId: string | null
   pinned: boolean
-  onOpen: (id: string) => void
-  onCreate: () => void
   onRename: () => void
   onDuplicate: () => void
   onDelete: () => void
@@ -31,7 +27,6 @@ export function WorkflowTitleMenu({ selectedId, workflows, graph, versions, prev
   const [open, setOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [flip, setFlip] = useState(false)
-  const steps = graph ? runnableNodes(graph).length : 0
   const close = () => { setOpen(false); setVersionsOpen(false) }
   const choose = (action: () => void) => { close(); action() }
   useLayoutEffect(() => {
@@ -55,33 +50,11 @@ export function WorkflowTitleMenu({ selectedId, workflows, graph, versions, prev
           setVersionsOpen(false)
         }}
       >
-        <Icon name="square.grid.2x2" size={12} color="var(--secondary)" />
-        <Text weight="medium" truncate>{tr('All workflows')}</Text>
-        {workflows.length ? <Text size="callout" tone="secondary">{workflows.length}</Text> : null}
+        <Text weight="medium" truncate>{title}</Text>
         <Icon name="chevron.down" size={11} weight="semibold" color="var(--secondary)" />
       </button>
       <AnchoredMenu open={open} onClose={close} anchor={button} className="workflow-title-panel">
         <div className="workflow-title-menu" role="menu">
-          <Text size="caption" tone="secondary" className="workflow-menu-label">{tr('Workflows')}</Text>
-          <div className="workflow-title-list">
-            {workflows.map((item) => {
-              const on = item.id === selectedId
-              return (
-                <button key={item.id} type="button" className="menu-row" role="menuitemradio" aria-checked={on} onClick={() => choose(() => onOpen(item.id))}>
-                  <Mark on={on} />
-                  <span className="menu-title with-detail beside">
-                    <span>{item.title}</span>
-                    {on && steps > 0 ? <span className="menu-detail">{tr('{count} steps').replaceAll('{count}', String(steps))}</span> : null}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-          <button type="button" className="menu-row" role="menuitem" onClick={() => choose(onCreate)}>
-            <span className="workflow-mark add"><Icon name="plus" size={10} /></span>
-            <span className="menu-title">{tr('New workflow')}</span>
-          </button>
-          <div className="menu-divider" role="separator" />
           <div className="workflow-version-anchor" onMouseEnter={() => setVersionsOpen(true)} onMouseLeave={() => setVersionsOpen(false)}>
             <button type="button" className={`menu-row${versionsOpen ? ' highlight' : ''}`} role="menuitem" aria-expanded={versionsOpen} onClick={() => setVersionsOpen((value) => !value)}>
               <span className="menu-icon"><Icon name="clock" size={15} /></span>

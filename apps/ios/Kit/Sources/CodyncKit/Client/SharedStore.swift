@@ -237,7 +237,7 @@ public extension SharedStore.Context {
     /// Every usage provider this account's computers have reported, plus Claude and Codex so
     /// there's a choice before the first report. Sorted by name.
     var usageProviders: [(id: String, name: String)] {
-        var names = ["claude": "Claude", "codex": "Codex"]
+        var names = ["claude": "Claude Code", "codex": "Codex"]
         for report in usage.values { for provider in report.providers { names[provider.id] = provider.name } }
         return names.map { (id: $0.key, name: $0.value) }.sorted { $0.name < $1.name }
     }

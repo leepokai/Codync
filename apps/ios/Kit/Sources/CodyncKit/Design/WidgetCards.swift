@@ -142,7 +142,7 @@ public extension Usage {
     /// Illustrative data only: widget placeholders and explicitly labelled previews.
     static var widgetPreview: Usage {
         let json = """
-        {"providers":[{"id":"claude","name":"Claude","source":"claude","updatedAt":0,"windows":[
+        {"providers":[{"id":"claude","name":"Claude Code","source":"claude","updatedAt":0,"windows":[
           {"id":"five_hour","label":"5-hour","percent":16,"resetsText":"3h 20m"},{"id":"seven_day","label":"Weekly","percent":59,"resetsText":"2d 6h"}]},
          {"id":"codex","name":"Codex","source":"sessions","updatedAt":0,"windows":[
           {"id":"primary","label":"5-hour","percent":8,"resetsText":"2h 10m"},{"id":"secondary","label":"Weekly","percent":27,"resetsText":"4d 2h"}]}]}

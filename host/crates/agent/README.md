@@ -66,13 +66,19 @@ cargo add codync-agent --features usage
   its binary or npm package; **`node`** provides a Node.js for npm agents on a computer without one.
 - **`acp`** speaks the Agent Client Protocol (JSON-RPC on stdio) to a started agent: what it can do (`Capabilities`),
   a session's controls (`Session`: prompt, cancel, steer) and why a turn ended (`StopReason`), and it tells failures
-  apart (signed out, exited, timed out, a model or mode it lacks); **`events`** types what the agent says (below);
+  apart (signed out, exited, timed out, a model or mode it lacks), with the sign-in methods it advertises (`acp::auth`),
+  the models it offers and their settings (`acp::models`) and claude-agent-acp's session `_meta` (`acp::claude`);
+  **`events`** types what the agent says (below);
   **`process`** owns the process tree each agent starts,
   so stopping the agent stops everything under it (a session of its own on Unix, a job object on Windows).
 - **`modes`** reads an agent's permission modes (its Auto among them) and picks the one to switch to.
+- **`own_memory`** turns each harness's own memory off for a launch where it can be, and says which can't.
+- **`mcp_names`** renames an app's MCP servers that Codex's or pi's own config would hide; **`pi`** hands pi the
+  servers pi-acp drops, and the error a failed turn ends in.
 - **`accounts`** gives an agent more than one login on the same computer (below).
 - **`usage`** (the `usage` feature) reads each agent's plan limits the way the agent itself reports them (below);
-  **`codex_app`** is Codex's own API (`codex app-server`), which it reads Codex's through.
+  **`codex_app`** is Codex's own API (`codex app-server`), which it reads Codex's through, and which files a session in
+  a section of Codex's own apps.
 
 ## Use
 

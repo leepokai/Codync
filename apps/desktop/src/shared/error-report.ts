@@ -44,16 +44,19 @@ export function parseStack(stack: string): ReportFrame[] {
 export interface GoneDetails {
   reason: string
   exitCode: number
-  /** A helper's name (`Network Service`), from `child-process-gone`. */
+  /** A helper's non-localized name (`network.mojom.NetworkService`), from `child-process-gone`. */
   name?: string
 }
+
+/** A signed 32-bit Windows code (NTSTATUS, HRESULT) as PostHog searches it: `0xC0000005`. */
+const hex32 = (code: number) => `0x${(code >>> 0).toString(16).toUpperCase()}`
 
 /**
  * `crashed` · the helper · its exit code: a Windows exit code in hex is the NTSTATUS that
  * names the fault (`0xC0000005` an access violation), elsewhere the signal or exit status.
  */
 export function goneValue({ reason, exitCode, name }: GoneDetails, platform: string): string {
-  const code = platform === 'win32' && exitCode < 0 ? `0x${(exitCode >>> 0).toString(16).toUpperCase()}` : String(exitCode)
+  const code = platform === 'win32' && exitCode < 0 ? hex32(exitCode) : String(exitCode)
   return [reason, name, `exit ${code}`].filter(Boolean).join(' · ')
 }
 
@@ -65,5 +68,5 @@ export function goneValue({ reason, exitCode, name }: GoneDetails, platform: str
 export function notificationFailure(error: string): string {
   const hresult = /HRESULT: (-?\d+)/.exec(error)?.[1]
   const step = /^(WinAPI: [A-Za-z ]+? failed|XML: Invalid XML|Creating ScopedHString failed)/.exec(error)?.[1] ?? (error.startsWith('Notification failed') ? 'Toast failed' : 'Other')
-  return hresult ? `${step} 0x${(Number(hresult) >>> 0).toString(16).toUpperCase()}` : step
+  return hresult ? `${step} ${hex32(Number(hresult))}` : step
 }

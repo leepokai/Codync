@@ -42,7 +42,7 @@ public final class CrashReports: NSObject, MXMetricManagerSubscriber, Sendable {
             "app_version": .string(appVersion),
         ]
         if !images.isEmpty { properties["$debug_images"] = .array(images) }
-        // Why a crash came without frames, so the next one can be read: the JSON's own key names, never a value.
+        // Why a crash came without frames or from another thread, so the next one can be read: the JSON's own key names, never a value.
         if let problem { properties["stack_problem"] = .string(problem) }
         return properties
     }
@@ -52,24 +52,39 @@ public final class CrashReports: NSObject, MXMetricManagerSubscriber, Sendable {
     /// dSYMs each release uploads (tools/upload-dsyms.py); a frame it can't resolve (the system's)
     /// keeps its `binary + offset` name.
     static func stack(_ callStack: Data) -> (frames: [Analytics.Value], images: [Analytics.Value], problem: String?) {
+        let (walk, problem) = crashedThread(callStack)
+        let (frames, images) = appleFrames(walk)
+        return (frames, images, problem)
+    }
+
+    /// The crashed thread from its root frame (where it crashed) through each first sub-frame (its
+    /// caller), and why it isn't simply MetricKit's attributed thread, when it isn't.
+    private static func crashedThread(_ callStack: Data) -> (walk: [Frame], problem: String?) {
         let tree: Tree
         do {
             tree = try JSONDecoder().decode(Tree.self, from: callStack)
         } catch {
-            return ([], [], "unreadable: " + decodingPlace(error))
+            return ([], "unreadable: " + decodingPlace(error))
         }
-        // The crashed thread, or the first with frames when MetricKit attributed none (or an empty one).
-        let stacks = (tree.callStacks ?? []).filter { !($0.callStackRootFrames ?? []).isEmpty }
-        guard let thread = stacks.first(where: { $0.threadAttributed == true }) ?? stacks.first else {
-            return ([], [], tree.callStacks == nil ? "no callStacks" : "no frames")
+        let all = tree.callStacks ?? []
+        let stacks = all.filter { !($0.callStackRootFrames ?? []).isEmpty }
+        guard let first = stacks.first else {
+            return ([], tree.callStacks == nil ? "no callStacks" : "no frames")
         }
-        // Root frame is where it crashed; each first sub-frame is its caller.
+        // The first thread with frames stands in when MetricKit attributed none, but says so when the attributed one is empty.
+        let attributed = stacks.first { $0.threadAttributed == true }
+        let problem = attributed == nil && all.contains { $0.threadAttributed == true } ? "attributed thread has no frames" : nil
         var walk: [Frame] = []
-        var next = thread.callStackRootFrames?.first
+        var next = (attributed ?? first).callStackRootFrames?.first
         while let frame = next, walk.count < maxFrames {
             walk.append(frame)
             next = frame.subFrames?.first
         }
+        return (walk, problem)
+    }
+
+    /// A walk, root frame first, as PostHog `apple` frames (oldest first) and the binaries they ran in.
+    private static func appleFrames(_ walk: [Frame]) -> (frames: [Analytics.Value], images: [Analytics.Value]) {
         var frames: [Analytics.Value] = []
         var images: [Analytics.Value] = []
         var loaded: Set<UInt64> = []
@@ -94,10 +109,10 @@ public final class CrashReports: NSObject, MXMetricManagerSubscriber, Sendable {
             }
             frames.append(.object(apple))
         }
-        return (frames, images, nil)
+        return (frames, images)
     }
 
-    /// Where decoding stopped and why, as key names and a kind (`callStacks.0.callStackRootFrames: missing`): no value of the payload.
+    /// Where decoding stopped and why, as key names and a kind (`callStacks.0.callStackRootFrames.0.subFrames: type mismatch`): no value of the payload.
     private static func decodingPlace(_ error: Error) -> String {
         guard let error = error as? DecodingError else { return "not JSON" }
         let (kind, context): (String, DecodingError.Context) = switch error {

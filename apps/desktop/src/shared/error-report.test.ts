@@ -22,7 +22,7 @@ test('a thrown non-error has a type but nothing else', () => {
 })
 
 test('a process that ended says why, which helper, and its exit code', () => {
-  assert.equal(goneValue({ reason: 'crashed', exitCode: -1073741819, name: 'Network Service' }, 'win32'), 'crashed · Network Service · exit 0xC0000005')
+  assert.equal(goneValue({ reason: 'crashed', exitCode: -1073741819, name: 'network.mojom.NetworkService' }, 'win32'), 'crashed · network.mojom.NetworkService · exit 0xC0000005')
   assert.equal(goneValue({ reason: 'oom', exitCode: 9 }, 'darwin'), 'oom · exit 9')
 })
 

@@ -228,7 +228,7 @@ async fn answered_late(
 /// The "done" push for `name`'s reply in the group.
 fn alert(hub: &Hub, group_id: &str, from: &str, name: &str, text: &str) -> Result<()> {
     if let Some(group) = hub.store.bot(group_id)?.map(|r| r.config) {
-        push::notify(hub, &group, Some(from), &format!("{name} in {}", group.name), text, AlertKind::Done);
+        push::notify(hub, &group, Some(from), &format!("{name} in {}", group.name), text, AlertKind::Done, None);
     }
     Ok(())
 }
@@ -439,7 +439,7 @@ fn line(hub: &Hub, group: &BotConfig, e: &Entry, me: &BotConfig) -> String {
         );
     }
     let author = e.data["author"].as_str().unwrap_or_default();
-    let text = crate::agent::acp::truncate(text, LINE_CHARS);
+    let text = codync_agent::acp::truncate(text, LINE_CHARS);
     if author == me.id {
         format!("{} (you): {text}{reacted}", me.name)
     } else {

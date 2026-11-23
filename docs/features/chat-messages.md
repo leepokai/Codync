@@ -125,6 +125,16 @@ summaries shown (`--thinking-display summarized`, through `claudeCode.options.ex
 `agent/bot/launch.rs`). Whether Claude thinks stays the user's Claude Code setting; when it does, a
 short thought's summary arrives in one piece when the thinking ends, a long one's in parts.
 
+A Claude Code bot's subagents show in the steps (the unfolded pill, Full conversation and a task's thread alike):
+each subagent's tool calls sit indented under the call that launched it, and that call carries a quiet second line
+with the subagent's type, the tokens it used and how long it ran once it finished
+(`general-purpose · 42.3k tokens · 6 s`), or `in background` for one launched in the background, which reports no
+totals. The host stores the facts on the tool entries: `parent` (the `toolCallId` of the launching call) on each of
+the subagent's calls, and `subagent` (`kind`, `model`, `background`, `tokens`, `toolUses`, `durationMs`, each kept
+until an update sends it again) on the launch; other calls carry neither. A step whose launch isn't among the steps
+shown stays where it is. The facts come from Claude's adapter only
+([claude-agent-acp](../upstream-agents/claude-agent-acp.md#subagents)); other agents' steps stay one flat list.
+
 Full conversation remains available through a message's Show what it did (its touch-and-hold
 menu on the iPhone and Android, its actions on the desktop). It contains narration, all
 thoughts, tools and previous turns, and follows new steps until the reader scrolls up.

@@ -14,14 +14,14 @@
 //!   environment on every launch (on a Codync Cloud computer, provider keys through its keeper: `proxied`).
 
 use crate::LockExt;
-use crate::agent::acp::{self, AUTH_REQUIRED, Incoming, RpcError};
-use crate::agent::backends;
-use crate::agent::registry::{Cmd, env_prefix};
 use crate::keeper::client::Grants;
 use crate::remote::managed::is_managed;
-use crate::shell::quote as shell_quote;
 use crate::store::Store;
 use anyhow::{Result, bail};
+use codync_agent::acp::{self, AUTH_REQUIRED, Incoming, RpcError};
+use codync_agent::backends;
+use codync_agent::registry::{Cmd, env_prefix};
+use codync_agent::shell::quote as shell_quote;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -108,7 +108,7 @@ fn visible(store: &Store, slot: &str) -> Result<BTreeMap<String, String>> {
 pub(crate) fn env_changes(vars: &Map<String, Value>) -> Result<Vec<(String, Option<String>)>> {
     let mut changes = Vec::new();
     for (k, v) in vars {
-        if !crate::shell::is_env_name(k) {
+        if !codync_agent::shell::is_env_name(k) {
             bail!("`{k}` isn't an environment variable name");
         }
         changes.push((k.clone(), v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)));
@@ -348,7 +348,7 @@ fn methods(backend: &str, init: &Value, cmd: &Cmd) -> Vec<Method> {
                     .iter()
                     .filter_map(|v| {
                         let name = text(&v["name"])?;
-                        crate::shell::is_env_name(&name).then(|| EnvVar {
+                        codync_agent::shell::is_env_name(&name).then(|| EnvVar {
                             label: text(&v["label"]).unwrap_or_else(|| name.clone()),
                             secret: v["secret"].as_bool().unwrap_or(true),
                             optional: v["optional"].as_bool().unwrap_or(false),
@@ -450,7 +450,7 @@ mod tests {
             params: json!({"authStatus": {"kind": kind, "label": "x"}}),
         };
         let (tx, mut rx) = mpsc::unbounded_channel();
-        tx.send(Incoming::Notification { method: "session/update".into(), params: json!({}) }).unwrap();
+        tx.send(Incoming::Update(codync_agent::events::Update::parse(&json!({})))).unwrap();
         tx.send(report("none")).unwrap();
         tx.send(report("account")).unwrap();
         assert_eq!(reported_login(&mut rx).await, Some(false));

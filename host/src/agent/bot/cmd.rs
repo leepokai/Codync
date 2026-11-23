@@ -17,6 +17,14 @@ pub enum Cmd {
     FollowUp(String),
     /// One of the bot's tasks ended (`chat::work`): its report, for a turn in the bot's chat.
     TaskReport(crate::chat::work::Report),
+    /// One assistant step of a workflow. `step_id` is `workflow_steps.id`.
+    WorkflowStep {
+        step_id: String,
+    },
+    /// Stop that step if it is the current turn, or drop it if it is still queued.
+    WorkflowStop {
+        step_id: String,
+    },
     /// One of the bot's tasks looks stuck (`chat::work::watch`): a turn in its chat to look at it.
     Watchdog(crate::chat::work::Stuck),
     /// The user wrote in the bot's chat.
@@ -32,7 +40,7 @@ pub enum Cmd {
     /// What the agent made of a steered message (`_session/steering`).
     Steered {
         entry_id: String,
-        outcome: Result<Value>,
+        outcome: Result<codync_agent::acp::Steered>,
     },
     /// The user took back a queued message of theirs (`unqueue`).
     Unqueue {
@@ -123,6 +131,7 @@ pub(super) enum Queued {
     Routine(String),
     FollowUp(String),
     TaskReport(crate::chat::work::Report),
+    WorkflowStep(String),
     Watchdog(crate::chat::work::Stuck),
     User {
         lane: Lane,

@@ -14,6 +14,7 @@ mod schema;
 mod workspaces;
 
 pub use devices::{Device, DeviceAccount, DeviceSource, Scope};
+pub use entries::INTERRUPTED;
 pub use model::{
     AVATAR_COLORS, AVATAR_SHAPES, BotConfig, BotKind, BotRow, DEFAULT_THREADS, Entry, EntryKind, Fallback, Lane,
     MAX_THREADS, Permission, THREAD_PREFIX, is_thread_id, message_text, run_session_key,
@@ -88,6 +89,15 @@ impl Store {
             .prepare("SELECT k FROM kv WHERE substr(k, 1, length(?1)) = ?1")
             .and_then(|mut st| st.query_map([prefix], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>());
         logged("kv prefix", rows).unwrap_or_default()
+    }
+
+    /// One immediate transaction. Workflow writes use it so a save replaces the graph in one step.
+    pub(crate) fn with_immediate<T>(&self, body: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<T>) -> Result<T> {
+        let mut c = self.db.locked();
+        let tx = c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let out = body(&tx)?;
+        tx.commit()?;
+        Ok(out)
     }
 
     pub fn current_rev(&self) -> i64 {

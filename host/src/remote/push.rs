@@ -24,8 +24,17 @@ pub enum AlertKind {
     Failed,
 }
 
-/// (bot id, kind) → last alert.
+/// (bot id, kind) → last alert. Workflow steps keep a separate table so two steps on one bot don't swallow each other.
 static LAST_SENT: LazyLock<Mutex<HashMap<(String, AlertKind), Instant>>> = LazyLock::new(Mutex::default);
+static WORKFLOW_SENT: LazyLock<Mutex<HashMap<(String, AlertKind), Instant>>> = LazyLock::new(Mutex::default);
+
+/// Where a workflow notification opens. The ids go on the APNs `data`, which the phone reads as `userInfo`.
+pub struct WorkflowLink {
+    pub workflow: String,
+    pub run: Option<String>,
+    pub step: String,
+    pub node: String,
+}
 /// Tickets the relay reported as dead (app uninstalled / token rotated); purged on the next push.
 static GONE: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
@@ -38,7 +47,15 @@ fn relay_url(hub: &Hub) -> Option<String> {
 
 /// True when `key` was sent less than `min_gap` ago; otherwise records now.
 fn throttled(key: (String, AlertKind), min_gap: Duration) -> bool {
-    let mut last = LAST_SENT.locked();
+    throttled_in(&LAST_SENT, key, min_gap)
+}
+
+fn throttled_in(
+    table: &Mutex<HashMap<(String, AlertKind), Instant>>,
+    key: (String, AlertKind),
+    min_gap: Duration,
+) -> bool {
+    let mut last = table.locked();
     if last.get(&key).is_some_and(|t| t.elapsed() < min_gap) {
         return true;
     }
@@ -106,7 +123,7 @@ fn faces(hub: &Hub, bot: &BotConfig, from: Option<&str>) -> Vec<Value> {
 
 /// An alert's title and body as a phone's push and a desktop notification show them: cut to fit.
 fn alert_text(title: &str, body: &str) -> (String, String) {
-    (crate::agent::acp::truncate(title, 80), crate::agent::acp::truncate(body, 400))
+    (codync_agent::acp::truncate(title, 80), codync_agent::acp::truncate(body, 400))
 }
 
 /// What an alert seals for the phone: its text, the faces to draw and the unread total for the app icon.
@@ -129,9 +146,25 @@ fn alert_event(bot: &BotConfig, title: &str, body: &str, kind: AlertKind) -> Val
 }
 
 /// `bot` is the chat the alert opens; `from` is the member bot speaking when that chat is a group.
-pub fn notify(hub: &Hub, bot: &BotConfig, from: Option<&str>, title: &str, body: &str, kind: AlertKind) {
+pub fn notify(
+    hub: &Hub,
+    bot: &BotConfig,
+    from: Option<&str>,
+    title: &str,
+    body: &str,
+    kind: AlertKind,
+    link: Option<&WorkflowLink>,
+) {
     purge_dead_tickets(hub);
-    if bot.notify == Some(false) || bot.hidden || throttled((bot.id.clone(), kind), Duration::from_secs(5)) {
+    if bot.notify == Some(false) || bot.hidden {
+        return;
+    }
+    // A workflow step's alerts are throttled per step, so two steps of one bot both arrive.
+    let repeated = match link {
+        Some(link) => throttled_in(&WORKFLOW_SENT, (link.step.clone(), kind), Duration::from_secs(5)),
+        None => throttled((bot.id.clone(), kind), Duration::from_secs(5)),
+    };
+    if repeated {
         return;
     }
     // Live only (no rev, so no catch-up replays it): a desktop app shows it if its user turned that on.
@@ -156,6 +189,16 @@ pub fn notify(hub: &Hub, bot: &BotConfig, from: Option<&str>, title: &str, body:
     let mut notifications = Vec::new();
     for t in hub.store.push_tickets() {
         let mut data = json!({"botId": bot.id, "computerId": computer_id, "ctx": t.ctx});
+        if let Some(link) = link {
+            data["workflowId"] = link.workflow.clone().into();
+            data["stepId"] = link.step.clone().into();
+            if !link.node.is_empty() {
+                data["nodeId"] = link.node.clone().into();
+            }
+            if let Some(run) = &link.run {
+                data["runId"] = run.clone().into();
+            }
+        }
         if let Some(key) = t.push_key.as_deref().and_then(|k| crypto::unb64_n::<32>(k).ok()) {
             let eph = StaticSecret::from(crypto::random::<32>());
             match crypto::seal_push(&hub.identity.cid_raw(), &key, secret.as_bytes(), &eph) {

@@ -33,7 +33,7 @@ pub struct Bot {
     pub cwd: String,
     pub managed_workspace: bool,
     pub auto: bool,
-    /// The agent mode it works in (`agent::modes`); none for the agent's default.
+    /// The agent mode it works in (`codync_agent::modes`); none for the agent's default.
     pub mode: Option<String>,
     pub model: Option<String>,
     /// The model's own settings (effort, fast…): option id → value.

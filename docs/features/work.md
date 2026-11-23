@@ -73,6 +73,10 @@ task:
 3. **Otherwise it waits**: `wait: next` for the first in line, `behind` with how many are `ahead` for the rest.
    Nothing is refused for being over the ceiling.
 
+A task that can't start now whatever is free (`dispatch::held`: a routine run while a run of its routine is under way
+or the host is stopping, a task whose worktree is still being looked over) takes no place: it reports `wait: next`
+and the tasks behind it may start first.
+
 **A thread waiting on the user gives its seat up** (`dispatch::free_seats`): while its runtime is `needsInput` (an approval,
 a choice, a sign-in) it doesn't count toward `maxThreads`, so the next task can start meanwhile; the user's answer
 lets it go on even past the ceiling. Every live thread still counts toward `maxThreads + 1`, so only one seat is ever
@@ -142,7 +146,8 @@ bot can say what it is doing and place an `after` without a tool call.
   waits at the front, behind the task that cut in, with `cutIn` set. It starts again later in a new thread and session,
   told that the work was begun before. With a thread free, cutting in is moving first; so it is for a task that
   wouldn't start on the freed thread (it follows unfinished work, or waits for usage), and the clients don't offer
-  Cut in on such a row.
+  Cut in on such a row. A held task (a routine run behind its routine's run, a task whose worktree is being looked
+  over) still shows Cut in, which only moves it to the front.
 - **Replace** (`steer_task replace`): the brief is replaced. A working task's thread is closed the same way and the
   task starts again from the new brief, at the front (`cutIn` stays as it was).
 - **Stop** (`stopWork`, `steer_task stop`): the task is `stopped`; a working one's thread is stopped. Without a task,
@@ -161,9 +166,14 @@ The user writes to the thread that works, or worked, one of the bot's **own** ta
 thread is a bot with an actor, so the message is a user entry in the thread's own transcript and goes through the
 chat's own queue: nothing here is a second copy of it.
 
-- **`send {botId, taskId, text, clientNonce?}`** → `{entry, reopened, queued}`. The caller names the bot and its
+- **`send {botId, taskId, text, attachments?, clientNonce?}`** → `{entry, reopened, queued}`. The caller names the bot and its
   task, never a thread: the task must be in that bot's box, and `send`, `steer` and `unqueue` refuse a thread's own id
-  as `botId` (`unknown bot`). Text only (`a thread takes text only` for attachments, `replyTo` or `call`). `entry`
+  as `botId` (`unknown bot`). Files go as in a chat: each is first sent with `upload {botId, taskId, …}`, which
+  puts it in the thread's own uploads (`uploads::root` of the thread bot, under the host's data folder, never in a
+  worktree, and deleted with the thread bot), and the thread's agent gets their paths. `readUpload` reads one back by
+  the entry's `botId` (the thread's); the task's report and a session that picks the task up name the files after
+  the user's words (`[sent files: …]`). `work[].talkFiles` says a thread takes files: clients show their + (and take
+  drops and pastes) only then. No quote or call (`a thread takes no quotes or calls`). `entry`
   is the message as the transcript holds it (`botId` is the thread's id); the same `clientNonce` again answers the
   same entry, with `reopened` and `queued` null.
 - **While the thread's turn runs** the entry is `status: queued`, as in a chat, and leaves as `threadEntry` events like
@@ -202,13 +212,15 @@ chat's own queue: nothing here is a second copy of it.
   write to`), and one whose thread is gone can't be picked up (`"<title>" ended too long ago to write to: add new
   work instead`). `work[].talk` says which tasks take a message, so no client guesses.
 - **What the thread shares stays in the chat.** Its cards, files, voice notes and artifacts are the chat's entries
-  ([below](#asking-and-sharing-from-a-thread)), answered, downloaded and opened there. The thread's transcript shows each, in time
-  order among the thread's own entries, as one quiet line with a symbol (`sharedLine` in every client, the
-  terminal's `shared_line`): `Waiting for your approval: <title>` or `Asked: <question>` while it waits,
+  ([below](#asking-and-sharing-from-a-thread)), answered, downloaded and opened there. On the iPhone, Android and the
+  terminal the thread's transcript shows each, in time order among the thread's own entries, as one quiet line with a
+  symbol (`sharedLine`, the terminal's `shared_line`): `Waiting for your approval: <title>` or `Asked: <question>` while it waits,
   `Approved: <title>`, `Denied: <title>` or `Answered: <choice>` once answered, `Not answered: <…>` when it
   expired, `Sent a file: <name>`, `Sent a voice note`, `Made an artifact: <title>`; its agent's
   [sign-in](#fallbacks-and-sign-in) card reads `Needs <agent> sign-in`, then `Signed in` (or `Cancelled`). The
-  line opens the chat at that entry; the thread has no card to answer.
+  line opens the chat at that entry; the thread has no card to answer. The desktop shows a thread in the chat's form
+  instead (`ThreadChat`, on the Threads page and as a tab of the inspector): there each of these is the chat's own row, the same entry of the bot's chat, answered,
+  downloaded and opened in the thread as in the chat ([UI conventions](../design/ui-conventions.md)).
 
 With the rest:
 
@@ -357,6 +369,22 @@ never taken for lost by the hourly look: its turn runs.
 
 ## Other sources
 
+**A thread the user starts** (`startThread {botId, text, setup?}` → `{taskId}`, `sources::add_thread`;
+`Source::User`): the user's first message is a task of the bot's box, named by its first line, that waits for a free
+thread like any other and may get a worktree like the bot's own work. Its thread opens with that message as the
+user's own (no `from: "host"`), in a new session that is told it is a thread the user opened and gets nothing of the
+chat (no fork, no chat so far). It is the bot's own work everywhere else: it takes messages ([talking to a
+thread](#talking-to-a-thread)), can be steered, stopped and tried again, and on the wire it has no `source`. **Its
+result takes no turn of the bot's**: the user reads it in the thread. Only a bot starts one (not a group, not a
+thread), with at most 32,000 bytes. `hello` says `startThread: true` on a host that has the method.
+
+`setup` is what the thread runs with in place of the bot's own (`tasks::Setup`, kept on the task and applied to its
+thread bot's config, `Setup::over`): `cwd` (a full path to a folder that exists), `model` (`{id, options}`: a model
+with its own settings, `id` null for the agent's default) and `approval` (`{permission, mode}`). What it leaves out is
+the bot's; the bot's setup never changes, and its memory stays the bot's wherever the thread works. It is checked as a
+bot's setup is (`hub::validate`), and one that can't be read starts nothing. A thread in another folder gets a
+worktree there by the same rule as in the bot's.
+
 A run of one of the bot's routines and another bot's `message_bot` request are tasks in the bot's box
 (`sources.rs`), so the chat stays free while they work and they wait for a free thread under `maxThreads` like anything
 else. A task's `source` says which: `routine` with the routine's id, or `request` with the asking bot's id (none
@@ -386,7 +414,7 @@ request from another computer under a network rule's `auto` or `ask` holds its t
 
 What differs from the bot's own tasks:
 
-- **Stop** cancels the run (`Stopped by user`, no failure line) or tells the asking bot its request was stopped.
+- **Stop** cancels the run (`Stopped by user`, no failure line) or tells the asking bot its request was stopped (a reply turn of its own).
   **Drop** on a waiting one does the same.
 - **Try again** on a routine's task runs the routine again: a new run (with the failed run's event when it kept
   one, else as `runRoutine` does) and a new task in the old one's place. A request can't be tried again: the bot
@@ -395,9 +423,28 @@ What differs from the bot's own tasks:
   act twice.
 - **They never start twice.** Cut off by a host restart with a thread that can't resume, or lost (the hourly look), a
   run ends `interrupted` at once and its routine's retry rules decide, and a request fails. A request lives in the
-  host process (its notices are marked interrupted at start, as before), so its task leaves the box at host start.
+  host process, so its task leaves the box at host start; one that hadn't started comes back as a new task, sent
+  again from its notices, and one that had fails and wakes its sender ([bot collaboration](bot-collaboration.md#stops-failures-and-restart)).
 - A run whose routine was paused or deleted while it waited leaves the box.
 - Stop in the chat no longer cancels a routine's run that waits in the box, nor a request: the box's Stop does.
+
+### Threads without a bot
+
+`startThread` without `botId` starts a thread that runs an agent on its own (`work::plain`): `setup.backend` names
+the agent (refused without one: `a thread without a bot names its agent`), and the app sends the folder (the home
+folder unless the user picked one), the approvals and the model with it. Its task waits in the computer's **box of
+threads without a bot**, a bot the host makes the first time one starts (`BotConfig::plain`, named `Agents`): always
+hidden (`updateBot` can't show it, `createBot` can't make one), in the home folder, no connectors, skills, shared
+memory or alerts, `maxThreads` 6, the harness's own memory kept. Apps that know it (`hello.threadsWithoutBot: true`)
+keep it out of every list of bots and list its threads on the Threads page, under **No bot** when grouped by bot;
+an app from before it lists it among the hidden bots. The reply names it (`{botId, taskId}`) and the task's wire row
+carries `agent`, the agent it runs on.
+
+Its thread is told nothing of Codync's (`plain` on the thread bot, copied from the box): no system prompt or
+`<bot-profile>`, no MCP servers (its own tools only), no memory folders, no message ids, no `[Codync: …]` notes on
+the user's messages; the user's words reach the agent as written. Its approval and choice cards and sign-in go to
+the box's chat, which the Threads page shows in the thread, as for any thread. Everything else is a thread the user
+started: it takes messages, can be stopped, steered and tried again, and reports to no chat.
 
 **Kept as turns in the chat**: a bot with **computer use** or **Manage the team** on takes its routine runs and
 requests in its chat as before (`work::boxed`), because a thread has neither the `computer` nor the `manage` server
@@ -501,6 +548,8 @@ A task's end sends no alert of its own: its report is a turn of the bot's, whose
   `gitRepo` it gives the line under the folder in Settings: `Git repository`, `Not a git repository`, `Git isn't
   installed on this computer`. The manual's page for it: `/docs/working-folders` (`#without-git`).
 - `threadEntry` events `{rev, thread, entry}` for a thread's transcript; none in the catch-up.
+- `startThread {botId?, text, setup?: {backend?, cwd?, model?: {id, options}, approval?: {permission, mode}}}` →
+  `{botId, taskId}`: [a thread the user starts](#other-sources), without `botId` [without a bot](#threads-without-a-bot).
 - `threadEntries {botId, threadId}` → `{thread: {id, title, status, startedAt, endedAt, start}, entries}` (newest 500):
   `threadId` is a task's `thread`; `title`, `status` and the times are of the task it works on, else the last it
   worked on. A user entry there is what the thread was told (`data.from: "host"`: a task, as its thread read it) or the
@@ -607,8 +656,10 @@ per thread and reason in a row. Never a title or text. The bot's turn is `turn_f
 
 - A thread never changes or takes out a line of memory, the bot's own tasks included, also in a turn the user's
   message to the thread started. What the user asks the bot to forget, the bot does in the chat.
-- A thread takes text only: no files, no quoted message, no voice. A message sent right as a host restart comes is
-  marked failed and has to be sent again.
+- A thread takes text and files, but no quoted message, voice or command. A message sent right as a host restart
+  comes is marked failed and has to be sent again.
+- A waiting message's files stay with the thread a task leaves (it gave way, or got a new brief): the task starts
+  again with the message's words and the names of its files, not the files.
 - A turn that ended with a message of the user's still waiting reports nothing of its own: its last message stays
   in the transcript, and the report is the last turn's.
 - No subagent rows.

@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { api, attach, openGeneralSettings, sandbox } from './sandbox.ts'
+import { api, appPage, attach, openPage, sandbox } from './sandbox.ts'
 
 type Logins = { items: { id: string; site: string }[] }
 const sites = async (page: Parameters<typeof api>[0]) => (await api<Logins>(page, 'credentialLogins', {})).items.map((l) => l.site)
 
-// Settings › Computers › Saved credentials (docs/features/connector-credentials.md): Reset asks twice, then deletes
+// the Computers page › Saved credentials (docs/features/connector-credentials.md): Reset asks twice, then deletes
 // every saved credential and the key they were sealed with; the next credential call makes a new key and works.
 test('Saved credentials › Reset asks twice, deletes the saved credentials, and the next save works under a new key', async () => {
   const { browser, page } = await attach()
@@ -18,9 +18,8 @@ test('Saved credentials › Reset asks twice, deletes the saved credentials, and
     const oldKey = readFileSync(key)
 
     await page.reload()
-    await openGeneralSettings(page)
-    const dialog = page.getByRole('dialog')
-    await dialog.getByRole('button', { name: 'Computers', exact: true }).click()
+    await openPage(page, 'Computers')
+    const dialog = appPage(page)
     // This computer's resets sit together at the bottom. Reset everything asks twice too: cancel the second.
     const everything = dialog.locator('.settings-row', { hasText: 'All data' })
     await everything.getByRole('button', { name: 'Reset everything', exact: true }).click()

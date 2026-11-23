@@ -1,10 +1,10 @@
-//! The bot form's Approvals: the agent's modes, its Auto mode first (`agent::modes`), then Codync approving
+//! The bot form's Approvals: the agent's modes, its Auto mode first (`codync_agent::modes`), then Codync approving
 //! everything. An agent without modes offers Ask me instead; one whose list hasn't come yet, Auto and Ask me. A bot
 //! without a mode (or in Auto on an agent without one) shows as Ask me, and one in a mode the list lacks as that
 //! mode's id: never as more careful than it is.
 
 use super::{App, Form, cycle};
-use crate::agent::modes::{AUTO, Mode};
+use codync_agent::modes::{AUTO, Mode};
 
 const ASKS: &str = "Anything the agent still asks about comes to you as an approval card.";
 
@@ -38,7 +38,7 @@ pub fn parse_modes(v: &serde_json::Value) -> Vec<Mode> {
 impl App {
     /// What the form offers for its agent, and which one its setting shows as.
     pub fn approvals(&self, f: &Form) -> (Vec<Approval>, usize) {
-        let mut choices = match self.modes.get(&f.backend) {
+        let mut choices = match self.modes.get(&Self::model_key(&f.backend, f.login_profile.as_deref())) {
             None => vec![
                 Approval::new(Some(AUTO), false, "Auto", "The agent decides what's safe and asks you about the rest."),
                 Approval::ask(),
@@ -82,8 +82,12 @@ impl App {
     }
 
     /// What a bot's mode is called on its agent, as far as the list that came says.
-    pub fn mode_name<'a>(&'a self, backend: &str, id: &'a str) -> &'a str {
-        let listed = self.modes.get(backend).and_then(|modes| modes.iter().find(|m| m.id == id));
+    pub fn mode_name<'a>(&'a self, backend: &str, login_profile: Option<&str>, id: &'a str) -> &'a str {
+        let listed = self
+            .modes
+            .get(&Self::model_key(backend, login_profile))
+            .or_else(|| self.modes.get(&Self::model_key(backend, None)))
+            .and_then(|modes| modes.iter().find(|m| m.id == id));
         listed.map_or(id, |m| m.name.as_str())
     }
 
@@ -117,12 +121,12 @@ mod tests {
         let mut app = test_app();
         let codex = json!({"modes": [{"id": "auto", "name": "Auto review", "description": "Only ask for unsafe actions"},
             {"id": "read-only", "name": "Read-only"}]});
-        app.modes.insert("codex".into(), parse_modes(&codex));
+        app.modes.insert(("codex".into(), None), parse_modes(&codex));
         let mut f = form(&mut app, &json!({"id": "b", "backend": "codex", "permission": "ask", "mode": "auto"}));
         let auto = app.approval(&f);
         assert_eq!((auto.label.as_str(), auto.note.as_deref()), ("Auto review", Some("Only ask for unsafe actions")));
         assert_eq!(labels(&app, &f), ["Auto review", "Read-only", "Approve automatically"]);
-        assert_eq!(app.mode_name("codex", "read-only"), "Read-only");
+        assert_eq!(app.mode_name("codex", None, "read-only"), "Read-only");
         app.cycle_approval(&mut f, 1);
         assert_eq!((f.mode.as_deref(), f.auto), (Some("read-only"), false));
         app.cycle_approval(&mut f, 1);
@@ -137,7 +141,7 @@ mod tests {
         assert_eq!(app.approval(&f).label, "bypassPermissions");
 
         // An agent without modes asks about everything; one whose list hasn't come yet offers Auto too.
-        app.modes.insert("gemini".into(), vec![]);
+        app.modes.insert(("gemini".into(), None), vec![]);
         let f = form(&mut app, &json!({"id": "b", "backend": "gemini", "permission": "ask", "mode": "auto"}));
         assert_eq!(labels(&app, &f), ["Ask me", "Approve automatically"]);
         assert_eq!(app.approval(&f).label, "Ask me");

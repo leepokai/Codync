@@ -15,7 +15,6 @@
 .access-onboarding .computer-access-row h2, .access-onboarding-star h2 { font-size: var(--text-title); line-height: 1.3; letter-spacing: -.5px; margin: 0 0 12px; color: var(--text); }
 .access-onboarding .computer-access-row p, .access-onboarding-star > p { max-width: 380px; margin-left: auto; margin-right: auto; color: var(--secondary); }
 .access-onboarding .computer-access-actions { justify-content: center; margin-top: 24px; }
-.access-onboarding .styled-button.secondary { border: none; background: var(--bubble-user); }
 .access-onboarding .styled-button { min-height: 36px; padding: 8px 16px; }
 .access-onboarding-star { text-align: center; padding: 0 16px 24px; }
 .access-onboarding-star-icon { display: flex; align-items: center; justify-content: center; background: var(--chrome-fill); margin-bottom: 22px; }

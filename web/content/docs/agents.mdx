@@ -6,7 +6,7 @@ If an agent's login stops working (for example, signing in somewhere else revoke
 
 ## Usage limits
 
-On desktop, open **Settings > Usage** to see the limits reported by your connected computers. On the phones it's **State > Usage limits**, and in the terminal UI press `U`. The host refreshes usage every five minutes, and GitHub Copilot's every 30.
+On desktop, open the **Usage** page to see the limits reported by your connected computers. On the phones it's **State > Usage limits**, and in the terminal UI press `U`. The host refreshes usage every five minutes, and GitHub Copilot's every 30.
 
 Usage shows the agents your bots run. The button beside the computer's name opens a list of every agent that can report on that computer: use its switches to turn on one no bot uses yet or hide one you don't want to see, and drag an agent by its handle to change the order Usage lists them in. In the terminal UI, press `s` on the usage sheet to open that list, and `J` or `K` to move an agent. The choices belong to the computer: your other devices follow them. An agent that's on but has nothing to read says **No reading yet**, which usually means it's signed out. When a check fails, Usage keeps the last numbers it read and marks them **Out of date** until the next check works.
 
@@ -91,7 +91,7 @@ Opening **Extensions** checks again, so an agent you installed or signed in to o
 
 Agents are set up from **Extensions**, which belongs to one computer:
 
-- **Desktop:** **Extensions** at the bottom of the sidebar. With several computers, each computer's heading in the sidebar has its own Extensions button instead.
+- **Desktop:** **Extensions** (four squares) in the bar of icons at the left of the window. With several computers, choose the computer at the top of the page, or use the Extensions button on its heading in the bot list.
 - **iPhone:** tap the connection status at the top of the Bots tab (such as **1 connected**), choose **Manage computers**, and tap **Extensions** on the computer.
 - **Terminal UI:** press `A`.
 
@@ -120,7 +120,7 @@ For an agent Codync knows by name, the chat also tells you when it needs signing
 
 ### Login profiles
 
-A login profile is one more login to an agent, so two bots can work at the same time on different ones. The agent's sheet lists them under **Login profiles**. The first is the **default login profile**: the one the computer was already signed in to, which bots use unless they pick another. There are two kinds:
+A login profile is one more login to an agent, so two bots can work at the same time on different ones. On the desktop they have a tab of their own in Extensions, **Login profiles**, with a card for each agent; the agent's sheet links there, and so does **Add login profile…** in a bot's settings. On the phones the agent's sheet lists them under **Login profiles**. The first is the **default login profile**: the one the computer was already signed in to, which bots use unless they pick another. There are two kinds:
 
 - **An account:** the agent's own sign-in, again. Claude Code, Codex, OpenCode, Pi, Google Antigravity, Devin and Gemini CLI can be signed in to more than one account. Choose **Add account**: the agent's sign-in follows, in a terminal on the computer for most agents and in a browser on the computer for Google Antigravity. The login profile then shows who it's signed in as, where the agent says. An account needs the agent installed on the computer.
 - **An API key:** for any agent. Choose **Add API key** and type the variables the agent reads its key from, such as `ANTHROPIC_API_KEY`, or a name of your own for a custom model (a config like OpenCode's `"apiKey": "{env:MY_KEY}"` reads `MY_KEY`). **Import from login shell** lists the variables your terminal sets, such as a key you `export` in `~/.zshrc`; tick the ones to use and Codync copies their values then. Nothing from your shell reaches an agent unless you import it, and changing the variable in your shell later doesn't change the login profile: use **Edit keys** and import again.

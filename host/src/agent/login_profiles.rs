@@ -8,12 +8,12 @@
 //!   vault and set for the process (`keys`). Any agent can have one.
 
 use crate::LockExt;
-use crate::agent::backends::{self, agent_id};
 use crate::hub::Hub;
 use crate::keeper::client::Grants;
 use crate::store::{BotConfig, Store};
 use anyhow::{Context, Result, anyhow, bail};
-use codync_accounts::{Account, Agent, SignIn};
+use codync_agent::accounts::{Account, Agent, SignIn};
+use codync_agent::backends::{self, agent_id};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Mutex;
@@ -23,7 +23,7 @@ pub mod keys;
 pub use account::{login_command, refresh_default};
 
 /// Set for an agent on a login profile, so its helpers know they don't report for the default login.
-pub use codync_accounts::ACCOUNT_VAR as PROFILE_VAR;
+pub use codync_agent::accounts::ACCOUNT_VAR as PROFILE_VAR;
 
 const KV: &str = "login-profiles";
 /// The names the user gave the default logins, by agent.
@@ -95,7 +95,7 @@ impl Profile {
 
 /// How `backend`'s agent keeps accounts, if it can have them.
 fn accounts_of(backend: &str) -> Option<&'static Agent> {
-    codync_accounts::agent(agent_id(backend))
+    codync_agent::accounts::agent(agent_id(backend))
 }
 
 fn default_names(store: &Store) -> serde_json::Map<String, Value> {
@@ -115,7 +115,7 @@ fn default_name(id: &str, names: &serde_json::Map<String, Value>) -> Option<Stri
 
 /// Names profile `id`, or with no id `backend`'s default login: an empty name takes it back to who it signs in.
 pub fn rename(store: &Store, backend: &str, id: Option<&str>, name: &str) -> Result<()> {
-    let label = codync_accounts::label(name)?;
+    let label = codync_agent::accounts::label(name)?;
     let Some(id) = id else {
         let agent = agent_id(backend);
         let _guard = CHANGING.locked();
@@ -252,7 +252,7 @@ pub fn annotate(store: &Store, agents: &mut [Value]) {
     for agent in agents {
         let Some(id) = agent["id"].as_str().map(|id| agent_id(id).to_owned()) else { continue };
         let own: Vec<Value> = profiles.iter().filter(|p| p.account.agent == id).map(Profile::wire).collect();
-        let accounts = codync_accounts::agent(&id);
+        let accounts = codync_agent::accounts::agent(&id);
         agent["loginProfiles"] = own.into();
         agent["defaultLoginProfile"] = default_wire(&id, &names);
         agent["loginProfileSignIn"] = match accounts.map(|a| a.sign_in) {

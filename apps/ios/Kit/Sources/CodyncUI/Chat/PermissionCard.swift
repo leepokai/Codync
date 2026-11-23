@@ -1,15 +1,20 @@
 import CodyncKit
 import SwiftUI
 
-/// Approval card in Grok Bot's choice-card style: what the agent wants, where
-/// it runs, and the answers as a list of rows.
+/// Approval card in the choice card's form: what the agent wants, where it runs, and the answers as the choice card's
+/// numbered rows, in one tone. Once settled it folds to one line (`RequestLine`), which opens to where it ran and what
+/// it asked with: no card, there is nothing left to answer.
 struct PermissionCard: View {
     let entry: Entry
     let hostName: String
     /// The option whose answer is on its way to the computer, if any.
     var answering: String?
     let respond: (String?) -> Void
+    /// In a run of requests that ended alike its line leaves the ending to the run's.
+    var showsEnding = true
     @State private var expanded = false
+    @State private var open = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var d: EntryData { entry.data }
     private var pending: Bool { d.status == "pending" }
@@ -25,46 +30,87 @@ struct PermissionCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Text(L10n.tr(headline)).font(.headline).foregroundStyle(Palette.text)
-                if pending {
-                    Circle().fill(Palette.warning).frame(width: 7, height: 7)
+        // Settled, there is nothing to answer: no card, one line that opens to where it ran and what it asked with.
+        if !pending {
+            let n = Request.name(d.title ?? "")
+            VStack(alignment: .leading, spacing: 0) {
+                RequestLine(icon: Request.icon(kind: d.toolKind, title: d.title), name: n.name, source: n.source, literal: n.literal,
+                            ending: showsEnding ? Self.outcome(d) : nil, expanded: open) {
+                    withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { open.toggle() }
                 }
-            }
-            Text(d.title ?? "")
-                .font(.subheadline.monospaced())
-                .foregroundStyle(Palette.secondary)
-                .lineLimit(expanded ? nil : 3)
-            Label(L10n.fill(L10n.tr("Runs on {name}{path}"), ["name": hostName, "path": d.cwd.map { " · \(($0 as NSString).lastPathComponent)" } ?? ""]), systemImage: "desktopcomputer")
-                .font(.caption)
-                .foregroundStyle(Palette.tertiary)
-            WorkThreadLine(data: d)
-
-            if hasDetail {
-                Disclosure(isExpanded: $expanded) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if let command = d.command, !command.isEmpty {
-                            CodeBox(text: command)
-                        }
-                        if let detail = d.detail, !detail.isEmpty {
-                            CodeBox(text: String(detail.prefix(2000)))
-                        }
+                if open {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(whereText).font(.caption).foregroundStyle(Palette.tertiary)
+                        if let command = d.command, !command.isEmpty { CodeBox(text: command) }
+                        if let detail = Request.detail(d.detail) { CodeBox(text: String(detail.prefix(2000))) }
                         ForEach(d.diffs ?? [], id: \.self) { DiffView(diff: $0) }
                     }
-                    .padding(.top, 6)
-                } label: {
-                    Text(L10n.tr("Details")).font(.caption.weight(.medium)).foregroundStyle(Palette.secondary)
+                    .padding(.leading, 24)
+                    .padding(.bottom, 6)
+                }
+            }
+            .padding(.trailing, 40)
+        } else {
+            card
+        }
+    }
+
+    private var whereText: String {
+        L10n.fill(L10n.tr("Runs on {name}{path}"), ["name": hostName, "path": d.cwd.map { " · \(($0 as NSString).lastPathComponent)" } ?? ""])
+    }
+
+    private var card: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // The choice card's form: the question, where it runs with Details, the request in a well.
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L10n.tr(headline)).font(.headline).foregroundStyle(Palette.text)
+                HStack(spacing: 8) {
+                    Text(whereText)
+                        .font(.caption)
+                        .foregroundStyle(Palette.tertiary)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    if hasDetail {
+                        Button {
+                            withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { expanded.toggle() }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(L10n.tr("Details")).font(.caption.weight(.medium))
+                                Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
+                                    .rotationEffect(.degrees(expanded ? 90 : 0))
+                            }
+                            .foregroundStyle(Palette.secondary)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+                    }
+                }
+                Text(d.title ?? "")
+                    .font(.subheadline.monospaced())
+                    .foregroundStyle(Palette.secondary)
+                    .lineLimit(expanded ? nil : 3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(Palette.text.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .padding(.top, 4)
+            }
+            WorkThreadLine(data: d)
+
+            if hasDetail && expanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let command = d.command, !command.isEmpty {
+                        CodeBox(text: command)
+                    }
+                    if let detail = Request.detail(d.detail) {
+                        CodeBox(text: String(detail.prefix(2000)))
+                    }
+                    ForEach(d.diffs ?? [], id: \.self) { DiffView(diff: $0) }
                 }
             }
 
-            if pending {
-                buttons
-            } else {
-                Text(outcome)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(Palette.secondary)
-            }
+            buttons
         }
         .padding(16)
         .frame(maxWidth: 420, alignment: .leading)
@@ -73,7 +119,7 @@ struct PermissionCard: View {
     }
 
     private var hasDetail: Bool {
-        !(d.command ?? "").isEmpty || !(d.detail ?? "").isEmpty || !(d.diffs ?? []).isEmpty
+        !(d.command ?? "").isEmpty || Request.detail(d.detail) != nil || !(d.diffs ?? []).isEmpty
     }
 
     /// Ordered like Grok Bot: Allow once, Always allow, then Deny.
@@ -94,31 +140,27 @@ struct PermissionCard: View {
 
     private var buttons: some View {
         let options = ordered
-        return VStack(spacing: 0) {
+        return VStack(spacing: 2) {
             ForEach(Array(options.enumerated()), id: \.element.id) { i, o in
-                if i > 0 { Rectangle().fill(Palette.border).frame(height: 0.5) }
                 Button { respond(o.optionId) } label: {
-                    HStack(spacing: 8) {
-                        Text(label(o))
-                            .font(.body.weight(o.kind == "allow_once" ? .semibold : .regular))
-                            .foregroundStyle(o.kind.hasPrefix("allow") ? Palette.text : Palette.danger)
+                    HStack(spacing: 10) {
+                        RowNumber {
+                            if answering == o.optionId { Spinner(size: 12) } else { Text(verbatim: "\(i + 1)") }
+                        }
+                        Text(label(o)).font(.body).foregroundStyle(Palette.text)
                         Spacer(minLength: 0)
-                        if answering == o.optionId { Spinner(size: 14) }
                     }
-                    .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
-                    .padding(.horizontal, 14)
-                    .contentShape(Rectangle())
+                    .decisionRow()
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(RowStyle())
                 .disabled(answering != nil)
                 .opacity(answering == nil || answering == o.optionId ? 1 : 0.4)
             }
         }
-        .background(Palette.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .padding(.top, 4)
+        .padding(.horizontal, -8)
     }
 
-    private var outcome: String {
+    static func outcome(_ d: EntryData) -> String {
         switch d.status {
         case "answered":
             let chosen = d.options?.first { $0.optionId == d.selected }

@@ -2,7 +2,7 @@
 //! the agent offers (docs/features/marketplace.md, "Fast mode").
 
 use super::{Actor, NoticeStyle};
-use crate::agent::config::{FastModeSupport, fast_mode_change, fast_mode_config, fast_mode_on, fast_mode_refusal};
+use codync_agent::config::{FastModeSupport, fast_mode_change, fast_mode_config, fast_mode_on, fast_mode_refusal};
 use serde_json::{Value, json};
 
 /// Where a session's config options come from.

@@ -311,14 +311,16 @@ async fn a_message_the_agent_leaves_for_later_goes_before_other_work() {
         return;
     }
     let host = Host::start().await;
-    let bot = host.fixture_bot("Ahead", "steer_agent.py", "next 3").await;
+    // The first turn outlasts the setup below even on a slow CI runner: a steer that only arrives after it ended
+    // finds the routine's turn running, and the message rightly waits behind it.
+    let bot = host.fixture_bot("Ahead", "steer_agent.py", "next 15").await;
     turn_running(&host, &bot).await;
     let body = json!({"botId": bot, "name": "Other work", "instruction": "Other work", "triggers": [{"type": "webhook"}], "timeoutSeconds": 60});
     let routine = host.call("saveRoutine", body).await["routine"]["id"].clone();
     host.call("runRoutine", json!({"botId": bot, "id": routine})).await;
     let second = host.call("send", json!({"botId": bot, "text": "second"})).await["entry"]["id"].clone();
     host.call("steer", json!({"botId": bot, "entryId": second})).await;
-    eventually("all three had their turns", Duration::from_secs(30), async || {
+    eventually("all three had their turns", Duration::from_mins(1), async || {
         host.requests(&bot, "session/prompt").len() == 3
     })
     .await;

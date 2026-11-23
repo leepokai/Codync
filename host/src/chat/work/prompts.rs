@@ -1,7 +1,7 @@
 //! What threads are told, and what a bot is told about its box.
 
 use super::Report;
-use super::tasks::Task;
+use super::tasks::{Source, Task};
 use std::fmt::Write as _;
 
 /// What a bot is told about its box, in its instructions (and each turn, for a session opened before it).
@@ -107,13 +107,21 @@ pub fn in_thread(text: &str, picked_up: Option<String>) -> String {
     picked_up.map_or(written.clone(), |work| format!("{work}\n\n{written}"))
 }
 
+/// What a thread the user started is told before their first message.
+const OPENED: &str = "[Task] You are the same bot, away from your chat: the user opened this thread to work with you \
+directly, and reads it here. It starts without your chat's conversation.";
+
 /// What a new session is told before the user's message to `task`'s thread, when the session that did the work
 /// can't be picked up: the work, what the user said about it, and what it reported.
 pub(super) fn picked_up(task: &Task) -> String {
+    // A thread the user started hears its first message: there is no earlier work to tell it of.
+    if task.source == Source::User && task.said.is_none() && task.notes.is_empty() {
+        return OPENED.to_owned();
+    }
     let said = said(task);
     let reported = task.said.as_deref().map_or_else(
         || "[Codync: it ended without a report.]".to_owned(),
-        |text| format!("[Codync: what you reported when it ended:]\n{}", crate::agent::acp::truncate(text, 2_000)),
+        |text| format!("[Codync: what you reported when it ended:]\n{}", codync_agent::acp::truncate(text, 2_000)),
     );
     format!(
         "[Task] You are the same bot, away from the chat. You worked on \"{}\" before, in a session that can't be \
@@ -128,7 +136,7 @@ pub(super) fn picked_up(task: &Task) -> String {
 fn told_line(told: &[String]) -> Option<String> {
     let shown = &told[told.len().saturating_sub(TOLD_IN_REPORT)..];
     let words: Vec<String> =
-        shown.iter().map(|w| format!("«{}»", crate::agent::acp::truncate(w, TOLD_LONGEST))).collect();
+        shown.iter().map(|w| format!("«{}»", codync_agent::acp::truncate(w, TOLD_LONGEST))).collect();
     let earlier = match told.len() - shown.len() {
         0 => String::new(),
         n => format!(" (and {n} earlier)"),

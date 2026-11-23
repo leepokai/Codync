@@ -122,6 +122,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var lastAt: Int64
 
     public var isGroup: Bool { kind == "group" }
+    /// Counted and listed by the widgets and the Control Center control: a group room isn't a bot.
+    public var showsInWidgets: Bool { !hidden && !isGroup }
     public var isWorking: Bool { status == "working" || status == "needsInput" }
     /// Working right now in this chat (not in a group it's in, or the reverse).
     public func isWorking(in chat: String) -> Bool {

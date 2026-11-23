@@ -2,7 +2,6 @@
 
 use super::sign_in::Held;
 use super::{Actor, Conn, Done, HostTurn, Instructions, NoticeStyle, Queued, Reacted, Seg};
-use crate::agent::acp::{self, Incoming};
 use crate::analytics::{self, TurnEnd, TurnOutcome, TurnSource};
 use crate::chat::context::{self, Snapshot};
 use crate::chat::memory;
@@ -12,6 +11,7 @@ use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{BotConfig, EntryKind, Lane, now_ms};
 use anyhow::{Result, anyhow};
+use codync_agent::acp::{self, Incoming, StopReason};
 use serde_json::json;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -29,6 +29,11 @@ impl Actor {
     /// The prompt for `text` in session `sid`: what the agent should hear first (its profile, a handoff, a memory
     /// change) and after (a profile update, how to share files).
     async fn compose(&mut self, sid: &str, text: &str) -> Result<String> {
+        // An agent on its own (`BotConfig::plain`) hears the user's words alone.
+        if self.cfg.plain {
+            self.session_fresh = false;
+            return Ok(text.to_owned());
+        }
         let instructions = self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions);
         let mut snapshot = self.snapshot(sid).await?;
         // Sessions whose frozen instructions predate send_file, artifacts or follow-ups hear about them each turn.
@@ -67,7 +72,7 @@ impl Actor {
             prompt = format!("{prompt}\n\n{update}");
             self.announce = Some((snapshot, identity));
         }
-        let own_chat = self.in_own_chat();
+        let own_chat = self.in_own_chat() && self.active_workflow.is_none();
         if remind_files && own_chat {
             prompt.push_str("\n\n[Codync: send_file(path, name?) shares any regular file up to 100 MiB as a downloadable card. Use it instead of sending a local path.]");
         }
@@ -77,7 +82,7 @@ impl Actor {
         if remind_follow_ups && own_chat {
             prompt = format!("{prompt}\n\n[Codync: {}]", crate::routines::BRIEF);
         }
-        let known = crate::agent::backends::harness(&self.cfg.backend).is_some();
+        let known = codync_agent::backends::harness(&self.cfg.backend).is_some();
         let own_box = own_chat && !self.cfg.is_thread();
         if let Some(about) = work::reminder(briefed_on_threads, known).filter(|_| own_box) {
             prompt = format!("{prompt}\n\n[Codync: {about}]");
@@ -175,18 +180,9 @@ impl Actor {
         } else {
             self.relay_turn(&lane, entry_ids, text).await;
         }
-        // A bot request or room turn isn't resumed after a host restart (the room that waited is gone): a request's
-        // persisted notices are marked interrupted instead of silently repeating work. Nor is a call's opening (the
-        // call is over). A reply turn is resumed, and so is a follow-up, which is gone from the list by now. A turn
-        // under a network rule's ceiling isn't: the ceiling doesn't outlive the host, and the turn that resumed it
-        // would work on the sender's text as the bot is set.
-        self.set_inflight(
-            self.active_request.is_none()
-                && !self.hub.ceilings.holds(&self.cfg.id)
-                && self.active_group.is_none()
-                && self.active_routine.is_none()
-                && self.host_turn.is_none_or(HostTurn::resumed),
-        );
+        // A reply turn is marked only once its prompt is out and its replies are relayed (`queue`): a restart before
+        // that sends them again from their notices, and resuming as well would hand them over twice.
+        self.set_inflight(self.resumes() && self.reply_hops.is_none());
         // A message the host wrote in the user's place (`from: host`) isn't the user asking.
         let typed = |id: &&String| self.hub.store.entry(id).is_some_and(|e| e.data["from"] != "host");
         let message = if from_user { entry_ids.iter().rev().find(typed).cloned() } else { None };
@@ -253,9 +249,9 @@ impl Actor {
         // chatter, what is about the agent (its commands, options) counts.
         while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
             match inc {
-                Incoming::Request { id, method, params } => self.answer_outside_turn(id, &method, &params).await,
-                Incoming::Notification { method, params } if method == "session/update" => {
-                    self.on_session_wide(&params);
+                Incoming::Request(request) => self.answer_outside_turn(request).await,
+                Incoming::Update(update) => {
+                    self.on_session_wide(&update);
                 }
                 _ => {}
             }
@@ -273,8 +269,11 @@ impl Actor {
             self.carry_in();
         }
         // What the user wrote to a thread says so, after the work itself where the session doesn't hold it.
-        let text =
-            &if written.is_empty() || agent_command { text.to_owned() } else { work::in_thread(text, picked_up) };
+        let text = &if written.is_empty() || agent_command || self.cfg.plain {
+            text.to_owned()
+        } else {
+            work::in_thread(text, picked_up)
+        };
         let prompt = if std::mem::take(&mut self.raw_prompt) || agent_command {
             text.to_owned()
         } else {
@@ -282,10 +281,7 @@ impl Actor {
         };
         self.hub.set_runtime(&self.id(), |r| r.activity = "Thinking…".into());
         let acp = self.conn.as_ref().ok_or_else(|| anyhow!("agent not running"))?.acp.clone();
-        let params = json!({
-            "sessionId": sid,
-            "prompt": [{"type": "text", "text": prompt}],
-        });
+        let prompt = json!([{"type": "text", "text": prompt}]);
         if let Some(id) = &self.active_routine {
             self.hub.routines.mark_started(&self.hub.store, id)?;
             self.set_inflight(true);
@@ -298,7 +294,7 @@ impl Actor {
         let asked = self.hub.runtime(&self.cfg.id).message.filter(|_| !self.cfg.is_thread());
         memory::turns::begin_turn(&self.cfg, &sid, asked);
         // Written before this returns, so a Stop right after is sent after the prompt.
-        let answer = acp.send("session/prompt", params).await?;
+        let answer = acp.session(&sid).prompt(prompt).await?;
         if !self.turn_memory_revision.is_empty()
             && let Err(error) =
                 memory::mark_announced(&self.hub.store, self.cfg.owner(), &sid, &self.turn_memory_revision)
@@ -319,7 +315,7 @@ impl Actor {
             return Vec::new();
         }
         let entries = entry_ids.iter().filter_map(|id| self.hub.store.entry(id)).filter(|e| e.data["from"] != "host");
-        entries.filter_map(|e| e.data["text"].as_str().map(str::to_owned)).collect()
+        entries.map(|e| work::written(&e.data)).collect()
     }
 
     /// A thread's turn for what the user wrote to its thread (`written`) begins: its task keeps their words for its
@@ -371,7 +367,7 @@ impl Actor {
         {
             *used = Instant::now();
         }
-        let cancelled = matches!(&done, Ok(v) if v["stopReason"] == "cancelled");
+        let cancelled = matches!(&done, Ok(v) if StopReason::of(v) == StopReason::Cancelled);
         if cancelled && !self.stop_requested {
             self.requeue_unheard();
         }
@@ -379,7 +375,7 @@ impl Actor {
         self.close_attempt(stopped || done.is_err());
         let mut final_text = None;
         let routine = self.active_routine.is_some();
-        let grouped = self.active_group.is_some() || routine;
+        let grouped = self.active_group.is_some() || routine || self.active_workflow.is_some();
         let delegated = self.active_request.is_some();
         let sent = std::mem::take(&mut self.sent);
         let reacted = std::mem::take(&mut self.reacted);
@@ -413,7 +409,7 @@ impl Actor {
             final_text = self.files.summary.take();
         }
         let stop_reason = match &done {
-            Ok(v) => v["stopReason"].as_str().unwrap_or("end_turn").to_owned(),
+            Ok(v) => StopReason::of(v).as_str().to_owned(),
             Err(_) => "error".into(),
         };
         match (&done, stop_reason.as_str()) {
@@ -453,6 +449,25 @@ impl Actor {
         } else {
             final_text.clone().filter(|s| !s.trim().is_empty()).ok_or_else(no_reply::no_text)
         };
+        if let Some(step) = self.active_workflow.clone() {
+            let timed_out = self.routine_timed_out;
+            let stopped_step = !timed_out && (stopped || self.stop_requested);
+            let failed_step = timed_out || (!stopped_step && (failed || stop_reason != "end_turn"));
+            let output = (!stopped_step && !failed_step).then(|| final_text.clone()).flatten();
+            let error = if timed_out {
+                Some("This step took too long".into())
+            } else {
+                failed_step.then(|| format!("The agent didn't finish ({stop_reason})"))
+            };
+            self.routine_deadline = None;
+            self.routine_timed_out = false;
+            self.active_workflow = None;
+            let keep = self.hub.workflows.finish(&self.hub, &step, output, error, stopped_step);
+            if !keep {
+                let slot = crate::workflows::session_slot(&step);
+                self.set_session(Some(&slot), None);
+            }
+        }
         if routine {
             let (status, detail) = if self.routine_timed_out {
                 (crate::routines::Status::Failed, Some(crate::routines::TIMED_OUT.into()))
@@ -538,9 +553,9 @@ impl Actor {
             match (turn_alert(failed, &stop_reason, more || news.is_none()), news) {
                 (Some(AlertKind::Failed), _) => {
                     let body = final_text.unwrap_or_else(|| "The agent didn't finish.".into());
-                    push::notify(&self.hub, &self.cfg, None, &self.cfg.name, &body, AlertKind::Failed);
+                    push::notify(&self.hub, &self.cfg, None, &self.cfg.name, &body, AlertKind::Failed, None);
                 }
-                (Some(kind), Some(body)) => push::notify(&self.hub, &self.cfg, None, &self.cfg.name, &body, kind),
+                (Some(kind), Some(body)) => push::notify(&self.hub, &self.cfg, None, &self.cfg.name, &body, kind, None),
                 // Their next message is queued: its turn announces this once the queue is answered.
                 (None, news) if more => self.unannounced = news,
                 _ => {}
@@ -576,15 +591,11 @@ impl Actor {
     /// Expires the permission cards still unanswered: no one can answer them once their turn, or the actor, is
     /// gone, and a pending card would stay in its chat's badge (`Store::badge`).
     pub(super) fn expire_perms(&mut self) {
-        let client = self.conn.as_ref().map(|c| c.acp.clone());
-        for (id, answer) in self.perms.drain() {
+        // The agent would wait on a card no one can answer any more: its request, dropped, answers `cancelled`.
+        for (id, _answer) in self.perms.drain() {
             if let Some(mut e) = self.hub.store.entry(&id) {
                 e.data["status"] = "expired".into();
                 self.hub.set_entry(&id, &e.data);
-            }
-            // The agent would wait on a card no one can answer any more.
-            if let (super::updates::Answer::Agent(rpc_id), Some(client)) = (answer, client.clone()) {
-                tokio::spawn(async move { client.respond(rpc_id, acp::permission_answer(None)).await });
             }
         }
     }
@@ -624,7 +635,7 @@ impl Actor {
 
     /// What started the turn that is starting or running. A thread's turn is what its task came from.
     pub(super) fn source(&self) -> TurnSource {
-        if self.in_routine() {
+        if self.in_routine() || self.active_workflow.is_some() {
             TurnSource::Routine
         } else if self.active_group.is_some() {
             TurnSource::Group

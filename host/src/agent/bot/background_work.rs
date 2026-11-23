@@ -1,8 +1,8 @@
 //! Whether an agent still runs something that stopping it would end, which keeps it running when it's idle, and
 //! whether it still runs Codync's MCP servers.
 
-use crate::agent::acp::Acp;
-use crate::agent::process::{self, JobProcess};
+use codync_agent::acp::Acp;
+use codync_agent::process::{self, JobProcess};
 
 /// Whether one of Codync's MCP servers (`codync-host mcp`) still runs under the agent. OpenCode 2.x drops them from a
 /// live session once it has been idle a while (#508). Unsure counts as running.

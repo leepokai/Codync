@@ -17,6 +17,7 @@
 //! thread that looks stuck.
 
 mod dispatch;
+pub mod plain;
 mod prompts;
 mod recall;
 mod sources;
@@ -30,12 +31,12 @@ mod worktree;
 
 pub use dispatch::{Wait, dispatch};
 pub use prompts::{BRIEF, in_thread, relayed, reminder, report_notice, report_prompt};
-pub use sources::{access_of, add_request, add_routine, boxed, from_chat, routines_changed, source_of};
+pub use sources::{access_of, add_request, add_routine, add_thread, boxed, from_chat, routines_changed, source_of};
 pub use steer::{Steer, cut_in, drop_task, first, retry, stop};
 #[cfg(test)]
 pub use tasks::put_working_for_test;
-pub use tasks::{Source, Status, doing, lines, outside, wire, working_threads};
-pub use thread::{Refused as ThreadRefused, heard, message, picked_up, thread as thread_of, unhear};
+pub use tasks::{Setup, Source, Status, doing, lines, outside, wire, working_threads};
+pub use thread::{Refused as ThreadRefused, heard, message, picked_up, thread as thread_of, unhear, written};
 pub use tools::{TOOLS, acting_as, call, refuse_chat_only, refuse_in_thread, tools};
 pub use watch::Stuck;
 pub use worktree::{Worktree, enter as enter_worktree, in_repo};
@@ -401,7 +402,7 @@ fn end(tasks: &mut [Task], thread: &str, outcome: Outcome) -> Option<Task> {
     let task = tasks.iter_mut().find(|i| i.status == Status::Working && i.thread.as_deref() == Some(thread))?;
     let (status, result, failure) = match outcome {
         // Only the bot's own work starts again: a routine run or a request done twice could act twice.
-        Outcome::Failed(Failure::Restart | Failure::Lost, _) if !task.restarted && task.source.is_bot() => {
+        Outcome::Failed(Failure::Restart | Failure::Lost, _) if !task.restarted && task.source.own() => {
             task.set_aside(front);
             task.restarted = true;
             task.cut_in = true;
@@ -410,8 +411,8 @@ fn end(tasks: &mut [Task], thread: &str, outcome: Outcome) -> Option<Task> {
         Outcome::Done(text) => {
             // A report to the bot's own turn carries only so much; a routine run's or a request's result is posted
             // whole, as its message.
-            let most = if task.source.is_bot() { MAX_REPORT } else { usize::MAX };
-            let text = text.map(|t| crate::agent::acp::truncate(t.trim(), most)).filter(|t| !t.is_empty());
+            let most = if task.source.own() { MAX_REPORT } else { usize::MAX };
+            let text = text.map(|t| codync_agent::acp::truncate(t.trim(), most)).filter(|t| !t.is_empty());
             match text {
                 Some(text) => (Status::Done, Some(Ok(text)), None),
                 // A routine run with nothing to tell says nothing (`(pass)`).
@@ -466,8 +467,8 @@ fn finished_properties(task: &Task, agent: Option<&str>) -> serde_json::Map<Stri
 }
 
 /// Sends what `task` came to where its source reads it: the bot's own work, as a turn in its chat; a routine run,
-/// as the routine's message there; a request, as the asking bot's reply. A report that can't be handed on stays on
-/// its task for the next host start.
+/// as the routine's message there; a request, as the asking bot's reply; a thread the user started, nowhere (they
+/// read it there). A report that can't be handed on stays on its task for the next host start.
 fn deliver(hub: &Hub, bot: &str, task: &Task) {
     if task.source.is_bot() {
         // With where its work is, as its worktree stands now.

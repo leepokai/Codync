@@ -2,10 +2,10 @@
 //! search over them, and search over its chat history.
 
 use super::dates::ymd;
-use crate::agent::acp;
 use crate::hub::Hub;
 use crate::store::BotConfig;
 use anyhow::{Result, anyhow, bail};
+use codync_agent::acp;
 use codync_mem::files::{self as mf, MAIN};
 use serde_json::{Value, json};
 use std::collections::HashMap;

@@ -78,3 +78,14 @@ import Testing
     draft.model = "haiku"
     #expect(draft.rebased(from: base, onto: fresh).model == "haiku")
 }
+
+@Test func modelListAsksForTheBotsLoginProfile() throws {
+    func body(_ request: AgentModelsRequest) throws -> [String: Any] {
+        try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any])
+    }
+    let profile = try body(AgentModelsRequest(backend: "gemini", loginProfile: "pro-7"))
+    #expect(profile["backend"] as? String == "gemini")
+    #expect(profile["loginProfile"] as? String == "pro-7")
+    // The default login sends none, as older apps did.
+    #expect(try body(AgentModelsRequest(backend: "gemini", loginProfile: nil)).keys.sorted() == ["backend"])
+}

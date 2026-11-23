@@ -32,7 +32,7 @@ reason to lock someone out.
 |---|---|---|
 | Notice | `UpdateNeededCard` above the computer's bots and in place of the composer; status reads *Needs update* | *needs update* in the status line, with the reason |
 | Update this app | iPhone: App Store page. Desktop: electron-updater check (`apps/desktop/src/main/updates.ts`). Android: text only | Text only |
-| Update the host | Desktop on macOS and Windows, its own computer: the bundled host is reinstalled (**Update now**). Any computer whose `hello` has `canUpdate` (the Linux desktop's own too): **Update now** calls `installHostUpdate` ([updates](../guides/updates.md#standalone-hosts-on-linux-and-macos)), and the notice reads *Updating Codync on …* until the host comes back newer, or for 10 minutes; then it offers the update again with why. Otherwise: instructions for that computer. The phones also offer it, and any newer release (`hello.latestVersion`), on the Codync row of the computer's card in Computer management; the desktop on SSH computers' cards in Settings > Computers | `^k` → Check for updates |
+| Update the host | Desktop on macOS and Windows, its own computer: the bundled host is reinstalled (**Update now**). Any computer whose `hello` has `canUpdate` (the Linux desktop's own too): **Update now** calls `installHostUpdate` ([updates](../guides/updates.md#standalone-hosts-on-linux-and-macos)), and the notice reads *Updating Codync on …* until the host comes back newer, or for 10 minutes; then it offers the update again with why. Otherwise: instructions for that computer. The phones also offer it, and any newer release (`hello.latestVersion`), on the Codync row of the computer's card in Computer management; the desktop on SSH computers' cards on the Computers page | `^k` → Check for updates |
 | Sync while mismatched | Stopped; `hello` is asked again every 30 s (5 s while an update asked from here runs) and on every reconnect | Continues; sending is blocked |
 
 Update notices name which side needs updating and its minimum version: this app, Codync on the named computer, or a cloud computer updating itself.
@@ -78,6 +78,10 @@ Writing to an item's thread adds only: `itemId` on `send`, `steer` and `unqueue`
 `work[].folder`, and the user's own entries in a task's transcript. An app from before it shows the transcript to
 read as before, with those entries among the steps, and an item the user reopened elsewhere as working again. A
 host from before it sends no `talk`, so a newer app shows no composer there. It raises no floor.
+
+Files in a message to a thread add only: `taskId` on `upload` and `readUpload`, `attachments` on a `send` with
+`taskId`, and `work[].talkFiles`. A host from before it sends no `talkFiles`, so a newer app shows no + (and takes no
+drop or paste) in a thread's box; an app from before it never attaches there. It raises no floor.
 
 Apps older than 2.39.0 don't read `removed`: a queued message taken back on a newer client (`unqueue`) stays in their
 chat as *Not sent — stopped*. Nothing breaks and the message never went out, so it raises no floor.

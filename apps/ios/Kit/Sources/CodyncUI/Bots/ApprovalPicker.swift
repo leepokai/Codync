@@ -18,16 +18,16 @@ struct ApprovalPicker: View {
             ChoicePicker(selection: Binding(get: { selected.id }, set: { draft.setApproval($0) }),
                          options: choices.map { ($0.id, $0.label) })
         }
-        .task(id: "\(store.computer.id)/\(draft.backend)/\(store.connection == .online)/\(reload)") { await load() }
+        .task(id: "\(store.computer.id)/\(draft.backend)/\(draft.loginProfile ?? "")/\(store.connection == .online)/\(reload)") { await load() }
         // Another agent's modes never show; a refresh that fails keeps the ones it has.
-        .onChange(of: "\(store.computer.id)/\(draft.backend)") { catalog = nil }
+        .onChange(of: "\(store.computer.id)/\(draft.backend)/\(draft.loginProfile ?? "")") { catalog = nil }
     }
 
     /// The agent's modes come with its model list (the host shares one asked for from several places at once).
     private func load() async {
         guard draft.backend != "custom", store.connection == .online, let client = store.client else { return }
         do {
-            let response = try await client.agentModels(draft.backend)
+            let response = try await client.agentModels(draft.backend, loginProfile: draft.loginProfile)
             try Task.checkCancellation()
             catalog = response
         } catch {

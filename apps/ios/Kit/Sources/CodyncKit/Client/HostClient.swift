@@ -26,6 +26,8 @@ public enum HostEvent: Sendable {
     case resync
     /// One this app has no use for.
     case skipped
+    /// A workflow change. It carries no `rev`; a decode failure is ignored, not `.undecodable`.
+    case workflow(WorkflowEvent)
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
 }
@@ -169,6 +171,10 @@ public struct HostClient: Sendable {
             return (try? d.decode(AutoOrderWrap.self, from: data)).map { .autoOrder($0.enabled) }
         case "resync":
             return .resync
+        case "workflow":
+            // A workflow event this build can't read is dropped. It has no rev, so it must not rewind the stream.
+            guard let event = try? d.decode(WorkflowEvent.self, from: data) else { return nil }
+            return .workflow(event)
         default:
             return nil
         }
@@ -303,7 +309,8 @@ public extension HostClient {
     /// `replyTo`: the chat message this one quotes. `replyPart`: the part of it the user selected.
     /// `pasted`: what the user pasted rather than typed, which memory never takes as their own words.
     /// `call`: the voice call it was said in (on-device or speech to text).
-    /// `taskId`: the bot's task whose thread it is for (text only); the entry that comes back is in that thread's transcript.
+    /// `taskId`: the bot's task whose thread it is for (no quote or call); the entry that comes back is in that thread's
+    /// transcript.
     func send(botId: String, text: String, clientNonce: String, replyTo: String? = nil, replyPart: String? = nil,
               attachments: [String]? = nil, pasted: [String]? = nil, call: String? = nil, taskId: String? = nil) async throws -> Entry {
         struct Body: Encodable {
@@ -321,14 +328,15 @@ public extension HostClient {
     static let uploadChunk = 384 * 1024
 
     /// Uploads a message's `files` for its `send`: their upload ids, in order. Each attempt takes fresh ids, so a retry never
-    /// appends to a half-sent file. `sent` hears the bytes of all of them sent so far.
-    func upload(botId: String, files: [OutgoingFile], sent: @Sendable (Int) -> Void = { _ in }) async throws -> [String] {
+    /// appends to a half-sent file. `sent` hears the bytes of all of them sent so far. `taskId`: for the thread of that
+    /// task of the bot's instead of its chat.
+    func upload(botId: String, taskId: String? = nil, files: [OutgoingFile], sent: @Sendable (Int) -> Void = { _ in }) async throws -> [String] {
         var ids: [String] = []
         var done = 0
         for file in files {
             let id = UUID().uuidString
             let before = done
-            try await upload(botId: botId, id: id, name: file.name, data: file.data) { sent(before + $0) }
+            try await upload(botId: botId, taskId: taskId, id: id, name: file.name, data: file.data) { sent(before + $0) }
             done += file.data.count
             ids.append(id)
         }
@@ -336,13 +344,13 @@ public extension HostClient {
     }
 
     /// Sends one file in chunks for a later `send`; `id` names the upload there. `sent` hears the bytes sent so far.
-    private func upload(botId: String, id: String, name: String, data: Data, sent: @Sendable (Int) -> Void) async throws {
-        struct Body: Encodable { var botId, uploadId, name, data: String; var offset: Int; var done: Bool }
+    private func upload(botId: String, taskId: String?, id: String, name: String, data: Data, sent: @Sendable (Int) -> Void) async throws {
+        struct Body: Encodable { var botId: String; var taskId: String?; var uploadId, name, data: String; var offset: Int; var done: Bool }
         var offset = 0
         repeat {
             let end = min(offset + Self.uploadChunk, data.count)
             let chunk = data.subdata(in: offset..<end).base64EncodedString()
-            let _: Empty = try await call("upload", Body(botId: botId, uploadId: id, name: name, data: chunk, offset: offset, done: end == data.count), timeout: 60)
+            let _: Empty = try await call("upload", Body(botId: botId, taskId: taskId, uploadId: id, name: name, data: chunk, offset: offset, done: end == data.count), timeout: 60)
             offset = end
             sent(offset)
         } while offset < data.count
@@ -530,8 +538,9 @@ public extension HostClient {
     }
 
     /// Starts the agent to see whether it's signed in and how it can be (first run may download it).
-    func agentModels(_ backend: String) async throws -> AgentModels {
-        try await call("agentModels", ["backend": backend], timeout: 300)
+    /// `loginProfile`: the login profile to list them for; nil for the computer's own.
+    func agentModels(_ backend: String, loginProfile: String? = nil) async throws -> AgentModels {
+        try await call("agentModels", AgentModelsRequest(backend: backend, loginProfile: loginProfile), timeout: 300)
     }
 
     func agentAuth(_ backend: String) async throws -> AgentAuth {
@@ -617,4 +626,10 @@ public extension HostClient {
     func termClose(_ term: String) async throws {
         let _: Empty = try await call("termClose", ["term": term])
     }
+}
+
+/// `agentModels`' body: no `loginProfile` (the default login) when it's nil.
+struct AgentModelsRequest: Encodable {
+    var backend: String
+    var loginProfile: String?
 }

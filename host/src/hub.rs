@@ -53,7 +53,7 @@ pub struct Runtime {
     pub message: Option<String>,
     /// The ACP session the running turn prompts. A memory write made there is one that session already knows.
     pub session: Option<String>,
-    pub fast_mode: crate::agent::config::FastModeSupport,
+    pub fast_mode: codync_agent::config::FastModeSupport,
     /// The fallback the bot is on; `None` on its own agent (see `agent::fallback`).
     pub agent_step: Option<AgentStep>,
 }
@@ -88,6 +88,7 @@ impl AgentStep {
 pub struct Hub {
     pub analytics: crate::analytics::Analytics,
     pub routines: crate::routines::Routines,
+    pub workflows: crate::workflows::Workflows,
     pub team: crate::chat::team::Requests,
     pub ceilings: crate::chat::team::Ceilings,
     pub work: crate::chat::work::Work,
@@ -155,11 +156,14 @@ impl Hub {
     }
 
     pub fn new(store: Store, host_id: String, identity: Identity, token: String, port: u16) -> Arc<Self> {
+        #[cfg(test)]
+        crate::agent::init_runtime();
         let (events, _) = broadcast::channel(1024);
         let screen = Arc::new(Screen::new(Screen::load_enabled(&store), events.clone()));
         Arc::new(Self {
             analytics: crate::analytics::Analytics::load(&store),
             routines: crate::routines::Routines::default(),
+            workflows: crate::workflows::Workflows::default(),
             team: crate::chat::team::Requests::default(),
             ceilings: crate::chat::team::Ceilings::default(),
             work: crate::chat::work::Work::default(),
@@ -211,8 +215,10 @@ impl Hub {
             }
         }
         crate::chat::work::restore(self);
+        crate::chat::team::restart::restore(self);
         crate::chat::calls::rewatch(self);
         crate::routines::start(self);
+        crate::workflows::start(self);
         crate::analytics::start(self);
         Ok(())
     }
@@ -264,6 +270,14 @@ impl Hub {
         let bots = self.bots.locked();
         let h = bots.get(bot_id).ok_or_else(|| anyhow!("unknown bot"))?;
         h.tx.send(cmd).map_err(|_| anyhow!("bot stopped"))
+    }
+
+    /// [`Self::send_cmd`], giving `cmd` back when `bot_id`'s actor doesn't run.
+    pub(crate) fn offer_cmd(&self, bot_id: &str, cmd: Cmd) -> std::result::Result<(), Box<Cmd>> {
+        match self.bots.locked().get(bot_id) {
+            Some(h) => h.tx.send(cmd).map_err(|refused| Box::new(refused.0)),
+            None => Err(Box::new(cmd)),
+        }
     }
 
     // MARK: bots
@@ -399,7 +413,9 @@ impl Hub {
 
     pub(crate) fn update_keep_awake(&self) {
         let busy = self.runtime.locked().values().any(|r| r.status == BotStatus::Working);
-        self.keep_awake.locked().set(busy || self.routines.keeps_awake());
+        self.keep_awake
+            .locked()
+            .set(busy || self.routines.keeps_awake() || crate::workflows::Workflows::keeps_awake(&self.store));
     }
 
     // MARK: entries
@@ -429,6 +445,11 @@ impl Hub {
                 None
             }
         }
+    }
+
+    pub(crate) fn emit_workflow(&self, body: Value) {
+        let _guard = self.emit_lock.locked();
+        let _ = self.events.send(body);
     }
 
     pub fn add_entry_once(
@@ -474,6 +495,20 @@ impl Hub {
             self.emit_bot(&e.bot_id);
         }
         Some(e)
+    }
+
+    /// Updates entries and kv rows in one write ([`Store::update_entries_kv`]) and broadcasts the entries; a failure
+    /// (nothing written) is logged here, like [`Self::set_entry`].
+    pub fn set_entries_with_kv(&self, entries: &[(String, Value)], delete: &[String], set: &[(String, String)]) {
+        let _g = self.emit_lock.locked();
+        match self.store.update_entries_kv(entries, delete, set) {
+            Ok(updated) => {
+                for e in &updated {
+                    let _ = self.events.send(entry_event(e));
+                }
+            }
+            Err(error) => tracing::error!(error = format!("{error:#}"), "couldn't update transcript entries"),
+        }
     }
 
     fn update_entry(&self, id: &str, turn: Option<i64>, data: &Value) -> Option<Entry> {

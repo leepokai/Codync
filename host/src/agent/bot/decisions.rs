@@ -1,7 +1,6 @@
 //! Choice waiters belong to the actor, so a click, typed answer, cancellation and turn end cannot answer twice.
 
 use super::Actor;
-use crate::agent::acp;
 use crate::analytics::{self, Event};
 use crate::chat::decision::{self, Asker, Expiry, Via};
 use crate::chat::replies;
@@ -9,6 +8,7 @@ use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{Entry, EntryKind, Lane};
 use anyhow::{Result, anyhow, ensure};
+use codync_agent::acp;
 use serde_json::{Map, Value, json};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
@@ -83,7 +83,7 @@ impl Actor {
         });
         // Tapping it opens where the card is: its bot's chat, for a thread.
         let chat = self.chat_of(&card);
-        push::notify(&self.hub, &chat, None, &chat.name, &acp::truncate(question, 120), AlertKind::NeedsInput);
+        push::notify(&self.hub, &chat, None, &chat.name, &acp::truncate(question, 120), AlertKind::NeedsInput, None);
         analytics::capture(
             &self.hub,
             Event::DecisionAsked,

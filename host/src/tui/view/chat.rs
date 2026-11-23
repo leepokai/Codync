@@ -52,7 +52,7 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         let mode = match b.mode.as_deref() {
             _ if b.auto => "approve all",
             None => "ask",
-            Some(id) => app.mode_name(&b.backend, id),
+            Some(id) => app.mode_name(&b.backend, b.login_profile.as_deref(), id),
         };
         let fast = match (b.fast_mode, b.fast_refusal().is_some()) {
             (true, true) => " · ⚡ refused",
@@ -113,13 +113,9 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         rput(buf, r.right() - 1, box_top + 1, hint, t.dim);
     }
     if fh > 0 {
-        let names: Vec<String> = files
-            .iter()
-            .map(|p| format!("▤ {}", p.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()))
-            .collect();
         let hint = if draft.text.is_empty() { "⌫ removes" } else { "" };
         let row = box_top + qh + 1;
-        put(buf, r.x + 3, row, r.width.saturating_sub(u(w(hint)) + 6), &names.join("  "), t.secondary);
+        put(buf, r.x + 3, row, r.width.saturating_sub(u(w(hint)) + 6), &file_names(files), t.secondary);
         rput(buf, r.right() - 1, row, hint, t.dim);
     }
     let comp_top = box_top + qh + fh;
@@ -379,6 +375,13 @@ pub(super) fn with_bg(lines: Vec<Line<'static>>, width: usize, bg: Style) -> Vec
             Line::from(spans)
         })
         .collect()
+}
+
+/// The files going with the next message, as the row over a composer shows them.
+pub(super) fn file_names(files: &[std::path::PathBuf]) -> String {
+    let names: Vec<String> =
+        files.iter().map(|p| format!("▤ {}", p.file_name().map(|n| n.to_string_lossy()).unwrap_or_default())).collect();
+    names.join("  ")
 }
 
 #[cfg(test)]

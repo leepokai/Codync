@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};
 
-use super::super::app::{App, Editor, Entry, Focus, Overlay, Queued, WorkTask, shared_line};
+use super::super::app::{After, App, Editor, Entry, Focus, Overlay, Queued, WorkTask, shared_line};
 use super::scroll::up_from_end;
 use super::{Reply, ctrl};
 
@@ -69,8 +69,11 @@ pub struct ThreadSheet {
     pub draft: Editor,
     /// Keys go to the draft (`i` or `↵`) until esc.
     pub typing: bool,
-    /// The message on its way to the host: the draft stays until it is delivered.
-    pub sending: Option<String>,
+    /// Files dragged onto the terminal while typing, sent with the next message (`⌫` on an empty draft drops the last).
+    pub files: Vec<std::path::PathBuf>,
+    /// The message on its way to the host and the files that went with it: the draft stays until it is delivered, and
+    /// the files come back to the box if it isn't.
+    pub sending: Option<(String, Vec<std::path::PathBuf>)>,
     /// The line of what the thread put in the bot's chat that `↵` shows there (`tab` picks one): that entry's id.
     pub pick: Option<String>,
 }
@@ -88,6 +91,7 @@ impl ThreadSheet {
             page: Cell::default(),
             draft: Editor::default(),
             typing: false,
+            files: Vec::new(),
             sending: None,
             pick: None,
         }
@@ -204,11 +208,13 @@ impl App {
         for o in &mut self.overlays {
             if let Overlay::Thread(s) = o
                 && s.task == task
-                && let Some(sent) = s.sending.take()
-                && answer.is_ok()
-                && s.draft.text.trim() == sent
+                && let Some((sent, files)) = s.sending.take()
             {
-                s.draft.clear();
+                if answer.is_err() {
+                    s.files.splice(0..0, files);
+                } else if s.draft.text.trim() == sent {
+                    s.draft.clear();
+                }
             }
         }
         if let Err(error) = answer {
@@ -220,7 +226,7 @@ impl App {
     /// and reopens a task that ended.
     fn send_to_thread(&mut self, s: &mut ThreadSheet) {
         let text = s.draft.text.trim().to_owned();
-        if text.is_empty() {
+        if text.is_empty() && s.files.is_empty() {
             return;
         }
         if s.sending.is_some() {
@@ -231,8 +237,9 @@ impl App {
         // the nonce with the draft as the chat does if that shows.
         let nonce = uuid::Uuid::new_v4().to_string();
         let body = json!({"botId": s.bot, "taskId": s.task, "text": text, "clientNonce": nonce});
-        self.sheet("send", body, Reply::ThreadSent(s.task.clone()));
-        s.sending = Some(text);
+        let files = std::mem::take(&mut s.files);
+        self.send_message(body, files.clone(), After::Sheet(Reply::ThreadSent(s.task.clone())));
+        s.sending = Some((text, files));
         s.scroll.set(0);
     }
 
@@ -276,6 +283,9 @@ impl App {
             KeyCode::Enter if newline => s.draft.insert("\n"),
             KeyCode::Char('j') if ctrl(k) => s.draft.insert("\n"),
             KeyCode::Enter => self.send_to_thread(s),
+            KeyCode::Backspace if s.draft.text.is_empty() => {
+                s.files.pop();
+            }
             _ => {
                 s.draft.key(k);
             }
@@ -416,6 +426,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_file_dropped_while_writing_to_a_thread_goes_with_the_next_message() {
+        let mut app = test_app();
+        let work = json!([{"id": "i", "title": "Fix login", "status": "working", "thread": "thread-1", "talk": true,
+            "talkFiles": true}]);
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "a", "name": "A", "work": work}})));
+        let own = app.bots["a"].work[0].clone();
+        app.open_thread("a", &own);
+        key(&mut app, 'i');
+        let file = std::env::temp_dir().join(format!("codync-thread-{}.png", uuid::Uuid::new_v4()));
+        std::fs::write(&file, b"png").expect("written");
+        let path = file.display().to_string();
+        app.on_paste(&path);
+        assert_eq!(sheet(&app).files, std::slice::from_ref(&file), "attached, not typed");
+        assert_eq!(sheet(&app).draft.text, "");
+        app.on_key(KeyEvent::from(KeyCode::Backspace));
+        assert!(sheet(&app).files.is_empty(), "⌫ on an empty draft drops it");
+        app.on_paste(&path);
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        let sending = |app: &App| sheet(app).sending.as_ref().map(|(text, files)| (text.clone(), files.len()));
+        assert_eq!(sending(&app), Some((String::new(), 1)), "a file alone is a message, out of the box");
+        app.thread_sent("i", Err("refused".into()));
+        assert_eq!(sheet(&app).files, std::slice::from_ref(&file), "refused: it comes back to the box");
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        app.on_paste(&path);
+        app.thread_sent("i", Ok(()));
+        assert_eq!(sheet(&app).files.len(), 1, "delivered: only the file added meanwhile stays");
+
+        // A host that doesn't say its threads take files: the path is typed.
+        let work = json!([{"id": "i", "title": "Fix login", "status": "working", "thread": "thread-1", "talk": true}]);
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "a", "name": "A", "work": work}})));
+        app.on_paste(&path);
+        assert_eq!(sheet(&app).draft.text, path);
+        let _ = std::fs::remove_file(file);
+    }
+
+    #[tokio::test]
     async fn the_thread_takes_what_the_user_types_and_the_chats_keys_for_what_waits() {
         let mut app = test_app();
         let work = json!([{"id": "i", "title": "Fix login", "status": "working", "thread": "thread-1", "talk": true},
@@ -433,7 +479,7 @@ mod tests {
         }
         assert!(sheet(&app).typing && sheet(&app).draft.text == "also q", "q types, it doesn't close");
         app.on_key(KeyEvent::from(KeyCode::Enter));
-        assert_eq!(sheet(&app).sending.as_deref(), Some("also q"));
+        assert_eq!(sheet(&app).sending.as_ref().map(|(text, _)| text.as_str()), Some("also q"));
         app.on_key(KeyEvent::from(KeyCode::Enter));
         assert_eq!(hint(&mut app), "Sending…", "one at a time");
         app.thread_sent("i", Err("\"Fix login\" hasn't started yet".into()));

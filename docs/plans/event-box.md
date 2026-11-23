@@ -461,7 +461,7 @@ differs from the text above:
 - **A message to an ended task whose thread now works a task that followed it** goes to that session and waits
   behind its turn; the ended task isn't reopened.
 - **Analytics**: `work_messaged {outcome, reopened, queued}`, or `{outcome: failed, error}` with the refusal's
-  category (`thread::Refused`: `read_only`, `not_started`, `gone`, `text_only`, else `other`); Send now and Remove
+  category (`thread::Refused`: `read_only`, `not_started`, `gone`, `unsupported`, else `other`); Send now and Remove
   in a thread are `work_steered` with `how` `sendNow` / `remove` (`by: user`), and the agent-level
   `message_steered` still says what became of a Send now.
 - **Wording**: the new key is in the ten catalogs, and all four clients read it. `Waiting for usage`, read by none
@@ -488,40 +488,40 @@ differs from the text above:
 ## As built (iPhone, Android and desktop, stage 11)
 
 The rules are one set, written three times: `apps/desktop/src/shared/work.ts` (`readOnlyReason`, `whereLine`,
-`wherePath`, `gitState`, `threadEntries`, `isThreadMessage`, `sharedLine`), the iPhone's
+`wherePath`, `gitState`, `threadEntries`), the iPhone's
 `CodyncKit/Models/WorkThread.swift` and Android's `core/Work.kt`; whether a thread takes a message is the host's
 `talk`, read as it is. Where the three settle or differ from the text above:
 
-- **Opening.** Desktop: the inspector's panel slides from its pages to the thread (`DetailsPanel` → `WorkThread`);
-  the back button (`Back to details`), or Escape while the keyboard is in the panel, returns to the page as it was
-  left, and the keyboard goes back to the row; a thread whose task left the box closes. The dialog that showed a
-  thread's transcript is gone. iPhone: the row
+- **Opening.** Desktop: the row opens the thread as a tab of the inspector's pane (`DetailsPanel` → `ThreadChat`,
+  the chat's own form, as on the Threads page); a thread whose task left the box closes. What follows (one line per
+  shared entry, the header, a composer without dictation) is the phones'; the desktop shows each shared entry as
+  the chat's own row, answered and opened in the thread, with the chat's `Composer`. iPhone: the row
   pushes `WorkThreadView` inside the details sheet; the system bar is hidden (`hidesSystemNavigationBar`, which keeps
   the edge swipe back) and the page draws its own header, as Android's: a `Back to details` icon button, the title
   over the status line, Stop. Android: `WorkThreadView` is pushed inside the sheet by the design module's
   `NavStack`, with the same header. A row of the Work sheet opens the bot's chat with its
   details on that thread.
 - **A row that needs you still opens the chat at its card**, not the thread. In the task's thread the card is one
-  line (below), which opens the chat at it; the thread has no card to answer.
+  line (below), which opens the chat at it; on the phones the thread has no card to answer.
 - **Header**: title, the status word with its mark and the time, the where line, Stop while the task is live (it
   asks first).
 - **Transcript**: `What it was told` folded on top (the host's first words to the thread); what the host told it
   later (a task picked up again) is a quiet quote where it happened; the user's messages are the chat's bubbles;
-  the thread's final replies (`isThreadMessage`: kind `agent` and `final`) are the chat's agent message, read only
+  the thread's final replies (kind `agent` and `final`) are the chat's agent message, read only
   (Copy; no reactions, reply or trace); the rest are the chat's working steps, the running turn's unfolded. A thread's
   own transcript holds no file or artifact (what it shares goes to the chat), so its replies are text on every
   client. What the thread put in the bot's chat (the entries whose `data.thread.id` is the thread's id: approval and
   choice cards, answered ones too, its agent's sign-in card, files, voice notes, artifact cards) joins the transcript in time order
   (`createdAt`, each side kept in its order, the thread's own first at the same moment) as one quiet line with a
-  symbol (`sharedLine`: `hand.raised` while it waits on the user, `checkmark`, `xmark` or `clock` once answered or
+  symbol (the phones' `sharedLine`: `hand.raised` while it waits on the user, `checkmark`, `xmark` or `clock` once answered or
   not, `doc`, `waveform`, `doc.richtext`; a sign-in card reads as the card stands: `Needs <agent> sign-in`, `Signed
   in`, `Cancelled`, not `Asked in the chat to sign in to <agent>.`, which the thread's own transcript already has
   beside it). The full card, file or artifact stays in the chat, where the coordinator
-  shows it. A tap or click on the line opens the chat at that entry: the desktop scrolls the chat beside the panel
-  to it (`showInChat`, by `data-entry-id`); the phones close the details sheet and bring it into view, as a
+  shows it. A tap on the line opens the chat at that entry: the phones close the details sheet and bring it into view, as a
   needs-you row does (iPhone `BotDetailsView.openInChat`, Android `openCard`). Only the chat's loaded messages are
   looked at, as for a needs-you row.
-- **Composer**: the chat's, text only (`Message this thread`): no files, dictation, commands, reply or call. Each
+- **Composer**: the chat's (`Message this thread`), with its + and file chips where the host takes files
+  (`talkFiles`), but on the phones no dictation, commands, reply or call (the desktop's has dictation). Each
   client keeps a draft per task, under the bot's (desktop `<bot>/thread/<task>`, phones `<bot>/task/<task>`), so it
   goes with the bot. Off while the computer is offline.
 - **Messages that wait.** Desktop: the bubble stays in the transcript with `Queued`, **Send now** and **Remove**
@@ -529,7 +529,7 @@ The rules are one set, written three times: `apps/desktop/src/shared/work.ts` (`
   two buttons. On the desktop a message that never arrived has Resend and Delete, and one dropped by Stop reads
   `Not sent — stopped`; the phones show the chat's own lines for both.
 - **Read-only threads**: no composer and one quiet line, `Read only: a routine's run` or `Read only: another bot's
-  request`. An own task whose thread is gone (`talk` false) has neither.
+  request`, with Stop beside it on the desktop while it runs. An own task whose thread is gone (`talk` false) has neither.
 - **Where line.** Every client writes the computer's home (`hello.home`) as `~`, with one rule (`homeRelative`,
   the terminal's `tilde`): at a separator boundary only, `/` or `\`; any other path shows whole and is cut in the
   middle.

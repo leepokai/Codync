@@ -78,6 +78,8 @@ data class WorkTask(
     val worktree: Worktree? = null,
     /** It takes the user's messages ([canTalk]): the bot's own task whose thread still exists. False from an older host. */
     val talk: Boolean = false,
+    /** Its thread takes files with the user's messages too. False from a host before them, where the box has no +. */
+    val talkFiles: Boolean = false,
     /** Where its thread works (a worktree's folder for one in a worktree); null for one no thread has taken, and from an older host. */
     val folder: String? = null,
     /** It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); null from an older host ([takesSeat]). */

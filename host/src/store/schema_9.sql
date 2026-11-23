@@ -1,0 +1,3 @@
+BEGIN;
+ALTER TABLE workflows ADD COLUMN owner_bot_id TEXT;
+COMMIT;

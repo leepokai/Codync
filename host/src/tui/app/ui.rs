@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use super::super::manage::{
     AgentSetup, AllWork, AnalyticsSheet, BotChatSheet, CutIn, DetailsPage, DevServersSheet, Fields, Gear, KeyImport,
-    Library, Market, MemorySheet, NetworkSheet, RoutineForm, SkillSheet, ThreadSheet,
+    Library, Market, MemorySheet, NetworkSheet, RoutineForm, SkillSheet, ThreadSheet, WorkflowSheet,
 };
 use super::{Editor, KofiSheet, Mark, WhatsNew};
 
@@ -127,6 +127,8 @@ pub enum ConfirmAct {
         bot: String,
         task: String,
     },
+    DeleteWorkflow(String),
+    RejectWorkflowStep(String),
 }
 
 pub struct Confirm {
@@ -281,7 +283,7 @@ pub struct Form {
     pub max_threads: Option<u8>,
     /// A worktree per thread; `None`: the host has no worktrees, or the bot's folder is in no git repository.
     pub thread_worktrees: Option<bool>,
-    /// Approvals: Codync approves what still asks, and the agent mode (`agent::modes`).
+    /// Approvals: Codync approves what still asks, and the agent mode (`codync_agent::modes`).
     pub auto: bool,
     pub mode: Option<String>,
     pub notify: bool,
@@ -420,6 +422,7 @@ pub enum Overlay {
     Analytics(AnalyticsSheet),
     Network(Box<NetworkSheet>),
     WhatsNew(WhatsNew),
+    Workflows(Box<WorkflowSheet>),
     Kofi(KofiSheet),
 }
 

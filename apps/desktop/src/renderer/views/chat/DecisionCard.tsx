@@ -52,7 +52,7 @@ export function DecisionCard({ entry, answering, respond, reply }: {
                 disabled={answering !== null}
                 onClick={() => respond(choice)}
               >
-                <Badge>{answering === choice ? <Spinner size={12} /> : i + 1}</Badge>
+                <OptionBadge>{answering === choice ? <Spinner size={12} /> : i + 1}</OptionBadge>
                 <Text size="body" weight={suggested === i ? 'semibold' : 'regular'} tone="text" className="decision-option-label">{choice}</Text>
                 {suggested === i ? <Text size="caption" tone="tertiary">{trNow('Suggested')}</Text> : null}
               </button>
@@ -72,8 +72,9 @@ export function DecisionCard({ entry, answering, respond, reply }: {
   )
 }
 
-/** A row's number, or the own answer's pencil: a screen reader reads the row itself. */
-function Badge({ children }: { children: React.ReactNode }) {
+/** A row's number, or the own answer's pencil: a screen reader reads the row itself. The approval card's rows have it
+ *  too. */
+export function OptionBadge({ children }: { children: React.ReactNode }) {
   return (
     <span className="decision-badge" aria-hidden>
       <Text size="caption" weight="semibold" tone="secondary" tabular>{children}</Text>
@@ -93,7 +94,7 @@ function OwnAnswer({ disabled, reply }: { disabled: boolean; reply: (text: strin
   const prompt = trNow('Something else')
   return (
     <div className={disabled ? 'decision-option decision-own dimmed' : 'decision-option decision-own'}>
-      <Badge><Icon name="pencil" size={11} /></Badge>
+      <OptionBadge><Icon name="pencil" size={11} /></OptionBadge>
       <input
         value={text}
         placeholder={prompt}

@@ -109,7 +109,7 @@ pub async fn tail(id: &str, lines: usize) -> Result<String> {
         anyhow::Ok(text)
     })
     .await??;
-    Ok(last_lines(&crate::usage::strip_ansi(&text), lines))
+    Ok(last_lines(&codync_agent::shell::strip_ansi(&text), lines))
 }
 
 /// The end of a log. A server that wrote nothing yet has no file, which isn't a failure; anything else is.

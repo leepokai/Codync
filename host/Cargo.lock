@@ -731,10 +731,13 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
+ "chrono",
  "dirs",
  "futures",
  "libc",
+ "portable-pty",
  "reqwest",
+ "rusqlite",
  "semver",
  "serde",
  "serde_json",
@@ -747,7 +750,7 @@ dependencies = [
 
 [[package]]
 name = "codync-host"
-version = "2.52.1"
+version = "2.53.0"
 dependencies = [
  "anyhow",
  "axum",

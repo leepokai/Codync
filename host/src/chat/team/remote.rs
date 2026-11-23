@@ -167,7 +167,7 @@ async fn send(hub: &Arc<Hub>, node: &Node, source: &BotConfig, to: &Target, lett
         Err(error) => {
             hub.waiting.take(&id);
             crate::analytics::network_failed(hub, NetworkStage::Send);
-            finish_entry(hub, &entry, RequestStatus::Failed, &format!("{error:#}"), None, false);
+            finish_entry(hub, &entry, RequestStatus::Failed, &format!("{error:#}"), None, None);
             return Err(error);
         }
     };
@@ -303,18 +303,18 @@ fn replied(hub: &Hub, id: &str, waiter: Waiter, m: &Message) {
     let outcome = match status {
         Some(RequestStatus::Cancelled) => {
             let detail = format!("{peer} was stopped before finishing. Partial work may have happened.");
-            finish_entry(hub, &entry, RequestStatus::Cancelled, &detail, None, false);
+            finish_entry(hub, &entry, RequestStatus::Cancelled, &detail, None, None);
             Err(detail)
         }
         Some(RequestStatus::Failed) => {
-            finish_entry(hub, &entry, RequestStatus::Failed, &m.body, None, false);
+            finish_entry(hub, &entry, RequestStatus::Failed, &m.body, None, None);
             Err(m.body.clone())
         }
         // A reply, also from an agent that isn't a Codync bot (it sends no `meta`).
         _ => {
             let reply = truncate(&m.body, NOTICE_REPLY_BYTES);
             let detail = format!("Reply from {peer}:\n{reply}");
-            finish_entry(hub, &entry, RequestStatus::Completed, &detail, Some(&reply), false);
+            finish_entry(hub, &entry, RequestStatus::Completed, &detail, Some(&reply), None);
             Ok(truncate(&m.body, MAX_MESSAGE_BYTES))
         }
     };

@@ -5,7 +5,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 
-use super::super::app::{App, Bot, Entry, Focus, Kind, Status, TraceMode, tilde};
+use super::super::app::{App, Bot, Entry, Focus, Kind, Status, TraceMode, nested, subagent_line, tilde};
 use super::super::l10n::tr;
 use super::super::md::{self, truncate, width as w};
 use super::buffer::{hline, put, put_line, rput, u};
@@ -77,7 +77,8 @@ fn build_trace(app: &App, b: &Bot, turn: i64, width: usize, full: bool) -> Vec<L
     let mut out: Vec<Line<'static>> = vec![];
     let Some(map) = app.entries.get(&b.id) else { return out };
     let mut speaker: Option<&str> = None;
-    for e in map.values().filter(|e| e.turn == turn) {
+    let entries: Vec<&Entry> = map.values().filter(|e| e.turn == turn).collect();
+    for (e, depth) in nested(&entries, |e| e) {
         // In a group, each member's steps under its name.
         if b.group && e.kind != Kind::User {
             let author = e.data["author"].as_str();
@@ -90,9 +91,22 @@ fn build_trace(app: &App, b: &Bot, turn: i64, width: usize, full: bool) -> Vec<L
                 out.push(Line::from(Span::styled(format!(" {name}"), name_style(&color))));
             }
         }
-        push_step(&mut out, app, e, width, full);
+        push_nested(&mut out, app, e, depth, width, full);
     }
     out
+}
+
+/// A step's lines, a subagent's indented under the call that launched it.
+pub(super) fn push_nested(out: &mut Vec<Line<'static>>, app: &App, e: &Entry, depth: usize, width: usize, full: bool) {
+    let pad = 2 * depth;
+    let mut lines = vec![];
+    push_step(&mut lines, app, e, width.saturating_sub(pad), full);
+    out.extend(lines.into_iter().map(|mut line| {
+        if pad > 0 {
+            line.spans.insert(0, Span::raw(" ".repeat(pad)));
+        }
+        line
+    }));
 }
 
 /// One entry's lines: a glyph, its kind and text. `full` shows a tool's whole diff and output,
@@ -190,6 +204,9 @@ fn push_tool(out: &mut Vec<Line<'static>>, app: &App, e: &Entry, width: usize, f
         label(&kind),
         Span::styled(truncate(&title, text_rest(width)), t.text),
     ]));
+    if let Some(line) = subagent_line(&e.data) {
+        out.push(Line::from(Span::styled(format!("{}{}", " ".repeat(12), truncate(&line, text_rest(width))), t.dim)));
+    }
     let (diff_max, out_max) = if full { (400, 400) } else { (14, 6) };
     for d in e.data["diffs"].as_array().into_iter().flatten() {
         push_diff(out, app, d, width, diff_max);

@@ -1,23 +1,22 @@
-//! Antigravity's quota: the `/usage` report of its ACP server, which is the login its bots run on,
-//! or the language server of a running Antigravity app. Codync sends no login to Google itself.
+//! Antigravity's quota: the `/usage` report of its ACP server, which is the login the agent runs on,
+//! or the language server of a running Antigravity app. No login goes to Google from here.
 
-use crate::hub::Hub;
 use serde_json::Value;
 use std::time::Duration;
 
-use super::Window;
+use super::{App, Window};
 
 const BODY: &str =
     r#"{"metadata":{"ideName":"antigravity","extensionName":"antigravity","ideVersion":"unknown","locale":"en"}}"#;
 
-/// The running app answers without a download, until a bot has brought the ACP server here.
-pub(super) async fn collect(hub: &Hub) -> Option<Vec<Window>> {
-    let server_here = crate::service::data_dir().join("agents/antigravity-acp").is_dir();
+/// The running app answers without a download, until the ACP server has been installed here.
+pub async fn collect(app: &dyn App) -> Option<Vec<Window>> {
+    let server_here = crate::setup::get().data_dir.join("agents/antigravity-acp").is_dir();
     if !server_here && let Some(windows) = from_language_server().await {
         return Some(windows);
     }
     if signed_in_or_unknown()
-        && let Some(windows) = super::acp_read::command_reading(hub, "antigravity", "usage", parse_report).await
+        && let Some(windows) = super::acp_read::command_reading(app, "antigravity", "usage", parse_report).await
     {
         return Some(windows);
     }
@@ -278,7 +277,7 @@ fn ports_in(text: &str) -> Vec<u16> {
     ports
 }
 
-pub(super) fn parse(body: &Value) -> Vec<Window> {
+fn parse(body: &Value) -> Vec<Window> {
     let groups = body["response"]["groups"].as_array().or_else(|| body["groups"].as_array());
     if let Some(groups) = groups {
         let windows = summary(groups);

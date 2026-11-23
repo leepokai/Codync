@@ -7,7 +7,7 @@ use super::Window;
 
 const FILE: &str = "options/AIAssistantQuotaManager2.xml";
 
-pub(super) fn collect() -> Option<Vec<Window>> {
+pub fn collect() -> Option<Vec<Window>> {
     let mut files = Vec::new();
     for root in roots() {
         files.extend(quota_files(&root));
@@ -19,7 +19,7 @@ pub(super) fn collect() -> Option<Vec<Window>> {
 }
 
 /// An IDE saved a quota here, with or without the `junie` CLI.
-pub(super) fn quota_saved() -> bool {
+pub fn quota_saved() -> bool {
     roots().iter().any(|root| !quota_files(root).is_empty())
 }
 

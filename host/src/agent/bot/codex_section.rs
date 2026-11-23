@@ -4,11 +4,12 @@
 //! the user moves it after that. A section the user removed comes back with the next new session.
 
 use super::{Actor, Adapter};
-use crate::agent::codex_app;
+use crate::agent::CODEX_CLIENT;
 use crate::analytics::{self, Event};
 use anyhow::{Context, Result};
 use codync_agent::acp::{Acp, METHOD_NOT_FOUND, RpcError};
 use codync_agent::backends;
+use codync_agent::codex_app;
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -123,7 +124,8 @@ async fn file_with(
     timeout: Duration,
 ) -> Outcome {
     let _one_at_a_time = FILING.lock().await;
-    let filed = codex_app::session(start, timeout, async |client| move_to_section(client, thread).await).await;
+    let filed =
+        codex_app::session(start, CODEX_CLIENT, timeout, async |client| move_to_section(client, thread).await).await;
     match filed {
         Ok(outcome) => outcome.unwrap_or(Outcome::Unsupported),
         Err(error) => {
@@ -180,7 +182,15 @@ mod tests {
     use super::*;
 
     async fn fixture(mode: &str, timeout: Duration) -> Outcome {
-        let outcome = file_with(codex_app::fixture("codex_sections.py", mode), "thread-1", timeout).await;
+        let outcome = file_with(
+            codex_app::fixture(
+                &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex_sections.py"),
+                mode,
+            ),
+            "thread-1",
+            timeout,
+        )
+        .await;
         codync_agent::acp::stopped().await;
         outcome
     }

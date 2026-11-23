@@ -104,3 +104,70 @@ fn modes_and_options_are_read_and_anything_else_is_kept() {
     let unknown = json!({"sessionUpdate": "session_info_update", "_meta": {"piAcp": {"running": true}}});
     assert_eq!(event(unknown.clone()), Event::Other(unknown));
 }
+
+/// What each update of claude-agent-acp 0.109.1 (trimmed) says: which call launched it, and about its subagent.
+fn read(u: Value) -> (Option<String>, Option<Subagent>) {
+    let (Event::ToolStarted(call) | Event::ToolUpdated(call)) = event(u) else { panic!("a tool call") };
+    (call.parent, call.subagent)
+}
+
+fn agent(update: Value) -> Value {
+    let mut u = update;
+    u["toolCallId"] = "toolu_A".into();
+    u["_meta"]["claudeCode"]["toolName"] = "Agent".into();
+    u
+}
+
+#[test]
+fn a_subagents_calls_name_their_launch_and_the_launch_reports_its_totals() {
+    let asked = read(agent(json!({"sessionUpdate": "tool_call_update", "rawInput": {"description": "Count files",
+        "subagent_type": "general-purpose", "run_in_background": false}})));
+    let kind = Subagent { kind: Some("general-purpose".into()), background: Some(false), ..Subagent::default() };
+    assert_eq!(asked, (None, Some(kind)));
+    let child = read(json!({"sessionUpdate": "tool_call", "toolCallId": "toolu_B", "title": "ls", "kind": "execute",
+        "_meta": {"claudeCode": {"toolName": "Bash", "parentToolUseId": "toolu_A"}}}));
+    assert_eq!(child, (Some("toolu_A".into()), None));
+    let ended = read(agent(json!({"sessionUpdate": "tool_call_update", "_meta": {"claudeCode": {"toolResponse": {
+        "status": "completed", "agentId": "ab00", "agentType": "general-purpose", "resolvedModel": "claude-opus-5-5",
+        "totalDurationMs": 6287, "totalTokens": 42310, "totalToolUseCount": 1}}}})));
+    let totals = Subagent {
+        id: Some("ab00".into()),
+        kind: Some("general-purpose".into()),
+        model: Some("claude-opus-5-5".into()),
+        background: None,
+        tokens: Some(42310),
+        tool_uses: Some(1),
+        duration_ms: Some(6287),
+    };
+    assert_eq!(ended, (None, Some(totals)));
+    // The Agent call's first and last updates say nothing about its subagent.
+    let started = agent(json!({"sessionUpdate": "tool_call", "rawInput": {}, "status": "pending", "title": "Task"}));
+    assert_eq!(read(started), (None, None));
+    assert_eq!(read(agent(json!({"sessionUpdate": "tool_call_update", "status": "completed"}))), (None, None));
+}
+
+#[test]
+fn a_background_subagent_has_its_kind_from_what_it_was_asked_and_no_totals() {
+    let launched = read(agent(json!({"sessionUpdate": "tool_call_update", "_meta": {"claudeCode": {"toolResponse": {
+        "isAsync": true, "status": "async_launched", "agentId": "ac78", "resolvedModel": "claude-opus-5-5"}}}})));
+    let reported = Subagent {
+        id: Some("ac78".into()),
+        model: Some("claude-opus-5-5".into()),
+        background: Some(true),
+        ..Subagent::default()
+    };
+    assert_eq!(launched, (None, Some(reported)));
+    let asked = read(agent(json!({"sessionUpdate": "tool_call_update", "rawInput": {"subagent_type": "Explore",
+        "run_in_background": true}})));
+    assert_eq!(asked.1.and_then(|s| s.kind).as_deref(), Some("Explore"));
+}
+
+#[test]
+fn other_calls_say_nothing_about_subagents() {
+    let Event::ToolStarted(call) = event(json!({"sessionUpdate": "tool_call", "toolCallId": "t1",
+        "rawInput": {"subagent_type": "x"}, "_meta": {"claudeCode": {"toolName": "Bash"}}}))
+    else {
+        panic!("a tool call")
+    };
+    assert_eq!((call.parent, call.subagent), (None, None));
+}

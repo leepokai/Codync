@@ -2,15 +2,14 @@
 //! or on a plan without it, the CLI exits non-zero with nothing on stdout.
 //! Read from the 0.36.0 CLI's source; no signed-in computer has run it yet.
 
-use crate::hub::Hub;
 use serde_json::Value;
 use std::time::Duration;
 
-use super::{Window, iso_ms};
+use super::{App, Window, iso_ms};
 
-pub(super) async fn collect(hub: &Hub) -> Option<Vec<Window>> {
+pub async fn collect(app: &dyn App) -> Option<Vec<Window>> {
     let args = ["account", "status", "--json"];
-    super::command::json_windows(hub, "auggie", &args, Duration::from_secs(20), parse).await
+    super::command::json_windows(app, "auggie", &args, Duration::from_secs(20), parse).await
 }
 
 /// `None`: a status with no amount left, which the CLI doesn't print for a plan without credits.

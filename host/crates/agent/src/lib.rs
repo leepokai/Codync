@@ -1,13 +1,14 @@
 //! Coding agents on one computer, for an app that runs them: which are installed and how to install, start and
 //! sign in to each ([`backends`], [`registry`], [`node`]), ACP over stdio ([`acp`]) with what they say as typed
 //! [`events`] and the process tree each one starts ([`process`]), their permission modes ([`modes`]), and more than
-//! one login per agent ([`accounts`]).
+//! one login per agent ([`accounts`]). With the `usage` feature, `usage` reads each agent's plan limits.
 //!
 //! The app calls [`init`] once at start, before any agent runs.
 
 pub mod accounts;
 pub mod acp;
 pub mod backends;
+pub mod codex_app;
 pub mod config;
 pub mod events;
 pub mod modes;
@@ -16,6 +17,8 @@ pub mod process;
 pub mod registry;
 mod setup;
 pub mod shell;
+#[cfg(feature = "usage")]
+pub mod usage;
 
 #[cfg(unix)]
 mod process_unix;

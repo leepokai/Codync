@@ -2,15 +2,14 @@
 //! as it has no cap or reset. Signed out, it exits non-zero with nothing on stdout.
 //! Read from the 7.8.18 CLI's source; no signed-in computer has run it yet.
 
-use crate::hub::Hub;
 use serde_json::Value;
 use std::time::Duration;
 
-use super::Window;
+use super::{App, Window};
 
-pub(super) async fn collect(hub: &Hub) -> Option<Vec<Window>> {
+pub async fn collect(app: &dyn App) -> Option<Vec<Window>> {
     let parse = |profile: &Value| Some(parse(profile));
-    super::command::json_windows(hub, "kilo", &["profile", "--json"], Duration::from_secs(20), parse).await
+    super::command::json_windows(app, "kilo", &["profile", "--json"], Duration::from_secs(20), parse).await
 }
 
 /// The CLI prints a balance of 0 when its own balance request fails, so a zero is an empty reading:

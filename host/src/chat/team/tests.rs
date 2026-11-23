@@ -680,6 +680,50 @@ async fn a_reply_waiting_for_a_busy_sender_survives_a_restart() {
     f.shutdown().await;
 }
 
+/// The sender's reply turn takes its replies and is marked running in one write: a crash between the two would
+/// otherwise neither relay nor resume them, or (the other way round) do both.
+#[tokio::test]
+async fn a_reply_turn_takes_its_replies_and_is_marked_running_in_one_write() {
+    let f = Fixture::new();
+    f.send_to("a", "BLOCK user work").await;
+    f.until(|| f.prompts_of("a").len() == 1).await;
+    f.message("work").unwrap();
+    f.until(|| f.took("b", 1)).await;
+    let notice = f.hub.store.unrelayed_replies().unwrap().remove(0);
+    assert!(f.hub.store.kv_get(&relaying_key(&notice.id)).is_some(), "the whole reply waits with it");
+    let reply = BotReply {
+        request_id: "r".into(),
+        quote: String::new(),
+        from_name: "b".into(),
+        outcome: Ok("reply".into()),
+        hops: 0,
+        access: Access::Allow,
+        entry: Some(notice.id.clone()),
+    };
+    // Another bot's mark, so a's own running turn doesn't overwrite it.
+    relayed(&f.hub, &[reply], &[("turn.inflight.other".into(), "42".into())]);
+    assert!(f.hub.store.unrelayed_replies().unwrap().is_empty());
+    assert!(f.hub.store.kv_get(&relaying_key(&notice.id)).is_none());
+    assert_eq!(f.hub.store.kv_get("turn.inflight.other").as_deref(), Some("42"));
+    f.shutdown().await;
+}
+
+/// The notice shows only the start of a long reply; a restart relays the whole of it, as the live path does.
+#[tokio::test]
+async fn a_long_reply_relayed_after_a_restart_is_whole() {
+    let f = Fixture::new();
+    f.send_to("a", "BLOCK user work").await;
+    f.until(|| f.prompts_of("a").len() == 1).await;
+    let long = format!("work {}", "x".repeat(NOTICE_REPLY_BYTES * 2));
+    f.message(&long).unwrap();
+    f.until(|| f.took("b", 1)).await;
+    let f = f.restart().await;
+    let whole = format!("reply: {long}");
+    f.until(|| f.idle("a") && f.prompts_of("a").iter().any(|p| p.contains(&whole))).await;
+    assert!(f.hub.store.unrelayed_replies().unwrap().is_empty());
+    f.shutdown().await;
+}
+
 #[tokio::test]
 async fn a_restart_between_a_requests_two_notices_keeps_the_outcome_saved_first() {
     let f = Fixture::new();

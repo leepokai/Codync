@@ -7,7 +7,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
 
-use super::super::app::{App, Entry, Kind, Source, WorkStatus, WorkTask, shared_line, tilde};
+use super::super::app::{App, Entry, Kind, Source, WorkStatus, WorkTask, nested, shared_line, tilde};
 use super::super::l10n::tr;
 use super::super::manage::{Fetched, ThreadSheet};
 use super::super::md::{self, truncate};
@@ -16,7 +16,7 @@ use super::chat::{composer_lines, file_names};
 use super::queue::{QueueKeys, queued_rows};
 use super::set_cursor;
 use super::style::theme;
-use super::trace::push_step;
+use super::trace::push_nested;
 use super::work::{mark, standing};
 
 /// What a thread was told shows this many lines until `T` unfolds it.
@@ -195,7 +195,7 @@ fn detail_lines(app: &App, s: &ThreadSheet, width: usize) -> (Vec<Line<'static>>
     // Stable: at the same moment the thread's own entry comes first.
     entries.sort_by_key(|(e, _)| e.created_at);
     let mut picked = None;
-    for (e, shared) in entries {
+    for ((e, shared), depth) in nested(&entries, |(e, _)| e) {
         if shared {
             if s.pick.as_ref() == Some(&e.id) {
                 picked = Some(out.len());
@@ -208,7 +208,7 @@ fn detail_lines(app: &App, s: &ThreadSheet, width: usize) -> (Vec<Line<'static>>
         } else if e.queued() {
             // The user's message that waits for its turn: over the composer, not here.
         } else {
-            push_step(&mut out, app, e, width, s.full);
+            push_nested(&mut out, app, e, depth, width, s.full);
         }
     }
     if out.is_empty() {

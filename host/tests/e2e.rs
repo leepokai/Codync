@@ -208,6 +208,17 @@ async fn turn_with_approval_reaches_a_final_reply() {
             &tool_keys
         )
     );
+    // A subagent's call names its launch, and the launch reports what the subagent did.
+    let data_of = |id: &str| &entries.iter().find(|e| e["data"]["toolCallId"] == id).unwrap()["data"];
+    assert_eq!((&data_of("c1")["parent"], &data_of("c1")["bookkeeping"]), (&json!("a1"), &json!(false)));
+    // Handing its report back is the subagent's plumbing, left out of the working steps.
+    assert_eq!((&data_of("h1")["parent"], &data_of("h1")["bookkeeping"]), (&json!("a1"), &json!(true)));
+    assert_eq!(
+        data_of("a1")["subagent"],
+        json!({"kind": "general-purpose", "model": "claude-opus-5-5", "background": false, "tokens": 42310,
+            "toolUses": 1, "durationMs": 6287})
+    );
+    assert_eq!((tool["data"].get("parent"), tool["data"].get("subagent")), (None, None));
     let plan = entries.iter().find(|e| e["kind"] == "plan").unwrap();
     assert_eq!(plan["data"]["entries"], json!([{"content": "edit", "status": "completed", "priority": "high"}]));
     assert_eq!(plan["data"]["author"], bot.as_str());

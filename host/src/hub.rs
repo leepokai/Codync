@@ -487,6 +487,20 @@ impl Hub {
         Some(e)
     }
 
+    /// Updates entries and kv rows in one write ([`Store::update_entries_kv`]) and broadcasts the entries; a failure
+    /// (nothing written) is logged here, like [`Self::set_entry`].
+    pub fn set_entries_with_kv(&self, entries: &[(String, Value)], delete: &[String], set: &[(String, String)]) {
+        let _g = self.emit_lock.locked();
+        match self.store.update_entries_kv(entries, delete, set) {
+            Ok(updated) => {
+                for e in &updated {
+                    let _ = self.events.send(entry_event(e));
+                }
+            }
+            Err(error) => tracing::error!(error = format!("{error:#}"), "couldn't update transcript entries"),
+        }
+    }
+
     fn update_entry(&self, id: &str, turn: Option<i64>, data: &Value) -> Option<Entry> {
         let _g = self.emit_lock.locked();
         match self.store.update_entry_turn(id, turn, data) {

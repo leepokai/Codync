@@ -2273,5 +2273,8 @@
   "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.": "チャットが計画して作業を任せ、thread は専用の agent とフォールバックで動きます。",
   "Threads' agent": "Thread の agent",
   "Threads' fallbacks": "Thread のフォールバック",
-  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "{agent} の使用量がなくなるか応答できない場合、thread は次のものに引き継ぎます。"
+  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "{agent} の使用量がなくなるか応答できない場合、thread は次のものに引き継ぎます。",
+  "in background": "バックグラウンドで実行",
+  "{count} s": "{count} 秒",
+  "{count} min": "{count} 分"
 }

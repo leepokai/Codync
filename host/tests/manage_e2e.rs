@@ -158,3 +158,37 @@ async fn a_card_ends_when_its_turn_stops_or_its_call_is_dropped() {
     drop(stdin);
     mcp.wait().unwrap();
 }
+
+/// Ryan's dry run: a manager checks a change without applying it — the answer carries the resolved model or
+/// the reason, no approval card ever goes up, and the bot's setup is untouched.
+#[tokio::test]
+async fn a_validate_only_check_answers_without_a_card_or_a_change() {
+    async fn dry(host: &Host, lead: &str, args: Value) -> Value {
+        host.call("send", json!({"botId": lead, "text": format!("MANAGE update_bot {args}")})).await;
+        let reply = wait(host, lead, |e| {
+            e["kind"] == "agent"
+                && e["data"]["final"] == true
+                && e["data"]["text"].as_str().is_some_and(|t| t.starts_with("Done: "))
+        })
+        .await;
+        let text = reply["data"]["text"].as_str().unwrap().to_owned();
+        serde_json::from_str(text.strip_prefix("Done: ").unwrap_or_else(|| panic!("{text}"))).unwrap()
+    }
+
+    let host = Host::start().await;
+    let lead = host.fixture_bot("Lead", "team_agent.py", "").await;
+    host.call("updateBot", json!({"id": lead, "permission": "auto", "manageTeam": true})).await;
+
+    let ok = dry(&host, &lead, json!({"botId": lead, "model": "fixture-2", "validateOnly": true})).await;
+    assert_eq!(ok["valid"], json!(true), "{ok}");
+    assert_eq!(ok["resolvedModel"], json!("fixture-2"), "{ok}");
+    assert_eq!(ok["applied"], json!(false), "{ok}");
+    let bad = dry(&host, &lead, json!({"botId": lead, "model": "claude-x", "validateOnly": true})).await;
+    assert_eq!(bad["valid"], json!(false), "{bad}");
+    assert!(bad["reason"].as_str().unwrap().contains("claude-x isn't in the agent's model list"), "{bad}");
+    assert!(bad["reason"].as_str().unwrap().contains("looks like a claude-backend model"), "{bad}");
+    // Neither call applied anything: the lead's model is still what it started on.
+    let sync = host.snapshot().await;
+    let lead_bot = sync["bots"].as_array().unwrap().iter().find(|b| b["id"] == lead).unwrap();
+    assert_ne!(lead_bot["model"], json!("fixture-2"), "a validateOnly check must not change the bot");
+}

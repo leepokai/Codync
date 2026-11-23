@@ -247,13 +247,9 @@ pub fn check_model(catalog: &Value, model: &str) -> Result<()> {
     if models.is_empty() || models.iter().any(|m| m["id"] == model || m["id"] == bare) {
         return Ok(());
     }
+    // The whole list, untruncated: a manager picking an id for another bot reads it straight from here.
     let listed: Vec<&str> = models.iter().filter_map(|m| m["id"].as_str()).collect();
-    let shown: Vec<String> = listed.iter().take(8).map(ToString::to_string).collect();
-    bail!(
-        "model {model} isn't in the agent's model list; it lists: {}{}",
-        shown.join(", "),
-        if listed.len() > 8 { ", …" } else { "" }
-    )
+    bail!("model {model} isn't in the agent's model list; it lists: {}", listed.join(", "))
 }
 
 fn parse_select_option(option: &Value) -> Option<Value> {

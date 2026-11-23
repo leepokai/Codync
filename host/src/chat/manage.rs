@@ -33,9 +33,11 @@ pub const MAX_CARD_DETAIL: usize = 2000;
 pub const INSTRUCTIONS: &str = "You manage the user's team of Codync bots. list_team shows every bot's setup and \
 routines, yours and hidden bots included. create_bot adds a bot, which can manage the team too; update_bot changes a \
 bot's name, instructions, model and its settings (effort…), fallbacks, avatar, routines, visibility or pause, yours included \
-(a new model of your own takes effect after this turn; a new model without modelOptions starts on its defaults). A paused \
-bot answers nothing and spends nothing until it is resumed, so pausing stops its credits. list_models shows the model ids \
-an agent offers, each with its settings, for picking a bot's model, its modelOptions or a fallback's model. Each \
+(a new model of your own takes effect after this turn; a field you leave out keeps its saved value, and what you \
+send is checked against the model it will run on). A paused bot answers nothing and spends nothing until it is \
+resumed, so pausing stops its credits. list_models shows the model ids an agent offers, each with its settings, for \
+picking a bot's model, its modelOptions or a fallback's model — pass botId to use a managed bot's agent, or query \
+to match by name. validateOnly checks a change and returns whether it is valid, without applying it or asking. Each \
 bot runs only its own routines: to test another bot's, ask that bot with message_bot to run it with its own \
 run_routine, naming the routine id; don't paste its instructions instead. Its result appears in that bot's chat. A \
 hidden bot can't be messaged: ask the user to run its routine from that bot. Use them for what the user asked, \
@@ -113,6 +115,7 @@ pub fn tools() -> Value {
     setup["botId"] = json!({"type": "string", "description": "The bot's id from list_team."});
     setup["hidden"] = json!({"type": "boolean", "description": "Hide it from the user's bot list, or show it again."});
     setup["paused"] = json!({"type": "boolean", "description": "Pause it: it answers nothing and spends nothing until it is resumed (its queued routine runs are cancelled, and messages sent to it are refused with a notice). Resume with false."});
+    setup["validateOnly"] = json!({"type": "boolean", "description": "Check the change and return whether it is valid (with the resolved model), without applying anything, without an approval card, and without an audit entry. dryRun is an alias."});
     json!([
         {
             "name": "list_team",
@@ -122,11 +125,14 @@ pub fn tools() -> Value {
         },
         {
             "name": "list_models",
-            "description": "List the model ids an agent offers, each with its settings (Claude's effort, Codex's reasoning_effort…), for picking a bot's model, its modelOptions or a fallback's model. Loads the agent's model catalog; for an agent this machine hasn't used yet that can take a while (it may build the agent's model registry first).",
+            "description": "List the model ids an agent offers, each with its settings (Claude's effort, Codex's reasoning_effort…), for picking a bot's model, its modelOptions or a fallback's model. Loads the agent's model catalog; for an agent this machine hasn't used yet that can take a while (it may build the agent's model registry first). Read-only: it never changes anything.",
             "inputSchema": {
                 "type": "object",
-                "properties": {"agent": {"type": "string", "description": "An agent id, as list_team shows bots running it."}},
-                "required": ["agent"],
+                "properties": {
+                    "agent": {"type": "string", "description": "An agent id, as list_team shows bots running it."},
+                    "botId": {"type": "string", "description": "A bot's id: lists that bot's own agent's models. Leave agent out to use this."},
+                    "query": {"type": "string", "description": "Text that must appear in the model id or its display name (case-insensitive); every match is returned."},
+                },
             },
             "annotations": {"readOnlyHint": true},
         },
@@ -166,16 +172,32 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
             Ok(json!({"bots": bots}))
         }
         "list_models" => {
-            let agent = text(args, "agent")?.context("agent is required")?;
+            // The agent to list: named directly, or else a managed bot's own agent (`botId`).
+            let agent = if let Some(agent) = text(args, "agent")? {
+                agent
+            } else {
+                let bot = text(args, "botId")?.context("pass agent, or botId for a managed bot's agent")?;
+                agent_bot(hub, &bot)?.backend
+            };
+            let query = text(args, "query")?.map(|q| q.to_ascii_lowercase());
             // A first-ever load can build the agent's model registry, which is slow: cap it at the window
             // the clients give a tool call, so a wedged agent launch can't outlive them silently.
             let deadline = Instant::now() + APPROVAL_TIMEOUT;
             let catalog = tokio::time::timeout_at(deadline, crate::agent::auth::shared_models(hub, &agent))
                 .await
                 .map_err(|_| anyhow!("loading {agent}'s models took too long; try again in a bit"))?
-                .map_err(|e| anyhow!("couldn't list {agent}'s models: {e:#}"))?;
-            let models = catalog["models"].as_array().cloned().unwrap_or_default();
-            Ok(json!({"models": models, "currentModelId": catalog["currentModelId"]}))
+                .map_err(|e| {
+                    anyhow!("couldn't list {agent}'s models: {e:#} — install and sign in to {agent} on this computer, or list an agent that is set up here")
+                })?;
+            let mut models = catalog["models"].as_array().cloned().unwrap_or_default();
+            if let Some(query) = &query {
+                models.retain(|m| {
+                    let id = m["id"].as_str().unwrap_or_default().to_ascii_lowercase();
+                    let name = m["name"].as_str().unwrap_or_default().to_ascii_lowercase();
+                    id.contains(query) || name.contains(query)
+                });
+            }
+            Ok(json!({"agent": agent, "models": models, "currentModelId": catalog["currentModelId"]}))
         }
         "create_bot" => create(hub, &source, args).await,
         "update_bot" => update(hub, &source, args).await,
@@ -279,7 +301,8 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     let model = model_after(&fields, target.model.as_deref());
     let fallbacks: Vec<Fallback> =
         serde_json::from_value(fields.get("fallbacks").cloned().unwrap_or_default()).unwrap_or_default();
-    checks::change(
+    let validate_only = args["validateOnly"].as_bool() == Some(true) || args["dryRun"].as_bool() == Some(true);
+    let checked = checks::change(
         hub,
         &target.backend,
         target.command.as_deref(),
@@ -291,9 +314,24 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         },
         deadline,
     )
-    .await?;
+    .await;
+    if validate_only {
+        // A dry run answers the manager's "would this be valid?" without applying anything, without an
+        // approval card, and without a trace of a change: the audit below only records real mutations.
+        return match checked {
+            Ok(()) => Ok(json!({
+                "valid": true,
+                "resolvedModel": model,
+                "resolvedBackend": target.backend,
+                "applied": false,
+            })),
+            Err(e) => Ok(json!({"valid": false, "reason": e.to_string(), "applied": false})),
+        };
+    }
+    checked?;
     let detail = describe(&hub.store, &fields, &lines);
     approve(hub, source, format!("Change bot {}", target.name), detail, deadline).await?;
+    let audited_fields = fields.clone();
     let mut changed: Vec<String> =
         FIELDS.iter().filter(|(key, _)| fields.contains_key(*key)).map(|(_, label)| label.to_lowercase()).collect();
     if !fields.is_empty() {
@@ -308,8 +346,74 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     }
     if !changed.is_empty() {
         notice(hub, &source.id, &format!("Updated {}: {}", target.name, changed.join(", ")));
+        // The audit trail: the target's own timeline gets who changed what and how it was approved, and the
+        // analytics event records the same for queries by actor or target. A validateOnly check or a
+        // refusal never reaches this point.
+        if let Ok(after) = agent_bot(hub, &id) {
+            audit_change(hub, source, &target, &after, &audited_fields);
+        }
     }
     Ok(json!({"bot": setup(hub, &agent_bot(hub, &id)?), "routines": saved}))
+}
+
+/// The audit entry for a manager's change to another bot: who (bot id), what moved (old -> new for the
+/// model, its settings, the fallback chain and the pause state), and whether it was approved automatically
+/// or by the user. It lands as a notice on the target bot's own timeline and as a `bot_config_changed`
+/// analytics event the fleet can query by actor or target.
+fn audit_change(hub: &Hub, source: &BotConfig, before: &BotConfig, after: &BotConfig, fields: &Map<String, Value>) {
+    let mode = if hub.ceilings.approves_by_itself(source) { "auto" } else { "approved" };
+    let on = |m: &Option<String>| m.as_deref().unwrap_or("the agent's default").to_owned();
+    let chain = |list: &[Fallback]| {
+        list.iter()
+            .map(|f| match f.model.as_deref() {
+                Some(m) => format!("{}/{}", f.backend, m),
+                None => f.backend.clone(),
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let mut moves: Vec<String> = Vec::new();
+    let mut props = Map::new();
+    props.insert("actorBotId".into(), source.id.clone().into());
+    props.insert("actorKind".into(), "lead".into());
+    props.insert("targetBotId".into(), after.id.clone().into());
+    props.insert("targetName".into(), after.name.clone().into());
+    props.insert("approvalMode".into(), mode.into());
+    let mut names: Vec<&str> = Vec::new();
+    for (key, _label) in FIELDS.iter().filter(|(key, _)| fields.contains_key(*key)) {
+        names.push(key);
+        match *key {
+            "model" => {
+                let line = format!("model: {} -> {}", on(&before.model), on(&after.model));
+                props.insert("modelFrom".into(), on(&before.model).into());
+                props.insert("modelTo".into(), on(&after.model).into());
+                moves.push(line);
+            }
+            "paused" => {
+                let line = format!("paused: {} -> {}", before.paused, after.paused);
+                props.insert("pausedFrom".into(), before.paused.into());
+                props.insert("pausedTo".into(), after.paused.into());
+                moves.push(line);
+            }
+            "fallbacks" => {
+                let line = format!("fallbacks: [{}] -> [{}]", chain(&before.fallbacks), chain(&after.fallbacks));
+                props.insert("fallbacksFrom".into(), chain(&before.fallbacks).into());
+                props.insert("fallbacksTo".into(), chain(&after.fallbacks).into());
+                moves.push(line);
+            }
+            _ => moves.push((*key).to_owned()),
+        }
+    }
+    props.insert("fields".into(), names.into());
+    if moves.is_empty() {
+        return;
+    }
+    notice(
+        hub,
+        &after.id,
+        &format!("Changed by {} ({}) via update_bot ({}): {}", source.name, source.id, mode, moves.join("; ")),
+    );
+    crate::analytics::capture(hub, crate::analytics::Event::BotConfigChanged, props);
 }
 
 /// Unless the bot approves by itself (`Ceilings::approves_by_itself`), the change waits for the user's Allow on an

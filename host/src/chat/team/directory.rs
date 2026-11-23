@@ -50,6 +50,8 @@ fn rows(hub: &Hub, from: &str, remote: &[Peer], keep: impl Fn(&BotConfig) -> boo
             value: json!({
                 "id": c.id, "name": c.name, "description": c.description, "kind": AgentKind::Codync,
                 "backend": c.backend, "cwd": c.cwd, "status": hub.runtime(&c.id).status,
+                "model": c.model, "modelOptions": c.model_options, "fallbacks": crate::chat::fallbacks::wire(&c.fallbacks),
+                "paused": c.paused,
             }),
             computer: None,
             online: true,

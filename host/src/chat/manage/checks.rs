@@ -55,7 +55,7 @@ pub(super) async fn change(
                 Ok(catalog) => {
                     if let Some(m) = set {
                         crate::agent::auth::check_model(&catalog, m)
-                            .map_err(|e| Refused::error("model", e.to_string()))?;
+                            .map_err(|e| Refused::error("model", format!("{e}{}", engine_hint(m, backend))))?;
                     }
                     if let Some(options) = options {
                         let settings = options.iter().map(|(id, v)| (id.as_str(), v.as_str().unwrap_or_default()));
@@ -94,7 +94,8 @@ pub(super) async fn change(
         }
         match catalog(hub, &mut fetched, &fallback.backend, deadline).await {
             Ok(catalog) => {
-                crate::agent::auth::check_model(&catalog, m).map_err(|e| Refused::error("model", e.to_string()))?;
+                crate::agent::auth::check_model(&catalog, m)
+                    .map_err(|e| Refused::error("model", format!("{e}{}", engine_hint(m, &fallback.backend))))?;
             }
             Err(e) => {
                 tracing::warn!(
@@ -107,6 +108,21 @@ pub(super) async fn change(
         }
     }
     Ok(())
+}
+
+/// A model id often carries its engine's name (`grok-4.7`, `claude-sonnet-4-6`, `gpt-5.4`); when it clearly
+/// belongs to a different backend than the one being checked, say so — a bare "not in the list" sent a
+/// manager hunting for a model that was never this engine's to give.
+fn engine_hint(model: &str, backend: &str) -> String {
+    const FAMILIES: &[(&str, &str)] =
+        &[("grok", "grok"), ("gpt-", "codex"), ("codex", "codex"), ("claude", "claude"), ("cursor", "cursor")];
+    let bare = model.rsplit('/').next().unwrap_or(model).to_ascii_lowercase();
+    match FAMILIES.iter().find(|(token, _)| bare.starts_with(token)) {
+        Some((_, family)) if *family != backend => {
+            format!(" — {model} looks like a {family}-backend model, and this bot's backend is {backend}")
+        }
+        _ => String::new(),
+    }
 }
 
 /// `agent`'s model catalog, loaded at most once per call. `Err` says why it didn't load: the agent, or the

@@ -120,7 +120,13 @@ impl Actor {
         };
         let port = self.hub.port;
         if self.cfg.plain {
-            return Ok(json!([crate::mcp::acp_server("workflows", &exe, &["workflows", "--bot", &self.cfg.id], port)]));
+            return Ok(json!([crate::mcp::acp_server(
+                "workflows",
+                &exe,
+                &["workflows", "--bot", &self.cfg.id],
+                port,
+                &[]
+            )]));
         }
         let mut servers: Vec<Value> =
             (if self.cfg.connectors.is_empty() { Vec::new() } else { crate::market::connectors(&self.hub.store)? })

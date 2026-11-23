@@ -750,7 +750,7 @@ dependencies = [
 
 [[package]]
 name = "codync-host"
-version = "2.53.0"
+version = "2.53.1"
 dependencies = [
  "anyhow",
  "axum",

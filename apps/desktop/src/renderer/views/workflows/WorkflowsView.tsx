@@ -18,10 +18,13 @@ import { GraphSaver, type FlushResult } from './save'
 import { WorkflowCanvas } from './WorkflowCanvas'
 import { WorkflowHud } from './WorkflowHud'
 import { WorkflowChat } from './WorkflowChat'
-import { ChatSidePanel } from '../chat/ChatSidePanel'
+import { ChatSidePanel, useSidePanelWidth } from '../chat/ChatSidePanel'
 import type { BotRef, RosterItem } from '../../store/app-model'
 import { cloneGraphNewIds, copyTitle, emptyGraph, latestStepByNode, type Graph, type RunDetail, type RunSummary, type WorkflowDetail, type WorkflowStep, type WorkflowVersion } from './workflow'
 import './workflows.css'
+
+/** What the canvas keeps beside the chat. */
+const CANVAS_MIN = 320
 
 type Phase = 'begin' | 'change' | 'end' | 'text'
 
@@ -85,8 +88,7 @@ export function WorkflowsView({ focus, onFocused, shown: lastShown, onShown, ros
   const [chatOpen, setChatOpen] = usePref(prefs.workflowChatOpen)
   const [chatWidth, setChatWidth] = usePref(prefs.detailsPanelWidth)
   const page = useRef<HTMLDivElement>(null)
-  // The canvas keeps at least 420 beside the chat.
-  const fit = (w: number) => Math.min(Math.max(360, w), (page.current?.clientWidth ?? 1200) - 420)
+  const chatPanel = useSidePanelWidth(page, CANVAS_MIN, chatWidth)
   const chatting = chatOpen && !!selected && store.buildsWorkflowsInThreads
 
   const summary = store.workflows.find((item) => item.id === selected) ?? null
@@ -423,7 +425,7 @@ export function WorkflowsView({ focus, onFocused, shown: lastShown, onShown, ros
         <textarea className="workflow-input workflow-script" aria-label={tr('Script')} value={scriptText} onChange={(event) => { scriptDirty.current = true; setScriptText(event.target.value) }} />
       </Dialog>
     </div>
-      <ChatSidePanel open={chatting} filled={false} width={fit(chatWidth)} min={360} max={fit(Infinity)} onResize={(w) => setChatWidth(fit(w))}>
+      <ChatSidePanel open={chatting} filled={!chatPanel.beside} width={chatPanel.width} max={chatPanel.max} onResize={(w) => setChatWidth(chatPanel.fit(w))}>
         {selected ? <WorkflowChat key={selected} workflowId={selected} roster={roster} openChat={openChat} /> : null}
       </ChatSidePanel>
     </div>

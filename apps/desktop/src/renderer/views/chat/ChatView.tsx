@@ -30,6 +30,7 @@ import { WorkCapsule } from './WorkCapsule'
 import { fill } from '@shared/fill'
 import { outsideQueue } from './queued-messages'
 import { ChatSidePanel } from './ChatSidePanel'
+import { CONVERSATION_MIN, fitPanel, PANEL_MIN } from './side-panel-width'
 import { WindowBarSlots } from '../WindowBar'
 import { IconButton } from '../../components/Controls'
 import { DetailsPanel, showPanelView, splitPanel, type DetailsTab } from './DetailsPanel'
@@ -97,7 +98,7 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
       const w = e!.contentRect.width
       width.current = w
       setWide(w >= WIDE)
-      setSqueezed(w - 380 < squeezeBelow.current ? w : 0)
+      setSqueezed(w - CONVERSATION_MIN < squeezeBelow.current ? w : 0)
     })
     observer.observe(el)
     return () => observer.disconnect()
@@ -106,9 +107,9 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
 
   const panelOpen = wide && showSettings
   const bar = useContext(WindowBarSlots)
-  squeezeBelow.current = panelOpen ? Math.max(360, detailsWidth) : 0
-  // The side panel's edge drags its width, leaving the conversation at least 380 wide.
-  const panelWidth = (w: number) => Math.min(Math.max(360, w), width.current - 380)
+  squeezeBelow.current = panelOpen ? Math.max(PANEL_MIN, detailsWidth) : 0
+  // The side panel's edge drags its width, leaving the conversation its least.
+  const panelWidth = (w: number) => fitPanel(w, width.current, CONVERSATION_MIN)
   // A compact Details presentation dismisses once the window is wide enough for the inspector.
   useEffect(() => {
     if (wide) setCompactDetails(false)
@@ -251,8 +252,7 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
         open={panelOpen}
         filled={panelFilled}
         width={panelWidth(detailsWidth)}
-        min={360}
-        max={width.current - 380}
+        max={panelWidth(Infinity)}
         onResize={(w) => setDetailsWidth(panelWidth(w))}
       >
         {details}

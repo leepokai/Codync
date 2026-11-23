@@ -261,7 +261,7 @@ async fn update_bot_checks_the_model_on_the_login_profile_the_bot_runs_on() {
     host.call("updateBot", json!({"id": target, "loginProfile": profile})).await;
     let reply =
         manage(&host, &lead, "update_bot", &json!({"botId": target, "model": "ultra-neon"}), "allow", |detail| {
-            assert_eq!(detail, "Model: ultra-neon")
+            assert_eq!(detail, "Model: ultra-neon");
         })
         .await;
     assert!(reply.starts_with("Done: "), "{reply}");

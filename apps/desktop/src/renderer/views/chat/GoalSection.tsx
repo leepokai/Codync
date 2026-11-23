@@ -49,7 +49,7 @@ export function GoalSection({ bot }: { bot: Bot }) {
   const [minutes, setMinutes] = useState(60)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  if (bot.goal === undefined) return null
+  if (bot.goal === undefined || bot.plain || bot.workflow) return null
   const start = async () => {
     setBusy(true)
     setError('')

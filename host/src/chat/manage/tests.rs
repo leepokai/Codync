@@ -72,7 +72,9 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
         [
             json!("Created bot Security Analyst"),
             json!("Updated dev: hidden, instructions"),
-            json!("Updated lead: name, model")
+            json!("Updated lead: name, model"),
+            // The audit: the manager's own change is on its timeline too, with what moved and how it was approved.
+            json!("Changed by lead (lead) via update_bot (auto): name; model: the agent's default -> opus")
         ]
     );
 

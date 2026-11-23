@@ -1726,7 +1726,8 @@ async fn a_thread_the_user_starts_works_where_its_setup_says() {
     // A setup is checked as a bot's is, and one that can't be read starts nothing.
     let start = |setup: Value| host.refused("startThread", json!({"botId": bot, "text": "x", "setup": setup}));
     assert_eq!(start(json!({"cwd": "elsewhere"})).await, "a thread's folder is a full path");
-    assert!(start(json!({"cwd": "/no/such/folder"})).await.contains("does not exist"));
+    // Under the host's own folder, so it is a full path on Windows too (`/no/such` lacks a drive).
+    assert!(start(json!({"cwd": host.home.join("no-such-folder")})).await.contains("does not exist"));
     assert!(start(json!({"approval": {"permission": "yolo", "mode": null}})).await.contains("a thread's setup"));
 }
 
@@ -1742,7 +1743,7 @@ async fn a_thread_without_a_bot_runs_its_agent_on_its_own() {
     let refused = "a thread without a bot names its agent";
     assert_eq!(host.refused("startThread", json!({"text": "Hello"})).await, refused);
     // The first one makes the computer's box, hidden, before its setup is checked: this one's folder isn't there.
-    let gone = json!({"backend": "claude", "cwd": "/no/such/folder"});
+    let gone = json!({"backend": "claude", "cwd": host.home.join("no-such-folder")});
     assert!(host.refused("startThread", json!({"text": "Hello", "setup": gone})).await.contains("does not exist"));
     let snapshot = host.snapshot().await;
     let boxes: Vec<&Value> = snapshot["bots"].as_array().unwrap().iter().filter(|b| b["plain"] == true).collect();

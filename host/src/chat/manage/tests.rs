@@ -211,6 +211,7 @@ async fn a_bot_without_the_option_cannot_pause_or_remodel() {
     let dir = std::env::temp_dir().join(format!("codync-manage-pause-gate-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let hub = hub(&dir);
+    let rev_before = hub.store.bot("lead").unwrap().unwrap().rev;
     for args in [
         json!({"botId": "lead", "paused": true}),
         json!({"botId": "lead", "model": "sonnet"}),
@@ -221,9 +222,11 @@ async fn a_bot_without_the_option_cannot_pause_or_remodel() {
     }
     let models = call(&hub, "dev", "list_models", &json!({"agent": "claude"})).await.unwrap_err().to_string();
     assert!(models.contains("may not manage the team"), "{models}");
-    assert!(!hub.store.bot("lead").unwrap().unwrap().config.paused, "nothing changed");
-    assert_eq!(hub.store.bot("lead").unwrap().unwrap().config.model, None, "nothing changed");
-    assert!(hub.store.bot("lead").unwrap().unwrap().config.fallbacks.is_empty(), "nothing changed");
+    let lead = hub.store.bot("lead").unwrap().unwrap();
+    assert!(!lead.config.paused, "nothing changed");
+    assert_eq!(lead.config.model, None, "nothing changed");
+    assert!(lead.config.fallbacks.is_empty(), "nothing changed");
+    assert_eq!(lead.rev, rev_before, "a refused change writes no revision");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

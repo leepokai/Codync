@@ -57,7 +57,9 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const store = useStore()
   const first = items[0]
   const backends = store.hello?.backends ?? []
-  const initialBackend = typeof first?.bot.backend === 'string' && first.bot.backend !== 'custom' ? first.bot.backend : String(backends[0] ?? 'claude')
+  const initialBackend = typeof first?.bot.backend === 'string' && first.bot.backend !== 'custom'
+    ? first.bot.backend
+    : (backends.find((b) => b.id !== 'custom')?.id ?? 'claude')
   const [pick, setPick] = useState<Pick>({ backend: initialBackend, model: null, modelOptions: {} })
   const [query, setQuery] = useState('')
   const [checked, setChecked] = useState<Set<string>>(() => new Set())
@@ -101,8 +103,12 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
           if (id === store.computer.id || id in catalogs) continue
           catalogs[id] = await item.store
             .ready()
-            .then((client) => client.call<AgentModels>('agentModels', { backend }, 300_000))
-            .then((catalog): CatalogCheck => ({ kind: 'ok', catalog }))
+            .then(async (client): Promise<CatalogCheck> => {
+              // The wait for a reconnect may outlast the run: re-check before anything is read.
+              if (!alive.current || run.current !== myRun) return { kind: 'error' }
+              const catalog = await client.call<AgentModels>('agentModels', { backend }, 300_000)
+              return { kind: 'ok', catalog }
+            })
             .catch((): CatalogCheck => ({ kind: 'error' }))
         }
       }
@@ -129,7 +135,11 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
           if (backend !== 'custom') patch.command = null
           await row.item.store
             .ready()
-            .then((client) => client.call('updateBot', patch))
+            .then((client) => {
+              // The wait for a reconnect may outlast the run: re-check before anything is sent.
+              if (!alive.current || run.current !== myRun) return null
+              return client.call('updateBot', patch)
+            })
             .then(() => {
               applied++
               if (alive.current && run.current === myRun) setOutcomes((o) => ({ ...o, [key]: { ok: true, text: tr('Applied') } }))

@@ -512,7 +512,7 @@ function ChatSplitView() {
         onClose={closeWork}
       />
       <SearchPalette open={searching} items={visibleRoster} onPick={(ref) => app.select(ref)} onClose={() => setSearching(false)} />
-      {modelManager ? <ModelManagerView items={fullRoster.items} onClose={() => setModelManager(false)} /> : null}
+      {modelManager ? <ModelManagerView items={[...fullRoster.items, ...app.hiddenBots]} onClose={() => setModelManager(false)} /> : null}
       <Sheet open={editing !== null} onClose={() => setEditing(null)} width={520} height={Math.min(680, sheetHeight)}>
         {editing ? (
           <StoreContext.Provider value={editing.store}>

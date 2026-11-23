@@ -19,11 +19,11 @@ models), and the model's own settings under it, such as the reasoning slider. Le
 
 ## Choosing the bots
 
-The list is the whole roster across all the account's computers — the sidebar's computer filter and
-hidden-computer choice don't limit it; a bot's computer is named under it when the account has more
-than one. Groups are not listed: they carry members, not a model of their own. The search field
-filters by name, description and last message, reusing the sidebar search's matcher (`matchBots`);
-`Select all` / `Unselect all` act on what the filter is showing.
+The list is every bot on every computer the account reaches — the sidebar's computer filter, hidden
+computers and bots hidden from the roster don't limit it; a bot's computer is named under it when
+the account has more than one. Groups are not listed: they carry members, not a model of their own.
+The search field filters by name, description and last message, reusing the sidebar search's matcher
+(`matchBots`); `Select all` / `Unselect all` act on what the filter is showing.
 
 ## Apply
 
@@ -33,8 +33,10 @@ editor's agent change does — a stale custom command would otherwise keep launc
 the patch over the bot's state as it is at that moment under one lock (`updateBot`'s patched merge),
 so an unrelated change that landed while the batch ran is never written back, and on another agent
 the bot moves to that agent's Auto mode on the host's own rule while a login profile that doesn't
-fit the new agent is dropped by the host's profile settle. Fallbacks are not touched. Fast mode and
-session notes are not touched either.
+fit the new agent is dropped by the host's profile settle. The patch itself doesn't send the
+fallback list, but the host's fallback tidy runs on every bot update: a fallback step that would
+duplicate the new primary agent (same backend and login) is dropped then, exactly as the bot
+editor's agent change does. Fast mode and session notes are not touched either.
 
 Before anything is saved, each involved computer's catalog is read for the chosen model
 (`agentModels`, the same call the picker makes, at the same 300 s patience). A bot on a computer

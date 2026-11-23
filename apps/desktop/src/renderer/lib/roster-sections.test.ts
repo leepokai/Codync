@@ -88,6 +88,14 @@ test('frozen, the lead renders above the pinned rows and outside every section',
   // Without the freeze the lead keeps its section like any bot.
   assert.deepEqual(outline(rosterLines(roster, [])), ['pinned', 'Work 2 0: lead a', 'BOTS', 'loose'])
   assert.deepEqual(rosterRows(roster, [], true).map((i) => i.id), ['lead', 'pinned', 'a', 'loose'])
+  assert.deepEqual(outline(rosterLines([], [], [], true)), [], 'an empty roster stays empty')
+  assert.deepEqual(outline(rosterLines([item('lead', 'Work', { lead: true })], [], [], true)), ['lead'], 'a solo lead leaves its section')
+  // The direct call the roster views and the store make (SectionRoster, useComputerRoster's move check).
+  assert.deepEqual(
+    rosterGroups([item('lead', 'Work', { lead: true }), item('a', 'Work')], [], [], true).flatMap((group) => group.items.map((i) => i.id)),
+    ['a'],
+    'a direct rosterGroups call keeps the lead out of every group',
+  )
 })
 
 test('frozen, nothing drags past the lead and it shows in no section', () => {
@@ -95,6 +103,9 @@ test('frozen, nothing drags past the lead and it shows in no section', () => {
   assert.equal(sameRosterGroup(bot({ lead: true }), bot({ pinned: true }), true), false)
   assert.equal(sameRosterGroup(bot({ pinned: true }), bot({ lead: true }), true), false)
   assert.equal(sameRosterGroup(bot({ lead: true }), bot({ section: 'Work' }), true), false)
+  // The load-bearing ones: same band and section (or none of either), only the freeze separates them.
+  assert.equal(sameRosterGroup(bot({ lead: true, section: 'Work' }), bot({ section: 'Work' }), true), false, 'same section: only the freeze separates them')
+  assert.equal(sameRosterGroup(bot(), bot({ lead: true }), true), false, 'both sectionless: only the freeze separates them')
   // Unfrozen, the lead moves like any bot (same section here).
   assert.equal(sameRosterGroup(bot({ lead: true, section: 'Work' }), bot({ section: 'Work' })), true)
   assert.equal(shownSection(bot({ lead: true, section: 'Work' }), true), undefined)

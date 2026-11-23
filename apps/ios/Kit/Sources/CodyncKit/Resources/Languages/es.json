@@ -473,7 +473,7 @@
   "Agent": "Agente",
   "Manage the team": "Administrar el equipo",
   "Manage team": "Administrar equipo",
-  "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.": "Permitir que este bot cree bots y cambie la configuración de cualquier bot, incluida la suya. Los bots que cree también podrán hacerlo.",
+  "Let this bot create bots, change any bot's setup including its model and fallbacks, and pause or resume it. The bots it creates can too.": "Permitir que este bot cree bots, cambie la configuración de cualquier bot, incluidos su modelo y agentes de respaldo, y lo pause o lo reanude. Los bots que cree también podrán hacerlo.",
   "Let this bot see the screen and use the mouse and keyboard. You can watch and take over from your phone.": "Permitir que este bot vea la pantalla y use el ratón y el teclado. Puedes observar y tomar el control desde tu teléfono.",
   "Let this bot see the screen and use the mouse and keyboard.": "Permitir que este bot vea la pantalla y use el ratón y el teclado.",
   "Let this bot see the screen and use the mouse and keyboard. On that computer, open Codync → Settings → Computer access to set up permissions first.": "Permitir que este bot vea la pantalla y use el ratón y el teclado. Configura primero los permisos en esa computadora: Codync → Ajustes → Acceso a la computadora.",

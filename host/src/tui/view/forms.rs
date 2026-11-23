@@ -96,7 +96,7 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
             tr("Threads that work at once in this repository each get their own branch.").into_owned()
         }
         Field::Team => {
-            tr("Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.").into_owned()
+            tr("Let this bot create bots, change any bot's setup including its model and fallbacks, and pause or resume it. The bots it creates can too.").into_owned()
         }
         Field::Network => tr("Offered to the network: bots on your other computers can see and message this bot.").into_owned(),
         Field::Assistants => {

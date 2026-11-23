@@ -473,7 +473,7 @@
   "Agent": "智慧體",
   "Manage the team": "管理團隊",
   "Manage team": "管理團隊",
-  "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.": "讓這個 Bot 建立 Bot，並修改任何 Bot 的設定，包括它自己。它建立的 Bot 也可以。",
+  "Let this bot create bots, change any bot's setup including its model and fallbacks, and pause or resume it. The bots it creates can too.": "讓這個 Bot 建立 Bot，修改任何 Bot 的設定（包括模型和備用），並暫停或恢復它。它建立的 Bot 也可以。",
   "Let this bot see the screen and use the mouse and keyboard. You can watch and take over from your phone.": "讓這個 Bot 看螢幕，並用滑鼠和鍵盤。你可以在手機上觀看和接管。",
   "Let this bot see the screen and use the mouse and keyboard.": "讓這個 Bot 看螢幕，並用滑鼠和鍵盤。",
   "Let this bot see the screen and use the mouse and keyboard. On that computer, open Codync → Settings → Computer access to set up permissions first.": "讓這個 Bot 看螢幕，並用滑鼠和鍵盤。先在那臺電腦上開啟 Codync → 設定 → 電腦訪問，完成許可權設定。",

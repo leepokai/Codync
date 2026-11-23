@@ -295,7 +295,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
           {[...store.bots.values()].some((b) => b.manageTeam !== null) ? (
             <SwitchRow
               title="Manage the team"
-              detail="Let this bot create bots and change any bot's setup, its own included. The bots it creates can too."
+              detail="Let this bot create bots, change any bot's setup including its model and fallbacks, and pause or resume it. The bots it creates can too."
               on={draft.manageTeam ?? false}
               onChange={(on) => set('manageTeam', on)}
             />

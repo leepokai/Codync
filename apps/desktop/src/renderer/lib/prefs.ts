@@ -79,6 +79,8 @@ export const prefs = {
   listHidden: pref('listHidden', false),
   sidebarWidth: pref('desktopSidebarWidth', 266),
   detailsPanelWidth: pref('detailsPanelWidth', 400),
+  /** The chat a workflow is built in shows beside the canvas (WorkflowChat): open until closed. */
+  workflowChatOpen: pref('workflowChatOpen', true),
   /** The panel beside a conversation: its panes, their tabs and the one each shows, the same for every bot. Read
    * through `panelLayout`, which makes what is stored safe to draw. */
   panelLayout: pref<PanelLayout>('panelLayout', DEFAULT_PANEL),

@@ -251,6 +251,7 @@
     "hello.startThread": "bool",
     "hello.threadsWithoutBot": "bool",
     "hello.version": "string",
+    "hello.workflowThreads": "bool",
     "hello.workflows": "bool"
   }
 }

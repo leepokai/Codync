@@ -2464,5 +2464,12 @@
   "Codync runs the CLI's own ACP mode.": "Codync запускает собственный режим ACP этого CLI.",
   "Codync runs the ACP build, which uses this CLI.": "Codync запускает сборку ACP, которая использует этот CLI.",
   "Brought in by default": "Добавлено по умолчанию",
-  "All workflows": "Все рабочие процессы"
+  "All workflows": "Все рабочие процессы",
+  "Build this workflow by talking": "Создайте этот процесс в диалоге",
+  "What should this workflow do?": "Что должен делать этот процесс?",
+  "Hide chat": "Скрыть чат",
+  "Show chat": "Показать чат",
+  "Workflow folder": "Папка процесса",
+  "Previous chats": "Предыдущие чаты",
+  "New chat": "Новый чат"
 }

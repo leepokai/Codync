@@ -98,6 +98,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "startThread": true,
                 // A thread may start without a bot, on an agent the user names (`startThread` without `botId`).
                 "threadsWithoutBot": true,
+                // A thread may be started to build one workflow (`startThread` with `setup.workflow`).
+                "workflowThreads": true,
                 // Whether a bot with a new message moves to the top of the roster (`setAutoOrder`).
                 "autoOrder": hub.auto_order(),
                 // `resetCredentials` can be used here (a Codync Cloud computer's keeper holds its credentials).

@@ -73,6 +73,8 @@ export interface ThreadSetup {
   cwd?: string
   model?: { id: string | null; options: Record<string, string> }
   approval?: { permission: string; mode: string | null }
+  /** A thread opened beside a workflow to build it by talking: its workflow tools reach that one only. */
+  workflow?: string
 }
 
 type Translate = (text: string) => string

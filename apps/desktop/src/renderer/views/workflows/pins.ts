@@ -27,6 +27,21 @@ export function workflowTabs(computerId: string) {
   return stored
 }
 
+/** Where a chat's thread is: its box (a bot, or the box of threads without one) and its task. */
+export interface ChatAt { botId: string; taskId: string }
+
+const builderCache = new Map<string, Pref<Record<string, ChatAt[]>>>()
+
+/** The threads each workflow was built in (WorkflowChat), by workflow id, newest first. */
+export function workflowChats(computerId: string) {
+  let stored = builderCache.get(computerId)
+  if (!stored) {
+    stored = pref<Record<string, ChatAt[]>>(`workflowChats.${computerId}`, {})
+    builderCache.set(computerId, stored)
+  }
+  return stored
+}
+
 export function pinWorkflow(computerId: string, id: string, pinned: boolean) {
   const stored = workflowPins(computerId)
   const without = stored.get().filter((item) => item !== id)

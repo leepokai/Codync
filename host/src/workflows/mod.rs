@@ -24,5 +24,5 @@ pub use outline::{EditMode, Outline, edit_mode, graph_from_outline, outline_of, 
 pub use script_run::worker as script_worker;
 pub use service::{Workflows, clear_bot, restore, start};
 pub use source::{SourceTarget, source_choices, source_target, with_source};
-pub use store::published_hooks;
+pub use store::{exists, published_hooks};
 pub use tools::{INSTRUCTIONS, call as tool_call, tools as tool_list};

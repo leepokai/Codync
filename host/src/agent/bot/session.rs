@@ -99,8 +99,8 @@ impl Actor {
 
     /// ACP connectors, team collaboration, and optional team management and computer control.
     pub(super) fn mcp_servers(&self) -> Result<Value> {
-        // An agent on its own (`BotConfig::plain`) has its own tools only.
-        if self.cfg.plain {
+        // An agent on its own (`BotConfig::plain`) has its own tools only, and a thread building a workflow its tools.
+        if self.cfg.plain && self.cfg.workflow.is_none() {
             return Ok(json!([]));
         }
         let Ok(exe) = std::env::current_exe() else {
@@ -108,6 +108,9 @@ impl Actor {
             return Ok(json!([]));
         };
         let port = self.hub.port;
+        if self.cfg.plain {
+            return Ok(json!([crate::mcp::acp_server("workflows", &exe, &["workflows", "--bot", &self.cfg.id], port)]));
+        }
         let mut servers: Vec<Value> =
             (if self.cfg.connectors.is_empty() { Vec::new() } else { crate::market::connectors(&self.hub.store)? })
                 .iter()

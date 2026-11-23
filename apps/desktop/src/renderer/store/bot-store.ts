@@ -240,6 +240,11 @@ export class BotStore extends BotSync {
     return this.hello?.threadsWithoutBot === true
   }
 
+  /** A workflow can be built by talking to a thread here (`startThread` with `setup.workflow`). */
+  get buildsWorkflowsInThreads() {
+    return this.hello?.workflowThreads === true
+  }
+
   /** A thread the user starts with `botId` themselves (null: without a bot, on the agent `setup` names), opened by
    *  `text`, its task on `setup` where that differs from the bot's: where its task is, the bot's (or the box's) id
    *  and the task's. */

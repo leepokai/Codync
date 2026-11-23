@@ -30,8 +30,8 @@ pub(super) fn claude_meta(cfg: &BotConfig, system: &str) -> Value {
 fn claude_options(cfg: &BotConfig) -> Value {
     // The bot's replies, memory and team management are Codync's own tools, which follow the bot's permission inside
     // Codync: the user's Claude Code auto-mode classifier mustn't refuse them (it blocked a reply naming the user's
-    // daughter), and a team change asks on Codync's own card.
-    let mut settings = json!({"permissions": {"allow": ["mcp__chat", "mcp__memory", "mcp__manage"]}});
+    // daughter), and a team change, a workflow's save or run asks on Codync's own card.
+    let mut settings = json!({"permissions": {"allow": ["mcp__chat", "mcp__memory", "mcp__manage", "mcp__workflows"]}});
     if !crate::agent::own_memory::kept(cfg) {
         settings["autoMemoryEnabled"] = false.into();
         settings["autoDreamEnabled"] = false.into();

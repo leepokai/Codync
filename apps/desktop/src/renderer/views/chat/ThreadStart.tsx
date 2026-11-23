@@ -41,7 +41,19 @@ const PLAIN_APPROVAL = { permission: 'ask', mode: 'auto' }
  * setup stays as it is. Sent, the thread is the one shown (`started`, with where its task is).
  * ponytail: the model menu lists every model without a search; the bot's settings have one if lists grow long.
  */
-export function ThreadStart({ bots, of, choose, started }: { bots: RosterItem[]; of: ThreadWith; choose: (ref: BotRef, plain?: boolean) => void; started: (ref: BotRef, taskId: string) => void }) {
+export function ThreadStart({ bots, of, choose, started, base, folder, heading, placeholder }: {
+  bots: RosterItem[]
+  of: ThreadWith
+  choose: (ref: BotRef, plain?: boolean) => void
+  started: (ref: BotRef, taskId: string) => void
+  /** What every thread started here carries besides the choices (a workflow it builds). */
+  base?: ThreadSetup
+  /** The folder it works in unless one is picked, when the computer chooses it (a workflow's own); its name. */
+  folder?: string
+  /** In the place of "New thread with …", and the box's prompt. */
+  heading?: string
+  placeholder?: string
+}) {
   const tr = useTr()
   const { store } = of
   const bot = of.bot?.plain ? null : of.bot
@@ -68,9 +80,9 @@ export function ThreadStart({ bots, of, choose, started }: { bots: RosterItem[];
   ]
 
   const home = store.hello?.home ?? ''
-  const ownFolder = bot ? folderName(bot, tr) : lastPathComponent(home) || home
+  const ownFolder = folder ?? (bot ? folderName(bot, tr) : lastPathComponent(home) || home)
   const folders = (): MenuItem[] => [
-    { title: ownFolder, verbatim: true, detail: bot?.managedWorkspace ? undefined : (bot?.cwd ?? home), selected: !setup.cwd, action: () => change({ cwd: undefined }) },
+    { title: ownFolder, verbatim: true, detail: folder || bot?.managedWorkspace ? undefined : (bot?.cwd ?? home), selected: !setup.cwd, action: () => change({ cwd: undefined }) },
     ...(setup.cwd ? [{ title: lastPathComponent(setup.cwd), verbatim: true, detail: setup.cwd, selected: true, action: () => {} }] : []),
     { title: 'Browse other folders', icon: 'folder', divider: true, action: () => setBrowsing(true) },
   ]
@@ -82,7 +94,7 @@ export function ThreadStart({ bots, of, choose, started }: { bots: RosterItem[];
   const send = (text: string) => {
     setFailed('')
     // Without a bot, all it runs on goes with it: there is no bot's setup to fall back on.
-    const asked = bot ? setup : { ...setup, backend, cwd: setup.cwd ?? home, approval }
+    const asked = { ...base, ...(bot ? setup : { ...setup, backend, cwd: setup.cwd ?? (folder ? undefined : home), approval }) }
     return store.startThread(bot?.id ?? null, text, asked).then(
       (s) => started({ computerId: of.ref.computerId, botId: s.botId }, s.taskId),
       (error: unknown) => {
@@ -106,7 +118,7 @@ export function ThreadStart({ bots, of, choose, started }: { bots: RosterItem[];
             <div className="intro-card">
               {bot ? <BotAvatar bot={bot} size={72} /> : <AgentIcon registry={store.agentRegistry(backend)} size={56} />}
               <Text as="h2" size="title2" weight="semibold" tone="text">
-                {bot ? tr('New thread with {name}').replaceAll('{name}', () => bot.name) : tr('New thread with {name}').replaceAll('{name}', () => store.backendName(backend))}
+                {heading ?? tr('New thread with {name}').replaceAll('{name}', () => bot ? bot.name : store.backendName(backend))}
               </Text>
             </div>
           }
@@ -115,7 +127,7 @@ export function ThreadStart({ bots, of, choose, started }: { bots: RosterItem[];
           <div className="composer-fade" />
           {/* What it runs on, in the box's row as in a bot's chat: who it is with first (with one bot and no other way
               there is nothing to choose). */}
-          <Composer key={refKey(of.ref) + (bot ? '' : '/plain')} botId={bot?.id ?? ''} thread={{ draftKey, placeholder: tr('What should it work on?'), working: false, send, controls: <>
+          <Composer key={refKey(of.ref) + (bot ? '' : '/plain')} botId={bot?.id ?? ''} thread={{ draftKey, placeholder: placeholder ?? tr('What should it work on?'), working: false, send, controls: <>
             <Option title="Choose a bot" items={others} search={bots.length > 8 ? 'Search bots' : undefined} disabled={bots.length + (plainOn ? 1 : 0) < 2} leading={bot ? <BotAvatar bot={bot} size={16} animated={false} /> : <NoBotAvatar size={16} />} label={bot ? bot.name : tr('No bot')} strong />
             <Option title="Workspace" items={folders} leading={<Icon name="folder" size={11} />} label={setup.cwd ? lastPathComponent(setup.cwd) : ownFolder} />
             {/* Without a bot the agent is a choice too, in the panel's rail; another agent starts from its own defaults. */}

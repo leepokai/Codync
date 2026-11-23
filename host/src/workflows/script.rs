@@ -90,6 +90,11 @@ pub fn script_title(script: &str) -> Option<String> {
     parse::meta_name(script)
 }
 
+/// Whether the canvas can draw `script`: its steps are fixed, not decided while it runs.
+pub fn draws(script: &str) -> Result<bool> {
+    Ok(matches!(parse::check(script, &|_| BotState::Ok)?.kind, Kind::Static(_)))
+}
+
 pub fn agent_ids(script: &str) -> Result<Vec<String>> {
     let agents = parse::check(script, &|_| BotState::Ok)?.agents;
     if agents.iter().any(String::is_empty) {

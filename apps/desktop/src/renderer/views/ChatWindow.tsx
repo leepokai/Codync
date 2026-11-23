@@ -586,8 +586,8 @@ function ChatSplitView() {
       ) : page === 'workflows' && workflowStore && workflows ? (
         <main className="detail">
           <StoreContext.Provider value={workflowStore}>
-            <WindowBarSlots.Provider value={{ start: barStart, title: null, end: null }}>
-              <WorkflowsView key={workflowStore.computer.id} focusId={workflowFocus} />
+            <WindowBarSlots.Provider value={{ start: barStart, title: null, end: barEnd }}>
+              <WorkflowsView key={workflowStore.computer.id} focusId={workflowFocus} roster={threadRoster} openChat={(ref) => { app.select(ref); setPage('bots') }} />
             </WindowBarSlots.Provider>
           </StoreContext.Provider>
         </main>

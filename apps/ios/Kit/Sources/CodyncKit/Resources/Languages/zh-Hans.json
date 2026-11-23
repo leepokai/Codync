@@ -2464,5 +2464,12 @@
   "Codync runs the CLI's own ACP mode.": "Codync 运行 CLI 自己的 ACP 模式。",
   "Codync runs the ACP build, which uses this CLI.": "Codync 运行 ACP 版本，由它调用这个 CLI。",
   "Brought in by default": "默认带入的项目",
-  "All workflows": "所有工作流"
+  "All workflows": "所有工作流",
+  "Build this workflow by talking": "通过对话搭建这个工作流",
+  "What should this workflow do?": "这个工作流要做什么？",
+  "Hide chat": "隐藏对话",
+  "Show chat": "显示对话",
+  "Workflow folder": "工作流文件夹",
+  "Previous chats": "之前的对话",
+  "New chat": "新对话"
 }

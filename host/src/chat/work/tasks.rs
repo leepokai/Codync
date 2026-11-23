@@ -112,6 +112,9 @@ pub struct Setup {
     pub model: Option<Model>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approval: Option<Approval>,
+    /// A thread opened beside a workflow to build it by talking (`BotConfig::workflow`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<String>,
 }
 
 /// A model with its own settings (`BotConfig::model`, `model_options`): they go together, as in a bot's setup.
@@ -156,6 +159,9 @@ impl Setup {
         if let Some(approval) = &self.approval {
             cfg.permission = approval.permission;
             cfg.mode.clone_from(&approval.mode);
+        }
+        if self.workflow.is_some() {
+            cfg.workflow.clone_from(&self.workflow);
         }
         cfg
     }

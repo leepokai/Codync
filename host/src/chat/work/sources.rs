@@ -13,7 +13,7 @@ use crate::chat::team::{BotRequest, no_reply};
 use crate::hub::Hub;
 use crate::routines;
 use crate::store::{BotConfig, EntryKind, Lane, Store};
-use anyhow::{Result, anyhow, bail, ensure};
+use anyhow::{Context as _, Result, anyhow, bail, ensure};
 use codync_network::Access;
 use serde_json::json;
 use std::sync::Arc;
@@ -82,18 +82,26 @@ pub fn add_routine(hub: &Arc<Hub>, bot: &str, routine: &str, run: &str, name: &s
 /// A thread the user starts with `bot` themselves (`startThread`): `text`, their first message, waits in its box as
 /// a task of its own, named by its first line, and starts when a place is free. `setup`: what its thread runs with
 /// in place of the bot's own, checked as a bot's setup is. Answers the task's id.
-pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, setup: Setup) -> Result<String> {
-    let changes = (setup.cwd.is_some(), setup.model.is_some(), setup.approval.is_some());
+pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, mut setup: Setup) -> Result<String> {
+    let changes = (setup.cwd.is_some(), setup.model.is_some(), setup.approval.is_some(), setup.workflow.is_some());
     let cfg = hub.store.bot(bot)?.filter(|row| !row.deleted).map(|row| row.config);
     let plain = cfg.as_ref().is_some_and(|cfg| cfg.plain);
     let outcome = |outcome: &str| {
         let properties = json!({
             "outcome": outcome, "after": false, "source": Source::User.kind(),
-            "folder": changes.0, "model": changes.1, "approval": changes.2, "bot": !plain,
+            "folder": changes.0, "model": changes.1, "approval": changes.2, "workflow": changes.3, "bot": !plain,
         });
         analytics::capture(hub, Event::WorkAdded, properties.as_object().cloned().unwrap_or_default());
     };
     let text = text.trim();
+    // A workflow's chat works in that workflow's own folder unless the user picked another.
+    if let Some(workflow) = setup.workflow.as_deref().filter(|_| setup.cwd.is_none()) {
+        uuid::Uuid::parse_str(workflow).context("a workflow's id")?;
+        ensure!(crate::workflows::exists(&hub.store, workflow)?, "unknown workflow");
+        let dir = crate::agent::workspace::workflow_path(workflow);
+        std::fs::create_dir_all(&dir).context("creating the workflow's folder")?;
+        setup.cwd = Some(dir.to_string_lossy().into_owned());
+    }
     let checked = (|| {
         let Some(cfg) = cfg.filter(|cfg| !cfg.is_thread() && !cfg.is_group()) else { bail!("unknown bot") };
         ensure!(
@@ -103,6 +111,9 @@ pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, setup: Setup) -> Result
         ensure!(!cfg.plain || setup.backend.is_some(), "a thread without a bot names its agent");
         let full = |cwd: &str| std::path::Path::new(cwd).is_absolute();
         ensure!(setup.cwd.as_deref().is_none_or(full), "a thread's folder is a full path");
+        if let Some(workflow) = &setup.workflow {
+            ensure!(crate::workflows::exists(&hub.store, workflow)?, "unknown workflow");
+        }
         crate::hub::validate(&setup.over(&cfg))
     })();
     if let Err(error) = checked {

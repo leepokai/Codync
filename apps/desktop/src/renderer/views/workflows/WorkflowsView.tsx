@@ -1,12 +1,12 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Screen } from '@shared/analytics'
-import { Button } from '../../components/Controls'
+import { Button, IconButton } from '../../components/Controls'
 import { Dialog } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
-import { usePref } from '../../lib/prefs'
+import { prefs, usePref } from '../../lib/prefs'
 import { analytics } from '../../store/analytics'
 import { WindowBarSlots } from '../WindowBar'
 import { useTr } from '../../lib/use-language'
@@ -20,12 +20,16 @@ import { GraphSaver, type FlushResult } from './save'
 import { WorkflowCanvas } from './WorkflowCanvas'
 import { WorkflowHud } from './WorkflowHud'
 import { WorkflowTabs } from './WorkflowTabs'
+import { WorkflowChat } from './WorkflowChat'
+import { ChatSidePanel } from '../chat/ChatSidePanel'
+import type { BotRef, RosterItem } from '../../store/app-model'
 import { cloneGraphNewIds, copyTitle, emptyGraph, latestStepByNode, type Graph, type RunDetail, type RunSummary, type WorkflowDetail, type WorkflowStep, type WorkflowVersion } from './workflow'
 import './workflows.css'
 
 type Phase = 'begin' | 'change' | 'end' | 'text'
 
-export function WorkflowsView({ focusId }: { focusId?: string | null }) {
+/** `roster` and `openChat`: the bots the chat beside the canvas can be with, and where a bot's chat opens. */
+export function WorkflowsView({ focusId, roster, openChat }: { focusId?: string | null; roster: RosterItem[]; openChat: (ref: BotRef) => void }) {
   const store = useStore()
   const tr = useTr()
   useModel(store)
@@ -67,6 +71,12 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
   graphRef.current = graph
   const bar = useContext(WindowBarSlots)
   const [tabIds, setTabIds] = usePref(workflowTabs(store.computer.id))
+  const [chatOpen, setChatOpen] = usePref(prefs.workflowChatOpen)
+  const [chatWidth, setChatWidth] = usePref(prefs.detailsPanelWidth)
+  const page = useRef<HTMLDivElement>(null)
+  // The canvas keeps at least 420 beside the chat.
+  const fit = (w: number) => Math.min(Math.max(360, w), (page.current?.clientWidth ?? 1200) - 420)
+  const chatting = chatOpen && !!selected && store.buildsWorkflowsInThreads
   const tabs = tabIds.flatMap((id) => store.workflows.filter((item) => item.id === id))
 
   const summary = store.workflows.find((item) => item.id === selected) ?? null
@@ -309,7 +319,9 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
   const calls = steps.filter((step) => step.nodeId.startsWith('call-') && !shown.nodes.some((node) => node.id === step.nodeId))
 
   return (
+    <div className="workflows-page" ref={page}>
     <div className="workflows">
+      {bar.end && selected && store.buildsWorkflowsInThreads ? createPortal(<IconButton title={chatting ? 'Hide chat' : 'Show chat'} icon="sidebar.right" size={28} onClick={() => setChatOpen(!chatOpen)} />, bar.end) : null}
       {bar.start && tabs.length ? createPortal(<WorkflowTabs tabs={tabs} selectedId={selected} onOpen={open} onClose={closeShown} onCreate={() => void create()} />, bar.start) : null}
       {chrome || !selected ? (
       <WorkflowHud
@@ -407,6 +419,10 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
       <Dialog open={scriptOpen} cardClassName="workflow-script-dialog" title={tr('Script')} actions={[{ title: 'Save', action: () => void saveScript() }]} onClose={() => setScriptOpen(false)}>
         <textarea className="workflow-input workflow-script" aria-label={tr('Script')} value={scriptText} onChange={(event) => { scriptDirty.current = true; setScriptText(event.target.value) }} />
       </Dialog>
+    </div>
+      <ChatSidePanel open={chatting} filled={false} width={fit(chatWidth)} min={360} max={fit(Infinity)} onResize={(w) => setChatWidth(fit(w))}>
+        {selected ? <WorkflowChat key={selected} workflowId={selected} roster={roster} openChat={openChat} /> : null}
+      </ChatSidePanel>
     </div>
   )
 

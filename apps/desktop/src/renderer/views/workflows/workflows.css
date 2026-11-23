@@ -737,6 +737,77 @@
 .workflow-tab:hover .workflow-tab-close,
 .workflow-tab.on .workflow-tab-close { opacity: 1; }
 
+/* The thread the workflow is built in, beside the canvas (WorkflowChat). */
+.workflows-page {
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.workflows-page > .workflows {
+  flex: 1;
+}
+.workflow-chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.workflow-chat-bar {
+  flex: none;
+  height: 44px;
+  padding: 0 10px 0 16px;
+}
+.workflow-chat-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+/* The chat's box is narrow here: each choice gives way (its name cut short) before the mic and send do. */
+.workflow-chat .composer-toolbar-space {
+  display: none;
+}
+.workflow-chat .thread-option {
+  flex: 0 1 auto;
+  min-width: 44px;
+}
+.workflow-chat .thread-option:last-of-type {
+  margin-right: auto;
+}
+.workflow-chat .composer-mic-group,
+.workflow-chat .composer-send {
+  flex-shrink: 0;
+}
+/* Too narrow for their names: each choice shows its picture alone (its name is its tooltip). */
+.workflow-chat {
+  container-type: inline-size;
+}
+@container (max-width: 440px) {
+  .workflow-chat .thread-option > .truncate {
+    display: none;
+  }
+}
+/* A canvas narrowed by the chat: the tools leave the middle for the trailing edge, clear of the zoom, and the add
+   button keeps to one line. */
+.workflows {
+  container-type: inline-size;
+}
+.workflow-add {
+  white-space: nowrap;
+}
+@container (max-width: 760px) {
+  .workflow-tools {
+    left: auto;
+    right: 16px;
+    transform: none;
+  }
+}
+@container (max-width: 600px) {
+  .workflow-add span {
+    display: none;
+  }
+}
+
 .workflow-pin {
   width: 100%;
 }

@@ -25,6 +25,11 @@ pub fn bot_state(store: &Store, id: &str) -> BotState {
     }
 }
 
+/// Whether `id` is a workflow on this computer.
+pub fn exists(store: &Store, id: &str) -> Result<bool> {
+    Ok(load(store, id)?.is_some())
+}
+
 pub fn title_of(raw: &str) -> String {
     let trimmed = raw.trim();
     let title = if trimmed.is_empty() { "Workflow" } else { trimmed };

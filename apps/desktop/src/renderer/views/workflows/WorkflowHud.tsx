@@ -115,8 +115,7 @@ export function WorkflowHud({ title, selectedId, workflows, enabled, graph, step
             <span className="workflow-history-count">{runs.length}</span>
           </button>
         ) : null}
-        <AnchoredMenu open={historyOpen} onClose={() => setHistoryOpen(false)} anchor={historyButton} items={history} />
-        {title && !previewLabel ? (
+        <AnchoredMenu open={historyOpen} onClose={() => setHistoryOpen(false)} anchor={historyButton} items={history} />        {title && !previewLabel ? (
           <Button className="workflow-run-now" onClick={live ? onStop : onRun}>
             {live ? tr('Stop') : <><Icon name="play.fill" size={12} /><span>{tr('Run workflow')}</span></>}
           </Button>

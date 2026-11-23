@@ -9,7 +9,7 @@ private let log = Logger(subsystem: "com.pokai.Codync", category: "Account")
 public enum SharedStore {
     public static let appGroup = AppEnvironment.current.appGroup
     /// The APNs push relay (relay/ in this repo).
-    public static let relayURL = "https://codync-relay.kevin2005ha.workers.dev"
+    public static let relayURL = "https://push.codync.dev"
 
     /// The App Group's shared defaults, read by the app, its widgets and its notification extension alike.
     public static var defaults: UserDefaults { UserDefaults(suiteName: appGroup) ?? .standard }

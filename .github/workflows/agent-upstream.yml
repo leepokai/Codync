@@ -1,7 +1,8 @@
 # The upstream check (docs/guides/test-stack.md#upstream-agents): every computer running Codync takes an adapter's
 # new ACP registry version within a day, so each day this runs one turn of each adapter in
 # tools/agent-upstream/accepted.json whose registry version moved, through a real host and a scripted model. A
-# failing run is the notice. Pull requests that change the check run every adapter.
+# failing scheduled run opens an issue labeled agent-upstream (one at a time; later failures comment on it), which
+# starts the "Codync upstream agent fix" Claude routine. Pull requests that change the check run every adapter.
 name: agent-upstream
 
 on:
@@ -48,3 +49,25 @@ jobs:
       - name: One turn on each new adapter
         working-directory: tools/agent-upstream
         run: node check.mjs "$GITHUB_WORKSPACE/host/target/debug/codync-host" ${{ github.event_name != 'schedule' && '--all' || '' }}
+
+  # Leaves the issue alone while one is open, so a breakage starts the fixing routine once.
+  report:
+    needs: check
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          open=$(gh issue list --label agent-upstream --state open --json number --jq '.[0].number')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "Still failing: $RUN"
+          else
+            gh issue create --label agent-upstream --title "A new agent adapter version breaks Codync" \
+              --body "The daily upstream check failed: $RUN (docs/guides/test-stack.md#upstream-agents)."
+          fi

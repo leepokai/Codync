@@ -9,7 +9,7 @@ use crate::chat::naming::MAX_NAME_CHARS;
 use crate::chat::profile::{MAX_INSTRUCTIONS_CHARS, checked_instructions, checked_name};
 use crate::hub::Hub;
 use crate::routines::Trigger;
-use crate::store::{AVATAR_COLORS, AVATAR_SHAPES, BotConfig, EntryKind, Lane};
+use crate::store::{AVATAR_COLORS, AVATAR_SHAPES, BotConfig, EntryKind, Fallback, Lane};
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
@@ -17,6 +17,8 @@ use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio::time::Instant;
+
+mod checks;
 
 /// How long a change waits for the user's answer on its approval card: less than Codex's MCP tool timeout (300 s;
 /// codex-acp sets none for Codync's servers), which gives up on a call without telling the server.
@@ -31,9 +33,10 @@ pub const MAX_CARD_DETAIL: usize = 2000;
 pub const INSTRUCTIONS: &str = "You manage the user's team of Codync bots. list_team shows every bot's setup and \
 routines, yours and hidden bots included. create_bot adds a bot, which can manage the team too; update_bot changes a \
 bot's name, instructions, model and its settings (effort…), fallbacks, avatar, routines or visibility, yours included \
-(a new model of your own takes effect after this turn; a new model without modelOptions starts on its defaults), and \
-it pauses and resumes a bot: a paused bot answers nothing and spends nothing until it is resumed, so pausing stops \
-its credits. Each \
+(a new model of your own takes effect after this turn; a new model without modelOptions starts on its defaults). \
+list_models shows the model ids an agent offers, each with its settings, for picking a bot's model, its modelOptions \
+or a fallback's model, and it pauses and resumes a bot: a paused bot answers nothing and spends nothing until it is \
+resumed, so pausing stops its credits. Each \
 bot runs only its own routines: to test another bot's, ask that bot with message_bot to run it with its own \
 run_routine, naming the routine id; don't paste its instructions instead. Its result appears in that bot's chat. A \
 hidden bot can't be messaged: ask the user to run its routine from that bot. Use them for what the user asked, \
@@ -64,7 +67,7 @@ const FIELDS: [(&str, &str); 14] = [
 pub fn arguments() -> &'static BTreeSet<String> {
     static ARGUMENTS: LazyLock<BTreeSet<String>> = LazyLock::new(|| {
         let tools = tools();
-        let changes = tools.as_array().into_iter().flatten().filter(|t| t["name"] != "list_team");
+        let changes = tools.as_array().into_iter().flatten().filter(|t| t["annotations"]["readOnlyHint"] != true);
         let keys = changes.flat_map(|t| t["inputSchema"]["properties"].as_object().into_iter().flatten());
         keys.map(|(k, _)| k.clone()).filter(|k| k != "botId").collect()
     });
@@ -72,7 +75,8 @@ pub fn arguments() -> &'static BTreeSet<String> {
 }
 
 /// A team change that was refused, with why for analytics (`category`): `options` (a model setting the agent doesn't
-/// list), `catalog` (its model list didn't load) or `denied` (the approval card wasn't allowed in time).
+/// list), `model` (a model id the agent doesn't list), `catalog` (its model list didn't load) or `denied` (the
+/// approval card wasn't allowed in time).
 #[derive(Debug)]
 pub struct Refused {
     pub category: &'static str,
@@ -97,9 +101,9 @@ pub fn tools() -> Value {
     let mut setup = json!({
         "name": {"type": "string", "description": format!("At most {MAX_NAME_CHARS} characters.")},
         "instructions": {"type": "string", "description": format!("Standing instructions: what the bot is for and rules that always apply, at most {MAX_INSTRUCTIONS_CHARS} characters. When the user approves your changes, their card shows at most {MAX_CARD_DETAIL} characters of the whole change, routines included.")},
-        "model": {"type": "string", "description": "The agent's model id, as list_team shows bots using it; empty for the agent's default."},
+        "model": {"type": "string", "description": "The agent's model id, as list_models shows; empty for the agent's default."},
         "modelOptions": {"type": "object", "additionalProperties": {"type": "string"}, "description": "The model's settings by id, as list_team shows them (Claude's effort, Codex's reasoning_effort…), each one of the values the agent lists for that model. Replaces them all; empty for the model's defaults."},
-        "fallbacks": {"type": "array", "items": {"type": "object", "properties": {"agent": {"type": "string"}, "model": {"type": "string"}}, "required": ["agent"]}, "description": "Up to 3 agents, in order, that carry on when the bot's own can't answer (out of usage, rate limited, signed out); each a different agent, not the bot's own. Replaces the list; empty removes it."},
+        "fallbacks": {"type": "array", "items": {"type": "object", "properties": {"agent": {"type": "string"}, "model": {"type": "string", "description": "A model id list_models shows for that agent; leave out for its default."}}, "required": ["agent"]}, "description": "Up to 3 agents, in order, that carry on when the bot's own can't answer (out of usage, rate limited, signed out); each a different agent, not the bot's own. Replaces the list; empty removes it."},
         "avatarColor": {"type": "string", "enum": AVATAR_COLORS},
         "avatarShape": {"type": "string", "enum": AVATAR_SHAPES},
         "routines": {"type": "array", "items": {"type": "object"}, "description": format!("Up to {MAX_ROUTINES} routines to save for the bot, each as save_routine takes it (name, instruction, triggers, optionally enabled and timeoutSeconds). One with an id from list_team replaces that routine.")},
@@ -115,6 +119,16 @@ pub fn tools() -> Value {
             "name": "list_team",
             "description": "List the user's bots, you (marked you) and hidden ones included, with their full setup and routines.",
             "inputSchema": {"type": "object", "properties": {}},
+            "annotations": {"readOnlyHint": true},
+        },
+        {
+            "name": "list_models",
+            "description": "List the model ids an agent offers, each with its settings (Claude's effort, Codex's reasoning_effort…), for picking a bot's model, its modelOptions or a fallback's model. Loads the agent's model catalog; for an agent this machine hasn't used yet that can take a while (it may build the agent's model registry first).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"agent": {"type": "string", "description": "An agent id, as list_team shows bots running it."}},
+                "required": ["agent"],
+            },
             "annotations": {"readOnlyHint": true},
         },
         {
@@ -151,6 +165,18 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
                 })
                 .collect();
             Ok(json!({"bots": bots}))
+        }
+        "list_models" => {
+            let agent = text(args, "agent")?.context("agent is required")?;
+            // A first-ever load can build the agent's model registry, which is slow: cap it at the window
+            // the clients give a tool call, so a wedged agent launch can't outlive them silently.
+            let deadline = Instant::now() + APPROVAL_TIMEOUT;
+            let catalog = tokio::time::timeout_at(deadline, crate::agent::auth::shared_models(hub, &agent))
+                .await
+                .map_err(|_| anyhow!("loading {agent}'s models took too long; try again in a bit"))?
+                .map_err(|e| anyhow!("couldn't list {agent}'s models: {e:#}"))?;
+            let models = catalog["models"].as_array().cloned().unwrap_or_default();
+            Ok(json!({"models": models, "currentModelId": catalog["currentModelId"]}))
         }
         "create_bot" => create(hub, &source, args).await,
         "update_bot" => update(hub, &source, args).await,
@@ -207,7 +233,19 @@ async fn create(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         );
     }
     crate::hub::validate(&cfg)?;
-    check_model_options(hub, &cfg.backend, cfg.model.as_deref(), &fields, deadline).await?;
+    checks::change(
+        hub,
+        &cfg.backend,
+        cfg.command.as_deref(),
+        checks::Models {
+            set: fields.get("model").and_then(Value::as_str),
+            effective: cfg.model.as_deref(),
+            options: fields.get("modelOptions").and_then(Value::as_object),
+            fallbacks: &cfg.fallbacks,
+        },
+        deadline,
+    )
+    .await?;
     fields.insert("backend".into(), cfg.backend.clone().into());
     let name = cfg.name.clone();
     approve(hub, source, format!("Create bot {name}"), describe(&hub.store, &fields, &lines), deadline).await?;
@@ -240,7 +278,21 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         bail!("nothing to change");
     }
     let model = model_after(&fields, target.model.as_deref());
-    check_model_options(hub, &target.backend, model, &fields, deadline).await?;
+    let fallbacks: Vec<Fallback> =
+        serde_json::from_value(fields.get("fallbacks").cloned().unwrap_or_default()).unwrap_or_default();
+    checks::change(
+        hub,
+        &target.backend,
+        target.command.as_deref(),
+        checks::Models {
+            set: fields.get("model").and_then(Value::as_str),
+            effective: model,
+            options: fields.get("modelOptions").and_then(Value::as_object),
+            fallbacks: &fallbacks,
+        },
+        deadline,
+    )
+    .await?;
     let detail = describe(&hub.store, &fields, &lines);
     approve(hub, source, format!("Change bot {}", target.name), detail, deadline).await?;
     let mut changed: Vec<String> =
@@ -318,7 +370,7 @@ fn text(args: &Value, key: &str) -> Result<Option<String>> {
 }
 
 /// The setup `args` sets on a bot, created or changed (whose fallbacks are `fallbacks`), checked and by wire name.
-fn setup_patch(args: &Value, fallbacks: &[crate::store::Fallback]) -> Result<Map<String, Value>> {
+fn setup_patch(args: &Value, fallbacks: &[Fallback]) -> Result<Map<String, Value>> {
     let mut patch = Map::new();
     if let Some(name) = text(args, "name")? {
         patch.insert("name".into(), checked_name(&name)?.into());
@@ -357,34 +409,6 @@ fn model_after<'a>(fields: &'a Map<String, Value>, stored: Option<&'a str>) -> O
     fields.get("model").map_or(stored, Value::as_str)
 }
 
-/// The `modelOptions` a change sets (`setup_patch` checked they're strings) must be ones `model` (none: the agent's
-/// default) of `backend` offers, as a client's model settings do: a value the agent refuses would keep the bot from
-/// starting. Loading the agent's model list counts against the call's `deadline`, which its approval card shares.
-async fn check_model_options(
-    hub: &Hub,
-    backend: &str,
-    model: Option<&str>,
-    fields: &Map<String, Value>,
-    deadline: Instant,
-) -> Result<()> {
-    let Some(options) = fields.get("modelOptions").and_then(Value::as_object).filter(|o| !o.is_empty()) else {
-        return Ok(());
-    };
-    let catalog = match tokio::time::timeout_at(deadline, crate::agent::auth::shared_models(hub, backend)).await {
-        Ok(Ok(catalog)) => catalog,
-        Ok(Err(e)) => {
-            return Err(Refused::error(
-                "catalog",
-                format!("couldn't load the agent's model list to check modelOptions: {e:#}"),
-            ));
-        }
-        Err(_) => return Err(Refused::error("catalog", "the agent's model list took too long to load".to_owned())),
-    };
-    let options = options.iter().map(|(id, value)| (id.as_str(), value.as_str().unwrap_or_default()));
-    crate::agent::auth::check_options(&catalog, model.filter(|m| !m.is_empty()), options)
-        .map_err(|e| Refused::error("options", e.to_string()))
-}
-
 /// `routines` for `bot` (empty for a new one), checked the way `save_routine` checks them, with a line for each on the
 /// approval card.
 fn routines(hub: &Hub, bot: &str, args: &Value) -> Result<(Vec<Value>, Vec<String>)> {
@@ -412,7 +436,7 @@ fn describe(store: &crate::store::Store, fields: &Map<String, Value>, routines: 
         .filter_map(|(key, label)| {
             let value = match fields.get(*key)? {
                 list @ Value::Array(_) if *key == "fallbacks" => {
-                    let list: Vec<crate::store::Fallback> = serde_json::from_value(list.clone()).unwrap_or_default();
+                    let list: Vec<Fallback> = serde_json::from_value(list.clone()).unwrap_or_default();
                     crate::chat::fallbacks::describe(store, &list)
                 }
                 Value::Object(options) if options.is_empty() => "default".to_owned(),

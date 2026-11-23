@@ -1,6 +1,7 @@
 .model-manager {
   padding: 16px;
   max-height: min(680px, calc(100vh - 80px));
+  overflow-y: auto;
 }
 
 .model-manager-head {

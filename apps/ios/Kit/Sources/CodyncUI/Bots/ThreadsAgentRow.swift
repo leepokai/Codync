@@ -19,7 +19,7 @@ struct ThreadsAgentRow: View {
         let backends = model.hello?.backends ?? []
         let backend = backends.first { $0.id == agent.wrappedValue.backend }
         Field("Threads' agent") {
-            AgentModelPicker(backend: agent.wrappedValue.backend, selection: agent.model, options: agent.modelOptions,
+            AgentModelPicker(backend: agent.wrappedValue.backend, loginProfile: agent.wrappedValue.loginProfile, selection: agent.model, options: agent.modelOptions,
                              agents: backends.map { ($0.id, model.agentLabel($0)) },
                              onAgentChange: { draft.setThreadAgent($0) },
                              restLine: bot?.rest(of: agent.wrappedValue.login).map { L10n.tr($0.line) }) {

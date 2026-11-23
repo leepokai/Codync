@@ -1,5 +1,5 @@
 import { app, ipcMain } from 'electron'
-import { errorReport, type ErrorReport } from '../shared/error-report'
+import { errorReport, goneValue, type ErrorReport } from '../shared/error-report'
 import type { HostController } from './host-controller'
 
 /** Not crashes: a helper that exited normally, or was ended from outside (logout, shutdown, an update). */
@@ -22,12 +22,12 @@ export function registerErrorReports(host: HostController): (report: ErrorReport
   })
   ipcMain.on('app:reportError', (_e, report: ErrorReport) => send({ ...report, process: 'desktop-renderer' }))
   app.on('render-process-gone', (_e, _contents, details) => {
-    if (!ENDED_FROM_OUTSIDE.has(details.reason)) send({ process: 'desktop-main', type: 'RendererGone', mechanism: 'render-process-gone', value: details.reason, frames: [] })
+    if (!ENDED_FROM_OUTSIDE.has(details.reason)) send({ process: 'desktop-main', type: 'RendererGone', mechanism: 'render-process-gone', value: goneValue(details, process.platform), frames: [] })
   })
   app.on('child-process-gone', (_e, details) => {
     // A GPU process that can't start (Linux without GPU access) only means software rendering: the app goes on.
     const softwareRendering = details.type === 'GPU' && details.reason === 'launch-failed'
-    if (!ENDED_FROM_OUTSIDE.has(details.reason) && !softwareRendering) send({ process: 'desktop-main', type: `${details.type}Gone`, mechanism: 'child-process-gone', value: details.reason, frames: [] })
+    if (!ENDED_FROM_OUTSIDE.has(details.reason) && !softwareRendering) send({ process: 'desktop-main', type: `${details.type}Gone`, mechanism: 'child-process-gone', value: goneValue({ ...details, name: details.name ?? details.serviceName }, process.platform), frames: [] })
   })
   return send
 }

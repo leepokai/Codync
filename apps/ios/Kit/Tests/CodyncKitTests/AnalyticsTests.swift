@@ -175,6 +175,16 @@ import Testing
     let unknown = CrashReports.properties(callStack: Data("{}".utf8), exceptionType: 99, signal: nil, appVersion: "1")
     let encoded = String(decoding: try JSONEncoder().encode(unknown), as: UTF8.self)
     #expect(encoded.contains(#""type":"Crash""#) && encoded.contains(#""frames":[]"#) && unknown["$debug_images"] == nil)
+    // A crash without frames says why, in the payload's key names only.
+    #expect(unknown["stack_problem"] == .string("no callStacks"))
+    #expect(p["stack_problem"] == nil)
+    let broken = CrashReports.stack(Data(#"{"callStacks":[{"callStackRootFrames":[{"subFrames":"secret"}]}]}"#.utf8))
+    #expect(broken.frames.isEmpty)
+    #expect(broken.problem == "unreadable: callStacks.0.callStackRootFrames.0.subFrames: type mismatch")
+    // An attributed thread with no frames falls back to one that has them.
+    let empty = CrashReports.stack(Data(#"{"callStacks":[{"threadAttributed":true,"callStackRootFrames":[]},{"callStackRootFrames":[\#(frame("Codync", 7))]}]}"#.utf8))
+    #expect(empty.frames.count == 1)
+    #expect(empty.problem == nil)
 
     // A runaway stack keeps the 200 frames nearest the crash, all in one binary.
     var deep = frame("Codync", 0)

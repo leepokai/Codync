@@ -14,6 +14,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 用量畫面和小工具把 Claude 的用量標示為「Claude Code」，與 Bot 使用的 agent 名稱一致。
 - 在 Bot 列表長按刪除 Bot 或群組聊天，確認後會真的刪掉。
 - 選 agent 時一起選登入設定檔：Bot 設定和 fallback 的 agent 清單裡，每個 agent 依登入設定檔各列一次，清單最後可以新增登入設定檔；原本獨立的「登入設定檔」列已移除。
+- 在中國大陸也能收到推播通知了。
 
 ### en-US
 - Workflows: tap the branch icon on a computer's heading in the bot list to open that computer's workflows. A workflow chains a trigger, prompts, assistants, a condition, an approval and an output; run it yourself, on a schedule or from a webhook, and restore an older version when you need to.
@@ -21,6 +22,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Usage and widgets name Claude's usage "Claude Code", the same name bots use for that agent.
 - Deleting a bot or group chat from its long-press menu in the bot list works again.
 - Pick an agent and its login profile in one step: a bot's and each fallback's agent list shows every agent once per login profile and ends with Add login profile. The separate Login profile row is gone.
+- Push notifications now reach phones and computers in mainland China.
 
 ## 2.53.0
 ### zh-Hant

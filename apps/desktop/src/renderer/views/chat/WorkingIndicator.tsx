@@ -8,7 +8,8 @@ import { ThinkingOrb } from '../../components/ThinkingOrb'
 import { prefs, usePref } from '../../lib/prefs'
 import { useTr } from '../../lib/use-language'
 import { useFollowEnd } from './follow-end'
-import { TraceRow } from './TraceView'
+import { Nested, TraceRow } from './TraceView'
+import { nestedSteps } from './trace-turns'
 
 /** The bot's current activity and elapsed time; with thinking details on (Settings), a click unfolds the turn's steps. */
 export function WorkingIndicator({ bot, steps }: { bot: Bot; steps: Entry[] }) {
@@ -18,7 +19,7 @@ export function WorkingIndicator({ bot, steps }: { bot: Bot; steps: Entry[] }) {
   const [expanded, setExpanded] = useState(false)
   const open = details && expanded
   const status = (
-    <HStack as="span" gap={8}>
+    <HStack as="span" gap={8} className="working-status">
       <ThinkingOrb state={waiting ? 'listening' : 'working'} size={16} color={waiting ? 'var(--warning)' : 'var(--secondary)'} />
       <Text size="subheadline" tone={waiting ? 'attention' : 'secondary'} truncate grow>{tr(bot.activity || 'Working…')}</Text>
       {bot.startedAt ? <Timer since={bot.startedAt} /> : null}
@@ -56,7 +57,11 @@ function WorkingSteps({ steps }: { steps: Entry[] }) {
     <div ref={follow.ref} className="working-steps" onScroll={follow.onScroll}>
       <VStack gap={10}>
         {steps.length === 0 ? <Text tone="tertiary">{tr('Nothing yet.')}</Text> : null}
-        {steps.map((e) => <TraceRow key={e.id} entry={e} unfolded />)}
+        {nestedSteps(steps).map(({ entry, depth }) => (
+          <Nested key={entry.id} depth={depth}>
+            <TraceRow entry={entry} unfolded />
+          </Nested>
+        ))}
       </VStack>
     </div>
   )

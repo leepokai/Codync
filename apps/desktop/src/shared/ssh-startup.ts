@@ -1,6 +1,6 @@
-import { counted } from './fill.ts'
+import { counted, fill } from './fill.ts'
 import type { HostState } from './ipc.ts'
-import type { SSHState, SSHStatus } from './ssh.ts'
+import type { SSHMessage, SSHState, SSHStatus } from './ssh.ts'
 
 export function isSSHConnecting(status: SSHStatus): boolean {
   return status.kind === 'connecting' || status.kind === 'retrying' || status.kind === 'installing'
@@ -25,15 +25,18 @@ export function sshSummary(statuses: SSHStatus[], tr: (text: string) => string):
   ].filter(Boolean).join(' · ')
 }
 
-export function sshStatusDetail(status: SSHStatus, attached = true): string {
+/** The phrase in the app language; what ssh printed stays as written. */
+const said = (m: SSHMessage, tr: (text: string) => string) => [fill(tr(m.phrase), m.values ?? {}), m.detail].filter(Boolean).join(' ')
+
+export function sshStatusDetail(status: SSHStatus, attached: boolean, tr: (text: string) => string): string {
   switch (status.kind) {
-    case 'idle': return 'Not connected'
+    case 'idle': return tr('Not connected')
     case 'connecting':
-    case 'installing': return status.step
-    case 'retrying': return `${status.message} Retrying…`
-    case 'confirmHostKey': return 'Confirm host key…'
-    case 'connected': return attached ? 'Connected' : 'Connected · opening…'
-    case 'failed': return status.message
-    case 'notInstalled': return 'Host not installed'
+    case 'installing': return tr(status.step)
+    case 'retrying': return `${said(status.message, tr)} ${tr('Retrying…')}`
+    case 'confirmHostKey': return tr('Confirm host key…')
+    case 'connected': return attached ? tr('Connected') : tr('Connected · opening…')
+    case 'failed': return said(status.message, tr)
+    case 'notInstalled': return tr('Host not installed')
   }
 }

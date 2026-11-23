@@ -69,7 +69,7 @@ import com.kyant.shapes.RoundedRectangle
                     if (suggested == index) Text(tr("Suggested"), style = Type.caption, color = Palette.tertiary)
                 }
             }
-            if (!entry.isFromThread) OwnAnswer(enabled = !answering, reply)
+            if (entry.takesOwnWords) OwnAnswer(enabled = !answering, reply)
         } else Text(if (entry.decisionStatus == DecisionStatus.Answered) d.text("selected") ?: tr("Answered") else tr("No answer — the bot moved on"),
             Modifier.padding(horizontal = 8.dp).testTag("decision-outcome"), style = Type.caption.medium, color = Palette.secondary)
         // Last on the card, under the answers or the outcome, as on the iPhone.
@@ -100,8 +100,8 @@ import com.kyant.shapes.RoundedRectangle
     }
 }
 
-/** A row's number, or the own answer's pencil. TalkBack reads the row itself. */
-@Composable private fun RowNumber(content: @Composable () -> Unit) {
+/** A row's number, or the own answer's pencil. TalkBack reads the row itself. The approval card's rows have it too. */
+@Composable internal fun RowNumber(content: @Composable () -> Unit) {
     Box(Modifier.size(24.dp).clip(RoundedRectangle(7.dp)).background(Palette.text.copy(alpha = 0.06f)).clearAndSetSemantics {},
         contentAlignment = Alignment.Center) { content() }
 }

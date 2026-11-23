@@ -6,7 +6,6 @@ use super::requests::{MAX_AGE, RequestKind, RequestStatus};
 use crate::{
     LockExt,
     agent::{
-        backends,
         bot::Cmd,
         login_profiles::{self, Login},
     },
@@ -15,6 +14,7 @@ use crate::{
     store::{BotConfig, EntryKind, Lane, now_ms},
 };
 use anyhow::{Result, anyhow};
+use codync_agent::backends;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -500,7 +500,7 @@ mod tests {
         // A bot of its own on a fixture agent that answers, under a harness id no other test uses.
         let agent = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
         let cfg = json!({"id": "", "name": "elsewhere", "backend": "junie", "cwd": dir,
-            "command": crate::shell::python(&agent)});
+            "command": codync_agent::shell::python(&agent)});
         let bot = hub.create_bot(serde_json::from_value(cfg).unwrap()).unwrap()["id"].as_str().unwrap().to_owned();
         // After a host restart nothing says signed out any more.
         backends::set_signed_in("junie", None);

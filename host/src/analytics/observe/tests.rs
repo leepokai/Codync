@@ -258,6 +258,10 @@ fn connectors_skills_and_agents() {
     let p = answered(event, p, &json!({"published": true, "quiet": true})).expect("published");
     assert_eq!((p["card"].clone(), p["quiet"].clone()), (json!(false), json!(true)), "a quiet update posts no card");
     assert_eq!(props("connectorSignIn", &json!({"id": "c"})).map(|(e, _)| e), Some(Event::ConnectorSigninStarted));
+    assert_eq!(
+        props("botTerminal", &json!({"botId": "b"})),
+        Some((Event::BotTerminalOpened, json!({"client": "local"})))
+    );
     let setup = props("agentSetup", &json!({"backend": "claude-acp", "step": "install"}));
     assert_eq!(setup, Some((Event::AgentSetupStarted, json!({"agent": "claude-acp", "client": "local"}))));
     assert_eq!(props("agentSetup", &json!({"step": "node"})).map(|(_, p)| p), Some(json!({"client": "local"})));

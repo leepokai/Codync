@@ -2,35 +2,28 @@
 //! and which calls are the bot's own bookkeeping.
 
 use super::codex_names::{Renamed, name_of};
-use crate::agent::acp;
 use crate::chat::memory::files;
 use crate::store::BotConfig;
+use codync_agent::acp;
+use codync_agent::events::{Subagent, ToolContent};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
-/// Folds ACP tool-call `content` into `{output, diffs}` on an entry's data.
-pub(super) fn merge_tool_content(data: &mut Value, content: &Value) {
-    let Some(items) = content.as_array() else { return };
+/// Folds a tool call's content, when the update carries it, into `{output, diffs}` on an entry's data.
+pub(super) fn merge_tool_content(data: &mut Value, content: Option<&[ToolContent]>) {
+    let Some(items) = content else { return };
     let mut out = String::new();
     let mut diffs = vec![];
     for item in items {
-        match item["type"].as_str() {
-            Some("diff") => {
-                let path = item["path"].as_str().unwrap_or_default();
-                let old = item["oldText"].as_str().unwrap_or_default();
-                let new = item["newText"].as_str().unwrap_or_default();
-                diffs.push(diff_summary(path, old, new));
-            }
-            Some("terminal") => {}
-            _ => {
-                let t = acp::content_text(item);
-                if !t.is_empty() {
-                    if !out.is_empty() {
-                        out.push('\n');
-                    }
-                    out.push_str(&t);
+        match item {
+            ToolContent::Diff { path, old_text, new_text } => diffs.push(diff_summary(path, old_text, new_text)),
+            ToolContent::Text(t) if !t.is_empty() => {
+                if !out.is_empty() {
+                    out.push('\n');
                 }
+                out.push_str(t);
             }
+            _ => {}
         }
     }
     if !out.is_empty() {
@@ -38,6 +31,29 @@ pub(super) fn merge_tool_content(data: &mut Value, content: &Value) {
     }
     if !diffs.is_empty() {
         data["diffs"] = diffs.into();
+    }
+}
+
+/// Who made a call, and what a subagent's launch says about it: `parent`, the call that launched the subagent making
+/// this one, and on the launch `subagent` (`kind`, `model`, `background`, `tokens`, `toolUses`, `durationMs`), each
+/// field kept until an update sends it again. Nothing is written for other calls, so their data stays as it was.
+pub(super) fn merge_subagent(data: &mut Value, parent: Option<String>, subagent: Option<Subagent>) {
+    if let Some(parent) = parent {
+        data["parent"] = parent.into();
+    }
+    let Some(s) = subagent else { return };
+    let fields = [
+        ("kind", s.kind.map(Value::from)),
+        ("model", s.model.map(Value::from)),
+        ("background", s.background.map(Value::from)),
+        ("tokens", s.tokens.map(Value::from)),
+        ("toolUses", s.tool_uses.map(Value::from)),
+        ("durationMs", s.duration_ms.map(Value::from)),
+    ];
+    for (key, value) in fields {
+        if let Some(value) = value {
+            data["subagent"][key] = value;
+        }
     }
 }
 
@@ -99,11 +115,19 @@ fn keeps_memory(cfg: &BotConfig, renamed: &Renamed, data: &Value) -> bool {
         .any(|path| folders.iter().any(|dir| Path::new(path).starts_with(dir)))
 }
 
-/// Flags whether a call is the bot's own bookkeeping (composing its message, keeping its memory), which the
-/// working steps a chat unfolds leave out. An update can change the title or paths, so the flag follows them.
+/// A Claude subagent handing its report back to the parent (`SubagentHandback`, made by the subagent itself): plumbing,
+/// whose report the parent goes on with.
+fn hands_back(data: &Value) -> bool {
+    data["title"] == "SubagentHandback" && data["parent"].is_string()
+}
+
+/// Flags whether a call is the bot's own bookkeeping (composing its message, keeping its memory, a subagent handing
+/// back), which the working steps a chat unfolds leave out. An update can change the title or paths, so the flag follows them.
 /// Always written, so clients tell an older host's unflagged call from one that isn't bookkeeping.
 pub(super) fn mark_bookkeeping(cfg: &BotConfig, renamed: &Renamed, data: &mut Value) {
-    let flag = sends_message(data["title"].as_str().unwrap_or_default(), renamed) || keeps_memory(cfg, renamed, data);
+    let flag = sends_message(data["title"].as_str().unwrap_or_default(), renamed)
+        || keeps_memory(cfg, renamed, data)
+        || hands_back(data);
     data["bookkeeping"] = flag.into();
 }
 
@@ -206,13 +230,11 @@ mod tests {
     #[test]
     fn tool_content_merges_text_and_diffs() {
         let mut data = json!({"output": "", "diffs": []});
-        merge_tool_content(
-            &mut data,
-            &json!([
-                {"type": "content", "content": {"type": "text", "text": "ok"}},
-                {"type": "diff", "path": "/a.rs", "oldText": "", "newText": "x\n"}
-            ]),
-        );
+        let content = [
+            ToolContent::Text("ok".into()),
+            ToolContent::Diff { path: "/a.rs".into(), old_text: String::new(), new_text: "x\n".into() },
+        ];
+        merge_tool_content(&mut data, Some(&content));
         assert_eq!(data["output"], "ok");
         assert_eq!(data["diffs"][0]["isNew"], true);
     }

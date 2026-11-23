@@ -1,18 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Entry } from '@shared/models'
 import { isTold } from '@shared/threads'
 import { isLive, isThreadMessage, sharedLine, threadEntries, type WorkTask } from '@shared/work'
 import { Button, IconButton, Reveal, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { HStack, Spacer, VStack } from '../../components/Stack'
+import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useFetched } from '../../lib/use-fetched'
 import { useTr } from '../../lib/use-language'
 import type { ThreadRef } from '../../store/bot-store'
 import { useStore } from '../../store/context'
+import { AttachmentList } from './Attachments'
 import { AgentBubble, Bubble } from './ChatRows'
-import { TraceRow } from './TraceView'
-import { runningTurn } from './trace-turns'
+import { Nested, TraceRow } from './TraceView'
+import { nestedSteps, runningTurn } from './trace-turns'
 import { copyMessageText } from './use-image-actions'
 import './trace.css'
 import './work.css'
@@ -27,6 +28,28 @@ import './work.css'
  */
 export function WorkThreadTranscript({ thread, task, openArtifact, showInChat }: { thread: ThreadRef; task: WorkTask; openArtifact: (artifactId: string) => void; showInChat: (entryId: string) => void }) {
   const tr = useTr()
+  const { entries, told, rest, running, fetched, failed, error, retry } = useThreadEntries(thread, task)
+  return (
+    <VStack gap={10} className="work-thread-content">
+      {told ? <Told entry={told} /> : null}
+      {failed ? <ThreadReadFailed error={error} retry={retry} /> : null}
+      {!failed && !fetched && entries.length === 0 ? <div className="work-thread-note" aria-label={tr('Loading')}><Spinner /></div> : null}
+      {!failed && fetched && entries.length === 0 ? <Text as="div" size="footnote" tone="tertiary" className="work-thread-note">{tr('Nothing yet.')}</Text> : null}
+      {nestedSteps(rest).map(({ entry, depth }) => (
+        <Nested key={entry.id} depth={depth}>
+          <Row entry={entry} thread={thread} unfolded={entry.turn === running} openArtifact={openArtifact} showInChat={showInChat} />
+        </Nested>
+      ))}
+    </VStack>
+  )
+}
+
+/**
+ * A thread's transcript from the computer, read as it opens and kept current while its task works: the task's own
+ * `entries`, and of them what it was `told` first and the `rest` in order with what it put in the bot's chat
+ * (`threadEntries`). `fetched`: the computer has answered once; `failed`: its latest answer was an `error`.
+ */
+export function useThreadEntries(thread: ThreadRef, task: WorkTask) {
   const store = useStore()
   const threadId = task.thread ?? ''
   const live = isLive(task)
@@ -41,39 +64,33 @@ export function WorkThreadTranscript({ thread, task, openArtifact, showInChat }:
   // Read again once it ends, for how it ended.
   const { fetched, error } = useFetched(() => store.loadThread(thread.botId, threadId), [store, thread.botId, threadId, live, attempt])
   const entries = store.threadEntriesOf(threadId)
-  const { told, rest } = threadEntries(entries, store.allEntries(thread.botId), threadId)
-  const running = runningTurn(entries, live)
+  const chat = store.allEntries(thread.botId)
+  const { told, rest } = useMemo(() => threadEntries(entries, chat, threadId), [entries, chat, threadId])
   // The latest attempt's outcome: a read that failed shows until the next one answers.
   const failed = error !== null && fetched === null
+  return { entries, told, rest, running: runningTurn(entries, live), fetched: fetched !== null, failed, error, retry: () => setAttempt((n) => n + 1) }
+}
+
+/** A thread that couldn't be read, and a button to read it again. */
+export function ThreadReadFailed({ error, retry }: { error: string | null; retry: () => void }) {
   return (
-    <VStack gap={10} className="work-thread-content">
-      {told ? <Told entry={told} /> : null}
-      {failed ? (
-        <VStack gap={10} align="center" className="work-thread-note">
-          <Text size="footnote" tone="danger">{error}</Text>
-          <Button kind="secondary" onClick={() => setAttempt((n) => n + 1)}>Try again</Button>
-        </VStack>
-      ) : null}
-      {!failed && fetched === null && entries.length === 0 ? <div className="work-thread-note" aria-label={tr('Loading')}><Spinner /></div> : null}
-      {!failed && fetched !== null && entries.length === 0 ? <Text as="div" size="footnote" tone="tertiary" className="work-thread-note">{tr('Nothing yet.')}</Text> : null}
-      {rest.map((entry) => (
-        <Row key={entry.id} entry={entry} thread={thread} unfolded={entry.turn === running} openArtifact={openArtifact} showInChat={showInChat} />
-      ))}
+    <VStack gap={10} align="center" className="work-thread-note">
+      <Text size="footnote" tone="danger">{error}</Text>
+      <Button kind="secondary" onClick={retry}>Try again</Button>
     </VStack>
   )
 }
 
 /** What the host told the thread (its task and brief), folded under one line. */
-function Told({ entry }: { entry: Entry }) {
+export function Told({ entry }: { entry: Entry }) {
   const tr = useTr()
   const [open, setOpen] = useState(false)
   return (
     <div className="work-thread-told">
-      <button className="disclosure-label work-thread-told-label" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <Text size="footnote" weight="semibold" tone="text">{tr('What it was told')}</Text>
-        <Spacer min={8} />
+      <button className="work-thread-told-label" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <Text size="subheadline" tone="secondary">{tr('What it was told')}</Text>
         <span className={`disclosure-chevron${open ? ' open' : ''}`}>
-          <Icon name="chevron.right" size={10} weight="semibold" />
+          <Icon name="chevron.right" size={8} weight="semibold" />
         </span>
       </button>
       <Reveal show={open}>
@@ -109,13 +126,16 @@ function Shared({ entry, show }: { entry: Entry; show: () => void }) {
 }
 
 /** One of the user's messages to the thread: the chat's bubble, with what can be done while it waits or failed. */
-function Mine({ entry, thread }: { entry: Entry; thread: ThreadRef }) {
+export function Mine({ entry, thread }: { entry: Entry; thread: ThreadRef }) {
   const status = entry.data.status
   return (
     <VStack align="flex-end" gap={4} className={status === 'queued' ? 'work-thread-mine queued' : 'work-thread-mine'} data-message-status={status}>
-      <Bubble className="bubble user selectable" items={() => [{ title: 'Copy', icon: 'square.on.square', action: () => copyMessageText(entry) }]}>
-        {entry.data.text}
-      </Bubble>
+      {entry.data.attachments?.length ? <AttachmentList attachments={entry.data.attachments} botId={entry.botId} /> : null}
+      {entry.data.text ? (
+        <Bubble className="bubble user selectable" items={() => [{ title: 'Copy', icon: 'square.on.square', action: () => copyMessageText(entry) }]}>
+          {entry.data.text}
+        </Bubble>
+      ) : null}
       <MineStatus entry={entry} thread={thread} />
     </VStack>
   )
@@ -145,7 +165,7 @@ function MineStatus({ entry, thread }: { entry: Entry; thread: ThreadRef }) {
           {/* Only one that never arrived can go again; one the host failed (a restart) is its record. */}
           {entry.rev === 0 && entry.data.clientNonce ? (
             <>
-              <IconButton title="Resend" icon="arrow.clockwise" size={24} disabled={store.isOffline} onClick={() => store.sendToThread(thread, entry.botId, entry.data.text ?? '', entry.data.clientNonce)} />
+              <IconButton title="Resend" icon="arrow.clockwise" size={24} disabled={store.isOffline} onClick={() => store.resendToThread(thread, entry)} />
               <IconButton title="Delete" icon="trash" size={24} onClick={() => store.discardFromThread(entry)} />
             </>
           ) : null}

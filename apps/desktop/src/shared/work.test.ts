@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { draftOf, normalizeBot, type Entry } from './models.ts'
-import { allWork, canCutIn, canRetry, capsuleLabel, gitState, givesWay, isThreadMessage, taskLine, normalizeWork, outsideStatus, worksOutside, pendingAsks, pendingCards, readOnlyReason, rosterLine, sharedLine, summaryLine, threadEntries, waitText, whereLine, wherePath, workCounts, workSections, workStatusWord, type WorkTask, type WorkStatus } from './work.ts'
+import { threadSections, rosterRank, canCutIn, canRetry, capsuleLabel, gitState, givesWay, isThreadMessage, taskLine, normalizeWork, outsideStatus, worksOutside, pendingAsks, pendingCards, readOnlyReason, rosterLine, sharedLine, summaryLine, threadEntries, waitText, whereLine, wherePath, workCounts, workSections, workStatusWord, type ThreadGrouping, type WorkTask, type WorkStatus } from './work.ts'
 
 const same = (text: string) => text
 const task = (id: string, status: WorkStatus = 'working', change: Partial<WorkTask> = {}): WorkTask => ({
-  id, title: `Title ${id}`, status, activity: '', thread: null, wait: null, cutIn: false, createdAt: 1000, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, ...change,
+  id, title: `Title ${id}`, status, activity: '', thread: null, wait: null, cutIn: false, createdAt: 1000, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null, ...change,
 })
 const ids = (tasks: WorkTask[]) => tasks.map((t) => t.id)
 
@@ -26,10 +26,10 @@ test('a bot from a host before the box has no work and no ceiling, and one with 
   ]
   const work = normalizeBot({ id: 'b', work: raw as WorkTask[] }).work
   assert.deepEqual(work, [
-    { id: 'i1', title: 'Audit', status: 'needsYou', activity: 'Reading', thread: 'thread-1', wait: null, cutIn: true, createdAt: 3, startedAt: 5, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false },
-    { id: 'i2', title: '', status: 'waiting', activity: '', thread: null, wait: { kind: 'behind', ahead: 2 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false },
-    { id: 'i3', title: '', status: 'waiting', activity: '', thread: null, wait: null, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false },
-    { id: 'i4', title: '', status: 'waiting', activity: '', thread: null, wait: { kind: 'behind', ahead: 1 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false },
+    { id: 'i1', title: 'Audit', status: 'needsYou', activity: 'Reading', thread: 'thread-1', wait: null, cutIn: true, createdAt: 3, startedAt: 5, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null },
+    { id: 'i2', title: '', status: 'waiting', activity: '', thread: null, wait: { kind: 'behind', ahead: 2 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null },
+    { id: 'i3', title: '', status: 'waiting', activity: '', thread: null, wait: null, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null },
+    { id: 'i4', title: '', status: 'waiting', activity: '', thread: null, wait: { kind: 'behind', ahead: 1 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null, folder: null, talk: false, agent: null, talkFiles: false, seat: null },
   ], 'a status this app does not know, or none, leaves the task out; a reason it does not know reads as none')
 })
 
@@ -151,8 +151,19 @@ test('the timeline groups tasks into Threads, the Event box and Recent, each in 
   assert.deepEqual(ids(sections.recent), ['s', 'd', 'f'])
   const lowered = workSections(work, 1)
   assert.deepEqual([lowered.threads.length, lowered.atOnce, lowered.free], [3, 1, 0], '3 / 1 right after the ceiling was lowered, and none free')
-  assert.deepEqual(workSections([], 2), { threads: [], atOnce: 2, free: 2, box: [], recent: [] })
-  assert.deepEqual(workSections([], null), { threads: [], atOnce: 3, free: 3, box: [], recent: [] }, 'a host that names no ceiling counts 3')
+  assert.deepEqual(workSections([], 2), { threads: [], inUse: 0, atOnce: 2, free: 2, box: [], recent: [] })
+  assert.deepEqual(workSections([], null), { threads: [], inUse: 0, atOnce: 3, free: 3, box: [], recent: [] }, 'a host that names no ceiling counts 3')
+})
+
+test('a thread waiting on the user gives its seat up, as the host says', () => {
+  const work = [task('w1', 'working', { seat: true }), task('n1', 'needsYou', { seat: false }), task('q1', 'waiting', { seat: false })]
+  const sections = workSections(work, 2)
+  assert.deepEqual([sections.threads.length, sections.inUse, sections.free], [2, 1, 1], '1 / 2: the one asking the user holds no seat')
+  assert.equal(canCutIn(work, 2), false, 'a seat is free, so nothing has to give way')
+  assert.equal(canCutIn(work, 1), true)
+  const old = [task('w1', 'working'), task('n1', 'needsYou'), task('q1', 'waiting')]
+  assert.deepEqual([workSections(old, 2).inUse, canCutIn(old, 2)], [2, true], 'an older host says nothing: every live task takes one')
+  assert.equal(normalizeWork([{ id: 'a', status: 'needsYou', seat: false }])[0]!.seat, false)
 })
 
 test('the first in line can cut in only when every thread is busy', () => {
@@ -170,20 +181,41 @@ test('the first in line can cut in only when every thread is busy', () => {
   }
 })
 
-test('the view of all bots lists the ones with live or waiting tasks, in roster order, and counts what is worked on', () => {
+test('the Threads page puts what needs the user on top, groups the rest as chosen, and counts what is worked on', () => {
+  const at = (id: string, status: WorkStatus, createdAt: number, change: Partial<WorkTask> = {}) => task(id, status, { createdAt, ...change })
   const roster = [
-    { ref: 'idle', bot: { work: [] } },
-    { ref: 'ended', bot: { work: [task('a', 'done'), task('b', 'stopped'), task('c', 'failed')] } },
-    { ref: 'busy', bot: { work: [task('d', 'working'), task('e', 'working'), task('f', 'waiting'), task('g', 'done')] } },
-    { ref: 'asks', bot: { work: [task('h', 'needsYou')] } },
-    { ref: 'queued', bot: { work: [task('i', 'waiting')] } },
-    { ref: 'one', bot: { work: [task('j', 'working')] } },
+    { ref: 'idle', bot: { name: 'Idle', cwd: '/w/idle', work: [] } },
+    { ref: 'code', bot: { name: 'Code', cwd: '/w/code', work: [
+      at('a', 'done', 1, { folder: '/w/code' }),
+      at('b', 'working', 5, { folder: '/w/other' }),
+      at('c', 'done', 3, { folder: '/w/code/.wt/fix', worktree: { branch: 'fix', path: '/w/code/.wt/fix' } }),
+      at('d', 'needsYou', 2),
+    ] } },
+    { ref: 'ops', bot: { name: 'Ops', cwd: '/w/ops', work: [
+      at('e', 'failed', 4, { title: 'Check in', source: { kind: 'routine', id: 'r1' } }),
+      at('f', 'done', 6, { title: 'Check in', source: { kind: 'routine', id: 'r1' } }),
+      at('g', 'working', 7),
+    ] } },
   ]
-  const all = allWork(roster)
-  assert.deepEqual(all.bots.map((r) => r.ref), ['busy', 'asks', 'queued', 'one'])
-  assert.equal(all.working, 3, 'tasks that need the user or wait are not counted as working')
-  assert.deepEqual(allWork(roster.slice(0, 2)), { bots: [], working: 0 }, 'nothing live or waiting: no button, and an open view closes')
-  assert.equal(allWork([roster[3]!, roster[4]!]).working, 0, 'the button shows without a count')
+  const shape = (grouping: ThreadGrouping) => {
+    const all = threadSections(roster, grouping, (of) => of.ref)
+    return [ids(all.needsYou.map((r) => r.task)), all.groups.map((g) => `${g.kind}:${g.title}=${ids(g.rows.map((r) => r.task)).join('')}`), ids(all.recent.map((r) => r.task)), all.working]
+  }
+  // By folder: work outside its bot's own folder under that folder (a worktree of it is the bot's), a routine's runs under it.
+  assert.deepEqual(shape('folder'), [['d'], ['routine:Check in=fe', 'folder:other=b'], ['g', 'c', 'a'], 2])
+  // By bot: a group each, in the bot list's order, a bot without work left out.
+  assert.deepEqual(shape('bot'), [['d'], ['bot:Code=bca', 'bot:Ops=gfe'], [], 2])
+  assert.deepEqual(shape('none'), [['d'], [], ['g', 'f', 'b', 'e', 'c', 'a'], 2])
+  // By computer: a group each, in the order the computers come.
+  const computers = threadSections(roster, 'computer', (of) => of.ref, (of) => (of.ref === 'ops' ? 'Mini' : 'Mac'))
+  assert.deepEqual(computers.groups.map((g) => `${g.title}=${ids(g.rows.map((r) => r.task)).join('')}`), ['Mac=bca', 'Mini=gfe'])
+  assert.equal(threadSections(roster.slice(0, 1), 'folder', (of) => of.ref).working, 0, 'the rail shows no count')
+  // Sorted beside the grouping: working rows first inside each group, the rest newest first.
+  const sorted = threadSections(roster, 'bot', (of) => of.ref, undefined, { status: true })
+  assert.deepEqual(sorted.groups.map((g) => ids(g.rows.map((r) => r.task)).join('')), ['bca', 'gfe'])
+  assert.deepEqual(ids(threadSections(roster, 'none', (of) => of.ref, undefined, { status: true }).recent.map((r) => r.task)), ['g', 'b', 'f', 'e', 'c', 'a'])
+  assert.deepEqual(['needsInput', 'working', 'idle'].map((status) => rosterRank({ status, activity: '', work: [] })), [0, 1, 3])
+  assert.equal(rosterRank({ status: 'idle', activity: '', work: [task('w', 'working')] }), 2, 'work in the background comes before a bot at rest')
 })
 
 test("outside its chat a bot stands as the host says, and as its chat does on an older host", () => {
@@ -292,9 +324,11 @@ test('a task that needs the user opens at its newest waiting card', () => {
 })
 
 test('the host says which threads take a message, and a read-only one says whose it is', () => {
-  const [own, old] = normalizeWork([{ id: 'a', status: 'working', talk: true }, { id: 'b', status: 'working' }])
+  const [own, old] = normalizeWork([{ id: 'a', status: 'working', talk: true, talkFiles: true }, { id: 'b', status: 'working' }])
   assert.equal(own!.talk, true)
+  assert.equal(own!.talkFiles, true)
   assert.equal(old!.talk, false, 'a host from before threads names none')
+  assert.equal(old!.talkFiles, false, 'nor files')
   assert.equal(readOnlyReason(task('a', 'working', { talk: true })), null)
   assert.equal(readOnlyReason(task('a', 'working', { source: { kind: 'routine', id: 'r1' } })), "Read only: a routine's run")
   assert.equal(readOnlyReason(task('a', 'done', { source: { kind: 'request', id: null } })), "Read only: another bot's request")

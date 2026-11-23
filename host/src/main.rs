@@ -28,14 +28,15 @@ mod routines;
 mod screen;
 mod send_cli;
 mod service;
-mod shell;
 mod store;
 mod tui;
 mod update;
 mod usage;
 mod voice;
+mod watchdog;
+mod workflows;
 
-use agent::backends;
+use codync_agent::{backends, shell};
 use local_api::local_call;
 use remote::identity;
 
@@ -217,6 +218,9 @@ enum Sub {
     /// service there).
     #[command(hide = true)]
     Keeper,
+    /// One workflow script, outside the host process. The host spawns this itself.
+    #[command(hide = true)]
+    WorkflowScript,
     /// Built-in MCP servers that bots are started with (stdio).
     #[command(hide = true)]
     Mcp {
@@ -244,6 +248,13 @@ enum McpServer {
     },
     /// Invite the user to connect services securely.
     Connectors {
+        #[arg(long)]
+        bot: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Workflows on this computer, as a script a bot can read and rewrite.
+    Workflows {
         #[arg(long)]
         bot: String,
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
@@ -363,6 +374,7 @@ fn write_token_file(token: &str) -> Result<()> {
 async fn main() -> Result<()> {
     // Every TLS connection (the relay, HTTPS) uses aws-lc-rs, also in builds that have ring too.
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    agent::init_runtime();
     let cli = Cli::parse();
     match cli.cmd.unwrap_or(Sub::Serve { port: service::DEFAULT_PORT, bind: None }) {
         Sub::Serve { port, bind } => serve(bind, port).await,
@@ -482,9 +494,9 @@ async fn main() -> Result<()> {
             );
             Ok(())
         }
-        Sub::Node => agent::node::add().await,
+        Sub::Node => codync_agent::node::add().await,
         Sub::Keeper => keeper::run().await,
-        Sub::Npm { args } => std::process::exit(agent::node::npm(&args).await?),
+        Sub::Npm { args } => std::process::exit(codync_agent::node::npm(&args).await?),
         Sub::Statusline { port, command, wrapped } => {
             statusline(port, command.unwrap_or_else(|| wrapped.join(" "))).await;
             Ok(())
@@ -495,11 +507,13 @@ async fn main() -> Result<()> {
             println!("Token rotated. Restart the host so local helpers pick it up.");
             Ok(())
         }
+        Sub::WorkflowScript => workflows::script_worker(),
         Sub::Mcp { server: McpServer::Connectors { bot, port } } => {
             mcp::serve(bot, port, mcp::Server::Connectors).await
         }
         Sub::Mcp { server: McpServer::Computer { bot, port } } => mcp::serve(bot, port, mcp::Server::Computer).await,
         Sub::Mcp { server: McpServer::Routines { bot, port } } => mcp::serve(bot, port, mcp::Server::Routines).await,
+        Sub::Mcp { server: McpServer::Workflows { bot, port } } => mcp::serve(bot, port, mcp::Server::Workflows).await,
         Sub::Mcp { server: McpServer::Chat { bot, port } } => mcp::serve(bot, port, mcp::Server::Chat).await,
         Sub::Mcp { server: McpServer::Team { bot, port } } => mcp::serve(bot, port, mcp::Server::Team).await,
         Sub::Mcp { server: McpServer::Manage { bot, port } } => mcp::serve(bot, port, mcp::Server::Manage).await,
@@ -535,7 +549,8 @@ async fn serve(bind: Option<std::net::IpAddr>, port: u16) -> Result<()> {
     cap_log();
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "codync_host=info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "codync_host=info,codync_agent=info".into()),
         )
         // A failed log write would be reported with `eprintln!`, which panics when stderr is gone
         // too (a closed terminal, a full disk): a log line must never take a task down.
@@ -557,6 +572,10 @@ async fn serve(bind: Option<std::net::IpAddr>, port: u16) -> Result<()> {
     hub.start()?;
     network::start(&hub).await;
     analytics::host_started(&hub, service::started_by_service(), bind.is_loopback());
+    if watchdog::restarted(&service::data_dir()) {
+        analytics::capture(&hub, analytics::Event::HostRestartedStuck, serde_json::Map::new());
+    }
+    watchdog::start(&hub, service::data_dir(), service::started_by_service());
     let agent_checks = background::start(&hub);
     tracing::info!(version = env!("CARGO_PKG_VERSION"), %bind, port, "codync-host listening");
     // Peer addresses: some settings may only be changed from this computer.
@@ -571,7 +590,7 @@ async fn serve(bind: Option<std::net::IpAddr>, port: u16) -> Result<()> {
     }
     hub.shutdown().await;
     background::stop_agent_checks(agent_checks).await;
-    agent::acp::stop_all().await;
+    codync_agent::acp::stop_all().await;
     analytics::flush_now(&hub).await;
     tracing::info!("codync-host stopped");
     // A keychain read may still wait on an unlock prompt; dropping the runtime would wait for it.

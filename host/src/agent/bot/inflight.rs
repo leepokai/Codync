@@ -1,7 +1,6 @@
 //! The mark of a running turn in the bot's own chat (`turn.inflight.<bot>`), which a restarted host resumes.
 
 use crate::store::{Store, now_ms};
-use anyhow::Result;
 
 /// What the mark holds: when the turn started and, for a follow-up's turn, its place in its
 /// chain, so a restart resumes it as that follow-up and what it sets next still counts toward the limit.
@@ -20,9 +19,9 @@ impl Inflight {
         Self::parse(&store.kv_get(&key(bot))?)
     }
 
-    /// Marks `turn` as the one `bot` is running; `None` when it is over.
-    pub(super) fn save(store: &Store, bot: &str, turn: Option<Self>) -> Result<()> {
-        store.kv_set(&key(bot), &turn.map(Self::mark).unwrap_or_default())
+    /// The kv row that marks `turn` as the one `bot` is running; `None` when it is over.
+    pub(super) fn row(bot: &str, turn: Option<Self>) -> (String, String) {
+        (key(bot), turn.map(Self::mark).unwrap_or_default())
     }
 
     fn parse(mark: &str) -> Option<Self> {

@@ -64,7 +64,7 @@ can be traced from the events around it:
   the host, which logs one and reports it under the same name; `reportError` from the desktop and
   terminal UI); crashes are already caught.
 - **Display preferences send nothing.** A device's own look (Settings › Appearance: theme, text
-  size, usage icons, compact sidebar, agent logos; thinking details) has no outcome or failure to
+  size, usage icons, agent logos; thinking details) has no outcome or failure to
   trace, so switching one is not an event.
 - The *Rules* above apply: feature use only, never content. List each new event and property in
   [analytics events](../reference/analytics-events.md), and check they arrive in PostHog
@@ -77,7 +77,7 @@ can be traced from the events around it:
   `clientNonce`) is not counted again. Bot actors report `turn_finished`, `agent_fell_back` (a turn moved on to the bot's next
   agent: the agent and why, see [agent fallbacks](agent-fallback.md)), `handoff_carried` (what the agent taking over
   was told first, by size) and `agent_retired` (an agent stopped between
-  turns to give back its processes, and why), the phone channel
+  turns to give back its processes, or because it dropped Codync's MCP servers, and why), the phone channel
   reports pairing and daily phone connections, and the host reports its own start. Each event
   carries its own `timestamp` and `uuid` (a resent batch counts once) and the computer's key
   (`computer`, a hash of its id); batches go to `/batch/` every 30 s and once more when the
@@ -126,7 +126,8 @@ builds PostHog frames itself (oldest first, the failing one last): generic `cust
   errors and rejections in the main process and every window, errors a view threw while
   rendering (mechanism `react`: the chat and pairing windows show *Something went wrong* with
   *Try again* instead of going blank), and windows or helpers that crashed (`RendererGone`,
-  `GPUGone`, … with Electron's reason), through `reportError`. A window whose page crashed loads
+  `GPUGone`, … with Electron's reason) and system notifications the system failed to show
+  (`NotificationFailed`, `main/notifications.ts`), through `reportError`. A window whose page crashed loads
   it again (`renderer-recovery.ts`), at most twice in a row before it has stayed up a minute, and
   says what came of it (`window_recovery`). Not
   reported: error events that carry no error (the ResizeObserver loop notice), and helpers that

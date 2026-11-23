@@ -84,7 +84,7 @@ pub struct BotConfig {
     pub cwd: String,
     #[serde(default)]
     pub permission: Permission,
-    /// The agent mode to work in (see `agent::modes`): its own id, or `auto` for its Auto mode under any id (an agent
+    /// The agent mode to work in (see `codync_agent::modes`): its own id, or `auto` for its Auto mode under any id (an agent
     /// without one keeps its own). None: the mode its sessions open in, the agent's default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
@@ -99,6 +99,13 @@ pub struct BotConfig {
     /// Agents that carry on, in order, when the bot's own can't answer (see `agent::fallback`).
     #[serde(default)]
     pub fallbacks: Vec<Fallback>,
+    /// Advisor mode: the agent the bot's threads run on when it isn't the chat's own (`agent::fallback::threads`);
+    /// none: the chat's, with the chat's fallbacks.
+    #[serde(default)]
+    pub thread_agent: Option<Fallback>,
+    /// In Advisor mode, the agents that carry on, in order, when the threads' own can't answer.
+    #[serde(default)]
+    pub thread_fallbacks: Vec<Fallback>,
     /// The bot may set its own fallbacks (`chat` server's `set_fallbacks`). On unless the user turns it off.
     #[serde(default = "yes")]
     pub self_fallbacks: bool,
@@ -114,6 +121,15 @@ pub struct BotConfig {
     pub position: i64,
     #[serde(default)]
     pub hidden: bool,
+    /// The computer's box for threads without a bot (`chat::work::plain`): they run an agent on its own, told
+    /// nothing of Codync's (no instructions, memory, tools or connectors). Always hidden; apps that know it keep it
+    /// out of every list of bots.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub plain: bool,
+    /// The workflow a thread was started to build (`Setup::workflow`): its workflow tools read, save and run that
+    /// one only, and the thread gets them even without a bot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<String>,
     /// The roster section it shows in; none when unset. Trimmed and checked (`hub::sections`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub section: Option<String>,
@@ -217,6 +233,16 @@ impl BotConfig {
     #[must_use]
     pub fn as_owner(&self) -> Self {
         Self { id: self.owner().to_owned(), thread_of: None, ..self.clone() }
+    }
+
+    /// The steps the bot runs besides its own agent: its fallbacks and, in Advisor mode, its threads' agent and theirs.
+    pub fn fallback_steps(&self) -> impl Iterator<Item = &Fallback> {
+        self.fallbacks.iter().chain(&self.thread_agent).chain(&self.thread_fallbacks)
+    }
+
+    /// [`Self::fallback_steps`], to change.
+    pub fn fallback_steps_mut(&mut self) -> impl Iterator<Item = &mut Fallback> {
+        self.fallbacks.iter_mut().chain(&mut self.thread_agent).chain(&mut self.thread_fallbacks)
     }
 }
 

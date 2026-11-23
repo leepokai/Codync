@@ -12,7 +12,7 @@ threads take tasks from it. The owner's decisions are marked *(owner)*.
 - **Coordinator**: the bot's main conversation. It talks to the user, decides what is worth a task, and tells the
   user what came of it.
 - **Task**: one piece of work in the box: a title, a brief, the user's own words, a status.
-- **Thread**: a session of the bot working tasks, one at a time: a thread bot
+- **Thread**: where the bot works tasks away from the chat, one at a time, with a session of its own: a thread bot
   ([work](../features/work.md)). A task names the thread that has it.
 - **Box**: the bot's tasks. It is the source of truth: a thread that dies leaves its task there.
 
@@ -131,7 +131,7 @@ the time, as today. It opens Details. Its Stop (one task working) asks once, the
 
 | Section | Rows |
 | --- | --- |
-| **Threads** | *(owner: the running sessions and the box are told apart.)* The agent sessions that run now. The heading carries `2 / 3`: how many run, of the most allowed. Tasks that need you first (the attention mark, what the card asks; opens the chat at the card), then working tasks (a moving dot, the thread's activity, elapsed time). Both kinds of row have Stop. A working row opens its thread (stage 11; the thread's transcript before it) and says where it works. A thread the bot may still start is one faint row, `Free`, so the ceiling is visible. |
+| **Threads** | *(owner: the running threads and the box are told apart.)* The threads that run now. The heading carries `2 / 3`: how many run, of the most allowed. Tasks that need you first (the attention mark, what the card asks; opens the chat at the card), then working tasks (a moving dot, the thread's activity, elapsed time). Both kinds of row have Stop. A working row opens its thread (stage 11; the thread's transcript before it) and says where it works. A thread the bot may still start is one faint row, `Free`, so the ceiling is visible. |
 | **Event box** | What waits for a thread, numbered 1, 2, 3 in the order it will be taken, with why it waits. The heading carries how many. **First** on every row but the first; **Cut in** on the first row when every thread of the bot is busy (not on a row that follows unfinished work or waits for usage), which asks which working task gives way; **Drop**. Left out when nothing waits. |
 | **Later** | Follow-ups the bot set (the dashed card, as today). |
 | **Routines** | As today, with **+**. |
@@ -461,7 +461,7 @@ differs from the text above:
 - **A message to an ended task whose thread now works a task that followed it** goes to that session and waits
   behind its turn; the ended task isn't reopened.
 - **Analytics**: `work_messaged {outcome, reopened, queued}`, or `{outcome: failed, error}` with the refusal's
-  category (`thread::Refused`: `read_only`, `not_started`, `gone`, `text_only`, else `other`); Send now and Remove
+  category (`thread::Refused`: `read_only`, `not_started`, `gone`, `unsupported`, else `other`); Send now and Remove
   in a thread are `work_steered` with `how` `sendNow` / `remove` (`by: user`), and the agent-level
   `message_steered` still says what became of a Send now.
 - **Wording**: the new key is in the ten catalogs, and all four clients read it. `Waiting for usage`, read by none
@@ -521,7 +521,8 @@ The rules are one set, written three times: `apps/desktop/src/shared/work.ts` (`
   to it (`showInChat`, by `data-entry-id`); the phones close the details sheet and bring it into view, as a
   needs-you row does (iPhone `BotDetailsView.openInChat`, Android `openCard`). Only the chat's loaded messages are
   looked at, as for a needs-you row.
-- **Composer**: the chat's, text only (`Message this thread`): no files, dictation, commands, reply or call. Each
+- **Composer**: the chat's (`Message this thread`), with its + and file chips where the host takes files
+  (`talkFiles`), but no dictation, commands, reply or call. Each
   client keeps a draft per task, under the bot's (desktop `<bot>/thread/<task>`, phones `<bot>/task/<task>`), so it
   goes with the bot. Off while the computer is offline.
 - **Messages that wait.** Desktop: the bubble stays in the transcript with `Queued`, **Send now** and **Remove**

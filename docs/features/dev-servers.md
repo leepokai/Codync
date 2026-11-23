@@ -16,13 +16,13 @@ in that session goes too, and one that detached into a session of its own surviv
 deliberate, and stays right for what an agent starts itself. So that such a server isn't lost, `background_work` keeps
 the agent running while it sees one, with its helpers and memory.
 
-A server started through `start_dev_server` is the host's own child, in a tree of its own (`agent/process.rs`, the same
+A server started through `start_dev_server` is the host's own child, in a tree of its own (`crates/agent/src/process.rs`, the same
 owner agents use), so the agent can be stopped when idle while it runs.
 
 | Event | The server |
 |---|---|
 | Agent stopped when idle, crashed or changed; new session; routine run ended | Keeps running |
-| User or bot stops it | Its whole tree stops: SIGTERM, then what is left after 3 s on Unix; all of it at once on Windows. It ends from its leaves up: a process whose children have ended gets 3 s to finish by itself, and what is left after 15 s is killed (`agent/process.rs`) |
+| User or bot stops it | Its whole tree stops: SIGTERM, then what is left after 3 s on Unix; all of it at once on Windows. It ends from its leaves up: a process whose children have ended gets 3 s to finish by itself, and what is left after 15 s is killed (`crates/agent/src/process.rs`) |
 | It ends by itself | Stopped (exit 0) or failed; it doesn't start again |
 | Bot deleted | Stopped and removed |
 | Host updated or restarted | Stopped, then started again |

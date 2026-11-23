@@ -1,109 +1,53 @@
-//! How a reading of an agent ends, and one reading at a time of those the host has to start.
+//! What the agents' usage readers take from the host: an agent started the way bots start it, the session kept for
+//! its readings, and how each check ended, for usage analytics.
 
 use crate::LockExt;
+use crate::agent::auth;
 use crate::analytics::{self, Event};
 use crate::hub::Hub;
-use serde::Serialize;
+use codync_agent::usage::{App, Stage, Started};
+use futures::future::BoxFuture;
 use serde_json::json;
 use std::collections::BTreeSet;
-use std::future::Future;
 use std::sync::Mutex;
 
-use super::Window;
-
-/// Where reading an agent's usage stopped (`usage_read_failed`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum UsageReadStage {
-    /// The agent didn't start.
-    Start,
-    /// It wouldn't open or resume a session.
-    Session,
-    /// The session doesn't offer the command, so it was never sent.
-    NoCommand,
-    /// The agent refused the request or closed on it.
-    Prompt,
-    /// It didn't finish in time (a signed-out agent waits here).
-    Timeout,
-    /// Its report wasn't one the host can read: the agent's format changed.
-    Parse,
-}
-
-/// Agents being read: a refresh during a poll doesn't start a second copy.
-static READING: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 /// Agents whose last reading failed, so a failure is reported once, not every poll.
 static FAILING: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 
-struct Reading(String);
+impl App for Hub {
+    fn start<'a>(
+        &'a self,
+        backend: &'a str,
+        extra: &'a [(&'a str, &'a str)],
+    ) -> BoxFuture<'a, anyhow::Result<Started>> {
+        Box::pin(async move {
+            let auth::Started { acp, inbox, init, .. } = auth::start_with(&self.store, backend, None, extra).await?;
+            Ok(Started { acp, inbox, init, dir: auth::probe_dir() })
+        })
+    }
 
-impl Reading {
-    fn start(agent: &str) -> Option<Self> {
-        READING.locked().insert(agent.to_owned()).then(|| Self(agent.to_owned()))
+    fn kept_session(&self, backend: &str) -> Option<String> {
+        self.store.kv_get(&session_key(backend))
+    }
+
+    fn keep_session(&self, backend: &str, id: &str) -> anyhow::Result<()> {
+        self.store.kv_set(&session_key(backend), id)
+    }
+
+    /// For usage analytics (`usage_read_failed`): a failure once, not on every poll.
+    fn report(&self, agent: &str, check: Result<(), Stage>) {
+        let Err(stage) = check else {
+            FAILING.locked().remove(agent);
+            return;
+        };
+        tracing::debug!(agent, ?stage, "couldn't read the agent's usage");
+        if FAILING.locked().insert(agent.to_owned()) {
+            let properties = json!({"agent": agent, "stage": stage});
+            analytics::capture(self, Event::UsageReadFailed, properties.as_object().cloned().unwrap_or_default());
+        }
     }
 }
 
-impl Drop for Reading {
-    fn drop(&mut self) {
-        READING.locked().remove(&self.0);
-    }
-}
-
-/// Whether `agent` is being read now.
-pub(super) fn busy(agent: &str) -> bool {
-    READING.locked().contains(agent)
-}
-
-/// What a reader brings back.
-#[derive(Debug, PartialEq)]
-pub(super) enum Outcome {
-    Read(Vec<Window>),
-    /// Skipped on purpose (Copilot between its reads): what it last read stands.
-    Skipped,
-    /// It couldn't tell, or the agent was being read already ([`busy`]).
-    Failed,
-}
-
-impl From<Option<Vec<Window>>> for Outcome {
-    fn from(windows: Option<Vec<Window>>) -> Self {
-        windows.map_or(Self::Failed, Self::Read)
-    }
-}
-
-/// What `reading` finds, unless `agent` is being read already. `None`: no reading this time.
-pub(super) async fn guarded(
-    hub: &Hub,
-    agent: &str,
-    reading: impl Future<Output = Result<Vec<Window>, UsageReadStage>>,
-) -> Option<Vec<Window>> {
-    let _reading = Reading::start(agent)?;
-    let outcome = reading.await;
-    report(hub, agent, &outcome);
-    outcome.ok()
-}
-
-/// How a reading ended, for usage analytics: a failure once, not on every poll.
-pub(super) fn report<T>(hub: &Hub, agent: &str, reading: &Result<T, UsageReadStage>) {
-    let Err(stage) = reading else {
-        FAILING.locked().remove(agent);
-        return;
-    };
-    tracing::debug!(agent, ?stage, "couldn't read the agent's usage");
-    if FAILING.locked().insert(agent.to_owned()) {
-        let properties = json!({"agent": agent, "stage": stage});
-        analytics::capture(hub, Event::UsageReadFailed, properties.as_object().cloned().unwrap_or_default());
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_second_reading_of_the_same_agent_waits_for_the_first() {
-        let first = Reading::start("test-agent").expect("nothing is reading it");
-        assert!(Reading::start("test-agent").is_none());
-        assert!(Reading::start("another-test-agent").is_some(), "other agents read meanwhile");
-        drop(first);
-        assert!(Reading::start("test-agent").is_some());
-    }
+fn session_key(backend: &str) -> String {
+    format!("usage.session.{backend}")
 }

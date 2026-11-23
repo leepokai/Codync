@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
 import com.codync.android.core.BotDraft
 import com.codync.android.core.CloudComputer
+import com.codync.android.core.CloudMachine
 import com.codync.android.core.GroupDraft
 import com.codync.android.core.LinkState
 import com.codync.android.design.*
@@ -56,6 +57,7 @@ private data class Editing<T>(val computerId: String, val draft: T)
     var showComputers by rememberSaveable { mutableStateOf(false) }
     var showPairing by rememberSaveable { mutableStateOf(false) }
     var showUsage by rememberSaveable { mutableStateOf(false) }
+    var showStatus by rememberSaveable { mutableStateOf(false) }
     var marketplace by rememberSaveable { mutableStateOf<String?>(null) }
     // New cloud computer, opened from the first-run pages, and a provider's key sheet over it.
     var startsCloud by rememberSaveable { mutableStateOf(false) }
@@ -73,15 +75,20 @@ private data class Editing<T>(val computerId: String, val draft: T)
         creating = null; access = null; editor = null; groupEditor = null
     }
     // A new account or a fresh start drops whatever was open for the old one.
-    LaunchedEffect(app.generation) { if (handledGeneration != app.generation) { closeAll(); showUsage = false; pairingNew = false; handledGeneration = app.generation } }
+    LaunchedEffect(app.generation) { if (handledGeneration != app.generation) { closeAll(); showUsage = false; showStatus = false; pairingNew = false; handledGeneration = app.generation } }
     // A notification, widget or link: close everything, then pick the tab as the iPhone does (usage on State, the rest over Bots)
-    // and maybe show usage, the computers or extensions.
+    // and maybe show usage, the computers, extensions or a workflow.
     LaunchedEffect(app.navigationRequest) {
         val handled = handledNavigation.second.takeIf { handledNavigation.first == accounts.activityOwnerId } ?: 0
         if (handled != app.navigationRequest) {
             closeAll()
-            tab = if (app.navigationPage == LinkPage.Usage) AppTab.State else AppTab.Bots
+            tab = when (app.navigationPage) {
+                LinkPage.Usage -> AppTab.Settings
+                LinkPage.Workflows -> AppTab.Workflows
+                else -> AppTab.Bots
+            }
             showUsage = app.navigationPage == LinkPage.Usage
+            showStatus = app.navigationPage == LinkPage.Usage
             showComputers = app.navigationPage == LinkPage.Computers
             if (app.navigationPage == LinkPage.Extensions) marketplace = app.currentComputerId
             handledNavigation = accounts.activityOwnerId to app.navigationRequest
@@ -141,6 +148,10 @@ private data class Editing<T>(val computerId: String, val draft: T)
                     }
                     Root.CloudStart -> Box(Modifier.fillMaxSize().safeDrawingPadding()) {
                         waitingFor?.let { machine ->
+                            // In the account, not on this phone yet: a lookup or request the network lost is asked
+                            // again while it waits (iOS too).
+                            val reaching = machine.computerId.takeIf { machine.start == CloudMachine.Start.Connecting }
+                            LaunchedEffect(reaching) { if (reaching != null) accounts.reachCloudComputer(reaching) }
                             CloudStartView(machine, back = { accounts.passCloud(machine) }, skip = accounts::skipSetup) {
                                 AccountSwitcherButton(app) { showAccount = true }
                             }
@@ -160,10 +171,11 @@ private data class Editing<T>(val computerId: String, val draft: T)
                             }
                         }
                     }
-                    Root.Tabs -> MainTabs(app, states, accounts, account = { showAccount = true }, manage = { showComputers = true }, usage = { showUsage = true },
+                    Root.Tabs -> MainTabs(app, states, accounts, account = { showAccount = true }, manage = { showComputers = true },
                         newBot = { creating = NewTarget(group = false, computerId = it) }, newGroup = { creating = NewTarget(group = true, computerId = it) },
-                        edit = edit, extensions = openMarketplace, tab = tab, onTab = { tab = it }, covered = showAccount || showComputers || showPairing || showUsage ||
-                            marketplace != null || creating != null || access != null || editor != null || groupEditor != null || app.error != null) { chat ->
+                        edit = edit, extensions = openMarketplace, tab = tab, onTab = { tab = it }, covered = showAccount || showComputers || showPairing || showUsage || showStatus ||
+                            marketplace != null || creating != null || access != null || editor != null || groupEditor != null || app.error != null,
+                        status = { showStatus = true }) { chat ->
                         // A conversation, talking to the computer the bot lives on.
                         accounts.store(chat.computer.id)?.let { store -> ChatScreen(chat, store) { bot -> edit(chat.computer.id, bot) } }
                     }
@@ -176,7 +188,9 @@ private data class Editing<T>(val computerId: String, val draft: T)
         }
         CodyncSheet(showComputers && !app.loading, { showComputers = false }) {
             AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Computers))
-            ComputersView(app, states, accounts, { showPairing = true }, { access = it }, openMarketplace)
+            ComputersView(app, states, accounts, { showPairing = true }, { access = it }, openMarketplace) { id ->
+                accounts.focusWorkflows(id)
+            }
         }
         CodyncSheet(access, { access = null }) { AccessRequestView(app, accounts, it) }
         CodyncSheet(showPairing && !app.loading, { showPairing = false }) {
@@ -190,6 +204,11 @@ private data class Editing<T>(val computerId: String, val draft: T)
         CodyncSheet(cloudKeyFor, { cloudKeyFor = null }) { provider -> app.cloudOffer?.let { CloudKeySheet(provider, it, app, accounts) } }
         // What another app shared: which bot it goes to.
         CodyncSheet(app.sharing?.takeIf { root == Root.Tabs }, accounts::finishSharing) { shared -> ShareToBot(shared, app, states, accounts) }
+        CodyncSheet(showStatus && !app.loading, { showStatus = false }) {
+            AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.State))
+            val current = states.firstOrNull { it.computer.id == app.currentComputerId }
+            StateScreen(app, current?.usage, accounts, { showUsage = true }, 24.dp, close = { showStatus = false })
+        }
         CodyncSheet(showUsage && !app.loading, { showUsage = false }) {
             AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Usage))
             UsageSheet(app, states, accounts)

@@ -8,7 +8,7 @@ use std::sync::Mutex;
 
 /// Current schema version (kv `schema`). `hello` carries it: a migration may rewrite or delete rows in place, so
 /// a client whose copy was synced under another schema fetches the conversation again.
-pub const SCHEMA: i64 = 9;
+pub const SCHEMA: i64 = 13;
 
 /// 3: authorized devices (keys, not push tickets) with their push and Live Activity
 /// tickets. The old ticket-only `devices` table is dropped; phones re-register on connect.
@@ -19,7 +19,11 @@ pub const SCHEMA: i64 = 9;
 /// 7: each device records the account it was let in for (`devices.account`), so a computer that changes
 /// accounts drops the old account's devices.
 /// 8: a phone that paired with no account is told apart from a device paired before 2.36.0 (`devices.no_account`).
-/// 9: what a thread put in its bot's chat names its thread and its task by their new names (see [`migrate_9`]).
+/// 9: what a thread put in its bot's chat names its thread and its task by their new names (see [`rename_threads`]).
+/// 10: workflows (a graph, its runs and its webhook secrets) live in their own tables.
+/// 11: a workflow is also a script. Runs remember which executor started them.
+/// 12: a workflow a bot creates records that bot. User-created workflows have no owner.
+/// 13: a saved version records whether it was a graph or a script.
 fn migrate(c: &Connection) -> Result<()> {
     let version: i64 =
         c.query_row("SELECT CAST(v AS INTEGER) FROM kv WHERE k = 'schema'", [], |r| r.get(0)).optional()?.unwrap_or(0);
@@ -41,10 +45,24 @@ fn migrate(c: &Connection) -> Result<()> {
     if version < 7 {
         migrate_7(c)?;
     }
-    if version < 8 {
-        migrate_8(c)?;
+    // A database built on the workflow branch used 8–12 for workflow tables, never added `no_account` and never
+    // renamed tasks to threads. Each step below checks for itself, so repeating one is cheap and safe.
+    ensure_no_account(c)?;
+    rename_threads(c)?;
+    if version < 10 {
+        migrate_10(c)?;
     }
-    migrate_9(c)
+    if version < 11 {
+        migrate_11(c)?;
+    }
+    if version < 12 {
+        migrate_12(c)?;
+    }
+    if version < 13 {
+        migrate_13(c)?;
+    }
+    c.execute("INSERT INTO kv(k, v) VALUES('schema', ?1) ON CONFLICT(k) DO UPDATE SET v = ?1", [SCHEMA.to_string()])?;
+    Ok(())
 }
 
 fn migrate_3(c: &Connection) -> Result<()> {
@@ -155,7 +173,7 @@ fn migrate_7(c: &Connection) -> Result<()> {
     Ok(())
 }
 
-fn migrate_8(c: &Connection) -> Result<()> {
+fn ensure_no_account(c: &Connection) -> Result<()> {
     let has: bool =
         c.query_row("SELECT count(*) > 0 FROM pragma_table_info('devices') WHERE name = 'no_account'", [], |r| {
             r.get(0)
@@ -163,7 +181,6 @@ fn migrate_8(c: &Connection) -> Result<()> {
     if !has {
         c.execute_batch("ALTER TABLE devices ADD COLUMN no_account INTEGER NOT NULL DEFAULT 0;")?;
     }
-    c.execute_batch("INSERT INTO kv(k, v) VALUES('schema', '8') ON CONFLICT(k) DO UPDATE SET v = '8';")?;
     Ok(())
 }
 
@@ -172,7 +189,7 @@ fn migrate_8(c: &Connection) -> Result<()> {
 /// so the host and every client read one shape. Revs stay: the schema number in `hello` makes a client fetch again.
 /// A bot's stored config is renamed the same way (`taskOf`, `maxAgents`, `taskWorktrees` become `threadOf`,
 /// `maxThreads`, `threadWorktrees`), so nothing reads the old names afterwards, `updateBot` included.
-fn migrate_9(c: &Connection) -> Result<()> {
+fn rename_threads(c: &Connection) -> Result<()> {
     c.execute_batch(
         "BEGIN;
          UPDATE entries SET data = json_remove(
@@ -185,10 +202,71 @@ fn migrate_9(c: &Connection) -> Result<()> {
          UPDATE bots SET config = json_remove(json_set(config, '$.threadWorktrees',
              json(CASE json_type(config, '$.taskWorktrees') WHEN 'false' THEN 'false' ELSE 'true' END)), '$.taskWorktrees')
            WHERE json_valid(config) AND json_type(config, '$.taskWorktrees') IN ('true', 'false');
-         INSERT INTO kv(k, v) VALUES('schema', '9') ON CONFLICT(k) DO UPDATE SET v = '9';
          COMMIT;",
     )?;
     Ok(())
+}
+
+fn migrate_10(c: &Connection) -> Result<()> {
+    if table_exists(c, "workflows")? {
+        return Ok(());
+    }
+    c.execute_batch(include_str!("schema_7.sql"))?;
+    Ok(())
+}
+
+fn migrate_11(c: &Connection) -> Result<()> {
+    if column_exists(c, "source")? {
+        return Ok(());
+    }
+    c.execute_batch(include_str!("schema_8.sql"))?;
+    Ok(())
+}
+
+fn migrate_12(c: &Connection) -> Result<()> {
+    if column_exists(c, "owner_bot_id")? {
+        return Ok(());
+    }
+    c.execute_batch(include_str!("schema_9.sql"))?;
+    Ok(())
+}
+
+fn migrate_13(c: &Connection) -> Result<()> {
+    if version_column(c, "source")? {
+        return Ok(());
+    }
+    c.execute_batch(include_str!("schema_10.sql"))?;
+    Ok(())
+}
+
+fn table_exists(c: &Connection, name: &str) -> Result<bool> {
+    Ok(c.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1", [name], |row| {
+        row.get::<_, i64>(0)
+    })? > 0)
+}
+
+fn column_exists(c: &Connection, column: &str) -> Result<bool> {
+    table_column(c, "workflows", column)
+}
+
+fn version_column(c: &Connection, column: &str) -> Result<bool> {
+    table_column(c, "workflow_versions", column)
+}
+
+fn table_column(c: &Connection, table: &str, column: &str) -> Result<bool> {
+    let sql = if table == "workflows" {
+        "SELECT name FROM pragma_table_info('workflows')"
+    } else {
+        "SELECT name FROM pragma_table_info('workflow_versions')"
+    };
+    let mut statement = c.prepare(sql)?;
+    let names = statement.query_map([], |row| row.get::<_, String>(0))?;
+    for name in names {
+        if name? == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 impl Store {
@@ -252,7 +330,7 @@ mod tests {
         }
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty());
-        assert_eq!(s.kv_get("schema").as_deref(), Some("9"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("13"));
         drop(s);
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty(), "reopening keeps the new table");
@@ -275,7 +353,7 @@ mod tests {
         let s = Store::open(&db).unwrap();
         let chat: Vec<String> = s.history("b", i64::MAX, 10).unwrap().into_iter().map(|e| e.id).collect();
         assert_eq!(chat, ["info"]);
-        assert_eq!(s.kv_get("schema").as_deref(), Some("9"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("13"));
     }
 
     #[test]
@@ -320,7 +398,7 @@ mod tests {
         let file = s.entry("file").unwrap().data;
         assert!(file["thread"]["id"] == "task-1" && file["task"].is_null() && file.get("item").is_none(), "{file}");
         assert_eq!(s.entry("own").unwrap().data, serde_json::json!({"text": "hi", "final": true}));
-        assert_eq!(s.kv_get("schema").as_deref(), Some("9"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("13"));
     }
 
     #[test]

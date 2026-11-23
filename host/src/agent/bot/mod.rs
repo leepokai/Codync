@@ -23,6 +23,7 @@ mod codex_section;
 mod commands;
 mod compaction;
 mod decisions;
+mod elicitations;
 mod fallback;
 mod fast_mode;
 mod files;
@@ -48,14 +49,14 @@ use inflight::Inflight;
 pub(crate) use inflight::resumable;
 pub(crate) use launch::{launch_commands, select_model, start_agent, start_first, system_prompt};
 
-use crate::agent::acp::{self, Acp, Incoming};
-use crate::agent::config::FastModeSupport;
 use crate::chat::context::{Identity, Snapshot};
 use crate::chat::group::GroupTurn;
 use crate::chat::memory;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, Entry, EntryKind, Lane};
 use anyhow::{Result, anyhow};
+use codync_agent::acp::{self, Acp, Capabilities, Incoming};
+use codync_agent::config::FastModeSupport;
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -103,6 +104,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         turn_session: None,
         active_group: None,
         active_routine: None,
+        active_workflow: None,
         routine_deadline: None,
         routine_timed_out: false,
         routine_completion: None,
@@ -139,6 +141,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         sent: Vec::new(),
         reacted: Reacted::No,
         joined: false,
+        unheard: Vec::new(),
         files: files::FileShares::default(),
         perms: HashMap::new(),
         asked: HashMap::new(),
@@ -158,28 +161,6 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     BotHandle { tx, task }
 }
 
-/// What the agent can do with sessions besides creating them.
-// Each flag is one capability the agent advertised at `initialize`, independent of the others.
-#[allow(clippy::struct_excessive_bools)]
-#[derive(Clone, Copy)]
-struct SessionCaps {
-    /// The request that opens a session the agent isn't holding, when it can: `session/load`, whose replay is thrown
-    /// away as the host keeps the chat itself, or `session/resume` on an agent without it.
-    reopen: Option<&'static str>,
-    /// `session/close`: an idle session can be released while the agent keeps running.
-    close: bool,
-    /// ACP `systemPrompt`: instructions on `session/new` and `load` that the agent keeps at system level.
-    system_prompt: bool,
-    /// ACP `additionalDirectories`: folders outside `cwd` the agent may work in, here the memory folders.
-    additional_directories: bool,
-    /// `_session/steering` (not in ACP v1 yet): a message joins the running turn (see `steer`).
-    steering: bool,
-    /// `session/fork`: a new session that starts as a copy of another, which a thread's does (`chat::work`).
-    fork: bool,
-    /// `session/delete`: a background job's session leaves the agent's saved history (`chat::oneshot`).
-    delete: bool,
-}
-
 /// How the bot's instructions (identity and memory) reach the agent.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Instructions {
@@ -191,24 +172,30 @@ pub(crate) enum Instructions {
     FirstMessage,
 }
 
-/// Which adapter answered `initialize`, where Codync treats it apart from the others.
+/// Which adapter answered `initialize`, where Codync treats it apart from the others (Codex's `/compact` keep-list is
+/// in `CODEX_CONFIG`).
+pub(crate) use codync_agent::acp::Adapter;
+
+/// Whether a turn checks that Codync's MCP servers still run under the agent: OpenCode 2.x drops them from its
+/// sessions once it has been idle a while (#508, `Actor::servers_dropped`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum Adapter {
-    /// claude-agent-acp: takes `_meta.systemPrompt` and `_meta.claudeCode.options`, and `/compact <instructions>`.
-    Claude,
-    /// codex-acp: `/compact` (its keep-list is in `CODEX_CONFIG`).
-    Codex,
-    Other,
+pub(crate) enum ServerWatch {
+    /// The agent keeps them.
+    Off,
+    /// Not seen under this process yet, so their absence says nothing: they may run elsewhere, or never have started.
+    Unseen,
+    /// Seen running under it: once none does, the agent dropped them.
+    Seen,
 }
 
 #[allow(clippy::struct_excessive_bools, reason = "independent facts about the agent process")]
 pub(crate) struct Conn {
     pub(crate) acp: Arc<Acp>,
     pub(crate) rx: mpsc::UnboundedReceiver<Incoming>,
-    sessions: SessionCaps,
-    pub(crate) adapter: Adapter,
-    /// An OpenCode older than 2, which never ends a turn its model refused: `start_first` keeps it as a last resort.
-    superseded: bool,
+    /// What the agent said it can do with sessions besides creating them. A reopened session's replay is thrown away
+    /// (`drop_replay`), as the host keeps the chat itself.
+    sessions: Capabilities,
+    servers: ServerWatch,
     /// Sessions already created or loaded in this process, and when each was last used.
     loaded: HashMap<String, Instant>,
     /// A finished routine run's session it couldn't close is still open, with its MCP servers (`release_spent`).
@@ -220,7 +207,7 @@ pub(crate) struct Conn {
     /// Each live session's Fast mode option, as the agent last listed it.
     fast_options: HashMap<String, Value>,
     /// Each live session's modes, as the agent last listed them, and the sessions already switched to the bot's.
-    modes: HashMap<String, crate::agent::modes::Modes>,
+    modes: HashMap<String, codync_agent::modes::Modes>,
     mode_set: HashSet<String>,
     /// The agent reports compactions (`compaction_update`); until it does, a fall in usage stands in for them.
     reports_compaction: bool,
@@ -236,13 +223,22 @@ pub(crate) struct Conn {
 }
 
 impl Conn {
+    pub(crate) fn adapter(&self) -> Adapter {
+        self.sessions.adapter
+    }
+
+    /// An OpenCode older than 2, which never ends a turn its model refused: `start_first` keeps it as a last resort.
+    fn superseded(&self) -> bool {
+        self.sessions.never_ends_refused_turns()
+    }
+
     pub(crate) fn deletes_sessions(&self) -> bool {
         self.sessions.delete
     }
 
     pub(crate) fn instructions(&self) -> Instructions {
         // Claude's adapter rebuilds the standard field without the `_meta` object's options, so Claude stays on it.
-        if self.adapter == Adapter::Claude {
+        if self.adapter() == Adapter::Claude {
             Instructions::ClaudeMeta
         } else if self.sessions.system_prompt {
             Instructions::SystemPrompt
@@ -293,6 +289,7 @@ struct Actor {
     turn_session: Option<String>,
     active_group: Option<GroupTurn>,
     active_routine: Option<String>,
+    active_workflow: Option<String>,
     routine_deadline: Option<Instant>,
     routine_timed_out: bool,
     routine_completion: Option<RoutineCompletion>,
@@ -359,10 +356,15 @@ struct Actor {
     // ponytail: the host can't tell which message a send answered, so a closing note after one shows too; a bubble too
     // many beats a reply lost.
     joined: bool,
+    /// Messages that joined this turn (`steer`) with nothing from the agent since: a turn its agent then cancels on its
+    /// own drops them (Codex, on a refused card), so they go out again (`requeue_unheard`).
+    // ponytail: any text or tool call counts as the agent's word on them, so a card from the step already under way when
+    // one joined, refused, still drops it; ACP doesn't say which step read the message.
+    unheard: Vec<Queued>,
     files: files::FileShares,
     /// permission entry id -> who waits for the answer
     perms: HashMap<String, updates::Answer>,
-    /// Decision card id -> the live tool call waiting for this turn's choice.
+    /// Decision card id -> the live tool call or agent question (`elicitations`) waiting for this turn's choice.
     asked: HashMap<String, decisions::Asked>,
     /// The chat's choice card whose call stopped waiting: the user's press or next message still answers it.
     open_card: Option<String>,
@@ -407,7 +409,7 @@ impl Actor {
         while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
             match inc {
                 // No agent ends a turn it waits on: a request queued here is for work after it.
-                Incoming::Request { id, method, params } => self.answer_outside_turn(id, &method, &params).await,
+                Incoming::Request(request) => self.answer_outside_turn(request).await,
                 inc => self.on_incoming(Some(inc)).await,
             }
         }
@@ -457,7 +459,7 @@ impl Actor {
                         self.set_inflight(false);
                         self.next_in_queue(&done_tx).await;
                     }
-                    if self.active_routine.is_some() && self.turn.is_some() && self.routine_deadline.is_some_and(|deadline| Instant::now() >= deadline) && !self.routine_timed_out {
+                    if (self.active_routine.is_some() || self.active_workflow.is_some()) && self.turn.is_some() && self.routine_deadline.is_some_and(|deadline| Instant::now() >= deadline) && !self.routine_timed_out {
                         self.routine_timed_out = true;
                         self.stop_requested = true;
                         if let Some(c) = self.conn.take() { c.acp.kill().await; }

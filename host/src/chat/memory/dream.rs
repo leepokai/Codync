@@ -320,7 +320,7 @@ fn within_batch(entries: &[Entry]) -> &[Entry] {
 /// may rephrase or translate: the call's transcript holds what the user said). A call's line gives its transcript,
 /// line by line: the user's lines are their own words, the voice's are context.
 fn messages(e: &Entry) -> Vec<Message> {
-    let clip = |text: &str| crate::agent::acp::truncate(text, MESSAGE_CHARS);
+    let clip = |text: &str| codync_agent::acp::truncate(text, MESSAGE_CHARS);
     let said: Vec<(bool, Vec<String>)> = if e.kind == EntryKind::Notice.as_str() {
         e.data["transcript"]
             .as_array()

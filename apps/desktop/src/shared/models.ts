@@ -43,6 +43,10 @@ export interface Bot {
   fallbacks: Fallback[]
   /** The bot may set its own fallbacks; null from an older host (no fallbacks there). */
   selfFallbacks: boolean | null
+  /** Advisor mode: the agent its threads run on, null when they run on the bot's own. */
+  threadAgent: Fallback | null
+  /** In Advisor mode, the threads' fallbacks; null from an older host (no Advisor mode there). */
+  threadFallbacks: Fallback[] | null
   /** The fallback the bot is on right now; null on its own agent. */
   agentStep: AgentStep | null
   /** Agents of its chain (its own included) resting now; one whose `until` passed isn't. */
@@ -57,6 +61,8 @@ export interface Bot {
   /** The roster section the user put it in (`Work`, `Personal`); none when absent. */
   section?: string
   hidden: boolean
+  /** The computer's box for threads without a bot: an agent on its own. Never a bot to the user. */
+  plain: boolean
   notify?: boolean | null
   connectors: string[]
   skills: string[]
@@ -142,6 +148,8 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     fastModeIssue: raw.fastModeIssue ?? null,
     fallbacks: raw.fallbacks ?? [],
     selfFallbacks: raw.selfFallbacks ?? null,
+    threadAgent: raw.threadAgent ?? null,
+    threadFallbacks: raw.threadFallbacks ?? null,
     agentStep: raw.agentStep ?? null,
     agentCommands: raw.agentCommands ?? [],
     resting: raw.resting ?? [],
@@ -152,6 +160,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     // A cleared section (null, or an empty name) reads as none.
     section: raw.section || undefined,
     hidden: raw.hidden ?? false,
+    plain: raw.plain === true,
     notify: raw.notify ?? null,
     connectors: raw.connectors ?? [],
     skills: raw.skills ?? [],
@@ -237,6 +246,16 @@ export const isWorkingIn = (b: Bot, chat: string) => isWorking(b) && (b.workingC
 /** Where the bot works, as a list shows it: its own folder, or its project folder's name. */
 export const folderName = (b: Bot, tr: (text: string) => string) =>
   b.managedWorkspace ? tr('Own folder') : (b.cwd.split('/').filter(Boolean).pop() ?? b.cwd)
+
+/** A subagent, as its launching call reports it: the totals once it finished in the foreground. */
+export interface Subagent {
+  kind?: string
+  model?: string
+  background?: boolean
+  tokens?: number
+  toolUses?: number
+  durationMs?: number
+}
 
 export interface FileDiff {
   path: string
@@ -408,9 +427,15 @@ export interface EntryData {
   clientNonce?: string
   title?: string
   toolKind?: string
+  /** tool and permission: the agent's id for the call, so an approval finds the tool entry with what it returned. */
+  toolCallId?: string
   /** tool: whether it's the bot's own bookkeeping (composing its message, keeping its memory), left out of the
    * working steps; a host older than 2.25.0 leaves it out, and the steps then leave out the call too. */
   bookkeeping?: boolean
+  /** tool: the call that launched the subagent making this one (Claude Code only). */
+  parent?: string
+  /** tool: what a subagent's launch says about it (Claude Code only). */
+  subagent?: Subagent
   output?: string
   diffs?: FileDiff[]
   locations?: { path: string; line?: number }[]
@@ -424,6 +449,8 @@ export interface EntryData {
   choices?: string[]
   /** decision: which choice the bot suggests (`choices`' index). */
   recommended?: number | null
+  /** decision: `false` when only an option answers it (an agent's own question); missing: own words answer it too. */
+  ownWords?: boolean
   command?: string
   detail?: string
   cwd?: string
@@ -679,8 +706,16 @@ export interface Hello {
   analytics?: boolean
   /** A bot with a new message moves to the top of the roster (`setAutoOrder`). Absent from older hosts. */
   autoOrder?: boolean
+  /** The user can start a thread with a bot themselves (`startThread`). Absent from older hosts. */
+  startThread?: boolean
+  /** A thread may start without a bot, on an agent the user names (`startThread` without `botId`). */
+  threadsWithoutBot?: boolean
+  /** A thread may be started to build one workflow (`startThread` with `setup.workflow`). */
+  workflowThreads?: boolean
   /** `resetCredentials` can be used on this computer (absent from older hosts, false on a Codync Cloud computer). */
   credentialsReset?: boolean
+  /** The host can store workflows. Missing means it cannot. */
+  workflows?: boolean
 }
 
 export interface PairingInfo {
@@ -822,6 +857,9 @@ export interface BotDraft {
   fastMode?: boolean
   fallbacks?: Fallback[]
   selfFallbacks?: boolean
+  /** Left out for a host before Advisor mode; null turns it off. */
+  threadAgent?: Fallback | null
+  threadFallbacks?: Fallback[]
   pinned?: boolean
   /** A name puts the bot in that roster section, null takes it out; left out, the host keeps it. */
   section?: string | null
@@ -861,6 +899,7 @@ export function draftOf(bot: Bot): BotDraft {
     fastMode: bot.fastMode,
     fallbacks: bot.fallbacks,
     selfFallbacks: bot.selfFallbacks ?? undefined,
+    ...(bot.threadFallbacks === null ? {} : { threadAgent: bot.threadAgent, threadFallbacks: bot.threadFallbacks }),
     pinned: bot.pinned,
     hidden: bot.hidden,
     notify: bot.notify ?? null,

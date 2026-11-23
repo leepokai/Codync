@@ -194,7 +194,7 @@ async fn create(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     let cfg = crate::agent::new_bot::with_defaults(hub, body).await?;
     // A mode is its agent's: on another agent, the new bot would work in that one's default, which may ask less.
     if cfg.backend != source.backend
-        && let Some(mode) = source.mode.as_deref().filter(|m| *m != crate::agent::modes::AUTO)
+        && let Some(mode) = source.mode.as_deref().filter(|m| *m != codync_agent::modes::AUTO)
     {
         bail!(
             "you work in your agent's {mode} mode, which {} may not have: create this bot on {}, or ask the user to",
@@ -203,7 +203,8 @@ async fn create(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         );
     }
     crate::hub::validate(&cfg)?;
-    check_model_options(hub, &cfg.backend, cfg.model.as_deref(), &fields, deadline).await?;
+    check_model_options(hub, &cfg.backend, cfg.login_profile.as_deref(), cfg.model.as_deref(), &fields, deadline)
+        .await?;
     fields.insert("backend".into(), cfg.backend.clone().into());
     let name = cfg.name.clone();
     approve(hub, source, format!("Create bot {name}"), describe(&hub.store, &fields, &lines), deadline).await?;
@@ -233,7 +234,7 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         bail!("nothing to change");
     }
     let model = model_after(&fields, target.model.as_deref());
-    check_model_options(hub, &target.backend, model, &fields, deadline).await?;
+    check_model_options(hub, &target.backend, target.login_profile.as_deref(), model, &fields, deadline).await?;
     let detail = describe(&hub.store, &fields, &lines);
     approve(hub, source, format!("Change bot {}", target.name), detail, deadline).await?;
     let mut changed: Vec<String> =
@@ -356,6 +357,7 @@ fn model_after<'a>(fields: &'a Map<String, Value>, stored: Option<&'a str>) -> O
 async fn check_model_options(
     hub: &Hub,
     backend: &str,
+    login_profile: Option<&str>,
     model: Option<&str>,
     fields: &Map<String, Value>,
     deadline: Instant,
@@ -363,16 +365,17 @@ async fn check_model_options(
     let Some(options) = fields.get("modelOptions").and_then(Value::as_object).filter(|o| !o.is_empty()) else {
         return Ok(());
     };
-    let catalog = match tokio::time::timeout_at(deadline, crate::agent::auth::shared_models(hub, backend)).await {
-        Ok(Ok(catalog)) => catalog,
-        Ok(Err(e)) => {
-            return Err(Refused::error(
-                "catalog",
-                format!("couldn't load the agent's model list to check modelOptions: {e:#}"),
-            ));
-        }
-        Err(_) => return Err(Refused::error("catalog", "the agent's model list took too long to load".to_owned())),
-    };
+    let catalog =
+        match tokio::time::timeout_at(deadline, crate::agent::auth::shared_models(hub, backend, login_profile)).await {
+            Ok(Ok(catalog)) => catalog,
+            Ok(Err(e)) => {
+                return Err(Refused::error(
+                    "catalog",
+                    format!("couldn't load the agent's model list to check modelOptions: {e:#}"),
+                ));
+            }
+            Err(_) => return Err(Refused::error("catalog", "the agent's model list took too long to load".to_owned())),
+        };
     let options = options.iter().map(|(id, value)| (id.as_str(), value.as_str().unwrap_or_default()));
     crate::agent::auth::check_options(&catalog, model.filter(|m| !m.is_empty()), options)
         .map_err(|e| Refused::error("options", e.to_string()))

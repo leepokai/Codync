@@ -23,7 +23,7 @@ The host on your computer runs every bot. A bot's agent starts when you send it 
 ## Where to change a bot's settings
 
 - **iPhone:** open the bot's chat and tap its name at the top. The tabs are **Details**, **Computer**, **Library**, **Memory** and **Settings**. **Details** shows what the bot does: its [work](/docs/conversations#work) away from the chat, follow-ups, routines and [dev servers](/docs/dev-servers); **Computer** shows the computer it runs on, a picture of that computer's screen once you tap **Tap to see the screen**, and [Use the computer](/docs/computer-use#let-a-bot-use-the-computer); **Settings** shows how it is set up: its instructions, agent and model first, then its profile, workspace, activity, and the Codync skills and connectors it passes on. Changes save as you edit. You can also touch and hold the bot in the list and choose **Edit profile**.
-- **Desktop:** click the bot's name at the top of the chat to open the details panel, with the same tabs. Changes save as you edit. You can also right-click the bot in the sidebar and choose **Edit Profile…**
+- **Desktop:** click the bot's name at the top of the window to open the details panel. It starts as a list of views to open: the same ones as on the phone, **Browser**, which previews a web page such as one of the bot's dev servers, and **Terminal**, a shell on the bot's computer that opens in the bot's folder and keeps running while you look at other tabs. Each view you open becomes a tab with a close button, and the **+** after the tabs shows the list again; the layout is the same for every bot on that computer's app. While the panel is open, **Split panel** at the top right of the window adds a second set of tabs under the first, and **Maximize panel** lets the panel fill the chat's place. Changes save as you edit. You can also right-click the bot in the sidebar and choose **Edit Profile…**
 - **Android:** the same sheet and tabs as the iPhone.
 - **Terminal UI:** select the bot and press `e` for settings. Shift+Left and Shift+Right move between **Details**, **Computer**, **Library**, **Memory** and **Settings**. Press Ctrl+S to save, or Esc to drop your changes.
 
@@ -42,6 +42,7 @@ You can also ask a bot in its chat to rename itself or change its own instructio
 - **Model:** **Default** or one of the models the agent lists. Some models have their own options, such as reasoning effort, each with its own row.
 - **Fast mode:** shown when the agent offers it for the model (Claude Code and Codex do). Faster replies for more usage.
 - **Fallbacks:** other agents that carry on when this one runs out of usage or can't answer. See [Agent fallbacks](/docs/agent-fallbacks).
+- **Advisor mode:** the bot's [threads](/docs/conversations#work) run on an agent of their own, set under **Threads' agent** with its model and login profile, and carry on along **Threads' fallbacks**, while the chat stays on the agent above. Turning it on starts the threads on the bot's own agent, model and fallbacks.
 
 Changing the agent or the model starts a new agent session. The chat history stays.
 
@@ -93,7 +94,7 @@ For a Claude Code or Codex bot, **Summarize long chats** decides who summarizes 
 | **Near the limit** | Just before the window fills: 40K short of it (960K on a 1M window), and never sooner than Early. |
 | **Set a size** | At the size you pick: 100K, 200K and so on up to the largest the window allows, or **Custom size…** to type your own, in thousands of tokens (from 50K, rounded to 10K). |
 
-With Near the limit or a size, nothing summarizes the chat or starts it over before it reaches that size, except that a chat already summarized three times starts fresh after eight hours away. The sizes appear once the bot has replied and its agent has said how large its window is. A size larger than a new model's window counts as that window's largest. A longer chat costs more usage on every turn, because the agent reads all of it each time. In the terminal UI this field is called **Summarize** and sits under the fallbacks: ←/→ goes through the same choices, then each listed size, and typing digits sets a size of your own in K.
+With Near the limit or a size, nothing summarizes the chat or starts it over before it reaches that size, except that a chat already summarized three times starts fresh after eight hours away. The sizes appear once the bot has replied and its agent has said how large its window is. A size larger than a new model's window counts as that window's largest. A longer chat costs more usage on every turn, because the agent reads all of it each time. In the terminal UI this field is called **Summarize** and sits under the fallbacks and Advisor mode: ←/→ goes through the same choices, then each listed size, and typing digits sets a size of your own in K.
 
 ## Activity
 
@@ -117,8 +118,8 @@ Each bot keeps a long-term memory across sessions, which you can read on its **M
 
 - **Pin:** pinned bots stay at the top of the list. iPhone: touch and hold the bot. Desktop: right-click it. Terminal UI: `p`.
 - **Order:** drag bots into the order you want. The computer keeps the order, so it's the same on every device. iPhone: touch and hold a bot, then drag it. Desktop: drag it, or select it and press Alt+Up or Alt+Down. Terminal UI: `J` and `K`.
-- **Move active bots to the top:** turn this on for a computer and a bot moves to the top of its list whenever it has a new message, from you, its reply, or a routine run. You can still drag; the bot's next message moves it again. iPhone and Android: tap the connection status at the top of the Bots tab, choose **Manage computers**, then the switch on the computer's card. Desktop: the computer in Settings › Computers. Terminal UI: the command palette.
-- **Name a computer:** every app shows a computer by its hostname until you name it, which helps when two computers share one. iPhone and Android: in **Manage computers**, touch and hold the computer's card, then **Rename…**. Desktop: the pencil on the computer in Settings › Computers. Terminal UI: **Computer name** in the command palette. Leave the name empty to go back to the hostname. A Codync Cloud computer is renamed from its **⋯** menu instead.
+- **Move active bots to the top:** turn this on for a computer and a bot moves to the top of its list whenever it has a new message, from you, its reply, or a routine run. You can still drag; the bot's next message moves it again. iPhone and Android: tap the connection status at the top of the Bots tab, choose **Manage computers**, then the switch on the computer's card. Desktop: the filter button at the top of the Bots list, then **Sort by last active** (it sets the computers the list shows). Terminal UI: the command palette.
+- **Name a computer:** every app shows a computer by its hostname until you name it, which helps when two computers share one. iPhone and Android: in **Manage computers**, touch and hold the computer's card, then **Rename…**. Desktop: the pencil on the computer on the Computers page. Terminal UI: **Computer name** in the command palette. Leave the name empty to go back to the hostname. A Codync Cloud computer is renamed from its **⋯** menu instead.
 - **Computers:** with more than one computer, each has a heading above its bots. Drag a heading (iPhone and Android: touch and hold it first) to move that computer and its bots up or down; this order stays on the device. Click or tap a heading to fold its bots away.
 - **Hide:** iPhone: touch and hold the bot, then **Hide from list**. Desktop: right-click it, then **Hide from sidebar**. A hidden bot sends no notifications. To bring it back:
   - **iPhone:** tap the connection status at the top of the Bots tab (such as **1 connected**), choose **Manage computers**, and tap the eye button (**Unhide**) beside the bot under **Hidden bots**.
@@ -138,9 +139,9 @@ Sections group a computer's bots under headings you name, such as Work and Perso
 
 ## Sessions
 
-A bot's chat and its agent's session are two different things. The chat is the permanent record you scroll through. The session is the agent's working context: what the model currently remembers of the conversation.
+A bot's chat and its agent's session are two different things. The chat is the permanent record you scroll through. The session is the agent's working context: what the model currently remembers of the chat. Each [thread](/docs/conversations#work) has a session of its own in the same way.
 
-**New session** starts the agent with a fresh context. Use it before unrelated work, or when the agent's context has drifted.
+**New session** starts the chat's agent with a fresh context; the bot's threads keep theirs. Use it before unrelated work, or when the agent's context has drifted.
 
 - **iPhone and Android:** touch and hold the bot in the list, then **New session**.
 - **Desktop:** right-click the bot in the sidebar, then **New session**.

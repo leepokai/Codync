@@ -64,6 +64,8 @@ impl Hub {
             if cfg.is_group() {
                 cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
             }
+            // Only the host makes the box of threads without a bot (`chat::work::plain`).
+            cfg.plain = row.config.plain;
             self.settle_config(&mut cfg)?;
             crate::agent::own_memory::settle(&mut cfg, &row.config, patch);
             self.store.save_bot(&cfg)?;
@@ -74,7 +76,10 @@ impl Hub {
             if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&before) {
                 crate::chat::memory::changed(self, Some(&id));
             }
-            if cfg.fallbacks != before.fallbacks {
+            if cfg.fallbacks != before.fallbacks
+                || cfg.thread_agent != before.thread_agent
+                || cfg.thread_fallbacks != before.thread_fallbacks
+            {
                 crate::chat::work::fallbacks_changed(self, &cfg);
             }
             self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
@@ -90,6 +95,7 @@ impl Hub {
             self.delete_bot(&thread.id)?;
         }
         self.routines.disable_bot(&self.store, id)?;
+        crate::workflows::clear_bot(self, id);
         self.team.end_turn(id);
         self.ceilings.set(id, codync_network::Access::Allow);
         crate::chat::group::stop(self, id);
@@ -108,8 +114,9 @@ impl Hub {
         }
         crate::chat::work::forget(self, id);
         crate::network::publish(self);
-        // Its shared files and artifacts are unreachable once the bot is deleted.
-        let folders = [crate::chat::files::root(id), crate::chat::artifacts::root(id)];
+        // Its shared files, artifacts and the files sent to it (a thread's, a group's) are unreachable once it is deleted.
+        let folders =
+            [crate::chat::files::root(id), crate::chat::artifacts::root(id), crate::chat::uploads::data_root(id)];
         let bot = id.to_owned();
         tokio::task::spawn_blocking(move || {
             crate::chat::memory::files::remove_bot(&bot);

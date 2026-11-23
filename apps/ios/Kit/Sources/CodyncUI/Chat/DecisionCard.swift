@@ -41,8 +41,8 @@ struct DecisionCard: View {
                     ForEach(Array((d.choices ?? []).enumerated()), id: \.offset) { index, choice in
                         option(choice, index: index)
                     }
-                    // Typing in the chat doesn't answer a thread's card: only its options do.
-                    if !d.isFromThread {
+                    // Typing in the chat doesn't answer a thread's card, nor one only an option answers.
+                    if d.takesOwnWords {
                         OwnAnswer(reply: reply)
                             .disabled(answering != nil).opacity(answering == nil ? 1 : 0.4)
                     }
@@ -118,8 +118,8 @@ private struct OwnAnswer: View {
     }
 }
 
-/// A row's number, or the own answer's pencil. VoiceOver reads the row itself.
-private struct RowNumber<Content: View>: View {
+/// A row's number, or the own answer's pencil. VoiceOver reads the row itself. The approval card's rows have it too.
+struct RowNumber<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -132,7 +132,7 @@ private struct RowNumber<Content: View>: View {
 }
 
 /// An option row lights up while pressed.
-private struct RowStyle: ButtonStyle {
+struct RowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(Palette.text.opacity(configuration.isPressed ? 0.08 : 0),
@@ -141,7 +141,7 @@ private struct RowStyle: ButtonStyle {
     }
 }
 
-private extension View {
+extension View {
     func decisionRow() -> some View {
         frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .padding(.horizontal, 8).padding(.vertical, 4).contentShape(Rectangle())

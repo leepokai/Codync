@@ -12,7 +12,7 @@ import com.codync.android.design.*
 
 /**
  * What the bot does, on its details' Details page (iOS `WorkTimeline`, with what it does later and keeps running in
- * between), top to bottom, empty sections left out: Threads (while a task is live or waiting: the agent sessions that
+ * between), top to bottom, empty sections left out: Threads (while a task is live or waiting: the threads that
  * run now, of the most allowed, a faint row per thread not in use), Event box (what waits for a thread, numbered in the
  * order it will be taken), Later (its follow-ups), Routines, Dev servers and Recent (tasks ended in the last day). A row
  * opens its task's thread (`openThread`); one that needs the user goes to its card in the chat (`openCard`; null: its
@@ -32,7 +32,7 @@ import com.codync.android.design.*
         }
         Column(verticalArrangement = Arrangement.spacedBy(28.dp)) {
             // Only while something is live or waiting: an idle bot's details have no row of free threads.
-            if (work.threads.isNotEmpty() || work.box.isNotEmpty()) Section("Threads", work.threads, count = "${work.threads.size} / ${work.atOnce}", free = work.free)
+            if (work.threads.isNotEmpty() || work.box.isNotEmpty()) Section("Threads", work.threads, count = "${work.inUse} / ${work.atOnce}", free = work.free)
             Section("Event box", work.box, count = "${work.box.size}", numbered = true)
             FollowUpsSection(bot, state, store)
             RoutinesView(bot, state, store, routineId)

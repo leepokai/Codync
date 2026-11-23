@@ -13,7 +13,8 @@ import kotlinx.serialization.json.*
 class HostFiles(private val call: suspend (String, JsonObject, Long) -> JsonElement) {
     constructor(channel: EncryptedChannel) : this({ method, body, timeout -> channel.call(method, body, timeout) })
 
-    suspend fun upload(botId: String, id: String, file: OutgoingFile, progress: (Long) -> Unit = {}) = withContext(Dispatchers.IO) {
+    /** [file] in chunks for a later `send`: to [botId]'s chat, or with [taskId] to the thread of that task of the bot's. */
+    suspend fun upload(botId: String, id: String, file: OutgoingFile, taskId: String? = null, progress: (Long) -> Unit = {}) = withContext(Dispatchers.IO) {
         val source = File(file.path)
         require(file.size in 0..MAX_FILE_BYTES && source.length() == file.size && source.isFile) { "The selected file is no longer available. Choose it again." }
         source.inputStream().use { input ->
@@ -31,7 +32,7 @@ class HostFiles(private val call: suspend (String, JsonObject, Long) -> JsonElem
                 val done = offset + chunk.size == file.size
                 require(done || chunk.isNotEmpty()) { "The selected file changed during upload." }
                 call("upload", buildJsonObject {
-                    put("botId", botId); put("uploadId", id); put("name", file.name)
+                    put("botId", botId); taskId?.let { put("taskId", it) }; put("uploadId", id); put("name", file.name)
                     put("offset", offset); put("data", Base64.getEncoder().encodeToString(chunk)); put("done", done)
                 }, 60_000)
                 offset += chunk.size

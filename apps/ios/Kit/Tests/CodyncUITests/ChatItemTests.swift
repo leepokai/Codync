@@ -98,6 +98,34 @@ import Testing
     #expect(Entry.workingSteps(entries).map(\.id) == ["thinking", "says", "terminal", "plan"])
 }
 
+/// A subagent's steps sit under its launch in its turn, even when other work came between them; one whose launch isn't
+/// there stays.
+@Test func aSubagentsStepsSitUnderItsLaunch() {
+    func tool(_ id: String, parent: String? = nil, turn: Int64 = 1) -> Entry {
+        var data = EntryData(text: id, status: "completed")
+        data.toolCallId = id
+        data.parent = parent
+        return Entry(id: id, seq: 0, botId: "b", rev: 0, kind: "tool", turn: turn, data: data, createdAt: 0, updatedAt: 0)
+    }
+    let steps = [tool("a"), tool("b"), tool("a1", parent: "a"), tool("b1", parent: "b"), tool("a2", parent: "a"),
+                 tool("lost", parent: "gone"), tool("self", parent: "self"), tool("later", parent: "a", turn: 2)]
+    #expect(Entry.nested(steps).map { "\($0.entry.id):\($0.depth)" } == ["a:0", "a1:1", "a2:1", "b:0", "b1:1", "lost:0", "self:0", "later:0"])
+}
+
+/// A subagent's launch reads its kind, tokens and time once finished, or that it runs in the background; a field of a
+/// shape the app doesn't know leaves the rest.
+@Test func aSubagentsLaunchReadsItsTotals() throws {
+    #expect(Subagent(kind: "general-purpose", background: false).line == nil)
+    #expect(Subagent(kind: "general-purpose", tokens: 42310, durationMs: 6287).line == "general-purpose · 42.3k tokens · 6 s")
+    #expect(Subagent(kind: "Explore", tokens: 812, durationMs: 125_000).line == "Explore · 812 tokens · 2 min")
+    #expect(Subagent(kind: "general-purpose", background: true).line == "general-purpose · in background")
+    #expect([1150, 2000, 123_456, 1_200_000].map { Subagent(tokens: $0).line } == ["1.2k tokens", "2k tokens", "123k tokens", "1.2M tokens"])
+    let odd = try JSONDecoder().decode(EntryData.self, from: Data(#"{"subagent": {"kind": "x", "tokens": "many"}}"#.utf8))
+    #expect(odd.subagent?.kind == "x" && odd.subagent?.tokens == nil)
+    let notAnObject = try JSONDecoder().decode(EntryData.self, from: Data(#"{"subagent": 3}"#.utf8))
+    #expect(notAnObject.subagent?.kind == nil)
+}
+
 /// The unfolded steps are one scroll view that hugs them and scrolls past its cap.
 @MainActor @Test func aCappedScrollViewHugsItsContentAndScrollsPastTheCap() {
     func height(_ content: CGFloat) -> CGFloat {

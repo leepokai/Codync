@@ -13,9 +13,9 @@ test('choice buttons preserve numeric labels and show the same answer after a la
     await page.evaluate(() => localStorage.setItem('appLanguage', JSON.stringify('en')))
     await page.reload()
     const offline = page.getByRole('button', { name: 'Continue without an account', exact: false })
-    await expect(page.locator('.sidebar-account').or(offline).first()).toBeVisible()
+    await expect(page.locator('.nav-rail').or(offline).first()).toBeVisible()
     if (await offline.isVisible()) await offline.click()
-    await expect(page.locator('.sidebar-account')).toBeVisible()
+    await expect(page.locator('.nav-rail')).toBeVisible()
     const fixture = resolve(__dirname, '../../../host/tests/fixtures/team_agent.py')
     const command = fixtureCommand(fixture)
     const name = `Choice e2e ${Date.now()}`

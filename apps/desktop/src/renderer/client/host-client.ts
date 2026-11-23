@@ -12,6 +12,7 @@ import {
   type ScreenState,
   type Usage,
 } from '@shared/models'
+import { parseAlert, type HostAlert } from '@shared/alerts'
 import type { Artifact, ArtifactChunk, LibraryItem } from '@shared/artifacts'
 import { parseCallCue, type CallCue } from '@shared/calls'
 import type { NetworkView } from '@shared/network'
@@ -107,9 +108,11 @@ const channelError = (e: CallError) => new HostError(e.status ?? 0, e.message, e
 
 export type HostEvent =
   | { type: 'icons'; iconsRevision: number; icons: import('@shared/custom-icons').CustomIcons }
-  /** `network` is null from hosts before the network view. `catchUp` events follow before the live ones (null from hosts before 2.32.0). */
-  | { type: 'hello'; hostId: string; rev: number; usage: Usage; screen: ScreenState | null; network: NetworkView | null; icons?: import('@shared/custom-icons').CustomIcons; catchUp: number | null }
+  /** `network` is null from hosts before the network view. `catchUp` events follow before the live ones (null from hosts before 2.32.0). `workflows` is absent on older hosts. */
+  | { type: 'hello'; hostId: string; rev: number; usage: Usage; screen: ScreenState | null; network: NetworkView | null; icons?: import('@shared/custom-icons').CustomIcons; catchUp: number | null; workflows?: boolean }
   | { type: 'bot'; bot: Bot }
+  /** Live only: a bot is done, needs you or failed (never replayed in a catch-up). */
+  | { type: 'alert'; alert: HostAlert }
   | { type: 'botDeleted'; id: string; rev: number }
   | { type: 'entry'; entry: Entry }
   /** One entry of a thread's transcript (never a chat's); the catch-up has none. */
@@ -132,6 +135,8 @@ export type HostEvent =
   | { type: 'resync' }
   /** One this app has no use for. */
   | { type: 'skipped' }
+  /** A workflow change. It carries no `rev` and never means the event stream is unreadable. */
+  | { type: 'workflow'; change: 'graph' | 'enabled' | 'run' | 'step' | 'deleted'; workflowId: string; runId: string | null; enabled?: boolean }
   /** An event this app version couldn't read (host newer/older than the app). */
   | { type: 'undecodable'; kind: string }
 
@@ -155,6 +160,7 @@ export function parseEvent(line: string): HostEvent | null {
         usage: (raw.usage as Usage) ?? { providers: [] },
         screen: normalizeScreen(raw.screen as ScreenState | undefined),
         network: (raw.network as NetworkView | undefined) ?? null,
+        workflows: raw.workflows === true,
         icons: raw.icons as import('@shared/custom-icons').CustomIcons | undefined,
         catchUp: typeof raw.catchUp === 'number' ? raw.catchUp : null,
       }
@@ -199,8 +205,19 @@ export function parseEvent(line: string): HostEvent | null {
       const cue = parseCallCue(raw)
       return cue ? { type, cue } : null
     }
+    case 'alert': {
+      const alert = parseAlert(raw.alert)
+      return alert ? { type, alert } : null
+    }
     case 'resync':
       return { type }
+    case 'workflow': {
+      const change = raw.change
+      const workflowId = raw.workflowId
+      if (typeof workflowId !== 'string') return null
+      if (change !== 'graph' && change !== 'enabled' && change !== 'run' && change !== 'step' && change !== 'deleted') return null
+      return { type, change, workflowId, runId: typeof raw.runId === 'string' ? raw.runId : null, enabled: typeof raw.enabled === 'boolean' ? raw.enabled : undefined }
+    }
     default:
       return null
   }
@@ -245,7 +262,7 @@ export class HostClient {
   hello() {
     return this.call<Hello>('hello').then((h) => {
       this.hostVersion = h.version
-      return { ...h, backends: h.backends ?? [], screen: normalizeScreen(h.screen) ?? undefined }
+      return { ...h, backends: h.backends ?? [], screen: normalizeScreen(h.screen) ?? undefined, workflows: h.workflows === true }
     })
   }
 
@@ -268,11 +285,12 @@ export class HostClient {
   /** Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message. */
   static uploadChunk = 384 * 1024
 
-  async upload(botId: string, uploadId: string, name: string, data: Uint8Array) {
+  /** One file for a message, in chunks: to `botId`'s chat, or with `taskId` to the thread of that task of the bot's. */
+  async upload(botId: string, uploadId: string, name: string, data: Uint8Array, taskId?: string) {
     let offset = 0
     do {
       const end = Math.min(offset + HostClient.uploadChunk, data.length)
-      await this.call('upload', { botId, uploadId, name, data: toBase64(data.subarray(offset, end)), offset, done: end === data.length }, 60_000)
+      await this.call('upload', { botId, ...(taskId ? { taskId } : {}), uploadId, name, data: toBase64(data.subarray(offset, end)), offset, done: end === data.length }, 60_000)
       offset = end
     } while (offset < data.length)
   }

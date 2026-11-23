@@ -104,7 +104,7 @@ struct BotSettingsForm: View {
     }
 
     private var modelPicker: some View {
-        AgentModelPicker(backend: draft.backend, selection: $draft.model, options: $draft.modelOptions,
+        AgentModelPicker(backend: draft.backend, loginProfile: draft.loginProfile, selection: $draft.model, options: $draft.modelOptions,
                          fastMode: Binding(get: { draft.fastMode ?? false }, set: { on in
                              withAnimation(Motion.reduced(Motion.fade, reduceMotion)) { draft.fastMode = on }
                          }), bot: bot,
@@ -128,7 +128,25 @@ struct BotSettingsForm: View {
 
     /// Only from a host that has fallbacks (its bots say).
     @ViewBuilder private var fallbackList: some View {
-        if draft.fallbacks != nil { FallbackList(draft: $draft, bot: bot) }
+        if draft.fallbacks != nil {
+            FallbackList(draft: $draft, bot: bot)
+            SwitchRow("Let the bot change its fallbacks", detail: "It can set this list itself, for example when you ask it to.",
+                      isOn: Binding(get: { draft.selfFallbacks ?? true }, set: { draft.selfFallbacks = $0 }))
+        }
+    }
+
+    /// Advisor mode, from a host that has it: its threads' agent and fallbacks show once it's on.
+    @ViewBuilder private var advisor: some View {
+        if draft.threadFallbacks != nil {
+            SwitchRow("Advisor mode", detail: "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.",
+                      isOn: Binding(get: { draft.threadAgent != nil }, set: { on in
+                          withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.setAdvisor(on, backends: model.hello?.backends ?? []) }
+                      }))
+            if draft.threadAgent != nil {
+                ThreadsAgentRow(draft: $draft, bot: bot)
+                FallbackList(draft: $draft, bot: bot, threads: true)
+            }
+        }
     }
 
     /// Only where the host summarizes this bot's chat (its bot says).
@@ -141,17 +159,18 @@ struct BotSettingsForm: View {
 
     private var sections: some View {
         VStack(alignment: .leading, spacing: 30) {
-            CardSection("Instructions") { instructions }
-            CardSection("Agent") {
+            CardSection("Instructions", fold: "bot.instructions") { instructions }
+            CardSection("Agent", fold: "bot.agent") {
                 fallbackBanner
                 modelPicker
                 loginProfilePicker
                 fallbackList
+                advisor
                 compactionPicker
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot?.agentStep)
 
-            CardSection("Profile") {
+            CardSection("Profile", fold: "bot.profile") {
                 VStack(alignment: .leading, spacing: 12) {
                     Button {
                         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { pickingAvatar.toggle() }
@@ -181,7 +200,7 @@ struct BotSettingsForm: View {
                 }
             }
 
-            CardSection("Workspace") {
+            CardSection("Workspace", fold: "bot.workspace") {
                 ValueRow("Computer") {
                     Text(model.hostName).lineLimit(1)
                 }
@@ -231,7 +250,7 @@ struct BotSettingsForm: View {
                 }
             }
 
-            CardSection("Activity") {
+            CardSection("Activity", fold: "bot.activity") {
                 SwitchRow("Notifications", detail: "Get notified when this bot finishes or needs you",
                           isOn: Binding(get: { draft.notify ?? true }, set: { draft.notify = $0 }))
                 if model.screen != nil, !inDetails {

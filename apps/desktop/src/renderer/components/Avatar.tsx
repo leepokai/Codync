@@ -316,3 +316,13 @@ export function AvatarWithStatus({ bot, members = [], size = 44, agent = null }:
     </div>
   )
 }
+
+/** Where a bot's face would be, for a thread without a bot: an empty dashed ring the size of an avatar. */
+export function NoBotAvatar({ size = 40 }: { size?: number }) {
+  // The system's empty-person mark: a conversation with no one's bot in it, only the agent.
+  return (
+    <span aria-hidden className="no-bot-avatar" style={{ width: size, height: size }}>
+      <Icon name="app.dashed" size={size} color="var(--secondary)" />
+    </span>
+  )
+}

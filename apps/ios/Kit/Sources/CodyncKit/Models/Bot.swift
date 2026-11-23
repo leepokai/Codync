@@ -38,6 +38,10 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var fallbacks: [BotFallback]?
     /// The bot may set its own fallbacks. Nil from an older host.
     public var selfFallbacks: Bool?
+    /// Advisor mode: the agent its threads run on; nil while they run on the bot's own.
+    public var threadAgent: BotFallback?
+    /// In Advisor mode, the threads' fallbacks. Nil from an older host: no Advisor mode there.
+    public var threadFallbacks: [BotFallback]?
     public var pinned: Bool
     /// The computer's lead bot: the host makes the first, and the user may pick another (`setLead`) or delete it.
     /// Placed in the list like any bot, never hidden, and the one a call or shortcut that names no bot talks to.
@@ -118,6 +122,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var lastAt: Int64
 
     public var isGroup: Bool { kind == "group" }
+    /// Counted and listed by the widgets and the Control Center control: a group room isn't a bot.
+    public var showsInWidgets: Bool { !hidden && !isGroup }
     public var isWorking: Bool { status == "working" || status == "needsInput" }
     /// Working right now in this chat (not in a group it's in, or the reverse).
     public func isWorking(in chat: String) -> Bool {
@@ -157,6 +163,14 @@ extension Bot {
         // A chain that doesn't decode stays unknown (nil), so saving the settings never sends an empty one.
         fallbacks = try? c.decodeIfPresent([BotFallback].self, forKey: .fallbacks)
         selfFallbacks = try? c.decodeIfPresent(Bool.self, forKey: .selfFallbacks)
+        // Advisor mode that doesn't decode stays unknown (nil), like a chain, so saving the settings never turns it off.
+        do {
+            threadAgent = try c.decodeIfPresent(BotFallback.self, forKey: .threadAgent)
+            threadFallbacks = try c.decodeIfPresent([BotFallback].self, forKey: .threadFallbacks)
+        } catch {
+            threadAgent = nil
+            threadFallbacks = nil
+        }
         pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
         lead = try c.decodeIfPresent(Bool.self, forKey: .lead) ?? false
         position = try c.decodeIfPresent(Int.self, forKey: .position) ?? 0

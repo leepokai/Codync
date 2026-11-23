@@ -2,12 +2,16 @@
 // only the catalog's events and properties (docs/reference/analytics-events.md): feature use,
 // never content.
 
+import type { AlertAnalyticsKind } from './alerts'
+
 /** Screens, sheets and tabs, named the same on every client. */
 export type Screen =
   | 'chat'
   | 'trace'
   | 'bot_details'
   | 'bot_computer'
+  | 'bot_browser'
+  | 'side_chat'
   | 'memory'
   | 'routines'
   | 'marketplace'
@@ -23,6 +27,10 @@ export type Screen =
   | 'remote_screen'
   | 'thread'
   | 'all_work'
+  | 'workflows'
+  | 'workflow'
+  | 'workflowRun'
+  | 'workflowEditor'
 
 /** Outbound links, by what they lead to. */
 export type Link = 'github' | 'docs' | 'issues' | 'discord' | 'app_store' | 'demo' | 'tailscale' | 'privacy' | 'support' | 'install_command' | 'whats_new_film'
@@ -92,6 +100,13 @@ export type AnalyticsEvent =
   | { event: 'kofi_invite_shown'; ask: number }
   | { event: 'kofi_invite_answered'; ask: number; opened: boolean }
   | { event: 'whats_new_shown' }
+  | { event: 'panel_split'; on: boolean }
+  | { event: 'panel_maximized'; on: boolean }
+  | { event: 'preview_opened'; from: 'address' | 'dev_server' }
+  | { event: 'workflow_tab_closed'; shown: boolean }
+  | { event: 'list_layout_changed'; list: 'bots' | 'threads'; option: 'folder' | 'bot' | 'computer' | 'status' | 'activity'; on: boolean }
+  | { event: 'desktop_notifications_set'; on: boolean }
+  | { event: 'desktop_notification_opened'; kind: AlertAnalyticsKind }
 
 /** `track`'s body: the event with its properties, from the desktop app. */
 export const trackBody = (event: AnalyticsEvent) => ({ ...event, app: 'desktop' as const })

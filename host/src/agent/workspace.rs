@@ -10,6 +10,11 @@ pub fn path(id: &str) -> PathBuf {
     service::data_dir().join("bots").join(id).join("workspace")
 }
 
+/// The folder a workflow's chat works in by default, beside the bots' own: Codync keeps it.
+pub fn workflow_path(id: &str) -> PathBuf {
+    service::data_dir().join("workflows").join(id)
+}
+
 /// `cfg` is a bot working in its own folder.
 pub fn is_managed(cfg: &BotConfig) -> bool {
     !cfg.is_thread() && own_folder(cfg).is_some()

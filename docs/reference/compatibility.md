@@ -32,7 +32,7 @@ reason to lock someone out.
 |---|---|---|
 | Notice | `UpdateNeededCard` above the computer's bots and in place of the composer; status reads *Needs update* | *needs update* in the status line, with the reason |
 | Update this app | iPhone: App Store page. Desktop: electron-updater check (`apps/desktop/src/main/updates.ts`). Android: text only | Text only |
-| Update the host | Desktop on macOS and Windows, its own computer: the bundled host is reinstalled (**Update now**). Any computer whose `hello` has `canUpdate` (the Linux desktop's own too): **Update now** calls `installHostUpdate` ([updates](../guides/updates.md#standalone-hosts-on-linux-and-macos)), and the notice reads *Updating Codync on …* until the host comes back newer, or for 10 minutes; then it offers the update again with why. Otherwise: instructions for that computer. The phones also offer it, and any newer release (`hello.latestVersion`), on the Codync row of the computer's card in Computer management; the desktop on SSH computers' cards in Settings > Computers | `^k` → Check for updates |
+| Update the host | Desktop on macOS and Windows, its own computer: the bundled host is reinstalled (**Update now**). Any computer whose `hello` has `canUpdate` (the Linux desktop's own too): **Update now** calls `installHostUpdate` ([updates](../guides/updates.md#standalone-hosts-on-linux-and-macos)), and the notice reads *Updating Codync on …* until the host comes back newer, or for 10 minutes; then it offers the update again with why. Otherwise: instructions for that computer. The phones also offer it, and any newer release (`hello.latestVersion`), on the Codync row of the computer's card in Computer management; the desktop on SSH computers' cards on the Computers page | `^k` → Check for updates |
 | Sync while mismatched | Stopped; `hello` is asked again every 30 s (5 s while an update asked from here runs) and on every reconnect | Continues; sending is blocked |
 
 Update notices name which side needs updating and its minimum version: this app, Codync on the named computer, or a cloud computer updating itself.
@@ -78,6 +78,10 @@ Writing to an item's thread adds only: `itemId` on `send`, `steer` and `unqueue`
 `work[].folder`, and the user's own entries in a task's transcript. An app from before it shows the transcript to
 read as before, with those entries among the steps, and an item the user reopened elsewhere as working again. A
 host from before it sends no `talk`, so a newer app shows no composer there. It raises no floor.
+
+Files in a message to a thread add only: `taskId` on `upload` and `readUpload`, `attachments` on a `send` with
+`taskId`, and `work[].talkFiles`. A host from before it sends no `talkFiles`, so a newer app shows no + (and takes no
+drop or paste) in a thread's box; an app from before it never attaches there. It raises no floor.
 
 Apps older than 2.39.0 don't read `removed`: a queued message taken back on a newer client (`unqueue`) stays in their
 chat as *Not sent — stopped*. Nothing breaks and the message never went out, so it raises no floor.
@@ -193,7 +197,7 @@ Update this table in the release that changes a floor, with the reason.
 
 | Release | Host `minApp` | Client `minHost` | Why |
 |---|---|---|---|
-| 2.51.0 | 2.51.0 | 2.26.0 (unchanged) | A piece of work is a `task` and the session that does it a `thread` on the wire: `itemId` → `taskId`, the old `taskId` → `threadId`, `taskEntries`/`taskEntry` → `threadEntries`/`threadEntry`, `maxAgents`/`taskWorktrees` → `maxThreads`/`threadWorktrees`, and a card's `data.task` (an object) → `data.thread` with `data.item` → `data.task`. An older app would send `itemId`, which the host no longer reads: a message to a thread would land in the chat. Until `minHost` reaches 2.51.0 each client has one seam for hosts before 2.51.0 (`old-host.ts`, `HostClient+OldHosts.swift`, `OldHostWire.kt`, `tui/net/old_host.rs`): a call that names a task or a bot's thread settings carries both names (`taskId` and `itemId`, `maxThreads` and `maxAgents`, `threadWorktrees` and `taskWorktrees`) whatever the host's version, so one sent before `hello` or under the last connection's version still reaches the thread on either host; only `threadEntries`/`taskEntries` is chosen by the host's version, and what comes in is read in either shape. |
+| 2.51.0 | 2.51.0 | 2.26.0 (unchanged) | A piece of work is a `task` and what does it a `thread` on the wire: `itemId` → `taskId`, the old `taskId` → `threadId`, `taskEntries`/`taskEntry` → `threadEntries`/`threadEntry`, `maxAgents`/`taskWorktrees` → `maxThreads`/`threadWorktrees`, and a card's `data.task` (an object) → `data.thread` with `data.item` → `data.task`. An older app would send `itemId`, which the host no longer reads: a message to a thread would land in the chat. Until `minHost` reaches 2.51.0 each client has one seam for hosts before 2.51.0 (`old-host.ts`, `HostClient+OldHosts.swift`, `OldHostWire.kt`, `tui/net/old_host.rs`): a call that names a task or a bot's thread settings carries both names (`taskId` and `itemId`, `maxThreads` and `maxAgents`, `threadWorktrees` and `taskWorktrees`) whatever the host's version, so one sent before `hello` or under the last connection's version still reaches the thread on either host; only `threadEntries`/`taskEntries` is chosen by the host's version, and what comes in is read in either shape. |
 | 2.49.0 | 2.49.0 | 2.26.0 (unchanged) | Routine runs and other bots' requests work as items in the bot's box, away from its chat: the chat's `status` no longer says they run and its Stop no longer stops them, and a task's choice card in the chat isn't answered by a typed message. Older apps show a running routine as an idle bot with nothing to stop, and their **Something else** answer to a task's card becomes an unrelated message. |
 | 2.45.1 | 2.45.1 | 2.26.0 (unchanged) | A bot's voice note is one message: the player and, in `text`, what the bot wrote. Older apps show a message with `files` as the file card only and never its `text`, so they would drop the message. |
 | 2.36.0 | 2.36.0 | 2.26.0 (unchanged) | Pairing proves the phone's account with a cloud-signed device certificate; older apps send none, so the host rejects their `pair` with `unsupportedVersion`. |
@@ -205,6 +209,10 @@ Update this table in the release that changes a floor, with the reason.
 | 2.18.0 | 2.18.0 | 2.12.0 | Memory moved from Engram into the host: the memory methods take and return the new two layers, and the Engram ones (`memoryDetail`, `reviewMemory`, `exportMemory`, `importMemory`) are gone. Clients still talk to older hosts; only their memory screen shows an error there. |
 | 2.12.0 | 2.3.0 | 2.12.0 | The clients require Engram memory management fields and methods. Older clients can still list and forget memories on the new host. |
 | 2.4.0 | 2.3.0 | 2.3.0 | First release with the check. Since 2.3.0 the wire only gained `minApp` and lost the unused `protocol`; 2.3.0 is the oldest pairing verified to work, and a higher floor would lock out hosts that never auto-update. |
+
+Releases that kept the floor on purpose:
+
+- 2.52.0 (`minApp` stays 2.51.0): an agent's own question (ACP elicitation) that has options comes with `ownWords: false`. Apps older than 2.52.0 ignore the field and still show **Something else** on it; words typed there match no option, so they cancel the question and reach the bot as the next message. Kept because the question is new (older apps lose nothing they had), its options still answer it, and the agent hears `cancel` rather than a wrong answer.
 
 ## Trying it on a simulator
 

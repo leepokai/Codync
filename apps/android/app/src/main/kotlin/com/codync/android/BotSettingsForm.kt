@@ -55,20 +55,20 @@ import androidx.compose.ui.semantics.semantics
     val bot = state.bots.firstOrNull { it.id == draft.id }
     LaunchedEffect(online) { if (online) store.refreshPlugins() }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(30.dp)) {
-        CardSection("Instructions") { instructionsRow(draft, change) }
-        CardSection("Agent") {
+        CardSection("Instructions", fold = "bot.instructions") { instructionsRow(draft, change) }
+        CardSection("Agent", fold = "bot.agent") {
             fallbackBanner(state, store, bot)
             agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ })
             compactionRow(bot, draft, change)
         }
-        CardSection("Profile") {
+        CardSection("Profile", fold = "bot.profile") {
             avatarRows(state, store, draft, change, pickingAvatar) { pickingAvatar = !pickingAvatar }
             nameRow(draft, change); createdByRow(state, bot)
         }
-        CardSection("Workspace") {
+        CardSection("Workspace", fold = "bot.workspace") {
             computerRow(state, online); placeRows(state, store, draft, change, modelReload) { folders = true }
         }
-        CardSection("Activity") {
+        CardSection("Activity", fold = "bot.activity") {
             notifyRow(draft, change)
             if (!inDetails) computerUseRow(state, draft, change)
             manageTeamRow(state, draft, change); reachRows(state, draft, change)
@@ -135,14 +135,14 @@ private fun CardRows.computerRow(state: AppState, online: Boolean) = row {
     }
 }
 
-/** The agent, its model and the fallbacks that carry on for it. */
+/** The agent, its model, the fallbacks that carry on for it and Advisor mode's for its threads. */
 private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, bot: Bot?, modelReload: Int,
     reloadModels: () -> Unit) {
     row {
         AgentModelPicker(state, store::agentModels, draft.backend, draft.model, draft.modelOptions, draft.fastMode ?: false, bot,
             { model, options -> change(draft.copy(model = model, modelOptions = options)) }, { change(draft.copy(fastMode = it)) },
             agents = agentChoices(state) + ("custom" to "Custom command"),
-            chooseAgent = { if (it != draft.backend) change(draft.withAgent(it)) }, onReload = reloadModels) {
+            chooseAgent = { if (it != draft.backend) change(draft.withAgent(it)) }, onReload = reloadModels, loginProfile = draft.loginProfile) {
                 bot?.restOf(draft.login)?.let { Text(tr(it.line(RelativeTime.clock(it.until))), style = Type.caption, color = Palette.secondary) }
                 backends(state).firstOrNull { it.text("id") == draft.backend && !it.available }?.text("installHint")?.takeIf(String::isNotBlank)?.let {
                     Text(it, style = Type.caption, color = Palette.warning)
@@ -159,6 +159,7 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
         SwitchRow("Let the bot change its fallbacks", "It can set this list itself, for example when you ask it to.", draft.selfFallbacks != false,
             { change(draft.copy(selfFallbacks = it)) })
     }
+    advisorRow(state, store, draft, change, bot)
 }
 
 /** Where the bot works, how many of its threads work at once and what it may do there without asking. */

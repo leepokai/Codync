@@ -12,28 +12,33 @@
 //! they see `work` on the bot and fetch a thread's transcript by id.
 //!
 //! Here: a thread's life from its turn's end to its report. [`steer`] has what the user and the bot do to a task,
-//! [`tools`] the bot's tools, [`prompts`] the words, [`worktree`] the git worktree of a thread that works beside
-//! another in one repository.
+//! [`tools`] the bot's tools ([`recall`] the one that looks back), [`prompts`] the words, [`worktree`] the git
+//! worktree of a thread that works beside another in one repository, [`watch`] the watchdog that wakes the bot for a
+//! thread that looks stuck.
 
 mod dispatch;
+pub mod plain;
 mod prompts;
+mod recall;
 mod sources;
 mod steer;
 mod sweep;
 mod tasks;
 mod thread;
 mod tools;
+mod watch;
 mod worktree;
 
 pub use dispatch::{Wait, dispatch};
-pub use prompts::{BRIEF, in_thread, reminder, report_notice, report_prompt};
-pub use sources::{access_of, add_request, add_routine, boxed, from_chat, routines_changed, source_of};
+pub use prompts::{BRIEF, in_thread, relayed, reminder, report_notice, report_prompt};
+pub use sources::{access_of, add_request, add_routine, add_thread, boxed, from_chat, routines_changed, source_of};
 pub use steer::{Steer, cut_in, drop_task, first, retry, stop};
 #[cfg(test)]
 pub use tasks::put_working_for_test;
-pub use tasks::{Source, Status, doing, lines, outside, wire, working_threads};
-pub use thread::{Refused as ThreadRefused, heard, message, picked_up, thread as thread_of};
+pub use tasks::{Setup, Source, Status, doing, lines, outside, wire, working_threads};
+pub use thread::{Refused as ThreadRefused, heard, message, picked_up, thread as thread_of, unhear, written};
 pub use tools::{TOOLS, acting_as, call, refuse_chat_only, refuse_in_thread, tools};
+pub use watch::Stuck;
 pub use worktree::{Worktree, enter as enter_worktree, in_repo};
 
 use crate::LockExt;
@@ -45,7 +50,7 @@ use crate::store::{BotConfig, Entry, Store, now_ms};
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 use tasks::Task;
 
@@ -54,7 +59,8 @@ const MAX_HOPS: u8 = 8;
 const _: () = assert!(MAX_HOPS == 8, "chat::team::limit::NOTICE and its translations say 8");
 /// Tasks a box holds waiting at most.
 const MAX_WAITING: usize = 20;
-/// An ended task, and a thread's transcript with its last task, are kept this long.
+/// An ended task stays in its box, and a thread's transcript with its last task, this long; `recall_task` still reads
+/// the task for [`tasks::PAST_MS`].
 const KEEP_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 const MAX_TITLE: usize = 80;
 const MAX_BRIEF: usize = 32_000;
@@ -150,6 +156,11 @@ pub struct Work {
     /// Task → the request of another bot it answers (`sources`), which owns the exchange's notices and the reply.
     /// Gone with the host process: a request is never replayed.
     requests: Mutex<HashMap<String, crate::chat::team::BotRequest>>,
+    /// Bots one of whose threads began to wait on the user, so gave its seat up: each box is looked over again.
+    freed: Mutex<BTreeSet<String>>,
+    seat_freed: tokio::sync::Notify,
+    /// What the watchdog remembers of the threads it looks at (`watch`).
+    watch: Mutex<watch::Memory>,
 }
 
 impl Work {
@@ -160,6 +171,28 @@ impl Work {
     fn hops(&self, bot: &str) -> u8 {
         self.chain.locked().get(bot).copied().unwrap_or(0)
     }
+
+    /// A thread of `bot`'s began to wait on the user (`Hub::set_runtime`): its seat is free for the next task. Called
+    /// where no `Arc<Hub>` is at hand; the look runs on the task [`restore`] starts.
+    pub fn seat_freed(&self, bot: &str) {
+        self.freed.locked().insert(bot.to_owned());
+        self.seat_freed.notify_one();
+    }
+}
+
+/// Looks over each box one of whose threads gave its seat up ([`Work::seat_freed`]), for as long as the host runs.
+fn look_when_seats_free(hub: &Arc<Hub>) {
+    let Ok(runtime) = tokio::runtime::Handle::try_current() else { return };
+    let hub = hub.clone();
+    runtime.spawn(async move {
+        loop {
+            hub.work.seat_freed.notified().await;
+            let bots = std::mem::take(&mut *hub.work.freed.locked());
+            for bot in bots {
+                dispatch(&hub, &bot);
+            }
+        }
+    });
 }
 
 /// `bot`'s thread bots.
@@ -180,8 +213,14 @@ pub fn of(store: &Store, bot: &str) -> Vec<BotConfig> {
 pub fn fallbacks_changed(hub: &Hub, cfg: &BotConfig) {
     let _g = hub.emit_lock.locked();
     let mut threads = of(&hub.store, &cfg.id);
+    // A thread keeps the agent it started on: it gets the chain that starts there (the threads' own in Advisor mode,
+    // else the chat's), and one that started on another keeps its own.
+    let chains = [crate::agent::fallback::threads(cfg), cfg.clone()];
+    let login = crate::agent::fallback::login::of;
     for thread in &mut threads {
-        thread.fallbacks.clone_from(&cfg.fallbacks);
+        if let Some(chain) = chains.iter().find(|chain| login(chain) == login(thread)) {
+            thread.fallbacks.clone_from(&chain.fallbacks);
+        }
     }
     if let Err(error) = hub.store.save_bots(&threads) {
         tracing::warn!(bot = %cfg.id, error = format!("{error:#}"), "couldn't give its threads the bot's fallbacks");
@@ -363,7 +402,7 @@ fn end(tasks: &mut [Task], thread: &str, outcome: Outcome) -> Option<Task> {
     let task = tasks.iter_mut().find(|i| i.status == Status::Working && i.thread.as_deref() == Some(thread))?;
     let (status, result, failure) = match outcome {
         // Only the bot's own work starts again: a routine run or a request done twice could act twice.
-        Outcome::Failed(Failure::Restart | Failure::Lost, _) if !task.restarted && task.source.is_bot() => {
+        Outcome::Failed(Failure::Restart | Failure::Lost, _) if !task.restarted && task.source.own() => {
             task.set_aside(front);
             task.restarted = true;
             task.cut_in = true;
@@ -372,8 +411,8 @@ fn end(tasks: &mut [Task], thread: &str, outcome: Outcome) -> Option<Task> {
         Outcome::Done(text) => {
             // A report to the bot's own turn carries only so much; a routine run's or a request's result is posted
             // whole, as its message.
-            let most = if task.source.is_bot() { MAX_REPORT } else { usize::MAX };
-            let text = text.map(|t| crate::agent::acp::truncate(t.trim(), most)).filter(|t| !t.is_empty());
+            let most = if task.source.own() { MAX_REPORT } else { usize::MAX };
+            let text = text.map(|t| codync_agent::acp::truncate(t.trim(), most)).filter(|t| !t.is_empty());
             match text {
                 Some(text) => (Status::Done, Some(Ok(text)), None),
                 // A routine run with nothing to tell says nothing (`(pass)`).
@@ -428,8 +467,8 @@ fn finished_properties(task: &Task, agent: Option<&str>) -> serde_json::Map<Stri
 }
 
 /// Sends what `task` came to where its source reads it: the bot's own work, as a turn in its chat; a routine run,
-/// as the routine's message there; a request, as the asking bot's reply. A report that can't be handed on stays on
-/// its task for the next host start.
+/// as the routine's message there; a request, as the asking bot's reply; a thread the user started, nowhere (they
+/// read it there). A report that can't be handed on stays on its task for the next host start.
 fn deliver(hub: &Hub, bot: &str, task: &Task) {
     if task.source.is_bot() {
         // With where its work is, as its worktree stands now.
@@ -477,6 +516,8 @@ pub fn reported(hub: &Hub, bot: &str, delivered: &[String]) {
 
 /// At host start: old tasks go, and the others pick up where the last process left them.
 pub fn restore(hub: &Arc<Hub>) {
+    look_when_seats_free(hub);
+    watch::start(hub);
     let lives = |bot: &str| hub.store.bot(bot).ok().flatten().is_some_and(|r| !r.deleted);
     let threads = hub.store.thread_bots().unwrap_or_default();
     for thread in threads.iter().filter(|thread| !thread.config.thread_of.as_deref().is_some_and(lives)) {
@@ -485,8 +526,7 @@ pub fn restore(hub: &Arc<Hub>) {
         }
     }
     // Every bot with a box, or with a thread bot left to clear away.
-    let mut bots: Vec<String> =
-        hub.store.kv_prefix(tasks::PREFIX).iter().map(|key| key.trim_start_matches(tasks::PREFIX).to_owned()).collect();
+    let mut bots = tasks::bots(&hub.store);
     bots.extend(threads.into_iter().filter_map(|thread| thread.config.thread_of));
     bots.sort();
     bots.dedup();
@@ -506,7 +546,12 @@ pub fn restore(hub: &Arc<Hub>) {
 fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
     let (resumed, failed, undelivered, recheck) = tasks::change(hub, bot, |tasks| {
         let now = now_ms();
-        tasks.retain(|i| i.ended_at.is_none_or(|at| now - at <= KEEP_MS));
+        let (old, kept) =
+            std::mem::take(tasks).into_iter().partition(|i| i.ended_at.is_some_and(|at| now - at > KEEP_MS));
+        *tasks = kept;
+        if let Err(error) = tasks::put_past(&hub.store, bot, old, now) {
+            tracing::warn!(bot, error = format!("{error:#}"), "couldn't keep a bot's past tasks");
+        }
         let recheck = worktree::recheck(tasks);
         // A request lived in the last process (its notices already say it was interrupted): it is never replayed.
         tasks.retain(|i| i.status.ended() || !matches!(i.source, Source::Request { .. }));
@@ -563,6 +608,26 @@ pub fn entries(hub: &Hub, bot: &str, id: &str, limit: i64) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn at_host_start_a_task_ended_over_a_week_ago_leaves_the_box_and_stays_for_recall() {
+        use crate::chat::calls::context::tests::{bot, hub};
+        let hub = hub();
+        hub.store.save_bot(&bot("b1", "Mika", "/tmp")).expect("saved");
+        hub.set_runtime("b1", |rt| rt.status = crate::hub::BotStatus::Working);
+        let (now, day) = (now_ms(), 24 * 60 * 60 * 1000);
+        let ended = |id: &str, ago: i64| {
+            json!({"id": id, "title": id, "brief": "x", "status": "done", "order": 0, "createdAt": 0,
+                "endedAt": now - ago * day})
+        };
+        let tasks = json!([ended("old", 8), ended("new", 1)]);
+        hub.store.kv_set(&format!("{}b1", tasks::PREFIX), &tasks.to_string()).expect("saved");
+
+        pick_up(&hub, "b1").expect("picked up");
+        let ids = |tasks: Vec<Task>| tasks.into_iter().map(|i| i.id).collect::<Vec<_>>();
+        assert_eq!(ids(tasks::load(&hub.store, "b1")), ["new"]);
+        assert_eq!(ids(tasks::past(&hub.store, "b1", now)), ["old"]);
+    }
 
     fn working(id: &str, thread: &str) -> Task {
         serde_json::from_value(json!({

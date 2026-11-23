@@ -121,12 +121,6 @@
   font-size: var(--text-caption);
 }
 
-.sidebar.compact .computer-roster-toggle {
-  justify-content: center;
-  padding: 4px 0;
-  gap: 2px;
-}
-
 .roster-section-toggle,
 button.roster-label { cursor: grab; }
 .pointer-dragging .roster-section-toggle:hover { background: none; }

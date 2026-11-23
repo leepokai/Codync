@@ -7,8 +7,6 @@
   flex-direction: column;
   gap: 20px;
   padding: 30px 36px 20px;
-  max-width: 980px;
-  margin: 0 auto;
 }
 .market-tabs {
   display: flex;
@@ -51,4 +49,11 @@
 }
 @media (max-width: 640px) {
   .market-frame { padding: 28px 18px 16px; }
+}
+
+/* Login profiles: one card per agent, a section apart. */
+.login-profiles-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }

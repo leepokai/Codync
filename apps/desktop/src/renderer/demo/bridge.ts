@@ -91,6 +91,12 @@ const bridge: CodyncBridge = {
     configHosts: async () => ({ access: 'denied', hosts: [] }),
     setConfigAccess: async () => ({ access: 'denied', hosts: [] }),
   },
+  notifications: {
+    supported: false,
+    enabled: async () => false,
+    setEnabled: async () => false,
+    show() {},
+  },
   island: {
     supported: false,
     enabled: async () => false,
@@ -150,7 +156,7 @@ const bridge: CodyncBridge = {
 }
 
 // Every visit starts from the story: no mirror cache, drafts or computer filter, order or folding from a
-// previous visit, onboarding done, no GitHub star ask, Ko-fi invitation, What's new or tip about Extensions over the demo.
+// previous visit, onboarding done, no GitHub star ask, Ko-fi invitation or What's new over the demo.
 try {
   for (const key of Object.keys(localStorage)) if (key.startsWith('codync-')) localStorage.removeItem(key)
   for (const key of ['hiddenComputers', 'computerOrder', 'collapsedComputerSections']) localStorage.removeItem(key)
@@ -158,7 +164,6 @@ try {
   localStorage.setItem('computerAccessSetup', JSON.stringify('later'))
   localStorage.setItem('githubStarAsk', JSON.stringify({ kind: 'done' }))
   localStorage.setItem('kofiAsk', JSON.stringify({ asked: 3, day: 0 }))
-  localStorage.setItem('extensionsMovedTipSeen', 'true')
   localStorage.setItem('whatsNewSeen', JSON.stringify(version))
 } catch {}
 

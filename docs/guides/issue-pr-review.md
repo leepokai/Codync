@@ -3,7 +3,7 @@
 Every issue and pull request someone else opens is reviewed this way before anything else is done with it (a
 pull request aimed at `main` is retargeted to `dev`). Our own changes go through the
 [after-change](clean-code.md#after-every-change-review-e2e-cleanup) workflow instead (this review runs it on the
-item's branch too), and release pull requests into `main` follow [GitHub releases](development.md#github-releases). In Claude Code, run the `review-issue-pr` workflow
+item's branch too), and release pull requests into `main` go through the `release-pr` workflow ([GitHub releases](development.md#github-releases)). In Claude Code, run the `review-issue-pr` workflow
 (`.claude/workflows/review-issue-pr.js`) from the main checkout:
 
 ```

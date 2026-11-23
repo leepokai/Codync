@@ -1,0 +1,12 @@
+flowchart LR
+  APP["Your app<br/>chats · approvals · what to show"]
+  subgraph CRATE["codync-agent"]
+    direction TB
+    FIND["backends + registry<br/>find · install · update"] --> START["process<br/>start each agent and its tree"]
+    ACC["accounts<br/>one folder per login"] --> START
+    START --> ACP["acp + events<br/>JSON-RPC over stdio → typed events"]
+    USE["usage<br/>plan limits"]
+  end
+  AGENTS["Claude Code · Codex<br/>OpenCode · Gemini CLI<br/>Cursor · Pi · 40+ more"]
+  APP <-->|"prompt · cancel · steer<br/>Event · Request · Capabilities"| CRATE
+  CRATE <-->|"ACP"| AGENTS

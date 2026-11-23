@@ -26,6 +26,25 @@ public extension Entry {
         working ? entries.filter { $0.data.status != "queued" }.map(\.turn).max() : nil
     }
 
+    /// Steps with each subagent's steps right under the call that launched it (`parent`, in the same turn), `depth`
+    /// deeper. A step whose launch isn't among them stays where it is.
+    static func nested(_ steps: [Entry]) -> [(entry: Entry, depth: Int)] {
+        // A call is known by its turn and id: a launch is looked for in its own turn only.
+        func key(_ e: Entry, _ id: String) -> String { "\(e.turn):\(id)" }
+        let ids = Set(steps.compactMap { e in e.data.toolCallId.map { key(e, $0) } })
+        func launch(_ e: Entry) -> String? {
+            e.data.parent.flatMap { $0 != e.data.toolCallId && ids.contains(key(e, $0)) ? key(e, $0) : nil }
+        }
+        let children = Dictionary(grouping: steps.filter { launch($0) != nil }) { launch($0) ?? "" }
+        var out: [(entry: Entry, depth: Int)] = []
+        func visit(_ e: Entry, _ depth: Int) {
+            out.append((e, depth))
+            for child in e.data.toolCallId.flatMap({ children[key(e, $0)] }) ?? [] { visit(child, depth + 1) }
+        }
+        for e in steps where launch(e) == nil { visit(e, 0) }
+        return out
+    }
+
     /// What the running turn has done so far, in order.
     static func workingSteps(_ entries: [Entry]) -> [Entry] {
         let turn = runningTurn(entries, working: true)

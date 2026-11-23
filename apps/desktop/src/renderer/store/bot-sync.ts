@@ -1,6 +1,7 @@
 import { isChat, unseen, type AccessRequest, type CloudStatus, type Entry, type Hello, type PairingRequest } from '@shared/models'
 import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
+import { fetchWorkflow, fetchWorkflowRun, listWorkflows, workflowRuns } from '../views/workflows/api'
 import { undoOnFailure } from '../lib/undo-on-failure'
 import { BotMirror, type Connection } from './bot-mirror'
 import { Artifacts } from './artifacts'
@@ -71,6 +72,7 @@ export class BotSync extends BotMirror {
     this.stopTransport()
     if (this.saveTimer) clearTimeout(this.saveTimer)
     this.onRosterChanged = null
+    this.onAlert = null
     this.onComputerChanged = null
     this.client = null
     this.selection = null
@@ -252,6 +254,8 @@ export class BotSync extends BotMirror {
     if (this.retired || loop !== this.eventsLoop || epoch !== this.iconsEpoch) return
     this.iconsRevision = -1
     this.hello = h
+    if (h.workflows === true) void this.reloadWorkflowMirror()
+    else this.workflows = []
     this.applyIcons(h.icons ?? {}, h.iconsRevision)
     this.noteSyncStamp(syncStamp(h))
     this.noteHostVersion({ version: h.version, minApp: h.minApp })
@@ -287,6 +291,9 @@ export class BotSync extends BotMirror {
         this.usage = event.usage
         this.screen = event.screen
         this.network = event.network
+        if (this.hello) this.hello = { ...this.hello, workflows: event.workflows }
+        if (event.workflows) void this.reloadWorkflowMirror()
+        else this.workflows = []
         if (event.rev < this.rev) this.rev = 0
         this.floors = snapshotFloors(this.entries, this.rev === 0 ? 0 : this.requestedSince)
         break
@@ -317,6 +324,9 @@ export class BotSync extends BotMirror {
         break
       case 'usage':
         this.usage = event.usage
+        break
+      case 'alert':
+        if (!this.isReading(event.alert.botId)) this.onAlert?.(event.alert)
         break
       case 'artifact':
         this.artifacts.upsert(event.artifact)
@@ -352,6 +362,10 @@ export class BotSync extends BotMirror {
       }
       case 'resync':
         this.restartEvents()
+        if (this.hello?.workflows === true) void this.loadWorkflowSummaries()
+        break
+      case 'workflow':
+        this.ingestWorkflow(event)
         break
       case 'undecodable':
         // Never skip past data we couldn't read: rewind once and fetch everything again.
@@ -391,8 +405,110 @@ export class BotSync extends BotMirror {
     this.rev = 0
     this.refetched = new Set()
     this.historyComplete = new Set()
+    this.resetWorkflowMirror()
   }
 
+  /** Reconnects have no live-workflow replay: refresh the summary plus the open detail and run. */
+  private async reloadWorkflowMirror() {
+    await this.loadWorkflowSummaries()
+    const session = this.workflowSession
+    if (!session) return
+    if (!session.dirty) void this.pullWorkflowDetail(session.id)
+    if (session.runId) void this.pullWorkflowRun(session.runId)
+    else if (session.followLive) {
+      const client = this.live
+      if (!client) return
+      try {
+        const { runs } = await workflowRuns(client, session.id, 1)
+        const open = runs.find((run) => run.status === 'running' || run.status === 'approval' || run.status === 'stopping')
+        if (open) void this.pullWorkflowRun(open.id)
+      } catch (error) {
+        this.reportWorkflowFailure(error)
+      }
+    }
+  }
+
+  private async loadWorkflowSummaries() {
+    const client = this.live
+    if (!client || this.hello?.workflows !== true || this.workflowMethodMissing) return
+    try {
+      const { workflows } = await listWorkflows(client)
+      if (this.retired || this.hello?.workflows !== true) return
+      this.workflows = workflows
+      this.changed()
+    } catch (error) {
+      this.reportWorkflowFailure(error)
+    }
+  }
+
+  private ingestWorkflow(event: Extract<HostEvent, { type: 'workflow' }>) {
+    if (event.change === 'deleted') {
+      this.workflows = this.workflows.filter((item) => item.id !== event.workflowId)
+      if (this.workflowSession?.id === event.workflowId) {
+        this.workflowSession = null
+        this.workflowDetail = null
+        this.workflowRun = null
+        this.workflowDeleted = 'This workflow was deleted'
+      }
+      return
+    }
+    if (event.change === 'enabled' && event.enabled !== undefined) {
+      this.workflows = this.workflows.map((item) => item.id === event.workflowId ? { ...item, enabled: event.enabled! } : item)
+    }
+    void this.loadWorkflowSummaries()
+    if (event.change === 'graph') {
+      const session = this.workflowSession
+      if (session && session.id === event.workflowId && !session.dirty) void this.pullWorkflowDetail(event.workflowId)
+      return
+    }
+    const session = this.workflowSession
+    // A run opened from history is not "live", but it still has to hear that it finished
+    // or that its stop landed. Otherwise the canvas stays on the snapshot from when it was opened.
+    if (session && session.id === event.workflowId && event.runId && (session.followLive || session.runId === event.runId)) {
+      void this.pullWorkflowRun(event.runId)
+    }
+  }
+
+  private async pullWorkflowDetail(id: string) {
+    const client = this.live
+    if (!client) return
+    try {
+      const { workflow } = await fetchWorkflow(client, id, false)
+      const session = this.workflowSession
+      if (this.retired || !session || session.id !== id || session.dirty) return
+      this.workflowDetail = workflow
+      this.workflowDetailToken += 1
+      this.changed()
+    } catch (error) {
+      this.reportWorkflowFailure(error)
+    }
+  }
+
+  private async pullWorkflowRun(runId: string) {
+    const client = this.live
+    if (!client) return
+    const token = ++this.workflowRunToken
+    try {
+      const { run } = await fetchWorkflowRun(client, runId)
+      if (token !== this.workflowRunToken || this.retired) return
+      const session = this.workflowSession
+      if (!session) return
+      const watching = session.followLive || session.runId === runId
+      if (!watching) return
+      if (session.followLive && session.runId && session.runId !== runId) return
+      this.workflowRun = run
+      if (session.runId !== runId) this.workflowSession = { ...session, runId }
+      this.changed()
+    } catch (error) {
+      this.reportWorkflowFailure(error)
+    }
+  }
+
+  /**
+   * Fetches everything again from rev 0. That catch-up brings only each chat's newest entries, so the
+   * main-chat ones held now go too: an older one kept would hide the gap from `loadOlder`, which pages
+   * from the oldest one held. Messages still sending stay.
+   */
   /**
    * The catch-up from rev 0 brought only each chat's newest entries and never says one is gone, so the held
    * ones it didn't bring go: an older one kept would hide the gap from `loadOlder`, which pages from the
@@ -506,9 +622,14 @@ export class BotSync extends BotMirror {
     }
   }
 
+  /** A chat of `botId`'s is on screen in a focused window. */
+  private isReading(botId: string) {
+    return [...this.readingViews.values()].includes(botId)
+  }
+
   private acknowledgeVisible(botId: string, entry?: Entry) {
     if (this.connection.kind !== 'online') return
-    if (![...this.readingViews.values()].includes(botId) || (entry && !isChat(entry))) return
+    if (!this.isReading(botId) || (entry && !isChat(entry))) return
     this.markRead(botId)
   }
 

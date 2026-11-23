@@ -18,12 +18,12 @@ pub use scan::scan_loop;
 pub use tools::{BRIEF, START, TOOLS, call, tools};
 
 use crate::LockExt;
-use crate::agent::acp::Acp;
-use crate::agent::process::{Process, UNWIND};
 use crate::analytics::{self, Event};
 use crate::hub::Hub;
 use crate::store::{BotConfig, Store};
 use anyhow::{Result, anyhow};
+use codync_agent::acp::Acp;
+use codync_agent::process::{Process, UNWIND};
 use detected::Detected;
 use ports::Port;
 use serde::{Deserialize, Serialize};

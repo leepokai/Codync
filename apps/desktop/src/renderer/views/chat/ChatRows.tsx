@@ -84,7 +84,9 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
 /** Follows the store: the card shows a spinner while its answer is on its way. */
 function LivePermission({ entry }: { entry: Entry }) {
   const store = useLiveStore()
-  return <PermissionCard entry={entry} hostName={store.hostName} answering={store.answering.get(entry.id) ?? null} respond={(o) => store.respond(entry, o)} />
+  const call = entry.data.toolCallId
+  const result = call && entry.data.status !== 'pending' ? store.allEntries(entry.botId).find((e) => e.kind === 'tool' && e.data.toolCallId === call) : undefined
+  return <PermissionCard entry={entry} hostName={store.hostName} answering={store.answering.get(entry.id) ?? null} respond={(o) => store.respond(entry, o)} result={result?.data} />
 }
 
 /** The user's press on a choice card, or their own words, on its way to the computer. */
@@ -236,7 +238,8 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact, plain = fal
     ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
     ...(openTrace ? [{ title: 'Show what it did', icon: 'list.bullet', action: openTrace }] : []),
   ]
-  // A shared picture or voice note has the same menu as the bubble: reactions, Reply and what it did, its own items in place of Copy.
+  // A shared picture has the same menu as the bubble: reactions, Reply and what it did, its own items in place of Copy.
+  // A voice note's player keeps the message's Copy (its text), as on the phones.
   const menu: MessageMenu = { items: rest, reactions }
   const download = (file: SharedFile) => downloadItem(store.fileDownloads.states.get(file.id), () => store.fileDownloads.toggle(store.client, entry.id, file))
   return (
@@ -253,7 +256,7 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact, plain = fal
             <ArtifactCard botId={entry.botId} card={entry.data.artifact} open={() => openArtifact?.(entry.data.artifact!.id)} />
           ) : voiceNote ? (
             <>
-              <VoiceNotePlayer entry={entry} file={voiceNote} menu={menu} />
+              <VoiceNotePlayer entry={entry} file={voiceNote} menu={{ ...menu, items: () => [...messageCopyItems(store, entry), ...rest()] }} />
               <MarkdownText text={entry.data.text ?? ''} findable />
             </>
           ) : entry.data.files?.length ? (

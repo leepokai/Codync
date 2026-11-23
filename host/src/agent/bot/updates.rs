@@ -83,6 +83,10 @@ impl Actor {
                     self.agent_error = Some(error.to_owned());
                     return;
                 }
+                if let Some(notice) = super::quota_notice::notice_text(&self.cfg.backend, &text) {
+                    self.quota_notice = Some(notice.to_owned());
+                    return;
+                }
                 self.unheard.clear();
                 self.append(SegKind::Text, &text);
                 self.set_activity("Writing a reply…");

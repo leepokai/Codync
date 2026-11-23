@@ -387,7 +387,9 @@ impl Actor {
             if reason == Reason::SignedOut {
                 self.note_signed_out(&login);
             }
-            let resets = rest::reset_time(&self.hub.usage.locked(), &agent, login.profile.as_deref(), now);
+            // The later of what the plan's windows say and what the error itself says (Antigravity's quota notice).
+            let resets = rest::reset_time(&self.hub.usage.locked(), &agent, login.profile.as_deref(), now)
+                .max(fallback::reset::of_error(error, now));
             let rest = rest::record(&self.hub.store, &key, reason, now, resets);
             if rest.is_some() {
                 fallback::tell_bots(&self.hub, &key);

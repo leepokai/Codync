@@ -63,15 +63,15 @@ Read from the ACP answer: the JSON-RPC code, the adapter's category (Claude's `d
 
 | Reason | How Codync knows | Rest |
 |---|---|---|
-| `usageLimit` | Claude: `rate_limit`/`billing_error` with the Agent SDK's usage-limit text ("You've hit your…"). Codex: `usageLimitExceeded` | Until the reset the agent reported (`usage` windows at 100%); unknown: 1 h |
+| `usageLimit` | Claude: `rate_limit`/`billing_error` with the Agent SDK's usage-limit text ("You've hit your…"). Codex: `usageLimitExceeded`. Antigravity: a refusal that came with its quota notice, or Google's `QUOTA_EXHAUSTED` 429 as an error ([antigravity](../upstream-agents/antigravity.md)) | Until the later of the reset the agent reported (`usage` windows at 100%) and the one in its error (`quotaResetTimeStamp`, "resets in 1h25m", at most 7 days, `fallback::reset`); unknown: 1 h |
 | `outOfCredits` | Claude `billing_error`, `account_on_hold` | 6 h |
-| `rateLimited`, `overloaded` | Claude `rate_limit`, `overloaded`, `server_error`; codex-acp `rateLimitExceeded`, `serverOverloaded`; pi's error starting with HTTP 429 or 5xx ([pi-acp](../upstream-agents/pi-acp.md)) | 1, 5, 25, then 60 min for failures in a row |
+| `rateLimited`, `overloaded` | Google's `RESOURCE_EXHAUSTED` 429 that names no quota; Claude `rate_limit`, `overloaded`, `server_error`; codex-acp `rateLimitExceeded`, `serverOverloaded`; pi's error starting with HTTP 429 or 5xx ([pi-acp](../upstream-agents/pi-acp.md)) | 1, 5, 25, then 60 min for failures in a row |
 | `signedOut` | ACP `-32000`, `authentication_failed`, CodeBuddy's `auth` category | Until it's signed in, looking again after 1 h; an agent Codync can't sign in to (no sign-in card): 10 min. The chat of each bot that moves past it gets the agent's sign-in card (holding no message: the fallback answers it), and signing in there brings the bot back |
 | `notStarting` | `FailureKind::NotSetUp`, `Timeout`, `Exited` | 5 min |
 | `modelMissing` | `model_not_found`, or the agent refusing the step's model (`FailureKind::NoModel`) | None: it's the bot's setup, not the agent's. The bot skips that step until its settings change |
 | `modeMissing` | A fallback step lacks the bot's mode and any no more permissive than it, or refuses the switch (`FailureKind::ModeMissing`) | None, the same as `modelMissing` |
 
-Stop, refusal, output or step limits, a routine's time limit, compactions and uncategorized internal errors don't move
+Stop, refusal (except Antigravity's quota notice, above), output or step limits, a routine's time limit, compactions and uncategorized internal errors don't move
 on. CodeBuddy's CLI (CodeBuddy Code, WorkBuddy) answers a failed prompt as a refusal with the error in
 `_meta["codebuddy.ai/errorMessage"]`: that one counts as the error it holds (`acp::codebuddy::prompt_result`), so a
 signed-out WorkBuddy moves on. codex-acp still sends its 429s and overloads as reply text ([codex-acp#647](https://github.com/agentclientprotocol/codex-acp/issues/647)),

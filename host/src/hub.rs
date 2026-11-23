@@ -219,6 +219,7 @@ impl Hub {
         crate::chat::calls::rewatch(self);
         crate::routines::start(self);
         crate::workflows::start(self);
+        crate::chat::schedule::start(self);
         crate::analytics::start(self);
         Ok(())
     }

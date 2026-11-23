@@ -262,6 +262,19 @@ impl Store {
         Ok(st.query_map([bot_id], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// The user's scheduled messages in `bot_id`'s chat whose time has come, oldest fire time first
+    /// (`scheduleSend`; the sweep turns each into a queued send).
+    pub fn scheduled_due(&self, bot_id: &str, now_ms: i64) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND kind = 'user'
+               AND json_extract(data, '$.status') = 'scheduled'
+               AND COALESCE(json_extract(data, '$.notBefore'), 0) <= ?2
+             ORDER BY json_extract(data, '$.notBefore'), seq"
+        ))?;
+        Ok(st.query_map(params![bot_id, now_ms], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Cards still waiting for the user to sign in to agent `backend`, oldest first.
     // ponytail: scans notices without an index; sign-ins are rare, add one if it shows up in profiles.
     pub fn pending_sign_ins(&self, backend: &str) -> Result<Vec<Entry>> {

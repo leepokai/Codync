@@ -2,21 +2,26 @@ import { useEffect, useRef, useState } from 'react'
 import { hidingCalls } from '@shared/calls'
 import { isWorking, quoteOf, type Entry } from '@shared/models'
 import { IconButton } from '../../components/Controls'
+import { Icon } from '../../components/Icon'
 import { usePresence } from '../../components/Overlay'
 import { HStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { afterExit } from '../../lib/exit-delay'
 import { messagePreview } from '../../lib/message-preview'
+import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
 import { ComposerReveal } from './Composer'
-import { canSteer, waitingMessages } from './queued-messages'
+import { canSchedule, canSteer, waitingMessages } from './queued-messages'
+import { ScheduleSheet } from './ScheduleSheet'
 import './queued-messages.css'
+import './schedule-sheet.css'
 
 const EXIT_MS = 300
 
 /**
- * The user's messages waiting while the bot works, oldest first, in a tray tucked under the composer's top edge: each
- * can go out now (`steer`) or be taken back (`unqueue`). A host older than steering only lists them.
+ * The user's pending messages in a tray tucked under the composer's top edge: the live queue (while the bot works,
+ * oldest first — each can go out now (`steer`) or be taken back (`unqueue`)) and the scheduled ones (a clock icon,
+ * their fire time, editable and cancelable). A host older than steering only lists them.
  */
 export function QueuedMessages({ botId }: { botId: string }) {
   const store = useStore()
@@ -26,32 +31,84 @@ export function QueuedMessages({ botId }: { botId: string }) {
   const list = useRevealSent(waiting.at(-1), store.lastSentNonce)
   const tray = usePresence(waiting.length > 0, EXIT_MS)
   const actions = canSteer(store.hostVersion?.version)
+  const scheduling = canSchedule(store.hello)
+  const [editing, setEditing] = useState<Entry | null>(null)
   if (!tray.mounted) return null
   return (
     <div className={`queued-tray ${tray.shown ? 'shown' : ''}`} inert={waiting.length === 0}>
       <div>
         <div ref={list} className="queued-list" role="list" aria-label="Queued messages">
           {rows.map(({ entry, leaving }) => (
-            <QueuedRow key={entry.id} entry={entry} leaving={leaving} actions={actions} />
+            <QueuedRow
+              key={entry.id}
+              entry={entry}
+              leaving={leaving}
+              actions={actions}
+              scheduling={scheduling}
+              onEdit={() => setEditing(entry)}
+            />
           ))}
         </div>
       </div>
+      {editing ? (
+        <ScheduleSheet
+          botId={botId}
+          entry={editing}
+          onClose={() => setEditing(null)}
+        />
+      ) : null}
     </div>
   )
 }
 
-function QueuedRow({ entry, leaving, actions }: { entry: Entry; leaving: boolean; actions: boolean }) {
+function QueuedRow({
+  entry,
+  leaving,
+  actions,
+  scheduling,
+  onEdit,
+}: {
+  entry: Entry
+  leaving: boolean
+  actions: boolean
+  scheduling: boolean
+  onEdit: () => void
+}) {
   const store = useStore()
+  const tr = useTr()
   const answering = store.answering.has(entry.id)
+  const fireAt = entry.data.notBefore
   return (
     <div className="queued-row" role="listitem">
       <ComposerReveal open={!leaving}>
         <HStack gap={2} className="queued-row-body">
-          <Text size="callout" tone="secondary" truncate grow>{messagePreview(quoteOf(entry).text)}</Text>
-          {actions ? (
+          {fireAt !== undefined ? (
+            <span className="queued-scheduled" title={tr('Scheduled')}>
+              <Icon name="clock" size={11} color="var(--secondary)" />
+            </span>
+          ) : null}
+          <Text size="callout" tone="secondary" truncate grow>
+            {messagePreview(quoteOf(entry).text)}
+            {fireAt !== undefined ? (
+              <span className="queued-fire-time">
+                {' '}
+                · {tr('Fires {time}').replaceAll('{time}', () => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(fireAt)))}
+              </span>
+            ) : null}
+          </Text>
+          {scheduling && fireAt !== undefined ? (
+            <IconButton title={tr('Edit schedule')} icon="pencil" size={26} disabled={answering} onClick={onEdit} />
+          ) : null}
+          {actions && fireAt === undefined ? (
             <>
               <IconButton title="Send now" icon="arrow.turn.down.right" size={26} disabled={answering} onClick={() => store.steer(entry)} />
               <IconButton title="Remove" icon="trash" size={26} disabled={answering} onClick={() => store.unqueue(entry)} />
+            </>
+          ) : null}
+          {scheduling && fireAt !== undefined ? (
+            <>
+              <IconButton title={tr('Send now')} icon="arrow.turn.down.right" size={26} disabled={answering} onClick={() => store.sendScheduledNow(entry)} />
+              <IconButton title={tr('Remove')} icon="trash" size={26} disabled={answering} onClick={() => store.cancelScheduled(entry)} />
             </>
           ) : null}
         </HStack>

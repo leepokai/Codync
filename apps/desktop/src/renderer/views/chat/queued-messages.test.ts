@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { canSteer, outsideQueue, waitingMessages } from './queued-messages.ts'
+import { canSchedule, canSteer, outsideQueue, waitingMessages } from './queued-messages.ts'
 import { withoutRemoved, type Entry, type EntryData } from '../../../shared/models.ts'
 
 const user = (id: string, status: string, data: EntryData = {}): Entry => ({
@@ -30,4 +30,18 @@ test('only a host that steers gets the queue’s buttons', () => {
   assert.equal(canSteer('2.38.0'), false)
   assert.equal(canSteer('2.39.0'), true)
   assert.equal(canSteer('2.40.2'), true)
+})
+
+test('a scheduled message is always in the tray, by its fire time, and never in the chat', () => {
+  const entries = [user('late', 'scheduled', { notBefore: 5_000 }), user('soon', 'scheduled', { notBefore: 2_000 }), user('sent', 'sent')]
+  assert.deepEqual(waitingMessages(entries, false).map((e) => e.id), ['soon', 'late'], "it shows while the bot isn't working")
+  const entriesBusy = [user('sent', 'sent'), user('q', 'queued'), user('soon', 'scheduled', { notBefore: 2_000 })]
+  assert.deepEqual(waitingMessages(entriesBusy, true).map((e) => e.id), ['q', 'soon'], 'the live queue first, scheduled at the tail')
+  assert.deepEqual(outsideQueue(entriesBusy, true).map((e) => e.id), ['sent'], 'neither kind shows in the chat while it waits')
+})
+
+test('only a host that schedules gets the schedule affordances', () => {
+  assert.equal(canSchedule(undefined), false)
+  assert.equal(canSchedule({ scheduleSend: true }), true)
+  assert.equal(canSchedule({ scheduleSend: false }), false)
 })

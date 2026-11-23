@@ -14,6 +14,8 @@ import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
 import { pluginsFor } from '../marketplace/plugins'
 import { ComposerField } from './ComposerField'
+import { ScheduleSheet } from './ScheduleSheet'
+import './schedule-sheet.css'
 import { BotRunOptions } from './RunOptions'
 import { CommandMenu, MentionMenu, useComposerMenu } from './ComposerMenu'
 import { ComposerAttachment } from './ComposerAttachment'
@@ -92,6 +94,15 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
   // A thread's first message waits for the computer's answer (`ThreadBox.send`).
   const [starting, setStarting] = useState(false)
   const canSend = !empty && !starting && (store.connection.kind === 'online' || (!thread && store.canQueue && !files.length))
+  // "Schedule send…": an online 1:1 chat with a typed draft and no files (files and calls send immediately).
+  const [scheduling, setScheduling] = useState(false)
+  const canScheduleHere =
+    !!bot && !thread && !isGroup(bot) && store.hello?.scheduleSend === true && store.connection.kind === 'online'
+  const scheduled = (clear: () => void) => {
+    clear()
+    setScheduling(false)
+    field.current?.focus()
+  }
 
   const members = bot && isGroup(bot) ? store.members(bot) : []
 
@@ -245,6 +256,17 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
                 <DictationEngineMenu />
               </HStack>
             ) : null}
+            {canScheduleHere ? (
+              <button
+                className="press composer-schedule"
+                disabled={!draft.trim()}
+                aria-label={tr('Schedule send…')}
+                title={tr('Schedule send…')}
+                onClick={() => setScheduling(true)}
+              >
+                <Icon name="clock" size={13} weight="medium" />
+              </button>
+            ) : null}
             <button
               className={trailing === 'interrupt' ? 'press composer-send interrupt' : 'press composer-send'}
               disabled={!enabled}
@@ -271,6 +293,20 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
       <Sheet open={voiceSettings} onClose={() => setVoiceSettings(false)}>
         <VoiceChatSettingsView />
       </Sheet>
+      {scheduling ? (
+        <ScheduleSheet
+          botId={botId}
+          draft={draft}
+          onClose={() => setScheduling(false)}
+          onScheduled={() =>
+            scheduled(() => {
+              setDraft('')
+              pasted.current = []
+              cancelReply?.()
+            })
+          }
+        />
+      ) : null}
     </VStack>
   )
 }

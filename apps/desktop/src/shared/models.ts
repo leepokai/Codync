@@ -424,6 +424,8 @@ export interface EntryData {
   status?: string
   /** user: taken back from the queue before it went out (`unqueue`); no view reads it (`withoutRemoved`). */
   removed?: boolean
+  /** user: scheduled for later (`scheduleSend`), as epoch-ms UTC; dropped when the message fires. */
+  notBefore?: number
   clientNonce?: string
   title?: string
   toolKind?: string
@@ -718,6 +720,8 @@ export interface Hello {
   credentialsReset?: boolean
   /** The host can store workflows. Missing means it cannot. */
   workflows?: boolean
+  /** A message can be scheduled for later (`scheduleSend`; the host's sweep delivers it). Missing means it cannot. */
+  scheduleSend?: boolean
 }
 
 export interface PairingInfo {

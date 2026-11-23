@@ -411,6 +411,101 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             hub.send_cmd(bot, cmd)?;
             json!({})
         }
+        // A message scheduled for later (`scheduleSend`): saved now, delivered by the sweep (`chat::schedule`)
+        // when its time comes. Files and voice-call sends are immediate-only; groups send immediately.
+        "scheduleSend" => {
+            let bot = str_arg(&b, "botId")?;
+            let row = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            let text = str_arg(&b, "text")?.trim();
+            if text.is_empty() {
+                bail!("the message is empty");
+            }
+            if b["attachments"].as_array().is_some_and(|a| !a.is_empty()) {
+                bail!("scheduled messages can't carry files yet; send them now instead");
+            }
+            if b["call"].as_str().is_some() {
+                bail!("a call's messages send immediately; there is nothing to schedule");
+            }
+            let not_before = b["notBefore"].as_i64().ok_or_else(|| anyhow!("notBefore must be a time"))?;
+            let mut data = json!({"text": text, "clientNonce": str_arg(&b, "clientNonce")?});
+            let pasted: Vec<&str> = b["pasted"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|p| !p.is_empty() && text.contains(p))
+                .collect();
+            if !pasted.is_empty() {
+                data["pasted"] = json!(pasted);
+            }
+            if let Some(reply) = b["replyTo"].as_str() {
+                data["replyTo"] = reply.into();
+            }
+            json!({"entry": crate::chat::messages::save_scheduled(hub, &row.config, data, not_before)?})
+        }
+        // Edits a message that is still scheduled (`updateScheduled`): its text and/or its time. Once it has
+        // fired into the queue it is an ordinary queued message (`steer`/`unqueue` territory).
+        "updateScheduled" => {
+            let bot = str_arg(&b, "botId")?;
+            let entry_id = str_arg(&b, "entryId")?;
+            let mut e = hub
+                .store
+                .entry(entry_id)
+                .filter(|e| e.bot_id == bot && e.kind == EntryKind::User.as_str() && e.data["status"] == "scheduled")
+                .ok_or_else(|| anyhow!("that message isn't scheduled any more"))?;
+            if let Some(text) = b["text"].as_str() {
+                let text = text.trim();
+                if text.is_empty() {
+                    bail!("the message is empty");
+                }
+                e.data["text"] = text.into();
+                // What the user pasted stays marked only while it is still part of the message.
+                let pasted: Vec<&str> = e.data["pasted"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(Value::as_str).collect())
+                    .unwrap_or_default();
+                let kept: Vec<Value> = pasted.into_iter().filter(|p| text.contains(*p)).map(Into::into).collect();
+                if kept.is_empty() {
+                    e.data.as_object_mut().map(|o| o.remove("pasted"));
+                } else {
+                    e.data["pasted"] = kept.into();
+                }
+            }
+            if let Some(not_before) = b["notBefore"].as_i64() {
+                if not_before <= crate::store::now_ms() {
+                    bail!("the scheduled time must be in the future");
+                }
+                e.data["notBefore"] = not_before.into();
+            }
+            json!({"entry": hub.set_entry(entry_id, &e.data).ok_or_else(|| anyhow!("couldn't save the edit"))?})
+        }
+        // Takes a scheduled message back before it fires (`cancelScheduled`): never delivered.
+        "cancelScheduled" => {
+            let bot = str_arg(&b, "botId")?;
+            let entry_id = str_arg(&b, "entryId")?;
+            let mut e = hub
+                .store
+                .entry(entry_id)
+                .filter(|e| e.bot_id == bot && e.kind == EntryKind::User.as_str() && e.data["status"] == "scheduled")
+                .ok_or_else(|| anyhow!("that message isn't scheduled any more"))?;
+            e.data["status"] = "cancelled".into();
+            e.data["removed"] = true.into();
+            hub.set_entry(entry_id, &e.data);
+            hub.emit_bot(bot);
+            json!({})
+        }
+        // Delivers a scheduled message right now (`sendScheduledNow`): it takes its place in the ordinary queue.
+        "sendScheduledNow" => {
+            let bot = str_arg(&b, "botId")?;
+            let entry_id = str_arg(&b, "entryId")?;
+            let e = hub
+                .store
+                .entry(entry_id)
+                .filter(|e| e.bot_id == bot && e.kind == EntryKind::User.as_str() && e.data["status"] == "scheduled")
+                .ok_or_else(|| anyhow!("that message isn't scheduled any more"))?;
+            json!({"entry": crate::chat::messages::fire_scheduled(hub, &e)?})
+        }
         "switchBack" => {
             hub.send_cmd(str_arg(&b, "botId")?, Cmd::SwitchBack)?;
             json!({})

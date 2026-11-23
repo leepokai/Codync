@@ -109,7 +109,7 @@ const channelError = (e: CallError) => new HostError(e.status ?? 0, e.message, e
 export type HostEvent =
   | { type: 'icons'; iconsRevision: number; icons: import('@shared/custom-icons').CustomIcons }
   /** `network` is null from hosts before the network view. `catchUp` events follow before the live ones (null from hosts before 2.32.0). `workflows` is absent on older hosts. */
-  | { type: 'hello'; hostId: string; rev: number; usage: Usage; screen: ScreenState | null; network: NetworkView | null; icons?: import('@shared/custom-icons').CustomIcons; catchUp: number | null; workflows?: boolean }
+  | { type: 'hello'; hostId: string; rev: number; usage: Usage; screen: ScreenState | null; network: NetworkView | null; icons?: import('@shared/custom-icons').CustomIcons; catchUp: number | null; workflows?: boolean; scheduleSend?: boolean }
   | { type: 'bot'; bot: Bot }
   /** Live only: a bot is done, needs you or failed (never replayed in a catch-up). */
   | { type: 'alert'; alert: HostAlert }
@@ -262,7 +262,13 @@ export class HostClient {
   hello() {
     return this.call<Hello>('hello').then((h) => {
       this.hostVersion = h.version
-      return { ...h, backends: h.backends ?? [], screen: normalizeScreen(h.screen) ?? undefined, workflows: h.workflows === true }
+      return {
+        ...h,
+        backends: h.backends ?? [],
+        screen: normalizeScreen(h.screen) ?? undefined,
+        workflows: h.workflows === true,
+        scheduleSend: h.scheduleSend === true,
+      }
     })
   }
 
@@ -280,6 +286,27 @@ export class HostClient {
   async send(botId: string, text: string, clientNonce: string, attachments: string[] | null, pasted: string[] = [], replyTo: ReplyQuote | null = null, call: string | null = null) {
     const reply = replyTo ? { replyTo: replyTo.id, ...(replyTo.part ? { replyPart: replyTo.text } : {}) } : {}
     return (await this.call<{ entry: Entry }>('send', { botId, text, clientNonce, attachments, ...(pasted.length ? { pasted } : {}), ...reply, ...(call ? { call } : {}) })).entry
+  }
+
+  /** Holds a message for later (`scheduleSend`); the host's sweep delivers it when its time comes. */
+  async scheduleSend(botId: string, text: string, notBefore: number, clientNonce: string, replyTo: ReplyQuote | null = null) {
+    const reply = replyTo ? { replyTo: replyTo.id, ...(replyTo.part ? { replyPart: replyTo.text } : {}) } : {}
+    return (await this.call<{ entry: Entry }>('scheduleSend', { botId, text, notBefore, clientNonce, ...reply })).entry
+  }
+
+  /** Edits a message that is still scheduled: its text and/or its fire time. */
+  async updateScheduled(botId: string, entryId: string, patch: { text?: string; notBefore?: number }) {
+    return (await this.call<{ entry: Entry }>('updateScheduled', { botId, entryId, ...patch })).entry
+  }
+
+  /** Takes a scheduled message back before it fires: never delivered. */
+  async cancelScheduled(botId: string, entryId: string) {
+    await this.call('cancelScheduled', { botId, entryId })
+  }
+
+  /** Delivers a scheduled message right now: it enters the ordinary queue as the sweep would. */
+  async sendScheduledNow(botId: string, entryId: string) {
+    return (await this.call<{ entry: Entry }>('sendScheduledNow', { botId, entryId })).entry
   }
 
   /** Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message. */

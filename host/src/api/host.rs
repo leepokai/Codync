@@ -114,6 +114,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 // Shells out to `tailscale`: keep it off the async workers.
                 "urls": tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?,
                 "workflows": true,
+                // A message can be scheduled for later (`scheduleSend`; the sweep delivers it).
+                "scheduleSend": true,
             })
         }
         "refreshBackends" => {

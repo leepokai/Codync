@@ -44,3 +44,43 @@ pub fn hand_on(hub: &Arc<Hub>, cfg: &BotConfig, e: &Entry) -> Result<()> {
     }
     Ok(())
 }
+
+/// A scheduled send (`scheduleSend`): the message is saved now, shown in the chat as scheduled, and delivered
+/// later by the sweep (`chat::schedule`) through the ordinary [`post`] path. A group's sends are immediate, so
+/// they can't be scheduled; the time must be in the future.
+pub fn save_scheduled(hub: &Hub, cfg: &BotConfig, mut data: Value, not_before_ms: i64) -> Result<Entry> {
+    if cfg.is_group() {
+        return Err(anyhow!("a group's messages send immediately; there is nothing to schedule"));
+    }
+    if not_before_ms <= crate::store::now_ms() {
+        return Err(anyhow!("the scheduled time must be in the future"));
+    }
+    data["status"] = "scheduled".into();
+    data["notBefore"] = not_before_ms.into();
+    let turn = hub.store.max_turn(&cfg.id) + 1;
+    let e = hub
+        .add_entry(&Lane::main(&cfg.id), EntryKind::User, turn, &data)
+        .ok_or_else(|| anyhow!("couldn't save the message"))?;
+    if let Err(error) = hub.mark_read(&cfg.id) {
+        tracing::warn!(%error, bot = %cfg.id, "couldn't mark bot read after scheduling a send");
+    }
+    Ok(e)
+}
+
+/// A scheduled message's time has come (`chat::schedule`): it takes its delivery-time place in the chat and
+/// enters the ordinary queue exactly as a message typed now would. Returns the queued entry.
+pub fn fire_scheduled(hub: &Arc<Hub>, e: &Entry) -> Result<Entry> {
+    let row = hub.store.bot(&e.bot_id)?.ok_or_else(|| anyhow!("unknown bot"))?;
+    let mut data = e.data.clone();
+    data["status"] = "queued".into();
+    // Remove the scheduling fields: the message is an ordinary queued send from here on.
+    if let Some(o) = data.as_object_mut() {
+        o.remove("notBefore");
+        o.remove("scheduledAt");
+    }
+    let turn = hub.store.max_turn(&e.bot_id) + 1;
+    let turned =
+        hub.set_entry_turn(&e.id, Some(turn), &data).ok_or_else(|| anyhow!("couldn't schedule the message in"))?;
+    hand_on(hub, &row.config, &turned)?;
+    Ok(turned)
+}

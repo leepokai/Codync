@@ -129,7 +129,7 @@ test('a waiting task says why it waits', () => {
   assert.equal(waitText(waiting({ wait: { kind: 'behind', ahead: 2 } }), (text) => (text === '{count} ahead' ? '前面還有 {count} 件' : text)), '前面還有 2 件')
 })
 
-test("a task's second line is why it waits, what its thread does, or how it ended", () => {
+test("how a task stands is why it waits, what its thread does, or how it ended", () => {
   assert.equal(taskLine(task('a', 'waiting', { wait: { kind: 'next', ahead: 0 } }), same), 'Next up')
   assert.equal(taskLine(task('a', 'working', { activity: 'Reading' }), same), 'Reading')
   assert.equal(taskLine(task('a', 'working'), same), 'Working')

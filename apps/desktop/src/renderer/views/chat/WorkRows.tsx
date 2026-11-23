@@ -122,7 +122,7 @@ export function WorkRow({ task, number, line, time, open, always, onHover }: { t
         <VStack as="span" gap={2} align="flex-start" grow shrink>
           {/* The title and how it stands share the first line, a gap apart. */}
           <HStack as="span" gap={8} className="work-row-title">
-            <HStack as="span" gap={5} shrink>
+            <HStack as="span" gap={5} className="work-row-name">
               <SourceMark task={task} />
               <Text tone="text" truncate>{task.title}</Text>
             </HStack>

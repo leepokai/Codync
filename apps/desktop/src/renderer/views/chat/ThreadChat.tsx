@@ -129,7 +129,7 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
           {bar.title ? createPortal(<>
             <div className="title-pill" title={task.title}>
               <HStack as="span" gap={7} className="thread-title">
-                {bot.plain ? <AgentIcon registry={store.agentRegistry(task.agent ?? bot.backend)} size={18} /> : <BotAvatar bot={bot} size={22} animated={false} />}
+                {bot.plain ? <AgentIcon registry={store.agentRegistry(agent)} size={18} /> : <BotAvatar bot={bot} size={22} animated={false} />}
                 <Text size="body" weight="medium" tone="text" truncate>{task.title}</Text>
               </HStack>
             </div>
@@ -166,7 +166,7 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
                     stop: () => setStopping(true),
                     // The agent it runs on, then where it works; the bot's own folder goes without saying, as in the list.
                     controls: <>
-                      <span className="thread-option" title={tr('Agent')}>
+                      <span className="thread-option static" title={tr('Agent')}>
                         <AgentIcon registry={store.agentRegistry(agent)} size={14} />
                         <Text size="caption" truncate>{store.backendName(agent)}</Text>
                       </span>
@@ -175,7 +175,11 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
                   }}
                 />
               ) : readOnly ? (
-                <Text as="div" size="caption" tone="tertiary" className="work-thread-read-only">{tr(readOnly)}</Text>
+                // It can't be written to, but a run under way can still be stopped.
+                <HStack gap={8} justify="center" className="work-thread-read-only">
+                  <Text size="caption" tone="tertiary">{tr(readOnly)}</Text>
+                  {isLive(task) ? <IconButton title="Stop" icon="stop.fill" size={24} disabled={store.isOffline} onClick={() => setStopping(true)} /> : null}
+                </HStack>
               ) : null}
             </>
           )}

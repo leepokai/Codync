@@ -89,6 +89,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* A thread in a tab: the tabs above are its band, so its top neither moves the window nor blocks a click. */
+.panel-pane .thread-chat .top-chrome {
+  -webkit-app-region: no-drag;
+}
 .panel-tab-close {
   display: flex;
   align-items: center;

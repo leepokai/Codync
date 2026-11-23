@@ -5,7 +5,10 @@ import './window-bar.css'
 
 /** Where the page shown puts its part of the window's bar: the conversation's bot (`title`) and panel toggle (`end`),
  * the Workflows page's tabs (`start`, right after the bar's own buttons). Null while another page covers it. */
-export const WindowBarSlots = createContext<{ start: HTMLElement | null; title: HTMLElement | null; end: HTMLElement | null }>({ start: null, title: null, end: null })
+type Slots = { start: HTMLElement | null; title: HTMLElement | null; end: HTMLElement | null }
+/** No part of the bar: for a page another covers, or one shown where the window's bar isn't. */
+export const NO_BAR_SLOTS: Slots = { start: null, title: null, end: null }
+export const WindowBarSlots = createContext<Slots>(NO_BAR_SLOTS)
 
 /**
  * The bar across the top of the window, which also moves it: Back and Forward through the places the window has shown

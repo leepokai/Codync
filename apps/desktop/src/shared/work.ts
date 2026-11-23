@@ -346,7 +346,7 @@ export function waitText(task: WorkTask, tr: Translate): string {
   }
 }
 
-/** A task's second line: why it waits, what its thread does, or how it ended (a failed or stopped one says why). */
+/** How a task stands, beside its title: why it waits, what its thread does, or how it ended (a failed or stopped one says why). */
 export function taskLine(task: WorkTask, tr: Translate): string {
   switch (task.status) {
     case 'waiting':

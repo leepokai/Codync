@@ -307,6 +307,9 @@ test("what the thread puts in the chat is answered in its open thread too, and a
     const run = await openThread(details, row(details, 'Threads', 'Digest'))
     await expect(run.locator('.work-thread-read-only')).toHaveText("Read only: a routine's run")
     await expect(run.getByRole('textbox', { name: 'Message this thread' })).toHaveCount(0)
+    await run.locator('.work-thread-read-only').getByRole('button', { name: 'Stop', exact: true }).click()
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Stop', exact: true }).click()
+    await expect(run.locator('.work-thread-read-only').getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0)
   } finally {
     await cleanUp(page, botId)
     await browser.close()

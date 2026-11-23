@@ -12,7 +12,7 @@ import { Dialog, ModalHeader, Sheet } from '../components/Overlay'
 import { AnchoredMenu, type MenuItem } from '../components/Menu'
 import { HStack, Spacer } from '../components/Stack'
 import { noVisits, step, visit } from '../lib/visits'
-import { WindowBar, WindowBarSlots } from './WindowBar'
+import { NO_BAR_SLOTS, WindowBar, WindowBarSlots } from './WindowBar'
 import { Text } from '../components/Text'
 import { useModels } from '../lib/observable'
 import { prefs, stepTextSize, usePref, DEFAULT_TEXT_SIZE } from '../lib/prefs'
@@ -73,8 +73,6 @@ function openRef(app: AppModel, key: string) {
 }
 
 /** The chat window: the rail of its pages on the left, then the page (Bots: the roster and the conversation). */
-const NO_SLOTS = { start: null, title: null, end: null }
-
 export function ChatWindow() {
   const tr = useTr()
   const app = useApp()
@@ -572,7 +570,7 @@ function ChatSplitView() {
       {/* The conversation stays as it is behind another page: its place, its open panel, a call under way. */}
       <main className="detail" hidden={page !== 'bots'}>
         {/* The call bar's settings open the Settings page at Voice chat. */}
-        <WindowBarSlots.Provider value={page === 'bots' ? { start: null, title: barTitle, end: barEnd } : NO_SLOTS}>
+        <WindowBarSlots.Provider value={page === 'bots' ? { start: null, title: barTitle, end: barEnd } : NO_BAR_SLOTS}>
           <OpenVoiceSettings.Provider value={openVoiceSettings}>{detail}</OpenVoiceSettings.Provider>
         </WindowBarSlots.Provider>
         {find.focus !== null && selectedBot ? <FindBar focusKey={find.focus} onClose={find.close} /> : null}

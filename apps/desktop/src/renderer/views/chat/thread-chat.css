@@ -16,7 +16,7 @@
 .thread-option > :not(.truncate) {
   flex: none;
 }
-.thread-option:not(:disabled):hover,
+.thread-option:not(:disabled, .static):hover,
 .thread-option[aria-expanded='true'] {
   background: var(--bubble-agent);
 }

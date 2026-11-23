@@ -90,10 +90,15 @@
   max-width: 100%;
   min-width: 0;
 }
-/* Beside the title, giving way to it first when the row is narrow. */
-.work-row-line {
-  flex: 0 3 auto;
+/* The title gives way first when the row is narrow; how it stands beside it keeps up to 60% of the line. */
+.work-row-name {
+  flex: 0 1000 auto;
   min-width: 0;
+}
+.work-row-title .work-row-line {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
 }
 /* Its lines start at the leading edge, so each needs the row's width as its own limit to end with an ellipsis. */
 .work-row-open .truncate {

@@ -1,4 +1,4 @@
-import { test, expect, type Locator } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
 import { api, attach, workBot } from './sandbox.ts'
 
 // A thread whose task runs a long shell command (the scripted agent's `COMMAND`, host/tests/fixtures/work_agent.py):
@@ -41,10 +41,42 @@ test("a thread's long command ends with an ellipsis before the row's time", asyn
     expect(box.lineRight).toBeLessThanOrEqual(box.timeLeft)
     await page.screenshot({ path: test.info().outputPath('work-row-overflow.png') })
   } finally {
-    if (botId) {
-      await api(page, 'stopWork', { botId }).catch(() => {})
-      await api(page, 'deleteBot', { botId }).catch(() => {})
-    }
+    await cleanUp(page, botId)
     await browser.close()
   }
 })
+
+test('a long title gives way to how the row stands, which stays beside it, a gap apart', async () => {
+  const { browser, page } = await attach()
+  const name = `Row title e2e ${Date.now()}`
+  const title = 'Read every file in the repository and write down what each one is for'
+  let botId: string | undefined
+  try {
+    botId = (await workBot(page, name)).id
+    await page.locator('.roster-row', { hasText: name }).click()
+    await api(page, 'send', { botId, text: `ADD ${title}|HOLD:title` })
+
+    await page.locator('.work-capsule .work-capsule-open').click()
+    const row = page.locator('.details-panel .work-row', { hasText: 'Read every file' })
+    await expect(row.locator('.work-row-line')).not.toBeEmpty()
+    const box = await row.evaluate((el) => {
+      const rect = (q: string) => el.querySelector(q)!.getBoundingClientRect()
+      const line = el.querySelector('.work-row-line')!
+      const [name, status] = [rect('.work-row-name'), rect('.work-row-line')]
+      return { gap: status.left - name.right, overlap: Math.min(name.bottom, status.bottom) - Math.max(name.top, status.top), width: status.width, truncated: line.scrollWidth > line.clientWidth }
+    })
+    expect(box.overlap).toBeGreaterThan(0)
+    expect(box.gap).toBeGreaterThanOrEqual(7.5)
+    expect(box.width).toBeGreaterThan(0)
+    expect(box.truncated).toBe(false)
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+async function cleanUp(page: Page, botId: string | undefined) {
+  if (!botId) return
+  await api(page, 'stopWork', { botId }).catch(() => {})
+  await api(page, 'deleteBot', { botId }).catch(() => {})
+}

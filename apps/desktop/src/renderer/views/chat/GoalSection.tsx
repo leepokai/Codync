@@ -59,23 +59,25 @@ export function GoalSection({ bot }: { bot: Bot }) {
   }
   const valid = text.trim().length > 0 && Number.isInteger(turns) && turns >= 1 && turns <= 200 && Number.isInteger(minutes) && minutes >= 1 && minutes <= 1440
   return <section className="details-section goal-section">
-    <Text as="h3" size="headline">{tr('Conversation goal')}</Text>
-    <VStack gap={5}>
-      <label htmlFor={`goal-${bot.id}`}><Text size="compactBody">{tr('Goal')}</Text></label>
-      <textarea id={`goal-${bot.id}`} aria-label={tr('Goal')} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} />
+    <Text as="h3" className="details-section-title">{tr('Conversation goal')}</Text>
+    <VStack gap={12} className="outlined-card goal-card">
+      <VStack gap={5}>
+        <label htmlFor={`goal-${bot.id}`}><Text size="compactBody" tone="secondary">{tr('Goal')}</Text></label>
+        <textarea className="field-box" id={`goal-${bot.id}`} aria-label={tr('Goal')} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} />
+      </VStack>
+      <HStack gap={12} className="goal-limits">
+        <VStack grow gap={5}>
+          <label htmlFor={`goal-turns-${bot.id}`}><Text size="compactBody" tone="secondary">{tr('Maximum turns')}</Text></label>
+          <input className="field-box" id={`goal-turns-${bot.id}`} aria-label={tr('Maximum turns')} type="number" min={1} max={200} value={turns} onChange={(e) => setTurns(Number(e.target.value))} />
+        </VStack>
+        <VStack grow gap={5}>
+          <label htmlFor={`goal-minutes-${bot.id}`}><Text size="compactBody" tone="secondary">{tr('Maximum minutes')}</Text></label>
+          <input className="field-box" id={`goal-minutes-${bot.id}`} aria-label={tr('Maximum minutes')} type="number" min={1} max={1440} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} />
+        </VStack>
+      </HStack>
+      <Text as="div" size="compactBody" tone="secondary" className="goal-explanation">{tr('Continues until complete, needs you, or reaches a limit. Your next message stops continuation.')}</Text>
+      <Button kind="primary" disabled={!valid || store.isOffline || busy} onClick={() => void start()}>{tr('Start goal')}</Button>
+      {error ? <Text as="div" size="compactBody" tone="danger" role="alert">{error}</Text> : null}
     </VStack>
-    <HStack gap={12} className="goal-limits">
-      <VStack grow gap={5}>
-        <label htmlFor={`goal-turns-${bot.id}`}><Text size="compactBody">{tr('Maximum turns')}</Text></label>
-        <input id={`goal-turns-${bot.id}`} aria-label={tr('Maximum turns')} type="number" min={1} max={200} value={turns} onChange={(e) => setTurns(Number(e.target.value))} />
-      </VStack>
-      <VStack grow gap={5}>
-        <label htmlFor={`goal-minutes-${bot.id}`}><Text size="compactBody">{tr('Maximum minutes')}</Text></label>
-        <input id={`goal-minutes-${bot.id}`} aria-label={tr('Maximum minutes')} type="number" min={1} max={1440} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} />
-      </VStack>
-    </HStack>
-    <Text as="div" size="compactBody" tone="secondary" className="goal-explanation">{tr('Continues until complete, needs you, or reaches a limit. Your next message stops continuation.')}</Text>
-    <Button kind="primary" disabled={!valid || store.isOffline || busy} onClick={() => void start()}>{tr('Start goal')}</Button>
-    {error ? <Text as="div" size="compactBody" tone="danger" role="alert">{error}</Text> : null}
   </section>
 }

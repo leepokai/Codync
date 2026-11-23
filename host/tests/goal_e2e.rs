@@ -564,6 +564,51 @@ async fn failed_goal_persistence_does_not_acknowledge_stop_or_accept_a_new_messa
 }
 
 #[tokio::test]
+async fn set_goal_rejects_group_plain_and_workflow_bots() {
+    let host = Host::start().await;
+    let bot1 = host.goal_bot().await;
+    let bot2 = host.goal_bot().await;
+    let group = host.call("createBot", json!({"name": "Room", "kind": "group", "members": [bot1, bot2]})).await["bot"]
+        ["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let folder = host.home.join("plain-box");
+    std::fs::create_dir_all(&folder).unwrap();
+    let _ = host
+        .refused(
+            "startThread",
+            json!({"text": "Plain thread", "setup": {"backend": "claude", "cwd": host.home.join("missing-plain-dir")}}),
+        )
+        .await;
+    let snapshot = host.snapshot().await;
+    let plain = snapshot["bots"].as_array().unwrap().iter().find(|b| b["plain"] == true).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let workflow = host
+        .call(
+            "createBot",
+            json!({
+                "name": "Workflow", "backend": "custom", "cwd": folder, "workflow": "wf-1",
+                "command": common::python_agent(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py")),
+                "notify": false,
+            }),
+        )
+        .await["bot"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    for id in [&group, &plain, &workflow] {
+        let err = host.refused("setGoal", json!({"botId": id, "goal": "Should not start"})).await;
+        assert!(err.contains("goals are only available in a bot's own conversation"), "{err}");
+    }
+}
+
+#[tokio::test]
 async fn stopping_clearing_or_replacing_during_versions_before_prevents_old_prompt() {
     if common::python_missing() {
         return;

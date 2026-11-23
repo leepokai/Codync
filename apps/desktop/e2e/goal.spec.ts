@@ -41,7 +41,7 @@ test('goal controls start a bounded run and show completion and stop', async () 
   const { browser, page } = await attach()
   let botId: string | undefined
   const preferences = await page.evaluate(() => Object.fromEntries(
-    ['appLanguage', 'computerAccessSetup', 'conversationFontSize'].map((key) => [key, localStorage.getItem(key)]),
+    ['appLanguage', 'computerAccessSetup', 'conversationFontSize', 'panelLayout'].map((key) => [key, localStorage.getItem(key)]),
   ))
   try {
     await setPref(page, 'appLanguage', 'en')
@@ -58,7 +58,20 @@ test('goal controls start a bounded run and show completion and stop', async () 
     botId = bot.id
     await page.locator('.roster-row', { hasText: name }).click()
     await page.getByRole('button', { name: `${name}, view details`, exact: true }).click()
-    const form = page.locator('.goal-section')
+    const details = page.locator('.details-panel')
+    await expect(details).toBeVisible()
+    const detailsTab = details.getByRole('tab', { name: 'Details', exact: true })
+    if (await detailsTab.count()) {
+      await detailsTab.click()
+    } else {
+      const chooser = details.locator('.panel-chooser')
+      if (!(await chooser.isVisible())) {
+        await details.getByRole('button', { name: 'Open a view', exact: true }).click()
+      }
+      await details.locator('.panel-chooser .panel-choice', { hasText: 'Details' }).click()
+    }
+    await expect(detailsTab).toHaveAttribute('aria-selected', 'true')
+    const form = details.locator('.goal-section')
     await form.getByRole('textbox', { name: 'Goal', exact: true }).fill('GOAL_DONE Ship the notes')
     await form.getByRole('spinbutton', { name: 'Maximum turns' }).fill('4')
     await form.getByRole('button', { name: 'Start goal', exact: true }).click()
@@ -71,10 +84,12 @@ test('goal controls start a bounded run and show completion and stop', async () 
     await expect(page.locator('.goal-banner')).toContainText('Stopped')
     await setPref(page, 'conversationFontSize', 12)
     const summary = page.locator('.goal-summary > span').last()
+    const goalInput = form.getByRole('textbox', { name: 'Goal', exact: true })
     const originalSize = await summary.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))
+    const originalInputSize = await goalInput.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))
     await setPref(page, 'conversationFontSize', 18)
     await expect.poll(() => summary.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThan(originalSize)
-    await expect(form.getByRole('textbox', { name: 'Goal', exact: true })).toHaveCSS('font-size', '18px')
+    await expect.poll(() => goalInput.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThan(originalInputSize)
     await page.screenshot({ path: 'test-results/goal-stopped.png' })
     await setPref(page, 'appLanguage', 'zh')
     await expect(page.locator('.goal-banner').getByRole('button', { name: '清除目标', exact: true })).toBeVisible()

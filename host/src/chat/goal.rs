@@ -71,7 +71,7 @@ pub fn set(hub: &Hub, bot: &str, body: &Value) -> Result<Value> {
     }
     let lock = WRITE.locked();
     let row = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow::anyhow!("unknown bot"))?;
-    if row.config.is_group() {
+    if row.config.is_group() || row.config.plain || row.config.workflow.is_some() {
         bail!("goals are only available in a bot's own conversation");
     }
     if text.is_empty() {

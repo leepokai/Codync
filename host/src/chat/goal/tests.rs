@@ -201,3 +201,17 @@ fn deleting_a_bot_clears_its_goal_and_blocks_late_saves() {
     assert!(begin(&hub, &bot, &goal.id).unwrap().is_none());
     assert!(get(&hub, "b").is_none());
 }
+
+#[test]
+fn set_rejects_group_plain_and_workflow_bots() {
+    let hub = hub();
+    let group: BotConfig = serde_json::from_value(json!({"id": "g", "name": "G", "kind": "group"})).unwrap();
+    let plain = BotConfig { plain: true, ..cfg("p", "custom") };
+    let workflow = BotConfig { workflow: Some("wf-1".into()), ..cfg("w", "custom") };
+    for bot in [&group, &plain, &workflow] {
+        hub.store.save_bot(bot).unwrap();
+        let err = set(&hub, &bot.id, &json!({"goal": "Should not start"})).unwrap_err();
+        assert!(err.to_string().contains("goals are only available in a bot's own conversation"), "{err}");
+        assert!(get(&hub, &bot.id).is_none());
+    }
+}

@@ -7,6 +7,7 @@ import type { AppModel } from '../src/renderer/store/app-model'
 import type { BotStore } from '../src/renderer/store/bot-store'
 import { AppContext, StoreContext } from '../src/renderer/store/context'
 import { BotSettingsPanel } from '../src/renderer/views/bots/BotEditorView'
+import type { ModelOption } from '../src/renderer/views/bots/agent-models'
 import { mountOverlay } from './overlay'
 
 export interface RecordedCall {
@@ -14,9 +15,20 @@ export interface RecordedCall {
   body: unknown
 }
 
-const CATALOGS: Record<string, { id: string; name: string }[]> = {
+const EFFORT: ModelOption = {
+  id: 'reasoning_effort',
+  name: 'Reasoning effort',
+  values: [
+    { id: 'low', name: 'Low' },
+    { id: 'medium', name: 'Medium' },
+    { id: 'high', name: 'High' },
+  ],
+  default: 'medium',
+}
+
+const CATALOGS: Record<string, { id: string; name: string; options?: ModelOption[] }[]> = {
   '': [
-    { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash' },
+    { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', options: [EFFORT] },
   ],
   'pro-7': [
     { id: 'gemini-4-neon', name: 'Gemini 4 Neon' },
@@ -87,7 +99,7 @@ class FakeStore extends Observable {
         const profile = typeof req.loginProfile === 'string' ? req.loginProfile : ''
         const models = CATALOGS[profile] ?? CATALOGS['']
         return {
-          models: models.map((m) => ({ ...m, options: [] })),
+          models: models.map((m) => ({ options: [], ...m })),
           currentModelId: models[0]?.id ?? null,
           fastMode: false,
           defaultModelOptions: true,

@@ -88,6 +88,23 @@ test('main and fallback model dropdowns refresh with the selected loginProfile a
     await expect(list).toContainText('Gemini 3.8 Flash')
     await expect(list).not.toContainText('Gemini 4 Carbon')
 
+    // Its effort: dragging the knob from one end of the track to the other picks the last step; Space on a step picks it.
+    const track = panel.getByRole('radiogroup', { name: 'Reasoning effort' })
+    const step = (name: string) => track.getByRole('radio', { name })
+    await expect(step('Medium')).toHaveAttribute('aria-checked', 'true')
+    const box = await track.boundingBox()
+    if (!box) throw new Error('the effort track has no box')
+    const y = box.y + box.height / 2
+    await page.mouse.move(box.x + 13, y)
+    await page.mouse.down()
+    await expect(step('Low')).toHaveAttribute('aria-checked', 'true')
+    await page.mouse.move(box.x + box.width - 13, y, { steps: 8 })
+    await page.mouse.up()
+    await expect(step('High')).toHaveAttribute('aria-checked', 'true')
+    await expect(panel.locator('.model-picker-effort-head')).toContainText('High')
+    await step('Low').focus()
+    await page.keyboard.press('Space')
+    await expect(step('Low')).toHaveAttribute('aria-checked', 'true')
   } finally {
     await page
       .evaluate((previous) => {

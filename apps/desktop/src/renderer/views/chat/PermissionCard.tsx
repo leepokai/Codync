@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import type { Entry, FileDiff, PermissionOption } from '@shared/models'
-import { Disclosure, Spinner } from '../../components/Controls'
+import type { Entry, EntryData, FileDiff, PermissionOption } from '@shared/models'
+import { Reveal, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
@@ -8,6 +8,8 @@ import './permission-card.css'
 import { useTr } from '../../lib/use-language'
 import { trNow } from '../../lib/l10n.ts'
 import { fill } from '@shared/fill'
+import { requestDetail, requestIcon, requestName, requestParams } from './requests'
+import { OptionBadge } from './DecisionCard'
 
 
 /** What the agent wants, from the tool's kind (also the notch island's headline). */
@@ -57,61 +59,127 @@ export function ThreadLine({ entry }: { entry: Entry }) {
   return thread ? <Text as="div" size="caption" tone="tertiary" truncate className="thread-line">{tr('Work')} · {thread.title}</Text> : null
 }
 
-/** Approval card in Grok Bot's choice-card style: what the agent wants, where it runs, the answers. */
-export function PermissionCard({ entry, hostName, answering, respond }: { entry: Entry; hostName: string; answering: string | null; respond: (option: string | null) => void }) {
+
+/**
+ * An approval in the chat. While it waits: what the agent wants and where it runs, the request itself in a well, its
+ * details on demand, then the answers in a row (allowing first, refusing last and quiet). Once it is settled it folds
+ * to one line, the request and how it ended, which opens to where it ran and what it asked with (no card: there is
+ * nothing left to answer); several in a row that ended alike fold into one line of their own (`RequestRun`).
+ */
+export function PermissionCard({ entry, hostName, answering, respond, result }: {
+  entry: Entry
+  hostName: string
+  answering: string | null
+  respond: (option: string | null) => void
+  /** Once allowed: the tool entry of the call it asked for, with what it returned. */
+  result?: EntryData
+}) {
   const tr = useTr()
   const [expanded, setExpanded] = useState(false)
+  const [open, setOpen] = useState(false)
   const d = entry.data
   const pending = d.status === 'pending'
-  const hasDetail = !!d.command || !!d.detail || !!d.diffs?.length
+  const detail = requestDetail(d.detail)
   const options = sortedOptions(d.options ?? [])
   const cwd = d.cwd ? ` · ${d.cwd.split('/').filter(Boolean).pop() ?? d.cwd}` : ''
+  const where = fill(tr('Runs on {name}{path}'), { name: hostName, path: cwd })
+  // Settled, there is nothing to answer: no card, one line that opens to where it ran and what it asked with.
+  if (!pending) {
+    return (
+      <div className="agent-inset">
+        <RequestLine icon={requestIcon(d.toolKind, d.title)} title={d.title ?? ''} end={outcome(entry)} expanded={open} onClick={() => setOpen((o) => !o)} />
+        <Reveal show={open}>
+          <VStack gap={6} className="request-detail">
+            <Text size="caption" tone="tertiary">{where}</Text>
+            {d.command ? <CodeBox text={d.command} /> : null}
+            {requestParams(detail) ? <ParamRows params={requestParams(detail) ?? []} clamp={false} /> : detail ? <CodeBox text={detail.slice(0, 2000)} /> : null}
+            {(d.diffs ?? []).map((diff, i) => <DiffView key={i} diff={diff} />)}
+            {result?.output || result?.diffs?.length ? (
+              <VStack gap={6}>
+                <Text size="caption" weight="medium" tone="secondary">{tr('Output')}</Text>
+                {(result.diffs ?? []).map((diff, i) => <DiffView key={i} diff={diff} />)}
+                {result.output ? <CodeBox text={result.output.slice(0, 4000)} /> : null}
+              </VStack>
+            ) : null}
+          </VStack>
+        </Reveal>
+      </div>
+    )
+  }
+  const { name, source, literal } = requestName(d.title ?? '')
+  const params = requestParams(detail)
+  const shownParams = expanded ? params : params?.slice(0, 4)
+  // Rows past the first four: counted on Details while folded, and Details stays so they fold back.
+  const extraParams = Math.max(0, (params?.length ?? 0) - 4)
+  const hiddenParams = expanded ? 0 : extraParams
+  // Anything params rows don't already show sits behind Details.
+  const command = d.command && d.command !== name ? d.command : null
+  const hasMore = !!command || (!params && !!detail) || !!d.diffs?.length || extraParams > 0
   return (
-    // The task's row on the bot's Details finds its card by this.
     <div className="agent-inset">
-      <VStack gap={10} className="permission-card">
-        <HStack gap={8}>
-          <Text size="headline" tone="text">{permissionHeadline(d.toolKind)}</Text>
-          {pending ? <span className="permission-card-dot" /> : null}
-        </HStack>
-        <Text as="div" size="subheadline" mono tone="secondary" lines={expanded ? undefined : 3} className="selectable permission-card-title">
-          {d.title ?? ''}
-        </Text>
-        <HStack gap={6}>
-          <Icon name="desktopcomputer" size={10} color="var(--tertiary)" />
-          <Text size="caption" tone="tertiary">{fill(tr('Runs on {name}{path}'), { name: hostName, path: cwd })}</Text>
-        </HStack>
-        <ThreadLine entry={entry} />
-        {hasDetail ? (
-          <Disclosure expanded={expanded} onToggle={() => setExpanded((e) => !e)} label={<Text size="caption" weight="medium" tone="secondary">{tr(`Details`)}</Text>}>
-            <VStack gap={8} className="permission-card-details">
-              {d.command ? <CodeBox text={d.command} /> : null}
-              {d.detail ? <CodeBox text={d.detail.slice(0, 2000)} /> : null}
-              {(d.diffs ?? []).map((diff, i) => <DiffView key={i} diff={diff} />)}
-            </VStack>
-          </Disclosure>
-        ) : null}
-        {pending ? (
-          <div className="permission-card-options">
-            {options.map((o, i) => (
-              <div key={o.optionId}>
-                {i > 0 ? <div className="chat-hairline" /> : null}
-                <button
-                  className={answering === null || answering === o.optionId ? 'permission-option' : 'permission-option dimmed'}
-                  disabled={answering !== null}
-                  onClick={() => respond(o.optionId)}
-                >
-                  <Text size="body" weight={o.kind === 'allow_once' ? 'semibold' : 'regular'} tone={o.kind.startsWith('allow') ? 'text' : 'danger'} className="permission-option-label">{optionLabel(o)}</Text>
-                  {answering === o.optionId ? <Spinner size={14} /> : null}
+      <VStack gap={12} className="permission-card approval-card">
+        <VStack gap={8}>
+          {/* What asks (its kind, or the server a tool comes from), then the request itself, then where it runs. */}
+          <HStack gap={6}>
+            <Icon name={requestIcon(d.toolKind, d.title)} size={12} color="var(--secondary)" />
+            <Text size="caption" tone="secondary" truncate grow>{source ?? permissionHeadline(d.toolKind)}</Text>
+          </HStack>
+          <VStack gap={2}>
+            {literal ? (
+              <Text as="div" size="subheadline" mono tone="secondary" lines={expanded ? undefined : 3} className="selectable permission-card-title">{name}</Text>
+            ) : (
+              <Text as="div" size="body" weight="medium" tone="text" className="permission-card-title">{name}</Text>
+            )}
+            <HStack gap={8} className="approval-card-meta">
+              <Text size="caption" tone="tertiary" truncate grow>{where}</Text>
+              {hasMore ? (
+                <button className="approval-card-details" aria-expanded={expanded} onClick={() => setExpanded((e) => !e)}>
+                  <Text size="caption" weight="medium" tone="secondary">{hiddenParams > 0 ? `${tr('Details')} · ${hiddenParams}` : tr('Details')}</Text>
+                  <span className={`disclosure-chevron${expanded ? ' open' : ''}`}><Icon name="chevron.right" size={8} weight="semibold" /></span>
                 </button>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <Text as="div" size="caption" weight="medium" tone="secondary">{outcome(entry)}</Text>
-        )}
+              ) : null}
+            </HStack>
+            <ThreadLine entry={entry} />
+          </VStack>
+          {shownParams?.length ? <ParamRows params={shownParams} clamp={!expanded} /> : null}
+        </VStack>
+        <Reveal show={expanded && (!!command || (!params && !!detail) || !!d.diffs?.length)}>
+          <VStack gap={8}>
+            {command ? <CodeBox text={command} /> : null}
+            {!params && detail ? <CodeBox text={detail.slice(0, 2000)} /> : null}
+            {(d.diffs ?? []).map((diff, i) => <DiffView key={i} diff={diff} />)}
+          </VStack>
+        </Reveal>
+        {/* The answers as the choice card's numbered rows: allow before deny, once before always. */}
+        <VStack gap={2} className="decision-options">
+          {options.map((o, i) => (
+            <button
+              key={o.optionId}
+              className={answering === null || answering === o.optionId ? 'decision-option approval-answer' : 'decision-option approval-answer dimmed'}
+              disabled={answering !== null}
+              onClick={() => respond(o.optionId)}
+            >
+              <OptionBadge>{answering === o.optionId ? <Spinner size={12} /> : i + 1}</OptionBadge>
+              <Text size="body" tone="text" className="decision-option-label">{optionLabel(o)}</Text>
+            </button>
+          ))}
+        </VStack>
       </VStack>
     </div>
+  )
+}
+
+/** Arguments as a quiet two-column list: the name, then its value (clamped to a few lines until opened). */
+function ParamRows({ params, clamp }: { params: [string, string][]; clamp: boolean }) {
+  return (
+    <dl className="param-rows">
+      {params.map(([k, v]) => (
+        <div key={k} className="param-row">
+          <Text as="div" size="caption" tone="tertiary" truncate className="param-row-name">{k}</Text>
+          <Text as="div" size="caption" mono tone="secondary" lines={clamp ? 3 : undefined} className="selectable param-row-value">{v}</Text>
+        </div>
+      ))}
+    </dl>
   )
 }
 
@@ -136,7 +204,7 @@ function outcome(entry: Entry) {
     case 'cancelled':
       return trNow('Cancelled')
     default:
-      return trNow('Expired — the agent moved on')
+      return trNow('Expired')
   }
 }
 
@@ -170,3 +238,42 @@ export function DiffView({ diff }: { diff: FileDiff }) {
     </VStack>
   )
 }
+
+/** A settled request as one quiet line: what kind it is, what it did (where it comes from in its tip), how it ended. */
+function RequestLine({ icon, title, end, expanded, onClick }: { icon: string; title: string; end: string; expanded: boolean; onClick: () => void }) {
+  const { name, source, literal } = requestName(title)
+  return (
+    <button className="request-line" aria-expanded={expanded} title={source ?? undefined} onClick={onClick}>
+      <Icon name={icon} size={12} color="var(--secondary)" />
+      <Text size="subheadline" mono={literal} tone="secondary" truncate>{name}</Text>
+      <Text size="caption" tone="tertiary" className="request-line-end">{end}</Text>
+      <span className={`disclosure-chevron${expanded ? ' open' : ''}`}><Icon name="chevron.right" size={8} weight="semibold" /></span>
+    </button>
+  )
+}
+
+/**
+ * Approvals in a row that ended alike, as one line: what they did, in a sentence of their names, how many and how they
+ * ended, with each one's own line under it on demand (`row` draws it, the chat's live card).
+ */
+export function RequestRun({ entries, row }: { entries: Entry[]; row: (entry: Entry) => React.ReactNode }) {
+  const tr = useTr()
+  const [open, setOpen] = useState(false)
+  const icons = new Set(entries.map((e) => requestIcon(e.data.toolKind, e.data.title)))
+  const names = [...new Set(entries.map((e) => requestName(e.data.title ?? '').name))]
+  return (
+    <div className="agent-inset">
+      <button className="request-line" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <Icon name={icons.size === 1 ? [...icons][0] : 'terminal'} size={12} color="var(--secondary)" />
+        <Text size="subheadline" tone="secondary" truncate title={fill(tr('{count} tool requests'), { count: String(entries.length) })}>{names.join(', ')}</Text>
+        <Text size="subheadline" tone="tertiary">{`· ${entries.length}`}</Text>
+        <Text size="caption" tone="tertiary" className="request-line-end">{outcome(entries[0])}</Text>
+        <span className={`disclosure-chevron${open ? ' open' : ''}`}><Icon name="chevron.right" size={8} weight="semibold" /></span>
+      </button>
+      <Reveal show={open}>
+        <div className="request-run-list">{entries.map((e) => <div key={e.id}>{row(e)}</div>)}</div>
+      </Reveal>
+    </div>
+  )
+}
+

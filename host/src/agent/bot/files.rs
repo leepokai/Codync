@@ -93,6 +93,7 @@ impl Actor {
     /// A turn that may still write into the chat: one is running, and the user hasn't stopped it.
     fn turn_writes(&self) -> Result<()> {
         ensure!(!self.stop_requested, "turn is stopping");
+        ensure!(self.active_workflow.is_none(), "send_file and artifact cards aren't available in a workflow step");
         ensure!(self.turn.is_some(), "no turn is running: between turns, tell the user with send_message");
         Ok(())
     }

@@ -1,15 +1,18 @@
-import { useState } from 'react'
+import { useContext, useState } from 'react'
 import { loginProfileChoices, type Backend } from '@shared/models'
 import { ChoicePicker, ValueRow } from '../../components/Controls'
 import { AgentSheet } from '../marketplace/AgentSheet'
 import { FormSheet } from '../marketplace/pieces'
+import { OpenExtensions } from '../NavRail'
+import { useStore } from '../../store/context'
 
 const DEFAULT = ''
 const ADD = '+'
 
 /**
  * Which of the agent's login profiles a bot runs on: the default one (the login the computer already has), or one of
- * its others. "Add login profile…" opens the agent's setup, where a new one signs in or gets its keys.
+ * its others. "Add login profile…" goes to Extensions' Login profiles at this agent, where a new one signs in or gets
+ * its keys (the agent's sheet where nothing can go there).
  */
 export function LoginProfileRow({ backend, loginProfile, free, onChange }: {
   backend: Backend
@@ -19,6 +22,9 @@ export function LoginProfileRow({ backend, loginProfile, free, onChange }: {
   onChange: (loginProfile: string | null) => void
 }) {
   const [adding, setAdding] = useState(false)
+  const store = useStore()
+  const openExtensions = useContext(OpenExtensions)
+  const add = () => (openExtensions ? openExtensions(store.computer.id, { section: 'logins', agent: backend.id }) : setAdding(true))
   const open = (id: string | null) => !free || free.includes(id)
   const options = [
     ...(open(null) ? [{ id: DEFAULT, label: backend.defaultLoginProfile?.name ?? 'Default login profile' }] : []),
@@ -28,7 +34,7 @@ export function LoginProfileRow({ backend, loginProfile, free, onChange }: {
   return (
     <>
       <ValueRow label="Login profile">
-        <ChoicePicker selection={loginProfile ?? DEFAULT} options={options} onChange={(id) => (id === ADD ? setAdding(true) : onChange(id || null))} />
+        <ChoicePicker selection={loginProfile ?? DEFAULT} options={options} onChange={(id) => (id === ADD ? add() : onChange(id || null))} />
       </ValueRow>
       <FormSheet open={adding} onClose={() => setAdding(false)} width={560} height={560} fixed>
         {adding ? <AgentSheet initial={backend} /> : null}

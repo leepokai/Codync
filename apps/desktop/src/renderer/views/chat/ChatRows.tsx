@@ -84,7 +84,9 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
 /** Follows the store: the card shows a spinner while its answer is on its way. */
 function LivePermission({ entry }: { entry: Entry }) {
   const store = useLiveStore()
-  return <PermissionCard entry={entry} hostName={store.hostName} answering={store.answering.get(entry.id) ?? null} respond={(o) => store.respond(entry, o)} />
+  const call = entry.data.toolCallId
+  const result = call && entry.data.status !== 'pending' ? store.allEntries(entry.botId).find((e) => e.kind === 'tool' && e.data.toolCallId === call) : undefined
+  return <PermissionCard entry={entry} hostName={store.hostName} answering={store.answering.get(entry.id) ?? null} respond={(o) => store.respond(entry, o)} result={result?.data} />
 }
 
 /** The user's press on a choice card, or their own words, on its way to the computer. */

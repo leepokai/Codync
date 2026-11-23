@@ -137,7 +137,7 @@ export function WorkRow({ task, number, line, time, open, always, onHover }: { t
 
 /** Before a task's title, where it came from: a routine's symbol, or the face of the bot that asked. Nothing for
  * what the bot added itself, or a bot this computer doesn't have. */
-function SourceMark({ task }: { task: WorkTask }) {
+export function SourceMark({ task }: { task: WorkTask }) {
   const tr = useTr()
   const store = useStore()
   if (task.source?.kind === 'routine') return <Icon name="clock.arrow.circlepath" size={11} color="var(--secondary)" title={tr('Routine')} className="work-row-source" />

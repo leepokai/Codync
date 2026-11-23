@@ -159,8 +159,8 @@ struct BotSettingsForm: View {
 
     private var sections: some View {
         VStack(alignment: .leading, spacing: 30) {
-            CardSection("Instructions") { instructions }
-            CardSection("Agent") {
+            CardSection("Instructions", fold: "bot.instructions") { instructions }
+            CardSection("Agent", fold: "bot.agent") {
                 fallbackBanner
                 modelPicker
                 loginProfilePicker
@@ -170,7 +170,7 @@ struct BotSettingsForm: View {
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot?.agentStep)
 
-            CardSection("Profile") {
+            CardSection("Profile", fold: "bot.profile") {
                 VStack(alignment: .leading, spacing: 12) {
                     Button {
                         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { pickingAvatar.toggle() }
@@ -200,7 +200,7 @@ struct BotSettingsForm: View {
                 }
             }
 
-            CardSection("Workspace") {
+            CardSection("Workspace", fold: "bot.workspace") {
                 ValueRow("Computer") {
                     Text(model.hostName).lineLimit(1)
                 }
@@ -250,7 +250,7 @@ struct BotSettingsForm: View {
                 }
             }
 
-            CardSection("Activity") {
+            CardSection("Activity", fold: "bot.activity") {
                 SwitchRow("Notifications", detail: "Get notified when this bot finishes or needs you",
                           isOn: Binding(get: { draft.notify ?? true }, set: { draft.notify = $0 }))
                 if model.screen != nil, !inDetails {

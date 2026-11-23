@@ -1,7 +1,7 @@
 //! The dispatcher: which waiting task a thread takes next, which thread ends, and why a task still waits.
 
 use super::sources::{self, Begin};
-use super::tasks::{self, Status, Task};
+use super::tasks::{self, Source, Status, Task};
 use super::worktree::{self, Place, Worktree};
 use super::{Outcome, finished, of, prompts};
 use crate::LockExt;
@@ -296,22 +296,28 @@ fn plan(hub: &Hub, cfg: &BotConfig, tasks: &mut Vec<Task>, over: Option<&str>) -
             task.worktree = inherited.or(task.worktree.take());
             plan.join.push((thread, task.clone()));
         } else {
-            let thread = thread_bot(cfg);
+            let thread = thread_bot(cfg, &task.setup);
             task.start = None;
             task.fork_failed = false;
             // One it has from before (it gave way, or is tried again) is where its work is.
             task.worktree.take_if(|w| !worktree::usable(w));
             // A bot's own folder keeps all its work in one place, with its versions (`agent::versions`).
+            // ponytail: "beside" counts the bot's threads wherever they work, so a thread in a folder of its own may
+            // get a worktree no other thread called for. Count by folder if that ever costs something.
             let beside = cfg.thread_worktrees
-                && !crate::agent::workspace::is_managed(cfg)
-                && task.source.is_bot()
+                && crate::agent::workspace::own_folder(&thread).is_none()
+                && task.source.own()
                 && side_by_side
-                && worktree::in_repo(&cfg.cwd);
+                && worktree::in_repo(&thread.cwd);
             task.place = if task.worktree.is_some() || beside { Place::Worktree } else { Place::Folder };
             // A routine's run starts as it did in the chat: a new session that knows only its own prompt.
             // ponytail: a thread in a worktree starts from a brief, not a fork: a fork is taken in another folder
             // than its session's, which no agent is checked to honor. Fork there once one is (stage 10's spikes).
-            let forks = sources::from_chat(&task.source) && task.place == Place::Folder && threads_fork(cfg);
+            // A thread its setup puts on another agent or login can't take the chat's session either.
+            let forks = sources::from_chat(&task.source)
+                && task.place == Place::Folder
+                && threads_fork(cfg)
+                && fallback::login::of(&thread) == fallback::login::of(cfg);
             task.fork_from = forks.then(|| fork_source(hub, &cfg.id)).flatten();
             task.thread = Some(thread.id.clone());
             {
@@ -348,8 +354,13 @@ fn begin(hub: &Arc<Hub>, bot: &str, thread: &BotConfig, task: &Task, first: bool
             hub.spawn_bot(thread.clone());
             sources::watch(hub, bot, &thread.id, task);
         }
-        let text = if task.source.is_bot() { prompts::task_prompt(task, first) } else { task.brief.clone() };
-        crate::chat::messages::post(hub, thread, json!({"text": text, "from": "host"}))
+        let message = match task.source {
+            Source::Bot => json!({"text": prompts::task_prompt(task, first), "from": "host"}),
+            // The user's own words, as the message that opens their thread (`thread`'s turn says who speaks).
+            Source::User => json!({"text": task.brief, "attachments": []}),
+            Source::Routine { .. } | Source::Request { .. } => json!({"text": task.brief, "from": "host"}),
+        };
+        crate::chat::messages::post(hub, thread, message)
     };
     if let Err(error) = posted {
         host_error!(hub, "couldn't hand work to a thread", thread = %thread.id, error = format!("{error:#}"));
@@ -363,8 +374,9 @@ fn threads_fork(cfg: &BotConfig) -> bool {
     fallback::login::of(&fallback::threads(cfg)) == fallback::login::of(cfg)
 }
 
-/// A thread bot for `cfg`: its config, without what stays with the chat.
-fn thread_bot(cfg: &BotConfig) -> BotConfig {
+/// A thread bot for `cfg`: its config (on the threads' own agent, in Advisor mode) with what its task's `setup`
+/// changes, without what stays with the chat.
+fn thread_bot(cfg: &BotConfig, setup: &tasks::Setup) -> BotConfig {
     BotConfig {
         id: format!("{THREAD_PREFIX}{}", uuid::Uuid::new_v4()),
         thread_of: Some(cfg.id.clone()),
@@ -387,7 +399,7 @@ fn thread_bot(cfg: &BotConfig) -> BotConfig {
         // A thread runs no threads of its own.
         thread_agent: None,
         thread_fallbacks: Vec::new(),
-        ..fallback::threads(cfg)
+        ..setup.over(&fallback::threads(cfg))
     }
 }
 
@@ -588,7 +600,7 @@ mod tests {
         let run = |n: usize| {
             let run = hub.routines.enqueue(&hub.store, "b1", &routine, json!({}), Some(format!("d{n}")), false);
             let run = run.expect("queued")["run"]["id"].as_str().map(str::to_owned).expect("its id");
-            let source = tasks::Source::Routine { id: routine.clone(), run };
+            let source = Source::Routine { id: routine.clone(), run };
             Task { source, order: i64::try_from(n).expect("small"), ..Task::waiting("Check", "", None, None, 0) }
         };
         let ordinary = Task { order: 2, ..Task::waiting("Dig", "x", None, None, 0) };

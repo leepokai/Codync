@@ -33,6 +33,23 @@ export interface AgentModelsState {
   reload: () => void
 }
 
+/**
+ * A catalog's models as a picker lists them (`options`): the agent's default first, under the id `''`, then the rest,
+ * and `selection` itself where the list lacks it. `value` is the one `selection` shows as, `selected` that model, and
+ * `modelOptions` its own settings.
+ */
+export function modelChoices(catalog: AgentModels | null, selection: string | null | undefined, tr: (text: string) => string) {
+  const agentDefault = catalog?.models.find((m) => m.name.toLowerCase().startsWith('default'))
+  const available = (catalog?.models ?? []).filter((m) => m.id !== agentDefault?.id)
+  const current = catalog?.models.find((m) => m.id === catalog.currentModelId)
+  const value = selection === agentDefault?.id ? '' : (selection ?? '')
+  const selected = catalog?.models.find((m) => m.id === (value || agentDefault?.id || catalog.currentModelId))
+  const modelOptions = value || catalog?.defaultModelOptions ? selected?.options ?? [] : []
+  const options: { id: string; label: string }[] = [{ id: '', label: agentDefault?.name ?? (current ? tr('Default · {name}').replaceAll('{name}', () => current.name) : tr('Default')) }, ...available.map((m) => ({ id: m.id, label: m.name }))]
+  if (value && !available.some((m) => m.id === value)) options.push({ id: value, label: value })
+  return { value, selected, modelOptions, options }
+}
+
 /** Models come from the selected computer's agent, never a bundled provider list. */
 export function useAgentModels(backend: string, loginProfile?: string | null): AgentModelsState {
   const store = useStore()

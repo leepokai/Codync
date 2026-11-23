@@ -94,6 +94,12 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "rev": hub.store.current_rev(),
                 "screen": hub.screen.state(),
                 "analytics": hub.analytics.state(),
+                // The user can start a thread with a bot themselves (`startThread`).
+                "startThread": true,
+                // A thread may start without a bot, on an agent the user names (`startThread` without `botId`).
+                "threadsWithoutBot": true,
+                // A thread may be started to build one workflow (`startThread` with `setup.workflow`).
+                "workflowThreads": true,
                 // Whether a bot with a new message moves to the top of the roster (`setAutoOrder`).
                 "autoOrder": hub.auto_order(),
                 // `resetCredentials` can be used here (a Codync Cloud computer's keeper holds its credentials).
@@ -105,6 +111,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "canJoinAccount": crate::remote::owner::can_join(hub),
                 // Shells out to `tailscale`: keep it off the async workers.
                 "urls": tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?,
+                "workflows": true,
             })
         }
         "refreshBackends" => {
@@ -327,7 +334,7 @@ fn agents(hub: &Hub) -> Vec<Value> {
     agents
 }
 
-fn term_size(b: &Value) -> (u16, u16) {
+pub(super) fn term_size(b: &Value) -> (u16, u16) {
     let dim = |k: &str, default: u16| b[k].as_u64().and_then(|v| u16::try_from(v).ok()).unwrap_or(default);
     (dim("cols", 80), dim("rows", 24))
 }

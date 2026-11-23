@@ -46,17 +46,21 @@ class LayoutTest {
         compose.onNode(hasSetTextAction() and hasText("Name your bot")).assertIsDisplayed()
         compose.onNodeWithContentDescription("Close").performClick()
         compose.onNodeWithContentDescription("Create").assertDoesNotExist()
-        // The State tab's widget previews never stop moving: step the clock by hand there.
+        // The status gallery's widget previews never stop moving: step the clock by hand there.
         compose.mainClock.autoAdvance = false
-        compose.onNode(tab("State")).performClick()
+        compose.onNode(tab("Settings")).performClick()
+        compose.mainClock.advanceTimeBy(500)
+        compose.onNodeWithText("Show status").performClick()
         compose.mainClock.advanceTimeBy(1_000)
-        compose.onNode(tab("State")).assertIsSelected()
+        compose.onNode(tab("Settings")).assertIsSelected()
         compose.onNodeWithText("Widget").assertIsSelected()
         compose.onNodeWithText("Choose your widget").performScrollTo()
         compose.mainClock.advanceTimeBy(500)
         compose.onNodeWithText("Choose your widget").assertIsDisplayed()
         snapshot("widget-gallery")
         compose.onNodeWithText("Bot 1").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Close").performClick()
+        compose.mainClock.advanceTimeBy(500)
         compose.onNode(tab("Bots")).performClick()
         compose.mainClock.advanceTimeBy(1_000)
         compose.mainClock.autoAdvance = true
@@ -68,11 +72,11 @@ class LayoutTest {
         // A cold start: the link is counted while the account loads, before the tabs first show.
         val context = mutableStateOf(app.copy(loading = true))
         compose.setContent { Hosted { CodyncApp(context.value, mapOf(computer.id to state), accounts) } }
-        // The State tab's widget previews never stop moving: step the clock by hand.
+        // The status gallery's widget previews never stop moving: step the clock by hand.
         compose.mainClock.autoAdvance = false
         compose.runOnUiThread { context.value = app.copy(navigationRequest = 1, navigationPage = LinkPage.Usage) }
         compose.mainClock.advanceTimeBy(1_000)
-        compose.onNode(tab("State")).assertIsSelected()
+        compose.onNode(tab("Settings")).assertIsSelected()
         compose.runOnUiThread { context.value = app.copy(navigationRequest = 2, navigationPage = LinkPage.Computers) }
         compose.mainClock.advanceTimeBy(1_000)
         compose.mainClock.autoAdvance = true

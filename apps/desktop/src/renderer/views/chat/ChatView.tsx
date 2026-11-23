@@ -1,23 +1,26 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { draftOf, isGroup, isWorking, isWorkingIn, type Bot, type BotDraft, type Entry, type ReplyQuote } from '@shared/models'
 import { BotAvatar, GroupAvatar } from '../../components/Avatar'
 import { Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { Sheet, usePresence } from '../../components/Overlay'
-import { HStack, IconSlot, Spacer } from '../../components/Stack'
+import { Sheet } from '../../components/Overlay'
+import { HStack, IconSlot } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { prefs, usePref } from '../../lib/prefs'
 import { connectedThrough } from '../../lib/relay-copy'
 import { useTr } from '../../lib/use-language'
-import { useScreenViewed } from '../../store/analytics'
+import { analytics, useScreenViewed } from '../../store/analytics'
 import { useStore } from '../../store/context'
 import { UpdateNeededCard } from '../UpdateNeededCard'
-import { buildChat, rowIn, useArrivals, type ChatItem } from './chat-items'
+import { buildChat, type ChatItem } from './chat-items'
+import { ChatLog, useDockHeight } from './ChatLog'
 import { BotConversationView, BotMessageRow } from './BotConversation'
 import { CallConversationView, CallLineRow } from '../call/CallRows'
 import { hidingCalls } from '@shared/calls'
 import { devServerSummary } from '@shared/dev-servers'
 import { ChatRow, TimeSeparator } from './ChatRows'
+import { RequestRun } from './PermissionCard'
 import { DevServerTitle } from './DevServersSection'
 import { WorkingTransition } from './WorkingTransition'
 import { RoutineNotice } from './RoutineNotice'
@@ -27,7 +30,9 @@ import { WorkCapsule } from './WorkCapsule'
 import { fill } from '@shared/fill'
 import { outsideQueue } from './queued-messages'
 import { ChatSidePanel } from './ChatSidePanel'
-import { DetailsPanel, type DetailsTab } from './DetailsPanel'
+import { WindowBarSlots } from '../WindowBar'
+import { IconButton } from '../../components/Controls'
+import { DetailsPanel, showPanelView, splitPanel, type DetailsTab } from './DetailsPanel'
 import { TraceView } from './TraceView'
 import { workingSteps } from './trace-turns'
 import { useReading } from './reading'
@@ -36,7 +41,6 @@ import { BotTemplateView } from '../bots/BotTemplateView'
 import { BotEditorView } from '../bots/BotEditorView'
 import { FormSheet } from '../marketplace/pieces'
 import { CallView } from '../call/CallView'
-import { MacChatButton } from './MacChatButton'
 import { ArtifactView } from '../library/ArtifactView'
 import './chat.css'
 import './composer.css'
@@ -47,10 +51,8 @@ const WIDE = 740
 /**
  * One endless conversation with a bot or a group chat. Only deliberate messages show here; tool
  * calls and thinking live in the "Full conversation" sheet. Replying to a message quotes it in the composer.
- * `request` is what something outside asks it to show, counted per asking: the card of the task `task`, the thread of the
- * task `thread`, else the bot's Details.
  */
-export const ChatView = memo(function ChatView({ botId, request = null }: { botId: string; request?: { count: number; task?: string; thread?: string } | null }) {
+export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
   const tr = useTr()
   const store = useStore()
   const bot = store.bots.get(botId) ?? null
@@ -63,10 +65,8 @@ export const ChatView = memo(function ChatView({ botId, request = null }: { botI
   const [editingGroup, setEditingGroup] = useState(false)
   const [templateDraft, setTemplateDraft] = useState<BotDraft | null>(null)
   const [showSettings, setShowSettings] = useState(false)
-  const [detailsTab, setDetailsTab] = useState<DetailsTab>('details')
-  // The task whose thread the inspector shows in place of its pages.
-  const [threadTask, setThreadTask] = useState<string | null>(null)
-  const closeThread = useCallback(() => setThreadTask(null), [])
+  // The docked panel covers the conversation.
+  const [panelFilled, setPanelFilled] = useState(false)
   const [compactDetails, setCompactDetails] = useState(false)
   const [calling, setCalling] = useState(false)
   const [callSpeaking, setCallSpeaking] = useState(false)
@@ -100,16 +100,12 @@ export const ChatView = memo(function ChatView({ botId, request = null }: { botI
       setSqueezed(w - 380 < squeezeBelow.current ? w : 0)
     })
     observer.observe(el)
-    // The composer floats over the transcript; its height becomes the transcript's bottom padding.
-    const docked = new ResizeObserver(([e]) => el.style.setProperty('--composer-height', `${Math.ceil(e!.borderBoxSize[0]!.blockSize)}px`))
-    if (dock.current) docked.observe(dock.current)
-    return () => {
-      observer.disconnect()
-      docked.disconnect()
-    }
+    return () => observer.disconnect()
   }, [])
+  useDockHeight(root, dock)
 
   const panelOpen = wide && showSettings
+  const bar = useContext(WindowBarSlots)
   squeezeBelow.current = panelOpen ? Math.max(360, detailsWidth) : 0
   // The side panel's edge drags its width, leaving the conversation at least 380 wide.
   const panelWidth = (w: number) => Math.min(Math.max(360, w), width.current - 380)
@@ -124,7 +120,7 @@ export const ChatView = memo(function ChatView({ botId, request = null }: { botI
   const devServers = devServerSummary(bot?.devServers ?? [])
   // The title's port leads to its row, whichever page the inspector was left on.
   const openFromTitle = useCallback(() => {
-    if (devServers.kind !== 'none') setDetailsTab('details')
+    if (devServers.kind !== 'none') showPanelView('details')
     toggleDetails()
   }, [devServers.kind, toggleDetails])
 
@@ -143,8 +139,7 @@ export const ChatView = memo(function ChatView({ botId, request = null }: { botI
   }, [])
 
   const showDetails = useCallback((tab: DetailsTab) => {
-    setDetailsTab(tab)
-    setThreadTask(null)
+    showPanelView(tab)
     setShowSettings(true)
     if (!wide) setCompactDetails(true)
   }, [wide])
@@ -170,37 +165,30 @@ export const ChatView = memo(function ChatView({ botId, request = null }: { botI
     setCompactDetails(false)
     setReveal({ entryId })
   }, [])
-  // The view of all bots' work asks for the same, each time: a bot's heading for its Details, a row for its card.
-  useEffect(() => {
-    if (!request) return
-    if (request.task) return openCard(request.task)
-    showDetails('details')
-    if (request.thread) setThreadTask(request.thread)
-  }, [request?.count])
   const member = editingMember ? store.bots.get(editingMember) : undefined
 
+  const shareBot = () => {
+    setCompactDetails(false)
+    if (bot) setTemplateDraft(draftOf(bot))
+  }
+  const maximizePanel = () => setPanelFilled((on) => {
+    analytics.track({ event: 'panel_maximized', on: !on })
+    return !on
+  })
   const details = (
     <DetailsPanel
       key={routineRequest}
       botId={botId}
       routineId={routineId}
-      tab={detailsTab}
-      setTab={setDetailsTab}
-      thread={threadTask}
-      openThread={setThreadTask}
-      closeThread={closeThread}
+      docked={wide}
       editGroup={() => setEditingGroup(true)}
       openArtifact={openArtifact}
       openCard={openCard}
       showInChat={showInChat}
-      share={() => {
-        setCompactDetails(false)
-        if (bot) setTemplateDraft(draftOf(bot))
-      }}
+      share={shareBot}
       close={() => {
         setShowSettings(false)
         setCompactDetails(false)
-        setThreadTask(null)
       }}
     />
   )
@@ -210,13 +198,17 @@ export const ChatView = memo(function ChatView({ botId, request = null }: { botI
       <div className="conversation">
         <div className="top-chrome">
           <TopFade />
-          <div className="top-chrome-row">
-            <Spacer />
-            {(!showSettings || !wide) && !compactDetails ? (
-              <MacChatButton className="ringed" title="Conversation details" icon="chevron.left.2" direction={[-1, 0]} onClick={toggleDetails} />
-            ) : null}
-          </div>
-          {/* The call bar takes the pill's place; its frosted glass would show the name blurred. */}
+          {/* The window's bar holds the bot, what runs it, and the panel's toggle with the open panel's own buttons
+              before it; nothing while another page covers the conversation. */}
+          {bar.end ? createPortal(<>
+            {panelOpen && bot && !isGroup(bot) ? <>
+              <IconButton title="Create template" icon="square.and.arrow.up" size={28} onClick={shareBot} />
+              <IconButton title="Maximize panel" icon={panelFilled ? 'arrow.down.right.and.arrow.up.left' : 'arrow.up.left.and.arrow.down.right'} size={28} onClick={maximizePanel} />
+              <IconButton title="Split panel" icon="rectangle.split.1x2" size={28} onClick={splitPanel} />
+            </> : null}
+            <IconButton title="Conversation details" icon="sidebar.right" size={28} onClick={toggleDetails} />
+          </>, bar.end) : null}
+          {bar.title ? createPortal(<>
           <button className={`title-pill ${calling ? 'hidden-by-call' : ''}`} inert={calling} onClick={openFromTitle} aria-label={tr('{name}, view details').replaceAll('{name}', () => bot?.name ?? tr('Conversation'))} title={tr('View conversation details')}>
             <HStack as="span" gap={7}>
               {bot ? isGroup(bot) ? <GroupAvatar members={store.members(bot)} size={22} /> : <BotAvatar bot={bot} size={22} /> : null}
@@ -229,6 +221,7 @@ export const ChatView = memo(function ChatView({ botId, request = null }: { botI
             </HStack>
             {store.shownConnection.kind !== 'online' || store.mismatch ? <ConnectionSubtitle /> : null}
           </button>
+          </>, bar.title) : null}
         </div>
         {/* An update card takes the composer's place, so there's nothing to reply with. */}
         <Transcript botId={botId} reveal={reveal} openTrace={openTrace} onReply={store.mismatch ? undefined : setReplyTo} openRoutine={presentRoutine} openAgent={presentAgent} openBotChat={setBotChat} openArtifact={openArtifact} openCall={setCallLine} />
@@ -262,6 +255,7 @@ export const ChatView = memo(function ChatView({ botId, request = null }: { botI
       </div>
       <ChatSidePanel
         open={panelOpen}
+        filled={panelFilled}
         width={panelWidth(detailsWidth)}
         min={360}
         max={width.current - 380}
@@ -332,21 +326,44 @@ function ConnectionSubtitle() {
   )
 }
 
-/** The messages: every loaded message, brought to the newest as it changes while the reader is at the bottom. */
-const PAGE = 40
-
-/** Where the shown rows start: at the row `first`, or with the newest `PAGE` rows. */
-function startOf(list: ChatItem[], first: string | null) {
-  const found = first ? list.findIndex((i) => i.id === first) : -1
-  return found >= 0 ? found : Math.max(0, list.length - PAGE)
+/**
+ * The bot's chat in a panel beside one of its threads: its messages and its message box, with its sheets (Full
+ * conversation, a talk with another bot, a call's conversation). What opens elsewhere (a routine, an agent's settings)
+ * waits for the chat itself.
+ */
+export function SideChat({ botId, openArtifact }: { botId: string; openArtifact: (artifactId: string) => void }) {
+  const store = useStore()
+  const root = useRef<HTMLDivElement>(null)
+  const dock = useRef<HTMLDivElement>(null)
+  useDockHeight(root, dock)
+  useScreenViewed('side_chat')
+  const [replyTo, setReplyTo] = useState<ReplyQuote | null>(null)
+  const [trace, setTrace] = useState(false)
+  const [peer, setPeer] = useState<string | null>(null)
+  const [line, setLine] = useState<string | null>(null)
+  const nothing = useCallback(() => {}, [])
+  return (
+    <div className="chat-view side-chat">
+      <div className="conversation" ref={root}>
+        <Transcript botId={botId} reveal={null} openTrace={() => setTrace(true)} onReply={store.mismatch ? undefined : setReplyTo} openRoutine={nothing} openAgent={nothing} openBotChat={setPeer} openArtifact={openArtifact} openCall={setLine} />
+        <div className="composer-dock" ref={dock}>
+          <div className="composer-fade" />
+          {store.mismatch ? null : <Composer botId={botId} reply={replyTo} cancelReply={() => setReplyTo(null)} />}
+        </div>
+      </div>
+      <Sheet open={trace} onClose={() => setTrace(false)} width={620} height={560}><TraceView botId={botId} /></Sheet>
+      <Sheet open={peer !== null} onClose={() => setPeer(null)} width={620} height={560}>{peer ? <BotConversationView botId={botId} peerId={peer} /> : null}</Sheet>
+      <Sheet open={line !== null} onClose={() => setLine(null)} width={620} height={560}>{line ? <CallConversationView botId={botId} lineId={line} /> : null}</Sheet>
+    </div>
+  )
 }
 
 /** Where the chat is brought to: a task's card (`taskId`), or an entry (`entryId`). */
 type Reveal = { taskId: string } | { entryId: string }
 
+/** The chat's messages: every loaded one (`ChatLog`), without what voice calls carried and what waits for the bot. */
 const Transcript = memo(function Transcript({ botId, reveal, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact, openCall }: { botId: string; reveal: Reveal | null; openTrace: () => void; onReply?: (quote: ReplyQuote) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
   const store = useStore()
-  const tr = useTr()
   const bot = store.bots.get(botId) ?? null
   const live = !!bot && isWorkingIn(bot, botId) && !store.isOffline
   // Rebuilt only when this chat changes: the store replaces a chat's list on every change.
@@ -356,158 +373,30 @@ const Transcript = memo(function Transcript({ botId, reveal, openTrace, onReply,
   const chatOf = useCallback((list: Entry[]) => buildChat(outsideQueue(hidingCalls(list), working)), [working])
   const all = useMemo(() => chatOf(entries), [chatOf, entries])
   const steps = useMemo(() => workingSteps(entries), [entries])
-  // The newest 40 items first; older pages come in near the top.
-  const [firstShown, setFirstShown] = useState<string | null>(null)
-  const [loadingEarlier, setLoadingEarlier] = useState(false)
-  const start = startOf(all, firstShown)
-  const items = all.slice(start)
-  const more = start > 0 || store.canLoadOlder(botId)
-  // Following the newest message, or reading history: scrolling up releases the bottom,
-  // arriving back at the end (or Jump to latest) restores it. Content growth alone never changes it.
-  const [following, setFollowingState] = useState(true)
-  // Set with the state, not from it: a store change renders before a pending change to it, and would undo it.
-  const followingRef = useRef(true)
-  const setFollowing = (on: boolean) => {
-    followingRef.current = on
-    setFollowingState(on)
-  }
-  const scroller = useRef<HTMLDivElement>(null)
-  const lastScrollTop = useRef(0)
-  const keepPlace = useRef<number | null>(null)
-  const last = items[items.length - 1]
-  const jump = usePresence(!following && items.length > 0, 200)
-  const arrivals = useArrivals(items.map((i) => i.id), following)
-
-  const toBottom = (smooth = false) => {
-    const el = scroller.current
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
-  }
-
-  useEffect(() => {
-    if (!firstShown && items[0]) setFirstShown(items[0].id)
-  }, [firstShown, items])
-
-  // `reveal`: the shown rows reach back to its entry (a task's card loads older pages until the chat has it), and it
-  // scrolls into the middle. One that can't be found leaves the chat where it was.
-  const [revealing, setRevealing] = useState<{ entryId: string } | null>(null)
+  // `reveal`: a task's card loads older pages until the chat has it.
+  const [revealed, setRevealed] = useState<{ entryId: string } | null>(null)
   useEffect(() => {
     if (!reveal) return
     let current = true
     void (async () => {
       const entryId = 'entryId' in reveal ? reveal.entryId : (await store.cardOf(botId, reveal.taskId))?.id
-      if (!current || !entryId) return
-      const list = chatOf(store.allEntries(botId))
-      const at = list.findIndex((i) => i.kind !== 'separator' && i.entry.id === entryId)
-      if (at < 0) return
-      setFirstShown((first) => list[Math.min(at, startOf(list, first))]!.id)
-      setRevealing({ entryId })
+      if (current && entryId) setRevealed({ entryId })
     })()
     return () => {
       current = false
     }
   }, [reveal])
-  // At once, not smooth: a smooth scroll still at the end lets the follower take the chat back down. Brought up from
-  // the newest, the reader stops following it.
-  useEffect(() => {
-    const el = scroller.current
-    if (!el || !revealing) return
-    el.querySelector(`[data-entry-id="${CSS.escape(revealing.entryId)}"]`)?.scrollIntoView({ block: 'center' })
-    if (el.scrollHeight - el.scrollTop - el.clientHeight >= 8) setFollowing(false)
-  }, [revealing])
-
-  const showEarlier = async () => {
-    if (loadingEarlier) return
-    setLoadingEarlier(true)
-    const el = scroller.current
-    keepPlace.current = el ? el.scrollHeight - el.scrollTop : null
-    let list = all
-    let at = start
-    if (at === 0) {
-      const anchor = list[0]?.id
-      await store.loadOlder(botId)
-      list = chatOf(store.allEntries(botId))
-      at = anchor ? Math.max(0, list.findIndex((i) => i.id === anchor)) : 0
-    }
-    if (at > 0) setFirstShown(list[Math.max(0, at - PAGE)]!.id)
-    setLoadingEarlier(false)
-  }
-
-  // Earlier messages going in above keep the reader's place; a follower stays at the bottom.
-  useLayoutEffect(() => {
-    const el = scroller.current
-    if (!el) return
-    if (keepPlace.current !== null && !followingRef.current) {
-      el.scrollTop = el.scrollHeight - keepPlace.current
-      keepPlace.current = null
-    } else if (followingRef.current) toBottom()
-  })
-
-  // A message the user sends brings the chat back to the newest.
-  const lastIsUser = last?.kind === 'entry' && last.entry.kind === 'user'
-  useEffect(() => {
-    if (lastIsUser) setFollowing(true)
-  }, [last?.id, lastIsUser])
-
-  // Rows that grow after layout (images, the text size) keep a follower at the bottom.
-  useEffect(() => {
-    const el = scroller.current
-    if (!el) return
-    const observer = new ResizeObserver(() => {
-      if (followingRef.current) toBottom()
-    })
-    observer.observe(el.firstElementChild!)
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
-
   return (
-    <div className="transcript-frame">
-      <div
-        className="transcript"
-        ref={scroller}
-        role="log"
-        data-find-root
-        aria-label={tr('Messages')}
-        onScroll={(e) => {
-          const el = e.currentTarget
-          const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 8
-          if (el.scrollTop < lastScrollTop.current - 1 && !atEnd) setFollowing(false)
-          else if (atEnd) setFollowing(true)
-          lastScrollTop.current = el.scrollTop
-          if (more && el.scrollTop < 200 && !loadingEarlier) void showEarlier()
-        }}
-      >
-        <div className="transcript-content">
-          {more ? (
-            <button className="load-earlier" disabled={loadingEarlier} onClick={() => void showEarlier()}>
-              {loadingEarlier ? <Spinner size={14} /> : tr('Load earlier messages')}
-            </button>
-          ) : null}
-          {items.length === 0 && bot ? <div className="transcript-intro">{isGroup(bot) ? <GroupIntroCard group={bot} /> : <IntroCard bot={bot} />}</div> : null}
-          {items.map((item) => (
-            // `data-entry-id`: what a quote's click looks for (a user row's `item.id` is its nonce).
-            <div key={item.id} className={arrivals.has(item.id) ? rowIn(item) : undefined} data-entry-id={item.kind === 'separator' ? undefined : item.entry.id}>
-              <Row item={item} chat={bot} openTrace={openTrace} onReply={onReply} openRoutine={openRoutine} openAgent={openAgent} openBotChat={openBotChat} openArtifact={openArtifact} openCall={openCall} />
-            </div>
-          ))}
-          {bot ? <WorkingTransition bot={bot} visible={live} steps={steps} /> : null}
-          <div className="chat-end" />
-        </div>
-      </div>
-      {jump.mounted ? (
-        <div className={`jump-to-latest ${jump.shown ? 'shown' : ''}`} inert={!jump.shown}>
-          <MacChatButton
-            title="Jump to latest"
-            icon="arrow.down"
-            direction={[0, 1]}
-            onClick={() => {
-              setFollowing(true)
-              toBottom(true)
-            }}
-          />
-        </div>
-      ) : null}
-    </div>
+    <ChatLog
+      items={all}
+      fresh={() => chatOf(store.allEntries(botId))}
+      canLoadOlder={store.canLoadOlder(botId)}
+      loadOlder={() => store.loadOlder(botId)}
+      revealed={revealed}
+      intro={bot ? isGroup(bot) ? <GroupIntroCard group={bot} /> : <IntroCard bot={bot} /> : null}
+      row={(item) => <Row item={item} chat={bot} openTrace={openTrace} onReply={onReply} openRoutine={openRoutine} openAgent={openAgent} openBotChat={openBotChat} openArtifact={openArtifact} openCall={openCall} />}
+      working={bot ? <WorkingTransition bot={bot} visible={live} steps={steps} /> : null}
+    />
   )
 })
 
@@ -516,6 +405,7 @@ function Row({ item, chat, openTrace, onReply, openRoutine, openAgent, openBotCh
     return <TimeSeparator date={item.date} />
   }
   if (item.kind === 'exchanges') return <BotMessageRow exchanges={item.exchanges} open={openBotChat} />
+  if (item.kind === 'requests') return <div className="chat-row group-start"><RequestRun entries={item.entries} row={(e) => <ChatRow entry={e} groupStart={false} chat={chat} />} /></div>
   const e = item.entry
   if (e.kind === 'notice' && e.data.routineId) return <RoutineNotice entry={e} open={() => openRoutine(e.data.routineId!)} />
   if (e.kind === 'notice' && e.data.call) return <div className="chat-row notice"><CallLineRow entry={e} open={() => openCall(e.id)} /></div>

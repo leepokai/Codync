@@ -1,5 +1,5 @@
 // Mounted inside the running sandbox Electron window by agent-models-login-profile.spec.ts:
-// exercises the real BotSettingsPanel, AgentModelPicker, FallbacksRow, and LoginProfileRow
+// exercises the real BotSettingsPanel, its ModelPicker and FallbacksRow (logins picked in the panel's rail)
 // against recorded `agentModels` requests across default / Pro #7 / Ultra #8 login profiles.
 import { normalizeBot, type Backend, type BotDraft } from '../src/shared/models'
 import { Observable } from '../src/renderer/lib/observable'

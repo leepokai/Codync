@@ -28,6 +28,8 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import com.codync.android.core.LinkState
+import com.codync.android.core.Login
+import com.codync.android.core.LoginSeat
 import com.codync.android.core.MAX_THREADS
 import com.codync.android.core.login
 import com.codync.android.core.restOf
@@ -141,8 +143,9 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
     row {
         AgentModelPicker(state, store::agentModels, draft.backend, draft.model, draft.modelOptions, draft.fastMode ?: false, bot,
             { model, options -> change(draft.copy(model = model, modelOptions = options)) }, { change(draft.copy(fastMode = it)) },
-            agents = agentChoices(state) + ("custom" to "Custom command"),
-            chooseAgent = { if (it != draft.backend) change(draft.withAgent(it)) }, onReload = reloadModels, loginProfile = draft.loginProfile) {
+            agents = pickerSeats(agentBackends(state), draft.login) + LoginSeat(Login("custom"), tr("Custom command")),
+            chooseAgent = { change((if (it.backend == draft.backend) draft else draft.withAgent(it.backend)).copy(loginProfile = it.loginProfile)) },
+            onReload = reloadModels, loginProfile = draft.loginProfile, store = store) {
                 bot?.restOf(draft.login)?.let { Text(tr(it.line(RelativeTime.clock(it.until))), style = Type.caption, color = Palette.secondary) }
                 backends(state).firstOrNull { it.text("id") == draft.backend && !it.available }?.text("installHint")?.takeIf(String::isNotBlank)?.let {
                     Text(it, style = Type.caption, color = Palette.warning)
@@ -151,7 +154,6 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
                     "ACP command, e.g. my-agent --acp", style = Type.callout.monospaced, capitalize = false)
             }
     }
-    loginProfileRow(state, store, draft, change)
     // Only from a host that has fallbacks (its bots say).
     val list = draft.fallbacks ?: return
     row { FallbackList(state, store, draft.login, list, bot, { change(draft.copy(fallbacks = it)) }) }

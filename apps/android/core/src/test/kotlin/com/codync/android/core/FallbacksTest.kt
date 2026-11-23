@@ -183,4 +183,15 @@ class FallbacksTest {
         assertNull(switched.loginProfile)
         assertEquals(listOf(Login("codex", "c1"), Login("claude")), switched.fallbacks?.map { it.login })
     }
+
+    @Test fun `each agent is a row per login, its default first, and keeps the one in use once signed out`() {
+        val claude = AgentBackend("claude", "Claude", defaultLoginProfile = DefaultLoginProfile("me@home"),
+            loginProfiles = listOf(LoginProfile("w", "Work", signedIn = true), LoginProfile("x", signedIn = false)))
+        val agents = listOf(claude, AgentBackend("codex", "Codex"))
+        fun names(on: Login, logins: ((AgentBackend) -> List<String?>)? = null) = agents.loginSeats(on, "Default", "New", logins).map { it.name }
+        assertEquals(listOf("Claude · me@home", "Claude · Work", "Codex"), names(Login("codex")))
+        assertEquals(listOf("Claude · me@home", "Claude · Work", "Claude · New", "Codex"), names(Login("claude", "x")))
+        assertEquals(listOf("Claude · Work"), names(Login("claude"), { if (it.id == "claude") listOf("w") else emptyList() }))
+        assertEquals(Login("claude", "w"), agents.loginSeats(Login("codex"), "Default", "New")[1].login)
+    }
 }

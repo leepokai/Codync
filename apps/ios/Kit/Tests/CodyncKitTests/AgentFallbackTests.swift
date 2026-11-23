@@ -221,6 +221,18 @@ private let claudeJSON = #"{"id":"claude","name":"Claude Code","available":true,
     #expect(plain.freeLogins(taken: []) == [nil] && plain.freeLogins(taken: [AgentLogin(backend: "codex")]).isEmpty)
 }
 
+@Test func anAgentIsPickedOncePerLogin() throws {
+    let claude = try JSONDecoder().decode(Backend.self, from: Data(claudeJSON.utf8))
+    let codex = try JSONDecoder().decode(Backend.self, from: Data(#"{"id":"codex","name":"Codex","available":true,"command":"codex","installHint":""}"#.utf8))
+    // Signed-out a2 only while it's the one picked; a profile without a name is a new one.
+    #expect(claude.loginSeats(label: "Claude Code", on: AgentLogin(backend: "codex")).map(\.name)
+        == ["Claude Code · Default login profile", "Claude Code · New login profile", "Claude Code · New login profile"])
+    #expect(claude.loginSeats(label: "Claude Code", on: AgentLogin(backend: "claude", loginProfile: "a2")).map(\.login.loginProfile) == [nil, "a1", "a2", "a3"])
+    #expect(claude.loginSeats(label: "Claude Code", on: AgentLogin(backend: "claude"), logins: ["a3"]).map(\.login) == [AgentLogin(backend: "claude", loginProfile: "a3")])
+    // Without login profiles, just the agent.
+    #expect(codex.loginSeats(label: "Codex", on: AgentLogin(backend: "claude")) == [LoginSeat(login: AgentLogin(backend: "codex"), name: "Codex")])
+}
+
 @Test func aStepPickedInPlaceGetsItsOwnBackOnItsOwnAgent() throws {
     let claude = try JSONDecoder().decode(Backend.self, from: Data(claudeJSON.utf8))
     let codex = try JSONDecoder().decode(Backend.self, from: Data(#"{"id":"codex","name":"Codex","available":true,"command":"codex","installHint":""}"#.utf8))

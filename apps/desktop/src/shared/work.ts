@@ -70,6 +70,8 @@ export interface WorkTask {
 export interface ThreadSetup {
   /** The agent: a thread without a bot names it. */
   backend?: string
+  /** The agent's login profile, `''` its default login; left out, the bot's. */
+  loginProfile?: string
   cwd?: string
   model?: { id: string | null; options: Record<string, string> }
   approval?: { permission: string; mode: string | null }

@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Models come from the selected computer's agent, never a bundled provider list.
 /// The summary expands into one searchable agent/model picker and its settings.
-struct AgentModelPicker<Details: View>: View {
+struct AgentModelPicker: View {
     let backend: String
     /// The login profile its models are listed for; nil for the default login.
     var loginProfile: String?
@@ -14,8 +14,11 @@ struct AgentModelPicker<Details: View>: View {
     var fastMode: Binding<Bool>?
     /// The saved bot: whether its own sessions offer Fast mode, and why the agent refused it.
     var bot: Bot?
-    var agents: [(String, String)] = []
-    var onAgentChange: ((String) -> Void)?
+    /// Each agent once per login; picking one sets both.
+    var agents: [LoginSeat] = []
+    var onAgentChange: ((AgentLogin) -> Void)?
+    /// The agent whose list ends with "Add login profile…": the picked one, when it has login profiles.
+    var addsLoginTo: Backend?
     var command: Binding<String?>?
     var installHint: String?
     var restLine: String?
@@ -23,9 +26,14 @@ struct AgentModelPicker<Details: View>: View {
     var onReload: (() -> Void)?
     /// Starts open on its choices (a fallback just added).
     var expanded = false
-    /// Under the agent and model while open: a fallback's login profile.
-    @ViewBuilder var details: Details
     private enum Stage { case closed, agents, models, settings }
+    /// A row of the agent or model list.
+    private struct Choice: Identifiable {
+        let id: String
+        let name: String
+        let on: Bool
+        let pick: () -> Void
+    }
     @State private var stage = Stage.closed
     @State private var query = ""
     @Environment(BotStore.self) private var store
@@ -35,6 +43,7 @@ struct AgentModelPicker<Details: View>: View {
     @State private var loading = false
     @State private var failure: String?
     @State private var retry = 0
+    @State private var adding: Backend?
 
     private var requestKey: String {
         "\(store.computer.id)/\(backend)/\(loginProfile ?? "")/\(store.connection == .online)/\(retry)"
@@ -86,7 +95,8 @@ struct AgentModelPicker<Details: View>: View {
             || (bot?.backend == backend && bot?.fastModeShown == true)
     }
 
-    private var agentName: String { agents.first { $0.0 == backend }?.1 ?? backend }
+    private var current: AgentLogin { AgentLogin(backend: backend, loginProfile: loginProfile) }
+    private var agentName: String { agents.first { $0.login == current }?.name ?? backend }
     private var modelName: String { value.wrappedValue.isEmpty ? L10n.tr("Default") : modelChoices.first { $0.0 == value.wrappedValue }?.1 ?? value.wrappedValue }
     private var summary: String {
         let settings = modelOptions.compactMap { option in
@@ -125,7 +135,6 @@ struct AgentModelPicker<Details: View>: View {
                 .font(.subheadline)
                 .buttonStyle(.plain)
                 .foregroundStyle(Palette.text)
-                details
                 if let restLine { Text(restLine).font(.caption).foregroundStyle(Palette.secondary) }
                 if let installHint { Text(installHint).font(.caption).foregroundStyle(Palette.warning) }
                 if backend == "custom", let command {
@@ -169,6 +178,7 @@ struct AgentModelPicker<Details: View>: View {
             }
         }
         .task(id: requestKey) { await load() }
+        .codyncSheet(item: $adding) { AgentSheet(initial: $0) }
         .onAppear { if expanded, stage == .closed { stage = .settings } }
     }
 
@@ -181,23 +191,18 @@ struct AgentModelPicker<Details: View>: View {
                 TextField(stage == .agents ? "Search agents" : "Search models", text: $query).plainTextInput()
                 refreshControl
             }
-            let choices = (stage == .agents ? agents : modelChoices).filter {
-                query.isEmpty || $0.1.localizedCaseInsensitiveContains(query)
+            let found = (stage == .agents ? agentChoices : modelChoiceRows).filter {
+                query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)
             }
+            let choices = found + (stage == .agents ? addLoginChoice : [])
             ScrollView {
                 VStack(spacing: 2) {
-                    ForEach(choices, id: \.0) { choice in
-                        Button {
-                            if stage == .agents {
-                                if choice.0 != backend { onAgentChange?(choice.0) }
-                                open(.models)
-                            }
-                            else { value.wrappedValue = choice.0; open(.settings) }
-                        } label: {
+                    ForEach(choices) { choice in
+                        Button(action: choice.pick) {
                             HStack {
-                                Text(L10n.tr(choice.1)).lineLimit(2)
+                                Text(choice.name).lineLimit(2)
                                 Spacer(minLength: 0)
-                                if choice.0 == (stage == .agents ? backend : value.wrappedValue) {
+                                if choice.on {
                                     Image(systemName: "checkmark").font(.caption)
                                 }
                             }
@@ -206,7 +211,7 @@ struct AgentModelPicker<Details: View>: View {
                             .contentShape(Rectangle())
                         }.buttonStyle(.plain).scrollEdgeBlur()
                     }
-                    if choices.isEmpty { Text(L10n.tr("No results")).font(.caption).foregroundStyle(Palette.secondary) }
+                    if found.isEmpty { Text(L10n.tr("No results")).font(.caption).foregroundStyle(Palette.secondary) }
                 }
             }
             .scrollEdges()
@@ -214,6 +219,26 @@ struct AgentModelPicker<Details: View>: View {
             if stage == .models, backend == "custom" || (!loading && catalog?.models.isEmpty != false) {
                 TextField("Default", text: value).plainTextInput().fieldBox()
             }
+        }
+    }
+
+    private var agentChoices: [Choice] {
+        agents.map { seat in
+            Choice(id: "\(seat.login.backend)/\(seat.login.loginProfile ?? "")", name: seat.name, on: seat.login == current) {
+                if seat.login != current { onAgentChange?(seat.login) }
+                open(.models)
+            }
+        }
+    }
+
+    private var addLoginChoice: [Choice] {
+        guard let addsLoginTo else { return [] }
+        return [Choice(id: "+", name: L10n.tr("Add login profile…"), on: false) { adding = addsLoginTo }]
+    }
+
+    private var modelChoiceRows: [Choice] {
+        modelChoices.map { id, name in
+            Choice(id: id, name: L10n.tr(name), on: id == value.wrappedValue) { value.wrappedValue = id; open(.settings) }
         }
     }
 

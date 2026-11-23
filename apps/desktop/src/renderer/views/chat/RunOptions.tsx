@@ -1,8 +1,9 @@
 import { useContext, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 import { approvals, withApproval } from '@shared/approvals'
-import { draftOf, loginProfileChoices, type Bot } from '@shared/models'
+import { withBackend } from '@shared/fallbacks'
+import { draftOf, type Bot } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
-import { DropdownMenu, Spinner } from '../../components/Controls'
+import { DropdownMenu, IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { AnchoredMenu, type MenuItem } from '../../components/Menu'
 import { Text } from '../../components/Text'
@@ -11,11 +12,10 @@ import { useStore } from '../../store/context'
 import { modelChoices, useAgentModels, type AgentModelsState, type ModelOption } from '../bots/agent-models'
 import { normalized } from '../bots/drafts'
 import { OpenExtensions } from '../NavRail'
+import { loginSeats, type Seat } from './seats'
 
 export interface Approval { permission: string; mode?: string | null }
 export interface ModelPick { id: string | null; options: Record<string, string> }
-/** One entry of the model panel's rail: an agent on one of its logins, named on hover, its login's initials on a badge. */
-export interface Seat { key: string; backend: string; name: string; badge?: string; on: boolean; pick: () => void }
 
 /** A way of approving, as an icon: asking, approving everything, or the agent's own mode read from its name. */
 const approvalIcon = ({ id, label }: { id: string; label: string }) =>
@@ -54,11 +54,12 @@ export function Option({ title, items, leading, label, disabled = false, strong 
 }
 
 /**
- * The model chip and its panel: a rail of agents (each login of one its own entry); the agent's models under a search
- * field (⌘1–9 picks one), with the effort as a slider and the model's other settings under them; and a footer of speed
- * and how it is approved. Another model starts without settings.
+ * The model chip and its panel, the one way every place picks what runs: a rail of the agents' logins (`loginSeats`);
+ * the agent's models under a search field (⌘1–9 picks one), with the effort as a slider and the model's other settings
+ * under them, then `children`; and a footer of speed and how it is approved. Another model starts without settings.
+ * `trigger`: a quiet chip in a message box's row, or a full-width row in a settings card.
  */
-export function ModelPicker({ backend, model, models, set, fast, seats, approval, adds = 'agent' }: {
+export function ModelPicker({ backend, model, models, set, fast, seats, approval, adds = 'agent', trigger = 'chip', startOpen = false, children }: {
   backend: string
   model: ModelPick
   models: AgentModelsState
@@ -71,11 +72,16 @@ export function ModelPicker({ backend, model, models, set, fast, seats, approval
   approval?: { items: () => MenuItem[]; label: string; icon: string }
   /** What the rail's `+` adds: another agent (the default), or a login profile of this one. */
   adds?: 'agent' | 'login'
+  trigger?: 'chip' | 'row'
+  /** Opens on mount (a fallback just added). */
+  startOpen?: boolean
+  /** Under the model's settings: notes and fields of the place it's in (a custom command, why it rests). */
+  children?: ReactNode
 }) {
   const tr = useTr()
   const store = useStore()
   const openExtensions = useContext(OpenExtensions)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(startOpen)
   const [query, setQuery] = useState('')
   const anchor = useRef<HTMLButtonElement>(null)
   const { value, options, modelOptions } = modelChoices(models.catalog, model.id, tr)
@@ -103,13 +109,26 @@ export function ModelPicker({ backend, model, models, set, fast, seats, approval
   }
   const at = effort ? Math.max(0, effort.values.findIndex((v) => v.id === chosen(effort))) : 0
   const check = <Icon name="checkmark" size={10} weight="semibold" color="var(--text)" />
+  const seatName = seats?.find((s) => s.on)?.name ?? store.backendName(backend)
+  const running = [modelName, effortName].filter(Boolean).join(' · ')
+  const toggle = () => (open ? close() : setOpen(true))
   return (
     <>
-      <button ref={anchor} className="thread-option" title={tr('Model')} aria-haspopup="dialog" aria-expanded={open} onClick={() => (open ? close() : setOpen(true))}>
-        <AgentIcon registry={store.agentRegistry(backend)} size={12} />
-        <Text size="caption" tone="secondary" truncate>{[modelName, effortName].filter(Boolean).join(' · ')}</Text>
-        <Icon name="chevron.down" size={8} color="var(--tertiary)" />
-      </button>
+      {trigger === 'chip' ? (
+        <button ref={anchor} className="thread-option" title={tr('Model')} aria-haspopup="dialog" aria-expanded={open} onClick={toggle}>
+          <AgentIcon registry={store.agentRegistry(backend)} size={12} />
+          <Text size="caption" tone="secondary" truncate>{running}</Text>
+          <Icon name="chevron.down" size={8} color="var(--tertiary)" />
+        </button>
+      ) : (
+        <button ref={anchor} className="model-picker-field" title={`${seatName} · ${running}`} aria-label={tr('Model')} aria-haspopup="dialog" aria-expanded={open} onClick={toggle}>
+          <AgentIcon registry={store.agentRegistry(backend)} size={14} />
+          <Text tone="text" truncate>{seatName}</Text>
+          <Text tone="secondary" truncate grow>{running}</Text>
+          {fast?.on ? <Icon name="bolt" size={11} title={tr('Fast mode')} /> : null}
+          <Icon name="chevron.down" size={10} color="var(--tertiary)" />
+        </button>
+      )}
       <AnchoredMenu open={open} onClose={close} anchor={anchor} width={380} className="model-picker">
         <div className="model-picker-columns" onKeyDown={jump}>
           <div className="model-picker-rail" role="toolbar" aria-label={tr('Agent')}>
@@ -131,8 +150,8 @@ export function ModelPicker({ backend, model, models, set, fast, seats, approval
             <label className="model-picker-search">
               <Icon name="magnifyingglass" size={12} color="var(--tertiary)" />
               <input autoFocus value={query} placeholder={tr('Search models')} aria-label={tr('Search models')} onChange={(e) => setQuery(e.target.value)} />
-              {/* The agent's models are still coming from the computer. */}
-              {models.loading ? <Spinner size={12} /> : null}
+              {/* The agent's models are still coming from the computer; or asked for again. */}
+              {models.loading ? <Spinner size={12} /> : <IconButton title={models.failure ? 'Retry model list' : 'Refresh model list'} icon="arrow.clockwise" size={20} onClick={models.reload} />}
             </label>
             <div className="model-picker-list" role="listbox" aria-label={tr('Model')}>
               {found.map((o, i) => (
@@ -189,6 +208,7 @@ export function ModelPicker({ backend, model, models, set, fast, seats, approval
                 <Icon name="chevron.up.chevron.down" size={9} color="var(--tertiary)" />
               </DropdownMenu>
             ))}
+            {children ? <div className="model-picker-extra">{children}</div> : null}
           </div>
         </div>
         {fast || approval ? (
@@ -216,26 +236,18 @@ export function ModelPicker({ backend, model, models, set, fast, seats, approval
   )
 }
 
-/** The initials a login's badge shows. */
-const initials = (name: string) => name.split(/[\s@._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()
-
-/** What a bot's chat runs on, in its message box: its model, with its logins in the panel's rail (adding one stays in
- * Settings), Fast mode where the agent has it, and how it is approved; each saved to the bot as its settings would. */
+/** What a bot's chat runs on, in its message box: its model, with every agent's logins in the panel's rail (adding one
+ * stays in Settings), Fast mode where the agent has it, and how it is approved; each saved to the bot as its settings would. */
 export function BotRunOptions({ bot }: { bot: Bot }) {
   const tr = useTr()
   const store = useStore()
-  const models = useAgentModels(bot.backend)
+  const models = useAgentModels(bot.backend, bot.loginProfile)
   const save = (change: Partial<ReturnType<typeof draftOf>>) => void store.save(normalized({ ...draftOf(bot), ...change })).catch((e: unknown) => store.setError(String(e)))
   const ways = useApprovalMenu({ permission: bot.permission, mode: bot.mode }, models, (a) => save({ permission: a.permission, mode: a.mode ?? null }))
-  const agent = store.hello?.backends.find((b) => b.id === bot.backend)
-  const named = (login: string) => `${store.backendName(bot.backend)} · ${login}`
-  const seats: Seat[] = [
-    { key: 'default', backend: bot.backend, name: named(agent?.defaultLoginProfile?.name ?? tr('Default login profile')), on: !bot.loginProfile, pick: () => save({ loginProfile: null }) },
-    ...(agent ? loginProfileChoices(agent, bot.loginProfile ?? null) : []).map((p) => {
-      const name = p.name ?? tr('New login profile')
-      return { key: p.id, backend: bot.backend, name: named(name), badge: initials(name), on: p.id === bot.loginProfile, pick: () => save({ loginProfile: p.id }) }
-    }),
-  ]
+  const backends = store.hello?.backends ?? []
+  const agent = backends.find((b) => b.id === bot.backend)
+  // Another agent is the bot's agent changed, as in its settings.
+  const seats: Seat[] = loginSeats({ backends, on: bot, tr, pick: (b, loginProfile) => save({ ...withBackend(draftOf(bot), b.id), loginProfile }) })
   return (
     <ModelPicker
       backend={bot.backend}

@@ -108,17 +108,16 @@ struct BotSettingsForm: View {
                          fastMode: Binding(get: { draft.fastMode ?? false }, set: { on in
                              withAnimation(Motion.reduced(Motion.fade, reduceMotion)) { draft.fastMode = on }
                          }), bot: bot,
-                         agents: (model.hello?.backends ?? []).map { ($0.id, model.agentLabel($0)) } + [("custom", "Custom command")],
-                         onAgentChange: { draft.setAgent($0) }, command: $draft.command,
+                         agents: model.loginSeats(model.hello?.backends ?? [], on: draft.login)
+                             + [LoginSeat(login: AgentLogin(backend: "custom"), name: L10n.tr("Custom command"))],
+                         onAgentChange: { login in
+                             draft.setAgent(login.backend)
+                             draft.loginProfile = login.loginProfile
+                         },
+                         addsLoginTo: model.hello?.backends.first { $0.id == draft.backend && $0.loginProfiles != nil },
+                         command: $draft.command,
                          installHint: model.hello?.backends.first { $0.id == draft.backend && !$0.available }?.installHint,
-                         restLine: bot?.rest(of: draft.login).map { L10n.tr($0.line) }, onReload: { modelReload += 1 }) {}
-    }
-
-    /// Only when the host has login profiles (an older one sends none).
-    @ViewBuilder private var loginProfilePicker: some View {
-        if let backend = model.hello?.backends.first(where: { $0.id == draft.backend }), backend.loginProfiles != nil {
-            LoginProfileRow(backend: backend, loginProfile: $draft.loginProfile)
-        }
+                         restLine: bot?.rest(of: draft.login).map { L10n.tr($0.line) }, onReload: { modelReload += 1 })
     }
 
     /// While the bot runs on a fallback: which, and Switch back.
@@ -163,7 +162,6 @@ struct BotSettingsForm: View {
             CardSection("Agent", fold: "bot.agent") {
                 fallbackBanner
                 modelPicker
-                loginProfilePicker
                 fallbackList
                 advisor
                 compactionPicker

@@ -68,6 +68,27 @@
   overflow: hidden;
 }
 /* As tall as what it lists, up to a fixed height: a short list leaves no empty column. */
+/* In a settings card: the agent's login, then what it runs, across the row. */
+.model-picker-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  color: var(--text);
+  text-align: left;
+  font-size: var(--text-callout);
+  border-radius: var(--radius-xs);
+}
+/* What the place adds under the model's settings: its notes and fields. */
+.model-picker-extra {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 12px 12px;
+}
 .model-picker-columns {
   display: flex;
   max-height: min(400px, calc(100vh - 140px));

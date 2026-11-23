@@ -49,19 +49,26 @@ onFlowComplete:
       - tapOn: ${output.profiles.name}
       - tapOn: "${output.profiles.name}, view details"
       - tapOn: "Settings"
-      # The Login profile row under Agent: the bot's own stays listed while it's signed out.
+      # The agent picker's summary under Agent names the bot's login; its agent list has the agent once per login,
+      # the bot's own listed while it's signed out.
       - scrollUntilVisible:
-          element: ${output.profiles.work}
+          element: ".*· ${output.profiles.work}.*"
           centerElement: true
-      - tapOn: ${output.profiles.work}
-      - tapOn: ${output.profiles.home}
-      - assertVisible: ${output.profiles.home}
+      - tapOn: ".*· ${output.profiles.work}.*"
+      - tapOn:
+          text: ".*· ${output.profiles.work}"
+          index: 1
+      - tapOn: ".*· ${output.profiles.home}"
+      - assertVisible: ".*· ${output.profiles.home}.*"
       - runScript:
           file: login-profiles.js
           env:
             STEP: moved
-      # Add login profile… opens the agent's setup, which lists the account and removes it now that no bot uses it.
-      - tapOn: ${output.profiles.home}
+      # Add login profile…, at the end of the agent list, opens the agent's setup, which lists the account and removes
+      # it now that no bot uses it.
+      - tapOn:
+          text: ".*· ${output.profiles.home}"
+          index: 1
       - tapOn: "Add login profile…"
       - scrollUntilVisible:
           element: "Not signed in"

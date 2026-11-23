@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
 import com.codync.android.core.BotDraft
 import com.codync.android.core.Fallback
+import com.codync.android.core.Login
 import com.codync.android.core.restOf
 import com.codync.android.design.*
 
@@ -43,7 +44,9 @@ internal fun CardRows.advisorRow(state: AppState, store: AppStore, draft: BotDra
                 // A row's padding on each side of its hairline, as the card draws them.
                 Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Hairline()
-                    ThreadsAgent(state, store, agent, bot, { edit(draft.copy(threadAgent = it)) }) { edit(draft.withThreadAgent(it)) }
+                    ThreadsAgent(state, store, agent, bot, { edit(draft.copy(threadAgent = it)) }) { login ->
+                        edit(draft.withThreadAgent(login.backend).let { it.copy(threadAgent = it.threadAgent?.copy(loginProfile = login.loginProfile)) })
+                    }
                     Hairline()
                     FallbackList(state, store, agent.login, shown.threadFallbacks.orEmpty(), bot, { edit(draft.copy(threadFallbacks = it)) }, threads = true)
                 }
@@ -52,16 +55,14 @@ internal fun CardRows.advisorRow(state: AppState, store: AppStore, draft: BotDra
     }
 }
 
-/** Advisor mode's agent for the bot's threads: picked in place with its model and login, as the bot's own, and its rest. */
-@Composable private fun ThreadsAgent(state: AppState, store: AppStore, agent: Fallback, bot: Bot?, edit: (Fallback) -> Unit, chooseAgent: (String) -> Unit) {
-    val backend = agentBackends(state).firstOrNull { it.id == agent.backend }
+/** Advisor mode's agent for the bot's threads: its login and model picked in place, as the bot's own, and its rest. */
+@Composable private fun ThreadsAgent(state: AppState, store: AppStore, agent: Fallback, bot: Bot?, edit: (Fallback) -> Unit, chooseAgent: (Login) -> Unit) {
     val rest = bot?.restOf(agent.login)
     Field("Threads' agent") {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             AgentModelPicker(state, store::agentModels, agent.backend, agent.model, agent.modelOptions, false, null,
-                { model, options -> edit(agent.copy(model = model, modelOptions = options)) }, null, agents = agentChoices(state), chooseAgent = chooseAgent, loginProfile = agent.loginProfile) {
-                if (backend?.loginProfiles != null) LoginProfilePicker(backend, agent.loginProfile, state, store) { edit(agent.copy(loginProfile = it)) }
-            }
+                { model, options -> edit(agent.copy(model = model, modelOptions = options)) }, null, agents = pickerSeats(agentBackends(state), agent.login),
+                chooseAgent = chooseAgent, loginProfile = agent.loginProfile, store = store)
             if (rest != null) Text(tr(rest.line(RelativeTime.clock(rest.until))), style = Type.caption, color = Palette.secondary)
         }
     }

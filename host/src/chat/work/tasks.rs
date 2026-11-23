@@ -99,13 +99,16 @@ impl Source {
 }
 
 /// What a thread the user starts changes from its bot's setup, for its own task (`startThread`'s `setup`): the
-/// agent (a thread without a bot names it), the folder it works in, its model and how it is approved. What it
-/// leaves out is the bot's.
+/// agent (a thread without a bot names it) and its login, the folder it works in, its model and how it is approved.
+/// What it leaves out is the bot's.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Setup {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub backend: Option<String>,
+    /// The agent's login profile; `""` its default login. None: the bot's (another agent's default login).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub login_profile: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -148,6 +151,9 @@ impl Setup {
             cfg.login_profile = None;
             cfg.command = None;
             cfg.fallbacks.clear();
+        }
+        if let Some(profile) = &self.login_profile {
+            cfg.login_profile = Some(profile.clone()).filter(|p| !p.is_empty());
         }
         if let Some(cwd) = &self.cwd {
             cfg.cwd.clone_from(cwd);
@@ -615,6 +621,9 @@ mod tests {
         assert_eq!((run.cwd.as_str(), run.model, run.model_options.len()), ("/bot", None, 0));
         assert_eq!((run.permission, run.mode.as_deref()), (Permission::Ask, Some("plan")));
         assert!(Setup::default().is_bots() && !setup.is_bots());
+        let on =
+            |login: &str| Setup { login_profile: Some(login.to_owned()), ..Setup::default() }.over(&bot).login_profile;
+        assert_eq!((on("work"), on("")), (Some("work".to_owned()), None), "a login profile, or the default login");
         assert_eq!(serde_json::to_value(Setup::default().over(&bot)).ok(), serde_json::to_value(&bot).ok());
     }
 

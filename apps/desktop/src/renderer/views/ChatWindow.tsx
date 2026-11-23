@@ -44,6 +44,7 @@ import { useFindBar } from './use-conversation-find'
 import { SearchPalette } from './SearchPalette'
 import { WorkflowsView, type WorkflowFocus } from './workflows/WorkflowsView'
 import { WorkflowList, type WorkflowPlace } from './workflows/WorkflowList'
+import { computerSymbol } from './ComputerBadge'
 import { canOpenWorkflows } from './workflows/pins'
 import { computerChoice, firstAmong } from './computer-choice'
 import { AccountWelcomeView, useWelcomeGate } from './AccountWelcomeView'
@@ -318,12 +319,19 @@ function ChatSplitView() {
     if (next !== page) setPage(next)
     else if (listed) setListHidden(!listHidden)
   }
+  /** The Workflows list unfolds a computer whose workflow the canvas turns to, so its row shows. */
+  const unfoldWorkflows = (computerId: string) => {
+    const folded = prefs.foldedWorkflowComputers.get()
+    if (folded.includes(computerId)) prefs.foldedWorkflowComputers.set(folded.filter((id) => id !== computerId))
+  }
   /** A new workflow on `computerId`, shown once made. */
   const newWorkflow = (computerId: string) => {
+    unfoldWorkflows(computerId)
     setWorkflowsOf(computerId)
     setWorkflowFocus({ create: true })
   }
   const openWorkflows = (computerId: string, workflowId?: string) => {
+    unfoldWorkflows(computerId)
     setWorkflowsOf(computerId)
     setWorkflowFocus(workflowId ? { id: workflowId } : null)
     setPage('workflows')
@@ -399,6 +407,9 @@ function ChatSplitView() {
   // Of the computers offering workflows: the one asked for, else the selected bot's, this one, any.
   const workflowStores = onlineStores.filter(canOpenWorkflows)
   const workflowStore = firstAmong(workflowStores, [workflowsOf ? app.store(workflowsOf) : null, selectedStore, app.local])
+  // The header's + on Workflows: the computers listed that take a new workflow, picked from a menu when there are several.
+  const workflowHomes = shownStores.filter(canOpenWorkflows)
+  const newWorkflowItems = (): MenuItem[] => workflowHomes.map((s) => ({ title: s.hostName, verbatim: true, icon: computerSymbol(s.computer.device), action: () => newWorkflow(s.computer.id) }))
   const extensionsStore = (extensionsOf ? app.store(extensionsOf) : null) ?? selectedStore ?? app.local ?? onlineStores[0] ?? null
   const extensionsChoice = computerChoice(onlineStores, extensionsStore?.computer.id, setExtensionsOf)
 
@@ -475,21 +486,25 @@ function ChatSplitView() {
   }
 
   const width = listHidden ? 0 : sidebarWidth
-  // The pages with a list beside their content: its title, its header's +, and what its Search finds.
+  // The pages with a list beside their content: its title, its header's + (and the menu that + opens), and what its Search finds.
   const lists = {
     bots: {
       title: 'Bots',
       add: <IconButton title="New" icon="plus" size={32} className="sidebar-header-action" buttonRef={newButton} menuOpen={newMenu} onClick={() => setNewMenu((o) => !o)} disabled={!onlineStores.length} />,
+      menu: newItems,
       search: { label: 'Search bots', empty: 'No matching bots', items: () => botItems(visibleRoster, openBot) },
     },
     threads: {
       title: 'Threads',
       add: <IconButton title="New thread" icon="plus" size={32} className="sidebar-header-action" onClick={() => startThread(null)} disabled={!canStartThread(threadRoster)} />,
+      menu: undefined,
       search: { label: 'Search', empty: 'No results', items: () => threadItems(threadRoster, setPicked) },
     },
     workflows: {
       title: 'Workflows',
-      add: <IconButton title="New workflow" icon="plus" size={32} className="sidebar-header-action" onClick={() => workflowStore && newWorkflow(workflowStore.computer.id)} disabled={!workflowStore} />,
+      add: <IconButton title="New workflow" icon="plus" size={32} className="sidebar-header-action" buttonRef={newButton} menuOpen={workflowHomes.length > 1 ? newMenu : undefined}
+        onClick={() => (workflowHomes.length > 1 ? setNewMenu((o) => !o) : workflowHomes[0] && newWorkflow(workflowHomes[0].computer.id))} disabled={!workflowHomes.length} />,
+      menu: newWorkflowItems,
       search: { label: 'Search', empty: 'No results', items: () => workflowItems(shownStores, openWorkflows) },
     },
   }
@@ -562,7 +577,7 @@ function ChatSplitView() {
                   <IconButton title="Search" icon="magnifyingglass" size={32} className="sidebar-header-action" onClick={() => setSearching(true)} />
                   {list.add}
                 </HStack>
-                <AnchoredMenu open={newMenu} onClose={() => setNewMenu(false)} anchor={newButton} items={newItems} />
+                <AnchoredMenu open={newMenu} onClose={() => setNewMenu(false)} anchor={newButton} items={list.menu} />
               </div>
               {page === 'bots' ? (
                 <div className="roster" ref={listRef} tabIndex={0} onKeyDown={onListKey}>
@@ -583,7 +598,7 @@ function ChatSplitView() {
                 </div>
               ) : page === 'workflows' ? (
                 <div className="roster">
-                  <WorkflowList stores={shownStores} place={shownWorkflow} open={openWorkflows} create={newWorkflow} />
+                  <WorkflowList stores={shownStores} place={shownWorkflow} open={openWorkflows} />
                 </div>
               ) : (
                 <div className="roster">

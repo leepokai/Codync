@@ -220,7 +220,7 @@ fn bot(archive: &Archive, raw: &Value, now: i64, warnings: &mut Vec<String>) -> 
     let routines = raw.routines.iter().chain(&raw.one_time_routines);
     Ok(Bot {
         description: described(&raw.title, &raw.description),
-        backend: raw.provider.filter(|p| crate::agent::backends::is_known(p)),
+        backend: raw.provider.filter(|p| codync_agent::backends::is_known(p)),
         avatar,
         skills,
         routines: routines.take(MAX_ROUTINES).filter_map(|r| routine(&name, r, now, warnings)).collect(),

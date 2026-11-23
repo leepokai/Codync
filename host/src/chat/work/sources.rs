@@ -125,12 +125,20 @@ pub(super) enum Begin {
     Gone,
 }
 
+/// Whether waiting `task` can't start now, whatever seats are free: the host is stopping (a routine run stays queued
+/// for the next start), or a run of its routine is under way.
+pub(super) fn held(hub: &Hub, task: &Task) -> bool {
+    matches!(&task.source, Source::Routine { run, .. } if hub.routines.stopping() || hub.routines.waits_its_turn(run))
+}
+
 /// A thread is about to take `task`: its source is told, and a routine run gets its prompt and its line in the chat.
 pub(super) fn begin(hub: &Hub, bot: &str, task: &mut Task) -> Result<Begin> {
     match &task.source {
         Source::Bot => {}
-        // The host is stopping: the run stays queued for the next start.
-        Source::Routine { .. } if hub.routines.stopping() => return Ok(Begin::Later),
+        // The host is stopping: the run stays queued for the next start. Or a run of its routine has started.
+        Source::Routine { .. } if held(hub, task) => {
+            return Ok(Begin::Later);
+        }
         Source::Routine { run, .. } => {
             let Some(prepared) = hub.routines.begin(hub, bot, run)? else { return Ok(Begin::Gone) };
             if let Err(error) = hub.routines.mark_started(&hub.store, run) {

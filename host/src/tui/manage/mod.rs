@@ -116,7 +116,7 @@ pub enum Reply {
         to: Option<String>,
     },
     SignIn,
-    Models(String),
+    Models(super::app::ModelKey),
     Downloaded,
     /// Something changed: every open sheet loads again.
     Changed,
@@ -409,17 +409,43 @@ impl App {
 
     // ---------- model picker ----------
 
-    /// Loads the models `backend` offers, once per run.
-    pub(super) fn want_models(&mut self, backend: &str) {
-        if !backend.is_empty() && !self.models.contains_key(backend) {
-            self.models.insert(backend.to_owned(), None);
-            self.sheet("agentModels", json!({"backend": backend}), Reply::Models(backend.to_owned()));
+    /// The key a model list is kept under; an empty login profile is the default login.
+    pub(in crate::tui) fn model_key(backend: &str, login_profile: Option<&str>) -> super::app::ModelKey {
+        (backend.to_owned(), login_profile.filter(|s| !s.is_empty()).map(str::to_owned))
+    }
+
+    /// The model list `backend` on `login_profile` offers: `Some(None)` while it loads.
+    pub(in crate::tui) fn models_for(
+        &self,
+        backend: &str,
+        login_profile: Option<&str>,
+    ) -> Option<&Option<Vec<super::app::AgentModel>>> {
+        self.models.get(&Self::model_key(backend, login_profile))
+    }
+
+    /// Whether that model list came with Fast mode.
+    pub(in crate::tui) fn has_fast_mode(&self, backend: &str, login_profile: Option<&str>) -> bool {
+        self.fast_mode.contains(&Self::model_key(backend, login_profile))
+    }
+
+    /// Loads the models `backend` (on `login_profile`, if any) offers, once per run.
+    pub(super) fn want_models(&mut self, backend: &str, login_profile: Option<&str>) {
+        let key = Self::model_key(backend, login_profile);
+        if !backend.is_empty() && !self.models.contains_key(&key) {
+            self.models.insert(key.clone(), None);
+            self.sheet("agentModels", json!({"backend": backend, "loginProfile": key.1}), Reply::Models(key));
         }
     }
 
     /// ←→ on the model field: "default", then each advertised model.
-    pub(super) fn cycle_model(&self, backend: &str, current: &str, d: isize) -> Option<String> {
-        let list = self.models.get(backend)?.as_ref()?;
+    pub(super) fn cycle_model(
+        &self,
+        backend: &str,
+        login_profile: Option<&str>,
+        current: &str,
+        d: isize,
+    ) -> Option<String> {
+        let list = self.models_for(backend, login_profile)?.as_ref()?;
         let mut ids = vec![String::new()];
         ids.extend(list.iter().filter(|m| !m.id.is_empty()).map(|m| m.id.clone()));
         let i = ids.iter().position(|x| x == current).unwrap_or(0);
@@ -427,8 +453,13 @@ impl App {
     }
 
     /// The settings (effort, fast…) `backend`'s `model` offers.
-    pub(crate) fn model_settings(&self, backend: &str, model: &str) -> &[super::app::ModelOption] {
-        let list = self.models.get(backend).and_then(Option::as_ref);
+    pub(crate) fn model_settings(
+        &self,
+        backend: &str,
+        login_profile: Option<&str>,
+        model: &str,
+    ) -> &[super::app::ModelOption] {
+        let list = self.models_for(backend, login_profile).and_then(Option::as_ref);
         list.and_then(|l| l.iter().find(|m| m.id == model)).map_or(&[], |m| &m.options)
     }
 }
@@ -436,5 +467,5 @@ impl App {
 /// Opens `url` in this computer's browser, when the host is this computer.
 pub(super) fn open_browser(url: &str, host: &str) -> bool {
     let local = ["//127.0.0.1", "//localhost", "//[::1]"].iter().any(|h| host.contains(h));
-    local && !url.is_empty() && crate::shell::open(std::ffi::OsStr::new(url))
+    local && !url.is_empty() && crate::service::open(std::ffi::OsStr::new(url))
 }

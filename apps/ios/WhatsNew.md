@@ -6,6 +6,28 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.53.0
+### zh-Hant
+- Claude Code 的 Bot 使用 subagent 時，展開的工作步驟、「完整對話」和 task 的 thread 裡，subagent 做的步驟會縮排在啟動它的那一步底下；那一步也會顯示 subagent 的類型、用了多少 token 和花了多久，在背景執行的則顯示「在背景執行」。
+
+### en-US
+- When a Claude Code bot uses subagents, each subagent's steps sit indented under the step that started it, in the unfolded working steps, Full conversation and a task's thread. That step also shows the subagent's type, the tokens it used and how long it took, or "in background" for one that runs in the background.
+
+## 2.52.0
+### zh-Hant
+- 有些 agent（例如 Hermes）會在回覆中途問你問題，現在這些問題會顯示在聊天的選擇卡片上，等你回答，不會再被「自動核准」替你選第一個選項。有選項的問題只能選其中一個，卡片上不再顯示「其他答案」那一列。
+- Bot 設定的 Agent 卡片新增「顧問模式」：聊天負責規劃與分派工作，thread 可以改用別的 agent、模型或登入設定檔，也有自己的備用列表。
+- 等你核准或選擇的 thread 不再佔名額，下一件 task 可以先開始；你回覆後它會接著做。
+- 你在聊天裡補充正在進行的 task，Bot 會把話轉給那個 thread，task 做完仍只回報一次。
+- 寫給 thread 的訊息也可以附上照片和檔案，和聊天一樣。
+
+### en-US
+- Some agents, such as Hermes, ask you questions mid-reply. These now wait for you on the chat's choice card, and Approve automatically no longer picks their first option for you. A question with options takes one of them, so its card has no Something else row.
+- Advisor mode in a bot's Agent settings: the chat plans and hands work on, and its threads can run on another agent, model or login profile, with fallbacks of their own.
+- A thread waiting for your approval or choice no longer holds a place, so the next task can start; it carries on once you answer.
+- What you add in the chat about a task under way, the bot passes on to its thread, and the task still reports once.
+- Messages to a thread can carry photos and files too, as in the chat.
+
 ## 2.51.0
 ### zh-Hant
 - Bot 離開聊天做的事現在有兩個清楚的名稱：一件工作叫 task，Bot 做 task 的地方叫 thread，有自己的工作階段。一個 thread 一次做一件 task，做完可以接下一件。

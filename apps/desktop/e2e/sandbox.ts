@@ -18,6 +18,23 @@ export const workAgent = join(root, 'host/tests/fixtures/work_agent.py')
 // The stand-in agent CLIs a `--cdp` sandbox's host finds first on its PATH (host/tests/fixtures/bin/README.md).
 const standIns = join(root, 'host/tests/fixtures/bin')
 
+/** A scripted agent whose turn starts each of `calls` and stays on them until it is stopped. */
+export const toolCallAgent = (calls: { kind: string; title: string }[]) => `import json,sys
+def send(m): sys.stdout.write(json.dumps(m)+"\\n"); sys.stdout.flush()
+def upd(u): send({"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":u}})
+turn=[None]
+for line in sys.stdin:
+    m=json.loads(line)
+    meth=m.get("method")
+    if meth=="initialize": send({"jsonrpc":"2.0","id":m["id"],"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":False}}})
+    elif meth=="session/new": send({"jsonrpc":"2.0","id":m["id"],"result":{"sessionId":"s1"}})
+    elif meth=="session/prompt":
+        turn[0]=m["id"]
+        for i,c in enumerate(json.loads(${JSON.stringify(JSON.stringify(calls))})):
+            upd({"sessionUpdate":"tool_call","toolCallId":"t%d"%i,"title":c["title"],"kind":c["kind"],"status":"in_progress"})
+    elif meth=="session/cancel" and turn[0] is not None: send({"jsonrpc":"2.0","id":turn[0],"result":{"stopReason":"cancelled"}})
+`
+
 /** This worktree's sandbox: its name, data folder, host port, DevTools port (`npm run dev -- --cdp` opens port + 10000) and whether it runs headless. */
 export function sandbox() {
   const name = sandboxName(basename(root))

@@ -6,6 +6,7 @@ use crate::chat::team::RequestStatus;
 use crate::chat::uploads;
 use crate::store::Lane;
 use anyhow::{Result, anyhow};
+use codync_agent::acp::Steered;
 use serde_json::{Value, json};
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -20,10 +21,10 @@ pub(super) struct InFlight {
 }
 
 /// What the agent's answer to a steer made of the message.
-fn steer_outcome(answer: &Result<Value>) -> Steer {
+fn steer_outcome(answer: &Result<Steered>) -> Steer {
     match answer {
-        Ok(v) if v["outcome"] == "injected" => Steer::Joined,
-        Ok(v) if v["outcome"] == "promptRequired" => Steer::Next,
+        Ok(Steered::Joined) => Steer::Joined,
+        Ok(Steered::Next) => Steer::Next,
         _ => Steer::Failed,
     }
 }
@@ -80,17 +81,13 @@ impl Actor {
         let threaded =
             self.cfg.is_thread() && self.hub.store.entry(&entry_id).is_some_and(|e| e.data["from"] != "host");
         let text = if threaded { crate::chat::work::in_thread(text, None) } else { text.to_owned() };
-        let params = json!({
-            "sessionId": sid,
-            "prompt": [{"type": "text", "text": text}],
-            // A turn that just ended doesn't take it: it stays queued for the next one.
-            "_meta": {"steering": {"idleBehavior": "promptRequired"}},
-        });
+        // A turn that just ended doesn't take it: it stays queued for the next one.
+        let prompt = json!([{"type": "text", "text": text}]);
         // What the agent writes from here may answer it: a reply of its own, after the message in the chat.
         self.close_seg();
         self.steers_in_flight.insert(entry_id.clone(), InFlight { taken_back: false });
         tokio::spawn(async move {
-            let answer = tokio::time::timeout(STEER_ANSWER, acp.request("_session/steering", params)).await;
+            let answer = tokio::time::timeout(STEER_ANSWER, acp.session(&sid).steer(prompt)).await;
             let outcome = answer.unwrap_or_else(|_| Err(anyhow!("the agent didn't answer the steer")));
             // Refused only once the bot was deleted meanwhile: no one is left to tell.
             let _ = hub.send_cmd(&bot, Cmd::Steered { entry_id, outcome });
@@ -98,12 +95,17 @@ impl Actor {
         true
     }
 
-    /// Moves what waits at `at` first in line; a compaction that is due still goes before it.
+    /// Moves what waits at `at` first in line.
     fn move_first(&mut self, at: usize) {
         let Some(item) = self.queue.remove(at) else { return };
+        self.put_first(item);
+        self.renumber_waiting();
+    }
+
+    /// Puts `item` first in line; a compaction that is due still goes before it.
+    fn put_first(&mut self, item: Queued) {
         let first = self.queue.iter().position(|q| !matches!(q, Queued::Compact { .. })).unwrap_or(self.queue.len());
         self.queue.insert(first, item);
-        self.renumber_waiting();
     }
 
     /// Hands the waiting messages' turn numbers out again in their new order: a batch runs as its last message's turn
@@ -140,7 +142,7 @@ impl Actor {
     pub(super) async fn steer_answered(
         &mut self,
         entry_id: &str,
-        outcome: &Result<Value>,
+        outcome: &Result<Steered>,
         done_tx: &mpsc::UnboundedSender<Done>,
     ) {
         self.steered(entry_id, outcome);
@@ -153,7 +155,7 @@ impl Actor {
 
     /// A message the agent took is the running turn's, sent; one it left for later goes next; any other stays queued,
     /// unless the user took it back meanwhile.
-    fn steered(&mut self, entry_id: &str, outcome: &Result<Value>) {
+    fn steered(&mut self, entry_id: &str, outcome: &Result<Steered>) {
         let Some(steer) = self.steers_in_flight.remove(entry_id) else { return };
         if let Err(error) = outcome {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't steer; the message waits");
@@ -170,18 +172,46 @@ impl Actor {
             }
             return;
         }
-        let Some(Queued::User { text, .. }) = self.queue.remove(at) else { return };
+        let Some(item) = self.queue.remove(at) else { return };
+        let Queued::User { text, .. } = &item else { return };
+        let text = text.clone();
+        self.unheard.push(item);
         // The host's copy, never `removed`, also brings it back to a client that took it back meanwhile.
         if let Some(mut e) = self.hub.store.entry(entry_id) {
             e.data["status"] = json!(RequestStatus::Sent);
             self.hub.set_entry_turn(entry_id, self.turn, &e.data);
-            // What the user wrote to a thread is in its task's next report, as when it starts a turn.
-            if self.cfg.is_thread() {
-                let words = e.data["text"].as_str().unwrap_or_default().to_owned();
+            // What the user wrote to a thread is in its task's next report, as when it starts a turn (what its chat
+            // passed on is not theirs).
+            if self.cfg.is_thread() && e.data["from"] != "host" {
+                let words = crate::chat::work::written(&e.data);
                 crate::chat::work::heard(&self.hub, &self.cfg, &[words]);
             }
         }
         self.record_joined_input(entry_id, &text);
+    }
+
+    /// The agent cancelled its turn on its own before a word on what joined it (`unheard`): those messages go first in
+    /// line again, waiting as before, and what the user wrote to a thread is its task's again once their turn comes.
+    pub(super) fn requeue_unheard(&mut self) {
+        let unheard = std::mem::take(&mut self.unheard);
+        let mut words = Vec::new();
+        for item in &unheard {
+            let Queued::User { entry_id, .. } = item else { continue };
+            let Some(mut e) = self.hub.store.entry(entry_id) else { continue };
+            e.data["status"] = json!(RequestStatus::Queued);
+            self.hub.set_entry(entry_id, &e.data);
+            // What `steered` passed on to the task as heard, which their turn passes on again.
+            if self.cfg.is_thread() && e.data["from"] != "host" {
+                words.push(e.data["text"].as_str().unwrap_or_default().to_owned());
+            }
+        }
+        for item in unheard.into_iter().rev() {
+            self.put_first(item);
+        }
+        self.renumber_waiting();
+        if !words.is_empty() {
+            crate::chat::work::unhear(&self.hub, &self.cfg, &words);
+        }
     }
 
     /// A user input delivered inside this turn belongs in its reply, memory and fallback context.
@@ -245,9 +275,9 @@ mod tests {
 
     #[test]
     fn the_agents_answer_says_what_became_of_the_message() {
-        assert_eq!(steer_outcome(&Ok(json!({"outcome": "injected"}))), Steer::Joined);
-        assert_eq!(steer_outcome(&Ok(json!({"outcome": "promptRequired"}))), Steer::Next);
-        assert_eq!(steer_outcome(&Ok(json!({"outcome": "somethingNew"}))), Steer::Failed);
+        assert_eq!(steer_outcome(&Ok(Steered::Joined)), Steer::Joined);
+        assert_eq!(steer_outcome(&Ok(Steered::Next)), Steer::Next);
+        assert_eq!(steer_outcome(&Ok(Steered::Other("somethingNew".into()))), Steer::Failed);
         assert_eq!(steer_outcome(&Err(anyhow!("gone"))), Steer::Failed);
         assert_eq!(json!(Steer::MovedUp), "moved_up", "as the event reports it");
     }

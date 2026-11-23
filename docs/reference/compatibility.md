@@ -79,6 +79,10 @@ Writing to an item's thread adds only: `itemId` on `send`, `steer` and `unqueue`
 read as before, with those entries among the steps, and an item the user reopened elsewhere as working again. A
 host from before it sends no `talk`, so a newer app shows no composer there. It raises no floor.
 
+Files in a message to a thread add only: `taskId` on `upload` and `readUpload`, `attachments` on a `send` with
+`taskId`, and `work[].talkFiles`. A host from before it sends no `talkFiles`, so a newer app shows no + (and takes no
+drop or paste) in a thread's box; an app from before it never attaches there. It raises no floor.
+
 Apps older than 2.39.0 don't read `removed`: a queued message taken back on a newer client (`unqueue`) stays in their
 chat as *Not sent — stopped*. Nothing breaks and the message never went out, so it raises no floor.
 
@@ -205,6 +209,10 @@ Update this table in the release that changes a floor, with the reason.
 | 2.18.0 | 2.18.0 | 2.12.0 | Memory moved from Engram into the host: the memory methods take and return the new two layers, and the Engram ones (`memoryDetail`, `reviewMemory`, `exportMemory`, `importMemory`) are gone. Clients still talk to older hosts; only their memory screen shows an error there. |
 | 2.12.0 | 2.3.0 | 2.12.0 | The clients require Engram memory management fields and methods. Older clients can still list and forget memories on the new host. |
 | 2.4.0 | 2.3.0 | 2.3.0 | First release with the check. Since 2.3.0 the wire only gained `minApp` and lost the unused `protocol`; 2.3.0 is the oldest pairing verified to work, and a higher floor would lock out hosts that never auto-update. |
+
+Releases that kept the floor on purpose:
+
+- 2.52.0 (`minApp` stays 2.51.0): an agent's own question (ACP elicitation) that has options comes with `ownWords: false`. Apps older than 2.52.0 ignore the field and still show **Something else** on it; words typed there match no option, so they cancel the question and reach the bot as the next message. Kept because the question is new (older apps lose nothing they had), its options still answer it, and the agent hears `cancel` rather than a wrong answer.
 
 ## Trying it on a simulator
 

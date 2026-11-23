@@ -183,7 +183,7 @@ struct BotEntityQuery: EntityQuery {
     @IntentParameterDependency<TeamIntent>(\.$computer) var team
 
     private var all: [BotEntity] {
-        BotsEntry.current.on(team?.computer.id).bots.filter { !$0.hidden }.map { BotEntity(id: $0.id, name: $0.name) }
+        BotsEntry.current.on(team?.computer.id).bots.filter(\.showsInWidgets).map { BotEntity(id: $0.id, name: $0.name) }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
@@ -232,7 +232,7 @@ struct TeamTimeline: AppIntentTimelineProvider {
 extension BotsEntry {
     /// Needs you first, then working, then most recent.
     var mostUrgent: Bot? {
-        bots.filter { !$0.hidden }.min {
+        bots.filter(\.showsInWidgets).min {
             let rank = { (b: Bot) in b.needsYouOutside ? 0 : b.isBusyOutside ? 1 : 2 }
             return rank($0) != rank($1) ? rank($0) < rank($1) : $0.lastAt > $1.lastAt
         }

@@ -82,7 +82,7 @@ impl Actor {
             return;
         }
         let Some(conn) = &self.conn else { return };
-        if conn.sessions.reopen.is_none() {
+        if conn.sessions.reopen().is_none() {
             return;
         }
         let release = plan(&conn.loaded, conn.started, conn.sessions.close, conn.spent, Instant::now());
@@ -103,7 +103,7 @@ impl Actor {
     /// A cloud computer's keeper started again (`Cmd::KeeperRestarted`), so the grants the agent started with are gone.
     pub(super) async fn keeper_restarted(&mut self) {
         let Some(conn) = &self.conn else { return };
-        match after_keeper(conn.acp.holds_grants(), conn.sessions.reopen.is_some(), self.turn.is_some()) {
+        match after_keeper(conn.acp.holds(), conn.sessions.reopen().is_some(), self.turn.is_some()) {
             AfterKeeper::Nothing => {}
             AfterKeeper::BeforeNextTurn => self.restart_before_turn = true,
             AfterKeeper::AfterTurn => self.restart_after_turn = true,
@@ -118,7 +118,7 @@ impl Actor {
     /// start), the next turn starts one and reopens the session where it can, as after any exit.
     pub(super) fn restart_stale(&mut self) {
         let Some(conn) = &self.conn else { return };
-        if conn.sessions.reopen.is_some() {
+        if conn.sessions.reopen().is_some() {
             self.restart_before_turn = true;
         } else {
             self.restart_after_turn = true;
@@ -145,7 +145,7 @@ impl Actor {
     /// chat reopens its own session on its next turn.
     pub(super) async fn release_spent(&mut self, sid: &str) {
         let Some(conn) = &self.conn else { return };
-        if conn.sessions.reopen.is_none() {
+        if conn.sessions.reopen().is_none() {
             return;
         }
         let alone = conn.loaded.keys().all(|s| s == sid) && self.queue.is_empty();
@@ -185,7 +185,7 @@ impl Actor {
         if self
             .conn
             .as_ref()
-            .is_some_and(|c| c.sessions.close && c.sessions.reopen.is_some() && c.loaded.contains_key(sid))
+            .is_some_and(|c| c.sessions.close && c.sessions.reopen().is_some() && c.loaded.contains_key(sid))
         {
             self.close_session(sid).await;
         }

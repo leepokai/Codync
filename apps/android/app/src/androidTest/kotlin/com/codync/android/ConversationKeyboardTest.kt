@@ -26,7 +26,7 @@ class ConversationKeyboardTest {
                 Column {
                     val draft = remember { mutableStateOf("Draft") }
                     BasicTextField(draft.value, { draft.value = it }, Modifier.testTag("composer"))
-                    ConversationList(rememberLazyListState(), "message", 1, false, PaddingValues(0.dp)) {
+                    ConversationList(rememberLazyListState(), "first", "message", 1, false, PaddingValues(0.dp)) {
                         item { Text("Conversation background") }
                         item { LinkButton("Keep editing", action = {}) }
                     }

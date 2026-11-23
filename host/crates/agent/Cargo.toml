@@ -1,0 +1,72 @@
+[package]
+name = "codync-agent"
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.91"
+description = "Coding agents on one computer: find, install and start each, drive it over ACP, give it more than one login, and read its plan usage"
+license = "Apache-2.0"
+repository = "https://github.com/leepokai/codync-agent"
+readme = "README.md"
+keywords = ["agent", "acp", "claude", "codex", "cli"]
+categories = ["development-tools"]
+# The mirror's CI, not part of the package.
+exclude = [".github"]
+
+[dependencies]
+anyhow = "1.0.104"
+base64 = "0.23.1"
+chrono = { version = "0.4.45", optional = true }
+dirs = "7.0.0"
+futures = "0.3.34"
+portable-pty = { version = "0.9.0", optional = true }
+# The app chooses how SQLite is linked (Codync bundles it): one build can't link two.
+rusqlite = { version = "0.41.0", optional = true }
+semver = "1.0.28"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "stream"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sha2 = "0.11.0"
+tokio = { version = "1.53.1", features = ["full"] }
+tracing = "0.1.44"
+uuid = { version = "1.26.1", features = ["v4"] }
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+# What an app's own tests use: `backends::TestSearchPath`, `shell::python` and `codex_app::fixture`.
+test-support = []
+# Each agent's plan usage (`usage`), which reads SQLite files and drives a terminal for one agent.
+usage = ["dep:chrono", "dep:portable-pty", "dep:rusqlite"]
+
+[dev-dependencies]
+rusqlite = { version = "0.41.0", features = ["bundled"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_Security"] }
+
+# Written out instead of inherited from the Codync workspace, so the crate also builds on its own. Unsafe stays
+# allowed: the process tree is libc and Win32 calls.
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unused_qualifications = "warn"
+
+[lints.clippy]
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+module_name_repetitions = "allow"
+too_many_lines = "allow"
+unwrap_used = "warn"
+dbg_macro = "warn"
+todo = "warn"
+undocumented_unsafe_blocks = "warn"

@@ -1,12 +1,13 @@
 //! Talking to a thread: the user writes to the thread that works, or worked, one of the bot's own tasks, as to a
 //! chat. The thread is a bot with an actor, so the message is a message in the thread's own chat: it waits behind a
 //! running turn, can be sent now or removed, and starts a turn when none runs. A task that ended is reopened by
-//! the first message, and reports again when that turn ends. A routine's run and another bot's request take none:
-//! their result has an owner already.
+//! the first message, and reports again when that turn ends. The bot's chat passes words on to a task here too
+//! (`tell`). A routine's run and another bot's request take none: their result has an owner already.
 
 use super::tasks::{self, Source, Status, Task};
 use super::{prompts, worktree};
 use crate::LockExt;
+use crate::agent::bot::Cmd;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, Entry, Store, now_ms};
 use anyhow::{Result, anyhow};
@@ -38,17 +39,22 @@ impl std::fmt::Display for Refused {
 
 impl std::error::Error for Refused {}
 
+/// Whether `task` takes words at all: the bot's own work does; a routine's run and another bot's request have an
+/// owner for their result already.
+fn writable(task: &Task) -> Result<()> {
+    let whose = match &task.source {
+        Source::Bot => return Ok(()),
+        Source::Routine { .. } => "a routine's run",
+        Source::Request { .. } => "another bot's request",
+    };
+    let why = format!("\"{}\" is {whose}: it can be read and stopped, not written to", task.title);
+    Err(Refused::error("read_only", why))
+}
+
 /// The thread that takes the user's messages for `task`, or why it takes none.
 fn thread_of(store: &Store, task: &Task) -> Result<BotConfig> {
+    writable(task)?;
     let title = &task.title;
-    let read_only = |whose: &str| {
-        Refused::error("read_only", format!("\"{title}\" is {whose}: it can be read and stopped, not written to"))
-    };
-    match &task.source {
-        Source::Bot => {}
-        Source::Routine { .. } => return Err(read_only("a routine's run")),
-        Source::Request { .. } => return Err(read_only("another bot's request")),
-    }
     let Some(thread) = task.thread.as_deref() else {
         let why = format!("\"{title}\" hasn't started yet: there is nothing to write to");
         return Err(Refused::error("not_started", why));
@@ -82,8 +88,29 @@ pub(super) fn unheard(store: &Store, thread: &str) -> bool {
 /// `task`'s thread is closed for the task to start again (it gave way, or got a new brief): what the user wrote to
 /// its thread and no turn took yet goes with the task, as what they said since.
 pub(super) fn carry(store: &Store, task: &mut Task, thread: &str) {
-    for entry in waiting(store, thread) {
-        note(&mut task.notes, entry.data["text"].as_str().unwrap_or_default());
+    // What its chat passed on is with the task already (`tell`).
+    // ponytail: a waiting message's files stay behind (only their names go); move them to the new thread if users
+    // miss them.
+    for entry in waiting(store, thread).into_iter().filter(|e| e.data["relay"] != true) {
+        note(&mut task.notes, &carried(&entry.data));
+    }
+}
+
+/// A waiting message as the task that starts again keeps it: its words and the names of the files left behind.
+fn carried(data: &Value) -> String {
+    let left = data["attachments"].as_array().is_some_and(|a| !a.is_empty());
+    format!("{}{}", written(data), if left { " (those files stayed behind)" } else { "" })
+}
+
+/// One message the user wrote to a thread, as its task keeps it: the words, and the names of the files sent with them.
+pub fn written(data: &Value) -> String {
+    let text = data["text"].as_str().unwrap_or_default().trim();
+    let names: Vec<&str> =
+        data["attachments"].as_array().into_iter().flatten().filter_map(|a| a["name"].as_str()).collect();
+    match (text.is_empty(), names.is_empty()) {
+        (_, true) => text.to_owned(),
+        (true, false) => format!("[sent files: {}]", names.join(", ")),
+        (false, false) => format!("{text} [sent files: {}]", names.join(", ")),
     }
 }
 
@@ -118,12 +145,12 @@ fn reopen(hub: &Hub, owner: &BotConfig, task: &mut Task, thread: &mut BotConfig)
     Ok(())
 }
 
-/// The user writes `text` to the thread of `bot`'s task `id`. A turn that runs there makes it wait, as in a chat;
-/// a task that ended is reopened and its thread's actor started again, which resumes its session where the agent
-/// can. `nonce`: the client's, so a message sent twice is one. Answers `{entry, reopened, queued}`: the message as
-/// the thread's transcript holds it, whether it reopened the task, and whether it waits behind a running turn
-/// (both null for a message sent before).
-pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, nonce: &str) -> Result<Value> {
+/// The user writes `text` to the thread of `bot`'s task `id`, with the files uploaded to that thread (`uploads`,
+/// their ids). A turn that runs there makes it wait, as in a chat; a task that ended is reopened and its thread's
+/// actor started again, which resumes its session where the agent can. `nonce`: the client's, so a message sent
+/// twice is one. Answers `{entry, reopened, queued}`: the message as the thread's transcript holds it, whether it
+/// reopened the task, and whether it waits behind a running turn (both null for a message sent before).
+pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, uploads: &[String], nonce: &str) -> Result<Value> {
     let owner = hub.store.bot(bot)?.filter(|row| !row.deleted).ok_or_else(|| anyhow!("unknown bot"))?.config;
     // Under the box's lock to the end: the task's end and the dispatcher's look at its thread come before all of
     // this or after it, so neither ends a thread a message is on its way to.
@@ -139,12 +166,14 @@ pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, nonce: &str) -> 
         if reopened {
             reopen(hub, &owner, tasks::find(tasks, id)?, &mut thread)?;
         }
-        if !hub.has_actor(&thread.id) {
-            hub.spawn_bot(thread.clone());
-        }
-        let queued = matches!(hub.runtime(&thread.id).status, BotStatus::Working | BotStatus::NeedsInput);
-        let data = json!({"text": text, "clientNonce": nonce, "attachments": []});
-        Ok((crate::chat::messages::post(hub, &thread, data)?, Some(reopened), Some(queued)))
+        let root = crate::chat::uploads::root(&thread);
+        let attachments = uploads
+            .iter()
+            .map(|upload| crate::chat::uploads::resolve(&root, upload).map(|(_, meta)| meta))
+            .collect::<Result<Vec<_>>>()?;
+        let data = json!({"text": text, "clientNonce": nonce, "attachments": attachments});
+        let (entry, queued) = post_to(hub, &thread, data)?;
+        Ok((entry, Some(reopened), Some(queued)))
     })?;
     if reopened == Some(true) {
         // It shows under Threads again, and what follows the bot from outside its chat counts it working.
@@ -153,16 +182,84 @@ pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, nonce: &str) -> 
     Ok(json!({"entry": entry, "reopened": reopened, "queued": queued}))
 }
 
+/// Posts `data` to `thread`'s chat as a message, its actor started again if it ended. Answers the entry, and whether
+/// it waits behind a running turn.
+fn post_to(hub: &Arc<Hub>, thread: &BotConfig, data: Value) -> Result<(Entry, bool)> {
+    if !hub.has_actor(&thread.id) {
+        hub.spawn_bot(thread.clone());
+    }
+    let queued = matches!(hub.runtime(&thread.id).status, BotStatus::Working | BotStatus::NeedsInput);
+    Ok((crate::chat::messages::post(hub, thread, data)?, queued))
+}
+
+/// Where words passed on to a task went (`tell`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Told {
+    /// With the waiting task, for its thread to read when it starts.
+    Waiting,
+    /// A message in the working task's thread; `queued`: it waits behind a running turn.
+    Working { queued: bool },
+}
+
+/// The bot passes `text` on to its task `id` (`tell_task`), which keeps it (`Task::relayed`) so a session that
+/// starts the task, or starts it again, reads it. A working task also gets it as a message in its thread from the chat
+/// (`from: host`, `relay`; every client quotes it there, as what the thread was told), which waits behind a running
+/// turn as the user's does and keeps the task going until it is taken. `now` hands it to that turn at its next step,
+/// or stops the turn for it where the agent takes no message mid-turn (`agent::bot::steer`).
+pub fn tell(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, now: bool) -> Result<Told> {
+    let (told, steer) = tasks::change(hub, bot, |tasks| {
+        let task = tasks::find(tasks, id)?;
+        writable(task)?;
+        match task.status {
+            Status::Waiting => {
+                note(&mut task.relayed, text);
+                Ok((Told::Waiting, None))
+            }
+            Status::Working => {
+                let thread = thread_of(&hub.store, task)?;
+                note(&mut task.relayed, text);
+                let (entry, queued) = post_to(hub, &thread, json!({"text": text, "from": "host", "relay": true}))?;
+                Ok((Told::Working { queued }, (now && queued).then_some((thread.id, entry.id))))
+            }
+            _ => {
+                let why = format!(
+                    "\"{}\" has ended: its report came to you already. For more of that work, add a new task",
+                    task.title
+                );
+                Err(Refused::error("ended", why))
+            }
+        }
+    })?;
+    if let Some((thread, entry_id)) = steer {
+        hub.send_cmd(&thread, Cmd::Steer { entry_id })?;
+    }
+    Ok(told)
+}
+
 /// A turn of thread `cfg` begins for what the user wrote to its thread (`words`, each message's): the task's next
 /// report ends with them, and a session that starts the task again reads them.
 pub fn heard(hub: &Hub, cfg: &BotConfig, words: &[String]) {
     super::update(hub, cfg, "what the user wrote to it", |task| {
-        for words in words {
+        for words in words.iter().map(|w| w.trim()).filter(|w| !w.is_empty()) {
             note(&mut task.notes, words);
-            task.told.push(words.trim().to_owned());
+            task.told.push(words.to_owned());
         }
         let over = task.told.len().saturating_sub(TOLD_KEPT);
         task.told.drain(..over);
+    });
+}
+
+/// What [`heard`] kept of `words` goes: those messages went back to wait (the agent dropped them with its turn), and
+/// their own turn hears them again.
+pub fn unhear(hub: &Hub, cfg: &BotConfig, words: &[String]) {
+    super::update(hub, cfg, "what the user wrote to it", |task| {
+        for words in words.iter().rev().map(|words| words.trim()) {
+            for kept in [&mut task.told, &mut task.notes] {
+                if kept.last().is_some_and(|last| last == words) {
+                    kept.pop();
+                }
+            }
+        }
     });
 }
 
@@ -212,6 +309,34 @@ mod tests {
     }
 
     #[test]
+    fn a_message_of_files_alone_is_told_by_their_names() {
+        let files = json!([{"name": "shot.png"}, {"name": "log.txt"}]);
+        assert_eq!(written(&json!({"text": "", "attachments": files})), "[sent files: shot.png, log.txt]");
+        assert_eq!(written(&json!({"text": " see ", "attachments": files})), "see [sent files: shot.png, log.txt]");
+        assert_eq!(written(&json!({"text": "see", "attachments": []})), "see");
+        let carried_files = carried(&json!({"text": "see", "attachments": files}));
+        assert_eq!(carried_files, "see [sent files: shot.png, log.txt] (those files stayed behind)");
+        assert_eq!(carried(&json!({"text": "see"})), "see");
+    }
+
+    #[tokio::test]
+    async fn files_sent_to_a_thread_are_its_own_uploads() {
+        let hub = hub();
+        hub.store.save_bot(&bot("b1", "Mika", "/tmp")).expect("saved");
+        let thread = BotConfig { thread_of: Some("b1".into()), ..bot("thread-1", "Mika", "/tmp") };
+        hub.store.save_bot(&thread).expect("saved");
+        crate::chat::work::put_working_for_test(&hub.store, "b1", "thread-1");
+        let root = crate::chat::uploads::root(&thread);
+        let upload = uuid::Uuid::new_v4().to_string();
+        crate::chat::uploads::append(&root, &upload, "shot.png", 0, b"png", true).expect("uploaded");
+        let sent = message(&hub, "b1", "i1", "", std::slice::from_ref(&upload), "n1").expect("sent");
+        assert_eq!(sent["entry"]["botId"], "thread-1");
+        assert_eq!(sent["entry"]["data"]["attachments"][0]["name"], "shot.png");
+        let unknown = [uuid::Uuid::new_v4().to_string()];
+        assert!(message(&hub, "b1", "i1", "", &unknown, "n2").is_err(), "only the thread's own uploads");
+    }
+
+    #[test]
     fn a_reopened_task_works_again_and_keeps_what_it_reported() {
         let hub = hub();
         let owner = bot("b1", "Mika", "/tmp");
@@ -235,5 +360,21 @@ mod tests {
         let task = tasks::load(&hub.store, "b1").remove(0);
         assert_eq!(task.told.len(), TOLD_KEPT, "the newest are kept");
         assert_eq!((task.told[0].as_str(), task.notes[0].as_str()), ("word 1", "word 0"));
+    }
+
+    #[test]
+    fn words_that_went_back_to_wait_are_the_tasks_once() {
+        let hub = hub();
+        let cfg = BotConfig { thread_of: Some("b1".into()), ..bot("thread-1", "Mika", "/tmp") };
+        crate::chat::work::put_working_for_test(&hub.store, "b1", "thread-1");
+        let words = |said: &[&str]| said.iter().map(|w| (*w).to_owned()).collect::<Vec<_>>();
+        heard(&hub, &cfg, &words(&["earlier"]));
+        // Two messages joined a turn its agent dropped: their own turn hears them again.
+        heard(&hub, &cfg, &words(&["one", "two"]));
+        unhear(&hub, &cfg, &words(&["one", "two"]));
+        heard(&hub, &cfg, &words(&["one", "two"]));
+        let task = tasks::load(&hub.store, "b1").remove(0);
+        assert_eq!(task.told, words(&["earlier", "one", "two"]));
+        assert_eq!(task.notes, words(&["earlier", "one", "two"]));
     }
 }

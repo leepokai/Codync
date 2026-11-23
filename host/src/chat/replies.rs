@@ -3,10 +3,10 @@
 //! A bot quotes the same way, with `reply_to` on `send_message` and `send_file` (`chat::outbox`).
 //! A reply can answer one part of the message, the text the user selected in it: the quote is then that part.
 
-use crate::agent::acp;
 use crate::hub::Hub;
 use crate::store::{EntryKind, Store, message_text};
 use anyhow::{Result, anyhow, ensure};
+use codync_agent::acp;
 use serde_json::{Value, json};
 
 /// How much of the answered message's text the reply keeps.

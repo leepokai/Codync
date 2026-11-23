@@ -480,10 +480,20 @@ fn may_run(routine: &Routine, event: &Value) -> bool {
     routine.enabled || event["source"] == "test"
 }
 
-/// Whether `routine` has a run under way or queued; a retry waiting for its time doesn't count.
+/// Most runs one routine holds queued and not yet started (webhook deliveries waiting for a busy bot, retries).
+// ponytail: fixed ceiling per routine, whatever the payload sizes; make it a setting if a sender bursts more.
+pub const MAX_QUEUED: usize = 16;
+
+/// Whether `routine` takes no new run now: one of its runs has started, or `MAX_QUEUED` wait to. Queued runs
+/// alone don't block: each runs once, in the order it came, when its bot is free (issue #502).
 fn busy(s: &State, routine: &str) -> bool {
-    let now = now_ms();
-    s.runs.iter().any(|r| r.routine_id == routine && r.status.active() && !r.waiting(now))
+    started(s, routine)
+        || s.runs.iter().filter(|r| r.routine_id == routine && r.status == Status::Pending).count() >= MAX_QUEUED
+}
+
+/// Whether a run of `routine` has started and not ended: its other runs wait for it (one at a time, in order).
+fn started(s: &State, routine: &str) -> bool {
+    s.runs.iter().any(|r| r.routine_id == routine && r.status.active() && r.status != Status::Pending)
 }
 
 fn cancel_run(run: &mut Run) {

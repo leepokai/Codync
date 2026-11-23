@@ -11,7 +11,6 @@ use crate::hub::BotStatus;
 use crate::store::{Lane, now_ms};
 use anyhow::{Result, anyhow};
 use codync_network::Access;
-use serde_json::json;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
@@ -23,6 +22,11 @@ impl Actor {
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
             Cmd::FollowUp(id) => self.enqueue(Queued::FollowUp(id), done_tx).await,
             Cmd::TaskReport(report) => self.enqueue(Queued::TaskReport(report), done_tx).await,
+            Cmd::Watchdog(stuck) => {
+                // A newer look at the thread stands for one still waiting.
+                self.queue.retain(|q| !matches!(q, Queued::Watchdog(s) if s.thread() == stuck.thread()));
+                self.enqueue(Queued::Watchdog(stuck), done_tx).await;
+            }
             Cmd::Send { lane, entry_id, mut text } => {
                 // What the user writes to a thread waits behind the turn its card holds: only a press
                 // answers a thread's card, and a message neither answers nor ends it.
@@ -117,7 +121,7 @@ impl Actor {
                 // The harness reads its own memory's switch when it starts: an agent that can resume its session
                 // restarts into it, one that can't starts afresh.
                 let memory_changed = own_memory::kept(&cfg) != own_memory::kept(&self.cfg);
-                let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.reopen.is_some());
+                let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.reopen().is_some());
                 let restart = cfg.backend != self.cfg.backend
                     || cfg.command != self.cfg.command
                     || cfg.login_profile != self.cfg.login_profile
@@ -188,6 +192,8 @@ impl Actor {
                 Queued::Group(turn) if turn.late => self.queue.push_back(Queued::Group(turn)),
                 // A task's report is news the user still wants.
                 Queued::TaskReport(report) => self.queue.push_back(Queued::TaskReport(report)),
+                // Its notice keeps the outcome; a host restart doesn't bring back what the user stopped.
+                Queued::BotReply(reply) => crate::chat::team::relayed(&self.hub, std::slice::from_ref(&reply), &[]),
                 Queued::User { entry_id, .. } => {
                     if let Some(mut e) = self.hub.store.entry(&entry_id) {
                         e.data["status"] = "cancelled".into();
@@ -223,7 +229,7 @@ impl Actor {
             self.answer_permission(&id, None).await;
         }
         if let (Some(c), Some(sid)) = (&self.conn, &self.turn_session) {
-            let _ = c.acp.notify("session/cancel", json!({"sessionId": sid})).await;
+            let _ = c.acp.session(sid).cancel().await;
         }
     }
 
@@ -303,9 +309,16 @@ impl Actor {
                     self.hub.ceilings.set(&self.cfg.id, access);
                     self.reply_hops = replies.iter().map(crate::chat::team::BotReply::hops).max();
                     let prompt = crate::chat::team::reply_prompt(&replies, access);
-                    if let Err(e) = self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
+                    let result = self.start_turn(main.clone(), &[], &prompt, false, done_tx).await;
+                    let started = result.is_ok();
+                    if let Err(e) = result {
                         self.start_error(e, done_tx).await;
                     }
+                    // Only once the agent has the prompt (or the turn failed where the user sees it): a host restart
+                    // before that relays them again from their notices. From then on a restart resumes the turn: the
+                    // one write that takes them also marks it running.
+                    let running = (started && self.resumes()).then(|| self.inflight_row(true));
+                    crate::chat::team::relayed(&self.hub, &replies, running.as_slice());
                     continue;
                 }
                 Some(Queued::TaskReport(_)) => {
@@ -322,6 +335,20 @@ impl Actor {
                     self.reports = reports;
                     match self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
                         // A task this turn adds carries the chain on.
+                        Ok(()) => self.hub.work.answering(&self.cfg.id, hops),
+                        Err(e) => self.start_error(e, done_tx).await,
+                    }
+                    continue;
+                }
+                Some(Queued::Watchdog(_)) => {
+                    let Some(Queued::Watchdog(stuck)) = self.queue.pop_front() else {
+                        unreachable!("front is the watchdog's")
+                    };
+                    // The task ended or was set aside while this waited: nothing is left to look at.
+                    let Some((prompt, hops)) = stuck.turn(&self.hub.store, &self.cfg.id) else { continue };
+                    self.host_turn = Some(HostTurn::Watchdog);
+                    match self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
+                        // A task this turn adds carries the chain on, as a report's turn does.
                         Ok(()) => self.hub.work.answering(&self.cfg.id, hops),
                         Err(e) => self.start_error(e, done_tx).await,
                     }
@@ -454,7 +481,7 @@ impl Actor {
         match ended {
             Some(HostTurn::FollowUp) => self.hub.routines.end_follow_up(&self.cfg.id),
             Some(HostTurn::TaskReport) => self.reports_over(answered),
-            Some(HostTurn::Opening) | None => {}
+            Some(HostTurn::Opening | HostTurn::Watchdog) | None => {}
         }
         ended
     }
@@ -579,16 +606,35 @@ impl Actor {
         }
     }
 
+    /// Whether a host restart resumes the turn starting now. A bot request or room turn isn't (the room that waited is
+    /// gone): a request's persisted notices are marked interrupted instead of silently repeating work. Nor is a call's
+    /// opening (the call is over). A reply turn is, and so is a follow-up, which is gone from the list by now. A turn
+    /// under a network rule's ceiling isn't: the ceiling doesn't outlive the host, and the turn that resumed it would
+    /// work on the sender's text as the bot is set.
+    pub(super) fn resumes(&self) -> bool {
+        self.active_request.is_none()
+            && !self.hub.ceilings.holds(&self.cfg.id)
+            && self.active_group.is_none()
+            && self.active_routine.is_none()
+            && self.host_turn.is_none_or(HostTurn::resumed)
+    }
+
     /// Marks a turn in the bot's own chat as running across host restarts (see [`Self::resume_interrupted`]); a
     /// follow-up's turn is marked as one, with its place in its chain.
     pub(super) fn set_inflight(&self, on: bool) {
+        let (key, mark) = self.inflight_row(on);
+        if let Err(error) = self.hub.store.kv_set(&key, &mark) {
+            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the running turn");
+        }
+    }
+
+    /// The kv row [`Self::set_inflight`] saves, for a write that saves it with others.
+    pub(super) fn inflight_row(&self, on: bool) -> (String, String) {
         let turn = on.then(|| {
             let follow_up = (self.host_turn == Some(HostTurn::FollowUp))
                 .then(|| self.hub.routines.follow_up_chain(&self.cfg.id).unwrap_or(0));
             Inflight { started: now_ms(), follow_up }
         });
-        if let Err(error) = Inflight::save(&self.hub.store, &self.cfg.id, turn) {
-            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the running turn");
-        }
+        Inflight::row(&self.cfg.id, turn)
     }
 }

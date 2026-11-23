@@ -163,8 +163,8 @@ step's login profile ("Fallbacks set: Claude Code (Work)").
 
 ## Threads
 
-A bot's [threads](work.md#fallbacks-and-sign-in) run the same chain, and get a change to it at
-once. Their sign-in cards and offers to add a fallback go to the bot's chat, marked as the task's; a task whose
+A bot's [threads](work.md#fallbacks-and-sign-in) run the same chain (in [Advisor mode](work.md#advisor-mode) their
+own, which starts at the threads' agent), and get a change to it at once. Their sign-in cards and offers to add a fallback go to the bot's chat, marked as the task's; a task whose
 agents can't take its turn until the user signs in waits for that (needs you) instead of failing, and goes on in
 the same thread once they have.
 
@@ -186,8 +186,11 @@ traveling" stays whole; a rest line holds only a time, so the apps translate the
   doesn't have, so the bot's own agent is offered on its other login profiles and an agent with no login left is left out;
   the step's own login stays offered even when it has signed out since; another agent starts on its first free login and
   default model, and the step's own agent picked again brings back its model, options and login), "Usage resets 3:00 PM" / "Resting until 3:00 PM" while resting, an **In use** chip, and a ⋯ menu (Move
-  up, Move down, Remove); "No fallbacks yet."; a caption; and the "Let the bot change its fallbacks" switch. No sheet
-  opens: every change goes into the form, which saves like the rest of it. The bot's own Agent row says when it resets.
+  up, Move down, Remove); "No fallbacks yet."; a caption; and the "Let the bot change its fallbacks" switch. Then, from
+  a host that has it, the **Advisor mode** switch; while it's on, **Threads' agent** (the threads' agent, model and
+  login, picked in place like the bot's own, with its rest line) and **Threads' fallbacks** (rows as above, with no
+  **In use** chip, its caption naming the threads' agent). No sheet opens: every change goes into the form, which saves
+  like the rest of it. The bot's own Agent row says when it resets.
 - **Chat**: one line where another agent took over ("Claude Code reached its usage limit (resets in 2 h). Codex carried
   on.") or the bot's own came back ("Back on Claude Code."); it unfolds to what the agent was told (past 8,000 bytes,
   its start and its end: the messages in the middle are in the chat). Moving past a
@@ -195,7 +198,9 @@ traveling" stays whole; a rest line holds only a time, so the apps translate the
   sign-in sheet. A failure with
   `addFallback` offers **Add a fallback**, which opens the bot's Settings at the Agent card.
 - **Terminal**: the bot form's Fallbacks field (←→ pick, space adds the next free agent or cycles a fallback's model,
-  `a` changes its agent, `c` changes its login profile, `[`/`]` move, `x` removes) and "Bot edits" (whether the bot may change them); while the bot is on a fallback the Settings page says which agent is in use ("Using Codex until Claude Code resets at 15:00", "Using Codex while Claude Code is signed out"),
+  `a` changes its agent, `c` changes its login profile, `[`/`]` move, `x` removes) and "Bot edits" (whether the bot may change them),
+  then Advisor mode (←→ or space turns it on or off), Threads' agent (←→ its agent, space its model, `c` its login profile) and
+  Threads' fallbacks (the Fallbacks field's keys); while the bot is on a fallback the Settings page says which agent is in use ("Using Codex until Claude Code resets at 15:00", "Using Codex while Claude Code is signed out"),
   and `b` on its Agent field switches back; in the chat `↪` lines unfold with `o`, and `A` on a picked failure opens that bot's Fallbacks field
   (in a group, the member whose agent failed).
 

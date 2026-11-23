@@ -1,11 +1,12 @@
 //! Background jobs on the bot's own harness (dreaming, automatic naming, call titles): one prompt to a throwaway
 //! agent.
 
-use crate::agent::acp::{self, Acp, Incoming};
 use crate::agent::bot::{Adapter, Instructions};
 use crate::hub::Hub;
 use crate::store::BotConfig;
 use anyhow::{Result, anyhow, bail};
+use codync_agent::acp::{self, Acp, Incoming};
+use codync_agent::events::{Event, Update};
 use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
@@ -35,7 +36,7 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
         crate::agent::bot::start_agent(&cfg.backend, &command[0], workspace, &env, Duration::from_mins(1)).await
     })
     .await?;
-    conn.acp.hold(grants);
+    grants.held_by(&conn.acp);
     let acp = conn.acp.clone();
     let mut opened = None;
     let result = async {
@@ -59,10 +60,10 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
         opened = Some(sid.clone());
         // Same model as the bot: the harness default may be another (local) model that
         // would load next to the bot's, or a cloud one the user kept these chats away from.
-        if conn.adapter != Adapter::Claude {
+        if conn.adapter() != Adapter::Claude {
             crate::agent::bot::select_model(&acp, &res, &sid, cfg).await?;
         }
-        let prompt = acp.request("session/prompt", json!({"sessionId": sid, "prompt": [{"type": "text", "text": text}]}));
+        let prompt = async { acp.session(&sid).prompt(json!([{"type": "text", "text": text}])).await?.response().await };
         tokio::pin!(prompt);
         let deadline = tokio::time::sleep(TIMEOUT);
         tokio::pin!(deadline);
@@ -71,7 +72,7 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
             tokio::select! {
                 r = &mut prompt => { r.and_then(acp::codebuddy::prompt_result)?; break }
                 inc = conn.rx.recv() => {
-                    if !collect(&acp, inc, &mut out).await {
+                    if !collect(inc, &mut out) {
                         bail!("the background job's agent exited");
                     }
                 }
@@ -79,12 +80,12 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
             }
         }
         while let Ok(inc) = conn.rx.try_recv() {
-            collect(&acp, Some(inc), &mut out).await;
+            collect(Some(inc), &mut out);
         }
         Ok(out)
     }
     .await;
-    if let Some(sid) = opened.filter(|_| conn.deletes_sessions() && conn.adapter != Adapter::Claude) {
+    if let Some(sid) = opened.filter(|_| conn.deletes_sessions() && conn.adapter() != Adapter::Claude) {
         forget(&acp, &cfg.id, &sid).await;
     }
     acp.kill().await;
@@ -107,24 +108,15 @@ async fn forget(acp: &Acp, bot: &str, sid: &str) {
     }
 }
 
-/// Keeps reply text; refuses anything the agent asks of us. False once the agent is gone.
-async fn collect(acp: &Acp, inc: Option<Incoming>, out: &mut String) -> bool {
+/// Keeps reply text; refuses anything the agent asks of us (a request dropped unanswered refuses itself). False once
+/// the agent is gone.
+fn collect(inc: Option<Incoming>, out: &mut String) -> bool {
     match inc {
         None | Some(Incoming::Closed { .. }) => false,
-        Some(Incoming::Notification { method, params }) => {
-            let u = &params["update"];
-            if method == "session/update" && u["sessionUpdate"] == "agent_message_chunk" {
-                out.push_str(&acp::content_text(&u["content"]));
-            }
+        Some(Incoming::Update(Update { event: Event::Text { text, .. }, .. })) => {
+            out.push_str(&text);
             true
         }
-        Some(Incoming::Request { id, method, .. }) => {
-            let _ = if method == "session/request_permission" {
-                acp.respond(id, acp::permission_answer(None)).await
-            } else {
-                acp.respond_error(id, -32601, "not supported").await
-            };
-            true
-        }
+        Some(_) => true,
     }
 }

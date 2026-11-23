@@ -113,12 +113,17 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
     public var worktree: Worktree?
     /// Its thread takes the user's messages (`WorkThread.swift`). False from an older host.
     public var talk: Bool
+    /// Its thread takes files with the user's messages too. False from a host before them, where the composer has no +.
+    public var talkFiles: Bool
     /// The folder its thread works in on the computer; nil before a thread took it, and from an older host.
     public var folder: String?
+    /// It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); nil from an
+    /// older host, where every live task takes one (`takesSeat`).
+    public var seat: Bool?
 
     public init(id: String, title: String, status: Status, activity: String = "", thread: String? = nil, wait: Wait? = nil,
                 cutIn: Bool = false, createdAt: Int64 = 0, startedAt: Int64? = nil, endedAt: Int64? = nil, result: String = "",
-                source: Source? = nil, worktree: Worktree? = nil, talk: Bool = false, folder: String? = nil) {
+                source: Source? = nil, worktree: Worktree? = nil, talk: Bool = false, talkFiles: Bool = false, folder: String? = nil, seat: Bool? = nil) {
         self.id = id
         self.title = title
         self.status = status
@@ -133,7 +138,9 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
         self.source = source
         self.worktree = worktree
         self.talk = talk
+        self.talkFiles = talkFiles
         self.folder = folder
+        self.seat = seat
     }
 
     /// Lenient, but for what says which task it is and where it stands: one without an id, or with a status this
@@ -155,8 +162,13 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
         source = try? c.decodeIfPresent(Source.self, forKey: .source)
         worktree = try? c.decodeIfPresent(Worktree.self, forKey: .worktree)
         talk = (try? c.decodeIfPresent(Bool.self, forKey: .talk)) ?? false
+        talkFiles = (try? c.decodeIfPresent(Bool.self, forKey: .talkFiles)) ?? false
         folder = try? c.decodeIfPresent(String.self, forKey: .folder)
+        seat = try? c.decodeIfPresent(Bool.self, forKey: .seat)
     }
+
+    /// It takes one of the bot's seats (`maxThreads`): the host's word, else a live task.
+    public var takesSeat: Bool { seat ?? status.isLive }
 
     /// Try again is offered on a task that failed or was stopped, unless another bot asked for it: that bot has
     /// its answer already. A routine's task runs the routine again.
@@ -275,8 +287,11 @@ public struct WorkSections: Equatable, Sendable {
 
     /// How many more threads the bot may run. A host that doesn't say how many it runs at once: three.
     public func free(maxThreads: Int?) -> Int {
-        max(0, (maxThreads ?? Bot.defaultMaxThreads) - live.count)
+        max(0, (maxThreads ?? Bot.defaultMaxThreads) - inUse)
     }
+
+    /// The seats taken: a thread waiting on the user takes none.
+    public var inUse: Int { live.filter(\.takesSeat).count }
 
     /// Every thread is busy: a task starts now only when a live one gives way.
     public func isFull(maxThreads: Int?) -> Bool {
@@ -293,9 +308,9 @@ public struct WorkSections: Equatable, Sendable {
         return isFull(maxThreads: maxThreads) && !givingWay.isEmpty && first.wait?.kind != .after && first.wait?.kind != .usage
     }
 
-    /// The Threads heading's `2 / 3`: how many run, of the most allowed.
+    /// The Threads heading's `2 / 3`: the seats taken, of the most allowed.
     public func threadsCount(maxThreads: Int?) -> String {
-        "\(live.count) / \(maxThreads ?? Bot.defaultMaxThreads)"
+        "\(inUse) / \(maxThreads ?? Bot.defaultMaxThreads)"
     }
 
     /// What a task's row offers, the one that shows on the row first.

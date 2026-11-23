@@ -20,7 +20,7 @@ the change.
 | `getting-started` | Install, pair, first bot | `README.md`, [updates](updates.md), [dev app](dev-app.md) for names only |
 | `bots` | Creating, settings, workspaces, hiding, permissions, new session, importing from Grok Bot | [bot workspaces](../features/bot-workspaces.md), [conversation runtime](../architecture/conversation-runtime.md), [bot import](../features/bot-import.md) |
 | `working-folders` | A bot's folder, where threads work, the worktrees Codync makes and leaves, bringing a branch in, working without a git repository or without git, installing git | [work](../features/work.md#worktrees), `host/src/chat/work/worktree.rs`, `host/src/git.rs` |
-| `agents` | Known agents, registry, custom command, Extensions, sign-in, models | [extensions](../features/marketplace.md), `host/src/agent/backends.rs` |
+| `agents` | Known agents, registry, custom command, Extensions, sign-in, models | [extensions](../features/marketplace.md), `host/crates/agent/src/backends.rs` |
 | `conversations` | Messages, files, approval cards, threads, stop, replies, reactions, commands, fresh conversations, notifications, sending from a script (`codync-host send`) | `README.md` (`codync-host send`), [chat messages](../features/chat-messages.md), [work](../features/work.md), [file attachments](../features/file-attachments.md), [context and memory](../features/context-and-memory.md), [notifications](../design/push-and-live-activity.md) |
 | `groups` | Group chats | [groups and replies](../features/groups-and-replies.md) |
 | `teamwork` | Bots messaging bots, bots on your other computers, Manage the team | [bot collaboration](../features/bot-collaboration.md), [codync-network](../features/codync-network.md) |

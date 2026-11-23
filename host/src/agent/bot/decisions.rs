@@ -1,14 +1,14 @@
 //! Choice waiters belong to the actor, so a click, typed answer, cancellation and turn end cannot answer twice.
 
 use super::Actor;
-use crate::agent::acp;
 use crate::analytics::{self, Event};
-use crate::chat::decision::{self, Expiry, Via};
+use crate::chat::decision::{self, Asker, Expiry, Via};
 use crate::chat::replies;
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{Entry, EntryKind, Lane};
 use anyhow::{Result, anyhow, ensure};
+use codync_agent::acp;
 use serde_json::{Map, Value, json};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
@@ -18,7 +18,10 @@ const RUN_OUT: Duration = Duration::from_secs(1);
 
 pub(super) struct Asked {
     reply: oneshot::Sender<Result<Value>>,
-    deadline: Instant,
+    /// When the asking call stops waiting; none for the agent's own question (`elicitations`), which waits until it is
+    /// answered or its turn ends.
+    deadline: Option<Instant>,
+    asker: Asker,
 }
 
 impl Actor {
@@ -33,13 +36,7 @@ impl Actor {
         if reply.is_closed() {
             return;
         }
-        if self.turn.is_none()
-            || self.stop_requested
-            || !self.in_own_chat()
-            || self.host_turn.is_some()
-            || self.lane.chat != self.cfg.id
-            || self.hub.runtime(&self.cfg.id).started_at != Some(started_at)
-        {
+        if !self.can_ask() || self.hub.runtime(&self.cfg.id).started_at != Some(started_at) {
             let _ = reply.send(Err(anyhow!("request_decision works only in the current turn of your own chat")));
             return;
         }
@@ -47,6 +44,27 @@ impl Actor {
             let _ = reply.send(Err(anyhow!("a decision is already waiting: ask one question at a time")));
             return;
         }
+        self.post_decision(data, Some(deadline), Asker::Tool, reply);
+    }
+
+    /// Whether the running turn may put a choice card in front of the user: one of the bot's own chat (a task's
+    /// included), not stopped and not started by the host. Room turns, routines and bot requests ask in a message.
+    pub(super) fn can_ask(&self) -> bool {
+        self.turn.is_some()
+            && !self.stop_requested
+            && self.in_own_chat()
+            && self.host_turn.is_none()
+            && self.lane.chat == self.cfg.id
+    }
+
+    /// Shows a card and waits for its answer on `reply`, telling the user it needs them.
+    pub(super) fn post_decision(
+        &mut self,
+        data: Value,
+        deadline: Option<Instant>,
+        asker: Asker,
+        reply: oneshot::Sender<Result<Value>>,
+    ) {
         if let Some(open) = self.open_card.take() {
             decision::expire(&self.hub, &open);
             Expiry::AskedAgain.capture(&self.hub);
@@ -69,9 +87,9 @@ impl Actor {
         analytics::capture(
             &self.hub,
             Event::DecisionAsked,
-            Map::from_iter([("options".into(), decision::choices(&card).len().into())]),
+            Map::from_iter([("options".into(), decision::choices(&card).len().into()), ("asker".into(), json!(asker))]),
         );
-        self.asked.insert(card.id, Asked { reply, deadline });
+        self.asked.insert(card.id, Asked { reply, deadline, asker });
     }
 
     pub(super) fn expire_abandoned_decisions(&mut self) {
@@ -80,7 +98,7 @@ impl Actor {
         let gone: Vec<_> = self
             .asked
             .iter()
-            .filter(|(_, a)| a.reply.is_closed() || (!thread && now + RUN_OUT >= a.deadline))
+            .filter(|(_, a)| a.reply.is_closed() || (!thread && a.deadline.is_some_and(|d| now + RUN_OUT >= d)))
             .map(|(id, _)| id.clone())
             .collect();
         if gone.is_empty() {
@@ -89,10 +107,10 @@ impl Actor {
         for id in gone {
             let Some(asked) = self.asked.remove(&id) else { continue };
             // The call's own timeout drops it at its deadline; anything earlier is the agent cancelling.
-            let timed_out = now >= asked.deadline;
+            let timed_out = asked.deadline.is_some_and(|d| now >= d);
             // A chat's card outlives its call, which is told so (here, or by its own timeout at the deadline); a
-            // thread's ends with it (a press there has no next message to become).
-            if !thread && (timed_out || !asked.reply.is_closed()) {
+            // thread's ends with it (a press there has no next message to become), and so does the agent's own question.
+            if !thread && asked.asker == Asker::Tool && (timed_out || !asked.reply.is_closed()) {
                 let _ = asked.reply.send(Ok(decision::left_open()));
                 self.open_card = Some(id);
                 continue;
@@ -135,7 +153,7 @@ impl Actor {
             decision::expire(&self.hub, id);
             return Err(anyhow!("that card expired: no live call is waiting"));
         }
-        let (choice, via) = decision::answer(&decision::choices(&card), wanted, typed.is_some())
+        let (choice, via) = decision::answer_card(&card, wanted, typed.is_some())
             .ok_or_else(|| anyhow!("no such option on that card"))?;
         let mut answer = json!({"choice": choice});
         if via == Via::Custom {
@@ -222,8 +240,8 @@ impl Actor {
     /// A press on the open card: answered, and the choice goes to the bot as the user's next message, quoting it.
     pub(super) fn answer_open_card(&mut self, id: &str, wanted: &str) -> Result<Value> {
         let card = decision::pending_card(&self.hub.store, id)?;
-        let (choice, _) = decision::answer(&decision::choices(&card), wanted, false)
-            .ok_or_else(|| anyhow!("no such option on that card"))?;
+        let (choice, _) =
+            decision::answer_card(&card, wanted, false).ok_or_else(|| anyhow!("no such option on that card"))?;
         self.open_card = None;
         let data = json!({"text": choice, "from": "decision", "decisionId": id, "decisionChoice": choice,
             "replyTo": self.quote_card(&card)});
@@ -274,6 +292,6 @@ impl Actor {
 fn typed_answer(card: &Entry, entry: &Entry) -> Option<(String, Via)> {
     let plain = entry.data["attachments"].as_array().is_none_or(Vec::is_empty) && entry.data["replyTo"].is_null();
     let text = entry.data["text"].as_str().unwrap_or_default();
-    decision::answer(&decision::choices(card), text, true)
+    decision::answer_card(card, text, true)
         .filter(|(_, via)| plain && (*via != Via::Custom || entry.data["call"].is_null()))
 }

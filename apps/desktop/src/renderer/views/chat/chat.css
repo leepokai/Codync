@@ -370,6 +370,8 @@
   background: var(--bubble-agent);
   text-align: left;
   min-width: 0;
+  /* A long activity or step stays inside the pill, as on the phones, which clip its shape. */
+  overflow: hidden;
   /* Unfolding widens the pill to a bubble's width in the same motion that grows it. */
   interpolate-size: allow-keywords;
   transition: width var(--layout);
@@ -381,9 +383,15 @@
 .working .reveal {
   contain: inline-size;
 }
+/* The status row keeps the pill's width whether details unfold its steps or not, so a long activity
+   truncates inside the pill instead of running past its edge. */
+.working-status,
+.working-toggle {
+  min-width: 0;
+  max-width: 100%;
+}
 .working-toggle {
   display: flex;
-  min-width: 0;
   text-align: left;
 }
 /* The unfolded steps scroll inside the pill, so a long turn never runs down the chat. */

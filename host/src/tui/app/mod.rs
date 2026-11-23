@@ -42,7 +42,7 @@ pub use model::{After, Entry, Kind, Mark, Msg, Status};
 pub use queue::Queued;
 pub use roster::{RosterLine, cursor_line, rename_fold, roster_lines, stops};
 pub use slash::SlashAction;
-pub(super) use steps::{running_turn, working_steps};
+pub(super) use steps::{nested, running_turn, subagent_line, working_steps};
 pub use ui::{
     ACTIONS, Action, COLORS, Click, Confirm, ConfirmAct, Dir, FIELDS, FILTERS, Field, Focus, FolderMode, FolderPicker,
     Form, Goto, GotoItem, GroupField, GroupForm, Hits, NewBot, NewBotField, Overlay, PairCode, SHAPES, Toast, Toggle,
@@ -71,6 +71,9 @@ struct PendingSend {
     nonce: String,
     busy: bool,
 }
+
+/// Whose model list it is: the agent and its login profile (`None`: the default login).
+pub type ModelKey = (String, Option<String>);
 
 #[allow(clippy::struct_excessive_bools, reason = "independent UI flags, not a state machine")]
 pub struct App {
@@ -154,12 +157,12 @@ pub struct App {
     pub market: (Vec<Toggle>, Vec<Toggle>),
     /// Installed connectors and skills as the host lists them.
     pub plugins: (Vec<Value>, Vec<Value>),
-    /// Models each agent offers (`None` while loading).
-    pub models: HashMap<String, Option<Vec<AgentModel>>>,
-    /// Agents whose model list came with Fast mode.
-    pub fast_mode: HashSet<String>,
-    /// The modes each agent's model list came with.
-    pub modes: HashMap<String, Vec<crate::agent::modes::Mode>>,
+    /// Models each agent (and login profile) offers (`None` while loading).
+    pub models: HashMap<ModelKey, Option<Vec<AgentModel>>>,
+    /// Agent/login-profile pairs whose model list came with Fast mode.
+    pub fast_mode: HashSet<ModelKey>,
+    /// The modes each agent's (and login profile's) model list came with.
+    pub modes: HashMap<ModelKey, Vec<codync_agent::modes::Mode>>,
     /// A setup terminal holding the screen.
     pub shell: Option<Shell>,
     /// Chats marked read since their bot's unread count last changed.
@@ -264,6 +267,15 @@ impl App {
         // Hosts before 2.51.0: goes when MIN_HOST reaches 2.51.0.
         let (method, body) = super::net::old_host::outgoing(&self.host_version, method, body);
         self.client.spawn_call(method, body, after, self.tx.clone());
+    }
+
+    /// `send` `body`, with `files` uploaded first when there are any; to an older host as `call` maps it.
+    pub(in crate::tui) fn send_message(&self, body: Value, files: Vec<std::path::PathBuf>, after: After) {
+        if files.is_empty() {
+            return self.call("send", body, after);
+        }
+        let (_, body) = super::net::old_host::outgoing(&self.host_version, "send", body);
+        self.client.spawn_send_files(body, files, after, self.tx.clone());
     }
 
     // ---------- derived ----------

@@ -53,6 +53,8 @@ pub fn declarations() -> Value {
                 "required": ["botId"],
             },
             "annotations": {"readOnlyHint": true},
+            // Always in the agent's prompt: Claude Code defers MCP tools behind tool search, matching team::message_tools.
+            "_meta": {"anthropic/alwaysLoad": true},
         })
     }
     json!([
@@ -78,6 +80,7 @@ pub fn declarations() -> Value {
                 "required": ["botId", "option"],
             },
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
+            "_meta": {"anthropic/alwaysLoad": true},
         }),
         json!({
             "name": "stop_bot",
@@ -88,6 +91,7 @@ pub fn declarations() -> Value {
                 "required": ["botId"],
             },
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
+            "_meta": {"anthropic/alwaysLoad": true},
         }),
     ])
 }

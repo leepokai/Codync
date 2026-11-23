@@ -99,6 +99,8 @@ export const prefs = {
   foldedThreadSections: pref<string[]>('foldedThreadSections', []),
   /** Folded computers of the Workflows list, by computer id: on this device only. */
   foldedWorkflowComputers: pref<string[]>('foldedWorkflowComputers', []),
+  /** The workflow canvas's bottom bars (zoom and tools) are folded into one button: on this device only. */
+  workflowToolsFolded: pref('workflowToolsFolded', false),
   /** Folded sections of a settings form (a bot's), by the section's key: on this device only. */
   foldedCardSections: pref<string[]>('foldedCardSections', []),
   usageIconStyle: pref<'character' | 'original'>('usageIconStyle', 'character'),

@@ -43,6 +43,19 @@ struct Started {
     agents: Vec<Weak<Acp>>,
 }
 
+impl Started {
+    fn note(&mut self, acp: &Arc<Acp>) {
+        self.agents.retain(|acp| acp.strong_count() > 0);
+        self.agents.push(Arc::downgrade(acp));
+    }
+
+    /// Closes the list for good and hands back the agents still running.
+    fn close(&mut self) -> Vec<Arc<Acp>> {
+        self.closed = true;
+        std::mem::take(&mut self.agents).iter().filter_map(Weak::upgrade).collect()
+    }
+}
+
 /// What the agent sends the app.
 #[derive(Debug)]
 pub enum Incoming {
@@ -361,8 +374,7 @@ impl Acp {
             pid,
             held: std::sync::Mutex::default(),
         });
-        started.agents.retain(|acp| acp.strong_count() > 0);
-        started.agents.push(Arc::downgrade(&acp));
+        started.note(&acp);
         Ok((acp, rx))
     }
 
@@ -442,11 +454,7 @@ pub async fn stopped() {
 /// Stops every agent left and waits for them, before the host exits: `process::exit` drops no process, and Cursor's agent
 /// outlives its closed stdin. The bots stop their own, so this is for a sign-in check or a model list still under way.
 pub async fn stop_all() {
-    let started: Vec<_> = {
-        let mut started = STARTED.locked();
-        started.closed = true;
-        std::mem::take(&mut started.agents).iter().filter_map(Weak::upgrade).collect()
-    };
+    let started = STARTED.locked().close();
     futures::future::join_all(started.iter().map(|acp| acp.kill())).await;
     stopped().await;
 }

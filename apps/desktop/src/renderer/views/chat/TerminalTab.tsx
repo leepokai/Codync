@@ -7,15 +7,17 @@ import { useTr } from '../../lib/use-language'
 import './terminal-tab.css'
 
 /**
- * The bot's terminal: the user's own shell on the bot's computer, in its folder (`botTerminal`). It keeps running while
+ * The bot's terminal: the user's own shell on the bot's computer, in its folder or `thread`'s (`botTerminal`). It keeps running while
  * the tab is away and shows again as it was; once it exits, a click opens a new one.
  */
-export function TerminalTab({ bot }: { bot: Bot }) {
+export function TerminalTab({ bot, thread }: { bot: Bot; thread?: string | null }) {
   const tr = useTr()
   const surface = useRef<HTMLDivElement>(null)
   const [run, setRun] = useState(0)
-  const { exitCode, error } = useHostTerminal(surface, `${bot.id}/${run}`, {
-    open: async (client, cols, rows) => (await client.call<{ term: string }>('botTerminal', { botId: bot.id, cols, rows })).term,
+  // A thread is a bot of its own on the host: its terminal opens in the thread's folder (a worktree, say).
+  const at = thread ?? bot.id
+  const { exitCode, error } = useHostTerminal(surface, `${at}/${run}`, {
+    open: async (client, cols, rows) => (await client.call<{ term: string }>('botTerminal', { botId: at, cols, rows })).term,
     closeOnLeave: false,
   })
   return (

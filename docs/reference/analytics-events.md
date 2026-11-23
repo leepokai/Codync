@@ -204,6 +204,7 @@ host answers and sends it once the host is up.
 | `bot_details` | bot details | details panel | settings page |
 | `bot_computer` | the Computer tab in bot details | the details panel's Computer tab | Computer page |
 | `bot_browser` | — | the details panel's Browser tab | — |
+| `side_chat` | — | the bot's chat as a tab of the panel beside one of its threads | — |
 | `memory` | bot memory (Android: the Memory tab in bot details) | memory tab | memory overlay |
 | `routines` | routines (iPhone: a routine's editor, the list being part of bot details) | a routine's editor | the bot's Details page (its work, follow-ups and routines) |
 | `marketplace` | extensions | extensions | marketplace overlay |

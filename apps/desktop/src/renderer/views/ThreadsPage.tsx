@@ -192,12 +192,14 @@ const plainStores = (roster: RosterItem[]) =>
  * or one whose task left its bot's box, the page a new thread starts from (`NewThread`, with the bot `starting`
  * names, else the lead bot), or the page's mark where no bot can start one.
  */
-export function ThreadDetail({ roster, picked, pick, starting, start }: {
+export function ThreadDetail({ roster, picked, pick, starting, start, openChat }: {
   roster: RosterItem[]
   picked: ThreadPick | null
   pick: (thread: ThreadPick) => void
   starting: BotRef | null
   start: (ref: BotRef) => void
+  /** Opens a bot's chat: where its panel's cards and entries are shown. */
+  openChat: (ref: BotRef) => void
 }) {
   const tr = useTr()
   const of = picked ? roster.find((r) => sameRef(r.ref, picked.ref)) : undefined
@@ -205,7 +207,7 @@ export function ThreadDetail({ roster, picked, pick, starting, start }: {
   if (of && task?.thread) {
     return (
       <StoreContext.Provider value={of.store}>
-        <ThreadChat key={`${refKey(of.ref)}/${task.id}`} bot={of.bot} task={task} />
+        <ThreadChat key={`${refKey(of.ref)}/${task.id}`} bot={of.bot} task={task} openChat={() => openChat(of.ref)} />
       </StoreContext.Provider>
     )
   }

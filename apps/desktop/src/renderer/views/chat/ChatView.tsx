@@ -326,6 +326,38 @@ function ConnectionSubtitle() {
   )
 }
 
+/**
+ * The bot's chat in a panel beside one of its threads: its messages and its message box, with its sheets (Full
+ * conversation, a talk with another bot, a call's conversation). What opens elsewhere (a routine, an agent's settings)
+ * waits for the chat itself.
+ */
+export function SideChat({ botId, openArtifact }: { botId: string; openArtifact: (artifactId: string) => void }) {
+  const store = useStore()
+  const root = useRef<HTMLDivElement>(null)
+  const dock = useRef<HTMLDivElement>(null)
+  useDockHeight(root, dock)
+  useScreenViewed('side_chat')
+  const [replyTo, setReplyTo] = useState<ReplyQuote | null>(null)
+  const [trace, setTrace] = useState(false)
+  const [peer, setPeer] = useState<string | null>(null)
+  const [line, setLine] = useState<string | null>(null)
+  const nothing = useCallback(() => {}, [])
+  return (
+    <div className="chat-view side-chat">
+      <div className="conversation" ref={root}>
+        <Transcript botId={botId} reveal={null} openTrace={() => setTrace(true)} onReply={store.mismatch ? undefined : setReplyTo} openRoutine={nothing} openAgent={nothing} openBotChat={setPeer} openArtifact={openArtifact} openCall={setLine} />
+        <div className="composer-dock" ref={dock}>
+          <div className="composer-fade" />
+          {store.mismatch ? null : <Composer botId={botId} reply={replyTo} cancelReply={() => setReplyTo(null)} />}
+        </div>
+      </div>
+      <Sheet open={trace} onClose={() => setTrace(false)} width={620} height={560}><TraceView botId={botId} /></Sheet>
+      <Sheet open={peer !== null} onClose={() => setPeer(null)} width={620} height={560}>{peer ? <BotConversationView botId={botId} peerId={peer} /> : null}</Sheet>
+      <Sheet open={line !== null} onClose={() => setLine(null)} width={620} height={560}>{line ? <CallConversationView botId={botId} lineId={line} /> : null}</Sheet>
+    </div>
+  )
+}
+
 /** Where the chat is brought to: a task's card (`taskId`), or an entry (`entryId`). */
 type Reveal = { taskId: string } | { entryId: string }
 

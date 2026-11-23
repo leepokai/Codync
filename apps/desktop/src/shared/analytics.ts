@@ -11,6 +11,7 @@ export type Screen =
   | 'bot_details'
   | 'bot_computer'
   | 'bot_browser'
+  | 'side_chat'
   | 'memory'
   | 'routines'
   | 'marketplace'

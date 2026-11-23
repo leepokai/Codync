@@ -1,6 +1,6 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { Bot } from '@shared/models'
+import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { isTold } from '@shared/threads'
 import { isLive, readOnlyReason, workStatusWord, type WorkTask } from '@shared/work'
 import { AgentIcon } from '../../components/AgentIcon'
@@ -9,18 +9,26 @@ import { IconButton, Spinner } from '../../components/Controls'
 import { Sheet } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { prefs, usePref } from '../../lib/prefs'
 import { useTr } from '../../lib/use-language'
 import { useScreenViewed } from '../../store/analytics'
 import type { ThreadRef } from '../../store/bot-store'
 import { useStore } from '../../store/context'
+import { BotTemplateView } from '../bots/BotTemplateView'
 import { ArtifactView } from '../library/ArtifactView'
 import { WindowBarSlots } from '../WindowBar'
+import { PANEL_VIEWS, type PanelPane as Pane } from '@shared/panel-layout'
+import { BrowserTab } from './BrowserTab'
 import { buildChat, type ChatItem } from './chat-items'
+import { ChatSidePanel } from './ChatSidePanel'
+import { SideChat } from './ChatView'
+import { TerminalTab } from './TerminalTab'
+import { DetailsPanel } from './DetailsPanel'
 import { ChatLog, useDockHeight } from './ChatLog'
 import { AgentBubble, ChatRow, TimeSeparator } from './ChatRows'
 import { Composer } from './Composer'
+import { PanelPane } from './PanelPane'
 import { RequestRun } from './PermissionCard'
-import { TracePage } from './TraceView'
 import { workingSteps } from './trace-turns'
 import { StopWorkDialog, WORK_MARK, WorkDot } from './WorkDialogs'
 import { Timer } from './WorkingIndicator'
@@ -31,14 +39,21 @@ import './chat.css'
 import './composer.css'
 import './chat-controls.css'
 import './thread-chat.css'
+import './details-panel.css'
+
+/** What the panel of a thread without a bot can show: a web page and a terminal in its folder (a bot's thread shows its
+ * bot's whole panel). */
+const THREAD_VIEWS = PANEL_VIEWS.filter((v) => v.id === 'browser' || v.id === 'terminal')
+const NEW_PANE: Pane = { tabs: [], shown: null }
 
 /**
  * A thread as the window shows it, in the chat's own form: its messages as the chat's bubbles, what its task put in
  * the bot's chat (a card to answer, a file, an artifact) as the chat's own rows, the working line with the turn's
- * steps, and the chat's message box, which writes to the thread. Its title, status and Full conversation are in the
- * window's bar; where it works sits over the box. A routine's run or another bot's request says it is read only.
+ * steps, and the chat's message box, which writes to the thread. Its title, status and the panel's toggle are in the
+ * window's bar; the panel beside it is its bot's own (Details, Computer, Library, Memory, Settings, Browser, Terminal in the thread's
+ * folder, Side chat with the bot, its other threads), a thread without a bot's a Browser and a Terminal; what the panel shows in the chat opens the bot's chat; where it works sits over the box. A routine's run or another bot's request says it is read only.
  */
-export function ThreadChat({ bot, task }: { bot: Bot; task: WorkTask }) {
+export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; openChat: () => void }) {
   const tr = useTr()
   const store = useStore()
   const threadId = task.thread ?? ''
@@ -60,7 +75,13 @@ export function ThreadChat({ bot, task }: { bot: Bot; task: WorkTask }) {
     if (task.status === 'needsYou') void store.cardOf(bot.id, task.id).catch((e: unknown) => store.setError(e instanceof Error ? e.message : String(e)))
   }, [store, bot.id, task.id, task.status])
   const [artifactId, setArtifactId] = useState<string | null>(null)
-  const [showTrace, setShowTrace] = useState(false)
+  const [panelOpen, setPanelOpen] = useState(false)
+  const [pane, setPane] = useState<Pane>(NEW_PANE)
+  const [templateDraft, setTemplateDraft] = useState<BotDraft | null>(null)
+  const [panelWidth, setPanelWidth] = usePref(prefs.detailsPanelWidth)
+  const view = useRef<HTMLDivElement>(null)
+  // The conversation keeps at least 380 beside the panel.
+  const fit = (w: number) => Math.min(Math.max(360, w), (view.current?.clientWidth ?? 1200) - 380)
   const [stopping, setStopping] = useState(false)
   const bar = useContext(WindowBarSlots)
   const root = useRef<HTMLDivElement>(null)
@@ -92,7 +113,7 @@ export function ThreadChat({ bot, task }: { bot: Bot; task: WorkTask }) {
 
   const ownFolder = bot.managedWorkspace && !task.worktree && task.folder === bot.cwd
   return (
-    <div className="chat-view thread-chat" data-work-thread={task.id}>
+    <div className="chat-view thread-chat" data-work-thread={task.id} ref={view}>
       <div className="conversation" ref={root}>
         <div className="top-chrome">
           <div className="top-fade" />
@@ -109,7 +130,7 @@ export function ThreadChat({ bot, task }: { bot: Bot; task: WorkTask }) {
               {task.startedAt !== null ? <Timer since={task.startedAt} until={task.endedAt ?? undefined} /> : null}
             </HStack>
           </>, bar.title) : null}
-          {bar.end ? createPortal(<IconButton title="Full conversation" icon="list.bullet" size={28} onClick={() => setShowTrace(true)} />, bar.end) : null}
+          {bar.end ? createPortal(<IconButton title="Conversation details" icon="sidebar.right" size={28} onClick={() => setPanelOpen((o) => !o)} />, bar.end) : null}
         </div>
         <ChatLog
           items={all}
@@ -149,8 +170,38 @@ export function ThreadChat({ bot, task }: { bot: Bot; task: WorkTask }) {
         </div>
         {artifactId ? <ArtifactView botId={bot.id} artifactId={artifactId} close={() => setArtifactId(null)} /> : null}
       </div>
-      <Sheet open={showTrace} onClose={() => setShowTrace(false)} width={620} height={560}>
-        <TracePage entries={entries} working={isLive(task)} />
+      <ChatSidePanel open={panelOpen} filled={false} width={fit(panelWidth)} min={360} max={fit(Infinity)} onResize={(w) => setPanelWidth(fit(w))}>
+        {bot.plain ? <div className="details-panel"><div className="details-page"><div className="details-panes">
+          <PanelPane
+            pane={pane}
+            views={THREAD_VIEWS}
+            first
+            flush={pane.shown !== null}
+            show={(id) => setPane((p) => ({ tabs: p.tabs.includes(id) ? p.tabs : [...p.tabs, id], shown: id }))}
+            close={(id) => setPane((p) => { const tabs = p.tabs.filter((t) => t !== id); return { tabs, shown: p.shown === id ? (tabs[0] ?? null) : p.shown } })}
+            choose={() => setPane((p) => ({ ...p, shown: null }))}
+            actions={<IconButton title="Close details" icon="xmark" size={26} onClick={() => setPanelOpen(false)} />}
+          >
+            {pane.shown === 'browser' ? <BrowserTab key={bot.id} bot={bot} /> : pane.shown === 'terminal' ? <TerminalTab key={threadId} bot={bot} thread={threadId} /> : null}
+          </PanelPane>
+        </div></div></div> : (
+          <DetailsPanel
+            botId={bot.id}
+            routineId={null}
+            docked={false}
+            thread={task}
+            sideChat={<SideChat botId={bot.id} openArtifact={setArtifactId} />}
+            editGroup={() => {}}
+            openArtifact={setArtifactId}
+            openCard={openChat}
+            showInChat={openChat}
+            share={() => setTemplateDraft(draftOf(bot))}
+            close={() => setPanelOpen(false)}
+          />
+        )}
+      </ChatSidePanel>
+      <Sheet open={templateDraft !== null} onClose={() => setTemplateDraft(null)}>
+        {templateDraft ? <BotTemplateView draft={templateDraft} /> : null}
       </Sheet>
       <StopWorkDialog botId={bot.id} taskId={stopping ? task.id : null} onClose={() => setStopping(false)} />
     </div>

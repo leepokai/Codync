@@ -578,7 +578,7 @@ function ChatSplitView() {
       {page === 'threads' ? (
         <main className="detail">
           <WindowBarSlots.Provider value={{ title: barTitle, end: barEnd }}>
-            <ThreadDetail roster={threadRoster} picked={picked} pick={setPicked} starting={starting} start={setStarting} />
+            <ThreadDetail roster={threadRoster} picked={picked} pick={setPicked} starting={starting} start={setStarting} openChat={(ref) => { app.select(ref); setPage('bots') }} />
           </WindowBarSlots.Provider>
         </main>
       ) : page === 'workflows' && workflowStore && workflows ? (

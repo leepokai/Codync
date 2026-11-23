@@ -2285,4 +2285,6 @@
   "Apply": "적용",
   "Applied": "적용됨",
   "Not available on {computer}": "{computer}에서 사용할 수 없습니다"
+,
+  "Couldn't check {computer}'s models": "{computer}의 모델을 확인할 수 없습니다"
 }

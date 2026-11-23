@@ -2285,4 +2285,6 @@
   "Apply": "適用",
   "Applied": "適用しました",
   "Not available on {computer}": "{computer} では利用できません"
+,
+  "Couldn't check {computer}'s models": "{computer} のモデルを確認できませんでした"
 }

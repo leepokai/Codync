@@ -2285,4 +2285,6 @@
   "Apply": "应用",
   "Applied": "已应用",
   "Not available on {computer}": "无法在 {computer} 上使用"
+,
+  "Couldn't check {computer}'s models": "无法检查 {computer} 的模型"
 }

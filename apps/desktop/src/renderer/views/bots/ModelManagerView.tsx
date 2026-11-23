@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { draftOf, isGroup } from '@shared/models'
-import { AgentIcon } from '../../components/AgentIcon'
+import { withBackend } from '@shared/fallbacks'
 import { AvatarWithStatus } from '../../components/Avatar'
 import { Button, IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
@@ -16,7 +16,7 @@ import { AgentModelPicker } from './AgentModelPicker'
 import { useAgentModels, type AgentModels } from './agent-models'
 import { errorText, normalized } from './drafts'
 import { agentChoice } from './Fallbacks'
-import { allKeys, filterChecked, planRows, toggleKey, type ApplyPlan } from './model-manager-logic'
+import { allKeys, filterChecked, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
@@ -57,17 +57,20 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const tr = useTr()
   const store = useStore()
   const first = items[0]
-  const [pick, setPick] = useState<Pick>({ backend: first?.bot.backend ?? 'custom', model: null, modelOptions: {} })
+  const [pick, setPick] = useState<Pick>({ backend: first?.bot.backend ?? 'claude', model: null, modelOptions: {} })
   const [query, setQuery] = useState('')
   const [checked, setChecked] = useState<Set<string>>(() => new Set())
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({})
   const [applying, setApplying] = useState(false)
   const busy = useRef(false)
   const alive = useRef(true)
+  const run = useRef(0)
   useEffect(() => () => { alive.current = false }, [])
   const models = useAgentModels(pick.backend)
   const backends = store.hello?.backends ?? []
-  const agents = [...backends.map(agentChoice), { id: 'custom', label: 'Custom command', leading: <AgentIcon registry="custom" size={14} /> }]
+  // A custom command needs the editor's command field, which a batch apply can't supply; the batch
+  // swap targets the agents the account's computers offer.
+  const agents = backends.map(agentChoice)
   const shown = matchBots(items, query)
   const shownKeys = allKeys(shown)
   const everyChecked = shownKeys.length > 0 && shownKeys.every((key) => checked.has(key))
@@ -80,35 +83,45 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const apply = async () => {
     const chosen = filterChecked(items, checked)
     if (!chosen.length || busy.current) return
+    const myRun = run.current
+    const backend = pick.backend
+    const model = pick.model?.trim() || null
+    const options = { ...pick.modelOptions }
     busy.current = true
     setApplying(true)
     setOutcomes({})
-    const model = pick.model?.trim() || null
-    const catalogs: Record<string, AgentModels | null> = {}
+    let applied = 0
+    const catalogs: Record<string, CatalogCheck> = {}
     try {
       if (model) {
         for (const item of chosen) {
-          if (!alive.current) return
+          if (!alive.current || run.current !== myRun) return
           const id = item.ref.computerId
           if (id === store.computer.id || id in catalogs) continue
           catalogs[id] = await item.store
             .ready()
-            .then((client) => client.call<AgentModels>('agentModels', { backend: pick.backend }))
-            .catch(() => null)
+            .then((client) => client.call<AgentModels>('agentModels', { backend }, 300_000))
+            .then((catalog): CatalogCheck => ({ kind: 'ok', catalog }))
+            .catch((): CatalogCheck => ({ kind: 'error' }))
         }
       }
-      const plan: ApplyPlan = { items: chosen, backend: pick.backend, model, options: pick.modelOptions }
-      const rows = planRows(plan, (id) => (id === store.computer.id ? models.catalog : catalogs[id] ?? null))
-      let applied = 0
+      const plan: ApplyPlan = { items: chosen, backend, model, options }
+      const rows = planRows(plan, (id) => {
+        if (id === store.computer.id) return models.failure ? { kind: 'error' } : models.catalog ? { kind: 'ok', catalog: models.catalog } : { kind: 'none' }
+        return catalogs[id] ?? { kind: 'none' }
+      })
       for (const row of rows) {
-        if (!alive.current) return
+        if (!alive.current || run.current !== myRun) return
         const key = refKey(row.item.ref)
         if (!row.ok) {
           setOutcomes((o) => ({ ...o, [key]: { ok: false, text: row.reason ?? tr('Failed') } }))
           continue
         }
         try {
-          const draft = normalized({ ...draftOf(row.item.bot), backend: pick.backend, model: model || null, modelOptions: { ...pick.modelOptions } })
+          // The bot's state as it is now, so an unrelated change that landed mid-batch is kept:
+          // only the agent, model and model options are this apply's business.
+          const current = row.item.store.bots.get(row.item.ref.botId) ?? row.item.bot
+          const draft = normalized({ ...withBackend(draftOf(current), backend), model: model || null, modelOptions: { ...options } })
           await row.item.store.save(draft)
           applied++
           setOutcomes((o) => ({ ...o, [key]: { ok: true, text: tr('Applied') } }))
@@ -116,8 +129,9 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
           setOutcomes((o) => ({ ...o, [key]: { ok: false, text: errorText(e) } }))
         }
       }
-      analytics.track({ event: 'model_manager_applied', requested: chosen.length, applied, failed: chosen.length - applied })
     } finally {
+      // One event per apply, whatever ended it: closed mid-run, pick changed mid-run, or completed.
+      analytics.track({ event: 'model_manager_applied', requested: chosen.length, applied, failed: chosen.length - applied })
       busy.current = false
       setApplying(false)
     }
@@ -129,10 +143,10 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
         backend={pick.backend}
         models={models}
         selection={pick.model}
-        onChange={(model, modelOptions) => { setOutcomes({}); setPick((p) => ({ ...p, model: model || null, modelOptions })) }}
+        onChange={(model, modelOptions) => { run.current++; setOutcomes({}); setPick((p) => ({ ...p, model: model || null, modelOptions })) }}
         options={pick.modelOptions}
         agents={agents}
-        onAgentChange={(id) => { setOutcomes({}); setPick({ backend: id, model: null, modelOptions: {} }) }}
+        onAgentChange={(id) => { run.current++; setOutcomes({}); setPick({ backend: id, model: null, modelOptions: {} }) }}
       />
       <div className="palette-field">
         <Icon name="magnifyingglass" size={15} color="var(--secondary)" />

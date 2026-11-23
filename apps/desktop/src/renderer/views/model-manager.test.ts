@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { RosterItem } from '../store/app-model'
 import type { AgentModels } from './bots/agent-models'
-import type { ApplyPlan } from './bots/model-manager-logic'
+import type { ApplyPlan, CatalogCheck } from './bots/model-manager-logic'
 import { allKeys, filterChecked, planRows, toggleKey } from './bots/model-manager-logic.ts'
 
 /** A roster row carries a store, a bot and a computer; these tests only read ref, bot and computer. */
@@ -15,6 +15,9 @@ const item = (computerId: string, computerName: string, botId: string, name: str
   }) as unknown as RosterItem
 
 const catalog = (...ids: string[]): AgentModels => ({ models: ids.map((id) => ({ id, name: id })) })
+const ok = (ids: string[]): CatalogCheck => ({ kind: 'ok', catalog: catalog(...ids) })
+const no: CatalogCheck = { kind: 'none' }
+const bad: CatalogCheck = { kind: 'error' }
 
 test('allKeys names every bot by its computer and bot, not by bot alone', () => {
   const items = [item('mac', 'Mac', 'b1', 'Alpha'), item('linux', 'Linux', 'b1', 'Alpha')]
@@ -48,13 +51,13 @@ test('toggleKey adds and removes without touching the set it was given', () => {
 test('planRows saves every bot when the agent default is chosen', () => {
   const items = [item('mac', 'Mac', 'b1', 'Alpha'), item('linux', 'Linux', 'b2', 'Beta')]
   const plan: ApplyPlan = { items, backend: 'claude', model: null, options: {} }
-  assert.deepEqual(planRows(plan, () => null).map((r) => r.ok), [true, true])
+  assert.deepEqual(planRows(plan, () => no).map((r) => r.ok), [true, true])
 })
 
 test('planRows saves a model the computer advertises', () => {
   const items = [item('mac', 'Mac', 'b1', 'Alpha'), item('linux', 'Linux', 'b2', 'Beta')]
   const plan: ApplyPlan = { items, backend: 'claude', model: 'opus', options: { effort: 'high' } }
-  const rows = planRows(plan, () => catalog('opus', 'sonnet'))
+  const rows = planRows(plan, () => ok(['opus', 'sonnet']))
   assert.deepEqual(rows.map((r) => r.ok), [true, true])
   assert.equal(rows[0]?.reason, undefined)
 })
@@ -63,22 +66,30 @@ test('planRows skips the computer without the model, and says which computer', (
   const mac = item('mac', 'Mac', 'b1', 'Alpha')
   const linux = item('linux', 'Linux Studio', 'b2', 'Beta')
   const plan: ApplyPlan = { items: [mac, linux], backend: 'claude', model: 'opus', options: {} }
-  const rows = planRows(plan, (id) => (id === 'mac' ? catalog('opus') : catalog('sonnet')))
+  const rows = planRows(plan, (id) => (id === 'mac' ? ok(['opus']) : ok(['sonnet'])))
   assert.deepEqual(rows.map((r) => r.ok), [true, false])
   assert.equal(rows[0]?.reason, undefined)
   assert.match(rows[1]?.reason ?? '', /Linux Studio/)
 })
 
-test('planRows leaves a computer whose catalog has not loaded to the host', () => {
+test('planRows refuses a computer whose catalog could not be read', () => {
+  const mac = item('mac', 'Mac', 'b1', 'Alpha')
+  const plan: ApplyPlan = { items: [mac], backend: 'claude', model: 'opus', options: {} }
+  const rows = planRows(plan, () => bad)
+  assert.deepEqual(rows.map((r) => r.ok), [false])
+  assert.match(rows[0]?.reason ?? '', /Mac/)
+})
+
+test('planRows leaves a computer with nothing to check against to the host', () => {
   const items = [item('mac', 'Mac', 'b1', 'Alpha')]
   const plan: ApplyPlan = { items, backend: 'claude', model: 'opus', options: {} }
-  assert.deepEqual(planRows(plan, () => null).map((r) => r.ok), [true])
+  assert.deepEqual(planRows(plan, () => no).map((r) => r.ok), [true])
 })
 
 test('planRows never checks a custom command, which has no catalog', () => {
   const items = [item('mac', 'Mac', 'b1', 'Alpha')]
   const plan: ApplyPlan = { items, backend: 'custom', model: 'my-agent --model opus', options: {} }
-  assert.deepEqual(planRows(plan, () => catalog('sonnet')).map((r) => r.ok), [true])
+  assert.deepEqual(planRows(plan, () => ok(['sonnet'])).map((r) => r.ok), [true])
 })
 
 test('the palette search narrows the list, so only matching bots can be checked', () => {

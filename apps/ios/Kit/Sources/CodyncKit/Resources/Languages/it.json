@@ -2285,4 +2285,6 @@
   "Apply": "Applica",
   "Applied": "Applicato",
   "Not available on {computer}": "Non disponibile su {computer}"
+,
+  "Couldn't check {computer}'s models": "Impossibile verificare i modelli di {computer}"
 }

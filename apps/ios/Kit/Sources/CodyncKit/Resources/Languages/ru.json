@@ -2285,4 +2285,6 @@
   "Apply": "Применить",
   "Applied": "Применено",
   "Not available on {computer}": "Недоступно на {computer}"
+,
+  "Couldn't check {computer}'s models": "Не удалось проверить модели {computer}"
 }

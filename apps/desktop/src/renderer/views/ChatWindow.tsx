@@ -260,6 +260,8 @@ function ChatSplitView() {
   const localOnline = !!app.local && onlineStores.includes(app.local)
   const roster = useComputerRoster(app, shown)
   const visibleRoster = roster.items
+  // The Model Manager ignores the sidebar's computer filter: it always sees every computer's bots.
+  const fullRoster = useComputerRoster(app, new Set(app.computers.map((c) => c.id)))
   const work = allWork(roster.ordered)
   const closeWork = useCallback(() => setShowWork(false), [])
   /** From the view of all work: the bot's chat, at its Details, at the card of the task `task` or with the thread of the task `thread`. */
@@ -509,7 +511,7 @@ function ChatSplitView() {
         onClose={closeWork}
       />
       <SearchPalette open={searching} items={visibleRoster} onPick={(ref) => app.select(ref)} onClose={() => setSearching(false)} />
-      {modelManager ? <ModelManagerView items={visibleRoster} onClose={() => setModelManager(false)} /> : null}
+      {modelManager ? <ModelManagerView items={fullRoster.items} onClose={() => setModelManager(false)} /> : null}
       <Sheet open={editing !== null} onClose={() => setEditing(null)} width={520} height={Math.min(680, sheetHeight)}>
         {editing ? (
           <StoreContext.Provider value={editing.store}>

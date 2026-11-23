@@ -163,12 +163,13 @@ async fn a_card_ends_when_its_turn_stops_or_its_call_is_dropped() {
 /// the reason, no approval card ever goes up, and the bot's setup is untouched.
 #[tokio::test]
 async fn a_validate_only_check_answers_without_a_card_or_a_change() {
-    async fn dry(host: &Host, lead: &str, args: Value) -> Value {
+    // Two dry calls answer alike, so each waits for the reply carrying its own marker.
+    async fn dry(host: &Host, lead: &str, args: Value, marker: &str) -> Value {
         host.call("send", json!({"botId": lead, "text": format!("MANAGE update_bot {args}")})).await;
         let reply = wait(host, lead, |e| {
             e["kind"] == "agent"
                 && e["data"]["final"] == true
-                && e["data"]["text"].as_str().is_some_and(|t| t.starts_with("Done: "))
+                && e["data"]["text"].as_str().is_some_and(|t| t.starts_with("Done: ") && t.contains(marker))
         })
         .await;
         let text = reply["data"]["text"].as_str().unwrap().to_owned();
@@ -179,14 +180,24 @@ async fn a_validate_only_check_answers_without_a_card_or_a_change() {
     let lead = host.fixture_bot("Lead", "team_agent.py", "").await;
     host.call("updateBot", json!({"id": lead, "permission": "auto", "manageTeam": true})).await;
 
-    let ok = dry(&host, &lead, json!({"botId": lead, "model": "fixture-2", "validateOnly": true})).await;
+    let ok = dry(&host, &lead, json!({"botId": lead, "model": "fixture-2", "validateOnly": true}), "fixture-2").await;
     assert_eq!(ok["valid"], json!(true), "{ok}");
     assert_eq!(ok["resolvedModel"], json!("fixture-2"), "{ok}");
     assert_eq!(ok["applied"], json!(false), "{ok}");
-    let bad = dry(&host, &lead, json!({"botId": lead, "model": "claude-x", "validateOnly": true})).await;
+    // The lead runs a custom command, so a model id is taken as it comes (its list is the command's to answer)
+    // and what a dry run can refuse here is its model settings: the true negative through the real process.
+    // Where a list is there to check against, a cross-engine id is refused with the backend named
+    // (`checks::an_engine_hint_names_the_backend_a_model_belongs_to`).
+    let bad = dry(
+        &host,
+        &lead,
+        json!({"botId": lead, "modelOptions": {"effort": "high"}, "validateOnly": true}),
+        "modelOptions can't be checked",
+    )
+    .await;
     assert_eq!(bad["valid"], json!(false), "{bad}");
-    assert!(bad["reason"].as_str().unwrap().contains("claude-x isn't in the agent's model list"), "{bad}");
-    assert!(bad["reason"].as_str().unwrap().contains("looks like a claude-backend model"), "{bad}");
+    assert!(bad["reason"].as_str().unwrap().contains("modelOptions can't be checked"), "{bad}");
+    assert_eq!(bad["applied"], json!(false), "{bad}");
     // Neither call applied anything: the lead's model is still what it started on.
     let sync = host.snapshot().await;
     let lead_bot = sync["bots"].as_array().unwrap().iter().find(|b| b["id"] == lead).unwrap();

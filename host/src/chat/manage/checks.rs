@@ -143,3 +143,27 @@ async fn catalog(
     fetched.insert(agent.to_owned(), catalog.clone());
     catalog.map_err(anyhow::Error::msg)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_engine_hint_names_the_backend_a_model_belongs_to() {
+        assert_eq!(
+            engine_hint("grok-4.7", "opencode"),
+            " — grok-4.7 looks like a grok-backend model, and this bot's backend is opencode"
+        );
+        assert_eq!(
+            engine_hint("gpt-5.4", "claude"),
+            " — gpt-5.4 looks like a codex-backend model, and this bot's backend is claude"
+        );
+        assert_eq!(
+            engine_hint("provider/cursor-max", "claude"),
+            " — provider/cursor-max looks like a cursor-backend model, and this bot's backend is claude",
+            "a prefixed id is read by its bare name"
+        );
+        assert_eq!(engine_hint("claude-sonnet-4-6", "claude"), String::new(), "its own family says nothing");
+        assert_eq!(engine_hint("opus", "claude"), String::new(), "an unrecognized id says nothing");
+    }
+}

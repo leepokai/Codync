@@ -86,12 +86,60 @@ export const SHEET_MIN = { width: 480, height: 420 } as const
 
 /** A dragged or re-measured sheet size, clamped to the bounds and the main window. */
 export const clampSheetSize = (width: number, height: number, viewportWidth: number, viewportHeight: number) => {
-  const maxWidth = Math.max(SHEET_MIN.width, viewportWidth - 40)
+  // 48 matches .modal-content's own max-width/max-height (calc(100vw|vh - 48px)).
+  const maxWidth = Math.max(SHEET_MIN.width, viewportWidth - 48)
   const maxHeight = Math.max(SHEET_MIN.height, viewportHeight - 48)
   return {
     width: Math.round(Math.min(Math.max(width, SHEET_MIN.width), maxWidth)),
     height: Math.round(Math.min(Math.max(height, SHEET_MIN.height), maxHeight)),
   }
+}
+
+/**
+ * The size a live drag proposes: anchored to the drag's START size, never to the already-updated
+ * live one — pointer moves arrive as cumulative deltas, so anchoring to the live size would
+ * compound every event (the runaway-drag bug the GLM review caught). The edge or corner decides
+ * which way dragging grows it.
+ */
+export const resizeFrom = (
+  kind: 'left' | 'right' | 'bottom' | 'corner-br' | 'corner-bl',
+  anchor: { width: number; height: number },
+  dx: number,
+  dy: number,
+  viewportWidth: number,
+  viewportHeight: number,
+) => {
+  const growsWest = kind === 'left' || kind === 'corner-bl'
+  const growsDown = kind !== 'left' && kind !== 'right'
+  return clampSheetSize(
+    anchor.width + (growsWest ? -dx : dx),
+    anchor.height + (growsDown ? dy : 0),
+    viewportWidth,
+    viewportHeight,
+  )
+}
+
+/**
+ * One arrow-key step on a handle: ±16 on the axis that handle advertises, nothing on the axis it
+ * doesn't (the bottom handle says "height", so its Left/Right do nothing).
+ */
+export const stepSize = (
+  kind: 'left' | 'right' | 'bottom' | 'corner-br' | 'corner-bl',
+  size: { width: number; height: number },
+  key: string,
+  viewportWidth: number,
+  viewportHeight: number,
+) => {
+  const d = 16
+  const growsWest = kind === 'left' || kind === 'corner-bl'
+  const horizontal = kind !== 'bottom'
+  let dw = 0
+  let dh = 0
+  if (horizontal && key === 'ArrowLeft') dw = growsWest ? d : -d
+  if (horizontal && key === 'ArrowRight') dw = growsWest ? -d : d
+  if (key === 'ArrowDown') dh = d
+  if (key === 'ArrowUp') dh = -d
+  return clampSheetSize(size.width + dw, size.height + dh, viewportWidth, viewportHeight)
 }
 
 /**

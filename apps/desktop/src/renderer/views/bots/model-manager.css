@@ -86,7 +86,7 @@
 .mm-corner-bl { left: 0; bottom: 0; width: 18px; height: 18px; cursor: nesw-resize; }
 
 /* While a drag is live the whole page takes the drag's cursor (the col-resizing precedent). */
-.mm-resizing-ew, .mm-resizing-ew * { cursor: ew-resize !important; user-select: none; }
-.mm-resizing-ns, .mm-resizing-ns * { cursor: ns-resize !important; user-select: none; }
-.mm-resizing-nwse, .mm-resizing-nwse * { cursor: nwse-resize !important; user-select: none; }
-.mm-resizing-nesw, .mm-resizing-nesw * { cursor: nesw-resize !important; user-select: none; }
+.mm-resizing-ew, .mm-resizing-ew *, .mm-resizing-ew *::after { cursor: ew-resize !important; user-select: none; }
+.mm-resizing-ns, .mm-resizing-ns *, .mm-resizing-ns *::after { cursor: ns-resize !important; user-select: none; }
+.mm-resizing-nwse, .mm-resizing-nwse *, .mm-resizing-nwse *::after { cursor: nwse-resize !important; user-select: none; }
+.mm-resizing-nesw, .mm-resizing-nesw *, .mm-resizing-nesw *::after { cursor: nesw-resize !important; user-select: none; }

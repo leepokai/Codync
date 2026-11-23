@@ -15,7 +15,7 @@ import { AgentModelPicker } from './AgentModelPicker'
 import { useAgentModels, type AgentModels } from './agent-models'
 import { errorText } from './drafts'
 import { agentChoice } from './Fallbacks'
-import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, SHEET_MIN, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
+import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, resizeFrom, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
@@ -31,7 +31,10 @@ const makeMeasurer = () => {
   const context = document.createElement('canvas').getContext('2d')
   if (!context) return (text: string) => text.length * 7
   return (text: string) => {
-    context.font = `500 13px ${getComputedStyle(document.documentElement).getPropertyValue('--font') || 'system-ui'}`
+    // The rows render at the body size (13px) times the user's text scale, weight 400.
+    const root = getComputedStyle(document.documentElement)
+    const scale = parseFloat(root.getPropertyValue('--scale')) || 1
+    context.font = `400 ${13 * scale}px ${root.getPropertyValue('--font') || 'system-ui'}`
     return context.measureText(text).width
   }
 }
@@ -45,8 +48,8 @@ export function ModelManagerView({ items, onClose }: { items: RosterItem[]; onCl
   // The sheet opens big (about three quarters of the main window's height) and sized to the
   // longest bot name, and stays draggable afterwards; the main window shrinking clamps it back.
   const measure = useMemo(makeMeasurer, [])
-  const names = useMemo(() => bots.map((item) => item.bot.name), [items])
-  const [size, setSize] = useState(() => defaultSheetSize(names, measure, window.innerWidth, window.innerHeight))
+  const [size, setSize] = useState(() =>
+    defaultSheetSize(bots.map((item) => item.bot.name), measure, window.innerWidth, window.innerHeight))
   useEffect(() => {
     const onResize = () => setSize((s) => clampSheetSize(s.width, s.height, window.innerWidth, window.innerHeight))
     window.addEventListener('resize', onResize)
@@ -55,11 +58,6 @@ export function ModelManagerView({ items, onClose }: { items: RosterItem[]; onCl
   return (
     <Sheet open onClose={onClose} width={size.width} height={size.height}>
       <VStack gap={12} className="model-manager">
-        <SheetHandle kind="left" label={tr('Resize width')} size={size} onSize={setSize} />
-        <SheetHandle kind="right" label={tr('Resize width')} size={size} onSize={setSize} />
-        <SheetHandle kind="bottom" label={tr('Resize height')} size={size} onSize={setSize} />
-        <SheetHandle kind="corner-br" label={tr('Resize height')} size={size} onSize={setSize} />
-        <SheetHandle kind="corner-bl" label={tr('Resize height')} size={size} onSize={setSize} />
         <HStack gap={8} className="model-manager-head">
           <Text size="body" tone="text" className="model-manager-title">{tr('Model Manager')}</Text>
           <Spacer />
@@ -72,6 +70,13 @@ export function ModelManagerView({ items, onClose }: { items: RosterItem[]; onCl
         ) : (
           <Text size="caption" tone="secondary">{tr('No bots selected')}</Text>
         )}
+        {/* The drag handles render last: absolute positioning frees them from DOM order, so Tab
+            reaches Close and every control before any resize handle. */}
+        <SheetHandle kind="left" label={tr('Resize width')} size={size} onSize={setSize} />
+        <SheetHandle kind="right" label={tr('Resize width')} size={size} onSize={setSize} />
+        <SheetHandle kind="bottom" label={tr('Resize height')} size={size} onSize={setSize} />
+        <SheetHandle kind="corner-br" label="" size={size} onSize={setSize} />
+        <SheetHandle kind="corner-bl" label="" size={size} onSize={setSize} />
       </VStack>
     </Sheet>
   )
@@ -79,8 +84,9 @@ export function ModelManagerView({ items, onClose }: { items: RosterItem[]; onCl
 
 /**
  * One draggable edge or corner of the sheet: a pointer drag (captured, so it keeps working over
- * the content) with the arrows stepping it like the app's panel ResizeHandle. Dragging toward the
- * sheet's outside grows it; clamping keeps every control reachable.
+ * the content) with the arrows stepping it like the app's panel ResizeHandle — but anchored to
+ * the drag's start size, never the live one, so cumulative pointer deltas can't compound. The
+ * corners are pointer-only duplicates of the edges and carry no roles.
  */
 function SheetHandle({ kind, label, size, onSize }: {
   kind: 'left' | 'right' | 'bottom' | 'corner-br' | 'corner-bl'
@@ -92,19 +98,13 @@ function SheetHandle({ kind, label, size, onSize }: {
   const resizingClass = kind === 'left' || kind === 'right' ? 'mm-resizing-ew'
     : kind === 'bottom' ? 'mm-resizing-ns'
     : kind === 'corner-br' ? 'mm-resizing-nwse' : 'mm-resizing-nesw'
+  const corner = kind === 'corner-br' || kind === 'corner-bl'
   const end = () => {
     if (!start.current) return
     start.current = null
     document.documentElement.classList.remove(resizingClass)
   }
   useEffect(() => () => { document.documentElement.classList.remove(resizingClass) }, [])
-  const apply = (dx: number, dy: number) => {
-    const growsWest = kind === 'left' || kind === 'corner-bl'
-    const width = size.width + (growsWest ? -dx : dx)
-    const growsDown = kind !== 'left' && kind !== 'right'
-    const height = size.height + (growsDown ? dy : 0)
-    onSize(clampSheetSize(width, height, window.innerWidth, window.innerHeight))
-  }
   const onPointerDown = (e: ReactPointerEvent) => {
     if (e.button !== 0) return
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -112,15 +112,25 @@ function SheetHandle({ kind, label, size, onSize }: {
     document.documentElement.classList.add(resizingClass)
   }
   const onPointerMove = (e: ReactPointerEvent) => {
-    if (start.current) apply(e.clientX - start.current.x, e.clientY - start.current.y)
+    // The deltas are cumulative since pointerdown, so the anchor is the drag's START size — the
+    // live one is already updated by earlier moves and would compound every event.
+    if (!start.current) return
+    onSize(resizeFrom(kind, start.current, e.clientX - start.current.x, e.clientY - start.current.y, window.innerWidth, window.innerHeight))
   }
   const onKeyDown = (e: ReactKeyboardEvent) => {
-    const step = { ArrowLeft: [-16, 0], ArrowRight: [16, 0], ArrowUp: [0, -16], ArrowDown: [0, 16] }[e.key]
-    if (!step) return
     e.preventDefault()
-    apply(step[0], step[1])
+    onSize(stepSize(kind, size, e.key, window.innerWidth, window.innerHeight))
   }
-  return (
+  const common = {
+    onPointerDown,
+    onPointerMove,
+    onPointerUp: end,
+    onPointerCancel: end,
+    onLostPointerCapture: end,
+  }
+  return corner ? (
+    <div className={`model-manager-resize mm-${kind}`} aria-hidden="true" {...common} />
+  ) : (
     <div
       className={`model-manager-resize mm-${kind}`}
       role="separator"
@@ -128,13 +138,9 @@ function SheetHandle({ kind, label, size, onSize }: {
       aria-orientation={kind === 'bottom' ? 'horizontal' : 'vertical'}
       aria-valuenow={kind === 'bottom' ? Math.round(size.height) : Math.round(size.width)}
       aria-valuemin={kind === 'bottom' ? SHEET_MIN.height : SHEET_MIN.width}
-      tabIndex={kind === 'corner-br' || kind === 'corner-bl' ? -1 : 0}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={end}
-      onPointerCancel={end}
-      onLostPointerCapture={end}
+      tabIndex={0}
       onKeyDown={onKeyDown}
+      {...common}
     />
   )
 }

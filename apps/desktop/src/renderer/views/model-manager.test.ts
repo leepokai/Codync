@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { RosterItem } from '../store/app-model'
 import type { AgentModels } from './bots/agent-models'
 import type { ApplyPlan, CatalogCheck } from './bots/model-manager-logic'
-import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, planRows, toggleKey } from './bots/model-manager-logic.ts'
+import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, planRows, resizeFrom, stepSize, toggleKey } from './bots/model-manager-logic.ts'
 
 /** A roster row carries a store, a bot and a computer; these tests only read ref, bot and computer. */
 const item = (computerId: string, computerName: string, botId: string, name: string, description = ''): RosterItem =>
@@ -153,11 +153,46 @@ test('defaultSheetSize never exceeds the main window', () => {
   // A name wider than the screen is capped; on a short window the usable floor (560) applies,
   // still capped under the viewport so the card never overflows.
   const size = defaultSheetSize(['x'.repeat(200)], (text) => text.length * 8, 900, 700)
-  assert.deepEqual(size, { width: 860, height: 560 })
+  assert.deepEqual(size, { width: 852, height: 560 })
 })
 
 test('clampSheetSize keeps a drag inside the bounds and the viewport', () => {
   assert.deepEqual(clampSheetSize(300, 300, 1600, 1000), { width: 480, height: 420 })
-  assert.deepEqual(clampSheetSize(5000, 5000, 1000, 800), { width: 960, height: 752 })
+  // 48 matches .modal-content's own max-width/max-height, so the state never leads the render.
+  assert.deepEqual(clampSheetSize(5000, 5000, 1000, 800), { width: 952, height: 752 })
   assert.deepEqual(clampSheetSize(700.4, 620.6, 1600, 1000), { width: 700, height: 621 })
+})
+
+test('resizeFrom anchors to the drag start, so cumulative deltas never compound', () => {
+  const anchor = { width: 640, height: 560 }
+  const vw = 1600
+  const vh = 1000
+  // A real drag's move events carry CUMULATIVE deltas: 10, 20, ... 100 from the start. Anchored
+  // math lands on 740 exactly; the pre-review bug added each delta to the live size (550 total).
+  let size = { ...anchor }
+  for (let total = 10; total <= 100; total += 10) size = resizeFrom('right', anchor, total, 0, vw, vh)
+  assert.deepEqual(size, { width: 740, height: 560 })
+  size = resizeFrom('left', anchor, -30, 0, vw, vh)
+  assert.deepEqual(size, { width: 670, height: 560 })
+  size = resizeFrom('bottom', anchor, 0, -80, vw, vh)
+  assert.deepEqual(size, { width: 640, height: 480 })
+  size = resizeFrom('corner-br', anchor, 40, 20, vw, vh)
+  assert.deepEqual(size, { width: 680, height: 580 })
+  size = resizeFrom('corner-bl', anchor, -40, 20, vw, vh)
+  assert.deepEqual(size, { width: 680, height: 580 })
+})
+
+test('stepSize steps only the axis the handle advertises, toward the drag direction', () => {
+  const size = { width: 640, height: 560 }
+  const vw = 1600
+  const vh = 1000
+  assert.deepEqual(stepSize('left', size, 'ArrowLeft', vw, vh), { width: 656, height: 560 })
+  assert.deepEqual(stepSize('left', size, 'ArrowRight', vw, vh), { width: 624, height: 560 })
+  assert.deepEqual(stepSize('right', size, 'ArrowRight', vw, vh), { width: 656, height: 560 })
+  // The bottom handle says height: its Left/Right keys do nothing.
+  assert.deepEqual(stepSize('bottom', size, 'ArrowDown', vw, vh), { width: 640, height: 576 })
+  assert.deepEqual(stepSize('bottom', size, 'ArrowLeft', vw, vh), { width: 640, height: 560 })
+  // Corners step both axes toward their own outside.
+  assert.deepEqual(stepSize('corner-br', size, 'ArrowRight', vw, vh), { width: 656, height: 560 })
+  assert.deepEqual(stepSize('corner-bl', size, 'ArrowLeft', vw, vh), { width: 656, height: 560 })
 })

@@ -201,7 +201,9 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
                     id.contains(query) || name.contains(query)
                 });
             }
-            Ok(json!({"agent": agent, "models": models, "currentModelId": catalog["currentModelId"], "botModel": bot_model}))
+            Ok(
+                json!({"agent": agent, "models": models, "currentModelId": catalog["currentModelId"], "botModel": bot_model}),
+            )
         }
         "create_bot" => create(hub, &source, args).await,
         "update_bot" => update(hub, &source, args).await,

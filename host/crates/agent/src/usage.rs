@@ -108,6 +108,49 @@ fn now_ms() -> i64 {
         .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
 }
 
+/// How long until a limit resets, in milliseconds, from text that says it ("resets in 6d 23h 22m", "Your limit will
+/// reset in 6 days, 12 hours.", "resets in 2hr 30mins"): the first "reset(s) in" up to the end of its clause. `None`
+/// when it names no duration, or a negative one.
+pub fn resets_in(text: &str) -> Option<i64> {
+    let lower = text.to_ascii_lowercase();
+    let rest = lower.split_once("resets in ").or_else(|| lower.split_once("reset in "))?.1;
+    let clause = rest.split(['.', '\n', ';', '(', ')']).next().unwrap_or(rest);
+    let (mut total, mut any, mut number) = (0_i64, false, None::<i64>);
+    for word in clause.split(|c: char| c.is_whitespace() || c == ',').filter(|w| !w.is_empty()) {
+        if word.starts_with('-') {
+            return None;
+        }
+        // A word is digits and letters in turn: "6", "days", "2h30m".
+        let mut rest = word;
+        while !rest.is_empty() {
+            let digits = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+            if digits > 0 {
+                number = Some(rest[..digits].parse().unwrap_or(i64::MAX));
+                rest = &rest[digits..];
+                continue;
+            }
+            let letters = rest.find(|c: char| c.is_ascii_digit()).unwrap_or(rest.len());
+            if let (Some(n), Some(unit)) = (number.take(), unit_ms(&rest[..letters])) {
+                total = total.saturating_add(n.saturating_mul(unit));
+                any = true;
+            }
+            rest = &rest[letters..];
+        }
+    }
+    any.then_some(total)
+}
+
+fn unit_ms(unit: &str) -> Option<i64> {
+    Some(match unit {
+        "w" | "wk" | "wks" | "week" | "weeks" => 7 * 86_400_000,
+        "d" | "day" | "days" => 86_400_000,
+        "h" | "hr" | "hrs" | "hour" | "hours" => 3_600_000,
+        "m" | "min" | "mins" | "minute" | "minutes" => 60_000,
+        "s" | "sec" | "secs" | "second" | "seconds" => 1_000,
+        _ => return None,
+    })
+}
+
 fn iso_ms(text: &str) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(text).ok().map(|at| at.timestamp_millis())
 }
@@ -142,5 +185,22 @@ mod tests {
         assert_eq!(value["text"], "$1.50");
         assert_eq!(value["percent"], 0.0);
         assert!(value.get("resetsText").is_none());
+    }
+
+    #[test]
+    fn a_reset_reads_short_and_spelled_out_units() {
+        const H: i64 = 3_600_000;
+        assert_eq!(resets_in("(resets in 6d 23h)"), Some(6 * 24 * H + 23 * H));
+        assert_eq!(resets_in("Your limit will reset in 6 days, 12 hours."), Some((6 * 24 + 12) * H));
+        assert_eq!(resets_in("Limit resets in 2hr 30mins and 15secs."), Some(2 * H + 30 * 60_000 + 15_000));
+        assert_eq!(resets_in("Limit resets in 1d12h."), Some(36 * H));
+        assert_eq!(resets_in("Limit resets in 2 weeks."), Some(14 * 24 * H));
+        assert_eq!(resets_in("Limit resets in 1wk."), Some(7 * 24 * H));
+        assert_eq!(resets_in("Limit resets in 2 hours (UTC)."), Some(2 * H));
+        assert_eq!(resets_in("Limit resets in 0s."), Some(0));
+        let negative = ["resets in 10m, -5m", "resets in -2h 30m", "reset in -5 minutes"];
+        for none in ["No reset time mentioned", "resets in 3 fortnights", "resets in foo bar"].iter().chain(&negative) {
+            assert_eq!(resets_in(none), None, "{none}");
+        }
     }
 }

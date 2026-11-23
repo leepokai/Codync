@@ -90,62 +90,11 @@ pub fn reset_until(
     [reset_time(usage, backend, login_profile, now), parse_reset_in(error_text, now)].into_iter().flatten().max()
 }
 
-fn duration_unit_ms(unit: &str) -> Option<i64> {
-    Some(match unit {
-        "w" | "wk" | "wks" | "week" | "weeks" => 7 * 24 * 60 * MINUTE,
-        "d" | "day" | "days" => 24 * 60 * MINUTE,
-        "h" | "hr" | "hrs" | "hour" | "hours" => 60 * MINUTE,
-        "m" | "min" | "mins" | "minute" | "minutes" => MINUTE,
-        "s" | "sec" | "secs" | "second" | "seconds" => 1_000,
-        _ => return None,
-    })
-}
-
-/// Parses a relative reset duration from an agent's usage-limit message (`"Your limit will reset in 6 days, 12 hours."`
-/// or `"resets in 2h 30m"`), returning `now + duration` capped at [`MAX_RESET_IN`] (7 days) when one is found.
-pub fn parse_reset_in(text: &str, now: i64) -> Option<i64> {
-    let lower = text.to_ascii_lowercase();
-    let tail = lower.split_once("reset in ").or_else(|| lower.split_once("resets in "))?.1;
-    let clause = tail.split(['.', '\n', ';', '(', ')']).next().unwrap_or(tail);
-    let mut total_ms: i64 = 0;
-    let mut pending_num: Option<i64> = None;
-    for raw in clause.split(|c: char| c.is_ascii_whitespace() || c == ',') {
-        let token = raw.trim();
-        if token.is_empty() || token == "and" {
-            continue;
-        }
-        if token.strip_prefix('-').is_some_and(|rest| rest.as_bytes().first().is_some_and(u8::is_ascii_digit)) {
-            return None;
-        }
-        if token.bytes().all(|b| b.is_ascii_digit()) {
-            pending_num = Some(token.parse::<i64>().unwrap_or(i64::MAX));
-            continue;
-        }
-        if token.as_bytes().first().is_some_and(u8::is_ascii_digit) {
-            pending_num = None;
-            let mut rest = token;
-            while let Some(digits_end) = rest.find(|c: char| !c.is_ascii_digit()) {
-                if digits_end == 0 {
-                    break;
-                }
-                let n = rest[..digits_end].parse::<i64>().unwrap_or(i64::MAX);
-                let after_digits = &rest[digits_end..];
-                let unit_end = after_digits.find(|c: char| c.is_ascii_digit()).unwrap_or(after_digits.len());
-                if let Some(unit_ms) = duration_unit_ms(&after_digits[..unit_end]) {
-                    total_ms = total_ms.saturating_add(n.saturating_mul(unit_ms));
-                }
-                rest = &after_digits[unit_end..];
-            }
-            continue;
-        }
-        if let Some(n) = pending_num.take()
-            && let Some(unit_ms) = duration_unit_ms(token)
-        {
-            total_ms = total_ms.saturating_add(n.saturating_mul(unit_ms));
-        }
-    }
-    let capped_ms = total_ms.min(MAX_RESET_IN);
-    (capped_ms > 0).then(|| now.saturating_add(capped_ms))
+/// When a relative duration stated in a failure message ends (`"Your limit will reset in 6 days, 12 hours."`, read by
+/// `usage::resets_in`), capped at [`MAX_RESET_IN`] (7 days). `None` when it states none, or a zero one.
+fn parse_reset_in(text: &str, now: i64) -> Option<i64> {
+    let ms = codync_agent::usage::resets_in(text).filter(|ms| *ms > 0)?;
+    Some(now.saturating_add(ms.min(MAX_RESET_IN)))
 }
 
 /// Agent `backend`'s accounts on one login (`login_profile`'s, or the computer's own, which a command of its own
@@ -252,39 +201,17 @@ mod tests {
     }
 
     #[test]
-    fn parse_reset_in_caps_at_seven_days_and_handles_edge_cases() {
+    fn a_stated_reset_is_capped_at_seven_days_and_a_zero_one_is_none() {
         let now = 1_000_000;
-        // Exactly 7 days: kept intact.
         assert_eq!(parse_reset_in("Your limit will reset in 7 days.", now), Some(now + MAX_RESET_IN));
-        assert_eq!(parse_reset_in("Limit resets in 168 hours.", now), Some(now + MAX_RESET_IN));
-        assert_eq!(parse_reset_in("Limit resets in 7d.", now), Some(now + MAX_RESET_IN));
-
-        // Over 7 days (or overflow): capped at 7 days.
         assert_eq!(parse_reset_in("Your limit will reset in 7 days, 1 second.", now), Some(now + MAX_RESET_IN));
-        assert_eq!(parse_reset_in("Your limit will reset in 8 days, 12 hours.", now), Some(now + MAX_RESET_IN));
-        assert_eq!(parse_reset_in("Your limit will reset in 30 days.", now), Some(now + MAX_RESET_IN));
         assert_eq!(parse_reset_in("Your limit will reset in 2 weeks.", now), Some(now + MAX_RESET_IN));
-        assert_eq!(parse_reset_in("Limit resets in 169 hours.", now), Some(now + MAX_RESET_IN));
         assert_eq!(
             parse_reset_in("Your limit will reset in 99999999999999999999 days.", now),
             Some(now + MAX_RESET_IN)
         );
-
-        // Zero and negative durations: ignored (`None`).
         assert_eq!(parse_reset_in("Your limit will reset in 0 minutes.", now), None);
-        assert_eq!(parse_reset_in("Limit resets in 0s.", now), None);
-        assert_eq!(parse_reset_in("Your limit will reset in -5 minutes.", now), None);
         assert_eq!(parse_reset_in("Limit resets in -2h 30m.", now), None);
-        assert_eq!(parse_reset_in("Limit resets in 10m, -5m.", now), None);
-
-        // Unusual unit spellings and separators.
-        assert_eq!(parse_reset_in("Limit resets in 2h30m.", now), Some(now + 150 * MINUTE));
-        assert_eq!(parse_reset_in("Limit resets in 1d12h.", now), Some(now + 36 * 60 * MINUTE));
-        assert_eq!(parse_reset_in("Limit resets in 2hr 30mins and 15secs.", now), Some(now + 150 * MINUTE + 15_000));
-        assert_eq!(parse_reset_in("Limit resets in 1wk.", now), Some(now + MAX_RESET_IN));
-        assert_eq!(parse_reset_in("Limit resets in 2 hours (UTC).", now), Some(now + 120 * MINUTE));
-        assert_eq!(parse_reset_in("Limit resets in 3 fortnights.", now), None);
-        assert_eq!(parse_reset_in("Limit resets in foo bar.", now), None);
     }
 
     #[test]

@@ -63,7 +63,7 @@ Read from the ACP answer: the JSON-RPC code, the adapter's category (Claude's `d
 
 | Reason | How Codync knows | Rest |
 |---|---|---|
-| `usageLimit` | Claude: `rate_limit`/`billing_error` with the Agent SDK's usage-limit text ("You've hit your…"). Codex: `usageLimitExceeded` | Until the reset the agent reported (`usage` windows at 100%); unknown: 1 h |
+| `usageLimit` | Claude: `rate_limit`/`billing_error` with the Agent SDK's usage-limit text ("You've hit your…"). Codex: `usageLimitExceeded`. Antigravity: a refusal whose streamed reply is its quota notice (`acp::antigravity::prompt_result`) | Until the later of the reset the agent reported (`usage` windows at 100%) and a "reset in …" the error states (at most 7 days, `rest::reset_until`); unknown: 1 h |
 | `outOfCredits` | Claude `billing_error`, `account_on_hold` | 6 h |
 | `rateLimited`, `overloaded` | Claude `rate_limit`, `overloaded`, `server_error`; codex-acp `rateLimitExceeded`, `serverOverloaded`; pi's error starting with HTTP 429 or 5xx ([pi-acp](../upstream-agents/pi-acp.md)) | 1, 5, 25, then 60 min for failures in a row |
 | `signedOut` | ACP `-32000`, `authentication_failed`, CodeBuddy's `auth` category | Until it's signed in, looking again after 1 h; an agent Codync can't sign in to (no sign-in card): 10 min. The chat of each bot that moves past it gets the agent's sign-in card (holding no message: the fallback answers it), and signing in there brings the bot back |
@@ -74,14 +74,16 @@ Read from the ACP answer: the JSON-RPC code, the adapter's category (Claude's `d
 Stop, refusal, output or step limits, a routine's time limit, compactions and uncategorized internal errors don't move
 on. CodeBuddy's CLI (CodeBuddy Code, WorkBuddy) answers a failed prompt as a refusal with the error in
 `_meta["codebuddy.ai/errorMessage"]`: that one counts as the error it holds (`acp::codebuddy::prompt_result`), so a
-signed-out WorkBuddy moves on. codex-acp still sends its 429s and overloads as reply text ([codex-acp#647](https://github.com/agentclientprotocol/codex-acp/issues/647)),
+signed-out WorkBuddy moves on. Antigravity answers a prompt it has no quota for as a refusal with its quota notice
+streamed as the reply: that one is a usage limit ([antigravity](../upstream-agents/antigravity.md)). codex-acp still sends its 429s and overloads as reply text ([codex-acp#647](https://github.com/agentclientprotocol/codex-acp/issues/647)),
 so only its usage limit moves a Codex bot on today.
 
 **Rests** (`fallback::rest`, `kv` `rest.<login>`: the agent, a custom command's own, or the agent on a
 [login profile](login-profiles.md), `<agent>#profile-<id>`) are the computer's: once one
 bot finds Claude Code out of usage, every bot on that login skips it until it resets. Each login rests by itself: a usage
 limit or sign-out on a login profile leaves the computer's own login, and the bots on it, alone, and the other way
-round. A login's usage limit rests until the reset its own windows give ([usage limits](usage-limits.md#login-profiles)), or for an hour at a time while it has no reading (an API key, an account of an agent whose accounts aren't read). A rest ends at its time, when any turn on that agent ends normally, or with Switch back.
+round. A login's usage limit rests until the reset its own windows give ([usage limits](usage-limits.md#login-profiles)) or the
+error's own "reset in …" (capped at 7 days), whichever is later, or for an hour at a time while it has no reading (an API key, an account of an agent whose accounts aren't read). A rest ends at its time, when any turn on that agent ends normally, or with Switch back.
 A signed-out rest also ends when the agent is signed in (`agent_sign_in::signed_in`: the card, Extensions, a turn of it
 finishing, a re-check), on that login: the computer's own (with the custom commands of the agent), or the one login
 profile; a usage rest stays.

@@ -8,12 +8,13 @@ mod park;
 pub(super) use park::resume_step;
 
 use super::sign_in::Held;
-use super::{Actor, Done, NoticeStyle};
+use super::{Actor, Done, NoticeStyle, Seg};
 use crate::LockExt;
 use crate::agent::fallback::{self, Reason, carry, rest};
 use crate::agent::login_profiles::Login;
 use crate::analytics::Carried;
 use crate::store::{BotConfig, Entry, EntryKind, Lane, now_ms};
+use codync_agent::acp;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
@@ -366,8 +367,25 @@ impl Actor {
                 (title, e.data["status"].as_str().unwrap_or("pending").to_owned())
             })
             .collect();
-        let narration = self.last_text.as_ref().and_then(|id| self.hub.store.entry(id));
-        carry::so_far(&tools, &self.sent, narration.as_ref().and_then(|e| e.data["text"].as_str()))
+        carry::so_far(&tools, &self.sent, self.last_words().as_deref())
+    }
+
+    /// The text of the turn's last agent message.
+    fn last_words(&self) -> Option<String> {
+        let entry = self.hub.store.entry(self.last_text.as_ref()?)?;
+        entry.data["text"].as_str().map(str::to_owned)
+    }
+
+    /// The turn's answer `done`, with Antigravity's quota refusal as the usage-limit error it is
+    /// (`acp::antigravity`). The streamed notice is then the error, not partial work to carry into the next agent.
+    pub(super) fn quota_refusal(&mut self, done: Done) -> Done {
+        let Ok(answer) = done else { return done };
+        let done = acp::antigravity::prompt_result(&self.cfg.backend, Ok(answer), self.last_words().as_deref());
+        if done.is_err() {
+            self.last_text = None;
+            self.seg = Seg::None;
+        }
+        done
     }
 
     /// The turn failed with `error`: when it may move on and another agent can take it, starts it again there.

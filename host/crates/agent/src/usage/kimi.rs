@@ -7,7 +7,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use super::Window;
+use super::{Window, resets_in};
 
 const WAIT: Duration = Duration::from_secs(20);
 /// How long the screen stays unchanged after the first plan row before it is read.
@@ -155,41 +155,6 @@ fn before_suffix(line: &str, suffix: &str) -> Option<f64> {
     let head = line[..at].trim_end();
     let token: String = head.chars().rev().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
     token.chars().rev().collect::<String>().parse().ok()
-}
-
-/// `resets in 6d 23h 22m` → milliseconds from now.
-fn resets_in(line: &str) -> Option<i64> {
-    let rest = line.split("resets in ").nth(1)?;
-    let mut total = 0_i64;
-    let mut number = String::new();
-    let mut any = false;
-    for c in rest.chars() {
-        if c.is_ascii_digit() {
-            number.push(c);
-            continue;
-        }
-        if let Some(unit) = unit_ms(c)
-            && let Ok(n) = number.parse::<i64>()
-        {
-            total = total.saturating_add(n.saturating_mul(unit));
-            any = true;
-        }
-        number.clear();
-        if c == ')' || c == '\n' {
-            break;
-        }
-    }
-    any.then_some(total)
-}
-
-fn unit_ms(c: char) -> Option<i64> {
-    Some(match c {
-        'd' => 86_400_000,
-        'h' => 3_600_000,
-        'm' => 60_000,
-        's' => 1_000,
-        _ => return None,
-    })
 }
 
 #[cfg(test)]

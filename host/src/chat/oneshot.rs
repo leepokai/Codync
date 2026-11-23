@@ -68,9 +68,9 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
         let deadline = tokio::time::sleep(TIMEOUT);
         tokio::pin!(deadline);
         let mut out = String::new();
-        loop {
+        let answer = loop {
             tokio::select! {
-                r = &mut prompt => { r.and_then(acp::codebuddy::prompt_result)?; break }
+                r = &mut prompt => break r.and_then(acp::codebuddy::prompt_result)?,
                 inc = conn.rx.recv() => {
                     if !collect(inc, &mut out) {
                         bail!("the background job's agent exited");
@@ -78,10 +78,11 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
                 }
                 () = &mut deadline => bail!("the background job timed out"),
             }
-        }
+        };
         while let Ok(inc) = conn.rx.try_recv() {
             collect(Some(inc), &mut out);
         }
+        acp::antigravity::prompt_result(&cfg.backend, Ok(answer), Some(&out))?;
         Ok(out)
     }
     .await;

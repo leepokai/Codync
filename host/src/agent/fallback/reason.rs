@@ -2,7 +2,7 @@
 //! the adapter's category (`errorKind`, codex-acp's `codexErrorInfo`), and the host's own `Failure`. The agents
 //! retry what is worth retrying before they answer with an error, so Codync never asks the same agent again.
 
-use codync_agent::acp::{Failure, FailureKind, RpcError, signed_out};
+use codync_agent::acp::{Failure, FailureKind, RpcError, USAGE_LIMIT_EXCEEDED, signed_out};
 use serde::{Deserialize, Serialize};
 
 /// Why an agent couldn't answer, and how long it rests for it (see `rest`).
@@ -41,14 +41,11 @@ impl Reason {
     }
 }
 
-/// How Claude's adapter words a usage limit (the Agent SDK's `USAGE_LIMIT_ERROR_PREFIXES`) and how Antigravity words
-/// a quota limit; Claude reports it as a `rate_limit` or `billing_error` with this text in the message, while
-/// Antigravity streams the message and answers `stopReason: "refusal"` (`usage_limit_refusal`).
-const USAGE_LIMIT_TEXT: [&str; 14] = [
+/// How Claude's adapter words a usage limit (the Agent SDK's `USAGE_LIMIT_ERROR_PREFIXES`); it reports it as a
+/// `rate_limit` or `billing_error` with this text in the message.
+const USAGE_LIMIT_TEXT: [&str; 12] = [
     "You've hit your",
     "You've reached your",
-    "You have reached your current quota",
-    "Usage Limit Reached",
     "You're out of usage credits",
     "Your org is out of usage",
     "Your seat type doesn't include usage credits",
@@ -60,36 +57,6 @@ const USAGE_LIMIT_TEXT: [&str; 14] = [
     "Your seat type doesn't include extra usage",
     "usage limit",
 ];
-
-const QUOTA_REFUSAL_BANNERS: [&str; 2] = ["Usage Limit Reached", "You have reached your current quota"];
-
-fn is_quota_refusal_banner(text: &str) -> bool {
-    let trimmed = text.trim_start();
-    QUOTA_REFUSAL_BANNERS.iter().any(|banner| trimmed.starts_with(banner))
-}
-
-/// An error when `backend` is `"antigravity"` and `done` is an ACP `refusal` whose streamed message `last_text` is
-/// a usage-limit notice (`antigravity-acp` streams `"Usage Limit Reached\n\nYou have reached your current quota…"`
-/// and answers `stopReason: "refusal"` instead of a JSON-RPC error).
-pub fn usage_limit_refusal(
-    backend: &str,
-    done: &anyhow::Result<serde_json::Value>,
-    last_text: Option<&str>,
-) -> Option<anyhow::Error> {
-    if backend != "antigravity" {
-        return None;
-    }
-    let text = last_text.filter(|t| is_quota_refusal_banner(t))?;
-    let refused = done.as_ref().is_ok_and(|v| v["stopReason"] == "refusal");
-    refused.then(|| {
-        RpcError {
-            code: codync_agent::acp::INTERNAL_ERROR,
-            message: text.trim().to_owned(),
-            kind: Some("usage_limit_exceeded".into()),
-        }
-        .into()
-    })
-}
 
 /// Why `error` moves the bot on, or `None` when it shouldn't (a stop, a refusal, a bug in the request).
 pub fn of(error: &anyhow::Error) -> Option<Reason> {
@@ -117,7 +84,7 @@ pub fn of_rpc(r: &RpcError) -> Option<Reason> {
     // Claude's adapter sends the Agent SDK's assistant error (`rate_limit`…); codex-acp its `codexErrorInfo`
     // (`usage_limit_exceeded`…); CodeBuddy its `category` (`auth`…).
     Some(match r.kind.as_deref() {
-        Some("usage_limit_exceeded") => Reason::UsageLimit,
+        Some(USAGE_LIMIT_EXCEEDED) => Reason::UsageLimit,
         Some("rate_limit" | "billing_error" | "account_on_hold") if usage_text => Reason::UsageLimit,
         Some("billing_error" | "account_on_hold") => Reason::OutOfCredits,
         Some("rate_limit" | "rate_limit_exceeded") => Reason::RateLimited,
@@ -144,7 +111,7 @@ mod tests {
     }
 
     #[test]
-    fn claude_codex_and_antigravity_usage_limits_move_on() {
+    fn claude_and_codex_usage_limits_move_on() {
         let claude =
             rpc(-32603, "Internal error: You've hit your limit · resets 3pm (Asia/Taipei)", Some("rate_limit"));
         assert_eq!(of(&claude), Some(Reason::UsageLimit));
@@ -157,33 +124,6 @@ mod tests {
             of(&rpc(-32603, "Internal error: credit balance too low", Some("billing_error"))),
             Some(Reason::OutOfCredits)
         );
-        let refusal = Ok(serde_json::json!({"stopReason": "refusal"}));
-        let agy_text = "Usage Limit Reached\n\nYou have reached your current quota for this period. Your limit will reset in 6 days, 12 hours.";
-        let err =
-            usage_limit_refusal("antigravity", &refusal, Some(agy_text)).expect("usage limit refusal becomes an error");
-        assert_eq!(of(&err), Some(Reason::UsageLimit));
-        let quota_only = "  You have reached your current quota for this period.";
-        assert_eq!(
-            of(&usage_limit_refusal("antigravity", &refusal, Some(quota_only)).expect("quota banner")),
-            Some(Reason::UsageLimit)
-        );
-        assert!(usage_limit_refusal("antigravity", &refusal, Some("I cannot help with that request.")).is_none());
-        assert!(
-            usage_limit_refusal("antigravity", &refusal, Some("I can't help bypass a usage limit.")).is_none(),
-            "ordinary refusals mentioning usage limit must not rest the login"
-        );
-        let end_turn = Ok(serde_json::json!({"stopReason": "end_turn"}));
-        assert!(
-            usage_limit_refusal("antigravity", &end_turn, Some(agy_text)).is_none(),
-            "only ACP refusals convert into usage-limit errors"
-        );
-        for other in ["claude", "codex", "custom"] {
-            assert!(
-                usage_limit_refusal(other, &refusal, Some(agy_text)).is_none(),
-                "non-antigravity backend `{other}` must not treat the banner as a login-resting quota refusal"
-            );
-            assert!(usage_limit_refusal(other, &refusal, Some(quota_only)).is_none());
-        }
     }
 
     #[test]

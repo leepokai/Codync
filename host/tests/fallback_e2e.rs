@@ -589,6 +589,16 @@ async fn an_antigravity_quota_banner_includes_the_reset_from_a_later_chunk() {
     assert_antigravity_quota_fallback(&chunks, Some(tail)).await;
 }
 
+#[tokio::test]
+async fn an_antigravity_quota_banner_after_narration_moves_on_and_rests() {
+    let chunks = [
+        "I'll look at the tests first. ",
+        "Usage Limit Reached\n\nYou have reached your current quota for this period. Your limit will reset in 1 hour, 25 minutes.",
+    ]
+    .join("\x1e");
+    assert_antigravity_quota_fallback(&chunks, None).await;
+}
+
 async fn assert_antigravity_quota_fallback(quota: &str, tail: Option<&str>) {
     let host = Host::start().await;
     let bot = json!({"name": "Agy", "backend": "antigravity", "command": agent("primary"), "connectors": [],
@@ -598,8 +608,10 @@ async fn assert_antigravity_quota_fallback(quota: &str, tail: Option<&str>) {
     std::fs::write(folder.join("primary.quota"), quota).unwrap();
 
     host.reply(&bot, "Fix the login tests").await;
-    let reply = wait_for(&host, &bot, "reply", |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
-    assert_eq!(reply["data"]["text"], "standin answered");
+    wait_for(&host, &bot, "fallback reply", |e| {
+        e["kind"] == "agent" && e["data"]["final"] == true && e["data"]["text"] == "standin answered"
+    })
+    .await;
     let line = wait_for(&host, &bot, "switch line", |e| e["data"]["agentSwitch"].is_object()).await;
     assert_eq!(line["data"]["agentSwitch"]["reason"], "usageLimit");
     assert_eq!(line["data"]["agentSwitch"]["from"], "antigravity");

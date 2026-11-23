@@ -1,8 +1,9 @@
 //! Antigravity (antigravity-acp) answers a prompt its Google quota can't pay for as `stopReason: "refusal"` with the
 //! limit notice streamed as the reply ("Usage Limit Reached\n\nYou have reached your current quota for this period.
 //! Your limit will reset in 1 hour, 25 minutes."), not as a JSON-RPC error. So the notice is held back from the chat,
-//! and a refusal that came with it fails the turn as a usage limit: the bot moves on to its next agent and the
-//! login rests until the reset the notice names. Any other refusal is still the agent declining.
+//! whenever it starts a chunk, even later in the turn. A refusal that came with it fails the turn as a usage limit:
+//! the bot moves on to its next agent and the login rests until the reset the notice names.
+//! Any other refusal is still the agent declining.
 
 use codync_agent::acp::{INTERNAL_ERROR, RpcError, StopReason};
 
@@ -12,7 +13,8 @@ const BACKEND: &str = "antigravity";
 /// How the notice starts.
 const STARTS: [&str; 2] = ["Usage Limit Reached", "You have reached your current quota"];
 
-/// Only the start of a reply can be a quota notice. Once confirmed, keep the rest for the reset time.
+/// A quota notice can start at the beginning of the reply or at the start of a later chunk.
+/// Once confirmed, keep the rest for the reset time.
 pub(super) enum QuotaNotice {
     Checking(String),
     Confirmed(String),
@@ -32,6 +34,10 @@ impl QuotaNotice {
             return Some(text);
         }
         match self {
+            Self::Reply if STARTS.iter().any(|s| text.trim_start().starts_with(s)) => {
+                *self = Self::Confirmed(text);
+                None
+            }
             Self::Reply => Some(text),
             Self::Confirmed(held) => {
                 held.push_str(&text);
@@ -80,6 +86,7 @@ mod tests {
 
     const START: &str = "Usage Limit Reached";
     const RESET: &str = "\nYour limit will reset in 1 hour, 25 minutes.";
+    const NARRATION: &str = "I'll look at the tests first. ";
 
     fn refusal() -> Value {
         json!({"stopReason": "refusal"})
@@ -91,7 +98,7 @@ mod tests {
         assert_eq!(notice.push(BACKEND, " \n".into()), None);
         assert_eq!(notice.push(BACKEND, "Usage Li".into()), None);
         assert_eq!(notice.push(BACKEND, "brary".into()).as_deref(), Some(" \nUsage Library"));
-        assert_eq!(notice.push(BACKEND, START.into()).as_deref(), Some(START));
+        assert_eq!(notice.push(BACKEND, NARRATION.into()).as_deref(), Some(NARRATION));
         let (done, text) = notice.finish(Ok(refusal()));
         assert_eq!(done.expect("a plain refusal"), refusal());
         assert_eq!(text, "");
@@ -103,6 +110,43 @@ mod tests {
             let mut notice = QuotaNotice::default();
             assert_eq!(notice.push(other, START.into()).as_deref(), Some(START), "{other}");
         }
+    }
+
+    #[test]
+    fn a_notice_after_narration_fails_a_refusal_as_a_usage_limit() {
+        let mut notice = QuotaNotice::default();
+        let banner = format!("{START}{RESET}");
+        assert_eq!(notice.push(BACKEND, NARRATION.into()).as_deref(), Some(NARRATION));
+        assert_eq!(notice.push(BACKEND, banner.clone()), None);
+        let (done, reply) = notice.finish(Ok(refusal()));
+        assert_eq!(reply, "");
+        let error = done.expect_err("a usage limit");
+        let rpc = error.downcast_ref::<RpcError>().expect("an RpcError");
+        assert_eq!(rpc.kind.as_deref(), Some("usage_limit_exceeded"));
+        assert_eq!(rpc.message, banner);
+    }
+
+    #[test]
+    fn a_notice_after_narration_on_end_turn_is_released_verbatim() {
+        let mut notice = QuotaNotice::default();
+        let banner = format!("  {START}{RESET}\n");
+        assert_eq!(notice.push(BACKEND, NARRATION.into()).as_deref(), Some(NARRATION));
+        assert_eq!(notice.push(BACKEND, banner.clone()), None);
+        let ended = json!({"stopReason": "end_turn"});
+        let (done, reply) = notice.finish(Ok(ended.clone()));
+        assert_eq!(done.expect("an answer"), ended);
+        assert_eq!(reply, banner);
+    }
+
+    #[test]
+    fn another_backend_passes_through_a_notice_after_narration() {
+        let mut notice = QuotaNotice::default();
+        let banner = format!("{START}{RESET}");
+        assert_eq!(notice.push("codex", NARRATION.into()).as_deref(), Some(NARRATION));
+        assert_eq!(notice.push("codex", banner.clone()), Some(banner));
+        let (done, reply) = notice.finish(Ok(refusal()));
+        assert_eq!(done.expect("a plain refusal"), refusal());
+        assert_eq!(reply, "");
     }
 
     #[test]

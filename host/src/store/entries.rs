@@ -116,6 +116,23 @@ impl Store {
         Ok(c.query_row(&format!("SELECT {ENTRY_COLS} FROM entries WHERE id = ?1"), [id], row_entry).optional()?)
     }
 
+    /// [`Self::update_entry_turn`] that only lands while the entry is still `scheduled`: a scheduled message's
+    /// transitions (fire, edit, cancel, send-now) lose the race to anything that changed it first, and the
+    /// caller learns that with `None`.
+    pub fn flip_scheduled(&self, id: &str, turn: Option<i64>, data: &Value) -> Result<Option<Entry>> {
+        let c = self.db.locked();
+        let rev = next_rev(&c)?;
+        let changed = c.execute(
+            "UPDATE entries SET rev = ?2, data = ?3, updated_at = ?4, turn = COALESCE(?5, turn)
+             WHERE id = ?1 AND json_extract(data, '$.status') = 'scheduled'",
+            params![id, rev, data.to_string(), now_ms(), turn],
+        )?;
+        if changed == 0 {
+            return Ok(None);
+        }
+        Ok(c.query_row(&format!("SELECT {ENTRY_COLS} FROM entries WHERE id = ?1"), [id], row_entry).optional()?)
+    }
+
     /// Updates `entries` (each stamped with the next rev), deletes the `delete` kv rows and saves the `set` ones in one
     /// transaction, so a crash keeps all of it or none; the entries as updated.
     pub fn update_entries_kv(
@@ -269,7 +286,8 @@ impl Store {
         let mut st = c.prepare(&format!(
             "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND kind = 'user'
                AND json_extract(data, '$.status') = 'scheduled'
-               AND COALESCE(json_extract(data, '$.notBefore'), 0) <= ?2
+               AND json_extract(data, '$.notBefore') IS NOT NULL
+               AND json_extract(data, '$.notBefore') <= ?2
              ORDER BY json_extract(data, '$.notBefore'), seq"
         ))?;
         Ok(st.query_map(params![bot_id, now_ms], row_entry)?.collect::<rusqlite::Result<_>>()?)

@@ -259,7 +259,7 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
             {canScheduleHere ? (
               <button
                 className="press composer-schedule"
-                disabled={!draft.trim()}
+                disabled={!draft.trim() || files.length > 0}
                 aria-label={tr('Schedule send…')}
                 title={tr('Schedule send…')}
                 onClick={() => setScheduling(true)}
@@ -297,6 +297,7 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
         <ScheduleSheet
           botId={botId}
           draft={draft}
+          replyTo={reply ?? (about && artifactQuote(about))}
           onClose={() => setScheduling(false)}
           onScheduled={() =>
             scheduled(() => {

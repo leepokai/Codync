@@ -49,10 +49,8 @@ pub fn hand_on(hub: &Arc<Hub>, cfg: &BotConfig, e: &Entry) -> Result<()> {
 /// the message.
 pub fn set_text(data: &mut Value, text: &str) {
     data["text"] = text.into();
-    let pasted: Vec<&str> = data["pasted"]
-        .as_array()
-        .map(|a| a.iter().filter_map(Value::as_str).collect())
-        .unwrap_or_default();
+    let pasted: Vec<&str> =
+        data["pasted"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
     let kept: Vec<Value> = pasted.into_iter().filter(|p| text.contains(*p)).map(Into::into).collect();
     if kept.is_empty() {
         data.as_object_mut().map(|o| o.remove("pasted"));
@@ -63,13 +61,13 @@ pub fn set_text(data: &mut Value, text: &str) {
 
 /// A scheduled send (`scheduleSend`): the message is saved now, shown in the chat as scheduled, and delivered
 /// later by the sweep (`chat::schedule`) through the ordinary [`post`] path. A group's sends are immediate, so
-/// they can't be scheduled; the time must be in the future.
+/// they can't be scheduled; the time must be at least half a minute out.
 pub fn save_scheduled(hub: &Hub, cfg: &BotConfig, mut data: Value, not_before_ms: i64) -> Result<Entry> {
     if cfg.is_group() {
         return Err(anyhow!("a group's messages send immediately; there is nothing to schedule"));
     }
-    if not_before_ms <= crate::store::now_ms() {
-        return Err(anyhow!("the scheduled time must be in the future"));
+    if not_before_ms <= crate::store::now_ms() + SOONEST {
+        return Err(anyhow!("the scheduled time must be at least 30 seconds out"));
     }
     data["status"] = "scheduled".into();
     data["notBefore"] = not_before_ms.into();
@@ -83,9 +81,13 @@ pub fn save_scheduled(hub: &Hub, cfg: &BotConfig, mut data: Value, not_before_ms
     Ok(e)
 }
 
+/// How far out a fire time must at least be: anything closer is a send, not a schedule.
+pub const SOONEST: i64 = 30_000;
+
 /// A scheduled message's time has come (`chat::schedule`): it takes its delivery-time place in the chat and
-/// enters the ordinary queue exactly as a message typed now would. Returns the queued entry.
-pub fn fire_scheduled(hub: &Arc<Hub>, e: &Entry) -> Result<Entry> {
+/// enters the ordinary queue exactly as a message typed now would. Returns the queued entry, or `None` when
+/// something else (an edit, a cancel) moved it first.
+pub fn fire_scheduled(hub: &Arc<Hub>, e: &Entry) -> Result<Option<Entry>> {
     let row = hub.store.bot(&e.bot_id)?.ok_or_else(|| anyhow!("unknown bot"))?;
     let mut data = e.data.clone();
     data["status"] = "queued".into();
@@ -95,8 +97,14 @@ pub fn fire_scheduled(hub: &Arc<Hub>, e: &Entry) -> Result<Entry> {
         o.remove("scheduledAt");
     }
     let turn = hub.store.max_turn(&e.bot_id) + 1;
-    let turned =
-        hub.set_entry_turn(&e.id, Some(turn), &data).ok_or_else(|| anyhow!("couldn't schedule the message in"))?;
-    hand_on(hub, &row.config, &turned)?;
-    Ok(turned)
+    // One-way: only while it is still scheduled, so a cancel or an edit that lands first wins.
+    let Some(turned) = hub.flip_scheduled(&e.id, Some(turn), &data)? else {
+        return Ok(None);
+    };
+    if let Err(error) = hand_on(hub, &row.config, &turned) {
+        // Back on its time rather than lost: the sweep tries again.
+        let _ = hub.set_entry(&e.id, &e.data);
+        return Err(error);
+    }
+    Ok(Some(turned))
 }

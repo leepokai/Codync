@@ -455,7 +455,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 text => text.map(str::trim),
             };
             let not_before = match b["notBefore"].as_i64() {
-                Some(at) if at <= crate::store::now_ms() => bail!("the scheduled time must be in the future"),
+                Some(at) if at <= crate::store::now_ms() + crate::chat::messages::SOONEST => {
+                    bail!("the scheduled time must be at least 30 seconds out")
+                }
                 at => at,
             };
             if text.is_none() && not_before.is_none() {
@@ -483,7 +485,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                     if let Some(at) = not_before {
                         e.data["notBefore"] = at.into();
                     }
-                    json!({"entry": hub.set_entry(entry_id, &e.data).ok_or_else(|| anyhow!("couldn't save the edit"))?})
+                    // One-way: only while it is still scheduled, so a fire that lands first wins and this refuses.
+                    let entry = hub
+                        .flip_scheduled(entry_id, None, &e.data)?
+                        .ok_or_else(|| anyhow!("that message isn't scheduled any more"))?;
+                    json!({"entry": entry})
                 }
                 _ => bail!("that message isn't waiting any more"),
             }
@@ -499,7 +505,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 .ok_or_else(|| anyhow!("that message isn't scheduled any more"))?;
             e.data["status"] = "cancelled".into();
             e.data["removed"] = true.into();
-            hub.set_entry(entry_id, &e.data);
+            // One-way: only while it is still scheduled, so a fire that lands first wins and this refuses.
+            if hub.flip_scheduled(entry_id, None, &e.data)?.is_none() {
+                bail!("that message isn't scheduled any more");
+            }
             hub.emit_bot(bot);
             json!({})
         }
@@ -512,7 +521,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 .entry(entry_id)
                 .filter(|e| e.bot_id == bot && e.kind == EntryKind::User.as_str() && e.data["status"] == "scheduled")
                 .ok_or_else(|| anyhow!("that message isn't scheduled any more"))?;
-            json!({"entry": crate::chat::messages::fire_scheduled(hub, &e)?})
+            json!({"entry": crate::chat::messages::fire_scheduled(hub, &e)?
+                .ok_or_else(|| anyhow!("that message isn't scheduled any more"))?})
         }
         "switchBack" => {
             hub.send_cmd(str_arg(&b, "botId")?, Cmd::SwitchBack)?;

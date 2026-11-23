@@ -134,13 +134,12 @@ function QueuedRow({
               onDoubleClick={startEdit}
             >
               {expanded ? text : messagePreview(text)}
-              {fireAt !== undefined ? (
-                <span className="queued-fire-time">
-                  {' '}
-                  · {tr('Fires {time}').replaceAll('{time}', () => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(fireAt)))}
-                </span>
-              ) : null}
             </Text>
+            {fireAt !== undefined ? (
+              <Text size="callout" tone="secondary" className="queued-fire-time">
+                · {tr('Fires {time}').replaceAll('{time}', () => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(fireAt)))}
+              </Text>
+            ) : null}
             <IconButton title={tr('Copy')} icon="doc.on.doc" size={26} onClick={() => window.codync.app.copy(text)} />
             <IconButton title={tr('Edit')} icon="pencil" size={26} disabled={answering} onClick={startEdit} />
             {actions && fireAt === undefined ? (

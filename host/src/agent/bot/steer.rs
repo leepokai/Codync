@@ -251,22 +251,22 @@ impl Actor {
     /// `updateScheduled` on a message still waiting in the live queue: its text changes where it waits, or it
     /// leaves the queue to fire at its time (`chat::schedule`). One already with the agent (`steer`) goes out
     /// as asked: the store then says what became of it.
-    pub(super) fn hold(&mut self, entry_id: &str, text: Option<String>, not_before: Option<i64>) {
+    pub(super) fn hold(&mut self, entry_id: &str, text: Option<&str>, not_before: Option<i64>) {
         if self.steers_in_flight.contains_key(entry_id) {
             return;
         }
         let Some(at) = self.queued_at(entry_id) else { return };
-        if let Some(t) = text.as_deref() {
+        if let Some(t) = text {
             // Delivery reads the queue's copy as much as the store's: both say the new text.
             if let Some(Queued::User { text: waiting, .. }) = self.queue.get_mut(at) {
-                *waiting = t.to_owned();
+                t.clone_into(waiting);
             }
         }
         if not_before.is_some() {
             self.queue.remove(at);
         }
         if let Some(mut e) = self.hub.store.entry(entry_id) {
-            if let Some(t) = text.as_deref() {
+            if let Some(t) = text {
                 crate::chat::messages::set_text(&mut e.data, t);
             }
             if let Some(at) = not_before {

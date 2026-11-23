@@ -528,6 +528,17 @@ impl Hub {
         }
     }
 
+    /// Updates an entry that must still be `scheduled` (a fire, an edit, a cancel, a send-now) and broadcasts
+    /// it; `Ok(None)` means something else moved it first, and the caller reports that like any refusal.
+    pub fn flip_scheduled(&self, id: &str, turn: Option<i64>, data: &Value) -> Result<Option<Entry>> {
+        let _g = self.emit_lock.locked();
+        let e = self.store.flip_scheduled(id, turn, data)?;
+        if let Some(e) = &e {
+            let _ = self.events.send(entry_event(e));
+        }
+        Ok(e)
+    }
+
     /// Changes part of an entry and broadcasts it, reading and writing under the emission lock: an edit made
     /// meanwhile elsewhere (a reaction from another device) isn't written over. `edit` returns `false` to leave the
     /// entry as it is.

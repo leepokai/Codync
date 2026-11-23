@@ -4,17 +4,19 @@ import { VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
-import type { Entry } from '@shared/models'
+import type { Entry, ReplyQuote } from '@shared/models'
 
 /**
  * Pick a time for "Schedule send…": a new message's, a waiting one's (a time holds it out of the live
  * queue), or the schedule of one already held (`entry`). The input is the browser's local-time picker; the
- * store keeps UTC epoch-ms, so a zone change or DST can't move a message by accident.
+ * store keeps UTC epoch-ms, so a zone change or DST can't move a message by accident. A time must be at
+ * least half a minute out — anything closer is a send, not a schedule.
  */
 export function ScheduleSheet({
   botId,
   entry = null,
   draft = '',
+  replyTo = null,
   onClose,
   onScheduled,
 }: {
@@ -23,6 +25,8 @@ export function ScheduleSheet({
   entry?: Entry | null
   /** New schedule: the draft to hold. */
   draft?: string
+  /** New schedule: the message it quotes, as a send would. */
+  replyTo?: ReplyQuote | null
   onClose: () => void
   /** New schedule only: the composer's cleanup once the message is scheduled. */
   onScheduled?: () => void
@@ -33,12 +37,12 @@ export function ScheduleSheet({
   const held = entry !== null && entry.data.status === 'scheduled'
   const [text, setText] = useState(entry?.data.text ?? draft)
   const [time, setTime] = useState(() => defaultTime(entry?.data.notBefore))
-  // A local-time value is only a value once a field was typed into; the picker starts blank.
-  const [touched, setTouched] = useState(false)
+  // A held message's own time is already a pick; a new or waiting one asks for one.
+  const [touched, setTouched] = useState(entry?.data.notBefore !== undefined)
   const invalid = useMemo(() => {
     const at = parseLocal(time)
     if (at === null) return tr('Pick a time')
-    if (at <= Date.now()) return tr('Pick a time in the future')
+    if (at <= Date.now() + 30_000) return tr('Pick a time in the future')
     return null
   }, [time, tr])
   const ready = text.trim().length > 0 && touched && invalid === null && !store.answering.has(entry?.id ?? '')
@@ -91,7 +95,7 @@ export function ScheduleSheet({
               if (at === null) return
               if (entry) store.updateScheduled(entry, { text: text.trim(), notBefore: at })
               else {
-                store.scheduleSend(text, botId, at, { replyTo: null })
+                store.scheduleSend(text, botId, at, { replyTo })
                 onScheduled?.()
               }
               onClose()

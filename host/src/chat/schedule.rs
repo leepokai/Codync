@@ -137,13 +137,18 @@ mod tests {
         }
 
         fn schedule(&self, text: &str, in_ms: i64) -> crate::store::Entry {
-            crate::chat::messages::save_scheduled(
+            let e = crate::chat::messages::save_scheduled(
                 &self.hub,
                 &self.hub.store.bot("b").unwrap().unwrap().config,
                 json!({"text": text, "clientNonce": uuid::Uuid::new_v4().to_string()}),
-                crate::store::now_ms() + in_ms,
+                crate::store::now_ms() + 60_000,
             )
-            .unwrap()
+            .unwrap();
+            // The sweep's clock is what these tests exercise, not the floor: move the fire time to where the
+            // test wants it.
+            let mut data = e.data.clone();
+            data["notBefore"] = json!(crate::store::now_ms() + in_ms);
+            self.hub.set_entry(&e.id, &data).unwrap()
         }
 
         async fn send(&self, text: &str) {
@@ -240,7 +245,8 @@ mod tests {
         assert!(prompts[0].contains("first"), "earliest first: {prompts:?}");
         assert!(prompts[1].contains("second"), "earliest first: {prompts:?}");
         // Each took its delivery-time place, as a message typed then would.
-        assert!(first.turn < second.turn);
+        let turns = [first.id.clone(), second.id.clone()].map(|id| f.hub.store.entry(&id).unwrap().turn);
+        assert!(turns[0] < turns[1], "the delivery-time turns, in fire order: {turns:?}");
         for e in [&first, &second] {
             assert_eq!(f.status_of(&e.id), "sent", "the turn started: it is no longer scheduled");
             assert!(f.hub.store.entry(&e.id).unwrap().data["notBefore"].is_null(), "firing clears the fields");
@@ -283,9 +289,8 @@ mod tests {
     #[tokio::test]
     async fn a_waiting_message_can_be_edited_and_held_for_later() {
         let f = Fixture::new();
-        // A live send starts a turn; a second message waits behind it.
+        // A live send starts a turn; a second message right behind it waits in the queue.
         f.send("live now").await;
-        f.until(|| f.prompts().len() == 1).await;
         f.send("first draft").await;
         let waiting = f
             .hub
@@ -310,11 +315,15 @@ mod tests {
             &f.hub,
             &crate::api::devices::Caller::Local,
             "updateScheduled",
-            json!({"botId": "b", "entryId": waiting.id, "notBefore": crate::store::now_ms() + 150}),
+            json!({"botId": "b", "entryId": waiting.id, "notBefore": crate::store::now_ms() + 60_000}),
         )
         .await
         .unwrap();
         f.until(|| f.status_of(&waiting.id) == "scheduled").await;
+        // The floor is not what this test exercises: move the fire time to just about now.
+        let mut held = f.hub.store.entry(&waiting.id).unwrap();
+        held.data["notBefore"] = json!(crate::store::now_ms() + 150);
+        f.hub.set_entry(&waiting.id, &held.data).unwrap();
         // The running turn ends with nothing new to deliver: the live queue no longer holds it.
         f.until(|| f.prompts().len() == 2 && f.prompts()[1].contains("held and edited")).await;
         assert!(!f.prompts()[1].contains("first draft"), "the queue's copy is the edited one");
@@ -352,9 +361,9 @@ mod tests {
         sweep(&f.hub).unwrap();
         assert_eq!(f.status_of(&e.id), "cancelled");
         assert_eq!(f.prompts().len(), 0);
-        // Editing something that already fired is refused.
+        // Editing something that already went out is refused (while it merely waited it was editable).
         let fired = f.schedule("will fire", 50);
-        f.until(|| f.status_of(&fired.id) != "scheduled").await;
+        f.until(|| f.status_of(&fired.id) == "sent").await;
         let late_edit = crate::api::dispatch(
             &f.hub,
             &crate::api::devices::Caller::Local,
@@ -420,5 +429,28 @@ mod tests {
         let due = store.scheduled_due("b", now).unwrap();
         assert_eq!(due.iter().map(|e| e.id.clone()).collect::<Vec<_>>(), [due_first.id, due_second.id]);
         assert!(!due.iter().any(|e| e.id == late.id));
+    }
+
+    /// A scheduled message's moves are one-way: the first transition lands, and a later one — a cancel racing a
+    /// fire, two fires — is refused, so a snapshot taken earlier can never overwrite it.
+    #[test]
+    fn a_scheduled_message_moves_one_way() {
+        let store = store_with_bot("b");
+        let e = store
+            .insert_entry(
+                &Lane::main("b"),
+                EntryKind::User,
+                1,
+                &json!({"text": "later", "status": "scheduled", "notBefore": crate::store::now_ms() + 60_000}),
+            )
+            .unwrap();
+        let fired = store.flip_scheduled(&e.id, Some(2), &json!({"text": "later", "status": "queued"})).unwrap();
+        assert!(fired.is_some(), "the first move lands");
+        let raced = store
+            .flip_scheduled(&e.id, None, &json!({"text": "later", "status": "cancelled", "removed": true}))
+            .unwrap();
+        assert!(raced.is_none(), "a second mover finds it isn't scheduled any more");
+        assert_eq!(store.entry(&e.id).unwrap().data["status"], "queued", "the first move stands");
+        assert_eq!(store.entry(&e.id).unwrap().turn, 2, "the fire's turn is kept");
     }
 }

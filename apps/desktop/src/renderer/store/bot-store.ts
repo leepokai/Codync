@@ -409,7 +409,11 @@ export class BotStore extends BotSync {
         }
       },
       true,
-      () => show(entry),
+      // Only when nothing newer arrived: a refusal because the message moved (it fired, it was taken
+      // back) leaves the newer state standing, not this snapshot.
+      () => {
+        if (this.entries.get(entry.botId)?.find((x) => x.id === entry.id)?.rev === entry.rev) show(entry)
+      },
     )
   }
 
@@ -420,7 +424,9 @@ export class BotStore extends BotSync {
       this.changed()
     }
     show({ ...entry, data: { ...entry.data, status: 'cancelled', removed: true } })
-    this.perform((c) => c.cancelScheduled(entry.botId, entry.id), true, () => show(entry))
+    this.perform((c) => c.cancelScheduled(entry.botId, entry.id), true, () => {
+      if (this.entries.get(entry.botId)?.find((x) => x.id === entry.id)?.rev === entry.rev) show(entry)
+    })
   }
 
   /** Delivers a scheduled message right now: it enters the ordinary queue as the sweep would. */

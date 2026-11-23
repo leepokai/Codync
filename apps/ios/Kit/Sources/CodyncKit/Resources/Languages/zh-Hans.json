@@ -2286,5 +2286,7 @@
   "Not available on {computer}": "无法在 {computer} 上使用",
   "Couldn't check {computer}'s models": "无法检查 {computer} 的模型",
   "Selected: {n}": "已选中：{n} 个",
-  "Bots hidden by the filter: {n} (unchanged by Apply)": "被筛选隐藏的机器人：{n} 个（Apply 不会更改它们）"
+  "Bots hidden by the filter: {n} (unchanged by Apply)": "被筛选隐藏的机器人：{n} 个（Apply 不会更改它们）",
+  "Resize width": "调整宽度",
+  "Resize height": "调整高度"
 }

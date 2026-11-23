@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { RosterItem } from '../store/app-model'
 import type { AgentModels } from './bots/agent-models'
 import type { ApplyPlan, CatalogCheck } from './bots/model-manager-logic'
-import { allKeys, applyTargets, filterChecked, hiddenCheckedCount, planRows, toggleKey } from './bots/model-manager-logic.ts'
+import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, filterChecked, hiddenCheckedCount, planRows, toggleKey } from './bots/model-manager-logic.ts'
 
 /** A roster row carries a store, a bot and a computer; these tests only read ref, bot and computer. */
 const item = (computerId: string, computerName: string, botId: string, name: string, description = ''): RosterItem =>
@@ -141,4 +141,23 @@ test('the palette search narrows the list, so only matching bots can be checked'
   const beta = item('mac', 'Mac', 'b2', 'Beta')
   const matched = [alpha, beta].filter((i) => i.bot.name.toLowerCase().includes('alpha'))
   assert.deepEqual(filterChecked(matched, new Set(allKeys([alpha, beta]))).map((i) => i.bot.name), ['Alpha'])
+})
+
+test('defaultSheetSize opens on the longest bot name and about three quarters of the height', () => {
+  // 40 characters at 8px each is 320 wide; with 460px of chrome around it the sheet wants 780.
+  const size = defaultSheetSize(['Short', 'A very long bot name that goes on and on'], (text) => text.length * 8, 1600, 1000)
+  assert.deepEqual(size, { width: 780, height: 780 })
+})
+
+test('defaultSheetSize never exceeds the main window', () => {
+  // A name wider than the screen is capped; on a short window the usable floor (560) applies,
+  // still capped under the viewport so the card never overflows.
+  const size = defaultSheetSize(['x'.repeat(200)], (text) => text.length * 8, 900, 700)
+  assert.deepEqual(size, { width: 860, height: 560 })
+})
+
+test('clampSheetSize keeps a drag inside the bounds and the viewport', () => {
+  assert.deepEqual(clampSheetSize(300, 300, 1600, 1000), { width: 480, height: 420 })
+  assert.deepEqual(clampSheetSize(5000, 5000, 1000, 800), { width: 960, height: 752 })
+  assert.deepEqual(clampSheetSize(700.4, 620.6, 1600, 1000), { width: 700, height: 621 })
 })

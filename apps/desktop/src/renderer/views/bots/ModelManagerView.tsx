@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { isGroup } from '@shared/models'
 import { AvatarWithStatus } from '../../components/Avatar'
 import { Button, IconButton } from '../../components/Controls'
@@ -15,7 +15,7 @@ import { AgentModelPicker } from './AgentModelPicker'
 import { useAgentModels, type AgentModels } from './agent-models'
 import { errorText } from './drafts'
 import { agentChoice } from './Fallbacks'
-import { allKeys, applyTargets, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
+import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, SHEET_MIN, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
@@ -26,15 +26,40 @@ type Outcome = { ok: boolean; text: string }
 const subtitle = ({ bot, computer }: RosterItem, oneComputer: boolean) =>
   [bot.description, oneComputer ? '' : computer.name].filter(Boolean).join(' · ')
 
+/** Measures rendered text with the app's font, so the sheet can size itself to its content. */
+const makeMeasurer = () => {
+  const context = document.createElement('canvas').getContext('2d')
+  if (!context) return (text: string) => text.length * 7
+  return (text: string) => {
+    context.font = `500 13px ${getComputedStyle(document.documentElement).getPropertyValue('--font') || 'system-ui'}`
+    return context.measureText(text).width
+  }
+}
+
 /** Apply one agent, model and its model options to many bots at once. */
 export function ModelManagerView({ items, onClose }: { items: RosterItem[]; onClose: () => void }) {
   const tr = useTr()
   // Groups carry members, not a model of their own; the batch swap targets bots.
   const bots = items.filter((item) => !isGroup(item.bot))
   const store = bots[0]?.store
+  // The sheet opens big (about three quarters of the main window's height) and sized to the
+  // longest bot name, and stays draggable afterwards; the main window shrinking clamps it back.
+  const measure = useMemo(makeMeasurer, [])
+  const names = useMemo(() => bots.map((item) => item.bot.name), [items])
+  const [size, setSize] = useState(() => defaultSheetSize(names, measure, window.innerWidth, window.innerHeight))
+  useEffect(() => {
+    const onResize = () => setSize((s) => clampSheetSize(s.width, s.height, window.innerWidth, window.innerHeight))
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
   return (
-    <Sheet open onClose={onClose} width={640}>
+    <Sheet open onClose={onClose} width={size.width} height={size.height}>
       <VStack gap={12} className="model-manager">
+        <SheetHandle kind="left" label={tr('Resize width')} size={size} onSize={setSize} />
+        <SheetHandle kind="right" label={tr('Resize width')} size={size} onSize={setSize} />
+        <SheetHandle kind="bottom" label={tr('Resize height')} size={size} onSize={setSize} />
+        <SheetHandle kind="corner-br" label={tr('Resize height')} size={size} onSize={setSize} />
+        <SheetHandle kind="corner-bl" label={tr('Resize height')} size={size} onSize={setSize} />
         <HStack gap={8} className="model-manager-head">
           <Text size="body" tone="text" className="model-manager-title">{tr('Model Manager')}</Text>
           <Spacer />
@@ -49,6 +74,68 @@ export function ModelManagerView({ items, onClose }: { items: RosterItem[]; onCl
         )}
       </VStack>
     </Sheet>
+  )
+}
+
+/**
+ * One draggable edge or corner of the sheet: a pointer drag (captured, so it keeps working over
+ * the content) with the arrows stepping it like the app's panel ResizeHandle. Dragging toward the
+ * sheet's outside grows it; clamping keeps every control reachable.
+ */
+function SheetHandle({ kind, label, size, onSize }: {
+  kind: 'left' | 'right' | 'bottom' | 'corner-br' | 'corner-bl'
+  label: string
+  size: { width: number; height: number }
+  onSize: (size: { width: number; height: number }) => void
+}) {
+  const start = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
+  const resizingClass = kind === 'left' || kind === 'right' ? 'mm-resizing-ew'
+    : kind === 'bottom' ? 'mm-resizing-ns'
+    : kind === 'corner-br' ? 'mm-resizing-nwse' : 'mm-resizing-nesw'
+  const end = () => {
+    if (!start.current) return
+    start.current = null
+    document.documentElement.classList.remove(resizingClass)
+  }
+  useEffect(() => () => { document.documentElement.classList.remove(resizingClass) }, [])
+  const apply = (dx: number, dy: number) => {
+    const growsWest = kind === 'left' || kind === 'corner-bl'
+    const width = size.width + (growsWest ? -dx : dx)
+    const growsDown = kind !== 'left' && kind !== 'right'
+    const height = size.height + (growsDown ? dy : 0)
+    onSize(clampSheetSize(width, height, window.innerWidth, window.innerHeight))
+  }
+  const onPointerDown = (e: ReactPointerEvent) => {
+    if (e.button !== 0) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    start.current = { x: e.clientX, y: e.clientY, width: size.width, height: size.height }
+    document.documentElement.classList.add(resizingClass)
+  }
+  const onPointerMove = (e: ReactPointerEvent) => {
+    if (start.current) apply(e.clientX - start.current.x, e.clientY - start.current.y)
+  }
+  const onKeyDown = (e: ReactKeyboardEvent) => {
+    const step = { ArrowLeft: [-16, 0], ArrowRight: [16, 0], ArrowUp: [0, -16], ArrowDown: [0, 16] }[e.key]
+    if (!step) return
+    e.preventDefault()
+    apply(step[0], step[1])
+  }
+  return (
+    <div
+      className={`model-manager-resize mm-${kind}`}
+      role="separator"
+      aria-label={label}
+      aria-orientation={kind === 'bottom' ? 'horizontal' : 'vertical'}
+      aria-valuenow={kind === 'bottom' ? Math.round(size.height) : Math.round(size.width)}
+      aria-valuemin={kind === 'bottom' ? SHEET_MIN.height : SHEET_MIN.width}
+      tabIndex={kind === 'corner-br' || kind === 'corner-bl' ? -1 : 0}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={end}
+      onPointerCancel={end}
+      onLostPointerCapture={end}
+      onKeyDown={onKeyDown}
+    />
   )
 }
 

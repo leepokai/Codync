@@ -2286,5 +2286,7 @@
   "Not available on {computer}": "Indisponible sur {computer}",
   "Couldn't check {computer}'s models": "Impossible de vérifier les modèles de {computer}",
   "Selected: {n}": "Sélection : {n}",
-  "Bots hidden by the filter: {n} (unchanged by Apply)": "Bots masqués par le filtre : {n} (Apply ne les change pas)"
+  "Bots hidden by the filter: {n} (unchanged by Apply)": "Bots masqués par le filtre : {n} (Apply ne les change pas)",
+  "Resize width": "Redimensionner la largeur",
+  "Resize height": "Redimensionner la hauteur"
 }

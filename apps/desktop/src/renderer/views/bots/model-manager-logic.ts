@@ -80,3 +80,28 @@ export const toggleKey = (checked: Set<string>, key: string, on: boolean) => {
   else next.delete(key)
   return next
 }
+
+/** The Model Manager sheet's smallest usable size: every control reachable, list still scrollable. */
+export const SHEET_MIN = { width: 480, height: 420 } as const
+
+/** A dragged or re-measured sheet size, clamped to the bounds and the main window. */
+export const clampSheetSize = (width: number, height: number, viewportWidth: number, viewportHeight: number) => {
+  const maxWidth = Math.max(SHEET_MIN.width, viewportWidth - 40)
+  const maxHeight = Math.max(SHEET_MIN.height, viewportHeight - 48)
+  return {
+    width: Math.round(Math.min(Math.max(width, SHEET_MIN.width), maxWidth)),
+    height: Math.round(Math.min(Math.max(height, SHEET_MIN.height), maxHeight)),
+  }
+}
+
+/**
+ * The sheet's opening size, from what Ryan asked it to be: wide enough that the longest bot name
+ * reads on one line (~460px of chrome around the text), never narrower than the original 640, and
+ * about three quarters of the main window's height.
+ */
+export const defaultSheetSize = (names: string[], measure: (text: string) => number, viewportWidth: number, viewportHeight: number) => {
+  const longest = names.reduce((max, name) => Math.max(max, measure(name)), 0)
+  const wanted = Math.max(640, Math.round(460 + longest))
+  const height = Math.round(Math.min(viewportHeight - 48, Math.max(560, viewportHeight * 0.78)))
+  return clampSheetSize(wanted, height, viewportWidth, viewportHeight)
+}

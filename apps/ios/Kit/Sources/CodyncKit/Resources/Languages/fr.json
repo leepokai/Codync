@@ -2477,5 +2477,8 @@
   "Pause bot": "Mettre le bot en pause",
   "Resume bot": "Reprendre le bot",
   "Paused": "En pause",
-  "It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled.": "Il ne répond à rien et ne dépense rien tant que vous ne le reprenez pas : les nouveaux messages sont refusés et les exécutions de routines en attente sont annulées."
+  "It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled.": "Il ne répond à rien et ne dépense rien tant que vous ne le reprenez pas : les nouveaux messages sont refusés et les exécutions de routines en attente sont annulées.",
+  "Context handoff pending": "Transmission du contexte en attente",
+  "Context handed off": "Contexte transmis",
+  "Switched": "Changé"
 }

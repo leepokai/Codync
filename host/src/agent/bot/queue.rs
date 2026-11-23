@@ -143,6 +143,7 @@ impl Actor {
                 let threshold_changed = cfg.compaction != self.cfg.compaction;
                 // Name, description and skill changes reach the agent as a profile update
                 // on the next message (see `context`).
+                self.switched_by_user(&cfg);
                 self.cfg = cfg;
                 if threshold_changed {
                     self.threshold_changed();

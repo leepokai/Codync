@@ -3,7 +3,7 @@ import { IconButton, SegmentedChoice, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import type { AgentModelsState } from './agent-models'
+import { modelChoices, type AgentModelsState } from './agent-models'
 import { useTr } from '../../lib/use-language'
 import './agent-picker.css'
 import { isReasoningOption, ReasoningSlider } from './ReasoningSlider'
@@ -33,14 +33,8 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
   const [stage, setStage] = useState<Stage>(expanded ? 'settings' : 'closed')
   const [query, setQuery] = useState('')
   const { catalog, loading, failure } = models
-  const agentDefault = catalog?.models.find((m) => m.name.toLowerCase().startsWith('default'))
-  const available = (catalog?.models ?? []).filter((m) => m.id !== agentDefault?.id)
-  const current = catalog?.models.find((m) => m.id === catalog.currentModelId)
-  const value = selection === agentDefault?.id ? '' : (selection ?? '')
-  const selected = catalog?.models.find((m) => m.id === (value || agentDefault?.id || catalog.currentModelId))
-  const modelOptions = value || catalog?.defaultModelOptions ? selected?.options ?? [] : []
-  const options: Choice[] = [{ id: '', label: agentDefault?.name ?? (current ? tr('Default · {name}').replaceAll('{name}', () => current.name) : tr('Default')) }, ...available.map((m) => ({ id: m.id, label: m.name }))]
-  if (value && !available.some((m) => m.id === value)) options.push({ id: value, label: value })
+  const { value, selected, modelOptions, options: listed } = modelChoices(catalog, selection, tr)
+  const options: Choice[] = listed
   const agent = agents.find((a) => a.id === backend)
   const modelName = value ? options.find((o) => o.id === value)?.label ?? value : tr('Default')
   const summary = modelOptions.map((o) => o.values.find((v) => v.id === (chosen[o.id] ?? o.default))?.name).filter(Boolean).join(' · ')

@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import type { CloudStatus } from '../src/shared/models.ts'
 import { pairAsSignedOutPhone } from './phone.ts'
-import { api, attach, freezeHost, openGeneralSettings, sandbox, setPref } from './sandbox.ts'
+import { api, attach, freezeHost, openPage, sandbox, setPref } from './sandbox.ts'
 
 // docs/plans/optional-sign-in.md.
 
@@ -113,8 +113,7 @@ test('signed in, a computer in no account is asked about once, and Add to accoun
     await page.waitForTimeout(3_000)
     await expect(prompt).toHaveCount(0)
 
-    await openGeneralSettings(page)
-    await page.getByRole('dialog').getByRole('button', { name: 'Computers', exact: true }).click()
+    await openPage(page, 'Computers')
     await expect(page.getByText('Not in an account: only Wi-Fi and Tailscale reach it.')).toBeVisible()
 
     // Windows has no signal that freezes a process.

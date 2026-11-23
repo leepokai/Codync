@@ -1,33 +1,47 @@
 /* The reference uses lightly outlined circular actions, not bare toolbar glyphs. */
-.sidebar:not(.compact) .sidebar-header {
+.sidebar-header {
   position: absolute;
   z-index: 3;
   inset: 0 0 auto;
   isolation: isolate;
 }
-.sidebar:not(.compact) {
-  timeline-scope: --roster;
-}
-.sidebar:not(.compact) .roster {
+.roster {
   padding-top: 54px;
   scroll-padding-top: 54px;
+  padding-bottom: 14px;
   scroll-timeline: --roster block;
 }
-/* The fade comes in as the roster scrolls under the header; at rest it stays off the first row. */
-.sidebar:not(.compact) .sidebar-header::before {
+/* The fade comes in as the roster scrolls under the header; at rest it stays off the first row. It reaches 18px below
+   the header, in two parts: the header's own (::before) and what hangs over the list (::after). A part inherits the
+   header's window drag, so the one over the list is no-drag: as a drag area it would take the clicks on the list's
+   first row before the page sees them. The stops are in px from the header's top (54px tall, as .roster's padding). */
+.sidebar-header::before,
+.sidebar-header::after {
   content: '';
   position: absolute;
   z-index: -1;
-  inset: 0 0 -18px;
   pointer-events: none;
-  background: linear-gradient(to bottom, var(--surface) 50%, transparent);
   backdrop-filter: blur(16px);
-  -webkit-mask-image: linear-gradient(to bottom, black 65%, transparent);
-  mask-image: linear-gradient(to bottom, black 65%, transparent);
   opacity: 0;
   animation: header-fade linear both;
   animation-timeline: --roster;
   animation-range: 0 24px;
+}
+.sidebar-header::before {
+  inset: 0;
+  background: linear-gradient(to bottom, var(--surface) 36px, transparent 72px);
+  -webkit-mask-image: linear-gradient(to bottom, black 46.8px, transparent 72px);
+  mask-image: linear-gradient(to bottom, black 46.8px, transparent 72px);
+}
+.sidebar-header::after {
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 18px;
+  -webkit-app-region: no-drag;
+  background: linear-gradient(to bottom, var(--surface) -18px, transparent 18px);
+  -webkit-mask-image: linear-gradient(to bottom, black -7.2px, transparent 18px);
+  mask-image: linear-gradient(to bottom, black -7.2px, transparent 18px);
 }
 @keyframes header-fade {
   to {
@@ -43,29 +57,26 @@
   background: rgba(var(--text-rgb), 0.05);
 }
 @media (prefers-reduced-transparency: reduce) {
-  .sidebar:not(.compact) .sidebar-header::before { backdrop-filter: none; }
+  .sidebar-header::before,
+  .sidebar-header::after { backdrop-filter: none; }
 }
 
 /* The roster's computer summary and filter (ComputerFilterHeader). */
 .computer-filter {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  padding: 6px 0;
-  font-size: var(--text-callout);
-  font-weight: 500;
-  color: var(--secondary);
-}
-.computer-filter-action {
-  height: 32px;
-  padding: 0 9px;
-  justify-content: center;
   flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
   border: 1px solid var(--chrome-stroke);
-  border-radius: var(--radius-pill);
+  border-radius: 50%;
+  color: var(--text);
   transition: background-color var(--hover);
 }
-.computer-filter-action:hover {
+.computer-filter:hover {
   background: rgba(var(--text-rgb), 0.05);
+}
+/* Some computer is filtered out. */
+.computer-filter.on {
+  background: rgba(var(--text-rgb), 0.12);
 }

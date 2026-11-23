@@ -22,6 +22,7 @@ enum RosterLine: Identifiable {
     case section(RosterSection, ComputerID, BotStore)
     case label(ComputerID)
     case bot(RosterItem, BotStore)
+    case workflow(String, ComputerID, BotStore)
 
     var id: String {
         switch self {
@@ -29,6 +30,7 @@ enum RosterLine: Identifiable {
         case let .section(section, computerId, _): "section:\(computerId):\(section.name)"
         case let .label(computerId): "label:\(computerId)"
         case let .bot(item, _): "bot:\(item.ref.computerId):\(item.bot.id)"
+        case let .workflow(id, computerId, _): "workflow:\(computerId):\(id)"
         }
     }
 

@@ -1,0 +1,95 @@
+/* The window's pages down its leading edge (NavRail). Its empty parts move the window. */
+.nav-rail {
+  flex: none;
+  width: 64px; /* railWidth in src/shared/chat-layout.ts */
+  height: 100%;
+  padding: 10px 0 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: var(--window-chrome);
+}
+.nav-rail-space {
+  flex: 1;
+}
+.nav-rail-entry {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-m);
+  display: grid;
+  place-items: center;
+  color: var(--secondary);
+  transition: background-color var(--hover), color var(--hover);
+}
+.nav-rail-entry:hover {
+  background: rgba(var(--text-rgb), 0.05);
+  color: var(--text);
+}
+.nav-rail-entry.selected {
+  background: rgba(var(--text-rgb), 0.1);
+  color: var(--text);
+}
+/* How many: threads at work, devices waiting to be let in. */
+.nav-rail-count {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.nav-rail-notice.icon-button {
+  color: var(--attention);
+  background: color-mix(in srgb, var(--attention) 24%, transparent);
+}
+.nav-rail-notice.icon-button:hover {
+  background: color-mix(in srgb, var(--attention) 32%, transparent);
+}
+
+/* An available release: one filled circle that stands out from the quiet chrome around it. */
+.update-badge {
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--on-accent);
+  background: var(--accent-fill);
+  animation: update-badge-in var(--layout) both;
+  transition: opacity var(--hover), transform var(--hover);
+  -webkit-app-region: no-drag;
+}
+.update-badge:hover:not(:disabled) { opacity: .85; }
+.update-badge:active:not(:disabled) { transform: scale(.94); }
+.update-badge .spinner circle { stroke: currentColor; }
+@keyframes update-badge-in { from { opacity: 0; transform: scale(.6); } }
+@media (prefers-reduced-motion: reduce) {
+  .update-badge:active:not(:disabled) { transform: none; }
+  .update-badge { animation: none; }
+}
+
+/* A page that fills the window beside the rail (Computers, Network, Extensions, Usage, Settings). */
+.app-page {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  background: var(--background);
+}
+/* Its top edge moves the window; short enough to stay off the page's first buttons. */
+.app-page-drag {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 28px;
+}

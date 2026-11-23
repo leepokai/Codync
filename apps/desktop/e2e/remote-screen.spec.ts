@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { execSync } from 'node:child_process'
 import type { HostSnapshot } from '../src/shared/ipc.ts'
-import { attach, openGeneralSettings } from './sandbox.ts'
+import { appPage, attach, openPage } from './sandbox.ts'
 
 // Another computer's screen in the desktop app (docs/features/remote-screen.md, "Desktop viewer"). The computer the app
 // runs on never offers its own. With CODYNC_E2E_SCREEN_COMPUTER naming another computer in the sandbox whose Remote
@@ -70,7 +70,7 @@ test("a bot's Computer tab shows its computer's screen and opens it", async () =
     await start.click()
     await expect(picture.locator('video')).toBeVisible({ timeout: 30_000 })
     // Opened from a bot that's using the computer, the viewer watches first; otherwise it takes over.
-    const bot = await details.locator('.details-name').innerText()
+    const bot = await details.locator('.details-who').innerText()
     const pill = picture.locator('.computer-tab-agent')
     const watching = (await pill.count()) > 0 && (await pill.innerText()).startsWith(`${bot} `)
     await picture.getByRole('button', { name: 'Open the screen' }).click()
@@ -127,9 +127,8 @@ test("another computer's screen takes the controls, keeps Escape and Tab, and ha
     await page.keyboard.press('Escape')
     await expect(viewer).toHaveCount(0)
 
-    await openGeneralSettings(page)
-    await page.getByRole('dialog').getByRole('button', { name: 'Computers', exact: true }).click()
-    const card = page.getByRole('dialog').locator('.settings-row').filter({ has: page.getByText(name!, { exact: true }) })
+    await openPage(page, 'Computers')
+    const card = appPage(page).locator('.settings-row').filter({ has: page.getByText(name!, { exact: true }) })
     await card.getByRole('button', { name: 'Screen', exact: true }).click()
     await controlling()
     await viewer.getByRole('button', { name: 'Close' }).click()

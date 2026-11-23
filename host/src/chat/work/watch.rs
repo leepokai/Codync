@@ -263,7 +263,7 @@ fn overdue_card(cards: &[Entry], now: i64) -> Option<(&str, String)> {
 /// one itself.
 fn remind(hub: &Hub, cfg: &BotConfig, id: &str, asks: &str) {
     hub.work.watch.locked().reminded.insert(id.to_owned());
-    push::notify(hub, cfg, None, &format!("{} needs you", cfg.name), asks, AlertKind::NeedsInput);
+    push::notify(hub, cfg, None, &format!("{} needs you", cfg.name), asks, AlertKind::NeedsInput, None);
     analytics::capture(hub, Event::WatchdogFlagged, Action::Reminded.properties("card"));
 }
 

@@ -35,6 +35,7 @@ mod update;
 mod usage;
 mod voice;
 mod watchdog;
+mod workflows;
 
 use codync_agent::{backends, shell};
 use local_api::local_call;
@@ -218,6 +219,9 @@ enum Sub {
     /// service there).
     #[command(hide = true)]
     Keeper,
+    /// One workflow script, outside the host process. The host spawns this itself.
+    #[command(hide = true)]
+    WorkflowScript,
     /// Built-in MCP servers that bots are started with (stdio).
     #[command(hide = true)]
     Mcp {
@@ -245,6 +249,13 @@ enum McpServer {
     },
     /// Invite the user to connect services securely.
     Connectors {
+        #[arg(long)]
+        bot: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Workflows on this computer, as a script a bot can read and rewrite.
+    Workflows {
         #[arg(long)]
         bot: String,
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
@@ -497,11 +508,13 @@ async fn main() -> Result<()> {
             println!("Token rotated. Restart the host so local helpers pick it up.");
             Ok(())
         }
+        Sub::WorkflowScript => workflows::script_worker(),
         Sub::Mcp { server: McpServer::Connectors { bot, port } } => {
             mcp::serve(bot, port, mcp::Server::Connectors).await
         }
         Sub::Mcp { server: McpServer::Computer { bot, port } } => mcp::serve(bot, port, mcp::Server::Computer).await,
         Sub::Mcp { server: McpServer::Routines { bot, port } } => mcp::serve(bot, port, mcp::Server::Routines).await,
+        Sub::Mcp { server: McpServer::Workflows { bot, port } } => mcp::serve(bot, port, mcp::Server::Workflows).await,
         Sub::Mcp { server: McpServer::Chat { bot, port } } => mcp::serve(bot, port, mcp::Server::Chat).await,
         Sub::Mcp { server: McpServer::Team { bot, port } } => mcp::serve(bot, port, mcp::Server::Team).await,
         Sub::Mcp { server: McpServer::Manage { bot, port } } => mcp::serve(bot, port, mcp::Server::Manage).await,

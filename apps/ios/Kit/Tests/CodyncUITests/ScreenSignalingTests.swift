@@ -42,8 +42,8 @@ actor ScreenTransport: HostTransport {
 }
 
 @MainActor
-func waitForScreenCondition(_ condition: @MainActor () async -> Bool) async throws {
-    let deadline = ContinuousClock.now + .seconds(10)
+func waitForScreenCondition(timeout: Duration = .seconds(10), _ condition: @MainActor () async -> Bool) async throws {
+    let deadline = ContinuousClock.now + timeout
     while ContinuousClock.now < deadline {
         let satisfied = await condition()
         if satisfied { return }
@@ -178,7 +178,9 @@ private actor FailingSignalingTransport: HostTransport {
     let transport = FailingSignalingTransport()
     let session = ScreenSession(client: HostClient(transport: transport), display: nil)
     await session.start()
-    try await waitForScreenCondition {
+    // Three recoveries sleep 2s then 4s, and each attempt builds a peer connection.
+    // Ten seconds is enough on a quiet machine and short of that on a busy runner.
+    try await waitForScreenCondition(timeout: .seconds(45)) {
         if case .failed = session.phase { return true }
         return false
     }
@@ -193,6 +195,9 @@ actor LateSignalingFailureTransport: HostTransport {
     private var installedAnswers: Set<String> = []
     private var answerWaiters: [String: AsyncStream<Bool>.Continuation] = [:]
     private let gateRecovery: Bool
+    /// Fail the first candidate upload. A later failure can land after gathering
+    /// finishes, and the session then detaches instead of recovering.
+    private let failUploadOnInstall: Bool
     private let preparationGate: AsyncStream<Void>
     private let preparationRelease: AsyncStream<Void>.Continuation
     nonisolated let recoveryRequested: AsyncStream<Bool>
@@ -202,8 +207,9 @@ actor LateSignalingFailureTransport: HostTransport {
     nonisolated let routeSubscribed: AsyncStream<Bool>
     private let routeSubscribedSink: AsyncStream<Bool>.Continuation
 
-    init(gateRecovery: Bool = false) {
+    init(gateRecovery: Bool = false, failUploadOnInstall: Bool = false) {
         self.gateRecovery = gateRecovery
+        self.failUploadOnInstall = failUploadOnInstall
         let gate = AsyncStream<Void>.makeStream()
         preparationGate = gate.stream
         preparationRelease = gate.continuation
@@ -261,6 +267,7 @@ actor LateSignalingFailureTransport: HostTransport {
             let upload = try JSONDecoder().decode(Upload.self, from: body)
             // Candidate uploads start only after the phone's native answer completion.
             installed(upload.session)
+            if failUploadOnInstall { throw HostError.unreachable }
             return Data("{}".utf8)
         case "screenClose":
             struct Close: Decodable { let session: String }

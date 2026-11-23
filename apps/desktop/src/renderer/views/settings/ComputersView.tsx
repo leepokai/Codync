@@ -213,6 +213,7 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
             {store !== app.local && store.screen ? (
               <IconButton title="Screen" icon="display" disabled={!app.canOpenScreen(store)} onClick={() => app.openScreen(store.computer.id)} />
             ) : null}
+            <IconButton title="Reconnect" icon="arrow.clockwise" onClick={() => store.restartStream()} />
             <IconButton title="Pair phone" icon="qrcode" selected={showPairing} disabled={!online} onClick={() => setShowPairing((s) => !s)} />
           </div>,
           // Until the host gives its cloud status, there's no way to tell its relay or account.
@@ -271,12 +272,6 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
                   : []),
               ]
             : []),
-          // Hosts before 2.45.1 have no automatic order.
-          online && store.autoOrder != null ? (
-            <Switch key="auto-order" className="settings-appear" on={store.autoOrder} onChange={(on) => void run(() => store.setAutoOrder(on))}>
-              Move active bots to the top
-            </Switch>
-          ) : null,
           // On macOS and Windows this computer's Codync is this app: its version and update are on the Updates page.
           // Kept while an update asked from here restarts the computer: its spinner says it's updating.
           (online || store.isUpdating) && store.hello && !(store === app.local && window.codync.platform !== 'linux')

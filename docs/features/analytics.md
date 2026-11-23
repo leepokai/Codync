@@ -64,7 +64,7 @@ can be traced from the events around it:
   the host, which logs one and reports it under the same name; `reportError` from the desktop and
   terminal UI); crashes are already caught.
 - **Display preferences send nothing.** A device's own look (Settings › Appearance: theme, text
-  size, usage icons, compact sidebar, agent logos; thinking details) has no outcome or failure to
+  size, usage icons, agent logos; thinking details) has no outcome or failure to
   trace, so switching one is not an event.
 - The *Rules* above apply: feature use only, never content. List each new event and property in
   [analytics events](../reference/analytics-events.md), and check they arrive in PostHog

@@ -18,7 +18,10 @@ impl Actor {
     /// Which session the running turn uses: a routine run has one of its own (by its slot); everything else uses
     /// the main one.
     pub(super) fn slot(&self) -> Option<String> {
-        self.active_routine.as_deref().map(crate::routines::session_slot)
+        self.active_workflow
+            .as_deref()
+            .map(crate::workflows::session_slot)
+            .or_else(|| self.active_routine.as_deref().map(crate::routines::session_slot))
     }
 
     pub(super) fn session_for(&mut self, slot: Option<&str>) -> Option<String> {
@@ -72,7 +75,7 @@ impl Actor {
         if let Some(sid) = session {
             params["sessionId"] = sid.into();
         }
-        if self.conn.as_ref().is_some_and(|c| c.sessions.additional_directories) {
+        if !self.cfg.plain && self.conn.as_ref().is_some_and(|c| c.sessions.additional_directories) {
             params["additionalDirectories"] = json!(memory::files::folders(&self.cfg.as_owner()));
         }
         params
@@ -96,11 +99,18 @@ impl Actor {
 
     /// ACP connectors, team collaboration, and optional team management and computer control.
     pub(super) fn mcp_servers(&self) -> Result<Value> {
+        // An agent on its own (`BotConfig::plain`) has its own tools only, and a thread building a workflow its tools.
+        if self.cfg.plain && self.cfg.workflow.is_none() {
+            return Ok(json!([]));
+        }
         let Ok(exe) = std::env::current_exe() else {
             tracing::warn!("can't locate codync-host for MCP servers");
             return Ok(json!([]));
         };
         let port = self.hub.port;
+        if self.cfg.plain {
+            return Ok(json!([crate::mcp::acp_server("workflows", &exe, &["workflows", "--bot", &self.cfg.id], port)]));
+        }
         let mut servers: Vec<Value> =
             (if self.cfg.connectors.is_empty() { Vec::new() } else { crate::market::connectors(&self.hub.store)? })
                 .iter()
@@ -115,6 +125,7 @@ impl Actor {
             self.cfg.manage_team.then_some("manage"),
             Some("memory"),
             Some("routines"),
+            Some("workflows"),
             self.cfg.computer.then_some("computer"),
             composio.then_some("composio"),
         ];
@@ -215,7 +226,12 @@ impl Actor {
         if self.conn.as_ref().is_some_and(|c| c.adapter() == Adapter::Codex) {
             renamed = codex_names::avoid_clashes(&mut servers, &self.cfg.cwd, self.saved_env("CODEX_HOME")).await;
         }
-        let instructions = self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions);
+        // An agent on its own gets no system prompt of Codync's, and `compose` adds no first-message one.
+        let instructions = if self.cfg.plain {
+            Instructions::FirstMessage
+        } else {
+            self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions)
+        };
         // Claude gets the frozen instructions as its system prompt. When a compaction
         // re-rendered them, loading the session again swaps the prompt in (the adapter
         // rebuilds its query and resumes the same conversation).

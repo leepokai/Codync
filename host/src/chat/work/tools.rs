@@ -34,7 +34,7 @@ pub fn acting_as(hub: &Hub, bot: &str, what: &str) -> Result<String> {
     let Some(cfg) = hub.store.bot(bot)?.map(|row| row.config).filter(crate::store::BotConfig::is_thread) else {
         return Ok(bot.to_owned());
     };
-    if sources::source_of(&hub.store, &cfg).is_bot() {
+    if sources::source_of(&hub.store, &cfg).own() {
         refuse_in_thread(hub, bot, what)?;
     }
     Ok(cfg.owner().to_owned())

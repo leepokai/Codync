@@ -7,6 +7,7 @@ import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { useScreenViewed } from '../../store/analytics'
 import type { ThreadRef } from '../../store/bot-store'
+import type { OutgoingFile } from '../../store/outgoing-files'
 import { useStore } from '../../store/context'
 import { AddFilesButton, ComposerFiles } from './Composer'
 import { ComposerField } from './ComposerField'
@@ -23,12 +24,11 @@ import './work.css'
 const COPIED_MS = 1600
 
 /**
- * The thread of one task, in the inspector in place of Details: its title, status, time and where it works, the
- * thread's transcript, and a box to write to it (the bot's own tasks; a routine's run or another bot's request says it
- * is read only). `close` goes back to Details; Escape does too while the panel has the keyboard. `showInChat` brings an
- * entry of the bot's chat into view beside it.
+ * The thread of one task, as a tab of the inspector: its title, status, time and where it works, the thread's
+ * transcript, and a box to write to it (the bot's own tasks; a routine's run or another bot's request says it is read
+ * only). `showInChat` brings an entry of the bot's chat into view.
  */
-export function WorkThread({ botId, task, openArtifact, showInChat, close }: { botId: string; task: WorkTask; openArtifact: (artifactId: string) => void; showInChat: (entryId: string) => void; close: () => void }) {
+export function WorkThread({ botId, task, openArtifact, showInChat }: { botId: string; task: WorkTask; openArtifact: (artifactId: string) => void; showInChat: (entryId: string) => void }) {
   const tr = useTr()
   const store = useStore()
   const threadId = task.thread ?? ''
@@ -37,25 +37,11 @@ export function WorkThread({ botId, task, openArtifact, showInChat, close }: { b
   useEffect(() => store.watchThread(threadId), [store, threadId])
   const [stopping, setStopping] = useState(false)
   const follow = useFollowEnd()
-  const back = useRef<HTMLButtonElement>(null)
   const talks = task.talk
   const readOnly = readOnlyReason(task)
-  // Without a box to type in, the keyboard starts on Back.
-  useEffect(() => {
-    if (!talks) back.current?.focus({ preventScroll: true })
-  }, [talks])
   return (
-    <div
-      className="work-thread"
-      data-work-thread={task.id}
-      onKeyDown={(e) => {
-        if (e.key !== 'Escape' || e.defaultPrevented || e.nativeEvent.isComposing) return
-        e.stopPropagation()
-        close()
-      }}
-    >
+    <div className="work-thread" data-work-thread={task.id}>
       <HStack gap={8} className="work-thread-header">
-        <IconButton buttonRef={back} title="Back to details" icon="chevron.left" onClick={close} />
         <VStack gap={2} grow shrink>
           <Text as="div" size="body" weight="semibold" tone="text" truncate title={task.title}>{task.title}</Text>
           <HStack gap={8} className="work-thread-meta">
@@ -84,7 +70,7 @@ export function WorkThread({ botId, task, openArtifact, showInChat, close }: { b
 
 /** Where the task works, as a button that copies the full path and says so for a moment. Nothing for a task whose
  * folder the host doesn't name. */
-function WhereCopy({ task }: { task: WorkTask }) {
+export function WhereCopy({ task }: { task: WorkTask }) {
   const tr = useTr()
   const store = useStore()
   const where = whereLine(task, store.hello?.home ?? '')
@@ -123,23 +109,44 @@ function WhereCopy({ task }: { task: WorkTask }) {
 function ThreadComposer({ thread, threadId, takesFiles, onSent }: { thread: ThreadRef; threadId: string; takesFiles: boolean; onSent: () => void }) {
   const tr = useTr()
   const store = useStore()
-  const drafts = store.composerDrafts
-  // Under the bot's key, so the draft goes with the bot (`removeBot`).
   // ponytail: a draft left for a task that is gone stays saved until then; drop it with the task if they pile up.
-  const key = `${thread.botId}/thread/${thread.taskId}`
+  return (
+    <TextComposer draftKey={`${thread.botId}/thread/${thread.taskId}`} label={tr('Message this thread')} takesFiles={takesFiles} send={(text, files) => {
+      onSent()
+      store.sendToThread(thread, threadId, text, { files })
+    }} />
+  )
+}
+
+/**
+ * A message box for text, and files where `takesFiles`, its draft kept under `draftKey` (the bot's key first, so the draft goes with the bot,
+ * `removeBot`): Return hands the text to `send`. Where `send` answers a promise the box waits for it, and keeps the
+ * text when it fails.
+ */
+function TextComposer({ draftKey: key, label, takesFiles, send }: { draftKey: string; label: string; takesFiles: boolean; send: (text: string, files: OutgoingFile[]) => void | Promise<void> }) {
+  const tr = useTr()
+  const store = useStore()
+  const drafts = store.composerDrafts
   const draft = useSyncExternalStore(drafts.subscribe, () => drafts.get(key))
   const field = useRef<HTMLTextAreaElement>(null)
-  const label = tr('Message this thread')
   const attach = useComposerFiles(takesFiles)
-  const canSend = (!!draft.trim() || attach.files.length > 0) && !store.isOffline
-  useEffect(() => field.current?.focus({ preventScroll: true }), [])
+  const [busy, setBusy] = useState(false)
+  const canSend = (!!draft.trim() || attach.files.length > 0) && !store.isOffline && !busy
+  useEffect(() => field.current?.focus({ preventScroll: true }), [key])
   const submit = () => {
     if (!canSend) return
-    onSent()
-    store.sendToThread(thread, threadId, draft, { files: attach.files })
-    drafts.set(key, '')
-    attach.clear()
-    field.current?.focus()
+    const done = () => {
+      drafts.set(key, '')
+      attach.clear()
+    }
+    const sent = send(draft, attach.files)
+    if (!sent) {
+      done()
+      field.current?.focus()
+      return
+    }
+    setBusy(true)
+    void sent.then(done, () => {}).finally(() => setBusy(false))
   }
   return (
     <div className="composer work-thread-composer" {...attach.drop}>

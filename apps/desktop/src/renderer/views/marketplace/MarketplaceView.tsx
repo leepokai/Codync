@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import type { Backend } from '@shared/models'
-import { Button, IconButton, Spinner } from '../../components/Controls'
+import { Button, ChoicePicker, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { Dialog, SheetPage, useDismiss } from '../../components/Overlay'
+import { Dialog, SheetPage } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import { useStore } from '../../store/context'
+import { useApp, useStore } from '../../store/context'
 import { useScreenViewed } from '../../store/analytics'
+import type { ComputerChoice } from '../bots/NewBotView'
 import { ComputerBadge } from '../ComputerBadge'
 import { AgentSheet } from './AgentSheet'
 import { CredentialsView } from './CredentialsView'
@@ -15,7 +16,8 @@ import { SetupTerminalView } from './SetupTerminal'
 import { SkillSheet, type SkillRef } from './SkillSheet'
 import { useModel } from '../../lib/observable'
 import { ConnectorCatalog } from './connector-catalog'
-import { errorText, market, needsSignIn, type ExtensionSection, type MarketConnector, type MarketSkill } from './market-models'
+import { errorText, market, needsSignIn, type ExtensionFocus, type ExtensionSection, type MarketConnector, type MarketSkill } from './market-models'
+import { LoginProfilesPanel } from './LoginProfilesPanel'
 import { AgentsPanel, ConnectorsPanel, MarketPanel, SkillsPanel } from './MarketplacePanel'
 import { AppLogo, ExtensionTabs, FormSheet, ItemGrid, ItemRow, MarketSection, ScreenHeader, ServiceLogo, SkillGlyph, SlideStack } from './pieces'
 import { usePlugins } from './plugins'
@@ -26,14 +28,14 @@ import { fill } from '@shared/fill'
  * Extensions for the bots on one computer (the store in context): Agents, Connectors
  * and Skills, one at a time. Each list scrolls; the connectors load more from the registry as
  * their end comes into view (`ConnectorCatalog`). Installing happens on that computer; each bot
- * turns connectors and skills on in its settings. Each computer has its own, opened
- * from its heading in the sidebar.
+ * turns connectors and skills on in its settings. Each computer has its own: the heading names it, and with
+ * several online (`computer`) picks another's.
  */
-export function MarketplaceView() {
+export function MarketplaceView({ computer, focus = null }: { computer: ComputerChoice | null; focus?: ExtensionFocus | null }) {
   const store = useStore()
+  const app = useApp()
   const tr = useTr()
   const plugins = usePlugins(store)
-  const dismiss = useDismiss()
   useScreenViewed('marketplace')
   const [search, setSearch] = useState('')
   const [catalog] = useState(() => new ConnectorCatalog<MarketConnector>(
@@ -52,7 +54,13 @@ export function MarketplaceView() {
   const [viewingSkill, setViewingSkill] = useState<SkillRef | null>(null)
   const [agent, setAgent] = useState<Backend | null>(null)
   const [addingNode, setAddingNode] = useState(false)
-  const [section, setSection] = useState<ExtensionSection>('agents')
+  const [section, setSection] = useState<ExtensionSection>(focus?.section ?? 'agents')
+  // Sent here from elsewhere (a bot's Add login profile…): that tab, over whatever sheet was open.
+  useEffect(() => {
+    if (!focus) return
+    setSection(focus.section)
+    setAgent(null)
+  }, [focus])
   const [showInstalled, setShowInstalled] = useState(false)
   const [showCredentials, setShowCredentials] = useState(false)
 
@@ -98,13 +106,19 @@ export function MarketplaceView() {
 
   const header = (
     <div className="market-heading">
-      {/* Everything here lives on one computer; say which. */}
-      <HStack gap={10} shrink>
-        <ComputerBadge computer={store.computer} size={32} />
-        <VStack shrink className="market-heading-titles">
-          <Text size="title" weight="semibold" tone="text">{tr(`Extensions`)}</Text>
-          <Text size="subheadline" tone="secondary" truncate>{store.hostName}</Text>
-        </VStack>
+      {/* Everything here lives on one computer: which, in a capsule beside the title, its menu the others. */}
+      <HStack gap={10} shrink className="market-heading-titles">
+        <Text size="title" weight="semibold" tone="text">{tr(`Extensions`)}</Text>
+        {computer ? (
+          <ChoicePicker
+            selection={computer.selection}
+            options={computer.options.map((o) => ({ ...o, leading: <ComputerBadge computer={app.store(o.id)?.computer ?? null} size={16} /> }))}
+            onChange={computer.onChange}
+            fill="var(--field)"
+          />
+        ) : (
+          <span className="choice-picker market-computer"><ComputerBadge computer={store.computer} size={16} /><span className="choice-label">{store.hostName}</span></span>
+        )}
       </HStack>
       <Spacer />
       <Button kind="secondary" onClick={() => setShowCredentials(true)}><Icon name="lock.shield" size={12} />{tr('Credentials')}</Button>
@@ -174,6 +188,8 @@ export function MarketplaceView() {
               onAddNode={() => setAddingNode(true)}
               onAgent={setAgent}
             />
+          ) : section === 'logins' ? (
+            <LoginProfilesPanel agents={agents} query={query} focus={focus?.agent} onAgent={setAgent} />
           ) : section === 'connectors' ? (
             <ConnectorsPanel
               catalog={connectors}
@@ -195,10 +211,6 @@ export function MarketplaceView() {
             />
           )}
         </MarketPanel>
-      </div>
-      {/* Dismissing slides the sheet away; clearing the caller's state would cut it off. */}
-      <div className="market-close">
-        <IconButton title="Close" icon="xmark" onClick={dismiss} />
       </div>
     </div>
   )

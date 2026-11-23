@@ -5,6 +5,7 @@
   background: var(--background);
   position: relative;
 }
+/* The Settings entry's pages, in the list column beside the rail. */
 .settings-sidebar {
   width: 200px;
   flex: none;
@@ -12,6 +13,7 @@
   flex-direction: column;
   gap: 2px;
   padding: 30px 10px 10px;
+  background: var(--surface);
 }
 .settings-group {
   font-size: var(--text-callout);
@@ -37,11 +39,7 @@
   background: rgba(var(--text-rgb), 0.08);
 }
 /* A row's leading icon, centered in a fixed column so the labels line up. */
-.settings-divider {
-  width: 1px;
-  flex: none;
-  background: var(--border);
-}
+/* A page takes the whole width beside the rail. */
 .settings-main {
   flex: 1;
   min-width: 0;
@@ -56,11 +54,6 @@
   min-height: 0;
   padding: 0 18px;
   animation: fade-in var(--fade) both;
-}
-.settings-close {
-  position: absolute;
-  top: 14px;
-  right: 14px;
 }
 /* One filled group, like a CardSection's. */
 .settings-card {

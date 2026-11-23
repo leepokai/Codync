@@ -26,6 +26,8 @@ public enum HostEvent: Sendable {
     case resync
     /// One this app has no use for.
     case skipped
+    /// A workflow change. It carries no `rev`; a decode failure is ignored, not `.undecodable`.
+    case workflow(WorkflowEvent)
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
 }
@@ -169,6 +171,10 @@ public struct HostClient: Sendable {
             return (try? d.decode(AutoOrderWrap.self, from: data)).map { .autoOrder($0.enabled) }
         case "resync":
             return .resync
+        case "workflow":
+            // A workflow event this build can't read is dropped. It has no rev, so it must not rewind the stream.
+            guard let event = try? d.decode(WorkflowEvent.self, from: data) else { return nil }
+            return .workflow(event)
         default:
             return nil
         }

@@ -210,6 +210,8 @@ pub enum Field {
     ThreadWorktrees,
     Approvals,
     Compaction,
+    /// Paused: it answers nothing and spends nothing until it is resumed.
+    Paused,
     Notify,
     Computer,
     Team,
@@ -221,7 +223,7 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 26] = [
+pub const FIELDS: [Field; 27] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,
@@ -239,6 +241,7 @@ pub const FIELDS: [Field; 26] = [
     Field::MaxThreads,
     Field::ThreadWorktrees,
     Field::Approvals,
+    Field::Paused,
     Field::Notify,
     Field::Computer,
     Field::Team,
@@ -284,6 +287,7 @@ pub struct Form {
     /// Approvals: Codync approves what still asks, and the agent mode (`codync_agent::modes`).
     pub auto: bool,
     pub mode: Option<String>,
+    pub paused: bool,
     pub notify: bool,
     pub computer: bool,
     /// `None`: the host has no Manage the team.

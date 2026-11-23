@@ -749,6 +749,41 @@ async fn a_restart_between_a_requests_two_notices_keeps_the_outcome_saved_first(
     f.shutdown().await;
 }
 
+/// A paused bot answers nothing and spends nothing: `message_bot` is refused to the sender, and a message of the
+/// user's is cancelled with a notice instead of a turn; resumed, it works again.
+#[tokio::test]
+async fn a_paused_bot_is_not_messaged_and_answers_nothing() {
+    let f = Fixture::new();
+    f.hub.update_bot(&json!({"id": "c", "paused": true})).unwrap();
+    let refused =
+        call(&f.hub, "a", "a", "message_bot", &json!({"botId": "c", "message": "work"})).unwrap_err().to_string();
+    assert!(refused.contains("c is paused"), "{refused}");
+    assert!(f.prompts_of("c").is_empty(), "nothing was spent");
+
+    // The user's message in its chat is cancelled with a notice, and no turn starts.
+    f.send_to("c", "hello?").await;
+    let paused_line = |history: &[crate::store::Entry]| {
+        history.iter().any(|e| e.kind == "notice" && e.data["text"].as_str().is_some_and(|t| t.contains("paused")))
+    };
+    f.until(|| {
+        let history = f.hub.store.history("c", i64::MAX, 50).unwrap();
+        paused_line(&history)
+    })
+    .await;
+    let history = f.hub.store.history("c", i64::MAX, 50).unwrap();
+    let user = history.iter().find(|e| e.kind == "user" && e.data["text"] == "hello?").unwrap();
+    assert_eq!(user.data["status"], "cancelled");
+    assert!(paused_line(&history));
+    assert!(f.prompts_of("c").is_empty(), "nothing was spent");
+
+    // Resumed, it works again: a message that comes now is answered.
+    f.hub.update_bot(&json!({"id": "c", "paused": false})).unwrap();
+    f.send_to("c", "now?").await;
+    f.until(|| f.idle("c") && f.prompts_of("c").len() == 1).await;
+    assert_eq!(f.finals("c").last().map(String::as_str), Some("reply: now?"));
+    f.shutdown().await;
+}
+
 #[test]
 fn restart_marks_remote_requests_interrupted_and_leaves_local_ones_to_settle() {
     let store = Store::open(std::path::Path::new(":memory:")).unwrap();

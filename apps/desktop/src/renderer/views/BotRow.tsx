@@ -43,6 +43,9 @@ function Preview({ bot, store }: { bot: Bot; store: BotStore }) {
   const tr = useTr()
   const place = folderName(bot, tr)
   const line = rosterLine(bot, tr)
+  if (bot.paused && !isGroup(bot)) {
+    return <Text size="callout" tone="secondary" truncate>{tr(`Paused`)}</Text>
+  }
   if (line?.kind === 'needsYou') {
     return (
       <HStack as="span" gap={6} shrink>

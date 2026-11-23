@@ -473,7 +473,7 @@
   "Agent": "智慧體",
   "Manage the team": "管理團隊",
   "Manage team": "管理團隊",
-  "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.": "讓這個 Bot 建立 Bot，並修改任何 Bot 的設定，包括它自己。它建立的 Bot 也可以。",
+  "Let this bot create bots, change any bot's setup including its model and fallbacks, and pause or resume it. The bots it creates can too.": "讓這個 Bot 建立 Bot，修改任何 Bot 的設定（包括模型和備用），並暫停或恢復它。它建立的 Bot 也可以。",
   "Let this bot see the screen and use the mouse and keyboard. You can watch and take over from your phone.": "讓這個 Bot 看螢幕，並用滑鼠和鍵盤。你可以在手機上觀看和接管。",
   "Let this bot see the screen and use the mouse and keyboard.": "讓這個 Bot 看螢幕，並用滑鼠和鍵盤。",
   "Let this bot see the screen and use the mouse and keyboard. On that computer, open Codync → Settings → Computer access to set up permissions first.": "讓這個 Bot 看螢幕，並用滑鼠和鍵盤。先在那臺電腦上開啟 Codync → 設定 → 電腦訪問，完成許可權設定。",
@@ -2288,5 +2288,9 @@
   "Selected: {n}": "已選取：{n} 個",
   "Bots hidden by the filter: {n} (unchanged by Apply)": "被篩選隱藏的機器人：{n} 個（Apply 不會變更它們）",
   "Resize width": "調整寬度",
-  "Resize height": "調整高度"
+  "Resize height": "調整高度",
+  "Pause bot": "暫停 Bot",
+  "Resume bot": "恢復 Bot",
+  "Paused": "已暫停",
+  "It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled.": "在你恢復之前，它不會回答任何訊息，也不會消耗任何用量：新訊息會被拒絕，排隊中的例行任務執行會被取消。"
 }

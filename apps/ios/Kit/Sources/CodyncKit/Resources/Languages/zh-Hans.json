@@ -473,7 +473,7 @@
   "Agent": "智能体",
   "Manage the team": "管理团队",
   "Manage team": "管理团队",
-  "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.": "让这个 Bot 创建 Bot，并修改任何 Bot 的设置，包括它自己。它创建的 Bot 也可以。",
+  "Let this bot create bots, change any bot's setup including its model and fallbacks, and pause or resume it. The bots it creates can too.": "让这个 Bot 创建 Bot，修改任何 Bot 的设置（包括模型和备用），并暂停或恢复它。它创建的 Bot 也可以。",
   "Let this bot see the screen and use the mouse and keyboard. You can watch and take over from your phone.": "让这个 Bot 看屏幕，并用鼠标和键盘。你可以在手机上观看和接管。",
   "Let this bot see the screen and use the mouse and keyboard.": "让这个 Bot 看屏幕，并用鼠标和键盘。",
   "Let this bot see the screen and use the mouse and keyboard. On that computer, open Codync → Settings → Computer access to set up permissions first.": "让这个 Bot 看屏幕，并用鼠标和键盘。先在那台电脑上打开 Codync → 设置 → 电脑访问，完成权限设置。",
@@ -2288,5 +2288,9 @@
   "Selected: {n}": "已选中：{n} 个",
   "Bots hidden by the filter: {n} (unchanged by Apply)": "被筛选隐藏的机器人：{n} 个（Apply 不会更改它们）",
   "Resize width": "调整宽度",
-  "Resize height": "调整高度"
+  "Resize height": "调整高度",
+  "Pause bot": "暂停 Bot",
+  "Resume bot": "恢复 Bot",
+  "Paused": "已暂停",
+  "It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled.": "在你恢复之前，它不回答任何消息，也不消耗任何用量：新消息会被拒绝，排队中的例行任务运行会被取消。"
 }

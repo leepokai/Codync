@@ -61,6 +61,8 @@ export interface Bot {
   /** The roster section the user put it in (`Work`, `Personal`); none when absent. */
   section?: string
   hidden: boolean
+  /** Paused by the user (or a managing bot): it answers nothing and spends nothing until it is resumed; missing from an older host reads as not paused. */
+  paused: boolean
   notify?: boolean | null
   connectors: string[]
   skills: string[]
@@ -158,6 +160,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     // A cleared section (null, or an empty name) reads as none.
     section: raw.section || undefined,
     hidden: raw.hidden ?? false,
+    paused: raw.paused ?? false,
     notify: raw.notify ?? null,
     connectors: raw.connectors ?? [],
     skills: raw.skills ?? [],
@@ -853,6 +856,8 @@ export interface BotDraft {
   /** A name puts the bot in that roster section, null takes it out; left out, the host keeps it. */
   section?: string | null
   hidden?: boolean
+  /** Pause the bot: it answers nothing and spends nothing until it is resumed; left out, the host keeps it. */
+  paused?: boolean
   notify?: boolean | null
   connectors?: string[]
   skills?: string[]
@@ -901,6 +906,7 @@ export function draftOf(bot: Bot): BotDraft {
     compaction: bot.compaction ?? undefined,
     maxThreads: bot.maxThreads ?? undefined,
     threadWorktrees: bot.threadWorktrees ?? undefined,
+    paused: bot.paused,
   }
 }
 

@@ -359,6 +359,10 @@ async fn title(hub: &Arc<Hub>, cfg: &BotConfig, line: &Entry) -> Result<()> {
         .collect();
     lines.reverse();
     let body = lines.join("\n");
+    // Paused: titling spends, so the call keeps its line until the bot is resumed.
+    if hub.paused(&cfg.id) {
+        return Ok(());
+    }
     let raw =
         crate::chat::oneshot::one_shot(hub, cfg, TITLE_PROMPT, &format!("The call, oldest first:\n\n{body}")).await?;
     let Some(name) = parse_title(&raw) else { return Ok(()) };

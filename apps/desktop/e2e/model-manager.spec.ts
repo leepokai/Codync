@@ -66,8 +66,9 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
 
     await test.step('pick the installed agent through the picker', async () => {
       // The shared picker opens on its models with the agents as its seat rail; one click picks.
+      // The seat's accessible name is the agent's own name (the rail shows no other text).
       await sheet.locator('.model-picker-field').click()
-      await page.locator('.model-picker-agent').filter({ has: page.locator(`[aria-label="${agent!.name}"]`) }).first().click().catch(() => {})
+      await page.locator('.model-picker-rail').getByRole('button', { name: agent!.name, exact: false }).click()
       await expect(page.getByRole('textbox', { name: 'Search models' })).toBeVisible()
     })
 
@@ -105,9 +106,10 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
       await sheet.getByRole('button', { name: 'Resume checked', exact: true }).click()
       await expect(rows.filter({ hasText: nameA })).toContainText('Resumed', { timeout: 30_000 })
       await expect(rows.filter({ hasText: nameB })).toContainText('Resumed', { timeout: 30_000 })
-      // The pause is really gone: the host echoed the resume, so no row still says Paused.
-      await expect(rows.filter({ hasText: nameA })).not.toContainText('Paused')
-      await expect(rows.filter({ hasText: nameB })).not.toContainText('Paused')
+      // The pause is really gone: the host echoed the resume, so no row still says Paused. The
+      // roster echo can trail the local outcome, so the negatives wait as long as the positives.
+      await expect(rows.filter({ hasText: nameA })).not.toContainText('Paused', { timeout: 30_000 })
+      await expect(rows.filter({ hasText: nameB })).not.toContainText('Paused', { timeout: 30_000 })
     })
 
     await test.step('the saves landed: each bot editor shows the chosen agent', async () => {

@@ -7,26 +7,29 @@ bot (see *Notes*).
 
 ## Opening it
 
-The sliders button at the top of the bot list, left of the computer filter (`ChatWindow`'s sidebar
-header); in a narrow sidebar, the same sliders button sits in the rail actions under the roster. It
-opens a sheet, top to bottom: the agent and model picker, a search field over the bots, `Select all`
+The sliders button in the bot list's shared header, left of the computer filter (`ChatWindow`'s
+sidebar header — the one header every page shares, so the sheet opens from anywhere). It opens a
+sheet, top to bottom: the agent and model picker, a search field over the bots, `Select all`
 / `Unselect all`, `Pause checked` / `Resume checked`, the bot list with a checkbox on each row, and
 `Apply`.
 
 ## Choosing what to apply
 
-The top section is the same picker the bot editor uses (`AgentModelPicker`, not a copy): pick the
-agent first (`Search agents`), then the model (`Search models` — typing `free` lists the free
-models), and the model's own settings under it, such as the reasoning slider. Leaving the model at
-`Default` applies the agent's default to every checked bot, which every computer allows.
+The top section is the same picker the bot editor uses (`ModelPicker`, not a copy): its rail
+carries the account's agents and logins (`loginSeats` — an agent that isn't installed is named
+"(not installed)" exactly as the editor names it), and the panel picks the model (`Search models`
+— typing `free` lists the free models) with the model's own settings under it, such as the
+reasoning slider. Leaving the model at `Default` applies the agent's default to every checked
+bot, which every computer allows.
 
 ## Choosing the bots
 
 The list is every bot on every computer the account reaches — the sidebar's computer filter, hidden
 computers and bots hidden from the roster don't limit it; a bot's computer is named under it when the
 account has more than one. Groups are not listed: they carry members, not a model of their own.
-The search field filters by name, description and last message, reusing the sidebar search's matcher
-(`matchBots`); `Select all` / `Unselect all` act on what the filter is showing. A bot that is paused
+The search field filters by name, description and last message, through the same word list and
+rule the window's search uses (`botWords` over `matchWords`, extracted from the search palette's
+own bot rows); `Select all` / `Unselect all` act on what the filter is showing. A bot that is paused
 says `Paused` under its name, so a fleet's state reads at a glance.
 
 ## Apply
@@ -63,15 +66,19 @@ checks entirely and is allowed on every computer.
 `Pause checked` and `Resume checked` act on the same checked bots Apply does — only the checked
 bots the filter still shows, one at a time, each as the same minimal patch the roster's own pause
 toggle sends (`{ id, paused }`, nothing else). The host's pause rules apply exactly as they do from
-the roster: a paused bot answers nothing and spends nothing, messages sent to it are refused with a
-notice, and its queued routine runs are cancelled. A bot that is mid-turn follows the host's own
-pause semantics — nothing new is invented here. Pausing also survives an Apply: a model patch never
-touches the flag unless it names it.
+the roster, in every class: a paused bot never *starts* anything new (no turn, no spend, no
+one-shot work like titling or dreaming), messages sent to it are refused with a notice, its queued
+routine runs are cancelled, a bot that is mid-turn follows the host's own pause semantics — the
+in-flight turn stops and the held message is cancelled with a notice — and a host restart leaves
+the paused state in place: recovery marks interrupted work and does not resume it, exactly as a
+single roster pause does. Nothing new is invented here, and nothing wakes a sleeping bot to save
+anything: `paused` is one persisted config field, written once by the patch. Pausing also survives
+an Apply: a model patch never touches the flag unless it names it.
 
 The sheet acts as the user, like Apply, so no team-permission gate applies to these clicks. A bot
 pausing another bot's setup goes through the manage tool's own *Manage the team* gate and approval
-card instead. Every mutation lands on the host's audit trail (actor, target, old→new, timestamp)
-the pause change introduces.
+card instead. The save rides the host's existing `updateBot` path, so it lands on the pause
+change's own audit record (actor, target, old→new, timestamp) — this sheet adds no second trail.
 
 Row results (✓ *Paused*, ✓ *Resumed*, or the save's error) stay on the rows until the sheet closes;
 a bot that was already in the target state is saved the same way, and its row outcome says where

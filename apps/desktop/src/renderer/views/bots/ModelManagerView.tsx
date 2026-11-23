@@ -323,7 +323,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
         models={models}
         seats={seats}
         model={{ id: pick.model, options: pick.modelOptions }}
-        set={(m) => { run.current++; setOutcomes({}); setPick((p) => ({ ...p, model: m.id, options: m.options })) }}
+        set={(m) => { run.current++; setOutcomes({}); setPick((p) => ({ ...p, model: m.id || null, modelOptions: m.options })) }}
       >
         <Text size="caption" tone="secondary">{tr('Changing the model starts a new agent session. Chat history is kept.')}</Text>
       </ModelPicker>

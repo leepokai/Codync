@@ -30,7 +30,7 @@ Phase 1 was 2.35.0 on `dev`; no release went out before phases 2 and 3 joined it
 
 App Store 5.1.1(v) and Google Play require in-app deletion for any app that creates accounts. No client has it today.
 
-- **Where:** the account sheet on iPhone (`AccountSwitcherView.swift`) and Android (`AccountSwitcherView.kt`), under **Sign out**; the desktop account menu (`PanelMenus.tsx`).
+- **Where:** the account sheet on iPhone (`AccountSwitcherView.swift`) and Android (`AccountSwitcherView.kt`), under **Sign out**; the desktop's Settings › General, beside **Sign out** (`SettingsView.tsx`).
 - **Confirmation dialog**, title "Delete your Codync account?", message: "Your account, its list of computers and every device's access through it are deleted. Your computers keep their bots and chats. This can't be undone." Actions: **Delete account** (destructive), **Cancel**.
 - **Steps:**
   1. Delete the user in Clerk first. When that fails ("Couldn't delete your account. Check your connection and try again."), nothing else changes:
@@ -82,7 +82,7 @@ The two calls are best effort, with a short timeout each. Signing out never fail
 
 **Desktop (`ChatWindow.tsx`, `AccountWelcomeView.tsx`)**
 - With Clerk configured, **Continue on this Mac** (the button and the skip link) goes, and the welcome shows only **Continue with Apple** / **Continue with Google** / **Continue with GitHub**.
-- `onboarded` alone no longer opens the chat window. The welcome shows whenever the app is configured, ready and signed out, so signing out from the account menu returns to it.
+- `onboarded` alone no longer opens the chat window. The welcome shows whenever the app is configured, ready and signed out, so signing out returns to it.
 - The host keeps running while signed out, and so do the tray and menu bar.
 - Signing out also revokes the desktop app's own cloud device (`DELETE /v1/devices/{id}`, best effort, on a token taken before Clerk signs out) once Clerk has signed out, then its key file goes: the cloud refuses a revoked key, so the next sign-in makes a new one.
 - A saved session stays "restoring" (retried every 30 seconds) until Clerk turns it down (401, 403 or 404) or answers, so a launch offline, behind a captive portal or during a Clerk outage isn't stopped at the welcome.
@@ -121,9 +121,9 @@ After either case the signed-out context is erased (on iOS except a mirror cache
   - `none {reason: cloudOff | privateRelay | keptOut}`;
   - `null` when the accounts match.
   Tested in `join-offer.test.ts`.
-- **A notice** above the sidebar footer's buttons (`SidebarFooter.tsx`): an amber card with an icon that shows its text in full, wrapping as needed, and takes no space when there's no mismatch. The narrow rail shows it as an amber icon with the text as its tooltip.
+- **A notice** on the window's rail above the account avatar (`NavRail.tsx`): an amber icon with the text as its tooltip, which takes no space when there's no mismatch.
   - `other`: "This computer is in {email}'s account", with the full address as Settings and the move dialog show it. Clicking it reopens the move choice (`MoveComputerPrompt`), even after *Keep it there*.
-  - `none`: "This computer isn't in an account: its cloud is off" / "…: it uses a private relay", or "This computer isn't in your account" (taken out). Clicking it opens Settings → Computers.
+  - `none`: "This computer isn't in an account: its cloud is off" / "…: it uses a private relay", or "This computer isn't in your account" (taken out). Clicking it opens the Computers page.
 - **The move dialog** stays as it is in this phase. Its "QR-paired devices keep access" text changes in phase 2.
 
 ### 6. Docs and release

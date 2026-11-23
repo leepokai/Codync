@@ -55,20 +55,20 @@ import androidx.compose.ui.semantics.semantics
     val bot = state.bots.firstOrNull { it.id == draft.id }
     LaunchedEffect(online) { if (online) store.refreshPlugins() }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(30.dp)) {
-        CardSection("Instructions") { instructionsRow(draft, change) }
-        CardSection("Agent") {
+        CardSection("Instructions", fold = "bot.instructions") { instructionsRow(draft, change) }
+        CardSection("Agent", fold = "bot.agent") {
             fallbackBanner(state, store, bot)
             agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ })
             compactionRow(bot, draft, change)
         }
-        CardSection("Profile") {
+        CardSection("Profile", fold = "bot.profile") {
             avatarRows(state, store, draft, change, pickingAvatar) { pickingAvatar = !pickingAvatar }
             nameRow(draft, change); createdByRow(state, bot)
         }
-        CardSection("Workspace") {
+        CardSection("Workspace", fold = "bot.workspace") {
             computerRow(state, online); placeRows(state, store, draft, change, modelReload) { folders = true }
         }
-        CardSection("Activity") {
+        CardSection("Activity", fold = "bot.activity") {
             notifyRow(draft, change)
             if (!inDetails) computerUseRow(state, draft, change)
             manageTeamRow(state, draft, change); reachRows(state, draft, change)
@@ -142,7 +142,7 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
         AgentModelPicker(state, store::agentModels, draft.backend, draft.model, draft.modelOptions, draft.fastMode ?: false, bot,
             { model, options -> change(draft.copy(model = model, modelOptions = options)) }, { change(draft.copy(fastMode = it)) },
             agents = agentChoices(state) + ("custom" to "Custom command"),
-            chooseAgent = { if (it != draft.backend) change(draft.withAgent(it)) }, onReload = reloadModels) {
+            chooseAgent = { if (it != draft.backend) change(draft.withAgent(it)) }, onReload = reloadModels, loginProfile = draft.loginProfile) {
                 bot?.restOf(draft.login)?.let { Text(tr(it.line(RelativeTime.clock(it.until))), style = Type.caption, color = Palette.secondary) }
                 backends(state).firstOrNull { it.text("id") == draft.backend && !it.available }?.text("installHint")?.takeIf(String::isNotBlank)?.let {
                     Text(it, style = Type.caption, color = Palette.warning)

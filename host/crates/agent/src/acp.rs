@@ -34,7 +34,27 @@ const EXIT_GRACE: Duration = Duration::from_secs(10);
 /// Agents [`Acp::kill`] is still stopping, for the host to wait for before it exits.
 static STOPPING: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>> = std::sync::Mutex::new(Vec::new());
 /// Every agent started, for the host to stop whichever are left before it exits.
-static STARTED: std::sync::Mutex<Vec<Weak<Acp>>> = std::sync::Mutex::new(Vec::new());
+static STARTED: std::sync::Mutex<Started> = std::sync::Mutex::new(Started { closed: false, agents: Vec::new() });
+
+/// The agents [`stop_all`] stops, and whether it has: an API call still under way then starts none it would leave
+/// running (`process::exit` drops no process).
+struct Started {
+    closed: bool,
+    agents: Vec<Weak<Acp>>,
+}
+
+impl Started {
+    fn note(&mut self, acp: &Arc<Acp>) {
+        self.agents.retain(|acp| acp.strong_count() > 0);
+        self.agents.push(Arc::downgrade(acp));
+    }
+
+    /// Closes the list for good and hands back the agents still running.
+    fn close(&mut self) -> Vec<Arc<Acp>> {
+        self.closed = true;
+        std::mem::take(&mut self.agents).iter().filter_map(Weak::upgrade).collect()
+    }
+}
 
 /// What the agent sends the app.
 #[derive(Debug)]
@@ -250,6 +270,9 @@ impl Acp {
         process.current_dir(cwd).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
         // So `kill` can stop everything it started.
         super::process::own_tree(&mut process);
+        // Held until it is noted: `stop_all` either sees it or has already closed the list.
+        let mut started = STARTED.locked();
+        anyhow::ensure!(!started.closed, "the host is stopping");
         let mut child = process.spawn().with_context(|| format!("starting `{command}`"))?;
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");
@@ -351,7 +374,7 @@ impl Acp {
             pid,
             held: std::sync::Mutex::default(),
         });
-        note_started(&acp);
+        started.note(&acp);
         Ok((acp, rx))
     }
 
@@ -431,15 +454,9 @@ pub async fn stopped() {
 /// Stops every agent left and waits for them, before the host exits: `process::exit` drops no process, and Cursor's agent
 /// outlives its closed stdin. The bots stop their own, so this is for a sign-in check or a model list still under way.
 pub async fn stop_all() {
-    let started: Vec<_> = std::mem::take(&mut *STARTED.locked()).iter().filter_map(Weak::upgrade).collect();
+    let started = STARTED.locked().close();
     futures::future::join_all(started.iter().map(|acp| acp.kill())).await;
     stopped().await;
-}
-
-fn note_started(acp: &Arc<Acp>) {
-    let mut started = STARTED.locked();
-    started.retain(|acp| acp.strong_count() > 0);
-    started.push(Arc::downgrade(acp));
 }
 
 /// Plain-text rendering of an ACP content block list / tool-call content list.

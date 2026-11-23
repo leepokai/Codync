@@ -9,7 +9,7 @@ Why it is built this way, the options weighed and what comes next: [design](../d
 
 ## Set it up
 
-On each computer, in the desktop app (Settings → Network, a section per computer it manages, this one first,
+On each computer, in the desktop app (the Network page, a section per computer it manages, this one first,
 `NetworkView.tsx` / `NetworkSection.tsx`), the terminal UI (`N`, `host/src/tui/manage/network.rs`) or the CLI. These are the only
 clients that change membership: the `network*` API methods are loopback-only, like pairing a device.
 

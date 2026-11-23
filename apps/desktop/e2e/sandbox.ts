@@ -85,6 +85,8 @@ export async function attach(): Promise<{ browser: Browser; page: Page }> {
     const notNow = sheet.getByRole('button', { name: 'Not now' })
     if (await notNow.isVisible()) await notNow.click()
   }
+  // A spec starts on the Bots page, whichever page the last one left open (on Bots itself the entry would fold the list).
+  await page.evaluate(() => document.querySelector<HTMLElement>('.nav-rail [data-page="bots"]:not([aria-current])')?.click())
   return { browser, page }
 }
 
@@ -142,21 +144,35 @@ export async function loginProfilesOf(page: Page, id: string) {
   return (await agents(page)).find((b) => b.id === id)?.loginProfiles ?? []
 }
 
+/** Opens one of the window's pages from its rail (Settings is the account's avatar). */
+export async function openPage(page: Page, name: 'Bots' | 'Threads' | 'Computers' | 'Network' | 'Extensions' | 'Usage' | 'Settings') {
+  const entry = page.locator('.nav-rail').getByRole('button', { name, exact: true })
+  // The entry of the page already shown folds its list: only another page is clicked to.
+  if ((await entry.getAttribute('aria-current')) !== 'page') await entry.click()
+}
+
+/** The page a rail entry other than Bots and Threads shows. */
+export const appPage = (page: Page) => page.locator('.app-page')
+
 /** Opens the agent's sheet from Extensions. */
-export async function openAgentSheet(page: Page, name: string) {
-  await page.getByRole('button', { name: /Extensions/ }).click()
-  await page.locator('.agent-grid').getByText(name, { exact: true }).click()
+/** Extensions' Login profiles tab, at the agent's card. */
+export async function openLoginProfiles(page: Page, agent: { id: string }) {
+  await openPage(page, 'Extensions')
+  await page.getByRole('tab', { name: 'Login profiles' }).click()
+  const card = page.locator(`[data-agent="${agent.id}"]`)
+  await card.scrollIntoViewIfNeeded()
+  return card
 }
 
 /**
- * Add account on the agent's sheet: its sign-in opens in a terminal, and leaving it signs nothing in. Returns the new
- * login profile's id, with the sheet showing its "New login profile" row; `made` hears the id as soon as the host has
+ * Add account on the agent's Login profiles card: its sign-in opens in a terminal, and leaving it signs nothing in.
+ * Returns the new login profile's id, with the card showing its "New login profile" row; `made` hears the id as soon as the host has
  * it, so a test that fails later still removes it.
  */
 export async function addAccount(page: Page, agent: Agent, made: (id: string) => void) {
   const before = new Set((await loginProfilesOf(page, agent.id)).map((p) => p.id))
-  await openAgentSheet(page, agent.name)
-  await page.getByRole('button', { name: /Add account/ }).click()
+  const card = await openLoginProfiles(page, agent)
+  await card.getByRole('button', { name: /Add account/ }).click()
   await expect(page.locator('.market-screen-title', { hasText: `Sign in to ${agent.name}` })).toBeVisible()
   await expect(page.locator('.setup-terminal-surface')).toBeVisible()
   let id: string | undefined
@@ -164,7 +180,7 @@ export async function addAccount(page: Page, agent: Agent, made: (id: string) =>
   if (!id) throw new Error('Add account made no login profile.')
   made(id)
   await page.locator('.market-screen-header').getByRole('button', { name: 'Back' }).click()
-  await expect(page.locator('.login-profile', { hasText: 'New login profile' })).toContainText('Not signed in')
+  await expect(card.locator('.login-profile', { hasText: 'New login profile' })).toContainText('Not signed in')
   return id
 }
 
@@ -175,10 +191,10 @@ export async function typeMessage(page: Page, text: string) {
   await box.press('Enter')
 }
 
-/** Opens Settings from the account panel, on its General page. */
+/** Opens Settings from the rail, on its General page. */
 export async function openGeneralSettings(page: Page) {
-  await page.locator('.sidebar-account').click()
-  await page.locator('.account-panel').getByText('Settings', { exact: true }).click()
+  await openPage(page, 'Settings')
+  await page.locator('.settings-item', { hasText: 'General' }).click()
 }
 
 /** Settings › Voice chat. */
@@ -207,17 +223,4 @@ export function api<T>(page: Page, method: string, body: unknown): Promise<T> {
     if (!local) throw new Error('The sandbox host has not answered yet.')
     return host.call(local.baseURL, local.token, method, body, 30_000)
   }, [method, body] as const) as Promise<T>
-}
-
-/** Opens this computer's Extensions: from its sidebar heading when several computers are listed, else the footer's. */
-export async function openLocalExtensions(page: Page) {
-  const computerId = await page.evaluate(async () => {
-    const host = (window as unknown as { codync: { host: Host } }).codync.host
-    const local = (await host.snapshot()).local
-    if (!local) throw new Error('The sandbox host has not answered yet.')
-    return local.computerId
-  })
-  const extensions = { name: /Extensions/ }
-  await page.locator(`[data-computer-section="${computerId}"]`).getByRole('button', extensions)
-    .or(page.locator('.sidebar-footer').getByRole('button', extensions)).click()
 }

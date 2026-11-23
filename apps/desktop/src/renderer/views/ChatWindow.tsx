@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useListFlip } from '../lib/slide'
 import { alertAnalyticsKind } from '@shared/alerts'
 import type { WindowCommand } from '@shared/ipc'
 import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startup'
-import { detailMinWidth, sidebarMinWidth } from '@shared/chat-layout'
+import { detailMinWidth, railWidth, sidebarMinWidth } from '@shared/chat-layout'
 import { draftOf, isGroup, type Bot, type BotDraft } from '@shared/models'
-import { allWork, isLive } from '@shared/work'
+import { isLive, threadSections } from '@shared/work'
 import { CharacterAvatar } from '../components/Avatar'
 import { Button, IconButton, ResizeHandle } from '../components/Controls'
 import { Dialog, ModalHeader, Sheet } from '../components/Overlay'
 import { AnchoredMenu, type MenuItem } from '../components/Menu'
 import { HStack, Spacer } from '../components/Stack'
+import { noVisits, step, visit } from '../lib/visits'
+import { WindowBar, WindowBarSlots } from './WindowBar'
 import { Text } from '../components/Text'
 import { useModels } from '../lib/observable'
 import { prefs, stepTextSize, usePref, DEFAULT_TEXT_SIZE } from '../lib/prefs'
@@ -19,17 +22,16 @@ import { analytics } from '../store/analytics'
 import { refKey, sameRef, parseRef, type AppModel, type BotRef } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
-import { AllWorkButton, AllWorkSheet } from './AllWorkView'
 import { BotRoster } from './BotRoster'
-import { ExtensionsMovedTip } from './ExtensionsMovedTip'
-import { RailAccountNotice, SidebarFooter } from './SidebarFooter'
-import { UpdateBadge } from './UpdateButton'
+import { NavRail, OpenExtensions, type AppPage } from './NavRail'
+import { ThreadDetail, ThreadList, type ThreadPick } from './ThreadsPage'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
 import { ChatView } from './chat/ChatView'
 import { queueVoiceKey } from './chat/voice-shortcut-keys'
 import { NewBotView, NewGroupView } from './bots/NewBotView'
 import { ImportBotsSheet } from './bots/ImportBotsView'
 import { BotEditorView } from './bots/BotEditorView'
+import type { ExtensionFocus } from './marketplace/market-models'
 import { MarketplaceView } from './marketplace/MarketplaceView'
 import { ScreenViewer } from './screen/ScreenViewer'
 import { SignInCodeDialog } from './marketplace/ConnectorSheets'
@@ -39,6 +41,8 @@ import { ResetAllDataDialogs } from './settings/ResetSection'
 import { FindBar } from './FindBar'
 import { useFindBar } from './use-conversation-find'
 import { SearchPalette } from './SearchPalette'
+import { WorkflowsView } from './workflows/WorkflowsView'
+import { canOpenWorkflows } from './workflows/pins'
 import { AccountWelcomeView, useWelcomeGate } from './AccountWelcomeView'
 import { ComputerAccessView } from './computer-access/ComputerAccessView'
 import { AccessOnboarding } from './computer-access/AccessOnboarding'
@@ -49,7 +53,6 @@ import { RefreshIndicator } from './RefreshIndicator'
 import { MainPrompts } from './MainPrompts'
 import { PairingRequestPrompt } from './PairingRequestPrompt'
 import { OpenVoiceSettings } from './call/CallView'
-import { AccountPanelLayer, ProfileAvatar } from './PanelMenus'
 import { DesktopActionMenu } from './DesktopActionMenu'
 import { moveToSectionItems, sectionHeaderItems } from './section-menus'
 import { makeLeadItems, offersDelete, voiceTarget } from './lead-menus'
@@ -69,7 +72,9 @@ function openRef(app: AppModel, key: string) {
   if (ref) app.select(ref)
 }
 
-/** Native desktop chat: roster on the left, the conversation on the right (Grok Bot's desktop layout). */
+/** The chat window: the rail of its pages on the left, then the page (Bots: the roster and the conversation). */
+const NO_SLOTS = { start: null, title: null, end: null }
+
 export function ChatWindow() {
   const tr = useTr()
   const app = useApp()
@@ -211,7 +216,12 @@ function ChatSplitView() {
   const app = useApp()
   const ssh = useSSH()
   const connecting = ssh.state.profiles.some((p) => isSSHConnecting(ssh.status(p.id))) || [...app.stores.values()].some((s) => s.shownConnection.kind === 'connecting')
-  const [compact, setCompact] = usePref(prefs.sidebarCompact)
+  const [listHidden, setListHidden] = usePref(prefs.listHidden)
+  const [botsByComputer, setBotsByComputer] = usePref(prefs.botsByComputer)
+  const [botsByStatus, setBotsByStatus] = usePref(prefs.botsByStatus)
+  const [threadsGroup, setThreadsGroup] = usePref(prefs.threadsGroup)
+  const [threadsByStatus, setThreadsByStatus] = usePref(prefs.threadsByStatus)
+  const [threadsByActivity, setThreadsByActivity] = usePref(prefs.threadsByActivity)
   const [sidebarWidth, setSidebarWidth] = usePref(prefs.sidebarWidth)
   const [hidden, setHidden] = usePref(prefs.hiddenComputers)
   const [searching, setSearching] = useState(false)
@@ -220,30 +230,44 @@ function ChatSplitView() {
   const [creating, setCreating] = useState<CreateTarget | null>(null)
   const [importing, setImporting] = useState(false)
   const [newMenu, setNewMenu] = useState(false)
-  const [railNewMenu, setRailNewMenu] = useState(false)
   const [context, setContext] = useState<{ items: MenuItem[]; x: number; y: number } | null>(null)
   const [naming, setNaming] = useState<Naming | null>(null)
   const [editing, setEditing] = useState<EditTarget | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<BotTarget | null>(null)
   const [newSessionBot, setNewSessionBot] = useState<BotTarget | null>(null)
-  const [marketplace, setMarketplace] = useState<string | null>(null)
-  const [settings, setSettings] = useState<SettingsPage | null>(null)
-  const openVoiceSettings = useCallback(() => setSettings('voice'), [])
-  const [showAccount, setShowAccount] = useState(false)
-  const [showWork, setShowWork] = useState(false)
-  // What the view of all work asked a bot's chat to show, and which asking it was: its Details, the card of the task `task`, or the thread of the task `thread`.
-  const [shownRequest, setShownRequest] = useState<{ ref: string; count: number; task?: string; thread?: string } | null>(null)
+  const [page, setPage] = useState<AppPage>('bots')
+  // The Settings entry's page. Computers, Network and Usage have entries of their own.
+  const [settingsPage, setSettingsPage] = useState<SettingsPage>('general')
+  const openVoiceSettings = useCallback(() => {
+    setSettingsPage('voice')
+    setPage('settings')
+  }, [])
+  // The computer whose Extensions show, once one was asked for by name (its heading in the roster, the page's picker).
+  const [extensionsOf, setExtensionsOf] = useState<string | null>(null)
+  // The computer whose workflows show, once one was asked for by name (its heading or a pin in the roster), and the workflow to open there.
+  const [workflowsOf, setWorkflowsOf] = useState<string | null>(null)
+  const [workflowFocus, setWorkflowFocus] = useState<string | null>(null)
+  // The thread the Threads page shows.
+  const [picked, setPicked] = useState<ThreadPick | null>(null)
+  // The bot a new thread starts with, where the user chose one; the page it starts from shows with no thread picked.
+  const [starting, setStarting] = useState<BotRef | null>(null)
+  const startThread = (ref: BotRef | null) => {
+    setStarting(ref)
+    setPicked(null)
+  }
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight })
   const newButton = useRef<HTMLButtonElement>(null)
-  const railNewButton = useRef<HTMLButtonElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const sidebar = useRef<HTMLElement>(null)
   useModels([...app.stores.values()])
 
   useEffect(() => {
     const onResize = () => {
       setWindowSize({ width: window.innerWidth, height: window.innerHeight })
-      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(sidebarMinWidth, window.innerWidth - detailMinWidth)))
+      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(sidebarMinWidth, window.innerWidth - railWidth - detailMinWidth)))
     }
+    // A window opened narrow starts with a list that fits it.
+    onResize()
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [setSidebarWidth])
@@ -258,18 +282,51 @@ function ChatSplitView() {
   const localOnline = !!app.local && onlineStores.includes(app.local)
   const roster = useComputerRoster(app, shown)
   const visibleRoster = roster.items
-  const work = allWork(roster.ordered)
-  const closeWork = useCallback(() => setShowWork(false), [])
-  /** From the view of all work: the bot's chat, at its Details, at the card of the task `task` or with the thread of the task `thread`. */
-  const showInChat = (ref: BotRef, show: { task?: string; thread?: string } = {}) => {
+  // The Threads page lists the boxes of threads without a bot too, of the computers shown.
+  const threadRoster = [...roster.ordered, ...app.plainBoxes.filter((r) => shown.has(r.ref.computerId))]
+  const threads = threadSections(threadRoster, threadsGroup, (of) => refKey(of.ref), (of) => of.store.hostName, { status: threadsByStatus, active: threadsByActivity })
+  /** A bot's chat, on the Bots page. */
+  const openBot = (ref: BotRef) => {
     app.select(ref)
-    setShownRequest((last) => ({ ref: refKey(ref), count: (last?.count ?? 0) + 1, ...show }))
-    setShowWork(false)
+    setPage('bots')
   }
-  // Asked once: coming back to that bot later opens its chat as it was left.
+  // Back and Forward: the pages shown, and on Bots each bot.
   const selectionKey = app.selection ? refKey(app.selection) : null
-  useEffect(() => setShownRequest((asked) => (asked && asked.ref !== selectionKey ? null : asked)), [selectionKey])
-  const workButton = (size: number, className?: string) => <AllWorkButton shown={work.bots.length > 0} working={work.working} size={size} className={className} onClick={() => setShowWork(true)} />
+  type Place = { page: AppPage; ref: BotRef | null }
+  const [visits, setVisits] = useState(noVisits<Place>)
+  useEffect(() => {
+    const place: Place = { page, ref: page === 'bots' ? app.selection : null }
+    setVisits((v) => visit(v, place, (a, b) => a.page === b.page && (a.ref && refKey(a.ref)) === (b.ref && refKey(b.ref))))
+  }, [page, selectionKey])
+  const travel = (by: -1 | 1) => {
+    const next = step(visits, by)
+    const place = next?.places[next.at]
+    if (!next || !place) return
+    setVisits(next)
+    setPage(place.page)
+    // A bot deleted since is passed over: the page shows what is selected now.
+    if (place.ref && app.store(place.ref.computerId)?.bots.has(place.ref.botId)) app.select(place.ref)
+  }
+  const [barStart, setBarStart] = useState<HTMLElement | null>(null)
+  const [barTitle, setBarTitle] = useState<HTMLElement | null>(null)
+  const [barEnd, setBarEnd] = useState<HTMLElement | null>(null)
+  /** The rail: another page, or, on the entry of the page shown, its list folded away and brought back. */
+  const go = (next: AppPage) => {
+    if (next !== page) setPage(next)
+    else if (next === 'bots' || next === 'threads') setListHidden(!listHidden)
+  }
+  const openWorkflows = (computerId: string, workflowId?: string) => {
+    setWorkflowsOf(computerId)
+    setWorkflowFocus(workflowId ?? null)
+    setPage('workflows')
+  }
+  // A new object each time, so opening the same tab again still turns Extensions to it.
+  const [extensionsFocus, setExtensionsFocus] = useState<ExtensionFocus | null>(null)
+  const openExtensions = (computerId: string, focus?: ExtensionFocus) => {
+    setExtensionsOf(computerId)
+    setExtensionsFocus(focus ? { ...focus } : null)
+    setPage('extensions')
+  }
 
   const create = (kind: CreateTarget['kind']) => {
     // The selected bot's computer if it's online, else this computer, else any online one.
@@ -285,12 +342,15 @@ function ChatSplitView() {
       window.codync.app.onCommand((c) => {
         if (c.kind === 'newBot' && onlineStores.length) create('bot')
         if (c.kind === 'search') setSearching(true)
-        // Without a conversation open there is nothing to find in: ⌘F searches the bots instead.
-        if (c.kind === 'find') app.selection ? find.open() : setSearching(true)
-        if (c.kind === 'networkSettings') setSettings('network')
-        if (c.kind === 'toggleSidebar') setCompact(!prefs.sidebarCompact.get())
+        // Without a conversation in sight there is nothing to find in: ⌘F searches the bots instead.
+        if (c.kind === 'find') page === 'bots' && app.selection ? find.open() : setSearching(true)
+        if (c.kind === 'networkSettings') setPage('network')
+        if (c.kind === 'toggleSidebar') setListHidden(!prefs.listHidden.get())
+        // The window's own handler selects the bot; its chat is on the Bots page.
+        if (c.kind === 'openBot') setPage('bots')
         if (c.kind === 'voiceKey') {
           if (c.key === 'double' && !app.selection) app.select(voiceTarget(roster)?.ref ?? null)
+          setPage('bots')
           queueVoiceKey(c.key)
         }
       }),
@@ -312,10 +372,10 @@ function ChatSplitView() {
     } else if (target === 'plugins') {
       if (!app.local) return
       debugOpened.current = true
-      setMarketplace(app.local.computer.id)
+      openExtensions(app.local.computer.id)
     } else if (target === 'computers') {
       debugOpened.current = true
-      setSettings('computers')
+      setPage('computers')
     } else {
       const item = app.roster.find((i) => i.bot.name === target)
       if (!item) return
@@ -330,7 +390,14 @@ function ChatSplitView() {
     ...(localOnline ? [{ title: 'Import bots…', icon: 'square.and.arrow.down', action: () => setImporting(true) }] : []),
   ]
 
-  const openMarketplace = () => setMarketplace((selectedStore ?? app.local ?? onlineStores[0])?.computer.id ?? null)
+  // The computer asked for by name, else the selected bot's, this one, any online one.
+  // Its computer: the one asked for, else the selected bot's, this one, any online.
+  const workflowStore = (workflowsOf ? app.store(workflowsOf) : null) ?? selectedStore ?? app.local ?? onlineStores[0] ?? null
+  const workflows = !!workflowStore && canOpenWorkflows(workflowStore)
+  const extensionsStore = (extensionsOf ? app.store(extensionsOf) : null) ?? selectedStore ?? app.local ?? onlineStores[0] ?? null
+  const extensionsChoice = extensionsStore && onlineStores.length > 1
+    ? { options: onlineStores.map((s) => ({ id: s.computer.id, label: s.hostName })), selection: extensionsStore.computer.id, onChange: setExtensionsOf }
+    : null
 
   // One plain list. The lead stays in sight: no hide.
   const botActions = (bot: Bot, store: BotStore): MenuItem[] => [
@@ -363,13 +430,13 @@ function ChatSplitView() {
     app.select(refs[next]!)
   }
 
-  // The sidebar's edge drags its width; narrower than 180 collapses it to the rail.
+  // The list's edge drags its width; dragged most of the way shut, it folds away.
   const [resizing, setResizing] = useState(false)
-  const sidebarMax = Math.min(420, window.innerWidth - detailMinWidth)
+  const sidebarMax = Math.min(420, window.innerWidth - railWidth - detailMinWidth)
   const resizeSidebar = (proposed: number) => {
-    const nextCompact = proposed < 180
-    if (nextCompact !== compact) setCompact(nextCompact)
-    if (!nextCompact) setSidebarWidth(Math.min(Math.max(sidebarMinWidth, proposed), sidebarMax))
+    const hide = proposed < 120
+    if (hide !== listHidden) setListHidden(hide)
+    if (!hide) setSidebarWidth(Math.min(Math.max(sidebarMinWidth, proposed), sidebarMax))
   }
 
   const errorMessage = app.errorMessage
@@ -381,11 +448,11 @@ function ChatSplitView() {
   if (selected && selectedStore && selectedBot) {
     detail = (
       <StoreContext.Provider value={selectedStore}>
-        <ChatView key={refKey(selected)} botId={selected.botId} request={shownRequest?.ref === refKey(selected) ? shownRequest : null} />
+        <ChatView key={refKey(selected)} botId={selected.botId} />
       </StoreContext.Provider>
     )
   } else if (!onlineStores.length && ssh.state.profiles.length) {
-    detail = <StartupRecovery manage={() => setSettings('computers')} />
+    detail = <StartupRecovery manage={() => setPage('computers')} />
   } else {
     detail = (
       <div className="empty-detail">
@@ -404,87 +471,147 @@ function ChatSplitView() {
     )
   }
 
-  const width = compact ? 76 : sidebarWidth
+  const width = listHidden ? 0 : sidebarWidth
+  const listed = page === 'bots' || page === 'threads'
+  // How the list shown is laid out, each list its own choice: the Threads list one grouping at a time.
+  const layOut = (option: 'folder' | 'bot' | 'computer' | 'status', on: boolean) => {
+    analytics.track({ event: 'list_layout_changed', list: page === 'threads' ? 'threads' : 'bots', option, on })
+    if (page === 'threads') setThreadsGroup(on && option !== 'status' ? option : 'none')
+    else if (option === 'status') setBotsByStatus(on)
+    else setBotsByComputer(on)
+  }
+  const sortThreads = (option: 'status' | 'activity', on: boolean) => {
+    analytics.track({ event: 'list_layout_changed', list: 'threads', option, on })
+    if (option === 'status') setThreadsByStatus(on)
+    else setThreadsByActivity(on)
+  }
+  // The computers shown that can move a bot with a new message to the top (hosts before 2.45.1 can't): theirs to
+  // keep, so the choice reaches every device, unlike the two above.
+  const ordering = page === 'bots'
+    ? [...shown].flatMap((id) => app.store(id) ?? []).filter((s) => s.autoOrder != null && s.shownConnection.kind === 'online')
+    : []
+  const byActivity = ordering.length > 0 && ordering.every((s) => s.autoOrder)
+  const listOptions: MenuItem[] = [
+    ...(page === 'threads'
+      ? [
+          ...(['folder', 'bot', 'computer'] as const).map((by) => ({ title: ({ folder: 'Group by folder', bot: 'Group by bot', computer: 'Group by computer' } as const)[by], selected: threadsGroup === by, keepsOpen: true, action: () => layOut(by, threadsGroup !== by) })),
+          // Beside the grouping: how the rows of each group are ordered.
+          { title: 'Sort by status', divider: true, selected: threadsByStatus, keepsOpen: true, action: () => sortThreads('status', !threadsByStatus) },
+          { title: 'Sort by last active', selected: threadsByActivity, keepsOpen: true, action: () => sortThreads('activity', !threadsByActivity) },
+        ]
+      : [
+          { title: 'Group by computer', selected: botsByComputer, keepsOpen: true, action: () => layOut('computer', !botsByComputer) },
+          { title: 'Sort by status', selected: botsByStatus, keepsOpen: true, action: () => layOut('status', !botsByStatus) },
+        ]),
+    ...(ordering.length ? [{
+      title: 'Sort by last active', selected: byActivity, keepsOpen: true,
+      action: () => {
+        analytics.track({ event: 'list_layout_changed', list: 'bots', option: 'activity', on: !byActivity })
+        for (const store of ordering) void store.setAutoOrder(!byActivity)
+      },
+    }] : []),
+  ]
+  // Grouping or sorting the list another way slides its rows to their new places.
+  useListFlip(sidebar, page, page === 'threads' ? `${threadsGroup}/${threadsByStatus}/${threadsByActivity}` : `${botsByComputer}/${botsByStatus}/${byActivity}`)
+  const settingsPages: Partial<Record<AppPage, SettingsPage>> = { computers: 'computers', network: 'network', usage: 'usage', settings: settingsPage }
   return (
-    <div className={`split ${showAccount || context ? 'covered' : ''}`}>
-      <aside className={`sidebar ${compact ? 'compact' : ''} ${resizing ? 'resizing' : ''}`} style={{ width }}>
-        <div className="sidebar-header drag" inert={compact}>
-          <Spacer />
-          <HStack gap={6} className="no-drag">
-            <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setSettings('computers')} compact />
-            {workButton(32, 'sidebar-header-action')}
-            <IconButton title="Search" icon="magnifyingglass" size={32} className="sidebar-header-action" onClick={() => setSearching(true)} />
-            <IconButton title="New" icon="plus" size={32} className="sidebar-header-action" buttonRef={newButton} menuOpen={newMenu} onClick={() => setNewMenu((o) => !o)} disabled={!onlineStores.length} />
-          </HStack>
-          <AnchoredMenu open={newMenu} onClose={() => setNewMenu(false)} anchor={newButton} items={newItems} />
-        </div>
-        {compact ? (
-          <div className="rail-header drag">
-            <HStack align="stretch" justify="center" className="no-drag">
-              <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setSettings('computers')} compact />
-            </HStack>
-          </div>
-        ) : null}
-        <div className="roster" ref={listRef} tabIndex={0} onKeyDown={onListKey}>
-          {roster.grouped && !compact ? <ExtensionsMovedTip /> : null}
-          <BotRoster roster={roster} compact={compact}
-            onContext={(bot, store, x, y) => setContext({ items: botActions(bot, store), x, y })}
-            onSectionContext={(section, store, x, y) => {
-              const items = sectionHeaderItems(section, store, setNaming, (to) => roster.renameSection(store, section, to))
-              if (items.length) setContext({ items, x, y })
-            }}
-            openExtensions={(id) => {
-              // Found it: the tip about where Extensions went has done its job.
-              prefs.extensionsMovedTipSeen.set(true)
-              setMarketplace(id)
-            }} />
-          {visibleRoster.length === 0 && !roster.grouped && !compact && mismatchStores.length === 0 ? (
-            <div className="roster-empty">
-              <Text as="div" size="body" weight="medium">{onlineStores.length ? tr(`No bots yet`) : tr(`Waiting for a computer`)}</Text>
-              {onlineStores.length ? <Text as="div" size="callout" tone="secondary">{tr(`Use + to create a bot.`)}</Text> : null}
+    <OpenExtensions.Provider value={openExtensions}>
+    <div className={`split ${context ? 'covered' : ''}`}>
+      <WindowBar
+        back={step(visits, -1) ? () => travel(-1) : null}
+        forward={step(visits, 1) ? () => travel(1) : null}
+        toggleList={listed ? () => setListHidden(!listHidden) : null}
+        setStart={setBarStart}
+        setTitle={setBarTitle}
+        setEnd={setBarEnd}
+      />
+      <NavRail page={page} go={go} working={threads.working} approvals={app.approvals.length} workflows={workflows} />
+      {listed ? (
+        <>
+          <aside ref={sidebar} className={`sidebar ${resizing ? 'resizing' : ''}`} style={{ width }} inert={listHidden}>
+            <div className="sidebar-header drag">
+              <Text size="title3" weight="semibold" tone="text" truncate className={page === 'bots' ? 'sidebar-title crowded' : 'sidebar-title'}>{tr(page === 'bots' ? 'Bots' : 'Threads')}</Text>
+              <Spacer />
+              <HStack gap={6} className="no-drag">
+                <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setPage('computers')} options={listOptions} />
+                {page === 'bots' ? (
+                  <>
+                    <IconButton title="Search" icon="magnifyingglass" size={32} className="sidebar-header-action" onClick={() => setSearching(true)} />
+                    <IconButton title="New" icon="plus" size={32} className="sidebar-header-action" buttonRef={newButton} menuOpen={newMenu} onClick={() => setNewMenu((o) => !o)} disabled={!onlineStores.length} />
+                  </>
+                ) : null}
+              </HStack>
+              <AnchoredMenu open={newMenu} onClose={() => setNewMenu(false)} anchor={newButton} items={newItems} />
             </div>
-          ) : null}
-        </div>
-        {compact ? (
-          <div className="rail-actions">
-            <IconButton title="Search" icon="magnifyingglass" onClick={() => setSearching(true)} />
-            {workButton(36)}
-            <IconButton title="New" icon="plus" size={36} buttonRef={railNewButton} menuOpen={railNewMenu} disabled={!onlineStores.length} onClick={() => setRailNewMenu((o) => !o)} />
-            <AnchoredMenu open={railNewMenu} onClose={() => setRailNewMenu(false)} anchor={railNewButton} items={newItems} />
-            <IconButton title="Extensions" icon="square.grid.2x2" size={36} onClick={openMarketplace} />
-            <UpdateBadge size={32} />
-            <RailAccountNotice />
-            <button className={`rail-profile ${showAccount ? 'open' : ''}`} aria-label={tr('Open account menu for Account')} title={tr('Account')} onClick={() => setShowAccount((s) => !s)}>
-              <ProfileAvatar />
-            </button>
-          </div>
-        ) : (
-          // With several computers each heading opens its own Extensions instead.
-          <SidebarFooter accountOpen={showAccount} onAccount={() => setShowAccount((s) => !s)} onExtensions={roster.grouped ? undefined : openMarketplace} />
-        )}
-      </aside>
-      <ResizeHandle label={tr('Resize sidebar')} width={width} min={76} max={sidebarMax} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />
-      <main className="detail">
-        {/* The call bar's settings open this window's Settings at Voice chat. */}
-        <OpenVoiceSettings.Provider value={openVoiceSettings}>{detail}</OpenVoiceSettings.Provider>
+            {page === 'bots' ? (
+              <div className="roster" ref={listRef} tabIndex={0} onKeyDown={onListKey}>
+                <BotRoster roster={roster}
+                  onContext={(bot, store, x, y) => setContext({ items: botActions(bot, store), x, y })}
+                  onSectionContext={(section, store, x, y) => {
+                    const items = sectionHeaderItems(section, store, setNaming, (to) => roster.renameSection(store, section, to))
+                    if (items.length) setContext({ items, x, y })
+                  }}
+                  openExtensions={openExtensions}
+                  openWorkflows={openWorkflows} />
+                {visibleRoster.length === 0 && !roster.grouped && mismatchStores.length === 0 ? (
+                  <div className="roster-empty">
+                    <Text as="div" size="body" weight="medium">{onlineStores.length ? tr(`No bots yet`) : tr(`Waiting for a computer`)}</Text>
+                    {onlineStores.length ? <Text as="div" size="callout" tone="secondary">{tr(`Use + to create a bot.`)}</Text> : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="roster">
+                <ThreadList roster={threadRoster} picked={picked} pick={setPicked} start={startThread} openChat={(ref) => { app.select(ref); setPage('bots') }} />
+              </div>
+            )}
+          </aside>
+          <ResizeHandle label={tr('Resize sidebar')} width={width} min={0} max={sidebarMax} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />
+        </>
+      ) : null}
+      {/* The conversation stays as it is behind another page: its place, its open panel, a call under way. */}
+      <main className="detail" hidden={page !== 'bots'}>
+        {/* The call bar's settings open the Settings page at Voice chat. */}
+        <WindowBarSlots.Provider value={page === 'bots' ? { start: null, title: barTitle, end: barEnd } : NO_SLOTS}>
+          <OpenVoiceSettings.Provider value={openVoiceSettings}>{detail}</OpenVoiceSettings.Provider>
+        </WindowBarSlots.Provider>
         {find.focus !== null && selectedBot ? <FindBar focusKey={find.focus} onClose={find.close} /> : null}
       </main>
+      {page === 'threads' ? (
+        <main className="detail">
+          <WindowBarSlots.Provider value={{ start: null, title: barTitle, end: barEnd }}>
+            <ThreadDetail roster={threadRoster} picked={picked} pick={setPicked} starting={starting} start={setStarting} openChat={(ref) => { app.select(ref); setPage('bots') }} />
+          </WindowBarSlots.Provider>
+        </main>
+      ) : page === 'workflows' && workflowStore && workflows ? (
+        <main className="detail">
+          <StoreContext.Provider value={workflowStore}>
+            <WindowBarSlots.Provider value={{ start: barStart, title: null, end: barEnd }}>
+              <WorkflowsView key={workflowStore.computer.id} focusId={workflowFocus} roster={threadRoster} openChat={(ref) => { app.select(ref); setPage('bots') }} />
+            </WindowBarSlots.Provider>
+          </StoreContext.Provider>
+        </main>
+      ) : listed ? null : (
+        <main className="app-page">
+          <div className="app-page-drag drag" />
+          {page === 'workflows' ? (
+            <div className="empty-detail">
+              <Text as="div" tone="secondary">{tr(`Waiting for a computer`)}</Text>
+            </div>
+          ) : page !== 'extensions' ? (
+            <SettingsView page={settingsPages[page] ?? settingsPage} setPage={setSettingsPage} />
+          ) : extensionsStore ? (
+            <StoreContext.Provider value={extensionsStore}>
+              <MarketplaceView key={extensionsStore.computer.id} computer={extensionsChoice} focus={extensionsFocus} />
+            </StoreContext.Provider>
+          ) : (
+            <div className="empty-detail">
+              <Text as="div" tone="secondary">{tr(`Waiting for a computer`)}</Text>
+            </div>
+          )}
+        </main>
+      )}
 
-      {showAccount ? (
-        <AccountPanelLayer
-          compact={compact}
-          approvals={app.approvals.length}
-          onDismiss={() => setShowAccount(false)}
-          onUsage={() => {
-            setShowAccount(false)
-            setSettings('usage')
-          }}
-          onSettings={() => {
-            setShowAccount(false)
-            setSettings('general')
-          }}
-        />
-      ) : null}
       {context ? (
         <div className="context-layer" onMouseDown={(e) => e.target === e.currentTarget && setContext(null)}>
           <DesktopActionMenu
@@ -496,16 +623,7 @@ function ChatSplitView() {
         </div>
       ) : null}
 
-      <AllWorkSheet
-        open={showWork}
-        bots={work.bots}
-        many={app.computers.length > 1}
-        openDetails={(ref) => showInChat(ref)}
-        openCard={(ref, task) => showInChat(ref, { task })}
-        openThread={(ref, thread) => showInChat(ref, { thread })}
-        onClose={closeWork}
-      />
-      <SearchPalette open={searching} items={visibleRoster} onPick={(ref) => app.select(ref)} onClose={() => setSearching(false)} />
+      <SearchPalette open={searching} items={visibleRoster} onPick={openBot} onClose={() => setSearching(false)} />
       <Sheet open={editing !== null} onClose={() => setEditing(null)} width={520} height={Math.min(680, sheetHeight)}>
         {editing ? (
           <StoreContext.Provider value={editing.store}>
@@ -522,16 +640,6 @@ function ChatSplitView() {
         ) : null}
       </Sheet>
       <ImportBotsSheet store={localOnline ? app.local : null} open={importing} onClose={() => setImporting(false)} maxHeight={sheetHeight} />
-      <Sheet open={marketplace !== null} onClose={() => setMarketplace(null)} width={Math.min(920, windowSize.width - 80)} height={sheetHeight} dismissOnDim>
-        {marketplace && app.store(marketplace) ? (
-          <StoreContext.Provider value={app.store(marketplace)!}>
-            <MarketplaceView key={marketplace} />
-          </StoreContext.Provider>
-        ) : null}
-      </Sheet>
-      <Sheet open={settings !== null} onClose={() => setSettings(null)} width={Math.min(800, windowSize.width - 80)} height={Math.min(620, sheetHeight)}>
-        {settings ? <SettingsView page={settings} setPage={setSettings} /> : null}
-      </Sheet>
       <Sheet open={screenStore !== null} onClose={() => app.openScreen(null)} width={windowSize.width - 48} height={sheetHeight}>
         {screenStore ? <ScreenViewer key={screenStore.computer.id} store={screenStore} watching={app.screenWatching} /> : null}
       </Sheet>
@@ -553,5 +661,6 @@ function ChatSplitView() {
       <Dialog open={errorMessage !== null} title={tr('Something went wrong')} message={errorMessage} actions={[]} cancel="OK" onClose={() => app.clearErrors()} />
       <SignInCodeDialog />
     </div>
+    </OpenExtensions.Provider>
   )
 }

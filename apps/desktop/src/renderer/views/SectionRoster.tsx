@@ -10,10 +10,9 @@ import { RosterLabel, RosterSection } from './RosterSection'
 interface Drag { name: string; order: string[]; at: Point; grab: Point; width: number }
 
 /** Sections move as blocks within one computer, including the unsectioned Bots group. */
-export function SectionRoster({ computerId, items, compact, folded, order, save, toggle, onContext, row }: {
+export function SectionRoster({ computerId, items, folded, order, save, toggle, onContext, row }: {
   computerId: string
   items: RosterItem[]
-  compact: boolean
   folded: string[]
   order: string[]
   save: (names: string[]) => void
@@ -58,8 +57,8 @@ export function SectionRoster({ computerId, items, compact, folded, order, save,
     const group = byName.get(name)
     if (!group) return null
     const props = preview ? {} : { drag: handlers(name), move: (offset: number) => move(name, offset) }
-    return name === '' ? <RosterLabel compact={compact} {...props} /> : <RosterSection name={name} count={group.count}
-      unread={group.unread} waiting={group.waiting} compact={compact}
+    return name === '' ? <RosterLabel {...props} /> : <RosterSection name={name} count={group.count}
+      unread={group.unread} waiting={group.waiting}
       folded={drag !== null || folded.includes(name)} toggle={() => toggle(name)}
       onContext={(x, y) => onContext(name, x, y)} {...props}>
       {preview ? null : group.items.map(row)}

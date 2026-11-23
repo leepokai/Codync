@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { addAccount, api, attach, loginProfilesOf, openAgentSheet, standInAgent, typeMessage } from './sandbox.ts'
+import { addAccount, api, attach, loginProfilesOf, openLoginProfiles, standInAgent, typeMessage } from './sandbox.ts'
 
 // Both tests run on the stand-in Devin CLI of an e2e sandbox (`npm run dev -- --cdp`,
 // docs/guides/test-stack.md#stand-in-agents): its sign-in and its agent are that script, so nothing here starts a
@@ -42,16 +42,18 @@ test('an agent gets another login profile, it signs in, a bot runs on it, and it
   try {
     const agent = await standInAgent(page, 'devin')
     agentId = agent.id
+    // Its card on Extensions' Login profiles.
+    const logins = page.locator(`[data-agent="${agent.id}"]`)
     ownLabel = agent.defaultLoginProfile?.label ?? null
 
     // Add account opens the new login profile's sign-in in a terminal on the computer; leaving it signs nothing in.
     await addAccount(page, agent, (id) => (profileId = id))
     // The pencil names it; the default login profile, the login the computer already has, is named the same way.
-    await page.locator('.login-profile', { hasText: 'New login profile' }).getByRole('button', { name: 'Rename login profile' }).click()
+    await logins.locator('.login-profile', { hasText: 'New login profile' }).getByRole('button', { name: 'Rename login profile' }).click()
     await page.getByRole('textbox', { name: 'Login profile name' }).fill(WORK)
     await page.getByRole('textbox', { name: 'Login profile name' }).press('Enter')
-    await expect(page.locator('.login-profile', { hasText: WORK })).toContainText('Not signed in')
-    const own = page.locator('.login-profile').first()
+    await expect(logins.locator('.login-profile', { hasText: WORK })).toContainText('Not signed in')
+    const own = logins.locator('.login-profile').first()
     await expect(own).toContainText('Default')
     await own.getByRole('button', { name: 'Rename login profile' }).click()
     await page.getByRole('textbox', { name: 'Login profile name' }).fill(OWN)
@@ -61,7 +63,7 @@ test('an agent gets another login profile, it signs in, a bot runs on it, and it
     expect((await api<{ signedIn: boolean }>(page, 'agentAuth', { backend: agent.id, loginProfile: profileId })).signedIn).toBe(false)
 
     // Its row opens the sign-in again. Finished in the terminal, the login profile is signed in.
-    const work = page.locator('.login-profile', { hasText: WORK })
+    const work = logins.locator('.login-profile', { hasText: WORK })
     await work.getByRole('button', { name: 'Sign in' }).click()
     await expect(page.locator('.setup-terminal-surface')).toContainText('press Enter to sign in')
     await page.keyboard.press('Enter')
@@ -124,9 +126,8 @@ test('an agent gets another login profile, it signs in, a bot runs on it, and it
     await typeMessage(page, 'hi again')
     await expect(page.getByRole('log', { name: 'Messages' }).getByText('Devin stand-in on the default login, signed out')).toBeVisible()
 
-    // The agent's sheet lists the login profile and removes it, now that no bot runs on it.
-    await openAgentSheet(page, agent.name)
-    const row = page.locator('.login-profile', { hasText: WORK })
+    // Login profiles lists it and removes it, now that no bot runs on it.
+    const row = (await openLoginProfiles(page, agent)).locator('.login-profile', { hasText: WORK })
     await expect(row).toContainText('Signed in')
     await row.getByRole('button', { name: 'Remove login profile' }).click()
     await expect(row).toHaveCount(0)
@@ -156,8 +157,7 @@ test('an API key login profile gets its keys from its sign-in card and its key f
     const header = page.locator('.market-screen-header')
 
     // Add API key makes the login profile and opens its key form.
-    await openAgentSheet(page, agent.name)
-    await page.getByRole('button', { name: /Add API key/ }).click()
+    await (await openLoginProfiles(page, agent)).getByRole('button', { name: /Add API key/ }).click()
     await expect(page.locator('.market-screen-title', { hasText: 'API key' })).toBeVisible()
     await expect.poll(async () => (profileId = (await profilesOf()).find((p) => !before.has(p.id))?.id)).toBeTruthy()
     if (!profileId) return
@@ -204,8 +204,7 @@ test('an API key login profile gets its keys from its sign-in card and its key f
     botId = undefined
 
     // Edit keys opens the form again, on the saved variable (its value stays on the computer).
-    await openAgentSheet(page, agent.name)
-    const row = page.locator('.login-profile', { hasText: KEY_NAME })
+    const row = (await openLoginProfiles(page, agent)).locator('.login-profile', { hasText: KEY_NAME })
     await row.getByRole('button', { name: 'Edit keys' }).click()
     await expect(page.locator('.login-profile-key', { hasText: KEY_NAME }).getByLabel('Value')).toHaveAttribute('placeholder', 'Saved (type to replace)')
 

@@ -6,6 +6,15 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.54.0
+### zh-Hant
+- 新增 Workflow：在 Bot 列表的電腦標題上點分支圖示，就能打開這台電腦的 workflow。一個 workflow 由觸發、提示、助理、條件、核准和輸出組成，可以手動執行、排程或用 webhook 啟動，並保留舊版本可以還原。
+- 單一路線的 workflow 會顯示成步驟列表，可以新增、刪除和調整順序；長按 workflow 可以釘選到 Bot 列表上方。
+
+### en-US
+- Workflows: tap the branch icon on a computer's heading in the bot list to open that computer's workflows. A workflow chains a trigger, prompts, assistants, a condition, an approval and an output; run it yourself, on a schedule or from a webhook, and restore an older version when you need to.
+- A workflow that is a single chain shows as a list of steps you can add, remove and reorder. Long-press a workflow to pin it above the bots.
+
 ## 2.53.0
 ### zh-Hant
 - Claude Code 的 Bot 使用 subagent 時，展開的工作步驟、「完整對話」和 task 的 thread 裡，subagent 做的步驟會縮排在啟動它的那一步底下；那一步也會顯示 subagent 的類型、用了多少 token 和花了多久，在背景執行的則顯示「在背景執行」。

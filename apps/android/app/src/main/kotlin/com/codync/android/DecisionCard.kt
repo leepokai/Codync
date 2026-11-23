@@ -100,8 +100,8 @@ import com.kyant.shapes.RoundedRectangle
     }
 }
 
-/** A row's number, or the own answer's pencil. TalkBack reads the row itself. */
-@Composable private fun RowNumber(content: @Composable () -> Unit) {
+/** A row's number, or the own answer's pencil. TalkBack reads the row itself. The approval card's rows have it too. */
+@Composable internal fun RowNumber(content: @Composable () -> Unit) {
     Box(Modifier.size(24.dp).clip(RoundedRectangle(7.dp)).background(Palette.text.copy(alpha = 0.06f)).clearAndSetSemantics {},
         contentAlignment = Alignment.Center) { content() }
 }

@@ -292,6 +292,20 @@ async fn npm_cache() -> Result<&'static Path> {
     Ok(dir)
 }
 
+/// Codync already has `agent`'s registry build on this computer: its unpacked archive, or its npx package in npm's
+/// cache. `None`: it isn't known (a uvx build, whose cache isn't read, or no npm to ask where its cache is).
+pub(crate) async fn downloaded(agent: &Value) -> Option<bool> {
+    match launch_kind(agent)? {
+        Launch::Download => Some(binary_dir(agent).is_ok_and(|dir| dir.is_dir())),
+        Launch::Npx => {
+            let package = agent["distribution"]["npx"]["package"].as_str()?;
+            let cache = npm_cache().await.ok()?;
+            Some(cache.join("_npx").join(npx_hash(package)).join("package.json").is_file())
+        }
+        Launch::Uvx => None,
+    }
+}
+
 /// npx's cache key for one package spec (libnpmexec: the first 16 hex digits of its SHA-512).
 fn npx_hash(package: &str) -> String {
     use std::fmt::Write as _;

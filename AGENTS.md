@@ -71,6 +71,7 @@ Name Swift files after their main `UpperCamelCase` type; use `snake_case.rs` and
 - Inspect every client's corresponding implementation before finishing a UI task. Implement applicable changes together; do not silently defer another client. For a platform-only change or an unsupported capability, document which clients are unaffected and the concrete reason in the change summary.
 - Validate each affected client with its relevant build/tests and UI checks. Report any checks that could not run and why.
 - The desktop app is one codebase for macOS, Linux and Windows: platform differences go through `window.codync.platform` checks or the main process, never a fork of a view.
+- The website shows the apps too: a UI change also updates, in the same change, every place on the site (`web/`) that pictures that UI: the rebuilt app views in `web/app/components/` (`mac-window`, `phone`, `sidebar-rows`, `demo`, …), the screenshots in `web/public/screens/` and the demo in `web/public/demo/`, so the site never shows an older look.
 
 ## Testing Guidelines
 

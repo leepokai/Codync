@@ -208,6 +208,11 @@ export class AppModel extends Observable {
     return this.botsOnEveryComputer((store) => store.hiddenBots)
   }
 
+  /** Every computer's box of threads without a bot, where one started. */
+  get plainBoxes(): RosterItem[] {
+    return this.botsOnEveryComputer((store) => (store.plainBox ? [store.plainBox] : []))
+  }
+
   private botsOnEveryComputer(bots: (store: BotStore) => Bot[]): RosterItem[] {
     const items: RosterItem[] = []
     for (const computer of this.computers) {
@@ -287,7 +292,10 @@ export class AppModel extends Observable {
 
   get errorMessage(): string | null {
     if (this.lastError) return this.lastError
-    for (const store of this.stores.values()) if (store.lastError) return store.lastError
+    for (const store of this.stores.values()) {
+      if (store.quietError) continue
+      if (store.lastError) return store.lastError
+    }
     return null
   }
 

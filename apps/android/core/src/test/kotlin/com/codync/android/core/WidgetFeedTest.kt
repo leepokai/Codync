@@ -11,6 +11,11 @@ class WidgetFeedTest {
         assertEquals(listOf("approval", "working", "idle"), widgetBots(mapOf("mac" to bots)).map { it.id })
     }
 
+    @Test fun `a group room is not a bot, so the widgets leave it out (issue 549)`() {
+        val bots = listOf(Bot("a", "Ada"), Bot("room", "Room", kind = "group"))
+        assertEquals(listOf("a"), widgetBots(mapOf("mac" to bots)).map { it.id })
+    }
+
     @Test fun `every computer's bots share one order and keep the computer they live on`() {
         val bots = widgetBots(mapOf("mac" to listOf(Bot("a", "Mac idle"), Bot("b", "Mac working", status = "working")),
             "linux" to listOf(Bot("a", "Linux approval", status = "needsInput"))))

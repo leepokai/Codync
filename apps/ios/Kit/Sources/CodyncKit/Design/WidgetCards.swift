@@ -158,7 +158,7 @@ public struct BotsWidgetCard: View {
     let links: [String: URL]
 
     public init(bots: [Bot], wide: Bool, large: Bool = false, links: [String: URL] = [:]) {
-        self.bots = bots.filter { !$0.hidden }
+        self.bots = bots.filter(\.showsInWidgets)
         self.wide = wide
         self.large = large
         self.links = links
@@ -300,12 +300,13 @@ public struct BotsTeamCard: View {
         self.opens = opens
     }
 
-    /// The bots in their four spots: picks first (a deleted pick falls back to automatic).
+    /// The bots in their four spots: picks first (a deleted pick or a group room falls back to automatic).
     public static func slots(bots: [Bot], picks: [String?]) -> [Bot?] {
+        let bots = bots.filter(\.showsInWidgets)
         let byId = Dictionary(bots.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let picked = (0..<4).map { i in i < picks.count ? picks[i].flatMap { byId[$0] } : nil }
         let taken = Set(picked.compactMap { $0?.id })
-        var queue = bots.filter { !$0.hidden && !taken.contains($0.id) }.sorted {
+        var queue = bots.filter { !taken.contains($0.id) }.sorted {
             let rank: (Bot) -> Int = { $0.needsYouOutside ? 0 : $0.isBusyOutside ? 1 : 2 }
             return rank($0) == rank($1) ? $0.lastAt > $1.lastAt : rank($0) < rank($1)
         }[...]

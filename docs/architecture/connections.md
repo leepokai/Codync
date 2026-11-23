@@ -85,7 +85,7 @@ The desktop app runs on a computer with its own host, so its account and the com
 | --- | --- | --- |
 | In A | Signed in to A | Nothing |
 | In A | Signed in to B | Asked once, **Move this computer to your account?** (*Keep it there* is remembered). After that, an amber notice above the sidebar's account button, its text in full: "This computer is in a•••@gmail.com's account", which opens the same choice |
-| In no account | Signed in | Asked once, **Add this computer to your account?** (*Not now* is remembered; Settings → Computers can still add it). No notice: being in no account is a choice |
+| In no account | Signed in | Asked once, **Add this computer to your account?** (*Not now* is remembered; the Computers page can still add it). No notice: being in no account is a choice |
 
 The app manages its computer through loopback either way. A computer in an account lets in only phones of that account (rule 3), so a B phone that tries is told which account the computer is in and how to move it.
 
@@ -107,7 +107,7 @@ The agents themselves (Claude Code, Codex, …) always sign in over SSH, as the 
 | Step | Where | What | Today |
 | --- | --- | --- | --- |
 | 1 | VPS | Install the agents and sign them in | Same |
-| 2 | Desktop | Settings → Computers → Over SSH → **Add SSH computer**, pick the host from `~/.ssh/config`, compare the host key, **Trust and connect** | Built |
+| 2 | Desktop | The Computers page → Over SSH → **Add SSH computer**, pick the host from `~/.ssh/config`, compare the host key, **Trust and connect** | Built |
 | 3 | Desktop | **Install** on the card: `install.sh --host-only` and `codync-host install` over SSH. Linger is turned on where the system lets the user do it (Ubuntu 24.04 does); otherwise the card shows `sudo loginctl enable-linger "$USER"` | Built (2.36.0); Codync Dev shows the command instead |
 | 4 | Desktop | The app asks once, then the VPS joins the desktop app's account | Built (2.41.0) |
 | 5 | Phone | The VPS appears in the account list: **Ask for access**, then compare the 6 digits on the desktop and Allow. Or open **Pair phone** on the VPS card and scan | Built |

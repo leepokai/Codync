@@ -23,11 +23,12 @@ test('an approval card reads in the app language, its answers and outcome too', 
     const card = page.locator('.permission-card')
     await expect(card).toContainText('想要修改文件')
     await expect(card).toContainText('Edit a.txt') // what the agent wrote stays as it wrote it
-    const answers = card.locator('.permission-option-label')
-    await expect(answers).toHaveText(['允许一次', '始终允许', '拒绝'])
+    // The answers as numbered rows: allow before deny, once before always.
+    await expect(card.locator('.approval-answer .decision-option-label')).toHaveText(['允许一次', '始终允许', '拒绝'])
 
-    await card.locator('.permission-option', { hasText: '拒绝' }).click()
-    await expect(card).toContainText('已拒绝')
+    await card.getByRole('button', { name: '拒绝' }).click()
+    // Answered, the card folds to its quiet line, how it ended at the end.
+    await expect(page.locator('.request-line').last()).toContainText('已拒绝')
   } finally {
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
     await page.evaluate(() => localStorage.removeItem('appLanguage'))

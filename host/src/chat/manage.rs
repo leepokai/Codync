@@ -32,11 +32,10 @@ pub const MAX_CARD_DETAIL: usize = 2000;
 
 pub const INSTRUCTIONS: &str = "You manage the user's team of Codync bots. list_team shows every bot's setup and \
 routines, yours and hidden bots included. create_bot adds a bot, which can manage the team too; update_bot changes a \
-bot's name, instructions, model and its settings (effort…), fallbacks, avatar, routines or visibility, yours included \
-(a new model of your own takes effect after this turn; a new model without modelOptions starts on its defaults). \
-list_models shows the model ids an agent offers, each with its settings, for picking a bot's model, its modelOptions \
-or a fallback's model, and it pauses and resumes a bot: a paused bot answers nothing and spends nothing until it is \
-resumed, so pausing stops its credits. Each \
+bot's name, instructions, model and its settings (effort…), fallbacks, avatar, routines, visibility or pause, yours included \
+(a new model of your own takes effect after this turn; a new model without modelOptions starts on its defaults). A paused \
+bot answers nothing and spends nothing until it is resumed, so pausing stops its credits. list_models shows the model ids \
+an agent offers, each with its settings, for picking a bot's model, its modelOptions or a fallback's model. Each \
 bot runs only its own routines: to test another bot's, ask that bot with message_bot to run it with its own \
 run_routine, naming the routine id; don't paste its instructions instead. Its result appears in that bot's chat. A \
 hidden bot can't be messaged: ask the user to run its routine from that bot. Use them for what the user asked, \

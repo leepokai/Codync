@@ -220,5 +220,7 @@ async fn a_bot_without_the_option_cannot_pause_or_remodel() {
     let models = call(&hub, "dev", "list_models", &json!({"agent": "claude"})).await.unwrap_err().to_string();
     assert!(models.contains("may not manage the team"), "{models}");
     assert!(!hub.store.bot("lead").unwrap().unwrap().config.paused, "nothing changed");
+    assert_eq!(hub.store.bot("lead").unwrap().unwrap().config.model, None, "nothing changed");
+    assert!(hub.store.bot("lead").unwrap().unwrap().config.fallbacks.is_empty(), "nothing changed");
     std::fs::remove_dir_all(&dir).unwrap();
 }

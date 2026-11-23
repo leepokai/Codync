@@ -1,8 +1,8 @@
 A bot runs on one agent, such as Claude Code. When that agent can't answer, because its usage ran out, it's rate limited or overloaded, it's signed out, or it won't start, the bot can carry on with the next agent in its list. The new agent continues the same turn in the same chat, with the bot's memory, working folder and tools. The bot goes back to its own agent once that one recovers.
 
-Each fallback is another **agent** (for example Claude Code, then Codex, then Gemini CLI). To fall back between one agent's own models, set that in the agent itself (for example Claude Code's `fallbackModel`).
+Each fallback is another **agent** (for example Claude Code, then Codex, then Gemini CLI) or another [login profile](/docs/agents#login-profiles) of the same agent. To fall back between one agent's own models, set that in the agent itself (for example Claude Code's `fallbackModel`).
 
-A bot has no fallbacks until you add them.
+If an agent has more than one signed-in [login profile](/docs/agents#login-profiles) (an account or an API key), Codync automatically rotates across the other signed-in profiles of that agent (using the same model and options) before moving on to the next saved fallback.
 
 ## Set up fallbacks
 
@@ -18,13 +18,13 @@ In the desktop, iPhone and Android apps:
 2. Pick the agent and its model right there, the same way as the bot's own agent. Tap a row's summary any time to change its agent and login profile (one choice: each agent is listed once per login profile) or its model; it keeps its place.
 3. Add up to three. Use each row's ⋯ menu to **Move up**, **Move down** or **Remove**.
 
-Each agent can appear once on each of its [login profiles](/docs/agents#login-profiles): an agent with more than one login profile can be a fallback again on another of them, the bot's own agent included, listed once for each login profile the rest of the list doesn't use. An agent with one login appears once, and the bot's own isn't offered. The info button next to Fallbacks explains the feature.
+Each agent can appear once on each of its [login profiles](/docs/agents#login-profiles): an agent with more than one login profile can be added as an explicit fallback on another of them with its own model and options (which automatic rotation leaves untouched), the bot's own agent included, listed once for each login profile the rest of the list doesn't use. An agent with one login appears once, and the bot's own isn't offered. The info button next to Fallbacks explains the feature.
 
 In the terminal UI, ←/→ picks a fallback, space adds the next free agent or changes a fallback's model, `a` changes its agent, `c` changes its login profile, `[` and `]` move it, and `x` removes it.
 
 Everything else stays the bot's own whichever agent is answering: its folder, approvals, connectors, skills, computer use and memory, and Fast mode where the fallback's agent has it. With **Auto** under Permissions, each agent works in its own Auto mode. A fallback without the bot's mode (Claude Code's Plan, say) works in its own closest mode that is no less careful, such as Codex's Read-only, and the chat says which. A fallback with no mode that careful, or one that won't switch to it, doesn't take the turn: the next one does.
 
-> **Note:** A fallback that runs on an API key instead of a subscription costs money with that provider.
+> **Note:** Rotating to or falling back onto an API-key login profile costs money with that provider instead of using a subscription.
 
 ## When a bot moves on
 
@@ -67,7 +67,7 @@ Once Codync knows the agent's context window, the recap takes at most a tenth of
 - **The way back:** "Back on Claude Code."
 - **A signed-out agent:** moving past one also posts that agent's sign-in card. Its **Sign in** button opens the agent's sign-in sheet; once you're signed in, the bot goes back to that agent on its next message.
 - **Every agent failed:** a failure notice says how each one is, for example "No agent in this bot's list could answer: Claude Code reached its usage limit (resets in 2 h); Codex …". If one of them was signed out, the turn's messages wait on its sign-in card and go out again once you sign in (messages older than 24 hours aren't resent).
-- **No fallbacks yet:** when a bot without fallbacks stops because its agent ran out of usage, was rate limited or was overloaded, the notice offers **Add a fallback**, which opens the Agent card in the bot's **Settings**. In the terminal UI, pick the notice and press `A`.
+- **No fallbacks left:** when a bot with no signed-in fallback steps left stops because its agent ran out of usage, was rate limited or was overloaded, the notice offers **Add a fallback**, which opens the Agent card in the bot's **Settings**. In the terminal UI, pick the notice and press `A`.
 - **Work away from the chat:** a [thread](/docs/conversations#work) falls back the same way (in [Advisor mode](/docs/conversations#work), along the threads' own fallbacks). Its sign-in card and its **Add a fallback** notice appear in the bot's chat, with the line **Work ·** and its task's title; its own steps just say it asked there. A task whose thread can't go on until you sign in waits for you instead of failing, and carries on once you have.
 
 The Agent card shows the state too. While the bot is on a fallback, its first row reads, for example, "Using Codex until Claude Code resets at 3:00 PM" when Claude Code reached its usage limit, or "Using Codex while Claude Code is signed out" for another reason, with **Switch back**. The fallback in use is marked **In use**, and a resting agent shows "Usage resets 3:00 PM" or "Resting until 3:00 PM". These lines follow the app's language. In the terminal UI, the bot's settings (`e`) show the agent in use while it is on a fallback, and the chain in the **Fallbacks** field.

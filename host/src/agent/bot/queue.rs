@@ -113,12 +113,15 @@ impl Actor {
                 self.versions.ready(&self.hub, &self.base);
                 // On its own agent the bot takes the new one; on a fallback it keeps that agent (its step may have
                 // moved) until `settle_chain` moves it off one it no longer uses.
-                let cfg = if crate::agent::fallback::step_of(&old, &crate::agent::fallback::login::of(&self.cfg))
-                    == Some(0)
+                let cfg = if crate::agent::fallback::step_of(
+                    &self.hub.store,
+                    &old,
+                    &crate::agent::fallback::login::of(&self.cfg),
+                ) == Some(0)
                 {
-                    crate::agent::fallback::effective(&self.base, 0)
+                    crate::agent::fallback::effective(&self.hub.store, &self.base, 0)
                 } else {
-                    super::fallback::running(&self.base, &self.cfg)
+                    super::fallback::running(&self.hub.store, &self.base, &self.cfg)
                 };
                 // The harness reads its own memory's switch when it starts: an agent that can resume its session
                 // restarts into it, one that can't starts afresh.

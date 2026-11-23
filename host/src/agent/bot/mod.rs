@@ -79,9 +79,10 @@ pub struct BotHandle {
 
 pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     let (tx, rx) = mpsc::unbounded_channel();
-    let session_id = hub.store.bot(&base.id).ok().flatten().and_then(|b| b.session_id);
+    let saved_session = hub.store.bot(&base.id).ok().flatten().and_then(|b| b.session_id);
     // The agent its main session runs on: one of its fallbacks, if it was on one when the host stopped.
-    let cfg = fallback::resume_step(&hub, &base);
+    let resumed = fallback::resume_step(&hub, &base, saved_session);
+    let (cfg, session_id) = (resumed.cfg, resumed.session_id);
     let interrupted = resumable(&hub.store, &cfg.id).then(|| Lane::main(&cfg.id));
     // A thread's chat is its bot's own work, not the user's words: only the bot dreams, over its own chat.
     let dreamer =
@@ -154,7 +155,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         restart_after_turn: false,
         fast_support,
         idle_checked: Instant::now(),
-        relay: fallback::Relay::default(),
+        relay: fallback::Relay::with_recap(resumed.recap),
     };
     let task = tokio::spawn(actor.run(rx, interrupted));
     BotHandle { tx, task }
@@ -412,6 +413,7 @@ impl Actor {
                 inc => self.on_incoming(Some(inc)).await,
             }
         }
+        self.flush(true);
         let done = codync_agent::pi::turn_result(done, self.agent_error.take());
         if let Err(error) = &done
             && self.fall_back(error, done_tx).await

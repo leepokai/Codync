@@ -13,6 +13,11 @@ export interface PaletteItem {
 
 /** The items matching the query in one of their words; all of them for an empty query. */
 export function matchItems(items: PaletteItem[], query: string): PaletteItem[] {
+  return matchWords(items, query)
+}
+
+/** `matchItems`'s rule over any list that carries words, so a view's own rows match the same way. */
+export function matchWords<T extends { words: string[] }>(items: T[], query: string): T[] {
   const q = query.trim().toLowerCase()
   if (!q) return items
   return items.filter((item) => item.words.some((s) => s.toLowerCase().includes(q)))

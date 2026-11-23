@@ -9,6 +9,9 @@ import { canOpenWorkflows } from './workflows/pins'
 
 // What each list's search finds: the rows of that list, matched by what they show.
 
+/** What a bot's search matches: its name, description or last message. */
+export const botWords = (item: RosterItem) => [item.bot.name, item.bot.description, item.bot.lastMessage ?? '']
+
 /** The bots, by name, description or last message; a group's subtitle lists its members. */
 export function botItems(roster: RosterItem[], open: (ref: BotRef) => void): PaletteItem[] {
   return roster.map((item) => {
@@ -19,7 +22,7 @@ export function botItems(roster: RosterItem[], open: (ref: BotRef) => void): Pal
       title: item.bot.name,
       subtitle: item.bot.description || (names === item.bot.name ? '' : names),
       leading: <AvatarWithStatus bot={item.bot} members={members} size={32} />,
-      words: [item.bot.name, item.bot.description, item.bot.lastMessage ?? ''],
+      words: botWords(item),
       pick: () => open(item.ref),
     }
   })

@@ -10,11 +10,12 @@ import { useTr } from '../../lib/use-language'
 import { refKey, type RosterItem } from '../../store/app-model'
 import { analytics } from '../../store/analytics'
 import { StoreContext, useStore } from '../../store/context'
-import { matchBots } from '../SearchPalette'
-import { AgentModelPicker } from './AgentModelPicker'
+import { botWords } from '../search-items'
+import { matchWords } from '../palette-items'
+import { ModelPicker } from './ModelPicker'
 import { useAgentModels, type AgentModels } from './agent-models'
 import { errorText } from './drafts'
-import { agentChoice } from './Fallbacks'
+import { loginSeats } from './seats'
 import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, pausePatch, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
@@ -167,9 +168,10 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   useEffect(() => () => { alive.current = false }, [])
   const models = useAgentModels(pick.backend)
   // A custom command needs the editor's command field, which a batch apply can't supply; the batch
-  // swap targets the agents the account's computers offer.
-  const agents = backends.map(agentChoice)
-  const shown = matchBots(items, query)
+  // swap targets the agents the account's computers offer. The sheet rides the same seat rail the
+  // bot editor's model picker shows, so picking an agent here behaves exactly as it does there.
+  const seats = loginSeats({ backends, on: { backend: pick.backend, loginProfile: null }, tr, pick: (b) => { run.current++; setOutcomes({}); setPick({ backend: b.id, model: null, modelOptions: {} }) } })
+  const shown = matchWords(items.map((item) => ({ item, words: botWords(item) })), query).map((w) => w.item)
   const shownKeys = allKeys(shown)
   const everyChecked = shownKeys.length > 0 && shownKeys.every((key) => checked.has(key))
   const oneComputer = !items.some((item) => item.computer.id !== first?.computer.id)
@@ -314,15 +316,17 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
 
   return (
     <VStack gap={12} className="model-manager-body">
-      <AgentModelPicker
+      <ModelPicker
+        key="agent"
+        trigger="row"
         backend={pick.backend}
         models={models}
-        selection={pick.model}
-        onChange={(model, modelOptions) => { run.current++; setOutcomes({}); setPick((p) => ({ ...p, model: model || null, modelOptions })) }}
-        options={pick.modelOptions}
-        agents={agents}
-        onAgentChange={(id) => { run.current++; setOutcomes({}); setPick({ backend: id, model: null, modelOptions: {} }) }}
-      />
+        seats={seats}
+        model={{ id: pick.model, options: pick.modelOptions }}
+        set={(m) => { run.current++; setOutcomes({}); setPick((p) => ({ ...p, model: m.id, options: m.options })) }}
+      >
+        <Text size="caption" tone="secondary">{tr('Changing the model starts a new agent session. Chat history is kept.')}</Text>
+      </ModelPicker>
       <div className="palette-field">
         <Icon name="magnifyingglass" size={15} color="var(--secondary)" />
         <input value={query} placeholder={tr('Search bots')} aria-label={tr('Search bots')} spellCheck={false} onChange={(e) => setQuery(e.target.value)} />

@@ -38,8 +38,8 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
       await page.locator('button[title="Bot Manager"]').first().click()
       const sheet = page.locator('.model-manager')
       await expect(sheet).toBeVisible()
-      // The top section is the shared AgentModelPicker, not a copy: same classes, two search stages.
-      await expect(sheet.locator('.agent-picker')).toBeVisible()
+      // The top section is the shared ModelPicker, not a copy: same field, seat rail and model list.
+      await expect(sheet.locator('.model-picker-field')).toBeVisible()
     })
 
     const sheet = page.locator('.model-manager')
@@ -64,13 +64,11 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
       await expect(rows.filter({ hasText: nameB })).toHaveAttribute('aria-checked', 'false')
     })
 
-    await test.step('pick the installed agent through the picker stages', async () => {
-      const picker = sheet.locator('.agent-picker')
-      // The picker starts closed: open its panel, then the agent stage, then pick.
-      await picker.locator('.agent-picker-summary').click()
-      await picker.locator('.agent-picker-choice').first().click()
-      await picker.locator('.agent-picker-item').filter({ hasText: agent!.name }).first().click()
-      await expect(picker.getByRole('textbox', { name: 'Search models' })).toBeVisible()
+    await test.step('pick the installed agent through the picker', async () => {
+      // The shared picker opens on its models with the agents as its seat rail; one click picks.
+      await sheet.locator('.model-picker-field').click()
+      await page.locator('.model-picker-agent').filter({ has: page.locator(`[aria-label="${agent!.name}"]`) }).first().click().catch(() => {})
+      await expect(page.getByRole('textbox', { name: 'Search models' })).toBeVisible()
     })
 
     await test.step('check both bots and apply', async () => {
@@ -119,7 +117,7 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
         await page.locator('.roster-row', { hasText: name }).click()
         await page.getByRole('button', { name: `${name}, view details` }).click()
         await page.locator('.details-panel').getByRole('tab', { name: 'Settings' }).click()
-        await expect(page.locator('.details-panel .agent-picker .agent-picker-summary')).toContainText(agent!.name)
+        await expect(page.locator('.details-panel .model-picker-field')).toContainText(agent!.name)
       }
     })
   } finally {

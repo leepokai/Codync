@@ -4,10 +4,10 @@
 use super::devices::Caller;
 use super::str_arg;
 use crate::LockExt;
-use crate::agent::backends;
 use crate::hub::Hub;
 use crate::usage;
 use anyhow::{Context, Result, anyhow, bail};
+use codync_agent::backends;
 use serde_json::{Value, json};
 use std::ops::ControlFlow;
 use std::sync::Arc;
@@ -202,7 +202,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             };
             json!({"term": term})
         }
-        "agentModels" => crate::agent::auth::shared_models(hub, str_arg(&b, "backend")?).await?,
+        "agentModels" => {
+            crate::agent::auth::shared_models(hub, str_arg(&b, "backend")?, login_profile_arg(&b)?).await?
+        }
         // A login profile's own sign-in state: `{signedIn, loginProfile}`, and the agent list it changed.
         "agentAuth" if b["loginProfile"].is_string() => {
             let id = str_arg(&b, "loginProfile")?;
@@ -328,4 +330,26 @@ fn agents(hub: &Hub) -> Vec<Value> {
 fn term_size(b: &Value) -> (u16, u16) {
     let dim = |k: &str, default: u16| b[k].as_u64().and_then(|v| u16::try_from(v).ok()).unwrap_or(default);
     (dim("cols", 80), dim("rows", 24))
+}
+
+fn login_profile_arg(b: &Value) -> Result<Option<&str>> {
+    match &b["loginProfile"] {
+        Value::Null => Ok(None),
+        Value::String(s) => Ok((!s.is_empty()).then_some(s.as_str())),
+        _ => bail!("`loginProfile` must be a string"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_models_login_profile_arg_is_backward_compatible() {
+        assert_eq!(login_profile_arg(&json!({"backend": "gemini"})).unwrap(), None);
+        assert_eq!(login_profile_arg(&json!({"backend": "gemini", "loginProfile": null})).unwrap(), None);
+        assert_eq!(login_profile_arg(&json!({"backend": "gemini", "loginProfile": ""})).unwrap(), None);
+        assert_eq!(login_profile_arg(&json!({"backend": "gemini", "loginProfile": "prof-1"})).unwrap(), Some("prof-1"));
+        assert!(login_profile_arg(&json!({"backend": "gemini", "loginProfile": 123})).is_err());
+    }
 }

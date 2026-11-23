@@ -2268,5 +2268,13 @@
   "Reading SSH settings…": "Lettura impostazioni SSH…",
   "Reading the host key…": "Lettura chiave host…",
   "Signing in…": "Accesso in corso…",
-  "Opening the tunnel…": "Apertura del tunnel…"
+  "Opening the tunnel…": "Apertura del tunnel…",
+  "Advisor mode": "Modalità consulente",
+  "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.": "La chat pianifica e affida il lavoro; i thread girano su un agente proprio, con i propri agenti di riserva.",
+  "Threads' agent": "Agente dei thread",
+  "Threads' fallbacks": "Agenti di riserva dei thread",
+  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "Se {agent} esaurisce l'utilizzo o non può rispondere, i thread proseguono con il successivo.",
+  "in background": "in background",
+  "{count} s": "{count} s",
+  "{count} min": "{count} min"
 }

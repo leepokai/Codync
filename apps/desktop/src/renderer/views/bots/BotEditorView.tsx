@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fastModeRefusal, fastModeShown } from '@shared/fast-mode'
-import { restLine, restOf, withBackend } from '@shared/fallbacks'
+import { restLine, restOf, withAdvisor, withBackend } from '@shared/fallbacks'
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { MAX_THREADS } from '@shared/work'
 import { AgentIcon } from '../../components/AgentIcon'
@@ -18,6 +18,7 @@ import { AgentModelPicker } from './AgentModelPicker'
 import { ApprovalRow } from './ApprovalRow'
 import { CompactionRow } from './CompactionRow'
 import { agentChoice, AgentStepBanner, FallbacksRow } from './Fallbacks'
+import { ThreadsAgentRow } from './ThreadsAgentRow'
 import { errorText, isValid, lastPathComponent, normalized, useFollowSaved, usePlugins, type Plugins } from './drafts'
 import { FormSheet } from '../marketplace/pieces'
 import { SkillSheet, type SkillRef } from '../marketplace/SkillSheet'
@@ -126,7 +127,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
   const avatarRef = useRef<HTMLButtonElement>(null)
   const set = <K extends keyof BotDraft>(key: K, value: BotDraft[K]) => onChange((d) => ({ ...d, [key]: value }))
   const setModel = useCallback((model: string | null, modelOptions: Record<string, string>) => onChange((d) => ({ ...d, model, modelOptions })), [onChange])
-  const models = useAgentModels(draft.backend)
+  const models = useAgentModels(draft.backend, draft.loginProfile)
   const saved = draft.id ? (store.bots.get(draft.id) ?? null) : null
 
   const backends = store.hello?.backends ?? []
@@ -167,6 +168,20 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
       onChange={(on) => set('selfFallbacks', on)}
     />,
   ] : null
+  // Advisor mode, from a host that has it: its threads' agent and fallbacks show once it's on.
+  const advisor = saved && saved.threadFallbacks !== null ? [
+    <SwitchRow
+      key="advisor"
+      title="Advisor mode"
+      detail="The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks."
+      on={!!draft.threadAgent}
+      onChange={(on) => onChange((d) => withAdvisor(d, on, backends))}
+    />,
+    ...(draft.threadAgent ? [
+      <ThreadsAgentRow key="threads-agent" agent={draft.threadAgent} bot={saved} onChange={onChange} />,
+      <FallbacksRow key="threads-fallbacks" threads draft={draft} bot={saved} onChange={onChange} />,
+    ] : []),
+  ] : null
   // Only where Codync summarizes the chat (its bot says): CardSection gives every child a row.
   const compaction = saved && saved.compaction !== null ? <CompactionRow key="compaction" draft={draft} bot={saved} onChange={onChange} /> : null
 
@@ -179,6 +194,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
           {agent}
           {loginProfile}
           {fallbacks}
+          {advisor}
           {compaction}
         </CardSection>
         <CardSection title="Profile">

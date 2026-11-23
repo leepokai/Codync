@@ -2268,5 +2268,13 @@
   "Reading SSH settings…": "正在讀取 SSH 設定…",
   "Reading the host key…": "正在讀取主機金鑰…",
   "Signing in…": "正在登入…",
-  "Opening the tunnel…": "正在開啟通道…"
+  "Opening the tunnel…": "正在開啟通道…",
+  "Advisor mode": "顧問模式",
+  "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.": "聊天負責規劃與分派工作；thread 用自己的 agent 和備用執行。",
+  "Threads' agent": "Thread 的 agent",
+  "Threads' fallbacks": "Thread 的備用",
+  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "如果 {agent} 用量用完或無法回答，thread 會交給下一個繼續。",
+  "in background": "在背景執行",
+  "{count} s": "{count} 秒",
+  "{count} min": "{count} 分鐘"
 }

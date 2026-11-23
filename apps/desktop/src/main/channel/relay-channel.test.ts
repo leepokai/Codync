@@ -14,6 +14,7 @@ type Listener = (event: { data?: unknown; code?: number }) => void
 
 /** The relay and the computer behind it, as one socket. */
 class FakeRelay implements Socket {
+  readyState: number = WebSocket.OPEN
   sent: Record<string, unknown>[] = []
   closedWith: number | null = null
   codec: FrameCodec | null = null
@@ -23,6 +24,8 @@ class FakeRelay implements Socket {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener])
   }
   send(text: string) {
+    // As the real WebSocket does.
+    if (this.readyState === WebSocket.CONNECTING) throw new Error('InvalidStateError: still connecting')
     const wire = JSON.parse(text) as Record<string, unknown>
     if (wire.t === 'hello') return this.welcome(wire as { dk: string; ek: string; n: string })
     this.sent.push(wire.t === 'f' && this.codec ? (this.codec.open(wire as { c: number; d: string }) as Record<string, unknown>) : wire)
@@ -158,6 +161,27 @@ test('nobody looking at the window closes the socket; calls wait until someone l
   relays[1]!.answer({ id: 2, ok: { routines: [] } })
   assert.deepEqual(await waiting, { routines: [] })
   ch.close()
+})
+
+test('an open socket is pinged; one still opening is not, and is closed if it never opens', () => {
+  mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'] })
+  try {
+    const { ch, relays } = channel()
+    void ch.call('hello', {}, 600_000).catch(() => {})
+    const pinged = () => relays[0]!.sent.some((m) => m.t === 'ping')
+    mock.timers.tick(30_000)
+    assert.ok(pinged())
+    relays[0]!.sent = []
+    relays[0]!.readyState = WebSocket.CONNECTING
+    mock.timers.tick(31_000)
+    assert.ok(!pinged())
+    assert.equal(relays[0]!.closedWith, null)
+    mock.timers.tick(30_000)
+    assert.equal(relays[0]!.closedWith, 4000)
+    ch.close()
+  } finally {
+    mock.timers.reset()
+  }
 })
 
 test('a socket that goes quiet or fails is closed and dialed again', async () => {

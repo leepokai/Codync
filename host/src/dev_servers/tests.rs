@@ -6,7 +6,7 @@ use super::scan::SETTLE_MS;
 use super::tools::tidied;
 use super::{DevServers, Live, Saved, Status};
 use crate::LockExt;
-use crate::agent::process::{JobProcess, descendants, parse_ps};
+use codync_agent::process::{JobProcess, descendants, parse_ps};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::Path;

@@ -3,9 +3,9 @@
 //! user's standing work and runs in a session of its own; a follow-up is the bot keeping its word once.
 use super::kept::{self, Refused};
 use super::{EntryKind, Hub, Lane, LockExt, Result, Routines, Store, Value, agent_bot, bail, json, now_ms};
-use crate::agent::acp;
 use crate::agent::bot::{Cmd, NoticeStyle};
 use crate::analytics::{self, Event};
+use codync_agent::acp;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},

@@ -24,7 +24,7 @@ import './work.css'
 export function LiveWork({ bot, openCard, openThread, plain = false }: { bot: Bot; openCard: (taskId: string) => void; openThread: (taskId: string) => void; plain?: boolean }) {
   const tr = useTr()
   const store = useStore()
-  const { threads, atOnce, free, box } = workSections(bot.work, bot.maxThreads)
+  const { threads, inUse, atOnce, free, box } = workSections(bot.work, bot.maxThreads)
   const asks = pendingAsks(store.allEntries(bot.id), tr)
   const cutIn = canCutIn(bot.work, bot.maxThreads)
   const offline = store.isOffline
@@ -66,7 +66,7 @@ export function LiveWork({ bot, openCard, openThread, plain = false }: { bot: Bo
         <VStack className="outlined-card">{threadRows}{boxRows}</VStack>
       ) : (
         <>
-          <WorkSection title="Threads" count={`${threads.length} / ${atOnce}`} shown={threads.length + box.length > 0}>
+          <WorkSection title="Threads" count={`${inUse} / ${atOnce}`} shown={threads.length + box.length > 0}>
             {threadRows}
             {Array.from({ length: free }, (_, at) => <FreeRow key={`free-${at}`} />)}
           </WorkSection>

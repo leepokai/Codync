@@ -17,6 +17,13 @@ def turn(rid):
     if ans.get("outcome",{}).get("outcome")=="cancelled":
         send({"jsonrpc":"2.0","id":rid,"result":{"stopReason":"cancelled"}}); return
     upd({"sessionUpdate":"tool_call_update","toolCallId":"t1","status":"completed"})
+    # A subagent as Claude's adapter runs one: the parent's Agent call, its own calls naming it, its totals at the end.
+    agent={"claudeCode":{"toolName":"Agent"}}
+    upd({"sessionUpdate":"tool_call","toolCallId":"a1","title":"Task","kind":"think","status":"pending","_meta":agent,"rawInput":{"subagent_type":"general-purpose","run_in_background":False}})
+    upd({"sessionUpdate":"tool_call","toolCallId":"c1","title":"ls","kind":"execute","status":"completed","_meta":{"claudeCode":{"toolName":"Bash","parentToolUseId":"a1"}}})
+    upd({"sessionUpdate":"tool_call","toolCallId":"h1","title":"SubagentHandback","kind":"other","status":"completed","_meta":{"claudeCode":{"toolName":"SubagentHandback","parentToolUseId":"a1"}}})
+    upd({"sessionUpdate":"tool_call_update","toolCallId":"a1","_meta":{"claudeCode":{"toolName":"Agent","toolResponse":{"status":"completed","agentId":"ab00","agentType":"general-purpose","resolvedModel":"claude-opus-5-5","totalTokens":42310,"totalToolUseCount":1,"totalDurationMs":6287}}}})
+    upd({"sessionUpdate":"tool_call_update","toolCallId":"a1","status":"completed","_meta":agent})
     upd({"sessionUpdate":"plan","entries":[{"content":"edit","status":"completed","priority":"high"}]})
     upd({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Done: "+json.dumps(ans)}})
     send({"jsonrpc":"2.0","id":rid,"result":{"stopReason":"end_turn"}})

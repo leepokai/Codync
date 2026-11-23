@@ -2268,5 +2268,13 @@
   "Reading SSH settings…": "SSH 설정 읽는 중…",
   "Reading the host key…": "호스트 키 읽는 중…",
   "Signing in…": "로그인 중…",
-  "Opening the tunnel…": "터널 여는 중…"
+  "Opening the tunnel…": "터널 여는 중…",
+  "Advisor mode": "어드바이저 모드",
+  "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.": "채팅은 계획하고 작업을 넘기며, thread는 자체 에이전트와 대체 에이전트로 실행됩니다.",
+  "Threads' agent": "Thread 에이전트",
+  "Threads' fallbacks": "Thread 대체 에이전트",
+  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "{agent}의 사용량이 소진되거나 응답할 수 없으면 thread가 다음 에이전트로 이어갑니다.",
+  "in background": "백그라운드에서 실행",
+  "{count} s": "{count}초",
+  "{count} min": "{count}분"
 }

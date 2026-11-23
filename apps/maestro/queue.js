@@ -19,8 +19,9 @@ if (typeof CLEANUP !== 'undefined') {
   for (let i = 1; i <= Number(FILL); i++) api('send', { botId: output.bot.id, text: `Waiting ${i}` })
 } else {
   const name = `Queue check ${Math.random().toString(36).slice(2, 6)}`
+  // The turn outlasts the flow, which takes Android over twenty minutes: a turn that ended would start the queue as the next one.
   const bot = api('createBot', {
-    name, backend: 'custom', command: `python3 -X utf8 -u '${STEER_AGENT}' steer 600`, connectors: [], skills: [], notify: false,
+    name, backend: 'custom', command: `python3 -X utf8 -u '${STEER_AGENT}' steer 3600`, connectors: [], skills: [], notify: false,
   }).bot
   api('send', { botId: bot.id, text: 'first' })
   output.bot = { name, id: bot.id }

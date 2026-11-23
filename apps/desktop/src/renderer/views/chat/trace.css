@@ -19,3 +19,7 @@
 .trace-thought {
   white-space: pre-wrap;
 }
+/* A subagent's step, under the call that launched it. */
+.trace-nested {
+  margin-left: 24px;
+}

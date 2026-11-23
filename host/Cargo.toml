@@ -1,6 +1,6 @@
 [package]
 name = "codync-host"
-version = "2.52.0"
+version = "2.53.0"
 edition = "2024"
 # iroh (codync-network) needs 1.91.
 rust-version = "1.91"
@@ -9,9 +9,9 @@ description = "Runs your coding-agent bots and serves the Codync apps"
 license = "Apache-2.0"
 repository = "https://github.com/leepokai/Codync"
 
-# The accounts, memory and network crates build here; memory is mirrored to its own repository (docs/design/bot-memory.md#packaging).
+# The agent, memory and network crates build here; memory is mirrored to its own repository (docs/design/bot-memory.md#packaging).
 [workspace]
-members = ["crates/accounts", "crates/memory", "crates/network"]
+members = ["crates/agent", "crates/memory", "crates/network"]
 # Patched dependencies (`[patch.crates-io]` below) build as they are, outside the workspace rules.
 exclude = ["vendor"]
 
@@ -22,7 +22,7 @@ base64 = "0.23.1"
 chacha20poly1305 = "0.11.0"
 chrono = "0.4.45"
 chrono-tz = "0.10.4"
-codync-accounts = { path = "crates/accounts" }
+codync-agent = { path = "crates/agent", features = ["usage"] }
 codync-mem = { path = "crates/memory" }
 # aws-lc-rs, like reqwest and tokio-tungstenite. With ring built in too (a `--workspace` build turns
 # on the crate's default), rustls has no default provider, so `main` installs one.
@@ -72,6 +72,9 @@ resvg = { version = "0.49", default-features = false }
 zip = { version = "9.2.0", default-features = false, features = ["deflate"] }
 listeners = "0.6.1"
 mdns-sd = "0.21.7"
+
+[dev-dependencies]
+codync-agent = { path = "crates/agent", features = ["test-support", "usage"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3.6.3", features = ["apple-native"] }

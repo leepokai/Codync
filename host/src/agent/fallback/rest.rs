@@ -56,7 +56,7 @@ pub fn record(store: &Store, login: &str, reason: Reason, now: i64, resets_at: O
         Reason::ModelMissing | Reason::ModeMissing => return None,
         Reason::UsageLimit => resets_at.filter(|t| *t > now).map_or(UNKNOWN_RESET, |t| t - now),
         Reason::OutOfCredits => OUT_OF_CREDITS,
-        Reason::SignedOut if crate::agent::backends::harness(login::backend_of(login)).is_some() => SIGNED_OUT,
+        Reason::SignedOut if codync_agent::backends::harness(login::backend_of(login)).is_some() => SIGNED_OUT,
         Reason::SignedOut => SIGNED_OUT_ELSEWHERE,
         Reason::NotStarting => NOT_STARTING,
         Reason::RateLimited | Reason::Overloaded => BACKOFF[(failures as usize - 1).min(BACKOFF.len() - 1)],

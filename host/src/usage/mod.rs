@@ -1,45 +1,21 @@
-//! Subscription usage, read on the host.
+//! Subscription usage: which agents' plan limits this computer reads, when, and what the apps get.
 //!
-//! Claude: `claude -p /usage`, the status line, and the ACP rate-limit event.
-//! Codex: the CLI's live account rate limits. The other agents Codync runs are
-//! read the same way when they can report locally: `omp usage`, `amp usage`,
-//! `hermes usage`, `auggie account status`, `kilo profile`, `kiro-cli /usage`, a `kimi`
-//! screen, Antigravity's ACP `/usage` command or its IDE's language server, Copilot's
-//! headless server, Grok's ACP billing extension, OpenCode's database, Vibe's session logs,
-//! and the `JetBrains` IDE quota file. Which of them get read and shown: [`services`].
-//! Failures: [`reading`].
-//!
-//! Cursor's saved CLI or app login reads the dashboard service's weekly unified
-//! allowance, or the website's usage summary for legacy monthly plans. These are
-//! the only provider requests, and the token is never logged.
+//! Each agent's reader is in the agent crate (`codync_agent::usage`): its CLI's own report, its server's account API,
+//! or its files here (Cursor's saved login reads Cursor's own service, the only provider request). The host adds
+//! Claude's status line and the ACP rate-limit event ([`claude`]), chooses which agents are read and shown
+//! ([`services`]), lands each reading on its login, and reports failures ([`reading`]).
 
-mod acp_read;
-mod amp;
-mod antigravity;
-mod auggie;
 mod claude;
-mod codex;
-mod command;
-mod copilot;
-mod cursor;
-mod grok;
-mod hermes;
-mod junie;
-mod kilo;
-mod kimi;
-mod kiro;
-mod omp;
-mod opencode;
 mod reading;
 mod services;
-mod vibe;
 
 pub use claude::{ingest_claude_rate_limit, ingest_statusline};
-pub(crate) use command::strip_ansi;
+pub use codync_agent::usage::Window;
 pub use services::{bots_changed, login_profiles_changed, set_order, set_shown};
 
 use crate::LockExt;
 use crate::hub::Hub;
+use codync_agent::usage::{self, Outcome};
 use futures::future::BoxFuture;
 use futures::stream::{FuturesUnordered, StreamExt};
 use serde::Serialize;
@@ -152,35 +128,6 @@ impl Checked {
     }
 }
 
-#[derive(Serialize, Clone, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct Window {
-    pub id: String,
-    pub label: String,
-    /// Share of the cap already used, 0–100. Zero when [`Self::text`] is set.
-    pub percent: f64,
-    /// Epoch milliseconds, when known.
-    pub resets_at: Option<i64>,
-    /// Human text when only that is known ("Sep 26 at 12pm (Asia/Taipei)").
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub resets_text: Option<String>,
-    /// A reading that isn't a share of a cap ("$4.20", "1.2M tokens", "Unlimited").
-    /// Clients show this instead of the percent, and it never counts as the tightest limit.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
-}
-
-impl Window {
-    fn new(id: impl Into<String>, label: impl Into<String>, percent: f64, resets_at: Option<i64>) -> Self {
-        Self { id: id.into(), label: label.into(), percent, resets_at, resets_text: None, text: None }
-    }
-
-    /// A row with no bar: today's tokens, an uncapped balance, an unlimited plan.
-    fn note(id: impl Into<String>, label: impl Into<String>, text: impl Into<String>) -> Self {
-        Self { text: Some(text.into()), ..Self::new(id, label, 0.0, None) }
-    }
-}
-
 impl Usage {
     /// What the apps get: without the readings of the agents the user doesn't show.
     pub fn visible(&self) -> Self {
@@ -194,7 +141,7 @@ impl Usage {
 
     /// The windows of `backend`'s login: `profile`'s, or the default one's.
     pub fn windows(&self, backend: &str, profile: Option<&str>) -> Option<&[Window]> {
-        let id = crate::agent::backends::agent_id(backend);
+        let id = codync_agent::backends::agent_id(backend);
         let provider = self.providers.iter().find(|p| p.id == id)?;
         match profile {
             None => Some(&provider.windows),
@@ -342,18 +289,18 @@ async fn readers(hub: &Arc<Hub>, pick: fn(&Hub) -> Vec<&'static Reader>) -> Vec<
 /// Each reading lands as it comes in: a slow agent doesn't hold back the others. A reader that can read a login
 /// profile reads each one listed under its agent, beside the default login.
 async fn read(hub: &Hub, readers: Vec<&'static Reader>) {
-    if crate::agent::backends::agent_checks_off() {
+    if codync_agent::backends::agent_checks_off() {
         return;
     }
     let mut readings: FuturesUnordered<BoxFuture<'_, ()>> = FuturesUnordered::new();
     for reader in readers {
         readings.push(Box::pin(async move {
             let reading = match (reader.read)(hub).await {
-                reading::Outcome::Read(windows) => Reading::All(windows),
+                Outcome::Read(windows) => Reading::All(windows),
                 // Skipped while the agent is being read already, whose reading lands instead, or on purpose.
-                reading::Outcome::Skipped => return,
-                reading::Outcome::Failed if reading::busy(reader.id) => return,
-                reading::Outcome::Failed => Reading::Unknown,
+                Outcome::Skipped => return,
+                Outcome::Failed if usage::busy(reader.id) => return,
+                Outcome::Failed => Reading::Unknown,
             };
             hub.update_usage(|usage| usage.land(reader, reader.source, None, reading));
         }));
@@ -394,29 +341,6 @@ async fn read_profile(hub: &Hub, reader: &Reader, profile: &str) -> Option<Vec<W
             None
         }
     }
-}
-
-fn iso_ms(text: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(text).ok().map(|at| at.timestamp_millis())
-}
-
-/// A window id made from its label.
-fn slug(label: &str) -> String {
-    label.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect()
-}
-
-pub(super) fn finite_i64(n: f64) -> Option<i64> {
-    if !n.is_finite() {
-        return None;
-    }
-    let rounded = n.round();
-    #[allow(clippy::cast_precision_loss)]
-    let (min, max) = (i64::MIN as f64, i64::MAX as f64);
-    if !(min..=max).contains(&rounded) {
-        return None;
-    }
-    #[allow(clippy::cast_possible_truncation)]
-    Some(rounded as i64)
 }
 
 #[cfg(test)]
@@ -558,15 +482,6 @@ mod tests {
         // Without a failure it only adds to what's there.
         land(&mut u, "claude", "agent", None, Reading::Some(vec![Window::new("five_hour", "5h", 1.0, None)]));
         assert_eq!(u.providers[0].windows.len(), 2);
-    }
-
-    #[test]
-    fn a_note_is_not_serialized_as_a_missing_percent() {
-        let window = Window::note("cost", "Cost today", "$1.50");
-        let value = serde_json::to_value(&window).unwrap();
-        assert_eq!(value["text"], "$1.50");
-        assert_eq!(value["percent"], 0.0);
-        assert!(value.get("resetsText").is_none());
     }
 
     #[test]

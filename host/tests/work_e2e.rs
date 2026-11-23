@@ -8,6 +8,7 @@ mod common;
 
 use common::host::Host;
 use serde_json::{Value, json};
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -110,6 +111,52 @@ async fn no_thread_bot_reached(events: &mut tokio::sync::mpsc::UnboundedReceiver
 }
 
 #[tokio::test]
+async fn a_thread_that_makes_one_call_again_and_again_gets_its_bot_one_watchdog_turn() {
+    // The watchdog looks every second here, not every five minutes.
+    let host = Host::start_with(&[("CODYNC_WORK_WATCH_SECS", OsStr::new("1"))]).await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Tail the log|LOOP HOLD:tail").await;
+
+    let looked = reply(&host, &bot, "Watchdog:").await;
+    assert_eq!(looked, "Watchdog: it has called \"Read the log\" 6 times in a row");
+    // It went on looking meanwhile: the bot is woken for a thread at most once an hour.
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    let woken: Vec<Value> = logged(&host.workspace(&bot), "prompts.jsonl")
+        .into_iter()
+        .filter(|p| p["text"].as_str().is_some_and(|t| t.contains("[Codync watchdog]")))
+        .collect();
+    assert_eq!(woken.len(), 1, "{woken:?}");
+    let task = task(&host, &bot, "Tail the log", "working").await;
+    assert!(woken[0]["text"].as_str().unwrap().contains(&format!("Task \"Tail the log\" ({})", id(&task))));
+
+    release(&host, &bot, "tail");
+    reply(&host, &bot, "Relayed: Report Tail the log").await;
+}
+
+#[tokio::test]
+async fn a_watchdog_turn_that_passes_leaves_nothing_in_the_chat() {
+    let host = Host::start_with(&[("CODYNC_WORK_WATCH_SECS", OsStr::new("1"))]).await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Tail PASS|LOOP HOLD:tail").await;
+    let replies = || async {
+        let entries = history(&host, &bot).await;
+        entries.into_iter().filter(|e| e["kind"] == "agent" && e["data"]["final"] == true).count()
+    };
+    let before = replies().await;
+
+    wait("the watchdog's turn", async || {
+        let prompts = logged(&host.workspace(&bot), "prompts.jsonl");
+        prompts.iter().any(|p| p["text"].as_str().is_some_and(|t| t.contains("[Codync watchdog]"))).then_some(())
+    })
+    .await;
+    wait("the chat to be idle", async || common::steer::idle(&host, &bot).await.then_some(())).await;
+    assert_eq!(replies().await, before, "(pass) says nothing");
+
+    release(&host, &bot, "tail");
+    reply(&host, &bot, "Relayed: Report Tail PASS").await;
+}
+
+#[tokio::test]
 async fn a_task_forks_the_chat_and_its_report_comes_back_as_a_turn() {
     let host = Host::start().await;
     let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
@@ -208,7 +255,9 @@ async fn a_threads_approval_card_is_answered_in_the_chat_and_it_cannot_add_task(
     for (method, tool) in [
         ("chatCall", "set_name"),
         ("chatCall", "steer_task"),
+        ("chatCall", "tell_task"),
         ("chatCall", "work_status"),
+        ("chatCall", "recall_task"),
         ("teamCall", "message_bot"),
         ("routineCall", "follow_up"),
         ("manageCall", "create_bot"),
@@ -221,6 +270,40 @@ async fn a_threads_approval_card_is_answered_in_the_chat_and_it_cannot_add_task(
     let relayed = reply(&host, &bot, "Relayed:").await;
     assert!(relayed.contains("Refused: add_task isn't available in a thread"), "{relayed}");
     assert!(relayed.ends_with("approved"), "{relayed}");
+}
+
+#[tokio::test]
+async fn a_thread_waiting_on_the_user_gives_its_seat_to_the_next_task_and_both_report() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.call("updateBot", json!({"id": bot, "permission": "ask"})).await;
+    host.reply(&bot, "ADD Asks|PERMISSION:asks").await;
+    task(&host, &bot, "Asks", "working").await;
+    host.reply(&bot, "ADD Next|HOLD:next").await;
+    task(&host, &bot, "Next", "waiting").await;
+
+    // Its card raised, the thread lends its seat and the next task starts beside it.
+    release(&host, &bot, "asks");
+    let card = wait("the thread's card", async || {
+        history(&host, &bot).await.into_iter().find(|e| e["kind"] == "permission" && e["data"]["status"] == "pending")
+    })
+    .await;
+    task(&host, &bot, "Next", "working").await;
+    let seats: Vec<(Value, Value)> =
+        work(&host, &bot).await.iter().map(|i| (i["title"].clone(), i["seat"].clone())).collect();
+    assert_eq!(seats, [(json!("Asks"), json!(false)), (json!("Next"), json!(true))], "one seat in use");
+
+    // Answered, it goes on past the ceiling, and each task reports once.
+    host.call("respondPermission", json!({"entryId": card["id"], "optionId": "allow"})).await;
+    release(&host, &bot, "next");
+    task(&host, &bot, "Asks", "done").await;
+    task(&host, &bot, "Next", "done").await;
+    let reports = wait("both reports", async || {
+        let relayed = relayed(&host, &bot).await.join(" | ");
+        (relayed.matches("Report ").count() == 2).then_some(relayed)
+    })
+    .await;
+    assert!(reports.contains("Report Asks:") && reports.contains("Report Next:"), "{reports}");
 }
 
 #[tokio::test]
@@ -384,6 +467,63 @@ async fn a_replaced_brief_is_what_the_task_starts_from_waiting_or_working() {
     host.reply(&bot, "STEER replace|Working|too late").await;
     let refused = reply(&host, &bot, "Refused:").await;
     assert_eq!(refused, "Refused: \"Working\" has ended: add new work instead");
+}
+
+#[tokio::test]
+async fn the_chat_passes_words_on_to_a_task_and_its_one_report_comes_after_them() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "steer").await;
+    host.call("updateBot", json!({"id": bot, "maxThreads": 1})).await;
+    host.reply(&bot, "ADD Working|HOLD:working").await;
+    task(&host, &bot, "Working", "working").await;
+    host.reply(&bot, "ADD Waiting|x").await;
+    task(&host, &bot, "Waiting", "waiting").await;
+
+    // A waiting task reads it when it starts.
+    host.reply(&bot, "TELL Waiting|the API page too").await;
+    assert!(reply(&host, &bot, "Told:").await.contains("It reads this when it starts."));
+    // A working one: now, into its running turn; or after it, as a turn of its own before it reports.
+    host.reply(&bot, "TELL Working|mind the docs|now").await;
+    host.reply(&bot, "TELL Working|and the tests").await;
+    let told: Vec<String> =
+        history(&host, &bot).await.into_iter().filter_map(|e| e["data"]["text"].as_str().map(str::to_owned)).collect();
+    assert!(told.iter().any(|t| t.contains("before it reports")), "{told:?}");
+    release(&host, &bot, "working");
+    task(&host, &bot, "Working", "done").await;
+    task(&host, &bot, "Waiting", "done").await;
+    wait("both reports", async || (relayed(&host, &bot).await.len() == 2).then_some(())).await;
+    assert_eq!(
+        relayed(&host, &bot).await,
+        ["Relayed: Heard and the tests", "Relayed: Report Waiting: forked; no chat"],
+        "one report a task: the last turn's"
+    );
+    let heard = logged(&host.workspace(&bot), "prompts.jsonl");
+    let in_thread = |t: &&str| t.contains("and the tests") && !t.contains("TELL");
+    let relay = heard.iter().find_map(|p| p["text"].as_str().filter(in_thread)).unwrap();
+    assert!(
+        relay.contains("[Codync: your chat passed this on to you") && !relay.contains("[Codync: message "),
+        "{relay}"
+    );
+    let waiting = task_prompts(&host, &bot, "Waiting")[0]["text"].as_str().unwrap().to_owned();
+    assert!(waiting.contains("the API page too"), "{waiting}");
+}
+
+#[tokio::test]
+async fn in_advisor_mode_tasks_run_on_the_threads_agent() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 2).await;
+    let worker = common::fixture_command("work_agent.py", "as=worker");
+    host.call("updateBot", json!({"id": bot, "threadAgent": {"backend": "custom", "command": worker}})).await;
+    host.reply(&bot, "ADD Fix|x").await;
+    wait("its report", async || (relayed(&host, &bot).await.len() == 1).then_some(())).await;
+    // Another agent can't take the chat's session: it starts from a brief that tells it the chat.
+    assert_eq!(relayed(&host, &bot).await, ["Relayed: Report Fix: briefed; saw the chat; on worker"]);
+
+    // Off: the chat's own agent again, on a fork of its session.
+    host.call("updateBot", json!({"id": bot, "threadAgent": null})).await;
+    host.reply(&bot, "ADD Again|x").await;
+    wait("its report", async || (relayed(&host, &bot).await.len() == 2).then_some(())).await;
+    assert_eq!(relayed(&host, &bot).await[1], "Relayed: Report Again: forked; no chat");
 }
 
 #[tokio::test]
@@ -1263,7 +1403,7 @@ async fn a_message_to_a_working_thread_waits_its_turn_and_the_task_reports_once_
     let twice = json!({"botId": bot, "taskId": slow["id"], "text": "also the tests", "clientNonce": nonce});
     assert_eq!(host.call("send", twice).await["entry"]["id"], entry["id"], "sent twice, it is one message");
 
-    // The caller names the bot and its task, never a thread; text only.
+    // The caller names the bot and its task, never a thread; no quote or call.
     let other = host.fixture_bot("Other", "work_agent.py", "").await;
     let (thread, id) = (&slow["id"], &entry["id"]);
     for (method, body, why) in [
@@ -1271,7 +1411,11 @@ async fn a_message_to_a_working_thread_waits_its_turn_and_the_task_reports_once_
         ("send", json!({"botId": other, "taskId": thread, "text": "x"}), "no such task"),
         ("send", json!({"botId": slow["thread"], "text": "x"}), "unknown bot"),
         ("send", json!({"botId": bot, "taskId": thread, "text": ""}), "empty message"),
-        ("send", json!({"botId": bot, "taskId": thread, "text": "x", "replyTo": id}), "a thread takes text only"),
+        (
+            "send",
+            json!({"botId": bot, "taskId": thread, "text": "x", "replyTo": id}),
+            "a thread takes no quotes or calls",
+        ),
         ("steer", json!({"botId": other, "taskId": thread, "entryId": id}), "no such task"),
         ("unqueue", json!({"botId": slow["thread"], "entryId": id}), "unknown bot"),
     ] {
@@ -1311,6 +1455,64 @@ async fn a_message_to_a_working_thread_waits_its_turn_and_the_task_reports_once_
         threads.iter().any(|thread| slow["thread"] == thread.as_str()),
         "the thread's entries are threadEntry events"
     );
+}
+
+/// Uploads a small file for a message to the thread of `task`: its upload id.
+async fn upload_to_thread(host: &Host, bot: &str, task: &Value, name: &str) -> String {
+    let upload = uuid::Uuid::new_v4().to_string();
+    let chunk = json!({"botId": bot, "taskId": task["id"], "uploadId": upload, "name": name, "offset": 0,
+        "data": "aGk=", "done": true});
+    host.call("upload", chunk).await;
+    upload
+}
+
+#[tokio::test]
+async fn files_sent_to_a_thread_are_its_own_and_go_with_it() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "ADD Slow|HOLD:slow").await;
+    let slow = task(&host, &bot, "Slow", "working").await;
+    assert_eq!(slow["talkFiles"], true, "its thread takes files");
+
+    // A file alone waits behind the running turn, read back by the thread's id; taken back, the file goes too.
+    let upload = upload_to_thread(&host, &bot, &slow, "shot.png").await;
+    let body = json!({"botId": bot, "taskId": slow["id"], "text": "", "attachments": [upload], "clientNonce": "n1"});
+    let sent = host.call("send", body).await;
+    assert_eq!(sent["queued"], true);
+    let entry = &sent["entry"];
+    assert_eq!((&entry["botId"], &entry["data"]["attachments"][0]["name"]), (&slow["thread"], &json!("shot.png")));
+    let read = json!({"botId": entry["botId"], "uploadId": upload, "offset": 0});
+    assert!(host.post("readUpload", &read).await.0, "the file is there while it waits");
+    let file = host.home.join("bots").join(slow["thread"].as_str().unwrap()).join("uploads").join(&upload);
+    assert!(file.exists(), "in the thread's own uploads");
+    host.call("unqueue", json!({"botId": bot, "taskId": slow["id"], "entryId": entry["id"]})).await;
+    wait("its file to leave the thread", async || (!file.exists()).then_some(())).await;
+    assert!(!host.post("readUpload", &read).await.0, "nor can a client read it");
+
+    // With words: the task's report names the file with them.
+    let upload = upload_to_thread(&host, &bot, &slow, "log.txt").await;
+    let body = json!({"botId": bot, "taskId": slow["id"], "text": "see this", "attachments": [upload]});
+    host.call("send", body).await;
+    release(&host, &bot, "slow");
+    let done = result(&host, &bot, "Slow", "Thread").await;
+    let relayed = reply(&host, &bot, "Relayed:").await;
+    assert!(relayed.contains("«see this [sent files: log.txt]»"), "{relayed}");
+
+    // A file to the ended task reopens it.
+    let upload = upload_to_thread(&host, &bot, &done, "more.png").await;
+    let body = json!({"botId": bot, "taskId": done["id"], "text": "", "attachments": [upload]});
+    assert_eq!(host.call("send", body).await["reopened"], true);
+    wait("the reopened task to end again", async || {
+        let task = work(&host, &bot).await.into_iter().find(|t| t["title"] == "Slow")?;
+        (task["status"] == "done" && task["endedAt"].as_i64() > done["endedAt"].as_i64()).then_some(())
+    })
+    .await;
+
+    // Its files go with the thread.
+    let uploads = host.home.join("bots").join(done["thread"].as_str().unwrap()).join("uploads");
+    assert!(uploads.join(&upload).exists(), "{}", uploads.display());
+    host.call("dropWork", json!({"botId": bot, "taskId": done["id"]})).await;
+    wait("the thread's files to go with it", async || (!uploads.exists()).then_some(())).await;
 }
 
 #[tokio::test]

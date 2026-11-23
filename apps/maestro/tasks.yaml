@@ -80,6 +80,8 @@ onFlowComplete:
 - assertNotVisible: "Threads"
 - tapOn: "What it was told"
 - assertVisible: ".*HOLD:audit.*"
+# The thread's box takes files, as the chat's does.
+- assertVisible: "Add files"
 # A message written while the task's turn runs waits over the composer, where Remove takes it back.
 - tapOn: "Message this thread"
 - inputText: "also the docs"

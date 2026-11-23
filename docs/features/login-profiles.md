@@ -17,7 +17,7 @@ The name is always "login profile", never "profile": a bot has a profile of its 
 
 Code: `host/src/agent/login_profiles.rs` is Codync's side: the records, both kinds, the sign-in check, names,
 removal and the processes that run on a profile; `login_profiles/account.rs` holds an account profile's folder and
-sign-in, `login_profiles/keys.rs` an API key profile's variables and the import from the login shell. The `codync-accounts` crate (`host/crates/accounts`) holds what is true of the
+sign-in, `login_profiles/keys.rs` an API key profile's variables and the import from the login shell. The `codync-agent` crate's `accounts` module (`host/crates/agent/src/accounts.rs`) holds what is true of the
 agents and no app, for the account kind: `agents.rs` (how each agent keeps a login in a folder), `slot.rs` (what a
 slot shares), `identity.rs` (who a login is) and the `Account` record. Clients: one **Login profiles** section in
 the agent's setup sheet (the default one first, then the others; each can be named), a **Login profile** choice
@@ -117,6 +117,9 @@ by every slot (its keyring names them by server, not by home).
   custom command, leaves its login profile behind. A bot whose account is gone doesn't start: it never runs on another
   login in silence.
 - Changing a bot's login profile restarts its agent at the next idle point, like a model change.
+- **The model list is the login's own**: `agentModels {backend, loginProfile?}` reads it on the bot's, fallback's or
+  threads' agent's login profile, so an account on another plan shows its own models
+  ([model selection](marketplace.md#model-selection)).
 - **A fallback step names its own login profile** (`fallbacks[].loginProfile`), or none for the default one. A login profile belongs
   to one agent. The chain has each login once, so an agent comes again only on another of its login profiles: Claude Code
   → Claude Code on a second login profile → Codex. Steps, parked sessions and rests go by login
@@ -148,7 +151,7 @@ its fallbacks, on `agentStep`, on each `resting` entry and on a sign-in card. Al
 
 ## Tests
 
-- **Host**: `host/src/agent/login_profiles/tests.rs` and the `codync-accounts` crate's own tests, on scratch folders.
+- **Host**: `host/src/agent/login_profiles/tests.rs` and the `codync-agent` crate's `accounts` tests, on scratch folders.
 - **Desktop, every time**: `apps/desktop/e2e/login-profiles.spec.ts` walks the screens on a stand-in Devin CLI, so
   it starts no real agent and touches no real account: what it walks and how the stand-in works is in
   [stand-in agents](../guides/test-stack.md#stand-in-agents). `e2e/usage-logins.spec.ts` checks the limits per login
@@ -164,7 +167,6 @@ its fallbacks, on `agentStep`, on each `resting` entry and on a sign-in card. Al
 ## Not built
 
 - **Limits of an account** of an agent other than Claude Code and Codex: its row says **No reading yet**.
-- **Models per login profile.** The model list is read on the computer's own login.
 - **A second real account on each agent.** Only Claude Code has had two accounts signed in at once here. The
   others are checked as far as the table says.
 - **Adopting a folder the user already has** (`~/.claude-work`) without a new sign-in.

@@ -8,12 +8,23 @@ use std::time::Duration;
 pub(super) struct Fixture {
     pub(super) hub: Arc<Hub>,
     dir: PathBuf,
+    /// b answers requests from its box, one thread at a time, as a bot does by default.
+    boxed: bool,
 }
 
 impl Fixture {
     pub(super) fn new() -> Self {
+        Self::create(false)
+    }
+
+    fn create(boxed: bool) -> Self {
         let dir = std::env::temp_dir().join(format!("codync-team-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
+        Self::open(dir, boxed)
+    }
+
+    /// The host over `dir`'s store and bots, started as a host process starts.
+    fn open(dir: PathBuf, boxed: bool) -> Self {
         let store = Store::open(&dir.join("test.db")).unwrap();
         let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
         for id in ["a", "b", "c"] {
@@ -21,10 +32,10 @@ impl Fixture {
             std::fs::create_dir_all(&cwd).unwrap();
             let cfg: BotConfig = serde_json::from_value(json!({
                 "id": id, "name": id, "backend": "fixture", "cwd": cwd,
-                "command": crate::shell::python(&agent),
+                "command": codync_agent::shell::python(&agent),
                 "notify": false, "permission": "ask",
                 // They answer requests in their chat, whose queue these tests are about (the box: `work_e2e`).
-                "manageTeam": true,
+                "manageTeam": !(boxed && id == "b"), "maxThreads": 1,
             }))
             .unwrap();
             store.save_bot(&cfg).unwrap();
@@ -37,7 +48,7 @@ impl Fixture {
             19222,
         );
         hub.start().unwrap();
-        let f = Self { hub, dir };
+        let f = Self { hub, dir, boxed };
         f.sending("a");
         f
     }
@@ -118,6 +129,12 @@ impl Fixture {
             .filter(|e| e.kind == "agent" && e.data["final"] == true)
             .map(|e| e.data["text"].as_str().unwrap_or_default().to_owned())
             .collect()
+    }
+
+    /// The host stops and a new process starts over the same store, as an update does.
+    async fn restart(self) -> Self {
+        self.hub.shutdown().await;
+        Self::open(self.dir, self.boxed)
     }
 
     pub(super) async fn shutdown(self) {
@@ -302,13 +319,23 @@ async fn recipient_stop_cancels_queued_messages_before_execution() {
         assert!(notices.iter().all(|e| e.data["status"] == "cancelled"
             && e.data["text"].as_str().unwrap().ends_with("Cancelled before execution.")));
     }
+    // The sender hears that both were cancelled, though the user stopped them (#534).
+    let heard = |receipt: &Value| {
+        let id = receipt["requestId"].as_str().unwrap().to_owned();
+        move |prompts: &[String]| {
+            prompts.iter().any(|p| p.contains(&format!("couldn't finish your message_bot request {id}")))
+        }
+    };
+    let (first_heard, second_heard) = (heard(&first), heard(&second));
+    f.until(|| f.idle("a") && first_heard(&f.prompts_of("a")) && second_heard(&f.prompts_of("a"))).await;
+    assert!(f.prompts_of("a").iter().all(|p| !p.contains("[Codync: b replied")));
+    let woken = f.prompts_of("a").len();
+    f.sending("a");
     let later = f.message("new work after Stop").unwrap();
-    f.until(|| f.took("a", 1)).await;
+    f.until(|| f.took("a", woken + 1)).await;
     assert_eq!(f.prompts().len(), 2);
     assert!(f.prompts()[1].ends_with("\n\nnew work after Stop"));
     assert!(f.notices(&later).iter().all(|e| e.data["status"] == "completed"));
-    // What the user stopped doesn't wake the sender: only the later message's reply did.
-    assert_eq!(f.prompts_of("a").len(), 1);
     f.shutdown().await;
 }
 
@@ -321,10 +348,11 @@ async fn recipient_stop_cancels_running_message_and_releases_capacity() {
     f.until(|| f.hub.team.0.locked().messages == 0).await;
     assert!(f.notices(&receipt).iter().all(|e| e.data["status"] == "cancelled"
         && e.data["text"].as_str().unwrap().contains("Partial work may have happened")));
-    // What the user stopped doesn't wake the sender: its only turn is the later message's reply.
-    let later = f.message("later work").unwrap();
+    // The sender hears it was stopped, though the user stopped it (#534).
     f.until(|| f.took("a", 1)).await;
-    assert!(f.prompts_of("a")[0].contains(later["requestId"].as_str().unwrap()));
+    let id = receipt["requestId"].as_str().unwrap();
+    assert!(f.prompts_of("a")[0].contains(&format!("b couldn't finish your message_bot request {id}")));
+    assert!(f.prompts_of("a")[0].contains("Recipient stopped"));
     f.shutdown().await;
 }
 
@@ -561,63 +589,191 @@ async fn sender_deletion_preserves_messages_and_recipient_deletion_closes_them()
         assert!(f.notices(receipt).iter().all(|e| e.data["status"] == "cancelled"));
     }
     assert_eq!(f.prompts().len(), 1);
-    // Deleting the recipient doesn't wake the sender: its only turn is a later message's reply.
-    let later = call(&f.hub, "a", "a", "message_bot", &json!({"botId": "c", "message": "later work"})).unwrap();
-    f.until(|| f.took("a", 1)).await;
-    assert!(f.prompts_of("a")[0].contains(later["requestId"].as_str().unwrap()));
+    // Deleting the recipient wakes the sender with both requests' end (#534).
+    f.until(|| {
+        let prompts = f.prompts_of("a").join("\n");
+        f.idle("a")
+            && [&running, &queued].iter().all(|r| prompts.contains(r["requestId"].as_str().unwrap()))
+            && prompts.matches("couldn't finish your message_bot request").count() == 2
+    })
+    .await;
     f.shutdown().await;
 }
 
+/// #534: requests that returned `queued` across a host restart (an update) never reached the recipient and their
+/// sender never heard. Now one that waited is sent again, and the one that ran fails and wakes its sender.
 #[tokio::test]
-async fn message_turns_have_no_resume_marker_and_restart_expires_both_notices() {
+async fn a_restart_sends_waiting_requests_again_and_wakes_the_sender_for_the_running_one() {
     let f = Fixture::new();
     let running = f.message("BLOCK active message").unwrap();
     f.until(|| f.prompts().len() == 1).await;
     let queued = f.message("queued message").unwrap();
     assert!(f.hub.store.kv_get("turn.inflight.b").is_none_or(|v| v.is_empty()));
-    // A new store connection applies the same startup cleanup to the
-    // persisted queued and running notices, without replaying a prompt.
-    let store = Store::open(&f.dir.join("test.db")).unwrap();
-    assert_eq!(store.expire_pending().unwrap().closed, 4);
-    for receipt in [&running, &queued] {
-        assert!(f.notices(receipt).iter().all(|e| e.data["status"] == "failed"
-            && e.data["text"].as_str().unwrap().contains("Interrupted by host restart")));
-    }
-    assert_eq!(f.prompts().len(), 1);
-    drop(store);
+    let f = f.restart().await;
+    let id = |receipt: &Value| receipt["requestId"].as_str().unwrap().to_owned();
+    let (running_id, queued_id) = (id(&running), id(&queued));
+    f.until(|| {
+        let prompts = f.prompts_of("a").join("\n");
+        f.idle("a")
+            && f.idle("b")
+            && prompts.contains(&format!("b couldn't finish your message_bot request {running_id}"))
+            && prompts.contains(&format!("b replied to your message_bot request {queued_id}"))
+    })
+    .await;
+    // The waiting request ran once, after the restart; the running one never ran again.
+    let prompts = f.prompts();
+    assert_eq!(prompts.len(), 2, "{prompts:?}");
+    assert!(prompts[1].ends_with("\n\nqueued message"));
+    assert!(f.notices(&running).iter().all(|e| e.data["status"] == "failed"
+        && e.data["botMessage"]["detail"].as_str().unwrap().contains("Interrupted by host restart")));
+    assert!(f.notices(&queued).iter().all(|e| e.data["status"] == "completed"));
+    assert!(f.prompts_of("a").join("\n").contains("Interrupted by host restart"));
+    // Both slots went back: nothing is left waiting, and no notice still waits for a reply turn.
+    assert_eq!(f.hub.team.0.locked().messages, 0);
+    assert!(f.hub.store.unrelayed_replies().unwrap().is_empty());
+    f.shutdown().await;
+}
+
+/// The same through b's box, where a bot that doesn't manage the team (the default) takes requests: the restart
+/// dropped the waiting task and failed its notices, and the sender never heard.
+#[tokio::test]
+async fn a_restart_sends_a_request_waiting_in_the_box_again() {
+    let f = Fixture::create(true);
+    let running = f.message("BLOCK active message").unwrap();
+    f.until(|| f.prompts().len() == 1).await;
+    // One thread at a time: this one waits in the box behind the running one.
+    let queued = f.message("queued message").unwrap();
+    assert!(f.notices(&queued).iter().all(|e| e.data["status"] == "queued"));
+    let f = f.restart().await;
+    let id = |receipt: &Value| receipt["requestId"].as_str().unwrap().to_owned();
+    let (running_id, queued_id) = (id(&running), id(&queued));
+    f.until(|| {
+        let prompts = f.prompts_of("a").join("\n");
+        f.idle("a")
+            && prompts.contains(&format!("b couldn't finish your message_bot request {running_id}"))
+            && prompts.contains(&format!("b replied to your message_bot request {queued_id}"))
+    })
+    .await;
+    let prompts = f.prompts();
+    assert_eq!(prompts.len(), 2, "{prompts:?}");
+    assert!(prompts[1].ends_with("\n\nqueued message"));
+    assert!(f.notices(&queued).iter().all(|e| e.data["status"] == "completed"));
+    f.shutdown().await;
+}
+
+/// A reply that reached a busy sender waited in memory only: a restart lost it. Now its notice holds it until the
+/// sender's turn takes it, so the next host start relays it.
+#[tokio::test]
+async fn a_reply_waiting_for_a_busy_sender_survives_a_restart() {
+    let f = Fixture::new();
+    f.send_to("a", "BLOCK user work").await;
+    f.until(|| f.prompts_of("a").len() == 1).await;
+    let receipt = f.message("work").unwrap();
+    f.until(|| f.took("b", 1)).await;
+    assert_eq!(f.hub.store.unrelayed_replies().unwrap().len(), 1, "it waits for a's turn");
+    let f = f.restart().await;
+    let id = receipt["requestId"].as_str().unwrap().to_owned();
+    let relayed = |p: &String| p.contains(&format!("b replied to your message_bot request {id}"));
+    f.until(|| f.idle("a") && f.prompts_of("a").iter().any(relayed)).await;
+    assert!(f.hub.store.unrelayed_replies().unwrap().is_empty());
+    assert_eq!(f.prompts().len(), 1, "the request itself never ran again");
+    f.shutdown().await;
+}
+
+/// The sender's reply turn takes its replies and is marked running in one write: a crash between the two would
+/// otherwise neither relay nor resume them, or (the other way round) do both.
+#[tokio::test]
+async fn a_reply_turn_takes_its_replies_and_is_marked_running_in_one_write() {
+    let f = Fixture::new();
+    f.send_to("a", "BLOCK user work").await;
+    f.until(|| f.prompts_of("a").len() == 1).await;
+    f.message("work").unwrap();
+    f.until(|| f.took("b", 1)).await;
+    let notice = f.hub.store.unrelayed_replies().unwrap().remove(0);
+    assert!(f.hub.store.kv_get(&relaying_key(&notice.id)).is_some(), "the whole reply waits with it");
+    let reply = BotReply {
+        request_id: "r".into(),
+        quote: String::new(),
+        from_name: "b".into(),
+        outcome: Ok("reply".into()),
+        hops: 0,
+        access: Access::Allow,
+        entry: Some(notice.id.clone()),
+    };
+    // Another bot's mark, so a's own running turn doesn't overwrite it.
+    relayed(&f.hub, &[reply], &[("turn.inflight.other".into(), "42".into())]);
+    assert!(f.hub.store.unrelayed_replies().unwrap().is_empty());
+    assert!(f.hub.store.kv_get(&relaying_key(&notice.id)).is_none());
+    assert_eq!(f.hub.store.kv_get("turn.inflight.other").as_deref(), Some("42"));
+    f.shutdown().await;
+}
+
+/// The notice shows only the start of a long reply; a restart relays the whole of it, as the live path does.
+#[tokio::test]
+async fn a_long_reply_relayed_after_a_restart_is_whole() {
+    let f = Fixture::new();
+    f.send_to("a", "BLOCK user work").await;
+    f.until(|| f.prompts_of("a").len() == 1).await;
+    let long = format!("work {}", "x".repeat(NOTICE_REPLY_BYTES * 2));
+    f.message(&long).unwrap();
+    f.until(|| f.took("b", 1)).await;
+    let f = f.restart().await;
+    let whole = format!("reply: {long}");
+    f.until(|| f.idle("a") && f.prompts_of("a").iter().any(|p| p.contains(&whole))).await;
+    assert!(f.hub.store.unrelayed_replies().unwrap().is_empty());
+    f.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_restart_between_a_requests_two_notices_keeps_the_outcome_saved_first() {
+    let f = Fixture::new();
+    f.send_to("a", "BLOCK user work").await;
+    f.until(|| f.prompts_of("a").len() == 1).await;
+    let receipt = f.message("work\non two lines").unwrap();
+    f.until(|| f.took("b", 1)).await;
+    // The last process saved the sender's notice and stopped before the recipient's.
+    let recipient = f.notices(&receipt).into_iter().find(|e| e.bot_id == "b").unwrap();
+    let mut data = recipient.data.clone();
+    data["status"] = "sent".into();
+    f.hub.store.update_entry(&recipient.id, &data).unwrap();
+    let f = f.restart().await;
+    let id = receipt["requestId"].as_str().unwrap().to_owned();
+    let replied = |p: &String| p.contains(&format!("b replied to your message_bot request {id}"));
+    f.until(|| f.idle("a") && f.prompts_of("a").iter().any(replied)).await;
+    assert!(f.prompts_of("a").iter().all(|p| !p.contains(crate::store::INTERRUPTED)), "no second outcome");
+    let notices = f.notices(&receipt);
+    assert!(notices.iter().all(|e| e.data["status"] == "completed"));
+    let answers: Vec<_> = notices.iter().map(|e| e.data["text"].as_str().unwrap().split("Reply from").nth(1)).collect();
+    assert!(answers[0].is_some() && answers[0] == answers[1], "both say the same: {answers:?}");
+    assert_eq!(f.prompts().len(), 1, "the request itself never ran again");
     f.shutdown().await;
 }
 
 #[test]
-fn restart_marks_requests_interrupted_without_replaying_them() {
+fn restart_marks_remote_requests_interrupted_and_leaves_local_ones_to_settle() {
     let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-    let pending = store
-        .insert_entry(
-            &Lane::main("b"),
-            EntryKind::Notice,
-            1,
-            &json!({
-                "delegationId": "d", "status": "sent", "heading": "Message from a",
-                "botMessage": {"sourceBotId": "a", "targetBotId": "b", "text": "Work"},
-            }),
-        )
-        .unwrap();
-    let complete = store
-        .insert_entry(
-            &Lane::main("a"),
-            EntryKind::Notice,
-            1,
-            &json!({
-                "delegationId": "done", "status": "completed",
-            }),
-        )
-        .unwrap();
+    let notice = |bot: &str, id: &str, status: &str, message: Value| {
+        let data = json!({"delegationId": id, "status": status, "heading": "Message from a", "botMessage": message});
+        store.insert_entry(&Lane::main(bot), EntryKind::Notice, 1, &data).unwrap()
+    };
+    let remote = notice(
+        "b",
+        "d",
+        "sent",
+        json!({"sourceBotId": "a@laptop", "targetBotId": "b", "text": "Work", "peerName": "a"}),
+    );
+    let local = notice("b", "l", "queued", json!({"sourceBotId": "a", "targetBotId": "b", "text": "Work"}));
+    let complete = notice("a", "done", "completed", json!({"sourceBotId": "a", "targetBotId": "b", "text": "x"}));
     store.expire_pending().unwrap();
-    let interrupted = store.entry(&pending.id).unwrap();
+    let interrupted = store.entry(&remote.id).unwrap();
     assert_eq!(interrupted.data["status"], "failed");
     assert!(interrupted.data["text"].as_str().unwrap().contains("Interrupted by host restart"));
-    assert_eq!(store.entry(&complete.id).unwrap().data["status"], "completed");
-    assert!(interrupted.rev > pending.rev);
+    assert!(interrupted.rev > remote.rev);
     assert_eq!(interrupted.data["botMessage"]["text"], "Work");
     assert!(interrupted.data["botMessage"]["detail"].as_str().unwrap().contains("Interrupted by host restart"));
+    assert_eq!(store.entry(&complete.id).unwrap().data["status"], "completed");
+    // `restart` settles it once the bots run.
+    assert_eq!(store.entry(&local.id).unwrap().data["status"], "queued");
+    let open: Vec<String> = store.unfinished_requests().unwrap().into_iter().map(|e| e.id).collect();
+    assert_eq!(open, [local.id]);
 }

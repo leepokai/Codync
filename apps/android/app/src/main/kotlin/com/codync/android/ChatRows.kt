@@ -182,11 +182,13 @@ internal class ConnectionRequestActions(val openApp: (String, ComposioApp) -> Un
 
 internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonArray)?.map { it.jsonPrimitive.content }.orEmpty()
 
+internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.jsonArray?.map { WireJson.decodeFromJsonElement<Attachment>(it) }.orEmpty()
+
 @Composable private fun UserBubble(entry: Entry, state: AppState, store: AppStore, reply: (() -> Unit)?, selectText: (() -> Unit)?,
     openQuote: ((String) -> Unit)?) {
     val context = LocalContext.current
     val focus = LocalFocusManager.current
-    val attachments = entry.data["attachments"]?.jsonArray?.map { WireJson.decodeFromJsonElement<Attachment>(it) }.orEmpty()
+    val attachments = entry.attachments
     val menu = MessageMenu.of(entry, store, reply, trace = null, selectText)
     Column(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, menu, state, store)
@@ -227,17 +229,19 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
 }
 
 /**
- * A message of a thread's own transcript ([WorkThreadView]): the chat's bubble with Copy alone in its menu.
- * Those entries are the thread's, never the chat's, so the chat's reactions and replies don't reach them.
+ * A message of a thread's own transcript ([WorkThreadView]): the chat's bubble with Copy alone in its menu, under the
+ * user's files. Those entries are the thread's, never the chat's, so the chat's reactions and replies don't reach them.
  */
-@Composable internal fun PlainMessageRow(entry: Entry) {
+@Composable internal fun PlainMessageRow(entry: Entry, state: AppState, store: AppStore) {
     val context = LocalContext.current
     val user = entry.kind == "user"
     val menu = { listOf(textCopyItem(context, entry.text)) }
     Column(Modifier.fillMaxWidth().padding(start = if (user) 56.dp else 0.dp, end = if (user) 0.dp else 40.dp),
         horizontalAlignment = if (user) Alignment.End else Alignment.Start, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (user) {
-            Box(Modifier.clip(RoundedRectangle(18.dp)).contextActions(items = menu)) { UserText(entry.text) }
+            val attachments = entry.attachments
+            if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, MessageMenu.copyOnly, state, store)
+            if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).contextActions(items = menu)) { UserText(entry.text) }
             SendStatusLine(entry.status)
         } else Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
             .contextActions(preview = { AgentText(entry.text, selectable = true) }, items = menu)) { AgentText(entry.text, selectable = false) }
@@ -497,7 +501,7 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
     }
     Column(Modifier.padding(top = 12.dp).heightIn(max = 280.dp).verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (steps.isEmpty()) Text(tr("Nothing yet."), style = Type.body, color = Palette.tertiary)
-        for (entry in steps) key(entry.id) { TraceRow(entry, unfolded = true) }
+        for ((entry, depth) in nestedSteps(steps)) key(entry.id) { Box(Modifier.nested(depth)) { TraceRow(entry, unfolded = true) } }
     }
 }
 

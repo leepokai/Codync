@@ -28,7 +28,7 @@ pub(super) async fn check_connector(store: &Store, c: &super::Connector, port: u
     let mut command = if let Some(exe) = &c.command {
         // Found and started as `mcp::serve_local` does for a bot, so what passes here is what runs:
         // the agent starts it in its bot's folder, which a relative path in the command line means.
-        let mut command = Command::new(crate::shell::program(exe));
+        let mut command = Command::new(codync_agent::shell::program(exe));
         command.args(&c.args);
         for (name, value) in &c.env {
             command.env(name, super::passwords::resolve(store, value).await?);

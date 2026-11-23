@@ -91,17 +91,8 @@ export class BotStore extends BotSync {
       try {
         // Safe to repeat: the computer skips a nonce it already has.
         const e = await this.withLink(async (client) => {
-          let ids: string[] | null = null
           const pending = this.outgoingFiles.get(nonce)
-          if (pending) {
-            ids = []
-            for (const file of pending) {
-              const id = crypto.randomUUID()
-              await client.upload(botId, id, file.name, file.data)
-              cacheAttachment(id, file.data)
-              ids.push(id)
-            }
-          }
+          const ids = pending ? await uploadFiles(client, botId, pending) : null
           return client.send(botId, trimmed, nonce, ids, pasted, replyTo, call)
         }, true)
         this.outgoingFiles.delete(nonce)
@@ -351,22 +342,32 @@ export class BotStore extends BotSync {
    * once, and the computer's own entry replaces it (queued while the thread's turn runs; the first one to an ended
    * task reopens it). A refusal leaves it as failed and says why. `nonce` again sends the same message once more.
    */
-  sendToThread(thread: ThreadRef, threadId: string, text: string, nonce: string = crypto.randomUUID()) {
+  sendToThread(thread: ThreadRef, threadId: string, text: string, { files = [], nonce = crypto.randomUUID() }: { files?: OutgoingFile[]; nonce?: string } = {}) {
     const trimmed = text.trim()
-    if (!trimmed || this.retired) return
+    if ((!trimmed && !files.length) || this.retired) return
     const show = (e: Entry) => {
       this.mergeThread(threadId, [e])
       this.changed()
     }
+    const data: Entry['data'] = { text: trimmed, status: 'sending', clientNonce: nonce }
+    if (files.length) {
+      data.attachments = files.map((f) => ({ id: f.id, name: f.name, size: f.data.length }))
+      this.outgoingFiles.set(nonce, files)
+    }
     const local: Entry = {
       id: localEntryId(nonce), seq: Number.MAX_SAFE_INTEGER, botId: threadId, rev: 0, kind: 'user',
-      turn: 0, data: { text: trimmed, status: 'sending', clientNonce: nonce }, createdAt: Date.now(), updatedAt: 0,
+      turn: 0, data, createdAt: Date.now(), updatedAt: 0,
     }
     show(local)
     // Safe to repeat: the computer answers a nonce it already has with the same entry.
-    void this.withLink((c) => c.call<{ entry: Entry }>('send', { ...thread, text: trimmed, clientNonce: nonce }), true).then(
+    void this.withLink(async (c) => {
+      const pending = this.outgoingFiles.get(nonce)
+      const attachments = pending ? await uploadFiles(c, thread.botId, pending, thread.taskId) : undefined
+      return c.call<{ entry: Entry }>('send', { ...thread, text: trimmed, clientNonce: nonce, ...(attachments ? { attachments } : {}) })
+    }, true).then(
       (res) => {
         noteActiveDay()
+        this.outgoingFiles.delete(nonce)
         show({ ...res.entry, data: res.entry.data ?? {} })
       },
       (error: unknown) => {
@@ -378,8 +379,16 @@ export class BotStore extends BotSync {
     )
   }
 
+  /** Resend on a message that never reached the thread: the same nonce, with its files while this app still holds them. */
+  resendToThread(thread: ThreadRef, entry: Entry) {
+    const files = filesToResend(entry, this.outgoingFiles)
+    if (!files) return this.setError(trNow("This message's files aren't on this device anymore. Delete it and attach them again."))
+    this.sendToThread(thread, entry.botId, entry.data.text ?? '', { files, nonce: entry.data.clientNonce })
+  }
+
   /** Takes a message that never reached the thread out of its transcript. */
   discardFromThread(entry: Entry) {
+    if (entry.data.clientNonce) this.outgoingFiles.delete(entry.data.clientNonce)
     this.mergeThread(entry.botId, [{ ...entry, data: { ...entry.data, removed: true } }])
     this.changed()
   }
@@ -685,6 +694,18 @@ export class BotStore extends BotSync {
 
 // ponytail: in-memory attachment cache; a disk cache (main process) if relaunches refetching hurts.
 const attachmentCache = new Map<string, Uint8Array>()
+/** Uploads `files` for one message (to the thread of `taskId` when given), each cached as sent; their upload ids. */
+async function uploadFiles(client: HostClient, botId: string, files: OutgoingFile[], taskId?: string): Promise<string[]> {
+  const ids: string[] = []
+  for (const file of files) {
+    const id = crypto.randomUUID()
+    await client.upload(botId, id, file.name, file.data, taskId)
+    cacheAttachment(id, file.data)
+    ids.push(id)
+  }
+  return ids
+}
+
 function cacheAttachment(id: string, data: Uint8Array) {
   attachmentCache.set(id, data)
 }

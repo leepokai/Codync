@@ -1,0 +1,491 @@
+//! Minimal ACP (Agent Client Protocol) client: JSON-RPC 2.0 over a child process's stdio. `session/update`s arrive
+//! as typed [`events`](crate::events), an unknown kind kept as sent so a newer adapter never breaks reading;
+//! requests from the agent as a [`Request`] that answers itself when dropped unanswered.
+
+use super::process::Process;
+use crate::LockExt;
+use crate::events::Update;
+use anyhow::{Context, Result};
+use serde_json::{Value, json};
+use std::collections::{HashMap, VecDeque};
+use std::process::Stdio;
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{Arc, Weak};
+use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::ChildStdin;
+use tokio::sync::{mpsc, oneshot};
+
+mod capabilities;
+pub mod codebuddy;
+mod exit;
+mod request;
+mod session;
+pub use capabilities::{Adapter, Capabilities, Reopen};
+pub use exit::{exit_tail, stderr_reason};
+pub use request::{ELICITATION, METHOD_NOT_FOUND, PERMISSION, Permission, PermissionOption, Request};
+pub use session::{Session, Steered, StopReason};
+
+/// stderr lines kept to explain a crash.
+const STDERR_TAIL_LINES: usize = 12;
+/// How long a stopped agent gets to exit by itself before what's left of it is killed.
+const EXIT_GRACE: Duration = Duration::from_secs(10);
+
+/// Agents [`Acp::kill`] is still stopping, for the host to wait for before it exits.
+static STOPPING: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>> = std::sync::Mutex::new(Vec::new());
+/// Every agent started, for the host to stop whichever are left before it exits.
+static STARTED: std::sync::Mutex<Started> = std::sync::Mutex::new(Started { closed: false, agents: Vec::new() });
+
+/// The agents [`stop_all`] stops, and whether it has: an API call still under way then starts none it would leave
+/// running (`process::exit` drops no process).
+struct Started {
+    closed: bool,
+    agents: Vec<Weak<Acp>>,
+}
+
+impl Started {
+    fn note(&mut self, acp: &Arc<Acp>) {
+        self.agents.retain(|acp| acp.strong_count() > 0);
+        self.agents.push(Arc::downgrade(acp));
+    }
+
+    /// Closes the list for good and hands back the agents still running.
+    fn close(&mut self) -> Vec<Arc<Acp>> {
+        self.closed = true;
+        std::mem::take(&mut self.agents).iter().filter_map(Weak::upgrade).collect()
+    }
+}
+
+/// What the agent sends the app.
+#[derive(Debug)]
+pub enum Incoming {
+    /// A `session/update`.
+    Update(Update),
+    /// Any other notification.
+    Notification { method: String, params: Value },
+    /// A request to the app.
+    Request(Request),
+    /// The process ended; the last lines it wrote to stderr.
+    Closed { stderr_tail: String },
+}
+
+/// The agent's stdin, which every message to it goes through. `None` once stopped: the closed pipe tells the agent
+/// to exit.
+pub(crate) struct Writer(tokio::sync::Mutex<Option<ChildStdin>>);
+
+impl Writer {
+    /// Closes the agent's stdin; writes fail as stopped after it.
+    async fn close(&self) {
+        self.0.lock().await.take();
+    }
+
+    async fn write(&self, msg: Value) -> Result<()> {
+        let mut line = serde_json::to_vec(&msg)?;
+        line.push(b'\n');
+        let mut stdin = self.0.lock().await;
+        let stdin = stdin.as_mut().ok_or_else(|| Failure::error(FailureKind::Exited, "agent stopped"))?;
+        let written = async {
+            stdin.write_all(&line).await?;
+            stdin.flush().await
+        };
+        match written.await {
+            // The agent exited before reading it.
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
+                Err(Failure::error(FailureKind::Exited, "agent process exited"))
+            }
+            r => Ok(r?),
+        }
+    }
+}
+
+/// In-flight requests by JSON-RPC id. A std mutex: it's never held across an `.await`.
+type Pending = Arc<std::sync::Mutex<HashMap<i64, oneshot::Sender<Result<Value, Value>>>>>;
+
+/// A JSON-RPC error answer (downcast from `request`'s error to read the code).
+#[derive(Debug)]
+pub struct RpcError {
+    pub code: i64,
+    pub message: String,
+    /// The adapter's own category (`data.errorKind`: Claude's `rate_limit`, `overloaded`, …; `CodeBuddy`'s
+    /// `data.category`: `auth`, `custom_model_auth`, …; codex-acp's `data.codexErrorInfo` as `usage_limit_exceeded`),
+    /// kept only when it's an identifier, as it can go to usage analytics.
+    pub kind: Option<String>,
+}
+
+/// ACP's "authentication required".
+pub const AUTH_REQUIRED: i64 = -32000;
+/// JSON-RPC's "internal error".
+pub const INTERNAL_ERROR: i64 = -32603;
+
+impl std::fmt::Display for RpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for RpcError {}
+
+/// Whether an agent's error asks for signing in: ACP's code, the category of an adapter that names one, or the
+/// words of one that names none. A named category is believed: `CodeBuddy`'s `custom_model_auth` (a bad key in
+/// `models.json`) says "Authentication failed" but signing in doesn't fix it.
+pub fn needs_sign_in(e: &anyhow::Error) -> bool {
+    let says_auth = |text: &str| text.to_lowercase().contains("auth");
+    match e.chain().find_map(|c| c.downcast_ref::<RpcError>()) {
+        Some(r) if r.kind.is_some() => signed_out(r),
+        Some(r) => r.code == AUTH_REQUIRED || says_auth(&r.message) || says_auth(&e.to_string()),
+        None => says_auth(&e.to_string()),
+    }
+}
+
+/// Whether an agent's error answer says it is signed out: ACP's code, or an adapter's category for it (the Agent
+/// SDK's `authentication_failed`, `CodeBuddy`'s `auth`…).
+pub fn signed_out(r: &RpcError) -> bool {
+    const KINDS: [&str; 4] = ["authentication_failed", "oauth_org_not_allowed", "unauthorized", "auth"];
+    r.code == AUTH_REQUIRED || r.kind.as_deref().is_some_and(|k| KINDS.contains(&k))
+}
+
+/// Whether a failed prompt may have left its session dead in the agent: an internal error the
+/// adapter gave no category. Claude's adapter answers every later prompt on a session whose query
+/// stream ended with one ("The Claude Agent session has ended") until the session is closed.
+pub fn may_end_session(e: &anyhow::Error) -> bool {
+    e.chain().filter_map(|c| c.downcast_ref::<RpcError>()).any(|r| r.code == INTERNAL_ERROR && r.kind.is_none())
+}
+
+/// A way an agent fails that the host itself recognizes, kept as a type so usage
+/// analytics can count it (`turn_finished.error`) without its text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FailureKind {
+    /// No way to start the agent on this computer.
+    NotSetUp,
+    /// The agent stopped answering.
+    Timeout,
+    /// The agent process went away mid-request.
+    Exited,
+    /// The agent wouldn't take the bot's model.
+    NoModel,
+    /// The agent doesn't have the mode the bot works in.
+    ModeMissing,
+}
+
+#[derive(Debug)]
+pub struct Failure {
+    pub kind: FailureKind,
+    message: String,
+}
+
+impl Failure {
+    pub fn error(kind: FailureKind, message: impl Into<String>) -> anyhow::Error {
+        Self { kind, message: message.into() }.into()
+    }
+}
+
+impl std::fmt::Display for Failure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Failure {}
+
+/// A request already written to the agent, waiting for its response.
+pub struct Answer {
+    id: i64,
+    pending: Pending,
+    rx: Option<oneshot::Receiver<std::result::Result<Value, Value>>>,
+}
+
+impl Answer {
+    pub async fn response(mut self) -> Result<Value> {
+        let receiver = self.rx.take().expect("a response is consumed once");
+        match receiver.await {
+            Ok(Ok(v)) => Ok(v),
+            Ok(Err(e)) => Err(rpc_error(&e).into()),
+            // The reader drops every waiter when the process goes away.
+            Err(_) => Err(Failure::error(FailureKind::Exited, "agent process exited")),
+        }
+    }
+}
+
+/// An abandoned request (timed out, cancelled) no longer waits for its response.
+impl Drop for Answer {
+    fn drop(&mut self) {
+        self.pending.locked().remove(&self.id);
+    }
+}
+
+/// A JSON-RPC error object as an [`RpcError`].
+fn rpc_error(e: &Value) -> RpcError {
+    let msg = e["message"].as_str().map_or_else(|| e.to_string(), str::to_owned);
+    let message = match e["data"]["details"].as_str().or(e["data"].as_str()) {
+        Some(d) => format!("{msg} ({d})"),
+        None => msg,
+    };
+    let kind = e["data"]["errorKind"]
+        .as_str()
+        .or(e["data"]["category"].as_str())
+        .map(str::to_owned)
+        .or_else(|| codex_kind(&e["data"]["codexErrorInfo"]))
+        .filter(|k| !k.is_empty() && k.len() <= 40 && k.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'));
+    RpcError { code: e["code"].as_i64().unwrap_or_default(), message, kind }
+}
+
+/// codex-acp's category (`data.codexErrorInfo`: `"usageLimitExceeded"`, or `{"httpConnectionFailed": {…}}`) in the
+/// same form as Claude's `errorKind`: `usage_limit_exceeded`.
+fn codex_kind(info: &Value) -> Option<String> {
+    let name = info.as_str().or_else(|| info.as_object().and_then(|o| o.keys().next()).map(String::as_str))?;
+    let mut kind = String::with_capacity(name.len() + 4);
+    for c in name.chars() {
+        if c.is_ascii_uppercase() {
+            kind.push('_');
+        }
+        kind.push(c.to_ascii_lowercase());
+    }
+    Some(kind)
+}
+
+pub struct Acp {
+    writer: Arc<Writer>,
+    next_id: AtomicI64,
+    pending: Pending,
+    /// Owns the agent's whole process tree: dropping it kills what the agent started.
+    child: Arc<tokio::sync::Mutex<Process>>,
+    /// The process and process group leader.
+    #[cfg(unix)]
+    pid: Option<u32>,
+    /// What the embedder ties to this process's life (a cloud computer's keeper grants): dropped once it is stopped,
+    /// or gone.
+    held: std::sync::Mutex<Option<Box<dyn Send>>>,
+}
+
+impl Acp {
+    /// Spawns `command` through the shell so user-provided commands (npx, env vars) just work.
+    /// `env` stays out of the command line (it can hold API keys).
+    pub fn spawn(
+        command: &str,
+        cwd: &str,
+        env: &[(String, String)],
+    ) -> Result<(Arc<Self>, mpsc::UnboundedReceiver<Incoming>)> {
+        let mut process = crate::shell::exec(command).tokio();
+        crate::shell::apply_env(process.as_std_mut(), env);
+        process.current_dir(cwd).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+        // So `kill` can stop everything it started.
+        super::process::own_tree(&mut process);
+        // Held until it is noted: `stop_all` either sees it or has already closed the list.
+        let mut started = STARTED.locked();
+        anyhow::ensure!(!started.closed, "the host is stopping");
+        let mut child = process.spawn().with_context(|| format!("starting `{command}`"))?;
+        let stdin = child.stdin.take().expect("stdin is piped");
+        let stdout = child.stdout.take().expect("stdout is piped");
+        let stderr = child.stderr.take().expect("stderr is piped");
+        #[cfg(unix)]
+        let pid = child.id();
+        let child = Arc::new(tokio::sync::Mutex::new(Process::new(child)?));
+        let (ended, leader_ended) = oneshot::channel();
+        Process::monitor(&child, ended);
+        // Deliberately unbounded: `session/load` replays a whole history as notifications
+        // *before* its response, while the bot is still awaiting that response. A bounded
+        // queue would stall this reader, and with it the response — a deadlock.
+        let (tx, rx) = mpsc::unbounded_channel();
+        let pending = Pending::default();
+        let writer = Arc::new(Writer(tokio::sync::Mutex::new(Some(stdin))));
+
+        let tail = Arc::new(std::sync::Mutex::new(VecDeque::<String>::with_capacity(STDERR_TAIL_LINES)));
+        let stderr_read = {
+            let tail = tail.clone();
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    tracing::debug!(target: "agent", stderr = %line);
+                    let mut t = tail.locked();
+                    if t.len() == STDERR_TAIL_LINES {
+                        t.pop_front();
+                    }
+                    t.push_back(line);
+                }
+            })
+        };
+        {
+            let pending = pending.clone();
+            let requests_writer = Arc::downgrade(&writer);
+            tokio::spawn(async move {
+                let read = async {
+                    let mut lines = BufReader::new(stdout).lines();
+                    while let Ok(Some(line)) = lines.next_line().await {
+                        let Ok(msg) = serde_json::from_str::<Value>(&line) else {
+                            tracing::debug!(target: "agent", stdout = %line, "ignoring non-JSON output");
+                            continue;
+                        };
+                        let method = msg["method"].as_str().map(str::to_owned);
+                        match (method, msg.get("id").cloned()) {
+                            (Some(method), Some(id)) if !id.is_null() => {
+                                let request = Request::new(id, method, msg["params"].clone(), requests_writer.clone());
+                                let _ = tx.send(Incoming::Request(request));
+                            }
+                            (Some(method), _) if method == "session/update" => {
+                                let _ = tx.send(Incoming::Update(Update::parse(&msg["params"])));
+                            }
+                            (Some(method), _) => {
+                                let _ = tx.send(Incoming::Notification { method, params: msg["params"].clone() });
+                            }
+                            (None, Some(id)) => {
+                                if let Some(id) = id.as_i64()
+                                    && let Some(waiter) = pending.locked().remove(&id)
+                                {
+                                    let res = match msg.get("error") {
+                                        Some(err) => Err(err.clone()),
+                                        None => Ok(msg["result"].clone()),
+                                    };
+                                    let _ = waiter.send(res);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                };
+                // Once the agent exited by itself, what it wrote last is read for a moment, not until stdout closes: a
+                // process that left its tree (its own session, a job escapee on Windows) can hold it open forever (#466).
+                let left = async {
+                    match leader_ended.await {
+                        Ok(()) => tokio::time::sleep(exit::STDERR_FLUSH).await,
+                        // Being stopped: `kill` fails the waiters.
+                        Err(_) => std::future::pending().await,
+                    }
+                };
+                tokio::select! {
+                    () = read => {}
+                    () = left => {}
+                }
+                // What it printed on its way out is still being read; a child that keeps stderr open isn't waited for.
+                // Read before the waiters fail, so `Closed` follows their failure at once.
+                let _ = tokio::time::timeout(exit::STDERR_FLUSH, stderr_read).await;
+                // Process gone: dropping the waiters fails them as `FailureKind::Exited`.
+                pending.locked().clear();
+                let stderr_tail = tail.locked().iter().cloned().collect::<Vec<_>>().join("\n");
+                let _ = tx.send(Incoming::Closed { stderr_tail });
+            });
+        }
+
+        let acp = Arc::new(Self {
+            writer,
+            next_id: AtomicI64::new(1),
+            pending,
+            child,
+            #[cfg(unix)]
+            pid,
+            held: std::sync::Mutex::default(),
+        });
+        started.note(&acp);
+        Ok((acp, rx))
+    }
+
+    #[cfg(unix)]
+    pub fn pid(&self) -> Option<u32> {
+        self.pid
+    }
+
+    /// Keeps `guard` (the grants in this process's environment) for as long as it runs: `kill` or drop drops it.
+    pub fn hold(&self, guard: impl Send + 'static) {
+        *self.held.locked() = Some(Box::new(guard));
+    }
+
+    /// Whether it holds something from [`hold`](Self::hold).
+    pub fn holds(&self) -> bool {
+        self.held.locked().is_some()
+    }
+
+    /// Everything still running in the agent's job.
+    #[cfg(windows)]
+    pub async fn job_processes(&self) -> Result<Vec<super::process::JobProcess>> {
+        self.child.lock().await.processes().await
+    }
+
+    async fn write(&self, msg: Value) -> Result<()> {
+        self.writer.write(msg).await
+    }
+
+    pub async fn request(&self, method: &str, params: Value) -> Result<Value> {
+        let answer = self.send(method, params).await?;
+        answer.response().await
+    }
+
+    /// Writes a request and returns its pending answer: anything written after this
+    /// (a `session/cancel`) reaches the agent after the request itself.
+    pub async fn send(&self, method: &str, params: Value) -> Result<Answer> {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let (tx, rx) = oneshot::channel();
+        self.pending.locked().insert(id, tx);
+        let answer = Answer { id, pending: self.pending.clone(), rx: Some(rx) };
+        self.write(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})).await?;
+        Ok(answer)
+    }
+
+    pub async fn notify(&self, method: &str, params: Value) -> Result<()> {
+        self.write(json!({"jsonrpc": "2.0", "method": method, "params": params})).await
+    }
+
+    /// Stops the agent and everything it started, without waiting for it. Closing its stdin
+    /// lets it exit by itself first: Claude Code killed during an OAuth refresh loses the new
+    /// refresh token, and the user's login with it.
+    pub async fn kill(&self) {
+        // Its requests fail now as `FailureKind::Exited`, not at stdout EOF: a process that left its tree (its own
+        // session, or a job escapee on Windows) can hold stdout open forever, and with it the turn (#466).
+        self.pending.locked().clear();
+        let mut child = self.child.lock().await;
+        if !child.begin_stop() {
+            return;
+        }
+        let held = self.held.locked().take();
+        drop(held);
+        self.writer.close().await;
+        let owned = self.child.clone();
+        let mut stopping = STOPPING.locked();
+        stopping.retain(|task| !task.is_finished());
+        stopping.push(tokio::spawn(async move { owned.lock().await.stop_within(EXIT_GRACE).await }));
+    }
+}
+
+/// Waits until every agent being stopped has exited or been killed: at most [`EXIT_GRACE`], then
+/// [`UNWIND`](super::process::UNWIND) for its tree to end from its leaves up.
+pub async fn stopped() {
+    let tasks = std::mem::take(&mut *STOPPING.locked());
+    futures::future::join_all(tasks).await;
+}
+
+/// Stops every agent left and waits for them, before the host exits: `process::exit` drops no process, and Cursor's agent
+/// outlives its closed stdin. The bots stop their own, so this is for a sign-in check or a model list still under way.
+pub async fn stop_all() {
+    let started = STARTED.locked().close();
+    futures::future::join_all(started.iter().map(|acp| acp.kill())).await;
+    stopped().await;
+}
+
+/// Plain-text rendering of an ACP content block list / tool-call content list.
+pub fn content_text(v: &Value) -> String {
+    match v {
+        Value::Array(items) => items.iter().map(content_text).filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n"),
+        Value::Object(o) => match o.get("type").and_then(Value::as_str) {
+            Some("text") => o.get("text").and_then(Value::as_str).unwrap_or_default().to_owned(),
+            Some("content") => o.get("content").map(content_text).unwrap_or_default(),
+            Some("resource_link") => o.get("uri").and_then(Value::as_str).unwrap_or_default().to_owned(),
+            Some("resource") => {
+                o.get("resource").and_then(|r| r.get("text")).and_then(Value::as_str).unwrap_or_default().to_owned()
+            }
+            _ => String::new(),
+        },
+        _ => String::new(),
+    }
+}
+
+pub fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        return s.to_owned();
+    }
+    let mut end = max;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &s[..end])
+}
+
+#[cfg(test)]
+mod tests;

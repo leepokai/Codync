@@ -19,7 +19,7 @@ Design: [the event box](../plans/event-box.md); why a thread is a bot of its own
 [the first design](../archive/background-tasks-plan-2026-11-15.md). Code: `host/src/chat/work/` (`tasks.rs`: the box, its wire shape and what the bot reads of it;
 `dispatch.rs`: which task a thread takes next; `steer.rs`: first, cut in, replace, stop, drop, retry; `mod.rs`: a
 thread's turn end, the report, host start; `sources.rs`: routine runs and other bots' requests as tasks; `thread.rs`: the user's messages to a task's thread;
-`tools.rs`: the bot's tools and what a thread may not call; `sweep.rs`: the hourly look; `worktree.rs`: a thread's git worktree;
+`tools.rs`: the bot's tools and what a thread may not call; `recall.rs`: `recall_task`; `sweep.rs`: the hourly look; `watch.rs`: the [watchdog](#watchdog); `worktree.rs`: a thread's git worktree;
 `prompts.rs`: the words); the actor's side is in `host/src/agent/bot/` (`session.rs` for the fork, `turn.rs` for the box in the prompt, the worktree
 and the report, `queue.rs` for `turn_over`, `updates.rs` for cards). Git is run through `host/src/git.rs`.
 
@@ -27,7 +27,7 @@ and the report, `queue.rs` for `turn_over`, `updates.rs` for cards). Git is run 
 
 One piece of work: `id, title, brief, source` (where it came from: the bot, a routine's run, another bot's request),
 `words` (the user's own, word for word), `notes` (what the user said about it
-since), `status, order, after, thread, cutIn, hops, createdAt, startedAt, endedAt, result, report, failure, worktree,
+since), `relayed` (what the bot's chat passed on to it since, `tell_task`), `status, order, after, thread, cutIn, hops, createdAt, startedAt, endedAt, result, report, failure, worktree,
 told` (what the user wrote to its thread since its last report), `said` (what it reported before the user wrote to
 it again). A bot's tasks are one
 JSON list in kv `work.<bot>`; every change to a box is made under one lock (`tasks::change`).
@@ -73,6 +73,18 @@ task:
 3. **Otherwise it waits**: `wait: next` for the first in line, `behind` with how many are `ahead` for the rest.
    Nothing is refused for being over the ceiling.
 
+A task that can't start now whatever is free (`dispatch::held`: a routine run while a run of its routine is under way
+or the host is stopping, a task whose worktree is still being looked over) takes no place: it reports `wait: next`
+and the tasks behind it may start first.
+
+**A thread waiting on the user gives its seat up** (`dispatch::free_seats`): while its runtime is `needsInput` (an approval,
+a choice, a sign-in) it doesn't count toward `maxThreads`, so the next task can start meanwhile; the user's answer
+lets it go on even past the ceiling. Every live thread still counts toward `maxThreads + 1`, so only one seat is ever
+lent. A thread that begins to wait on the user looks its bot's box over again (`Work::seat_freed`). Near the usage
+limit it still counts as running, so nothing else starts. Where the next thread gets no worktree of its own (a folder
+that isn't a Git repository, **Worktree per thread** off, the bot's own folder) it works in the same folder as the
+one that waits, even at `maxThreads` 1.
+
 A new thread waits for any turn of the bot to end, a routine run's or a room's too (they share its actor); that turn's
 end looks over the box again.
 
@@ -91,10 +103,25 @@ The decisions are one pure function (`dispatch::standings`), which the wire's `w
 - `steer_task {task, how, brief?, insteadOf?}` → `{taskId, status}`: `first` (a waiting task moves to the front), `now` (it cuts in),
   `replace` (a new brief), `stop`. The user's own words of the running turn are added to the task's `notes`.
   Refused under a ceiling, as `add_task` is.
+- `tell_task {task, text, now?}` → `{taskId, status, note}`: passes words on to a task without starting it again (what
+  the user adds about work under way, a fact it needs). The task keeps them in `relayed`, which a session that starts
+  it, or starts it again, reads as what its chat passed on, never as the user's words.
+  A working one gets them as a message in its [thread](#talking-to-a-thread), from the host (`data.from: host`,
+  `data.relay`): it waits behind the running turn as the user's does (with `now`, into that turn at its next step
+  where the agent can, else the turn stops for it), and keeps the task going until a turn takes it, so the chat
+  still gets one report. Refused for a task that ended (add a new one), for a routine's run and another bot's request
+  (read only, as [their thread](#talking-to-a-thread) is), and under a ceiling, as `add_task` is.
 - `work_status {}` → `{tasks: […]}`: every task that is working or waiting, and those ended in the last day: status, what its thread
   does now, why it waits, seconds, result.
+- `recall_task {task?, query?, before?}` (`work/recall.rs`): the bot looks back at its tasks, ended ones too, from
+  its box and its past tasks (kv `work-past.<bot>`: tasks that left the box at host start, kept until 30 days after
+  they ended, the newest 200). With `task`: its brief, `usersWords`, `usersNotes`, `chatPassedOn`, whole result,
+  `after`, `followedBy`, local times, and a page of 30 of its thread's steps (user, agent, notice, tool and card lines,
+  each cut at 600 bytes) with `earlierSteps`, the `before` for the page before; none once the thread is gone. With
+  `query`: the tasks whose title, brief or result has it (any case); with neither, the latest; 20 at most, each result
+  cut at 280 bytes. Read only: allowed under a ceiling.
 
-Refused in a thread: these three and changes to the bot's profile or fallbacks (`work::refuse_chat_only`, the `chat`
+Refused in a thread: these five and changes to the bot's profile or fallbacks (`work::refuse_chat_only`, the `chat`
 server's), and the `routines`, `team` and `manage` tools (`work::acting_as`, `work::refuse_in_thread`). The refusal
 says to put what it needs in its report. `request_decision`, `send_file` and artifacts work from a thread
 ([below](#asking-and-sharing-from-a-thread)). A thread on a routine's run or another bot's request has that turn's own
@@ -119,7 +146,8 @@ bot can say what it is doing and place an `after` without a tool call.
   waits at the front, behind the task that cut in, with `cutIn` set. It starts again later in a new thread and session,
   told that the work was begun before. With a thread free, cutting in is moving first; so it is for a task that
   wouldn't start on the freed thread (it follows unfinished work, or waits for usage), and the clients don't offer
-  Cut in on such a row.
+  Cut in on such a row. A held task (a routine run behind its routine's run, a task whose worktree is being looked
+  over) still shows Cut in, which only moves it to the front.
 - **Replace** (`steer_task replace`): the brief is replaced. A working task's thread is closed the same way and the
   task starts again from the new brief, at the front (`cutIn` stays as it was).
 - **Stop** (`stopWork`, `steer_task stop`): the task is `stopped`; a working one's thread is stopped. Without a task,
@@ -138,9 +166,14 @@ The user writes to the thread that works, or worked, one of the bot's **own** ta
 thread is a bot with an actor, so the message is a user entry in the thread's own transcript and goes through the
 chat's own queue: nothing here is a second copy of it.
 
-- **`send {botId, taskId, text, clientNonce?}`** → `{entry, reopened, queued}`. The caller names the bot and its
+- **`send {botId, taskId, text, attachments?, clientNonce?}`** → `{entry, reopened, queued}`. The caller names the bot and its
   task, never a thread: the task must be in that bot's box, and `send`, `steer` and `unqueue` refuse a thread's own id
-  as `botId` (`unknown bot`). Text only (`a thread takes text only` for attachments, `replyTo` or `call`). `entry`
+  as `botId` (`unknown bot`). Files go as in a chat: each is first sent with `upload {botId, taskId, …}`, which
+  puts it in the thread's own uploads (`uploads::root` of the thread bot, under the host's data folder, never in a
+  worktree, and deleted with the thread bot), and the thread's agent gets their paths. `readUpload` reads one back by
+  the entry's `botId` (the thread's); the task's report and a session that picks the task up name the files after
+  the user's words (`[sent files: …]`). `work[].talkFiles` says a thread takes files: clients show their + (and take
+  drops and pastes) only then. No quote or call (`a thread takes no quotes or calls`). `entry`
   is the message as the transcript holds it (`botId` is the thread's id); the same `clientNonce` again answers the
   same entry, with `reopened` and `queued` null.
 - **While the thread's turn runs** the entry is `status: queued`, as in a chat, and leaves as `threadEntry` events like
@@ -148,6 +181,9 @@ chat's own queue: nothing here is a second copy of it.
   agent can (`_session/steering`), else the turn is stopped for it. **`unqueue {botId, taskId, entryId}`** takes it
   back (`status: cancelled`, `removed: true`; `threadEntries` no longer lists it). With no turn running the message
   starts one. The statuses are the chat's: `queued`, `sent`, `cancelled`, `failed`.
+- **What the chat passes on** (`tell_task`) is a message in the thread too, the host's (`from: host`, `relay: true`):
+  the thread reads it marked as passed on from its chat, and it never counts as the user's own words in the task's
+  report. Clients quote it as what the thread was told.
 - **The task isn't over while a message waits.** A turn that ends (done, failed, or stopped for Send now) with a
   message of the user's still queued ends nothing (`work::finished`): the task stays `working`, the message's turn
   runs, and that turn's last message is the task's result and its one report.
@@ -241,8 +277,9 @@ A thread runs its bot's [fallback chain](agent-fallback.md) with the same actor 
 out of usage, is rate limited, signed out or won't start, the same turn goes on with the next agent. Rests are the
 computer's, so the chat and every thread skip a resting login together.
 
-- **The chain is the bot's.** A thread copies it when it starts; a change to the bot's fallbacks reaches its threads at
-  once (`work::fallbacks_changed`, from `Hub::update_bot`), for their next agent.
+- **The chain is the bot's** (its threads' own in [Advisor mode](#advisor-mode)). A thread copies it when it starts; a
+  change reaches its threads at once (`work::fallbacks_changed`, from `Hub::update_bot`), for their next agent: each
+  gets the chain that starts at the agent it started on, and one that started on another keeps its own.
 - **A new session on another agent hears the chat.** A thread forked from the chat, or told it, keeps that only in
   the session it began; when it falls back to a new session elsewhere, that agent is told the chat so far
   (`work::chat_so_far`) before the recap of the thread's own transcript. Not for a routine's run.
@@ -275,6 +312,27 @@ it comes first, as what the running turn waits on. In the task's
 [thread](#talking-to-a-thread) the sign-in card is one quiet line beside that transcript line, as the card stands
 (`Needs <agent> sign-in`, then `Signed in` or `Cancelled`), which opens the chat at the card; the failure that offers
 **Add a fallback** has no line there, since the transcript holds the failure itself.
+
+## Advisor mode
+
+The bot's chat plans and hands work on; its threads may run on another agent, model or login, with fallbacks of their
+own: a strong model in the chat and a cheaper or faster one for the work, or another vendor's. Bot settings → Agent →
+**Advisor mode** sets `threadAgent` (a fallback-shaped step; null: off, the threads run on the bot's own) and
+`threadFallbacks` (`updateBot`; `threadAgent: null` turns it off, and the host then keeps no threads' chain).
+Turning it on in the apps starts the threads on the bot's own agent, model and fallbacks, for the user to change.
+
+- **`agent::fallback::threads`** is the bot as its threads run it: that agent, model, options and login, its chain, and
+  Auto for a mode the chat's agent named (the chat's Fast mode only on the same agent). Every thread starts from it,
+  routine runs and other bots' requests too.
+- **A fork only on the chat's own agent and login.** A thread that may start as a fork of the chat's session
+  (`dispatch::plan`) does so only when its agent and login are the chat's; its model may differ, which the forked
+  session takes as a new one does. On another agent it starts from a brief that tells it the chat
+  ([how a thread's session begins](#how-a-threads-session-begins)).
+- **A thread keeps the agent it started on.** Turning Advisor mode on or off, or picking another threads' agent,
+  reaches new threads; running ones keep theirs, and their chain follows the one that starts there.
+- **Both chains count**: the host validates the threads' chain as a bot's own (each login once, at most three
+  fallbacks), settles and protects its login profiles, reads usage for its agents and shows its rests (`resting`).
+- `bot_updated` carries `advisorMode` and `threadAgent` ([analytics](../reference/analytics-events.md)).
 
 ## Asking and sharing from a thread
 
@@ -338,7 +396,7 @@ request from another computer under a network rule's `auto` or `ask` holds its t
 
 What differs from the bot's own tasks:
 
-- **Stop** cancels the run (`Stopped by user`, no failure line) or tells the asking bot its request was stopped.
+- **Stop** cancels the run (`Stopped by user`, no failure line) or tells the asking bot its request was stopped (a reply turn of its own).
   **Drop** on a waiting one does the same.
 - **Try again** on a routine's task runs the routine again: a new run (with the failed run's event when it kept
   one, else as `runRoutine` does) and a new task in the old one's place. A request can't be tried again: the bot
@@ -347,7 +405,8 @@ What differs from the bot's own tasks:
   act twice.
 - **They never start twice.** Cut off by a host restart with a thread that can't resume, or lost (the hourly look), a
   run ends `interrupted` at once and its routine's retry rules decide, and a request fails. A request lives in the
-  host process (its notices are marked interrupted at start, as before), so its task leaves the box at host start.
+  host process, so its task leaves the box at host start; one that hadn't started comes back as a new task, sent
+  again from its notices, and one that had fails and wakes its sender ([bot collaboration](bot-collaboration.md#stops-failures-and-restart)).
 - A run whose routine was paused or deleted while it waited leaves the box.
 - Stop in the chat no longer cancels a routine's run that waits in the box, nor a request: the box's Stop does.
 
@@ -430,7 +489,7 @@ A task's end sends no alert of its own: its report is a turn of the bot's, whose
 
 - Bot: `work: [task]`: every working task (oldest first), then the waiting in dispatch order, then the tasks ended
   in the last 24 hours (newest first, at most 20). Task: `{id, title, status, activity, thread, wait, cutIn,
-  createdAt, startedAt, endedAt, result, talk, folder?, source?, worktree?}`; `activity` is its thread's, `thread` the thread bot that has or had it (null while it waits), `talk` whether the user may write to its [thread](#talking-to-a-thread) (the bot's own task whose thread bot is there), `folder` where its thread works (the worktree's folder for one in a worktree, else the bot's folder as it was when the thread began; absent before a thread took it, and once its worktree was removed with nothing in it), `wait`
+  createdAt, startedAt, endedAt, result, talk, seat, folder?, source?, worktree?}`; `seat` whether it takes one of the bot's seats (a working task's thread; one waiting on the user lends its own, [the dispatcher](#the-dispatcher)), absent on an older host, where every live task takes one; `activity` is its thread's, `thread` the thread bot that has or had it (null while it waits), `talk` whether the user may write to its [thread](#talking-to-a-thread) (the bot's own task whose thread bot is there), `folder` where its thread works (the worktree's folder for one in a worktree, else the bot's folder as it was when the thread began; absent before a thread took it, and once its worktree was removed with nothing in it), `wait`
   is `{kind: next | behind | after | usage, ahead?}` on a waiting task and null otherwise, `result` at most 280
   characters. `source` is `{kind: routine, id: <routine id>}` or `{kind: request, id?: <asking bot id>}`, and absent
   on a task the bot added, so a client that doesn't know it shows the row as before. `worktree` is
@@ -441,6 +500,7 @@ A task's end sends no alert of its own: its report is a turn of the bot's, whose
   offer **Add a fallback** (`data.addFallback`, without the `stopReason` of the thread's own), file messages
   (`data.files`) and artifact cards (`data.artifact`).
 - Bot: `maxThreads`, set with `updateBot` (1 to 6).
+- Bot: `threadAgent` and `threadFallbacks` ([Advisor mode](#advisor-mode)), set with `updateBot`. Absent on an older host.
 - Bot: `outside: {status, startedAt}`: how the bot stands [outside its chat](#outside-the-chat) (`idle`, `working`,
   `needsInput`, `error`), where `status` is the chat's alone. Absent on an older host: `status` then.
 - Bot: `threadWorktrees` (true unless set; `updateBot`), and `gitRepo`: whether the bot's folder is in a git
@@ -489,7 +549,8 @@ absent on an older host, where the feature doesn't show.
 
 ## Restart and cleanup
 
-At host start (`work::restore`): tasks ended over 7 days ago are deleted; a working task whose thread's turn was cut
+At host start (`work::restore`): tasks ended over 7 days ago leave the box for the bot's past tasks (`recall_task`),
+and their threads go at the next dispatcher pass; a working task whose thread's turn was cut
 off and can be resumed (`agent::bot::resumable`: a restart mark under an hour old) stays working, and its thread's
 actor resumes the turn; one whose thread can't goes back to waiting once, as a task that was cut in on, and fails with
 a report the second time. An ended task's undelivered report is sent again: to the bot, or, for a routine's run,
@@ -501,15 +562,66 @@ The hourly look (`work/sweep.rs`) catches what no event said. After every dispat
 working tasks in a box, one timer per bot is set for an hour later (reset by the next pass, none for an empty box).
 When it fires, the host takes a dispatcher pass again, and a working task whose thread runs no turn (its actor is
 gone or idle, and nothing is about to resume) follows the restart rule: back to waiting once, then failed with a
-report (`work_finished` `error: lost`). A turn that runs is never touched, however long and quiet. The look is host
-code only: no agent is woken unless a task was lost.
+report (`work_finished` `error: lost`). A turn that runs is never touched, however long and quiet (the
+[watchdog](#watchdog) asks the bot to look at one that seems stuck). The look is host code only: no agent is woken
+unless a task was lost.
+
+## Watchdog
+
+Every 5 minutes (`work/watch.rs`: one host-wide timer, started by `work::restore`), host code reads the running turn
+of each thread that works on one of a bot's own tasks: its newest 50 entries since the turn began (its runtime's
+`startedAt`), and its cards in the bot's chat (`Store::open_cards`). A routine's run and another bot's request
+aren't watched: their result has an owner other than the bot's chat. What it flags:
+
+- **looping**: the turn's last 6 tool calls are one call with one result: the same title, output, diffs and
+  locations (a title can leave the arguments out: an MCP tool's is its name). Calls with no title of their own
+  (`Tool`) never loop, nor does a call run again whose output changes each time (a timing, a temporary path).
+- **failing**: its last 5 tool calls ended `failed`.
+- **quiet**: no entry of the turn was created or changed for 60 minutes, while no tool call is `pending` or
+  `in_progress` (a long build isn't stuck). The hour counts from when the computer last woke, if that is later: a
+  look that comes long after the one before means the computer slept.
+- **card**: an approval or choice card of the thread has waited on the user for 2 hours. The user gets one reminder
+  per card: the needs-you alert (`AlertKind::NeedsInput`, opening the bot's chat; none when the bot's alerts are off).
+
+A thread that waits on the user (a card, a sign-in) is never flagged otherwise, nor is one between turns.
+
+**The wake-up.** On `looping`, `failing` or `quiet` the bot gets a host turn in its own chat (`Cmd::Watchdog`,
+`HostTurn::Watchdog`), queued behind the user's messages as a report is: `[Codync watchdog] Task "<title>" (<id>)
+looks stuck: <the repeated call, the failed calls' titles, or the minutes without a step>`, asking it to look
+(`work_status`, `recall_task`) and do one thing: `tell_task` what to change, `steer_task` it (stop, or replace the
+brief), or reply `(pass)` if it is fine. A task that ended or left that thread before the turn comes drops it.
+`(pass)` leaves nothing in the chat and alerts no one; another answer alerts like a reply. A task the turn adds
+carries the stuck task's hops on, as a report's turn does. A host restart doesn't resume it; the next look asks again.
+
+**Limits.** A thread wakes its bot at most once an hour (kept in memory, so a host restart forgets it). No wake
+while the chat's own agent rests (`agent::fallback::rest`, its login) or is near its usage limit
+(`usage::near_limit`, as the dispatcher counts it); the next look tries again. A Stop in the chat drops a wake-up
+that waits there, and a newer one for the same thread takes the place of one still waiting (the chat was busy for
+over an hour).
+
+**The host itself** (`host/src/watchdog.rs`). Under the service (`service::started_by_service`), a beat goes through
+the runtime and the hub's emit lock every 10 seconds, and an OS thread outside the runtime looks every 30. No beat for
+5 minutes (every worker blocked, a lock never freed) logs, writes `watchdog.restart` in the data folder and aborts
+the process; the service starts it again (launchd `KeepAlive`, systemd `Restart=always`, `codync-hostw` on Windows),
+whose start reports `host_restarted_stuck` and keeps the time as `watchdog.last`. A stall within 30 minutes of that
+restart only logs, so a hang that returns at start can't restart the host, and resume its turns, every few minutes.
+A nap of the thread that runs long by the wall clock means the computer slept: the wait starts over.
+`CODYNC_WATCHDOG_STALL_SECS` sets the stall and turns the watchdog on outside the service; a debug build with
+`CODYNC_WATCHDOG_TEST_HANG` stops beating (`watchdog_e2e`).
+
+**Analytics.** `watchdog_flagged`: `signal` (`looping`, `failing`, `quiet`, `card`), `action` (`woke`,
+`reminded`, `skipped`) and, when skipped, `reason` (`cooldown`, `rests`, `near_limit`); a skip is counted once
+per thread and reason in a row. Never a title or text. The bot's turn is `turn_finished` `source: watchdog`.
+`CODYNC_WORK_WATCH_SECS` sets the period for the end-to-end test (`work_e2e`).
 
 ## Limits of this version
 
 - A thread never changes or takes out a line of memory, the bot's own tasks included, also in a turn the user's
   message to the thread started. What the user asks the bot to forget, the bot does in the chat.
-- A thread takes text only: no files, no quoted message, no voice. A message sent right as a host restart comes is
-  marked failed and has to be sent again.
+- A thread takes text and files, but no quoted message, voice or command. A message sent right as a host restart
+  comes is marked failed and has to be sent again.
+- A waiting message's files stay with the thread a task leaves (it gave way, or got a new brief): the task starts
+  again with the message's words and the names of its files, not the files.
 - A turn that ended with a message of the user's still waiting reports nothing of its own: its last message stays
   in the transcript, and the report is the last turn's.
 - No subagent rows.
@@ -558,16 +670,26 @@ waiting behind a thread's card without answering it; Stop dropping what waited; 
 thread taking a message afterwards; what waited going with a task that gives way; a thread's sign-in asked in the
 chat and its task going on in the same thread once signed in, a thread moving past a signed-out agent and its next
 agent told the chat, a thread's offer to add a fallback in the chat and new fallbacks reaching a running thread, a thread
-that starts on a fallback never forking the chat's session); `memory_files_e2e` (a line a
+that starts on a fallback never forking the chat's session; the watchdog's turn in the chat for a thread that makes one
+call again and again, once an hour, and its `(pass)` leaving nothing; `recall_task` and `tell_task` refused in a
+thread); `watchdog_e2e` (a hung host aborted with its mark, the next start reporting it, a second stall within 30
+minutes only logged); `memory_files_e2e` (a line a
 routine's run in a thread takes out with a shell command is put back); unit tests of a worktree made, removed, kept,
 removed once merged and never touched when it isn't Codync's, the kept ones looked over again at a restart
 (`recheck`), the walk that removes only merged worktrees no task knows (`tidy_orphans`), and an inherited worktree
 known after its earlier task is gone (`known`) (`worktree.rs`), how a bot stands outside its chat (`tasks.rs`), a box stored before the rename read and saved under the new names (`tasks.rs`, `store/model.rs`) and schema 9's rewrite of stored entries (`store/schema.rs`), unit tests of the dispatch order and the `wait` reasons
-(`dispatch.rs`), the agent a new thread starts on (`agent/fallback/mod.rs`), a thread's held message sent again however
+(`dispatch.rs`), the watchdog's signals (looping, failing, quiet, a card overdue), its hourly hold and its reasons,
+only the bot's own tasks watched, a wake-up dropped once its task moved on and its analytics (`watch.rs`), the host
+watchdog's verdict, a computer that slept and the mark reported once (`watchdog.rs`), `recall_task` by id, query and
+latest, its pages of steps and 30 days (`recall.rs`), a task ended over a week ago leaving the box for the past ones
+at host start (`mod.rs`), the user's words a dropped turn gave back heard once (`thread.rs`), the agent a new thread starts on (`agent/fallback/mod.rs`), a thread's held message sent again however
 old and not once its task ended (`market/agent_sign_in.rs`), a task's end and the restart rule, also for a run and a request (`mod.rs`), a source on the wire (`tasks.rs`), which bots keep runs in the chat (`sources.rs`), the 20 waiting tasks and the title and brief lengths (`tools.rs`), the prompts and the box's lines. Not
 covered by a test: a reopened task's kept worktree becoming its folder again and a removed one's thread moving to the bot's folder end to end (the unit test covers the folder), a message to a task whose thread is on a task that followed it, a message that arrives as the task's turn ends (the lock that orders them), a real agent resuming a reopened session, a replaced brief carrying what waited, a worktree reused by a task that starts again, one inherited by a task that follows, a
 stopped task's worktree looked over, a task stopped while it waits for a sign-in ending its thread, a worktree's dev server and artifact, git failing, a real agent in a worktree, the host-start reclaim end to end (`tidy` spawning
 `tidy_orphans`, `pick_up` settling what `recheck` took),
 the Live Activity push itself (the relay isn't in the tests), a routine's time limit in a thread, a lost run or request at the hourly look, a run the box lost at host start, a request from another computer or the cloud assistant as a task, `message_bot` from a run's thread, a thread's voice note, a choice card's timeout and its end at a host restart, the usage and in-a-row limits, the desktop's Add a fallback opening Settings, `add_task` refused in a room or a bot's request (a routine run is: `routines/tests.rs`), a report turn that fails, a
-thread's dev server, a task sent back to waiting by a restart end to end, the 7-day purge, and the box's lines in a
+thread's dev server, a task sent back to waiting by a restart end to end, a task moving to the past ones end to end,
+`recall_task` end to end, a Stop dropping a waiting watchdog wake-up, one dropped because its task ended before its
+turn end to end, a newer wake-up taking a waiting one's place, the card reminder's push, a thread's message given back to its task
+by a dropped turn end to end (`requeue_unheard` in a thread), and the box's lines in a
 known harness's prompt.

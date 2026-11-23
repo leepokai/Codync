@@ -40,21 +40,22 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
  * The selected model's settings follow it; Fast mode is its own row while the agent offers it. Without [setFast] (a
  * fallback's model), the bot's own session and Fast mode don't apply, so neither shows.
  */
-@Composable internal fun AgentModelPicker(state: AppState, load: suspend (String) -> AgentModels, backend: String, selection: String?,
+@Composable internal fun AgentModelPicker(state: AppState, load: suspend (String, String?) -> AgentModels, backend: String, selection: String?,
     options: Map<String, String>, fastMode: Boolean, bot: Bot?, choose: (String?, Map<String, String>) -> Unit, setFast: ((Boolean) -> Unit)?,
     agents: List<Pair<String, String>> = emptyList(), chooseAgent: ((String) -> Unit)? = null,
-    onReload: () -> Unit = {}, expanded: Boolean = false, agentDetails: @Composable () -> Unit = {}) {
+    onReload: () -> Unit = {}, expanded: Boolean = false, loginProfile: String? = null, agentDetails: @Composable () -> Unit = {}) {
     val online = state.actualConnection is LinkState.Ready
-    var catalog by remember(backend) { mutableStateOf<AgentModels?>(null) }
-    var loading by remember(backend) { mutableStateOf(false) }
-    var failure by remember(backend) { mutableStateOf<String?>(null) }
-    var retry by remember(backend) { mutableIntStateOf(0) }
-    LaunchedEffect(state.computer.id, backend, online, retry) {
+    // The list belongs to the agent and its login profile.
+    var catalog by remember(backend, loginProfile) { mutableStateOf<AgentModels?>(null) }
+    var loading by remember(backend, loginProfile) { mutableStateOf(false) }
+    var failure by remember(backend, loginProfile) { mutableStateOf<String?>(null) }
+    var retry by remember(backend, loginProfile) { mutableIntStateOf(0) }
+    LaunchedEffect(state.computer.id, backend, loginProfile, online, retry) {
         failure = null; loading = false
         if (backend == "custom") return@LaunchedEffect
         if (!online) { failure = "Connect to this computer to load its models. You can still enter a model ID."; return@LaunchedEffect }
         loading = true
-        try { catalog = load(backend) }
+        try { catalog = load(backend, loginProfile) }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) { failure = "Couldn't load models: ${error.message ?: "Try again."}" }
         finally { loading = false }

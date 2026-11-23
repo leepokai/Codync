@@ -2268,5 +2268,13 @@
   "Reading SSH settings…": "Читаем настройки SSH…",
   "Reading the host key…": "Читаем ключ хоста…",
   "Signing in…": "Входим…",
-  "Opening the tunnel…": "Открываем туннель…"
+  "Opening the tunnel…": "Открываем туннель…",
+  "Advisor mode": "Режим советника",
+  "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.": "Чат планирует и передаёт работу; threads работают на своём агенте со своими резервными агентами.",
+  "Threads' agent": "Агент threads",
+  "Threads' fallbacks": "Резервные агенты threads",
+  "If {agent} runs out of usage or can't answer, threads carry on with the next one.": "Если у {agent} закончится лимит или он не сможет ответить, threads продолжат со следующим.",
+  "in background": "в фоне",
+  "{count} s": "{count} с",
+  "{count} min": "{count} мин"
 }

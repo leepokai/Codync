@@ -1,21 +1,22 @@
 //! Agent → client: `session/update`s, permission requests and streamed text mapped onto entries.
 
 use super::fast_mode::Listing;
-use super::tool_entry::{activity, mark_bookkeeping, merge_tool_content};
+use super::tool_entry::{activity, mark_bookkeeping, merge_subagent, merge_tool_content};
 use super::{Actor, Reacted, Seg, SegKind};
-use crate::agent::acp::{self, Incoming};
-use crate::agent::elicitation::{self, Declined};
+use crate::agent::elicitation::Declined;
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{BotConfig, Entry, EntryKind, Lane};
+use codync_agent::acp::{ELICITATION, Incoming, Permission, Request};
+use codync_agent::events::{Event, Update};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
 
 /// Who waits for an approval card's answer.
 pub(super) enum Answer {
-    /// The agent's `session/request_permission`, by its JSON-RPC id.
-    Agent(Value),
+    /// The agent's `session/request_permission`: dropped unanswered, it tells the agent `cancelled`.
+    Agent(Request),
     /// A Codync tool (`Cmd::Approve`): true when the user allowed it.
     Codync(oneshot::Sender<bool>),
 }
@@ -32,83 +33,80 @@ impl Actor {
                 // The in-flight prompt request resolves with an error; finish_turn reports it with this output.
                 self.exit_tail = Some(tail);
             }
-            Some(Incoming::Notification { method, params }) if method == "session/update" => {
-                if !self.on_session_wide(&params)
-                    && params["sessionId"].as_str() == self.turn_session.as_deref()
+            Some(Incoming::Update(update)) => {
+                if !self.on_session_wide(&update)
+                    && update.session.as_deref() == self.turn_session.as_deref()
                     && self.turn.is_some()
                 {
-                    self.on_update(&params["update"]);
+                    self.on_update(update.event);
                 }
             }
             Some(Incoming::Notification { .. }) => {}
-            Some(Incoming::Request { id, method, params }) => match method.as_str() {
-                "session/request_permission" if self.turn.is_some() => self.on_permission(id, params).await,
+            Some(Incoming::Request(request)) if self.turn.is_some() => match request.permission() {
+                Some(permission) => self.on_permission(request, permission).await,
                 // A question for the user, never a permission: the approval setting doesn't answer it.
-                elicitation::METHOD if self.turn.is_some() => self.on_elicitation(id, &params).await,
-                _ => self.answer_outside_turn(id, &method, &params).await,
+                None if request.method() == ELICITATION => self.on_elicitation(request).await,
+                None => self.answer_outside_turn(request).await,
             },
+            Some(Incoming::Request(request)) => self.answer_outside_turn(request).await,
         }
     }
 
     /// Any session's update, turn or not, about the agent rather than a reply: an option or mode the agent changed
     /// itself, or its commands. Returns whether it was one.
-    pub(super) fn on_session_wide(&mut self, params: &Value) -> bool {
-        let update = &params["update"];
-        let sid = params["sessionId"].as_str();
-        match (update["sessionUpdate"].as_str(), sid) {
-            (Some("config_option_update"), Some(sid)) => self.note_options(sid, update, Listing::Update),
-            (Some("current_mode_update"), Some(sid)) => self.note_current_mode(sid, update["currentModeId"].as_str()),
-            (Some("available_commands_update"), _) => self.note_commands(update),
+    pub(super) fn on_session_wide(&mut self, update: &Update) -> bool {
+        let sid = update.session.as_deref();
+        match (&update.event, sid) {
+            (Event::ConfigOptions(options), Some(sid)) => self.note_options(sid, options, Listing::Update),
+            (Event::ModeChanged { mode }, Some(sid)) => self.note_current_mode(sid, mode.as_deref()),
+            (Event::Commands(commands), _) => self.note_commands(commands),
             _ => return false,
         }
         true
     }
 
     /// A request no turn handles: a permission gets `answer_background`, a question is declined (no card can wait for
-    /// it), anything else isn't supported.
-    pub(super) async fn answer_outside_turn(&self, rpc_id: Value, method: &str, params: &Value) {
-        match method {
-            "session/request_permission" => self.answer_background(rpc_id, params).await,
-            elicitation::METHOD => self.decline_elicitation(rpc_id, Declined::NoTurn).await,
-            _ => {
-                if let Some(conn) = &self.conn {
-                    let _ =
-                        conn.acp.respond_error(rpc_id, -32601, &format!("{method} is not supported by Codync")).await;
-                }
-            }
+    /// it), anything else isn't supported (dropping it says so).
+    pub(super) async fn answer_outside_turn(&self, request: Request) {
+        if let Some(permission) = request.permission() {
+            self.answer_background(request, &permission).await;
+        } else if request.method() == ELICITATION {
+            self.decline_elicitation(request, Declined::NoTurn).await;
         }
     }
 
-    pub(super) fn on_update(&mut self, u: &Value) {
+    pub(super) fn on_update(&mut self, event: Event) {
         let turn = self.turn.unwrap_or(0);
-        match u["sessionUpdate"].as_str().unwrap_or_default() {
-            "agent_message_chunk" => {
-                let t = acp::content_text(&u["content"]);
-                if let Some(error) = super::pi_tools::turn_error_text(&self.cfg.backend, u, &t) {
+        match event {
+            Event::Text { text, notice } => {
+                if let Some(error) = super::pi_tools::turn_error_text(&self.cfg.backend, notice.as_deref(), &text) {
                     self.agent_error = Some(error.to_owned());
                     return;
                 }
-                self.append(SegKind::Text, &t);
+                self.unheard.clear();
+                self.append(SegKind::Text, &text);
                 self.set_activity("Writing a reply…");
             }
-            "agent_thought_chunk" => {
-                let t = acp::content_text(&u["content"]);
-                self.append(SegKind::Thought, &t);
+            Event::Thought { text } => {
+                self.append(SegKind::Thought, &text);
                 self.set_activity("Thinking…");
             }
-            "tool_call" => {
+            Event::ToolStarted(call) => {
+                let call = *call;
+                self.unheard.clear();
                 self.close_seg();
-                let tool_id = u["toolCallId"].as_str().unwrap_or_default().to_owned();
+                let tool_id = call.id;
                 let mut data = json!({
                     "toolCallId": tool_id,
-                    "title": u["title"].as_str().unwrap_or("Tool"),
-                    "toolKind": u["kind"].as_str().unwrap_or("other"),
-                    "status": u["status"].as_str().unwrap_or("pending"),
+                    "title": call.title.as_deref().unwrap_or("Tool"),
+                    "toolKind": call.kind.as_deref().unwrap_or("other"),
+                    "status": call.status.as_deref().unwrap_or("pending"),
                     "output": "",
                     "diffs": [],
-                    "locations": u["locations"].clone(),
+                    "locations": call.locations.unwrap_or_default(),
                 });
-                merge_tool_content(&mut data, &u["content"]);
+                merge_tool_content(&mut data, call.content.as_deref());
+                merge_subagent(&mut data, call.parent, call.subagent);
                 mark_bookkeeping(&self.cfg, self.renamed(), &mut data);
                 crate::chat::memory::turns::touched(&self.hub, &self.cfg, &data);
                 let working = activity(&data, self.renamed()).to_owned();
@@ -117,19 +115,20 @@ impl Actor {
                 }
                 self.set_activity(&working);
             }
-            "tool_call_update" => {
-                let tool_id = u["toolCallId"].as_str().unwrap_or_default();
-                let Some(entry_id) = self.tools.get(tool_id).cloned() else { return };
+            Event::ToolUpdated(call) => {
+                let call = *call;
+                let Some(entry_id) = self.tools.get(&call.id).cloned() else { return };
                 let Some(mut e) = self.hub.store.entry(&entry_id) else { return };
-                for (k, key) in [("title", "title"), ("kind", "toolKind"), ("status", "status")] {
-                    if let Some(v) = u[k].as_str() {
+                for (value, key) in [(call.title, "title"), (call.kind, "toolKind"), (call.status, "status")] {
+                    if let Some(v) = value {
                         e.data[key] = v.into();
                     }
                 }
-                if !u["locations"].is_null() {
-                    e.data["locations"] = u["locations"].clone();
+                if let Some(locations) = call.locations {
+                    e.data["locations"] = locations;
                 }
-                merge_tool_content(&mut e.data, &u["content"]);
+                merge_tool_content(&mut e.data, call.content.as_deref());
+                merge_subagent(&mut e.data, call.parent, call.subagent);
                 mark_bookkeeping(&self.cfg, self.renamed(), &mut e.data);
                 crate::chat::memory::turns::touched(&self.hub, &self.cfg, &e.data);
                 let working = (e.data["status"] == "in_progress").then(|| activity(&e.data, self.renamed()).to_owned());
@@ -138,31 +137,26 @@ impl Actor {
                     self.set_activity(&working);
                 }
             }
-            "compaction_update" => {
+            Event::Compaction(compaction) => {
                 if let Some(conn) = self.conn.as_mut() {
                     conn.reports_compaction = true;
                 }
                 // Claude's adapter carries the summary on one of its completed updates.
-                if u["status"] == "completed" {
-                    let summary = acp::content_text(&u["summary"]);
-                    self.compacted(
-                        u["compactionId"].as_str().unwrap_or_default(),
-                        (!summary.trim().is_empty()).then_some(summary),
-                    );
+                if compaction.done {
+                    self.compacted(&compaction.id, compaction.summary);
                 }
             }
-            "usage_update" => {
-                let info = &u["_meta"]["_claude/rateLimit"];
-                if info.is_object() {
+            Event::Usage(usage) => {
+                if let Some(info) = &usage.claude_rate_limit {
                     let profile = crate::agent::login_profiles::of_bot(&self.hub.store, &self.cfg.backend, &self.cfg);
                     crate::usage::ingest_claude_rate_limit(&self.hub, profile, info);
                 }
-                if let Some(used) = u["used"].as_u64() {
-                    self.track_usage(used, u["size"].as_u64().unwrap_or(0));
+                if let Some(used) = usage.used {
+                    self.track_usage(used, usage.size.unwrap_or(0));
                 }
             }
-            "plan" => {
-                let data = json!({"entries": u["entries"].clone(), "author": self.cfg.id});
+            Event::Plan { entries } => {
+                let data = json!({"entries": entries, "author": self.cfg.id});
                 match &self.plan_entry {
                     Some(id) => {
                         self.hub.set_entry(id, &data);
@@ -178,57 +172,51 @@ impl Actor {
         }
     }
 
-    pub(super) async fn on_permission(&mut self, rpc_id: Value, params: Value) {
-        let options = params["options"].as_array().cloned().unwrap_or_default();
-        let tool = &params["toolCall"];
+    pub(super) async fn on_permission(&mut self, request: Request, permission: Permission) {
         if self.hub.ceilings.approves_by_itself(&self.cfg)
-            && let (Some(option), Some(conn)) = (auto_pick(&options), &self.conn)
+            && let Some(option) = permission.allow()
         {
-            let _ = conn.acp.respond(rpc_id, acp::permission_answer(Some(option))).await;
+            let _ = request.choose(Some(option)).await;
             return;
         }
-        let title = tool["title"]
-            .as_str()
+        let tool = &permission.tool;
+        let title = tool
+            .title
+            .clone()
             .filter(|t| !t.is_empty())
-            .map(str::to_owned)
             .or_else(|| {
-                let eid = self.tools.get(tool["toolCallId"].as_str()?)?;
+                let eid = self.tools.get(&tool.id)?;
                 self.hub.store.entry(eid)?.data["title"].as_str().map(str::to_owned)
             })
             .unwrap_or_else(|| "Use a tool".into());
         let mut detail = json!({"output": "", "diffs": []});
-        merge_tool_content(&mut detail, &tool["content"]);
-        let raw = &tool["rawInput"];
-        let command = raw["command"].as_str().map(str::to_owned).or_else(|| {
-            raw["command"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" "))
-        });
+        merge_tool_content(&mut detail, tool.content.as_deref());
         let data = json!({
             "title": title,
-            "toolKind": tool["kind"].as_str().unwrap_or("other"),
-            "command": command,
+            "toolKind": tool.kind.as_deref().unwrap_or("other"),
+            "command": permission.command,
             "detail": detail["output"],
             "diffs": detail["diffs"],
             "cwd": self.cfg.cwd,
-            "options": options.iter().map(|o| json!({"optionId": o["optionId"], "name": o["name"], "kind": o["kind"]})).collect::<Vec<_>>(),
+            "options": permission.options.iter().map(|o| json!({"optionId": o.id, "name": o.name, "kind": o.kind})).collect::<Vec<_>>(),
             "status": "pending",
             "selected": Value::Null,
         });
-        self.show_card(&title, data, Answer::Agent(rpc_id));
+        self.show_card(&title, data, Answer::Agent(request));
     }
 
     /// A permission request from work the agent goes on with after its turn ended (a background subagent): no turn
     /// shows a card for it, so it gets what a turn would answer without asking, where the bot approves by itself
     /// (`Ceilings::approves_by_itself`), for one of this bot's own sessions, unless the user stopped its last turn.
     /// Anything else is declined.
-    pub(super) async fn answer_background(&self, rpc_id: Value, params: &Value) {
+    pub(super) async fn answer_background(&self, request: Request, permission: &Permission) {
         let Some(conn) = &self.conn else { return };
-        let own = params["sessionId"].as_str().is_some_and(|sid| conn.loaded.contains_key(sid));
-        let options = params["options"].as_array().cloned().unwrap_or_default();
+        let own = permission.session.as_deref().is_some_and(|sid| conn.loaded.contains_key(sid));
         let pick = (self.hub.ceilings.approves_by_itself(&self.cfg) && own && !self.stop_requested)
-            .then(|| auto_pick(&options))
+            .then(|| permission.allow())
             .flatten();
-        tracing::info!(bot = %self.id(), approved = pick.is_some(), title = params["toolCall"]["title"].as_str(), "permission asked outside a turn");
-        let _ = conn.acp.respond(rpc_id, acp::permission_answer(pick)).await;
+        tracing::info!(bot = %self.id(), approved = pick.is_some(), title = permission.tool.title.as_deref(), "permission asked outside a turn");
+        let _ = request.choose(pick).await;
     }
 
     /// `Cmd::Approve`: Allow or Deny on a card, with what the tool will do in its details.
@@ -300,10 +288,8 @@ impl Actor {
         let Some(answer) = self.perms.remove(entry_id) else { return };
         let mut status = if option_id.is_some() { "answered" } else { "cancelled" };
         match answer {
-            Answer::Agent(rpc_id) => {
-                if let Some(conn) = &self.conn {
-                    let _ = conn.acp.respond(rpc_id, acp::permission_answer(option_id.as_deref())).await;
-                }
+            Answer::Agent(request) => {
+                let _ = request.choose(option_id.as_deref()).await;
             }
             Answer::Codync(reply) => {
                 // The tool stopped waiting (see `expire_abandoned`): nothing acts on the answer.
@@ -443,15 +429,6 @@ impl Actor {
         self.flush(true);
         self.seg = Seg::None;
     }
-}
-
-/// The option Approve automatically picks for a permission request: allow once, else allow always, else its first.
-fn auto_pick(options: &[Value]) -> Option<&str> {
-    ["allow_once", "allow_always"]
-        .iter()
-        .find_map(|k| options.iter().find(|o| o["kind"] == *k))
-        .or_else(|| options.first())?["optionId"]
-        .as_str()
 }
 
 /// Told with a `send_message` refused in a room, request or routine turn, in case it came from earlier work.

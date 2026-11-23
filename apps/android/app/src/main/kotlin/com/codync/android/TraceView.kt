@@ -28,8 +28,11 @@ import com.codync.android.core.Entry
 import com.codync.android.design.*
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 
 /** "Full conversation": everything the agent did, grouped by turn (iOS `TraceView`). */
 @Composable internal fun TraceView(bot: Bot, state: AppState) {
@@ -39,7 +42,7 @@ import kotlinx.serialization.json.jsonPrimitive
     val running = runningTurn(all, bot.isWorking(bot.id))
     val list = rememberLazyListState()
     // Opens at the end and follows any new step there (in whichever turn) until the reader scrolls up.
-    rememberFollowing(list, turns.lastOrNull()?.first?.toString(), all.maxOfOrNull { it.rev }, working = false, bottom = 0.dp)
+    rememberFollowing(list, turns.firstOrNull()?.first?.toString(), turns.lastOrNull()?.first?.toString(), all.maxOfOrNull { it.rev }, working = false, bottom = 0.dp)
     Column(Modifier.fillMaxSize()) {
         ModalHeader("Full conversation")
         LazyColumn(state = list, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
@@ -48,7 +51,7 @@ import kotlinx.serialization.json.jsonPrimitive
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(entries.firstOrNull { it.kind == "user" }?.text ?: tr("Turn {turn}").replace("{turn}", turn.toString()), Modifier.padding(start = 4.dp),
                         style = Type.subheadline.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    CardSection { for (entry in entries) row { TraceRow(entry, unfolded = turn == running) } }
+                    CardSection { for ((entry, depth) in nestedSteps(entries)) row { Box(Modifier.nested(depth)) { TraceRow(entry, unfolded = turn == running) } } }
                 }
             }
         }
@@ -63,6 +66,55 @@ internal fun runningTurn(entries: List<Entry>, working: Boolean): Long? =
 internal fun workingSteps(entries: List<Entry>): List<Entry> {
     val turn = runningTurn(entries, working = true)
     return entries.filter { it.turn == turn && it.isWorkingStep }
+}
+
+/** Steps with each subagent's steps right under the call that launched it (`parent`, in the same turn), `depth`
+ *  deeper. A step whose launch isn't among them stays where it is. */
+internal fun nestedSteps(steps: List<Entry>): List<Pair<Entry, Int>> {
+    fun Entry.callRef(key: String) = (data[key] as? JsonPrimitive)?.contentOrNull?.let { "$turn:$it" }
+    // A call is known by its turn and id: a launch is looked for in its own turn only.
+    val ids = steps.mapNotNull { it.callRef("toolCallId") }.toSet()
+    fun launch(e: Entry) = e.callRef("parent")?.takeIf { it != e.callRef("toolCallId") && it in ids }
+    val children = steps.filter { launch(it) != null }.groupBy { launch(it) }
+    val out = mutableListOf<Pair<Entry, Int>>()
+    fun visit(e: Entry, depth: Int) {
+        out += e to depth
+        children[e.callRef("toolCallId")].orEmpty().forEach { visit(it, depth + 1) }
+    }
+    steps.filter { launch(it) == null }.forEach { visit(it, 0) }
+    return out
+}
+
+/** A step a subagent took, indented under the call that launched it. ponytail: one indent for any depth; Claude's
+ *  subagents launch none of their own. */
+internal fun Modifier.nested(depth: Int) = padding(start = if (depth > 0) 24.dp else 0.dp)
+
+/** A subagent's launch, quietly: its kind, then the tokens it used and how long it ran once it finished, or that it
+ *  runs in the background. Null while a foreground one runs, or for any other call. */
+internal fun subagentLine(d: JsonObject, tr: (String) -> String): String? {
+    val s = d["subagent"] as? JsonObject ?: return null
+    fun field(key: String) = s[key] as? JsonPrimitive
+    val background = field("background")?.booleanOrNull == true
+    val tokens = field("tokens")?.longOrNull
+    if (!background && tokens == null) return null
+    val parts = listOfNotNull(field("kind")?.takeIf { it.isString }?.content).toMutableList()
+    if (background) parts += tr("in background")
+    if (tokens != null) parts += tr("{tokens} tokens").replace("{tokens}", compactCount(tokens))
+    field("durationMs")?.longOrNull?.let { ms ->
+        val seconds = maxOf(1, Math.round(ms / 1000.0))
+        parts += if (seconds < 60) tr("{count} s").replace("{count}", "$seconds")
+            else tr("{count} min").replace("{count}", Math.round(seconds / 60.0).toString())
+    }
+    return parts.joinToString(" · ")
+}
+
+/** 812, 42.3k, 1.2M. */
+private fun compactCount(n: Long): String {
+    if (n < 1000) return "$n"
+    val (div, unit) = if (n < 1_000_000) 1000.0 to "k" else 1_000_000.0 to "M"
+    val tenths = Math.round(n / (div / 10))
+    if (tenths >= 1000) return "${Math.round(n / div)}$unit"
+    return (if (tenths % 10 == 0L) "${tenths / 10}" else "${tenths / 10}.${tenths % 10}") + unit
 }
 
 /** The running turn's thoughts start `unfolded`, so its reasoning reads as it comes in. */
@@ -122,7 +174,10 @@ internal fun workingSteps(entries: List<Entry>): List<Entry> {
     val label: @Composable () -> Unit = {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.width(18.dp), contentAlignment = Alignment.Center) { Symbol(icon, size = 15.dp, tint = Palette.secondary) }
-            Text(if (title == "Tool") tr("Tool") else title, Modifier.weight(1f), style = Type.subheadline, color = Palette.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(if (title == "Tool") tr("Tool") else title, style = Type.subheadline, color = Palette.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                subagentLine(d, translator())?.let { Text(it, style = Type.footnote, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
             when (d.text("status")) {
                 "completed" -> Symbol("checkmark", size = 14.dp, tint = Palette.accent)
                 "failed" -> Symbol("xmark", size = 14.dp, tint = Palette.danger)

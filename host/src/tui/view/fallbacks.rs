@@ -9,16 +9,26 @@ use crate::agent::fallback::Reason;
 use crate::store::Fallback;
 use crate::tui::l10n::{fill, tr};
 
-/// Fallback `i` of `bot`'s chain: "1 Codex · gpt-5.5 (in use)", "2 Claude Code (Work) · default (Usage resets 15:00)".
-pub(in crate::tui) fn step_item(app: &App, bot: Option<&Bot>, i: usize, f: &Fallback) -> String {
-    let login_profile = f.login_profile.as_deref();
+/// A step's agent, login and model: "Claude Code (Work) · default".
+pub(in crate::tui) fn step_label(app: &App, f: &Fallback) -> String {
     let agent = app.agent_name(&f.backend);
-    let agent =
-        login_profile.map_or(agent.clone(), |id| format!("{agent} ({})", app.login_profile_name(&f.backend, id)));
-    let item = format!("{} {agent} · {}", i + 1, f.model.as_deref().unwrap_or("default"));
-    if bot.is_some_and(|b| {
-        b.agent_step.as_deref() == Some(f.backend.as_str()) && b.step_login_profile.as_deref() == login_profile
-    }) {
+    let agent = f
+        .login_profile
+        .as_deref()
+        .map_or(agent.clone(), |id| format!("{agent} ({})", app.login_profile_name(&f.backend, id)));
+    format!("{agent} · {}", f.model.as_deref().unwrap_or("default"))
+}
+
+/// Fallback `i` of `bot`'s chain: "1 Codex · gpt-5.5 (in use)", "2 Claude Code (Work) · default (Usage resets 15:00)".
+/// `chat`: of the chat's own chain, whose step the bot is on (Advisor mode's threads each run their own).
+pub(in crate::tui) fn step_item(app: &App, bot: Option<&Bot>, i: usize, f: &Fallback, chat: bool) -> String {
+    let login_profile = f.login_profile.as_deref();
+    let item = format!("{} {}", i + 1, step_label(app, f));
+    if chat
+        && bot.is_some_and(|b| {
+            b.agent_step.as_deref() == Some(f.backend.as_str()) && b.step_login_profile.as_deref() == login_profile
+        })
+    {
         format!("{item} (in use)")
     } else if let Some(note) = bot.and_then(|b| rest_note(b, &f.backend, login_profile)) {
         format!("{item} ({note})")

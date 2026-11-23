@@ -6,8 +6,8 @@
 // stays while the turn-error hook does.
 
 use super::codex_names::{self, Renamed};
-use crate::agent::acp::{INTERNAL_ERROR, RpcError};
 use anyhow::{Context, Result};
+use codync_agent::acp::{INTERNAL_ERROR, RpcError, StopReason};
 use serde_json::{Map, Value, json};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -46,17 +46,17 @@ const EXTENSION: &str = r#"export default function (pi) {
 /// Leads the notification the extension sends for a turn pi ended in an error.
 const TURN_ERROR: &str = "[codync: turn failed] ";
 
-/// The error an agent message chunk (`update`, its `text`) carries when it's the extension's notification to pi
-/// (pi-acp marks it `level` `error`), not reply text: an agent quoting the notification is still talking.
-pub(super) fn turn_error_text<'a>(backend: &str, update: &Value, text: &'a str) -> Option<&'a str> {
-    let notified = backend == "pi" && update["_meta"]["piAcp"]["notify"]["level"] == "error";
+/// The error reply text carries when it's the extension's notification to pi (pi-acp passes it on with `notice`
+/// `error`), not the reply's words: an agent quoting the notification is still talking.
+pub(super) fn turn_error_text<'a>(backend: &str, notice: Option<&str>, text: &'a str) -> Option<&'a str> {
+    let notified = backend == "pi" && notice == Some("error");
     text.strip_prefix(TURN_ERROR).filter(|_| notified)
 }
 
 /// The prompt's answer `done`, failed with `error` when pi ended the turn in one and pi-acp still answered `end_turn`.
 pub(super) fn turn_result(done: Result<Value>, error: Option<String>) -> Result<Value> {
     match error {
-        Some(error) if done.as_ref().is_ok_and(|v| v["stopReason"] == "end_turn") => Err(turn_error(&error)),
+        Some(error) if done.as_ref().is_ok_and(|v| StopReason::of(v) == StopReason::EndTurn) => Err(turn_error(&error)),
         _ => done,
     }
 }
@@ -186,13 +186,13 @@ mod tests {
     fn only_an_ended_turn_fails_with_pi_s_error() {
         let ended = || Ok(json!({ "stopReason": "end_turn" }));
         let error = || Some("503: busy".to_owned());
-        let notified = json!({ "_meta": { "piAcp": { "notify": { "level": "error" } } } });
+        let notified = Some("error");
         let quoted = format!("{TURN_ERROR}503: busy");
-        assert_eq!(turn_error_text("pi", &notified, &quoted), Some("503: busy"));
-        assert_eq!(turn_error_text("pi", &notified, "a reply"), None);
+        assert_eq!(turn_error_text("pi", notified, &quoted), Some("503: busy"));
+        assert_eq!(turn_error_text("pi", notified, "a reply"), None);
         // Quoted in a reply, by pi or another agent, it is the reply's text.
-        assert_eq!(turn_error_text("pi", &json!({}), &quoted), None);
-        assert_eq!(turn_error_text("claude", &notified, &quoted), None);
+        assert_eq!(turn_error_text("pi", None, &quoted), None);
+        assert_eq!(turn_error_text("claude", notified, &quoted), None);
         assert!(turn_result(ended(), error()).is_err());
         assert!(turn_result(ended(), None).is_ok());
         let cancelled = json!({ "stopReason": "cancelled" });

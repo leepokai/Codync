@@ -17,6 +17,16 @@ impl App {
             return;
         }
         let s = s.replace("\r\n", "\n").replace('\r', "\n");
+        // A file dragged onto the terminal while writing to a thread that takes files: attach it there.
+        let takes_files = matches!(self.overlays.last(), Some(Overlay::Thread(sheet))
+            if sheet.typing && sheet.task(self).is_some_and(|task| task.talk_files));
+        if takes_files
+            && let Some(paths) = dropped_files(&s)
+            && let Some(Overlay::Thread(sheet)) = self.overlays.last_mut()
+        {
+            sheet.files.extend(paths);
+            return;
+        }
         if let Some(ed) = self.top_editor() {
             ed.insert(&s);
         } else if !self.paste_find(&s)
@@ -144,12 +154,7 @@ impl App {
                 if let Some(pasted) = self.pasted.get(&key).filter(|p| !p.is_empty()) {
                     body["pasted"] = json!(pasted);
                 }
-                let after = After::Sent(key);
-                if files.is_empty() {
-                    self.call("send", body, after);
-                } else {
-                    self.client.spawn_send_files(body, files, after, self.tx.clone());
-                }
+                self.send_message(body, files, After::Sent(key));
                 self.flash("Sending… Your draft stays here until delivered.");
             }
             KeyCode::Backspace if draft.text.is_empty() => {
@@ -464,7 +469,8 @@ impl App {
 
 /// Paths a terminal pastes for dropped files (shell-escaped, quoted or `file://`), when every one is a file.
 fn dropped_files(s: &str) -> Option<Vec<std::path::PathBuf>> {
-    let paths: Vec<std::path::PathBuf> = shlex::split(s.trim())?
+    let words = if cfg!(windows) { windows_words(s.trim())? } else { shlex::split(s.trim())? };
+    let paths: Vec<std::path::PathBuf> = words
         .into_iter()
         .map(|p| match p.strip_prefix("file://") {
             Some(url) => url.replace("%20", " "),
@@ -473,6 +479,37 @@ fn dropped_files(s: &str) -> Option<Vec<std::path::PathBuf>> {
         .map(std::path::PathBuf::from)
         .collect();
     (!paths.is_empty() && paths.iter().all(|p| p.is_absolute() && p.is_file())).then_some(paths)
+}
+
+/// How Windows terminals paste paths: as they are, one with spaces in double quotes. A backslash is part of the path,
+/// not an escape as in a Unix shell. `None` for an unclosed quote.
+fn windows_words(s: &str) -> Option<Vec<String>> {
+    let (mut words, mut word, mut quoted) = (vec![], String::new(), false);
+    for c in s.chars() {
+        match c {
+            '"' => quoted = !quoted,
+            c if c.is_whitespace() && !quoted => {
+                if !word.is_empty() {
+                    words.push(std::mem::take(&mut word));
+                }
+            }
+            c => word.push(c),
+        }
+    }
+    if !word.is_empty() {
+        words.push(word);
+    }
+    (!quoted).then_some(words)
+}
+
+#[cfg(test)]
+mod windows_paste_tests {
+    #[test]
+    fn windows_paths_keep_their_backslashes_and_quoted_spaces() {
+        let words = super::windows_words(r#"C:\Users\me\a.png "C:\My Files\b c.txt""#);
+        assert_eq!(words, Some(vec![r"C:\Users\me\a.png".to_owned(), r"C:\My Files\b c.txt".to_owned()]));
+        assert_eq!(super::windows_words(r#""C:\open"#), None);
+    }
 }
 
 #[cfg(all(test, unix))]

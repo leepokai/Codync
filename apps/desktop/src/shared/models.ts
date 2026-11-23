@@ -43,6 +43,10 @@ export interface Bot {
   fallbacks: Fallback[]
   /** The bot may set its own fallbacks; null from an older host (no fallbacks there). */
   selfFallbacks: boolean | null
+  /** Advisor mode: the agent its threads run on, null when they run on the bot's own. */
+  threadAgent: Fallback | null
+  /** In Advisor mode, the threads' fallbacks; null from an older host (no Advisor mode there). */
+  threadFallbacks: Fallback[] | null
   /** The fallback the bot is on right now; null on its own agent. */
   agentStep: AgentStep | null
   /** Agents of its chain (its own included) resting now; one whose `until` passed isn't. */
@@ -142,6 +146,8 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     fastModeIssue: raw.fastModeIssue ?? null,
     fallbacks: raw.fallbacks ?? [],
     selfFallbacks: raw.selfFallbacks ?? null,
+    threadAgent: raw.threadAgent ?? null,
+    threadFallbacks: raw.threadFallbacks ?? null,
     agentStep: raw.agentStep ?? null,
     agentCommands: raw.agentCommands ?? [],
     resting: raw.resting ?? [],
@@ -237,6 +243,16 @@ export const isWorkingIn = (b: Bot, chat: string) => isWorking(b) && (b.workingC
 /** Where the bot works, as a list shows it: its own folder, or its project folder's name. */
 export const folderName = (b: Bot, tr: (text: string) => string) =>
   b.managedWorkspace ? tr('Own folder') : (b.cwd.split('/').filter(Boolean).pop() ?? b.cwd)
+
+/** A subagent, as its launching call reports it: the totals once it finished in the foreground. */
+export interface Subagent {
+  kind?: string
+  model?: string
+  background?: boolean
+  tokens?: number
+  toolUses?: number
+  durationMs?: number
+}
 
 export interface FileDiff {
   path: string
@@ -411,6 +427,12 @@ export interface EntryData {
   /** tool: whether it's the bot's own bookkeeping (composing its message, keeping its memory), left out of the
    * working steps; a host older than 2.25.0 leaves it out, and the steps then leave out the call too. */
   bookkeeping?: boolean
+  /** tool: the agent's id for the call. */
+  toolCallId?: string
+  /** tool: the call that launched the subagent making this one (Claude Code only). */
+  parent?: string
+  /** tool: what a subagent's launch says about it (Claude Code only). */
+  subagent?: Subagent
   output?: string
   diffs?: FileDiff[]
   locations?: { path: string; line?: number }[]
@@ -824,6 +846,9 @@ export interface BotDraft {
   fastMode?: boolean
   fallbacks?: Fallback[]
   selfFallbacks?: boolean
+  /** Left out for a host before Advisor mode; null turns it off. */
+  threadAgent?: Fallback | null
+  threadFallbacks?: Fallback[]
   pinned?: boolean
   /** A name puts the bot in that roster section, null takes it out; left out, the host keeps it. */
   section?: string | null
@@ -863,6 +888,7 @@ export function draftOf(bot: Bot): BotDraft {
     fastMode: bot.fastMode,
     fallbacks: bot.fallbacks,
     selfFallbacks: bot.selfFallbacks ?? undefined,
+    ...(bot.threadFallbacks === null ? {} : { threadAgent: bot.threadAgent, threadFallbacks: bot.threadFallbacks }),
     pinned: bot.pinned,
     hidden: bot.hidden,
     notify: bot.notify ?? null,

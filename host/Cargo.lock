@@ -726,17 +726,31 @@ dependencies = [
 ]
 
 [[package]]
-name = "codync-accounts"
-version = "0.1.0"
+name = "codync-agent"
+version = "0.2.0"
 dependencies = [
+ "anyhow",
  "base64 0.23.1",
+ "chrono",
+ "dirs",
+ "futures",
+ "libc",
+ "portable-pty",
+ "reqwest",
+ "rusqlite",
+ "semver",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
+ "tokio",
+ "tracing",
+ "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "codync-host"
-version = "2.52.0"
+version = "2.53.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -745,7 +759,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "clap",
- "codync-accounts",
+ "codync-agent",
  "codync-mem",
  "codync-network",
  "croner",

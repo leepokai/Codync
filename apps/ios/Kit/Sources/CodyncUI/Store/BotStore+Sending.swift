@@ -46,7 +46,7 @@ extension BotStore {
 
     /// Transfer to the outbox now; an eventual acknowledgement must not erase a newer draft.
     /// `draft`: whose draft it is (the chat's when nil). `replyTo`: the chat message it quotes. `thread`: the task's
-    /// thread it goes to instead of the chat, as text alone.
+    /// thread it goes to instead of the chat.
     @discardableResult
     func sendComposerDraft(to botId: String, draft key: String? = nil, replyTo: ReplyQuote? = nil,
                            files: [OutgoingFile] = [], thread: WorkThread? = nil) -> Bool {
@@ -55,7 +55,7 @@ extension BotStore {
         guard !retired, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty else { return false }
         let pasted = composerPasted[key] ?? []
         if let thread {
-            send(text, to: thread)
+            send(text, to: thread, files: files)
         } else {
             send(text, to: botId, replyTo: replyTo, nonce: UUID().uuidString, files: files, pasted: pasted)
         }
@@ -107,12 +107,7 @@ extension BotStore {
             do {
                 // Safe to repeat: the computer skips a nonce it already has.
                 let e = try await withLink(replay: true) { client in
-                    var ids: [String]?
-                    if let files = self.outgoingFiles[nonce] {
-                        let uploaded = try await client.upload(botId: botId, files: files)
-                        for (id, file) in zip(uploaded, files) { Self.cacheAttachment(id, file.data) }
-                        ids = uploaded
-                    }
+                    let ids = try await self.uploadOutgoing(nonce, botId: botId, with: client)
                     try Task.checkCancellation()
                     return try await client.send(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo?.id,
                                                  replyPart: replyTo?.selectedPart, attachments: ids, pasted: pasted, call: call)
@@ -265,18 +260,27 @@ extension BotStore {
         saveCache()
     }
 
+    /// Uploads the files kept for the message `nonce` (to the thread of `taskId` when given), each cached as sent: their
+    /// upload ids, nil for a message without files.
+    func uploadOutgoing(_ nonce: String, botId: String, taskId: String? = nil, with client: HostClient) async throws -> [String]? {
+        guard let files = outgoingFiles[nonce] else { return nil }
+        let ids = try await client.upload(botId: botId, taskId: taskId, files: files)
+        for (id, file) in zip(ids, files) { Self.cacheAttachment(id, file.data) }
+        return ids
+    }
+
     /// Files are kept only in memory: a message whose files went with the app can't go again, or it would go half sent.
     private func filesGone(_ entry: Entry) -> Bool {
         entry.data.attachments?.isEmpty == false && entry.data.clientNonce.flatMap { outgoingFiles[$0] } == nil
     }
 
     public func retry(_ entry: Entry, in thread: WorkThread? = nil) {
-        if let thread { return resend(entry, to: thread) }
         guard !filesGone(entry) else {
             lastError = "This message's files aren't on this device anymore. Delete it and attach them again."
             return
         }
         let files = entry.data.clientNonce.flatMap { outgoingFiles[$0] } ?? []
+        if let thread { return resend(entry, to: thread, files: files) }
         guard let text = entry.data.text, !text.isEmpty || !files.isEmpty else { return }
         entries[entry.botId]?.removeAll { $0.id == entry.id }
         // The same clientNonce: if the computer got it after all, it won't run twice (the host
@@ -315,8 +319,8 @@ extension BotStore {
     }
 
     public func discard(_ entry: Entry, in thread: WorkThread? = nil) {
-        if let thread { return dropThreadEntry(entry.id, thread: thread.threadId) }
         if let nonce = entry.data.clientNonce { outgoingFiles[nonce] = nil }
+        if let thread { return dropThreadEntry(entry.id, thread: thread.threadId) }
         entries[entry.botId]?.removeAll { $0.id == entry.id }
         scheduleSave()
     }

@@ -412,10 +412,24 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({})
         }
         // A message scheduled for later (`scheduleSend`): saved now, delivered by the sweep (`chat::schedule`)
-        // when its time comes. Files and voice-call sends are immediate-only; groups send immediately.
+        // when its time comes. Files and voice-call sends are immediate-only through this entry point (a
+        // queued message carrying files can still be held for a time by `updateScheduled`, and delivers
+        // them then); groups send immediately; and a thread is written to through its bot and task, never
+        // by its own id — the sweep never visits one.
         "scheduleSend" => {
             let bot = str_arg(&b, "botId")?;
-            let row = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            let nonce = str_arg(&b, "clientNonce")?;
+            // One message per nonce, as `send`: a retry with the same token finds its first save.
+            if !nonce.is_empty()
+                && let Some(e) = hub.store.find_by_nonce(bot, nonce)
+            {
+                return Ok(ControlFlow::Break(json!({"entry": e})));
+            }
+            let row = hub
+                .store
+                .bot(bot)?
+                .filter(|r| !r.deleted && !r.config.is_thread())
+                .ok_or_else(|| anyhow!("unknown bot"))?;
             let text = str_arg(&b, "text")?.trim();
             if text.is_empty() {
                 bail!("the message is empty");
@@ -427,7 +441,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 bail!("a call's messages send immediately; there is nothing to schedule");
             }
             let not_before = b["notBefore"].as_i64().ok_or_else(|| anyhow!("notBefore must be a time"))?;
-            let mut data = json!({"text": text, "clientNonce": str_arg(&b, "clientNonce")?});
+            let mut data = json!({"text": text, "clientNonce": nonce});
             let pasted: Vec<&str> = b["pasted"]
                 .as_array()
                 .into_iter()
@@ -439,8 +453,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             if !pasted.is_empty() {
                 data["pasted"] = json!(pasted);
             }
-            if let Some(reply) = b["replyTo"].as_str() {
-                data["replyTo"] = reply.into();
+            // `replyTo`: the validated quote of this chat, as `send` takes it — never a bare id.
+            if let Some(id) = b["replyTo"].as_str().filter(|id| !id.is_empty()) {
+                data["replyTo"] = crate::chat::replies::quote(&hub.store, bot, id, b["replyPart"].as_str())?;
             }
             json!({"entry": crate::chat::messages::save_scheduled(hub, &row.config, data, not_before)?})
         }
@@ -449,6 +464,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         // (it leaves the queue and fires at its time). Once it has gone out, neither applies.
         "updateScheduled" => {
             let bot = str_arg(&b, "botId")?;
+            // A thread is written to through its bot and task, never by its own id — the sweep never
+            // visits one, so a time held here would never come.
+            if hub.store.bot(bot)?.is_some_and(|r| r.config.is_thread()) {
+                bail!("a thread takes its messages through its bot and task, never by its own id");
+            }
             let entry_id = str_arg(&b, "entryId")?;
             let text = match b["text"].as_str() {
                 Some(text) if text.trim().is_empty() => bail!("the message is empty"),
@@ -497,10 +517,12 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 _ => bail!("that message isn't waiting any more"),
             }
         }
-        // Takes a scheduled message back before it fires (`cancelScheduled`): never delivered.
+        // Takes a scheduled message back before it fires (`cancelScheduled`): never delivered, and its
+        // files leave the bot's folder, as `unqueue`'s removal does.
         "cancelScheduled" => {
             let bot = str_arg(&b, "botId")?;
             let entry_id = str_arg(&b, "entryId")?;
+            let row = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
             let mut e = hub
                 .store
                 .entry(entry_id)
@@ -511,6 +533,25 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             // One-way at the rev we read: a fire that lands first wins and this refuses.
             if hub.flip_scheduled(entry_id, None, &e.data, e.rev)?.is_none() {
                 bail!("that message isn't scheduled any more");
+            }
+            // A held message can carry files (a queued one with files can be given a time): they leave
+            // with it rather than orphaning in the folder.
+            let ids: Vec<String> = e.data["attachments"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|a| a["id"].as_str().map(str::to_owned))
+                .collect();
+            if !ids.is_empty() {
+                let root = crate::chat::uploads::root(&row.config);
+                let entry_id = entry_id.to_owned();
+                tokio::task::spawn_blocking(move || {
+                    for id in ids {
+                        if let Err(error) = crate::chat::uploads::remove(&root, &id) {
+                            tracing::warn!(entry = %entry_id, error = format!("{error:#}"), "couldn't delete a removed message's file");
+                        }
+                    }
+                });
             }
             hub.emit_bot(bot);
             json!({})

@@ -199,6 +199,26 @@ mod tests {
             crate::chat::messages::save_scheduled(&hub, &cfg, json!({"text": "later"}), crate::store::now_ms() - 1,)
                 .is_err()
         );
+        // The floor is exactly the constant: at it the save is refused (it is a send by then); a hair
+        // past it lands.
+        assert!(
+            crate::chat::messages::save_scheduled(
+                &hub,
+                &cfg,
+                json!({"text": "later"}),
+                crate::store::now_ms() + crate::chat::messages::SOONEST,
+            )
+            .is_err()
+        );
+        assert!(
+            crate::chat::messages::save_scheduled(
+                &hub,
+                &cfg,
+                json!({"text": "later"}),
+                crate::store::now_ms() + crate::chat::messages::SOONEST + 5_000,
+            )
+            .is_ok()
+        );
         let group: BotConfig = serde_json::from_value(json!({
             "id": "g", "name": "g", "kind": "group", "members": ["b"], "backend": "claude", "cwd": ".",
         }))
@@ -357,7 +377,10 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(f.status_of(&e.id), "cancelled");
-        // Past its (cancelled) time, the sweep delivers nothing more.
+        // Past its (cancelled) time — the due query must leave it out — the sweep delivers nothing more.
+        let mut cancelled = f.hub.store.entry(&e.id).unwrap();
+        cancelled.data["notBefore"] = (crate::store::now_ms() - 1).into();
+        f.hub.store.update_entry(&e.id, &cancelled.data).unwrap();
         sweep(&f.hub).unwrap();
         assert_eq!(f.status_of(&e.id), "cancelled");
         assert_eq!(f.prompts().len(), 0);
@@ -482,5 +505,66 @@ mod tests {
             store.flip_scheduled(&e.id, Some(2), &json!({"text": "first words", "status": "queued"}), e.rev).unwrap();
         assert!(raced.is_none(), "the stale fire is refused");
         assert_eq!(store.entry(&e.id).unwrap().data["text"], "edited words", "the edit's text stands");
+    }
+
+    /// The refusals the desktop relies on: files and calls can't be scheduled, and a time too soon to be
+    /// anything but a send is refused on both paths — a save and a hold.
+    #[tokio::test]
+    async fn files_calls_and_a_too_soon_time_are_refused() {
+        let f = Fixture::new();
+        // Files and calls are immediate-only.
+        let files = crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "scheduleSend",
+            json!({"botId": "b", "text": "with a file", "notBefore": crate::store::now_ms() + 60_000,
+                  "attachments": [{"id": "a1", "name": "a.txt"}], "clientNonce": "n-files"}),
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{files:#}").contains("files"), "files refused: {files:#}");
+        let call = crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "scheduleSend",
+            json!({"botId": "b", "text": "in a call", "notBefore": crate::store::now_ms() + 60_000,
+                  "call": "c1", "clientNonce": "n-call"}),
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{call:#}").contains("call"), "calls refused: {call:#}");
+        // A time at the floor is a send, not a schedule: refused on the save path...
+        let floor = crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "scheduleSend",
+            json!({"botId": "b", "text": "too soon", "notBefore": crate::store::now_ms() + 10_000,
+                  "clientNonce": "n-floor"}),
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{floor:#}").contains("at least 30"), "the floor refuses a save: {floor:#}");
+        // ...and on the hold path (a queued message asked to fire too soon).
+        f.send("live now").await;
+        f.send("waiting").await;
+        let waiting = f
+            .hub
+            .store
+            .history("b", i64::MAX, 50)
+            .unwrap()
+            .into_iter()
+            .find(|e| e.data["text"] == "waiting")
+            .expect("the waiting message is saved");
+        let hold = crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "updateScheduled",
+            json!({"botId": "b", "entryId": waiting.id, "notBefore": crate::store::now_ms() + 10_000}),
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{hold:#}").contains("at least 30"), "the floor refuses a hold: {hold:#}");
+        f.hub.shutdown().await;
+        let _ = std::fs::remove_dir_all(&f.dir);
     }
 }

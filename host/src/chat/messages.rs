@@ -53,7 +53,9 @@ pub fn set_text(data: &mut Value, text: &str) {
         data["pasted"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
     let kept: Vec<Value> = pasted.into_iter().filter(|p| text.contains(*p)).map(Into::into).collect();
     if kept.is_empty() {
-        data.as_object_mut().map(|o| o.remove("pasted"));
+        if let Some(o) = data.as_object_mut() {
+            o.remove("pasted");
+        }
     } else {
         data["pasted"] = kept.into();
     }
@@ -67,7 +69,7 @@ pub fn save_scheduled(hub: &Hub, cfg: &BotConfig, mut data: Value, not_before_ms
         return Err(anyhow!("a group's messages send immediately; there is nothing to schedule"));
     }
     if not_before_ms <= crate::store::now_ms() + SOONEST {
-        return Err(anyhow!("the scheduled time must be at least 30 seconds out"));
+        return Err(anyhow!("the scheduled time must be at least {} seconds out", SOONEST / 1_000));
     }
     data["status"] = "scheduled".into();
     data["notBefore"] = not_before_ms.into();
@@ -103,8 +105,17 @@ pub fn fire_scheduled(hub: &Arc<Hub>, e: &Entry) -> Result<Option<Entry>> {
         return Ok(None);
     };
     if let Err(error) = hand_on(hub, &row.config, &turned) {
-        // Back on its time rather than lost: the sweep tries again.
-        let _ = hub.set_entry(&e.id, &e.data);
+        // Back on its time rather than lost — the sweep tries again — but only while the queued row is
+        // still the one we flipped: an edit that landed through `Cmd::Hold` in the failure window keeps
+        // what it wrote, and a rollback that can't happen is said, not swallowed.
+        if let Err(rollback) = hub.edit_entry(&e.id, |cur| {
+            Ok(cur.rev == turned.rev && cur.data["status"] == "queued" && {
+                cur.data = e.data.clone();
+                true
+            })
+        }) {
+            tracing::warn!(error = format!("{rollback:#}"), entry = %e.id, "couldn't put a fired message back on its time");
+        }
         return Err(error);
     }
     Ok(Some(turned))

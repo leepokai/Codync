@@ -116,16 +116,17 @@ impl Store {
         Ok(c.query_row(&format!("SELECT {ENTRY_COLS} FROM entries WHERE id = ?1"), [id], row_entry).optional()?)
     }
 
-    /// [`Self::update_entry_turn`] that only lands while the entry is still `scheduled`: a scheduled message's
-    /// transitions (fire, edit, cancel, send-now) lose the race to anything that changed it first, and the
-    /// caller learns that with `None`.
-    pub fn flip_scheduled(&self, id: &str, turn: Option<i64>, data: &Value) -> Result<Option<Entry>> {
+    /// [`Self::update_entry_turn`] that only lands while the entry is still `scheduled` at the rev the caller
+    /// read: a scheduled message's transitions (fire, edit, cancel, send-now) lose the race to anything that
+    /// changed it first — a cancel, an edit, even another same-status write — and the caller learns that with
+    /// `None`, so a snapshot taken earlier can never overwrite what landed since.
+    pub fn flip_scheduled(&self, id: &str, turn: Option<i64>, data: &Value, expect_rev: i64) -> Result<Option<Entry>> {
         let c = self.db.locked();
         let rev = next_rev(&c)?;
         let changed = c.execute(
             "UPDATE entries SET rev = ?2, data = ?3, updated_at = ?4, turn = COALESCE(?5, turn)
-             WHERE id = ?1 AND json_extract(data, '$.status') = 'scheduled'",
-            params![id, rev, data.to_string(), now_ms(), turn],
+             WHERE id = ?1 AND rev = ?6 AND json_extract(data, '$.status') = 'scheduled'",
+            params![id, rev, data.to_string(), now_ms(), turn, expect_rev],
         )?;
         if changed == 0 {
             return Ok(None);

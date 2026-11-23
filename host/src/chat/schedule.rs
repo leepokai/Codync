@@ -444,13 +444,43 @@ mod tests {
                 &json!({"text": "later", "status": "scheduled", "notBefore": crate::store::now_ms() + 60_000}),
             )
             .unwrap();
-        let fired = store.flip_scheduled(&e.id, Some(2), &json!({"text": "later", "status": "queued"})).unwrap();
+        let fired = store.flip_scheduled(&e.id, Some(2), &json!({"text": "later", "status": "queued"}), e.rev).unwrap();
         assert!(fired.is_some(), "the first move lands");
         let raced = store
-            .flip_scheduled(&e.id, None, &json!({"text": "later", "status": "cancelled", "removed": true}))
+            .flip_scheduled(&e.id, None, &json!({"text": "later", "status": "cancelled", "removed": true}), e.rev)
             .unwrap();
         assert!(raced.is_none(), "a second mover finds it isn't scheduled any more");
         assert_eq!(store.entry(&e.id).unwrap().data["status"], "queued", "the first move stands");
         assert_eq!(store.entry(&e.id).unwrap().turn, 2, "the fire's turn is kept");
+    }
+
+    /// An edit that lands first keeps its text: a fire holding a snapshot from before the edit finds the rev
+    /// moved and refuses, so the sweep re-reads and delivers what was actually said.
+    #[test]
+    fn a_stale_fire_loses_to_a_landed_edit() {
+        let store = store_with_bot("b");
+        let e = store
+            .insert_entry(
+                &Lane::main("b"),
+                EntryKind::User,
+                1,
+                &json!({"text": "first words", "status": "scheduled", "notBefore": crate::store::now_ms() + 60_000}),
+            )
+            .unwrap();
+        // The edit lands first, as `updateScheduled` does: new text, still scheduled.
+        let edited = store
+            .flip_scheduled(
+                &e.id,
+                None,
+                &json!({"text": "edited words", "status": "scheduled", "notBefore": crate::store::now_ms() + 60_000}),
+                e.rev,
+            )
+            .unwrap();
+        assert!(edited.is_some(), "the edit lands");
+        // A fire holding the pre-edit snapshot loses: the rev moved under it.
+        let raced =
+            store.flip_scheduled(&e.id, Some(2), &json!({"text": "first words", "status": "queued"}), e.rev).unwrap();
+        assert!(raced.is_none(), "the stale fire is refused");
+        assert_eq!(store.entry(&e.id).unwrap().data["text"], "edited words", "the edit's text stands");
     }
 }

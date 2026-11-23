@@ -470,7 +470,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 .ok_or_else(|| anyhow!("that message isn't waiting any more"))?;
             match e.data["status"].as_str() {
                 // The live queue is the actor's: it moves the message, as `steer` and `unqueue` do. The
-                // entry it hands back follows in the store's events.
+                // entry it hands back follows in the store's events; a hold that finds the message already
+                // with the agent or off the queue changes nothing, and the store's next entry event replaces
+                // the caller's optimistic text.
                 Some("queued") => {
                     hub.send_cmd(
                         bot,
@@ -485,9 +487,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                     if let Some(at) = not_before {
                         e.data["notBefore"] = at.into();
                     }
-                    // One-way: only while it is still scheduled, so a fire that lands first wins and this refuses.
+                    // One-way at the rev we read: a fire, a cancel — even an edit that kept it scheduled —
+                    // that landed first refuses this.
                     let entry = hub
-                        .flip_scheduled(entry_id, None, &e.data)?
+                        .flip_scheduled(entry_id, None, &e.data, e.rev)?
                         .ok_or_else(|| anyhow!("that message isn't scheduled any more"))?;
                     json!({"entry": entry})
                 }
@@ -505,8 +508,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 .ok_or_else(|| anyhow!("that message isn't scheduled any more"))?;
             e.data["status"] = "cancelled".into();
             e.data["removed"] = true.into();
-            // One-way: only while it is still scheduled, so a fire that lands first wins and this refuses.
-            if hub.flip_scheduled(entry_id, None, &e.data)?.is_none() {
+            // One-way at the rev we read: a fire that lands first wins and this refuses.
+            if hub.flip_scheduled(entry_id, None, &e.data, e.rev)?.is_none() {
                 bail!("that message isn't scheduled any more");
             }
             hub.emit_bot(bot);

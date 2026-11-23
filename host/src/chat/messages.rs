@@ -97,8 +97,9 @@ pub fn fire_scheduled(hub: &Arc<Hub>, e: &Entry) -> Result<Option<Entry>> {
         o.remove("scheduledAt");
     }
     let turn = hub.store.max_turn(&e.bot_id) + 1;
-    // One-way: only while it is still scheduled, so a cancel or an edit that lands first wins.
-    let Some(turned) = hub.flip_scheduled(&e.id, Some(turn), &data)? else {
+    // One-way at the rev we read: a cancel, an edit — even one that kept it scheduled — that landed since
+    // our snapshot moved the rev, so this refuses and the sweep re-reads and fires what was actually said.
+    let Some(turned) = hub.flip_scheduled(&e.id, Some(turn), &data, e.rev)? else {
         return Ok(None);
     };
     if let Err(error) = hand_on(hub, &row.config, &turned) {

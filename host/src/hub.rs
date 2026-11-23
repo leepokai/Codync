@@ -528,11 +528,12 @@ impl Hub {
         }
     }
 
-    /// Updates an entry that must still be `scheduled` (a fire, an edit, a cancel, a send-now) and broadcasts
-    /// it; `Ok(None)` means something else moved it first, and the caller reports that like any refusal.
-    pub fn flip_scheduled(&self, id: &str, turn: Option<i64>, data: &Value) -> Result<Option<Entry>> {
+    /// Updates an entry that must still be `scheduled` at the rev the caller read (a fire, an edit, a cancel,
+    /// a send-now) and broadcasts it; `Ok(None)` means something else moved it first — including an edit that
+    /// kept it `scheduled` — and the caller reports that like any refusal.
+    pub fn flip_scheduled(&self, id: &str, turn: Option<i64>, data: &Value, expect_rev: i64) -> Result<Option<Entry>> {
         let _g = self.emit_lock.locked();
-        let e = self.store.flip_scheduled(id, turn, data)?;
+        let e = self.store.flip_scheduled(id, turn, data, expect_rev)?;
         if let Some(e) = &e {
             let _ = self.events.send(entry_event(e));
         }

@@ -83,14 +83,24 @@ function QueuedRow({
   const [expanded, setExpanded] = useState(false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(text)
+  const doneRef = useRef(false)
   const startEdit = () => {
     setDraft(text)
     setEditing(true)
+    doneRef.current = false
   }
+  // One commit per edit: Enter commits and the unmount's blur arrives too, and Escape leaves without
+  // saving — the blur it triggers must not turn the escape into a save.
   const commit = () => {
+    if (doneRef.current) return
+    doneRef.current = true
     setEditing(false)
     const trimmed = draft.trim()
     if (trimmed && trimmed !== text) store.updateScheduled(entry, { text: trimmed })
+  }
+  const cancelEdit = () => {
+    doneRef.current = true
+    setEditing(false)
   }
   return (
     <div className="queued-row" role="listitem">
@@ -105,7 +115,7 @@ function QueuedRow({
             onBlur={commit}
             onKeyDown={(e) => {
               if (e.key === 'Enter') commit()
-              if (e.key === 'Escape') setEditing(false)
+              if (e.key === 'Escape') cancelEdit()
             }}
           />
         ) : (

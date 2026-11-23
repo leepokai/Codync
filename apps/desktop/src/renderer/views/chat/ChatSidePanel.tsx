@@ -7,10 +7,12 @@ import { useTr } from '../../lib/use-language'
  * The panel beside the conversation. The conversation takes its new width at once (one layout,
  * however long the chat), then the panel slides in or out over it; its edge drags the width. The
  * slide moves `right`, not a transform: window drag regions (the panel's top band) follow layout,
- * and a transform would leave them where the slide started, over the corner buttons.
+ * and a transform would leave them where the slide started, over the corner buttons. `filled`: the panel covers
+ * the conversation (which keeps its layout under it) until it is restored.
  */
-export function ChatSidePanel({ open, width, min, max, onResize, children }: {
+export function ChatSidePanel({ open, filled, width, min, max, onResize, children }: {
   open: boolean
+  filled: boolean
   width: number
   min: number
   max: number
@@ -29,9 +31,9 @@ export function ChatSidePanel({ open, width, min, max, onResize, children }: {
     <>
       <div className="side-panel-slot" style={{ width: open ? panelWidth : 0 }} />
       {mounted ? (
-        <div className="side-panel" inert={!open} style={{ width: panelWidth, right: shown ? 0 : -panelWidth }}>
-          <ResizeHandle label={tr('Resize panel')} width={content.width} min={min} max={max} edge="leading" onResize={onResize} />
-          <div className="side-panel-content" style={{ width: content.width }}>{content.children}</div>
+        <div className="side-panel" inert={!open} style={{ width: filled ? '100%' : panelWidth, right: shown ? 0 : -panelWidth }}>
+          {filled ? null : <ResizeHandle label={tr('Resize panel')} width={content.width} min={min} max={max} edge="leading" onResize={onResize} />}
+          <div className="side-panel-content" style={{ width: filled ? '100%' : content.width }}>{content.children}</div>
         </div>
       ) : null}
     </>

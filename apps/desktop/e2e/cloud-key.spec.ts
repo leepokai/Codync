@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { attach, openGeneralSettings } from './sandbox.ts'
+import { attach, openPage } from './sandbox.ts'
 
 // Computers → Codync Cloud → "+": each provider's key, reached only through that provider (docs/plans/codync-cloud.md,
 // "Bring your own cloud"). Needs the sandbox on a cloud that offers Codync Cloud: dev-api offers it to every account
@@ -26,8 +26,7 @@ async function forgetKeys(page: Page, offer: Offer) {
 /** Computers, then "+": New cloud computer, its steps (provider, key, name), and the key sheets its rows' ⋯ open. */
 async function openNewComputer(page: Page) {
   await page.reload()
-  await openGeneralSettings(page)
-  await page.getByRole('dialog').getByRole('button', { name: 'Computers', exact: true }).click()
+  await openPage(page, 'Computers')
   const card = page.locator('section.card-section').filter({ has: page.getByRole('heading', { name: 'Codync Cloud' }) })
   await expect(card).toBeVisible()
   // Keys are reached only through their provider: no row of their own.

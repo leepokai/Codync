@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { api, attach, openGeneralSettings } from './sandbox.ts'
+import { api, appPage, attach, openPage } from './sandbox.ts'
 
 type Rule = { fromComputer: string; fromAgent: string; toAgent: string; access: string }
 type View = { networks: { id: string; name: string; rules: Rule[]; defaultAccess?: string }[] }
@@ -27,9 +27,8 @@ test('a network rule takes one of four levels, and an Ask rule reads as one', as
     // A computer no rule matches gets Auto, and the footer under the rules says so.
     expect(created?.defaultAccess).toBe('auto')
 
-    await openGeneralSettings(page)
-    const dialog = page.getByRole('dialog')
-    await dialog.getByRole('button', { name: 'Network', exact: true }).click()
+    await openPage(page, 'Network')
+    const dialog = appPage(page)
     await expect(dialog.getByText('A computer no rule matches gets Auto.', { exact: false })).toBeVisible()
     await dialog.getByRole('button', { name: 'Add rule' }).click()
     const sheet = page.locator('.network-sheet')
@@ -48,7 +47,7 @@ test('a network rule takes one of four levels, and an Ask rule reads as one', as
     expect(saved).toEqual([{ fromComputer: '*', fromAgent: '*', toAgent: '*', access: 'ask' }])
   } finally {
     if (made) await api(page, 'networkLeave', { network: made }).catch(() => {})
-    await page.keyboard.press('Escape')
+    await openPage(page, 'Bots').catch(() => {})
     await browser.close()
   }
 })

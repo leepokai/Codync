@@ -1674,3 +1674,100 @@ async fn what_waited_in_a_thread_goes_with_a_task_that_gives_way() {
     let again = prompts[1]["text"].as_str().unwrap();
     assert!(again.contains("[The user said since: «mind the cache»]"), "{again}");
 }
+
+#[tokio::test]
+async fn a_thread_the_user_starts_opens_with_their_message_and_takes_no_turn_in_the_chat() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    let started = host.call("startThread", json!({"botId": bot, "text": "Look at the tests\nall of them"})).await;
+
+    // Its first line names it; its turn is the user's message, in a session that starts without the chat.
+    let done = result(&host, &bot, "Look at the tests", "Thread").await;
+    assert_eq!((&done["id"], &done["status"]), (&started["taskId"], &json!("done")));
+    assert_eq!(done["result"], "Thread Look at the tests: same session");
+    assert_eq!((&done["source"], &done["talk"]), (&Value::Null, &json!(true)), "the bot's own to every client");
+    let opened = transcript(&host, &bot, &done).await;
+    let first = (&opened[0]["kind"], &opened[0]["data"]["text"]);
+    assert_eq!(first, (&json!("user"), &json!("Look at the tests\nall of them")));
+    let prompts = thread_prompts(&host, &bot);
+    let text = prompts[0]["text"].as_str().unwrap();
+    assert!(text.contains("the user opened this thread to work with you"), "{text}");
+    assert!(!text.contains("[The chat you come from, so far]"), "{text}");
+    assert!(!host.workspace(&bot).join("forks.jsonl").exists(), "it forks nothing of the chat");
+
+    // What it came to is read in the thread: the chat takes no turn for it.
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert!(history(&host, &bot).await.is_empty(), "{:?}", history(&host, &bot).await);
+
+    // It takes more messages, as any thread of the bot's own work does, and still tells the chat nothing.
+    tell(&host, &bot, &done, "and the docs").await;
+    let again = result(&host, &bot, "Look at the tests", "Thread and").await;
+    assert_eq!(again["result"], "Thread and the docs: same session");
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert!(relayed(&host, &bot).await.is_empty());
+
+    // Only a bot starts one, with something to say.
+    let empty = "a thread starts with a message of at most 32000 bytes";
+    assert_eq!(host.refused("startThread", json!({"botId": bot, "text": "  "})).await, empty);
+    assert_eq!(host.refused("startThread", json!({"botId": done["thread"], "text": "x"})).await, "unknown bot");
+}
+
+#[tokio::test]
+async fn a_thread_the_user_starts_works_where_its_setup_says() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    let elsewhere = host.workspace(&bot).join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    // Its model and approvals are the thread bot's own (`tasks::Setup::over`): the scripted agent takes neither.
+    host.call("startThread", json!({"botId": bot, "text": "Elsewhere", "setup": {"cwd": elsewhere}})).await;
+    let done = result(&host, &bot, "Elsewhere", "Thread").await;
+    assert_eq!(done["folder"], json!(elsewhere), "its thread works in the folder the user chose");
+
+    // A setup is checked as a bot's is, and one that can't be read starts nothing.
+    let start = |setup: Value| host.refused("startThread", json!({"botId": bot, "text": "x", "setup": setup}));
+    assert_eq!(start(json!({"cwd": "elsewhere"})).await, "a thread's folder is a full path");
+    assert!(start(json!({"cwd": "/no/such/folder"})).await.contains("does not exist"));
+    assert!(start(json!({"approval": {"permission": "yolo", "mode": null}})).await.contains("a thread's setup"));
+}
+
+/// What the scripted agent heard in `folder`, oldest first.
+fn heard_in(folder: &Path) -> Vec<Value> {
+    let log = std::fs::read_to_string(folder.join("prompts.jsonl")).unwrap_or_default();
+    log.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()["text"].clone()).collect()
+}
+
+#[tokio::test]
+async fn a_thread_without_a_bot_runs_its_agent_on_its_own() {
+    let host = Host::start().await;
+    let refused = "a thread without a bot names its agent";
+    assert_eq!(host.refused("startThread", json!({"text": "Hello"})).await, refused);
+    // The first one makes the computer's box, hidden, before its setup is checked: this one's folder isn't there.
+    let gone = json!({"backend": "claude", "cwd": "/no/such/folder"});
+    assert!(host.refused("startThread", json!({"text": "Hello", "setup": gone})).await.contains("does not exist"));
+    let snapshot = host.snapshot().await;
+    let boxes: Vec<&Value> = snapshot["bots"].as_array().unwrap().iter().filter(|b| b["plain"] == true).collect();
+    assert_eq!(boxes.len(), 1, "one box");
+    let owner = boxes[0]["id"].as_str().unwrap().to_owned();
+    assert_eq!((&boxes[0]["hidden"], &boxes[0]["connectors"]), (&json!(true), &json!([])));
+    // Only the host makes it, and it stays out of sight.
+    let made = host.call("createBot", json!({"name": "B", "backend": "custom", "command": "x", "plain": true})).await;
+    assert!(made["bot"]["plain"].is_null(), "{made}");
+    let shown = host.refused("updateBot", json!({"id": owner, "hidden": false})).await;
+    assert_eq!(shown, "the box of threads without a bot stays hidden");
+
+    // Here it runs the scripted agent, which hears the user's words and nothing of Codync's.
+    let agent = common::fixture_command("work_agent.py", "");
+    host.call("updateBot", json!({"id": owner, "backend": "custom", "command": agent})).await;
+    let folder = host.home.join("project");
+    std::fs::create_dir_all(&folder).unwrap();
+    let setup = json!({"backend": "custom", "cwd": folder});
+    let started = host.call("startThread", json!({"text": "Look around", "setup": setup})).await;
+    let done = task(&host, &owner, "Look around", "done").await;
+    assert_eq!((&done["id"], &done["folder"]), (&started["taskId"], &json!(folder)));
+    assert_eq!((&started["botId"], &done["agent"]), (&json!(owner), &json!("custom")), "where it went, on what");
+    assert_eq!(heard_in(&folder), [json!("Look around")]);
+    // It takes more messages, as they are written.
+    tell(&host, &owner, &done, "and the docs").await;
+    wait("the second message", async || heard_in(&folder).get(1).cloned()).await;
+    assert_eq!(heard_in(&folder)[1], "and the docs");
+}

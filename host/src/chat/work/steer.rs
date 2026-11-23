@@ -107,7 +107,7 @@ pub fn cut_in(hub: &Arc<Hub>, bot: &str, id: &str, instead_of: Option<&str>) -> 
             if task.status != Status::Working {
                 bail!("\"{}\" isn't working: nothing to give way", task.title);
             }
-            if !task.source.is_bot() {
+            if !task.source.own() {
                 bail!(
                     "\"{}\" is a routine run or another bot's request: it can't give way, stop it instead",
                     task.title
@@ -115,7 +115,7 @@ pub fn cut_in(hub: &Arc<Hub>, bot: &str, id: &str, instead_of: Option<&str>) -> 
             }
             Some(named.to_owned())
         } else {
-            let working = tasks.iter().filter(|i| i.status == Status::Working && i.source.is_bot());
+            let working = tasks.iter().filter(|i| i.status == Status::Working && i.source.own());
             working.max_by_key(|i| i.started_at).map(|i| i.id.clone())
         };
         let gives_way = gives_way.filter(|_| full);
@@ -146,7 +146,7 @@ pub fn replace(hub: &Arc<Hub>, bot: &str, id: &str, brief: &str) -> Result<()> {
         if task.status.ended() {
             bail!("\"{}\" has ended: add new work instead", task.title);
         }
-        if !task.source.is_bot() {
+        if !task.source.own() {
             bail!("\"{}\" is a routine run or another bot's request: its brief isn't yours to replace", task.title);
         }
         brief.clone_into(&mut task.brief);
@@ -215,7 +215,7 @@ pub fn retry(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
     if !matches!(task.status, Status::Stopped | Status::Failed) {
         bail!("only work that was stopped or failed can be tried again");
     }
-    if !task.source.is_bot() {
+    if !task.source.own() {
         return sources::run_again(hub, bot, &task);
     }
     tasks::change(hub, bot, |tasks| {

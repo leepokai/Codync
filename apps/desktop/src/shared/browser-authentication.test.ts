@@ -12,14 +12,15 @@ test('a stale same-scheme callback leaves the current browser login waiting', as
   const second = browser.authenticate('https://example.test/second', 'codync', async (url) => url.endsWith('current'))
   void second.then(() => { resolved = true })
   await firstEnded
-  browser.handleURL('codync://stale')
+  assert.equal(browser.handleURL('codync://stale'), true)
   await turn()
   assert.equal(resolved, false)
-  browser.handleURL('other://current')
+  assert.equal(browser.handleURL('other://current'), false)
   await turn()
   assert.equal(resolved, false)
   browser.handleURL('codync://current')
   assert.equal(await second, 'codync://current')
+  assert.equal(browser.handleURL('codync://current'), false)
 })
 
 test('browser-open and callback-validation failures end their waits', async () => {

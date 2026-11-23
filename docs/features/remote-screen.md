@@ -73,7 +73,7 @@ host/helper contract are covered by PR #40.
 ## Desktop viewer
 
 The desktop app shows another computer's screen in a sheet: the **Screen** button on that computer's heading in the
-sidebar, or on its card in Settings → Computers (not for the computer the app runs on, whose screen is right there).
+sidebar, or on its card on the Computers page (not for the computer the app runs on, whose screen is right there).
 `views/screen/ScreenViewer.tsx` draws it; `store/screen-session.ts` holds the WebRTC peer (receive-only H.264, data
 channels `input` and `input-fast`), recovery and renewal like the iPhone's `ScreenSession`.
 

@@ -1,0 +1,3 @@
+BEGIN;
+ALTER TABLE workflow_versions ADD COLUMN source TEXT NOT NULL DEFAULT '';
+COMMIT;

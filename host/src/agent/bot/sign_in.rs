@@ -135,6 +135,7 @@ impl Actor {
                 &title,
                 &held.needs().unwrap_or_default(),
                 AlertKind::NeedsInput,
+                None,
             );
         }
     }

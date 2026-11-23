@@ -38,7 +38,7 @@ impl App {
             }
             KeyCode::Char(' ') if at == len => {
                 if let Some(step) = self.step_agents().into_iter().find_map(|a| self.free_step(f, a)) {
-                    self.want_models(&step.backend);
+                    self.want_models(&step.backend, step.login_profile.as_deref());
                     chain_mut(f).push(step);
                 }
             }
@@ -51,7 +51,7 @@ impl App {
                 agents.rotate_left(i.map_or(0, |i| i + 1));
                 let other = agents.into_iter().filter(|a| *a != own);
                 if let Some(step) = other.into_iter().find_map(|a| self.free_step(f, a)) {
-                    self.want_models(&step.backend);
+                    self.want_models(&step.backend, step.login_profile.as_deref());
                     chain_mut(f)[at] = step;
                 }
             }
@@ -66,6 +66,9 @@ impl App {
                     .collect();
                 let i = logins.iter().position(|l| *l == step.login_profile).unwrap_or(0);
                 chain_mut(f)[at].login_profile.clone_from(&logins[cycle(i, 1, logins.len())]);
+                let backend = chain(f)[at].backend.clone();
+                let login_profile = chain(f)[at].login_profile.clone();
+                self.want_models(&backend, login_profile.as_deref());
             }
             KeyCode::Char('[') if at > 0 && at < len => {
                 chain_mut(f).swap(at, at - 1);
@@ -99,7 +102,7 @@ impl App {
             });
             f.thread_fallbacks.clone_from(&f.fallbacks);
         } else if let Some(backend) = self.step_agents().into_iter().next() {
-            self.want_models(&backend);
+            self.want_models(&backend, None);
             f.thread_agent = Some(Fallback { backend, ..Fallback::default() });
         }
     }
@@ -114,27 +117,30 @@ impl App {
         let i = agents.iter().position(|a| *a == agent.backend).unwrap_or(0);
         let backend = agents[cycle(i, d, agents.len())].clone();
         f.thread_fallbacks.retain(|x| x.backend != backend || x.login_profile.is_some());
-        self.want_models(&backend);
+        self.want_models(&backend, None);
         f.thread_agent = Some(Fallback { backend, ..Fallback::default() });
     }
 
     /// Space on a fallback or on Threads' agent: its next model.
     pub(super) fn cycle_step_model(&mut self, step: &mut Fallback) {
-        self.want_models(&step.backend);
-        if let Some(model) = self.cycle_model(&step.backend, step.model.as_deref().unwrap_or_default(), 1) {
+        self.want_models(&step.backend, step.login_profile.as_deref());
+        if let Some(model) =
+            self.cycle_model(&step.backend, step.login_profile.as_deref(), step.model.as_deref().unwrap_or_default(), 1)
+        {
             step.model = (!model.is_empty()).then_some(model);
             step.model_options.clear();
         }
     }
 
     /// `c` on Threads' agent: its next login; a threads' fallback on that login goes.
-    pub(super) fn cycle_thread_login(&self, f: &mut Form) {
+    pub(super) fn cycle_thread_login(&mut self, f: &mut Form) {
         let Some(agent) = f.thread_agent.as_mut() else { return };
         let logins = self.logins(&agent.backend);
         let i = logins.iter().position(|l| *l == agent.login_profile).unwrap_or(0);
         agent.login_profile.clone_from(&logins[cycle(i, 1, logins.len())]);
         let head = (agent.backend.clone(), agent.login_profile.clone());
         f.thread_fallbacks.retain(|x| (&x.backend, &x.login_profile) != (&head.0, &head.1));
+        self.want_models(&head.0, head.1.as_deref());
     }
 
     /// Runnable agents a step can be on, in the pickers' order.

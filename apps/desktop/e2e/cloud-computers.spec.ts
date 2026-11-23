@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { attach, openGeneralSettings } from './sandbox.ts'
+import { attach, openPage } from './sandbox.ts'
 
 // Computers → Codync Cloud with real machines: "+" → New cloud computer lists every provider with its logo; one without
 // a key asks for only its own key next and goes on to the name once it's saved; a named computer on InstaBox and one on
@@ -32,8 +32,7 @@ test('Codync Cloud runs named cloud computers on Boat and InstaBox side by side'
     test.skip(!value?.available || value.cloudComputers?.length !== 0, 'Needs a local cloud offering Codync Cloud and no cloud computer.')
     for (const p of value!.providers ?? []) if (p.credential) await cloud(page, 'DELETE', `v1/cloud-credentials/${p.provider}`)
     await page.reload()
-    await openGeneralSettings(page)
-    await page.getByRole('dialog').getByRole('button', { name: 'Computers', exact: true }).click()
+    await openPage(page, 'Computers')
 
     const section = page.locator('section.card-section').filter({ has: page.getByRole('heading', { name: 'Codync Cloud' }) })
     const newSheet = page.getByRole('dialog').filter({ has: page.locator('.cloud-new-sheet') })

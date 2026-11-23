@@ -24,8 +24,12 @@ export interface OwnLogin {
  * key). Each can be named; others are added, signed in or given keys, and removed. Bots pick theirs in their
  * own settings. Any agent takes API keys; an account signs in with the agent's own CLI, so it needs that installed.
  */
-export function LoginProfiles({ backend, own, signIn, editKeys, signInNow, children }: {
+export function LoginProfiles({ backend, title = 'Login profiles', footer = 'A bot picks its login profile under Agent in its settings. Bots that pick none use the default one.', own, signIn, editKeys, signInNow, children }: {
   backend: Backend
+  /** The card's heading: the agent's name and logo where several agents' cards stand together. */
+  title?: ReactNode
+  /** The note under the card; none where the page says it once for every agent. */
+  footer?: string | null
   own: OwnLogin
   /** Opens the sign-in terminal for an account profile. */
   signIn: (loginProfile: string) => void
@@ -55,7 +59,7 @@ export function LoginProfiles({ backend, own, signIn, editKeys, signInNow, child
 
   const mine = backend.defaultLoginProfile
   return (
-    <CardSection title="Login profiles" footer="A bot picks its login profile under Agent in its settings. Bots that pick none use the default one.">
+    <CardSection title={title} footer={footer}>
       <LoginProfileLine
         name={mine?.name ?? tr('Default login profile')}
         label={mine?.label ?? null}

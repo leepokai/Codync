@@ -38,6 +38,17 @@ Everyday tests use the fake agents, which only answer the way we expect. Run the
 
 Each check ends by stopping the host: no agent process may outlive it, except a daemon an agent detaches on purpose and shares with its other clients, which its [upstream page](../upstream-agents/README.md) lists (Hermes's `gateway run --idle-exit`).
 
+## Upstream agents
+
+Every computer running Codync takes an adapter's new [ACP registry](https://agentclientprotocol.com/registry) version within a day (`registry.rs` refreshes it daily), so a daily CI job (`.github/workflows/agent-upstream.yml`) runs one turn of each adapter in [`tools/agent-upstream/accepted.json`](../../tools/agent-upstream/accepted.json) whose registry version moved: a real host built from the branch, the agent's latest CLI, a new bot on that agent, and `codync-host send --wait`. The adapter is the real one the host downloads; only the model is a stand-in, an [aimock](https://www.npmjs.com/package/@copilotkit/aimock) server on the runner answering "ok" in the provider's own API (Anthropic Messages, OpenAI Responses through a `CODEX_HOME` provider of its own), so no login or token is used. It finds an adapter that no longer starts, opens a session or ends a turn; what a real model does differently still needs the [real agents](#real-agents) check.
+
+A failing run is the notice. A passing run on a new version says so in its summary: raise that version in `accepted.json`. A pull request that changes the check runs every adapter. To run it on this computer (about two minutes; it starts each agent in a home of its own, never on your logins):
+
+```sh
+cd host && cargo build --bin codync-host
+cd ../tools/agent-upstream && npm ci && node check.mjs ../../host/target/debug/codync-host --all
+```
+
 ## Desktop: Playwright
 
 Playwright attaches to the worktree's running sandbox over the DevTools protocol. It doesn't launch Electron itself: the sandbox already owns the host, data, sign-in and single-instance lock, and an app launched without them would open against the shared Codync Dev.

@@ -43,7 +43,7 @@ impl std::error::Error for Refused {}
 /// owner for their result already.
 fn writable(task: &Task) -> Result<()> {
     let whose = match &task.source {
-        Source::Bot => return Ok(()),
+        Source::Bot | Source::User => return Ok(()),
         Source::Routine { .. } => "a routine's run",
         Source::Request { .. } => "another bot's request",
     };
@@ -137,8 +137,8 @@ fn reopen(hub: &Hub, owner: &BotConfig, task: &mut Task, thread: &mut BotConfig)
     if let Some(kept) = task.worktree.as_mut().filter(|w| worktree::usable(w)) {
         kept.left = worktree::Left::InUse;
     } else if !Path::new(&thread.cwd).is_dir() {
-        // Its worktree had nothing in it and went: the bot's folder, as for a thread without one.
-        thread.cwd.clone_from(&owner.cwd);
+        // Its worktree had nothing in it and went: the folder a thread without one works in.
+        thread.cwd.clone_from(task.setup.cwd.as_ref().unwrap_or(&owner.cwd));
         let _g = hub.emit_lock.locked();
         hub.store.save_bot(thread)?;
     }

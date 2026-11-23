@@ -56,11 +56,25 @@ export interface WorkTask {
   folder: string | null
   /** Its thread takes the user's messages, as the host says: the bot's own task whose thread still exists. */
   talk: boolean
+  /** The agent a thread the user started runs on, where it isn't its bot's (always without a bot). */
+  agent: string | null
   /** Its thread takes files with the user's messages too; false from a host before them, where its box has no +. */
   talkFiles: boolean
   /** It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); null from an older
    * host, where every live task takes one. */
   seat: boolean | null
+}
+
+/** What a thread the user starts changes from its bot's setup, for its own task (`startThread`'s `setup`): the folder
+ * it works in, its model with that model's settings, and how it is approved. What it leaves out is the bot's. */
+export interface ThreadSetup {
+  /** The agent: a thread without a bot names it. */
+  backend?: string
+  cwd?: string
+  model?: { id: string | null; options: Record<string, string> }
+  approval?: { permission: string; mode: string | null }
+  /** A thread opened beside a workflow to build it by talking: its workflow tools reach that one only. */
+  workflow?: string
 }
 
 type Translate = (text: string) => string
@@ -89,6 +103,7 @@ export function normalizeWork(raw: unknown): WorkTask[] {
           source: t.source?.kind === 'routine' || t.source?.kind === 'request' ? { kind: t.source.kind, id: t.source.id ?? null } : null,
           folder: t.folder || null,
           talk: t.talk ?? false,
+          agent: typeof t.agent === 'string' ? t.agent : null,
           talkFiles: t.talkFiles ?? false,
           seat: typeof t.seat === 'boolean' ? t.seat : null,
         }]
@@ -103,17 +118,86 @@ export const normalizeMaxThreads = (raw: unknown): number | null =>
 /** A thread has it: working, or waiting on the user's approval. */
 export const isLive = (task: WorkTask) => task.status === 'working' || task.status === 'needsYou'
 
+/** How the Threads page groups what doesn't need the user: under the folder (or routine) it works for, under its
+ * bot, under its computer, or not at all. */
+export type ThreadGrouping = 'folder' | 'bot' | 'computer' | 'none'
+
+/** How the Threads list orders its rows inside each group: working ones first (`status`), and by when each last moved
+ * (`active`: ended, else started, else added) instead of when it was added. Both can be on. */
+export interface ThreadSort {
+  status?: boolean
+  active?: boolean
+}
+
+/** Where a thread stands in a list sorted by status: working, then waiting for a thread, then the ended ones. */
+const threadRank = (status: WorkStatus) => (status === 'working' ? 0 : status === 'waiting' ? 1 : 2)
+/** When a thread last moved: it ended, else it started, else it was added. */
+const lastActive = (t: WorkTask) => t.endedAt ?? t.startedAt ?? t.createdAt
+
 /** It takes one of the bot's seats (`maxThreads`): the host's word, else a live task. */
 export const takesSeat = (task: WorkTask) => task.seat ?? isLive(task)
 
 /** Still in the box's hands: a thread has it, or it waits for one. */
 export const isOpen = (task: WorkTask) => isLive(task) || task.status === 'waiting'
 
-/** All bots' work in one view: the bots of `roster` (as its rows are on screen) that have a live or waiting task, in that order, and how many
- * tasks are worked on in all (the count on the view's button). */
-export function allWork<T extends { bot: { work: WorkTask[] } }>(roster: T[]): { bots: T[]; working: number } {
-  const bots = roster.filter((r) => r.bot.work.some(isOpen))
-  return { bots, working: bots.reduce((sum, r) => sum + r.bot.work.filter((t) => t.status === 'working').length, 0) }
+export interface ThreadRowOf<T> {
+  of: T
+  task: WorkTask
+}
+
+/** One group of the Threads page: a folder a thread works in outside its bot's own, a routine's runs, a bot, or a
+ * computer. */
+export interface ThreadGroup<T> {
+  key: string
+  kind: 'folder' | 'routine' | 'bot' | 'computer'
+  /** The folder's last name, the routine's, the bot's or the computer's. */
+  title: string
+  rows: ThreadRowOf<T>[]
+}
+
+/**
+ * All bots' work as the Threads page lists it, newest first (or as `sort` says, inside each group): what needs the user on top, then the groups `grouping`
+ * makes (a folder a thread works in outside its bot's own, a worktree of it being the bot's; a routine's runs; or a
+ * group per bot, in `roster`'s order, which is the bot list's; or a group per computer, `computerOf` naming it, in
+ * the order the computers come), then the rest. `keyOf` tells the bots apart. `working` is how many tasks are worked on in all (the count on the rail's Threads).
+ */
+export function threadSections<T extends { bot: { work: WorkTask[]; name: string; cwd?: string } }>(roster: T[], grouping: ThreadGrouping, keyOf: (of: T) => string, computerOf: (of: T) => string = () => '', sort: ThreadSort = {}): {
+  needsYou: ThreadRowOf<T>[]
+  groups: ThreadGroup<T>[]
+  recent: ThreadRowOf<T>[]
+  working: number
+} {
+  const time = sort.active ? lastActive : (t: WorkTask) => t.createdAt
+  const newest = (a: ThreadRowOf<T>, b: ThreadRowOf<T>) =>
+    (sort.status ? threadRank(a.task.status) - threadRank(b.task.status) : 0) || time(b.task) - time(a.task)
+  const rows = roster.flatMap((of) => of.bot.work.map((task) => ({ of, task })))
+  const needsYou = rows.filter((r) => r.task.status === 'needsYou').sort(newest)
+  const rest = rows.filter((r) => r.task.status !== 'needsYou').sort(newest)
+  const groups = new Map<string, ThreadGroup<T>>()
+  const recent: ThreadRowOf<T>[] = []
+  for (const row of rest) {
+    const { of, task } = row
+    const path = wherePath(task)
+    const group: Omit<ThreadGroup<T>, 'rows'> | null =
+      grouping === 'bot' ? { key: `bot:${keyOf(of)}`, kind: 'bot', title: of.bot.name }
+      : grouping === 'computer' ? { key: `computer:${computerOf(of)}`, kind: 'computer', title: computerOf(of) }
+      : grouping === 'none' ? null
+      : task.source?.kind === 'routine' ? { key: `routine:${keyOf(of)}:${task.source.id ?? task.title}`, kind: 'routine', title: task.title }
+      : path && !task.worktree && path !== of.bot.cwd ? { key: `folder:${path}`, kind: 'folder', title: path.split(/[\\/]/).filter(Boolean).pop() ?? path }
+      : null
+    if (!group) recent.push(row)
+    else (groups.get(group.key) ?? groups.set(group.key, { ...group, rows: [] }).get(group.key)!).rows.push(row)
+  }
+  // A bot's group keeps the bot list's order, a computer's the computers'; the others come newest first, as their rows do.
+  const ordered = grouping === 'bot' ? roster.map((of) => `bot:${keyOf(of)}`) : grouping === 'computer' ? roster.map((of) => `computer:${computerOf(of)}`) : null
+  const byBot = ordered ? [...new Set(ordered)].flatMap((key) => groups.get(key) ?? []) : [...groups.values()]
+  return { needsYou, groups: byBot, recent, working: rows.filter((r) => r.task.status === 'working').length }
+}
+
+/** Where a bot stands in a list sorted by status: it needs the user, it works, it has work in the background, the rest. */
+export function rosterRank(bot: { status: string; activity: string; work: WorkTask[] }): number {
+  const kind = rosterLine(bot, (text) => text)?.kind
+  return kind === 'needsYou' ? 0 : kind === 'working' ? 1 : kind === 'work' ? 2 : 3
 }
 
 /** How a bot stands outside its chat, as the host says it (`bot.outside`); null from a host before it. */
@@ -262,7 +346,7 @@ export function waitText(task: WorkTask, tr: Translate): string {
   }
 }
 
-/** A task's second line: why it waits, what its thread does, or how it ended (a failed or stopped one says why). */
+/** How a task stands, beside its title: why it waits, what its thread does, or how it ended (a failed or stopped one says why). */
 export function taskLine(task: WorkTask, tr: Translate): string {
   switch (task.status) {
     case 'waiting':
@@ -331,50 +415,6 @@ export function pendingAsks(entries: Entry[], tr: Translate): Map<string, string
   return new Map([...pendingCards(entries)].map(([task, e]) => [task, ask(e)]))
 }
 
-/** An entry of a thread that it shows as the chat's message bubble: a final reply (text, a file, an artifact card), as
- * the chat tells them apart. What it says on the way is a step. */
-export const isThreadMessage = (e: Entry) => e.kind === 'agent' && e.data.final === true
-
-/** One quiet line of a thread for what it put in the bot's chat. */
-export interface SharedLine {
-  symbol: string
-  text: string
-}
-
-/** What the chat entry `e` a thread put in the bot's chat (a card, its agent's sign-in card, a file, a voice note, an
- * artifact) says in that thread: one line with a symbol, where the entry itself stays in the chat, which the
- * line opens. Null for anything else. */
-export function sharedLine(e: Entry, tr: Translate): SharedLine | null {
-  const d = e.data
-  const line = (symbol: string, key: string, values: Record<string, string> = {}) => ({ symbol, text: fill(tr(key), values) })
-  // A sign-in reads as its card does: the needs-you row's words while it waits, then the card's own.
-  const request = d.connectionRequest
-  if (request?.kind === 'agent') {
-    if (request.status === 'pending') return line('hand.raised', 'Needs {agent} sign-in', { agent: String(request.title ?? '') })
-    return request.status === 'ready' ? line('checkmark', 'Signed in') : line('xmark', 'Cancelled')
-  }
-  if (e.kind === 'permission') {
-    const title = d.title ?? ''
-    if (d.status === 'pending') return line('hand.raised', 'Waiting for your approval: {title}', { title })
-    if (d.status !== 'answered') return line('clock', 'Not answered: {text}', { text: title })
-    const chosen = d.options?.find((o) => o.optionId === d.selected)
-    if (chosen?.kind.startsWith('allow')) return line('checkmark', 'Approved: {title}', { title })
-    if (chosen?.kind.startsWith('reject')) return line('xmark', 'Denied: {title}', { title })
-    return line('checkmark', 'Answered: {choice}', { choice: chosen?.name ?? d.selected ?? '' })
-  }
-  if (d.decision) {
-    const question = d.question ?? ''
-    if (d.status === 'pending') return line('hand.raised', 'Asked: {question}', { question })
-    if (d.status === 'answered') return line('checkmark', 'Answered: {choice}', { choice: d.selected ?? '' })
-    return line('clock', 'Not answered: {text}', { text: question })
-  }
-  if (e.kind !== 'agent') return null
-  if (d.artifact) return line('doc.richtext', 'Made an artifact: {title}', { title: d.artifact.title })
-  if (d.voiceNote) return line('waveform', 'Sent a voice note')
-  if (d.files?.length) return line('doc', 'Sent a file: {name}', { name: d.files.map((f) => f.name).join(', ') })
-  return null
-}
-
 /** Why a thread that takes no message is read only, as a catalog key: its result has an owner already. Null for an
  * task that takes messages, and for the bot's own (nothing to explain). */
 export function readOnlyReason(task: Pick<WorkTask, 'talk' | 'source'>): string | null {
@@ -423,7 +463,7 @@ export function gitState(bot: { gitRepo: boolean; gitInstalled: boolean }): GitS
 
 /** A thread's transcript as its panel shows it: what the host told the thread first (`told`, folded at the top), then
  * the rest in order, without the messages the user took back. What the thread `threadId` put in the bot's `chat` (a
- * file, a voice note, an artifact, a card, answered or not) joins the rest where it came, each a `sharedLine`. */
+ * file, a voice note, an artifact, a card, answered or not) joins the rest where it came. */
 export function threadEntries(entries: Entry[], chat: Entry[] = [], threadId = ''): { told: Entry | null; rest: Entry[] } {
   const shown = entries.filter((e) => !e.data.removed)
   const told = shown.find(isTold) ?? null

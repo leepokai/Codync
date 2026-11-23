@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { attach } from './sandbox.ts'
+import { api, attach } from './sandbox.ts'
 
 type Store = { computer: { id: string }; hostName: string }
 type App = { computers: { id: string }[]; stores: Map<string, Store>; local: Store | null; changed(): void }
@@ -37,37 +37,45 @@ async function standIn(page: Page, on: boolean) {
   }, [on, other] as const)
 }
 
-test('the Workflows page shows a computer menu before its tabs only with more than one computer, and it switches both ways', async () => {
+test('the Workflows page lists each computer\'s workflows beside the canvas, like the Threads list', async () => {
   const { browser, page } = await attach()
-  const start = page.locator('.window-bar-start')
+  const list = page.locator('aside.sidebar')
+  const section = (name: string) => list.getByRole('region', { name, exact: true })
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(String(e.stack ?? e)))
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
+  type Listed = { workflows: { id: string }[] }
+  const ids = async () => (await api<Listed>(page, 'workflows', {})).workflows.map((w) => w.id)
+  const before = new Set(await ids())
   try {
     await page.locator('.nav-rail [data-page="workflows"]').click()
-    await expect(page.locator('.workflows-page')).toBeVisible()
-    // One computer: no menu.
-    await expect(start.locator('.choice-picker')).toHaveCount(0)
+    await expect(list.locator('.sidebar-title')).toHaveText('Workflows')
+    const local = (await list.locator('section.thread-group').first().getAttribute('aria-label')) ?? ''
+    expect(local).not.toBe('')
+    await expect(page.locator('.window-bar-start .workflow-tab')).toHaveCount(0)
 
+    // The + on a computer's heading starts a workflow there; its row is the one shown.
+    await expect(section(local).locator('button.thread-row')).toHaveCount(before.size)
+    await section(local).locator('.thread-section-heading').hover()
+    await section(local).getByRole('button', { name: 'New workflow' }).click()
+    await expect(section(local).locator('button.thread-row')).toHaveCount(before.size + 1)
+    await expect(section(local).locator('button.thread-row.selected')).toHaveCount(1)
+    await expect(page.locator('button.workflow-title[aria-haspopup]')).toBeVisible()
+
+    // A second computer gets its own section; a row there opens on that computer, and back.
     await standIn(page, true)
-    const picker = start.locator('.choice-picker')
-    await expect(picker).toHaveCount(1)
-    const local = (await picker.getAttribute('title')) ?? ''
-    expect(local).not.toBe('Other Mac')
-    await picker.click()
-    await expect(page.getByRole('menuitemradio', { name: 'Other Mac', exact: true })).toBeVisible()
-    await page.getByRole('menuitemradio', { name: 'Other Mac', exact: true }).click()
-    await expect(start.locator('.choice-picker[title="Other Mac"]')).toBeVisible()
-    await expect(page.locator('.workflows-page')).toBeVisible()
-
-    await start.locator('.choice-picker').click()
-    await page.getByRole('menuitemradio', { name: local, exact: true }).click()
-    await expect(start.locator(`.choice-picker[title="${local}"]`)).toBeVisible()
+    await expect(section('Other Mac')).toBeVisible()
+    await section('Other Mac').locator('button.thread-row').first().click()
+    await expect(section('Other Mac').locator('button.thread-row.selected')).toHaveCount(1)
+    await expect(section(local).locator('button.thread-row.selected')).toHaveCount(0)
+    await section(local).locator('button.thread-row').first().click()
+    await expect(section(local).locator('button.thread-row.selected')).toHaveCount(1)
+    await expect(section('Other Mac').locator('button.thread-row.selected')).toHaveCount(0)
   } catch (e) {
     throw new Error(`${String(e)}\n${errors.join('\n---\n')}`)
   } finally {
     await standIn(page, false).catch(() => {})
-    await expect(start.locator('.choice-picker')).toHaveCount(0).catch(() => {})
+    // The workflows this test made go again.
+    for (const id of await ids().catch(() => [])) if (!before.has(id)) await api(page, 'deleteWorkflow', { id }).catch(() => {})
     await browser.close()
   }
 })

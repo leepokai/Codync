@@ -29,7 +29,7 @@ export interface ThreadPick {
 const SHOWN_RECENT = 8
 
 /**
- * The Threads page's list, in the shape of a chat app's sidebar: **New thread** first, then what needs the user, then
+ * The Threads page's list, in the shape of a chat app's sidebar (its header's `+` starts a thread): what needs the user, then
  * the groups the list's options make (`threadsGroup`: the folders threads work in outside their bot's own and the
  * routines' runs, a group per bot in the bot list's order, or one per computer), then the rest, newest first, the last of it on demand.
  * A row is a thread's title and one mark at its end for how it stands; a group's heading folds it, and a bot's has a
@@ -55,7 +55,6 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
   // A thread's menu asks before Stop and Cut in, with its bot's dialogs.
   const [asking, setAsking] = useState<{ of: RosterItem; task: WorkTask; kind: 'stop' | 'cutIn' } | null>(null)
   const { needsYou, groups, recent } = threadSections(roster, grouping, (of) => refKey(of.ref), (of) => of.store.hostName, { status: byStatus, active: byActivity })
-  const canStart = threadBots(roster).length > 0 || plainStores(roster).length > 0
   const row = ({ of, task }: { of: RosterItem; task: WorkTask }, label = task.title) => (
     <StoreContext.Provider key={`${refKey(of.ref)}/${task.id}`} value={of.store}>
       <ThreadRow
@@ -82,10 +81,6 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
   const shownRecent = more ? recent : recent.slice(0, SHOWN_RECENT)
   return (
     <>
-      <button className="thread-row thread-new" disabled={!canStart} onClick={() => start(null)}>
-        <Icon name="square.and.pencil" size={13} color="var(--secondary)" />
-        <Text tone="text" truncate>{tr('New thread')}</Text>
-      </button>
       {needsYou.length ? <section aria-label={tr('Needs you')}>{label('Needs you')}{needsYou.map((r) => row(r))}</section> : null}
       {(['folder', 'routine', 'bot', 'computer'] as const).map((kind) => {
         const mine = groups.filter((g) => g.kind === kind)
@@ -181,6 +176,9 @@ function ThreadRow({ flip, task, label, selected, open, items }: { flip: string;
 /** The bots a thread can start with: on a computer that is connected and starts threads; never a group, nor the box
  * of threads without a bot. */
 export const threadBots = (roster: RosterItem[]) => roster.filter((r) => !isGroup(r.bot) && !r.bot.plain && r.store.startsThreads && !r.store.isOffline)
+
+/** Whether a thread can start at all: with a bot, or on a computer that starts one without. */
+export const canStartThread = (roster: RosterItem[]) => threadBots(roster).length > 0 || plainStores(roster).length > 0
 
 /** The connected computers of `roster` where a thread may start without a bot, one item each. */
 const plainStores = (roster: RosterItem[]) =>

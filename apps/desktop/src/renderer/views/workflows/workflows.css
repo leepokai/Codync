@@ -421,20 +421,6 @@
   box-shadow: var(--shadow-l);
 }
 
-.workflow-menu-label {
-  padding: 6px 10px 4px;
-  font-size: var(--text-caption);
-  color: var(--secondary);
-}
-
-.workflow-title-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 220px;
-  overflow-y: auto;
-}
-
 .workflow-mark {
   width: 18px;
   height: 18px;
@@ -450,10 +436,6 @@
   background: var(--text);
   border-color: var(--text);
   color: var(--background);
-}
-
-.workflow-mark.add {
-  border-style: dashed;
 }
 
 .workflow-version-anchor {
@@ -700,42 +682,6 @@
   border-radius: 50%;
 }
 .workflow-swatch.on { box-shadow: 0 0 0 2px var(--text); }
-
-/* The open workflows as tabs in the window's bar (WorkflowTabs): the shown one on the page's own color. */
-.workflow-tabs {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-  overflow: hidden;
-}
-.workflow-tab {
-  position: relative;
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  max-width: 200px;
-  border-radius: var(--radius-m);
-  transition: background-color var(--hover);
-}
-.workflow-tab:hover { background: rgba(var(--text-rgb), 0.05); }
-.workflow-tab.on { background: var(--background); }
-.workflow-tab-open {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  height: 30px;
-  padding: 0 28px 0 10px;
-}
-.workflow-tab-close {
-  position: absolute;
-  right: 6px;
-  opacity: 0;
-  transition: opacity var(--hover);
-}
-.workflow-tab:hover .workflow-tab-close,
-.workflow-tab.on .workflow-tab-close { opacity: 1; }
 
 /* The thread the workflow is built in, beside the canvas (WorkflowChat). */
 .workflows-page {

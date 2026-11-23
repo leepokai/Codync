@@ -610,8 +610,9 @@ test("the Threads page groups every bot's work as chosen, shows a thread beside 
 
     await openPage(page, 'Threads')
     const list = page.locator('aside.sidebar')
-    // New thread leads the list; grouped by bot (the list's options), a group per bot.
-    await expect(list.locator('.thread-row').first()).toHaveText('New thread')
+    // New thread is the header's +; grouped by bot (the list's options), a group per bot.
+    await expect(page.locator('.sidebar-header').getByRole('button', { name: 'New thread', exact: true })).toBeVisible()
+    await expect(list.locator('.thread-new')).toHaveCount(0)
     await page.locator('.sidebar-header .computer-filter').click()
     const byBot = page.getByRole('menuitemradio', { name: 'Group by bot', exact: true })
     if ((await byBot.getAttribute('aria-checked')) !== 'true') await byBot.click()

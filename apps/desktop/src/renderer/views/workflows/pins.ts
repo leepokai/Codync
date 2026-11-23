@@ -15,18 +15,6 @@ export function workflowPins(computerId: string) {
   return stored
 }
 
-const tabCache = new Map<string, Pref<string[]>>()
-
-/** The workflows open as tabs on the desktop, in their order (tabs.ts). */
-export function workflowTabs(computerId: string) {
-  let stored = tabCache.get(computerId)
-  if (!stored) {
-    stored = pref<string[]>(`workflowTabs.${computerId}`, [])
-    tabCache.set(computerId, stored)
-  }
-  return stored
-}
-
 /** Where a chat's thread is: its box (a bot, or the box of threads without one) and its task. */
 export interface ChatAt { botId: string; taskId: string }
 

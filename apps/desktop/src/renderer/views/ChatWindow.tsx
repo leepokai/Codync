@@ -24,7 +24,8 @@ import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
 import { BotRoster } from './BotRoster'
 import { NavRail, OpenExtensions, type AppPage } from './NavRail'
-import { ThreadDetail, ThreadList, type ThreadPick } from './ThreadsPage'
+import { ThreadDetail, ThreadList, canStartThread, type ThreadPick } from './ThreadsPage'
+import { botItems, threadItems, workflowItems } from './search-items'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
 import { ChatView } from './chat/ChatView'
 import { queueVoiceKey } from './chat/voice-shortcut-keys'
@@ -41,7 +42,8 @@ import { ResetAllDataDialogs } from './settings/ResetSection'
 import { FindBar } from './FindBar'
 import { useFindBar } from './use-conversation-find'
 import { SearchPalette } from './SearchPalette'
-import { WorkflowsView } from './workflows/WorkflowsView'
+import { WorkflowsView, type WorkflowFocus } from './workflows/WorkflowsView'
+import { WorkflowList } from './workflows/WorkflowList'
 import { canOpenWorkflows } from './workflows/pins'
 import { computerChoice, firstAmong } from './computer-choice'
 import { AccountWelcomeView, useWelcomeGate } from './AccountWelcomeView'
@@ -245,7 +247,9 @@ function ChatSplitView() {
   const [extensionsOf, setExtensionsOf] = useState<string | null>(null)
   // The computer whose workflows show, once one was asked for by name (its heading or a pin in the roster), and the workflow to open there.
   const [workflowsOf, setWorkflowsOf] = useState<string | null>(null)
-  const [workflowFocus, setWorkflowFocus] = useState<string | null>(null)
+  const [workflowFocus, setWorkflowFocus] = useState<WorkflowFocus | null>(null)
+  // The workflow on the canvas, for the list beside it.
+  const [shownWorkflow, setShownWorkflow] = useState<string | null>(null)
   // The thread the Threads page shows.
   const [picked, setPicked] = useState<ThreadPick | null>(null)
   // The bot a new thread starts with, where the user chose one; the page it starts from shows with no thread picked.
@@ -312,11 +316,16 @@ function ChatSplitView() {
   /** The rail: another page, or, on the entry of the page shown, its list folded away and brought back. */
   const go = (next: AppPage) => {
     if (next !== page) setPage(next)
-    else if (next === 'bots' || next === 'threads') setListHidden(!listHidden)
+    else if (next === 'bots' || next === 'threads' || next === 'workflows') setListHidden(!listHidden)
+  }
+  /** A new workflow on `computerId`, shown once made. */
+  const newWorkflow = (computerId: string) => {
+    setWorkflowsOf(computerId)
+    setWorkflowFocus({ create: true })
   }
   const openWorkflows = (computerId: string, workflowId?: string) => {
     setWorkflowsOf(computerId)
-    setWorkflowFocus(workflowId ?? null)
+    setWorkflowFocus(workflowId ? { id: workflowId } : null)
     setPage('workflows')
   }
   // A new object each time, so opening the same tab again still turns Extensions to it.
@@ -390,7 +399,6 @@ function ChatSplitView() {
   // Of the computers offering workflows: the one asked for, else the selected bot's, this one, any.
   const workflowStores = onlineStores.filter(canOpenWorkflows)
   const workflowStore = firstAmong(workflowStores, [workflowsOf ? app.store(workflowsOf) : null, selectedStore, app.local])
-  const workflowsChoice = computerChoice(workflowStores, workflowStore?.computer.id, (id) => openWorkflows(id))
   const extensionsStore = (extensionsOf ? app.store(extensionsOf) : null) ?? selectedStore ?? app.local ?? onlineStores[0] ?? null
   const extensionsChoice = computerChoice(onlineStores, extensionsStore?.computer.id, setExtensionsOf)
 
@@ -467,7 +475,7 @@ function ChatSplitView() {
   }
 
   const width = listHidden ? 0 : sidebarWidth
-  const listed = page === 'bots' || page === 'threads'
+  const listed = page === 'bots' || page === 'threads' || page === 'workflows'
   // How the list shown is laid out, each list its own choice: the Threads list one grouping at a time.
   const layOut = (option: 'folder' | 'bot' | 'computer' | 'status', on: boolean) => {
     analytics.track({ event: 'list_layout_changed', list: page === 'threads' ? 'threads' : 'bots', option, on })
@@ -494,7 +502,7 @@ function ChatSplitView() {
           { title: 'Sort by status', divider: true, selected: threadsByStatus, keepsOpen: true, action: () => sortThreads('status', !threadsByStatus) },
           { title: 'Sort by last active', selected: threadsByActivity, keepsOpen: true, action: () => sortThreads('activity', !threadsByActivity) },
         ]
-      : [
+      : page !== 'bots' ? [] : [
           { title: 'Group by computer', selected: botsByComputer, keepsOpen: true, action: () => layOut('computer', !botsByComputer) },
           { title: 'Sort by status', selected: botsByStatus, keepsOpen: true, action: () => layOut('status', !botsByStatus) },
         ]),
@@ -527,16 +535,18 @@ function ChatSplitView() {
             {/* Keeps its width while the sidebar opens or closes: the list slides under the edge instead of squeezing. */}
             <div className="sidebar-content" style={{ width: sidebarWidth }}>
               <div className="sidebar-header drag">
-                <Text size="title3" weight="semibold" tone="text" truncate className={page === 'bots' ? 'sidebar-title crowded' : 'sidebar-title'}>{tr(page === 'bots' ? 'Bots' : 'Threads')}</Text>
+                <Text size="title3" weight="semibold" tone="text" truncate className="sidebar-title crowded">{tr(page === 'bots' ? 'Bots' : page === 'threads' ? 'Threads' : 'Workflows')}</Text>
                 <Spacer />
                 <HStack gap={6} className="no-drag">
                   <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setPage('computers')} options={listOptions} />
+                  <IconButton title="Search" icon="magnifyingglass" size={32} className="sidebar-header-action" onClick={() => setSearching(true)} />
                   {page === 'bots' ? (
-                    <>
-                      <IconButton title="Search" icon="magnifyingglass" size={32} className="sidebar-header-action" onClick={() => setSearching(true)} />
-                      <IconButton title="New" icon="plus" size={32} className="sidebar-header-action" buttonRef={newButton} menuOpen={newMenu} onClick={() => setNewMenu((o) => !o)} disabled={!onlineStores.length} />
-                    </>
-                  ) : null}
+                    <IconButton title="New" icon="plus" size={32} className="sidebar-header-action" buttonRef={newButton} menuOpen={newMenu} onClick={() => setNewMenu((o) => !o)} disabled={!onlineStores.length} />
+                  ) : page === 'threads' ? (
+                    <IconButton title="New thread" icon="plus" size={32} className="sidebar-header-action" onClick={() => startThread(null)} disabled={!canStartThread(threadRoster)} />
+                  ) : (
+                    <IconButton title="New workflow" icon="plus" size={32} className="sidebar-header-action" onClick={() => workflowStore && newWorkflow(workflowStore.computer.id)} disabled={!workflowStore} />
+                  )}
                 </HStack>
                 <AnchoredMenu open={newMenu} onClose={() => setNewMenu(false)} anchor={newButton} items={newItems} />
               </div>
@@ -556,6 +566,10 @@ function ChatSplitView() {
                       {onlineStores.length ? <Text as="div" size="callout" tone="secondary">{tr(`Use + to create a bot.`)}</Text> : null}
                     </div>
                   ) : null}
+                </div>
+              ) : page === 'workflows' ? (
+                <div className="roster">
+                  <WorkflowList stores={stores.filter((s) => shown.has(s.computer.id))} place={workflowStore ? { computerId: workflowStore.computer.id, workflowId: shownWorkflow } : null} open={openWorkflows} create={newWorkflow} />
                 </div>
               ) : (
                 <div className="roster">
@@ -585,18 +599,20 @@ function ChatSplitView() {
         <main className="detail">
           <StoreContext.Provider value={workflowStore}>
             <WindowBarSlots.Provider value={{ start: barStart, title: null, end: barEnd }}>
-              <WorkflowsView key={workflowStore.computer.id} focusId={workflowFocus} computer={workflowsChoice} roster={threadRoster} openChat={(ref) => { app.select(ref); setPage('bots') }} />
+              <WorkflowsView key={workflowStore.computer.id} focus={workflowsOf === workflowStore.computer.id ? workflowFocus : null} onShown={setShownWorkflow} roster={threadRoster} openChat={(ref) => { app.select(ref); setPage('bots') }} />
             </WindowBarSlots.Provider>
           </StoreContext.Provider>
+        </main>
+      ) : page === 'workflows' ? (
+        <main className="detail">
+          <div className="empty-detail">
+            <Text as="div" tone="secondary">{tr(`Waiting for a computer`)}</Text>
+          </div>
         </main>
       ) : listed ? null : (
         <main className="app-page">
           <div className="app-page-drag drag" />
-          {page === 'workflows' ? (
-            <div className="empty-detail">
-              <Text as="div" tone="secondary">{tr(`Waiting for a computer`)}</Text>
-            </div>
-          ) : page !== 'extensions' ? (
+          {page !== 'extensions' ? (
             <SettingsView page={settingsPages[page] ?? settingsPage} setPage={setSettingsPage} />
           ) : extensionsStore ? (
             <StoreContext.Provider value={extensionsStore}>
@@ -621,7 +637,13 @@ function ChatSplitView() {
         </div>
       ) : null}
 
-      <SearchPalette open={searching} items={visibleRoster} onPick={openBot} onClose={() => setSearching(false)} />
+      <SearchPalette
+        open={searching}
+        items={page === 'threads' ? threadItems(threadRoster, setPicked) : page === 'workflows' ? workflowItems(stores.filter((s) => shown.has(s.computer.id)), openWorkflows) : botItems(visibleRoster, openBot)}
+        label={page === 'threads' || page === 'workflows' ? 'Search' : 'Search bots'}
+        empty={page === 'threads' || page === 'workflows' ? 'No results' : 'No matching bots'}
+        onClose={() => setSearching(false)}
+      />
       <Sheet open={editing !== null} onClose={() => setEditing(null)} width={520} height={Math.min(680, sheetHeight)}>
         {editing ? (
           <StoreContext.Provider value={editing.store}>

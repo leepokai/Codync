@@ -49,7 +49,7 @@ async fn a_stopped_host_ends_the_checks_it_was_running() {
         ("PATH", path.as_os_str()),
         ("HOME", home.as_os_str()),
         ("ZDOTDIR", home.as_os_str()),
-        ("CODYNC_AGENT_CHECKS", "on".as_ref()),
+        ("CODYNC_AGENT_CHECKS", "claude,cursor".as_ref()),
     ];
     let (mut host, base) = common::serve_with(&home, &env).await;
     // No bot runs Claude here, so its usage is only read once it's asked for.
@@ -101,7 +101,7 @@ async fn a_usage_reading_starts_the_agent_with_no_browser_to_open() {
         ("PATH", path.as_os_str()),
         ("HOME", home.as_os_str()),
         ("ZDOTDIR", home.as_os_str()),
-        ("CODYNC_AGENT_CHECKS", "on".as_ref()),
+        ("CODYNC_AGENT_CHECKS", "grok".as_ref()),
     ];
     let (mut host, base) = common::serve_with(&home, &env).await;
     let token = std::fs::read_to_string(home.join("token")).unwrap();
@@ -181,7 +181,7 @@ async fn agent_probes_leave_no_session_in_the_users_omp() {
         ("PATH", path.as_os_str()),
         ("HOME", home.as_os_str()),
         ("ZDOTDIR", home.as_os_str()),
-        ("CODYNC_AGENT_CHECKS", "on".as_ref()),
+        ("CODYNC_AGENT_CHECKS", "omp".as_ref()),
     ];
     let (mut host, base) = common::serve_with(&home, &env).await;
     let token = std::fs::read_to_string(home.join("token")).unwrap();

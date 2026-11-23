@@ -6,10 +6,14 @@ use serde_json::Value;
 use std::sync::Mutex;
 use std::time::Duration;
 
-/// `CODYNC_AGENT_CHECKS=off`, the tests' disposable hosts: nothing runs the computer's agent CLIs to check on their
-/// sign-in or usage, so a test never starts one on the user's own login.
-pub fn agent_checks_off() -> bool {
-    std::env::var("CODYNC_AGENT_CHECKS").is_ok_and(|value| value == "off")
+/// Whether the host may run `backend`'s CLI to check on its sign-in, usage or models. `CODYNC_AGENT_CHECKS` is unset
+/// for the user's own host: every agent. The tests' disposable hosts set `off`, so a test never starts one on the
+/// user's own login, or the comma-separated harness ids a test of those checks runs stand-ins for, leaving the rest
+/// alone.
+pub fn agent_checks_on(backend: &str) -> bool {
+    let Ok(agents) = std::env::var("CODYNC_AGENT_CHECKS") else { return true };
+    let id = super::harness_of(backend).map_or(backend, |h| h.id);
+    agents.split(',').any(|agent| agent == id)
 }
 
 /// `<bin> <args>`, judged by exit code and stdout.
@@ -93,10 +97,10 @@ pub async fn cli_signed_in(h: &Harness, env: &[(String, String)]) -> Option<bool
     Some((check.ok)(out.status.success(), &String::from_utf8_lossy(&out.stdout)))
 }
 
-/// Runs `h`'s own CLI with `args` and `env`. `None`: it isn't installed, didn't answer in time, or the tests
-/// turned the agents' CLIs off.
+/// Runs `h`'s own CLI with `args` and `env`. `None`: it isn't installed, didn't answer in time, or the host may not
+/// check it.
 pub async fn run_cli(h: &Harness, args: &str, env: &[(String, String)]) -> Option<std::process::Output> {
-    if agent_checks_off() {
+    if !agent_checks_on(h.id) {
         return None;
     }
     let bin = h.bins.iter().find_map(|b| which(b))?;

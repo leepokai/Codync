@@ -13,7 +13,7 @@ use super::style::theme;
 /// The key of the page of every bot's work: listed only while some bot has a live or waiting task.
 const WORK_KEY: &str = "E";
 
-const HELP: [(&str, &str, &str); 86] = [
+const HELP: [(&str, &str, &str); 87] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -76,6 +76,7 @@ const HELP: [(&str, &str, &str); 86] = [
     ("BOTS", "M", "memory"),
     ("BOTS", "^k session", "new session: fresh agent context; the chat stays"),
     ("BOTS", "R", "details: threads, event box, routines, recent"),
+    ("BOTS", "f", "workflows"),
     ("BOTS", "↵ X", "details, on a task: its thread / stop"),
     ("BOTS", "F C D A", "details, on a task: first / cut in / drop / try again"),
     ("BOTS", "i S D", "a task's thread: write to it / send now / take back"),
@@ -141,7 +142,8 @@ pub(super) fn help(buf: &mut Buffer, area: Rect, filter: &Editor, work: bool) {
             section = sec;
         }
         put(buf, x, y, 11, k, t.bold.patch(t.panel));
-        put(buf, x + 12, y, col_w.saturating_sub(13), d, t.secondary.patch(t.panel));
+        let label = tr(d);
+        put(buf, x + 12, y, col_w.saturating_sub(13), label.as_ref(), t.secondary.patch(t.panel));
         y += 1;
         shown += 1;
     }

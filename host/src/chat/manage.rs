@@ -175,20 +175,21 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
             Ok(json!({"bots": bots}))
         }
         "list_models" => {
-            // The agent to list: named directly, or else a managed bot's own agent (`botId`).
-            let (agent, bot_model) = if let Some(agent) = text(args, "agent")? {
-                (agent, None)
+            // The agent to list: named directly, or else a managed bot's own agent (`botId`), on its login profile.
+            let (agent, profile, bot_model) = if let Some(agent) = text(args, "agent")? {
+                (agent, None, None)
             } else {
                 let bot = text(args, "botId")?.context("pass agent, or botId for a managed bot's agent")?;
                 let cfg = agent_bot(hub, &bot)?;
-                (cfg.backend, Some(cfg.model))
+                (cfg.backend, cfg.login_profile, Some(cfg.model))
             };
             let query = text(args, "query")?.map(|q| q.to_ascii_lowercase());
             // A first-ever load can build the agent's model registry, which is slow: cap it at the window
             // the clients give a tool call, so a wedged agent launch can't outlive them silently.
             let deadline = Instant::now() + APPROVAL_TIMEOUT;
-            let catalog = tokio::time::timeout_at(deadline, crate::agent::auth::shared_models(hub, &agent))
-                .await
+            let catalog =
+                tokio::time::timeout_at(deadline, crate::agent::auth::shared_models(hub, &agent, profile.as_deref()))
+                    .await
                 .map_err(|_| anyhow!("loading {agent}'s models took too long; try again in a bit"))?
                 .map_err(|e| {
                     anyhow!("couldn't list {agent}'s models: {e:#} — install and sign in to {agent} on this computer, or list an agent that is set up here")
@@ -267,6 +268,7 @@ async fn create(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         hub,
         &cfg.backend,
         cfg.command.as_deref(),
+        cfg.login_profile.as_deref(),
         checks::Models {
             set: fields.get("model").and_then(Value::as_str),
             effective: cfg.model.as_deref(),
@@ -315,6 +317,7 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         hub,
         &target.backend,
         target.command.as_deref(),
+        target.login_profile.as_deref(),
         checks::Models {
             set: fields.get("model").and_then(Value::as_str),
             effective: model,

@@ -1,5 +1,11 @@
 package com.codync.android
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -9,10 +15,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Text
@@ -24,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -31,7 +36,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.Entry
 import com.codync.android.design.*
-import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -64,7 +68,8 @@ internal val Entry.isFromThread: Boolean
 internal val Entry.takesOwnWords: Boolean
     get() = !isFromThread && (data["ownWords"] as? JsonPrimitive)?.booleanOrNull != false
 
-/** Approval card in Grok Bot's choice-card style: what the agent wants, where it runs, and the answers as rows. */
+/** Approval card in the choice card's form: what the agent wants, where it runs, and the answers as the choice card's
+ *  numbered rows, in one tone. */
 @Composable internal fun PermissionCard(entry: Entry, hostName: String, answering: Boolean, respond: (String?) -> Unit) {
     val d = entry.data
     val pending = d.text("status") == "pending"
@@ -79,24 +84,33 @@ internal val Entry.takesOwnWords: Boolean
     }
     val diffs = (d["diffs"] as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
     val hasDetail = !d.text("command").isNullOrEmpty() || !d.text("detail").isNullOrEmpty() || diffs.isNotEmpty()
-    Column(Modifier.padding(end = 40.dp).widthIn(max = 420.dp).clip(RoundedRectangle(22.dp)).background(Palette.bubbleAgent).padding(16.dp),
+    Column(Modifier.padding(end = 40.dp).widthIn(max = 420.dp).clip(RoundedRectangle(22.dp)).background(Palette.bubbleAgent).padding(vertical = 16.dp, horizontal = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // The rows run 8dp wider than the rest, so their numbers line up under the text, as on the choice card.
+        // The choice card's form: the question, where it runs with Details, the request in a well.
+        Column(Modifier.padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(tr(headline), style = Type.headline, color = Palette.text)
-            if (pending) Box(Modifier.size(7.dp).clip(Capsule()).background(Palette.warning))
-        }
-        Text(d.text("title").orEmpty(), style = Type.subheadline.monospaced, color = Palette.secondary, maxLines = if (expanded) Int.MAX_VALUE else 3)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Symbol("desktopcomputer", size = 14.dp, tint = Palette.tertiary)
             val path = d.text("cwd")?.let { " · " + it.trimEnd('/').substringAfterLast('/') } ?: ""
-            Text(tr("Runs on {name}{path}").replace("{name}", hostName).replace("{path}", path),
-                style = Type.caption, color = Palette.tertiary)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(tr("Runs on {name}{path}").replace("{name}", hostName).replace("{path}", path), Modifier.weight(1f),
+                    style = Type.caption, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (hasDetail) {
+                    val turn by animateFloatAsState(if (expanded) 90f else 0f, Motion.layout(), label = "Chevron")
+                    Row(Modifier.clickable(role = Role.Button) { expanded = !expanded }, verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(tr("Details"), style = Type.caption.medium, color = Palette.secondary)
+                        Symbol("chevron.right", Modifier.rotate(turn), size = 10.dp, tint = Palette.secondary)
+                    }
+                }
+            }
+            Text(d.text("title").orEmpty(), Modifier.padding(top = 4.dp).fillMaxWidth().clip(RoundedRectangle(10.dp))
+                .background(Palette.text.copy(alpha = 0.06f)).padding(horizontal = 10.dp, vertical = 8.dp),
+                style = Type.subheadline.monospaced, color = Palette.secondary, maxLines = if (expanded) Int.MAX_VALUE else 3)
         }
-        WorkThreadLine(entry)
-        if (hasDetail) Disclosure(expanded, { expanded = !expanded }, label = {
-            Text(tr("Details"), style = Type.caption.medium, color = Palette.secondary)
-        }) {
-            Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        WorkThreadLine(entry, Modifier.padding(horizontal = 8.dp))
+        AnimatedVisibility(hasDetail && expanded, Modifier.padding(horizontal = 8.dp), enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
+            exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 d.text("command")?.takeIf(String::isNotEmpty)?.let { CodeBox(it) }
                 d.text("detail")?.takeIf(String::isNotEmpty)?.let { CodeBox(it.take(2000)) }
                 for (diff in diffs) DiffView(diff)
@@ -106,26 +120,30 @@ internal val Entry.takesOwnWords: Boolean
             val rank = mapOf("allow_once" to 0, "allow_always" to 1, "reject_once" to 2, "reject_always" to 3)
             val options = (d["options"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
                 .sortedBy { rank[it.text("kind")] ?: 9 }
-            Column(Modifier.padding(top = 4.dp).fillMaxWidth().clip(RoundedRectangle(14.dp)).background(Palette.background)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 for ((index, option) in options.withIndex()) {
                     val id = option.text("optionId") ?: continue
                     val kind = option.text("kind").orEmpty()
-                    if (index > 0) Box(Modifier.fillMaxWidth().height(0.5.dp).background(Palette.border))
                     val waiting = answering && chosen != null
-                    Row(Modifier.fillMaxWidth().heightIn(min = 46.dp)
-                        .clickable(enabled = !answering, role = Role.Button) { chosen = id; respond(id) }
+                    val (source, pressed) = rememberPress()
+                    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedRectangle(12.dp))
+                        .background(Palette.text.copy(alpha = if (pressed) 0.08f else 0f))
+                        .clickable(source, null, enabled = !answering, role = Role.Button) { chosen = id; respond(id) }
                         .graphicsLayer { alpha = if (!waiting || chosen == id) 1f else 0.4f }
-                        .padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        RowNumber {
+                            if (answering && chosen == id) Spinner(12.dp)
+                            else Text("${index + 1}", style = Type.caption.semibold.copy(fontFeatureSettings = "tnum"), color = Palette.secondary)
+                        }
                         Text(when (kind) {
                             "allow_once" -> tr("Allow once"); "allow_always" -> tr("Always allow"); "reject_once" -> tr("Deny"); "reject_always" -> tr("Never")
                             else -> option.text("name").orEmpty()
-                        }, Modifier.weight(1f), style = if (kind == "allow_once") Type.body.semibold else Type.body,
-                            color = if (kind.startsWith("allow")) Palette.text else Palette.danger)
-                        if (answering && chosen == id) Spinner(14.dp)
+                        }, Modifier.weight(1f), style = Type.body, color = Palette.text)
                     }
                 }
             }
-        } else Text(outcome(d), style = Type.caption.medium, color = Palette.secondary)
+        } else Text(outcome(d), Modifier.padding(horizontal = 8.dp), style = Type.caption.medium, color = Palette.secondary)
     }
 }
 

@@ -42,9 +42,10 @@ export class BrowserAuthentication {
     })
   }
 
+  /** Whether a waiting sign-in on this URL's scheme took it. */
   handleURL(url: string) {
     const pending = this.pending
-    if (!pending || url.split(':')[0]?.toLowerCase() !== pending.scheme.toLowerCase()) return
+    if (!pending || url.split(':')[0]?.toLowerCase() !== pending.scheme.toLowerCase()) return false
     // A stale tab may return before the current one. Validate in order; a rejected callback
     // leaves the current wait intact and cannot race another nonce exchange.
     pending.callbacks = pending.callbacks.then(async () => {
@@ -55,6 +56,7 @@ export class BrowserAuthentication {
         this.finish(pending, error)
       }
     })
+    return true
   }
 
   private finish(pending: Pending, error?: unknown, url?: string) {

@@ -28,7 +28,8 @@ pub struct Report {
     pub kind: String,
     /// How it was caught: `panic`, `onerror`, `unhandledrejection`, `render-process-gone`, …
     pub mechanism: String,
-    /// A panic's literal message, or a reason the platform names (`oom`); never an error's text.
+    /// A panic's literal message, or only what the platform names (a crash reason, a helper's name and
+    /// exit code, a failed system call and its result code); never an error's text.
     #[serde(default)]
     pub value: String,
     /// Oldest call first, the failing one last.

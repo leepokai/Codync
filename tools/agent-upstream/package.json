@@ -1,0 +1,12 @@
+{
+  "name": "codync-agent-upstream",
+  "private": true,
+  "type": "module",
+  "description": "Daily check of new ACP adapter versions against a scripted model",
+  "scripts": {
+    "check": "node check.mjs"
+  },
+  "dependencies": {
+    "@copilotkit/aimock": "1.48.1"
+  }
+}

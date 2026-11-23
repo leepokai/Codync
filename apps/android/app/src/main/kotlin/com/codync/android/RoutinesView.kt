@@ -206,7 +206,7 @@ import kotlinx.coroutines.launch
                             "hourly" -> Field("At minute") { ChoicePicker(schedule.minute, MINUTES, { change(schedule.copy(minute = it)) }, label = "At minute") }
                             "daily", "weekdays" -> TimeField(schedule) { change(it) }
                             "weekly" -> {
-                                Field("On") { ChoicePicker(schedule.weekday, WEEKDAYS, { change(schedule.copy(weekday = it)) }, label = "On") }
+                                Field("Weekday") { ChoicePicker(schedule.weekday, WEEKDAYS, { change(schedule.copy(weekday = it)) }, label = "Weekday") }
                                 TimeField(schedule) { change(it) }
                             }
                             else -> Field("Cron") {
@@ -295,6 +295,19 @@ private val WEEKDAYS = listOf(1 to "Monday", 2 to "Tuesday", 3 to "Wednesday", 4
     }
 }
 
+/** The editor's line. The host's cron sentence stays English, so this uses the same words as the fields. */
+@Composable private fun RoutineScheduleDraft.caption(): String {
+    val time = "%02d:%02d".format(hour, minute)
+    val names = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+    return when (calendarStyle) {
+        "hourly" -> "${tr("Hourly")} · :${"%02d".format(minute)} · $zone"
+        "daily" -> "${tr("Daily")} · $time · $zone"
+        "weekdays" -> "${tr("Weekdays")} · $time · $zone"
+        "weekly" -> "${tr("Weekly")} · ${tr(names.getOrElse(weekday) { "Mon" })} · $time · $zone"
+        else -> expression.trim().let { written -> if (written.isEmpty()) zone else "$written · $zone" }
+    }
+}
+
 /** One quiet line under the schedule fields: what the host read, or why it can't (with the cron fields' order while it checks a Custom one). */
 @Composable private fun SchedulePreview(preview: RoutineSchedulePreview?, error: String?, cronHint: Boolean) {
     Column(Modifier.padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -302,6 +315,7 @@ private val WEEKDAYS = listOf(1 to "Monday", 2 to "Tuesday", 3 to "Wednesday", 4
             error != null -> Text(tr(error), style = Type.caption, color = Palette.danger)
             preview != null -> {
                 Text(tr(preview.summary), style = Type.caption.medium, color = Palette.text)
+                Text(preview.draft.caption(), style = Type.caption.medium, color = Palette.text)
                 preview.nextRunAt?.let {
                     val whenText = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, appLocale()).format(Date(it))
                     Text(tr("Next {when}").replace("{when}", whenText), style = Type.caption, color = Palette.secondary)

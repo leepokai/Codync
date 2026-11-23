@@ -138,7 +138,7 @@ struct FallbackList: View {
     }
 }
 
-/// One fallback: its place, its agent, model and login picked in place like the bot's own, whether it's resting or in
+/// One fallback: its place, its agent's login and model picked in place like the bot's own, whether it's resting or in
 /// use, and its menu.
 private struct FallbackRow: View {
     @Binding var fallback: BotFallback
@@ -156,29 +156,27 @@ private struct FallbackRow: View {
 
     var body: some View {
         let choices = (model.hello?.backends ?? []).usable(taken: taken, keeping: [fallback.login] + (own.map { [$0.login] } ?? []))
-        let agent = choices.first { $0.id == fallback.backend }
-        let loginProfile = fallback.loginProfile.flatMap { id in agent?.loginProfiles?.first { $0.id == id } }
-        // The step's login shows beside its agent: "Claude Code (Work)".
-        let agents = choices.map { backend in
-            let label = L10n.tr(model.agentLabel(backend))
-            return (backend.id, backend.id == fallback.backend ? loginProfile.map { "\(label) (\($0.name ?? L10n.tr("New login profile")))" } ?? label : label)
+        // The logins the rest of the chain doesn't have, with its own (and the one it had on an agent before, while no other
+        // step took it).
+        let agents = model.loginSeats(choices, on: fallback.login) { backend in
+            if backend.id == fallback.backend { return backend.logins(for: fallback.login, taken: taken) }
+            if let own, backend.id == own.backend, !taken.contains(own.login) { return backend.logins(for: own.login, taken: taken) }
+            return backend.freeLogins(taken: taken)
         }
-        let name = agents.first { $0.0 == fallback.backend }?.1 ?? model.backendName(fallback.backend)
+        let name = agents.first { $0.login == fallback.login }?.name ?? model.backendName(fallback.backend)
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top, spacing: 10) {
                 Text(L10n.tr("\(number)")).font(.subheadline.monospacedDigit()).foregroundStyle(Palette.secondary)
-                AgentModelPicker(backend: fallback.backend, selection: $fallback.model, options: $fallback.modelOptions, agents: agents,
-                                 onAgentChange: { id in
-                                     guard let next = choices.first(where: { $0.id == id }) else { return }
-                                     let step = BotFallback.on(next, taken: taken, own: own)
+                AgentModelPicker(backend: fallback.backend, loginProfile: fallback.loginProfile, selection: $fallback.model, options: $fallback.modelOptions, agents: agents,
+                                 onAgentChange: { login in
+                                     guard login.backend != fallback.backend else { return fallback.loginProfile = login.loginProfile }
+                                     guard let next = choices.first(where: { $0.id == login.backend }) else { return }
+                                     var step = BotFallback.on(next, taken: taken, own: own)
                                      own = step == own ? nil : own ?? fallback
+                                     step.loginProfile = login.loginProfile
                                      fallback = step
                                  },
-                                 expanded: expanded) {
-                    if let agent, agent.loginProfiles != nil {
-                        LoginProfileRow(backend: agent, loginProfile: $fallback.loginProfile, free: agent.logins(for: fallback.login, taken: taken))
-                    }
-                }
+                                 expanded: expanded)
                 if inUse == fallback.login {
                     Text(L10n.tr("In use"))
                         .font(.caption.weight(.medium))

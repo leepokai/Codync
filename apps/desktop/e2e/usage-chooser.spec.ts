@@ -1,16 +1,14 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, attach } from './sandbox.ts'
+import { api, attach, openPage } from './sandbox.ts'
 
 type Usage = { providers: { id: string }[]; services: { id: string; name: string; shown: boolean }[] }
 
 async function openChooser(page: Page) {
-  await page.reload() // A settings window left open would cover the account button.
-  await page.locator('.sidebar-account').click()
-  await page.locator('.account-panel').getByText('Usage', { exact: true }).click()
+  await openPage(page, 'Usage')
   await page.getByRole('button', { name: 'Choose and arrange' }).first().click()
 }
 
-test('Settings > Usage chooses which agents show, and the host keeps the choice', async () => {
+test('The Usage page chooses which agents show, and the host keeps the choice', async () => {
   const { browser, page } = await attach()
   const usage = () => api<Usage>(page, 'usage', {})
   const { services } = await usage()
@@ -39,7 +37,7 @@ test('Settings > Usage chooses which agents show, and the host keeps the choice'
   }
 })
 
-test('dragging an agent in Settings > Usage changes its order, and the host keeps it', async () => {
+test('dragging an agent on the Usage page changes its order, and the host keeps it', async () => {
   const { browser, page } = await attach()
   const order = async () => (await api<Usage>(page, 'usage', {})).services.map((s) => s.id)
   const before = await order()
@@ -73,7 +71,7 @@ test('dragging an agent in Settings > Usage changes its order, and the host keep
 
 // Guards the row staying where it was moved and the order the moves end on. It can't tell the order they reach the
 // host in (latest-only.test.ts does), and the first answer can land before the second press.
-test('two quick moves in Settings > Usage end on the second, and the row stays there', async () => {
+test('two quick moves on the Usage page end on the second, and the row stays there', async () => {
   const { browser, page } = await attach()
   const order = async () => (await api<Usage>(page, 'usage', {})).services.map((s) => s.id)
   const before = await order()

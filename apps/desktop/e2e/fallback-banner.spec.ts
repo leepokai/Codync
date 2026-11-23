@@ -63,9 +63,9 @@ test('the fallback banner and rest line follow the app language', async () => {
     const panel = page.locator('.details-panel')
     await panel.getByRole('tab', { name: '設定' }).click()
     await expect(panel.locator('.fallback-switch-back').locator('..')).toContainText('正在使用 Codex，Kimi Code 已登出')
-    await panel.locator('.agent-picker-summary').first().click()
-    await expect(panel.getByText(/^休息到 /)).toBeVisible()
-    await expect(panel.getByText(/^Resting until /)).toHaveCount(0)
+    await panel.locator('.model-picker-field').first().click()
+    await expect(page.locator('.model-picker').getByText(/^休息到 /)).toBeVisible()
+    await expect(page.getByText(/^Resting until /)).toHaveCount(0)
   } finally {
     await page.evaluate(() => localStorage.removeItem('appLanguage')).catch(() => {})
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})

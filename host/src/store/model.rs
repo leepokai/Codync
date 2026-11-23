@@ -121,6 +121,15 @@ pub struct BotConfig {
     pub position: i64,
     #[serde(default)]
     pub hidden: bool,
+    /// The computer's box for threads without a bot (`chat::work::plain`): they run an agent on its own, told
+    /// nothing of Codync's (no instructions, memory, tools or connectors). Always hidden; apps that know it keep it
+    /// out of every list of bots.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub plain: bool,
+    /// The workflow a thread was started to build (`Setup::workflow`): its workflow tools read, save and run that
+    /// one only, and the thread gets them even without a bot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<String>,
     /// Paused by the user (or a managing bot): it answers nothing and spends nothing until it is resumed. New
     /// messages are refused with a notice, queued routine runs are cancelled, and no turn of its starts.
     #[serde(default)]

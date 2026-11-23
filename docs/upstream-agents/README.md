@@ -6,6 +6,11 @@ page per agent: what goes wrong, how the host patches around it (or that it does
 the patch can go. When enough of an agent's rows are gone, we can reconsider how Codync uses it, or replace it with
 another implementation.
 
+A daily check runs one turn of the main adapters' new registry versions against a scripted model, and
+[`tools/agent-upstream/accepted.json`](../../tools/agent-upstream/accepted.json) holds the versions it last passed
+([upstream agents](../guides/test-stack.md#upstream-agents)). That check finds an adapter that no longer runs a turn; the
+rows here are what a person found by reading and testing.
+
 Last checked: **2026-11-02**. Versions in the ACP registry then: claude-acp 0.99.1, codex-acp 2.5.0, pi-acp 0.0.34,
 cursor 2026.10.22, gemini 0.66.0, github-copilot-cli 1.0.105, grok-build 1.0.73, kilo 7.8.18, opencode 2.2.5,
 qwen-code 0.26.5.

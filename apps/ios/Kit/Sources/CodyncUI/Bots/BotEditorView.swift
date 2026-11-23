@@ -104,21 +104,16 @@ struct BotSettingsForm: View {
     }
 
     private var modelPicker: some View {
-        AgentModelPicker(backend: draft.backend, selection: $draft.model, options: $draft.modelOptions,
+        AgentModelPicker(backend: draft.backend, loginProfile: draft.loginProfile, selection: $draft.model, options: $draft.modelOptions,
                          fastMode: Binding(get: { draft.fastMode ?? false }, set: { on in
                              withAnimation(Motion.reduced(Motion.fade, reduceMotion)) { draft.fastMode = on }
                          }), bot: bot,
-                         agents: (model.hello?.backends ?? []).map { ($0.id, model.agentLabel($0)) } + [("custom", "Custom command")],
-                         onAgentChange: { draft.setAgent($0) }, command: $draft.command,
+                         agents: model.loginSeats(model.hello?.backends ?? [], on: draft.login)
+                             + [LoginSeat(login: AgentLogin(backend: "custom"), name: L10n.tr("Custom command"))],
+                         onAgentChange: { draft.setAgent($0) },
+                         command: $draft.command,
                          installHint: model.hello?.backends.first { $0.id == draft.backend && !$0.available }?.installHint,
-                         restLine: bot?.rest(of: draft.login).map { L10n.tr($0.line) }, onReload: { modelReload += 1 }) {}
-    }
-
-    /// Only when the host has login profiles (an older one sends none).
-    @ViewBuilder private var loginProfilePicker: some View {
-        if let backend = model.hello?.backends.first(where: { $0.id == draft.backend }), backend.loginProfiles != nil {
-            LoginProfileRow(backend: backend, loginProfile: $draft.loginProfile)
-        }
+                         restLine: bot?.rest(of: draft.login).map { L10n.tr($0.line) }, onReload: { modelReload += 1 })
     }
 
     /// While the bot runs on a fallback: which, and Switch back.
@@ -159,18 +154,17 @@ struct BotSettingsForm: View {
 
     private var sections: some View {
         VStack(alignment: .leading, spacing: 30) {
-            CardSection("Instructions") { instructions }
-            CardSection("Agent") {
+            CardSection("Instructions", fold: "bot.instructions") { instructions }
+            CardSection("Agent", fold: "bot.agent") {
                 fallbackBanner
                 modelPicker
-                loginProfilePicker
                 fallbackList
                 advisor
                 compactionPicker
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot?.agentStep)
 
-            CardSection("Profile") {
+            CardSection("Profile", fold: "bot.profile") {
                 VStack(alignment: .leading, spacing: 12) {
                     Button {
                         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { pickingAvatar.toggle() }
@@ -200,7 +194,7 @@ struct BotSettingsForm: View {
                 }
             }
 
-            CardSection("Workspace") {
+            CardSection("Workspace", fold: "bot.workspace") {
                 ValueRow("Computer") {
                     Text(model.hostName).lineLimit(1)
                 }
@@ -250,7 +244,7 @@ struct BotSettingsForm: View {
                 }
             }
 
-            CardSection("Activity") {
+            CardSection("Activity", fold: "bot.activity") {
                 SwitchRow("Notifications", detail: "Get notified when this bot finishes or needs you",
                           isOn: Binding(get: { draft.notify ?? true }, set: { draft.notify = $0 }))
                 if model.screen != nil, !inDetails {

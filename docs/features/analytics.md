@@ -64,7 +64,7 @@ can be traced from the events around it:
   the host, which logs one and reports it under the same name; `reportError` from the desktop and
   terminal UI); crashes are already caught.
 - **Display preferences send nothing.** A device's own look (Settings › Appearance: theme, text
-  size, usage icons, compact sidebar, agent logos; thinking details) has no outcome or failure to
+  size, usage icons, agent logos; thinking details) has no outcome or failure to
   trace, so switching one is not an event.
 - The *Rules* above apply: feature use only, never content. List each new event and property in
   [analytics events](../reference/analytics-events.md), and check they arrive in PostHog
@@ -126,8 +126,10 @@ builds PostHog frames itself (oldest first, the failing one last): generic `cust
   errors and rejections in the main process and every window, errors a view threw while
   rendering (mechanism `react`: the chat and pairing windows show *Something went wrong* with
   *Try again* instead of going blank), and windows or helpers that crashed (`RendererGone`,
-  `GPUGone`, … with Electron's reason) and system notifications the system failed to show
-  (`NotificationFailed`, `main/notifications.ts`), through `reportError`. A window whose page crashed loads
+  `GPUGone`, … with Electron's reason, the helper's name and its exit code, in hex on Windows:
+  `crashed · network.mojom.NetworkService · exit 0xC0000005`) and system notifications the system failed to show
+  (`NotificationFailed`, `main/notifications.ts`: the step Electron names and its HRESULT,
+  `WinAPI: Show failed 0x803E0111`), through `reportError`. A window whose page crashed loads
   it again (`renderer-recovery.ts`), at most twice in a row before it has stayed up a minute, and
   says what came of it (`window_recovery`). Not
   reported: error events that carry no error (the ResizeObserver loop notice), and helpers that
@@ -138,7 +140,10 @@ builds PostHog frames itself (oldest first, the failing one last): generic `cust
 - **iPhone** (`CodyncKit` `CrashReports`): MetricKit's crash diagnostics, delivered on the next
   launch, straight to PostHog with the version that crashed and the session it ended. Frames are
   code addresses with the binaries they ran in (`$debug_images`: each binary's UUID and load
-  address). PostHog symbolicates them with the release's dSYMs, which the *iOS dSYMs* workflow
+  address). A crash whose stack can't be read says why in `stack_problem`
+  (`no callStacks`, `no frames`, `attributed thread has no frames` when another thread stands in, or
+  where decoding stopped, as MetricKit's key names: `unreadable: callStacks.0.callStackRootFrames.0.subFrames: type mismatch`).
+  PostHog symbolicates them with the release's dSYMs, which the *iOS dSYMs* workflow
   uploads from its Xcode Cloud archive after *Submit iOS* (`tools/upload-dsyms.py`, secret
   `POSTHOG_CLI_API_KEY`: a personal API key with *error tracking write* on this project). A frame
   it can't resolve, such as the system's, shows `binary + offset`. Process `ios`. Reading one,
@@ -152,7 +157,8 @@ caught, function names, and file names and line numbers inside Codync's code (on
 code addresses and binary UUIDs instead); an absolute path keeps only its file name. Never the
 error's message: only a panic message or a handled failure's name written as a literal in the
 code, the fixed start of a runtime panic whose rest carries data (`OS can't spawn worker thread`,
-`index out of bounds`), an Electron crash reason or a signal name. Release host builds are
+`index out of bounds`), an Electron crash reason, helper name and exit code, the failed
+step and HRESULT of a Windows notification, or a signal name. Release host builds are
 stripped, so a host panic is its location only.
 
 Alerts email the owner, from insights on the *Codync users* dashboard (production only): *Any

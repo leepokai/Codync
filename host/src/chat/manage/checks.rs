@@ -31,10 +31,11 @@ pub(super) async fn change(
     hub: &Hub,
     backend: &str,
     command: Option<&str>,
+    login_profile: Option<&str>,
     models: Models<'_>,
     deadline: Instant,
 ) -> Result<()> {
-    let mut fetched: HashMap<String, Result<Value, String>> = HashMap::new();
+    let mut fetched: HashMap<(String, Option<String>), Result<Value, String>> = HashMap::new();
     let options = models.options.filter(|o| !o.is_empty());
     let set = models.set.filter(|m| !m.is_empty());
     if command.is_some_and(|c| !c.trim().is_empty()) {
@@ -51,15 +52,15 @@ pub(super) async fn change(
     } else if set.is_some() || options.is_some() {
         // A change that only moves the model probes agents that are here; settings need the list either way.
         if options.is_some() || codync_agent::backends::installed(backend) {
-            match catalog(hub, &mut fetched, backend, deadline).await {
+            match catalog(hub, &mut fetched, backend, login_profile, deadline).await {
                 Ok(catalog) => {
                     if let Some(m) = set {
-                        crate::agent::auth::check_model(&catalog, m)
+                        codync_agent::acp::models::check_model(&catalog, m)
                             .map_err(|e| Refused::error("model", format!("{e}{}", engine_hint(m, backend))))?;
                     }
                     if let Some(options) = options {
                         let settings = options.iter().map(|(id, v)| (id.as_str(), v.as_str().unwrap_or_default()));
-                        crate::agent::auth::check_options(
+                        codync_agent::acp::models::check_options(
                             &catalog,
                             models.effective.filter(|m| !m.is_empty()),
                             settings,
@@ -92,9 +93,9 @@ pub(super) async fn change(
             );
             continue;
         }
-        match catalog(hub, &mut fetched, &fallback.backend, deadline).await {
+        match catalog(hub, &mut fetched, &fallback.backend, fallback.login_profile.as_deref(), deadline).await {
             Ok(catalog) => {
-                crate::agent::auth::check_model(&catalog, m)
+                codync_agent::acp::models::check_model(&catalog, m)
                     .map_err(|e| Refused::error("model", format!("{e}{}", engine_hint(m, &fallback.backend))))?;
             }
             Err(e) => {
@@ -125,22 +126,26 @@ fn engine_hint(model: &str, backend: &str) -> String {
     }
 }
 
-/// `agent`'s model catalog, loaded at most once per call. `Err` says why it didn't load: the agent, or the
-/// `deadline` the call's approval card shares.
+/// `agent`'s model catalog on its login profile, loaded at most once per call. `Err` says why it didn't load: the
+/// agent, or the `deadline` the call's approval card shares.
 async fn catalog(
     hub: &Hub,
-    fetched: &mut HashMap<String, Result<Value, String>>,
+    fetched: &mut HashMap<(String, Option<String>), Result<Value, String>>,
     agent: &str,
+    login_profile: Option<&str>,
     deadline: Instant,
 ) -> Result<Value> {
-    if let Some(catalog) = fetched.get(agent) {
+    let login_profile = login_profile.filter(|s| !s.is_empty());
+    let key = (agent.to_owned(), login_profile.map(str::to_owned));
+    if let Some(catalog) = fetched.get(&key) {
         return catalog.clone().map_err(anyhow::Error::msg);
     }
-    let catalog = match tokio::time::timeout_at(deadline, crate::agent::auth::shared_models(hub, agent)).await {
-        Ok(catalog) => catalog.map_err(|e| format!("{e:#}")),
-        Err(_) => Err("the agent's model list took too long to load".to_owned()),
-    };
-    fetched.insert(agent.to_owned(), catalog.clone());
+    let catalog =
+        match tokio::time::timeout_at(deadline, crate::agent::auth::shared_models(hub, agent, login_profile)).await {
+            Ok(catalog) => catalog.map_err(|e| format!("{e:#}")),
+            Err(_) => Err("the agent's model list took too long to load".to_owned()),
+        };
+    fetched.insert(key, catalog.clone());
     catalog.map_err(anyhow::Error::msg)
 }
 

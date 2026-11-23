@@ -430,8 +430,10 @@
   bottom: 0;
   z-index: 7;
   display: flex;
+  /* Its content keeps to the trailing edge while the width grows over the conversation and comes back. */
+  justify-content: flex-end;
   background: var(--background);
-  transition: right var(--layout);
+  transition: right var(--layout), width var(--layout);
   /* The margin lets the edge's drag area reach into the conversation. */
   overflow: clip;
   overflow-clip-margin: 4px;

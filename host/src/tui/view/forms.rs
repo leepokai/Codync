@@ -206,7 +206,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             }
             Field::Model => {
                 text_field(buf, &f.model, "default", y);
-                let hint = match app.models.get(&f.backend) {
+                let hint = match app.models_for(&f.backend, f.login_profile.as_deref()) {
                     Some(None) => "loading models…".to_owned(),
                     Some(Some(list)) if !list.is_empty() => {
                         let id = f.model.text.trim();
@@ -224,19 +224,20 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 let s = switch(f.fast);
                 // Known once the agent's model list loads, or once the bot's own sessions say.
                 let saved = app.bots.get(&f.bot_id).filter(|b| b.backend == f.backend);
-                let offered = match app.models.get(&f.backend) {
+                let offered = match app.models_for(&f.backend, f.login_profile.as_deref()) {
                     _ if saved.is_some_and(Bot::fast_shown) => "",
-                    Some(Some(_)) if !app.fast_mode.contains(&f.backend) => "  · not offered by this agent",
+                    Some(Some(_)) if !app.has_fast_mode(&f.backend, f.login_profile.as_deref()) => {
+                        "  · not offered by this agent"
+                    }
                     _ => "",
                 };
                 put(buf, vx, y, vw, &format!("{s}{offered}"), t.text.patch(base));
             }
             Field::ModelOptions => {
-                let offered = app.model_settings(&f.backend, f.model.text.trim());
+                let offered = app.model_settings(&f.backend, f.login_profile.as_deref(), f.model.text.trim());
                 if offered.is_empty() {
                     let error = app
-                        .models
-                        .get(&f.backend)
+                        .models_for(&f.backend, f.login_profile.as_deref())
                         .and_then(Option::as_ref)
                         .and_then(|models| models.iter().find(|m| m.id == f.model.text.trim()))
                         .and_then(|model| model.options_error.as_deref());

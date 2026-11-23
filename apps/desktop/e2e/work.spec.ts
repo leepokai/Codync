@@ -174,7 +174,7 @@ test('a working task shows in the capsule and on Details, opens its thread in th
     await expect(section(details, 'Threads').locator('.work-row.free')).toHaveText(['Free', 'Free'])
     await expect(section(details, 'Event box')).toHaveCount(0)
     await expect(section(details, 'Recent')).toHaveCount(0)
-    await expect(details.locator('.agent-picker')).toHaveCount(0)
+    await expect(details.locator('.model-picker-field')).toHaveCount(0)
 
     // A working row opens its thread in the panel, in the chat's form, not in a dialog: its tab named by the task, its
     // status and time on top, what it was told folded under one line, and the chat's box to write to it, which stops
@@ -610,8 +610,8 @@ test("the Threads page groups every bot's work as chosen, shows a thread beside 
 
     await openPage(page, 'Threads')
     const list = page.locator('aside.sidebar')
-    // New thread leads the list; grouped by bot (the list's options), a group per bot.
-    await expect(list.locator('.thread-row').first()).toHaveText('New thread')
+    // New thread is the header's +; grouped by bot (the list's options), a group per bot.
+    await expect(page.locator('.sidebar-header').getByRole('button', { name: 'New thread', exact: true })).toBeVisible()
     await page.locator('.sidebar-header .computer-filter').click()
     const byBot = page.getByRole('menuitemradio', { name: 'Group by bot', exact: true })
     if ((await byBot.getAttribute('aria-checked')) !== 'true') await byBot.click()
@@ -621,6 +621,14 @@ test("the Threads page groups every bot's work as chosen, shows a thread beside 
     await expect(section.locator('[data-thread-row]')).toHaveCount(2)
     await expect(thread('Long job')).toHaveAttribute('data-work-status', 'working')
     await expect(thread('Next job')).toHaveAttribute('data-work-status', 'waiting')
+
+    // Search in the header finds a thread by its bot's name (one waiting has none yet) and picks it in the list.
+    await page.locator('.sidebar-header').getByRole('button', { name: 'Search', exact: true }).click()
+    await page.getByRole('dialog').getByRole('textbox', { name: 'Search', exact: true }).fill(name)
+    await expect(page.getByRole('dialog').getByRole('option')).toHaveText([/^Long job/])
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(thread('Long job')).toHaveClass(/selected/)
 
     // A row of an item a task has shows its thread beside the list, in the chat's form: its title and status in the
     // window's bar, the chat's message box under its messages.

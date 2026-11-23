@@ -36,8 +36,8 @@ pub struct Service {
 type ReadProfile = fn(Vec<(String, String)>) -> BoxFuture<'static, Option<Vec<Window>>>;
 
 pub(super) struct Reader {
+    /// The agent's harness id (`backends::HARNESSES`), which also names it.
     pub(super) id: &'static str,
-    pub(super) name: &'static str,
     pub(super) source: &'static str,
     /// Something to read without the agent's CLI: an app's saved login or quota file.
     pub(super) found_without_cli: Option<fn() -> bool>,
@@ -55,7 +55,6 @@ fn blocking(read: fn() -> Option<Vec<Window>>) -> BoxFuture<'static, Outcome> {
 pub(super) const READERS: &[Reader] = &[
     Reader {
         id: "claude",
-        name: "Claude",
         source: "claude",
         found_without_cli: None,
         read: |_| Box::pin(claude::collect(Vec::new()).map(Outcome::from)),
@@ -63,7 +62,6 @@ pub(super) const READERS: &[Reader] = &[
     },
     Reader {
         id: "codex",
-        name: "Codex",
         source: "Codex CLI",
         found_without_cli: None,
         read: |_| Box::pin(codex::collect(Vec::new(), CODEX_CLIENT).map(Outcome::from)),
@@ -71,7 +69,6 @@ pub(super) const READERS: &[Reader] = &[
     },
     Reader {
         id: "antigravity",
-        name: "Google Antigravity",
         source: "antigravity",
         found_without_cli: None,
         read: |hub| Box::pin(antigravity::collect(hub).map(Outcome::from)),
@@ -79,7 +76,6 @@ pub(super) const READERS: &[Reader] = &[
     },
     Reader {
         id: "cursor",
-        name: "Cursor",
         source: "Cursor",
         found_without_cli: Some(cursor::login_saved),
         read: |_| Box::pin(cursor::collect().map(Outcome::from)),
@@ -87,7 +83,6 @@ pub(super) const READERS: &[Reader] = &[
     },
     Reader {
         id: "copilot",
-        name: "GitHub Copilot",
         source: "Copilot CLI",
         found_without_cli: None,
         read: |hub| Box::pin(copilot::collect(hub, || copilot_held(hub))),
@@ -95,7 +90,6 @@ pub(super) const READERS: &[Reader] = &[
     },
     Reader {
         id: "grok",
-        name: "Grok Build",
         source: "Grok CLI",
         found_without_cli: None,
         read: |hub| Box::pin(grok::collect(hub).map(Outcome::from)),
@@ -103,7 +97,6 @@ pub(super) const READERS: &[Reader] = &[
     },
     Reader {
         id: "amp",
-        name: "Amp",
         source: "amp usage",
         found_without_cli: None,
         read: |_| Box::pin(amp::collect().map(Outcome::from)),
@@ -111,7 +104,6 @@ pub(super) const READERS: &[Reader] = &[
     },
     Reader {
         id: "auggie",
-        name: "Auggie",
         source: "auggie account status",
         found_without_cli: None,
         read: |hub| Box::pin(auggie::collect(hub).map(Outcome::from)),
@@ -119,7 +111,6 @@ pub(super) const READERS: &[Reader] = &[
     },
     Reader {
         id: "hermes",
-        name: "Hermes Agent",
         source: "hermes usage",
         found_without_cli: None,
         read: |hub| Box::pin(hermes::collect(hub).map(Outcome::from)),
@@ -127,7 +118,6 @@ pub(super) const READERS: &[Reader] = &[
     },
     Reader {
         id: "junie",
-        name: "Junie",
         source: "JetBrains IDE",
         found_without_cli: Some(junie::quota_saved),
         read: |_| blocking(junie::collect),
@@ -135,7 +125,6 @@ pub(super) const READERS: &[Reader] = &[
     },
     Reader {
         id: "kilo",
-        name: "Kilo",
         source: "kilo profile",
         found_without_cli: None,
         read: |hub| Box::pin(kilo::collect(hub).map(Outcome::from)),
@@ -143,7 +132,6 @@ pub(super) const READERS: &[Reader] = &[
     },
     Reader {
         id: "kimi",
-        name: "Kimi Code",
         source: "kimi",
         found_without_cli: None,
         read: |_| blocking(kimi::collect),
@@ -151,7 +139,6 @@ pub(super) const READERS: &[Reader] = &[
     },
     Reader {
         id: "kiro",
-        name: "Kiro CLI",
         source: "kiro-cli",
         found_without_cli: None,
         read: |_| Box::pin(kiro::collect().map(Outcome::from)),
@@ -159,7 +146,6 @@ pub(super) const READERS: &[Reader] = &[
     },
     Reader {
         id: "vibe",
-        name: "Mistral Vibe",
         source: "vibe logs",
         found_without_cli: None,
         read: |_| blocking(vibe::collect),
@@ -167,7 +153,6 @@ pub(super) const READERS: &[Reader] = &[
     },
     Reader {
         id: "omp",
-        name: "oh-my-pi",
         source: "omp usage",
         found_without_cli: None,
         read: |_| Box::pin(omp::collect().map(Outcome::from)),
@@ -175,13 +160,19 @@ pub(super) const READERS: &[Reader] = &[
     },
     Reader {
         id: "opencode",
-        name: "OpenCode",
         source: "opencode database",
         found_without_cli: None,
         read: |_| blocking(opencode::collect),
         read_profile: None,
     },
 ];
+
+impl Reader {
+    /// The agent's name, as every screen calls it.
+    pub(super) fn name(&self) -> &'static str {
+        backends::harness(self.id).expect("every usage reader is a known harness").name
+    }
+}
 
 /// Whether Copilot's last reading is still held: its reader skips between server starts.
 fn copilot_held(hub: &Hub) -> bool {
@@ -284,7 +275,7 @@ pub(super) fn sync(hub: &Hub) {
         .filter(|reader| listed(reader, &used, store, &held))
         .map(|reader| Service {
             id: reader.id,
-            name: reader.name,
+            name: reader.name(),
             registry: registry(reader.id),
             shown: chosen(store, reader.id).unwrap_or_else(|| used.contains(reader.id)),
         })
@@ -501,7 +492,6 @@ pub(super) mod tests {
     async fn waiting_between_reads_isnt_a_failure() {
         static SKIPS: Reader = Reader {
             id: "copilot",
-            name: "GitHub Copilot",
             source: "Copilot CLI",
             found_without_cli: None,
             read: |_| Box::pin(async { Outcome::Skipped }),

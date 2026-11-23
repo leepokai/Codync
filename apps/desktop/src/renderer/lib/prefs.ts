@@ -57,6 +57,11 @@ export function usePref<T>(p: Pref<T>): [T, (v: T) => void] {
   return [value, p.set]
 }
 
+/** `list` with `value` added, or taken out when it's there: a fold toggled. */
+export function toggled(list: string[], value: string) {
+  return list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
+}
+
 export const TEXT_SIZES = [11, 12, 13, 14, 15, 16, 18]
 export const DEFAULT_TEXT_SIZE = 12
 
@@ -92,6 +97,8 @@ export const prefs = {
   collapsedRosterSections: pref<string[]>('collapsedRosterSections', []),
   /** Folded groups of the Threads list, by the group's key: on this device only. */
   foldedThreadSections: pref<string[]>('foldedThreadSections', []),
+  /** Folded computers of the Workflows list, by computer id: on this device only. */
+  foldedWorkflowComputers: pref<string[]>('foldedWorkflowComputers', []),
   /** Folded sections of a settings form (a bot's), by the section's key: on this device only. */
   foldedCardSections: pref<string[]>('foldedCardSections', []),
   usageIconStyle: pref<'character' | 'original'>('usageIconStyle', 'character'),

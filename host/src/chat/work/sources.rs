@@ -83,13 +83,19 @@ pub fn add_routine(hub: &Arc<Hub>, bot: &str, routine: &str, run: &str, name: &s
 /// a task of its own, named by its first line, and starts when a place is free. `setup`: what its thread runs with
 /// in place of the bot's own, checked as a bot's setup is. Answers the task's id.
 pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, mut setup: Setup) -> Result<String> {
-    let changes = (setup.cwd.is_some(), setup.model.is_some(), setup.approval.is_some(), setup.workflow.is_some());
+    let changes = (
+        setup.cwd.is_some(),
+        setup.model.is_some(),
+        setup.approval.is_some(),
+        setup.workflow.is_some(),
+        setup.login_profile.is_some(),
+    );
     let cfg = hub.store.bot(bot)?.filter(|row| !row.deleted).map(|row| row.config);
     let plain = cfg.as_ref().is_some_and(|cfg| cfg.plain);
     let outcome = |outcome: &str| {
         let properties = json!({
             "outcome": outcome, "after": false, "source": Source::User.kind(),
-            "folder": changes.0, "model": changes.1, "approval": changes.2, "workflow": changes.3, "bot": !plain,
+            "folder": changes.0, "model": changes.1, "approval": changes.2, "workflow": changes.3, "login": changes.4, "bot": !plain,
         });
         analytics::capture(hub, Event::WorkAdded, properties.as_object().cloned().unwrap_or_default());
     };
@@ -114,7 +120,11 @@ pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, mut setup: Setup) -> Re
         if let Some(workflow) = &setup.workflow {
             ensure!(crate::workflows::exists(&hub.store, workflow)?, "unknown workflow");
         }
-        crate::hub::validate(&setup.over(&cfg))
+        // As its thread will run it (`dispatch`): in Advisor mode on the threads' agent.
+        let run = setup.over(&crate::agent::fallback::threads(&cfg));
+        let login = crate::agent::login_profiles::of_bot(&hub.store, &run.backend, &run);
+        ensure!(run.login_profile.as_deref() == login, "unknown login profile");
+        crate::hub::validate(&run)
     })();
     if let Err(error) = checked {
         outcome("invalid");

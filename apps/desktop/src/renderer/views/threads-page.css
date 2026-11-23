@@ -3,7 +3,7 @@
 .thread-label {
   padding: 14px 10px 4px;
 }
-/* A row: a thread's title and its mark at the end; a group's heading and New thread are rows too. */
+/* A row: a thread's title and its mark at the end; a group's heading is a row too. */
 .thread-row {
   width: 100%;
   min-height: 30px;
@@ -27,9 +27,6 @@
 .thread-group + .thread-group,
 .thread-group-rows {
   margin-top: 2px;
-}
-.thread-new:disabled {
-  opacity: 0.4;
 }
 /* A group's threads sit under its name. */
 .thread-group-rows .thread-row {

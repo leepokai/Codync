@@ -2464,7 +2464,6 @@
   "Codync runs the CLI's own ACP mode.": "Codync ejecuta el modo ACP propio del CLI.",
   "Codync runs the ACP build, which uses this CLI.": "Codync ejecuta el build de ACP, que usa este CLI.",
   "Brought in by default": "Incluido por defecto",
-  "All workflows": "Todos los flujos de trabajo",
   "Build this workflow by talking": "Crea este flujo de trabajo conversando",
   "What should this workflow do?": "¿Qué debe hacer este flujo de trabajo?",
   "Hide chat": "Ocultar chat",

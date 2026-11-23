@@ -7,19 +7,16 @@ import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
 import { prefs, usePref } from '../../lib/prefs'
-import { analytics } from '../../store/analytics'
 import { WindowBarSlots } from '../WindowBar'
 import { useTr } from '../../lib/use-language'
 import { useScreenViewed } from '../../store/analytics'
 import { useStore } from '../../store/context'
 import { createWorkflow, deleteWorkflow, fetchWorkflow, fetchWorkflowRun, renameWorkflow, restoreWorkflowVersion, retryWorkflowStep, runWorkflowStep, saveWorkflowGraph, saveWorkflowScript, setWorkflowEnabled, startWorkflowRun, stopWorkflowRun, stopWorkflowStep, decideWorkflowStep, workflowRuns, workflowVersion, workflowVersions } from './api'
 import { UndoStack } from './history'
-import { isWorkflowPinned, pinWorkflow, workflowTabs } from './pins'
-import { closeTab, openTab } from './tabs'
+import { isWorkflowPinned, pinWorkflow } from './pins'
 import { GraphSaver, type FlushResult } from './save'
 import { WorkflowCanvas } from './WorkflowCanvas'
 import { WorkflowHud } from './WorkflowHud'
-import { WorkflowTabs } from './WorkflowTabs'
 import { WorkflowChat } from './WorkflowChat'
 import { ChatSidePanel } from '../chat/ChatSidePanel'
 import type { BotRef, RosterItem } from '../../store/app-model'
@@ -28,12 +25,27 @@ import './workflows.css'
 
 type Phase = 'begin' | 'change' | 'end' | 'text'
 
-/** `roster` and `openChat`: the bots the chat beside the canvas can be with, and where a bot's chat opens. */
-export function WorkflowsView({ focusId, roster, openChat }: { focusId?: string | null; roster: RosterItem[]; openChat: (ref: BotRef) => void }) {
+/** What the page's list asks the canvas for: a workflow to show, or a new one. A new object each time, so asking again counts. */
+export type WorkflowFocus = { id: string } | { create: true }
+
+/**
+ * One computer's workflow on the canvas. `focus`: what the list asked for, done once (`onFocused` lets it go);
+ * `shown`: the workflow shown here last, to show again; `onShown`: the workflow shown, for the list.
+ * `roster` and `openChat`: the bots the chat beside the canvas can be with, and where a bot's chat opens.
+ */
+export function WorkflowsView({ focus, onFocused, shown: lastShown, onShown, roster, openChat }: {
+  focus: WorkflowFocus | null
+  onFocused: () => void
+  shown: string | null
+  onShown: (id: string | null) => void
+  roster: RosterItem[]
+  openChat: (ref: BotRef) => void
+}) {
   const store = useStore()
   const tr = useTr()
   useModel(store)
-  const [selected, setSelected] = useState<string | null>(focusId ?? null)
+  const [selected, setSelected] = useState<string | null>(() =>
+    focus && 'id' in focus ? focus.id : store.workflows.some((w) => w.id === lastShown) ? lastShown : null)
   const [undoable, setUndoable] = useState({ undo: false, redo: false })
   const [graph, setGraph] = useState<Graph>(emptyGraph())
   const [ready, setReady] = useState(false)
@@ -70,14 +82,12 @@ export function WorkflowsView({ focusId, roster, openChat }: { focusId?: string 
   const followRef = useRef(true)
   graphRef.current = graph
   const bar = useContext(WindowBarSlots)
-  const [tabIds, setTabIds] = usePref(workflowTabs(store.computer.id))
   const [chatOpen, setChatOpen] = usePref(prefs.workflowChatOpen)
   const [chatWidth, setChatWidth] = usePref(prefs.detailsPanelWidth)
   const page = useRef<HTMLDivElement>(null)
   // The canvas keeps at least 420 beside the chat.
   const fit = (w: number) => Math.min(Math.max(360, w), (page.current?.clientWidth ?? 1200) - 420)
   const chatting = chatOpen && !!selected && store.buildsWorkflowsInThreads
-  const tabs = tabIds.flatMap((id) => store.workflows.filter((item) => item.id === id))
 
   const summary = store.workflows.find((item) => item.id === selected) ?? null
   const historical = viewed !== null && versionGraph === null
@@ -92,10 +102,14 @@ export function WorkflowsView({ focusId, roster, openChat }: { focusId?: string 
     return () => window.clearInterval(timer)
   }, [])
 
-  useEffect(() => { if (focusId) { hold.current = false; setSelected(focusId) } }, [focusId])
+  useEffect(() => {
+    if (!focus) return
+    onFocused()
+    if ('create' in focus) void create()
+    else open(focus.id)
+  }, [focus])
 
-  // The workflow shown always has a tab.
-  useEffect(() => { if (selected) setTabIds(openTab(tabIds, selected)) }, [selected])
+  useEffect(() => onShown(selected), [selected])
 
   useEffect(() => {
     if (hold.current || selected || !store.workflows.length) return
@@ -308,12 +322,6 @@ export function WorkflowsView({ focusId, roster, openChat }: { focusId?: string 
       setSelected(id)
     })()
   }
-  const closeShown = (id: string) => {
-    const { tabs: rest, next } = closeTab(tabIds.filter((item) => tabs.some((tab) => tab.id === item)), id)
-    analytics.track({ event: 'workflow_tab_closed', shown: id === selected })
-    setTabIds(rest)
-    if (id === selected && next) open(next)
-  }
   const pinned = selected ? isWorkflowPinned(store.computer.id, selected) : false
   const stepMap = latestStepByNode(steps)
   const calls = steps.filter((step) => step.nodeId.startsWith('call-') && !shown.nodes.some((node) => node.id === step.nodeId))
@@ -322,12 +330,9 @@ export function WorkflowsView({ focusId, roster, openChat }: { focusId?: string 
     <div className="workflows-page" ref={page}>
     <div className="workflows">
       {bar.end && selected && store.buildsWorkflowsInThreads ? createPortal(<IconButton title={chatting ? 'Hide chat' : 'Show chat'} icon="sidebar.right" size={28} onClick={() => setChatOpen(!chatOpen)} />, bar.end) : null}
-      {bar.start && tabs.length ? createPortal(<WorkflowTabs tabs={tabs} selectedId={selected} onOpen={open} onClose={closeShown} onCreate={() => void create()} />, bar.start) : null}
       {chrome || !selected ? (
       <WorkflowHud
         title={summary?.title ?? ''}
-        selectedId={selected}
-        workflows={store.workflows}
         enabled={summary?.enabled ?? true}
         graph={ready ? shown : null}
         steps={[...stepMap.values()]}
@@ -346,8 +351,6 @@ export function WorkflowsView({ focusId, roster, openChat }: { focusId?: string 
         canRedo={undoable.redo}
         onUndo={undo}
         onRedo={redo}
-        onOpen={open}
-        onCreate={() => void create()}
         onRename={() => { setName(summary?.title ?? ''); setRenaming(true) }}
         onDuplicate={() => void duplicate()}
         onDelete={() => setConfirmDelete(true)}

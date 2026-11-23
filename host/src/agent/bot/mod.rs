@@ -18,7 +18,6 @@
 
 mod background_work;
 mod cmd;
-mod codex_names;
 mod codex_section;
 mod commands;
 mod compaction;
@@ -31,7 +30,6 @@ mod inflight;
 mod launch;
 mod lifecycle;
 mod modes;
-mod pi_tools;
 mod queue;
 mod session;
 mod sign_in;
@@ -42,6 +40,7 @@ mod updates;
 
 pub use cmd::Cmd;
 use cmd::{HostTurn, Queued};
+use codync_agent::mcp_names::Renamed;
 pub use commands::listed as agent_commands;
 pub(crate) use compaction::conversation;
 pub use compaction::{context_window, offers_threshold};
@@ -215,8 +214,8 @@ pub(crate) struct Conn {
     /// Each session's context use and window size at its last `usage_update` that reported use (a stream's
     /// provisional zero is skipped, see `record_usage`).
     usage: HashMap<String, (u64, u64)>,
-    /// Codync's MCP servers each session knows by another name (`codex_names`), as it was created or loaded with.
-    renamed: HashMap<String, codex_names::Renamed>,
+    /// Codync's MCP servers each session knows by another name (`codync_agent::mcp_names`), as it was created or loaded with.
+    renamed: HashMap<String, Renamed>,
     /// The login profile the process runs on, which isn't removed meanwhile.
     on_profile: Option<crate::agent::login_profiles::Running>,
     /// The `CODEX_HOME` the process started with, when it isn't Codex's own default.
@@ -380,7 +379,7 @@ struct Actor {
     cancel_deadline: Option<Instant>,
     /// Last stderr lines of an agent process that just exited.
     exit_tail: Option<String>,
-    /// The error the agent said its turn ended in while answering it as a success (pi, `pi_tools::turn_result`).
+    /// The error the agent said its turn ended in while answering it as a success (pi, `codync_agent::pi::turn_result`).
     agent_error: Option<String>,
     /// The agent's process is stale (its tools changed, or the grants or sign-in it started with are gone): a new one
     /// starts before the next turn, which reopens its session. An agent that can't reopen one keeps its process.
@@ -417,7 +416,7 @@ impl Actor {
                 inc => self.on_incoming(Some(inc)).await,
             }
         }
-        let done = pi_tools::turn_result(done, self.agent_error.take());
+        let done = codync_agent::pi::turn_result(done, self.agent_error.take());
         if let Err(error) = &done
             && self.fall_back(error, done_tx).await
         {

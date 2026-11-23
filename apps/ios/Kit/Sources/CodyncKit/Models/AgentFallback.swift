@@ -119,18 +119,18 @@ public struct AgentSwitch: Codable, Hashable, Sendable {
 }
 
 public extension BotDraft {
-    /// The bot on agent `backend`, on the computer's own login: a fallback on that login goes (a login is in the
-    /// chain once, as the host keeps it).
-    mutating func setAgent(_ backend: String) {
-        guard self.backend != backend else { return }
-        self.backend = backend
-        // A login profile belongs to one agent.
-        loginProfile = nil
+    /// The bot on `login` (an agent on one of its logins): a fallback on that login goes (a login is in the chain once,
+    /// as the host keeps it). Another agent starts on its default model.
+    mutating func setAgent(_ login: AgentLogin) {
+        guard self.login != login else { return }
+        loginProfile = login.loginProfile
+        fallbacks?.removeAll { $0.login == login }
+        guard backend != login.backend else { return }
+        backend = login.backend
         model = nil
         modelOptions = [:]
         // A picked mode becomes the new agent's Auto mode (or, without one, asking).
         if mode != nil { mode = AgentMode.auto }
-        fallbacks?.removeAll { $0.login == AgentLogin(backend: backend) }
     }
 
     /// Advisor mode on: its threads start on the bot's own agent, model and fallbacks, for the user to change (on a
@@ -151,11 +151,12 @@ public extension BotDraft {
         threadFallbacks = []
     }
 
-    /// Its threads on agent `backend`, on the computer's own login: a threads' fallback on that login goes, as `setAgent`.
-    mutating func setThreadAgent(_ backend: String) {
-        guard threadAgent?.backend != backend else { return }
-        threadAgent = BotFallback(backend: backend)
-        threadFallbacks?.removeAll { $0.login == AgentLogin(backend: backend) }
+    /// Its threads on `login`, as `setAgent` puts the bot on one: a threads' fallback on that login goes.
+    mutating func setThreadAgent(_ login: AgentLogin) {
+        guard threadAgent?.login != login else { return }
+        if threadAgent?.backend == login.backend { threadAgent?.loginProfile = login.loginProfile }
+        else { threadAgent = BotFallback(backend: login.backend, loginProfile: login.loginProfile) }
+        threadFallbacks?.removeAll { $0.login == login }
     }
 }
 

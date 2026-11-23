@@ -76,7 +76,7 @@ class LoginProfilesTest {
         val draft = BotDraft.from(bot)
         assertEquals(JsonPrimitive("a1"), draft.body()["loginProfile"])
         assertEquals(JsonNull, draft.copy(loginProfile = null).body()["loginProfile"])
-        assertNull(draft.withAgent("codex").loginProfile)
+        assertNull(draft.withAgent(Login("codex")).loginProfile)
         assertFalse("\"loginProfile\"" in draft.template())
     }
 }

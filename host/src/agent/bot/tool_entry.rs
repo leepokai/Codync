@@ -1,11 +1,11 @@
 //! Tool-call entries: ACP content folded into output and diffs, the working line a call shows,
 //! and which calls are the bot's own bookkeeping.
 
-use super::codex_names::{Renamed, name_of};
 use crate::chat::memory::files;
 use crate::store::BotConfig;
 use codync_agent::acp;
 use codync_agent::events::{Subagent, ToolContent};
+use codync_agent::mcp_names::{Renamed, name_of};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 

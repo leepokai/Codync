@@ -79,7 +79,9 @@ impl Actor {
         let turn = self.turn.unwrap_or(0);
         match event {
             Event::Text { text, notice } => {
-                if let Some(error) = super::pi_tools::turn_error_text(&self.cfg.backend, notice.as_deref(), &text) {
+                if let Some(error) =
+                    codync_agent::pi::turn_error_text(crate::agent::APP, &self.cfg.backend, notice.as_deref(), &text)
+                {
                     self.agent_error = Some(error.to_owned());
                     return;
                 }

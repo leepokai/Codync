@@ -65,7 +65,8 @@ export function WorkflowCanvas({ workflowId, graph, readOnly, scripted, ready, s
   const gesture = useRef<Gesture | null>(null)
   const [camera, setCamera] = useState<Camera>({ x: 40, y: 40, scale: 1 })
   const [size, setSize] = useState<Size>({ width: 0, height: 0 })
-  const [tool, setTool] = useState<Tool>('select')
+  // A workflow opens to look around in: dragging pans until another tool is picked.
+  const [tool, setTool] = useState<Tool>('pan')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null)
   const [query, setQuery] = useState<string | null>(null)

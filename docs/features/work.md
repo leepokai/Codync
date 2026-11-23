@@ -380,8 +380,10 @@ thread), with at most 32,000 bytes. `hello` says `startThread: true` on a host t
 
 `setup` is what the thread runs with in place of the bot's own (`tasks::Setup`, kept on the task and applied to its
 thread bot's config, `Setup::over`): `cwd` (a full path to a folder that exists), `model` (`{id, options}`: a model
-with its own settings, `id` null for the agent's default) and `approval` (`{permission, mode}`). What it leaves out is
-the bot's; the bot's setup never changes, and its memory stays the bot's wherever the thread works. It is checked as a
+with its own settings, `id` null for the agent's default), `approval` (`{permission, mode}`) and `loginProfile` (one
+of the agent's login profiles, `""` its default login; left out, the bot's, or the default login of another
+`backend`; a step of the bot's chain on that login leaves the thread's; anything else is refused as `unknown login
+profile`; `hello.threadLogins: true` on a host that takes it). What it leaves out is the bot's; the bot's setup never changes, and its memory stays the bot's wherever the thread works. It is checked as a
 bot's setup is (`hub::validate`), and one that can't be read starts nothing. A thread in another folder gets a
 worktree there by the same rule as in the bot's.
 
@@ -548,7 +550,7 @@ A task's end sends no alert of its own: its report is a turn of the bot's, whose
   `gitRepo` it gives the line under the folder in Settings: `Git repository`, `Not a git repository`, `Git isn't
   installed on this computer`. The manual's page for it: `/docs/working-folders` (`#without-git`).
 - `threadEntry` events `{rev, thread, entry}` for a thread's transcript; none in the catch-up.
-- `startThread {botId?, text, setup?: {backend?, cwd?, model?: {id, options}, approval?: {permission, mode}}}` →
+- `startThread {botId?, text, setup?: {backend?, loginProfile?, cwd?, model?: {id, options}, approval?: {permission, mode}}}` →
   `{botId, taskId}`: [a thread the user starts](#other-sources), without `botId` [without a bot](#threads-without-a-bot).
 - `threadEntries {botId, threadId}` → `{thread: {id, title, status, startedAt, endedAt, start}, entries}` (newest 500):
   `threadId` is a task's `thread`; `title`, `status` and the times are of the task it works on, else the last it

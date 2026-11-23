@@ -5,9 +5,8 @@ import { BotAvatar, NoBotAvatar } from '../components/Avatar'
 import { IconButton } from '../components/Controls'
 import { AnchoredMenu, useContextMenu, type MenuItem } from '../components/Menu'
 import { Icon } from '../components/Icon'
-import { HStack } from '../components/Stack'
 import { Text } from '../components/Text'
-import { prefs, usePref } from '../lib/prefs'
+import { prefs, toggled, usePref } from '../lib/prefs'
 import { useTr } from '../lib/use-language'
 import { useScreenViewed } from '../store/analytics'
 import { refKey, sameRef, type BotRef, type RosterItem } from '../store/app-model'
@@ -15,6 +14,7 @@ import { StoreContext, useStore } from '../store/context'
 import { relativeTime } from './chat/chat-items'
 import { CutInDialog, StopWorkDialog, WORK_MARK, WorkDot } from './chat/WorkDialogs'
 import { threadMenuItems } from './thread-menu'
+import { ListSectionHeading } from './ListSectionHeading'
 import { ThreadChat } from './chat/ThreadChat'
 import { ThreadStart, type ThreadWith } from './chat/ThreadStart'
 import './computer-roster.css'
@@ -29,7 +29,7 @@ export interface ThreadPick {
 const SHOWN_RECENT = 8
 
 /**
- * The Threads page's list, in the shape of a chat app's sidebar: **New thread** first, then what needs the user, then
+ * The Threads page's list, in the shape of a chat app's sidebar (its header's `+` starts a thread): what needs the user, then
  * the groups the list's options make (`threadsGroup`: the folders threads work in outside their bot's own and the
  * routines' runs, a group per bot in the bot list's order, or one per computer), then the rest, newest first, the last of it on demand.
  * A row is a thread's title and one mark at its end for how it stands; a group's heading folds it, and a bot's has a
@@ -55,7 +55,6 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
   // A thread's menu asks before Stop and Cut in, with its bot's dialogs.
   const [asking, setAsking] = useState<{ of: RosterItem; task: WorkTask; kind: 'stop' | 'cutIn' } | null>(null)
   const { needsYou, groups, recent } = threadSections(roster, grouping, (of) => refKey(of.ref), (of) => of.store.hostName, { status: byStatus, active: byActivity })
-  const canStart = threadBots(roster).length > 0 || plainStores(roster).length > 0
   const row = ({ of, task }: { of: RosterItem; task: WorkTask }, label = task.title) => (
     <StoreContext.Provider key={`${refKey(of.ref)}/${task.id}`} value={of.store}>
       <ThreadRow
@@ -82,10 +81,6 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
   const shownRecent = more ? recent : recent.slice(0, SHOWN_RECENT)
   return (
     <>
-      <button className="thread-row thread-new" disabled={!canStart} onClick={() => start(null)}>
-        <Icon name="square.and.pencil" size={13} color="var(--secondary)" />
-        <Text tone="text" truncate>{tr('New thread')}</Text>
-      </button>
       {needsYou.length ? <section aria-label={tr('Needs you')}>{label('Needs you')}{needsYou.map((r) => row(r))}</section> : null}
       {(['folder', 'routine', 'bot', 'computer'] as const).map((kind) => {
         const mine = groups.filter((g) => g.kind === kind)
@@ -103,14 +98,14 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
               const loud = isFolded ? (group.rows.find((r) => r.task.status === 'failed') ?? group.rows.find((r) => r.task.status === 'working')) : undefined
               return (
                 <div key={group.key} className="thread-group" role="group" aria-label={title}>
-                  <HStack gap={2} className="thread-section-heading">
-                    <button className="thread-row thread-section-toggle" aria-expanded={!isFolded} onClick={() => setFolded(isFolded ? folded.filter((key) => key !== group.key) : [...folded, group.key])}>
-                      {group.kind === 'bot' ? (of.bot.plain ? <NoBotAvatar size={16} /> : <BotAvatar bot={of.bot} size={16} animated={false} />) : <Icon name={({ folder: 'folder', routine: 'clock', computer: 'desktopcomputer' } as const)[group.kind]} size={12} color="var(--secondary)" />}
-                      <Text tone="text" truncate grow>{title}</Text>
-                      {loud ? <StatusMark status={loud.task.status} /> : null}
-                    </button>
-                    {group.kind === 'bot' && (threadBots([of]).length || plainStores([of]).length) ? <IconButton title="New thread" icon="plus" size={24} className="thread-section-new" onClick={() => start(of.ref)} /> : null}
-                  </HStack>
+                  <ListSectionHeading
+                    leading={group.kind === 'bot' ? (of.bot.plain ? <NoBotAvatar size={16} /> : <BotAvatar bot={of.bot} size={16} animated={false} />) : <Icon name={({ folder: 'folder', routine: 'clock', computer: 'desktopcomputer' } as const)[group.kind]} size={12} color="var(--secondary)" />}
+                    title={title}
+                    mark={loud ? <StatusMark status={loud.task.status} /> : null}
+                    folded={isFolded}
+                    onFold={() => setFolded(toggled(folded, group.key))}
+                    add={group.kind === 'bot' && (threadBots([of]).length || plainStores([of]).length) ? { title: 'New thread', action: () => start(of.ref) } : null}
+                  />
                   <div className={`computer-roster-content ${isFolded ? 'collapsed' : ''}`} inert={isFolded} aria-hidden={isFolded}>
                     {/* A routine's runs are told apart by when they started. */}
                     <div className="thread-group-rows">{group.rows.map((r) => row(r, group.kind === 'routine' ? relativeTime.separator(r.task.createdAt, tr) : r.task.title))}</div>
@@ -181,6 +176,9 @@ function ThreadRow({ flip, task, label, selected, open, items }: { flip: string;
 /** The bots a thread can start with: on a computer that is connected and starts threads; never a group, nor the box
  * of threads without a bot. */
 export const threadBots = (roster: RosterItem[]) => roster.filter((r) => !isGroup(r.bot) && !r.bot.plain && r.store.startsThreads && !r.store.isOffline)
+
+/** Whether a thread can start at all: with a bot, or on a computer that starts one without. */
+export const canStartThread = (roster: RosterItem[]) => threadBots(roster).length > 0 || plainStores(roster).length > 0
 
 /** The connected computers of `roster` where a thread may start without a bot, one item each. */
 const plainStores = (roster: RosterItem[]) =>

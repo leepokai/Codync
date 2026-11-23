@@ -190,8 +190,9 @@ private class ComputerRoster(private val context: Context, val key: String) {
     CodyncDialog("Delete ${deleting?.name ?: "bot"}?", confirmDelete != null, { confirmDelete = null },
         message = if (deleting?.kind == "group") "Its bots and their own chats stay." else "Files it changed on your computer stay as they are.") {
         // lastOf keeps the target through the fade-out and the press (dismiss clears confirmDelete first).
+        // enabled follows confirmDelete, so a tap during the fade-out (after Cancel, Back or an outside tap) cannot delete.
         listOfNotNull(target?.let { (id, bot) ->
-            DialogAction(if (bot.kind == "group") "Delete group chat" else "Delete bot and its conversation", destructive = true) {
+            DialogAction(if (bot.kind == "group") "Delete group chat" else "Delete bot and its conversation", destructive = true, enabled = confirmDelete != null) {
                 accounts.store(id)?.deleteBot(bot) {}
             }
         })

@@ -1,0 +1,46 @@
+# The upstream check (docs/guides/test-stack.md#upstream-agents): every computer running Codync takes an adapter's
+# new ACP registry version within a day, so each day this runs one turn of each adapter in
+# tools/agent-upstream/accepted.json whose registry version moved, through a real host and a scripted model. A
+# failing run is the notice. Pull requests that change the check run every adapter.
+name: agent-upstream
+
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths: ["tools/agent-upstream/**", ".github/workflows/agent-upstream.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Rust (rust-toolchain.toml)
+        working-directory: host
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host
+          shared-key: agent-upstream
+      - name: Build the host
+        working-directory: host
+        run: cargo build --bin codync-host
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - working-directory: tools/agent-upstream
+        run: npm ci
+      - name: One turn on each new adapter
+        working-directory: tools/agent-upstream
+        run: node check.mjs "$GITHUB_WORKSPACE/host/target/debug/codync-host" ${{ github.event_name != 'schedule' && '--all' || '' }}

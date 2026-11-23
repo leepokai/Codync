@@ -262,6 +262,28 @@ async fn a_request_is_answered_once() {
 
 #[cfg(unix)]
 #[tokio::test]
+async fn a_request_dropped_outside_the_runtime_still_answers() {
+    let (_acp, mut rx) = asking(PERMISSION);
+    let Some(Incoming::Request(request)) = rx.recv().await else { panic!("a request") };
+    std::thread::spawn(move || drop(request)).join().unwrap();
+    assert_eq!(answer_to(&mut rx).await["result"], json!({"outcome": {"outcome": "cancelled"}}));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn an_answer_whose_caller_stops_waiting_still_reaches_the_agent() {
+    let (acp, mut rx) = asking(PERMISSION);
+    let Some(Incoming::Request(request)) = rx.recv().await else { panic!("a request") };
+    let busy = acp.writer.0.lock().await;
+    let waited = tokio::time::timeout(Duration::from_millis(50), request.choose(Some("yes"))).await;
+    assert!(waited.is_err(), "the answer waits for the writer");
+    drop(busy);
+    let got = answer_to(&mut rx).await;
+    assert_eq!(got["result"], json!({"outcome": {"outcome": "selected", "optionId": "yes"}}));
+}
+
+#[cfg(unix)]
+#[tokio::test]
 async fn a_held_request_doesnt_keep_the_agent() {
     let (acp, mut rx) = asking(PERMISSION);
     let Some(Incoming::Request(request)) = rx.recv().await else { panic!("a request") };

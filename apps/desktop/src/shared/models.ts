@@ -247,6 +247,16 @@ export const isWorkingIn = (b: Bot, chat: string) => isWorking(b) && (b.workingC
 export const folderName = (b: Bot, tr: (text: string) => string) =>
   b.managedWorkspace ? tr('Own folder') : (b.cwd.split('/').filter(Boolean).pop() ?? b.cwd)
 
+/** A subagent, as its launching call reports it: the totals once it finished in the foreground. */
+export interface Subagent {
+  kind?: string
+  model?: string
+  background?: boolean
+  tokens?: number
+  toolUses?: number
+  durationMs?: number
+}
+
 export interface FileDiff {
   path: string
   added: number
@@ -422,6 +432,10 @@ export interface EntryData {
   /** tool: whether it's the bot's own bookkeeping (composing its message, keeping its memory), left out of the
    * working steps; a host older than 2.25.0 leaves it out, and the steps then leave out the call too. */
   bookkeeping?: boolean
+  /** tool: the call that launched the subagent making this one (Claude Code only). */
+  parent?: string
+  /** tool: what a subagent's launch says about it (Claude Code only). */
+  subagent?: Subagent
   output?: string
   diffs?: FileDiff[]
   locations?: { path: string; line?: number }[]

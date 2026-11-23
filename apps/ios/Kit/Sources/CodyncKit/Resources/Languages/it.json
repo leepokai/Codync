@@ -2471,5 +2471,8 @@
   "Show chat": "Mostra chat",
   "Workflow folder": "Cartella del workflow",
   "Previous chats": "Chat precedenti",
-  "New chat": "Nuova chat"
+  "New chat": "Nuova chat",
+  "in background": "in background",
+  "{count} s": "{count} s",
+  "{count} min": "{count} min"
 }

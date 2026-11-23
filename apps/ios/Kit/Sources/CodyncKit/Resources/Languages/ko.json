@@ -2471,5 +2471,8 @@
   "Show chat": "채팅 보기",
   "Workflow folder": "워크플로 폴더",
   "Previous chats": "이전 채팅",
-  "New chat": "새 채팅"
+  "New chat": "새 채팅",
+  "in background": "백그라운드에서 실행",
+  "{count} s": "{count}초",
+  "{count} min": "{count}분"
 }

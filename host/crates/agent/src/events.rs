@@ -7,6 +7,9 @@
 use crate::acp::content_text;
 use serde_json::Value;
 
+mod claude;
+pub use claude::Subagent;
+
 /// One `session/update`: the session it is about and what it says.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
@@ -101,6 +104,10 @@ pub struct ToolCall {
     pub content: Option<Vec<ToolContent>>,
     /// The files it works on, as sent.
     pub locations: Option<Value>,
+    /// The tool call that launched the subagent making this call (Claude's adapter only).
+    pub parent: Option<String>,
+    /// What this call, a subagent's launch, says about its subagent (Claude's adapter only).
+    pub subagent: Option<Subagent>,
 }
 
 impl ToolCall {
@@ -114,6 +121,8 @@ impl ToolCall {
             status: text("status"),
             content: u["content"].as_array().map(|items| items.iter().map(ToolContent::parse).collect()),
             locations: Some(&u["locations"]).filter(|l| !l.is_null()).cloned(),
+            parent: claude::parent(u),
+            subagent: claude::subagent(u),
         }
     }
 }

@@ -75,7 +75,7 @@ impl App {
         merge_toggles(&mut f.connectors, &self.market.0);
         merge_toggles(&mut f.skills, &self.market.1);
         f.opened = f.body();
-        self.want_models(&b.backend);
+        self.want_models(&b.backend, b.login_profile.as_deref());
         self.overlays.push(Overlay::Form(Box::new(f)));
         self.call("connectors", json!({}), After::Connectors);
         self.call("skills", json!({}), After::Skills);
@@ -149,8 +149,8 @@ impl App {
             }
             KeyCode::Left | KeyCode::Right if field == Field::Model => {
                 let d: isize = if k.code == KeyCode::Left { -1 } else { 1 };
-                self.want_models(&f.backend);
-                if let Some(m) = self.cycle_model(&f.backend, f.model.text.trim(), d) {
+                self.want_models(&f.backend, f.login_profile.as_deref());
+                if let Some(m) = self.cycle_model(&f.backend, f.login_profile.as_deref(), f.model.text.trim(), d) {
                     f.model = Editor::with(&m);
                 }
             }
@@ -199,10 +199,13 @@ impl App {
                             f.fallbacks.retain(|x| x.backend != own || x.login_profile.is_some());
                             // Nor its mode ids: a picked mode becomes the new agent's Auto mode (or, without one, asking).
                             f.mode = codync_agent::modes::on_other_agent(f.mode.as_deref());
-                            self.want_models(&f.backend);
+                            self.want_models(&f.backend, f.login_profile.as_deref());
                         }
                     }
-                    Field::LoginProfile if !space => self.cycle_login_profile(&mut f, d),
+                    Field::LoginProfile if !space => {
+                        self.cycle_login_profile(&mut f, d);
+                        self.want_models(&f.backend, f.login_profile.as_deref());
+                    }
                     Field::Fast => f.fast = !f.fast,
                     Field::SelfFallbacks => f.self_fallbacks = !f.self_fallbacks,
                     Field::Advisor => self.toggle_advisor(&mut f),
@@ -228,7 +231,7 @@ impl App {
                     Field::Shape if !space => f.shape = cycle(f.shape, d, SHAPES.len()),
                     Field::ModelOptions => {
                         let model = f.model.text.trim().to_owned();
-                        let offered = self.model_settings(&f.backend, &model);
+                        let offered = self.model_settings(&f.backend, f.login_profile.as_deref(), &model);
                         if !space {
                             f.sub = cycle(f.sub, d, offered.len().max(1));
                         } else if let Some(o) = offered.get(f.sub) {
@@ -426,7 +429,7 @@ mod tests {
         let mut app = test_app();
         let grok = json!({"id": "grok", "name": "Grok", "options": [
             {"id": "fast", "name": "Fast", "values": [{"id": "false", "name": "Off"}, {"id": "true", "name": "On"}]}]});
-        app.models.insert("cursor".into(), Some(AgentModel::parse(&grok).into_iter().collect()));
+        app.models.insert(("cursor".into(), None), Some(AgentModel::parse(&grok).into_iter().collect()));
         let bot = json!({"id": "b", "backend": "cursor", "model": "grok", "modelOptions": {"fast": "false"}});
         app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
         app.selected = Some("b".into());
@@ -620,5 +623,25 @@ mod tests {
             let changed = f.changes();
             assert_eq!(changed.get("offeredToNetwork").cloned(), offered.map(Value::from), "{changed}");
         }
+    }
+
+    #[tokio::test]
+    async fn a_bot_on_another_login_asks_for_that_logins_models() {
+        let (base, mut requests) = super::super::recording_host().await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(crate::tui::net::Client::new(&base, Some("token")), tx, String::new());
+        let bot = json!({"id": "b", "backend": "claude", "loginProfile": "pro-7"});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let request = loop {
+            let request = super::super::next_request(&mut requests).await;
+            if request.starts_with("POST /api/agentModels") {
+                break request;
+            }
+        };
+        assert!(request.contains(r#""loginProfile":"pro-7""#), "{request}");
+        assert!(matches!(app.models_for("claude", Some("pro-7")), Some(None)), "its list is loading");
+        assert!(app.models_for("claude", None).is_none(), "the default login's list is another one");
     }
 }

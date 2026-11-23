@@ -2471,5 +2471,8 @@
   "Show chat": "Mostrar chat",
   "Workflow folder": "Pasta do fluxo de trabalho",
   "Previous chats": "Chats anteriores",
-  "New chat": "Novo chat"
+  "New chat": "Novo chat",
+  "in background": "em segundo plano",
+  "{count} s": "{count} s",
+  "{count} min": "{count} min"
 }

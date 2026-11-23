@@ -2471,5 +2471,8 @@
   "Show chat": "Chat einblenden",
   "Workflow folder": "Workflow-Ordner",
   "Previous chats": "Frühere Chats",
-  "New chat": "Neuer Chat"
+  "New chat": "Neuer Chat",
+  "in background": "im Hintergrund",
+  "{count} s": "{count} s",
+  "{count} min": "{count} Min."
 }

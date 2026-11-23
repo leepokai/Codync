@@ -2471,5 +2471,8 @@
   "Show chat": "Показать чат",
   "Workflow folder": "Папка процесса",
   "Previous chats": "Предыдущие чаты",
-  "New chat": "Новый чат"
+  "New chat": "Новый чат",
+  "in background": "в фоне",
+  "{count} s": "{count} с",
+  "{count} min": "{count} мин"
 }

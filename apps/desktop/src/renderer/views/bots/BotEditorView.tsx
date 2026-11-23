@@ -127,7 +127,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
   const avatarRef = useRef<HTMLButtonElement>(null)
   const set = <K extends keyof BotDraft>(key: K, value: BotDraft[K]) => onChange((d) => ({ ...d, [key]: value }))
   const setModel = useCallback((model: string | null, modelOptions: Record<string, string>) => onChange((d) => ({ ...d, model, modelOptions })), [onChange])
-  const models = useAgentModels(draft.backend)
+  const models = useAgentModels(draft.backend, draft.loginProfile)
   const saved = draft.id ? (store.bots.get(draft.id) ?? null) : null
 
   const backends = store.hello?.backends ?? []

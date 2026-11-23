@@ -2471,5 +2471,8 @@
   "Show chat": "チャットを表示",
   "Workflow folder": "ワークフローのフォルダ",
   "Previous chats": "以前のチャット",
-  "New chat": "新しいチャット"
+  "New chat": "新しいチャット",
+  "in background": "バックグラウンドで実行",
+  "{count} s": "{count} 秒",
+  "{count} min": "{count} 分"
 }

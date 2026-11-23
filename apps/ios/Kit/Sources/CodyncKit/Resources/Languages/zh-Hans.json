@@ -2471,5 +2471,8 @@
   "Show chat": "显示对话",
   "Workflow folder": "工作流文件夹",
   "Previous chats": "之前的对话",
-  "New chat": "新对话"
+  "New chat": "新对话",
+  "in background": "在后台运行",
+  "{count} s": "{count} 秒",
+  "{count} min": "{count} 分钟"
 }

@@ -6,6 +6,7 @@ use crate::events::ToolCall;
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::sync::Weak;
+use tokio::runtime::Handle;
 
 /// `session/request_permission`.
 pub const PERMISSION: &str = "session/request_permission";
@@ -22,12 +23,16 @@ pub struct Request {
     params: Value,
     /// Not the agent itself: a card holding a request mustn't keep the agent's process alive.
     writer: Weak<Writer>,
+    /// The runtime reading the agent: answers go out on it, so one reaches the agent from a thread outside any runtime
+    /// (a UI dropping a card) and from a caller that stops waiting for it.
+    runtime: Handle,
     answered: bool,
 }
 
 impl Request {
+    /// Made on the runtime reading the agent.
     pub(super) fn new(id: Value, method: String, params: Value, writer: Weak<Writer>) -> Self {
-        Self { id, method, params, writer, answered: false }
+        Self { id, method, params, writer, runtime: Handle::current(), answered: false }
     }
 
     pub fn method(&self) -> &str {
@@ -49,15 +54,15 @@ impl Request {
     }
 
     /// Answers it with `result`.
-    pub async fn respond(mut self, result: Value) -> Result<()> {
-        self.answered = true;
-        self.send(json!({"jsonrpc": "2.0", "id": self.id, "result": result})).await
+    pub async fn respond(self, result: Value) -> Result<()> {
+        let msg = json!({"jsonrpc": "2.0", "id": self.id, "result": result});
+        self.send(msg).await
     }
 
     /// Answers it with an error.
-    pub async fn refuse(mut self, code: i64, message: &str) -> Result<()> {
-        self.answered = true;
-        self.send(json!({"jsonrpc": "2.0", "id": self.id, "error": {"code": code, "message": message}})).await
+    pub async fn refuse(self, code: i64, message: &str) -> Result<()> {
+        let msg = json!({"jsonrpc": "2.0", "id": self.id, "error": {"code": code, "message": message}});
+        self.send(msg).await
     }
 
     /// Answers a permission with the option picked, or `cancelled` without one.
@@ -65,11 +70,13 @@ impl Request {
         self.respond(permission_answer(option)).await
     }
 
-    async fn send(&self, msg: Value) -> Result<()> {
-        match self.writer.upgrade() {
-            Some(writer) => writer.write(msg).await,
-            None => Err(Failure::error(FailureKind::Exited, "agent stopped")),
-        }
+    /// Writes its answer on a task of its own, which finishes even when the caller stops waiting.
+    async fn send(mut self, msg: Value) -> Result<()> {
+        self.answered = true;
+        let Some(writer) = self.writer.upgrade() else {
+            return Err(Failure::error(FailureKind::Exited, "agent stopped"));
+        };
+        self.runtime.spawn(async move { writer.write(msg).await }).await?
     }
 
     /// What answers it when no one did.
@@ -89,12 +96,12 @@ impl Drop for Request {
         if self.answered {
             return;
         }
-        // Gone with the agent, or outside a runtime (nothing reads it there): nothing waits for an answer.
-        let (Some(writer), Ok(runtime)) = (self.writer.upgrade(), tokio::runtime::Handle::try_current()) else {
+        // Gone with the agent: nothing waits for an answer.
+        let Some(writer) = self.writer.upgrade() else {
             return;
         };
         let msg = self.unanswered();
-        runtime.spawn(async move {
+        self.runtime.spawn(async move {
             let _ = writer.write(msg).await;
         });
     }

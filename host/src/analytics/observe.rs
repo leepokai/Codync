@@ -149,6 +149,25 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("attachments".into(), b["attachments"].as_array().map_or(0, Vec::len).into());
             Event::MessageSent
         }
+        // A message held for a later time; never the time or the text.
+        "scheduleSend" => {
+            p.insert("reply".into(), b["replyTo"].as_str().is_some_and(|t| !t.is_empty()).into());
+            Event::MessageScheduled
+        }
+        // Edit schedule on a message that hasn't gone out; `what` names the fields, never their values.
+        "updateScheduled" => {
+            let mut what: Vec<&str> = Vec::new();
+            if b["notBefore"].is_i64() {
+                what.push("time");
+            }
+            if b["text"].is_string() {
+                what.push("text");
+            }
+            p.insert("what".into(), what.into());
+            Event::MessageScheduleEdited
+        }
+        "cancelScheduled" => Event::ScheduledMessageRemoved,
+        "sendScheduledNow" => Event::ScheduledMessageSentNow,
         "stop" => Event::TurnStopped,
         "unqueue" => Event::QueuedMessageRemoved,
         "newSession" => Event::SessionReset,
@@ -291,7 +310,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
 pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Option<(Event, Map<String, Value>)> {
     let (event, mut p) = observe(caller, method, b)?;
     match event {
-        Event::MessageSent => {
+        Event::MessageSent | Event::MessageScheduled => {
             let bot = b["botId"].as_str().unwrap_or_default();
             let nonce = b["clientNonce"].as_str().unwrap_or_default();
             if !nonce.is_empty() && hub.store.find_by_nonce(bot, nonce).is_some() {

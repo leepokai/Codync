@@ -1728,6 +1728,14 @@ async fn a_thread_the_user_starts_works_where_its_setup_says() {
     assert_eq!(start(json!({"cwd": "elsewhere"})).await, "a thread's folder is a full path");
     assert!(start(json!({"cwd": "/no/such/folder"})).await.contains("does not exist"));
     assert!(start(json!({"approval": {"permission": "yolo", "mode": null}})).await.contains("a thread's setup"));
+
+    // Its login is one of its agent's: one this computer doesn't have, or another agent's, starts nothing; `""` is the
+    // agent's default login.
+    let other = host.call("addLoginProfile", json!({"backend": "cursor", "kind": "apiKey"})).await;
+    assert_eq!(start(json!({"loginProfile": "no-such-profile"})).await, "unknown login profile");
+    assert_eq!(start(json!({"loginProfile": other["loginProfile"]["id"]})).await, "unknown login profile");
+    host.call("startThread", json!({"botId": bot, "text": "At home", "setup": {"loginProfile": ""}})).await;
+    result(&host, &bot, "At home", "Thread").await;
 }
 
 /// What the scripted agent heard in `folder`, oldest first.

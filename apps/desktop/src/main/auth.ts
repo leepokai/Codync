@@ -1,6 +1,7 @@
 import { BrowserAuthentication } from './browser-authentication'
-import { app, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { identity } from './environment'
+import { activate, present } from './headless'
 
 // Browser sign-ins that come back to this app on a custom scheme (ASWebAuthenticationSession's
 // job on the iPhone): connector OAuth (`codync://oauth`) and the account (`com.pokai.Codync://callback`).
@@ -8,6 +9,8 @@ import { identity } from './environment'
 export const SCHEMES = [identity.scheme, identity.appId]
 
 const browser = new BrowserAuthentication((url) => shell.openExternal(url))
+/** The window a sign-in started from, brought back in front when the browser returns. */
+let origin: BrowserWindow | null = null
 
 export { AuthenticationEnded } from './browser-authentication'
 
@@ -24,15 +27,21 @@ export function registerSchemes() {
 }
 
 /** A URL on one of our schemes reached the app (open-url, or a second instance's argv). */
-export const handleURL = (url: string) => browser.handleURL(url)
+export function handleURL(url: string) {
+  if (!browser.handleURL(url) || !origin || origin.isDestroyed()) return
+  activate()
+  present(origin)
+}
 
 export function urlFromArgv(argv: string[]) {
   return argv.find((a) => SCHEMES.some((s) => a.toLowerCase().startsWith(`${s.toLowerCase()}:`)))
 }
 
-export const authenticate = (url: string, scheme: string, accept?: (url: string, isCurrent: () => boolean) => Promise<boolean>) =>
-  browser.authenticate(url, scheme, accept)
+export function authenticate(url: string, scheme: string, accept?: (url: string, isCurrent: () => boolean) => Promise<boolean>, window: BrowserWindow | null = null) {
+  origin = window
+  return browser.authenticate(url, scheme, accept)
+}
 
 export function registerAuthIPC() {
-  ipcMain.handle('app:authenticate', (_e, url: string, scheme: string) => authenticate(url, scheme))
+  ipcMain.handle('app:authenticate', (e, url: string, scheme: string) => authenticate(url, scheme, undefined, BrowserWindow.fromWebContents(e.sender)))
 }

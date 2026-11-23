@@ -171,7 +171,7 @@ impl Usage {
     fn provider(&mut self, reader: &Reader, source: &'static str) -> &mut Provider {
         let at = self.providers.iter().position(|p| p.id == reader.id).unwrap_or_else(|| {
             let unread =
-                Provider { checked: Checked::default(), ..Provider::new(reader.id, reader.name, source, Vec::new()) };
+                Provider { checked: Checked::default(), ..Provider::new(reader.id, reader.name(), source, Vec::new()) };
             self.providers.push(unread);
             self.providers.len() - 1
         });
@@ -491,7 +491,7 @@ mod tests {
         let usage = Usage {
             providers: vec![provider("claude"), provider("cursor"), provider("codex")],
             services: vec![
-                Service { id: "claude", name: "Claude", registry: None, shown: true },
+                Service { id: "claude", name: "Claude Code", registry: None, shown: true },
                 Service { id: "cursor", name: "Cursor", registry: None, shown: false },
             ],
         };

@@ -1,42 +1,29 @@
 //! The harnesses' own memory, turned off wherever Codync can, so a bot has one memory and the user sees all of it:
 //! every bot unless the user keeps its harness's memory on, and Codync's background jobs
-//! ([design](../../../docs/design/bot-memory.md#instructions-in-every-harness)). Claude Code also gets its settings
-//! through `_meta` (see `agent::bot`).
+//! ([design](../../../docs/design/bot-memory.md#instructions-in-every-harness)). How each harness's is turned off is
+//! the agent crate's (`codync_agent::own_memory`); Claude Code also gets its settings through `_meta` (see
+//! `agent::bot`).
 
 use crate::store::BotConfig;
-use anyhow::{Context, Result};
-use serde_json::{Value, json};
-use std::path::Path;
+use codync_agent::own_memory::{self, Switch};
+use serde_json::Value;
 
-/// For the agent's process. A harness ignores the variables meant for the others.
-pub const ENV: &[(&str, &str)] = &[("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1"), ("CODEBUDDY_DISABLE_AUTO_MEMORY", "1")];
-
-/// Appended to the harness's ACP command.
-pub fn args(backend: &str) -> &'static str {
-    match backend {
-        // Copilot Memory writes through these two tools.
-        "copilot" => " --excluded-tools=store_memory,vote_memory",
-        _ => "",
-    }
-}
-
-/// Whether Codync can turn the bot's harness's own memory off, and so offers the user a switch for it. Qwen Code
-/// reads it from the workspace folder, which Codync writes only in a bot's own workspace: a project folder's files
-/// are the user's.
+/// Whether Codync can turn the bot's harness's own memory off, and so offers the user a switch for it. A harness
+/// that reads it from its working folder has one only in a bot's own workspace: a project folder's files are the
+/// user's.
 pub fn switchable(cfg: &BotConfig) -> bool {
-    match cfg.backend.as_str() {
-        "claude" | "copilot" | "codebuddy" | "workbuddy" => true,
-        "qwen" => crate::agent::workspace::is_managed(cfg),
-        _ => false,
+    match own_memory::switch(&cfg.backend) {
+        Switch::Always => true,
+        Switch::InOwnFolder => crate::agent::workspace::is_managed(cfg),
+        Switch::Never => false,
     }
 }
 
-/// Whether the bot's harness keeps one memory of its own for all its sessions that Codync can't turn off: every bot
-/// on it, and the harness used outside Codync, share it. Gemini CLI's is `~/.gemini/GEMINI.md`, Hermes Agent's
-/// `~/.hermes/memories` ([design](../../../docs/design/bot-memory.md#instructions-in-every-harness)). The apps say so
-/// where other harnesses have a switch.
+/// Whether the bot's harness keeps one memory of its own for all its sessions that Codync can't turn off
+/// ([design](../../../docs/design/bot-memory.md#instructions-in-every-harness)). The apps say so where other
+/// harnesses have a switch.
 pub fn shared(cfg: &BotConfig) -> bool {
-    matches!(cfg.backend.as_str(), "gemini" | "hermes")
+    own_memory::shared(&cfg.backend)
 }
 
 /// Whether the user kept the bot's harness's own memory on beside Codync's.
@@ -58,109 +45,35 @@ pub async fn apply(cfg: &BotConfig, env: &mut Vec<(String, String)>, commands: &
     // An agent on its own (`BotConfig::plain`) keeps its memory, as it has outside Codync.
     let on = cfg.plain || kept(cfg);
     if !on {
-        switch_off(&cfg.backend, env, commands);
+        own_memory::turn_off(&cfg.backend, env, commands);
     }
     if crate::agent::workspace::is_managed(cfg) {
-        write_settings(&cfg.backend, &cfg.cwd, on).await;
+        set_in_folder(&cfg.backend, &cfg.cwd, on).await;
     }
 }
 
 /// Turns the harness's own memory off for one launch in `workspace`, a folder of Codync's own: its environment,
 /// its command, and the settings it reads from the folder.
 pub async fn turn_off(backend: &str, workspace: &str, env: &mut Vec<(String, String)>, commands: &mut [String]) {
-    switch_off(backend, env, commands);
-    write_settings(backend, workspace, false).await;
+    own_memory::turn_off(backend, env, commands);
+    set_in_folder(backend, workspace, false).await;
 }
 
-fn switch_off(backend: &str, env: &mut Vec<(String, String)>, commands: &mut [String]) {
-    env.extend(ENV.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())));
-    for command in commands {
-        command.push_str(args(backend));
-    }
-}
-
-async fn write_settings(backend: &str, workspace: &str, on: bool) {
-    let (backend, workspace) = (backend.to_owned(), workspace.to_owned());
-    match tokio::task::spawn_blocking(move || prepare_workspace(&backend, Path::new(&workspace), on)).await {
+async fn set_in_folder(backend: &str, folder: &str, on: bool) {
+    let (backend, folder) = (backend.to_owned(), folder.to_owned());
+    match tokio::task::spawn_blocking(move || own_memory::set_in_folder(&backend, std::path::Path::new(&folder), on))
+        .await
+    {
         Ok(Ok(())) => {}
         Ok(Err(error)) => tracing::warn!(error = format!("{error:#}"), "couldn't set the harness's own memory"),
         Err(error) => tracing::warn!(%error, "couldn't set the harness's own memory"),
     }
 }
 
-/// Settings a harness reads from the workspace folder itself: off, or (kept on) taken out again so the harness's
-/// own setting applies.
-fn prepare_workspace(backend: &str, workspace: &Path, on: bool) -> Result<()> {
-    match backend {
-        "qwen" => edit(&workspace.join(".qwen/settings.json"), |settings| {
-            const KEYS: [&str; 2] = ["enableManagedAutoMemory", "enableManagedAutoDream"];
-            if on {
-                if let Some(memory) = settings["memory"].as_object_mut() {
-                    for key in KEYS {
-                        memory.remove(key);
-                    }
-                }
-            } else {
-                overlay(settings, &json!({"memory": {KEYS[0]: false, KEYS[1]: false}}));
-            }
-        }),
-        _ => Ok(()),
-    }
-}
-
-/// Changes the JSON file at `path` (none yet: `{}`), keeping the rest of it, and writes it only if it changed.
-fn edit(path: &Path, change: impl FnOnce(&mut Value)) -> Result<()> {
-    let mut current = match std::fs::read_to_string(path) {
-        Ok(text) => serde_json::from_str(&text).with_context(|| format!("reading {}", path.display()))?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => json!({}),
-        Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
-    };
-    let before = current.clone();
-    change(&mut current);
-    if current == before {
-        return Ok(());
-    }
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    std::fs::write(path, serde_json::to_string_pretty(&current)?).with_context(|| format!("writing {}", path.display()))
-}
-
-fn overlay(target: &mut Value, settings: &Value) {
-    match (target, settings) {
-        (Value::Object(target), Value::Object(settings)) => {
-            for (key, value) in settings {
-                overlay(target.entry(key.clone()).or_insert(Value::Null), value);
-            }
-        }
-        (target, value) => *target = value.clone(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn workspace_settings_keep_what_the_user_set() {
-        let dir = std::env::temp_dir().join(format!("codync-own-memory-{}", uuid::Uuid::new_v4()));
-        let file = dir.join(".qwen/settings.json");
-        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
-        std::fs::write(&file, r#"{"model": {"name": "qwen3"}, "memory": {"other": 1}}"#).unwrap();
-        prepare_workspace("qwen", &dir, false).unwrap();
-        let settings = || -> Value { serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap() };
-        assert_eq!(settings()["model"]["name"], "qwen3");
-        assert_eq!(
-            settings()["memory"],
-            json!({"other": 1, "enableManagedAutoMemory": false, "enableManagedAutoDream": false})
-        );
-        prepare_workspace("qwen", &dir, true).unwrap();
-        assert_eq!(settings()["memory"], json!({"other": 1}), "kept on, Qwen Code's own setting applies again");
-        assert_eq!(settings()["model"]["name"], "qwen3");
-        prepare_workspace("codex", &dir.join("none"), false).unwrap();
-        assert!(!dir.join("none").exists(), "nothing for other harnesses");
-        std::fs::remove_dir_all(dir).unwrap();
-    }
+    use serde_json::json;
 
     #[test]
     fn the_switch_is_offered_only_where_codync_can_turn_it_off() {

@@ -21,9 +21,12 @@ sign-in, `login_profiles/keys.rs` an API key profile's variables and the import 
 agents and no app, for the account kind: `agents.rs` (how each agent keeps a login in a folder), `slot.rs` (what a
 slot shares), `identity.rs` (who a login is) and the `Account` record. Clients: on the desktop, a **Login profiles** tab of
 Extensions (one card per agent that takes them: the default one first, then the others; each can be named;
-`LoginProfilesPanel.tsx`), which the agent's setup sheet links to and a bot's **Add login profile…** (and the bot
-model panel's `+`) opens at that agent; the phones still keep the section in the agent's setup sheet. A
-**Login profile** choice under Agent in a bot's settings, and the same choice on a fallback. A chat's sign-in
+`LoginProfilesPanel.tsx`), which the agent's setup sheet links to and a bot's **Add login profile…** (the
+model panel's `+`) opens at that agent; the phones still keep the section in the agent's setup sheet. Every place
+that picks an agent picks its login with it: the desktop's model panel (`views/bots/ModelPicker.tsx`, its rail's seats from
+`loginSeats` in `views/bots/seats.ts`: a bot's settings, a fallback, Advisor mode's threads' agent, a chat's message
+box, a new thread) and the phones' agent picker list each agent once per login. A new thread sends its pick as
+`startThread`'s `setup.loginProfile` (`""` the default login) where `hello.threadLogins` says the host takes it. A chat's sign-in
 card for one login profile still opens that agent's sheet on it. The section shows for every agent, installed
 or not: any agent takes an API key, while **Add account** needs the agent's own CLI on the computer.
 

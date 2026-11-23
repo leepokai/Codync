@@ -55,10 +55,16 @@ data class BotDraft(
     /** A saved bot keeps a name; only a new one goes without (the host names it after its first conversations). */
     val isValid: Boolean get() = name.isNotBlank()
     fun toggleNotifications(): BotDraft = copy(notify = !(notify ?: true))
-    /** On agent [id], on the computer's own login: its model starts over, and a fallback on that login goes (each login is in the chain once). */
-    fun withAgent(id: String): BotDraft = copy(backend = id, loginProfile = null, model = null, modelOptions = emptyMap(), fallbacks = fallbacks?.filter { it.login != Login(id) },
-        // A picked mode becomes the new agent's Auto mode (or, without one, asking).
-        mode = mode?.let { AgentMode.AUTO })
+    /** On [login] (an agent on one of its logins): a fallback on that login goes (each login is in the chain once), and
+     *  another agent's model starts over. */
+    fun withAgent(login: Login): BotDraft = when {
+        login == this.login -> this
+        login.backend == backend -> copy(loginProfile = login.loginProfile, fallbacks = fallbacks?.filter { it.login != login })
+        else -> copy(backend = login.backend, loginProfile = login.loginProfile, model = null, modelOptions = emptyMap(),
+            fallbacks = fallbacks?.filter { it.login != login },
+            // A picked mode becomes the new agent's Auto mode (or, without one, asking).
+            mode = mode?.let { AgentMode.AUTO })
+    }
     /** Advisor mode on: its threads start on the bot's own agent, model and fallbacks, for the user to change (on a custom
      *  command, which the threads' picker doesn't offer, on the first installed agent of [backends]); off: none. */
     fun withAdvisor(on: Boolean, backends: List<AgentBackend>): BotDraft = when {
@@ -68,9 +74,10 @@ data class BotDraft(
         else -> (backends.firstOrNull { it.available } ?: backends.firstOrNull())?.let { copy(threadAgent = it.stepOn(emptyList()), threadFallbacks = emptyList()) }
             ?: this
     }
-    /** Its threads on agent [id], on the computer's own login: a threads' fallback on that login goes, as in [withAgent]. */
-    fun withThreadAgent(id: String): BotDraft = if (threadAgent?.backend == id) this
-        else copy(threadAgent = Fallback(id), threadFallbacks = threadFallbacks?.filter { it.login != Login(id) })
+    /** Its threads on [login], as [withAgent] puts the bot on one: a threads' fallback on that login goes. */
+    fun withThreadAgent(login: Login): BotDraft = if (threadAgent?.login == login) this
+        else copy(threadAgent = threadAgent?.takeIf { it.backend == login.backend }?.copy(loginProfile = login.loginProfile)
+            ?: Fallback(login.backend, loginProfile = login.loginProfile), threadFallbacks = threadFallbacks?.filter { it.login != login })
     fun body(): JsonObject {
         val normalized = if (backend == "custom") this else copy(command = null)
         // updateBot merges a patch: null clears model, command or the connector choice, but an unset

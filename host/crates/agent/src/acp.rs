@@ -16,15 +16,23 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::ChildStdin;
 use tokio::sync::{mpsc, oneshot};
 
+pub mod auth;
 mod capabilities;
+pub mod claude;
 pub mod codebuddy;
 mod exit;
+pub mod models;
 mod request;
 mod session;
 pub use capabilities::{Adapter, Capabilities, Reopen};
 pub use exit::{exit_tail, stderr_reason};
 pub use request::{ELICITATION, METHOD_NOT_FOUND, PERMISSION, Permission, PermissionOption, Request};
 pub use session::{Session, Steered, StopReason};
+
+/// A JSON string with its text trimmed, when any is left.
+pub(crate) fn text(v: &Value) -> Option<String> {
+    v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)
+}
 
 /// stderr lines kept to explain a crash.
 const STDERR_TAIL_LINES: usize = 12;

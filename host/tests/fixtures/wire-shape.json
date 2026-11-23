@@ -257,6 +257,7 @@
     "hello.schema": "number",
     "hello.signKey": "string",
     "hello.startThread": "bool",
+    "hello.threadLogins": "bool",
     "hello.threadsWithoutBot": "bool",
     "hello.version": "string",
     "hello.workflowThreads": "bool",

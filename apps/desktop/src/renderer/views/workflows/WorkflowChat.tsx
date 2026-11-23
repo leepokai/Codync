@@ -10,10 +10,9 @@ import { useStore } from '../../store/context'
 import { ThreadChat } from '../chat/ThreadChat'
 import { ThreadStart, type ThreadWith } from '../chat/ThreadStart'
 import { threadBots } from '../ThreadsPage'
-import { WindowBarSlots } from '../WindowBar'
+import { NO_BAR_SLOTS, WindowBarSlots } from '../WindowBar'
 import { workflowChats, type ChatAt } from './pins'
 
-const NO_BAR = { start: null, title: null, end: null }
 /** The most chats a workflow keeps to go back to. */
 const KEPT = 20
 
@@ -64,7 +63,7 @@ export function WorkflowChat({ workflowId, roster, openChat }: {
         <AnchoredMenu open={listing} onClose={() => setListing(false)} anchor={historyButton} items={previous} />
       </HStack>
       {/* The thread's title and details stay in the panel: the window's bar is the canvas's. */}
-      <WindowBarSlots.Provider value={NO_BAR}>
+      <WindowBarSlots.Provider value={NO_BAR_SLOTS}>
         <div className="workflow-chat-body">
           {current ? (
             <ThreadChat key={`${current.at.botId}/${current.task.id}`} bot={current.of.bot} task={current.task} openChat={() => openChat(current.of.ref)} />

@@ -151,6 +151,8 @@ internal sealed class AnalyticsEvent(val name: String) {
         override val properties get() = mapOf("action" to action.json, "from" to from.json,
             "outcome" to JsonPrimitive(if (error == null) "done" else "failed")) + listOfNotNull(error?.let { "error" to it.json })
     }
+    /** A fenced code block's copy button put its code on the clipboard; never the code. */
+    data object CodeBlockCopied : AnalyticsEvent("code_block_copied")
     /** A dev server opened, or its address copied; the host reports what it does itself. */
     data class DevServerAction(val use: DevServerUse) : AnalyticsEvent("dev_server_action") {
         override val properties get() = mapOf("action" to use.json)

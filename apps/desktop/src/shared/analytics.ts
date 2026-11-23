@@ -79,6 +79,7 @@ export type AnalyticsEvent =
   | { event: 'remote_screen_paused'; screen: 'bot_computer' | 'remote_screen' }
   | { event: 'image_preview_opened' }
   | { event: 'image_preview_action'; action: ImageAction; from: ImageFrom; outcome: 'done' | 'failed'; error?: ImageFailure }
+  | { event: 'code_block_copied' }
   | { event: 'conversation_find_opened' }
   | { event: 'conversation_find_searched'; found: boolean }
   | { event: 'quote_opened'; found: boolean }

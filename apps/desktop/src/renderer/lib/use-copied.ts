@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 /** How long `Path copied` (or the like) stands in after a copy. */
-const COPIED_MS = 1600
+export const COPIED_MS = 1600
 
 /** Whether something was just copied, and `copy`, which copies `text` and says so for a moment. */
 export function useCopied(): [boolean, (text: string) => void] {

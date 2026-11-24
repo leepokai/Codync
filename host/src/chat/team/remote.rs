@@ -26,15 +26,24 @@ use tokio::sync::mpsc;
 /// Requests this computer's bots sent to other computers or to a session's mailbox here, by
 /// letter id, until their outcome comes back.
 #[derive(Default)]
-pub struct Waiting(Mutex<HashMap<String, Waiter>>);
+pub struct Waiting {
+    all: Mutex<HashMap<String, Waiter>>,
+    /// The latest requests to sessions here that their session answered, by `(session key, id)`:
+    /// an answer sent again (a retry) is taken as delivered, not as a new request.
+    answered: Mutex<std::collections::VecDeque<(String, String)>>,
+}
+
+/// How many answered requests to sessions `Waiting` remembers.
+const ANSWERED_KEPT: usize = 256;
 
 struct Waiter {
     to: ReplyTo,
     quote: String,
     /// How the recipient is shown ("Reviewer on desk").
     peer: String,
-    /// The coding agent's session on this computer it went to, the only one whose answer ends it.
-    session: Option<String>,
+    /// The coding agent's session on this computer it went to, the only one whose answer ends it,
+    /// and the address the letter was signed with (the bot's then), which its answer may name.
+    session: Option<(String, String)>,
     /// The chain's hops when it went to that session, which its answer carries back.
     hops: u8,
     /// When it stops waiting (Unix ms): a request to an agent that isn't a Codync bot (a coding
@@ -56,39 +65,53 @@ enum ReplyTo {
 
 impl Waiting {
     fn insert(&self, id: String, waiter: Waiter) {
-        self.0.locked().insert(id, waiter);
+        self.all.locked().insert(id, waiter);
     }
 
     fn take(&self, id: &str) -> Option<Waiter> {
-        self.0.locked().remove(id)
+        self.all.locked().remove(id)
     }
 
-    /// The request `id`, taken when it went to `session` (`None`: to another computer).
-    /// The bot whose request `id` to the session `key` this is.
-    fn asker(&self, id: &str, key: &str) -> Option<String> {
-        let all = self.0.locked();
-        let w = all.get(id).filter(|w| w.session.as_deref() == Some(key))?;
+    /// The bot whose request `id` to the session `key` this is, and the address its letter was signed with.
+    fn asker(&self, id: &str, key: &str) -> Option<(String, String)> {
+        let all = self.all.locked();
+        let w = all.get(id)?;
+        let (_, signed) = w.session.as_ref().filter(|(k, _)| k == key)?;
         match &w.to {
-            ReplyTo::Bot { id, .. } => Some(id.clone()),
+            ReplyTo::Bot { id, .. } => Some((id.clone(), signed.clone())),
             ReplyTo::Replies => None,
         }
     }
 
-    fn take_for(&self, id: &str, session: Option<&str>) -> Option<Waiter> {
-        let mut all = self.0.locked();
-        all.get(id).is_some_and(|w| w.session.as_deref() == session).then(|| all.remove(id)).flatten()
+    /// The request `id`, taken when it went to the session `key` (`None`: to another computer).
+    fn take_for(&self, id: &str, key: Option<&str>) -> Option<Waiter> {
+        let mut all = self.all.locked();
+        let fits = all.get(id).is_some_and(|w| w.session.as_ref().map(|(k, _)| k.as_str()) == key);
+        fits.then(|| all.remove(id)).flatten()
+    }
+
+    fn mark_answered(&self, key: &str, id: &str) {
+        let mut answered = self.answered.locked();
+        answered.push_back((key.to_owned(), id.to_owned()));
+        if answered.len() > ANSWERED_KEPT {
+            answered.pop_front();
+        }
+    }
+
+    fn was_answered(&self, key: &str, id: &str) -> bool {
+        self.answered.locked().iter().any(|(k, i)| k == key && i == id)
     }
 
     /// Request `id` stops waiting at `until`.
     fn wait_until(&self, id: &str, until: Option<i64>) {
-        if let Some(w) = self.0.locked().get_mut(id) {
+        if let Some(w) = self.all.locked().get_mut(id) {
             w.until = until;
         }
     }
 
     /// The requests whose wait is over, taken.
     fn expired(&self, now: i64) -> Vec<(String, Waiter)> {
-        let mut all = self.0.locked();
+        let mut all = self.all.locked();
         let over: Vec<String> =
             all.iter().filter(|(_, w)| w.until.is_some_and(|until| until <= now)).map(|(id, _)| id.clone()).collect();
         over.into_iter().filter_map(|id| all.remove(&id).map(|w| (id, w))).collect()
@@ -273,14 +296,14 @@ fn open_request(
     address: &str,
     peer: &str,
     body: &str,
-    session: Option<(String, u8)>,
+    session: Option<(String, u8, String)>,
 ) -> Result<(String, String)> {
     let heading = format!("Messaged {peer}: {body}");
     let exchange =
         Exchange { request: id, source: &source.id, target: address, text: body, peer_name: Some(peer), hops: None };
     let entry = exchange.notice(hub, &source.id, &heading, false)?;
     let to = ReplyTo::Bot { id: source.id.clone(), entry: entry.clone() };
-    let (session, hops) = session.map_or((None, 0), |(key, hops)| (Some(key), hops));
+    let (session, hops) = session.map_or((None, 0), |(key, hops, signed)| (Some((key, signed)), hops));
     // A session may never answer: its request stops waiting after a while.
     let until = session.is_some().then(|| crate::store::now_ms() + SESSION_WAIT_MS);
     let waiter = Waiter { to, quote: truncate(body, REQUEST_QUOTE_BYTES), peer: peer.to_owned(), session, hops, until };
@@ -311,9 +334,9 @@ pub(super) fn to_local_session(
     let id = uuid::Uuid::new_v4().to_string();
     // ponytail: kept in memory like a request to another computer; a host restart forgets it, and
     // the session's answer then reaches the bot as a new request.
-    let (entry, heading) =
-        open_request(hub, source, &id, &to.address, &to.address, message, Some((to.key.clone(), hops)))?;
     let from = hub.network.handle_of(&source.id).unwrap_or_else(|| source.id.clone());
+    let session = Some((to.key.clone(), hops, from.clone()));
+    let (entry, heading) = open_request(hub, source, &id, &to.address, &to.address, message, session)?;
     if let Err(error) = super::mailbox::post(hub, to, Some(&id), &from, message, None) {
         return Err(fail_request(hub, &id, &entry, error));
     }
@@ -327,27 +350,34 @@ pub(super) fn to_local_session(
 /// A session here answers `reply_to`: when that is a bot's request to it, the bot gets the answer
 /// as its reply turn. False when it isn't one.
 pub(super) fn session_replied(hub: &Hub, session: &Session, reply_to: &str, to: &str, body: &str) -> Result<bool> {
-    let Some(asker) = hub.waiting.asker(reply_to, &session.key) else { return Ok(false) };
-    // The answer goes to the bot that asked: a botId naming another one is a mix-up to correct.
+    let Some((asker, signed)) = hub.waiting.asker(reply_to, &session.key) else {
+        // Sent again after it went through (a retry): delivered already, not a new request.
+        return Ok(hub.waiting.was_answered(&session.key, reply_to));
+    };
+    // The answer goes to the bot that asked, by its id, its address now, or the one its letter was
+    // signed with (it may have been renamed since): a botId naming another bot is a mix-up to correct.
     let named = match hub.network.recipient(to) {
         Ok(crate::network::Recipient::Here(bot)) => bot,
         _ => to.to_owned(),
     };
-    if named != asker {
+    if named != asker && to != signed {
         let handle = hub.network.handle_of(&asker).unwrap_or(asker);
         anyhow::bail!("letter {reply_to} came from {handle}: answer it with botId {handle}");
     }
     let Some(waiter) = hub.waiting.take_for(reply_to, Some(&session.key)) else { return Ok(false) };
+    hub.waiting.mark_answered(&session.key, reply_to);
     let hops = waiter.hops;
     replied(hub, reply_to, waiter, body, None, hops, codync_network::Access::Allow);
     crate::analytics::network_session(hub, crate::analytics::SessionAction::Answered, session.kind);
     Ok(true)
 }
 
-/// Letters a full mailbox dropped unread: a bot's request among them ends, as failed.
-pub(super) fn dropped_unread(hub: &Hub, ids: &[String]) {
+/// Letters the full mailbox of the session `key` dropped unread: a bot's request to that session
+/// among them ends, as failed (a letter from another computer keeps its sender's id, which may
+/// name an unrelated request here, so only one made for this mailbox counts).
+pub(super) fn dropped_unread(hub: &Hub, key: &str, ids: &[String]) {
     for id in ids {
-        if let Some(waiter) = hub.waiting.take(id) {
+        if let Some(waiter) = hub.waiting.take_for(id, Some(key)) {
             let hops = waiter.hops;
             let why = "The session's inbox was full, so this letter was dropped unread.";
             replied(hub, id, waiter, why, Some(RequestStatus::Failed), hops, codync_network::Access::Allow);

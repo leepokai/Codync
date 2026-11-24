@@ -143,7 +143,7 @@ pub(crate) fn post(
         at: now_ms(),
     };
     let dropped = hub.network.sessions.post(&hub.store, &to.key, mail)?;
-    super::remote::dropped_unread(hub, &dropped);
+    super::remote::dropped_unread(hub, &to.key, &dropped);
     crate::analytics::network_session(hub, crate::analytics::SessionAction::Posted, to.kind);
     Ok(id)
 }

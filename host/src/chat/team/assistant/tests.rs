@@ -336,6 +336,8 @@ async fn a_bot_messages_a_session_and_gets_its_answer() {
     assert!(mixed.contains("answer it with botId"), "{mixed}");
     let answer = json!({"botId": "b", "message": "yes, merged", "replyTo": request});
     assert_eq!(local_call(hub, &codex, "message_bot", &answer).await.unwrap()["status"], "delivered");
+    // Sent again (a retry), it's delivered already: no new request to the bot.
+    assert_eq!(local_call(hub, &codex, "message_bot", &answer).await.unwrap()["status"], "delivered");
     let notice = || {
         let history = hub.store.history("b", i64::MAX, 50).unwrap();
         history.into_iter().find(|e| e.data["delegationId"] == *request).map(|e| e.data)

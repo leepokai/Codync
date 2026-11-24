@@ -113,8 +113,7 @@ pub fn list() -> Vec<Value> {
             let reg = h.registry.and_then(|id| registry.iter().find(|a| a["id"] == id));
             let native = path.is_some() && h.local.is_some();
             let runnable = native || reg.is_some_and(|a| registry::launch_kind(a).is_some());
-            let needs_node = if native { workbuddy::runs_on_node(h.id) } else { reg.is_some_and(registry::needs_node) };
-            let node = if needs_node { node::state() } else { None };
+            let node = node_state(h, native, reg);
             json!({
                 "id": h.id,
                 "name": h.name,
@@ -155,6 +154,17 @@ pub fn list() -> Vec<Value> {
     }
     out.sort_by_key(|v| (!v["installed"].as_bool().unwrap_or(false), !v["curated"].as_bool().unwrap_or(false)));
     out
+}
+
+/// The Node.js dependency of harness `h`, using the command that harness actually runs.
+fn node_state(h: &Harness, native: bool, reg: Option<&Value>) -> Option<node::State> {
+    if native {
+        workbuddy::runs_on_node(h.id).then_some(node::state_for("node")).flatten()
+    } else if reg.is_some_and(registry::needs_node) {
+        node::state()
+    } else {
+        None
+    }
 }
 
 /// `program` is some other harness's CLI (not `backend`'s own).

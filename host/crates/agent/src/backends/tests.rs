@@ -104,6 +104,29 @@ fn workbuddy_cli_is_not_codebuddy_code() {
 }
 
 #[test]
+fn workbuddy_accepts_node_without_npx() {
+    let dir = TempDir::new();
+    write_cli(&dir.0, "node");
+    let _path = TestSearchPath::set(dir.0.clone());
+    let workbuddy = harness("workbuddy").unwrap();
+    assert_eq!(node_state(workbuddy, true, None), None);
+    let npm_adapter = json!({
+        "id": "codex-acp",
+        "distribution": {"npx": {"package": "@agentclientprotocol/codex-acp"}}
+    });
+    assert_eq!(node_state(harness("codex").unwrap(), false, Some(&npm_adapter)), Some(node::State::Missing));
+}
+
+#[test]
+fn a_native_agent_does_not_need_its_registry_adapters_node() {
+    let dir = TempDir::new();
+    write_cli(&dir.0, "node");
+    let _path = TestSearchPath::set(dir.0.clone());
+    let npm_adapter = json!({"distribution": {"npx": {"package": "gemini-cli"}}});
+    assert_eq!(node_state(harness("gemini").unwrap(), true, Some(&npm_adapter)), None);
+}
+
+#[test]
 fn a_codebuddy_on_path_is_not_workbuddy() {
     let dir = TempDir::new();
     write_cli(&dir.0, "codebuddy");

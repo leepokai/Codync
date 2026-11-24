@@ -13,6 +13,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 單一路線的 workflow 會顯示成步驟列表，可以新增、刪除和調整順序；長按 workflow 可以釘選到 Bot 列表上方。
 - 用量畫面和小工具把 Claude 的用量標示為「Claude Code」，與 Bot 使用的 agent 名稱一致。
 - 選 agent 時一起選登入設定檔：Bot 設定和 fallback 的 agent 清單裡，每個 agent 依登入設定檔各列一次，清單最後可以新增登入設定檔；原本獨立的「登入設定檔」列已移除。
+- 聊天的輸入框改成上下兩層：上面打字，下面一排是加檔案的 +、Bot 目前的 agent 和模型、麥克風和送出鍵。點模型就能直接換 agent、登入設定檔、模型和推理強度，不必進 Bot 設定。
 - 在中國大陸也能收到推播通知了。
 
 ### en-US
@@ -21,6 +22,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - A workflow that is a single chain shows as a list of steps you can add, remove and reorder. Long-press a workflow to pin it above the bots.
 - Usage and widgets name Claude's usage "Claude Code", the same name bots use for that agent.
 - Pick an agent and its login profile in one step: a bot's and each fallback's agent list shows every agent once per login profile and ends with Add login profile. The separate Login profile row is gone.
+- The message box now has two layers: you type on top, and under it are the + for files, the bot's agent and model, the mic and send. Tap the model to switch the agent, login profile, model or effort without opening the bot's settings.
 - Push notifications now reach phones and computers in mainland China.
 
 ## 2.53.0

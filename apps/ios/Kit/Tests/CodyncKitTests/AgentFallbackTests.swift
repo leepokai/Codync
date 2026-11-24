@@ -255,6 +255,15 @@ private let claudeJSON = #"{"id":"claude","name":"Claude Code","available":true,
     #expect(codex.loginSeats(label: "Codex", on: AgentLogin(backend: "claude")) == [LoginSeat(login: AgentLogin(backend: "codex"), name: "Codex")])
 }
 
+@Test func aChatsBoxLeavesOutADefaultLoginWaitingOnASignIn() throws {
+    var claude = try JSONDecoder().decode(Backend.self, from: Data(claudeJSON.utf8))
+    #expect(claude.readyLogins(on: AgentLogin(backend: "codex")) == nil, "signed in: the usual logins")
+    claude.signedIn = false
+    #expect(claude.readyLogins(on: AgentLogin(backend: "codex")) == claude.loginProfileChoices(picked: nil).map(\.id))
+    #expect(claude.readyLogins(on: AgentLogin(backend: "claude")) == nil, "the one in use stays")
+    #expect(claude.readyLogins(on: AgentLogin(backend: "claude", loginProfile: "a2"))?.contains(nil) == false)
+}
+
 @Test func aStepPickedInPlaceGetsItsOwnBackOnItsOwnAgent() throws {
     let claude = try JSONDecoder().decode(Backend.self, from: Data(claudeJSON.utf8))
     let codex = try JSONDecoder().decode(Backend.self, from: Data(#"{"id":"codex","name":"Codex","available":true,"command":"codex","installHint":""}"#.utf8))

@@ -207,4 +207,13 @@ class FallbacksTest {
         assertEquals(listOf("Claude · Work"), names(Login("claude"), { if (it.id == "claude") listOf("w") else emptyList() }))
         assertEquals(Login("claude", "w"), agents.loginSeats(Login("codex"), "Default", "New")[1].login)
     }
+
+    @Test fun `a chat's box leaves out a default login waiting on a sign-in, unless it's in use`() {
+        val claude = AgentBackend("claude", "Claude", signedIn = false,
+            loginProfiles = listOf(LoginProfile("w", "Work", signedIn = true), LoginProfile("x", signedIn = false)))
+        assertEquals(listOf<String?>("w"), claude.readyLogins(Login("codex")))
+        assertEquals(listOf<String?>("w", "x"), claude.readyLogins(Login("claude", "x")))
+        assertEquals(null, claude.readyLogins(Login("claude")))
+        assertEquals(null, claude.copy(signedIn = true).readyLogins(Login("codex")))
+    }
 }

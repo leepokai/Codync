@@ -2493,5 +2493,8 @@
   "Every thread works in a worktree of its own; your checkout is never touched": "Jeder Thread arbeitet in einem eigenen Worktree; dein Checkout bleibt unberührt",
   "Its chat, routines and files live here.": "Hier liegen sein Chat, seine Routinen und Dateien.",
   "Add folder": "Ordner hinzufügen",
-  "Remove folder": "Ordner entfernen"
+  "Remove folder": "Ordner entfernen",
+  "iMate token": "iMate-Token",
+  "Personal token": "Persönliches Token",
+  "Create a personal token on the {name} open platform.": "Erstelle ein persönliches Token auf der offenen Plattform von {name}."
 }

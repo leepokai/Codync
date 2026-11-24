@@ -2101,7 +2101,6 @@
   "A follow-up is the bot's own: x cancels it": "跟进由 Bot 自己设定：按 x 取消",
   "Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "用你自己的 Boat 或 InstaBox 账户启动一台云端电脑，电脑关机时 Bot 也能继续工作。",
   "Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "在智能体设置页的「登录配置」让同一个智能体登录多个账户或添加 API 密钥，再选择每个 Bot 要用哪一个。",
-  "Picking up from the chat…": "正在从聊天接着做…",
   "Stop this task?": "停止这个 task？",
   "What it already changed stays.": "已经改的内容会留着。",
   "No work": "没有工作",

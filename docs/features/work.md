@@ -9,18 +9,18 @@ tasks too ([other sources](#other-sources)).
 
 | | The chat | A thread |
 |---|---|---|
-| Session | The bot's main one | Its own, forked from the main one where the agent can (a routine's run: a new one) |
+| Session | The bot's main one | Its own, new, told its task and nothing of the chat ([how it begins](#how-a-threads-session-begins)) |
 | Agent process | The bot's | Its own |
 | Transcript | The chat | Its own, read from the task's details |
 | Who talks to it | The user | It gets tasks, one at a time; the user may write to the [thread](#talking-to-a-thread) of the bot's own task |
 | Its result | A message | Its task's report, which the bot turns into a message |
 
-Design: [the event box](../plans/event-box.md); why a thread is a bot of its own, and the fork spikes:
+Design: [the event box](../plans/event-box.md), [bots, projects and threads](../plans/bots-projects-threads.md); why a thread is a bot of its own:
 [the first design](../archive/background-tasks-plan-2026-11-15.md). Code: `host/src/chat/work/` (`tasks.rs`: the box, its wire shape and what the bot reads of it;
 `dispatch.rs`: which task a thread takes next; `steer.rs`: first, cut in, replace, stop, drop, retry; `mod.rs`: a
 thread's turn end, the report, host start; `sources.rs`: routine runs and other bots' requests as tasks; `thread.rs`: the user's messages to a task's thread;
 `tools.rs`: the bot's tools and what a thread may not call; `recall.rs`: `recall_task`; `sweep.rs`: the hourly look; `watch.rs`: the [watchdog](#watchdog); `worktree.rs`: a thread's git worktree;
-`prompts.rs`: the words); the actor's side is in `host/src/agent/bot/` (`session.rs` for the fork, `turn.rs` for the box in the prompt, the worktree
+`prompts.rs`: the words); the actor's side is in `host/src/agent/bot/` (`session.rs` for its session, `turn.rs` for the box in the prompt, the worktree
 and the report, `queue.rs` for `turn_over`, `updates.rs` for cards). Git is run through `host/src/git.rs`.
 
 ## A task
@@ -68,7 +68,7 @@ task:
    same session. These go first, since that thread already runs. While what it follows waits or works, it
    waits (`wait: after`). When what it follows failed, was stopped or dropped, or its thread is gone, it is an ordinary
    task.
-2. **Otherwise a new thread starts for it**, lowest `order` first, when the bot is under `maxThreads`, the bot's own turn is over (a fork taken mid-turn would carry an unanswered tool call), and the agent is
+2. **Otherwise a new thread starts for it**, lowest `order` first, when the bot is under `maxThreads`, the bot's own turn is over (stopping that turn drops a task it added, and a routine's run or a room's turn shares the actor), and the agent is
    not near its usage limit (near it, one thread at a time: `wait: usage`).
 3. **Otherwise it waits**: `wait: next` for the first in line, `behind` with how many are `ahead` for the rest.
    Nothing is refused for being over the ceiling.
@@ -234,16 +234,26 @@ With the rest:
 
 ## How a thread's session begins
 
-- **Fork**: `session/fork` of the bot's main session, sent from the thread's own process with the main session's
-  frozen instructions, so the prompt cache is the chat's. Conditions: the agent advertises
-  `sessionCapabilities.fork`, the bot is on its own agent (not a fallback), the main session has used under half
-  its window, and the thread starts on the bot's own agent too (a thread whose first agent rests starts on a
-  [fallback](#fallbacks-and-sign-in), which can't fork another agent's session).
-- **Brief**: `session/new`, with the chat so far before the thread's first message (`handoff::build`: summary, last
-  requests, last reply, plan). Used when a condition fails or the fork errors, and for a thread that works in a
-  [worktree](#worktrees) (a fork would be taken in another folder than its session's).
-- **A routine's run**: `session/new` with the run's own prompt and nothing of the chat, as a run in the chat has:
-  no fork and no chat so far, so it costs and sees what it did before runs were tasks (`sources::from_chat`).
+Every thread starts in a session of its own (`session/new`), never a fork of the chat's, and is told nothing of the
+chat: the chat may have talked about many things the task has nothing to do with, so the brief is where what the task
+needs is written (`work::BRIEF` and `add_task`'s `brief` say so). What its instructions hold depends on where its
+task came from (`chat::context::render_thread`, by the task's `Source`):
+
+| Task from | Told who the bot is | Told where it is | Servers besides `chat`, `memory`, connectors, `workflows` |
+| --- | --- | --- | --- |
+| The bot (`add_task`) | No: the task alone (`context::TASK`); memory is looked up with the `memory` server | Its folder; its last message is its report | none |
+| The user (`startThread`) | Yes: name, description, memory opening | Away from the chat; the user reads it here | none |
+| A routine's run | Yes | Running a routine; its reply is the run's result | `routines`, `team` |
+| Another bot's request | Yes | Answering that bot | `routines`, `team` (its `message_bot` refused, as in the chat) |
+
+Every thread is also told it runs inside Codync, its folder (the bot's, a project, or a worktree Codync made), how
+dev servers work, the bot's skills and the compaction keep-list. None hears the chat's own paragraphs (Messages,
+Other conversations, `routines::BRIEF` outside a run or request, `work::BRIEF`). A thread's `chat` server lists only
+what a thread may call: `request_decision`, `send_file`, artifacts and dev servers; not `send_message` (its last
+message is its report), `react`, `save_skill`, the box's tools, the profile's or the fallbacks' (`mcp::chat_tools`, `work::chat_only`;
+a call to one is still refused, and counted as `thread_tool_refused`). Its instructions are kept with its bot's
+sessions (`context::resolve` keys by `BotConfig::owner`), and a profile update is announced only to a thread that was
+told who the bot is.
 
 A thread's message for a task says what it is, gives the brief, the user's own words and what they said since, and
 how its words reach the user (`prompts::task_prompt`). A task that follows another is the thread's next message in
@@ -282,9 +292,8 @@ computer's, so the chat and every thread skip a resting login together.
 - **The chain is the bot's** (its threads' own in [Advisor mode](#advisor-mode)). A thread copies it when it starts; a
   change reaches its threads at once (`work::fallbacks_changed`, from `Hub::update_bot`), for their next agent: each
   gets the chain that starts at the agent it started on, and one that started on another keeps its own.
-- **A new session on another agent hears the chat.** A thread forked from the chat, or told it, keeps that only in
-  the session it began; when it falls back to a new session elsewhere, that agent is told the chat so far
-  (`work::chat_so_far`) before the recap of the thread's own transcript. Not for a routine's run.
+- **A new session on another agent hears the thread's own work.** When a thread falls back to a new session
+  elsewhere, that agent is told the recap of the thread's own transcript, never the chat.
 - **What the user must do is asked in the bot's chat** (`agent::bot::sign_in`). A thread's agent sign-in card goes to
   its bot's chat with `data.thread`, `data.task` and the bot as `data.author`, and `connectionRequest.botId` the bot's
   (the apps check it against the chat). The host keeps one card per login per thread (`data.thread.id`), apart from
@@ -299,8 +308,8 @@ computer's, so the chat and every thread skip a resting login together.
   whose task was stopped or went back to the box gets nothing sent; its Stop ends the wait, and the thread.
 - **A sign-in keeps the session.** A refused sign-in starts a new agent process before the next turn (the old one
   holds the old credentials), as it does for the chat: an agent that can reopen its session goes on in it
-  (`restart_before_turn`), so a thread keeps its fork or brief and what it did; one that can't starts a new session,
-  told the conversation so far as after a move to another agent (`owe_recap`; a thread's, the chat it comes from too).
+  (`restart_before_turn`), so a thread keeps its brief and what it did; one that can't starts a new session,
+  told the conversation so far as after a move to another agent (`owe_recap`; a thread's own, never the chat).
   With no process left (it quit, or the new one couldn't start), the next turn starts one and reopens the session,
   as after any exit.
 - **The usage gate looks past a resting agent.** The dispatcher's "near its usage limit" reads the agent a new thread
@@ -326,10 +335,6 @@ Turning it on in the apps starts the threads on the bot's own agent, model and f
 - **`agent::fallback::threads`** is the bot as its threads run it: that agent, model, options and login, its chain, and
   Auto for a mode the chat's agent named (the chat's Fast mode only on the same agent). Every thread starts from it,
   routine runs and other bots' requests too.
-- **A fork only on the chat's own agent and login.** A thread that may start as a fork of the chat's session
-  (`dispatch::plan`) does so only when its agent and login are the chat's; its model may differ, which the forked
-  session takes as a new one does. On another agent it starts from a brief that tells it the chat
-  ([how a thread's session begins](#how-a-threads-session-begins)).
 - **A thread keeps the agent it started on.** Turning Advisor mode on or off, or picking another threads' agent,
   reaches new threads; running ones keep theirs, and their chain follows the one that starts there.
 - **Both chains count**: the host validates the threads' chain as a bot's own (each login once, at most three
@@ -372,8 +377,8 @@ never taken for lost by the hourly look: its turn runs.
 **A thread the user starts** (`startThread {botId, text, setup?, attachments?}` → `{taskId}`, `sources::add_thread`;
 `Source::User`): the user's first message is a task of the bot's box, named by its first line, that waits for a free
 thread like any other and may get a worktree like the bot's own work. Its thread opens with that message as the
-user's own (no `from: "host"`), in a new session that is told it is a thread the user opened and gets nothing of the
-chat (no fork, no chat so far). It is the bot's own work everywhere else: it takes messages ([talking to a
+user's own (no `from: "host"`), in a new session that is told it is a thread the user opened and who the bot is, and
+gets nothing of the chat. It is the bot's own work everywhere else: it takes messages ([talking to a
 thread](#talking-to-a-thread)), can be steered, stopped and tried again, and on the wire it has no `source`. **Its
 result takes no turn of the bot's**: the user reads it in the thread. Only a bot starts one (not a group, not a
 thread), with at most 32,000 bytes. `hello` says `startThread: true` on a host that has the method.
@@ -396,9 +401,9 @@ worktree there by the same rule as in the bot's.
 A run of one of the bot's routines and another bot's `message_bot` request are tasks in the bot's box
 (`sources.rs`), so the chat stays free while they work and they wait for a free thread under `maxThreads` like anything
 else. A task's `source` says which: `routine` with the routine's id, or `request` with the asking bot's id (none
-when it was asked from another computer or by the cloud assistant). A request starts like any task (a fork of the
-chat's session where the agent can, else a new session told the chat so far); a routine's run starts in a new
-session that knows only its own prompt, as it did in the chat. Their thread is told the routine's own
+when it was asked from another computer or by the cloud assistant). A request and a routine's run start, like every
+task, in a new session that knows nothing of the chat; they are told who the bot is
+([how a thread's session begins](#how-a-threads-session-begins)). Their thread is told the routine's own
 prompt or the request as it is, not a task's brief, and **their result takes no turn of the bot's**:
 
 - **A routine's run** ([routines](routines.md#execution)): when a thread takes it, the run begins as it did in the
@@ -484,7 +489,7 @@ of the bot's own tasks that starts **while another thread of the bot is working*
 - `~/.codync/worktrees/<bot id>/<task id>`, on a new branch `codync/<title in lowercase, dashes>` (`-2`, `-3`… when
   taken), from the commit the bot's folder is on. The thread's agent starts there (in the same place of the
   repository as the bot's folder, when that is a folder inside it), is told so with its task, and starts from a
-  brief, not a fork. Uncommitted changes of the bot's folder aren't in it.
+  brief. Uncommitted changes of the bot's folder aren't in it.
 - **The first thread alone keeps the bot's folder**; a routine's run and a request never get a worktree; a task that
   follows another (`after`) goes on in that thread's folder, worktree or not.
 - It is made by the thread itself as its first turn starts. When git fails (no commit yet, git missing, the folder in
@@ -671,7 +676,6 @@ per thread and reason in a row. Never a title or text. The bot's turn is `turn_f
 - A turn that ended with a message of the user's still waiting reports nothing of its own: its last message stays
   in the transcript, and the report is the last turn's.
 - No subagent rows.
-- A thread in a worktree starts from a brief, not a fork (no agent is checked to honor another folder on a fork).
 - A worktree is a new checkout: what git ignores in the bot's folder (installed packages, build output, local env
   files) isn't in it, and removing an untouched one deletes what its thread left there ignored.
 - On Windows a worktree whose agent process is still in it can't be removed and stays (kept). A host that stops
@@ -693,7 +697,7 @@ per thread and reason in a row. Never a title or text. The bot's turn is `turn_f
 - A thread's line for what it shared finds that entry only among the chat's messages the client has loaded,
   as a needs-you row does; an older one shows no line, and the line's tap leaves the chat where it was.
 
-Tests: `host/tests/work_e2e.rs` with `tests/fixtures/work_agent.py` (fork, brief, a card with `data.task` answered
+Tests: `host/tests/work_e2e.rs` with `tests/fixtures/work_agent.py` (a brief with nothing of the chat, a card with `data.task` answered
 from the chat, refusals in a thread from each server, the ceiling and the order, first, drop, cut in from the user and
 from the bot, replace on a waiting and on a working task, `after` in the same session, stop one and all, retry, an
 agent that can't start, a stopped turn dropping the task it added, a deleted bot taking its box and threads, a host
@@ -703,7 +707,7 @@ turn with no turn of the bot's, `(pass)`, its progress note, the refusals of a r
 run, try again, never giving way, an agent that can't start, a host restart mid-run; another bot's request as a
 task: its source, the notices, the reply turn of the asking bot, the refusals of a request, stop, no try again; a
 thread's choice card answered by a press and not by a typed message, ended by stopping its task and not by the chat's
-Stop, its file and artifact in the chat and kept with the bot; a run that never forks nor sees the chat, a request's
+Stop, its file and artifact in the chat and kept with the bot; a run that never sees the chat, a request's
 `(pass)`; a thread's `edit_memory` adding and refused a removal while the user's own turn runs in the chat; a thread
 beside another in a repository working in its worktree, an untouched one removed with its branch, a touched one
 kept and named in the report, the switch off, a project folder that is no repository and a bot's own folder (a
@@ -714,9 +718,8 @@ and joining it where the agent steers; a message to an ended task reopening it p
 refused there, its second report, and a new session told the work where the agent can't load one; a message
 waiting behind a thread's card without answering it; Stop dropping what waited; a host restart failing it and the
 thread taking a message afterwards; what waited going with a task that gives way; a thread's sign-in asked in the
-chat and its task going on in the same thread once signed in, a thread moving past a signed-out agent and its next
-agent told the chat, a thread's offer to add a fallback in the chat and new fallbacks reaching a running thread, a thread
-that starts on a fallback never forking the chat's session; the watchdog's turn in the chat for a thread that makes one
+chat and its task going on in the same thread once signed in, a thread's offer to add a fallback in the chat and new fallbacks reaching a running thread, a thread
+that starts on a fallback never forking the chat's session, a thread moving past a signed-out agent told its own work and not the chat; the watchdog's turn in the chat for a thread that makes one
 call again and again, once an hour, and its `(pass)` leaving nothing; `recall_task` and `tell_task` refused in a
 thread); `watchdog_e2e` (a hung host aborted with its mark, the next start reporting it, a second stall within 30
 minutes only logged); `memory_files_e2e` (a line a

@@ -90,7 +90,6 @@ import androidx.annotation.DrawableRes
     "eye.slash" -> R.drawable.sf_eye_slash
     "figure.run" -> R.drawable.sf_figure_run
     "film" -> R.drawable.sf_film
-    "flowchart" -> R.drawable.sf_flowchart
     "folder" -> R.drawable.sf_folder
     "function" -> R.drawable.sf_function
     "gearshape" -> R.drawable.sf_gearshape
@@ -143,6 +142,7 @@ import androidx.annotation.DrawableRes
     "person.2" -> R.drawable.sf_person_2
     "person.crop.circle" -> R.drawable.sf_person_crop_circle
     "person.crop.circle.badge.checkmark" -> R.drawable.sf_person_crop_circle_badge_checkmark
+    "person.crop.circle.dashed" -> R.drawable.sf_person_crop_circle_dashed
     "person.fill" -> R.drawable.sf_person_fill
     "phone.fill" -> R.drawable.sf_phone_fill
     "photo" -> R.drawable.sf_photo

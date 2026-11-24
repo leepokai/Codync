@@ -35,6 +35,9 @@ struct BotListView: View {
     @AppStorage("collapsedRosterSections") private var collapsedRosterSections = ""
 
     @AppStorage("rosterSectionOrder") private var sectionOrderData = Data()
+    /// The filter menu's layout: a heading per computer, and each computer's bots by status.
+    @AppStorage(ListLayout.botsByComputer) private var byComputer = true
+    @AppStorage(ListLayout.botsByStatus) private var byStatus = false
     @AppStorage(AgentLogos.storageKey) private var agentLogos = true
     private var sectionOrder: RosterSectionOrder {
         get { RosterSectionOrder(data: sectionOrderData) }
@@ -89,8 +92,21 @@ struct BotListView: View {
         accounts.computers.filter { shownIDs.contains($0.id) }.compactMap { accounts.store(for: $0.id) }
     }
 
-    /// One computer shows a flat list; more get a heading each.
-    private var grouped: Bool { shownStores.count > 1 }
+    /// One computer shows a flat list; more get a heading each, unless the list is asked for as one.
+    /// The shown computers that move a bot with a new message to the top when asked: the computer keeps that
+    /// choice, so it reaches every device, unlike the two layout options before it.
+    private var ordering: [BotStore] {
+        shownStores.filter { $0.connection == .online && $0.hello?.autoOrder != nil }
+    }
+
+    private var byActivity: Binding<Bool> {
+        Binding(get: { ordering.allSatisfy(\.autoOrder) }, set: { on in
+            Analytics.shared.capture(.listLayoutChanged(.bots, option: .activity, on: on))
+            withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { for store in ordering { store.setAutoOrder(on) } }
+        })
+    }
+
+    private var grouped: Bool { shownStores.count > 1 && byComputer }
 
     /// Moves a computer one place up (-1) or down (+1) among the shown ones.
     private func move(_ id: ComputerID, _ offset: Int) {
@@ -132,7 +148,8 @@ struct BotListView: View {
     private func sectionLines(_ store: BotStore) -> [RosterLine] {
         let id = store.computer.id
         let _ = pinRevision
-        let items = accounts.roster.filter { $0.ref.computerId == id }
+        let roster = accounts.roster.filter { $0.ref.computerId == id }
+        let items = byStatus ? RosterSection.byStatus(roster) { $0.bot } : roster
         let pins = PinnedWorkflows.ids(id).compactMap { workflowId -> RosterLine? in
             guard store.workflows.contains(where: { $0.id == workflowId }) else { return nil }
             return .workflow(workflowId, id, store)
@@ -199,15 +216,17 @@ struct BotListView: View {
             .listRowBackground(Color.clear)
         }
         .listStyle(.plain)
+        // A plain List's top edge is the hard one (an opaque bar over a hairline): soft, like the chat's.
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, 0)
         .background(Palette.background)
         .navigationTitle(L10n.tr("Bots"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
-        .navigationSubtitle(ComputerFilterHeader.summary(accounts: accounts, hidden: hiddenComputers))
+        .navigationSubtitle(accounts.connectionSummary(hidden: hiddenComputers))
         .toolbar { bar }
-        .modifier(BotSearch(searching: $searching, query: $query))
+        .modifier(ListSearch(searching: $searching, query: $query, prompt: "Search bots"))
         .refreshable {
             for computer in accounts.computers { accounts.store(for: computer.id)?.restartStream() }
             await accounts.refreshCloud()
@@ -294,7 +313,11 @@ struct BotListView: View {
             AccountSwitcherButton()
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
-            ComputerFilterHeader(accounts: accounts, hidden: $hiddenComputers) { app.showComputers = true }
+            ComputerFilterHeader(accounts: accounts, hidden: $hiddenComputers, manage: { app.showComputers = true }) {
+                ListLayout.option("Group by computer", ListLayout.tracked($byComputer, .bots, .computer, reduceMotion: reduceMotion))
+                ListLayout.option("Sort by status", ListLayout.tracked($byStatus, .bots, .status, reduceMotion: reduceMotion))
+                if !ordering.isEmpty { ListLayout.option("Sort by last active", byActivity) }
+            }
             Button(L10n.tr("Search"), systemImage: "magnifyingglass") { searching = true }
             // A native menu: the bar hosts toolbar buttons outside SwiftUI's layout,
             // so an anchored Codync menu can't find where the button is.
@@ -416,9 +439,13 @@ struct BotListView: View {
         // The badge, said (Android's `UnreadBadge` description), and that a card in it waits on the user.
         .accessibilityValue([bot.unread > 0 ? "\(bot.unread) unread" : nil, bot.waiting > 0 ? L10n.tr("Needs approval") : nil]
             .compactMap { $0 }.joined(separator: ", "))
+        // Sorted by status, the list doesn't show the order a move would change.
+        .moveDisabled(byStatus)
         .accessibilityActions {
-            Button(L10n.tr("Move up")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: -1) } }
-            Button(L10n.tr("Move down")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: 1) } }
+            if !byStatus {
+                Button(L10n.tr("Move up")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: -1) } }
+                Button(L10n.tr("Move down")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: 1) } }
+            }
         }
         .contextActions {
             var items = [MenuItem(bot.pinned ? "Unpin" : "Pin", icon: bot.pinned ? "pin.slash" : "pin") { store.setPinned(bot, !bot.pinned) }]
@@ -487,31 +514,5 @@ struct BotListView: View {
     private func newBot() {
         guard let store = onlineStores.first ?? availableStores.first else { return }
         creating = NewTarget(kind: .bot, computerId: store.computer.id)
-    }
-}
-
-/// The roster's search field: shown under the bar only once the header's Search opens it, and gone again with Cancel.
-private struct BotSearch: ViewModifier {
-    @Binding var searching: Bool
-    @Binding var query: String
-    /// The field's focus, apart from the drawer being shown: focusing it as the drawer is inserted can lose
-    /// to a live roster update, and the system's write-back of false then took the drawer away with it.
-    @State private var active = false
-
-    func body(content: Content) -> some View {
-        Group {
-            if searching {
-                content
-                    .searchable(text: $query, isPresented: $active, placement: .navigationBarDrawer(displayMode: .always), prompt: L10n.tr("Search bots"))
-                    // Focused once the drawer is in the bar.
-                    .task { active = true }
-            } else {
-                content
-            }
-        }
-        // Close (or Cancel) ends the field's focus once it had it: that closes the drawer.
-        .onChange(of: active) { _, isActive in if !isActive { searching = false } }
-        // Outside the branch, so it still sees Search close however it closes.
-        .onChange(of: searching) { if !searching { query = ""; active = false } }
     }
 }

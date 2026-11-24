@@ -8,7 +8,6 @@ import {
   CaretLeft,
   CaretRight,
   Desktop,
-  FlowArrow,
   FunnelSimple,
   GearSix,
   ListChecks,
@@ -16,6 +15,7 @@ import {
   Plus,
   Robot,
   Stop,
+  TreeStructure,
   User,
   Waveform,
   WifiHigh,
@@ -210,7 +210,7 @@ export function Roster({ chats, open }: { chats: Chat[]; open: (id: string) => v
         {[
           { t: "Bots", I: Robot, on: true },
           { t: "Threads", I: ListChecks, on: false },
-          { t: "Workflows", I: FlowArrow, on: false },
+          { t: "Workflows", I: TreeStructure, on: false },
           { t: "Settings", I: GearSix, on: false },
         ].map(({ t, I, on }) => (
           <span

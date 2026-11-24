@@ -37,10 +37,14 @@ public extension AccountStore {
     }
 
     /// Every bot on the computers the Bots tab shows (`hidden`: the ones left out), in its order, folded computers and
-    /// sections included, with how much each one works on: the Threads tab.
-    func work(hidden: String, sectionOrder: RosterSectionOrder) -> AllWork<RosterItem> {
+    /// sections included, then each of those computers' box of threads without a bot: whose work the Threads tab lists.
+    func threadRoster(hidden: String, sectionOrder: RosterSectionOrder) -> [RosterItem] {
         let shown = ComputerSelection(all: computers.map(\.id), hidden: hidden).shown
-        let rows = computers.filter { shown.contains($0.id) }.flatMap { onScreen($0.id, order: sectionOrder) }
-        return AllWork(rows) { $0.bot.work }
+        let computers = computers.filter { shown.contains($0.id) }
+        let boxes = computers.compactMap { computer -> RosterItem? in
+            guard let store = store(for: computer.id), let box = store.plainBox else { return nil }
+            return RosterItem(ref: BotReference(accountId: accountId, computerId: computer.id, botId: box.id), bot: box, computer: store.computer)
+        }
+        return computers.flatMap { onScreen($0.id, order: sectionOrder) } + boxes
     }
 }

@@ -145,7 +145,7 @@ struct RootView: View {
     /// The system tab bar; every tab stays alive (scroll position, open chat) and the bar hides while a
     /// chat is open.
     private var tabs: some View {
-        let work = accounts.work(hidden: hiddenComputers, sectionOrder: RosterSectionOrder(data: sectionOrderData))
+        let threads = accounts.threadRoster(hidden: hiddenComputers, sectionOrder: RosterSectionOrder(data: sectionOrderData))
         return TabView(selection: Bindable(app).tab) {
             Tab(L10n.tr("Bots"), image: "bot", value: AppTab.bots) {
                 NavigationStack(path: path) {
@@ -158,11 +158,11 @@ struct RootView: View {
             }
             // Counts what is worked on; no badge at zero.
             Tab(L10n.tr("Threads"), systemImage: "checklist", value: AppTab.threads) {
-                ThreadsTab(work: work)
+                ThreadsTab(roster: threads)
                     .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
             }
-            .badge(work.working)
-            Tab(L10n.tr("Workflows"), systemImage: "flowchart", value: AppTab.workflows) {
+            .badge(ThreadSections.working(in: threads) { $0.bot })
+            Tab(L10n.tr("Workflows"), image: "workflow", value: AppTab.workflows) {
                 WorkflowsTab()
                     .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
             }
@@ -386,12 +386,23 @@ private struct UsageSheet: View {
 /// A centered icon, title and optional line: what a screen shows when it has nothing yet.
 struct EmptyState: View {
     let title: String
-    let systemImage: String
+    /// A symbol, or a resizable asset (the Workflows mark), shown 40 points high.
+    let image: Image
     var message: String?
+
+    init(title: String, systemImage: String, message: String? = nil) {
+        self.init(title: title, image: Image(systemName: systemImage), message: message)
+    }
+
+    init(title: String, image: Image, message: String? = nil) {
+        self.title = title
+        self.image = image
+        self.message = message
+    }
 
     var body: some View {
         VStack(spacing: 8) {
-            Image(systemName: systemImage).font(.system(size: 40)).foregroundStyle(Palette.tertiary)
+            image.font(.system(size: 40)).aspectRatio(contentMode: .fit).frame(height: 40).foregroundStyle(Palette.tertiary)
             Text(L10n.tr(title)).font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
             if let message {
                 Text(L10n.tr(message)).font(.subheadline).foregroundStyle(Palette.secondary)

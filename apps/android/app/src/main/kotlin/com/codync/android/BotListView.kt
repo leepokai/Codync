@@ -113,7 +113,27 @@ private class ComputerRoster(private val context: Context, val key: String, priv
     val rosters = remember(app.contextId) { mutableMapOf<String, ComputerRoster>() }
     val shownIds = ComputerSelection(states.map { it.computer.id }, hidden).shown
     val shown = states.filter { it.computer.id in shownIds }
-    val grouped = shown.size > 1
+    // The list's layout, kept on this device; several computers each get a heading unless the list is asked for as one.
+    var byComputer by remember { mutableStateOf(BotListLayout.byComputer(context)) }
+    var byStatus by remember { mutableStateOf(BotListLayout.byStatus(context)) }
+    val several = shown.size > 1
+    val grouped = several && byComputer
+    // The computers shown that can move a bot with a new message to the top: theirs to keep, so it reaches every device.
+    val ordering = shown.filter { it.connection is LinkState.Ready && autoOrder(it.hello) != null }
+    val byActivity = ordering.isNotEmpty() && ordering.all { autoOrder(it.hello) == true }
+    val layOut = { option: LayoutOption, on: Boolean ->
+        Analytics.capture(AnalyticsEvent.ListLayoutChanged(LayoutList.Bots, option, on))
+        when (option) {
+            LayoutOption.Computer -> { byComputer = on; BotListLayout.setByComputer(context, on) }
+            LayoutOption.Status -> { byStatus = on; BotListLayout.setByStatus(context, on) }
+            else -> ordering.forEach { accounts.store(it.computer.id)?.setAutoOrder(on) }
+        }
+    }
+    val options = listOfNotNull(
+        layoutOption("Group by computer", byComputer) { layOut(LayoutOption.Computer, it) },
+        layoutOption("Sort by status", byStatus) { layOut(LayoutOption.Status, it) },
+        layoutOption("Sort by last active", byActivity) { layOut(LayoutOption.Activity, it) }.takeIf { ordering.isNotEmpty() },
+    )
     // Computers that can take a new bot once they're connected, and the ones that can right now (iOS `availableStores`, `onlineStores`).
     val available = availableComputers(app, states)
     val online = available.filter { it.actualConnection is LinkState.Ready }
@@ -149,8 +169,7 @@ private class ComputerRoster(private val context: Context, val key: String, priv
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 6.dp).padding(horizontal = 16.dp).height(44.dp),
             verticalAlignment = Alignment.CenterVertically) {
             if (searching) {
-                SearchField(query, { query = it }, Modifier.weight(1f), prompt = "Search bots", autoFocus = true)
-                Text(tr("Cancel"), Modifier.padding(start = 12.dp).plainButton { searching = false; query = "" }, style = Type.body, color = Palette.text)
+                ListSearchField(query, { query = it }, "Search bots") { searching = false; query = "" }
             } else {
                 AccountSwitcherButton(app, account)
                 // The list's title over how its computers are connected (iOS `navigationSubtitle`).
@@ -161,10 +180,8 @@ private class ComputerRoster(private val context: Context, val key: String, priv
                 }
                 // The desktop list header's buttons: the computers to show, Search and New.
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ComputerFilterHeader(states, hidden, setHidden, { for (state in shown) accounts.store(state.computer.id)?.reconnect() }, manage)
-                    val searchLabel = tr("Search")
-                    Box(Modifier.size(44.dp).glass(Capsule()).plainButton { searching = true }.semantics { contentDescription = searchLabel },
-                        contentAlignment = Alignment.Center) { Symbol("magnifyingglass", size = 24.dp, tint = Palette.text) }
+                    ComputerFilterHeader(states, hidden, setHidden, { for (state in shown) accounts.store(state.computer.id)?.reconnect() }, manage, options)
+                    HeaderButton("magnifyingglass", "Search") { searching = true }
                     // A new bot starts on the first computer online (its dialog can move it); a group chat gathers one computer's bots.
                     NewMenuButton(enabled = available.isNotEmpty(), groupEnabled = online.isNotEmpty(),
                         { (online.firstOrNull() ?: available.firstOrNull())?.let { newBot(it.computer.id) } },
@@ -208,7 +225,7 @@ private class ComputerRoster(private val context: Context, val key: String, priv
                         }
                     }
                 }
-                botLines(state, store, roster, folded, grouped, agentLogos, search, RosterActions(toggleSection,
+                botLines(state, store, roster, folded, several, byStatus, agentLogos, search, RosterActions(toggleSection,
                     rename = { name -> naming = Naming("Rename section", name) { renameSection(roster, store, name, it) } },
                     remove = { name -> renameSection(roster, store, name, null) },
                     newSection = { bot -> naming = Naming("New section", "") { store.setSection(bot.id, it) } },
@@ -253,9 +270,12 @@ private class ComputerRoster(private val context: Context, val key: String, priv
 private class RosterActions(val toggleSection: (String) -> Unit, val rename: (String) -> Unit, val remove: (String) -> Unit,
     val newSection: (Bot) -> Unit, val edit: (Bot) -> Unit, val newSession: (Bot) -> Unit, val delete: (Bot) -> Unit)
 
-/** One computer's bots: pinned ones, then each section's heading with its bots (none while folded), then the bots in no section. */
-private fun LazyListScope.botLines(state: AppState, store: AppStore, roster: ComputerRoster, folded: Set<String>, grouped: Boolean,
-    agentLogos: Boolean, search: String, actions: RosterActions) {
+/**
+ * One computer's bots: pinned ones, then each section's heading with its bots (none while folded), then the bots in no section.
+ * [several]: the list shows several computers' bots, so a row names its computer; [byStatus]: each group's bots stand by status.
+ */
+private fun LazyListScope.botLines(state: AppState, store: AppStore, roster: ComputerRoster, folded: Set<String>, several: Boolean,
+    byStatus: Boolean, agentLogos: Boolean, search: String, actions: RosterActions) {
     val id = state.computer.id
     val sectionReorder = roster.sections
     val reorder = roster.reorder
@@ -263,7 +283,8 @@ private fun LazyListScope.botLines(state: AppState, store: AppStore, roster: Com
     // The agent's logo marks each avatar only while the computer's bots mix agents. Not before hello: it names
     // the logos, and without it every badge would be the same generic one.
     val logos = agentLogos && state.hello != null && roster(state.bots).mixesAgents()
-    val lines = if (search.isEmpty()) rosterLines(reorder.shown(roster(state.bots)), folded, sectionReorder.shown, sectionReorder.dragged != null)
+    val bots = roster(state.bots).let { if (byStatus) sortedByStatus(it) else it }
+    val lines = if (search.isEmpty()) rosterLines(reorder.shown(bots), folded, sectionReorder.shown, sectionReorder.dragged != null)
         else shownBots(roster(state.bots), roster.order, search).map(RosterLine::Row)
     items(lines, key = { "$id:${it.key}" }) { line ->
         when (line) {
@@ -281,8 +302,8 @@ private fun LazyListScope.botLines(state: AppState, store: AppStore, roster: Com
                 Box(Modifier.onSizeChanged { reorder.heights[bot.id] = it.height }
                     .then(if (lifted) Modifier.zIndex(1f).graphicsLayer { translationY = reorder.offset; scaleX = 1.02f; scaleY = 1.02f }
                         else Modifier.animateItem())) {
-                    // Search shows only some bots: no reordering among them.
-                    BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }.takeIf { search.isEmpty() }, sections, grouped, agent, actions)
+                    // Search shows only some bots, and a status sort another order than the saved one: no reordering then.
+                    BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }.takeIf { search.isEmpty() && !byStatus }, sections, several, agent, actions)
                 }
             }
         }

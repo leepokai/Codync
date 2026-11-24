@@ -1,9 +1,12 @@
-# The computer card's "Move active bots to the top" switch follows a change made on another device (the desktop, the
-# terminal UI) while the phone stays connected: the host's `autoOrder` event. The phone must already be signed in and
-# connected to the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`:
+# The Bots tab's filter menu's "Sort by last active" (the computer's host-synced "Move active bots to the top") follows a
+# change made on another device (the desktop, the terminal UI) while the phone stays connected: the host's `autoOrder`
+# event. The phone must already be signed in and connected to the host (a worktree's sandbox,
+# docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`:
 #   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags computer-order \
 #     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
-# Android reports the switch's state on its row and matches only `checked: true` there, hence the per-platform checks.
+# The menu is opened afresh for each check (the filter button, top right; named Computers and how many are connected)
+# and closed again after it. Android reports the checked option on its row (the text is a child of it), hence the
+# per-platform checks.
 appId: com.pokai.Codync.ios.dev
 tags:
   - computer-order
@@ -39,76 +42,33 @@ onFlowComplete:
       visible: "Skip"
     commands:
       - tapOn: "Skip"
-# The bot list's filter button (top right; named Computers and how many are connected) opens a menu that leads there.
 - runFlow:
-    when:
-      notVisible: "Manage computers"
-    commands:
-      - tapOn: "Computers, .*Filter conversations"
+    file: subflows/last-active.yaml
+    env:
+      ON: "false"
+# The menu's device-local layout options sit beside it: each toggled on and back off, so later flows see the defaults.
 - runFlow:
-    when:
-      visible: "Manage computers"
-    commands:
-      - tapOn: "Manage computers"
-- extendedWaitUntil:
-    visible: "Move active bots to the top"
-    timeout: 20000
+    file: subflows/toggle-layout.yaml
+    env:
+      OPTION: "Sort by status"
 - runFlow:
-    when:
-      platform: iOS
-    commands:
-      - assertVisible:
-          text: "Move active bots to the top.*"
-          checked: false
-- runFlow:
-    when:
-      platform: Android
-    commands:
-      - assertNotVisible:
-          containsChild: "Move active bots to the top"
-          checked: true
+    file: subflows/toggle-layout.yaml
+    env:
+      OPTION: "Group by computer"
 - runScript:
     file: auto-order.js
     env:
       ENABLED: "true"
 - runFlow:
-    when:
-      platform: iOS
-    commands:
-      - extendedWaitUntil:
-          visible:
-            text: "Move active bots to the top.*"
-            checked: true
-          timeout: 10000
-- runFlow:
-    when:
-      platform: Android
-    commands:
-      - extendedWaitUntil:
-          visible:
-            containsChild: "Move active bots to the top"
-            checked: true
-          timeout: 10000
+    file: subflows/last-active.yaml
+    env:
+      ON: "true"
 - takeScreenshot: auto-order-followed
 - runScript:
     file: auto-order.js
     env:
       ENABLED: "false"
 - runFlow:
-    when:
-      platform: iOS
-    commands:
-      - extendedWaitUntil:
-          visible:
-            text: "Move active bots to the top.*"
-            checked: false
-          timeout: 10000
-- runFlow:
-    when:
-      platform: Android
-    commands:
-      - extendedWaitUntil:
-          notVisible:
-            containsChild: "Move active bots to the top"
-            checked: true
-          timeout: 10000
+    file: subflows/last-active.yaml
+    env:
+      ON: "false"

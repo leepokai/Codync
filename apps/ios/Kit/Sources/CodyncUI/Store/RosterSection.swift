@@ -109,6 +109,13 @@ public struct RosterSection: Sendable {
         return lines
     }
 
+    /// `roster` sorted by status (`Bot.statusRank`), each rank keeping the roster's order: Sort by status.
+    public static func byStatus<Item>(_ roster: [Item], bot: (Item) -> Bot) -> [Item] {
+        roster.enumerated()
+            .sorted { (bot($0.element).statusRank, $0.offset) < (bot($1.element).statusRank, $1.offset) }
+            .map(\.element)
+    }
+
     /// A computer's bots in the order `lines` shows them, the ones in a folded section included: what a view of
     /// every bot lists (all bots' work, Search, which keeps the ones whose name has `query`).
     public static func onScreen<Item>(_ roster: [Item], order: [String] = [], matching query: String = "", bot: (Item) -> Bot) -> [Item] {

@@ -50,3 +50,10 @@ import Testing
     order.rename("Work", to: "Home", on: "mac")
     #expect(order.saved(on: "mac") == ["", "Home"])
 }
+
+@Test func sortByStatusPutsNeedsYouThenWorkingFirstAndKeepsTheOrderWithinEach() throws {
+    let bots = try [#"{"id":"idle1"}"#, #"{"id":"busy1","status":"working"}"#, #"{"id":"ask","status":"needsInput"}"#,
+                    #"{"id":"idle2"}"#, #"{"id":"busy2","status":"working"}"#]
+        .map { try JSONDecoder().decode(Bot.self, from: Data($0.utf8)) }
+    #expect(RosterSection.byStatus(bots) { $0 }.map(\.id) == ["ask", "busy1", "busy2", "idle1", "idle2"])
+}

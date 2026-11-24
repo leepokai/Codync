@@ -23,6 +23,8 @@
   "Auto: Wi-Fi or Tailscale, then Cloudflare": "自動：先 Wi-Fi 或 Tailscale，再 Cloudflare",
   "Back": "返回",
   "Bots": "機器人",
+  "Bot icon size": "機器人圖示大小",
+  "The Bots list's icons, with their agent mark, at a readable size.": "機器人列表的圖示會跟著變大（含智慧體標誌）。",
   "Can't reach": "連不上",
   "Cancel": "取消",
   "Cancel request": "取消申請",

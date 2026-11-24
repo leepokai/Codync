@@ -23,6 +23,8 @@
   "Auto: Wi-Fi or Tailscale, then Cloudflare": "자동: Wi-Fi 또는 Tailscale, Cloudflare",
   "Back": "뒤로",
   "Bots": "봇",
+  "Bot icon size": "봇 아이콘 크기",
+  "The Bots list's icons, with their agent mark, at a readable size.": "봇 목록의 아이콘(에이전트 표시 포함)을 읽기 쉬운 크기로 조절합니다.",
   "Can't reach": "연결할 수 없음",
   "Cancel": "취소",
   "Cancel request": "요청 취소",

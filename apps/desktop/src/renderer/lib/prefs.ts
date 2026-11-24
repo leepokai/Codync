@@ -70,6 +70,17 @@ export function stepTextSize(size: number, up: boolean) {
   return (up ? TEXT_SIZES.find((s) => s > size) : [...TEXT_SIZES].reverse().find((s) => s < size)) ?? size
 }
 
+/** The roster rows' avatar size (the Bots list's icons), for readability: the agent mark and a
+ * group's faces scale with it. 30 is the app's default. */
+export const DEFAULT_ROSTER_ICON_SIZE = 30
+export const ROSTER_ICON_MIN = 24
+export const ROSTER_ICON_MAX = 44
+
+/** Keeps a stored roster icon size a whole number inside the range, on either end when past it. */
+export function clampRosterIconSize(size: number) {
+  return Number.isFinite(size) ? Math.min(ROSTER_ICON_MAX, Math.max(ROSTER_ICON_MIN, Math.round(size))) : DEFAULT_ROSTER_ICON_SIZE
+}
+
 export const prefs = {
   textSize: pref('conversationFontSize', DEFAULT_TEXT_SIZE),
   /** How the Bots list and the Threads list are laid out: under their computer's heading, and by status. */
@@ -106,6 +117,8 @@ export const prefs = {
   usageIconStyle: pref<'character' | 'original'>('usageIconStyle', 'character'),
   /** The roster marks each bot with its agent's logo while the bots run more than one agent. */
   agentLogos: pref('showAgentLogos', true),
+  /** The roster rows' avatar size (the Bots list's icons), for readability; the agent mark scales with it. On this device only. */
+  rosterIconSize: pref('rosterIconSize', DEFAULT_ROSTER_ICON_SIZE),
   onboardingDone: pref('macAccountOnboardingCompleted', false),
   /** Chose to go on without signing in; signing in ends it. */
   withoutAccount: pref('withoutAccount', false),

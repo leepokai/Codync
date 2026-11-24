@@ -24,3 +24,12 @@ test('A stored preference of another kind reads as the fallback', async () => {
   assert.equal(prefs.sidebarWidth.get(), 300)
   assert.equal(prefs.computerAccessSetup.get(), 'ready')
 })
+
+test('A roster icon size stays a whole number inside its range', async () => {
+  const { clampRosterIconSize } = await import('./prefs.ts')
+  assert.equal(clampRosterIconSize(30), 30)
+  assert.equal(clampRosterIconSize(12), 24)
+  assert.equal(clampRosterIconSize(99), 44)
+  assert.equal(clampRosterIconSize(31.6), 32)
+  assert.equal(clampRosterIconSize(Number.NaN), 30)
+})

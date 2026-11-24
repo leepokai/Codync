@@ -23,6 +23,8 @@
   "Auto: Wi-Fi or Tailscale, then Cloudflare": "Automático: Wi-Fi o Tailscale, luego Cloudflare",
   "Back": "Atrás",
   "Bots": "Bots",
+  "Bot icon size": "Tamaño del icono de bot",
+  "The Bots list's icons, with their agent mark, at a readable size.": "Los iconos de la lista de bots, con su marca de agente, en un tamaño legible.",
   "Can't reach": "No se puede conectar",
   "Cancel": "Cancelar",
   "Cancel request": "Cancelar solicitud",

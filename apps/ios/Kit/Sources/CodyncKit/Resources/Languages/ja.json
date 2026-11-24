@@ -23,6 +23,8 @@
   "Auto: Wi-Fi or Tailscale, then Cloudflare": "自動: Wi-Fi または Tailscale、次に Cloudflare",
   "Back": "戻る",
   "Bots": "ボット",
+  "Bot icon size": "ボットアイコンのサイズ",
+  "The Bots list's icons, with their agent mark, at a readable size.": "ボット一覧のアイコン（エージェントのマーク付き）を見やすい大きさにします。",
   "Can't reach": "接続できません",
   "Cancel": "キャンセル",
   "Cancel request": "リクエストのキャンセル",

@@ -856,6 +856,26 @@ async fn a_new_session_after_a_move_to_its_own_folder_carries_nothing() {
     assert!(!prompt.contains("<handoff>") && !prompt.contains("Fix the login tests"), "{prompt}");
 }
 
+#[tokio::test]
+async fn a_move_to_its_own_folder_carries_the_context_manifest_past_a_restart() {
+    let mut host = Host::start().await;
+    let bot = relay_bot(&host).await;
+    let home_ws = host.workspace(&bot);
+    std::fs::write(home_ws.join("ledger-files.json"), serde_json::to_vec(&["moved_from_home.txt"]).unwrap()).unwrap();
+    host.reply(&bot, "Never run the suite twice").await;
+
+    moved_home(&mut host, &bot).await;
+    host.reply(&bot, "Continue in own folder").await;
+
+    let prompt = last_prompt(&host, &bot, "primary");
+    assert!(prompt.contains("<handoff>") && prompt.contains("in another working folder"), "{prompt}");
+    assert!(!prompt.contains("another agent"), "{prompt}");
+    assert!(prompt.contains("<ledger>\nGathered by rule"), "move carries the context manifest: {prompt}");
+    assert!(prompt.contains("Never run the suite twice"), "move preserves user constraints: {prompt}");
+    assert!(prompt.contains("synthetic-test") && prompt.contains("exit 3"), "{prompt}");
+    assert!(prompt.contains("moved_from_home.txt"), "{prompt}");
+}
+
 async fn relay_bot(host: &Host) -> String {
     let bot =
         json!({"name": "Relay", "backend": "custom", "command": agent("primary"), "connectors": [], "notify": false});

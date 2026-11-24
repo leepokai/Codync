@@ -523,9 +523,45 @@ mod tests {
     #[test]
     fn a_recap_after_a_move_to_another_folder_names_no_other_agent() {
         let said = chat(1, "Fix the login tests");
-        let recap = Recap { from: "Claude Code", said: &said, moved: true, ..Recap::default() }.text();
+        let recap = Recap { from: "Claude Code", said: &said, moved: true, ..Recap::default() }.text().unwrap();
         assert!(recap.starts_with("<handoff>\nThis chat has been going on with you in another working folder"));
         assert!(!recap.contains("another agent") && recap.contains("Fix the login tests"), "{recap}");
+    }
+
+    #[test]
+    fn a_move_to_another_folder_recap_carries_and_bounds_the_context_manifest() {
+        let manifest = ledger::Ledger {
+            constraints: vec!["Never run the suite twice".into()],
+            files: vec![ledger::Touched {
+                path: "src/app.rs".into(),
+                bytes: Some(512),
+                sha256: Some("c".repeat(64)),
+                why: "modified",
+                unavailable: None,
+            }],
+            ..ledger::Ledger::default()
+        };
+        let said = chat(1, "Fix the login tests");
+        let full =
+            Recap { from: "Claude Code", said: &said, moved: true, manifest: Some(&manifest), ..Recap::default() }
+                .text()
+                .unwrap();
+        assert!(full.starts_with("<handoff>\nThis chat has been going on with you in another working folder"));
+        assert!(!full.contains("another agent") && full.contains("<ledger>"), "{full}");
+        assert!(full.contains("Never run the suite twice") && full.contains("src/app.rs"), "{full}");
+
+        let bounded = Recap {
+            from: "Claude Code",
+            said: &said,
+            room: Some(full.len()),
+            moved: true,
+            manifest: Some(&manifest),
+            ..Recap::default()
+        }
+        .text()
+        .unwrap();
+        assert!(bounded.len() <= full.len());
+        assert!(bounded.contains("in another working folder") && bounded.contains("<ledger>"), "{bounded}");
     }
 
     /// A recap of `said` alone, for an agent with `room`.

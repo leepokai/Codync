@@ -39,11 +39,16 @@ test('a paused bot wears the pause mark on its avatar until it is resumed, and a
   try {
     made.push(await createBot(page, { name: bot, backend: 'claude' }))
     made.push(await createBot(page, { name: group, kind: 'group', members: [...made] }))
+    // The absence checks need the rows on screen first: count 0 is also true before mount.
+    await expect(row(bot)).toBeVisible()
+    await expect(row(group)).toBeVisible()
     await expect(row(bot).locator('.avatar-paused')).toHaveCount(0)
 
     // The same minimal patch the roster's Pause bot menu sends (lead-menus → store.setPaused).
     await call(page, 'updateBot', { id: made[0], paused: true })
     await expect(row(bot).locator('.avatar-paused')).toBeVisible()
+    // Decorative by design: the row's own marks announce Paused.
+    await expect(row(bot).locator('.avatar-paused')).toHaveAttribute('aria-hidden', 'true')
     // A group's face stays bare: groups carry no pause state of their own.
     await expect(row(group).locator('.avatar-paused')).toHaveCount(0)
 

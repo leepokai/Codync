@@ -297,6 +297,10 @@ export function BotOrGroupAvatar({ bot, members = [], size = 44, animated = true
 /** Avatar with the roster status dot: filled = unread, amber = needs you. A group shows its members; `agent`
  * (a registry id) puts the agent's logo in the bottom-left corner. */
 export function AvatarWithStatus({ bot, members = [], size = 44, agent = null }: { bot: Bot; members?: Bot[]; size?: number; agent?: string | null }) {
+  // A paused bot's mark takes the top-right gap the lead's crown leaves; a gap too small for a
+  // readable mark skips it — the row's fade, name mark and preview still say Paused.
+  const crown = bot.lead ? Math.max(12, size * 0.34) : 0
+  const pausedMark = Math.min(Math.max(9, size * 0.3), size - (size / 2 + crown / 2) - 2)
   return (
     <div className="avatar-frame" style={{ width: size, height: size }}>
       <BotOrGroupAvatar bot={bot} members={members} size={size} />
@@ -306,10 +310,12 @@ export function AvatarWithStatus({ bot, members = [], size = 44, agent = null }:
         </span>
       ) : null}
       {bot.lead ? <LeadAgentBadge size={Math.max(12, size * 0.34)} /> : null}
-      {/* A paused bot wears its state on its face too: the roster row fades, but a manager sheet row
-          doesn't — this mark says paused wherever the bot's face shows. */}
-      {bot.paused && !isGroup(bot) ? (
-        <Icon className="avatar-paused" name="pause.circle" size={Math.max(11, size * 0.34)} weight="medium" color="var(--secondary)" scaled={false} />
+      {/* A paused bot wears its state on its face too: the roster row fades, but a manager sheet
+          row doesn't — this mark says paused wherever the bot's face shows. */}
+      {bot.paused && !isGroup(bot) && pausedMark >= 8 ? (
+        <span className="avatar-paused" aria-hidden="true">
+          <Icon name="pause.circle" size={pausedMark} weight="medium" color="var(--secondary)" scaled={false} />
+        </span>
       ) : null}
       {outsideStatus(bot) === 'needsInput' ? (
         <div className="avatar-badge needs-you" style={{ width: size * 0.36, height: size * 0.36 }}>

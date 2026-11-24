@@ -44,11 +44,15 @@
 /* A paused bot wears its state on its face (AvatarWithStatus): a pause mark pinned to the frame's
    top-right, over whatever the avatar draws, legible by its background halo. The badge family keeps
    the bottom corners — the agent's logo bottom-left, needs-you and unread bottom-right — and the
-   crown the top-center, so this one takes the top-right. */
+   crown the top-center, so this one sizes itself to the gap the crown leaves. Decorative: it never
+   takes a pointer, and the row's own marks announce Paused to a screen reader. */
 .avatar-paused {
   position: absolute;
   top: 0;
   right: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
   filter: drop-shadow(0 0 1.5px var(--background)) drop-shadow(0 0 1.5px var(--background));
 }
 

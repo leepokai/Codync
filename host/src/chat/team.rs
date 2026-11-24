@@ -498,13 +498,17 @@ pub async fn call_async(hub: &Arc<Hub>, from: &str, turn: &str, name: &str, args
         "list_bots" => {
             visible_bot(hub, from)?;
             let remote = hub.network.directory().await;
-            let sessions = assistant::sessions_here(hub, None).await?;
+            // A session whose saved address is a bot's id stays unlisted: the id means the bot.
+            let mut sessions = assistant::sessions_here(hub, None).await?;
+            sessions.retain(|s| !names_bot(hub, &s.address));
             directory::list(hub, from, args, &remote, &sessions, |_| true)
         }
         "message_bot" => {
             let (to, message) = message_args(args)?;
-            // A coding agent's session on this computer, by its address.
-            if let Some(session) = hub.network.sessions.by_address(&hub.store, to) {
+            // A coding agent's session on this computer, by its address; a bot's id or address name wins.
+            if !names_bot(hub, to)
+                && let Some(session) = hub.network.sessions.by_address(&hub.store, to)
+            {
                 return remote::to_local_session(hub, &visible_bot(hub, from)?, turn, &session, message);
             }
             match hub.network.recipient(to)? {
@@ -516,6 +520,11 @@ pub async fn call_async(hub: &Arc<Hub>, from: &str, turn: &str, name: &str, args
         }
         _ => call(hub, from, turn, name, args),
     }
+}
+
+/// Whether `to` names one of this computer's bots (its id or address name).
+fn names_bot(hub: &Hub, to: &str) -> bool {
+    matches!(hub.network.recipient(to), Ok(Recipient::Here(id)) if visible_bot(hub, &id).is_ok())
 }
 
 /// A team tool call among this computer's bots.

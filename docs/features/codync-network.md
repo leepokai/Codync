@@ -196,7 +196,9 @@ that was off learns of a removal.
 - **Bots**: a bot's `list_bots` lists the sessions here too, and its `message_bot` to a session's address leaves a
   letter under the request's id, from the bot's address (`remote::to_local_session`); the bot's exchange notice
   waits. When the session answers with `replyTo` = that id, the answer ends the notice and comes back as the bot's
-  reply turn, as from another computer, carrying the chain's hops; only the session it went to can end it. The
+  reply turn, as from another computer, carrying the chain's hops; only the session it went to can end it, and only with the asking bot as `botId`. A letter a full inbox
+  (100) drops unread ends its request as failed. A bot's id or address name wins over a session's saved address that
+  happens to equal it (such a session isn't listed to bots). The
   request is checked like any other (the bot's turn, the hop limit) but holds no running slot. A bot's request to a
   session on another computer goes as a letter like any other, and the session's answer comes back the same way.
   Kept in memory: after a host restart the session's answer reaches the bot as a new request, and an answer the bot

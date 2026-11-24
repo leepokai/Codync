@@ -225,7 +225,7 @@ async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
     // An answer to one of this computer's bots that asked this session.
     if let Some(me) = &asker.session
         && let Some(reply_to) = args["replyTo"].as_str()
-        && remote::session_replied(hub, me, reply_to, message)
+        && remote::session_replied(hub, me, reply_to, to, message)?
     {
         return Ok(json!({"to": to, "status": "delivered"}));
     }

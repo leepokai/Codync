@@ -330,6 +330,10 @@ async fn a_bot_messages_a_session_and_gets_its_answer() {
     let wrong =
         local_call(hub, &other, "message_bot", &json!({"botId": "b", "message": "x", "replyTo": request})).await;
     assert_ne!(wrong.as_ref().ok().map(|v| v["status"].clone()), Some(json!("delivered")));
+    // Paired with another bot's id, the answer is refused, and the request still waits for it.
+    let mixed = json!({"botId": "nobody", "message": "yes", "replyTo": request});
+    let mixed = local_call(hub, &codex, "message_bot", &mixed).await.unwrap_err().to_string();
+    assert!(mixed.contains("answer it with botId"), "{mixed}");
     let answer = json!({"botId": "b", "message": "yes, merged", "replyTo": request});
     assert_eq!(local_call(hub, &codex, "message_bot", &answer).await.unwrap()["status"], "delivered");
     let notice = || {
@@ -338,5 +342,21 @@ async fn a_bot_messages_a_session_and_gets_its_answer() {
     };
     f.until(|| notice().is_some_and(|d| d["status"] == "completed")).await;
     assert!(notice().unwrap().to_string().contains("yes, merged"));
+
+    // A request whose letter a full inbox drops unread ends, as failed.
+    hub.team.start_turn("b", crate::chat::team::Turn::Chat(0));
+    let ask = json!({"botId": address, "message": "still there?"});
+    let sent = crate::chat::team::call_async(hub, "b", "b", "message_bot", &ask).await.unwrap();
+    let dropped = sent["requestId"].as_str().unwrap().to_owned();
+    for n in 0..100 {
+        local_call(hub, &other, "message_bot", &json!({"botId": address, "message": format!("note {n}")}))
+            .await
+            .unwrap();
+    }
+    let ended = || {
+        let history = hub.store.history("b", i64::MAX, 50).unwrap();
+        history.into_iter().find(|e| e.data["delegationId"] == *dropped).map(|e| e.data)
+    };
+    f.until(|| ended().is_some_and(|d| d["status"] == "failed")).await;
     f.shutdown().await;
 }

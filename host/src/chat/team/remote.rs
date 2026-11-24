@@ -64,6 +64,16 @@ impl Waiting {
     }
 
     /// The request `id`, taken when it went to `session` (`None`: to another computer).
+    /// The bot whose request `id` to the session `key` this is.
+    fn asker(&self, id: &str, key: &str) -> Option<String> {
+        let all = self.0.locked();
+        let w = all.get(id).filter(|w| w.session.as_deref() == Some(key))?;
+        match &w.to {
+            ReplyTo::Bot { id, .. } => Some(id.clone()),
+            ReplyTo::Replies => None,
+        }
+    }
+
     fn take_for(&self, id: &str, session: Option<&str>) -> Option<Waiter> {
         let mut all = self.0.locked();
         all.get(id).is_some_and(|w| w.session.as_deref() == session).then(|| all.remove(id)).flatten()
@@ -316,12 +326,33 @@ pub(super) fn to_local_session(
 
 /// A session here answers `reply_to`: when that is a bot's request to it, the bot gets the answer
 /// as its reply turn. False when it isn't one.
-pub(super) fn session_replied(hub: &Hub, session: &Session, reply_to: &str, body: &str) -> bool {
-    let Some(waiter) = hub.waiting.take_for(reply_to, Some(&session.key)) else { return false };
+pub(super) fn session_replied(hub: &Hub, session: &Session, reply_to: &str, to: &str, body: &str) -> Result<bool> {
+    let Some(asker) = hub.waiting.asker(reply_to, &session.key) else { return Ok(false) };
+    // The answer goes to the bot that asked: a botId naming another one is a mix-up to correct.
+    let named = match hub.network.recipient(to) {
+        Ok(crate::network::Recipient::Here(bot)) => bot,
+        _ => to.to_owned(),
+    };
+    if named != asker {
+        let handle = hub.network.handle_of(&asker).unwrap_or(asker);
+        anyhow::bail!("letter {reply_to} came from {handle}: answer it with botId {handle}");
+    }
+    let Some(waiter) = hub.waiting.take_for(reply_to, Some(&session.key)) else { return Ok(false) };
     let hops = waiter.hops;
     replied(hub, reply_to, waiter, body, None, hops, codync_network::Access::Allow);
     crate::analytics::network_session(hub, crate::analytics::SessionAction::Answered, session.kind);
-    true
+    Ok(true)
+}
+
+/// Letters a full mailbox dropped unread: a bot's request among them ends, as failed.
+pub(super) fn dropped_unread(hub: &Hub, ids: &[String]) {
+    for id in ids {
+        if let Some(waiter) = hub.waiting.take(id) {
+            let hops = waiter.hops;
+            let why = "The session's inbox was full, so this letter was dropped unread.";
+            replied(hub, id, waiter, why, Some(RequestStatus::Failed), hops, codync_network::Access::Allow);
+        }
+    }
 }
 
 /// The cloud assistant, or an agent on this computer that isn't a bot, asks a bot on another
@@ -395,13 +426,15 @@ pub(super) fn awaits_in_replies(hub: &Hub, id: &str, peer: &str, message: &str, 
 
 /// Says where a request waits, unless its reply already came (a quick one can beat this).
 fn waiting(hub: &Hub, id: &str, text: &str, status: RequestStatus) {
-    if let Some(mut e) = hub.store.entry(id)
-        && e.data["status"] == json!(RequestStatus::Queued)
-    {
+    // Checked and changed together: a reply as quick as this must not be overwritten with the old copy.
+    let _ = hub.edit_entry(id, |e| {
+        if e.data["status"] != json!(RequestStatus::Queued) {
+            return Ok(false);
+        }
         e.data["text"] = text.into();
         e.data["status"] = json!(status);
-        hub.set_entry(id, &e.data);
-    }
+        Ok(true)
+    });
 }
 
 /// A bot on another computer (or any agent there) asks one of this computer's bots.

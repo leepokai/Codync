@@ -70,6 +70,20 @@ can be traced from the events around it:
   [analytics events](../reference/analytics-events.md), and check they arrive in PostHog
   (`env = dev`) during the change's e2e test.
 
+## Fixing a bug
+
+Every bug fix leaves a way to see in PostHog whether the bug still happens in the versions after it:
+
+- **A failure event that names the bug.** The fix keeps, or adds in the same change, a failure event
+  (or an `outcome`/`error` category) that fires when this bug happens, distinct enough that its count
+  is this bug and not a neighbour's. When the fix turns a failure into a handled case, give that case
+  its own category (as `own_folder_save_failed` got `stage: unreadable`), so the handled path shows
+  apart from the bug.
+- **An insight on the *Bug fixes* dashboard** (id 2404829), named `Fixed in X.Y.Z: <the bug>`: that
+  event, production only (`env = main`), users per day broken down by `app_version`, with the fix's
+  commit in its description. The bug is gone when the fixed versions stop showing it; if they don't,
+  reopen the issue.
+
 ## Where events come from
 
 - **Host** (`host/src/analytics.rs`, `analytics/`): `api::dispatch` maps successful API calls to

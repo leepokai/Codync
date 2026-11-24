@@ -48,9 +48,9 @@ impl InFlight {
 }
 
 /// [`models`], shared with the asks for the same agent and login profile meanwhile.
-pub async fn shared_models(hub: &Hub, backend: &str, login_profile: Option<&str>) -> Result<Value> {
+pub async fn shared_models(hub: &Arc<Hub>, backend: &str, login_profile: Option<&str>) -> Result<Value> {
     if backend == "imate" {
-        return super::imate::shared_models(hub).await;
+        return super::imate::shared_models(hub, login_profile).await;
     }
     let login_profile = login_profile.filter(|s| !s.is_empty());
     Box::pin(hub.model_lists.get(backend, login_profile, Box::pin(models(&hub.store, backend, login_profile)))).await

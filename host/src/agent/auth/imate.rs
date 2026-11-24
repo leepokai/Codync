@@ -37,6 +37,8 @@ pub async fn set_token(hub: Arc<Hub>, token: &str) -> Result<Value> {
     super::save_env(&hub.store, "agent-env:imate", &[(TOKEN.to_owned(), Some(token.to_owned()))])?;
     backends::set_signed_in("imate", Some(true));
     hub.model_lists.clear("imate");
+    // A bridge already running still has the token it started with.
+    hub.restart_agents("imate");
     status(hub).await
 }
 
@@ -46,87 +48,134 @@ pub fn check(store: &Store) -> Result<Status> {
     Ok(Status { signed_in: Some(signed_in), detail: None, methods: Vec::new() })
 }
 
-/// The token a bridge process should start with: the agent's own, or one saved on a login profile.
-pub(crate) fn launch_token(store: &Store) -> Result<Option<String>> {
+/// The token a bridge starts with for `login_profile` (none: the agent's own, then a signed-in profile).
+/// The model picker uses the same choice, so the colleagues it lists are the ones that bot can reach.
+pub(crate) fn token_for(store: &Store, login_profile: Option<&str>) -> Result<Option<String>> {
+    if let Some(id) = login_profile.filter(|id| !id.is_empty())
+        && let Some(token) = profile_token(store, id)?
+    {
+        return Ok(Some(token));
+    }
     saved_token(store)
+}
+
+/// Puts the chosen colleague and, when the login didn't, its token on `env`. A chat and a background
+/// job (naming, a call title) both go through here, so they open the same tunnel.
+pub(crate) fn apply_launch(
+    store: &Store,
+    model: Option<&str>,
+    login_profile: Option<&str>,
+    env: &mut Vec<(String, String)>,
+) -> Result<()> {
+    if let Some(model) = model.map(str::trim).filter(|model| !model.is_empty()) {
+        env.retain(|(name, _)| name != "IMATE_CLIENT_UUID");
+        env.push(("IMATE_CLIENT_UUID".into(), model.to_owned()));
+    }
+    let has_token = env.iter().any(|(name, value)| name == "IMATE_API_TOKEN" && !value.is_empty());
+    if !has_token && let Some(token) = token_for(store, login_profile)? {
+        env.retain(|(name, _)| name != "IMATE_API_TOKEN");
+        env.push(("IMATE_API_TOKEN".into(), token));
+    }
+    Ok(())
+}
+
+fn profile_token(store: &Store, id: &str) -> Result<Option<String>> {
+    let Some(raw) = crate::market::vault::read(store, &format!("login-profile:{id}"))? else {
+        return Ok(None);
+    };
+    let vars: Map<String, Value> = serde_json::from_str(&raw)?;
+    Ok(token_text(vars.get(TOKEN)))
 }
 
 fn saved_token(store: &Store) -> Result<Option<String>> {
     if let Some(raw) = crate::market::vault::read(store, "agent-env:imate")? {
         let vars: Map<String, Value> = serde_json::from_str(&raw)?;
-        if let Some(token) = vars.get(TOKEN).and_then(Value::as_str) {
-            let token = token.trim();
-            if !token.is_empty() {
-                return Ok(Some(token.to_owned()));
-            }
+        if let Some(token) = token_text(vars.get(TOKEN)) {
+            return Ok(Some(token));
         }
     }
     for profile in login_profiles::signed_in_for(store, "imate") {
         let slot = format!("login-profile:{}", profile.account.id);
         let Some(raw) = crate::market::vault::read(store, &slot)? else { continue };
         let vars: Map<String, Value> = serde_json::from_str(&raw)?;
-        if let Some(token) = vars.get(TOKEN).and_then(Value::as_str) {
-            let token = token.trim();
-            if !token.is_empty() {
-                return Ok(Some(token.to_owned()));
-            }
+        if let Some(token) = token_text(vars.get(TOKEN)) {
+            return Ok(Some(token));
         }
     }
     Ok(None)
 }
 
-/// The signed-in user's `iMate` bots, in the shape the shared model picker reads.
-pub async fn shared_models(hub: &Hub) -> Result<Value> {
-    // An API key profile's value is in the vault; a model request has no other
-    // reason to unlock it. A token saved for the agent itself is in the same store.
-    let fetch = async {
-        let token = saved_token(&hub.store)?.context("add an iMate API token in Extensions first")?;
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            AUTHORIZATION,
-            HeaderValue::from_str(&format!("Bearer {token}")).context("invalid iMate API token")?,
-        );
-        let response = http()
-            .get(format!("{BASE}/api/v1/open/imates"))
-            .headers(headers)
-            .send()
-            .await
-            .context("listing iMate agents")?;
-        let status = response.status();
-        let body = response.text().await.context("reading the iMate agent list")?;
-        if !status.is_success() {
-            bail!("iMate agent list failed ({status}): {}", first_line(&body));
-        }
-        let value: Value = serde_json::from_str(first_line(&body)).context("decoding the iMate agent list")?;
-        if value["code"] != 0 {
-            bail!("iMate agent list failed: {}", value["message"].as_str().unwrap_or("unknown error"));
-        }
-        let mut models: Vec<Value> = value["data"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|imate| {
-                let id = imate["clientUuid"].as_str()?;
-                Some(json!({"id": id, "name": imate["botName"].as_str().unwrap_or(id), "description": null, "options": []}))
-            })
-            .collect();
-        models.sort_by(|a, b| a["name"].as_str().unwrap_or_default().cmp(b["name"].as_str().unwrap_or_default()));
-        Ok(json!({
-            "models": models,
-            "currentModelId": models.first().and_then(|m| m["id"].as_str()).unwrap_or_default(),
-            "defaultModelOptions": false,
-            "fastMode": false,
-            "modes": [],
-        }))
-    };
-    let result = fetch.await;
-    let mut properties = Map::new();
-    properties.insert("outcome".into(), json!(if result.is_ok() { "success" } else { "failed" }));
-    if let Err(error) = &result {
-        properties.insert("category".into(), json!(failure_category(error)));
+fn token_text(value: Option<&Value>) -> Option<String> {
+    let token = value.and_then(Value::as_str)?.trim();
+    if token.is_empty() { None } else { Some(token.to_owned()) }
+}
+
+/// The signed-in user's iMate colleagues, in the shape the shared model picker reads.
+/// `login_profile` is the bot's login, so the list is the one that token can see.
+pub async fn shared_models(hub: &Arc<Hub>, login_profile: Option<&str>) -> Result<Value> {
+    // The vault stays locked across a host restart until something opens it. Listing colleagues is that read.
+    crate::market::vault::unlock(hub.clone()).await?;
+    let login_profile = login_profile.filter(|id| !id.is_empty());
+    hub.model_lists
+        .get("imate", login_profile, async {
+            let result = list_colleagues(&hub.store, login_profile).await;
+            let mut properties = Map::new();
+            properties.insert("outcome".into(), json!(if result.is_ok() { "success" } else { "failed" }));
+            if let Err(error) = &result {
+                properties.insert("category".into(), json!(failure_category(error)));
+            }
+            capture(hub, Event::ImateAgentsListed, properties);
+            result
+        })
+        .await
+}
+
+async fn list_colleagues(store: &Store, login_profile: Option<&str>) -> Result<Value> {
+    let token = token_for(store, login_profile)?.context("add an iMate API token in Extensions first")?;
+    let mut headers = HeaderMap::new();
+    headers
+        .insert(AUTHORIZATION, HeaderValue::from_str(&format!("Bearer {token}")).context("invalid iMate API token")?);
+    let response = http()
+        .get(format!("{BASE}/api/v1/open/imates"))
+        .headers(headers)
+        .send()
+        .await
+        .context("listing iMate agents")?;
+    let status = response.status();
+    let body = response.text().await.context("reading the iMate agent list")?;
+    if !status.is_success() {
+        bail!("iMate agent list failed ({status}): {}", first_line(&body));
     }
-    capture(hub, Event::ImateAgentsListed, properties);
-    hub.model_lists.get("imate", None, async { result }).await
+    let value: Value = serde_json::from_str(first_line(&body)).context("decoding the iMate agent list")?;
+    if value["code"] != 0 {
+        bail!("iMate agent list failed: {}", value["message"].as_str().unwrap_or("unknown error"));
+    }
+    // The same order as the bridge's default colleague: first by name, so "Default" is that person.
+    let mut models: Vec<Value> = value["data"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|imate| {
+            let id = imate["clientUuid"].as_str()?;
+            Some(json!({"id": id, "name": colleague_name(imate), "description": null, "options": []}))
+        })
+        .collect();
+    models.sort_by(|a, b| a["name"].as_str().unwrap_or_default().cmp(b["name"].as_str().unwrap_or_default()));
+    Ok(json!({
+        "models": models,
+        "currentModelId": models.first().and_then(|m| m["id"].as_str()).unwrap_or_default(),
+        "defaultModelOptions": false,
+        "fastMode": false,
+        "modes": [],
+    }))
+}
+
+/// The name the picker sorts by. Empty names sort as the colleague's id, the same as the bridge.
+pub(crate) fn colleague_name(imate: &Value) -> &str {
+    imate["botName"]
+        .as_str()
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| imate["clientUuid"].as_str().unwrap_or_default())
 }
 
 fn first_line(body: &str) -> &str {

@@ -240,12 +240,7 @@ pub async fn run() -> Result<()> {
 async fn open_tunnel(client: &Client, tunnel: &Arc<Mutex<Tunnel>>, frame: &Value) -> Result<()> {
     let uuid = match colleague(std::env::var(CLIENT_VAR).ok().as_deref()) {
         Some(uuid) => uuid,
-        None => client
-            .imates()
-            .await?
-            .into_iter()
-            .find_map(|imate| imate["clientUuid"].as_str().map(str::to_owned))
-            .context("no iMate agent is available for this token")?,
+        None => default_colleague(client.imates().await?).context("no iMate agent is available for this token")?,
     };
     let raw = serde_json::to_string(frame)?;
     let (connection, body) = client.open(&uuid, &raw).await?;
@@ -260,9 +255,16 @@ async fn open_tunnel(client: &Client, tunnel: &Arc<Mutex<Tunnel>>, frame: &Value
     Ok(())
 }
 
-/// `preferred` when the bot already chose a colleague. Empty means the token's first agent.
+/// `preferred` when the bot already chose a colleague. Empty means the first by name, the picker's default.
 fn colleague(preferred: Option<&str>) -> Option<String> {
     preferred.map(str::trim).filter(|id| !id.is_empty()).map(str::to_owned)
+}
+
+/// The colleague a bot with no model of its own talks to. Same order as the picker: name, then id.
+fn default_colleague(mut imates: Vec<Value>) -> Option<String> {
+    imates
+        .sort_by(|a, b| crate::agent::auth::imate::colleague_name(a).cmp(crate::agent::auth::imate::colleague_name(b)));
+    imates.into_iter().find_map(|imate| imate["clientUuid"].as_str().map(str::to_owned))
 }
 
 /// A session request without the local MCP servers: they are processes on this computer, which iMate can't start.
@@ -327,6 +329,9 @@ async fn pump(mut response: reqwest::Response, tunnel: Arc<Mutex<Tunnel>>) {
             dispatch_event(&event, &tunnel);
         }
     }
+    // The host is still waiting on a reply this process accepted. Leaving it running hangs that turn.
+    tracing::warn!("iMate ACP event stream closed; stopping the bridge");
+    std::process::exit(1);
 }
 
 /// Completed SSE event payloads in `incoming`. Bytes after the last newline stay in `pending`.
@@ -409,6 +414,16 @@ mod tests {
     }
 
     #[test]
+    fn the_default_colleague_is_the_first_by_name() {
+        let listed = vec![
+            json!({"clientUuid": "b", "botName": "Zoe"}),
+            json!({"clientUuid": "a", "botName": "Alice"}),
+            json!({"clientUuid": "c", "botName": ""}),
+        ];
+        assert_eq!(default_colleague(listed).as_deref(), Some("a"));
+    }
+
+    #[test]
     fn session_frames_drop_local_servers() {
         let frame = r#"{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[{"name":"chat"}],"additionalDirectories":["/mem"]}}"#;
         let sent = forward_frame("session/new", frame);
@@ -424,7 +439,7 @@ mod tests {
         let mut pending = Vec::new();
         let mut data = String::new();
         let first = take_events(&mut pending, br#"data: {"id":2,"result":{"sessionId":"a"#, &mut data);
-        assert!(first.is_empty());
+        assert_eq!(first, Vec::<String>::new());
         let second = take_events(
             &mut pending,
             br#"bc"}}
@@ -443,6 +458,6 @@ mod tests {
             "sessionUpdate":"agent_message_chunk", "content":{"type":"text","text":""},
             "_meta":{"task":{"taskId":"image","final":true}}}}});
         dispatch_event(&frame.to_string(), &tunnel);
-        assert!(tunnel.locked().pending.locked().is_empty());
+        assert_eq!(tunnel.locked().pending.locked().clone(), Vec::<String>::new());
     }
 }

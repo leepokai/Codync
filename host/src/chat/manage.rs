@@ -354,7 +354,7 @@ fn model_after<'a>(fields: &'a Map<String, Value>, stored: Option<&'a str>) -> O
 /// default) of `backend` offers, as a client's model settings do: a value the agent refuses would keep the bot from
 /// starting. Loading the agent's model list counts against the call's `deadline`, which its approval card shares.
 async fn check_model_options(
-    hub: &Hub,
+    hub: &Arc<Hub>,
     backend: &str,
     login_profile: Option<&str>,
     model: Option<&str>,

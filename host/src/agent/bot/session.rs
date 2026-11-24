@@ -219,16 +219,8 @@ impl Actor {
             let (mut env, grants) = crate::agent::auth::launch_env(&self.hub.store, &self.cfg.backend, profile)?;
             if self.cfg.backend == "imate" {
                 // The tunnel URL is the colleague. Codync tells the agent its model only after `session/new`.
-                if let Some(model) = self.cfg.model.clone().filter(|model| !model.is_empty()) {
-                    env.retain(|(name, _)| name != "IMATE_CLIENT_UUID");
-                    env.push(("IMATE_CLIENT_UUID".into(), model));
-                }
                 // A login profile with no key of its own would clear the token saved for the agent.
-                let has_token = env.iter().any(|(name, value)| name == "IMATE_API_TOKEN" && !value.is_empty());
-                if !has_token && let Ok(Some(token)) = crate::agent::auth::imate::launch_token(&self.hub.store) {
-                    env.retain(|(name, _)| name != "IMATE_API_TOKEN");
-                    env.push(("IMATE_API_TOKEN".into(), token));
-                }
+                crate::agent::auth::imate::apply_launch(&self.hub.store, self.cfg.model.as_deref(), profile, &mut env)?;
             }
             if self.cfg.backend == "codex" && !env.iter().any(|(k, _)| k == "CODEX_CONFIG") {
                 // Codex's `/compact` takes no instructions: the keep-list is its config's `compact_prompt`.

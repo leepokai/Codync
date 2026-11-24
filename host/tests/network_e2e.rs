@@ -564,8 +564,10 @@ async fn a_session_a_rule_opens_takes_letters_from_another_computer_in_its_mailb
     .await
     .expect("the desk never offered the session");
     assert!(!listed.contains(&temporary), "{listed:?}");
-    // The letter waits in the session's mailbox under its own id, and the session's answer ends the request.
+    // The request ends with a receipt, and the letter waits in the session's mailbox under its own id.
     laptop.call("send", json!({"botId": lead, "text": format!("DELEGATE {address}@desk hello session")})).await;
+    let delivered = |e: &Value| is_final(e) && e["data"]["text"].as_str().is_some_and(|t| t.contains("Delivered to"));
+    laptop.wait_for(&lead, delivered).await;
     let mut wait = call(Some("t1"), "check_inbox");
     wait["arguments"] = json!({"waitSecs": 20});
     let inbox = desk.call("agentCall", wait).await;
@@ -574,7 +576,8 @@ async fn a_session_a_rule_opens_takes_letters_from_another_computer_in_its_mailb
     let id = letters.split(" id=\"").nth(1).and_then(|rest| rest.split('"').next()).unwrap().to_owned();
     let mut answer = call(Some("t1"), "message_bot");
     answer["arguments"] = json!({"botId": "lead@laptop", "message": "hi back", "replyTo": id});
-    assert_eq!(desk.call("agentCall", answer).await["status"], "sent");
-    let answered = |e: &Value| is_final(e) && e["data"]["text"].as_str().is_some_and(|t| t.contains("hi back"));
+    // The answer comes after the receipt, into the asking bot's chat: that computer asked, so it takes it.
+    assert_eq!(desk.call("agentCall", answer).await["status"], "delivered");
+    let answered = |e: &Value| e.to_string().contains("hi back");
     laptop.wait_for(&lead, answered).await;
 }

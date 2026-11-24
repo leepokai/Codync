@@ -196,7 +196,7 @@ async fn run(hub: &Arc<Hub>, asker: &Asker, tool: &str, args: &Value) -> Result<
             let remote = hub.network.directory().await;
             directory::list(hub, &asker.id, args, &remote, &sessions, |bot| asker.reaches(bot))
         }
-        "message_bot" => message(hub, asker, args),
+        "message_bot" => message(hub, asker, args).await,
         "read_replies" => Ok(hub.assistant.read(&asker.id, args["requestId"].as_str())),
         _ => match &asker.session {
             Some(session) => super::mailbox::call(hub, session, tool, args).await,
@@ -219,7 +219,7 @@ async fn others(hub: &Hub, me: &Session) -> Result<Vec<Session>> {
     Ok(others.await?)
 }
 
-fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
+async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
     let (to, message) = message_args(args)?;
     check_message(message)?;
     if let Some(me) = &asker.session
@@ -235,10 +235,9 @@ fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
         Recipient::There(address) => match (&asker.session, args["replyTo"].as_str()) {
             // A session answering a letter from another computer.
             (Some(me), Some(reply_to)) => {
-                remote::session_answer(hub, &me.address, &address, reply_to, message)?;
-                return Ok(
-                    json!({"to": hub.network.address_text(&address), "status": "sent", "note": "Your answer is on its way."}),
-                );
+                let sent = remote::session_answer(hub, &me.address, &address, reply_to, message).await?;
+                let status = if sent == codync_network::Sent::Delivered { "delivered" } else { "queued" };
+                return Ok(json!({"to": hub.network.address_text(&address), "status": status}));
             }
             _ => return message_elsewhere(hub, asker, &address, message),
         },

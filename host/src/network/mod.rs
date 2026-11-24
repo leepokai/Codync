@@ -237,8 +237,7 @@ impl Network {
         // The lock `publish` holds while it gives the bots theirs.
         let _handles = self.handles.locked();
         let mut given = given_handles(store);
-        // A name it already holds is its own again (a retried rename keeps the address it got).
-        let free = numbered(base, given.len(), |h| given.get(h).is_none_or(|o| o == owner));
+        let free = numbered(base, given.len(), |h| !given.contains_key(h));
         given.insert(free.clone(), owner.to_owned());
         store.kv_set(KV_HANDLES, &json!(given).to_string()).context("couldn't save the address names")?;
         Ok(free)

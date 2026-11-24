@@ -124,25 +124,41 @@ fn to_session(hub: &Arc<Hub>, session: &Session, m: &Message, back: &Return) -> 
     // Named with its network while this computer is in several, so the session can answer it.
     let from = hub.network.address_text(&Target { network: back.network.clone(), address: m.from.clone() });
     super::mailbox::post(hub, session, Some(&m.id), &from, &m.body, m.reply_to.as_deref())?;
+    // The sender's request ends with this receipt; the session's answer, if it sends one, comes
+    // after it (`session_answer`), which that computer still takes since it asked.
+    if request {
+        receipt(
+            hub,
+            back,
+            format!("Delivered to {}'s inbox: it reads its mail itself and may answer later.", session.address),
+            m.hops,
+        );
+    }
     Ok(())
 }
 
-/// A session here answers letter `reply_to` from another computer: an answer that ends the
-/// sender's request, which that computer takes since it asked.
-pub(super) fn session_answer(hub: &Arc<Hub>, from: &str, to: &Target, reply_to: &str, body: &str) -> Result<()> {
+/// A reply without `meta`: it ends the sender's request but not what that computer lets in as answers.
+fn receipt(hub: &Arc<Hub>, to: &Return, body: String, hops: u8) {
+    let Ok(slot) = hub.network.slot(Some(&to.network)) else { return };
+    let letter = Letter::new(to.from.clone(), to.to.clone(), body).reply_to(to.request.clone()).hops(hops);
+    let hub = hub.clone();
+    tokio::spawn(async move {
+        if let Err(error) = slot.node.send(letter).await {
+            tracing::warn!(error = format!("{error:#}"), "couldn't tell another computer its letter reached a session");
+            crate::analytics::network_failed(&hub, NetworkStage::Reply);
+        }
+    });
+}
+
+/// A session here answers letter `reply_to` from another computer: the answer that says how it
+/// ended (`meta`), which that computer takes since it asked, into the asker's chat or mailbox.
+pub(super) async fn session_answer(hub: &Hub, from: &str, to: &Target, reply_to: &str, body: &str) -> Result<Sent> {
     let node = hub.network.slot(Some(&to.network))?.node;
     hub.network.send_as(from)?;
     let letter = Letter::new(from, to.address.clone(), body)
         .reply_to(reply_to.to_owned())
         .meta(json!({"codync": RequestStatus::Completed}));
-    let hub = hub.clone();
-    tokio::spawn(async move {
-        if let Err(error) = node.send(letter).await {
-            tracing::warn!(error = format!("{error:#}"), "a session's answer to another computer didn't go");
-            crate::analytics::network_failed(&hub, NetworkStage::Reply);
-        }
-    });
-    Ok(())
+    node.send(letter).await.inspect_err(|_| crate::analytics::network_failed(hub, NetworkStage::Reply))
 }
 
 /// How a bot on another computer is shown: its name and computer, from that network's directory.

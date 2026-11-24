@@ -138,12 +138,13 @@ pub fn opens(rules: &[Rule], to: &str) -> bool {
     rules.iter().any(|r| r.access == Access::Allow && r.to_agent.eq_ignore_ascii_case(to))
 }
 
-/// How `agent` on `computer` may write to a session's mailbox `to`: like [`access`], but only a rule
-/// that names `to` lets it in (a `*` deny still keeps it out), and with none it is denied.
+/// How `agent` on `computer` may write to a session's mailbox `to`: like [`access`], but a `*`
+/// allow doesn't let it in (only one that names `to` does), while a `*` deny or ceiling still
+/// applies, and with no rule it is denied.
 pub fn mailbox_access(rules: &[Rule], computer: &str, agent: &str, to: &str) -> Access {
     rules
         .iter()
-        .find(|r| r.matches(computer, agent, to) && (r.access == Access::Deny || r.to_agent != ANY))
+        .find(|r| r.matches(computer, agent, to) && (r.access != Access::Allow || r.to_agent != ANY))
         .map_or(Access::Deny, |r| r.access)
 }
 
@@ -219,5 +220,7 @@ mod tests {
         assert_eq!(mailbox_access(&rules, "desk", "other", "api-claude"), Access::Deny, "* doesn't open it");
         let closed = [rule(Access::Deny, "*@server", "*"), rule(Access::Allow, "*@server", "api-claude")];
         assert_eq!(mailbox_access(&closed, "server", "x", "api-claude"), Access::Deny, "a * deny still applies");
+        let held = [rule(Access::Ask, "*@cloud", "*"), rule(Access::Allow, "*@cloud", "api-claude")];
+        assert_eq!(mailbox_access(&held, "cloud", "x", "api-claude"), Access::Ask, "so does a * ceiling");
     }
 }

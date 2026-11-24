@@ -200,7 +200,8 @@ sets it to ClaudeCode or Codex for a `Reach::ClaudeCode` or `Reach::Codex` agent
 come out of the inbox like the app's own agents', but it can't be held to a ceiling, so a letter under `auto` or
 `ask` is refused, except an answer to a request it sent. Offer such a session only where a rule opens it:
 `rules::opens(rules, address)` is true for an `allow` that names the address (`*` doesn't count). A letter to
-it passes only such a rule too (`rules::mailbox_access`: a `*` allow doesn't open it, a `*` deny still closes it).
+it passes only such a rule too (`rules::mailbox_access`: a `*` allow doesn't open it, a `*` deny or ceiling still
+applies).
 
 `sessions` tells an MCP server which session of which agent it serves: `AgentKind::of_mcp_client` (the client's
 `clientInfo.name`), `session_id(kind, env, meta)` (from the server's environment or a tool call's `_meta`), and

@@ -138,6 +138,14 @@
   flex-direction: column;
   padding-bottom: 24px;
 }
+/* Its bottom edge sits at the pane's edge: a sticky edge stops short of the padding, which would leave a clear strip
+   under the fade. */
+.details-panel .details-scroll::after {
+  bottom: -24px;
+}
+.details-panel .details-scroll.flush::after {
+  bottom: 0;
+}
 /* In a pane the view takes what the tabs leave; a web page fills it to the edges. */
 .panel-pane > .details-scroll {
   flex: 1;
@@ -309,6 +317,11 @@
 }
 .details-tab .bot-form-content {
   padding: 0;
+}
+/* So its edges are the panel's: a second pair, stuck inside the form, would fade and blur the rows in between. */
+.details-tab .bot-form::before,
+.details-tab .bot-form::after {
+  content: none;
 }
 
 .details-members {

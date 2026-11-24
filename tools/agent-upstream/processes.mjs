@@ -8,8 +8,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // `ps` prints whole command lines (and, for `stopDaemons`, environments): far past execFile's 1 MiB default on a busy computer.
 const PS = { maxBuffer: 64 * 1024 * 1024 };
 // Daemons an agent detaches on purpose and shares with its other clients, listed on its docs/upstream-agents page:
-// they may outlive the host (stopDaemons ends them after the check).
-const DETACHED = /\bgateway run\b.*--idle-exit/u;
+// they may outlive the host (stopDaemons ends them after the check). Hermes's gateway, and the supervisor each
+// Hermes process keeps for exactly its own life (a leaked Hermes process is reported by itself).
+const DETACHED = /\bgateway run\b.*--idle-exit|hermes_cli\/process_supervisor\.sh \d+$/u;
 
 /** Ends what an agent detached on purpose to outlive the host (Hermes's gateway), found by the check's own HOME. */
 export async function stopDaemons(home) {

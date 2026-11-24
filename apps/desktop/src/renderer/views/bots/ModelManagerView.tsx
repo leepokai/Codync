@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import { isGroup } from '@shared/models'
 import { AgentIcon, agentTint } from '../../components/AgentIcon'
 import { AvatarWithStatus } from '../../components/Avatar'
-import { Button, DropdownMenu, IconButton } from '../../components/Controls'
+import { Button, DropdownMenu, IconButton, SearchField } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import type { MenuItem } from '../../components/Menu'
 import { Sheet } from '../../components/Overlay'
@@ -161,6 +161,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
     : (backends.find((b) => b.id !== 'custom')?.id ?? 'claude')
   const [pick, setPick] = useState<Selection>({ backend: initialBackend, model: null, modelOptions: {} })
   const [query, setQuery] = useState('')
+  const searchField = useRef<HTMLInputElement>(null)
   // The agent filter, composed with the search over the ONE shared matcher: `''` is every provider.
   const [provider, setProvider] = useState('')
   const [checked, setChecked] = useState<Set<string>>(() => new Set())
@@ -345,10 +346,9 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
       >
         <Text size="caption" tone="secondary">{tr('Changing the model starts a new agent session. Chat history is kept.')}</Text>
       </ModelPicker>
-      <div className="palette-field">
-        <Icon name="magnifyingglass" size={15} color="var(--secondary)" />
-        <input value={query} placeholder={tr('Search bots')} aria-label={tr('Search bots')} spellCheck={false} onChange={(e) => setQuery(e.target.value)} />
-      </div>
+      {/* The shared search field — the same one FindBar and the pickers use — so its clear ✕
+          comes with it and the box is one implementation everywhere (the sync rule). */}
+      <SearchField value={query} onChange={setQuery} prompt="Search bots" inputRef={searchField} />
       {providers.length > 1 ? (
         <DropdownMenu
           items={(): MenuItem[] => [

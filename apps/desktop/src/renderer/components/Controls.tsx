@@ -334,7 +334,7 @@ export function SearchField({
       <Icon name="magnifyingglass" size={12} color="var(--secondary)" />
       <input ref={inputRef} value={value} placeholder={tr(prompt)} aria-label={tr(prompt)} spellCheck={false} onChange={(e) => onChange(e.target.value)} onKeyDown={onKeyDown} />
       {value ? (
-        <button aria-label={clear} title={clear} className="search-clear" onClick={() => onChange('')}>
+        <button aria-label={clear} title={clear} className="search-clear" onClick={() => { onChange(''); inputRef?.current?.focus() }}>
           <Icon name="xmark.circle.fill" size={12} />
         </button>
       ) : null}

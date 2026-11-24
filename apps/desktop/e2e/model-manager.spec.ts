@@ -54,7 +54,13 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
       await search.fill(nameB)
       await expect(rows.filter({ hasText: nameA })).toHaveCount(0)
       await expect(rows.filter({ hasText: nameB })).toBeVisible()
-      await search.fill('')
+      // The shared search field's clear ✕: it shows only while there is text, empties the
+      // field, and hands focus back so the next filter is ready to type.
+      const clear = sheet.locator('.model-manager-body .search-clear')
+      await expect(clear).toBeVisible()
+      await clear.click()
+      await expect(search).toHaveValue('')
+      await expect(search).toBeFocused()
       await expect(rows.filter({ hasText: nameA })).toHaveCount(1)
     })
 

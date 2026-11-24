@@ -50,8 +50,8 @@ class FallbacksTest {
         assertEquals(listOf("codex", "gemini"), sent.map { it["backend"]?.jsonPrimitive?.content })
         assertEquals(JsonObject(emptyMap()), sent.first()["modelOptions"])
         assertEquals(JsonPrimitive(true), draft.body()["selfFallbacks"])
-        assertEquals(listOf("gemini"), draft.withAgent("codex").fallbacks?.map { it.backend })
-        assertEquals("codex", draft.withAgent("codex").backend)
+        assertEquals(listOf("gemini"), draft.withAgent(Login("codex")).fallbacks?.map { it.backend })
+        assertEquals("codex", draft.withAgent(Login("codex")).backend)
         // A custom command a bot set goes back as it came.
         val custom = draft.copy(fallbacks = listOf(Fallback("custom", command = "my-agent --acp")))
         assertEquals("my-agent --acp", custom.body().getValue("fallbacks").jsonArray.single().jsonObject["command"]?.jsonPrimitive?.content)
@@ -60,7 +60,7 @@ class FallbacksTest {
         val old = BotDraft.from(Bot("b", "Scout", backend = "claude"))
         assertFalse("fallbacks" in old.body() || "selfFallbacks" in old.body())
         assertFalse("nor Advisor mode", "threadAgent" in old.body() || "threadFallbacks" in old.body())
-        assertNull(old.withAgent("codex").fallbacks)
+        assertNull(old.withAgent(Login("codex")).fallbacks)
     }
 
     @Test fun `Advisor mode starts the threads on the bot's own agent and chain, and another threads' agent drops its login from theirs`() {
@@ -75,10 +75,10 @@ class FallbacksTest {
         assertEquals("claude", on.body()["threadAgent"]?.jsonObject?.get("backend")?.jsonPrimitive?.content)
         assertFalse("a template names no agent of this computer's",
             WireJson.parseToJsonElement(on.template()).jsonObject.keys.any { it in setOf("threadAgent", "threadFallbacks") })
-        val moved = on.copy(threadFallbacks = listOf(codex, Fallback("codex", loginProfile = "c1"))).withThreadAgent("codex")
+        val moved = on.copy(threadFallbacks = listOf(codex, Fallback("codex", loginProfile = "c1"))).withThreadAgent(Login("codex"))
         assertEquals(Fallback("codex"), moved.threadAgent)
         assertEquals(listOf(Login("codex", "c1")), moved.threadFallbacks?.map { it.login })
-        assertSame(moved, moved.withThreadAgent("codex"))
+        assertSame(moved, moved.withThreadAgent(Login("codex")))
         assertEquals("the chat's chain is its own", listOf(codex), moved.fallbacks)
         val off = moved.withAdvisor(false, emptyList())
         assertNull(off.threadAgent)
@@ -179,8 +179,41 @@ class FallbacksTest {
 
     @Test fun `switching agent drops only the step on that agent's own login`() {
         val draft = BotDraft(backend = "claude", loginProfile = "a1", fallbacks = listOf(Fallback("codex"), Fallback("codex", loginProfile = "c1"), Fallback("claude")))
-        val switched = draft.withAgent("codex")
+        val switched = draft.withAgent(Login("codex"))
         assertNull(switched.loginProfile)
         assertEquals(listOf(Login("codex", "c1"), Login("claude")), switched.fallbacks?.map { it.login })
+    }
+
+    @Test fun `a login of the chain picked for the bot or its threads leaves the chain, and another login of its agent keeps the model`() {
+        val home = Fallback("codex"); val work = Fallback("codex", loginProfile = "w")
+        val draft = BotDraft(backend = "claude", model = "opus", fallbacks = listOf(home, work))
+        val onWork = draft.withAgent(work.login)
+        assertEquals(Triple(work.login, null as String?, listOf(home)), Triple(onWork.login, onWork.model, onWork.fallbacks))
+        val back = onWork.copy(model = "gpt").withAgent(home.login)
+        assertEquals(Triple(home.login, "gpt", emptyList<Fallback>()), Triple(back.login, back.model, back.fallbacks))
+        assertSame(back, back.withAgent(home.login))
+        val threads = draft.copy(threadAgent = Fallback("claude"), threadFallbacks = listOf(home, work)).withThreadAgent(work.login)
+        assertEquals(work.login, threads.threadAgent?.login)
+        assertEquals(listOf(home), threads.threadFallbacks)
+    }
+
+    @Test fun `each agent is a row per login, its default first, and keeps the one in use once signed out`() {
+        val claude = AgentBackend("claude", "Claude", defaultLoginProfile = DefaultLoginProfile("me@home"),
+            loginProfiles = listOf(LoginProfile("w", "Work", signedIn = true), LoginProfile("x", signedIn = false)))
+        val agents = listOf(claude, AgentBackend("codex", "Codex"))
+        fun names(on: Login, logins: ((AgentBackend) -> List<String?>)? = null) = agents.loginSeats(on, "Default", "New", logins).map { it.name }
+        assertEquals(listOf("Claude · me@home", "Claude · Work", "Codex"), names(Login("codex")))
+        assertEquals(listOf("Claude · me@home", "Claude · Work", "Claude · New", "Codex"), names(Login("claude", "x")))
+        assertEquals(listOf("Claude · Work"), names(Login("claude"), { if (it.id == "claude") listOf("w") else emptyList() }))
+        assertEquals(Login("claude", "w"), agents.loginSeats(Login("codex"), "Default", "New")[1].login)
+    }
+
+    @Test fun `a chat's box leaves out a default login waiting on a sign-in, unless it's in use`() {
+        val claude = AgentBackend("claude", "Claude", signedIn = false,
+            loginProfiles = listOf(LoginProfile("w", "Work", signedIn = true), LoginProfile("x", signedIn = false)))
+        assertEquals(listOf<String?>("w"), claude.readyLogins(Login("codex")))
+        assertEquals(listOf<String?>("w", "x"), claude.readyLogins(Login("claude", "x")))
+        assertEquals(null, claude.readyLogins(Login("claude")))
+        assertEquals(null, claude.copy(signedIn = true).readyLogins(Login("codex")))
     }
 }

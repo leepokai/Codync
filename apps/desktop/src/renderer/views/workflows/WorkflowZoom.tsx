@@ -3,12 +3,14 @@ import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { chord, WorkflowTip } from './WorkflowTip'
 
-export function WorkflowZoom({ scale, onZoom, onFit, minimap, onMinimap }: {
+export function WorkflowZoom({ scale, onZoom, onFit, minimap, onMinimap, onFold }: {
   scale: number
   onZoom: (direction: 1 | -1 | 0) => void
   onFit: () => void
   minimap: boolean
   onMinimap: () => void
+  /** Folds the bottom bars into one button. */
+  onFold: () => void
 }) {
   const tr = useTr()
   return (
@@ -30,6 +32,10 @@ export function WorkflowZoom({ scale, onZoom, onFit, minimap, onMinimap }: {
       </WorkflowTip>
       <WorkflowTip label="Minimap">
         <IconButton title="Minimap" systemTip={false} icon="map" selected={minimap} onClick={onMinimap} />
+      </WorkflowTip>
+      <span className="workflow-tools-sep" />
+      <WorkflowTip label="Collapse">
+        <IconButton title="Collapse" systemTip={false} icon="chevron.down" onClick={onFold} />
       </WorkflowTip>
     </div>
   )

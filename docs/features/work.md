@@ -212,14 +212,14 @@ chat's own queue: nothing here is a second copy of it.
   write to`), and one whose thread is gone can't be picked up (`"<title>" ended too long ago to write to: add new
   work instead`). `work[].talk` says which tasks take a message, so no client guesses.
 - **What the thread shares stays in the chat.** Its cards, files, voice notes and artifacts are the chat's entries
-  ([below](#asking-and-sharing-from-a-thread)), answered, downloaded and opened there. The thread's transcript shows each, in time
-  order among the thread's own entries, as one quiet line with a symbol (`sharedLine` in every client, the
-  terminal's `shared_line`): `Waiting for your approval: <title>` or `Asked: <question>` while it waits,
+  ([below](#asking-and-sharing-from-a-thread)), answered, downloaded and opened there. On the iPhone, Android and the
+  terminal the thread's transcript shows each, in time order among the thread's own entries, as one quiet line with a
+  symbol (`sharedLine`, the terminal's `shared_line`): `Waiting for your approval: <title>` or `Asked: <question>` while it waits,
   `Approved: <title>`, `Denied: <title>` or `Answered: <choice>` once answered, `Not answered: <…>` when it
   expired, `Sent a file: <name>`, `Sent a voice note`, `Made an artifact: <title>`; its agent's
   [sign-in](#fallbacks-and-sign-in) card reads `Needs <agent> sign-in`, then `Signed in` (or `Cancelled`). The
-  line opens the chat at that entry; the thread has no card to answer. The desktop's Threads page shows a thread in
-  the chat's form instead: there each of these is the chat's own row, the same entry of the bot's chat, answered,
+  line opens the chat at that entry; the thread has no card to answer. The desktop shows a thread in the chat's form
+  instead (`ThreadChat`, on the Threads page and as a tab of the inspector): there each of these is the chat's own row, the same entry of the bot's chat, answered,
   downloaded and opened in the thread as in the chat ([UI conventions](../design/ui-conventions.md)).
 
 With the rest:
@@ -380,8 +380,10 @@ thread), with at most 32,000 bytes. `hello` says `startThread: true` on a host t
 
 `setup` is what the thread runs with in place of the bot's own (`tasks::Setup`, kept on the task and applied to its
 thread bot's config, `Setup::over`): `cwd` (a full path to a folder that exists), `model` (`{id, options}`: a model
-with its own settings, `id` null for the agent's default) and `approval` (`{permission, mode}`). What it leaves out is
-the bot's; the bot's setup never changes, and its memory stays the bot's wherever the thread works. It is checked as a
+with its own settings, `id` null for the agent's default), `approval` (`{permission, mode}`) and `loginProfile` (one
+of the agent's login profiles, `""` its default login; left out, the bot's, or the default login of another
+`backend`; a step of the bot's chain on that login leaves the thread's; anything else is refused as `unknown login
+profile`; `hello.threadLogins: true` on a host that takes it). What it leaves out is the bot's; the bot's setup never changes, and its memory stays the bot's wherever the thread works. It is checked as a
 bot's setup is (`hub::validate`), and one that can't be read starts nothing. A thread in another folder gets a
 worktree there by the same rule as in the bot's.
 
@@ -548,7 +550,7 @@ A task's end sends no alert of its own: its report is a turn of the bot's, whose
   `gitRepo` it gives the line under the folder in Settings: `Git repository`, `Not a git repository`, `Git isn't
   installed on this computer`. The manual's page for it: `/docs/working-folders` (`#without-git`).
 - `threadEntry` events `{rev, thread, entry}` for a thread's transcript; none in the catch-up.
-- `startThread {botId?, text, setup?: {backend?, cwd?, model?: {id, options}, approval?: {permission, mode}}}` →
+- `startThread {botId?, text, setup?: {backend?, loginProfile?, cwd?, model?: {id, options}, approval?: {permission, mode}}}` →
   `{botId, taskId}`: [a thread the user starts](#other-sources), without `botId` [without a bot](#threads-without-a-bot).
 - `threadEntries {botId, threadId}` → `{thread: {id, title, status, startedAt, endedAt, start}, entries}` (newest 500):
   `threadId` is a task's `thread`; `title`, `status` and the times are of the task it works on, else the last it

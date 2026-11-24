@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fixtureCommand } from './fixture-command.ts'
@@ -89,6 +89,38 @@ test("a turn in the bot's own folder leaves a version before and after it", asyn
     await typeMessage(page, 'Tidy up the notes')
     await expect.poll(() => versions(dir)).toEqual(['Tidy up the notes', 'Before: Tidy up the notes', MADE])
   } finally {
+    if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
+    await browser.close()
+  }
+})
+
+test('a file git cannot read stays out of the versions and the rest is still saved', async () => {
+  test.skip(process.platform === 'win32', 'chmod 000 keeps nothing from reading a file on Windows')
+  const { browser, page } = await attach()
+  const name = `Own folder unreadable e2e ${Date.now()}`
+  let botId: string | undefined
+  let locked: string | undefined
+  try {
+    botId = (await api<{ bot: { id: string } }>(page, 'createBot', {
+      name, backend: 'custom', command: fixtureCommand(workAgent), connectors: [], skills: [], notify: false,
+    })).bot.id
+    const dir = join(sandbox().home, 'bots', botId, 'workspace')
+    await expect.poll(() => versions(dir)).toEqual([MADE])
+    locked = join(dir, 'locked.txt')
+    writeFileSync(locked, 'unreadable')
+    chmodSync(locked, 0o000)
+    writeFileSync(join(dir, 'notes.md'), 'before the turn')
+    await row(page, name).click()
+    await typeMessage(page, 'Read the notes')
+    await expect.poll(() => versions(dir)).toEqual(['Read the notes', 'Before: Read the notes', MADE])
+    const tracked = execFileSync('git', ['-C', dir, 'ls-files'], { encoding: 'utf8' })
+    expect(tracked).toContain('notes.md')
+    expect(tracked).not.toContain('locked.txt')
+    // The log line comes once the version is made; the host log is colored.
+    await expect.poll(() => readFileSync(join(sandbox().home, 'host.log'), 'utf8').replace(/\x1b\[[0-9;]*m/g, ''))
+      .toMatch(new RegExp(`bots/${botId}/workspace stage="unreadable"`))
+  } finally {
+    if (locked) chmodSync(locked, 0o600)
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
     await browser.close()
   }

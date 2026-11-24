@@ -54,6 +54,11 @@ val BotDraft.login: Login get() = Login(backend, loginProfile)
 fun AgentBackend.freeLogins(taken: List<Login>): List<String?> =
     (listOf<String?>(null) + loginProfiles.orEmpty().filter { it.signedIn }.map { it.id }).filter { Login(id, it) !in taken }
 
+/** The logins a chat's box can switch to (the desktop's `readySeats`): a default login still waiting on a sign-in is left
+ *  out, unless it's the one in use ([on]). Null: the usual ones. */
+fun AgentBackend.readyLogins(on: Login): List<String?>? =
+    if (signedIn != false || on == Login(id)) null else loginProfileChoices(on.loginProfile.takeIf { on.backend == id }).map { it.id }
+
 /** The logins [step] can pick on this agent: the free ones, and its own, even one that has signed out since. */
 fun AgentBackend.stepLogins(step: Login, taken: List<Login>): List<String?> =
     freeLogins(taken).let { if (step.loginProfile in it) it else it + step.loginProfile }
@@ -62,6 +67,25 @@ fun AgentBackend.stepLogins(step: Login, taken: List<Login>): List<String?> =
  *  the chain ([taken]), else its first free login with its default model. */
 fun AgentBackend.stepOn(taken: List<Login>, own: Fallback? = null): Fallback =
     if (own != null && own.backend == id && own.login !in taken) own else Fallback(id, loginProfile = freeLogins(taken).firstOrNull())
+
+/** One row of an agent picker: an agent on one of its logins, named "Claude Code · Work". */
+data class LoginSeat(val login: Login, val name: String)
+
+/**
+ * Every login of these agents as picker rows: each agent's default login, then its login profiles. [logins]: the ones of an
+ * agent that can be picked (null its default login), when not all can; by default the default login and the signed-in
+ * profiles, with [on]'s. The default login is named only on an agent that has login profiles ([default] until the user
+ * names it); [unnamed] is a profile without a name.
+ */
+fun List<AgentBackend>.loginSeats(on: Login, default: String, unnamed: String, logins: ((AgentBackend) -> List<String?>?)? = null): List<LoginSeat> =
+    flatMap { backend ->
+        val ids = logins?.invoke(backend) ?: (listOf<String?>(null) + backend.loginProfileChoices(on.loginProfile.takeIf { on.backend == backend.id }).map { it.id })
+        ids.map { id ->
+            val login = if (id != null) backend.loginProfiles?.firstOrNull { it.id == id }?.name ?: unnamed
+                else if (backend.loginProfiles != null) backend.defaultLoginProfile?.name ?: default else null
+            LoginSeat(Login(backend.id, id), if (login != null) "${backend.name} · $login" else backend.name)
+        }
+    }
 
 /** The agents a step can use: each with a login the rest of the chain ([taken]) doesn't have, and the ones [keep] is on
  *  while no other step has that login (a step keeps its own login, even one that has signed out since). */

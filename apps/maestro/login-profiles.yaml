@@ -49,19 +49,30 @@ onFlowComplete:
       - tapOn: ${output.profiles.name}
       - tapOn: "${output.profiles.name}, view details"
       - tapOn: "Settings"
-      # The Login profile row under Agent: the bot's own stays listed while it's signed out.
+      # The agent picker's summary under Agent names the bot's login; its agent list has the agent once per login,
+      # the bot's own listed while it's signed out.
       - scrollUntilVisible:
-          element: ${output.profiles.work}
+          element: ".*· ${output.profiles.work}.*"
           centerElement: true
-      - tapOn: ${output.profiles.work}
-      - tapOn: ${output.profiles.home}
-      - assertVisible: ${output.profiles.home}
+      - tapOn: ".*· ${output.profiles.work}.*"
+      - tapOn: ".*· ${output.profiles.work}"
+      # The list has every agent once per login: the agent's default login may sit below the fold.
+      - scrollUntilVisible:
+          element: ".*· ${output.profiles.home}"
+          centerElement: true
+      - tapOn: ".*· ${output.profiles.home}"
+      - assertVisible: ".*· ${output.profiles.home}.*"
       - runScript:
           file: login-profiles.js
           env:
             STEP: moved
-      # Add login profile… opens the agent's setup, which lists the account and removes it now that no bot uses it.
-      - tapOn: ${output.profiles.home}
+      # Add login profile…, at the end of the agent list, opens the agent's setup, which lists the account and removes
+      # it now that no bot uses it.
+      - tapOn: ".*· ${output.profiles.home}"
+      # Searching keeps it at the end of a short list.
+      - tapOn: "Search agents"
+      - inputText: ${output.profiles.home}
+      - hideKeyboard
       - tapOn: "Add login profile…"
       - scrollUntilVisible:
           element: "Not signed in"
@@ -76,7 +87,18 @@ onFlowComplete:
           index: 0
       - eraseText
       - inputText: ${output.profiles.renamed}
-      - tapOn: "Save"
+      # On the iPhone the card rises above the keyboard after XCUITest reads its frame, so a tap on "Save" can land on
+      # the row behind it: Return runs Save there (the dialog's field submits its first action).
+      - runFlow:
+          when:
+            platform: iOS
+          commands:
+            - pressKey: Enter
+      - runFlow:
+          when:
+            platform: Android
+          commands:
+            - tapOn: "Save"
       - assertVisible: ${output.profiles.renamed}
       - runScript:
           file: login-profiles.js

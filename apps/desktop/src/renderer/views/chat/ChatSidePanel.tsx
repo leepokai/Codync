@@ -1,7 +1,8 @@
-import { useRef, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { ResizeHandle } from '../../components/Controls'
 import { usePresence } from '../../components/Overlay'
 import { useTr } from '../../lib/use-language'
+import { fitPanel, fitsBeside, PANEL_MIN } from './side-panel-width'
 
 /**
  * The panel beside the conversation. The conversation takes its new width at once (one layout,
@@ -10,11 +11,10 @@ import { useTr } from '../../lib/use-language'
  * and a transform would leave them where the slide started, over the corner buttons. `filled`: the panel covers
  * the conversation (which keeps its layout under it) until it is restored.
  */
-export function ChatSidePanel({ open, filled, width, min, max, onResize, children }: {
+export function ChatSidePanel({ open, filled, width, max, onResize, children }: {
   open: boolean
   filled: boolean
   width: number
-  min: number
   max: number
   onResize: (width: number) => void
   children: ReactNode
@@ -32,10 +32,33 @@ export function ChatSidePanel({ open, filled, width, min, max, onResize, childre
       <div className="side-panel-slot" style={{ width: open ? panelWidth : 0 }} />
       {mounted ? (
         <div className="side-panel" inert={!open} style={{ width: filled ? '100%' : panelWidth, right: shown ? 0 : -panelWidth }}>
-          {filled ? null : <ResizeHandle label={tr('Resize panel')} width={content.width} min={min} max={max} edge="leading" onResize={onResize} />}
+          {filled ? null : <ResizeHandle label={tr('Resize panel')} width={content.width} min={PANEL_MIN} max={max} edge="leading" onResize={onResize} />}
           <div className="side-panel-content" style={{ width: filled ? '100%' : content.width }}>{content.children}</div>
         </div>
       ) : null}
     </>
   )
+}
+
+/**
+ * The panel's width beside the view `view` measures, which keeps `keep` of its width. The width is measured, not
+ * rendered: a resize re-renders the view only when what the panel shows changes. Not `beside`: the panel covers the view.
+ */
+export function useSidePanelWidth(view: RefObject<HTMLElement | null>, keep: number, wanted: number) {
+  const room = useRef(1200)
+  const want = useRef(wanted)
+  want.current = wanted
+  const [, setShown] = useState('')
+  useLayoutEffect(() => {
+    const el = view.current
+    if (!el) return
+    const observer = new ResizeObserver(([e]) => {
+      room.current = e!.contentRect.width
+      setShown(`${fitsBeside(room.current, keep)} ${fitPanel(want.current, room.current, keep)}`)
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [view, keep])
+  const fit = (w: number) => fitPanel(w, room.current, keep)
+  return { beside: fitsBeside(room.current, keep), width: fit(wanted), max: fit(Infinity), fit }
 }

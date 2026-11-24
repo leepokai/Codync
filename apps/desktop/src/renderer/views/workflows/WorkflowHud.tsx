@@ -7,12 +7,10 @@ import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { WorkflowTip } from './WorkflowTip'
 import { WorkflowTitleMenu } from './WorkflowTitleMenu'
-import { progressOf, runClock, runWhen, type Graph, type RunSummary, type WorkflowStep, type WorkflowSummary, type WorkflowVersion } from './workflow'
+import { progressOf, runClock, runWhen, type Graph, type RunSummary, type WorkflowStep, type WorkflowVersion } from './workflow'
 
-export function WorkflowHud({ title, selectedId, workflows, enabled, graph, steps, live, runs, hasMore, followLive, viewing, versions, previewId, previewLabel, pinned, notice, scripted, canUndo, canRedo, onUndo, onRedo, onOpen, onCreate, onRename, onDuplicate, onDelete, onPin, onEnabled, onRun, onStop, onLatest, onRunOpen, onOlder, onLoadVersions, onPreview, onShowCurrent, onRestore, onScript, onShowHistory }: {
+export function WorkflowHud({ title, enabled, graph, steps, live, runs, hasMore, followLive, viewing, versions, previewId, previewLabel, pinned, notice, scripted, canUndo, canRedo, onUndo, onRedo, onRename, onDuplicate, onDelete, onPin, onEnabled, onRun, onStop, onLatest, onRunOpen, onOlder, onLoadVersions, onPreview, onShowCurrent, onRestore, onScript, onShowHistory }: {
   title: string
-  selectedId: string | null
-  workflows: WorkflowSummary[]
   enabled: boolean
   graph: Graph | null
   steps: WorkflowStep[]
@@ -31,8 +29,6 @@ export function WorkflowHud({ title, selectedId, workflows, enabled, graph, step
   canRedo: boolean
   onUndo: () => void
   onRedo: () => void
-  onOpen: (id: string) => void
-  onCreate: () => void
   onRename: () => void
   onDuplicate: () => void
   onDelete: () => void
@@ -71,25 +67,23 @@ export function WorkflowHud({ title, selectedId, workflows, enabled, graph, step
       <HStack gap={8}>
         {title ? <IconButton title="Undo" icon="arrow.uturn.backward" disabled={!canUndo} onClick={onUndo} /> : null}
         {title ? <IconButton title="Redo" icon="arrow.uturn.forward" disabled={!canRedo} onClick={onRedo} /> : null}
-        <span className="workflow-title-wrap">
-          <WorkflowTitleMenu
-            selectedId={selectedId}
-            workflows={workflows}
-            graph={graph}
-            versions={versions}
-            previewId={previewId}
-            pinned={pinned}
-            onOpen={onOpen}
-            onCreate={onCreate}
-            onRename={onRename}
-            onDuplicate={onDuplicate}
-            onDelete={onDelete}
-            onPin={onPin}
-            onLoadVersions={onLoadVersions}
-            onPreview={onPreview}
-            onShowCurrent={onShowCurrent}
-          />
-        </span>
+        {title ? (
+          <span className="workflow-title-wrap">
+            <WorkflowTitleMenu
+              title={title}
+              versions={versions}
+              previewId={previewId}
+              pinned={pinned}
+              onRename={onRename}
+              onDuplicate={onDuplicate}
+              onDelete={onDelete}
+              onPin={onPin}
+              onLoadVersions={onLoadVersions}
+              onPreview={onPreview}
+              onShowCurrent={onShowCurrent}
+            />
+          </span>
+        ) : null}
         {title ? <Switch className="workflow-enabled" on={enabled} label="Enabled" onChange={onEnabled} /> : null}
         {title ? (
           <WorkflowTip label="Script" below>
@@ -109,16 +103,20 @@ export function WorkflowHud({ title, selectedId, workflows, enabled, graph, step
           </span>
         ) : null}
         {title ? (
-          <button ref={historyButton} type="button" className="workflow-history" aria-expanded={historyOpen} onClick={() => setHistoryOpen((open) => { if (!open) onShowHistory(); return !open })}>
-            <Icon name="clock" size={14} />
-            <span>{tr('History')}</span>
-            <span className="workflow-history-count">{runs.length}</span>
-          </button>
+          <WorkflowTip label="History" below>
+            <button ref={historyButton} type="button" className="workflow-history" aria-label={tr('History')} aria-expanded={historyOpen} onClick={() => setHistoryOpen((open) => { if (!open) onShowHistory(); return !open })}>
+              <Icon name="clock" size={14} />
+              <span className="workflow-hud-label">{tr('History')}</span>
+              <span className="workflow-history-count">{runs.length}</span>
+            </button>
+          </WorkflowTip>
         ) : null}
         <AnchoredMenu open={historyOpen} onClose={() => setHistoryOpen(false)} anchor={historyButton} items={history} />        {title && !previewLabel ? (
-          <Button className="workflow-run-now" onClick={live ? onStop : onRun}>
-            {live ? tr('Stop') : <><Icon name="play.fill" size={12} /><span>{tr('Run workflow')}</span></>}
-          </Button>
+          <WorkflowTip label={live ? 'Stop' : 'Run workflow'} below>
+            <Button className="workflow-run-now" label={live ? 'Stop' : 'Run workflow'} onClick={live ? onStop : onRun}>
+              {live ? tr('Stop') : <><Icon name="play.fill" size={12} /><span className="workflow-hud-label">{tr('Run workflow')}</span></>}
+            </Button>
+          </WorkflowTip>
         ) : null}
       </HStack>
       {notice ? (

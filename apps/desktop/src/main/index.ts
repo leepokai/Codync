@@ -19,7 +19,7 @@ import { Updates, yieldsToInstall } from './updates'
 import { handleURL, registerAuthIPC, registerSchemes, urlFromArgv } from './auth'
 import { registerSpeech } from './speech'
 import { VoiceShortcutKeys } from './voice-shortcut'
-import { registerScreenIPC } from './screen'
+import { registerScreenIPC, setScreenAgent } from './screen'
 import { registerCloud } from './cloud'
 import { registerCloudAccess } from './cloud-access'
 import { registerChannels } from './channel'
@@ -208,6 +208,8 @@ function registerIPC(tray: Tray) {
     for (const device of devices.devices) await host.call('revokeDevice', { key: device.key }).catch(() => {})
     await account.signOutAll()
     if (!(await host.uninstall())) throw new Error('The host could not be safely uninstalled. Data was preserved.')
+    // Codync Screen is a login item of its own, which deleting the data leaves behind.
+    setScreenAgent(false)
     const { rm } = await import('node:fs/promises')
     const { dataDir } = await import('./host-controller')
     await rm(dataDir, { recursive: true, force: true })

@@ -15,7 +15,9 @@ import { lastPathComponent } from '../bots/drafts'
 import { FolderPicker } from '../bots/FolderPicker'
 import { ChatLog, useDockHeight } from './ChatLog'
 import { Composer } from './Composer'
-import { ModelPicker, Option, useApprovalMenu } from './RunOptions'
+import { ModelPicker } from '../bots/ModelPicker'
+import { readySeats } from '../bots/seats'
+import { Option, useApprovalMenu } from './RunOptions'
 import './chat.css'
 import './composer.css'
 import './chat-controls.css'
@@ -36,8 +38,8 @@ const PLAIN_APPROVAL = { permission: 'ask', mode: 'auto' }
  * The page a thread starts from, in the form of a chat nothing was said in yet: the bot it is with in the middle, and
  * the chat's message box. Over the box, what the thread runs on, each a menu: the bot (or **No bot**, where the
  * computer can), which the others follow (they start as that bot's own), then the folder it works in, how it is
- * approved and its model with that model's settings. Without a bot the agent is chosen too, the folder starts as
- * the home folder and nothing of Codync's goes with it. A choice is the thread's alone (`ThreadSetup`): the bot's
+ * approved and its model with that model's settings, on the agent and login picked in the model panel's rail. Without
+ * a bot the folder starts as the home folder and nothing of Codync's goes with it. A choice is the thread's alone (`ThreadSetup`): the bot's
  * setup stays as it is. Sent, the thread is the one shown (`started`, with where its task is).
  * ponytail: the model menu lists every model without a search; the bot's settings have one if lists grow long.
  */
@@ -61,10 +63,17 @@ export function ThreadStart({ bots, of, choose, started, base, folder, heading, 
   const change = (part: ThreadSetup) => setSetup((s) => ({ ...s, ...part }))
   const [failed, setFailed] = useState('')
   const [browsing, setBrowsing] = useState(false)
-  // The agents set up on the computer: installed and not waiting on a sign-in (Extensions adds the rest).
-  const agents = (store.hello?.backends ?? []).filter((b) => b.available && b.signedIn !== false)
-  const backend = setup.backend ?? bot?.backend ?? agents.find((b) => b.id === 'claude')?.id ?? agents[0]?.id ?? ''
-  const models = useAgentModels(backend)
+  const ready = (store.hello?.backends ?? []).filter((b) => b.available && b.signedIn !== false)
+  const backend = setup.backend ?? bot?.backend ?? ready.find((b) => b.id === 'claude')?.id ?? ready[0]?.id ?? ''
+  // Another agent than the bot's starts on its default login.
+  const loginProfile = setup.loginProfile !== undefined ? setup.loginProfile || null : backend === bot?.backend ? bot.loginProfile ?? null : null
+  const models = useAgentModels(backend, loginProfile)
+  // A host that can't start a thread on a login is sent none: each agent stays on its default login, the bot's on its own.
+  const logins = store.startsThreadsOnLogins
+  const seats = readySeats({
+    backends: store.hello?.backends ?? [], on: { backend, loginProfile }, tr, profiles: logins,
+    pick: (b, id) => change({ backend: b.id, ...(logins ? { loginProfile: id ?? '' } : {}), ...(b.id === backend ? {} : { model: undefined, approval: undefined }) }),
+  })
   const root = useRef<HTMLDivElement>(null)
   const dock = useRef<HTMLDivElement>(null)
   useDockHeight(root, dock)
@@ -87,14 +96,16 @@ export function ThreadStart({ bots, of, choose, started, base, folder, heading, 
     { title: 'Browse other folders', icon: 'folder', divider: true, action: () => setBrowsing(true) },
   ]
 
-  const approval = setup.approval ?? (bot ? { permission: bot.permission, mode: bot.mode } : PLAIN_APPROVAL)
+  // On another agent than its bot's, a thread starts from that agent's own defaults.
+  const own = bot && backend === bot.backend ? bot : null
+  const approval = setup.approval ?? (own ? { permission: own.permission, mode: own.mode } : PLAIN_APPROVAL)
   const ways = useApprovalMenu(approval, models, (a) => change({ approval: { permission: a.permission, mode: a.mode ?? null } }))
-  const model = setup.model ?? (bot ? { id: bot.model ?? null, options: bot.modelOptions } : { id: null, options: {} })
+  const model = setup.model ?? (own ? { id: own.model ?? null, options: own.modelOptions } : { id: null, options: {} })
 
   const send = (text: string) => {
     setFailed('')
     // Without a bot, all it runs on goes with it: there is no bot's setup to fall back on.
-    const asked = { ...base, ...(bot ? setup : { ...setup, backend, cwd: setup.cwd ?? (folder ? undefined : home), approval }) }
+    const asked = { ...base, ...(own ? setup : bot ? { ...setup, model, approval } : { ...setup, backend, cwd: setup.cwd ?? (folder ? undefined : home), approval }) }
     return store.startThread(bot?.id ?? null, text, asked).then(
       (s) => started({ computerId: of.ref.computerId, botId: s.botId }, s.taskId),
       (error: unknown) => {
@@ -130,11 +141,9 @@ export function ThreadStart({ bots, of, choose, started, base, folder, heading, 
           <Composer key={refKey(of.ref) + (bot ? '' : '/plain')} botId={bot?.id ?? ''} thread={{ draftKey, placeholder: placeholder ?? tr('What should it work on?'), working: false, send, controls: <>
             <Option title="Choose a bot" items={others} search={bots.length > 8 ? 'Search bots' : undefined} disabled={bots.length + (plainOn ? 1 : 0) < 2} leading={bot ? <BotAvatar bot={bot} size={16} animated={false} /> : <NoBotAvatar size={16} />} label={bot ? bot.name : tr('No bot')} strong />
             <Option title="Workspace" items={folders} leading={<Icon name="folder" size={11} />} label={setup.cwd ? lastPathComponent(setup.cwd) : ownFolder} />
-            {/* Without a bot the agent is a choice too, in the panel's rail; another agent starts from its own defaults. */}
+            {/* The agent and its login are in the panel's rail; another agent starts from its own defaults. */}
             <ModelPicker
-              backend={backend} model={model} models={models} set={(m) => change({ model: m })} approval={ways}
-              // ponytail: a thread starts on an agent's default login; its other logins join the rail once a thread can take one.
-              {...(bot ? {} : { seats: agents.map((a) => ({ key: a.id, backend: a.id, name: a.name, on: a.id === backend, pick: () => change({ backend: a.id, model: undefined, approval: undefined }) })) })}
+              backend={backend} model={model} models={models} set={(m) => change({ model: m })} approval={ways} seats={seats}
             />
           </> }} />
           {failed ? <Text as="div" size="caption" tone="danger" className="thread-start-failed" role="alert">{failed}</Text> : null}

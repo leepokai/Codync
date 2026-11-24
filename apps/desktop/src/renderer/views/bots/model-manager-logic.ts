@@ -81,6 +81,22 @@ export const toggleKey = (checked: Set<string>, key: string, on: boolean) => {
   return next
 }
 
+/** One filterable provider in the Bot Manager's filter: a bot's agent (`backend`), named as hello names it. */
+export type ProviderOption = { id: string; name: string }
+
+/**
+ * The providers the sheet's filter offers: every agent the given bots actually run, in hello's
+ * order, each named the way the model picker names it. Derived from the bots present, never a
+ * hardcoded list, so a roster on agents this build doesn't know still filters; an agent hello
+ * doesn't name shows its raw id. `''` (all providers) is the menu's first row, not one of these.
+ */
+export const providerOptions = (items: RosterItem[], backends: ReadonlyArray<{ id: string; name: string }>): ProviderOption[] => {
+  const present = new Set(items.map((i) => i.bot.backend))
+  const known = backends.filter((b) => present.has(b.id)).map((b) => ({ id: b.id, name: b.name }))
+  const missing = [...present].filter((id) => !backends.some((b) => b.id === id)).sort().map((id) => ({ id, name: id }))
+  return [...known, ...missing]
+}
+
 /**
  * The patch a bulk pause or resume writes for one bot: the same `updateBot` path the roster's own
  * pause toggle uses, and more minimal — `{ id, paused }` only — so the host's patched merge keeps

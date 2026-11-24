@@ -403,7 +403,10 @@ impl Actor {
             if reason == Reason::SignedOut {
                 self.note_signed_out(&login);
             }
-            let resets = rest::reset_time(&self.hub.usage.locked(), &agent, login.profile.as_deref(), now);
+            let failed = start_error.as_ref().unwrap_or(error);
+            // The later of what the plan's windows say and what the error itself says (Antigravity's quota notice).
+            let resets = rest::reset_time(&self.hub.usage.locked(), &agent, login.profile.as_deref(), now)
+                .max(fallback::reset::of_error(failed, now));
             let rest = rest::record(&self.hub.store, &key, reason, now, resets);
             if rest.is_some() {
                 fallback::tell_bots(&self.hub, &key);
@@ -412,7 +415,6 @@ impl Actor {
                 self.relay.skipped.push(key.clone());
             }
             self.relay.tried.push(key);
-            let failed = start_error.as_ref().unwrap_or(error);
             let Some(next) = self.next_step(now) else {
                 self.relay.exhausted = true;
                 // No agent answers the turn's messages: they go out again once the first one left signed out is

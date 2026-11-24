@@ -43,7 +43,7 @@ impl Reason {
 
 /// How Claude's adapter words a usage limit (the Agent SDK's `USAGE_LIMIT_ERROR_PREFIXES`); it reports it as a
 /// `rate_limit` or `billing_error` with this text in the message.
-const USAGE_LIMIT_TEXT: [&str; 12] = [
+const USAGE_LIMIT_TEXT: [&str; 14] = [
     "You've hit your",
     "You've reached your",
     "You're out of usage credits",
@@ -56,6 +56,9 @@ const USAGE_LIMIT_TEXT: [&str; 12] = [
     "You're out of extra usage",
     "Your seat type doesn't include extra usage",
     "usage limit",
+    // Antigravity (Google): the quota of the account's plan, not a burst of requests.
+    "QUOTA_EXHAUSTED",
+    "Individual quota reached",
 ];
 
 /// Why `error` moves the bot on, or `None` when it shouldn't (a stop, a refusal, a bug in the request).
@@ -97,6 +100,8 @@ pub fn of_rpc(r: &RpcError) -> Option<Reason> {
         ) => Reason::Overloaded,
         Some("model_not_found") => Reason::ModelMissing,
         _ if usage_text => Reason::UsageLimit,
+        // Google's 429 with no quota named: a burst of requests, which clears soon.
+        _ if r.message.contains("RESOURCE_EXHAUSTED") => Reason::RateLimited,
         _ => return None,
     })
 }
@@ -139,6 +144,15 @@ mod tests {
         assert_eq!(of(&no_model), Some(Reason::ModelMissing));
         let no_mode = Failure::error(FailureKind::ModeMissing, "OpenCode doesn't have bypassPermissions");
         assert_eq!(of(&no_mode), Some(Reason::ModeMissing));
+    }
+
+    #[test]
+    fn googles_quota_errors_move_on() {
+        let quota = "Error 429, Message: Individual quota reached. Resets in 1h25m37s., Status: RESOURCE_EXHAUSTED, \
+                     reason: QUOTA_EXHAUSTED, model: gemini-4-neon-medium";
+        assert_eq!(of(&rpc(-32603, quota, None)), Some(Reason::UsageLimit));
+        let burst = "Error 429, Status: RESOURCE_EXHAUSTED, Message: Resource has been exhausted";
+        assert_eq!(of(&rpc(-32603, burst, None)), Some(Reason::RateLimited));
     }
 
     #[test]

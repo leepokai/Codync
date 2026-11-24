@@ -5,6 +5,9 @@ otherwise it answers "<name> answered", after editing `<name>.txt` while `<name>
 (ACP's -32000); while `<name>.revoked` exists, only a process started before it does (it holds the sign-in that file
 replaced). While `<name>.refusal` exists, every prompt answers `refusal` with the file's text as
 `_meta["codebuddy.ai/errorMessage"]`, the way CodeBuddy's CLI reports an error (an empty file: a plain refusal).
+While `<name>.quota` exists, every prompt does what antigravity-acp does out of quota: it streams the limit notice
+as the reply and answers `refusal` (the file's text, when it has some, is the reply instead). A record separator
+(U+001E) splits that text into separate reply chunks.
 While `<name>.errored` exists, every prompt ends the way pi-acp (0.0.33, 0.0.34) ends a turn whose model request
 failed: `end_turn` with no reply, with pi's error only in the notification Codync's pi extension sends.
 Sessions load (`<name>-s<n>`) unless `<name>.noload` exists; while `<name>.commands` exists, a new session lists the
@@ -25,6 +28,10 @@ LIMIT = {
     "message": "Internal error: You've hit your limit · resets 3pm (Asia/Taipei)",
     "data": {"errorKind": "rate_limit"},
 }
+QUOTA_NOTICE = (
+    "Usage Limit Reached\n\nYou have reached your current quota for this period. "
+    "Your limit will reset in 1 hour, 25 minutes."
+)
 sessions = 0
 
 
@@ -68,6 +75,12 @@ for line in sys.stdin:
                 error = f.read()
             meta = {"_meta": {"codebuddy.ai/errorMessage": error}} if error else {}
             send({"id": message["id"], "result": {"stopReason": "refusal", **meta}})
+        elif os.path.exists(f"{NAME}.quota"):
+            with open(f"{NAME}.quota", encoding="utf-8") as f:
+                reply = f.read() or QUOTA_NOTICE
+            for chunk in reply.split("\x1e"):
+                update(sid, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": chunk}})
+            send({"id": message["id"], "result": {"stopReason": "refusal"}})
         elif os.path.exists(f"{NAME}.errored"):
             update(sid, {"sessionUpdate": "session_info_update", "_meta": {"piAcp": {"queueDepth": 0, "running": True}}})
             error = '[codync: turn failed] 503: {"message":"queued: upstream busy, try again in 60s"}'

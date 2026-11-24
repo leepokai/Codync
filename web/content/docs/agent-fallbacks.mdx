@@ -34,7 +34,7 @@ The agent it leaves then rests: every bot on the computer skips it for a while, 
 
 | The chat says the agent… | Bots skip it until |
 | --- | --- |
-| reached its usage limit | the reset time the agent reported (an hour if it gave none) |
+| reached its usage limit | the reset time the agent reported (an hour if it gave none). For Antigravity this includes running out of Google quota, which it reports as a refusal |
 | is out of credits | 6 hours have passed |
 | is rate limited, or is overloaded | 1, 5, 25, then 60 minutes, growing with failures in a row |
 | is signed out | it's signed in again (Codync also looks again after an hour, or after 10 minutes for an agent it doesn't know by name) |
@@ -44,7 +44,7 @@ The agent it leaves then rests: every bot on the computer skips it for a while, 
 
 A rest also ends early when any turn on that agent finishes normally. **Switch back** ends the rest of the bot's own agent.
 
-These don't move a bot on: you stopping it, the agent refusing, output or step limits, a routine's time limit, or the agent compacting a full context.
+These don't move a bot on: you stopping it, the agent refusing (Antigravity's "Usage Limit Reached" notice is not a refusal in this sense), output or step limits, a routine's time limit, or the agent compacting a full context.
 
 Codex currently reports its rate limits and overloads as ordinary reply text, so for Codex only a usage limit moves the bot on. For Pi, a model request its provider turned down as busy (HTTP 5xx) or rate limited (HTTP 429) moves the bot on; any other error Pi ends a turn in shows as a notice in the chat.
 

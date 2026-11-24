@@ -557,6 +557,114 @@ async fn a_turn_pi_ended_in_an_error_says_so() {
     assert!(notice["data"]["text"].as_str().unwrap().contains("upstream busy"), "{notice}");
 }
 
+/// #552: Antigravity out of Google quota answers `refusal` with the limit notice as its reply. That is a usage limit:
+/// the next agent takes the turn, the login rests until the reset the notice names, and the next message goes straight
+/// to the fallback instead of asking the exhausted agent again.
+#[tokio::test]
+async fn an_antigravity_quota_refusal_moves_on_and_rests_until_its_reset() {
+    assert_antigravity_quota_fallback("", None).await;
+}
+
+#[tokio::test]
+async fn an_antigravity_quota_banner_split_mid_start_moves_on_and_rests() {
+    let reset = "Your limit will reset in 1 hour, 25 minutes.";
+    for chunks in [
+        ["Usage Li", "mit Reached\n\nYou have reached your current quota for this period. ", reset].join("\x1e"),
+        ["Usage", " Limit", " Reached", "\n\nYou have reached", " your current quota for this period. ", reset]
+            .join("\x1e"),
+    ] {
+        assert_antigravity_quota_fallback(&chunks, None).await;
+    }
+}
+
+#[tokio::test]
+async fn an_antigravity_quota_banner_includes_the_reset_from_a_later_chunk() {
+    let tail = "Please try again later.";
+    let chunks = [
+        "Usage Limit Reached\n\nYou have reached your current quota for this period. ",
+        "Your limit will reset in 1 hour, 25 minutes.\n",
+        tail,
+    ]
+    .join("\x1e");
+    assert_antigravity_quota_fallback(&chunks, Some(tail)).await;
+}
+
+#[tokio::test]
+async fn an_antigravity_quota_banner_after_narration_moves_on_and_rests() {
+    let chunks = [
+        "I'll look at the tests first. ",
+        "Usage Limit Reached\n\nYou have reached your current quota for this period. Your limit will reset in 1 hour, 25 minutes.",
+    ]
+    .join("\x1e");
+    assert_antigravity_quota_fallback(&chunks, None).await;
+}
+
+async fn assert_antigravity_quota_fallback(quota: &str, tail: Option<&str>) {
+    let host = Host::start().await;
+    let bot = json!({"name": "Agy", "backend": "antigravity", "command": agent("primary"), "connectors": [],
+        "notify": false, "fallbacks": [{"backend": "codex", "command": agent("standin")}]});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    std::fs::write(folder.join("primary.quota"), quota).unwrap();
+
+    host.reply(&bot, "Fix the login tests").await;
+    wait_for(&host, &bot, "fallback reply", |e| {
+        e["kind"] == "agent" && e["data"]["final"] == true && e["data"]["text"] == "standin answered"
+    })
+    .await;
+    let line = wait_for(&host, &bot, "switch line", |e| e["data"]["agentSwitch"].is_object()).await;
+    assert_eq!(line["data"]["agentSwitch"]["reason"], "usageLimit");
+    assert_eq!(line["data"]["agentSwitch"]["from"], "antigravity");
+    let on = bot_value(&host, &bot).await;
+    assert_eq!(on["agentStep"]["agent"], "codex");
+    assert_eq!(on["resting"][0]["reason"], "usageLimit");
+    let (until, now) = (on["resting"][0]["until"].as_i64().unwrap(), chrono::Utc::now().timestamp_millis());
+    let wait_min = (until - now) / 60_000;
+    assert!((83..=86).contains(&wait_min), "rests until the notice's 1 h 25 min, not the default hour: {wait_min}");
+
+    // The exhausted agent isn't asked again while it rests.
+    let asked =
+        |host: &Host| host.log(&bot, "primary.jsonl").iter().filter(|r| r["method"] == "session/prompt").count();
+    assert_eq!(asked(&host), 1);
+    host.reply(&bot, "And the signup tests").await;
+    assert_eq!(asked(&host), 1, "the next message went straight to the fallback");
+    assert!(last_prompt(&host, &bot, "standin").contains("And the signup tests"));
+
+    let history = host.call("history", json!({"botId": bot})).await;
+    let entries = history["entries"].as_array().unwrap();
+    for entry in entries {
+        let text = entry["data"]["text"].as_str().unwrap_or_default();
+        if entry["kind"] == "agent" {
+            let lower = text.to_ascii_lowercase();
+            for leaked in ["usage limit", "quota", "reset in", "declined"] {
+                assert!(!lower.contains(leaked), "quota refusal leaked into chat: {entry}");
+            }
+        }
+        assert_ne!(text, "The agent declined to continue.");
+        assert!(tail.is_none_or(|tail| !text.contains(tail)), "quota notice tail leaked into chat: {entry}");
+    }
+}
+
+/// #552 control: the same refusal from any other agent, and an Antigravity refusal that isn't the notice, are still
+/// the agent declining: no fallback, no rest.
+#[tokio::test]
+async fn a_refusal_that_isnt_antigravitys_quota_notice_stays_a_refusal() {
+    let host = Host::start().await;
+    for (backend, reply) in [("kimi", ""), ("antigravity", "I can't help with that request.")] {
+        let bot = json!({"name": "Refused", "backend": backend, "command": agent("primary"), "connectors": [],
+            "notify": false, "fallbacks": [{"backend": "codex", "command": agent("standin")}]});
+        let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+        let folder = host.home.join("bots").join(&bot).join("workspace");
+        std::fs::write(folder.join("primary.quota"), reply).unwrap();
+
+        host.call("send", json!({"botId": bot, "text": "Fix the build", "clientNonce": "n-552"})).await;
+        wait_for(&host, &bot, "declined notice", |e| e["data"]["text"] == "The agent declined to continue.").await;
+        assert!(!prompted(&host, &bot, "standin"), "{backend}: the fallback wasn't asked");
+        assert!(bot_value(&host, &bot).await["agentStep"].is_null(), "{backend}");
+        assert!(bot_value(&host, &bot).await["resting"].as_array().is_none_or(Vec::is_empty), "{backend}");
+    }
+}
+
 #[tokio::test]
 async fn a_switch_the_user_makes_carries_the_conversation_and_says_so() {
     let host = Host::start().await;

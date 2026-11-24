@@ -85,9 +85,9 @@ impl Actor {
                     self.agent_error = Some(error.to_owned());
                     return;
                 }
-                self.unheard.clear();
-                self.append(SegKind::Text, &text);
-                self.set_activity("Writing a reply…");
+                if let Some(reply) = self.quota_notice.push(&self.cfg.backend, text) {
+                    self.reply_text(&reply);
+                }
             }
             Event::Thought { text } => {
                 self.append(SegKind::Thought, &text);
@@ -387,6 +387,12 @@ impl Actor {
     }
 
     // MARK: streaming text segments
+
+    pub(super) fn reply_text(&mut self, text: &str) {
+        self.unheard.clear();
+        self.append(SegKind::Text, text);
+        self.set_activity("Writing a reply…");
+    }
 
     pub(super) fn append(&mut self, kind: SegKind, text: &str) {
         if text.is_empty() {

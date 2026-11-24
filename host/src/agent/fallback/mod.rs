@@ -7,6 +7,7 @@
 pub mod carry;
 pub mod login;
 pub mod reason;
+pub mod reset;
 pub mod rest;
 
 pub use reason::Reason;

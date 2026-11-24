@@ -297,9 +297,12 @@ export function BotOrGroupAvatar({ bot, members = [], size = 44, animated = true
 /** Avatar with the roster status dot: filled = unread, amber = needs you. A group shows its members; `agent`
  * (a registry id) puts the agent's logo in the bottom-left corner. */
 export function AvatarWithStatus({ bot, members = [], size = 44, agent = null }: { bot: Bot; members?: Bot[]; size?: number; agent?: string | null }) {
-  // A paused bot's mark takes the top-right gap the lead's crown leaves; a gap too small for a
-  // readable mark skips it — the row's fade, name mark and preview still say Paused.
-  const crown = bot.lead ? Math.max(12, size * 0.34) : 0
+  // The crown's width is named once: the mark's clearance math and the badge itself must stay
+  // in sync for the 2px gap to hold. A paused bot's mark takes the top-right gap the lead's
+  // crown leaves; a gap too small for a readable mark skips it — the row's fade, name mark and
+  // preview still say Paused.
+  const crownSize = Math.max(12, size * 0.34)
+  const crown = bot.lead ? crownSize : 0
   const pausedMark = Math.min(Math.max(9, size * 0.3), size - (size / 2 + crown / 2) - 2)
   return (
     <div className="avatar-frame" style={{ width: size, height: size }}>
@@ -309,7 +312,7 @@ export function AvatarWithStatus({ bot, members = [], size = 44, agent = null }:
           <AgentIcon registry={agent} size={size * 0.28} color={agentTint(agent)} />
         </span>
       ) : null}
-      {bot.lead ? <LeadAgentBadge size={Math.max(12, size * 0.34)} /> : null}
+      {bot.lead ? <LeadAgentBadge size={crownSize} /> : null}
       {/* A paused bot wears its state on its face too: the roster row fades, but a manager sheet
           row doesn't — this mark says paused wherever the bot's face shows. */}
       {bot.paused && !isGroup(bot) && pausedMark >= 8 ? (

@@ -634,6 +634,75 @@ async fn a_command_right_after_the_users_switch_leaves_the_recap_for_the_next_me
     wait_for(&host, &bot, "handed-off line", |e| state(e, "handedOff")).await;
 }
 
+#[tokio::test]
+async fn a_move_to_another_folder_carries_the_conversation_even_past_a_restart() {
+    let mut host = Host::start().await;
+    let bot = relay_bot(&host).await;
+    host.reply(&bot, "Fix the login tests").await;
+
+    // The agent starts again in the project, in a new session: the next message carries the chat.
+    let project = host.home.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    host.call("updateBot", json!({"id": bot, "cwd": project})).await;
+    host.reply(&bot, "And the signup tests").await;
+    let prompt = prompt_in(&project, "primary");
+    assert!(prompt.contains("<handoff>") && prompt.contains("Fix the login tests"), "{prompt}");
+    assert!(prompt.contains("in another working folder") && !prompt.contains("another agent"), "{prompt}");
+    host.reply(&bot, "Thanks").await;
+    assert!(!prompt_in(&project, "primary").contains("<handoff>"), "carried once");
+    let history = host.call("history", json!({"botId": bot})).await;
+    assert!(!history["entries"].as_array().unwrap().iter().any(manual), "a move shows no switch line: {history}");
+
+    // Back to its own folder, with a host restart before the next message: still carried.
+    host.call("updateBot", json!({"id": bot, "cwd": ""})).await;
+    host.restart(|_| {}).await;
+    host.reply(&bot, "Back home").await;
+    let prompt = last_prompt(&host, &bot, "primary");
+    assert!(prompt.contains("<handoff>") && prompt.contains("And the signup tests"), "{prompt}");
+}
+
+#[tokio::test]
+async fn a_switch_after_a_move_to_another_folder_says_so_and_names_the_agent_left() {
+    let host = Host::start().await;
+    let bot = relay_bot(&host).await;
+    host.reply(&bot, "Fix the login tests").await;
+
+    let project = host.home.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    host.call("updateBot", json!({"id": bot, "cwd": project})).await;
+    host.call("updateBot", json!({"id": bot, "backend": "codex", "command": agent("standin")})).await;
+    wait_for(&host, &bot, "pending line", manual).await;
+    host.reply(&bot, "And the signup tests").await;
+    let prompt = prompt_in(&project, "standin");
+    assert!(prompt.contains("<handoff>") && prompt.contains("Fix the login tests"), "{prompt}");
+    assert!(prompt.contains("another agent") && !prompt.contains("another working folder"), "{prompt}");
+    let history = host.call("history", json!({"botId": bot})).await;
+    assert_eq!(history["entries"].as_array().unwrap().iter().filter(|e| manual(e)).count(), 1, "{history}");
+}
+
+#[tokio::test]
+async fn a_new_session_after_a_move_to_another_folder_carries_nothing() {
+    let host = Host::start().await;
+    let bot = relay_bot(&host).await;
+    host.reply(&bot, "Fix the login tests").await;
+
+    let project = host.home.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    host.call("updateBot", json!({"id": bot, "cwd": project})).await;
+    host.call("newSession", json!({"botId": bot})).await;
+    host.reply(&bot, "Fresh start").await;
+    let prompt = prompt_in(&project, "primary");
+    assert!(!prompt.contains("<handoff>") && !prompt.contains("Fix the login tests"), "{prompt}");
+}
+
+/// The last prompt `agent` got while working in `folder`.
+fn prompt_in(folder: &std::path::Path, agent: &str) -> String {
+    let log = std::fs::read_to_string(folder.join(format!("{agent}.jsonl"))).unwrap();
+    let prompt =
+        log.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).rfind(|r| r["method"] == "session/prompt");
+    prompt.unwrap()["params"]["prompt"][0]["text"].as_str().unwrap().to_owned()
+}
+
 async fn relay_bot(host: &Host) -> String {
     let bot =
         json!({"name": "Relay", "backend": "custom", "command": agent("primary"), "connectors": [], "notify": false});

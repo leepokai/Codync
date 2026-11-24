@@ -100,17 +100,6 @@ import kotlinx.coroutines.launch
             else {
                 RunOverview(shown)
                 shown.error?.let { Text(tr(it), style = Type.callout, color = Palette.danger) }
-                if (shown.status in setOf("running", "approval", "stopping")) {
-                    RunStop(enabled = !busy && shown.status != "stopping") {
-                        scope.launch {
-                            busy = true
-                            try { store.stopWorkflowRun(shown.id) }
-                            catch (cancelled: CancellationException) { throw cancelled }
-                            catch (failure: Exception) { error = failure.message }
-                            finally { busy = false }
-                        }
-                    }
-                }
                 val names = state::workflowBotName
                 for (step in shown.steps) {
                     val node = shown.graph.nodes.firstOrNull { it.id == step.nodeId }
@@ -119,22 +108,6 @@ import kotlinx.coroutines.launch
                         openOutput = if (step.id in openOutput) openOutput - step.id else openOutput + step.id
                     }, onToggleInput = {
                         openInput = if (step.id in openInput) openInput - step.id else openInput + step.id
-                    }, onRetry = {
-                        scope.launch {
-                            busy = true
-                            try { store.retryWorkflowStep(step.id); error = null }
-                            catch (cancelled: CancellationException) { throw cancelled }
-                            catch (failure: Exception) { error = failure.message }
-                            finally { busy = false }
-                        }
-                    }, onStop = {
-                        scope.launch {
-                            busy = true
-                            try { store.stopWorkflowStep(step.id) }
-                            catch (cancelled: CancellationException) { throw cancelled }
-                            catch (failure: Exception) { error = failure.message }
-                            finally { busy = false }
-                        }
                     }, onDecide = { approved ->
                         scope.launch {
                             busy = true
@@ -162,7 +135,7 @@ import kotlinx.coroutines.launch
 }
 
 @Composable private fun RunStep(step: WorkflowStep, title: String, expanded: Boolean, inputOpen: Boolean, busy: Boolean, onToggle: () -> Unit,
-    onToggleInput: () -> Unit, onRetry: () -> Unit, onStop: () -> Unit, onDecide: (Boolean) -> Unit) {
+    onToggleInput: () -> Unit, onDecide: (Boolean) -> Unit) {
     val live = step.status == "running" || step.status == "stopping"
     val ink = runInk(step.status)
     Column(Modifier.fillMaxWidth().clip(RoundedRectangle(16.dp)).background(if (live) Palette.bubbleUser else Palette.surface).padding(14.dp),
@@ -177,10 +150,8 @@ import kotlinx.coroutines.launch
         step.error?.let { Text(tr(it), style = Type.caption, color = Palette.danger) }
         if (step.status == "approval") Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PrimaryButton("Approve", enabled = !busy) { onDecide(true) }
-            SecondaryButton("Deny", enabled = !busy) { onDecide(false) }
+            SecondaryButton("Reject", enabled = !busy) { onDecide(false) }
         }
-        if (step.status == "failed") SecondaryButton("Retry", enabled = !busy, action = onRetry)
-        if (step.status == "running") SecondaryButton("Stop", enabled = !busy, action = onStop)
         if (step.input.isNotBlank()) {
             Disclosure(tr(if (inputOpen) "Hide input" else "Show input"), inputOpen, onToggleInput)
             if (inputOpen) Quote(step.input)
@@ -222,15 +193,6 @@ import kotlinx.coroutines.launch
     Box(Modifier.fillMaxWidth().height(4.dp).clip(Capsule()).background(Palette.accentDim)) {
         Box(Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).height(4.dp).background(runInk(status)))
     }
-}
-
-@Composable private fun RunStop(enabled: Boolean, action: () -> Unit) {
-    val dark = LocalDark.current
-    Text(tr("Stop"), Modifier.clip(Capsule())
-        .background(if (dark) Palette.danger.copy(alpha = 0.18f) else Palette.danger)
-        .plainButton(enabled, action = action)
-        .padding(horizontal = 22.dp, vertical = 11.dp),
-        style = Type.body.medium, color = if (dark) Palette.danger else Color.White)
 }
 
 @Composable private fun Disclosure(title: String, open: Boolean, action: () -> Unit) {

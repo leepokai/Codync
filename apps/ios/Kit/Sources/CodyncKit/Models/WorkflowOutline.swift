@@ -1,6 +1,6 @@
 import Foundation
 
-/// Columns the phone can edit. Same rules as `host/src/workflows/outline.rs`.
+/// A workflow read as columns (trigger, steps, one condition's branches). Same rules as `host/src/workflows/outline.rs`.
 public struct WorkflowOutline: Equatable, Sendable {
     public var trigger: String
     public var main: [String]
@@ -9,31 +9,6 @@ public struct WorkflowOutline: Equatable, Sendable {
     public var no: [String]
     public var after: [String]
     public var loose: [String]
-
-    /// Where a step reads from. `node` is the trigger or a step. `yes` and `no` are the condition's branches.
-    /// `both` is the step that runs after the two branches meet.
-    public enum SourceTarget: Hashable, Sendable {
-        case node(String)
-        case yes, no, both
-
-        public var token: String {
-            switch self {
-            case let .node(id): id
-            case .yes: "*yes"
-            case .no: "*no"
-            case .both: "*both"
-            }
-        }
-
-        public init(token: String) {
-            switch token {
-            case "*yes": self = .yes
-            case "*no": self = .no
-            case "*both": self = .both
-            default: self = .node(token)
-            }
-        }
-    }
 
     public init(trigger: String, main: [String] = [], condition: String? = nil, yes: [String] = [], no: [String] = [],
                 after: [String] = [], loose: [String] = []) {
@@ -45,151 +20,10 @@ public struct WorkflowOutline: Equatable, Sendable {
         self.after = after
         self.loose = loose
     }
-
-    /// The step this one reads, matching the lines `graph(from:keeping:)` writes. A prompt has none.
-    public func sourceTarget(of step: String, kinds: [String: WorkflowNodeKind]) -> SourceTarget? {
-        var found: SourceTarget?
-        func walk(_ items: [String], start: SourceTarget) -> SourceTarget {
-            var source = start
-            for item in items {
-                let kind = kinds[item]
-                if kind == .prompt { continue }
-                if item == step { found = source }
-                if kind != .output { source = .node(item) }
-            }
-            return source
-        }
-        let feeding = walk(main, start: .node(trigger))
-        if let condition {
-            if condition == step { found = feeding }
-            _ = walk(yes, start: .yes)
-            _ = walk(no, start: .no)
-            _ = walk(after, start: .both)
-        }
-        return found
-    }
-
-    /// Moves `step` so it reads from `target`. The result stays an outline.
-    public func retargeting(_ step: String, to target: SourceTarget) -> WorkflowOutline? {
-        guard step != trigger else { return nil }
-        if case let .node(source) = target, source == step { return nil }
-        if condition == step { return retargetCondition(to: target) }
-        var next = self
-        next.detach(step)
-        switch target {
-        case .both:
-            guard next.condition != nil else { return nil }
-            next.after.insert(step, at: 0)
-        case .yes:
-            guard next.condition != nil else { return nil }
-            next.yes.insert(step, at: 0)
-        case .no:
-            guard next.condition != nil else { return nil }
-            next.no.insert(step, at: 0)
-        case let .node(source):
-            if source == next.trigger {
-                next.main.insert(step, at: 0)
-            } else if !next.insert(step, after: source) {
-                return nil
-            }
-        }
-        return next
-    }
-
-    /// One incoming line, for a graph the phone does not edit as columns.
-    public static func rewired(_ graph: WorkflowGraph, step: String, to target: SourceTarget) -> WorkflowGraph? {
-        guard graph.node(step)?.kind != .trigger else { return nil }
-        var next = graph
-        next.edges.removeAll { $0.to == step }
-        func link(_ from: String, branch: String?) {
-            let id = branch.map { "\(from).\($0)>\(step):text" } ?? "\(from)>\(step):text"
-            next.edges.append(WorkflowEdge(id: id, from: from, to: step, branch: branch))
-        }
-        switch target {
-        case let .node(source):
-            guard source != step, graph.node(source) != nil else { return nil }
-            link(source, branch: nil)
-        case .yes, .no:
-            guard let condition = graph.nodes.first(where: { $0.kind == .condition })?.id else { return nil }
-            let branch = target == .no ? "no" : "yes"
-            guard !next.edges.contains(where: { $0.from == condition && $0.branch == branch }) else { return nil }
-            link(condition, branch: branch)
-        case .both:
-            guard let condition = graph.nodes.first(where: { $0.kind == .condition })?.id else { return nil }
-            guard let tails = branchTails(next, condition: condition, step: step) else { return nil }
-            var linked: Set<String> = []
-            for tail in tails where linked.insert("\(tail.from)|\(tail.branch ?? "")").inserted {
-                link(tail.from, branch: tail.branch)
-            }
-        }
-        return next
-    }
-
-    /// The node that can feed a step after one branch. An empty branch is the condition itself.
-    /// A branch that already ends at another step is that step, so the join does not add a second yes or no line.
-    private static func branchTails(_ graph: WorkflowGraph, condition: String, step: String) -> [(from: String, branch: String?)]? {
-        func tail(_ branch: String) -> (from: String, branch: String?)? {
-            guard let first = graph.edges.first(where: { $0.from == condition && $0.branch == branch && $0.to != step }) else {
-                return (condition, branch)
-            }
-            var current = first.to
-            var seen: Set<String> = [condition, step]
-            while !seen.contains(current) {
-                if graph.node(current)?.kind == .output { return nil }
-                seen.insert(current)
-                let outs = graph.edges.filter { $0.from == current && $0.to != step }
-                guard outs.count == 1, graph.node(outs[0].to)?.kind != .output else { break }
-                current = outs[0].to
-            }
-            if graph.node(current)?.kind == .output { return nil }
-            return (current, nil)
-        }
-        guard let yes = tail("yes"), let no = tail("no") else { return nil }
-        return [yes, no]
-    }
-
-    private func retargetCondition(to target: SourceTarget) -> WorkflowOutline? {
-        guard case let .node(source) = target else { return nil }
-        var next = self
-        if source == trigger {
-            next.after = next.main + next.after
-            next.main = []
-            return next
-        }
-        guard let index = next.main.firstIndex(of: source) else { return nil }
-        let rest = Array(next.main.suffix(from: index + 1))
-        next.main = Array(next.main.prefix(index + 1))
-        next.after = rest + next.after
-        return next
-    }
-
-    private mutating func detach(_ step: String) {
-        main.removeAll { $0 == step }
-        yes.removeAll { $0 == step }
-        no.removeAll { $0 == step }
-        after.removeAll { $0 == step }
-        loose.removeAll { $0 == step }
-    }
-
-    private mutating func insert(_ step: String, after source: String) -> Bool {
-        for key in [\WorkflowOutline.main, \.yes, \.no, \.after] as [WritableKeyPath<WorkflowOutline, [String]>] {
-            guard let index = self[keyPath: key].firstIndex(of: source) else { continue }
-            self[keyPath: key].insert(step, at: index + 1)
-            return true
-        }
-        return false
-    }
 }
 
-/// Outline, reading order and the lines an outline rewrites. The host is the authority on save.
+/// Outline and reading order of a saved graph.
 public enum WorkflowLayout {
-    /// `outline` when the phone can add and move steps, `fields` otherwise.
-    /// An unknown kind is `readOnly` so a save would not drop it. Annotations alone stay `outline`.
-    public static func editMode(of graph: WorkflowGraph) -> WorkflowEditMode {
-        if graph.hasUnknownKind { return .readOnly }
-        return outline(of: graph) == nil ? .fields : .outline
-    }
-
     public static func outline(of graph: WorkflowGraph) -> WorkflowOutline? {
         let steps = graph.nodes.filter(\.kind.isStep)
         let triggers = steps.filter { $0.kind == .trigger }
@@ -286,51 +120,6 @@ public enum WorkflowLayout {
             outline[keyPath: key] = list
         }
         return outline
-    }
-
-    /// Rewrites step lines and lays the columns out. Notes, strokes and loose lines stay.
-    public static func graph(from outline: WorkflowOutline, keeping graph: WorkflowGraph) -> WorkflowGraph {
-        let kinds = Dictionary(uniqueKeysWithValues: graph.nodes.map { ($0.id, $0.kind) })
-        var edges: [WorkflowEdge] = []
-        func link(_ from: String, _ to: String, branch: String?) {
-            let id = branch.map { "\(from).\($0)>\(to):text" } ?? "\(from)>\(to):text"
-            edges.append(WorkflowEdge(id: id, from: from, to: to, branch: branch))
-        }
-        func walk(_ items: [String], start: [(from: String, branch: String?)]) -> (sources: [(from: String, branch: String?)], prompts: [String]) {
-            var sources = start
-            var prompts: [String] = []
-            for id in items {
-                if kinds[id] == .prompt {
-                    prompts.append(id)
-                    continue
-                }
-                for source in sources { link(source.from, id, branch: source.branch) }
-                for prompt in prompts { link(prompt, id, branch: nil) }
-                prompts = []
-                if kinds[id] != .output { sources = [(id, nil)] }
-            }
-            return (sources, prompts)
-        }
-        let walked = walk(outline.main, start: [(outline.trigger, nil)])
-        var sources = walked.sources
-        var prompts = walked.prompts
-        if let condition = outline.condition {
-            for source in sources { link(source.from, condition, branch: source.branch) }
-            for prompt in prompts { link(prompt, condition, branch: nil) }
-            let yes = walk(outline.yes, start: [(condition, "yes")])
-            let no = walk(outline.no, start: [(condition, "no")])
-            if !outline.after.isEmpty {
-                sources = yes.sources + no.sources
-                prompts = []
-                _ = walk(outline.after, start: sources)
-            }
-        }
-        let loose = Set(outline.loose)
-        edges.append(contentsOf: graph.edges.filter { loose.contains($0.from) && loose.contains($0.to) })
-        var next = graph
-        next.edges = edges
-        place(&next, outline)
-        return next
     }
 
     /// Top to bottom: a layer goes left to right, then top to bottom. Back edges wait for the next pass.
@@ -486,28 +275,5 @@ public enum WorkflowLayout {
             current = next(id)
         }
         return Walk(list: list, condition: nil, rest: current)
-    }
-
-    private static func place(_ graph: inout WorkflowGraph, _ outline: WorkflowOutline) {
-        func set(_ id: String, column: Int, y: Double) {
-            guard let index = graph.nodes.firstIndex(where: { $0.id == id }) else { return }
-            graph.nodes[index].at = WorkflowPoint(x: 80 + Double(column) * 400, y: y)
-        }
-        func placeList(_ items: [String], column: Int, y: Double) -> Int {
-            var column = column
-            for id in items {
-                column += 1
-                set(id, column: column, y: y)
-            }
-            return column
-        }
-        set(outline.trigger, column: 0, y: 80)
-        var column = placeList(outline.main, column: 0, y: 80)
-        guard let condition = outline.condition else { return }
-        column += 1
-        set(condition, column: column, y: 80)
-        let yes = placeList(outline.yes, column: column, y: 80)
-        let no = placeList(outline.no, column: column, y: 300)
-        _ = placeList(outline.after, column: max(yes, no), y: 80)
     }
 }

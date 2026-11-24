@@ -9,7 +9,7 @@ use crate::agent::fallback;
 use crate::analytics::errors::host_error;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, THREAD_PREFIX, now_ms};
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
@@ -344,7 +344,10 @@ fn plan(hub: &Hub, cfg: &BotConfig, tasks: &mut Vec<Task>, over: Option<&str>) -
 /// Hands `task` of `bot` to `thread` as its next turn. `first`: the thread is new, and starts here. A routine run's
 /// prompt and another bot's request go as they are: they say themselves what the turn is and where its reply goes.
 /// Under the box's lock, and only while the task is still on that thread: a Stop since the plan found no turn to stop.
+/// The files a user's task starts with are copied before it.
 fn begin(hub: &Arc<Hub>, bot: &str, thread: &BotConfig, task: &Task, first: bool) {
+    // Copied before the lock, which every bot's box shares: a copy again is harmless.
+    let files = if task.source == Source::User { handed(hub, bot, thread, &task.files) } else { Ok(Vec::new()) };
     let posted = {
         let _g = hub.work.boxes.locked();
         if tasks::of_thread(&tasks::load(&hub.store, bot), &thread.id).is_none_or(|on| on.id != task.id) {
@@ -355,17 +358,39 @@ fn begin(hub: &Arc<Hub>, bot: &str, thread: &BotConfig, task: &Task, first: bool
             sources::watch(hub, bot, &thread.id, task);
         }
         let message = match task.source {
-            Source::Bot => json!({"text": prompts::task_prompt(task, first), "from": "host"}),
-            // The user's own words, as the message that opens their thread (`thread`'s turn says who speaks).
-            Source::User => json!({"text": task.brief, "attachments": []}),
-            Source::Routine { .. } | Source::Request { .. } => json!({"text": task.brief, "from": "host"}),
+            Source::Bot => Ok(json!({"text": prompts::task_prompt(task, first), "from": "host"})),
+            // The user's own words, as the message that opens their thread (`thread`'s turn says who speaks), with
+            // the files they started it with.
+            Source::User => files.map(|files| json!({"text": task.brief, "attachments": files})),
+            Source::Routine { .. } | Source::Request { .. } => Ok(json!({"text": task.brief, "from": "host"})),
         };
-        crate::chat::messages::post(hub, thread, message)
+        message.and_then(|message| crate::chat::messages::post(hub, thread, message))
     };
     if let Err(error) = posted {
         host_error!(hub, "couldn't hand work to a thread", thread = %thread.id, error = format!("{error:#}"));
         finished(hub, thread, Outcome::not_dispatched(&error));
     }
+}
+
+/// The files the user started a task of `bot`'s with, copied from the bot's uploads to `thread`'s, where the thread
+/// reads them; their chat metadata.
+/// ponytail: the bot's copies stay until its uploads are cleared, as a chat's do; delete them with the task if they
+/// pile up.
+fn handed(
+    hub: &Arc<Hub>,
+    bot: &str,
+    thread: &BotConfig,
+    files: &[serde_json::Value],
+) -> Result<Vec<serde_json::Value>> {
+    if files.is_empty() {
+        return Ok(Vec::new());
+    }
+    let owner = hub.store.bot(bot)?.filter(|row| !row.deleted).context("unknown bot")?.config;
+    let (from, to) = (crate::chat::uploads::root(&owner), crate::chat::uploads::root(thread));
+    for meta in files {
+        crate::chat::uploads::copy(&from, &to, meta)?;
+    }
+    Ok(files.to_vec())
 }
 
 /// Whether `cfg`'s threads run on the chat's own agent and login, so a thread may start as a fork of the chat's

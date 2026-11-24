@@ -223,9 +223,7 @@ extension BotStore {
         screen = nil
         refetched = nil
         workflows = []
-        dirtyWorkflowGraphs = []
         deletedWorkflows = []
-        workflowNotices = [:]
         saveCache()
     }
 

@@ -182,12 +182,6 @@ private struct ComputerRows: View {
             }
         }
         ComputerNotificationsRow(store: store)
-        if store.connection == .online, store.hello?.autoOrder != nil {
-            Toggle(isOn: Binding(get: { store.autoOrder }, set: { store.setAutoOrder($0) })) {
-                RowLabel("Move active bots to the top", systemImage: "arrow.up")
-            }
-            .toggleStyle(.codync)
-        }
         if store.connection == .online, store.hello?.hopReview != nil {
             Toggle(isOn: Binding(get: { store.hopReview }, set: { store.setHopReview($0) })) {
                 RowLabel("Let another bot review a stopped chain.", systemImage: "arrow.up")

@@ -1,0 +1,52 @@
+# Opens the Bots tab's filter menu and checks that "Sort by last active" is checked when ON is "true", unchecked when
+# "false", then closes the menu. Tried again with the menu opened afresh, for a change another device just made.
+appId: com.pokai.Codync.ios.dev
+---
+- retry:
+    maxRetries: 4
+    commands:
+      - runFlow:
+          when:
+            visible: "Sort by last active"
+          file: close-menu.yaml
+      - tapOn: "Computers, .*Filter conversations"
+      - extendedWaitUntil:
+          visible: "Sort by last active"
+          timeout: 10000
+      - runFlow:
+          when:
+            true: ${ON === 'true'}
+          commands:
+            - runFlow:
+                when:
+                  platform: iOS
+                commands:
+                  - assertVisible:
+                      text: "Sort by last active"
+                      checked: true
+            - runFlow:
+                when:
+                  platform: Android
+                commands:
+                  - assertVisible:
+                      containsChild: "Sort by last active"
+                      checked: true
+      - runFlow:
+          when:
+            true: ${ON !== 'true'}
+          commands:
+            - runFlow:
+                when:
+                  platform: iOS
+                commands:
+                  - assertNotVisible:
+                      text: "Sort by last active"
+                      checked: true
+            - runFlow:
+                when:
+                  platform: Android
+                commands:
+                  - assertNotVisible:
+                      containsChild: "Sort by last active"
+                      checked: true
+      - runFlow: close-menu.yaml

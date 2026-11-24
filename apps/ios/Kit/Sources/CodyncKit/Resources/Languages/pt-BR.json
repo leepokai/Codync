@@ -2356,7 +2356,7 @@
   "Skipped": "Skipped",
   "Retry": "Retry",
   "Approve": "Approve",
-  "Reject": "Reject",
+  "Reject": "Rejeitar",
   "Show output": "Show output",
   "Hide output": "Hide output",
   "Show input": "Eingabe anzeigen",
@@ -2476,5 +2476,7 @@
   "{count} min": "{count} min",
   "Context handoff pending": "Passagem de contexto pendente",
   "Context handed off": "Contexto passado",
-  "Switched": "Trocado"
+  "Switched": "Trocado",
+  "No threads right now": "Nenhuma thread no momento",
+  "Tasks your bots work on show up here.": "As tarefas em que seus bots trabalham aparecem aqui."
 }

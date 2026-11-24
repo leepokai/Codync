@@ -10,7 +10,7 @@ The configured directory is the agent process and ACP session's starting directo
 
 Routines and group contributions use their owner's configured starting directory. Task-specific paths should be explicit in routine instructions. The host does not infer a task directory from the last chat message. Harness-specific restrictions can still require user approval for other paths.
 
-Changing the default project in settings deliberately reconfigures the agent session, as before. This is separate from executing a task in another directory.
+Changing the folder in settings starts the bot's agent again there, in a new session (`restart_agent`). Its next message carries a recap of the chat, as after a switch to another agent (`moved_folder` in `agent/bot/fallback/handoff.rs`): the same handoff, kept across a host restart, opening with "the user moved you to the folder you're in now" instead of naming another agent, and with no line in the chat. This is separate from executing a task in another directory.
 
 ## Lifecycle
 

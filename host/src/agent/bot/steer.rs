@@ -268,7 +268,8 @@ impl Actor {
             }
         }
         // The store row first: if the row can't be read or written, the message stays live-queued rather
-        // than falling out of both paths.
+        // than falling out of both paths — a write that doesn't land (the row moved underneath us)
+        // leaves the queue row exactly where it was.
         if let Some(mut e) = self.hub.store.entry(entry_id) {
             if let Some(t) = text {
                 crate::chat::messages::set_text(&mut e.data, t);
@@ -277,12 +278,18 @@ impl Actor {
                 e.data["status"] = json!("scheduled");
                 e.data["notBefore"] = json!(at);
             }
-            self.hub.set_entry(entry_id, &e.data);
-            if not_before.is_some() {
-                self.queue.remove(at);
+            match self.hub.set_entry(entry_id, &e.data) {
+                Some(_) => {
+                    if not_before.is_some() {
+                        self.queue.remove(at);
+                    }
+                    // The roster previews the chat's newest message.
+                    self.hub.emit_bot(&self.cfg.id);
+                }
+                None => {
+                    tracing::warn!(bot = %self.cfg.id, entry = entry_id, "the store write didn't land; the message stays live-queued");
+                }
             }
-            // The roster previews the chat's newest message.
-            self.hub.emit_bot(&self.cfg.id);
         } else {
             tracing::warn!(bot = %self.cfg.id, entry = entry_id, "a hold found no store row; the message stays live-queued");
         }

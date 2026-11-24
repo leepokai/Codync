@@ -109,7 +109,7 @@ pub fn fire_scheduled(hub: &Arc<Hub>, e: &Entry) -> Result<Option<Entry>> {
         // still the one we flipped: any write that landed in the failure window — an edit through
         // `Cmd::Hold`, or an unrelated one such as a reaction — moved the rev, so what it wrote stays
         // (a rev-blind rollback would stomp it) and the entry waits where that write left it until a
-        // host restart expires it. A rollback that can't happen is said, not swallowed.
+        // host restart expires it. A rollback that fails outright is said, not swallowed.
         if let Err(rollback) = hub.edit_entry(&e.id, |cur| {
             Ok(cur.rev == turned.rev && cur.data["status"] == "queued" && {
                 cur.data = e.data.clone();

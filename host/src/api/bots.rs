@@ -511,7 +511,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                     // that landed first refuses this.
                     let entry = hub
                         .flip_scheduled(entry_id, None, &e.data, e.rev)?
-                        .ok_or_else(|| anyhow!("that message isn't scheduled any more"))?;
+                        .ok_or_else(|| anyhow!("that message changed underneath you; take another look"))?;
                     json!({"entry": entry})
                 }
                 _ => bail!("that message isn't waiting any more"),
@@ -532,7 +532,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             e.data["removed"] = true.into();
             // One-way at the rev we read: a fire that lands first wins and this refuses.
             if hub.flip_scheduled(entry_id, None, &e.data, e.rev)?.is_none() {
-                bail!("that message isn't scheduled any more");
+                bail!("that message changed underneath you; take another look");
             }
             // A held message can carry files (a queued one with files can be given a time): they leave
             // with it rather than orphaning in the folder.

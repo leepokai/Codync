@@ -47,6 +47,9 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
     await test.step('the list carries both test bots, and the search filters it', async () => {
       await expect(rows.filter({ hasText: nameA })).toHaveCount(1)
       await expect(rows.filter({ hasText: nameB })).toHaveCount(1)
+      // The row's small agent->model line stays honest: a custom-command bot shows none
+      // (rowModelPath's null contract; the readable-model rendering is unit-pinned).
+      await expect(rows.filter({ hasText: nameA }).locator('.model-manager-model-path')).toHaveCount(0)
       const search = sheet.getByRole('textbox', { name: 'Search bots' })
       await search.fill(nameB)
       await expect(rows.filter({ hasText: nameA })).toHaveCount(0)
@@ -70,6 +73,10 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
       await sheet.locator('.model-picker-field').click()
       await page.locator('.model-picker-rail').getByRole('button', { name: agent!.name, exact: false }).click()
       await expect(page.getByRole('textbox', { name: 'Search models' })).toBeVisible()
+      // The picker overlays the sheet until dismissed. The search box holds focus, so a user
+      // closes it by clicking the backdrop (the menu's own outside-click close), not Escape.
+      await page.mouse.click(10, 10)
+      await expect(page.locator('.model-picker')).toHaveCount(0)
     })
 
     await test.step('check both bots and apply', async () => {
@@ -138,7 +145,12 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
       for (const name of [nameA, nameB]) {
         await page.locator('.roster-row', { hasText: name }).click()
         await page.getByRole('button', { name: `${name}, view details` }).click()
-        await page.locator('.details-panel').getByRole('tab', { name: 'Settings' }).click()
+        const panel = page.locator('.details-panel')
+        // The panel keeps its layout: an earlier run's panel shows its tabs, a fresh one the chooser.
+        // Both are real states of the same window, so the step takes whichever Settings it finds.
+        const settingsTab = panel.getByRole('tab', { name: 'Settings' })
+        if ((await settingsTab.count()) === 0) await panel.locator('.panel-choice', { hasText: 'Settings' }).click()
+        else await settingsTab.click()
         await expect(page.locator('.details-panel .model-picker-field')).toContainText(agent!.name)
       }
     })

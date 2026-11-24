@@ -29,22 +29,29 @@ test('clean model-manager e2e leftovers', async () => {
       await api(page, 'deleteBot', { botId: bot.id }).catch((e) => console.log('delete failed', bot.name, String(e)))
     }
     // The cleanup must not report green without having done its work: after the deletions,
-    // no e2e leftovers of either prefix may remain in the mirror.
-    const rest = await page.evaluate((): MirrorBot[] => {
-      const keys = Object.keys(localStorage).filter((k) => k.startsWith('codync-mirror-local'))
-      const seen = new Map<string, MirrorBot>()
-      for (const k of keys) {
-        try {
-          const parsed = JSON.parse(localStorage.getItem(k) ?? '{}') as { bots?: MirrorBot[] }
-          for (const bot of parsed.bots ?? []) if (bot.id && bot.name) seen.set(bot.id, bot)
-        } catch {
-          // A half-written mirror line is not worth failing over.
+    // no e2e leftovers of either prefix may remain. The mirror is a cache that trails the
+    // host (the roster echo can lag, like every other wait in these specs), so poll for it
+    // with the same 30s grace the positives get; only a leftover that survives it fails.
+    const deadline = Date.now() + 30_000
+    for (;;) {
+      const rest = await page.evaluate((): MirrorBot[] => {
+        const keys = Object.keys(localStorage).filter((k) => k.startsWith('codync-mirror-local'))
+        const seen = new Map<string, MirrorBot>()
+        for (const k of keys) {
+          try {
+            const parsed = JSON.parse(localStorage.getItem(k) ?? '{}') as { bots?: MirrorBot[] }
+            for (const bot of parsed.bots ?? []) if (bot.id && bot.name) seen.set(bot.id, bot)
+          } catch {
+            // A half-written mirror line is not worth failing over.
+          }
         }
-      }
-      return [...seen.values()]
-    })
-    const remaining = rest.filter((b) => /^(Model|Bot) manager e2e/.test(b.name))
-    if (remaining.length > 0) throw new Error(`cleanup left e2e bots behind: ${remaining.map((b) => b.name).join(', ')}`)
+        return [...seen.values()]
+      })
+      const remaining = rest.filter((b) => /^(Model|Bot) manager e2e/.test(b.name))
+      if (remaining.length === 0) break
+      if (Date.now() > deadline) throw new Error(`cleanup left e2e bots behind: ${remaining.map((b) => b.name).join(', ')}`)
+      await page.waitForTimeout(1_000)
+    }
   } finally {
     await browser.close()
   }

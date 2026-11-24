@@ -137,6 +137,7 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
   const openArtifact = useCallback((id: string) => {
     setArtifactId(id)
     setCompactDetails(false)
+    setPanelFilled(false)
   }, [])
 
   const showDetails = useCallback((tab: DetailsTab) => {
@@ -192,9 +193,7 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
           <TopFade />
           {/* The window's bar holds the bot, what runs it, and the panel's toggle with the open panel's own buttons
               before it; nothing while another page covers the conversation. */}
-          {bar.end ? createPortal(bot && !isGroup(bot)
-            ? <PanelBarButtons open={panelOpen} filled={panelFilled} setFilled={setPanelFilled} share={shareBot} toggle={toggleDetails} />
-            : <PanelBarButtons open={false} filled={false} toggle={toggleDetails} />, bar.end) : null}
+          {bar.end ? createPortal(<PanelBarButtons open={panelOpen && !!bot && !isGroup(bot)} filled={panelFilled} setFilled={setPanelFilled} share={shareBot} toggle={toggleDetails} />, bar.end) : null}
           {bar.title ? createPortal(<>
           <button className={`title-pill ${calling ? 'hidden-by-call' : ''}`} inert={calling} onClick={openFromTitle} aria-label={tr('{name}, view details').replaceAll('{name}', () => bot?.name ?? tr('Conversation'))} title={tr('View conversation details')}>
             <HStack as="span" gap={7}>

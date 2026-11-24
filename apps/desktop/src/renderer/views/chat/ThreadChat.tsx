@@ -91,6 +91,12 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
   const dock = useRef<HTMLDivElement>(null)
   useDockHeight(root, dock)
   const readOnly = readOnlyReason(task)
+  // An artifact opens over the conversation, so the panel stops covering it.
+  const openArtifact = (id: string) => {
+    setArtifactId(id)
+    setPanelFilled(false)
+    if (!panel.beside) setPanelOpen(false)
+  }
 
   const row = (it: ChatItem) => {
     if (it.kind === 'separator') return <TimeSeparator date={it.date} />
@@ -215,9 +221,9 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
             routineId={null}
             docked={bar.end !== null}
             thread={task}
-            sideChat={<SideChat botId={bot.id} openArtifact={setArtifactId} />}
+            sideChat={<SideChat botId={bot.id} openArtifact={openArtifact} />}
             editGroup={() => {}}
-            openArtifact={setArtifactId}
+            openArtifact={openArtifact}
             openCard={openChat}
             share={() => setTemplateDraft(draftOf(bot))}
             close={() => setPanelOpen(false)}

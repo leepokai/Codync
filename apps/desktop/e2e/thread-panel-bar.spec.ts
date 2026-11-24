@@ -1,21 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, attach, openPage, setPref, workBot } from './sandbox.ts'
-
-/** Sets the prefs for the test; what it returns puts back the sandbox's. */
-async function withPrefs(page: Page, prefs: Record<string, unknown>) {
-  const keys = Object.keys(prefs)
-  const saved = await page.evaluate((keys) => keys.map((key) => localStorage.getItem(key)), keys)
-  for (const key of keys) await setPref(page, key, prefs[key])
-  return async () => {
-    for (const [i, key] of keys.entries()) {
-      await page.evaluate(([key, value]) => {
-        if (value === null) localStorage.removeItem(key)
-        else localStorage.setItem(key, value)
-        window.dispatchEvent(new StorageEvent('storage', { key, newValue: value }))
-      }, [key, saved[i] ?? null] as const).catch(() => {})
-    }
-  }
-}
+import { api, attach, holdTask, openPage, setPref, withPrefs, workBot } from './sandbox.ts'
 
 /** The buttons at the window bar's end, by name, in order. */
 const barButtons = (page: Page) => page.locator('.window-bar-end button').evaluateAll((all) => all.map((b) => b.getAttribute('aria-label') ?? b.getAttribute('title')))
@@ -30,9 +14,7 @@ test("a thread's panel puts its buttons in the window's bar as a bot's chat does
   try {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1300, height: 760, deviceScaleFactor: 2, mobile: false })
     botId = (await workBot(page, name)).id
-    // A task whose thread works until it is stopped (host/tests/fixtures/work_agent.py).
-    await api(page, 'send', { botId, text: `ADD ${title}|HOLD:e2e` })
-    await expect.poll(async () => (await api<{ bot: { work: { title: string }[] } }>(page, 'updateBot', { id: botId })).bot.work.some((t) => t.title === title)).toBe(true)
+    await holdTask(page, botId, title)
 
     // The bot's chat, panel open: the row the thread's must match.
     await page.locator('.roster-row', { hasText: name }).click()
@@ -94,8 +76,7 @@ test("a panel's tabs share its width, narrow ones hide their close button, and +
   try {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 760, deviceScaleFactor: 2, mobile: false })
     botId = (await workBot(page, name)).id
-    await api(page, 'send', { botId, text: `ADD ${title}|HOLD:e2e` })
-    await expect.poll(async () => (await api<{ bot: { work: { title: string }[] } }>(page, 'updateBot', { id: botId })).bot.work.some((t) => t.title === title)).toBe(true)
+    await holdTask(page, botId, title)
     const check = async (where: string) => {
       const panel = page.locator('.side-panel:not([inert])')
       const row = panel.locator('.panel-tabs-row').first()

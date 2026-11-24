@@ -83,6 +83,19 @@ extension BotStore {
         applyIcons(h.icons ?? [:], revision: h.iconsRevision ?? 0)
         noteSyncStamp(Self.syncStamp(h))
         noteHostVersion(HostVersion(version: h.version, minApp: h.minApp))
+        // A reconnect, including the one a lagged stream asks for, fills the pin rows in again.
+        if h.workflows == true {
+            Task { [weak self] in
+                guard let self else { return }
+                await self.reloadWorkflows()
+                // Workflow events are live only: an open detail or run can miss the run ending or an approval
+                // while the phone was away. Bump both reloads after the summaries are back.
+                workflowReload += 1
+                workflowRunReload += 1
+            }
+        } else {
+            workflows = []
+        }
     }
 
     /// A copy synced under another mirror format or host schema may lack fields or hold rows a migration changed:
@@ -186,7 +199,11 @@ extension BotStore {
                 // A newer host this app can't follow: stop syncing and ask for an update.
                 if mismatch != nil { restartEvents() }
             }
+        case let .workflow(event):
+            applyWorkflow(event)
         }
+        // Workflow events carry no rev and are not part of the bot mirror.
+        if case .workflow = event { return }
         scheduleSave()
     }
 
@@ -205,6 +222,10 @@ extension BotStore {
         windowFloors = [:]
         screen = nil
         refetched = nil
+        workflows = []
+        dirtyWorkflowGraphs = []
+        deletedWorkflows = []
+        workflowNotices = [:]
         saveCache()
     }
 

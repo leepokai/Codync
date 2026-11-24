@@ -12,6 +12,8 @@ export type ChannelError = CallError
 
 /** What the channel needs from a WebSocket (the global one in the app, a fake in tests). */
 export interface Socket {
+  /** `WebSocket.OPEN` once it opened: sending before that throws (InvalidStateError). */
+  readonly readyState: number
   send(text: string): void
   close(code?: number): void
   addEventListener(type: 'open' | 'message' | 'close' | 'error', listener: (event: { data?: unknown; code?: number }) => void): void
@@ -198,7 +200,8 @@ export class RelayChannel {
     socket.addEventListener('error', () => this.socket === socket && socket.close(BROKEN))
     this.heartbeat = setInterval(() => {
       if (Date.now() - this.heard > SILENCE) socket.close(BROKEN)
-      else socket.send(PING)
+      // A socket still opening (a slow network) has nothing to ping yet; silence closes it if it never opens.
+      else if (socket.readyState === WebSocket.OPEN) socket.send(PING)
     }, HEARTBEAT)
   }
 

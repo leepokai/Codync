@@ -178,8 +178,9 @@ internal suspend fun AppStore.hostQuery(method: String, payload: JsonObject, tim
     }
     try { return request.await() } finally { request.cancel() }
 }
-suspend fun AppStore.agentModels(backend: String): AgentModels {
-    val response = hostQuery("agentModels", body("backend" to backend), timeoutMillis = 300_000)
+/** [loginProfile]: the login profile to list them for; null for the default login. */
+suspend fun AppStore.agentModels(backend: String, loginProfile: String?): AgentModels {
+    val response = hostQuery("agentModels", body("backend" to backend, "loginProfile" to loginProfile), timeoutMillis = 300_000)
     return WireJson.decodeFromJsonElement(response)
 }
 /** A forced usage read that returns when it's done, for pull to refresh. */

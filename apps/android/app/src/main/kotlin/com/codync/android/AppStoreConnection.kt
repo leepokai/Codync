@@ -191,6 +191,7 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             batch.filterIsInstance<MirrorEvent.Name>().lastOrNull()?.let { setHostName(it.name) }
             batch.filterIsInstance<MirrorEvent.AutoOrder>().lastOrNull()?.let { showAutoOrder(it.enabled) }
             batch.filterIsInstance<MirrorEvent.HopReview>().lastOrNull()?.let { showHopReview(it.enabled) }
+            receiveWorkflows(batch)
             hearCalls(batch)
             acknowledgeVisible(readAfter(batch, state.value.readingChats))
             readChats(batch, NotificationDisplay.alertKinds(application, local.referenceId, id)).forEach { NotificationDisplay.cancelAlert(application, local.referenceId, id, it) }
@@ -238,9 +239,21 @@ private suspend fun AppStore.awaitUpdate(active: EncryptedChannel) {
 }
 
 /** A different host version may read fine: forget that its data was unreadable and any update asked of the old one (iOS `noteHostVersion`). */
-private fun AppStore.noteHello(hello: JsonObject) = mutableState.update {
-    val same = it.hello?.text("version") == hello.text("version")
-    it.copy(hello = hello, unreadable = it.unreadable && same, hostUpdate = it.hostUpdate.takeIf { same })
+private fun AppStore.noteHello(hello: JsonObject) {
+    mutableState.update {
+        val same = it.hello?.text("version") == hello.text("version")
+        it.copy(hello = hello, unreadable = it.unreadable && same, hostUpdate = it.hostUpdate.takeIf { same })
+    }
+    val offered = hello["workflows"]?.jsonPrimitive?.booleanOrNull == true
+    if (!offered) {
+        mutableState.update { it.copy(workflows = emptyList(), workflow = null, workflowsSupported = true) }
+        return
+    }
+    contextScope.launch {
+        try { refreshWorkflows() }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { }
+    }
 }
 
 /** The computer could join an account, so a signed-in phone may offer to add it (iOS `Hello.canJoinAccount`). */

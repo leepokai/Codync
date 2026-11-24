@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import type { HostSnapshot } from '../src/shared/ipc.ts'
-import { attach, openGeneralSettings } from './sandbox.ts'
+import { attach, openGeneralSettings, openPage } from './sandbox.ts'
 
 type Bridge = {
   codync: {
@@ -47,17 +47,20 @@ test('bots on different agents show their logos until Show agent logos is turned
     await expect(toggle).toHaveAttribute('aria-checked', 'true')
     await toggle.click()
     await expect(toggle).toHaveAttribute('aria-checked', 'false')
-    await expect(logos).toHaveCount(0)
+    // Settings is a page of its own: the roster is back on Bots.
+    await openPage(page, 'Bots')
     await expect(row(codex)).toHaveAttribute('aria-label', new RegExp(`^${codex}(, on |$)`))
+    await expect(logos).toHaveCount(0)
 
     // The choice is kept on this device.
     await page.reload()
     await expect(row(codex)).toBeVisible()
+    await expect(logos).toHaveCount(0)
     await openGeneralSettings(page)
     await expect(toggle).toHaveAttribute('aria-checked', 'false')
-    await expect(logos).toHaveCount(0)
 
     await toggle.click()
+    await openPage(page, 'Bots')
     await expect(row(claude).locator('.avatar-agent')).toBeVisible()
     await expect(row(codex).locator('.avatar-agent')).toBeVisible()
   } finally {

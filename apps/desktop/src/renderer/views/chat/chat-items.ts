@@ -1,16 +1,19 @@
 import { useRef } from 'react'
 import type { Entry } from '@shared/models'
 import { groupExchanges, type BotExchange, type ChatSlot } from './bot-exchange'
+import { settledAs } from './requests'
 
 export type ChatItem =
   | { id: string; kind: 'separator'; date: number }
   | { id: string; kind: 'entry'; entry: Entry; groupStart: boolean }
   | { id: string; kind: 'exchanges'; entry: Entry; exchanges: BotExchange[] }
+  /** Approvals in a row that ended alike, as one line. */
+  | { id: string; kind: 'requests'; entry: Entry; entries: Entry[] }
 
 /**
  * Chat-visible entries plus time separators (gaps > 1 h) and author grouping. A bot's messages
  * arrive whole (Grok Bot's `send_message`); what it writes along the way is trace. Runs of bot
- * exchanges with one peer fold into one item.
+ * exchanges with one peer fold into one item, and approvals in a row that ended alike into one.
  */
 export function buildChat(entries: Entry[]): ChatItem[] {
   const out: ChatItem[] = []
@@ -26,6 +29,13 @@ export function buildChat(entries: Entry[]): ChatItem[] {
     if (exchanges) {
       out.push({ id, kind: 'exchanges', entry: e, exchanges })
       lastAuthor = null
+      lastDate = e.createdAt
+      continue
+    }
+    const ending = settledAs(e)
+    const last = out.at(-1)
+    if (ending && last && last.kind !== 'separator' && settledAs(last.entry) === ending) {
+      out[out.length - 1] = last.kind === 'requests' ? { ...last, entries: [...last.entries, e] } : { id: last.id, kind: 'requests', entry: last.entry, entries: [last.entry, e] }
       lastDate = e.createdAt
       continue
     }

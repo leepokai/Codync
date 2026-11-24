@@ -24,21 +24,51 @@ pub enum AlertKind {
     Failed,
 }
 
-/// (bot id, kind) → last alert.
+/// (bot id, kind) → last alert. Workflow steps keep a separate table so two steps on one bot don't swallow each other.
 static LAST_SENT: LazyLock<Mutex<HashMap<(String, AlertKind), Instant>>> = LazyLock::new(Mutex::default);
+static WORKFLOW_SENT: LazyLock<Mutex<HashMap<(String, AlertKind), Instant>>> = LazyLock::new(Mutex::default);
+
+/// Where a workflow notification opens. The ids go on the APNs `data`, which the phone reads as `userInfo`.
+pub struct WorkflowLink {
+    pub workflow: String,
+    pub run: Option<String>,
+    pub step: String,
+    pub node: String,
+}
 /// Tickets the relay reported as dead (app uninstalled / token rotated); purged on the next push.
 static GONE: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// Seconds between the Unix epoch and Swift's `Date` reference date (2001-01-01).
 const SWIFT_REFERENCE_EPOCH: f64 = 978_307_200.0;
 
+/// The push relay's former address: `*.workers.dev` is blocked in mainland China (#570), and phone builds from
+/// before the move still register it.
+const WORKERS_DEV_RELAY: &str = "https://codync-relay.kevin2005ha.workers.dev";
+const RELAY: &str = "https://push.codync.dev";
+
 fn relay_url(hub: &Hub) -> Option<String> {
-    std::env::var("CODYNC_RELAY_URL").ok().or_else(|| hub.store.kv_get("relay_url")).filter(|u| !u.is_empty())
+    std::env::var("CODYNC_RELAY_URL")
+        .ok()
+        .or_else(|| hub.store.kv_get("relay_url").map(reachable_relay))
+        .filter(|u| !u.is_empty())
+}
+
+/// The same relay Worker on its custom domain, which mainland China reaches.
+fn reachable_relay(url: String) -> String {
+    if url == WORKERS_DEV_RELAY { RELAY.to_owned() } else { url }
 }
 
 /// True when `key` was sent less than `min_gap` ago; otherwise records now.
 fn throttled(key: (String, AlertKind), min_gap: Duration) -> bool {
-    let mut last = LAST_SENT.locked();
+    throttled_in(&LAST_SENT, key, min_gap)
+}
+
+fn throttled_in(
+    table: &Mutex<HashMap<(String, AlertKind), Instant>>,
+    key: (String, AlertKind),
+    min_gap: Duration,
+) -> bool {
+    let mut last = table.locked();
     if last.get(&key).is_some_and(|t| t.elapsed() < min_gap) {
         return true;
     }
@@ -129,9 +159,25 @@ fn alert_event(bot: &BotConfig, title: &str, body: &str, kind: AlertKind) -> Val
 }
 
 /// `bot` is the chat the alert opens; `from` is the member bot speaking when that chat is a group.
-pub fn notify(hub: &Hub, bot: &BotConfig, from: Option<&str>, title: &str, body: &str, kind: AlertKind) {
+pub fn notify(
+    hub: &Hub,
+    bot: &BotConfig,
+    from: Option<&str>,
+    title: &str,
+    body: &str,
+    kind: AlertKind,
+    link: Option<&WorkflowLink>,
+) {
     purge_dead_tickets(hub);
-    if bot.notify == Some(false) || bot.hidden || throttled((bot.id.clone(), kind), Duration::from_secs(5)) {
+    if bot.notify == Some(false) || bot.hidden {
+        return;
+    }
+    // A workflow step's alerts are throttled per step, so two steps of one bot both arrive.
+    let repeated = match link {
+        Some(link) => throttled_in(&WORKFLOW_SENT, (link.step.clone(), kind), Duration::from_secs(5)),
+        None => throttled((bot.id.clone(), kind), Duration::from_secs(5)),
+    };
+    if repeated {
         return;
     }
     // Live only (no rev, so no catch-up replays it): a desktop app shows it if its user turned that on.
@@ -156,6 +202,16 @@ pub fn notify(hub: &Hub, bot: &BotConfig, from: Option<&str>, title: &str, body:
     let mut notifications = Vec::new();
     for t in hub.store.push_tickets() {
         let mut data = json!({"botId": bot.id, "computerId": computer_id, "ctx": t.ctx});
+        if let Some(link) = link {
+            data["workflowId"] = link.workflow.clone().into();
+            data["stepId"] = link.step.clone().into();
+            if !link.node.is_empty() {
+                data["nodeId"] = link.node.clone().into();
+            }
+            if let Some(run) = &link.run {
+                data["runId"] = run.clone().into();
+            }
+        }
         if let Some(key) = t.push_key.as_deref().and_then(|k| crypto::unb64_n::<32>(k).ok()) {
             let eph = StaticSecret::from(crypto::random::<32>());
             match crypto::seal_push(&hub.identity.cid_raw(), &key, secret.as_bytes(), &eph) {
@@ -207,6 +263,12 @@ mod tests {
     use super::*;
     use crate::chat::calls::context::tests::{bot, hub};
     use crate::store::{EntryKind, Lane};
+
+    #[test]
+    fn the_workers_dev_relay_is_reached_on_its_custom_domain() {
+        assert_eq!(reachable_relay(WORKERS_DEV_RELAY.to_owned()), RELAY);
+        assert_eq!(reachable_relay("https://relay.example.com".to_owned()), "https://relay.example.com");
+    }
 
     #[test]
     fn an_alert_seals_the_computers_unread_total() {

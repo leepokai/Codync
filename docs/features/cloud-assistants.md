@@ -47,7 +47,7 @@ ChatGPT / Claude ──MCP over HTTPS──▶ mcp.codync.dev (cloud Worker)
 The cloud sees these calls in plain text, and a bot can run anything on its computer, so the computer decides:
 
 - **Off by default.** The **Cloud assistants** switch on the computer turns it on for that computer: the desktop
-  app (Settings → Computers, beside the account rows, shown while the computer is in the account) and the terminal
+  app (the Computers page, beside the account rows, shown while the computer is in the account) and the terminal
   UI's network sheet (`N`, then `a`), or `codync-host cloud --assistants on`. It turns on only while the computer
   is in a Codync account (`setAssistants` refuses otherwise, or says the account isn't known yet when no state pull
   worked on this connection; off always works), and a state pull with no owner turns it off, so the account the

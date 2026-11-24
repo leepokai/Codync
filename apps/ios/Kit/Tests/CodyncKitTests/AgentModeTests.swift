@@ -52,6 +52,6 @@ private func catalog(_ json: String) throws -> AgentModels {
     // Another agent's ids mean nothing: a picked mode becomes its Auto mode.
     var draft = BotDraft(name: "Bot")
     draft.mode = "plan"
-    draft.setAgent("codex")
+    draft.setAgent(AgentLogin(backend: "codex"))
     #expect(draft.mode == "auto")
 }

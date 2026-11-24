@@ -4,36 +4,31 @@ import { VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
+import { ModelPicker } from './ModelPicker'
+import { loginSeats } from './seats'
 import { useAgentModels } from './agent-models'
-import { AgentModelPicker } from './AgentModelPicker'
-import { agentChoice } from './Fallbacks'
-import { LoginProfileRow } from './LoginProfileRow'
 
-/** Advisor mode's agent for the bot's threads: picked in place with its model and login, as the bot's own. */
+/** Advisor mode's agent for the bot's threads: its login and model picked in the model panel, as the bot's own. */
 export function ThreadsAgentRow({ agent, bot, onChange }: { agent: Fallback; bot: Bot; onChange: (update: (d: BotDraft) => BotDraft) => void }) {
   const tr = useTr()
   const store = useStore()
-  const models = useAgentModels(agent.backend)
-  const backends = store.hello?.backends ?? []
-  const backend = backends.find((b) => b.id === agent.backend)
+  const models = useAgentModels(agent.backend, agent.loginProfile)
   const set = (change: Partial<Fallback>) => onChange((d) => (d.threadAgent ? { ...d, threadAgent: { ...d.threadAgent, ...change } } : d))
+  const seats = loginSeats({ backends: store.hello?.backends ?? [], on: agent, tr, pick: (b, loginProfile) => onChange((d) => withThreadBackend(d, { backend: b.id, loginProfile })) })
   const rest = restOf(bot, agent, Date.now())
   return (
     <VStack gap={8} className="fade-in">
       <Text tone="text">{tr("Threads' agent")}</Text>
-      <AgentModelPicker
+      <ModelPicker
+        trigger="row"
         backend={agent.backend}
         models={models}
-        selection={agent.model}
-        onChange={(model, modelOptions) => set({ model, modelOptions })}
-        options={agent.modelOptions}
-        sessionNote={false}
-        agents={backends.map(agentChoice)}
-        onAgentChange={(id) => onChange((d) => withThreadBackend(d, id))}
+        model={{ id: agent.model ?? null, options: agent.modelOptions }}
+        set={(m) => set({ model: m.id, modelOptions: m.options })}
+        seats={seats}
       >
         {rest ? <Text size="caption" tone="secondary">{tr(restLine(rest, Date.now()))}</Text> : null}
-        {backend?.loginProfiles ? <LoginProfileRow backend={backend} loginProfile={agent.loginProfile ?? null} onChange={(loginProfile) => set({ loginProfile })} /> : null}
-      </AgentModelPicker>
+      </ModelPicker>
     </VStack>
   )
 }

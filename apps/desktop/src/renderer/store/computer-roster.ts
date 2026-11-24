@@ -1,10 +1,11 @@
 import { computerSections, moveInOrder, orderedComputers } from '../lib/computer-roster'
 import { renamedSectionOrder } from '../lib/roster-section-order'
-import { prefs, usePref } from '../lib/prefs'
+import { prefs, toggled, usePref } from '../lib/prefs'
 import { useModel } from '../lib/observable'
 import { foldsAfterRename, rosterGroups, rosterLines, rosterRows, sameRosterGroup, sectionRename, shownRows, shownSection } from '../lib/roster-sections'
 import type { BotStore } from './bot-store'
 import type { AppModel, BotRef } from './app-model'
+import { rosterRank } from '@shared/work'
 
 /** Device-local section ordering and folding, matching the iPhone roster. */
 export function useComputerRoster(app: AppModel, shown: Set<string>) {
@@ -12,11 +13,16 @@ export function useComputerRoster(app: AppModel, shown: Set<string>) {
   const [collapsed, setCollapsed] = usePref(prefs.collapsedComputers)
   const [sectionOrders, setSectionOrders] = usePref(prefs.rosterSectionOrder)
   const [folded, setFolded] = usePref(prefs.collapsedRosterSections)
+  const [byComputer] = usePref(prefs.botsByComputer)
+  const [byStatus] = usePref(prefs.botsByStatus)
   const computers = orderedComputers(app.computers, order)
   const sections = computerSections(computers.filter((c) => shown.has(c.id)), app.roster)
     .map((section) => ({ ...section, store: app.store(section.computer.id) }))
     .filter((section): section is typeof section & { store: BotStore } => section.store !== null)
-  const grouped = sections.length > 1
+    // Sorted by status, a computer's bots stand by what they do (the sort keeps their own order within each).
+    .map((section) => (byStatus ? { ...section, items: [...section.items].sort((a, b) => rosterRank(a.bot) - rosterRank(b.bot)) } : section))
+  // Several computers each get a heading, unless the list is asked for as one.
+  const grouped = sections.length > 1 && byComputer
   return {
     sections,
     grouped,
@@ -72,9 +78,4 @@ export function useComputerRoster(app: AppModel, shown: Set<string>) {
       if (target) section.store.reorder(moveInOrder(items.map((item) => item.bot.id), ref.botId, target.bot.id))
     },
   }
-}
-
-/** `list` with `value` added, or taken out when it's there. */
-function toggled(list: string[], value: string) {
-  return list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
 }

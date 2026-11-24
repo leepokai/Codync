@@ -14,10 +14,12 @@ use serde_json::{Value, json};
 use std::path::Path;
 
 mod catalog;
+mod install_info;
 mod search_path;
 mod sign_in;
 mod workbuddy;
 pub use catalog::HARNESSES;
+pub use install_info::install_info;
 #[cfg(any(test, feature = "test-support"))]
 pub use search_path::TestSearchPath;
 pub use search_path::{hydrate_path, on_path, which};

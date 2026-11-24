@@ -28,6 +28,8 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import com.codync.android.core.LinkState
+import com.codync.android.core.Login
+import com.codync.android.core.LoginSeat
 import com.codync.android.core.MAX_THREADS
 import com.codync.android.core.login
 import com.codync.android.core.restOf
@@ -55,20 +57,20 @@ import androidx.compose.ui.semantics.semantics
     val bot = state.bots.firstOrNull { it.id == draft.id }
     LaunchedEffect(online) { if (online) store.refreshPlugins() }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(30.dp)) {
-        CardSection("Instructions") { instructionsRow(draft, change) }
-        CardSection("Agent") {
+        CardSection("Instructions", fold = "bot.instructions") { instructionsRow(draft, change) }
+        CardSection("Agent", fold = "bot.agent") {
             fallbackBanner(state, store, bot)
             agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ })
             compactionRow(bot, draft, change)
         }
-        CardSection("Profile") {
+        CardSection("Profile", fold = "bot.profile") {
             avatarRows(state, store, draft, change, pickingAvatar) { pickingAvatar = !pickingAvatar }
             nameRow(draft, change); createdByRow(state, bot)
         }
-        CardSection("Workspace") {
+        CardSection("Workspace", fold = "bot.workspace") {
             computerRow(state, online); placeRows(state, store, draft, change, modelReload) { folders = true }
         }
-        CardSection("Activity") {
+        CardSection("Activity", fold = "bot.activity") {
             notifyRow(draft, change)
             if (!inDetails) computerUseRow(state, draft, change)
             manageTeamRow(state, draft, change); reachRows(state, draft, change)
@@ -141,8 +143,9 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
     row {
         AgentModelPicker(state, store::agentModels, draft.backend, draft.model, draft.modelOptions, draft.fastMode ?: false, bot,
             { model, options -> change(draft.copy(model = model, modelOptions = options)) }, { change(draft.copy(fastMode = it)) },
-            agents = agentChoices(state) + ("custom" to "Custom command"),
-            chooseAgent = { if (it != draft.backend) change(draft.withAgent(it)) }, onReload = reloadModels) {
+            agents = pickerSeats(agentBackends(state), draft.login) + LoginSeat(Login("custom"), tr("Custom command")),
+            chooseAgent = { change(draft.withAgent(it)) },
+            onReload = reloadModels, loginProfile = draft.loginProfile, store = store) {
                 bot?.restOf(draft.login)?.let { Text(tr(it.line(RelativeTime.clock(it.until))), style = Type.caption, color = Palette.secondary) }
                 backends(state).firstOrNull { it.text("id") == draft.backend && !it.available }?.text("installHint")?.takeIf(String::isNotBlank)?.let {
                     Text(it, style = Type.caption, color = Palette.warning)
@@ -151,7 +154,6 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
                     "ACP command, e.g. my-agent --acp", style = Type.callout.monospaced, capitalize = false)
             }
     }
-    loginProfileRow(state, store, draft, change)
     // Only from a host that has fallbacks (its bots say).
     val list = draft.fallbacks ?: return
     row { FallbackList(state, store, draft.login, list, bot, { change(draft.copy(fallbacks = it)) }) }

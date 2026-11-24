@@ -5,11 +5,11 @@ use super::worktree::{Left, Place, Worktree};
 use super::{Failure, Report, Start};
 use crate::LockExt;
 use crate::hub::{BotStatus, Hub};
-use crate::store::{BotConfig, Store, now_ms};
+use crate::store::{BotConfig, Permission, Store, now_ms};
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 
 /// An ended task shows on the wire and in `work_status` this long.
@@ -51,6 +51,9 @@ pub enum Source {
     /// The bot added it (`add_task`).
     #[default]
     Bot,
+    /// The user started it themselves, as a thread with the bot (`startThread`): what it comes to is read in that
+    /// thread, and never becomes a turn in the chat.
+    User,
     /// A run of one of the bot's routines: `id` is the routine.
     Routine { id: String, run: String },
     /// Another bot's `message_bot` request: `id` is the asking bot, when it is one of this computer's.
@@ -65,25 +68,111 @@ impl Source {
         *self == Self::Bot
     }
 
+    /// The bot's own work, whoever added it (the bot, or the user as a thread): it may be steered, tried again and
+    /// written to, where a routine's run or another bot's request has an owner elsewhere.
+    pub fn own(&self) -> bool {
+        matches!(self, Self::Bot | Self::User)
+    }
+
     /// `work_added` and `work_finished`'s `source`.
     pub fn kind(&self) -> &'static str {
         match self {
             Self::Bot => "bot",
+            Self::User => "user",
             Self::Routine { .. } => "routine",
             Self::Request { .. } => "request",
         }
     }
 
-    /// `work[].source`: `{kind, id?}`; none for the bot's own, so a client that doesn't know sources shows the row.
+    /// `work[].source`: `{kind, id?}`; none for the bot's own (a thread the user started is one to every client), so a
+    /// client that doesn't know sources shows the row.
     fn wire(&self) -> Option<Value> {
         match self {
-            Self::Bot => None,
+            Self::Bot | Self::User => None,
             Self::Routine { id, .. } => Some(json!({"kind": self.kind(), "id": id})),
             Self::Request { id } => Some(match id {
                 Some(id) => json!({"kind": self.kind(), "id": id}),
                 None => json!({"kind": self.kind()}),
             }),
         }
+    }
+}
+
+/// What a thread the user starts changes from its bot's setup, for its own task (`startThread`'s `setup`): the
+/// agent (a thread without a bot names it) and its login, the folder it works in, its model and how it is approved.
+/// What it leaves out is the bot's.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Setup {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backend: Option<String>,
+    /// The agent's login profile; `""` its default login. None: the bot's (another agent's default login).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub login_profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<Model>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval: Option<Approval>,
+    /// A thread opened beside a workflow to build it by talking (`BotConfig::workflow`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<String>,
+}
+
+/// A model with its own settings (`BotConfig::model`, `model_options`): they go together, as in a bot's setup.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+pub struct Model {
+    /// None: the agent's default.
+    pub id: Option<String>,
+    #[serde(default)]
+    pub options: BTreeMap<String, String>,
+}
+
+/// How its requests are approved (`BotConfig::permission`, `mode`).
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+pub struct Approval {
+    pub permission: Permission,
+    /// None: the agent's default mode.
+    pub mode: Option<String>,
+}
+
+impl Setup {
+    pub fn is_bots(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// `cfg` with what this changes.
+    pub fn over(&self, cfg: &BotConfig) -> BotConfig {
+        let mut cfg = cfg.clone();
+        // Another agent runs on its own login, without the bot's fallbacks, command or Fast mode.
+        if let Some(backend) = self.backend.as_ref().filter(|b| **b != cfg.backend) {
+            backend.clone_into(&mut cfg.backend);
+            cfg.login_profile = None;
+            cfg.command = None;
+            cfg.fast_mode = false;
+            cfg.fallbacks.clear();
+        }
+        // A login the bot's chain falls back to is the thread's own now: that step goes.
+        if let Some(profile) = &self.login_profile {
+            cfg.login_profile = Some(profile.clone()).filter(|p| !p.is_empty());
+            crate::agent::fallback::tidy(&mut cfg);
+        }
+        if let Some(cwd) = &self.cwd {
+            cfg.cwd.clone_from(cwd);
+        }
+        if let Some(model) = &self.model {
+            cfg.model.clone_from(&model.id);
+            cfg.model_options.clone_from(&model.options);
+        }
+        if let Some(approval) = &self.approval {
+            cfg.permission = approval.permission;
+            cfg.mode.clone_from(&approval.mode);
+        }
+        if self.workflow.is_some() {
+            cfg.workflow.clone_from(&self.workflow);
+        }
+        cfg
     }
 }
 
@@ -98,6 +187,9 @@ pub(super) struct Task {
     pub brief: String,
     #[serde(default, skip_serializing_if = "Source::is_bot")]
     pub source: Source,
+    /// What its task runs with in place of its bot's setup.
+    #[serde(default, skip_serializing_if = "Setup::is_bots")]
+    pub setup: Setup,
     /// The user's own words that led to it, word for word.
     #[serde(default)]
     pub words: Option<String>,
@@ -177,6 +269,7 @@ impl Task {
             title: title.to_owned(),
             brief: brief.to_owned(),
             source: Source::Bot,
+            setup: Setup::default(),
             words,
             notes: Vec::new(),
             relayed: Vec::new(),
@@ -391,7 +484,7 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
                 };
                 let cwd = task.thread.as_ref().and_then(|thread| folders.get(thread));
                 let folder = folder_of(&task, cwd);
-                let talk = task.source.is_bot() && cwd.is_some();
+                let talk = task.source.own() && cwd.is_some();
                 let mut row = json!({
                     "id": task.id, "title": task.title, "status": status, "activity": activity, "thread": task.thread,
                     "wait": wait, "cutIn": task.cut_in, "createdAt": task.created_at, "startedAt": task.started_at,
@@ -411,6 +504,10 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
                 }
                 if let Some(worktree) = task.worktree.as_ref().and_then(Worktree::wire) {
                     row["worktree"] = worktree;
+                }
+                // The agent a thread the user started runs on, where it isn't its bot's (always without a bot).
+                if let Some(agent) = &task.setup.backend {
+                    row["agent"] = agent.clone().into();
                 }
                 row
             })
@@ -481,6 +578,22 @@ pub fn working_threads(store: &Store) -> Vec<BotConfig> {
         .collect()
 }
 
+/// The setups the user's waiting threads will run with (`Setup::over` their bot's) where they name a login, each named
+/// by its bot (a thread without one by its title): a login profile they run on must still be there when they start.
+pub fn waiting_threads(store: &Store) -> Vec<BotConfig> {
+    let bots = store.bots().unwrap_or_default().into_iter().filter(|row| !row.deleted);
+    bots.flat_map(|row| {
+        let cfg = row.config;
+        let waiting = load(store, &cfg.id).into_iter();
+        let named = waiting.filter(|t| t.status == Status::Waiting && t.setup.login_profile.is_some());
+        let name = |t: &Task| if cfg.plain { t.title.clone() } else { cfg.name.clone() };
+        named
+            .map(|t| BotConfig { name: name(&t), ..t.setup.over(&crate::agent::fallback::threads(&cfg)) })
+            .collect::<Vec<_>>()
+    })
+    .collect()
+}
+
 /// Puts a task that `thread` works on in `bot`'s box.
 #[cfg(test)]
 pub fn put_working_for_test(store: &Store, bot: &str, thread: &str) {
@@ -514,6 +627,52 @@ fn summary(live: &[(Status, &str, &str)], most: u8, whose: &str) -> Option<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_threads_setup_changes_only_what_it_names() {
+        let bot: BotConfig = serde_json::from_value(json!({"id": "b", "name": "B", "backend": "claude", "cwd": "/bot",
+            "model": "m1", "modelOptions": {"effort": "low"}, "permission": "auto", "createdAt": 0}))
+        .expect("a bot");
+        let setup: Setup = serde_json::from_value(json!({"model": {"id": null}, "approval": {"permission": "ask",
+            "mode": "plan"}}))
+        .expect("a setup");
+        let run = setup.over(&bot);
+        assert_eq!((run.cwd.as_str(), run.model, run.model_options.len()), ("/bot", None, 0));
+        assert_eq!((run.permission, run.mode.as_deref()), (Permission::Ask, Some("plan")));
+        assert!(Setup::default().is_bots() && !setup.is_bots());
+        let on =
+            |login: &str| Setup { login_profile: Some(login.to_owned()), ..Setup::default() }.over(&bot).login_profile;
+        assert_eq!((on("work"), on("")), (Some("work".to_owned()), None), "a login profile, or the default login");
+        // The login it picks leaves the bot's chain; another agent leaves the bot's Fast mode too.
+        let chained = BotConfig {
+            fast_mode: true,
+            fallbacks: vec![
+                serde_json::from_value(json!({"backend": "claude", "loginProfile": "work"})).expect("a step"),
+            ],
+            ..bot.clone()
+        };
+        let work = Setup { login_profile: Some("work".into()), ..Setup::default() }.over(&chained);
+        assert!(work.fallbacks.is_empty() && work.fast_mode, "{work:?}");
+        let codex = Setup { backend: Some("codex".into()), ..Setup::default() }.over(&chained);
+        assert!(!codex.fast_mode && codex.fallbacks.is_empty());
+        assert_eq!(serde_json::to_value(Setup::default().over(&bot)).ok(), serde_json::to_value(&bot).ok());
+    }
+
+    #[test]
+    fn a_waiting_thread_on_a_login_is_named_with_it() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let cfg = crate::chat::calls::context::tests::bot("b1", "Mika", "/tmp");
+        hub.store.save_bot(&cfg).expect("saved");
+        let on = |login: Option<&str>, status| Task {
+            setup: Setup { login_profile: login.map(str::to_owned), ..Setup::default() },
+            status,
+            ..Task::waiting("Fix it", "x", None, None, 0)
+        };
+        let tasks = [on(Some("work"), Status::Waiting), on(None, Status::Waiting), on(Some("old"), Status::Done)];
+        hub.store.kv_set(&key("b1"), &serde_json::to_string(&tasks).expect("json")).expect("saved");
+        let waiting: Vec<_> = waiting_threads(&hub.store).into_iter().map(|c| (c.name, c.login_profile)).collect();
+        assert_eq!(waiting, [("Mika".to_owned(), Some("work".to_owned()))]);
+    }
 
     #[test]
     fn the_bot_reads_its_box_in_a_few_lines() {

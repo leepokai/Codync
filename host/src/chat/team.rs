@@ -65,6 +65,9 @@ pub fn tools() -> Value {
                 },
             },
             "annotations": {"readOnlyHint": true},
+            // Always in the agent's prompt: Claude Code defers MCP tools behind tool search, and a bot then called
+            // these without their schema ("botId is required").
+            "_meta": {"anthropic/alwaysLoad": true},
         },
         {
             "name": "message_bot",
@@ -78,6 +81,7 @@ pub fn tools() -> Value {
                 "required": ["botId", "message"],
             },
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
+            "_meta": {"anthropic/alwaysLoad": true},
         },
         {
             "name": "explain_hop_block",
@@ -91,6 +95,7 @@ pub fn tools() -> Value {
                 "required": ["refusalId", "text"],
             },
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
+            "_meta": {"anthropic/alwaysLoad": true},
         },
         {
             "name": "ask_hop_clarification",
@@ -105,6 +110,7 @@ pub fn tools() -> Value {
                 "required": ["refusalId", "botId", "text"],
             },
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
+            "_meta": {"anthropic/alwaysLoad": true},
         },
         {
             "name": "answer_hop_clarification",
@@ -118,6 +124,7 @@ pub fn tools() -> Value {
                 "required": ["refusalId", "text"],
             },
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
+            "_meta": {"anthropic/alwaysLoad": true},
         },
         {
             "name": "reset_hop_count",
@@ -131,6 +138,7 @@ pub fn tools() -> Value {
                 "required": ["refusalId", "botId"],
             },
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
+            "_meta": {"anthropic/alwaysLoad": true},
         },
         {
             "name": "deny_hop_reset",
@@ -144,6 +152,7 @@ pub fn tools() -> Value {
                 "required": ["refusalId", "botId"],
             },
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
+            "_meta": {"anthropic/alwaysLoad": true},
         }
     ])
 }

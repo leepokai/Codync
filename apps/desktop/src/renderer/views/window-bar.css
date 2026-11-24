@@ -1,0 +1,49 @@
+/* The bar across the top of the window (WindowBar): it moves the window, its buttons don't. */
+.window-bar {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 8;
+  height: 46px; /* .split's padding-top (chat-window.css) */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px 0 14px;
+  background: var(--window-chrome);
+}
+/* Where the bar meets the rail, the page under them starts on a round corner. */
+.window-bar::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 64px; /* railWidth in src/shared/chat-layout.ts */
+  width: var(--radius-m);
+  height: var(--radius-m);
+  background: radial-gradient(circle at 100% 100%, transparent calc(var(--radius-m) - 0.5px), var(--window-chrome) var(--radius-m));
+  pointer-events: none;
+}
+/* Clear of the traffic lights. */
+html[data-platform="darwin"] .window-bar {
+  padding-left: 84px;
+}
+.window-bar-space {
+  flex: 1;
+}
+.window-bar-title,
+.window-bar-end {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.window-bar .icon-button:disabled {
+  opacity: 0.35;
+}
+/* The bot shown, as the bar's tab: no shadow here, the conversation's own color under it. */
+.window-bar .title-pill {
+  flex-direction: row;
+  gap: 8px;
+  max-width: 340px;
+  padding: 5px 12px 5px 8px;
+  background: var(--background);
+  box-shadow: none;
+}

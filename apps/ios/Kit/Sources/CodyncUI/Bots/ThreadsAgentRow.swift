@@ -1,7 +1,7 @@
 import CodyncKit
 import SwiftUI
 
-/// Advisor mode's agent for the bot's threads: picked in place with its model and login, as the bot's own.
+/// Advisor mode's agent for the bot's threads: its login and model picked in place, as the bot's own.
 struct ThreadsAgentRow: View {
     @Binding var draft: BotDraft
     /// The saved bot: the logins resting.
@@ -16,17 +16,11 @@ struct ThreadsAgentRow: View {
 
     var body: some View {
         let agent = agent
-        let backends = model.hello?.backends ?? []
-        let backend = backends.first { $0.id == agent.wrappedValue.backend }
         Field("Threads' agent") {
-            AgentModelPicker(backend: agent.wrappedValue.backend, selection: agent.model, options: agent.modelOptions,
-                             agents: backends.map { ($0.id, model.agentLabel($0)) },
+            AgentModelPicker(backend: agent.wrappedValue.backend, loginProfile: agent.wrappedValue.loginProfile, selection: agent.model, options: agent.modelOptions,
+                             agents: model.loginSeats(model.hello?.backends ?? [], on: agent.wrappedValue.login),
                              onAgentChange: { draft.setThreadAgent($0) },
-                             restLine: bot?.rest(of: agent.wrappedValue.login).map { L10n.tr($0.line) }) {
-                if let backend, backend.loginProfiles != nil {
-                    LoginProfileRow(backend: backend, loginProfile: agent.loginProfile)
-                }
-            }
+                             restLine: bot?.rest(of: agent.wrappedValue.login).map { L10n.tr($0.line) })
         }
     }
 }

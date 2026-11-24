@@ -825,3 +825,10 @@ fn restart_marks_remote_requests_interrupted_and_leaves_local_ones_to_settle() {
     let open: Vec<String> = store.unfinished_requests().unwrap().into_iter().map(|e| e.id).collect();
     assert_eq!(open, [local.id]);
 }
+
+#[test]
+fn the_team_tools_are_never_deferred_behind_tool_search() {
+    for tool in tools().as_array().expect("tools() is a list") {
+        assert_eq!(tool["_meta"]["anthropic/alwaysLoad"], true, "{} is always loaded", tool["name"]);
+    }
+}

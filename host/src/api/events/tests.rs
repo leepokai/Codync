@@ -189,8 +189,8 @@ async fn an_alert_reaches_a_desktop_app_but_not_a_phone_which_gets_it_as_a_push(
             .unwrap()
     };
     let kind = crate::remote::push::AlertKind::Done;
-    crate::remote::push::notify(&f.hub, &config("alert-muted", false), None, "Muted", "Not shown.", kind);
-    crate::remote::push::notify(&f.hub, &config("alert-on", true), None, "Builder", "All tests pass.", kind);
+    crate::remote::push::notify(&f.hub, &config("alert-muted", false), None, "Muted", "Not shown.", kind, None);
+    crate::remote::push::notify(&f.hub, &config("alert-on", true), None, "Builder", "All tests pass.", kind, None);
     let mut alerts = Vec::new();
     for mut stream in [desktop, phone] {
         let mut got = Vec::new();

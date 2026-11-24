@@ -139,7 +139,7 @@ private fun style(size: Float, color: Ink, weight: FontWeight = FontWeight.Norma
     }
 }
 
-private fun providerName(id: String) = when (id) { "claude" -> "Claude"; "codex" -> "Codex"; else -> id }
+private fun providerName(id: String) = when (id) { "claude" -> "Claude Code"; "codex" -> "Codex"; else -> id }
 
 @Composable private fun Empty(title: String, message: String) {
     Column(GlanceModifier.fillMaxSize()) {

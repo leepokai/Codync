@@ -55,8 +55,7 @@ computer's bots (the lead stays on top, pinned bots move among all pinned bots, 
 also stays inside its section); drag a bot row or press Alt+Up/Down on the selected bot to reorder
 it ([bot order](../features/computer-order.md#bot-order), synced through the host), and
 Up/Down navigation skips folded computers and sections.
-Search still includes their bots. The compact sidebar uses computer badges for the same
-section controls. Ordering is saved locally immediately and survives restart, with separate
+Search still includes their bots. Ordering is saved locally immediately and survives restart, with separate
 preferences per account and cloud environment. See [computer ordering](../features/computer-order.md).
 The TUI connects to one host at a time, so it keeps its single roster.
 

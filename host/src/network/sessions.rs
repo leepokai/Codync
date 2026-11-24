@@ -112,7 +112,6 @@ pub enum Registered {
 
 /// The sessions and their mail, kept in the store; one change at a time.
 #[derive(Default)]
-
 pub struct Sessions {
     lock: Mutex<()>,
     /// Woken when mail arrives, for `check_inbox` waits.
@@ -120,9 +119,9 @@ pub struct Sessions {
 }
 
 impl Sessions {
-    /// The caller's session, registered on its first call (then `true`, and `true` again when that
-    /// call forgot stale sessions that weren't temporary) with the address `reserve`
-    /// gives out, one no bot or session ever had; `title` is what its agent calls it now.
+    /// The caller's session, registered on its first call with the address `reserve` gives out,
+    /// one no bot or session ever had, and what the call changed; `title` is what its agent calls
+    /// it now.
     pub fn register(
         &self,
         store: &Store,
@@ -230,8 +229,7 @@ impl Sessions {
 }
 
 /// Forgets the sessions unseen for long (a temporary one with its mail); their addresses stay given.
-/// Forgets the sessions gone stale; true when it forgot any that weren't temporary (those may be
-/// offered to a network).
+/// True when it forgot any that weren't temporary (those may be offered to a network).
 fn forget_stale(store: &Store, all: &mut BTreeMap<String, Session>, now: i64) -> Result<bool> {
     // Most calls find nothing past its time: the mail is read only when something may go.
     let due = |s: &Session| now - s.seen >= if s.temporary { TEMPORARY_FOR_MS } else { KEPT_FOR_MS };

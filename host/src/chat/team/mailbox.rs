@@ -69,10 +69,6 @@ fn set_name(hub: &Hub, s: &Session, args: &Value) -> Result<Value> {
     let name =
         args["name"].as_str().map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| anyhow!("name is required"))?;
     let base = crate::network::handle(name);
-    // Asked again (a retry): the address it already has, not a numbered one.
-    if base == s.address {
-        return Ok(whoami(hub, s));
-    }
     let owner = format!("session:{}", s.key);
     let renamed = hub.network.sessions.rename(&hub.store, &s.key, || hub.network.reserve(&hub.store, &base, &owner))?;
     tracing::info!(kind = s.kind.as_str(), "a session took another address");
@@ -118,9 +114,17 @@ fn frame(letters: &[Mail]) -> String {
     text
 }
 
-/// Leaves a letter in the mailbox of the session at `to`.
-pub(crate) fn post(hub: &Hub, to: &Session, from: &str, body: &str, reply_to: Option<&str>) -> Result<String> {
-    let id = uuid::Uuid::new_v4().to_string();
+/// Leaves a letter in the mailbox of the session at `to`: under `id` (a letter from another
+/// computer keeps its own, which an answer names), else a new one.
+pub(crate) fn post(
+    hub: &Hub,
+    to: &Session,
+    id: Option<&str>,
+    from: &str,
+    body: &str,
+    reply_to: Option<&str>,
+) -> Result<String> {
+    let id = id.map_or_else(|| uuid::Uuid::new_v4().to_string(), str::to_owned);
     let mail = Mail {
         id: id.clone(),
         from: from.into(),

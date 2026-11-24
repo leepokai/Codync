@@ -107,8 +107,12 @@ impl Inner {
         let name = |id: &EndpointId| roster.as_ref().map_or_else(|| "local".into(), |r| r.name(id));
         // This computer's rules, for letters from the others that don't answer one of its own.
         let answers = self.answers(peer, &envelope);
+        let known = locked(&self.agents).iter().find(|(a, _)| a.id == envelope.to).map(|(_, r)| r.clone());
         let access = if peer == self.me() {
             Access::Allow
+        } else if matches!(known, Some(Reach::Mailbox { .. })) && !answers {
+            // A session's mailbox is open only to the senders a rule names it for.
+            rules::mailbox_access(&locked(&self.rules), &name(&peer), &envelope.from, &envelope.to)
         } else {
             let default = *locked(&self.default_access);
             rules::access(&locked(&self.rules), default, &name(&peer), &envelope.from, &envelope.to)
@@ -121,8 +125,7 @@ impl Inner {
             Access::Deny => Access::Ask,
             access => access,
         };
-        let reach = locked(&self.agents).iter().find(|(a, _)| a.id == envelope.to).map(|(_, r)| r.clone());
-        let reach = match reach {
+        let reach = match known {
             Some(reach) => reach,
             // An answer to an agent that has since been renamed, gone or kept off the network: the
             // app knows its request by id and still takes it. Only a real answer: one this
@@ -282,7 +285,8 @@ mod tests {
         laptop.peers().await.expect("hear desk");
         let to = laptop.resolve("api-claude@desk").expect("offered");
         let refused = laptop.send(Letter::new("lead", to.clone(), "hi")).await.expect_err("under a ceiling");
-        assert!(format!("{refused:#}").contains("can't be held"), "{refused:#}");
+        // No rule names it: the default (a ceiling, or anything else) never opens a mailbox.
+        assert!(format!("{refused:#}").contains("doesn't take messages"), "{refused:#}");
         desk.set_rules(vec![Rule::new(Access::Allow, "lead@laptop", "api-claude").expect("a rule")]).expect("rules");
         assert_eq!(laptop.send(Letter::new("lead", to, "hi again")).await.expect("allowed"), Sent::Delivered);
         let taken = inbox.recv().await.expect("the app takes it");

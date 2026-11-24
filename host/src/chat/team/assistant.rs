@@ -164,6 +164,10 @@ impl Asker {
         if new {
             tracing::info!(kind = s.kind.as_str(), temporary = s.temporary, "a session joined the Network");
             crate::analytics::network_session(hub, crate::analytics::SessionAction::Registered, s.kind);
+            // A rule may already name its address.
+            if !s.temporary {
+                crate::network::publish(hub);
+            }
         }
         Ok(Self {
             id: owner,
@@ -228,7 +232,16 @@ fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
     }
     let to = match hub.network.recipient(to)? {
         Recipient::Here(bot) => bot,
-        Recipient::There(address) => return message_elsewhere(hub, asker, &address, message),
+        Recipient::There(address) => match (&asker.session, args["replyTo"].as_str()) {
+            // A session answering a letter from another computer.
+            (Some(me), Some(reply_to)) => {
+                remote::session_answer(hub, &me.address, &address, reply_to, message)?;
+                return Ok(
+                    json!({"to": hub.network.address_text(&address), "status": "sent", "note": "Your answer is on its way."}),
+                );
+            }
+            _ => return message_elsewhere(hub, asker, &address, message),
+        },
     };
     let target = visible_bot(hub, &to)?;
     if !asker.reaches(&target) {
@@ -254,7 +267,7 @@ fn mail_here(hub: &Hub, me: &Session, to: &Session, message: &str, reply_to: Opt
     if to.key == me.key {
         bail!("that's your own address");
     }
-    let id = super::mailbox::post(hub, to, &me.address, message, reply_to)?;
+    let id = super::mailbox::post(hub, to, None, &me.address, message, reply_to)?;
     Ok(json!({
         "letterId": id, "to": to.address, "status": "delivered", "tier": "pull",
         "note": "In its inbox: it reads its mail itself (check_inbox), and answers, if it does, come to yours.",

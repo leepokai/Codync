@@ -184,9 +184,12 @@ that was off learns of a removal.
   user's words, and counts them read. Every tool result carries `you` (the address) and, with mail waiting,
   `unread` (a count, never text). The tier is `pull`.
 - **Other computers**: a session is offered to a network only when one of its rules is an `allow` naming the
-  session's address (`rules::opens`; `*` doesn't count), as `Reach::Mailbox`. The host's default `auto` is a
-  ceiling, which a session can't be held to, so without such a rule its letters are refused anyway. A request that
-  reaches a session is answered at once ("Delivered to …'s inbox"); the session answers with a letter of its own.
+  session's address (`rules::opens`; `*` doesn't count), as `Reach::Mailbox`. Its letters, too, pass only a rule
+  that names it (`rules::mailbox_access`: a `*` allow doesn't open it, a `*` deny still closes it; no rule, denied),
+  and a ceiling (`auto`, `ask`) refuses them: a session can't be held to one. A letter lands in the mailbox under its
+  own id, from its sender's address (with the network while this computer is in several). The session answers with
+  `message_bot` and `replyTo` = that id: an answer letter (`meta` completed) that ends the sender's request there.
+  An answer to a session's own request always gets in.
 - A Codync bot's agent runs with `CODYNC_BOT` set, so a user-scope `codync` server it loads refuses its calls
   (the bot has its team tools).
 - PostHog: `network_session` with `action` (`registered`, `renamed`, `posted`, `read`) and `kind`.

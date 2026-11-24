@@ -107,8 +107,8 @@ fn take(hub: &Arc<Hub>, network: &str, m: &Message) -> Result<()> {
     }
 }
 
-/// A letter for a coding agent's session here goes to its mailbox. A request is answered at once:
-/// the session reads its mail itself, and answers with a letter of its own.
+/// A letter for a coding agent's session here goes to its mailbox, under its own id: the session
+/// answers it (`replyTo`) with a letter of its own, which reaches the sender's waiting request.
 fn to_session(hub: &Arc<Hub>, session: &Session, m: &Message, back: &Return) -> Result<()> {
     let request = m.wake && m.reply_to.is_none();
     // The cloud assistant asking through another computer: this one's cloud switch decides too.
@@ -121,11 +121,27 @@ fn to_session(hub: &Arc<Hub>, session: &Session, m: &Message, back: &Return) -> 
         }
         return Err(error);
     }
-    super::mailbox::post(hub, session, &m.from.to_string(), &m.body, m.reply_to.as_deref())?;
-    if request {
-        let note = format!("Delivered to {}'s inbox: it reads its mail itself.", session.address);
-        send_back(hub, back, note, RequestStatus::Completed, m.hops);
-    }
+    // Named with its network while this computer is in several, so the session can answer it.
+    let from = hub.network.address_text(&Target { network: back.network.clone(), address: m.from.clone() });
+    super::mailbox::post(hub, session, Some(&m.id), &from, &m.body, m.reply_to.as_deref())?;
+    Ok(())
+}
+
+/// A session here answers letter `reply_to` from another computer: an answer that ends the
+/// sender's request, which that computer takes since it asked.
+pub(super) fn session_answer(hub: &Arc<Hub>, from: &str, to: &Target, reply_to: &str, body: &str) -> Result<()> {
+    let node = hub.network.slot(Some(&to.network))?.node;
+    hub.network.send_as(from)?;
+    let letter = Letter::new(from, to.address.clone(), body)
+        .reply_to(reply_to.to_owned())
+        .meta(json!({"codync": RequestStatus::Completed}));
+    let hub = hub.clone();
+    tokio::spawn(async move {
+        if let Err(error) = node.send(letter).await {
+            tracing::warn!(error = format!("{error:#}"), "a session's answer to another computer didn't go");
+            crate::analytics::network_failed(&hub, NetworkStage::Reply);
+        }
+    });
     Ok(())
 }
 

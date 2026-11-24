@@ -190,10 +190,14 @@ async fn network_call(port: u16, token: &str, hint: &str, client: &str, params: 
         return refusal;
     }
     let kind = codync_network::AgentKind::of_mcp_client(client);
-    let meta = params.get("_meta").unwrap_or(&Value::Null);
+    let meta = params.get("_meta").cloned().unwrap_or(Value::Null);
+    // Claude Code's session is read from its registry: file work, off the async workers.
+    let looked = tokio::task::spawn_blocking(move || {
+        codync_network::sessions::session_id(kind, |k| std::env::var(k).ok(), &meta)
+    });
     let caller = crate::network::sessions::Caller {
         kind,
-        session: codync_network::sessions::session_id(kind, |k| std::env::var(k).ok(), meta),
+        session: looked.await.unwrap_or_default(),
         process: PROCESS.clone(),
         cwd: std::env::current_dir().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default(),
         hint: Some(hint.trim()).filter(|h| !h.is_empty()).map(str::to_owned),

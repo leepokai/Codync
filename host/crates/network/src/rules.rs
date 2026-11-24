@@ -138,6 +138,15 @@ pub fn opens(rules: &[Rule], to: &str) -> bool {
     rules.iter().any(|r| r.access == Access::Allow && r.to_agent.eq_ignore_ascii_case(to))
 }
 
+/// How `agent` on `computer` may write to a session's mailbox `to`: like [`access`], but only a rule
+/// that names `to` lets it in (a `*` deny still keeps it out), and with none it is denied.
+pub fn mailbox_access(rules: &[Rule], computer: &str, agent: &str, to: &str) -> Access {
+    rules
+        .iter()
+        .find(|r| r.matches(computer, agent, to) && (r.access == Access::Deny || r.to_agent != ANY))
+        .map_or(Access::Deny, |r| r.access)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,5 +210,14 @@ mod tests {
         let rules = [rule(Access::Allow, "*", "*"), rule(Access::Auto, "*", "api-claude")];
         assert!(!opens(&rules, "api-claude"), "neither * nor a ceiling opens it");
         assert!(opens(&[rule(Access::Allow, "lead@desk", "API-Claude")], "api-claude"));
+    }
+
+    #[test]
+    fn a_mailbox_takes_only_the_senders_a_rule_names_it_for() {
+        let rules = [rule(Access::Allow, "lead@desk", "api-claude"), rule(Access::Allow, "*", "*")];
+        assert_eq!(mailbox_access(&rules, "desk", "lead", "api-claude"), Access::Allow);
+        assert_eq!(mailbox_access(&rules, "desk", "other", "api-claude"), Access::Deny, "* doesn't open it");
+        let closed = [rule(Access::Deny, "*@server", "*"), rule(Access::Allow, "*@server", "api-claude")];
+        assert_eq!(mailbox_access(&closed, "server", "x", "api-claude"), Access::Deny, "a * deny still applies");
     }
 }

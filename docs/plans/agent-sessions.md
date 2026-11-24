@@ -106,7 +106,7 @@ must check which agent is calling it.
 | Agent | User scope | Project scope | Command |
 |---|---|---|---|
 | Claude Code | `~/.claude.json` | `.mcp.json` | `claude mcp add -s user` |
-| Codex | `~/.codex/config.toml` `[mcp_servers.<name>]` (file) | — | `codex mcp add` |
+| Codex | `~/.codex/config.toml` `[mcp_servers.<name>]` (file) | `.codex/config.toml` `[mcp_servers.<name>]`, trusted projects only (ref) | `codex mcp add` (user scope) |
 | Cursor | `~/.cursor/mcp.json` (file) | `.cursor/mcp.json` (ran) | — |
 | Copilot CLI | `~/.copilot/mcp-config.json` (file) | — | `--additional-mcp-config` per run (ran) |
 | Grok CLI | `~/.grok/config.toml` `[mcp_servers.<name>]` (file) | `.grok/config.toml` | `grok mcp add -s user` / `-s project` |
@@ -133,7 +133,7 @@ so this only matters if a bot's conversation title is ever shown.
 |---|---|
 | push (wakes idle) | Claude Code (inbox socket) and pi (extension): read mid-turn; opencode (plugin, once verified), Amp (not installed) |
 | queued (idle wake unverified) | Codex (`codex queue`): queued as the thread's next input; whether it starts a turn on an idle thread without user input is not checked yet |
-| turn (next tool call or stop) | Cursor, Copilot CLI (hooks verified here); Grok, Gemini CLI (not verified: follow-up) |
+| turn (next tool call or stop) | Cursor and Copilot CLI (hook events observed; delivery through hook output unverified; Cursor's `stop` did not fire in `-p`); Grok and Gemini CLI (not verified: follow-up) |
 | pull (a proposed `check_inbox` tool + an unread notice) | any MCP client, including the above before their hooks or plugins are installed |
 
 ## Open design questions

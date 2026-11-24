@@ -237,10 +237,13 @@ async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
             (Some(me), Some(reply_to)) => {
                 // A slow connection keeps trying in the background; the call says so rather than time out.
                 let sending = remote::session_answer(hub, &me.address, &address, reply_to, message);
+                // Its own task: a slow connection keeps trying past this call, into the outbox.
+                let sending = tokio::spawn(sending);
                 let status = match tokio::time::timeout(std::time::Duration::from_secs(10), sending).await {
-                    Ok(Ok(codync_network::Sent::Delivered)) => "delivered",
-                    Ok(Err(error)) => return Err(error),
-                    Ok(Ok(_)) | Err(_) => "queued",
+                    Ok(Ok(Ok(codync_network::Sent::Delivered))) => "delivered",
+                    Ok(Ok(Err(error))) => return Err(error),
+                    Ok(Err(error)) => return Err(error.into()),
+                    Ok(Ok(Ok(_))) | Err(_) => "queued",
                 };
                 return Ok(json!({"to": hub.network.address_text(&address), "status": status}));
             }
@@ -258,7 +261,7 @@ async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
     let exchange =
         Exchange { request: &request, source, target: &target.id, text: message, peer_name: Some(name), hops: None };
     lifetime.entries.push(exchange.notice(hub, &target.id, &format!("Message from {name}: {message}"), true)?);
-    hub.assistant.add(Reply::queued(&asker.id, &request, &target.name, message));
+    let _ = hub.assistant.add(Reply::queued(&asker.id, &request, &target.name, message));
     lifetime.deliver(&target.id, Access::Allow, request_prompt(&asker.who, name, Access::Allow, message))?;
     Ok(json!({
         "requestId": request, "botId": target.id, "name": target.name, "status": RequestStatus::Queued,
@@ -389,13 +392,20 @@ impl Reply {
 }
 
 impl Replies {
-    pub(super) fn add(&self, reply: Reply) {
+    /// Keeps `reply`, forgetting the oldest finished ones (or ones to sessions, which may never
+    /// finish) past `KEEP`: the requests forgotten while still running, whose waits end with them.
+    pub(super) fn add(&self, reply: Reply) -> Vec<String> {
         let mut all = self.0.locked();
         all.push(reply);
+        let mut dropped = Vec::new();
         while all.len() > KEEP {
             let Some(i) = all.iter().position(|r| !r.running() || !r.limited) else { break };
-            all.remove(i);
+            let gone = all.remove(i);
+            if gone.running() {
+                dropped.push(gone.request);
+            }
         }
+        dropped
     }
 
     fn running(&self, asker: &str) -> usize {

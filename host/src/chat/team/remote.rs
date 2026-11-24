@@ -129,13 +129,19 @@ fn to_session(hub: &Arc<Hub>, session: &Session, m: &Message, back: &Return) -> 
 
 /// A session here answers letter `reply_to` from another computer: the answer that says how it
 /// ended (`meta`), which that computer takes since it asked, into the asker's chat or mailbox.
-pub(super) async fn session_answer(hub: &Hub, from: &str, to: &Target, reply_to: &str, body: &str) -> Result<Sent> {
-    let node = hub.network.slot(Some(&to.network))?.node;
-    hub.network.send_as(from)?;
+pub(super) fn session_answer(
+    hub: &Arc<Hub>,
+    from: &str,
+    to: &Target,
+    reply_to: &str,
+    body: &str,
+) -> impl Future<Output = Result<Sent>> + Send + 'static {
+    let ready = hub.network.slot(Some(&to.network)).and_then(|slot| hub.network.send_as(from).map(|()| slot.node));
     let letter = Letter::new(from, to.address.clone(), body)
         .reply_to(reply_to.to_owned())
         .meta(json!({"codync": RequestStatus::Completed}));
-    node.send(letter).await.inspect_err(|_| crate::analytics::network_failed(hub, NetworkStage::Reply))
+    let hub = hub.clone();
+    async move { ready?.send(letter).await.inspect_err(|_| crate::analytics::network_failed(&hub, NetworkStage::Reply)) }
 }
 
 /// How a bot on another computer is shown: its name and computer, from that network's directory.
@@ -229,7 +235,9 @@ pub(super) fn ask_for_replies(
     let (id, peer) = (letter.id.clone(), peer_name(hub, &to.network, &to.address));
     // Kept before the letter goes, so an outcome as quick as a refusal finds them.
     let reply = super::assistant::Reply::queued(asker, &id, &peer, message);
-    hub.assistant.add(if offers_bot(hub, to) { reply } else { reply.unlimited() });
+    for forgotten in hub.assistant.add(if offers_bot(hub, to) { reply } else { reply.unlimited() }) {
+        hub.waiting.take(&forgotten);
+    }
     awaits_in_replies(hub, &id, &peer, message);
     let (hub, request) = (hub.clone(), id.clone());
     tokio::spawn(async move {

@@ -2,7 +2,7 @@
 
 Files travel in both directions: users attach inputs, and bots explicitly share generated outputs.
 
-- Composer: the **+** button left of the message box. iPhone: a menu with Photos (sent as JPEG) and
+- Composer: the **+** button at the bottom left of the message box. iPhone: a menu with Photos (sent as JPEG) and
   Files (plus Paste when the clipboard has an image); desktop: an open panel. Files and images can
   also be dropped on the box or pasted: ⌘V / Ctrl+V on the desktop takes a copied image or file
   (`apps/desktop/src/renderer/views/chat/use-composer-files.ts`); on the iPhone through Paste in the

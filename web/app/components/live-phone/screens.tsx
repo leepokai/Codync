@@ -7,10 +7,14 @@ import {
   CaretDown,
   CaretLeft,
   CaretRight,
-  Chats,
-  CardsThree,
   Desktop,
+  FlowArrow,
+  FunnelSimple,
+  GearSix,
+  ListChecks,
+  MagnifyingGlass,
   Plus,
+  Robot,
   Stop,
   User,
   Waveform,
@@ -157,11 +161,14 @@ export function Roster({ chats, open }: { chats: Chat[]; open: (id: string) => v
           </span>
           <CaretDown size={14} weight="bold" color={palette.text} />
         </div>
-        <span className="flex items-center gap-[5px] text-[15px] font-medium" style={{ color: palette.secondary }}>
-          1 connected <CaretDown size={12} weight="bold" />
+        <span className="mr-auto ml-[12px] flex flex-col leading-tight">
+          <span className="text-[17px] font-semibold" style={{ color: palette.text }}>Bots</span>
+          <span className="text-[12px]" style={{ color: palette.secondary }}>1 connected</span>
         </span>
-        <div className={`flex size-[44px] items-center justify-center rounded-full ${glass}`}>
-          <Plus size={22} weight="bold" color={palette.text} />
+        <div className={`flex h-[44px] items-center gap-[18px] rounded-full px-[14px] ${glass}`}>
+          <FunnelSimple size={20} weight="bold" color={palette.text} />
+          <MagnifyingGlass size={20} weight="bold" color={palette.text} />
+          <Plus size={20} weight="bold" color={palette.text} />
         </div>
       </div>
       <ul className="absolute inset-x-0 top-[116px]">
@@ -201,12 +208,14 @@ export function Roster({ chats, open }: { chats: Chat[]; open: (id: string) => v
       </ul>
       <div aria-hidden className={`absolute bottom-[39px] left-1/2 flex -translate-x-1/2 gap-[4px] rounded-full p-[5px] ${glass}`}>
         {[
-          { t: "Bots", I: Chats, on: true },
-          { t: "State", I: CardsThree, on: false },
+          { t: "Bots", I: Robot, on: true },
+          { t: "Threads", I: ListChecks, on: false },
+          { t: "Workflows", I: FlowArrow, on: false },
+          { t: "Settings", I: GearSix, on: false },
         ].map(({ t, I, on }) => (
           <span
             key={t}
-            className="flex h-[50px] w-[76px] flex-col items-center justify-center gap-[3px] rounded-full text-[11px] font-medium"
+            className="flex h-[50px] w-[72px] flex-col items-center justify-center gap-[3px] rounded-full text-[11px] font-medium"
             style={{ color: on ? palette.text : palette.secondary, background: on ? "rgba(20,20,20,0.08)" : undefined }}
           >
             <I size={22} weight="fill" />
@@ -388,44 +397,55 @@ function Composer({ chat, send, stop }: { chat: Chat; send: (text: string) => vo
   };
   const inputRef = useRef<HTMLInputElement>(null);
   return (
-    <form onSubmit={submit} className="absolute inset-x-[16px] bottom-[49px] z-20 flex items-end gap-[8px]">
-      {!group && (
-        <button
-          type="button"
-          aria-label="Add files"
-          onClick={() => inputRef.current?.focus()}
-          className={`flex size-[47px] shrink-0 items-center justify-center rounded-full ${glass} ${focus} ${press}`}
-        >
-          <Plus size={20} color={palette.text} />
-        </button>
-      )}
-      <div className={`flex h-[54px] min-w-0 flex-1 items-center gap-[8px] rounded-[27px] pr-[6px] pl-[18px] ${glass} focus-within:shadow-[0_0_0_1px_rgba(0,0,0,0.25),0_6px_18px_rgba(0,0,0,0.07)]`}>
+    <form onSubmit={submit} className="absolute inset-x-[16px] bottom-[49px] z-20">
+      {/* Two layers, as in the apps: the field, then the +, what the bot runs on and send / stop / call. */}
+      <div className={`flex flex-col gap-[4px] rounded-[24px] p-[8px] ${glass} focus-within:shadow-[0_0_0_1px_rgba(0,0,0,0.25),0_6px_18px_rgba(0,0,0,0.07)]`}>
         <input
           ref={inputRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder={placeholder}
           aria-label={placeholder}
-          className="min-w-0 flex-1 bg-transparent text-[17px] outline-none placeholder:text-[#B4B4B4]"
+          className="h-[30px] min-w-0 bg-transparent px-[10px] pt-[8px] text-[17px] outline-none placeholder:text-[#B4B4B4]"
           style={{ color: palette.text }}
         />
-        <motion.button
-          type="submit"
-          layout
-          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-          disabled={!enabled}
-          aria-label={state === "stop" ? "Stop" : state === "call" ? "Call" : "Send"}
-          title={state === "call" ? "Voice call is in the app" : undefined}
-          onClick={state === "call" ? (e) => { e.preventDefault(); inputRef.current?.focus(); } : undefined}
-          className={`flex h-[34px] shrink-0 items-center justify-center rounded-full ${focus} ${press}`}
-          style={{
-            width: state === "call" ? 46 : 34,
-            background: state === "send" && !enabled ? palette.accentDim : palette.accentFill,
-            color: state === "send" && !enabled ? palette.tertiary : "#fff",
-          }}
-        >
-          {state === "stop" ? <Stop size={14} weight="fill" /> : state === "call" ? <Waveform size={17} weight="bold" /> : <ArrowUp size={16} weight="bold" />}
-        </motion.button>
+        <div className="flex items-center gap-[8px]">
+          {!group && (
+            <button
+              type="button"
+              aria-label="Add files"
+              onClick={() => inputRef.current?.focus()}
+              className={`flex size-[34px] shrink-0 items-center justify-center rounded-full ${focus} ${press}`}
+              style={{ background: palette.bubbleAgent }}
+            >
+              <Plus size={16} color={palette.text} />
+            </button>
+          )}
+          <span className="flex-1" />
+          {!group && (
+            <span className="flex items-center gap-[4px] px-[8px] text-[15px]" style={{ color: palette.secondary }}>
+              Default
+              <CaretDown size={10} weight="bold" color={palette.tertiary} />
+            </span>
+          )}
+          <motion.button
+            type="submit"
+            layout
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            disabled={!enabled}
+            aria-label={state === "stop" ? "Stop" : state === "call" ? "Call" : "Send"}
+            title={state === "call" ? "Voice call is in the app" : undefined}
+            onClick={state === "call" ? (e) => { e.preventDefault(); inputRef.current?.focus(); } : undefined}
+            className={`flex h-[34px] shrink-0 items-center justify-center rounded-full ${focus} ${press}`}
+            style={{
+              width: state === "call" ? 46 : 34,
+              background: state === "send" && !enabled ? palette.accentDim : palette.accentFill,
+              color: state === "send" && !enabled ? palette.tertiary : "#fff",
+            }}
+          >
+            {state === "stop" ? <Stop size={14} weight="fill" /> : state === "call" ? <Waveform size={17} weight="bold" /> : <ArrowUp size={16} weight="bold" />}
+          </motion.button>
+        </div>
       </div>
     </form>
   );
@@ -480,7 +500,7 @@ export function Thread({
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[132px] bg-[linear-gradient(#fff_78%,rgba(255,255,255,0))]" />
       <div
         ref={scroller}
-        className="absolute inset-0 overflow-y-auto px-[16px] pt-[132px] pb-[112px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="absolute inset-0 overflow-y-auto px-[16px] pt-[132px] pb-[142px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         aria-label={`Conversation with ${chat.name}`}
         role="log"
       >

@@ -10,6 +10,7 @@ import { CharacterAvatar } from '../components/Avatar'
 import { Button, IconButton, ResizeHandle } from '../components/Controls'
 import { Dialog, ModalHeader, Sheet } from '../components/Overlay'
 import { AnchoredMenu, type MenuItem } from '../components/Menu'
+import { Icon } from '../components/Icon'
 import { HStack, Spacer } from '../components/Stack'
 import { noVisits, step, visit } from '../lib/visits'
 import { NO_BAR_SLOTS, WindowBar, WindowBarSlots } from './WindowBar'
@@ -23,7 +24,7 @@ import { refKey, sameRef, parseRef, type AppModel, type BotRef } from '../store/
 import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
 import { BotRoster } from './BotRoster'
-import { NavRail, OpenExtensions, type AppPage } from './NavRail'
+import { NavRail, OpenExtensions, pageIcon, type AppPage } from './NavRail'
 import { ThreadDetail, ThreadList, canStartThread, type ThreadPick } from './ThreadsPage'
 import { botItems, threadItems, workflowItems } from './search-items'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
@@ -570,6 +571,7 @@ function ChatSplitView() {
             {/* Keeps its width while the sidebar opens or closes: the list slides under the edge instead of squeezing. */}
             <div className="sidebar-content" style={{ width: sidebarWidth }}>
               <div className="sidebar-header drag">
+                <Icon name={pageIcon(page)} size={18} weight="semibold" className="sidebar-title crowded" />
                 <Text size="title3" weight="semibold" tone="text" truncate className="sidebar-title crowded">{tr(list.title)}</Text>
                 <Spacer />
                 <HStack gap={6} className="no-drag">

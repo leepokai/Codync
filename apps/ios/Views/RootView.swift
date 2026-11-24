@@ -10,6 +10,9 @@ struct RootView: View {
     @AppStorage("onboardingCompleted") private var onboardingCompleted = false
     /// Chose to go on without signing in (docs/plans/optional-sign-in.md); signing in or starting over ends it.
     @AppStorage("withoutAccount") private var withoutAccount = false
+    /// The Bots tab's computers left out and its section order, which the Threads tab follows.
+    @AppStorage("hiddenComputers") private var hiddenComputers = ""
+    @AppStorage("rosterSectionOrder") private var sectionOrderData = Data()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// First launch only: past the welcome, on to setup.
     @State private var welcomed = false
@@ -142,8 +145,9 @@ struct RootView: View {
     /// The system tab bar; every tab stays alive (scroll position, open chat) and the bar hides while a
     /// chat is open.
     private var tabs: some View {
-        TabView(selection: Bindable(app).tab) {
-            Tab(L10n.tr("Bots"), systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.bots) {
+        let work = accounts.work(hidden: hiddenComputers, sectionOrder: RosterSectionOrder(data: sectionOrderData))
+        return TabView(selection: Bindable(app).tab) {
+            Tab(L10n.tr("Bots"), image: "bot", value: AppTab.bots) {
                 NavigationStack(path: path) {
                     BotListView()
                         .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
@@ -152,6 +156,12 @@ struct RootView: View {
                         }
                 }
             }
+            // Counts what is worked on; no badge at zero.
+            Tab(L10n.tr("Threads"), systemImage: "checklist", value: AppTab.threads) {
+                ThreadsTab(work: work)
+                    .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
+            }
+            .badge(work.working)
             Tab(L10n.tr("Workflows"), systemImage: "flowchart", value: AppTab.workflows) {
                 WorkflowsTab()
                     .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
@@ -178,6 +188,7 @@ struct RootView: View {
     private var screen: AnalyticsEvent.Screen {
         switch app.tab {
         case .bots: .bots
+        case .threads: .allWork
         case .workflows: .workflows
         case .settings: .settings
         }

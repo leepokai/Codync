@@ -28,3 +28,19 @@ public struct RosterSectionOrder: Codable, Sendable {
         }
     }
 }
+
+public extension AccountStore {
+    /// `computer`'s bots in the order the Bots tab has them (`RosterSection.onScreen`), the ones named like `query` when
+    /// there is one.
+    func onScreen(_ computer: ComputerID, order: RosterSectionOrder, matching query: String = "") -> [RosterItem] {
+        RosterSection.onScreen(roster.filter { $0.ref.computerId == computer }, order: order.saved(on: computer), matching: query) { $0.bot }
+    }
+
+    /// Every bot on the computers the Bots tab shows (`hidden`: the ones left out), in its order, folded computers and
+    /// sections included, with how much each one works on: the Threads tab.
+    func work(hidden: String, sectionOrder: RosterSectionOrder) -> AllWork<RosterItem> {
+        let shown = ComputerSelection(all: computers.map(\.id), hidden: hidden).shown
+        let rows = computers.filter { shown.contains($0.id) }.flatMap { onScreen($0.id, order: sectionOrder) }
+        return AllWork(rows) { $0.bot.work }
+    }
+}

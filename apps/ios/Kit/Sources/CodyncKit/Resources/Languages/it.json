@@ -2476,5 +2476,7 @@
   "{count} min": "{count} min",
   "Context handoff pending": "Passaggio del contesto in sospeso",
   "Context handed off": "Contesto passato",
-  "Switched": "Cambiato"
+  "Switched": "Cambiato",
+  "No threads right now": "Nessun thread al momento",
+  "Tasks your bots work on show up here.": "Le attività su cui lavorano i tuoi bot compaiono qui."
 }

@@ -52,9 +52,12 @@ internal fun rosterLines(roster: List<Bot>, folded: Set<String>, order: List<Str
     }
 }
 
-/** The sorted [roster]'s bots in the order they show with nothing folded: what lists every bot the way the roster does. */
-internal fun shownBots(roster: List<Bot>, order: List<String> = emptyList()): List<Bot> =
-    rosterLines(roster, emptySet(), order).filterIsInstance<RosterLine.Row>().map { it.bot }
+/**
+ * The sorted [roster]'s bots in the order they show with nothing folded: what lists every bot the way the roster does
+ * (all bots' work, Search, which keeps the ones whose name has [query]).
+ */
+internal fun shownBots(roster: List<Bot>, order: List<String> = emptyList(), query: String = ""): List<Bot> =
+    rosterLines(roster, emptySet(), order).filterIsInstance<RosterLine.Row>().map { it.bot }.filter { it.name.contains(query, ignoreCase = true) }
 
 /** The sections [bots] are in, sorted the way the phone's language sorts ("İş" where Turkish puts it). */
 internal fun sectionNames(bots: List<Bot>): List<String> = bots.mapNotNull(Bot::section).distinct().sortedWith(Collator.getInstance())

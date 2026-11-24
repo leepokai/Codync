@@ -114,7 +114,7 @@ struct CodyncApp: App {
     }
 }
 
-enum AppTab: Hashable { case bots, workflows, settings }
+enum AppTab: Hashable { case bots, threads, workflows, settings }
 
 /// A workflow a notification asked to open on the Workflows tab.
 struct WorkflowDeepLink: Equatable {

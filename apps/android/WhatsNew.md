@@ -9,21 +9,27 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 
 ## 2.54.0
 ### zh-Hant
+- 新增 Threads 分頁：Bot 正在處理和排隊中的工作都集中在這裡，分頁上的數字是正在處理的數量；原本 Bot 列表上方的「工作」按鈕已移除。
+- Bot 分頁的圖示改成機器人，和電腦版一致；右上角改成篩選、搜尋和新增三個按鈕，搜尋可以用名稱找 Bot，連線狀態移到標題下方。
 - 換 Bot 的 agent 或登入設定檔後，新的 agent 不再從零開始：下一則訊息會帶上目前對話的摘要。送出前聊天裡會出現「脈絡交接待進行」的分隔線，標出從哪個 agent 換到哪個，送出後可以點開看帶了什麼。
 - 新增 Workflow：在 Bot 列表的電腦標題上點分支圖示，就能打開這台電腦的 workflow。一個 workflow 由觸發、提示、助理、條件、核准和輸出組成，可以手動執行、排程或用 webhook 啟動，並保留舊版本可以還原。
 - 單一路線的 workflow 會顯示成步驟列表，可以新增、刪除和調整順序；長按 workflow 可以釘選到 Bot 列表上方。
 - 用量畫面和小工具把 Claude 的用量標示為「Claude Code」，與 Bot 使用的 agent 名稱一致。
 - 在 Bot 列表長按刪除 Bot 或群組聊天，確認後會真的刪掉。
 - 選 agent 時一起選登入設定檔：Bot 設定和 fallback 的 agent 清單裡，每個 agent 依登入設定檔各列一次，清單最後可以新增登入設定檔；原本獨立的「登入設定檔」列已移除。
+- 聊天的輸入框改成上下兩層：上面打字，下面一排是加檔案的 +、Bot 目前的 agent 和模型、麥克風和送出鍵。點模型就能直接換 agent、登入設定檔、模型和推理強度，不必進 Bot 設定。
 - 在中國大陸也能收到推播通知了。
 
 ### en-US
+- A new Threads tab gathers what your bots are working on and what waits, its badge counting what is being worked on. The Work button at the top of the bot list is gone.
+- The Bots tab has the robot icon the desktop app uses, and its top right holds Filter, Search and New: search finds bots by name, and the connection status sits under the title.
 - Changing a bot's agent or login profile no longer starts it from nothing: your next message carries a summary of the conversation. Until then a divider in the chat reads Context handoff pending with both agents; afterwards tap it to see what was carried.
 - Workflows: tap the branch icon on a computer's heading in the bot list to open that computer's workflows. A workflow chains a trigger, prompts, assistants, a condition, an approval and an output; run it yourself, on a schedule or from a webhook, and restore an older version when you need to.
 - A workflow that is a single chain shows as a list of steps you can add, remove and reorder. Long-press a workflow to pin it above the bots.
 - Usage and widgets name Claude's usage "Claude Code", the same name bots use for that agent.
 - Deleting a bot or group chat from its long-press menu in the bot list works again.
 - Pick an agent and its login profile in one step: a bot's and each fallback's agent list shows every agent once per login profile and ends with Add login profile. The separate Login profile row is gone.
+- The message box now has two layers: you type on top, and under it are the + for files, the bot's agent and model, the mic and send. Tap the model to switch the agent, login profile, model or effort without opening the bot's settings.
 - Push notifications now reach phones and computers in mainland China.
 
 ## 2.53.0

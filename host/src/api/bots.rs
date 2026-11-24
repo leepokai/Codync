@@ -476,7 +476,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             };
             let not_before = match b["notBefore"].as_i64() {
                 Some(at) if at <= crate::store::now_ms() + crate::chat::messages::SOONEST => {
-                    bail!("the scheduled time must be at least 30 seconds out")
+                    bail!("the scheduled time must be at least {} seconds out", crate::chat::messages::SOONEST / 1_000)
                 }
                 at => at,
             };

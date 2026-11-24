@@ -13,6 +13,7 @@ import type { OutgoingFile } from '../../store/outgoing-files'
 import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
 import { pluginsFor } from '../marketplace/plugins'
+import { canSchedule } from './queued-messages'
 import { ComposerField } from './ComposerField'
 import { ScheduleSheet } from './ScheduleSheet'
 import './schedule-sheet.css'
@@ -97,11 +98,13 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
   // "Schedule send…": an online 1:1 chat with a typed draft and no files (files and calls send immediately).
   const [scheduling, setScheduling] = useState(false)
   const canScheduleHere =
-    !!bot && !thread && !isGroup(bot) && store.hello?.scheduleSend === true && store.connection.kind === 'online'
+    !!bot && !thread && !isGroup(bot) && canSchedule(store.hello) && store.connection.kind === 'online'
   const scheduled = (clear: () => void) => {
     clear()
     setScheduling(false)
-    field.current?.focus()
+    // The sheet hands focus back to its opener (the clock button) as it closes; take it for the field
+    // once that restore has run, so typing goes where the user expects.
+    setTimeout(() => field.current?.focus(), 0)
   }
 
   const members = bot && isGroup(bot) ? store.members(bot) : []

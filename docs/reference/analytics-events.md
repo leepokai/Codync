@@ -112,9 +112,9 @@ host answers and sends it once the host is up.
 | `bot_deleted` | host | `deleteBot` | — |
 | `message_sent` | host | `send` to a chat (a resend counts once; one to a task's thread is `work_messaged`) | `kind`, `agent`, `reply` (whether it quotes a message), `replyPart` (whether it quotes a part the user selected in it), `attachments` (count) |
 | `message_scheduled` | host | *Schedule send…* holds a message for a later time (`scheduleSend`; a resend counts once) | `kind`, `agent`, `reply` (whether it quotes a message) |
-| `message_schedule_edited` | host | *Edit schedule* on a message that hasn't gone out (`updateScheduled`: its text and/or time, on one waiting in the live queue too) | `what` (`time`, `text`); never the time or the text |
+| `message_schedule_edited` | host | *Edit schedule* on a message that hasn't gone out (`updateScheduled`: its text and/or time, on one waiting in the live queue too) | `what` (`time`, `text`); never the time or the text; the desktop's *Edit schedule* saves text and time together, so a text-only edit reports `time` too |
 | `scheduled_message_removed` | host | *Remove* on a scheduled message before it fires (`cancelScheduled`) | — |
-| `scheduled_message_sent_now` | host | *Send now* on a scheduled message (`sendScheduledNow`): it enters the ordinary queue at once | — |
+| `scheduled_message_sent_now` | host | *Send now* on a scheduled message (`sendScheduledNow`): it enters the ordinary queue at once; *Clear the time* in the schedule sheet reports it too | — |
 | `message_steered` | host | *Send now* on a queued message (`steer`), once its outcome is known | `agent`, `how` (`joined` the running turn / `next` turn, the turn ended first / `interrupted` the user's turn / `moved_up` behind other work / `failed`, it waits) |
 | `agent_command_sent` | host | The user sends one of the bot's agent's own `/` commands, which goes to the agent as typed ([commands](../features/marketplace.md#commands)) | `agent` (never the command: its name can be the user's own) |
 | `queued_message_removed` | host | *Remove* on a chat's queued message (`unqueue`; in a task's thread it is `work_steered` `remove`) | — |

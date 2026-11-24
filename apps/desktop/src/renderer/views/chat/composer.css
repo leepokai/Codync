@@ -83,6 +83,17 @@
   place-items: center;
   flex: none;
 }
+/* "Schedule send…": the same round as the add button, with the tray's clock glyph inside. */
+.composer-schedule {
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 9%, var(--composer-fill));
+  box-shadow: var(--shadow-s);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
 .composer-surface {
   position: relative;
   flex: 1;

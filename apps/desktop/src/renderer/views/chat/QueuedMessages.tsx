@@ -79,13 +79,15 @@ function QueuedRow({
   const answering = store.answering.has(entry.id)
   const fireAt = entry.data.notBefore
   const text = quoteOf(entry).text
+  // The preview clips to a quote; the expanded row and the editor work on the whole stored message.
+  const whole = typeof entry.data.text === 'string' ? entry.data.text : text
   // Click shows the whole message; a second click folds it back; a double-click edits it in place.
   const [expanded, setExpanded] = useState(false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(text)
   const doneRef = useRef(false)
   const startEdit = () => {
-    setDraft(text)
+    setDraft(whole)
     setEditing(true)
     doneRef.current = false
   }
@@ -96,7 +98,7 @@ function QueuedRow({
     doneRef.current = true
     setEditing(false)
     const trimmed = draft.trim()
-    if (trimmed && trimmed !== text) store.updateScheduled(entry, { text: trimmed })
+    if (trimmed && trimmed !== whole) store.updateScheduled(entry, { text: trimmed })
   }
   const cancelEdit = () => {
     doneRef.current = true
@@ -141,9 +143,9 @@ function QueuedRow({
               grow
               className="queued-preview"
               onClick={() => setExpanded(!expanded)}
-              onDoubleClick={startEdit}
+              onDoubleClick={scheduling ? startEdit : undefined}
             >
-              {expanded ? text : messagePreview(text)}
+              {expanded ? whole : messagePreview(text)}
             </Text>
             {fireAt !== undefined ? (
               <Text size="callout" tone="secondary" className="queued-fire-time">
@@ -151,7 +153,9 @@ function QueuedRow({
               </Text>
             ) : null}
             <IconButton title={tr('Copy')} icon="doc.on.doc" size={26} onClick={() => window.codync.app.copy(text)} />
-            <IconButton title={tr('Edit')} icon="pencil" size={26} disabled={answering} onClick={startEdit} />
+            {scheduling ? (
+              <IconButton title={tr('Edit')} icon="pencil" size={26} disabled={answering} onClick={startEdit} />
+            ) : null}
             {actions && fireAt === undefined ? (
               <>
                 <IconButton title="Send now" icon="arrow.turn.down.right" size={26} disabled={answering} onClick={() => store.steer(entry)} />

@@ -42,7 +42,7 @@ export function ScheduleSheet({
   const invalid = useMemo(() => {
     const at = parseLocal(time)
     if (at === null) return tr('Pick a time')
-    if (at <= Date.now() + 30_000) return tr('Pick a time in the future')
+    if (at <= Date.now() + 30_000) return tr('Pick a time at least 30 seconds out')
     return null
   }, [time, tr])
   const ready = text.trim().length > 0 && touched && invalid === null && !store.answering.has(entry?.id ?? '')
@@ -101,7 +101,7 @@ export function ScheduleSheet({
               onClose()
             }}
           >
-            {held ? tr('Save') : tr('Schedule')}
+            {held ? tr('Save') : tr('Schedule send')}
           </button>
         </div>
       </VStack>

@@ -105,7 +105,10 @@ The capsule above the composer isn't an entry: it is the bot's `work`.
 ## Scheduled messages
 
 *Schedule send…* holds a typed message for a later time: the composer's clock button (a draft, no
-files, a 1:1 chat) opens a local-time picker, and the message waits until then. There is no second
+files, a 1:1 chat, the host online — an ordinary send still queues offline, the clock doesn't) opens a
+local-time picker, and the message waits until then. The time must be at least 30 seconds out —
+anything closer is a send, not a schedule. A scheduled message carries the active reply quote,
+exactly as a send. There is no second
 queue and no second scheduler: a scheduled message is an ordinary user Entry whose `data.status` is
 `scheduled` with a `notBefore` epoch-ms UTC (`chat/messages::save_scheduled`); a sweep
 (`chat/schedule`, every 15 s) flips due entries to `queued` and hands them on through the ordinary

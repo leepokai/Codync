@@ -140,6 +140,66 @@ async fn a_bounded_handoff_names_each_item_it_could_not_expand() {
     assert_eq!(labels, skipped, "every unexpanded item needs its own label: {handoff}");
 }
 
+/// The agent a turn switches to hears the manifest in its very first message, and every item the manifest could not
+/// expand carries its own label there.
+#[tokio::test]
+async fn a_switch_hands_the_manifest_over_in_the_new_agents_first_message() {
+    let host = Host::start().await;
+    let bot = host
+        .call(
+            "createBot",
+            json!({"name":"SwitchManifest", "backend":"custom", "command":agent("primary"), "connectors":[], "notify":false,
+        "fallbacks":[{"backend":"codex", "command":agent("standin")}]}),
+        )
+        .await["bot"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    // More files than a manifest expands, each one created by the agent the turn starts on.
+    let paths: Vec<_> = (0..24).map(|i| format!("note_{i:02}_{}.txt", "y".repeat(30))).collect();
+    std::fs::write(folder.join("ledger-files.json"), serde_json::to_vec(&paths).unwrap()).unwrap();
+    std::fs::write(folder.join("primary.limit"), "").unwrap();
+    host.reply(&bot, "Never run the suite twice").await;
+    let reply = wait_for(&host, &bot, "reply", |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
+    assert_eq!(reply["data"]["text"], "standin answered");
+
+    // The switched-to agent's first message is the handed-over turn itself.
+    let log = host.log(&bot, "standin.jsonl");
+    let prompts: Vec<_> = log.iter().filter(|r| r["method"] == "session/prompt").collect();
+    assert_eq!(prompts.len(), 1, "one prompt, its first: {log:#?}");
+    let prompt = prompts[0]["params"]["prompt"][0]["text"].as_str().unwrap();
+    assert!(prompt.contains("<ledger>\nGathered by rule"), "the first message carries the manifest: {prompt}");
+    assert!(prompt.contains("a.txt (created;"), "{prompt}");
+
+    // Every file is either expanded or named by its own label, with its size and the reason it stayed out.
+    let disclosure = prompt
+        .split("Omitted due to budget/collection limit:")
+        .nth(1)
+        .unwrap_or_else(|| panic!("the manifest names what it could not expand: {prompt}"));
+    let disclosure = disclosure.split("</ledger>").next().unwrap_or(disclosure);
+    let labels: Vec<&str> = disclosure.lines().filter(|line| !line.trim().is_empty()).collect();
+    for index in 0..24 {
+        let prefix = format!("note_{index:02}_");
+        let expanded = prompt.contains(&format!("File this turn: {prefix}"));
+        let labeled = labels.iter().find(|label| label.contains(&prefix));
+        assert!(expanded || labeled.is_some(), "file {index} must be expanded or itemized: {prompt}");
+        if let Some(label) = labeled {
+            assert!(
+                label.contains(" B; ") && label.contains("collection limit"),
+                "an unexpanded file names its size and why: {label}"
+            );
+        }
+    }
+    let skipped: usize = prompt
+        .split("Omitted: ")
+        .nth(1)
+        .and_then(|text| text.split(" items").next())
+        .and_then(|text| text.parse().ok())
+        .unwrap_or_default();
+    assert_eq!(labels.len(), skipped, "every unexpanded item needs its own label: {prompt}");
+}
+
 #[tokio::test]
 async fn the_next_agent_carries_the_turn_on_and_the_bot_goes_back() {
     let host = Host::start().await;

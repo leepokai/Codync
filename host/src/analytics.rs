@@ -90,6 +90,10 @@ pub enum SessionAction {
     Read,
     /// It answered a request one of this computer's bots sent it.
     Answered,
+    /// A bot's request to it waited a week unanswered and ended.
+    Expired,
+    /// Its full inbox dropped a bot's request unread.
+    Dropped,
 }
 
 pub fn network_session(hub: &Hub, action: SessionAction, kind: codync_network::AgentKind) {
@@ -99,6 +103,8 @@ pub fn network_session(hub: &Hub, action: SessionAction, kind: codync_network::A
         SessionAction::Posted => "posted",
         SessionAction::Read => "read",
         SessionAction::Answered => "answered",
+        SessionAction::Expired => "expired",
+        SessionAction::Dropped => "dropped",
     };
     capture(
         hub,

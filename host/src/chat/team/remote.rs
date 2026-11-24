@@ -28,12 +28,13 @@ use tokio::sync::mpsc;
 #[derive(Default)]
 pub struct Waiting {
     all: Mutex<HashMap<String, Waiter>>,
-    /// The latest requests to sessions here that their session answered, by `(session key, id)`:
-    /// an answer sent again (a retry) is taken as delivered, not as a new request.
-    answered: Mutex<std::collections::VecDeque<(String, String)>>,
+    /// The latest requests to sessions here that ended, by `(session key, id)`, and whether their
+    /// session answered them: an answer sent again (a retry) is taken as delivered, and one after
+    /// the request expired is refused, rather than either becoming a new request.
+    ended: Mutex<std::collections::VecDeque<(String, String, bool)>>,
 }
 
-/// How many answered requests to sessions `Waiting` remembers.
+/// How many ended requests to sessions `Waiting` remembers.
 const ANSWERED_KEPT: usize = 256;
 
 struct Waiter {
@@ -95,16 +96,18 @@ impl Waiting {
         self.all.locked().get(id).and_then(|w| w.session.as_ref()).is_some_and(|(k, _)| k != key)
     }
 
-    fn mark_answered(&self, key: &str, id: &str) {
-        let mut answered = self.answered.locked();
-        answered.push_back((key.to_owned(), id.to_owned()));
-        if answered.len() > ANSWERED_KEPT {
-            answered.pop_front();
+    /// Request `id` to the session `key` ended, answered or not.
+    fn mark_ended(&self, key: &str, id: &str, answered: bool) {
+        let mut ended = self.ended.locked();
+        ended.push_back((key.to_owned(), id.to_owned(), answered));
+        if ended.len() > ANSWERED_KEPT {
+            ended.pop_front();
         }
     }
 
-    fn was_answered(&self, key: &str, id: &str) -> bool {
-        self.answered.locked().iter().any(|(k, i)| k == key && i == id)
+    /// Whether request `id` to the session `key` was answered, when it ended lately.
+    fn ended(&self, key: &str, id: &str) -> Option<bool> {
+        self.ended.locked().iter().find(|(k, i, _)| k == key && i == id).map(|(_, _, answered)| *answered)
     }
 
     /// Request `id` stops waiting at `until`.
@@ -138,6 +141,12 @@ pub(crate) async fn expire_loop(hub: Arc<Hub>) {
 fn expire(hub: &Hub) {
     for (id, waiter) in hub.waiting.expired(crate::store::now_ms()) {
         let why = "No answer within a week: it never read or answered this.";
+        if let Some((key, _)) = &waiter.session {
+            hub.waiting.mark_ended(key, &id, false);
+            let kind =
+                hub.network.sessions.by_key(&hub.store, key).map_or(codync_network::AgentKind::Other, |s| s.kind);
+            crate::analytics::network_session(hub, crate::analytics::SessionAction::Expired, kind);
+        }
         let hops = waiter.hops;
         replied(hub, &id, waiter, why, Some(RequestStatus::Failed), hops, codync_network::Access::Allow);
     }
@@ -370,8 +379,14 @@ pub(super) fn session_replied(hub: &Hub, session: &Session, reply_to: &str, to: 
         if hub.waiting.for_another_session(reply_to, &session.key) {
             anyhow::bail!("letter {reply_to} went to another session: only that session can answer it");
         }
-        // Sent again after it went through (a retry): delivered already, not a new request.
-        return Ok(hub.waiting.was_answered(&session.key, reply_to));
+        return match hub.waiting.ended(&session.key, reply_to) {
+            // Sent again after it went through (a retry): delivered already, not a new request.
+            Some(true) => Ok(true),
+            Some(false) => anyhow::bail!(
+                "request {reply_to} waited a week unanswered and was closed: message the bot again without replyTo if it still matters"
+            ),
+            None => Ok(false),
+        };
     };
     // The answer goes to the bot that asked, by its id, its address now, or the one its letter was
     // signed with (it may have been renamed since): a botId naming another bot is a mix-up to correct.
@@ -384,7 +399,7 @@ pub(super) fn session_replied(hub: &Hub, session: &Session, reply_to: &str, to: 
         anyhow::bail!("letter {reply_to} came from {handle}: answer it with botId {handle}");
     }
     let Some(waiter) = hub.waiting.take_for(reply_to, Some(&session.key)) else { return Ok(false) };
-    hub.waiting.mark_answered(&session.key, reply_to);
+    hub.waiting.mark_ended(&session.key, reply_to, true);
     let hops = waiter.hops;
     replied(hub, reply_to, waiter, body, None, hops, codync_network::Access::Allow);
     crate::analytics::network_session(hub, crate::analytics::SessionAction::Answered, session.kind);
@@ -394,9 +409,10 @@ pub(super) fn session_replied(hub: &Hub, session: &Session, reply_to: &str, to: 
 /// Letters the full mailbox of the session `key` dropped unread: a bot's request to that session
 /// among them ends, as failed (a letter from another computer keeps its sender's id, which may
 /// name an unrelated request here, so only one made for this mailbox counts).
-pub(super) fn dropped_unread(hub: &Hub, key: &str, ids: &[String]) {
+pub(super) fn dropped_unread(hub: &Hub, to: &Session, ids: &[String]) {
     for id in ids {
-        if let Some(waiter) = hub.waiting.take_for(id, Some(key)) {
+        if let Some(waiter) = hub.waiting.take_for(id, Some(&to.key)) {
+            crate::analytics::network_session(hub, crate::analytics::SessionAction::Dropped, to.kind);
             let hops = waiter.hops;
             let why = "The session's inbox was full, so this letter was dropped unread.";
             replied(hub, id, waiter, why, Some(RequestStatus::Failed), hops, codync_network::Access::Allow);
@@ -617,5 +633,10 @@ mod waiting_tests {
         let over: Vec<String> = waiting.expired(100).into_iter().map(|(id, _)| id).collect();
         assert_eq!(over, ["session"]);
         assert!(waiting.take("bot").is_some(), "a bot's request waits for good");
+        waiting.mark_ended("codex:t", "late", false);
+        waiting.mark_ended("codex:t", "done", true);
+        assert_eq!(waiting.ended("codex:t", "late"), Some(false), "a late answer is refused");
+        assert_eq!(waiting.ended("codex:t", "done"), Some(true), "a retry is delivered already");
+        assert_eq!(waiting.ended("codex:u", "done"), None);
     }
 }

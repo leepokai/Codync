@@ -21,25 +21,8 @@ extension BotStore {
         }
     }
 
-    func noteWorkflow(_ summary: WorkflowSummary) {
-        var next = workflows.filter { $0.id != summary.id }
-        next.append(summary)
-        workflows = WorkflowSummary.listOrder(next)
-    }
-
-    func setWorkflowGraphDirty(_ id: String, _ dirty: Bool) {
-        var next = dirtyWorkflowGraphs
-        if dirty { next.insert(id) } else { next.remove(id) }
-        dirtyWorkflowGraphs = next
-    }
-
-    func noteWorkflow(_ id: String, notice: String?) {
-        var next = workflowNotices
-        if let notice { next[id] = notice } else { next.removeValue(forKey: id) }
-        workflowNotices = next
-    }
-
-    /// `enabled`, `run` and `step` refresh summaries and open runs. A dirty graph is left for the next save.
+    /// Workflows change on the computer: each change refreshes the summaries; `run` and `step` also open runs, `graph`
+    /// an open workflow.
     func applyWorkflow(_ event: WorkflowEvent) {
         switch event.change {
         case .deleted:
@@ -47,22 +30,13 @@ extension BotStore {
             var gone = deletedWorkflows
             gone.insert(event.workflowId)
             deletedWorkflows = gone
-            var dirty = dirtyWorkflowGraphs
-            dirty.remove(event.workflowId)
-            dirtyWorkflowGraphs = dirty
-            noteWorkflow(event.workflowId, notice: "This workflow was deleted")
         case .enabled:
-            if let on = event.enabled, let index = workflows.firstIndex(where: { $0.id == event.workflowId }) {
-                var next = workflows
-                next[index].enabled = on
-                workflows = next
-            }
             Task { await reloadWorkflows() }
         case .run, .step:
             workflowRunReload += 1
             Task { await reloadWorkflows() }
         case .graph:
-            if !dirtyWorkflowGraphs.contains(event.workflowId) { workflowReload += 1 }
+            workflowReload += 1
             Task { await reloadWorkflows() }
         }
     }

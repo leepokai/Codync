@@ -2486,5 +2486,7 @@
   "{count} min": "{count} 分钟",
   "Context handoff pending": "上下文交接待进行",
   "Context handed off": "上下文已交接",
-  "Switched": "已切换"
+  "Switched": "已切换",
+  "No threads right now": "当前没有线程",
+  "Tasks your bots work on show up here.": "你的 Bot 正在处理的任务会显示在这里。"
 }

@@ -37,8 +37,10 @@ export interface ThreadBox {
   placeholder: string
   /** A turn runs there: the empty box stops it (`stop`). */
   working: boolean
-  /** It takes files with a message too, as the chat does. */
+  /** It takes files with a message too, as the chat does (a thread's first one too, where the host can). */
   files?: boolean
+  /** The key its files not sent yet are kept by beyond the box: a new thread's box is mounted again as its bot changes. */
+  keepFiles?: string
   /** A promise makes the box wait, and keep the words when it fails. */
   send: (text: string, files: OutgoingFile[]) => void | Promise<unknown>
   stop?: () => void
@@ -88,8 +90,9 @@ function DestinationComposer({ botId, reply, about, thread, cancelReply, onCall,
   /** Text pasted into this draft since the last send. */
   const pasted = useRef<string[]>([])
   const working = thread ? thread.working : !!bot && isWorkingIn(bot, botId)
-  const canAttach = !!bot && (!thread || !!thread.files)
-  const attach = useComposerFiles(canAttach)
+  // A thread says itself whether it takes files: one about to start may have no bot yet.
+  const canAttach = thread ? !!thread.files : !!bot
+  const attach = useComposerFiles(canAttach, thread?.keepFiles)
   const files = attach.files
   const empty = !draft.trim() && !files.length
   // A thread's first message waits for the computer's answer (`ThreadBox.send`).

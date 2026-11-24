@@ -90,7 +90,7 @@ import kotlinx.serialization.json.put
                 }
             }
             if (signedIn) CloudSettings(app, accounts)
-            val hidden = states.flatMap { state -> state.bots.filter { it.hidden && !it.deleted }.map { state to it } }
+            val hidden = states.flatMap { state -> state.bots.filter { it.hidden && !it.plain && !it.deleted }.map { state to it } }
             if (hidden.isNotEmpty()) CardSection("Hidden bots") {
                 for ((state, bot) in hidden) row { accounts.store(state.computer.id)?.let { HiddenBotRow(state, it, bot) } }
             }
@@ -151,12 +151,6 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
     if (BuildConfig.PUSH_CONFIGURED) row {
         ComputerNotificationsRow(state.computer.notifications, store::notifications)
     }
-    val autoOrder = autoOrder(state.hello)
-    if (state.connection is LinkState.Ready && autoOrder != null) row {
-        CodyncSwitch(autoOrder, store::setAutoOrder, Modifier.fillMaxWidth()) {
-            RowLabel("Move active bots to the top", "arrow.up", modifier = Modifier.weight(1f))
-        }
-    }
     row { ConnectionRow(state.computer, store) }
     if (canAddToAccount(signedIn, state)) row { AddToAccount(store) }
     // Kept while an update asked from here restarts the computer: its spinner says it's updating.
@@ -168,7 +162,7 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
 @Composable private fun WorkflowsComputerRow(state: AppState, online: Boolean, action: () -> Unit) {
     Column(Modifier.fillMaxWidth().plainButton(enabled = online, action = action), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Symbol("flowchart", size = 20.dp, tint = Palette.text)
+            Symbol("workflow", size = 20.dp, tint = Palette.text)
             Text(tr("Workflows"), Modifier.weight(1f), style = Type.body, color = Palette.text)
             if (online) Symbol("chevron.right", size = 14.dp, tint = Palette.tertiary)
         }
@@ -191,7 +185,7 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
             MenuItem("Color", icon = "paintpalette", action = actions.color),
             if (canRename(state)) MenuItem("Rename…", icon = "pencil", action = actions.rename) else null,
             if (online) MenuItem("Extensions", icon = "square.grid.2x2", action = actions.extensions) else null,
-            if (online && state.offersWorkflows) MenuItem("Workflows", icon = "flowchart", action = actions.workflows) else null,
+            if (online && state.offersWorkflows) MenuItem("Workflows", icon = "workflow", action = actions.workflows) else null,
             if (online) MenuItem("Voice chat", icon = "waveform", action = actions.voice) else null,
             if (online && state.screen != null) MenuItem("Screen", icon = "display", action = actions.screen) else null,
             if (online && state.network?.shown == true) MenuItem("Network", icon = NETWORK_ICON, action = actions.network) else null,

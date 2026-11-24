@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import com.codync.android.core.AppVersion
 import com.codync.android.core.Bot
+import com.codync.android.core.ThreadGrouping
 import java.text.Collator
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -52,9 +53,12 @@ internal fun rosterLines(roster: List<Bot>, folded: Set<String>, order: List<Str
     }
 }
 
-/** The sorted [roster]'s bots in the order they show with nothing folded: what lists every bot the way the roster does. */
-internal fun shownBots(roster: List<Bot>, order: List<String> = emptyList()): List<Bot> =
-    rosterLines(roster, emptySet(), order).filterIsInstance<RosterLine.Row>().map { it.bot }
+/**
+ * The sorted [roster]'s bots in the order they show with nothing folded: what lists every bot the way the roster does
+ * (all bots' work, Search, which keeps the ones whose name has [query]).
+ */
+internal fun shownBots(roster: List<Bot>, order: List<String> = emptyList(), query: String = ""): List<Bot> =
+    rosterLines(roster, emptySet(), order).filterIsInstance<RosterLine.Row>().map { it.bot }.filter { it.name.contains(query, ignoreCase = true) }
 
 /** The sections [bots] are in, sorted the way the phone's language sorts ("İş" where Turkish puts it). */
 internal fun sectionNames(bots: List<Bot>): List<String> = bots.mapNotNull(Bot::section).distinct().sortedWith(Collator.getInstance())
@@ -121,6 +125,27 @@ internal object FoldedSections {
     private const val KEY = "collapsedRosterSections"
     fun load(context: Context): Set<String> = rosterPrefs(context).getStringSet(KEY, null).orEmpty().toSet()
     fun save(context: Context, names: Set<String>) { rosterPrefs(context).edit { putStringSet(KEY, names) } }
+}
+
+/** How the Bots list lays out on this device (the desktop's `botsByComputer`, `botsByStatus` prefs, same defaults). */
+internal object BotListLayout {
+    fun byComputer(context: Context): Boolean = rosterPrefs(context).getBoolean("botsByComputer", true)
+    fun setByComputer(context: Context, on: Boolean) = rosterPrefs(context).edit { putBoolean("botsByComputer", on) }
+    fun byStatus(context: Context): Boolean = rosterPrefs(context).getBoolean("botsByStatus", false)
+    fun setByStatus(context: Context, on: Boolean) = rosterPrefs(context).edit { putBoolean("botsByStatus", on) }
+}
+
+/** How the Threads list lays out on this device and which of its groups are folded (desktop `threadsGroup` and its sorts, same defaults). */
+internal object ThreadsLayout {
+    fun grouping(context: Context): ThreadGrouping =
+        ThreadGrouping.entries.firstOrNull { it.name == rosterPrefs(context).getString("threadsGroup", null) } ?: ThreadGrouping.Folder
+    fun setGrouping(context: Context, grouping: ThreadGrouping) = rosterPrefs(context).edit { putString("threadsGroup", grouping.name) }
+    fun byStatus(context: Context): Boolean = rosterPrefs(context).getBoolean("threadsByStatus", false)
+    fun setByStatus(context: Context, on: Boolean) = rosterPrefs(context).edit { putBoolean("threadsByStatus", on) }
+    fun byActivity(context: Context): Boolean = rosterPrefs(context).getBoolean("threadsByActivity", false)
+    fun setByActivity(context: Context, on: Boolean) = rosterPrefs(context).edit { putBoolean("threadsByActivity", on) }
+    fun folded(context: Context): Set<String> = rosterPrefs(context).getStringSet("foldedThreadSections", null).orEmpty().toSet()
+    fun setFolded(context: Context, keys: Set<String>) = rosterPrefs(context).edit { putStringSet("foldedThreadSections", keys) }
 }
 
 /** Computers left out of the roster (`ComputerSelection`'s list), and computers whose bots are folded away (iOS `@AppStorage`). */

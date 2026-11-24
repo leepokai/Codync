@@ -1,0 +1,76 @@
+# The model chip in a bot's message box (docs/design/ui-conventions.md): it opens the agent and model picker, and a
+# pick is saved to the bot a moment later, the sheet closed right after; a group's box has no chip. The phone must
+# already be signed in and paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so
+# run it apart from `welcome`, whose clearState undoes that; the flow makes its own bot and group there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags model-chip \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - model-chip
+onFlowComplete:
+  - runScript:
+      file: model-chip.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: model-chip.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+- tapOn: "Model"
+# The agent's default model, the one every agent lists (not a "Default login profile" picker above the list), in the
+# list the model's own button opens (a menu on the iPhone).
+- tapOn: "e2e-model"
+- scrollUntilVisible:
+    element: "Default(?! login profile).*"
+- tapOn: "Default(?! login profile).*"
+- takeScreenshot: model-chip-sheet
+# Closed before the save goes out: the chip keeps it.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - swipe:
+          direction: DOWN
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- runScript:
+    file: model-chip.js
+    env:
+      STEP: saved
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          stopApp: true
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+          stopApp: true
+- tapOn: ${output.group.name}
+- extendedWaitUntil:
+    visible: "Ask everyone.*"
+    timeout: 5000
+- assertNotVisible: "Model"

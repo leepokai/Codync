@@ -218,8 +218,19 @@ async fn update_bot_checks_the_model_on_the_login_profile_the_bot_runs_on() {
     let bin = shim_root.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/models_agent.py");
-    let cmd = format!("@echo off\r\n{} -X utf8 -u \"{}\" %*\r\n", common::python(), fixture.display());
-    std::fs::write(bin.join("grok.cmd"), cmd).unwrap();
+    #[cfg(windows)]
+    {
+        let cmd = format!("@echo off\r\n{} -X utf8 -u \"{}\" %*\r\n", common::python(), fixture.display());
+        std::fs::write(bin.join("grok.cmd"), cmd).unwrap();
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let script = format!("#!/bin/sh\nexec {} -X utf8 -u '{}' \"$@\"\n", common::python(), fixture.display());
+        let file = bin.join("grok");
+        std::fs::write(&file, script).unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
     let inherited = std::env::var_os("PATH").unwrap_or_default();
     let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(&inherited))).unwrap();
     let empty = OsStr::new("");

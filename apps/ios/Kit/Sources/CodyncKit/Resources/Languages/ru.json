@@ -2491,5 +2491,8 @@
   "Pause bot": "Приостановить бота",
   "Resume bot": "Возобновить бота",
   "Paused": "Приостановлен",
-  "It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled.": "Он не отвечает и ничего не тратит, пока вы его не возобновите: новые сообщения отклоняются, а ожидающие запуски рутин отменяются."
+  "It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled.": "Он не отвечает и ничего не тратит, пока вы его не возобновите: новые сообщения отклоняются, а ожидающие запуски рутин отменяются.",
+  "Context handoff pending": "Передача контекста ожидается",
+  "Context handed off": "Контекст передан",
+  "Switched": "Переключено"
 }

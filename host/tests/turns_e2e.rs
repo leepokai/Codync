@@ -166,9 +166,14 @@ async fn pausing_a_bot_mid_turn_stops_it_and_resuming_lets_it_work_again() {
     host.call("updateBot", json!({"id": bot, "paused": false})).await;
     host.call("send", json!({"botId": bot, "text": "after"})).await;
     host.wait_for(&bot, Duration::from_secs(20), |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
+    assert_eq!(
+        std::fs::read_to_string(folder.join("prompts.jsonl")).unwrap().lines().count(),
+        2,
+        "the resumed bot spent on the new message only: the stopped turn's prompt and this one, nothing else"
+    );
     assert!(
         std::fs::read_to_string(folder.join("prompts.jsonl")).unwrap().lines().any(|p| p.contains("after")),
-        "the resumed bot spent on the new message only"
+        "the new message reached the agent"
     );
 }
 

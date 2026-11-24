@@ -29,6 +29,11 @@ impl Actor {
     /// The prompt for `text` in session `sid`: what the agent should hear first (its profile, a handoff, a memory
     /// change) and after (a profile update, how to share files).
     async fn compose(&mut self, sid: &str, text: &str) -> Result<String> {
+        // An agent on its own (`BotConfig::plain`) hears the user's words alone.
+        if self.cfg.plain {
+            self.session_fresh = false;
+            return Ok(text.to_owned());
+        }
         let instructions = self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions);
         let mut snapshot = self.snapshot(sid).await?;
         // Sessions whose frozen instructions predate send_file, artifacts or follow-ups hear about them each turn.
@@ -67,7 +72,7 @@ impl Actor {
             prompt = format!("{prompt}\n\n{update}");
             self.announce = Some((snapshot, identity));
         }
-        let own_chat = self.in_own_chat();
+        let own_chat = self.in_own_chat() && self.active_workflow.is_none();
         if remind_files && own_chat {
             prompt.push_str("\n\n[Codync: send_file(path, name?) shares any regular file up to 100 MiB as a downloadable card. Use it instead of sending a local path.]");
         }
@@ -264,8 +269,11 @@ impl Actor {
             self.carry_in();
         }
         // What the user wrote to a thread says so, after the work itself where the session doesn't hold it.
-        let text =
-            &if written.is_empty() || agent_command { text.to_owned() } else { work::in_thread(text, picked_up) };
+        let text = &if written.is_empty() || agent_command || self.cfg.plain {
+            text.to_owned()
+        } else {
+            work::in_thread(text, picked_up)
+        };
         let prompt = if std::mem::take(&mut self.raw_prompt) || agent_command {
             text.to_owned()
         } else {
@@ -287,6 +295,9 @@ impl Actor {
         memory::turns::begin_turn(&self.cfg, &sid, asked);
         // Written before this returns, so a Stop right after is sent after the prompt.
         let answer = acp.session(&sid).prompt(prompt).await?;
+        if std::mem::take(&mut self.relay.handing_off) {
+            self.handed_off(true);
+        }
         if !self.turn_memory_revision.is_empty()
             && let Err(error) =
                 memory::mark_announced(&self.hub.store, self.cfg.owner(), &sid, &self.turn_memory_revision)
@@ -367,7 +378,7 @@ impl Actor {
         self.close_attempt(stopped || done.is_err());
         let mut final_text = None;
         let routine = self.active_routine.is_some();
-        let grouped = self.active_group.is_some() || routine;
+        let grouped = self.active_group.is_some() || routine || self.active_workflow.is_some();
         let delegated = self.active_request.is_some();
         let sent = std::mem::take(&mut self.sent);
         let reacted = std::mem::take(&mut self.reacted);
@@ -441,6 +452,25 @@ impl Actor {
         } else {
             final_text.clone().filter(|s| !s.trim().is_empty()).ok_or_else(no_reply::no_text)
         };
+        if let Some(step) = self.active_workflow.clone() {
+            let timed_out = self.routine_timed_out;
+            let stopped_step = !timed_out && (stopped || self.stop_requested);
+            let failed_step = timed_out || (!stopped_step && (failed || stop_reason != "end_turn"));
+            let output = (!stopped_step && !failed_step).then(|| final_text.clone()).flatten();
+            let error = if timed_out {
+                Some("This step took too long".into())
+            } else {
+                failed_step.then(|| format!("The agent didn't finish ({stop_reason})"))
+            };
+            self.routine_deadline = None;
+            self.routine_timed_out = false;
+            self.active_workflow = None;
+            let keep = self.hub.workflows.finish(&self.hub, &step, output, error, stopped_step);
+            if !keep {
+                let slot = crate::workflows::session_slot(&step);
+                self.set_session(Some(&slot), None);
+            }
+        }
         if routine {
             let (status, detail) = if self.routine_timed_out {
                 (crate::routines::Status::Failed, Some(crate::routines::TIMED_OUT.into()))
@@ -529,7 +559,7 @@ impl Actor {
                 (AlertKind::Done, _) => "Finished.".into(),
                 _ => "The agent didn't finish.".into(),
             });
-            push::notify(&self.hub, &self.cfg, None, &self.cfg.name, &body, kind);
+            push::notify(&self.hub, &self.cfg, None, &self.cfg.name, &body, kind, None);
         }
     }
 }
@@ -605,7 +635,7 @@ impl Actor {
 
     /// What started the turn that is starting or running. A thread's turn is what its task came from.
     pub(super) fn source(&self) -> TurnSource {
-        if self.in_routine() {
+        if self.in_routine() || self.active_workflow.is_some() {
             TurnSource::Routine
         } else if self.active_group.is_some() {
             TurnSource::Group

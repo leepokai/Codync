@@ -306,7 +306,9 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
             } else if e.data["agentSwitch"].is_object() {
                 // Another agent took over (or the bot's own came back): `o` shows what it was told.
                 let hint = if unfoldable(e).is_some() { " · o shows what it carried" } else { "" };
-                format!("↪ {}{hint}", e.notice_text())
+                // One the user made (another agent or login profile) says whether its handoff is still pending.
+                let mark = if e.data["agentSwitch"]["manual"] == true { "⇄" } else { "↪" };
+                format!("{mark} {}{hint}", e.notice_text())
             } else if e.call().is_some() {
                 // A voice call's line: its title and length; `o` shows the conversation.
                 format!("{} · o shows the call", e.notice_text())

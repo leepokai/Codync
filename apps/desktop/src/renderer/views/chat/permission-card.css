@@ -1,46 +1,116 @@
 /* The approval card in the chat, and the command and diff boxes it shares with the trace. */
 .permission-card {
   width: fit-content;
+  min-width: min(100%, 300px);
   max-width: min(100%, 420px);
-  padding: 16px;
+  padding: 14px;
   background: var(--bubble-agent);
   border-radius: var(--radius-xl);
 }
-.permission-card-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--warning);
+/* A settled approval, or several that ended alike: one quiet line, its symbol, name, source and ending; a click opens
+   it (the card, or the run's own lines). */
+.request-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* The hover fill hugs the line's words, not the whole column. */
+  width: fit-content;
+  max-width: calc(100% + 16px);
+  min-height: 28px;
+  margin-inline: -8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-s);
+  text-align: start;
+  transition: background-color var(--hover);
+}
+.request-line:hover {
+  background: var(--field);
+}
+.request-line > * {
+  flex: none;
+}
+.request-line > .truncate {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* How it ended, right after its name, the chevron beside it (never pushed to the far end). */
+.request-line-end {
+  padding-left: 4px;
+}
+/* The run's own lines, under its line and tight together, each as wide as the run. */
+.request-run-list {
+  padding: 2px 0 0 20px;
+}
+.request-run-list .chat-row,
+.request-run-list .chat-row.group-start {
+  padding-top: 0;
+}
+/* Under a run its lines sit as a list: one short line each. */
+.request-run-list .request-line {
+  min-height: 24px;
+  padding-block: 2px;
+}
+.request-run-list .agent-inset {
+  padding-right: 0;
 }
 .permission-card-title {
   overflow-wrap: anywhere;
 }
-.permission-card-details {
-  padding-top: 6px;
-}
-.permission-card-options {
-  background: var(--background);
-  border-radius: 14px;
+/* The approval card, in the choice card's form: the question, where it runs with Details, the request, the answers. */
+/* The request, quoted in a well under the question, as the choice card's question is never boxed. */
+.approval-card .permission-card-title.selectable {
   margin-top: 4px;
+  padding: 8px 10px;
+  line-height: 1.45;
+  border-radius: var(--radius-s);
+  background: var(--field);
 }
-.permission-option {
-  display: flex;
+.approval-card-meta {
+  min-width: 0;
+}
+.approval-card .permission-card-title {
+  overflow-wrap: anywhere;
+}
+/* A request's arguments: name and value per row, the names in one column. */
+.param-rows {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 4px;
+  margin: 0;
+}
+.param-row {
+  display: contents;
+}
+.param-row-name {
+  max-width: 140px;
+}
+.param-row-value {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.approval-card-details {
+  flex: none;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 46px;
-  padding: 0 14px;
+  gap: 4px;
+  margin: -3px -6px;
+  padding: 3px 6px;
+  border-radius: var(--radius-xs);
+  transition: background-color var(--hover);
 }
-/* The other answers while one is on its way. */
-.permission-option.dimmed {
-  opacity: 0.4;
+.approval-card-details:hover {
+  background: rgba(var(--text-rgb), 0.06);
 }
-.permission-option-label {
-  flex: 1;
+.approval-card-details:focus:not(:focus-visible),
+.request-line:focus:not(:focus-visible) {
+  outline: none;
 }
 
 /* A choice card: the question, a numbered row per option and one for the user's own words, then what was picked. */
-.permission-card.decision-card {
+/* The approval card has the same form and width. */
+.permission-card.decision-card,
+.permission-card.approval-card {
   width: 100%;
 }
 .decision-card-question {
@@ -131,4 +201,12 @@ button.decision-option:hover:not(:disabled),
 /* Under a message a thread put in the chat (ThreadLine): which task it comes from. */
 .message > .thread-line {
   padding: 3px 2px 0;
+}
+/* The run's line says how they all ended. */
+.request-run-list .request-line-end {
+  display: none;
+}
+/* What a settled request asked with, under its line, where its name starts. */
+.request-detail {
+  padding: 2px 0 6px 20px;
 }

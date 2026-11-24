@@ -18,12 +18,16 @@ pub fn of_message(store: &Store, skills: &[String], root: &Path, text: &str, att
 
 /// What a user message `e` in `bot`'s own chat asks the agent, led by its id, which `send_message`'s `reply_to` quotes.
 /// An agent's own `/command` goes without the id: it only runs while it starts the prompt. So does what the host
-/// wrote (a task's brief): the user never sees it, so there is nothing to quote.
+/// wrote (a task's brief): the user never sees it, so there is nothing to quote. An agent on its own
+/// (`BotConfig::plain`) has no `send_message`: it hears the words alone.
 pub fn of_entry(hub: &Hub, bot: &BotConfig, e: &Entry) -> String {
     let data = &e.data;
     let text = data["text"].as_str().unwrap_or_default();
     let attachments = data["attachments"].as_array().map_or(&[][..], Vec::as_slice);
     let asked = of_message(&hub.store, &bot.skills, &uploads::root(bot), text, attachments);
+    if bot.plain {
+        return asked;
+    }
     // What a bot's chat passed on to its task's thread (`tell_task`) says so to the thread.
     let asked = if data["relay"] == true { crate::chat::work::relayed(&asked) } else { asked };
     let id = (!asked.starts_with('/') && data["from"] != "host").then(|| format!("[Codync: message {}]", e.id));

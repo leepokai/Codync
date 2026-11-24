@@ -10,16 +10,17 @@ import { useTr } from '../../lib/use-language'
 import { refKey, type RosterItem } from '../../store/app-model'
 import { analytics } from '../../store/analytics'
 import { StoreContext, useStore } from '../../store/context'
-import { matchBots } from '../SearchPalette'
-import { AgentModelPicker } from './AgentModelPicker'
+import { matchItems } from '../palette-items'
+import { botItems } from '../search-items'
+import { ModelPicker } from './ModelPicker'
 import { useAgentModels, type AgentModels } from './agent-models'
 import { errorText } from './drafts'
-import { agentChoice } from './Fallbacks'
+import { loginSeats } from './seats'
 import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
-type Selection = { backend: string; model: string | null; modelOptions: Record<string, string> }
+type Selection = { backend: string; loginProfile: string | null; model: string | null; modelOptions: Record<string, string> }
 type Outcome = { ok: boolean; text: string }
 
 /** What the bot is for, plus its computer when the roster spans more than one. */
@@ -153,10 +154,10 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const store = useStore()
   const first = items[0]
   const backends = store.hello?.backends ?? []
-  const initialBackend = typeof first?.bot.backend === 'string' && first.bot.backend !== 'custom'
-    ? first.bot.backend
-    : (backends.find((b) => b.id !== 'custom')?.id ?? 'claude')
-  const [pick, setPick] = useState<Selection>({ backend: initialBackend, model: null, modelOptions: {} })
+  const initialFromBot = typeof first?.bot.backend === 'string' && first.bot.backend !== 'custom'
+  const initialBackend = initialFromBot ? first.bot.backend : (backends.find((b) => b.id !== 'custom')?.id ?? 'claude')
+  const initialLogin = initialFromBot && typeof first.bot.loginProfile === 'string' ? first.bot.loginProfile : null
+  const [pick, setPick] = useState<Selection>({ backend: initialBackend, loginProfile: initialLogin, model: null, modelOptions: {} })
   const [query, setQuery] = useState('')
   const [checked, setChecked] = useState<Set<string>>(() => new Set())
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({})
@@ -165,11 +166,26 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const alive = useRef(true)
   const run = useRef(0)
   useEffect(() => () => { alive.current = false }, [])
-  const models = useAgentModels(pick.backend)
-  // A custom command needs the editor's command field, which a batch apply can't supply; the batch
-  // swap targets the agents the account's computers offer.
-  const agents = backends.map(agentChoice)
-  const shown = matchBots(items, query)
+  const models = useAgentModels(pick.backend, pick.loginProfile)
+  // The same seats every picker shows (loginSeats): each agent and its logins. A custom command
+  // needs the editor's command field, which a batch apply can't supply, so it is not offered.
+  const seats = loginSeats({
+    backends,
+    on: pick,
+    tr,
+    // The editor's own rule (withBackend): a login on the same agent keeps the model, another agent starts fresh.
+    pick: (b, loginProfile) => {
+      run.current++
+      setOutcomes({})
+      setPick((p) => (p.backend === b.id ? { ...p, loginProfile } : { backend: b.id, loginProfile, model: null, modelOptions: {} }))
+    },
+  })
+  // The window search's own match — search-items builds each bot's words, palette-items matches
+  // them — so the manager's filter always agrees with the search on what a query finds.
+  const shown = useMemo(() => {
+    const matched = new Set(matchItems(botItems(items, () => {}), query).map((row) => row.key))
+    return items.filter((item) => matched.has(refKey(item.ref)))
+  }, [items, query])
   const shownKeys = allKeys(shown)
   const everyChecked = shownKeys.length > 0 && shownKeys.every((key) => checked.has(key))
   const oneComputer = !items.some((item) => item.computer.id !== first?.computer.id)
@@ -193,6 +209,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
     if (!chosen.length || busy.current) return
     const myRun = run.current
     const backend = pick.backend
+    const loginProfile = pick.loginProfile
     const model = pick.model?.trim() || null
     const options = { ...pick.modelOptions }
     busy.current = true
@@ -238,7 +255,8 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
           // profile that doesn't fit it; the custom command is cleared here, as the bot editor's
           // agent change does. The patch sends no fallback list — the host's own fallback tidy may
           // still drop a step that duplicates the new primary agent, as on any agent change.
-          const patch: Record<string, unknown> = { id: row.item.ref.botId, backend, model: model || null, modelOptions: { ...options } }
+          // The seat's login goes with the patch: the agent's default, or the profile the user picked.
+          const patch: Record<string, unknown> = { id: row.item.ref.botId, backend, loginProfile, model: model || null, modelOptions: { ...options } }
           if (backend !== 'custom') patch.command = null
           await row.item.store
             .ready()
@@ -268,14 +286,13 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
 
   return (
     <VStack gap={12} className="model-manager-body">
-      <AgentModelPicker
+      <ModelPicker
+        trigger="row"
         backend={pick.backend}
         models={models}
-        selection={pick.model}
-        onChange={(model, modelOptions) => { run.current++; setOutcomes({}); setPick((p) => ({ ...p, model: model || null, modelOptions })) }}
-        options={pick.modelOptions}
-        agents={agents}
-        onAgentChange={(id) => { run.current++; setOutcomes({}); setPick({ backend: id, model: null, modelOptions: {} }) }}
+        seats={seats}
+        model={{ id: pick.model, options: pick.modelOptions }}
+        set={(m) => { run.current++; setOutcomes({}); setPick((p) => ({ ...p, model: m.id, modelOptions: m.options })) }}
       />
       <div className="palette-field">
         <Icon name="magnifyingglass" size={15} color="var(--secondary)" />

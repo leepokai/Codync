@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { api, appPid, attach, echoBot, openGeneralSettings } from './sandbox.ts'
+import { api, appPid, attach, echoBot } from './sandbox.ts'
 
 // ⌘F and ⌘G are menu accelerators, which keys sent over the DevTools protocol never reach: the specs pick the
 // menu items through System Events instead (macOS). Every unpackaged sandbox app is a process named "Electron",
@@ -121,12 +121,12 @@ test('find in a conversation keeps to the messages, steps through matches and ke
     expect((await current(page))?.message).toContain('needle three')
 
     // A menu or sheet opened over the bar takes Escape first.
-    await page.locator('.sidebar-account').click()
-    await expect(page.locator('.account-panel')).toBeVisible()
+    await page.locator('.sidebar-header').getByRole('button', { name: 'New', exact: true }).click()
+    await expect(page.getByRole('menu')).toBeVisible()
     await page.keyboard.press('Escape')
-    await expect(page.locator('.account-panel')).toHaveCount(0)
+    await expect(page.getByRole('menu')).toHaveCount(0)
     await expect(page.getByRole('search')).toBeVisible()
-    await openGeneralSettings(page)
+    await page.locator('.sidebar-header').getByRole('button', { name: 'Search', exact: true }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog')).toHaveCount(0)

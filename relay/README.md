@@ -17,7 +17,9 @@ openssl rand -base64 32 | npx wrangler secret put TICKET_KEY
 npm run deploy
 ```
 
-It deploys as `codync-relay`. The iOS app points at `SharedStore.relayURL` in `CodyncKit`.
+It deploys as `codync-relay`, served at `https://push.codync.dev` (a custom domain: `*.workers.dev` is blocked in
+mainland China) and still at its `workers.dev` address for older phones. The iPhone and Android apps point at
+`SharedStore.relayURL` in `CodyncKit`; the host sends pushes registered for the `workers.dev` address to the custom domain.
 Rotating `TICKET_KEY` invalidates every ticket; phones re-register on launch.
 
 ## Test

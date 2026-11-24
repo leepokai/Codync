@@ -52,7 +52,7 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         let mode = match b.mode.as_deref() {
             _ if b.auto => "approve all",
             None => "ask",
-            Some(id) => app.mode_name(&b.backend, id),
+            Some(id) => app.mode_name(&b.backend, b.login_profile.as_deref(), id),
         };
         let fast = match (b.fast_mode, b.fast_refusal().is_some()) {
             (true, true) => " · ⚡ refused",

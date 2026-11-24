@@ -73,7 +73,10 @@ class DialogAction(val title: String, val destructive: Boolean = false, val enab
                 }
                 field?.invoke()
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (action in actions()) DialogButton(if (action.verbatim) action.title else tr(action.title), action.destructive, prominent = true, enabled = action.enabled) { dismiss(); action.action() }
+                    for (action in actions()) DialogButton(if (action.verbatim) action.title else tr(action.title), action.destructive, prominent = true, enabled = action.enabled) {
+                        // Still on screen while it fades out: a tap then (after Cancel or Back) runs nothing.
+                        if (isPresented) { dismiss(); action.action() }
+                    }
                     if (cancel != null) DialogButton(tr(cancel), destructive = false, prominent = false) { dismiss() }
                 }
             }

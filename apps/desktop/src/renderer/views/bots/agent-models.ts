@@ -3,6 +3,7 @@ import { useStore } from '../../store/context'
 import type { AgentMode } from '@shared/approvals'
 import { errorText } from './drafts'
 import { trNow } from '../../lib/l10n.ts'
+import { agentModelsRequest, agentModelsScopeKey, normalizeLoginProfile } from './agent-models-query.ts'
 
 /** A model's own setting (effort, fast…) and the values the agent accepts. */
 export interface ModelOption {
@@ -32,8 +33,25 @@ export interface AgentModelsState {
   reload: () => void
 }
 
+/**
+ * A catalog's models as a picker lists them (`options`): the agent's default first, under the id `''`, then the rest,
+ * and `selection` itself where the list lacks it. `value` is the one `selection` shows as, `selected` that model, and
+ * `modelOptions` its own settings.
+ */
+export function modelChoices(catalog: AgentModels | null, selection: string | null | undefined, tr: (text: string) => string) {
+  const agentDefault = catalog?.models.find((m) => m.name.toLowerCase().startsWith('default'))
+  const available = (catalog?.models ?? []).filter((m) => m.id !== agentDefault?.id)
+  const current = catalog?.models.find((m) => m.id === catalog.currentModelId)
+  const value = selection === agentDefault?.id ? '' : (selection ?? '')
+  const selected = catalog?.models.find((m) => m.id === (value || agentDefault?.id || catalog.currentModelId))
+  const modelOptions = value || catalog?.defaultModelOptions ? selected?.options ?? [] : []
+  const options: { id: string; label: string }[] = [{ id: '', label: agentDefault?.name ?? (current ? tr('Default · {name}').replaceAll('{name}', () => current.name) : tr('Default')) }, ...available.map((m) => ({ id: m.id, label: m.name }))]
+  if (value && !available.some((m) => m.id === value)) options.push({ id: value, label: value })
+  return { value, selected, modelOptions, options }
+}
+
 /** Models come from the selected computer's agent, never a bundled provider list. */
-export function useAgentModels(backend: string): AgentModelsState {
+export function useAgentModels(backend: string, loginProfile?: string | null): AgentModelsState {
   const store = useStore()
   const online = store.connection.kind === 'online'
   const [catalog, setCatalog] = useState<AgentModels | null>(null)
@@ -42,9 +60,10 @@ export function useAgentModels(backend: string): AgentModelsState {
   const [failure, setFailure] = useState<string | null>(null)
   const [retry, setRetry] = useState(0)
   const custom = backend === 'custom'
+  const profile = normalizeLoginProfile(loginProfile)
 
   useEffect(() => {
-    const key = `${store.computer.id}/${backend}`
+    const key = agentModelsScopeKey(store.computer.id, backend, profile)
     if (scope.current !== key) {
       setCatalog(null)
       scope.current = key
@@ -60,14 +79,14 @@ export function useAgentModels(backend: string): AgentModelsState {
     let cancelled = false
     setLoading(true)
     client
-      .call<AgentModels>('agentModels', { backend }, 300_000)
+      .call<AgentModels>('agentModels', agentModelsRequest(backend, profile), 300_000)
       .then((res) => !cancelled && setCatalog(res))
       .catch((e: unknown) => !cancelled && setFailure(`Couldn't load models: ${errorText(e)}`))
       .finally(() => !cancelled && setLoading(false))
     return () => {
       cancelled = true
     }
-  }, [store.computer.id, store.client, backend, online, retry, custom])
+  }, [store.computer.id, store.client, backend, profile, online, retry, custom])
 
   return { catalog, loading, failure, reload: () => setRetry((r) => r + 1) }
 }

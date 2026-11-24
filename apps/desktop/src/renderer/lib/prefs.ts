@@ -1,3 +1,5 @@
+import type { ThreadGrouping } from '@shared/work'
+import { DEFAULT_PANEL, type PanelLayout } from '../../shared/panel-layout.ts'
 import type { AppLanguage } from './l10n'
 import { useSyncExternalStore } from 'react'
 import type { StarAsk } from './star-ask'
@@ -55,6 +57,11 @@ export function usePref<T>(p: Pref<T>): [T, (v: T) => void] {
   return [value, p.set]
 }
 
+/** `list` with `value` added, or taken out when it's there: a fold toggled. */
+export function toggled(list: string[], value: string) {
+  return list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
+}
+
 export const TEXT_SIZES = [11, 12, 13, 14, 15, 16, 18]
 export const DEFAULT_TEXT_SIZE = 12
 
@@ -65,15 +72,37 @@ export function stepTextSize(size: number, up: boolean) {
 
 export const prefs = {
   textSize: pref('conversationFontSize', DEFAULT_TEXT_SIZE),
-  sidebarCompact: pref('sidebarCompact', false),
+  /** How the Bots list and the Threads list are laid out: under their computer's heading, and by status. */
+  botsByComputer: pref('botsByComputer', true),
+  botsByStatus: pref('botsByStatus', false),
+  /** How the Threads list groups what doesn't need the user: by folder (and routine), by bot, or not at all. */
+  threadsGroup: pref<ThreadGrouping>('threadsGroup', 'folder'),
+  /** How the Threads list orders the rows of each group, beside how it groups them. */
+  threadsByStatus: pref('threadsByStatus', false),
+  threadsByActivity: pref('threadsByActivity', false),
+  /** The list beside the rail (the bots, the threads) is folded away. */
+  listHidden: pref('listHidden', false),
   sidebarWidth: pref('desktopSidebarWidth', 266),
   detailsPanelWidth: pref('detailsPanelWidth', 400),
+  /** The chat a workflow is built in shows beside the canvas (WorkflowChat): open until closed. */
+  workflowChatOpen: pref('workflowChatOpen', true),
+  /** The panel beside a conversation: its panes, their tabs and the one each shows, the same for every bot. Read
+   * through `panelLayout`, which makes what is stored safe to draw. */
+  panelLayout: pref<PanelLayout>('panelLayout', DEFAULT_PANEL),
   hiddenComputers: pref('hiddenComputers', ''),
   computerOrder: pref<string[]>('computerOrder', []),
   collapsedComputers: pref<string[]>('collapsedComputerSections', []),
   /** Folded roster sections, by name: on this device only. */
   rosterSectionOrder: pref<Record<string, string[]>>('rosterSectionOrder', {}),
   collapsedRosterSections: pref<string[]>('collapsedRosterSections', []),
+  /** Folded groups of the Threads list, by the group's key: on this device only. */
+  foldedThreadSections: pref<string[]>('foldedThreadSections', []),
+  /** Folded computers of the Workflows list, by computer id: on this device only. */
+  foldedWorkflowComputers: pref<string[]>('foldedWorkflowComputers', []),
+  /** The workflow canvas's bottom bars (zoom and tools) are folded into one button: on this device only. */
+  workflowToolsFolded: pref('workflowToolsFolded', false),
+  /** Folded sections of a settings form (a bot's), by the section's key: on this device only. */
+  foldedCardSections: pref<string[]>('foldedCardSections', []),
   usageIconStyle: pref<'character' | 'original'>('usageIconStyle', 'character'),
   /** The roster marks each bot with its agent's logo while the bots run more than one agent. */
   agentLogos: pref('showAgentLogos', true),
@@ -92,7 +121,6 @@ export const prefs = {
   thinkingDetails: pref('showThinkingDetails', false),
   /** The voice input shortcut's tap after its double tap: sends, or stops and keeps the words in the box. */
   voiceShortcutTap: pref<VoiceTap>('voiceShortcutTap', 'send'),
-  extensionsMovedTipSeen: pref('extensionsMovedTipSeen', false),
   /** The version this device last opened on, for What's new; `null` before it ever recorded one. */
   whatsNewSeen: pref<string | null>('whatsNewSeen', null),
 }

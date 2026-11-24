@@ -3,6 +3,7 @@ import { Icon } from './Icon'
 import { IconButtonBase, usePresence } from './Overlay'
 import { AnchoredMenu, type MenuItem } from './Menu'
 import { HStack, Spacer, VStack } from './Stack'
+import { prefs, usePref } from '../lib/prefs'
 import { useTr } from '../lib/use-language'
 import { Text } from './Text'
 import './controls.css'
@@ -12,17 +13,19 @@ import './controls.css'
 export const IconButton = IconButtonBase
 
 /** The filled call-to-action (`.primary`) or the quieter filled one (`.secondary`). */
-export function Button({ kind = 'primary', children, onClick, disabled, className, title }: {
+export function Button({ kind = 'primary', children, onClick, disabled, className, title, label }: {
   kind?: 'primary' | 'secondary' | 'destructive'
   children: ReactNode
   onClick?: () => void
   disabled?: boolean
   className?: string
   title?: string
+  /** The accessible name, for a button whose text can be hidden. */
+  label?: string
 }) {
   const tr = useTr()
   return (
-    <button className={`styled-button ${kind} ${className ?? ''}`} onClick={onClick} disabled={disabled} title={title ? tr(title) : title}>
+    <button className={`styled-button ${kind} ${className ?? ''}`} onClick={onClick} disabled={disabled} title={title ? tr(title) : title} aria-label={label ? tr(label) : label}>
       {typeof children === 'string' ? tr(children) : children}
     </button>
   )
@@ -92,7 +95,7 @@ export function Stepper({ label, value, min, max, onChange }: { label: string; v
 }
 
 /** A button that opens a Codync menu. */
-export function DropdownMenu({ items, children, className, style, title, disabled }: { items: () => MenuItem[]; children: ReactNode; className?: string; style?: CSSProperties; title?: string; disabled?: boolean }) {
+export function DropdownMenu({ items, children, className, style, title, disabled, search }: { items: () => MenuItem[]; children: ReactNode; className?: string; style?: CSSProperties; title?: string; disabled?: boolean; search?: string }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLButtonElement>(null)
   return (
@@ -100,7 +103,7 @@ export function DropdownMenu({ items, children, className, style, title, disable
       <button ref={ref} className={className} style={style} title={title} disabled={disabled} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         {children}
       </button>
-      <AnchoredMenu open={open} onClose={() => setOpen(false)} anchor={ref} items={items} />
+      <AnchoredMenu open={open} onClose={() => setOpen(false)} anchor={ref} items={items} search={search} />
     </>
   )
 }
@@ -237,20 +240,16 @@ export function CardForm({ children }: { children: ReactNode }) {
  * A titled group of rows (ChatGPT's desktop settings): a small bold heading over a filled,
  * rounded group whose rows are split by inset hairlines.
  */
-export function CardSection({ title, footer, accessory, children }: { title?: ReactNode; footer?: ReactNode; accessory?: ReactNode; children: ReactNode }) {
+export function CardSection({ title, footer, accessory, fold, children }: { title?: ReactNode; footer?: ReactNode; accessory?: ReactNode; fold?: string; children: ReactNode }) {
   const tr = useTr()
+  const [foldedKeys, setFoldedKeys] = usePref(prefs.foldedCardSections)
   const rows = Children.toArray(children)
   const heading = typeof title === 'string' ? tr(title) : title
   const note = typeof footer === 'string' ? tr(footer) : footer
-  return (
-    <section className="card-section">
-      {heading || accessory ? (
-        <div className="card-section-title">
-          {heading ? <Text as="h3" size="body" weight="semibold" tone="text">{heading}</Text> : null}
-          <Spacer />
-          {accessory}
-        </div>
-      ) : null}
+  const folded = !!fold && foldedKeys.includes(fold)
+  const toggle = () => fold && setFoldedKeys(folded ? foldedKeys.filter((k) => k !== fold) : [...foldedKeys, fold])
+  const body = (
+    <>
       <div className="card-section-rows">
         {rows.map((row, i) => (
           <Fragment key={i}>
@@ -260,6 +259,27 @@ export function CardSection({ title, footer, accessory, children }: { title?: Re
         ))}
       </div>
       {note ? <div className="card-section-footer">{typeof footer === 'string' ? <Text size="caption" tone="secondary">{note}</Text> : footer}</div> : null}
+    </>
+  )
+  return (
+    <section className={folded ? 'card-section folded' : 'card-section'}>
+      {heading || accessory ? (
+        <div className="card-section-title">
+          {fold ? (
+            <button className="card-section-fold" aria-expanded={!folded} onClick={toggle}>
+              <Text as="h3" size="body" weight="semibold" tone="text">{heading}</Text>
+              <Icon name="chevron.down" size={9} weight="semibold" color="var(--tertiary)" className="card-section-chevron" />
+            </button>
+          ) : heading ? <Text as="h3" size="body" weight="semibold" tone="text">{heading}</Text> : null}
+          <Spacer />
+          {folded ? null : accessory}
+        </div>
+      ) : null}
+      {fold ? (
+        <div className="card-section-body" inert={folded} aria-hidden={folded}>
+          <div className="card-section-inner">{body}</div>
+        </div>
+      ) : body}
     </section>
   )
 }

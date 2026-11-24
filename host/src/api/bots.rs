@@ -147,6 +147,25 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             work::refuse_in_thread(hub, bot, name)?;
             crate::chat::manage::call(hub, bot, name, &b["arguments"]).await?
         }
+        // A thread the user starts themselves: its first message, as a task of the bot's box, or with no `botId`
+        // of the computer's box of threads without a bot, on the agent its setup names.
+        "startThread" => {
+            let text = str_arg(&b, "text")?.to_owned();
+            // One that can't be read is refused: a thread never starts on other approvals than the user chose.
+            let setup: work::Setup = match &b["setup"] {
+                Value::Null => work::Setup::default(),
+                setup => serde_json::from_value(setup.clone()).context("a thread's setup")?,
+            };
+            let bot = match b["botId"].as_str() {
+                Some(bot) => bot.to_owned(),
+                None if setup.backend.is_some() => work::plain::owner(hub).await?,
+                None => bail!("a thread without a bot names its agent"),
+            };
+            let (hub, owner) = (hub.clone(), bot.clone());
+            let id = tokio::task::spawn_blocking(move || work::add_thread(&hub, &owner, &text, setup)).await??;
+            // The box a thread without a bot went to is named, so the app can show it.
+            json!({"botId": bot, "taskId": id})
+        }
         // A thread's transcript, for its details: no chat an app holds has it.
         "threadEntries" => work::entries(hub, str_arg(&b, "botId")?, str_arg(&b, "threadId")?, 500)?,
         "history" => {
@@ -197,6 +216,14 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let hub = hub.clone();
             tokio::task::spawn_blocking(move || hub.rename_section(&from, to.as_deref())).await??;
             json!({})
+        }
+        // A terminal in the bot's folder: the user's own shell there (`termInput` / `termResize` / `termClose` and
+        // `/term/<id>` as for a setup terminal). Opening it again while it runs returns the same one.
+        "botTerminal" => {
+            let bot_id = str_arg(&b, "botId")?;
+            let cfg = hub.store.bot(bot_id)?.filter(|row| !row.deleted).map(|row| row.config).context("unknown bot")?;
+            let (cols, rows) = super::host::term_size(&b);
+            json!({"term": hub.terms.shell(bot_id, std::path::Path::new(&cfg.cwd), cols, rows)?})
         }
         // The apps name a dev server, and never send a command.
         "devServerStop" => {

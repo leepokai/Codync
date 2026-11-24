@@ -21,7 +21,7 @@ two hosts on one machine (two users) can be told apart. `setComputerName {name}`
 and cut to the cloud's 64 UTF-16 units; empty goes back to the hostname. Connected apps hear a `name` event, the
 others read it in their next `hello`, and the host registers again so the account's computer list has it. A cloud
 computer is named in Codync Cloud instead (the call refuses there). iPhone and Android: **Rename…** in the
-computer card's long-press menu in Computer management; desktop: the pencil on its card in Settings › Computers;
+computer card's long-press menu in Computer management; desktop: the pencil on its card on the Computers page;
 terminal UI: **Computer name** in the command palette.
 
 ## Local persistence
@@ -65,8 +65,8 @@ they return.
 user's, or an agent's finished reply, so conversations and routine runs alike) gives its chat a
 position above every other bot (`Hub::order_on_message`). Clients sort as before, so the bot rises to
 the top of its band and section. Dragging still works; the bot's next message moves it again. Phones
-show the switch in the computer's card (Bots tab connection status › Manage computers), the desktop app in the computer's
-settings, the TUI in the command palette.
+show the switch in the computer's card (Bots tab connection status › Manage computers), the desktop app as **Sort by
+last active** in the Bots list's filter menu (one choice for the computers shown), the TUI in the command palette.
 
 A bot or group chat can be in one section, a name the user picks (`section`, set with `updateBot`;
 `renameSection` renames, merges into another section's name, or removes one; `host/src/hub/sections.rs`).

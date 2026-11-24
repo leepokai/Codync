@@ -24,7 +24,7 @@ import { canReplyToPart, useSelectedPart } from './selected-part'
 import { DecisionCard } from './DecisionCard'
 import { PermissionCard, ThreadLine } from './PermissionCard'
 import { ConnectionRequestCard } from '../marketplace/ConnectionRequestCard'
-import { AgentSwitchNotice, HandoffNotice } from './HandoffNotice'
+import { AgentSwitchNotice, HandoffNotice, UserSwitchNotice } from './HandoffNotice'
 
 export function reactionPick(store: BotStore, entry: Entry): ReactionPick {
   return { emoji: QUICK_REACTIONS, chosen: entry.data.reactions ?? [], toggle: (e) => store.react(entry, e) }
@@ -76,7 +76,10 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
       if (entry.kind === 'notice' && entry.data.decision) return <div className="chat-row group-start"><LiveDecision entry={entry} /></div>
       if (entry.data.connectionRequest) return <div className="chat-row group-start"><ConnectionRequestCard entry={entry} /></div>
       if (entry.data.handoff) return <div className="chat-row notice"><HandoffNotice entry={entry} card={entry.data.handoff} /></div>
-      if (entry.data.agentSwitch) return <div className="chat-row notice"><AgentSwitchNotice entry={entry} carried={entry.data.agentSwitch.carried} /></div>
+      if (entry.data.agentSwitch) {
+        const change = entry.data.agentSwitch
+        return <div className="chat-row notice">{change.manual ? <UserSwitchNotice change={change} /> : <AgentSwitchNotice entry={entry} carried={change.carried} />}</div>
+      }
       return <div className="chat-row notice"><NoticeRow entry={entry} addFallback={entry.data.addFallback && openAgent ? () => openAgent(entry.data.author ?? entry.botId) : undefined} /></div>
   }
 })
@@ -84,7 +87,9 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
 /** Follows the store: the card shows a spinner while its answer is on its way. */
 function LivePermission({ entry }: { entry: Entry }) {
   const store = useLiveStore()
-  return <PermissionCard entry={entry} hostName={store.hostName} answering={store.answering.get(entry.id) ?? null} respond={(o) => store.respond(entry, o)} />
+  const call = entry.data.toolCallId
+  const result = call && entry.data.status !== 'pending' ? store.allEntries(entry.botId).find((e) => e.kind === 'tool' && e.data.toolCallId === call) : undefined
+  return <PermissionCard entry={entry} hostName={store.hostName} answering={store.answering.get(entry.id) ?? null} respond={(o) => store.respond(entry, o)} result={result?.data} />
 }
 
 /** The user's press on a choice card, or their own words, on its way to the computer. */

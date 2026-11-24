@@ -134,6 +134,7 @@
     "event:entry(permission).entry.data.selected": "string",
     "event:entry(permission).entry.data.status": "string",
     "event:entry(permission).entry.data.title": "string",
+    "event:entry(permission).entry.data.toolCallId": "string",
     "event:entry(permission).entry.data.toolKind": "string",
     "event:entry(permission).entry.id": "string",
     "event:entry(permission).entry.kind": "string",
@@ -228,6 +229,7 @@
     "event:hello.network.networks": "array",
     "event:hello.rev": "number",
     "event:hello.type": "string",
+    "event:hello.workflows": "bool",
     "event:icons": "object",
     "event:icons.icons": "object",
     "event:icons.iconsRevision": "number",
@@ -254,6 +256,11 @@
     "hello.rev": "number",
     "hello.schema": "number",
     "hello.signKey": "string",
-    "hello.version": "string"
+    "hello.startThread": "bool",
+    "hello.threadLogins": "bool",
+    "hello.threadsWithoutBot": "bool",
+    "hello.version": "string",
+    "hello.workflowThreads": "bool",
+    "hello.workflows": "bool"
   }
 }

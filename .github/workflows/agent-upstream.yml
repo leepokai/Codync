@@ -1,8 +1,9 @@
 # The upstream check (docs/guides/test-stack.md#upstream-agents): every computer running Codync takes an adapter's
-# new ACP registry version within a day, so each day this runs one turn of each adapter in
-# tools/agent-upstream/accepted.json whose registry version moved, through a real host and a scripted model. A
-# failing scheduled run opens an issue labeled agent-upstream (one at a time; later failures comment on it), which
-# starts the "Codync upstream agent fix" Claude routine. Pull requests that change the check run every adapter.
+# new ACP registry version within a day, so each day this runs a scripted turn (a shell command, its permission card,
+# its result) of each adapter in tools/agent-upstream/accepted.json whose registry version moved, and of each agent
+# Codync runs from its own CLI, through a real host and a scripted model. A failing scheduled run opens an issue
+# labeled agent-upstream (one at a time; later failures comment on it), which starts the "Codync upstream agent fix"
+# Claude routine. Pull requests that change the check or the host's agent code run every agent.
 name: agent-upstream
 
 on:
@@ -10,7 +11,7 @@ on:
     - cron: "23 5 * * *"
   workflow_dispatch:
   pull_request:
-    paths: ["tools/agent-upstream/**", ".github/workflows/agent-upstream.yml"]
+    paths: ["tools/agent-upstream/**", ".github/workflows/agent-upstream.yml", "host/crates/agent/**", "host/src/agent/**"]
 
 permissions:
   contents: read
@@ -22,7 +23,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,10 +43,16 @@ jobs:
           node-version: "24"
       - working-directory: tools/agent-upstream
         run: npm ci
-      # A harness the host knows by name runs only when its CLI is on the computer: the latest of each, as a user
-      # installing it today gets.
+      # A harness the host knows by name runs only when its CLI is on the computer: the latest of each, installed the
+      # way the host's catalog (host/crates/agent/src/backends/catalog.rs) tells a user to.
       - name: Install the agents' CLIs
-        run: npm install -g @anthropic-ai/claude-code @openai/codex
+        run: |
+          npm install -g @anthropic-ai/claude-code @openai/codex @github/copilot @earendil-works/pi-coding-agent @deepseek-ai/dsh @xai-official/grok
+          curl -fsSL https://omp.sh/install | sh -s -- --binary
+          curl -fsSL https://opencode.ai/install | bash
+          curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash < /dev/null
+          curl -fsSL https://antigravity.google/cli/install.sh | bash
+          for dir in "$HOME/.local/bin" "$HOME/.opencode/bin" "$HOME/.hermes/bin"; do echo "$dir" >> "$GITHUB_PATH"; done
       - name: One turn on each new adapter
         working-directory: tools/agent-upstream
         run: node check.mjs "$GITHUB_WORKSPACE/host/target/debug/codync-host" ${{ github.event_name != 'schedule' && '--all' || '' }}

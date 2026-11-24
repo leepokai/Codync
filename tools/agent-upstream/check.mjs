@@ -1,8 +1,12 @@
 // The upstream check: each adapter in accepted.json whose ACP registry version moved (every one with --all) runs one
-// turn through a real Codync host, with a scripted model (aimock) standing in for the provider: no login, no tokens.
-// The host downloads the registry's latest build itself, as every computer running Codync does within a day.
+// scripted turn through a real Codync host, with aimock standing in for the provider: no login, no tokens. The host
+// downloads the registry's latest build itself, as every computer running Codync does within a day.
 //
-//   node check.mjs <codync-host binary> [--all]
+// The turn (scenario.mjs) has the agent run a shell command that writes a file, in a bot on the agent's asking mode,
+// and passes when the transcript shows the tool call, its permission card was answered, the file was written and the
+// reply came back, and no agent process outlives the stopped host.
+//
+//   node check.mjs <codync-host binary> [--all] [--only <backend>]
 //
 // Exits 1 when an adapter fails; with GITHUB_STEP_SUMMARY set, writes a table of what ran.
 
@@ -12,33 +16,38 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFile
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { pointAtMock } from "./agents.mjs";
+import { PROMPT, respond } from "./scenario.mjs";
 
 const run = promisify(execFile);
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const REGISTRY = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
-const TURN_TIMEOUT = 8 * 60_000;
+const TURN_TIMEOUT_SECONDS = 300;
 
 const [hostBin, ...flags] = process.argv.slice(2);
-if (!hostBin) throw new Error("usage: node check.mjs <codync-host> [--all]");
+if (!hostBin) throw new Error("usage: node check.mjs <codync-host> [--all] [--only <backend>]");
 const all = flags.includes("--all");
+const only = flags.includes("--only") ? flags[flags.indexOf("--only") + 1] : null;
 const accepted = JSON.parse(readFileSync(new URL("accepted.json", import.meta.url), "utf8")).agents;
 const registry = await (await fetch(REGISTRY, { signal: AbortSignal.timeout(30_000) })).json();
 const latest = Object.fromEntries(registry.agents.map((agent) => [agent.id, agent.version]));
 
 const rows = [];
-for (const [id, { backend, version }] of Object.entries(accepted)) {
-  const now = latest[id];
+for (const [id, { backend, version = "-", mode, registry: listed = true }] of Object.entries(accepted)) {
+  if (only && only !== backend) continue;
+  // An agent outside the ACP registry runs on its installed CLI: no version to follow, so it runs every time.
+  const now = listed ? latest[id] : "installed";
   if (!now) {
     rows.push({ id, version, now: "missing", result: "failed", detail: "no longer in the ACP registry" });
     continue;
   }
-  if (!all && now === version) {
+  if (listed && !all && !only && now === version) {
     rows.push({ id, version, now, result: "unchanged" });
     continue;
   }
-  console.log(`${id} ${version} -> ${now}: one turn on ${backend}`);
+  console.log(`${id} ${version} -> ${now}: the scripted turn on ${backend}`);
   try {
-    const reply = await oneTurn(backend);
-    rows.push({ id, version, now, result: "passed", detail: reply });
+    rows.push({ id, version, now, result: "passed", detail: await scriptedTurn(backend, mode) });
   } catch (error) {
     rows.push({ id, version, now, result: "failed", detail: error.message });
   }
@@ -57,24 +66,19 @@ if (process.env.GITHUB_STEP_SUMMARY) {
 }
 if (rows.some((r) => r.result === "failed")) process.exitCode = 1;
 
-/** One turn of a new bot on `backend`, in a host of its own with a home of its own, against a model that answers "ok". */
-async function oneTurn(backend) {
-  const mock = new LLMock({ port: 0 });
-  // Every request, whatever its shape (titles, tool results), gets the same answer: an unanswered one is retried.
-  mock.on({ predicate: () => true }, { content: "ok" });
+/** The scripted turn of a new bot on `backend` in `mode`, in a host of its own with a home of its own. */
+async function scriptedTurn(backend, mode) {
+  const mock = new LLMock({ port: 0, responsesTools: "extended" });
+  mock.on({ predicate: () => true }, respond);
   await mock.start();
   const root = mkdtempSync(path.join(tmpdir(), "cu-"));
-  const [home, data, codexHome, folder] = ["h", "d", "x", "w"].map((dir) => path.join(root, dir));
-  for (const dir of [home, data, codexHome, folder]) mkdirSync(dir, { recursive: true });
-  // Codex signed in to ChatGPT ignores OPENAI_BASE_URL: a provider of its own, on an API key, points it at the mock.
-  writeFileSync(path.join(codexHome, "config.toml"), [
-    'model = "gpt-5.1"', 'model_provider = "aimock"', 'preferred_auth_method = "apikey"', "",
-    "[model_providers.aimock]", 'name = "aimock"', `base_url = "${mock.url}/v1"`, 'env_key = "OPENAI_API_KEY"', 'wire_api = "responses"', "",
-  ].join("\n"));
+  const [home, data, folder] = ["h", "d", "w"].map((dir) => path.join(root, dir));
+  for (const dir of [home, data, folder]) mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(folder, "notes.txt"), "alpha\n");
   const port = String(19500 + Math.floor(Math.random() * 400));
   const env = {
-    ...process.env, HOME: home, CODYNC_HOME: data, CODYNC_CLOUD: "off", CODYNC_ANALYTICS_ENV: "dev",
-    ANTHROPIC_BASE_URL: mock.url, ANTHROPIC_API_KEY: "aimock", CODEX_HOME: codexHome, OPENAI_API_KEY: "aimock",
+    ...withoutCredentials(process.env), HOME: home, CODYNC_HOME: data, CODYNC_CLOUD: "off", CODYNC_ANALYTICS_ENV: "dev",
+    ...pointAtMock(backend, { url: mock.url, home }),
   };
   const host = spawn(hostBin, ["serve", "--bind", "127.0.0.1", "--port", port], { env, stdio: ["ignore", "pipe", "pipe"] });
   let log = "";
@@ -97,20 +101,107 @@ async function oneTurn(backend) {
       const hello = await api("hello").catch(() => null);
       if (hello?.backends?.find((b) => b.id === backend)?.available) break;
       if (i > 90) throw new Error(`${backend} never became available`);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await sleep(2000);
     }
-    const bot = await api("createBot", { name: "Upstream check", backend, folder });
-    const sent = await run(hostBin, ["send", "--port", port, "--bot", bot.id ?? bot.bot?.id, "--wait", "--json", "Reply with exactly the word: ok"], { env, timeout: TURN_TIMEOUT });
-    const answer = JSON.parse(sent.stdout);
-    if (answer.status !== "completed" || !/\bok\s*$/u.test(answer.reply?.split("\n\n>")[0] ?? "")) {
-      throw new Error(`the turn ended ${answer.status} (${answer.stopReason}): ${answer.reply}`);
-    }
+    const { bot } = await api("createBot", { name: "Upstream check", backend, cwd: folder, ...(mode ? { mode } : {}) });
+    const approving = approveCards(api, bot.id);
+    const sent = await run(hostBin, ["send", "--port", port, "--bot", bot.id, "--wait", "--timeout", String(TURN_TIMEOUT_SECONDS), "--json", PROMPT], { env })
+      .catch((error) => error);
+    approving.stop();
+    const answer = JSON.parse(sent.stdout || "{}");
+    const { entries } = await api("history", { botId: bot.id });
+    const failed = verdict({ answer, entries, file: readFileSync(path.join(folder, "notes.txt"), "utf8"), cards: await approving.done });
+    if (failed) throw new Error(failed);
+    const leftover = await stopHost(host);
+    if (leftover) throw new Error(`agent processes outlived the host: ${leftover}`);
     return `${answer.stopReason} in ${Math.round(answer.elapsedSeconds)} s`;
   } catch (error) {
     throw new Error(`${error.message}\n${log.slice(-1500)}`);
   } finally {
     host.kill("SIGTERM");
+    await stopDaemons(home);
     await mock.stop();
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
   }
+}
+
+/** What's missing from a scripted turn, or null when it all happened. */
+function verdict({ answer, entries, file, cards }) {
+  const tool = entries.find((e) => e.kind === "tool");
+  const reply = entries.findLast((e) => e.kind === "agent" && e.data.final);
+  if (answer.status !== "completed") return `the turn ended ${answer.status} (${answer.stopReason}): ${answer.reply ?? answer.error ?? ""}`;
+  if (!tool) return `no tool call in the transcript (${entries.map((e) => e.kind).join(", ")})`;
+  if (tool.data.status !== "completed") return `the tool call ended ${tool.data.status}`;
+  if (!cards) return "the agent never asked to run the command: no permission card";
+  if (file.trim() !== "beta") return `notes.txt reads ${JSON.stringify(file)} after the command`;
+  if (!/done:/u.test(reply?.data.text ?? "")) return `the reply missed the tool result: ${reply?.data.text}`;
+  return null;
+}
+
+/** Answers each permission card of `botId` with its allow-once option, as a user would; `done` is how many it answered. */
+function approveCards(api, botId) {
+  let running = true;
+  const answered = new Set();
+  const done = (async () => {
+    while (running) {
+      const { entries } = await api("history", { botId }).catch(() => ({ entries: [] }));
+      for (const card of entries.filter((e) => e.kind === "permission" && e.data.status === "pending" && !answered.has(e.id))) {
+        const allow = card.data.options.find((o) => o.kind === "allow_once");
+        await api("respondPermission", { entryId: card.id, optionId: allow?.optionId });
+        answered.add(card.id);
+      }
+      await sleep(500);
+    }
+    return answered.size;
+  })();
+  return { stop: () => (running = false), done };
+}
+
+/** The environment without provider credentials, so an agent can reach only the mock (OpenCode alone takes up any
+ * DEEPSEEK_API_KEY it finds). */
+function withoutCredentials(env) {
+  return Object.fromEntries(Object.entries(env).filter(([key]) => !/(_API_KEY|_AUTH_TOKEN|^GH_TOKEN|^GITHUB_TOKEN)$/u.test(key)));
+}
+
+/** Ends what an agent detached on purpose to outlive the host (Hermes's gateway), found by the check's own HOME. */
+async function stopDaemons(home) {
+  const { stdout } = await run("ps", ["axeww", "-o", "pid=,command="], { maxBuffer: 64 * 1024 * 1024 });
+  for (const line of stdout.split("\n").filter((l) => l.includes(` HOME=${home} `))) {
+    try {
+      process.kill(Number(line.trim().split(/\s+/u)[0]), "SIGKILL");
+    } catch (error) {
+      // Ended by itself between ps and kill.
+      if (error.code !== "ESRCH") throw error;
+    }
+  }
+}
+
+/** Stops the host and returns its descendants still running 10 s later, if any. */
+async function stopHost(host) {
+  const tree = descendants(await processTable(), host.pid);
+  host.kill("SIGTERM");
+  await new Promise((resolve) => (host.exitCode === null ? host.once("exit", resolve) : resolve()));
+  await sleep(10_000);
+  // Compared by command line too, so a pid reused since reads as gone.
+  const alive = new Map((await processTable()).map((p) => [p.pid, p.command]));
+  return tree.filter((p) => alive.get(p.pid) === p.command).map((p) => `${p.pid} ${p.command.slice(0, 100)}`).join("; ");
+}
+
+async function processTable() {
+  const { stdout } = await run("ps", ["-eo", "pid=,ppid=,command="]);
+  return stdout.split("\n").filter(Boolean).map((line) => {
+    const [pid, ppid, ...command] = line.trim().split(/\s+/u);
+    return { pid: Number(pid), ppid: Number(ppid), command: command.join(" ") };
+  });
+}
+
+/** Every process under `root` in `table`. */
+function descendants(table, root) {
+  const found = [];
+  for (let parents = new Set([root]); parents.size; ) {
+    const children = table.filter((p) => parents.has(p.ppid));
+    found.push(...children);
+    parents = new Set(children.map((c) => c.pid));
+  }
+  return found;
 }

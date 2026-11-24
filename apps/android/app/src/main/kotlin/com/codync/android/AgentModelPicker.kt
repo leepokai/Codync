@@ -163,9 +163,9 @@ private class Choice(val name: String, val on: Boolean, val pick: () -> Unit)
     if (store != null && addsLogin != null) CodyncSheet(adding, { adding = false }) { AgentSheet(addsLogin, state, store) }
 }
 
-/** [agents] as the Agent pickers list them, one row per login ("(not installed)" after an agent that isn't), in the app's language. */
+/** [agents] as the Agent pickers list them, one row per login with the setup each still needs, in the app's language. */
 @Composable internal fun pickerSeats(agents: List<AgentBackend>, on: Login, logins: ((AgentBackend) -> List<String?>?)? = null): List<LoginSeat> =
-    agents.map { if (it.available) it else it.copy(name = "${it.name} (not installed)") }.loginSeats(on, tr("Default login profile"), tr("New login profile"), logins)
+    agents.map { it.copy(name = tr(it.pickerLabel)) }.loginSeats(on, tr("Default login profile"), tr("New login profile"), logins)
 
 /** The logins a chat's box can switch to (iOS `BotStore.readySeats`, the desktop's `readySeats`): the installed agents and the one [on]. */
 @Composable internal fun readySeats(state: AppState, on: Login): List<LoginSeat> =

@@ -1264,6 +1264,8 @@
   "the right ⌘": "右側 ⌘",
   "the left ⌘": "左側 ⌘",
   "{name} (not installed)": "{name}（未安裝）",
+  "{name} (not ready)": "{name}（尚未就緒）",
+  "{name} (needs Node.js)": "{name}（需要 Node.js）",
   "Copy template": "複製模板",
   "Siri and Dictation are disabled": "Siri 和聽寫已關閉",
   "the Codync cloud refused ({status} {reason}): {hint}": "Codync 雲拒絕了（{status} {reason}）：{hint}",

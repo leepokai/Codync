@@ -1264,6 +1264,8 @@
   "the right ⌘": "右⌘",
   "the left ⌘": "左⌘",
   "{name} (not installed)": "{name} (未インストール)",
+  "{name} (not ready)": "{name} (準備未完了)",
+  "{name} (needs Node.js)": "{name} (Node.js が必要です)",
   "Copy template": "テンプレートをコピー",
   "Siri and Dictation are disabled": "Siri とディクテーションが無効になっています",
   "the Codync cloud refused ({status} {reason}): {hint}": "Codync クラウドが拒否しました ({status} {reason}): {hint}",

@@ -1264,6 +1264,8 @@
   "the right ⌘": "правый ⌘",
   "the left ⌘": "левый ⌘",
   "{name} (not installed)": "{name} (не установлен)",
+  "{name} (not ready)": "{name} (ещё не готов)",
+  "{name} (needs Node.js)": "{name} (нужен Node.js)",
   "Copy template": "Скопировать шаблон",
   "Siri and Dictation are disabled": "Siri и Диктовка отключены",
   "the Codync cloud refused ({status} {reason}): {hint}": "облако Codync отказало ({status} {reason}): {hint}",

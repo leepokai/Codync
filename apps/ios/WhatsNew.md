@@ -18,6 +18,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 選 agent 時一起選登入設定檔：Bot 設定和 fallback 的 agent 清單裡，每個 agent 依登入設定檔各列一次，清單最後可以新增登入設定檔；原本獨立的「登入設定檔」列已移除。
 - 聊天的輸入框改成上下兩層：上面打字，下面一排是加檔案的 +、Bot 目前的 agent 和模型、麥克風和送出鍵。點模型就能直接換 agent、登入設定檔、模型和推理強度，不必進 Bot 設定。
 - 在中國大陸也能收到推播通知了。
+- 已安裝但尚未就緒的 agent 不再顯示「未安裝」：agent 清單會顯示「尚未就緒」，缺少 Node.js 時則直接說明需要 Node.js。
 
 ### en-US
 - A routine can name a folder: pick one under Folder in the routine editor and each run works there in a thread of its own; without one it runs in the bot's folder.
@@ -30,6 +31,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - Pick an agent and its login profile in one step: a bot's and each fallback's agent list shows every agent once per login profile and ends with Add login profile. The separate Login profile row is gone.
 - The message box now has two layers: you type on top, and under it are the + for files, the bot's agent and model, the mic and send. Tap the model to switch the agent, login profile, model or effort without opening the bot's settings.
 - Push notifications now reach phones and computers in mainland China.
+- An agent that is installed but not ready is no longer labeled Not installed: the picker says Not ready, or Needs Node.js when that is what it waits for.
 
 ## 2.53.0
 ### zh-Hant

@@ -290,6 +290,14 @@ public struct Backend: Codable, Hashable, Sendable, Identifiable {
 
     /// It can't run until Node.js is added to the computer.
     public var needsNode: Bool { node == "missing" }
+
+    /// Its name with the setup it still needs when the pickers can't choose it.
+    public var pickerLabel: String {
+        if available { return name }
+        if needsNode { return "\(name) (needs Node.js)" }
+        if installed == true { return "\(name) (not ready)" }
+        return "\(name) (not installed)"
+    }
 }
 
 /// How an agent can be signed in, from asking the agent itself.

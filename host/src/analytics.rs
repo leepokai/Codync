@@ -92,7 +92,7 @@ pub enum SessionAction {
     Answered,
     /// One of this computer's bots left it a request (also counted as `posted`).
     Asked,
-    /// A bot's request couldn't be left in its inbox (saving it failed).
+    /// A bot's request couldn't be left: saving its notice or the letter failed.
     AskFailed,
     /// A bot's request to it waited a week unanswered and ended.
     Expired,

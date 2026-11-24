@@ -361,9 +361,12 @@ pub(super) fn to_local_session(
     // the session's answer then reaches the bot as a new request.
     let from = hub.network.handle_of(&source.id).unwrap_or_else(|| source.id.clone());
     let session = Some((to, hops, from.clone()));
-    let (entry, heading) = open_request(hub, source, &id, &to.address, &to.address, message, session)?;
+    // Either failure is the store refusing a write: one category, `ask_failed`.
+    let failed = || crate::analytics::network_session(hub, crate::analytics::SessionAction::AskFailed, to.kind);
+    let (entry, heading) =
+        open_request(hub, source, &id, &to.address, &to.address, message, session).inspect_err(|_| failed())?;
     if let Err(error) = super::mailbox::post(hub, to, Some(&id), &from, message, None) {
-        crate::analytics::network_session(hub, crate::analytics::SessionAction::AskFailed, to.kind);
+        failed();
         return Err(fail_request(hub, &id, &entry, error));
     }
     crate::analytics::network_session(hub, crate::analytics::SessionAction::Asked, to.kind);

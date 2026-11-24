@@ -16,7 +16,7 @@ use super::{
 use crate::LockExt;
 use crate::hub::Hub;
 use crate::network::Recipient;
-use crate::network::sessions::{Caller, Registered, Session};
+use crate::network::sessions::{Caller, Session};
 use crate::remote::cloud::{self, CloudStatus};
 use crate::store::{BotConfig, Store, now_ms};
 use anyhow::{Result, anyhow, bail};
@@ -161,13 +161,12 @@ impl Asker {
         let owner = format!("session:{}", caller.key());
         let reserve = || hub.network.reserve(&hub.store, &base, &owner);
         let (s, registered) = hub.network.sessions.register(&hub.store, caller, info.title, reserve)?;
-        if registered == Registered::New {
+        if registered.new {
             tracing::info!(kind = s.kind.as_str(), temporary = s.temporary, "a session joined the Network");
             crate::analytics::network_session(hub, crate::analytics::SessionAction::Registered, s.kind);
         }
-        // A rule may already name a new session's address; a new title, or a forgotten session,
-        // changes what is offered.
-        if (registered == Registered::New && !s.temporary) || registered == Registered::Changed {
+        // A rule may already name a new session's address.
+        if registered.offer {
             crate::network::publish(hub);
         }
         Ok(Self {

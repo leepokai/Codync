@@ -91,7 +91,10 @@ fn a_session_unseen_for_long_is_forgotten_unless_mail_waits() {
         s.seen -= KEPT_FOR_MS;
     }
     save(&store, &all).unwrap();
-    register(&sessions, &store, &caller(AgentKind::Codex, Some("now"), "/work/api"), &mut book);
+    // Even a temporary newcomer's call that forgets them changes what's offered.
+    let newcomer = Caller { process: "8-b".into(), ..caller(AgentKind::Other, None, "/") };
+    let now = register(&sessions, &store, &newcomer, &mut book).1;
+    assert!(now.new && now.offer, "{now:?}");
     let left: Vec<String> = sessions.all(&store).into_iter().map(|s| s.key).collect();
     assert!(!left.contains(&quiet.key) && !left.contains(&temporary.key), "{left:?}");
     assert!(left.contains(&waiting.key), "its mail keeps it: {left:?}");

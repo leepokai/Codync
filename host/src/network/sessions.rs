@@ -101,13 +101,14 @@ pub struct Mail {
     pub at: i64,
 }
 
-/// What a call that registers a session changed, for what this computer offers its networks.
+/// What a call that registers a session changed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Registered {
-    New,
-    /// Its title, or other sessions forgotten.
-    Changed,
-    Same,
+pub struct Registered {
+    /// The caller is new.
+    pub new: bool,
+    /// What this computer offers its networks changed: a new session's address, one's title, or
+    /// sessions forgotten (temporary ones aren't offered).
+    pub offer: bool,
 }
 
 /// The sessions and their mail, kept in the store; one change at a time.
@@ -153,14 +154,8 @@ impl Sessions {
         let session = Session { title: title.or(session.title), seen: now, ..session };
         all.insert(key, session.clone());
         save(store, &all)?;
-        let registered = if new {
-            Registered::New
-        } else if retitled || forgot {
-            Registered::Changed
-        } else {
-            Registered::Same
-        };
-        Ok((session, registered))
+        let offer = forgot || (!session.temporary && (new || retitled));
+        Ok((session, Registered { new, offer }))
     }
 
     /// Gives the session at `key` the address `reserve` hands out; its old one is retired.

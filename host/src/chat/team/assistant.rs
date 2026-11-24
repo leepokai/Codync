@@ -251,7 +251,10 @@ async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
                 };
                 return Ok(json!({"to": hub.network.address_text(&address), "status": status}));
             }
-            limit()?;
+            // A letter to an agent there that isn't a bot holds no slot (`Reply::unlimited`).
+            if remote::offers_bot(hub, &address) {
+                limit()?;
+            }
             return message_elsewhere(hub, asker, &address, message);
         }
     };

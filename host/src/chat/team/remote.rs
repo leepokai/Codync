@@ -295,7 +295,7 @@ pub(super) fn ask_for_replies(
 }
 
 /// Whether `to` is a Codync bot there (as far as this computer heard), which always answers.
-fn offers_bot(hub: &Hub, to: &Target) -> bool {
+pub(super) fn offers_bot(hub: &Hub, to: &Target) -> bool {
     let Ok(slot) = hub.network.slot(Some(&to.network)) else { return true };
     let peer = slot.node.directory().into_iter().find(|p| p.name == to.address.computer);
     let agent = peer.and_then(|p| p.agents.into_iter().find(|a| a.id == to.address.agent));

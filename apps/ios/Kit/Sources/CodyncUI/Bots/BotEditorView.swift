@@ -130,16 +130,19 @@ struct BotSettingsForm: View {
         }
     }
 
-    /// Advisor mode, from a host that has it: its threads' agent and fallbacks show once it's on.
+    /// Advisor mode, from a host that has it: its threads' agent and fallbacks show once it's on, in its row (one
+    /// setting, no lines inside it).
     @ViewBuilder private var advisor: some View {
         if draft.threadFallbacks != nil {
-            SwitchRow("Advisor mode", detail: "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.",
-                      isOn: Binding(get: { draft.threadAgent != nil }, set: { on in
-                          withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.setAdvisor(on, backends: model.hello?.backends ?? []) }
-                      }))
-            if draft.threadAgent != nil {
-                ThreadsAgentRow(draft: $draft, bot: bot)
-                FallbackList(draft: $draft, bot: bot, threads: true)
+            VStack(alignment: .leading, spacing: 16) {
+                SwitchRow("Advisor mode", detail: "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.",
+                          isOn: Binding(get: { draft.threadAgent != nil }, set: { on in
+                              withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.setAdvisor(on, backends: model.hello?.backends ?? []) }
+                          }))
+                if draft.threadAgent != nil {
+                    ThreadsAgentRow(draft: $draft, bot: bot)
+                    FallbackList(draft: $draft, bot: bot, threads: true)
+                }
             }
         }
     }

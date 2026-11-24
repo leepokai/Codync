@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -102,8 +103,8 @@ import kotlin.math.roundToInt
     else ModalHeader({ heading() }, trailing)
 }
 
-/** One tab of the system tab bar. */
-class TabItem<T>(val value: T, val title: String, val systemImage: String, val iconSize: Dp = 28.dp)
+/** One tab of the system tab bar; [badge] is a count at its icon's corner (`.badge`), none at zero. */
+class TabItem<T>(val value: T, val title: String, val systemImage: String, val iconSize: Dp = 28.dp, val badge: Int = 0)
 
 /** The iOS 26 tab bar: a floating glass capsule whose selection pill slides between tabs. */
 @Composable fun <T> GlassTabBar(selection: T, tabs: List<TabItem<T>>, select: (T) -> Unit, modifier: Modifier = Modifier) {
@@ -116,7 +117,14 @@ class TabItem<T>(val value: T, val title: String, val systemImage: String, val i
                 val on = tab.value == selection
                 Column(Modifier.size(TAB_WIDTH, 54.dp).clip(Capsule()).selectable(on, role = Role.Tab) { select(tab.value) },
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                    Symbol(tab.systemImage, size = tab.iconSize, height = 28.dp, tint = Palette.text)
+                    Box {
+                        Symbol(tab.systemImage, size = tab.iconSize, height = 28.dp, tint = Palette.text)
+                        if (tab.badge > 0) Box(Modifier.align(Alignment.TopEnd).offset(x = 10.dp, y = (-2).dp).height(16.dp).widthIn(min = 16.dp)
+                            .clip(Capsule()).background(Palette.danger).padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
+                            // Red like the iOS tab bar's badge.
+                            Text("${tab.badge}", style = Type.caption2.bold, color = Color.White)
+                        }
+                    }
                     Text(tr(tab.title), style = Type.system(10f).medium, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
@@ -124,7 +132,7 @@ class TabItem<T>(val value: T, val title: String, val systemImage: String, val i
     }
 }
 
-private val TAB_WIDTH = 90.dp
+private val TAB_WIDTH = 82.dp
 
 /**
  * `NavigationStack`: the top screen slides in from the right over the one below, which drifts

@@ -89,7 +89,8 @@ private class ComputerRoster(private val context: Context, val key: String) {
  * computer shows a flat list; more get a heading each, which folds its bots and drags to reorder the computers.
  */
 @Composable internal fun BotListView(app: AccountContext, states: List<AppState>, accounts: AccountStore, account: () -> Unit, manage: () -> Unit,
-    newBot: (String) -> Unit, newGroup: (String) -> Unit, edit: (String, Bot) -> Unit, extensions: (String) -> Unit, bottomInset: Dp) {
+    newBot: (String) -> Unit, newGroup: (String) -> Unit, edit: (String, Bot) -> Unit, extensions: (String) -> Unit, bottomInset: Dp,
+    hidden: String, setHidden: (String) -> Unit) {
     var confirmDelete by remember { mutableStateOf<Pair<String, Bot>?>(null) }
     // A bot whose agent starts over with a fresh context, once confirmed.
     var confirmNewSession by remember { mutableStateOf<Pair<String, Bot>?>(null) }
@@ -97,7 +98,9 @@ private class ComputerRoster(private val context: Context, val key: String) {
     val context = LocalContext.current
     var folded by remember { mutableStateOf(FoldedSections.load(context)) }
     var pins by remember { mutableStateOf(0) }
-    var hidden by remember { mutableStateOf(RosterComputers.hidden(context)) }
+    // The search field is open, and what it finds bots by.
+    var searching by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
     var collapsed by remember { mutableStateOf(RosterComputers.folded(context)) }
     val listState = rememberLazyListState()
     val rosters = remember(app.contextId) { mutableMapOf<String, ComputerRoster>() }
@@ -133,24 +136,34 @@ private class ComputerRoster(private val context: Context, val key: String) {
     }
     val toggleSection = { name: String -> folded = if (name in folded) folded - name else folded + name; FoldedSections.save(context, folded) }
     val agentLogos by AppearancePreferences.agentLogos.collectAsStateWithLifecycle()
-    // Every bot's work in one sheet, from the header's button while any bot has some.
-    val work = allWork(ordered) { rosters[it.computer.id]?.order.orEmpty() }
-    var workOpen by remember { mutableStateOf(false) }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     GlassStage(Modifier.fillMaxSize().background(Palette.background), chrome = {
         ScrollEdge(Edge.Top, top + 64.dp)
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 6.dp).padding(horizontal = 16.dp).height(44.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            AccountSwitcherButton(app, account)
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                ComputerFilterHeader(states, hidden, { hidden = it; RosterComputers.setHidden(context, it) },
-                    { for (state in shown) accounts.store(state.computer.id)?.reconnect() }, manage)
+            if (searching) {
+                SearchField(query, { query = it }, Modifier.weight(1f), prompt = "Search bots", autoFocus = true)
+                Text(tr("Cancel"), Modifier.padding(start = 12.dp).plainButton { searching = false; query = "" }, style = Type.body, color = Palette.text)
+            } else {
+                AccountSwitcherButton(app, account)
+                // The list's title over how its computers are connected (iOS `navigationSubtitle`).
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(tr("Bots"), style = Type.body.semibold, color = Palette.text, maxLines = 1)
+                    val summary = connectionSummary(shown)
+                    Text(summary.filled(tr(summary.template)), style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                // The desktop list header's buttons: the computers to show, Search and New.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ComputerFilterHeader(states, hidden, setHidden, { for (state in shown) accounts.store(state.computer.id)?.reconnect() }, manage)
+                    val searchLabel = tr("Search")
+                    Box(Modifier.size(44.dp).glass(Capsule()).plainButton { searching = true }.semantics { contentDescription = searchLabel },
+                        contentAlignment = Alignment.Center) { Symbol("magnifyingglass", size = 24.dp, tint = Palette.text) }
+                    // A new bot starts on the first computer online (its dialog can move it); a group chat gathers one computer's bots.
+                    NewMenuButton(enabled = available.isNotEmpty(), groupEnabled = online.isNotEmpty(),
+                        { (online.firstOrNull() ?: available.firstOrNull())?.let { newBot(it.computer.id) } },
+                        { online.firstOrNull()?.let { newGroup(it.computer.id) } })
+                }
             }
-            AllWorkButton(work.bots.isNotEmpty(), work.working) { workOpen = true }
-            // A new bot starts on the first computer online (its dialog can move it); a group chat gathers one computer's bots.
-            NewMenuButton(enabled = available.isNotEmpty(), groupEnabled = online.isNotEmpty(),
-                { (online.firstOrNull() ?: available.firstOrNull())?.let { newBot(it.computer.id) } },
-                { online.firstOrNull()?.let { newGroup(it.computer.id) } })
         }
     }) {
         // Pull to refresh reconnects every computer and asks the account for its computers again (iOS `refreshable`).
@@ -167,17 +180,19 @@ private class ComputerRoster(private val context: Context, val key: String) {
                 EmptyRoster(canCreate = available.isNotEmpty(), hasComputer = states.any { !app.isStale(it, states) },
                     create = { (online.firstOrNull() ?: available.firstOrNull())?.let { newBot(it.computer.id) } }, showComputers = manage)
             }
+            val search = query.trim()
             for (state in ordered) {
                 val id = state.computer.id
                 val store = accounts.store(id) ?: continue
                 val roster = rosters[id] ?: continue
-                if (grouped) item("computer:$id") {
+                // Search: the matching bots of every shown computer, flat, folded ones included.
+                if (grouped && search.isEmpty()) item("computer:$id") {
                     ComputerHeading(state, store, computerReorder, folded = movingComputer || id in collapsed, stale = app.isStale(state, states),
                         toggle = { collapsed = if (id in collapsed) collapsed - id else collapsed + id; RosterComputers.setFolded(context, collapsed) },
                         extensions = { extensions(id) })
                 }
-                if (grouped && (movingComputer || id in collapsed)) continue
-                if (state.offersWorkflows) {
+                if (grouped && search.isEmpty() && (movingComputer || id in collapsed)) continue
+                if (state.offersWorkflows && search.isEmpty()) {
                     val pinned = pinnedWorkflows(context, state).let { if (pins < 0) emptyList() else it }
                     items(pinned, key = { "workflow:$id:${it.id}" }) { workflow ->
                         PinnedWorkflowRow(workflow, pinned = true, onOpen = { accounts.focusWorkflows(id, workflow.id) }) {
@@ -186,7 +201,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
                         }
                     }
                 }
-                botLines(state, store, roster, folded, grouped, agentLogos, RosterActions(toggleSection,
+                botLines(state, store, roster, folded, grouped, agentLogos, search, RosterActions(toggleSection,
                     rename = { name -> naming = Naming("Rename section", name) { renameSection(roster, store, name, it) } },
                     remove = { name -> renameSection(roster, store, name, null) },
                     newSection = { bot -> naming = Naming("New section", "") { store.setSection(bot.id, it) } },
@@ -206,7 +221,6 @@ private class ComputerRoster(private val context: Context, val key: String) {
             }
         })
     }
-    AllWorkSheet(workOpen, work.bots, grouped, accounts) { workOpen = false }
     CodyncDialog("Start a new session?", confirmNewSession != null, { confirmNewSession = null },
         message = "The conversation stays here, but the agent starts with a fresh context.") {
         // Taken now: the dialog dismisses (clearing it) before it runs the action.
@@ -234,7 +248,7 @@ private class RosterActions(val toggleSection: (String) -> Unit, val rename: (St
 
 /** One computer's bots: pinned ones, then each section's heading with its bots (none while folded), then the bots in no section. */
 private fun LazyListScope.botLines(state: AppState, store: AppStore, roster: ComputerRoster, folded: Set<String>, grouped: Boolean,
-    agentLogos: Boolean, actions: RosterActions) {
+    agentLogos: Boolean, search: String, actions: RosterActions) {
     val id = state.computer.id
     val sectionReorder = roster.sections
     val reorder = roster.reorder
@@ -242,7 +256,9 @@ private fun LazyListScope.botLines(state: AppState, store: AppStore, roster: Com
     // The agent's logo marks each avatar only while the computer's bots mix agents. Not before hello: it names
     // the logos, and without it every badge would be the same generic one.
     val logos = agentLogos && state.hello != null && roster(state.bots).mixesAgents()
-    items(rosterLines(reorder.shown(roster(state.bots)), folded, sectionReorder.shown, sectionReorder.dragged != null), key = { "$id:${it.key}" }) { line ->
+    val lines = if (search.isEmpty()) rosterLines(reorder.shown(roster(state.bots)), folded, sectionReorder.shown, sectionReorder.dragged != null)
+        else shownBots(roster(state.bots), roster.order).filter { it.name.contains(search, ignoreCase = true) }.map(RosterLine::Row)
+    items(lines, key = { "$id:${it.key}" }) { line ->
         when (line) {
             // Folding drops the section's rows from the list; animateItem fades them out and slides the rest up.
             is RosterLine.Header -> SectionHeader(line, toggle = { actions.toggleSection(line.name) },

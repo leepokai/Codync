@@ -3,6 +3,9 @@ package com.codync.android
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
@@ -31,7 +34,10 @@ class ComputerRosterTest {
         RosterComputers.setHidden(context, ""); RosterComputers.setFolded(context, emptySet())
         try {
             compose.setContent {
-                Hosted { BotListView(app, listOf(state(mac, "Mac bot"), state(linux, "Linux bot")), accounts, {}, {}, {}, {}, { _, _ -> }, {}, 0.dp) }
+                Hosted {
+                    var shown by remember { mutableStateOf("") }
+                    BotListView(app, listOf(state(mac, "Mac bot"), state(linux, "Linux bot")), accounts, {}, {}, {}, {}, { _, _ -> }, {}, 0.dp, shown) { shown = it }
+                }
             }
             compose.onNode(heading("Mac fixture")).assertIsDisplayed()
             compose.onNode(heading("Linux fixture")).assertIsDisplayed()

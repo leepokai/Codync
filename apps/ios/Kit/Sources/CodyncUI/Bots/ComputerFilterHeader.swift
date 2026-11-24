@@ -1,19 +1,24 @@
 import CodyncKit
 import SwiftUI
 
-/// The roster's only connection surface: a quiet summary, with details and filters on demand.
+/// The roster's filter button (the desktop list header's): the computers to show, each with its connection, Reconnect
+/// and Manage computers. `summary` is the quiet line the list shows under its title.
 public struct ComputerFilterHeader: View {
     let accounts: AccountStore
     @Binding var hidden: String
     let manage: () -> Void
-    let compact: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    public init(accounts: AccountStore, hidden: Binding<String>, compact: Bool = false, manage: @escaping () -> Void) {
+    public init(accounts: AccountStore, hidden: Binding<String>, manage: @escaping () -> Void) {
         self.accounts = accounts
         _hidden = hidden
         self.manage = manage
-        self.compact = compact
+    }
+
+    /// How the shown computers are connected ("3 connected", "Connecting…"), in the app's language.
+    public static func summary(accounts: AccountStore, hidden: String) -> String {
+        let stores = ComputerSelection(all: accounts.computers.map(\.id), hidden: hidden).shown.compactMap { accounts.store(for: $0) }
+        return phrase(ConnectionSummary(connections: stores.map(\.shownConnection), waking: stores.contains(where: \.isWaking)).text)
     }
 
     private var selection: ComputerSelection {
@@ -43,21 +48,11 @@ public struct ComputerFilterHeader: View {
         .accessibilityLabel("Computers, \(summary). Filter conversations")
     }
 
+    /// The filter symbol, filled while a computer is left out.
     private var label: some View {
-        HStack(spacing: 4) {
-            if compact {
-                Image(systemName: "desktopcomputer")
-            } else {
-                Text(Self.phrase(summary)).lineLimit(1).contentTransition(.opacity)
-            }
-            Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
-        }
-        .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(Palette.secondary)
-        .help(Self.phrase(summary))
-        .padding(.vertical, 6)
-        .contentShape(Rectangle())
-        .animation(Motion.reduced(Motion.fade, reduceMotion), value: summary)
+        Label(L10n.tr("Computers"), systemImage: selection.shown.count < accounts.computers.count
+            ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease")
+            .help(Self.phrase(summary))
     }
 
     /// "3 connected" and the other summaries, in the app's language.

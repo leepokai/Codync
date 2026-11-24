@@ -9,6 +9,8 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 
 ## 2.54.0
 ### zh-Hant
+- 新增 Threads 分頁：Bot 正在處理和排隊中的工作都集中在這裡，分頁上的數字是正在處理的數量；原本 Bot 列表上方的「工作」按鈕已移除。
+- Bot 分頁的圖示改成機器人，和電腦版一致；右上角改成篩選、搜尋和新增三個按鈕，搜尋可以用名稱找 Bot，連線狀態移到標題下方。
 - 換 Bot 的 agent 或登入設定檔後，新的 agent 不再從零開始：下一則訊息會帶上目前對話的摘要。送出前聊天裡會出現「脈絡交接待進行」的分隔線，標出從哪個 agent 換到哪個，送出後可以點開看帶了什麼。
 - 新增 Workflow：在 Bot 列表的電腦標題上點分支圖示，就能打開這台電腦的 workflow。一個 workflow 由觸發、提示、助理、條件、核准和輸出組成，可以手動執行、排程或用 webhook 啟動，並保留舊版本可以還原。
 - 單一路線的 workflow 會顯示成步驟列表，可以新增、刪除和調整順序；長按 workflow 可以釘選到 Bot 列表上方。
@@ -19,6 +21,8 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 在中國大陸也能收到推播通知了。
 
 ### en-US
+- A new Threads tab gathers what your bots are working on and what waits, its badge counting what is being worked on. The Work button at the top of the bot list is gone.
+- The Bots tab has the robot icon the desktop app uses, and its top right holds Filter, Search and New: search finds bots by name, and the connection status sits under the title.
 - Changing a bot's agent or login profile no longer starts it from nothing: your next message carries a summary of the conversation. Until then a divider in the chat reads Context handoff pending with both agents; afterwards tap it to see what was carried.
 - Workflows: tap the branch icon on a computer's heading in the bot list to open that computer's workflows. A workflow chains a trigger, prompts, assistants, a condition, an approval and an output; run it yourself, on a schedule or from a webhook, and restore an older version when you need to.
 - A workflow that is a single chain shows as a list of steps you can add, remove and reorder. Long-press a workflow to pin it above the bots.

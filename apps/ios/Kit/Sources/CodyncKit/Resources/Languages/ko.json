@@ -2476,5 +2476,7 @@
   "{count} min": "{count}분",
   "Context handoff pending": "컨텍스트 인계 대기 중",
   "Context handed off": "컨텍스트 인계됨",
-  "Switched": "전환됨"
+  "Switched": "전환됨",
+  "No threads right now": "지금은 스레드가 없습니다",
+  "Tasks your bots work on show up here.": "봇이 작업 중인 태스크가 여기에 표시됩니다."
 }

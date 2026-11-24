@@ -2476,5 +2476,7 @@
   "{count} min": "{count} мин",
   "Context handoff pending": "Передача контекста ожидается",
   "Context handed off": "Контекст передан",
-  "Switched": "Переключено"
+  "Switched": "Переключено",
+  "No threads right now": "Сейчас нет тредов",
+  "Tasks your bots work on show up here.": "Здесь появятся задачи, над которыми работают ваши боты."
 }

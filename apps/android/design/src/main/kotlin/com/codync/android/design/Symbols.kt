@@ -109,6 +109,8 @@ import androidx.annotation.DrawableRes
     "keyboard.chevron.compact.down" -> R.drawable.sf_keyboard_chevron_compact_down
     "laptopcomputer" -> R.drawable.sf_laptopcomputer
     "line.3.horizontal" -> R.drawable.sf_line_3_horizontal
+    "line.3.horizontal.decrease" -> R.drawable.sf_line_3_horizontal_decrease
+    "line.3.horizontal.decrease.circle.fill" -> R.drawable.sf_line_3_horizontal_decrease_circle_fill
     "list.bullet" -> R.drawable.sf_list_bullet
     "list.bullet.rectangle" -> R.drawable.sf_list_bullet_rectangle
     "lock.display" -> R.drawable.sf_lock_display
@@ -182,7 +184,6 @@ import androidx.annotation.DrawableRes
     "text.bubble" -> R.drawable.sf_text_bubble
     "trash" -> R.drawable.sf_trash
     "tray" -> R.drawable.sf_tray
-    "tray.full" -> R.drawable.sf_tray_full
     "waveform" -> R.drawable.sf_waveform
     "wifi" -> R.drawable.sf_wifi
     "wifi.exclamationmark" -> R.drawable.sf_wifi_exclamationmark

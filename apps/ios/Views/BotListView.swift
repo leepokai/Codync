@@ -14,8 +14,9 @@ struct BotListView: View {
     @State private var editing: EditTarget?
     @State private var editingGroup: GroupTarget?
     @State private var confirmDelete: RosterItem?
-    /// The view of all bots' work.
-    @State private var showingWork = false
+    /// The search field is open, and what it finds bots by.
+    @State private var searching = false
+    @State private var query = ""
     /// A bot whose agent starts over with a fresh context, once confirmed.
     @State private var confirmNewSession: RosterItem?
     /// Bumped when a pin changes, so the rows reread this phone's list.
@@ -112,21 +113,22 @@ struct BotListView: View {
     /// The roster's rows: each shown computer's heading (with several computers), in the order
     /// they were dragged into, followed by its bots and sections unless it's folded away.
     private var lines: [RosterLine] {
-        shownStores.flatMap { store -> [RosterLine] in
+        let query = query.trimmingCharacters(in: .whitespaces)
+        if !query.isEmpty {
+            // Search: the matching bots of every shown computer, flat, folded ones included.
+            return shownStores.flatMap { store in
+                RosterSection.onScreen(accounts.roster.filter { $0.ref.computerId == store.computer.id && $0.bot.name.localizedStandardContains(query) },
+                                       order: sectionOrder.saved(on: store.computer.id)) { $0.bot }
+                    .map { RosterLine.bot($0, store) }
+            }
+        }
+        return shownStores.flatMap { store -> [RosterLine] in
             let id = store.computer.id
             let rows = grouped && collapsedIDs.contains(id) ? [] : sectionLines(store)
             return grouped ? [.computer(id, store)] + rows : rows
         }
     }
 
-    /// Every shown computer's bots in the order the list has them, folded computers and sections included: what
-    /// the view of all bots' work lists.
-    private var onScreenRoster: [RosterItem] {
-        shownStores.flatMap { store -> [RosterItem] in
-            let id = store.computer.id
-            return RosterSection.onScreen(accounts.roster.filter { $0.ref.computerId == id }, order: sectionOrder.saved(on: id)) { $0.bot }
-        }
-    }
 
     /// A computer's bots: pinned ones, then each section's heading with its bots (none while
     /// folded), then the bots in no section (under the "Bots" label when there are sections).
@@ -149,7 +151,6 @@ struct BotListView: View {
 
     var body: some View {
         let roster = accounts.roster.filter { shownIDs.contains($0.ref.computerId) }
-        let work = AllWork(onScreenRoster) { $0.bot.work }
         let lines = self.lines
         let movingComputer = lines.contains { $0.id == lifted && $0.computerId != nil }
         let movingSection = lines.first { $0.id == lifted }?.sectionComputer
@@ -207,13 +208,13 @@ struct BotListView: View {
         .navigationTitle(L10n.tr("Bots"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
-        .toolbar { bar(work) }
+        .navigationSubtitle(ComputerFilterHeader.summary(accounts: accounts, hidden: hiddenComputers))
+        .toolbar { bar }
+        .modifier(BotSearch(searching: $searching, query: $query))
         .refreshable {
             for computer in accounts.computers { accounts.store(for: computer.id)?.restartStream() }
             await accounts.refreshCloud()
         }
-        .animation(Motion.reduced(Motion.layout, reduceMotion), value: work.bots.isEmpty)
-        .codyncSheet(isPresented: $showingWork) { workSheet(work.bots) }
         .codyncSheet(item: $creating) { target in
             if let store = accounts.store(for: target.computerId) {
                 Group {
@@ -290,22 +291,14 @@ struct BotListView: View {
         }
     }
 
-    @ToolbarContentBuilder private func bar(_ work: AllWork<RosterItem>) -> some ToolbarContent {
+    /// The list's header, as the desktop's: the account; then the computers to show, Search and New.
+    @ToolbarContentBuilder private var bar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             AccountSwitcherButton()
         }
-        ToolbarItem(placement: .principal) {
+        ToolbarItemGroup(placement: .topBarTrailing) {
             ComputerFilterHeader(accounts: accounts, hidden: $hiddenComputers) { app.showComputers = true }
-        }
-        // All bots' work: only while some bot has a live or waiting item, counting what is worked on.
-        if !work.bots.isEmpty {
-            ToolbarItem(placement: .topBarTrailing) {
-                // No badge at zero.
-                Button(L10n.tr("Work"), systemImage: "tray.full") { showingWork = true }
-                    .badge(work.working)
-            }
-        }
-        ToolbarItem(placement: .topBarTrailing) {
+            Button(L10n.tr("Search"), systemImage: "magnifyingglass") { searching = true }
             // A native menu: the bar hosts toolbar buttons outside SwiftUI's layout,
             // so an anchored Codync menu can't find where the button is.
             Menu(L10n.tr("New"), systemImage: "plus") {
@@ -316,24 +309,6 @@ struct BotListView: View {
             // A computer that needs an update can't take a new bot.
             .disabled(availableStores.isEmpty)
         }
-    }
-
-    /// All bots' work. Its heading opens the bot's chat with its details over it; a row that needs the user, the chat;
-    /// any other row, the details on its thread.
-    private func workSheet(_ bots: [RosterItem]) -> some View {
-        AllWorkView(bots: bots, many: grouped, store: { accounts.store(for: $0.ref.computerId) },
-                    openDetails: { item in
-                        accounts.store(for: item.ref.computerId)?.requestDetails(of: item.bot.id)
-                        accounts.selection = item.ref
-                    },
-                    openChat: { item, work in
-                        accounts.store(for: item.ref.computerId)?.requestCard(of: item.bot.id, task: work)
-                        accounts.selection = item.ref
-                    },
-                    openThread: { item, work in
-                        accounts.store(for: item.ref.computerId)?.requestThread(of: item.bot.id, task: work)
-                        accounts.selection = item.ref
-                    })
     }
 
     /// A row the system's reordering dropped. A heading moves its computer and its bots (an order
@@ -518,3 +493,19 @@ struct BotListView: View {
     }
 }
 
+
+/// The roster's search field: shown under the bar only once the header's Search opens it, and gone again with Cancel.
+private struct BotSearch: ViewModifier {
+    @Binding var searching: Bool
+    @Binding var query: String
+
+    func body(content: Content) -> some View {
+        if searching {
+            content
+                .searchable(text: $query, isPresented: $searching, placement: .navigationBarDrawer(displayMode: .always), prompt: L10n.tr("Search bots"))
+                .onChange(of: searching) { if !searching { query = "" } }
+        } else {
+            content
+        }
+    }
+}

@@ -7,10 +7,14 @@ import {
   CaretDown,
   CaretLeft,
   CaretRight,
-  Chats,
-  CardsThree,
   Desktop,
+  FlowArrow,
+  FunnelSimple,
+  GearSix,
+  ListChecks,
+  MagnifyingGlass,
   Plus,
+  Robot,
   Stop,
   User,
   Waveform,
@@ -157,11 +161,14 @@ export function Roster({ chats, open }: { chats: Chat[]; open: (id: string) => v
           </span>
           <CaretDown size={14} weight="bold" color={palette.text} />
         </div>
-        <span className="flex items-center gap-[5px] text-[15px] font-medium" style={{ color: palette.secondary }}>
-          1 connected <CaretDown size={12} weight="bold" />
+        <span className="mr-auto ml-[12px] flex flex-col leading-tight">
+          <span className="text-[17px] font-semibold" style={{ color: palette.text }}>Bots</span>
+          <span className="text-[12px]" style={{ color: palette.secondary }}>1 connected</span>
         </span>
-        <div className={`flex size-[44px] items-center justify-center rounded-full ${glass}`}>
-          <Plus size={22} weight="bold" color={palette.text} />
+        <div className={`flex h-[44px] items-center gap-[18px] rounded-full px-[14px] ${glass}`}>
+          <FunnelSimple size={20} weight="bold" color={palette.text} />
+          <MagnifyingGlass size={20} weight="bold" color={palette.text} />
+          <Plus size={20} weight="bold" color={palette.text} />
         </div>
       </div>
       <ul className="absolute inset-x-0 top-[116px]">
@@ -201,12 +208,14 @@ export function Roster({ chats, open }: { chats: Chat[]; open: (id: string) => v
       </ul>
       <div aria-hidden className={`absolute bottom-[39px] left-1/2 flex -translate-x-1/2 gap-[4px] rounded-full p-[5px] ${glass}`}>
         {[
-          { t: "Bots", I: Chats, on: true },
-          { t: "State", I: CardsThree, on: false },
+          { t: "Bots", I: Robot, on: true },
+          { t: "Threads", I: ListChecks, on: false },
+          { t: "Workflows", I: FlowArrow, on: false },
+          { t: "Settings", I: GearSix, on: false },
         ].map(({ t, I, on }) => (
           <span
             key={t}
-            className="flex h-[50px] w-[76px] flex-col items-center justify-center gap-[3px] rounded-full text-[11px] font-medium"
+            className="flex h-[50px] w-[72px] flex-col items-center justify-center gap-[3px] rounded-full text-[11px] font-medium"
             style={{ color: on ? palette.text : palette.secondary, background: on ? "rgba(20,20,20,0.08)" : undefined }}
           >
             <I size={22} weight="fill" />

@@ -27,16 +27,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
+import com.codync.android.core.ComputerSelection
 import com.codync.android.design.*
 
-internal enum class AppTab { Bots, Workflows, Settings }
+internal enum class AppTab { Bots, Threads, Workflows, Settings }
 
 /**
- * The system tab bar over Bots, Workflows and Settings, as iOS `RootView.tabs`: every tab stays alive, the bar
+ * The system tab bar over Bots, Threads, Workflows and Settings, as iOS `RootView.tabs`: every tab stays alive, the bar
  * floats as glass over their content and hides while a conversation or a workflow step is open.
  */
 @Composable internal fun MainTabs(app: AccountContext, states: List<AppState>, accounts: AccountStore, account: () -> Unit, manage: () -> Unit,
@@ -52,8 +54,14 @@ internal enum class AppTab { Bots, Workflows, Settings }
         val id = app.currentComputerId ?: states.firstOrNull()?.computer?.id ?: return@LaunchedEffect
         accounts.store(id)?.openWorkflows()
     }
+    // The computers the Bots tab leaves out, which Threads follows too.
+    val context = LocalContext.current
+    var hidden by remember { mutableStateOf(RosterComputers.hidden(context)) }
+    val shownIds = ComputerSelection(states.map { it.computer.id }, hidden).shown
+    val work = allWork(states.filter { it.computer.id in shownIds }) { SectionOrders.load(context, SectionOrders.key(app.contextId, it.computer.id)) }
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(when (tab) {
         AppTab.Bots -> AnalyticsScreen.Bots
+        AppTab.Threads -> AnalyticsScreen.AllWork
         AppTab.Workflows -> AnalyticsScreen.Workflows
         AppTab.Settings -> AnalyticsScreen.Settings
     }))
@@ -78,7 +86,7 @@ internal enum class AppTab { Bots, Workflows, Settings }
             exit = fadeOut(Motion.fade()) + slideOutVertically(Motion.layoutOffset) { it / 2 }) {
             Box(contentAlignment = Alignment.BottomCenter) {
                 ScrollEdge(Edge.Bottom, barSpace)
-                GlassTabBar(tab, listOf(TabItem(AppTab.Bots, "Bots", "bubble.left.and.bubble.right.fill", 33.dp),
+                GlassTabBar(tab, listOf(TabItem(AppTab.Bots, "Bots", "bot"), TabItem(AppTab.Threads, "Threads", "checklist", badge = work.working),
                     TabItem(AppTab.Workflows, "Workflows", "flowchart"), TabItem(AppTab.Settings, "Settings", "gearshape")),
                     onTab, Modifier.padding(bottom = maxOf(bottom - 4.dp, 12.dp)))
             }
@@ -95,12 +103,14 @@ internal enum class AppTab { Bots, Workflows, Settings }
                 if (open != null || app.removedChat) accounts.openBot(null)
             }) { entry ->
                 when {
-                    entry == "roster" -> BotListView(app, states, accounts, account, manage, newBot, newGroup, edit, extensions, barSpace)
+                    entry == "roster" -> BotListView(app, states, accounts, account, manage, newBot, newGroup, edit, extensions, barSpace,
+                        hidden) { hidden = it; RosterComputers.setHidden(context, it) }
                     entry == REMOVED_CHAT -> RemovedComputer { accounts.openBot(null) }
                     else -> (states.firstOrNull { "${it.computer.id}/${it.selectedBot}" == entry } ?: shown)?.let { chat(it) }
                 }
             }
         }
+        Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Threads)) { ThreadsView(work.bots, accounts, barSpace) }
         Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Workflows)) {
             val shown = states.firstOrNull { it.workflow != null }
                 ?: states.firstOrNull { it.computer.id == app.currentComputerId }

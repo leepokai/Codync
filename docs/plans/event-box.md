@@ -274,9 +274,8 @@ The same on iPhone, Android, desktop and terminal unless said; where it settles 
   have (another computer, the cloud assistant, a deleted bot) has no mark. **Try again** isn't offered on a
   request's row. **Cut in** shows only when some live task can give way (the bot's own), and the list it asks with
   holds only those.
-- **4.** The roster header's button (`tray.full`, titled **Work**, with the count of working tasks, no number at
-  none) shows only while a bot has a live or waiting task: a toolbar button on iPhone, a glass button on Android,
-  an icon button in the desktop's roster header. It opens a sheet titled **Work**: the bots in the roster's
+- **4.** On the phones the **Threads** tab (its badge the count of working tasks, none at zero; it replaced the
+  roster header's Work button and sheet), on the desktop the Threads page, lists the bots in the roster's
   on-screen order, each a heading (avatar, name, with the computer's name
   when there are several computers) that opens that bot's Details, over its Threads rows then its numbered Event
   box rows, with the rows' own actions. No `Free` rows, Later, Routines or Recent there. A row that needs you opens

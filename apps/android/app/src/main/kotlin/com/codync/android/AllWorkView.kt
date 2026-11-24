@@ -1,34 +1,23 @@
 package com.codync.android
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.AllWork
 import com.codync.android.core.Bot
@@ -37,7 +26,6 @@ import com.codync.android.core.allWork
 import com.codync.android.core.fill
 import com.codync.android.core.workSections
 import com.codync.android.design.*
-import com.kyant.shapes.Capsule
 
 /** A bot in the view of all bots' work, with its computer's state. */
 internal class WorkingBot(val state: AppState, val bot: Bot)
@@ -51,45 +39,22 @@ internal fun allWork(shown: List<AppState>, sectionOrder: (AppState) -> List<Str
     allWork(shown.flatMap { state -> shownBots(roster(state.bots), sectionOrder(state)).map { WorkingBot(state, it) } }) { it.bot.work }
 
 /**
- * Opens the view of all bots' work: in the roster's header only while some bot has a live or waiting task, with how
- * many tasks are worked on (no number at none).
+ * The Threads tab (iOS `ThreadsTab`): every bot that has live or waiting tasks, the bot as a heading, which opens its
+ * details, over the rows its details have for them, with the same actions. A row that needs the user opens the bot's
+ * chat at its card; any other row of a task a thread has opens the bot's details at its thread. With none, an empty
+ * state. [grouped]: the bots are on several computers, so a heading also names the bot's computer.
  */
-@Composable internal fun AllWorkButton(shown: Boolean, working: Int, open: () -> Unit) {
-    AnimatedVisibility(shown, enter = fadeIn(Motion.fade()) + scaleIn(Motion.layout()), exit = fadeOut(Motion.fade()) + scaleOut(Motion.layout())) {
-        val label = tr("Work")
-        val count = fill(tr("{count} working"), "count" to "$working").takeIf { working > 0 }
-        Box(Modifier.padding(end = 8.dp)) {
-            Box(Modifier.size(44.dp).glass(Capsule()).plainButton(action = open)
-                .semantics { contentDescription = label; count?.let { stateDescription = it } }, contentAlignment = Alignment.Center) {
-                Symbol("tray.full", size = 24.dp, tint = Palette.text)
-            }
-            // Beside the glass, not in it: the glass clips its content to the circle.
-            if (working > 0) Box(Modifier.align(Alignment.TopEnd).height(16.dp).widthIn(min = 16.dp).clip(Capsule()).background(Palette.accentFill)
-                .padding(horizontal = 4.dp).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
-                Text("$working", style = Type.caption2.bold, color = Palette.onAccent)
-            }
-        }
-    }
-}
-
-/**
- * Every bot that has live or waiting tasks, in one sheet (the desktop's `AllWorkSheet`): the bot as a heading, which
- * opens its details ([openDetails]), over the rows its details have for them, with the same actions. A row that needs
- * the user opens the bot's chat at its card ([openCard]); any other row of a task a thread has opens the bot's details at
- * its thread. It closes when the last task ends. [grouped]: several computers show, so a heading also names the bot's computer.
- */
-@Composable internal fun AllWorkSheet(open: Boolean, bots: List<WorkingBot>, grouped: Boolean, accounts: AccountStore, close: () -> Unit) {
-    LaunchedEffect(open, bots.isEmpty()) { if (open && bots.isEmpty()) close() }
-    CodyncSheet(open && bots.isNotEmpty(), close) {
-        AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.AllWork))
-        Column(Modifier.fillMaxSize().background(Palette.background)) {
-            ModalHeader("Work")
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                for (working in bots) {
-                    val store = accounts.store(working.state.computer.id) ?: continue
-                    BotWork(working, store, grouped, openDetails = { close(); store.openDetails(working.bot.id) },
-                        openCard = { close(); store.openCard(working.bot.id, it) }, openThread = { close(); store.openDetails(working.bot.id, it.id) })
-                }
+@Composable internal fun ThreadsView(bots: List<WorkingBot>, accounts: AccountStore, bottomInset: Dp) {
+    val grouped = bots.map { it.state.computer.id }.distinct().size > 1
+    Column(Modifier.fillMaxSize().background(Palette.background).statusBarsPadding()) {
+        ScreenHeader(title = { Text(tr("Threads"), style = Type.body.semibold, color = Palette.text) })
+        if (bots.isEmpty()) EmptyState("checklist", "No threads right now", Modifier.fillMaxSize(), message = "Tasks your bots work on show up here.")
+        else Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = bottomInset),
+            verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            for (working in bots) {
+                val store = accounts.store(working.state.computer.id) ?: continue
+                BotWork(working, store, grouped, openDetails = { store.openDetails(working.bot.id) },
+                    openCard = { store.openCard(working.bot.id, it) }, openThread = { store.openDetails(working.bot.id, it.id) })
             }
         }
     }

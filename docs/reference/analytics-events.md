@@ -222,7 +222,7 @@ host answers and sends it once the host is up.
 | `artifact` | an artifact's viewer | an artifact's viewer | — (opens in the browser) |
 | `network` | network sheet (Network on a computer's card in Manage computers) | — (part of `computers`) | network sheet |
 | `thread` | a task's thread: its thread's transcript and the composer, pushed inside the bot's details sheet from the task's row | a task's thread, in the inspector's panel in place of Details | a thread's transcript page with its composer, opened from a task's row |
-| `all_work` | the Work sheet: every bot's work, from the bot list's Work button | the Threads page of the window's rail | the Work page (`E` from the roster) |
+| `all_work` | the Threads tab: every bot's work | the Threads page of the window's rail | the Work page (`E` from the roster) |
 
 ## Funnels
 

@@ -60,6 +60,8 @@ const table = [
   ...rows.map((r) => `| ${r.id} | ${r.version} | ${r.now} | ${r.result} | ${(r.detail ?? "").replace(/[|\n]/g, " ").slice(0, 300)} |`),
 ].join("\n");
 console.log(table);
+// The table cuts each detail short: a failure's whole message (with the host's log) follows it.
+for (const r of rows.filter((row) => row.result === "failed")) console.log(`\n## ${r.id} failed\n${r.detail}`);
 if (process.env.GITHUB_STEP_SUMMARY) {
   const moved = rows.filter((r) => r.result === "passed" && r.now !== r.version && r.now !== "installed").map((r) => `${r.id} to ${r.now}`);
   const accept = moved.length ? `\n\nPassed on a new version: raise ${moved.join(", ")} in tools/agent-upstream/accepted.json.` : "";

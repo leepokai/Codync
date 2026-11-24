@@ -2,7 +2,7 @@
 
 use super::dispatch::{self, Standing, Wait};
 use super::worktree::{Left, Place, Worktree};
-use super::{Failure, Report, Start};
+use super::{Failure, Report};
 use crate::LockExt;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, Permission, Store, now_ms};
@@ -236,15 +236,9 @@ pub(super) struct Task {
     /// the task as it ends, never saved.
     #[serde(skip)]
     pub undispatched: bool,
-    /// How its thread's session began, once known.
+    /// Its thread's session began on it (or on the task it follows, in the same session).
     #[serde(default)]
-    pub start: Option<Start>,
-    /// Its bot's main session, for its new thread to fork; none when it starts from a brief.
-    #[serde(default)]
-    pub fork_from: Option<String>,
-    /// The agent refused or didn't answer the fork, so its thread started from a brief.
-    #[serde(default)]
-    pub fork_failed: bool,
+    pub began: bool,
     /// Where its new thread works: in a git worktree of its own when another thread of the bot worked in the
     /// repository as it began, or when it has one from before.
     #[serde(default)]
@@ -291,9 +285,7 @@ impl Task {
             report: None,
             failure: None,
             undispatched: false,
-            start: None,
-            fork_from: None,
-            fork_failed: false,
+            began: false,
             place: Place::Folder,
             worktree: None,
             told: Vec::new(),
@@ -308,8 +300,7 @@ impl Task {
         self.order = front;
         self.thread = None;
         self.started_at = None;
-        self.start = None;
-        self.fork_from = None;
+        self.began = false;
     }
 }
 

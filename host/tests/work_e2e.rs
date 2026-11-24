@@ -1,5 +1,5 @@
 //! A bot's box against a real host and its `chat` MCP server, with a scripted ACP agent: the bot adds tasks, threads
-//! take them up to `maxThreads` (a fork of the chat's session, or from a brief), raise their approval cards in the
+//! take them up to `maxThreads` (each from its brief, in a session of its own), raise their approval cards in the
 //! chat and report back as turns there; the user and the bot move, cut in, replace, stop and retry tasks.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -85,7 +85,7 @@ fn task_prompts(host: &Host, bot: &str, title: &str) -> Vec<Value> {
 
 /// The prompts the threads working in `dir` got for `title`, oldest first.
 fn task_prompts_in(dir: &Path, title: &str) -> Vec<Value> {
-    let named = format!(": \"{title}\".");
+    let named = format!(" \"{title}\".");
     let of_title = |p: &Value| p["text"].as_str().is_some_and(|t| t.contains("[Task]") && t.contains(&named));
     logged(dir, "prompts.jsonl").into_iter().filter(of_title).collect()
 }
@@ -157,7 +157,7 @@ async fn a_watchdog_turn_that_passes_leaves_nothing_in_the_chat() {
 }
 
 #[tokio::test]
-async fn a_task_forks_the_chat_and_its_report_comes_back_as_a_turn() {
+async fn a_task_starts_from_its_brief_alone_and_its_report_comes_back_as_a_turn() {
     let host = Host::start().await;
     let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
     host.reply(&bot, "hello").await;
@@ -165,20 +165,19 @@ async fn a_task_forks_the_chat_and_its_report_comes_back_as_a_turn() {
 
     host.reply(&bot, "ADD Fix the login|Find why the redirect drops the path").await;
     let relayed = reply(&host, &bot, "Relayed:").await;
-    assert_eq!(relayed, "Relayed: Report Fix the login: forked; no chat", "its last message reached the chat's turn");
+    assert_eq!(relayed, "Relayed: Report Fix the login: briefed; no chat", "its last message reached the chat's turn");
 
-    // The fork was taken from the chat's session, by the thread's own agent process.
-    let forks = host.log(&bot, "forks.jsonl");
-    assert_eq!(forks.len(), 1);
+    // A new session of the thread's own, never a fork of the chat's, told the task and nothing of the chat.
+    assert_eq!(host.log(&bot, "forks.jsonl"), [] as [Value; 0]);
     let prompts = host.log(&bot, "prompts.jsonl");
     let chat_session = prompts[0]["session"].as_str().unwrap();
-    assert_eq!(forks[0]["from"], chat_session);
     let thread_prompt = &task_prompts(&host, &bot, "Fix the login")[0];
-    assert_eq!(thread_prompt["session"], forks[0]["to"]);
+    assert_ne!(thread_prompt["session"], chat_session);
     let text = thread_prompt["text"].as_str().unwrap();
     assert!(text.contains("Find why the redirect drops the path"));
     assert!(text.contains("[The user's own words: «ADD Fix the login|Find why the redirect drops the path»]"));
-    assert!(!text.contains("<bot-profile>"), "a fork already holds the instructions");
+    assert!(text.contains("<bot-profile>") && text.contains("You are doing one task"), "its own instructions: {text}");
+    assert!(!text.contains("Title: Mika") && !text.contains("add_task"), "nothing of the chat's: {text}");
 
     // No client lists the thread as a bot or mixes its transcript into a chat.
     let snapshot = host.snapshot().await;
@@ -188,7 +187,7 @@ async fn a_task_forks_the_chat_and_its_report_comes_back_as_a_turn() {
 
     // The task stays in the box as done, with what its thread reported and the thread that had it.
     let done = task(&host, &bot, "Fix the login", "done").await;
-    assert_eq!(done["result"], "Report Fix the login: forked; no chat");
+    assert_eq!(done["result"], "Report Fix the login: briefed; no chat");
     assert!(done["wait"].is_null() && done["cutIn"] == false && done["endedAt"].is_i64(), "{done}");
     let threads = no_thread_bot_reached(&mut events).await;
     assert_eq!(
@@ -201,7 +200,6 @@ async fn a_task_forks_the_chat_and_its_report_comes_back_as_a_turn() {
     let details = host.call("threadEntries", json!({"botId": bot, "threadId": done["thread"]})).await;
     assert_eq!(details["thread"]["title"], "Fix the login");
     assert_eq!(details["thread"]["status"], "done");
-    assert_eq!(details["thread"]["start"], "fork");
     let finals: Vec<&str> = details["entries"]
         .as_array()
         .unwrap()
@@ -209,7 +207,7 @@ async fn a_task_forks_the_chat_and_its_report_comes_back_as_a_turn() {
         .filter(|e| e["kind"] == "agent" && e["data"]["final"] == true)
         .filter_map(|e| e["data"]["text"].as_str())
         .collect();
-    assert_eq!(finals, ["Report Fix the login: forked; no chat"]);
+    assert_eq!(finals, ["Report Fix the login: briefed; no chat"]);
 
     host.reply(&bot, "STATUS").await;
     let status = reply(&host, &bot, "Status:").await;
@@ -221,16 +219,15 @@ async fn a_task_forks_the_chat_and_its_report_comes_back_as_a_turn() {
 }
 
 #[tokio::test]
-async fn an_agent_that_cannot_fork_starts_the_task_from_the_chat_so_far() {
+async fn a_thread_hears_nothing_of_the_chat_it_was_handed_out_in() {
     let host = Host::start().await;
     let bot = host.fixture_bot("Mika", "work_agent.py", "no-fork").await;
-    host.reply(&bot, "hello").await;
+    host.reply(&bot, "Remember the blue theme").await;
     host.reply(&bot, "ADD Update the docs|Rewrite the install steps").await;
-    assert_eq!(reply(&host, &bot, "Relayed:").await, "Relayed: Report Update the docs: briefed; saw the chat");
-    assert_eq!(host.log(&bot, "forks.jsonl"), [] as [Value; 0]);
+    assert_eq!(reply(&host, &bot, "Relayed:").await, "Relayed: Report Update the docs: briefed; no chat");
     let text = task_prompts(&host, &bot, "Update the docs")[0]["text"].as_str().unwrap().to_owned();
-    assert!(text.contains("<bot-profile>"), "a new session gets the bot's instructions");
-    assert!(text.contains("hello"), "and what the chat said");
+    assert!(text.contains("<bot-profile>"), "a new session gets its instructions");
+    assert!(!text.contains("blue theme"), "but not what the chat said: {text}");
 }
 
 #[tokio::test]
@@ -412,7 +409,7 @@ async fn a_task_cuts_in_and_the_one_that_gave_way_starts_again_in_a_new_thread()
     wait("both reports", async || (relayed(&host, &bot).await.len() == 2).then_some(())).await;
     assert_eq!(
         relayed(&host, &bot).await,
-        ["Relayed: Report Urgent: forked; no chat", "Relayed: Report Slow: forked; no chat; again"]
+        ["Relayed: Report Urgent: briefed; no chat", "Relayed: Report Slow: briefed; no chat; again"]
     );
     let prompts = task_prompts(&host, &bot, "Slow");
     assert_eq!(prompts.len(), 2);
@@ -451,7 +448,7 @@ async fn a_replaced_brief_is_what_the_task_starts_from_waiting_or_working() {
     wait("both reports", async || (relayed(&host, &bot).await.len() == 2).then_some(())).await;
     assert_eq!(
         relayed(&host, &bot).await,
-        ["Relayed: Report Working: forked; no chat", "Relayed: Report Waiting: forked; no chat"]
+        ["Relayed: Report Working: briefed; no chat", "Relayed: Report Waiting: briefed; no chat"]
     );
     let again = task(&host, &bot, "Working", "done").await;
     assert_ne!(again["thread"], working["thread"]);
@@ -494,7 +491,7 @@ async fn the_chat_passes_words_on_to_a_task_and_its_one_report_comes_after_them(
     wait("both reports", async || (relayed(&host, &bot).await.len() == 2).then_some(())).await;
     assert_eq!(
         relayed(&host, &bot).await,
-        ["Relayed: Heard and the tests", "Relayed: Report Waiting: forked; no chat"],
+        ["Relayed: Heard and the tests", "Relayed: Report Waiting: briefed; no chat"],
         "one report a task: the last turn's"
     );
     let heard = logged(&host.workspace(&bot), "prompts.jsonl");
@@ -516,14 +513,13 @@ async fn in_advisor_mode_tasks_run_on_the_threads_agent() {
     host.call("updateBot", json!({"id": bot, "threadAgent": {"backend": "custom", "command": worker}})).await;
     host.reply(&bot, "ADD Fix|x").await;
     wait("its report", async || (relayed(&host, &bot).await.len() == 1).then_some(())).await;
-    // Another agent can't take the chat's session: it starts from a brief that tells it the chat.
-    assert_eq!(relayed(&host, &bot).await, ["Relayed: Report Fix: briefed; saw the chat; on worker"]);
+    assert_eq!(relayed(&host, &bot).await, ["Relayed: Report Fix: briefed; no chat; on worker"]);
 
-    // Off: the chat's own agent again, on a fork of its session.
+    // Off: the chat's own agent again.
     host.call("updateBot", json!({"id": bot, "threadAgent": null})).await;
     host.reply(&bot, "ADD Again|x").await;
     wait("its report", async || (relayed(&host, &bot).await.len() == 2).then_some(())).await;
-    assert_eq!(relayed(&host, &bot).await[1], "Relayed: Report Again: forked; no chat");
+    assert_eq!(relayed(&host, &bot).await[1], "Relayed: Report Again: briefed; no chat");
 }
 
 #[tokio::test]
@@ -540,7 +536,7 @@ async fn a_task_that_follows_another_runs_in_its_session_when_it_is_done() {
     wait("every report", async || (relayed(&host, &bot).await.join(" ").matches("Report ").count() == 3).then_some(()))
         .await;
     let reports = relayed(&host, &bot).await.join(" | ");
-    assert!(reports.contains("Report First: forked; no chat"), "{reports}");
+    assert!(reports.contains("Report First: briefed; no chat"), "{reports}");
     assert!(reports.contains("Report Second: next; no chat"), "{reports}");
 
     // The same thread and session took it, ahead of the ordinary task that was before it in the box.
@@ -552,7 +548,7 @@ async fn a_task_that_follows_another_runs_in_its_session_when_it_is_done() {
     let prompts = host.log(&bot, "prompts.jsonl");
     let at = |prompt: &Value| prompts.iter().position(|p| p == prompt).unwrap();
     assert!(at(second) < at(&task_prompts(&host, &bot, "Other")[0]), "it had the place its thread kept");
-    assert_eq!(host.log(&bot, "forks.jsonl").len(), 2, "one fork per thread");
+    assert_eq!(host.log(&bot, "forks.jsonl"), [] as [Value; 0], "no thread forks the chat");
 
     // Once that thread has ended, a task can't follow into it.
     host.reply(&bot, "ADD Third|more|after=First").await;
@@ -598,7 +594,7 @@ async fn tasks_stop_one_or_all_without_a_report_and_a_stopped_one_is_tried_again
     release(&host, &bot, "one");
     host.call("retryWork", json!({"botId": bot, "taskId": id(&one)})).await;
     wait("its report", async || {
-        relayed(&host, &bot).await.iter().any(|r| r == "Relayed: Report One: forked; no chat").then_some(())
+        relayed(&host, &bot).await.iter().any(|r| r == "Relayed: Report One: briefed; no chat").then_some(())
     })
     .await;
     let done = task(&host, &bot, "One", "done").await;
@@ -1102,7 +1098,7 @@ async fn a_thread_beside_another_in_one_repository_works_in_a_worktree_of_its_ow
     .await;
     assert!(told.contains("you work in a git worktree of your own") && told.contains("codync/second-thread"), "{told}");
     assert_eq!(task_prompts_in(&dir, "Second thread"), [] as [Value; 0], "not in the bot's folder");
-    assert_eq!(logged(&dir, "forks.jsonl").len(), 1, "only the first forked: a worktree's thread starts anew");
+    assert!(logged(&dir, "forks.jsonl").is_empty(), "no thread forks the chat");
 
     // Nothing changed in it: the worktree and its branch go, and the report says so.
     std::fs::write(folder(&second).join("release-second"), "").unwrap();
@@ -1239,8 +1235,8 @@ async fn a_threads_sign_in_is_asked_in_the_chat_and_its_task_goes_on_in_the_same
     host.reply(&bot, "hello again").await;
     let done = task(&host, &bot, "Login", "done").await;
     assert_eq!(done["thread"], waiting["thread"], "the same thread");
-    // A new agent process (the old one kept the old sign-in) goes on in the thread's session: its fork of the chat
-    // and what it did are still there.
+    // A new agent process (the old one kept the old sign-in) goes on in the thread's session: what it did is still
+    // there.
     let tries = task_prompts(&host, &bot, "Login");
     assert_eq!(tries.len(), 2, "{tries:?}");
     assert_eq!(tries[0]["session"], tries[1]["session"], "{tries:?}");
@@ -1250,7 +1246,7 @@ async fn a_threads_sign_in_is_asked_in_the_chat_and_its_task_goes_on_in_the_same
 }
 
 #[tokio::test]
-async fn a_threads_sign_in_on_an_agent_that_cant_reopen_a_session_tells_the_new_one_the_chat() {
+async fn a_threads_sign_in_on_an_agent_that_cant_reopen_a_session_tells_the_new_one_nothing_of_the_chat() {
     let host = Host::start().await;
     let command = common::fixture_command("work_agent.py", "no-load");
     let bot = json!({"name": "Mika", "backend": "kimi", "command": command, "connectors": [], "notify": false});
@@ -1263,16 +1259,16 @@ async fn a_threads_sign_in_on_an_agent_that_cant_reopen_a_session_tells_the_new_
     std::fs::remove_file(signed_out).unwrap();
     host.reply(&bot, "hello again").await;
     task(&host, &bot, "Login", "done").await;
-    // A new agent process can't take the thread's session up again: a new one is told the chat it comes from.
+    // A new agent process can't take the thread's session up again: a new one, still nothing of the chat.
     let tries = task_prompts(&host, &bot, "Login");
     assert_eq!(tries.len(), 2, "{tries:?}");
     assert_ne!(tries[0]["session"], tries[1]["session"], "{tries:?}");
     let text = tries[1]["text"].as_str().unwrap();
-    assert!(text.contains("[The chat you come from, so far]") && text.contains("blue theme"), "{text}");
+    assert!(!text.contains("[The chat you come from, so far]") && !text.contains("blue theme"), "{text}");
 }
 
 #[tokio::test]
-async fn a_thread_moves_past_a_signed_out_agent_asks_in_the_chat_and_its_next_agent_hears_the_chat() {
+async fn a_thread_moves_past_a_signed_out_agent_asks_in_the_chat_and_its_next_agent_hears_its_work_alone() {
     let host = Host::start().await;
     let bot = kimi_bot(&host, "Mika", json!([{"backend": "codex", "command": relay_agent("standin")}])).await;
     host.reply(&bot, "Remember the blue theme").await;
@@ -1288,11 +1284,11 @@ async fn a_thread_moves_past_a_signed_out_agent_asks_in_the_chat_and_its_next_ag
     let texts: Vec<&str> = moved.iter().filter_map(|e| e["data"]["text"].as_str()).collect();
     assert!(texts.contains(&"Kimi Code is signed out. Codex carried on."), "{texts:?}");
     assert!(texts.contains(&"Asked in the chat to sign in to Kimi Code."), "{texts:?}");
-    // The fork that carried the chat stays with the agent that failed: the next one is told the chat.
+    // The next agent is told the thread's own work, nothing of the chat.
     let log = host.log(&bot, "standin.jsonl");
     let prompt = log.iter().rfind(|r| r["method"] == "session/prompt").unwrap()["params"]["prompt"][0]["text"].clone();
     let prompt = prompt.as_str().unwrap();
-    assert!(prompt.contains("[The chat you come from, so far]") && prompt.contains("blue theme"), "{prompt}");
+    assert!(!prompt.contains("[The chat you come from, so far]") && !prompt.contains("blue theme"), "{prompt}");
 }
 
 #[tokio::test]
@@ -1540,7 +1536,7 @@ async fn send_now_stops_the_threads_turn_for_the_message_or_joins_it_where_the_a
     assert_eq!(task(&host, &steers, "Slow", "working").await["thread"], slow["thread"]);
     release(&host, &steers, "slow");
     let done = task(&host, &steers, "Slow", "done").await;
-    assert_eq!(done["result"], "Report Slow: forked; no chat; joined use tabs");
+    assert_eq!(done["result"], "Report Slow: briefed; no chat; joined use tabs");
     let relayed = reply(&host, &steers, "Relayed:").await;
     assert!(relayed.contains("not the thread's: «use tabs»]"), "{relayed}");
 }
@@ -1550,7 +1546,7 @@ async fn a_message_to_an_ended_task_reopens_it_and_it_reports_again() {
     let host = Host::start().await;
     let bot = bot_with(&host, 1).await;
     host.reply(&bot, "ADD Quick|look around").await;
-    assert_eq!(reply(&host, &bot, "Relayed:").await, "Relayed: Report Quick: forked; no chat");
+    assert_eq!(reply(&host, &bot, "Relayed:").await, "Relayed: Report Quick: briefed; no chat");
     let done = task(&host, &bot, "Quick", "done").await;
     assert_eq!(done["talk"], true, "its thread is kept with it");
 
@@ -1590,7 +1586,7 @@ async fn a_message_to_an_ended_task_reopens_it_and_it_reports_again() {
     assert_ne!(prompt["session"], task_prompts(&host, &fresh, "Quick")[0]["session"]);
     let text = prompt["text"].as_str().unwrap();
     assert!(text.contains("You worked on \"Quick\" before") && text.contains("look around"), "{text}");
-    assert!(text.contains("[Codync: what you reported when it ended:]\nReport Quick: forked; no chat"), "{text}");
+    assert!(text.contains("[Codync: what you reported when it ended:]\nReport Quick: briefed; no chat"), "{text}");
     assert!(text.contains("and now?\n\n[Codync: the user wrote this to you directly"), "{text}");
 }
 

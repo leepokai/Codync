@@ -44,13 +44,6 @@ pub fn access_of(hub: &Hub, cfg: &BotConfig) -> Access {
     }
 }
 
-/// Whether a thread that takes a task from `source` starts from the chat (a fork of its session, else the chat so
-/// far). A routine's run doesn't: in the chat it had a session of its own with only its prompt, and it costs and
-/// sees the same here.
-pub fn from_chat(source: &Source) -> bool {
-    !matches!(source, Source::Routine { .. } | Source::User)
-}
-
 /// `work_added` for a task that came from `source`.
 fn added(hub: &Hub, source: &Source) {
     let properties = json!({"outcome": "added", "after": false, "source": source.kind()});

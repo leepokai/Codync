@@ -23,8 +23,8 @@ pub(super) struct Capacity {
     pub running: usize,
     /// The bot's agent is near its usage limit: one thread at a time.
     pub near_limit: bool,
-    /// The bot's own turn is over: a new thread forks the chat's session, which a running turn would leave with an
-    /// unanswered tool call.
+    /// The bot's own turn is over. A task the turn adds starts once it ends, since stopping that turn drops the task;
+    /// a routine's run or a room's turn shares the bot's actor and ends first too.
     pub chat_free: bool,
 }
 
@@ -263,10 +263,10 @@ fn plan(hub: &Hub, cfg: &BotConfig, tasks: &mut Vec<Task>, over: Option<&str>) -
         if matches!(standing, Standing::Wait(_)) {
             continue;
         }
-        // What it follows began its thread's session.
+        // What it follows began its thread's session, which it goes on in.
         let before = tasks.iter().find(|i| i.id == id).and_then(|i| i.after.clone());
         let before = before.and_then(|id| tasks.iter().position(|i| i.id == id));
-        let began = before.and_then(|at| tasks[at].start);
+        let began = before.is_some_and(|at| tasks[at].began);
         // Another thread of the bot works in its folder now: a new one beside it gets a worktree, in a repository.
         let side_by_side = tasks::working(tasks) > 0;
         let Some(at) = tasks.iter().position(|i| i.id == id) else { continue };
@@ -291,14 +291,13 @@ fn plan(hub: &Hub, cfg: &BotConfig, tasks: &mut Vec<Task>, over: Option<&str>) -
         task.status = Status::Working;
         task.started_at = Some(now_ms());
         if let Standing::Join(thread) = standing {
-            task.start = began;
+            task.began = began;
             task.thread = Some(thread.clone());
             task.worktree = inherited.or(task.worktree.take());
             plan.join.push((thread, task.clone()));
         } else {
             let thread = thread_bot(cfg, &task.setup);
-            task.start = None;
-            task.fork_failed = false;
+            task.began = false;
             // One it has from before (it gave way, or is tried again) is where its work is.
             task.worktree.take_if(|w| !worktree::usable(w));
             // A bot's own folder keeps all its work in one place, with its versions (`agent::versions`).
@@ -310,15 +309,6 @@ fn plan(hub: &Hub, cfg: &BotConfig, tasks: &mut Vec<Task>, over: Option<&str>) -
                 && side_by_side
                 && worktree::in_repo(&thread.cwd);
             task.place = if task.worktree.is_some() || beside { Place::Worktree } else { Place::Folder };
-            // A routine's run starts as it did in the chat: a new session that knows only its own prompt.
-            // ponytail: a thread in a worktree starts from a brief, not a fork: a fork is taken in another folder
-            // than its session's, which no agent is checked to honor. Fork there once one is (stage 10's spikes).
-            // A thread its setup puts on another agent or login can't take the chat's session either.
-            let forks = sources::from_chat(&task.source)
-                && task.place == Place::Folder
-                && threads_fork(cfg)
-                && fallback::login::of(&thread) == fallback::login::of(cfg);
-            task.fork_from = forks.then(|| fork_source(hub, &cfg.id)).flatten();
             task.thread = Some(thread.id.clone());
             {
                 let _g = hub.emit_lock.locked();
@@ -393,12 +383,6 @@ fn handed(
     Ok(files.to_vec())
 }
 
-/// Whether `cfg`'s threads run on the chat's own agent and login, so a thread may start as a fork of the chat's
-/// session (its model may differ: a forked session takes the thread's model like a new one).
-fn threads_fork(cfg: &BotConfig) -> bool {
-    fallback::login::of(&fallback::threads(cfg)) == fallback::login::of(cfg)
-}
-
 /// A thread bot for `cfg`: its config (on the threads' own agent, in Advisor mode) with what its task's `setup`
 /// changes, without what stays with the chat.
 fn thread_bot(cfg: &BotConfig, setup: &tasks::Setup) -> BotConfig {
@@ -426,17 +410,6 @@ fn thread_bot(cfg: &BotConfig, setup: &tasks::Setup) -> BotConfig {
         thread_fallbacks: Vec::new(),
         ..setup.over(&fallback::threads(cfg))
     }
-}
-
-/// `bot`'s main session, when a thread may start as a fork of it: the bot is on its own agent, and the session has
-/// used under half its window (a fork carries all of it). Whether the agent can fork is its actor's to find out.
-fn fork_source(hub: &Hub, bot: &str) -> Option<String> {
-    let session = hub.store.bot(bot).ok().flatten()?.session_id.filter(|s| !s.is_empty())?;
-    if hub.runtime(bot).agent_step.is_some() {
-        return None;
-    }
-    let chat = crate::agent::bot::conversation(&hub.store, bot, &session);
-    (chat.size == 0 || chat.used * 2 < chat.size).then_some(session)
 }
 
 #[cfg(test)]
@@ -503,21 +476,6 @@ mod tests {
         assert_eq!(free_seats(3, 4, 2), 0, "never two past it, however many wait");
         assert_eq!(free_seats(1, 1, 1), 1);
         assert_eq!(free_seats(2, 4, 0), 0, "the ceiling was lowered: nothing new starts");
-    }
-
-    #[test]
-    fn a_thread_forks_the_chats_session_only_on_the_chats_own_agent_and_login() {
-        use crate::store::Fallback;
-        let base: BotConfig =
-            serde_json::from_value(json!({"id": "b", "name": "B", "backend": "claude", "model": "opus"}))
-                .expect("a bot");
-        assert!(threads_fork(&base), "off: the chat's own agent");
-        let on = |backend: &str| BotConfig {
-            thread_agent: Some(Fallback { backend: backend.into(), model: Some("m".into()), ..Fallback::default() }),
-            ..base.clone()
-        };
-        assert!(!threads_fork(&on("codex")), "another agent can't take the chat's session");
-        assert!(threads_fork(&on("claude")), "only the model differs: a fork takes the thread's model");
     }
 
     #[test]

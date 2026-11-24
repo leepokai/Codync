@@ -91,7 +91,10 @@ def chat_tool(tool, arguments):
 
 
 def server_tool(name, tool, arguments):
-    server = next(s for s in servers if s["name"] == name)
+    server = next((s for s in servers if s["name"] == name), None)
+    if server is None:
+        # A thread isn't given that server at all.
+        return {"isError": True, "content": [{"type": "text", "text": f"no {name} server"}]}
     with subprocess.Popen([server["command"], *server["args"]], stdin=subprocess.PIPE,
                           stdout=subprocess.PIPE, encoding="utf-8") as mcp:
         def rpc(identifier, method, params):
@@ -101,7 +104,8 @@ def server_tool(name, tool, arguments):
 
         rpc(1, "initialize", {"protocolVersion": "2025-06-18"})
         listed = {t["name"] for t in rpc(2, "tools/list", {})["result"]["tools"]}
-        assert name != "chat" or {"add_task", "steer_task", "tell_task", "work_status", "recall_task"} <= listed, listed
+        # A thread's chat server leaves out what only the chat may call; the host still refuses a call to it.
+        log("listed.jsonl", {"server": name, "tool": tool, "listed": tool in listed})
         response = rpc(3, "tools/call", {"name": tool, "arguments": arguments})
         mcp.stdin.close()
         return response["result"]

@@ -20,6 +20,8 @@ pub const TOOLS: [&str; 5] = ["add_task", "steer_task", "tell_task", "work_statu
 /// A thread can't do what only makes sense from the chat. `what`: the tool, as the refusal names it.
 pub fn refuse_in_thread(hub: &Hub, bot: &str, what: &str) -> Result<()> {
     if hub.store.bot(bot)?.is_some_and(|row| row.config.is_thread()) {
+        let properties = json!({"tool": what});
+        analytics::capture(hub, Event::ThreadToolRefused, properties.as_object().cloned().unwrap_or_default());
         bail!(
             "{what} isn't available in a thread: say in your report what you need, and you will handle it in the chat"
         );
@@ -52,10 +54,10 @@ pub fn tools() -> Vec<Value> {
     vec![
         json!({
             "name": "add_task",
-            "description": "Put long work in your event box as a task: one of your threads (you again, in a session of its own) does it away from this chat, and you stay free to answer the user. It starts when this turn ends and a thread is free; until then it waits its turn. Its report comes back to you later as a message. One task per piece of work.",
+            "description": "Put long work in your event box as a task: one of your threads does it away from this chat, in a session of its own that sees nothing of this chat, and you stay free to answer the user. It starts when this turn ends and a thread is free; until then it waits its turn. Its report comes back to you later as a message. One task per piece of work.",
             "inputSchema": {"type": "object", "properties": {
                 "title": {"type": "string", "description": "A few words the user sees while it works, e.g. \"Fix the login redirect\"."},
-                "brief": {"type": "string", "description": "Everything needed to do the work: the goal, what you already know, what done looks like."},
+                "brief": {"type": "string", "description": "Everything needed to do the work, standing alone (the thread sees nothing of this chat): the goal, what you already know, the user's words that matter, what done looks like."},
                 "after": {"type": "string", "description": "The id of a task that is working or waiting: this one is done after it, in the same thread, knowing what that one did. For more of the same work."},
             }, "required": ["title", "brief"]},
             "annotations": {"readOnlyHint": false, "idempotentHint": false},

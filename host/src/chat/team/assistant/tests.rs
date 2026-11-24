@@ -329,7 +329,8 @@ async fn a_bot_messages_a_session_and_gets_its_answer() {
     let other = session(Codex, "t2");
     let wrong =
         local_call(hub, &other, "message_bot", &json!({"botId": "b", "message": "x", "replyTo": request})).await;
-    assert_ne!(wrong.as_ref().ok().map(|v| v["status"].clone()), Some(json!("delivered")));
+    let wrong = wrong.unwrap_err().to_string();
+    assert!(wrong.contains("went to another session"), "no new work on the bot either: {wrong}");
     // Paired with another bot's id, the answer is refused, and the request still waits for it.
     let mixed = json!({"botId": "nobody", "message": "yes", "replyTo": request});
     let mixed = local_call(hub, &codex, "message_bot", &mixed).await.unwrap_err().to_string();

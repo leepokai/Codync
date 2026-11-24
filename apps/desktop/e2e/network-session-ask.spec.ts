@@ -29,7 +29,7 @@ for line in sys.stdin:
         if "[Codync: these are bot replies" in text: say("Relayed: "+text)
         elif last.startswith("ASK "):
             _,to,msg=last.split(" ",2)
-            listed,sent=team([("list_bots",{"kind":"codex","limit":50}),("message_bot",{"botId":to,"message":msg})])
+            listed,sent=team([("list_bots",{"kind":"codex","query":to}),("message_bot",{"botId":to,"message":msg})])
             say("Listed: "+listed+"\\nSent: "+sent)
         else: say("ok")
         send({"jsonrpc":"2.0","id":m["id"],"result":{"stopReason":"end_turn"}})

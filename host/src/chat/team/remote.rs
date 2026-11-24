@@ -90,6 +90,11 @@ impl Waiting {
         fits.then(|| all.remove(id)).flatten()
     }
 
+    /// Request `id` is waiting on a session other than `key`.
+    fn for_another_session(&self, id: &str, key: &str) -> bool {
+        self.all.locked().get(id).and_then(|w| w.session.as_ref()).is_some_and(|(k, _)| k != key)
+    }
+
     fn mark_answered(&self, key: &str, id: &str) {
         let mut answered = self.answered.locked();
         answered.push_back((key.to_owned(), id.to_owned()));
@@ -351,6 +356,9 @@ pub(super) fn to_local_session(
 /// as its reply turn. False when it isn't one.
 pub(super) fn session_replied(hub: &Hub, session: &Session, reply_to: &str, to: &str, body: &str) -> Result<bool> {
     let Some((asker, signed)) = hub.waiting.asker(reply_to, &session.key) else {
+        if hub.waiting.for_another_session(reply_to, &session.key) {
+            anyhow::bail!("letter {reply_to} went to another session: only that session can answer it");
+        }
         // Sent again after it went through (a retry): delivered already, not a new request.
         return Ok(hub.waiting.was_answered(&session.key, reply_to));
     };

@@ -172,9 +172,17 @@ mod tests {
         let tag = uuid::Uuid::new_v4().simple().to_string();
         let first_name = format!("Thread deploy {}", &tag[..8]);
         let thread_cfg = hub.store.bot("thread-a1").unwrap().unwrap().config;
-        let thread_snap =
-            crate::chat::context::adopt(&hub.store, &thread_cfg.as_owner(), "s-thread", "SYSTEM".into(), String::new())
-                .unwrap();
+        let (thread_system, thread_identity) =
+            crate::chat::context::render_with_identity(&hub.store, &thread_cfg.as_owner());
+        let thread_snap = crate::chat::context::adopt(
+            &hub.store,
+            thread_cfg.owner(),
+            "s-thread",
+            thread_system,
+            thread_identity,
+            String::new(),
+        )
+        .unwrap();
 
         let args = json!({"name": first_name, "description": "Deploy steps.", "instructions": "1. Build."});
         let saved = call(&hub, "thread-a1", &args).await.unwrap()["skill"].clone();

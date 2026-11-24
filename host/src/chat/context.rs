@@ -146,13 +146,13 @@ pub fn resolve(store: &Store, cfg: &BotConfig, session: &str) -> Result<Snapshot
     if let Some(s) = stored.as_ref().filter(|s| s.epoch == epoch && !s.system.is_empty()) {
         return Ok(s.clone());
     }
-    let identity = Identity::of(store, cfg);
+    let (system, identity) = render_with_identity(store, cfg);
     let memory = crate::chat::memory::current_revision(store, owner);
     let unprompted = stored.as_ref().is_some_and(|old| old.unprompted);
     let s = Snapshot {
         session: session.to_owned(),
         epoch,
-        system: render(store, cfg),
+        system,
         system_identity: identity.clone(),
         unprompted,
         // A re-render reaches the agent only as Claude's system prompt or a re-sent profile (see `mark_announced`):
@@ -190,20 +190,26 @@ pub fn invalidate(store: &Store, bot_id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Records `system` (already handed to a new session), rendered at memory revision `memory`, as that session's
-/// snapshot.
-pub fn adopt(store: &Store, cfg: &BotConfig, session: &str, system: String, memory: String) -> Result<Snapshot> {
-    let identity = Identity::of(store, cfg);
+/// Records `system` (already handed to a new session), rendered with `identity` at memory revision `memory`, as that
+/// session's snapshot.
+pub fn adopt(
+    store: &Store,
+    bot_id: &str,
+    session: &str,
+    system: String,
+    identity: Identity,
+    memory: String,
+) -> Result<Snapshot> {
     let s = Snapshot {
         session: session.to_owned(),
-        epoch: epoch(store, cfg.owner(), session),
+        epoch: epoch(store, bot_id, session),
         system,
         system_identity: identity.clone(),
         announced: identity,
         memory,
         unprompted: true,
     };
-    save(store, cfg.owner(), &s)?;
+    save(store, bot_id, &s)?;
     Ok(s)
 }
 
@@ -244,24 +250,35 @@ final reply goes back to that bot as your answer, so write it for that bot.";
 const OTHER_COMPUTERS: &str = "Other computers: the user's other computers and their bots are reached through Codync's network. To see, ask or hand work to a bot or Codync on another computer, use list_bots and message_bot (ids like name@computer), not SSH, remote shells or your engine's own agent and session tools, which only see this computer. Use SSH only when the user asks for it or the request is about that computer's files or system rather than its bots.";
 
 /// The instructions of a session of `cfg`, a bot or one of its threads, rendered live.
+#[cfg(test)]
 pub fn render(store: &Store, cfg: &BotConfig) -> String {
-    if cfg.is_thread() {
-        render_thread(store, cfg, &crate::chat::work::source_of(store, cfg))
+    render_with_identity(store, cfg).0
+}
+
+/// The instructions of a session of `cfg`, rendered live alongside the [`Identity`] baked into them so `adopt`
+/// records what the agent actually received even if skills or profile fields change before `session/new` replies.
+pub fn render_with_identity(store: &Store, cfg: &BotConfig) -> (String, Identity) {
+    let identity = Identity::of(store, cfg);
+    let system = if cfg.is_thread() {
+        render_thread(store, cfg, &crate::chat::work::source_of(store, cfg), &identity)
     } else {
-        render_bot(store, cfg)
-    }
+        render_bot(store, cfg, &identity)
+    };
+    (system, identity)
 }
 
 /// Who the bot is: its name and description.
-fn identity(cfg: &BotConfig) -> Vec<String> {
-    let name = cfg.name.trim();
+fn identity_lines(identity: &Identity) -> Vec<String> {
     let mut lines = vec!["Agent profile:".to_owned()];
-    if !name.is_empty() {
-        lines.push(format!("Title: {name}"));
-        lines.push(format!("Your agent name is \"{name}\". If the user asks for your name, answer with \"{name}\"."));
+    if !identity.name.is_empty() {
+        lines.push(format!("Title: {}", identity.name));
+        lines.push(format!(
+            "Your agent name is \"{}\". If the user asks for your name, answer with \"{}\".",
+            identity.name, identity.name
+        ));
     }
-    if !cfg.description.trim().is_empty() {
-        lines.push(format!("Description: {}", cfg.description.trim()));
+    if !identity.description.is_empty() {
+        lines.push(format!("Description: {}", identity.description));
     }
     lines.push(String::new());
     lines.push(
@@ -289,10 +306,10 @@ fn environment(cfg: &BotConfig, chat: bool) -> String {
 }
 
 /// What every session ends with: the skills, the compaction keep-list and, told who the bot is, its memory.
-fn closing(store: &Store, cfg: &BotConfig, mut lines: Vec<String>, memory: bool) -> String {
-    if let Some(skills) = crate::market::skills_brief(store, &enabled_skills(store, cfg)) {
+fn closing(store: &Store, cfg: &BotConfig, mut lines: Vec<String>, memory: bool, skills_brief: &str) -> String {
+    if !skills_brief.is_empty() {
         lines.push(String::new());
-        lines.push(skills);
+        lines.push(skills_brief.to_owned());
     }
     lines.push(String::new());
     lines.push(codync_mem::compaction::KEEP.to_owned());
@@ -306,8 +323,8 @@ fn closing(store: &Store, cfg: &BotConfig, mut lines: Vec<String>, memory: bool)
 }
 
 /// The bot's own instructions.
-fn render_bot(store: &Store, cfg: &BotConfig) -> String {
-    let mut lines = identity(cfg);
+fn render_bot(store: &Store, cfg: &BotConfig, identity: &Identity) -> String {
+    let mut lines = identity_lines(identity);
     if cfg.lead {
         lines.push(crate::chat::lead::BRIEF.to_owned());
     }
@@ -331,14 +348,14 @@ fn render_bot(store: &Store, cfg: &BotConfig) -> String {
     lines.push(crate::routines::BRIEF.to_owned());
     lines.push(String::new());
     lines.push(crate::chat::work::BRIEF.to_owned());
-    closing(store, cfg, lines, true)
+    closing(store, cfg, lines, true, &identity.skills_brief)
 }
 
 /// A thread's instructions: what its task needs, never the chat's own paragraphs (messages, rooms, the event box).
 /// On a handed-out task it is told the task alone; otherwise who the bot is too, as the bot away from its chat.
-fn render_thread(store: &Store, cfg: &BotConfig, source: &Source) -> String {
+fn render_thread(store: &Store, cfg: &BotConfig, source: &Source, identity: &Identity) -> String {
     let as_bot = as_bot(cfg, source);
-    let mut lines = if as_bot { identity(cfg) } else { Vec::new() };
+    let mut lines = if as_bot { identity_lines(identity) } else { Vec::new() };
     lines.push(
         match source {
             Source::Bot => TASK,
@@ -367,7 +384,7 @@ fn render_thread(store: &Store, cfg: &BotConfig, source: &Source) -> String {
         lines.push(String::new());
         lines.push(OTHER_COMPUTERS.to_owned());
     }
-    closing(store, cfg, lines, as_bot)
+    closing(store, cfg, lines, as_bot, &identity.skills_brief)
 }
 
 /// Whose a thread's folder is.
@@ -585,7 +602,8 @@ mod tests {
     fn snapshot_is_frozen_until_compaction_and_updates_are_announced_once() {
         let store = store();
         let a = cfg("Fixer", "Fix bugs");
-        let first = adopt(&store, &a, "s1", "SYSTEM v1".into(), String::new()).expect("adopt");
+        let first =
+            adopt(&store, &a.id, "s1", "SYSTEM v1".into(), Identity::of(&store, &a), String::new()).expect("adopt");
         // Frozen: resolving again returns the same text, even though a live render differs.
         assert_eq!(resolve(&store, &a, "s1").expect("resolve").system, "SYSTEM v1");
         assert!(profile_update(&store, &first, &a).is_none());
@@ -618,7 +636,8 @@ mod tests {
         skill("When shipping");
         let mut a = cfg("Fixer", "Fix bugs");
         a.skills = vec!["release".into()];
-        let first = adopt(&store, &a, "s1", "SYSTEM v1".into(), String::new()).expect("adopt");
+        let first =
+            adopt(&store, &a.id, "s1", "SYSTEM v1".into(), Identity::of(&store, &a), String::new()).expect("adopt");
         assert!(profile_update(&store, &first, &a).is_none());
         skill("When shipping a release or a hotfix");
         let (text, _) = profile_update(&store, &first, &a).expect("the description changed");
@@ -629,7 +648,7 @@ mod tests {
     fn a_memory_change_re_renders_but_keeps_what_the_agent_heard() {
         let store = store();
         let a = cfg("Fixer", "Fix bugs");
-        adopt(&store, &a, "s1", "SYSTEM v1".into(), String::new()).expect("adopt");
+        adopt(&store, &a.id, "s1", "SYSTEM v1".into(), Identity::of(&store, &a), String::new()).expect("adopt");
         let b = cfg("Fixer", "Fix bugs and write tests");
         invalidate(&store, &a.id).expect("invalidate");
         let snap = resolve(&store, &b, "s1").expect("resolve");
@@ -642,7 +661,8 @@ mod tests {
         let store = store();
         let mut lead = cfg("Fixer", "Fix bugs");
         lead.lead = true;
-        adopt(&store, &lead, "s1", render(&store, &lead), String::new()).expect("adopt");
+        let (system, identity) = render_with_identity(&store, &lead);
+        adopt(&store, &lead.id, "s1", system, identity, String::new()).expect("adopt");
         // A snapshot from before the lead could move: the role was in its instructions alone.
         let k = key(&lead.id, "s1");
         let mut old: serde_json::Value = serde_json::from_str(&store.kv_get(&k).expect("saved")).expect("json");
@@ -668,7 +688,8 @@ mod tests {
     fn a_new_sessions_instructions_stay_owed_until_a_prompt_carried_them() {
         let store = store();
         let a = cfg("Fixer", "Fix bugs");
-        let first = adopt(&store, &a, "s1", "SYSTEM v1".into(), String::new()).expect("adopt");
+        let first =
+            adopt(&store, &a.id, "s1", "SYSTEM v1".into(), Identity::of(&store, &a), String::new()).expect("adopt");
         assert!(resolve(&store, &a, "s1").expect("resolve").unprompted, "survives a restart");
         mark_prompted(&store, &a.id, &first).expect("mark");
         assert!(!resolve(&store, &a, "s1").expect("resolve").unprompted);
@@ -682,7 +703,8 @@ mod tests {
         let mut thread = owner.clone();
         thread.id = "thread-1".into();
         thread.thread_of = Some(owner.id.clone());
-        let snap = adopt(&store, &thread.as_owner(), "s-thread", "SYSTEM".into(), String::new()).expect("adopt");
+        let (system, identity) = render_with_identity(&store, &thread.as_owner());
+        let snap = adopt(&store, thread.owner(), "s-thread", system, identity, String::new()).expect("adopt");
         assert!(profile_update(&store, &snap, &thread.as_owner()).is_none());
 
         let list = serde_json::json!([{"id": "deploy", "name": "Deploy", "description": "Ship releases"}]);
@@ -693,5 +715,29 @@ mod tests {
         let (update, _) = profile_update(&store, &snap, &thread.as_owner()).expect("thread hears parent's new skill");
         assert!(update.contains("- Deploy: Ship releases"), "{update}");
         assert!(render(&store, &thread.as_owner()).contains("- Deploy: Ship releases"));
+    }
+
+    #[test]
+    fn a_skill_saved_while_opening_a_session_is_still_announced_after_adopt() {
+        let store = store();
+        let mut owner = cfg("Fixer", "Fix bugs");
+        store.save_bot(&owner).expect("save owner");
+
+        // Rendered before `session/new` (no skills yet); another thread saves a skill before `adopt` runs.
+        let (system, identity) = render_with_identity(&store, &owner);
+        assert!(!system.contains("Deploy"));
+        let list = serde_json::json!([{"id": "deploy", "name": "Deploy", "description": "Ship releases"}]);
+        store.kv_set("skills", &list.to_string()).expect("save skills");
+        owner.skills = vec!["deploy".into()];
+        store.save_bot(&owner).expect("save owner with skill");
+
+        let snap = adopt(&store, &owner.id, "s-new", system, identity, String::new()).expect("adopt");
+        let (update, _) = profile_update(&store, &snap, &owner).expect("new skill must still be announced");
+        assert!(update.contains("- Deploy: Ship releases"), "{update}");
+
+        // Same for a forked session: a skill saved while `session/fork` runs is announced on the fork's next turn.
+        let forked = adopt_fork(&store, &owner.id, "s-fork", &snap).expect("adopt fork");
+        let (fork_update, _) = profile_update(&store, &forked, &owner).expect("forked session must hear new skill");
+        assert!(fork_update.contains("- Deploy: Ship releases"), "{fork_update}");
     }
 }

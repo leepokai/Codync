@@ -329,10 +329,12 @@ impl Actor {
         if slot.is_none() {
             crate::chat::work::began(&self.hub, &self.cfg);
         }
-        let (revision, system) = {
+        let (revision, system, identity) = {
             let (hub, cfg) = (self.hub.clone(), self.cfg.clone());
             tokio::task::spawn_blocking(move || {
-                (memory::current_revision(&hub.store, cfg.owner()), context::render(&hub.store, &cfg))
+                let revision = memory::current_revision(&hub.store, cfg.owner());
+                let (system, identity) = context::render_with_identity(&hub.store, &cfg);
+                (revision, system, identity)
             })
             .await?
         };
@@ -340,7 +342,7 @@ impl Actor {
         self.instruct(&mut params, instructions, &system);
         let res = self.session_request("session/new", params).await?;
         let sid = self.adopt_opened(&res, slot, renamed).await?;
-        context::adopt(&self.hub.store, &self.cfg, &sid, system.clone(), revision)?;
+        context::adopt(&self.hub.store, self.cfg.owner(), &sid, system.clone(), identity, revision)?;
         if instructions == Instructions::ClaudeMeta {
             self.applied_system.insert(sid, system);
         }

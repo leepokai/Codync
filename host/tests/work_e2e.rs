@@ -2126,9 +2126,10 @@ async fn a_thread_without_a_bot_and_no_folder_works_in_one_of_its_own() {
 async fn a_thread_saves_a_skill_for_its_bot_and_restart_adopts_old_thread_skills() {
     let mut host = Host::start().await;
     let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
-    host.reply(&bot, "ADD Ship it|HOLD gate").await;
+    host.reply(&bot, "ADD Ship it|HOLD:gate").await;
     let working = task(&host, &bot, "Ship it", "working").await;
     let thread = working["thread"].as_str().unwrap().to_owned();
+    wait("first prompt in thread", async || task_prompts(&host, &bot, "Ship it").into_iter().next()).await;
 
     // Save a skill from the running background thread: the parent bot gets ownership, settings and chat notice.
     let saved = host

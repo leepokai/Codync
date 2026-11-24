@@ -348,7 +348,7 @@ mod tests {
 
     #[test]
     fn the_network_server_refuses_a_bots_agent() {
-        assert!(super::refuse_bot(Some("bot-1".into())).is_some_and(|v| v["isError"] == true));
-        assert!(super::refuse_bot(None).is_none());
+        assert!(refuse_bot(Some("bot-1".into())).is_some_and(|v| v["isError"] == true));
+        assert!(refuse_bot(None).is_none());
     }
 }

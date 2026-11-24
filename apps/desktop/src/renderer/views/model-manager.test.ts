@@ -193,6 +193,9 @@ test('resizeFrom anchors to the drag start, so cumulative deltas never compound'
   assert.deepEqual(size, { width: 670, height: 560 })
   size = resizeFrom('bottom', anchor, 0, -80, vw, vh)
   assert.deepEqual(size, { width: 640, height: 480 })
+  // The bottom handle says height: horizontal drift from a sloppy drag never changes the width.
+  size = resizeFrom('bottom', anchor, 40, 60, vw, vh)
+  assert.deepEqual(size, { width: 640, height: 620 })
   size = resizeFrom('corner-br', anchor, 40, 20, vw, vh)
   assert.deepEqual(size, { width: 680, height: 580 })
   size = resizeFrom('corner-bl', anchor, -40, 20, vw, vh)
@@ -206,6 +209,9 @@ test('stepSize steps only the axis the handle advertises, toward the drag direct
   assert.deepEqual(stepSize('left', size, 'ArrowLeft', vw, vh), { width: 656, height: 560 })
   assert.deepEqual(stepSize('left', size, 'ArrowRight', vw, vh), { width: 624, height: 560 })
   assert.deepEqual(stepSize('right', size, 'ArrowRight', vw, vh), { width: 656, height: 560 })
+  // Side handles say width: their Up/Down keys do nothing.
+  assert.deepEqual(stepSize('right', size, 'ArrowDown', vw, vh), { width: 640, height: 560 })
+  assert.deepEqual(stepSize('left', size, 'ArrowUp', vw, vh), { width: 640, height: 560 })
   // The bottom handle says height: its Left/Right keys do nothing.
   assert.deepEqual(stepSize('bottom', size, 'ArrowDown', vw, vh), { width: 640, height: 576 })
   assert.deepEqual(stepSize('bottom', size, 'ArrowLeft', vw, vh), { width: 640, height: 560 })

@@ -131,8 +131,10 @@ export const resizeFrom = (
 ) => {
   const growsWest = kind === 'left' || kind === 'corner-bl'
   const growsDown = kind !== 'left' && kind !== 'right'
+  // The bottom handle says "height": horizontal pointer drift never changes the width.
+  const widthDx = kind === 'bottom' ? 0 : growsWest ? -dx : dx
   return clampSheetSize(
-    anchor.width + (growsWest ? -dx : dx),
+    anchor.width + widthDx,
     anchor.height + (growsDown ? dy : 0),
     viewportWidth,
     viewportHeight,
@@ -153,12 +155,13 @@ export const stepSize = (
   const d = 16
   const growsWest = kind === 'left' || kind === 'corner-bl'
   const horizontal = kind !== 'bottom'
+  const vertical = kind !== 'left' && kind !== 'right'
   let dw = 0
   let dh = 0
   if (horizontal && key === 'ArrowLeft') dw = growsWest ? d : -d
   if (horizontal && key === 'ArrowRight') dw = growsWest ? -d : d
-  if (key === 'ArrowDown') dh = d
-  if (key === 'ArrowUp') dh = -d
+  if (vertical && key === 'ArrowDown') dh = d
+  if (vertical && key === 'ArrowUp') dh = -d
   return clampSheetSize(size.width + dw, size.height + dh, viewportWidth, viewportHeight)
 }
 

@@ -173,7 +173,8 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
     backends,
     on: pick,
     tr,
-    // The editor's own rule (withBackend): a login on the same agent keeps the model, another agent starts fresh.
+    // The editor's own rule (@shared/fallbacks' withBackend, which shapes a whole BotDraft): a login on
+    // the same agent keeps the model, another agent starts fresh — keep the two in step.
     pick: (b, loginProfile) => {
       run.current++
       setOutcomes({})
@@ -217,6 +218,9 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
     setOutcomes({})
     let applied = 0
     let failed = 0
+    // What this run changed: an applied bot leaves the selection afterwards, so a later Apply can
+    // never sweep it up again by surprise.
+    const appliedKeys = new Set<string>()
     const catalogs: Record<string, CatalogCheck> = {}
     try {
       if (model) {
@@ -268,6 +272,7 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
             .then((sent) => {
               if (sent !== 'sent') return
               applied++
+              appliedKeys.add(key)
               if (alive.current && run.current === myRun) setOutcomes((o) => ({ ...o, [key]: { ok: true, text: tr('Applied') } }))
             })
         } catch (e) {
@@ -276,11 +281,20 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
         }
       }
     } finally {
+      busy.current = false
+      setApplying(false)
+      // An applied bot leaves the selection; failed or never-reached bots stay checked, so a
+      // retry keeps exactly what still needs work and nothing lands twice by accident. Before the
+      // analytics event: even a throwing tracker cannot leave the old selection live.
+      if (alive.current && appliedKeys.size > 0)
+        setChecked((set) => {
+          const next = new Set(set)
+          for (const key of appliedKeys) next.delete(key)
+          return next
+        })
       // One event per apply, whatever ended it: closed mid-run, pick changed mid-run, or completed.
       // Rows the run never reached are the remainder (requested - applied - failed).
       analytics.track({ event: 'model_manager_applied', requested: chosen.length, applied, failed })
-      busy.current = false
-      setApplying(false)
     }
   }
 

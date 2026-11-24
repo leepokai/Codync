@@ -17,6 +17,7 @@ use crate::network::sessions::Session;
 use crate::store::{BotConfig, EntryKind, Lane};
 use anyhow::{Result, anyhow};
 use codync_agent::acp::truncate;
+use codync_network::AgentKind;
 use codync_network::{Address, Letter, Message, Node, Sent};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -44,7 +45,7 @@ struct Waiter {
     peer: String,
     /// The coding agent's session on this computer it went to, the only one whose answer ends it,
     /// and the address the letter was signed with (the bot's then), which its answer may name.
-    session: Option<(String, String)>,
+    session: Option<(String, String, AgentKind)>,
     /// The chain's hops when it went to that session, which its answer carries back.
     hops: u8,
     /// When it stops waiting (Unix ms): a request to an agent that isn't a Codync bot (a coding
@@ -77,7 +78,7 @@ impl Waiting {
     fn asker(&self, id: &str, key: &str) -> Option<(String, String)> {
         let all = self.all.locked();
         let w = all.get(id)?;
-        let (_, signed) = w.session.as_ref().filter(|(k, _)| k == key)?;
+        let (_, signed, _) = w.session.as_ref().filter(|(k, ..)| k == key)?;
         match &w.to {
             ReplyTo::Bot { id, .. } => Some((id.clone(), signed.clone())),
             ReplyTo::Replies => None,
@@ -87,13 +88,13 @@ impl Waiting {
     /// The request `id`, taken when it went to the session `key` (`None`: to another computer).
     fn take_for(&self, id: &str, key: Option<&str>) -> Option<Waiter> {
         let mut all = self.all.locked();
-        let fits = all.get(id).is_some_and(|w| w.session.as_ref().map(|(k, _)| k.as_str()) == key);
+        let fits = all.get(id).is_some_and(|w| w.session.as_ref().map(|(k, ..)| k.as_str()) == key);
         fits.then(|| all.remove(id)).flatten()
     }
 
     /// Request `id` is waiting on a session other than `key`.
     fn for_another_session(&self, id: &str, key: &str) -> bool {
-        self.all.locked().get(id).and_then(|w| w.session.as_ref()).is_some_and(|(k, _)| k != key)
+        self.all.locked().get(id).and_then(|w| w.session.as_ref()).is_some_and(|(k, ..)| k != key)
     }
 
     /// Request `id` to the session `key` ended, answered or not.
@@ -141,11 +142,9 @@ pub(crate) async fn expire_loop(hub: Arc<Hub>) {
 fn expire(hub: &Hub) {
     for (id, waiter) in hub.waiting.expired(crate::store::now_ms()) {
         let why = "No answer within a week: it never read or answered this.";
-        if let Some((key, _)) = &waiter.session {
+        if let Some((key, _, kind)) = &waiter.session {
             hub.waiting.mark_ended(key, &id, false);
-            let kind =
-                hub.network.sessions.by_key(&hub.store, key).map_or(codync_network::AgentKind::Other, |s| s.kind);
-            crate::analytics::network_session(hub, crate::analytics::SessionAction::Expired, kind);
+            crate::analytics::network_session(hub, crate::analytics::SessionAction::Expired, *kind);
         }
         let hops = waiter.hops;
         replied(hub, &id, waiter, why, Some(RequestStatus::Failed), hops, codync_network::Access::Allow);
@@ -321,14 +320,15 @@ fn open_request(
     address: &str,
     peer: &str,
     body: &str,
-    session: Option<(String, u8, String)>,
+    session: Option<(&Session, u8, String)>,
 ) -> Result<(String, String)> {
     let heading = format!("Messaged {peer}: {body}");
     let exchange =
         Exchange { request: id, source: &source.id, target: address, text: body, peer_name: Some(peer), hops: None };
     let entry = exchange.notice(hub, &source.id, &heading, false)?;
     let to = ReplyTo::Bot { id: source.id.clone(), entry: entry.clone() };
-    let (session, hops) = session.map_or((None, 0), |(key, hops, signed)| (Some((key, signed)), hops));
+    let (session, hops) =
+        session.map_or((None, 0), |(to, hops, signed)| (Some((to.key.clone(), signed, to.kind)), hops));
     // A session may never answer: its request stops waiting after a while.
     let until = session.is_some().then(|| crate::store::now_ms() + SESSION_WAIT_MS);
     let waiter = Waiter { to, quote: truncate(body, REQUEST_QUOTE_BYTES), peer: peer.to_owned(), session, hops, until };
@@ -360,11 +360,13 @@ pub(super) fn to_local_session(
     // ponytail: kept in memory like a request to another computer; a host restart forgets it, and
     // the session's answer then reaches the bot as a new request.
     let from = hub.network.handle_of(&source.id).unwrap_or_else(|| source.id.clone());
-    let session = Some((to.key.clone(), hops, from.clone()));
+    let session = Some((to, hops, from.clone()));
     let (entry, heading) = open_request(hub, source, &id, &to.address, &to.address, message, session)?;
     if let Err(error) = super::mailbox::post(hub, to, Some(&id), &from, message, None) {
+        crate::analytics::network_session(hub, crate::analytics::SessionAction::AskFailed, to.kind);
         return Err(fail_request(hub, &id, &entry, error));
     }
+    crate::analytics::network_session(hub, crate::analytics::SessionAction::Asked, to.kind);
     waiting(hub, &entry, &format!("{heading}\nIn its inbox: it reads its mail itself."), RequestStatus::Sent);
     Ok(json!({
         "requestId": id, "botId": to.address, "status": RequestStatus::Queued,
@@ -465,7 +467,7 @@ pub(super) fn offers_bot(hub: &Hub, to: &Target) -> bool {
     let Ok(slot) = hub.network.slot(Some(&to.network)) else { return true };
     let peer = slot.node.directory().into_iter().find(|p| p.name == to.address.computer);
     let agent = peer.and_then(|p| p.agents.into_iter().find(|a| a.id == to.address.agent));
-    agent.is_none_or(|a| a.kind == codync_network::AgentKind::Codync)
+    agent.is_none_or(|a| a.kind == AgentKind::Codync)
 }
 
 /// Keeps `reply` in its asker's replies, ending the routes of the running requests it pushes out.

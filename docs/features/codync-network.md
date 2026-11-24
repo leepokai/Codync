@@ -205,7 +205,7 @@ that was off learns of a removal.
   hadn't taken yet (it was busy) is lost, its notice already completed.
 - A Codync bot's agent runs with `CODYNC_BOT` set, so a user-scope `codync` server it loads refuses its calls
   (the bot has its team tools).
-- PostHog: `network_session` with `action` (`registered`, `renamed`, `posted`, `read`, `answered`) and `kind`.
+- PostHog: `network_session` with `action` (`registered`, `renamed`, `posted`, `read`, `answered`, `asked`, `ask_failed`, `expired`, `dropped`) and `kind` ([catalog](../reference/analytics-events.md)).
 - Not yet: the turn tier (hooks) and push tier (plugins), showing sessions in the apps
   (including picking one as a rule's target: today only `setNetworkRules` can name a session), and a setup command:
   [plan](../plans/agent-sessions.md).

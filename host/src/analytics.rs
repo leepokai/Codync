@@ -90,6 +90,10 @@ pub enum SessionAction {
     Read,
     /// It answered a request one of this computer's bots sent it.
     Answered,
+    /// One of this computer's bots left it a request (also counted as `posted`).
+    Asked,
+    /// A bot's request couldn't be left in its inbox (saving it failed).
+    AskFailed,
     /// A bot's request to it waited a week unanswered and ended.
     Expired,
     /// Its full inbox dropped a bot's request unread.
@@ -103,6 +107,8 @@ pub fn network_session(hub: &Hub, action: SessionAction, kind: codync_network::A
         SessionAction::Posted => "posted",
         SessionAction::Read => "read",
         SessionAction::Answered => "answered",
+        SessionAction::Asked => "asked",
+        SessionAction::AskFailed => "ask_failed",
         SessionAction::Expired => "expired",
         SessionAction::Dropped => "dropped",
     };

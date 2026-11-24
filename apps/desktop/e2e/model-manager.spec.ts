@@ -211,11 +211,15 @@ test('the provider filter narrows the Bot Manager to one agent, and what it hide
     })
 
     await test.step('a checked bot the provider filter hides is not paused either', async () => {
-      // Check both while everything shows, then narrow: the custom bot is hidden and checked.
-      await sheet.getByRole('button', { name: 'Unselect all', exact: true }).click()
+      // Back to every provider first, so both bots can be checked while they show; nothing is
+      // checked yet, so there is no Unselect all to do.
+      const filter = sheet.locator('.model-manager-provider')
+      await filter.click()
+      await page.getByRole('menuitemradio', { name: 'All providers', exact: true }).click()
+      await expect(rows.filter({ hasText: nameCustom })).toHaveCount(1)
       await rows.filter({ hasText: nameCustom }).click()
       await rows.filter({ hasText: nameAgent }).click()
-      const filter = sheet.locator('.model-manager-provider')
+      // Then narrow: the custom bot is hidden and checked.
       await filter.click()
       await page.getByRole('menuitemradio', { name: agent!.name, exact: true }).click()
       await expect(sheet.getByText('hidden by the filter')).toBeVisible()

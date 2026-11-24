@@ -177,9 +177,15 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   // writes no login profile (each bot keeps its own), so that is exactly what it can target.
   const seats = loginSeats({ backends, on: { backend: pick.backend, loginProfile: null }, logins: () => [null], tr, pick: (b) => { run.current++; setOutcomes({}); setPick({ backend: b.id, model: null, modelOptions: {} }) } })
   // The agents the bots actually run — derived live from the roster, never a hardcoded list — and
-  // the one the filter is narrowed to. A provider the roster no longer runs self-heals back to all.
+  // the one the filter is narrowed to. A provider whose bots all left is forgotten, so it cannot
+  // silently re-narrow the list when one of them returns; the effect keys on the joined ids so a
+  // new array each render doesn't re-run it.
   const providers = providerOptions(items, backends)
   const chosenProvider = providers.find((p) => p.id === provider) ?? null
+  const providerIds = providers.map((p) => p.id).join('\0')
+  useEffect(() => {
+    if (provider && !providerIds.split('\0').includes(provider)) setProvider('')
+  }, [provider, providerIds])
   const shown = matchWords(items.map((item) => ({ item, words: botWords(item) })), query)
     .map((w) => w.item)
     .filter((item) => !chosenProvider || item.bot.backend === chosenProvider.id)

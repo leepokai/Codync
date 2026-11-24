@@ -74,15 +74,28 @@ impl Waiting {
         self.all.locked().remove(id)
     }
 
-    /// The bot whose request `id` to the session `key` this is, and the address its letter was signed with.
-    fn asker(&self, id: &str, key: &str) -> Option<(String, String)> {
-        let all = self.all.locked();
-        let w = all.get(id)?;
-        let (_, signed, _) = w.session.as_ref().filter(|(k, ..)| k == key)?;
-        match &w.to {
-            ReplyTo::Bot { id, .. } => Some((id.clone(), signed.clone())),
-            ReplyTo::Replies => None,
+    /// The session `key` answers request `id`, naming a bot `named` (its id) or `to` (as typed):
+    /// what the request is, checked and, when it ends here, taken and remembered as answered, all
+    /// under one lock, so two copies of an answer (or one during an expiry) can't both miss it.
+    fn answer(&self, id: &str, key: &str, named: &str, to: &str) -> Answer {
+        let mut all = self.all.locked();
+        let Some(w) = all.get(id) else {
+            let ended = self.ended.locked();
+            return ended.iter().find(|(k, i, _)| k == key && i == id).map_or(Answer::Unknown, |e| Answer::Ended(e.2));
+        };
+        let (asker, signed) = match (&w.session, &w.to) {
+            (Some((k, signed, _)), ReplyTo::Bot { id, .. }) if k == key => (id, signed),
+            (Some(_), _) => return Answer::OtherSession,
+            (None, _) => return Answer::Unknown,
+        };
+        // By the bot's id, its address now, or the one its letter was signed with (it may have
+        // been renamed since).
+        if named != asker && to != signed {
+            return Answer::WrongBot(asker.clone());
         }
+        let waiter = all.remove(id).expect("found above, under the same lock");
+        self.mark_ended(key, id, true);
+        Answer::Ends(waiter)
     }
 
     /// The request `id`, taken when it went to the session `key` (`None`: to another computer).
@@ -92,23 +105,13 @@ impl Waiting {
         fits.then(|| all.remove(id)).flatten()
     }
 
-    /// Request `id` is waiting on a session other than `key`.
-    fn for_another_session(&self, id: &str, key: &str) -> bool {
-        self.all.locked().get(id).and_then(|w| w.session.as_ref()).is_some_and(|(k, ..)| k != key)
-    }
-
-    /// Request `id` to the session `key` ended, answered or not.
+    /// Request `id` to the session `key` ended, answered or not. Called with `all` locked.
     fn mark_ended(&self, key: &str, id: &str, answered: bool) {
         let mut ended = self.ended.locked();
         ended.push_back((key.to_owned(), id.to_owned(), answered));
         if ended.len() > ANSWERED_KEPT {
             ended.pop_front();
         }
-    }
-
-    /// Whether request `id` to the session `key` was answered, when it ended lately.
-    fn ended(&self, key: &str, id: &str) -> Option<bool> {
-        self.ended.locked().iter().find(|(k, i, _)| k == key && i == id).map(|(_, _, answered)| *answered)
     }
 
     /// Request `id` stops waiting at `until`.
@@ -123,8 +126,27 @@ impl Waiting {
         let mut all = self.all.locked();
         let over: Vec<String> =
             all.iter().filter(|(_, w)| w.until.is_some_and(|until| until <= now)).map(|(id, _)| id.clone()).collect();
-        over.into_iter().filter_map(|id| all.remove(&id).map(|w| (id, w))).collect()
+        let taken: Vec<(String, Waiter)> = over.into_iter().filter_map(|id| all.remove(&id).map(|w| (id, w))).collect();
+        for (id, w) in &taken {
+            if let Some((key, ..)) = &w.session {
+                self.mark_ended(key, id, false);
+            }
+        }
+        taken
     }
+}
+
+/// What an answer from a session here is to (`Waiting::answer`).
+enum Answer {
+    /// The request it ends, now taken.
+    Ends(Waiter),
+    /// A request to it that ended lately: answered (a retry), or not (it expired).
+    Ended(bool),
+    /// A request to another session.
+    OtherSession,
+    /// Its own request, but the bot it names (a mix-up) isn't the one that asked, which is this.
+    WrongBot(String),
+    Unknown,
 }
 
 /// Ends requests whose wait ran out, every hour, so one to a session that never answers doesn't
@@ -142,8 +164,7 @@ pub(crate) async fn expire_loop(hub: Arc<Hub>) {
 fn expire(hub: &Hub) {
     for (id, waiter) in hub.waiting.expired(crate::store::now_ms()) {
         let why = "No answer within a week: it never read or answered this.";
-        if let Some((key, _, kind)) = &waiter.session {
-            hub.waiting.mark_ended(key, &id, false);
+        if let Some((_, _, kind)) = &waiter.session {
             crate::analytics::network_session(hub, crate::analytics::SessionAction::Expired, *kind);
         }
         let hops = waiter.hops;
@@ -380,31 +401,27 @@ pub(super) fn to_local_session(
 /// A session here answers `reply_to`: when that is a bot's request to it, the bot gets the answer
 /// as its reply turn. False when it isn't one.
 pub(super) fn session_replied(hub: &Hub, session: &Session, reply_to: &str, to: &str, body: &str) -> Result<bool> {
-    let Some((asker, signed)) = hub.waiting.asker(reply_to, &session.key) else {
-        if hub.waiting.for_another_session(reply_to, &session.key) {
-            anyhow::bail!("letter {reply_to} went to another session: only that session can answer it");
-        }
-        return match hub.waiting.ended(&session.key, reply_to) {
-            // Sent again after it went through (a retry): delivered already, not a new request.
-            Some(true) => Ok(true),
-            Some(false) => anyhow::bail!(
-                "request {reply_to} waited a week unanswered and was closed: message the bot again without replyTo if it still matters"
-            ),
-            None => Ok(false),
-        };
-    };
-    // The answer goes to the bot that asked, by its id, its address now, or the one its letter was
-    // signed with (it may have been renamed since): a botId naming another bot is a mix-up to correct.
+    // A botId naming another bot is a mix-up to correct.
     let named = match hub.network.recipient(to) {
         Ok(crate::network::Recipient::Here(bot)) => bot,
         _ => to.to_owned(),
     };
-    if named != asker && to != signed {
-        let handle = hub.network.handle_of(&asker).unwrap_or(asker);
-        anyhow::bail!("letter {reply_to} came from {handle}: answer it with botId {handle}");
-    }
-    let Some(waiter) = hub.waiting.take_for(reply_to, Some(&session.key)) else { return Ok(false) };
-    hub.waiting.mark_ended(&session.key, reply_to, true);
+    let waiter = match hub.waiting.answer(reply_to, &session.key, &named, to) {
+        Answer::Ends(waiter) => waiter,
+        // Sent again after it went through (a retry): delivered already, not a new request.
+        Answer::Ended(true) => return Ok(true),
+        Answer::Ended(false) => anyhow::bail!(
+            "request {reply_to} waited a week unanswered and was closed: message the bot again without replyTo if it still matters"
+        ),
+        Answer::OtherSession => {
+            anyhow::bail!("letter {reply_to} went to another session: only that session can answer it")
+        }
+        Answer::WrongBot(asker) => {
+            let handle = hub.network.handle_of(&asker).unwrap_or(asker);
+            anyhow::bail!("letter {reply_to} came from {handle}: answer it with botId {handle}");
+        }
+        Answer::Unknown => return Ok(false),
+    };
     let hops = waiter.hops;
     replied(hub, reply_to, waiter, body, None, hops, codync_network::Access::Allow);
     crate::analytics::network_session(hub, crate::analytics::SessionAction::Answered, session.kind);
@@ -640,8 +657,12 @@ mod waiting_tests {
         assert!(waiting.take("bot").is_some(), "a bot's request waits for good");
         waiting.mark_ended("codex:t", "late", false);
         waiting.mark_ended("codex:t", "done", true);
-        assert_eq!(waiting.ended("codex:t", "late"), Some(false), "a late answer is refused");
-        assert_eq!(waiting.ended("codex:t", "done"), Some(true), "a retry is delivered already");
-        assert_eq!(waiting.ended("codex:u", "done"), None);
+        let ended = |key, id| match waiting.answer(id, key, "b", "b") {
+            Answer::Ended(answered) => Some(answered),
+            _ => None,
+        };
+        assert_eq!(ended("codex:t", "late"), Some(false), "a late answer is refused");
+        assert_eq!(ended("codex:t", "done"), Some(true), "a retry is delivered already");
+        assert_eq!(ended("codex:u", "done"), None);
     }
 }

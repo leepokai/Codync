@@ -85,10 +85,50 @@ public extension Backend {
         return all.filter { !taken.contains(AgentLogin(backend: id, loginProfile: $0)) }
     }
 
+    /// The logins a chat's box can switch to (the desktop's `readySeats`): a default login still waiting on a sign-in is
+    /// left out, unless it's the one in use. Nil: the usual ones.
+    func readyLogins(on: AgentLogin) -> [String?]? {
+        guard signedIn == false, on != AgentLogin(backend: id) else { return nil }
+        return loginProfileChoices(picked: on.backend == id ? on.loginProfile : nil).map(\.id)
+    }
+
     /// The logins `step` can pick on this agent: the free ones, and its own, even one that has signed out since.
     func logins(for step: AgentLogin, taken: [AgentLogin]) -> [String?] {
         let free = freeLogins(taken: taken)
         return free.contains(step.loginProfile) ? free : free + [step.loginProfile]
+    }
+}
+
+/// One row of an agent picker: an agent on one of its logins, and the name it shows ("Claude Code · Work").
+public struct LoginSeat: Hashable, Sendable, Identifiable {
+    public let login: AgentLogin
+    public let name: String
+    public var id: AgentLogin { login }
+
+    public init(login: AgentLogin, name: String) {
+        self.login = login
+        self.name = name
+    }
+}
+
+public extension Backend {
+    /// This agent once per login, named after `label`: its default login, then its login profiles. `logins`: the ones
+    /// that can be picked (nil: the default login), when not all can; by default the default login and the signed-in
+    /// profiles, with the one `on` is on. The default login is named only beside login profiles.
+    func loginSeats(label: String, on: AgentLogin, logins: [String?]? = nil) -> [LoginSeat] {
+        let current = on.backend == id ? on.loginProfile : nil
+        let ids: [String?] = logins ?? [nil] + loginProfileChoices(picked: current).map(\.id)
+        return ids.map { profile in
+            let name = loginName(profile)
+            return LoginSeat(login: AgentLogin(backend: id, loginProfile: profile), name: name.map { "\(label) · \($0)" } ?? label)
+        }
+    }
+
+    /// What a login of this agent is called (nil: the default one); none for the default login of an agent without
+    /// login profiles.
+    private func loginName(_ profile: String?) -> String? {
+        guard let profile else { return loginProfiles == nil ? nil : defaultLoginProfile?.name ?? L10n.tr("Default login profile") }
+        return loginProfiles?.first { $0.id == profile }?.name ?? L10n.tr("New login profile")
     }
 }
 

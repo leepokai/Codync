@@ -19,7 +19,7 @@ class AgentSettingsScreenTest {
         actualConnection = LinkState.Ready(HostRoute.Direct))
 
     @Composable private fun Picker(state: AppState, backend: String, selected: String?, choose: (String?) -> Unit, load: suspend (String) -> AgentModels) =
-        AgentModelPicker(state, load, backend, selected, emptyMap(), false, null, { id, _ -> choose(id) }, {})
+        AgentModelPicker(state, { id, _ -> load(id) }, backend, selected, emptyMap(), false, null, { id, _ -> choose(id) }, {})
 
     private fun showing(text: String) = compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
 
@@ -60,9 +60,38 @@ class AgentSettingsScreenTest {
         compose.onNodeWithText("old advertised model").assertDoesNotExist()
     }
 
+    @Test fun anotherLoginProfileListsItsOwnModels() {
+        var profile by mutableStateOf<String?>(null)
+        compose.setContent { Hosted { Column {
+            TextButton(onClick = { profile = "pro-7" }) { Text("Switch login") }
+            AgentModelPicker(online, { id, login -> AgentModels(listOf(AgentModel("$id-${login ?: "main"}", "${login ?: "main"} login model"))) },
+                "agent", null, emptyMap(), false, null, { _, _ -> }, {}, loginProfile = profile)
+        } } }
+        compose.onNodeWithText("agent · Default").performClick()
+        compose.waitUntil { showing("main login model") }
+        compose.onNodeWithText("Switch login").performClick()
+        compose.waitUntil { showing("pro-7 login model") }
+        compose.onNodeWithText("main login model").assertDoesNotExist()
+    }
+
+    @Test fun anotherLoginProfileListsItsOwnPermissionsModes() {
+        var draft by mutableStateOf(BotDraft(backend = "agent", mode = "plan"))
+        val asked = mutableListOf<String?>()
+        compose.setContent { Hosted { Column {
+            TextButton(onClick = { draft = draft.copy(loginProfile = "pro-7") }) { Text("Switch login") }
+            ApprovalRow(online, { _, login -> asked += login
+                AgentModels(emptyList(), modes = listOf(AgentMode("plan", "${login ?: "main"} plan"))) }, draft, { draft = it })
+        } } }
+        compose.waitUntil { showing("main plan") }
+        compose.onNodeWithText("Switch login").performClick()
+        compose.waitUntil { showing("pro-7 plan") }
+        compose.onNodeWithText("main plan").assertDoesNotExist()
+        assertEquals(listOf(null, "pro-7"), asked.distinct())
+    }
+
     @Test fun retryModelListAlsoFillsThePermissionsModes() {
         val failing = AtomicBoolean(true)
-        val load: suspend (String) -> AgentModels = {
+        val load: suspend (String, String?) -> AgentModels = { _, _ ->
             if (failing.get()) throw java.io.IOException("Agent not ready")
             AgentModels(emptyList(), modes = listOf(AgentMode("auto", "Auto"), AgentMode("plan", "Plan")))
         }

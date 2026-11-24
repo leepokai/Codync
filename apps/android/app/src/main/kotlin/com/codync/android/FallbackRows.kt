@@ -27,6 +27,7 @@ import com.codync.android.core.Fallback
 import com.codync.android.core.Login
 import com.codync.android.core.MAX_FALLBACKS
 import com.codync.android.core.fill
+import com.codync.android.core.freeLogins
 import com.codync.android.core.login
 import com.codync.android.core.moved
 import com.codync.android.core.restOf
@@ -43,12 +44,6 @@ private const val ABOUT_FALLBACKS = "When this bot's agent runs out of usage, is
     "agent here carries on in the same chat, with the same memory and workspace. The bot goes back to its own agent when it " +
     "recovers. A fallback that uses an API key costs money. To fall back between one agent's models, set that in the agent " +
     "itself (Claude Code's fallbackModel)."
-
-/** The computer's agents as the Agent picker lists them: id and name, "(not installed)" when it isn't. */
-internal fun agentChoices(state: AppState): List<Pair<String, String>> = backends(state).map { info ->
-    val id = info.text("id").orEmpty()
-    id to ((info.text("name") ?: id) + if (!info.available) " (not installed)" else "")
-}
 
 /** The chain's logins, its first agent's ([own]) first, without step [but]'s: each is in it once, and step [but] keeps its own. */
 private fun taken(own: Login, list: List<Fallback>, but: Int): List<Login> = listOf(own) + list.filterIndexed { i, _ -> i != but }.map { it.login }
@@ -121,13 +116,13 @@ private fun taken(own: Login, list: List<Fallback>, but: Int): List<Login> = lis
     // The step as it was on its own agent while another is picked: picking that agent again brings back its model and login.
     var own by remember { mutableStateOf<Fallback?>(null) }
     val choices = agentBackends(state).usable(taken, listOfNotNull(fallback.login, own?.login))
-    val agent = choices.firstOrNull { it.id == fallback.backend }
-    val loginProfile = fallback.loginProfile?.let { id -> agent?.loginProfiles?.firstOrNull { it.id == id } }
-    // The step's login shows beside its agent: "Claude Code (Work)".
-    val agents = agentChoices(state).filter { (id, _) -> choices.any { it.id == id } }.map { (id, label) ->
-        id to if (id == fallback.backend && loginProfile != null) "${tr(label)} (${loginProfile.name ?: tr("New login profile")})" else label
+    // The logins the rest of the chain doesn't have, with its own (and the one it had on an agent before, while no other step took it).
+    val before = own
+    val agents = pickerSeats(choices, fallback.login) { backend ->
+        if (backend.id == fallback.backend) backend.stepLogins(fallback.login, taken)
+        else before?.takeIf { it.backend == backend.id && it.login !in taken }?.let { backend.stepLogins(it.login, taken) } ?: backend.freeLogins(taken)
     }
-    val name = agents.firstOrNull { it.first == fallback.backend }?.second ?: backendName(state, fallback.backend)
+    val name = agents.firstOrNull { it.login == fallback.login }?.name ?: backendName(state, fallback.backend)
     val rest = bot?.restOf(fallback.login)
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -136,21 +131,21 @@ private fun taken(own: Login, list: List<Fallback>, but: Int): List<Login> = lis
             Box(Modifier.weight(1f)) {
                 AgentModelPicker(state, store::agentModels, fallback.backend, fallback.model, fallback.modelOptions, false, null,
                     { model, options -> edit(fallback.copy(model = model, modelOptions = options)) }, null, agents = agents,
-                    chooseAgent = { id ->
-                        choices.firstOrNull { it.id == id }?.let { next ->
+                    chooseAgent = { login ->
+                        if (login.backend == fallback.backend) edit(fallback.copy(loginProfile = login.loginProfile))
+                        else choices.firstOrNull { it.id == login.backend }?.let { next ->
                             val step = next.stepOn(taken, own)
                             own = if (step == own) null else own ?: fallback
-                            edit(step)
+                            edit(step.copy(loginProfile = login.loginProfile))
                         }
-                    }, expanded = expanded) {
-                    if (agent?.loginProfiles != null) LoginProfilePicker(agent, fallback.loginProfile, state, store, agent.stepLogins(fallback.login, taken)) {
-                        edit(fallback.copy(loginProfile = it))
-                    }
-                }
+                    }, expanded = expanded, loginProfile = fallback.loginProfile, store = store)
             }
             if (inUse) Text("In use", Modifier.padding(top = 6.dp).clip(Capsule()).background(Palette.accentFill)
                 .padding(horizontal = 8.dp, vertical = 3.dp), style = Type.caption.medium, color = Palette.onAccent)
-            DropdownMenu(menu, label = "$name actions") {
+            // A menu of one action (Remove, for the only fallback) shows as that action.
+            val only = menu().singleOrNull()
+            if (only != null) IconButton(only.title, only.icon ?: "trash") { only.action() }
+            else DropdownMenu(menu, label = "$name actions") {
                 Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Symbol("ellipsis", size = 18.dp, tint = Palette.secondary) }
             }
         }

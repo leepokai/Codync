@@ -8,7 +8,8 @@ works until a `release-<name>` file is in its folder, `PERMISSION` asks for an a
 choose, `SHARE` sends a file (`QUOTE`: quoting the chat message that added the task), `ARTIFACT` publishes one,
 `NEST` tries what a thread may not, `REMEMBER` adds a line to `MEMORY.md` with `edit_memory` and `FORGET` tries to take
 one out (both once it is released), `TOUCH` writes `made.txt` in its folder, `LOOP` makes the same tool call six
-times. The watchdog's turn in the chat answers `Watchdog: <why the task looks stuck>`, or `(pass)` for a task whose title
+times, `COMMAND` starts a shell command with a long title (`LONG_COMMAND`), which the task shows as what it does.
+The watchdog's turn in the chat answers `Watchdog: <why the task looks stuck>`, or `(pass)` for a task whose title
 has `PASS`.
 
 A routine run and another bot's request read the same words in the routine's instruction or the request, and also
@@ -22,8 +23,8 @@ What the user writes to a thread is a turn of its own: it answers `Thread <their
 notes say whether the session is the one that did the work (`same session`) or a new one told of it (`picked up`),
 and the words may hold `HOLD:<name>`, `NEST` and `ASK` as a brief does.
 
-Arguments: `as=<name>`: a task's report says `on <name>` (which agent did it). `no-fork`: the agent doesn't advertise `session/fork`. `no-load`: nor `session/load`, so a session can't
-be picked up again. `steer`: it takes a message into its running turn (`_session/steering`), and the turn's reply
+Arguments: `as=<name>`: a task's report says `on <name>` (which agent did it). `no-load`: the agent doesn't advertise `session/load`, so a
+session can't be picked up again. It always advertises `session/fork`, which no thread may take. `steer`: it takes a message into its running turn (`_session/steering`), and the turn's reply
 ends with `joined <the message>`. A `no-start` file in its folder: it doesn't start.
 A `signedout` file: every prompt fails asking to sign in (ACP's -32000). `thread-signedout` / `thread-limit`: a thread's
 turn does its work and then fails, asking to sign in or the way Claude's adapter reports a usage limit. A brief that
@@ -45,7 +46,6 @@ sys.stdout.reconfigure(encoding="utf-8")
 if pathlib.Path("no-start").exists():
     sys.exit(1)
 
-CAN_FORK = "no-fork" not in sys.argv
 CAN_LOAD = "no-load" not in sys.argv
 CAN_STEER = "steer" in sys.argv
 AGENT = next((arg.removeprefix("as=") for arg in sys.argv if arg.startswith("as=")), None)
@@ -57,6 +57,10 @@ LIMIT = {
     "message": "Internal error: You've hit your limit · resets 3pm (Asia/Taipei)",
     "data": {"errorKind": "rate_limit"},
 }
+LONG_COMMAND = (
+    "agentctl wait 3f2a9c1e-7b44-4d1a-9e0f-0a1b2c3d4e5f --until idle --timeout 3600"
+    " --workspace /home/example/.codync/bots/0bcd2c28-ac38-4db8-b932-4ec2da5be7a3/workspace"
+)
 output_lock = threading.Lock()
 cancel = threading.Event()
 permission = threading.Event()
@@ -86,7 +90,10 @@ def chat_tool(tool, arguments):
 
 
 def server_tool(name, tool, arguments):
-    server = next(s for s in servers if s["name"] == name)
+    server = next((s for s in servers if s["name"] == name), None)
+    if server is None:
+        # A thread isn't given that server at all.
+        return {"isError": True, "content": [{"type": "text", "text": f"no {name} server"}]}
     with subprocess.Popen([server["command"], *server["args"]], stdin=subprocess.PIPE,
                           stdout=subprocess.PIPE, encoding="utf-8") as mcp:
         def rpc(identifier, method, params):
@@ -96,7 +103,8 @@ def server_tool(name, tool, arguments):
 
         rpc(1, "initialize", {"protocolVersion": "2025-06-18"})
         listed = {t["name"] for t in rpc(2, "tools/list", {})["result"]["tools"]}
-        assert name != "chat" or {"add_task", "steer_task", "tell_task", "work_status", "recall_task"} <= listed, listed
+        # A thread's chat server leaves out what only the chat may call; the host still refuses a call to it.
+        log("listed.jsonl", {"server": name, "tool": tool, "listed": tool in listed})
         response = rpc(3, "tools/call", {"name": tool, "arguments": arguments})
         mcp.stdin.close()
         return response["result"]
@@ -177,6 +185,11 @@ def work(text, session):
         for n in range(6):
             send({"method": "session/update", "params": {"sessionId": session, "update": {
                 "sessionUpdate": "tool_call", "toolCallId": f"loop-{n}", "title": "Read the log", "status": "completed"}}})
+    if "COMMAND" in brief:
+        send({"method": "session/update", "params": {"sessionId": session, "update": {
+            "sessionUpdate": "tool_call", "toolCallId": "command", "title": LONG_COMMAND, "kind": "execute",
+            "status": "in_progress",
+        }}})
     if "PERMISSION" in brief:
         later = re.search(r"PERMISSION:(\w+)", brief)
         if later:
@@ -301,11 +314,8 @@ for line in sys.stdin:
     method = message.get("method")
     params = message.get("params") or {}
     if method == "initialize":
-        capabilities = {"close": {}}
-        if CAN_FORK:
-            capabilities["fork"] = {}
         initialized = {"protocolVersion": 1, "agentCapabilities": {
-            "loadSession": CAN_LOAD, "sessionCapabilities": capabilities}}
+            "loadSession": CAN_LOAD, "sessionCapabilities": {"close": {}, "fork": {}}}}
         if CAN_STEER:
             initialized["_meta"] = {"steering": {"supported": True}}
         send({"id": message["id"], "result": initialized})
@@ -315,6 +325,8 @@ for line in sys.stdin:
         if method == "session/fork":
             forked.add(session)
             log("forks.jsonl", {"from": params["sessionId"], "to": session})
+        if method != "session/load":
+            log("servers.jsonl", {"session": session, "servers": [s["name"] for s in servers]})
         send({"id": message["id"], "result": {} if method == "session/load" else {"sessionId": session}})
     elif method == "session/close":
         send({"id": message["id"], "result": {}})

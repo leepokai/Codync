@@ -1,9 +1,9 @@
 //! Codex's own API (`codex app-server`, JSON-RPC on stdio), for what an app asks Codex itself without a model turn:
-//! the account's plan windows (`usage::codex`), or where a session is listed in Codex's own apps.
+//! the account's plan windows (`usage::codex`), or where a session is listed in Codex's own apps ([`move_to_section`]).
 
-use crate::acp::Acp;
+use crate::acp::{Acp, METHOD_NOT_FOUND, RpcError};
 use anyhow::{Context, Result};
-use serde_json::json;
+use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -53,6 +53,75 @@ async fn initialize(acp: &Acp, client: ClientInfo) -> Result<()> {
     let info = json!({"clientInfo": {"name": client.name, "title": client.title, "version": client.version}});
     acp.request("initialize", info).await?;
     acp.notify("initialized", json!({})).await
+}
+
+/// The request filing a thread in a section failed at, as context on its error.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SectionStep {
+    List,
+    Create,
+    Move,
+}
+
+impl SectionStep {
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::List => "list",
+            Self::Create => "create",
+            Self::Move => "move",
+        }
+    }
+}
+
+impl std::fmt::Display for SectionStep {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.word())
+    }
+}
+
+/// JSON-RPC's "invalid request".
+const INVALID_REQUEST: i64 = -32600;
+
+/// Puts `thread` in the section of Codex's own apps named `section`, made when Codex has none. `false`: a Codex
+/// from before sections. An error carries the [`SectionStep`] it failed at.
+pub async fn move_to_section(client: &Acp, thread: &str, section: &str) -> Result<bool> {
+    let Some(id) = section_id(client, section).await? else { return Ok(false) };
+    let moved = client.request("thread/section/move", json!({"threadId": thread, "sectionId": id})).await;
+    moved.context(SectionStep::Move)?;
+    Ok(true)
+}
+
+/// The id of the section named `name`, made when Codex has none. `None`: a Codex from before sections.
+async fn section_id(client: &Acp, name: &str) -> Result<Option<String>> {
+    let mut cursor = Value::Null;
+    loop {
+        let page = match client.request("threadSection/list", json!({"cursor": cursor})).await {
+            Ok(page) => page,
+            Err(error) if unknown_method(&error) => return Ok(None),
+            Err(error) => return Err(error.context(SectionStep::List)),
+        };
+        let found = page["data"].as_array().into_iter().flatten().find(|section| section["name"] == name);
+        if let Some(id) = found.and_then(|section| section["id"].as_str()) {
+            return Ok(Some(id.to_owned()));
+        }
+        cursor = page["nextCursor"].clone();
+        if cursor.is_null() {
+            break;
+        }
+    }
+    let made = client.request("threadSection/create", json!({"name": name})).await;
+    let made = made.context(SectionStep::Create)?;
+    let id = made["section"]["id"].as_str().context("Codex returned no section id").context(SectionStep::Create)?;
+    Ok(Some(id.to_owned()))
+}
+
+/// Whether Codex refused a request because it doesn't know the method. Its parser calls that an invalid request
+/// with an "unknown variant".
+fn unknown_method(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<RpcError>().is_some_and(|refusal| {
+        refusal.code == METHOD_NOT_FOUND
+            || (refusal.code == INVALID_REQUEST && refusal.message.contains("unknown variant"))
+    })
 }
 
 /// A stand-in for [`start`]: the Python `script` answering as Codex's API, in `mode`, run in its own folder.

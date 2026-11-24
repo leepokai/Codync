@@ -38,8 +38,6 @@ struct Composer: View {
     @State private var photoItems: [PhotosPickerItem] = []
     @FocusState private var focused: Bool
     @State private var dictation = Dictation()
-    /// One line of the field's text, following Dynamic Type: the send button centers on the last line.
-    @ScaledMetric(relativeTo: .body) private var lineHeight: CGFloat = 22
 
     private var bot: Bot? { model.bots[botId] }
     private var draftKey: String { thread?.draftKey ?? artifact.map(BotStore.artifactDraftKey) ?? botId }
@@ -90,10 +88,8 @@ struct Composer: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if !queued.isEmpty {
-                // Over the box, past the + button.
                 QueuedMessages(entries: queued)
-                    .padding(.leading, 16 + (canAttach ? fieldHeight + 8 : 0))
-                    .padding(.trailing, 16)
+                    .padding(.horizontal, 16)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             if !commands.isEmpty {
@@ -113,31 +109,21 @@ struct Composer: View {
         .animation(Motion.reduced(Motion.layout, reduceMotion), value: queued.isEmpty)
     }
 
-    private var fieldPadding: CGFloat { 10 }
     private var buttonSize: CGFloat { 34 }
-    private var boxPadding: CGFloat { 6 }
-    /// The one-line field's height; the + circle matches it.
-    private var fieldHeight: CGFloat { max(textLineHeight + 2 * fieldPadding, buttonSize) + 2 * boxPadding }
-    private var textLineHeight: CGFloat {
-        lineHeight
-    }
 
     private var field: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            if canAttach { addButton }
-            VStack(alignment: .leading, spacing: 0) {
-                if let replyingTo {
-                    quoteBar(replyingTo).transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-                if !files.isEmpty {
-                    fileChips.transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-                box
+        VStack(alignment: .leading, spacing: 0) {
+            if let replyingTo {
+                quoteBar(replyingTo).transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            .glass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            // Lines, not the text: an animated transaction on every keystroke breaks IME composition.
-            .animation(Motion.layout, value: draft.count(where: \.isNewline))
+            if !files.isEmpty {
+                fileChips.transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            box
         }
+        .glass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        // Lines, not the text: an animated transaction on every keystroke breaks IME composition.
+        .animation(Motion.layout, value: draft.count(where: \.isNewline))
         .animation(Motion.layout, value: files.map(\.id))
         .animation(Motion.reduced(Motion.layout, reduceMotion), value: replyingTo?.id)
         .dropDestination(for: PickedFile.self) { picked, _ in
@@ -257,8 +243,10 @@ struct Composer: View {
                       message: dictation.failure, cancel: "OK") { [] }
     }
 
+    /// Two layers, as on the desktop: the field on top; under it the + for files, what the bot runs on, the mic and
+    /// send / stop / call.
     private var box: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
             TextField(placeholder, text: $input.text, selection: $input.selection, axis: .vertical)
                 .lineLimit(1...8)
                 .font(.body)
@@ -266,18 +254,20 @@ struct Composer: View {
                 .focused($focused)
                 // A hardware keyboard's Return (⌘↩ too) submits the field and ends editing.
                 .onSubmit(newline)
-                .padding(.vertical, fieldPadding)
-            if thread == nil {
-                micButton
-                    .padding(.bottom, max(0, (textLineHeight + 2 * fieldPadding - buttonSize) / 2))
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
+            HStack(spacing: 8) {
+                if canAttach { addButton }
+                Spacer(minLength: 0)
+                // A bot's own chat: a group's bots each run on their own, a thread on its task's agent.
+                if thread == nil, let bot, !bot.isGroup { ModelChip(bot: bot) }
+                if thread == nil { micButton.layoutPriority(1) }
+                trailingButton
+                    .layoutPriority(1)
+                    .animation(Motion.layout, value: isEmpty)
             }
-            trailingButton
-                .padding(.bottom, max(0, (textLineHeight + 2 * fieldPadding - buttonSize) / 2))
-                .animation(Motion.layout, value: isEmpty)
         }
-        .padding(.leading, 18)
-        .padding(.trailing, 6)
-        .padding(.vertical, boxPadding)
+        .padding(8)
         .onChange(of: draftKey, initial: true) {
             dictation.stop()
             draft = model.composerDraft(for: draftKey)
@@ -318,12 +308,13 @@ struct Composer: View {
                 .accessibilityLabel("Add files")
     }
 
+    /// A light circle, as the mic's capsule.
     private var addLabel: some View {
         Image(systemName: "plus")
-            .font(.system(size: 18, weight: .medium))
+            .font(.system(size: 16, weight: .medium))
             .foregroundStyle(Palette.text)
-            .frame(width: fieldHeight, height: fieldHeight)
-            .glass(in: Circle())
+            .frame(width: buttonSize, height: buttonSize)
+            .background(Palette.bubbleAgent, in: Circle())
             .contentShape(Circle())
     }
 

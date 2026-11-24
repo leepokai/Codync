@@ -25,15 +25,16 @@ its own context and compacts it itself.
   cache stays warm.
 - How the snapshot reaches the agent (`Instructions` in `agent/bot`):
   - **Claude** (`agentCapabilities._meta.claudeCode` present) receives it as a real system prompt:
-    `_meta.systemPrompt.append` on `session/new`, `session/load` and `session/fork`. It survives compaction.
+    `_meta.systemPrompt.append` on `session/new` and `session/load`. It survives compaction.
   - **An agent advertising ACP `sessionCapabilities.systemPrompt`** receives it as `systemPrompt`
-    (`append`) on `session/new`, `session/load` and `session/fork`, and keeps it across compaction.
+    (`append`) on `session/new` and `session/load`, and keeps it across compaction.
   - **Every other harness** receives it in the first message of each session (`<bot-profile>…</bot-profile>`; repeated with each message until one carrying it succeeds, the snapshot's `unprompted`, kept across a host restart),
     and once more, marked as replacing the earlier one, on the first message after a compaction.
-- A [thread](work.md)'s session is a fork of the bot's main one where the agent can
-  (`session/fork`): it is sent the main session's snapshot as it is, adopts it under its own session id
-  (`context.<bot>` is the bot's, a thread has none of its own) and counts as already prompted, so nothing is sent
-  twice. A thread that starts from a new session gets a fresh snapshot like any session.
+- A [thread](work.md) starts in a new session of its own, never a fork of the bot's main one, with a fresh
+  snapshot rendered for where its task came from (`render_thread`): a task the bot handed out is told the task
+  alone (no name, description or memory, so no memory-change notice or profile update either); a thread the user
+  started, a routine's run and another bot's request are told who the bot is, without the chat's own paragraphs. Its
+  snapshots are kept with its bot's (`context.<bot>` under `BotConfig::owner`).
 - **Compaction epoch:** Codync advertises `clientCapabilities.session.compaction`. Each completed
   `compaction_update` (deduplicated by `compactionId`) increments `context.epoch.<bot>`; for an agent that has
   never sent one, so does its `usage_update.used` falling below half of a previous value of at least 20k (a
@@ -122,7 +123,7 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   layer take turns, so one run tidies it and the others find it tidied. It waits while the plan's usage is above 75%. It writes the files
   compare-and-swap; when one changed meanwhile, the rest waits for the next run. Every run is logged (the lines it
   added and took out, the notes it wrote).
-- **The harness's own memory** is off for every bot and for background jobs (`agent/own_memory.rs`): Claude Code
+- **The harness's own memory** is off for every bot and for background jobs (`agent/own_memory.rs`; how each harness's is switched, `codync_agent::own_memory`): Claude Code
   (`autoMemoryEnabled` and `autoDreamEnabled` false, `CLAUDE_CODE_DISABLE_AUTO_MEMORY`), Copilot (its memory tools
   excluded), CodeBuddy, WorkBuddy (the same switch as CodeBuddy), and Qwen Code (workspace settings, so only in a bot's own workspace: a project folder's
   files are the user's). Gemini CLI, Kilo Code, Kiro and Hermes Agent have no switch Codync can use. Project
@@ -215,7 +216,7 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
 - Bot-to-bot requests and the replies to them occupy separate turns in the same queue (replies waiting together are one turn); user messages are only folded together up to the next request or reply. Neither feeds dreaming. See [bot collaboration](bot-collaboration.md).
 - A request turn (the recipient's) doesn't set the restart marker: its pending notices become interrupted errors instead of automatically replaying work. A reply turn is the sender's own chat turn and sets it, so it resumes like a user turn.
 - Stop sends `session/cancel`; an agent still running 15 seconds later is stopped (it resumes its session on
-  the next turn). `session/new`, `session/load`, `session/resume` and `session/fork` get three minutes before the agent is
+  the next turn). `session/new`, `session/load` and `session/resume` get three minutes before the agent is
   stopped. Connector or computer changes restart an agent that can resume sessions before its next turn; one
   that can't keeps its session, and its next new session gets them. An edit to a connector the bot has on restarts
   that one too, once its turn ends, told the conversation so far ([connector credentials](connector-credentials.md)).

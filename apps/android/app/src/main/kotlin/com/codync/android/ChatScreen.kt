@@ -11,7 +11,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -57,7 +56,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -261,18 +259,6 @@ import kotlinx.coroutines.withContext
                 ComputerButton(operating, Modifier) { store.openScreen(bot.id.takeIf { operating }) }
             }
         }
-    }
-}
-
-/** A glass button in the header's corner. */
-@Composable private fun HeaderButton(symbol: String, title: String, modifier: Modifier = Modifier, symbolModifier: Modifier = Modifier,
-    action: () -> Unit) {
-    val (source, pressed) = rememberPress()
-    val label = tr(title)
-    Box(modifier.size(44.dp).glass(Capsule(), pressed = pressed)
-        .clickable(source, null, role = Role.Button, onClick = action).semantics { contentDescription = label },
-        contentAlignment = Alignment.Center) {
-        Symbol(symbol, symbolModifier, size = 22.dp, tint = Palette.text)
     }
 }
 

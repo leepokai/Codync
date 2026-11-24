@@ -17,7 +17,7 @@ import {
 } from '@shared/models'
 import type { CallLine } from '@shared/calls'
 import { localEntryId } from '@shared/threads'
-import { pendingCards } from '@shared/work'
+import { pendingCards, type ThreadSetup } from '@shared/work'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
 import { errorText } from '../lib/error-text'
@@ -228,6 +228,44 @@ export class BotStore extends BotSync {
     const res = await (await this.ready()).call<{ enabled: boolean }>('setAnalytics', { enabled })
     if (this.hello) this.hello = { ...this.hello, analytics: res.enabled }
     this.changed()
+  }
+
+  /** Whether this computer starts a thread the user asks for themselves; false before hello or on older hosts. */
+  get startsThreads() {
+    return this.hello?.startThread === true
+  }
+
+  /** Threads may start without a bot here (`startThread` without `botId`). */
+  get startsThreadsWithoutBot() {
+    return this.hello?.threadsWithoutBot === true
+  }
+
+  /** A workflow can be built by talking to a thread here (`startThread` with `setup.workflow`). */
+  get buildsWorkflowsInThreads() {
+    return this.hello?.workflowThreads === true
+  }
+
+  /** A thread can be started on a login of its agent here (`startThread` with `setup.loginProfile`). */
+  get startsThreadsOnLogins() {
+    return this.hello?.threadLogins === true
+  }
+
+  /** A thread can start with files here (`startThread` with `attachments`). */
+  get startsThreadsWithFiles() {
+    return this.hello?.threadFiles === true
+  }
+
+  /** A thread the user starts with `botId` themselves (null: without a bot, on the agent `setup` names), opened by
+   *  `text`, its task on `setup` where that differs from the bot's: where its task is, the bot's (or the box's) id
+   *  and the task's. */
+  async startThread(botId: string | null, text: string, setup: ThreadSetup = {}, files: OutgoingFile[] = []): Promise<{ botId: string; taskId: string }> {
+    // Its files go to the bot first (without one, to the computer's box of threads without a bot).
+    const started = await this.withLink(async (c) => {
+      const attachments = files.length ? await uploadFiles(c, botId ?? '', files) : undefined
+      return c.call<{ botId: string; taskId: string }>('startThread', { ...(botId ? { botId } : {}), text: text.trim(), setup, ...(attachments ? { attachments } : {}) })
+    })
+    noteActiveDay()
+    return started
   }
 
   /** Whether a bot with a new message moves to the top of this computer's roster; undefined before hello or on older hosts. */

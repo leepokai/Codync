@@ -107,6 +107,18 @@ turn keeps its number, messages, routine run, room turn or bot request; permissi
   - and when agents failed this turn: who stopped last and why, then each failed agent's tool calls, the messages it
     sent and its last note, with "check what's already done before you redo any step". It follows a handoff the user
     approved, which waits for the next turn if this one can't start at all.
+- **A switch the user makes** (the bot's agent or login profile changed in its settings, `agent/bot/fallback/handoff.rs`):
+  the main session is left as on a move down the chain (`owe_recap`), so the next main-chat message carries a recap.
+  A bot with a session posts an `agentSwitch` line in its own chat with `manual: true`, `state: "pending"` and
+  `fromName`/`toName` ("Context handoff pending: Claude Code → Codex (Work)"); the apps draw it as a divider with each
+  agent's logo, the TUI as a `⇄` line. A second switch before that message moves the same line on (back to where it
+  came from, it names the login just left). Once the prompt carrying the recap is out, `state` is `handedOff`
+  ("Context handed off", with `carried`); after `newSession`, or with nothing to tell, `switched` ("Switched"). A
+  turn that fails before that keeps it owed, and an agent's `/command` first leaves it for the next message. What is owed is kept in `kv`
+  `fallback.handoff.<bot>`, so a host restart in between still carries it. A model-only change carries nothing.
+  A move to another folder (`moved_folder`, the main chat only, not a thread) owes the same recap with no line, told
+  as the same agent moved to the folder it's in now (`Recap.moved`) when the login it left takes it; a handoff
+  already owed carries it as it is, and a switch of login before the next message adds the line as above.
 - **Every agent failed** (the turn ran out of agents): the failure notice as before, saying how each agent is ("No agent in this bot's list could
   answer: Claude Code reached its usage limit (resets in 2 h); Codex …"). The turn's messages wait on the sign-in card
   of the first agent it left signed out, and go out again once that agent is signed in. A routine run's 1/5/15-minute retries still
@@ -201,7 +213,7 @@ traveling" stays whole; a rest line holds only a time, so the apps translate the
   `a` changes its agent, `c` changes its login profile, `[`/`]` move, `x` removes) and "Bot edits" (whether the bot may change them),
   then Advisor mode (←→ or space turns it on or off), Threads' agent (←→ its agent, space its model, `c` its login profile) and
   Threads' fallbacks (the Fallbacks field's keys); while the bot is on a fallback the Settings page says which agent is in use ("Using Codex until Claude Code resets at 15:00", "Using Codex while Claude Code is signed out"),
-  and `b` on its Agent field switches back; in the chat `↪` lines unfold with `o`, and `A` on a picked failure opens that bot's Fallbacks field
+  and `b` on its Agent field switches back; in the chat `↪` lines, and `⇄` for a switch the user made, unfold with `o`, and `A` on a picked failure opens that bot's Fallbacks field
   (in a group, the member whose agent failed).
 
 ## Wire
@@ -217,7 +229,7 @@ All additive (no `minApp` change):
   n-th saved one's (`hub::patch`), so such a list never clears one.
 - Method: `switchBack {botId}`.
 - Notices: `agentSwitch: {from, to, back, reason, resetsAt, carried}`; failure notices' `addFallback: true`.
-- Analytics: `agent_fell_back {agent, reason}`; `handoff_carried {agent, kind, bytes, window_known}` for each recap
+- Analytics: `agent_fell_back {agent, reason}`; `handoff_carried {agent, kind, bytes, window_known}` for each recap (`kind: move` after a move to another folder)
   or catch-up (`window_known`: a recap sized to the agent's window); `turn_finished` once per agent the turn ran on.
   Both carry `loginProfile: true` when a login profile is involved (the step left or the one taking over; never
   which), which tells a move to another login profile of the same agent from one to another agent.

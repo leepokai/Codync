@@ -112,7 +112,7 @@ pub async fn authenticate(store: &Store, backend: &str, method: &str) -> Result<
 pub(crate) async fn authenticate_account(store: &Store, backend: &str, id: &str) -> Result<()> {
     let Started { acp, inbox, init, cmd } = start_with(store, backend, Some(id), &[]).await?;
     let own = |m: &super::Method| matches!(m.kind, super::MethodKind::Agent);
-    let Some(method) = super::methods(backend, &init, &cmd).into_iter().find(own) else {
+    let Some(method) = acp::auth::methods(backend, &init, &cmd.program).into_iter().find(own) else {
         acp.kill().await;
         bail!("the agent offers no sign-in of its own");
     };

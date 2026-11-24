@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { api, attach, sandbox } from './sandbox.ts'
+import { api, attach, openPage, sandbox } from './sandbox.ts'
 
 type Window = { id: string; percent: number }
 type Provider = { id: string; windows: Window[]; loginProfiles?: { id: string; name: string; windows: Window[] }[] }
@@ -33,12 +33,10 @@ async function statusline(loginProfile: string | null, session: number, weekly: 
 }
 
 async function openUsage(page: Page) {
-  await page.reload() // A settings window left open would cover the account button.
-  await page.locator('.sidebar-account').click()
-  await page.locator('.account-panel').getByText('Usage', { exact: true }).click()
+  await openPage(page, 'Usage')
 }
 
-test('Settings > Usage lists each login of an agent with login profiles, with its own limits', async () => {
+test('The Usage page lists each login of an agent with login profiles, with its own limits', async () => {
   const { browser, page } = await attach()
   const usage = () => api<Usage>(page, 'usage', {})
   const claude = async () => (await usage()).providers.find((p) => p.id === 'claude')
@@ -95,7 +93,7 @@ test('Settings > Usage lists each login of an agent with login profiles, with it
   }
 })
 
-test('Settings > Usage marks a login whose check failed as out of date, until the next reading', async () => {
+test('The Usage page marks a login whose check failed as out of date, until the next reading', async () => {
   test.setTimeout(150_000) // The refresh runs the computer's Claude Code on each login.
   const { browser, page } = await attach()
   const service = (await api<Usage>(page, 'usage', {})).services.find((s) => s.id === 'claude')

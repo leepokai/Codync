@@ -26,6 +26,8 @@ public enum HostEvent: Sendable {
     case resync
     /// One this app has no use for.
     case skipped
+    /// A workflow change. It carries no `rev`; a decode failure is ignored, not `.undecodable`.
+    case workflow(WorkflowEvent)
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
 }
@@ -169,6 +171,10 @@ public struct HostClient: Sendable {
             return (try? d.decode(AutoOrderWrap.self, from: data)).map { .autoOrder($0.enabled) }
         case "resync":
             return .resync
+        case "workflow":
+            // A workflow event this build can't read is dropped. It has no rev, so it must not rewind the stream.
+            guard let event = try? d.decode(WorkflowEvent.self, from: data) else { return nil }
+            return .workflow(event)
         default:
             return nil
         }
@@ -286,6 +292,13 @@ public extension HostClient {
     func renameSection(from: String, to: String?) async throws {
         let body: [String: String?] = ["from": from, "to": to]
         let _: Empty = try await call("renameSection", body)
+    }
+
+    /// A thread the user starts with `botId`, opened by `text`, on the bot's own settings: its task's id.
+    func startThread(botId: String, text: String) async throws -> String {
+        struct Res: Decodable { var taskId: String }
+        let res: Res = try await call("startThread", ["botId": botId, "text": text])
+        return res.taskId
     }
 
     /// The chat read; a no-op when nothing there is unread.
@@ -532,8 +545,9 @@ public extension HostClient {
     }
 
     /// Starts the agent to see whether it's signed in and how it can be (first run may download it).
-    func agentModels(_ backend: String) async throws -> AgentModels {
-        try await call("agentModels", ["backend": backend], timeout: 300)
+    /// `loginProfile`: the login profile to list them for; nil for the computer's own.
+    func agentModels(_ backend: String, loginProfile: String? = nil) async throws -> AgentModels {
+        try await call("agentModels", AgentModelsRequest(backend: backend, loginProfile: loginProfile), timeout: 300)
     }
 
     func agentAuth(_ backend: String) async throws -> AgentAuth {
@@ -619,4 +633,10 @@ public extension HostClient {
     func termClose(_ term: String) async throws {
         let _: Empty = try await call("termClose", ["term": term])
     }
+}
+
+/// `agentModels`' body: no `loginProfile` (the default login) when it's nil.
+struct AgentModelsRequest: Encodable {
+    var backend: String
+    var loginProfile: String?
 }

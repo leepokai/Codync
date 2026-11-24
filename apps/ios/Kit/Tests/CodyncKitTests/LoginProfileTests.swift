@@ -45,9 +45,9 @@ private let backendJSON = #""id":"claude","name":"Claude Code","available":true,
 @Test func switchingAgentClearsTheLoginProfile() {
     var draft = BotDraft(name: "Lead")
     draft.loginProfile = "a1"
-    draft.setAgent("claude")
-    #expect(draft.loginProfile == "a1")
-    draft.setAgent("codex")
+    draft.setAgent(AgentLogin(backend: draft.backend, loginProfile: "a2"))
+    #expect(draft.loginProfile == "a2")
+    draft.setAgent(AgentLogin(backend: "codex"))
     #expect(draft.loginProfile == nil)
 }
 

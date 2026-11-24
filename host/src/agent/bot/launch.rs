@@ -20,7 +20,7 @@ pub(crate) fn system_prompt(system: &str) -> Value {
 /// per-session parts of Claude Code's prompt (working directory, git status) move to the first message, so a
 /// bot's chat, groups and routines share one cached system prompt.
 pub(super) fn claude_meta(cfg: &BotConfig, system: &str) -> Value {
-    json!({"systemPrompt": {"append": system, "excludeDynamicSections": true}, "claudeCode": claude_options(cfg)})
+    acp::claude::session_meta(system, &claude_options(cfg))
 }
 
 /// Claude Code's own memory and its auto-dream stay off, so Codync's is the bot's one memory, unless the user kept
@@ -30,13 +30,12 @@ pub(super) fn claude_meta(cfg: &BotConfig, system: &str) -> Value {
 fn claude_options(cfg: &BotConfig) -> Value {
     // The bot's replies, memory and team management are Codync's own tools, which follow the bot's permission inside
     // Codync: the user's Claude Code auto-mode classifier mustn't refuse them (it blocked a reply naming the user's
-    // daughter), and a team change asks on Codync's own card.
-    let mut settings = json!({"permissions": {"allow": ["mcp__chat", "mcp__memory", "mcp__manage"]}});
+    // daughter), and a team change, a workflow's save or run asks on Codync's own card.
+    let mut settings = json!({"permissions": {"allow": ["mcp__chat", "mcp__memory", "mcp__manage", "mcp__workflows"]}});
     if !crate::agent::own_memory::kept(cfg) {
-        settings["autoMemoryEnabled"] = false.into();
-        settings["autoDreamEnabled"] = false.into();
+        codync_agent::own_memory::claude_settings_off(&mut settings);
     }
-    json!({"options": {"settings": settings, "extraArgs": {"thinking-display": "summarized"}}})
+    json!({"settings": settings, "extraArgs": {"thinking-display": "summarized"}})
 }
 
 /// Ways to start the bot's agent over ACP, best first: its own command, else its backend's.
@@ -58,7 +57,7 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
     };
     let mut current = res.clone();
     if selected.is_some() {
-        if let Some(config_id) = crate::agent::auth::model_config(res).and_then(|c| c["id"].as_str()) {
+        if let Some(config_id) = acp::models::model_config(res).and_then(|c| c["id"].as_str()) {
             let answer = set(config_id, model).await.map_err(|e| model_error(model, &e))?;
             if answer["configOptions"].is_array() {
                 current = answer;
@@ -103,11 +102,11 @@ fn model_error(model: &str, e: &anyhow::Error) -> anyhow::Error {
     acp::Failure::error(acp::FailureKind::NoModel, format!("Couldn't select model {model}: {e:#}"))
 }
 
-/// A Cursor model variant ([`auth::cursor_variant`](crate::agent::auth::cursor_variant)): when the agent lists plain
+/// A Cursor model variant ([`cursor_variant`](acp::models::cursor_variant)): when the agent lists plain
 /// models instead, the bracket becomes options of the plain model.
 fn split_variant<'a>(res: &Value, model: &'a str) -> (&'a str, Vec<(&'a str, &'a str)>) {
-    let listed = |id: &str| crate::agent::auth::model_ids(res).iter().any(|m| m == id);
-    if let Some((name, params)) = crate::agent::auth::cursor_variant(model)
+    let listed = |id: &str| acp::models::model_ids(res).iter().any(|m| m == id);
+    if let Some((name, params)) = acp::models::cursor_variant(model)
         && !listed(model)
         && listed(name)
     {
@@ -324,7 +323,7 @@ mod tests {
             )
             .unwrap()
         };
-        let settings = |cfg: &BotConfig| claude_options(cfg)["options"]["settings"].clone();
+        let settings = |cfg: &BotConfig| claude_options(cfg)["settings"].clone();
         // `null`: a client sending back a bot that had no switch.
         for off in [json!(false), Value::Null] {
             let off = settings(&bot(off));
@@ -342,7 +341,7 @@ mod tests {
     fn claude_streams_thinking_summaries() {
         let cfg: BotConfig =
             serde_json::from_value(json!({"id": "a", "name": "B", "backend": "claude", "cwd": "/work/app"})).unwrap();
-        let options = &claude_options(&cfg)["options"];
+        let options = &claude_options(&cfg);
         assert_eq!(options["extraArgs"]["thinking-display"], "summarized");
         assert!(options.get("thinking").is_none(), "whether Claude thinks stays Claude Code's");
     }

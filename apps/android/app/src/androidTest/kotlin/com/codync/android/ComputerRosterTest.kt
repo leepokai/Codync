@@ -3,6 +3,9 @@ package com.codync.android
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
@@ -31,7 +34,10 @@ class ComputerRosterTest {
         RosterComputers.setHidden(context, ""); RosterComputers.setFolded(context, emptySet())
         try {
             compose.setContent {
-                Hosted { BotListView(app, listOf(state(mac, "Mac bot"), state(linux, "Linux bot")), accounts, {}, {}, {}, {}, { _, _ -> }, {}, 0.dp) }
+                Hosted {
+                    var shown by remember { mutableStateOf("") }
+                    BotListView(app, listOf(state(mac, "Mac bot"), state(linux, "Linux bot")), accounts, {}, {}, {}, {}, { _, _ -> }, {}, 0.dp, shown, { shown = it }, mutableMapOf())
+                }
             }
             compose.onNode(heading("Mac fixture")).assertIsDisplayed()
             compose.onNode(heading("Linux fixture")).assertIsDisplayed()
@@ -71,7 +77,7 @@ class ComputerRosterTest {
         // The account's own state, as the app shows it: Back clears it there.
         compose.setContent {
             val live by accounts.state.collectAsState()
-            Hosted { MainTabs(live, listOf(state(mac, "Mac bot")), accounts, {}, {}, {}, {}, {}, { _, _ -> }, {}, AppTab.Bots, {}, covered = true) {} }
+            Hosted { MainTabs(live, listOf(state(mac, "Mac bot")), accounts, {}, {}, {}, {}, { _, _ -> }, {}, AppTab.Bots, {}, covered = true, status = {}) {} }
         }
         compose.onNodeWithText("This computer was removed").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back").performClick()

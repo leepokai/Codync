@@ -10,7 +10,7 @@ test("an agent's question with options has no own-words row, free text keeps it"
   let botId: string | undefined
   try {
     const offline = page.getByRole('button', { name: 'Continue without an account', exact: false })
-    await expect(page.locator('.sidebar-account').or(offline).first()).toBeVisible()
+    await expect(page.locator('.nav-rail').getByRole('button', { name: 'Account' }).or(offline).first()).toBeVisible()
     if (await offline.isVisible()) await offline.click()
     const command = fixtureCommand(resolve(__dirname, '../../../host/tests/fixtures/elicitation_agent.py'))
     const name = `Question e2e ${Date.now()}`

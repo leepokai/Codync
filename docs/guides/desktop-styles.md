@@ -13,7 +13,7 @@ How the desktop renderer (`apps/desktop/src/renderer/`) styles its views. Views 
 
 | Need | Use |
 | --- | --- |
-| Text in a type style and color | `<Text size="caption" tone="secondary" weight="semibold" mono as="div">` (`Text.tsx`). With `size` the weight defaults to regular (bold for `headline`); without it, size and weight come from around it. `truncate` ends one line with an ellipsis, `lines={n}` clamps to n lines, `grow` takes a stack's free space, `tabular` lines digits up |
+| Text in a type style and color | `<Text size="caption" tone="secondary" weight="semibold" mono as="div">` (`Text.tsx`). With `size` the weight defaults to regular (bold for `headline`); without it, size and weight come from around it. `truncate` ends one line with an ellipsis and is never wider than its box (so it truncates in a column that doesn't stretch it), `lines={n}` clamps to n lines, `grow` takes a stack's free space, `tabular` lines digits up |
 | A row / a column | `<HStack gap={8}>` (centered vertically; `align="stretch"` or `"baseline"` otherwise) / `<VStack gap={8}>` (`Stack.tsx`); `grow` takes the free space, `shrink` lets it shrink so text inside can truncate; `justify`, `wrap`, `as` |
 | Space between stack items | `<Spacer />`, `<Spacer min={8} />` |
 | A fixed-width column that centers an icon, so labels line up | `<IconSlot width={18} tone="secondary">` |

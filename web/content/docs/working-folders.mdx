@@ -15,7 +15,7 @@ When Git is installed, a bot's own folder is a Git repository that Codync keeps 
 
 - **Before each turn** that works there, Codync saves the folder as it is, named `Before:` and the first line of what the bot was asked.
 - **After the turn**, it saves what the turn did, under that first line.
-- Nothing is saved when nothing changed. A file over 50 MB stays out of the versions, and so do the files you send the bot (its `uploads` folder). So do folders that tools fill again by themselves, such as `node_modules` and build output: they are listed in the folder's `.gitignore`, where you can add your own.
+- Nothing is saved when nothing changed. A file over 50 MB stays out of the versions, and so do the files you send the bot (its `uploads` folder). So do folders that tools fill again by themselves, such as `node_modules` and build output: they are listed in the folder's `.gitignore`, where you can add your own. A file Git can't read (locked by another program, not readable, or with a name Windows reserves such as `nul`) stays out too, until it can be read.
 
 The bot knows this. Ask it what a turn changed, or to bring back a file as it was before, and it looks through the versions with Git. Your **Settings** show **Git repository** under the folder.
 
@@ -95,7 +95,7 @@ Then restart Codync on that computer, so it finds Git.
 
 ## Where the apps show it
 
-- **Under each task that is or was worked on**, in the bot's **Details** and in **Work**, a line says where its thread works: the folder when it works in the bot's folder, the branch when it has a copy of its own. Your home folder is written as `~`. On the desktop, hold the pointer over the line to see the full path.
+- **Under each task that is or was worked on**, in the bot's **Details** and in **Threads**, a line says where its thread works: the folder when it works in the bot's folder, the branch when it has a copy of its own. Your home folder is written as `~`. On the desktop, hold the pointer over the line to see the full path.
 - **At the top of a thread** (tap or click its task's row), the same line is a button: tap or click it to copy the full path. It reads **Path copied** for a moment.
 - **Settings > Workspace** says under the folder which case the bot is in: **Git repository**, **Not a git repository** or **Git isn't installed on this computer**. On iPhone, Android and the desktop, the information button beside it opens this page. It describes the folder the bot has saved.
 - **Terminal UI:** the same words are in dim text under **Workspace** in the bot's settings, with no button. A task's row has no such line; the heading of its thread's steps shows its branch or folder, and doesn't copy.

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Backend } from '@shared/models'
 import { AgentIcon, agentTint } from '../../components/AgentIcon'
 import { Button, CardForm, CardSection, IconButton, Spinner } from '../../components/Controls'
@@ -15,7 +15,9 @@ import { ErrorText, Field, OptionRow, ScreenHeader, SlideStack, WebLink, filled 
 import { LoginProfileKeys } from './LoginProfileKeys'
 import { CheckAgain, LoginProfiles } from './LoginProfiles'
 import { AgentBrings } from './AgentBrings'
+import { AgentSource } from './AgentSource'
 import { SetupTerminalView } from './SetupTerminal'
+import { OpenExtensions } from '../NavRail'
 
 type SetupRoute = { kind: 'install' } | { kind: 'node' } | { kind: 'terminal'; method: AuthMethod | null; loginProfile?: string } | { kind: 'keys'; method: AuthMethod } | { kind: 'profileKeys'; loginProfile: string }
 
@@ -58,6 +60,8 @@ export function NodeNotice({ onAdd }: { onAdd: () => void }) {
  *  so its sign-in (an account) or its key form (an API key) opens, not a check of the computer's own login. */
 export function AgentSheet({ initial, recheck = false, signInProfile }: { initial: Backend; recheck?: boolean; signInProfile?: string | null }) {
   const store = useStore()
+  const tr = useTr()
+  const openExtensions = useContext(OpenExtensions)
   const asked = signInProfile ? initial.loginProfiles?.find((p) => p.id === signInProfile) : undefined
   const [route, setRoute] = useState<SetupRoute | null>(
     asked?.kind === 'apiKey' ? { kind: 'profileKeys', loginProfile: asked.id }
@@ -215,6 +219,7 @@ export function AgentSheet({ initial, recheck = false, signInProfile }: { initia
             />
           </CardSection>
         ) : null}
+        <AgentSource backendId={backend.id} installed={installed} />
         {backend.node ? (
           <CardSection>
             <SetupStepRow
@@ -226,7 +231,7 @@ export function AgentSheet({ initial, recheck = false, signInProfile }: { initia
             />
           </CardSection>
         ) : null}
-        {backend.loginProfiles ? (
+        {backend.loginProfiles && asked ? (
           <LoginProfiles
             backend={backend}
             own={{ status: statusText, checking, check: () => void check() }}
@@ -250,7 +255,19 @@ export function AgentSheet({ initial, recheck = false, signInProfile }: { initia
             {options}
           </CardSection>
         )}
-        <AgentBrings backendId={backend.id} />
+        {backend.loginProfiles && !asked && openExtensions ? (
+          <CardSection footer="Other accounts or API keys this agent can run on. A bot picks one under Agent in its settings.">
+            <OptionRow
+              icon="person.2"
+              title={tr('Login profiles')}
+              detail={fill(tr('{count} besides the default one'), { count: String(backend.loginProfiles.length) })}
+              onClick={() => openExtensions(store.computer.id, { section: 'logins', agent: backend.id })}
+              trailing={<Icon name="chevron.right" size={10} weight="semibold" color="var(--tertiary)" />}
+            />
+          </CardSection>
+        ) : null}
+        {/* An agent with login profiles shows what it brings under its default login, on Login profiles. */}
+        {backend.loginProfiles ? null : <AgentBrings backendId={backend.id} />}
         {error ? <CardSection><ErrorText text={error} /></CardSection> : null}
       </CardForm>
     </SheetPage>

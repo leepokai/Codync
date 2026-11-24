@@ -2,6 +2,7 @@
 //! Read-only / Auto review / Full access…), as its `mode` config option or the older `modes` field lists them.
 //! A bot names the one it wants (`BotConfig::mode`); what still reaches Codync follows the bot's Approvals.
 
+use crate::acp::text;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -242,10 +243,6 @@ fn sentence(mut s: String) -> String {
         s.push('.');
     }
     s
-}
-
-fn text(v: &Value) -> Option<String> {
-    v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)
 }
 
 #[cfg(test)]

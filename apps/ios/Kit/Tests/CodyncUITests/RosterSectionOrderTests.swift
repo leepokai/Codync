@@ -34,6 +34,14 @@ import Testing
     #expect(RosterSection.onScreen(bots) { $0 }.map(\.id) == shown([]))
 }
 
+@Test func searchFindsBotsByNameInTheListsOrderFoldedSectionsIncluded() throws {
+    let bots = try [#"{"id":"a","name":"Alpha","section":"Work"}"#, #"{"id":"b","name":"Beta"}"#, #"{"id":"g","name":"Gamma","section":"Work"}"#]
+        .map { try JSONDecoder().decode(Bot.self, from: Data($0.utf8)) }
+    #expect(RosterSection.onScreen(bots, order: ["", "Work"], matching: "ma") { $0 }.map(\.id) == ["g"])
+    #expect(RosterSection.onScreen(bots, order: ["Work", ""], matching: "A") { $0 }.map(\.id) == ["a", "g", "b"])
+    #expect(RosterSection.onScreen(bots, matching: "zeta") { $0 }.isEmpty)
+}
+
 @Test func mergingIntoANewGroupKeepsItsDisplayedPosition() {
     var order = RosterSectionOrder(data: Data())
     order.set(["Work", ""], on: "mac")
@@ -41,4 +49,11 @@ import Testing
     order.set(displayed, on: "mac")
     order.rename("Work", to: "Home", on: "mac")
     #expect(order.saved(on: "mac") == ["", "Home"])
+}
+
+@Test func sortByStatusPutsNeedsYouThenWorkingFirstAndKeepsTheOrderWithinEach() throws {
+    let bots = try [#"{"id":"idle1"}"#, #"{"id":"busy1","status":"working"}"#, #"{"id":"ask","status":"needsInput"}"#,
+                    #"{"id":"idle2"}"#, #"{"id":"busy2","status":"working"}"#]
+        .map { try JSONDecoder().decode(Bot.self, from: Data($0.utf8)) }
+    #expect(RosterSection.byStatus(bots) { $0 }.map(\.id) == ["ask", "busy1", "busy2", "idle1", "idle2"])
 }

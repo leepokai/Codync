@@ -1,0 +1,63 @@
+# Delete in a bot's touch-and-hold menu on the phones: it asks first, Cancel keeps the bot, and confirming removes it from
+# the list and the host; a group asks with its own copy. The phone must already be signed in and paired with the host (a
+# worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose clearState undoes
+# that; the flow makes its own bot and group there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags delete-bot \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - delete-bot
+onFlowComplete:
+  - runScript:
+      file: delete-bot.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: delete-bot.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+# A bot made a moment ago can take a while to reach the phone's list.
+- extendedWaitUntil:
+    visible: ${output.group.name}
+    timeout: 30000
+- longPressOn: ${output.bot.name}
+- tapOn: "Delete"
+- assertVisible: "Delete ${output.bot.name}?"
+- tapOn: "Cancel"
+- assertNotVisible: "Delete ${output.bot.name}?"
+- assertVisible: ${output.bot.name}
+# The group goes first: deleting its only member could take the group with it.
+- longPressOn: ${output.group.name}
+- tapOn: "Delete"
+- assertVisible: "Its bots and their own chats stay."
+- tapOn: "Delete group chat"
+- extendedWaitUntil:
+    notVisible: ${output.group.name}
+    timeout: 15000
+- runScript:
+    file: delete-bot.js
+    env:
+      GONE: group
+- longPressOn: ${output.bot.name}
+- tapOn: "Delete"
+- assertVisible: "Files it changed on your computer stay as they are."
+- tapOn: "Delete bot and its conversation"
+- extendedWaitUntil:
+    notVisible: ${output.bot.name}
+    timeout: 15000
+- runScript:
+    file: delete-bot.js
+    env:
+      GONE: bot

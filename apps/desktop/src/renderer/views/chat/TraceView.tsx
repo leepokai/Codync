@@ -22,14 +22,18 @@ import { useTr } from '../../lib/use-language'
  * and diffs, plans) grouped by turn.
  */
 export function TraceView({ botId }: { botId: string }) {
-  const tr = useTr()
   const store = useStore()
+  const bot = store.bots.get(botId)
+  return <TracePage entries={store.allEntries(botId)} working={!!bot && isWorkingIn(bot, botId)} />
+}
+
+/** The same sheet for any transcript (`entries`), a chat's or a thread's; `working`: its last turn still runs. */
+export function TracePage({ entries: all, working }: { entries: Entry[]; working: boolean }) {
+  const tr = useTr()
   useScreenViewed('trace')
-  const all = store.allEntries(botId)
   const sorted = traceTurns(all)
   // The running turn's thoughts start unfolded.
-  const bot = store.bots.get(botId)
-  const running = runningTurn(all, !!bot && isWorkingIn(bot, botId))
+  const running = runningTurn(all, working)
   const follow = useFollowEnd()
   return (
     <SheetPage>

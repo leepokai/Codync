@@ -44,6 +44,7 @@
 		5D64026DF494A86A970BCD86 /* SharedItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = B34E7FC0E86FE88AC19FAC59 /* SharedItems.swift */; };
 		5FD48874687C2D18B31C7C01 /* CodyncBot-pebble-Tint.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1FECC371F3CD98687C0B69FA /* CodyncBot-pebble-Tint.ttf */; };
 		6147896360A45F5880C39BC9 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 1BDF6A8F94A945065D4348F8 /* AppIcon.icon */; };
+		644C67B6C25596FAB0CB4251 /* ThreadsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D01C8AC683C194B9A3EBB59 /* ThreadsTab.swift */; };
 		646410F85B1110297E5F54B9 /* CodyncBot-squircle-Tint.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D5F23C3F9FCE63B4AFB4771A /* CodyncBot-squircle-Tint.ttf */; };
 		674BCFBAC7022359FB673FDB /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AD18A04CD014230F1B7B0535 /* PrivacyInfo.xcprivacy */; };
 		684F7F77EECBA0BD95BDD658 /* UsageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFEBE2E6A9D0AF0A0D89FFE7 /* UsageView.swift */; };
@@ -57,6 +58,7 @@
 		8157F3E9CFB390CBCB1A9F9A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4815867922559696EDCA47FD /* Assets.xcassets */; };
 		8517F8FC5AFAFF1527369829 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6932F782C1B87C9608359A6 /* NotificationService.swift */; };
 		864E7C2DC7600E9DA58E2BD6 /* RosterSectionHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36C62636FD789C49762696A3 /* RosterSectionHeader.swift */; };
+		8673CA603A158ED5655D6F96 /* WorkflowsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4067D99D0A47DAC5B08147CE /* WorkflowsTab.swift */; };
 		89CA3972915769DBA315876F /* Push.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3BF4D3B82FE8274F610C703 /* Push.swift */; };
 		8B5CCF45DEE9149BB11333C4 /* CodyncBot-pebble-Ink.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F4375A206703EC65F0D15BD6 /* CodyncBot-pebble-Ink.ttf */; };
 		8B78A34695AD94109AE82C0F /* CodyncBot-blob-Tint.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D0E552136D473567E0C25ED4 /* CodyncBot-blob-Tint.ttf */; };
@@ -167,6 +169,7 @@
 		365F24B61AEDCFE6C389E904 /* CustomActivityIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomActivityIcon.swift; sourceTree = "<group>"; };
 		36C62636FD789C49762696A3 /* RosterSectionHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosterSectionHeader.swift; sourceTree = "<group>"; };
 		3F4C4D3B64C608AEF2F85F91 /* Kit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Kit; path = ios/Kit; sourceTree = SOURCE_ROOT; };
+		4067D99D0A47DAC5B08147CE /* WorkflowsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowsTab.swift; sourceTree = "<group>"; };
 		445DB0A03CFBB5CC7A830139 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		46538A6E6E6B7C5E212F5CDF /* SessionCandidates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCandidates.swift; sourceTree = "<group>"; };
 		4815867922559696EDCA47FD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -194,6 +197,7 @@
 		73D324231A9BCE79C84C0403 /* LanguageSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageSettings.swift; sourceTree = "<group>"; };
 		741B706007BA1B91CB853699 /* Screen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Screen.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7B7E845BA1B8696B266CF578 /* NotificationService.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7D01C8AC683C194B9A3EBB59 /* ThreadsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadsTab.swift; sourceTree = "<group>"; };
 		7D8961FADA8810B6CC479705 /* WidgetSetupDemo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSetupDemo.swift; sourceTree = "<group>"; };
 		89A0D530BEF30AF36F9DBEA8 /* CodyncBot-hex-Ink.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-hex-Ink.ttf"; sourceTree = "<group>"; };
 		8BA06CEE98A7CDED62678522 /* Input.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Input.swift; sourceTree = "<group>"; };
@@ -393,10 +397,12 @@
 				4EE5DC162F5E949B3C36A319 /* SetupChoice.swift */,
 				6ABB70475ABEE88EFAFBA1BB /* ShortcutLeadSettings.swift */,
 				9AD0BD16672E128A4F26272B /* SignInButtons.swift */,
+				7D01C8AC683C194B9A3EBB59 /* ThreadsTab.swift */,
 				CFEBE2E6A9D0AF0A0D89FFE7 /* UsageView.swift */,
 				D57A7C09154869DD84BACE19 /* WelcomeView.swift */,
 				5B22589689593E0089118FDB /* WidgetGalleryView.swift */,
 				7D8961FADA8810B6CC479705 /* WidgetSetupDemo.swift */,
+				4067D99D0A47DAC5B08147CE /* WorkflowsTab.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -855,10 +861,12 @@
 				F8C1DE098672FDB0400A1E9F /* SetupChoice.swift in Sources */,
 				0137767F43A65AB592869ADD /* ShortcutLeadSettings.swift in Sources */,
 				76E77CC8A2B7C74213512FAB /* SignInButtons.swift in Sources */,
+				644C67B6C25596FAB0CB4251 /* ThreadsTab.swift in Sources */,
 				684F7F77EECBA0BD95BDD658 /* UsageView.swift in Sources */,
 				501377099B6CF42761B230CB /* WelcomeView.swift in Sources */,
 				B3554D38F39916698E961A37 /* WidgetGalleryView.swift in Sources */,
 				BA978F06CB1E58511FFB541B /* WidgetSetupDemo.swift in Sources */,
+				8673CA603A158ED5655D6F96 /* WorkflowsTab.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -959,7 +967,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.53.0;
+				MARKETING_VERSION = 2.54.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -1057,7 +1065,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.53.0;
+				MARKETING_VERSION = 2.54.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1400,7 +1408,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.53.0;
+				MARKETING_VERSION = 2.54.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -1550,7 +1558,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.53.0;
+				MARKETING_VERSION = 2.54.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

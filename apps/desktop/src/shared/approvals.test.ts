@@ -41,6 +41,6 @@ test('an agent without Auto asks, and one still loading offers Auto', () => {
 
 test("another agent's mode ids mean nothing: a picked mode becomes its Auto mode", () => {
   const draft: BotDraft = { name: 'B', description: '', avatarColor: 'red', avatarShape: 'blob', backend: 'claude', cwd: '', permission: 'ask', mode: 'plan' }
-  assert.equal(withBackend(draft, 'codex').mode, 'auto')
-  assert.equal(withBackend({ ...draft, mode: null }, 'codex').mode, null)
+  assert.equal(withBackend(draft, { backend: 'codex' }).mode, 'auto')
+  assert.equal(withBackend({ ...draft, mode: null }, { backend: 'codex' }).mode, null)
 })

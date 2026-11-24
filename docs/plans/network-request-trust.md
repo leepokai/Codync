@@ -8,8 +8,7 @@ cover yet; what it means for the user: [risks](../reference/network-request-risk
 ## Why more
 
 A turn under a ceiling works no more freely than its level and can only read and answer the user with the host's
-tools, but it still starts from the bot's conversation: a request's task forks the main session where the agent can,
-and an answer (or a request to a bot that keeps them in its chat) runs in the main session itself:
+tools, but an answer (or a request to a bot that keeps them in its chat) runs in the main session itself:
 
 - It sees the conversation the user had with that bot, so a sender can ask for what was said there.
 - An answer's text stays in the main session, where it can act in a later turn of the user's own.
@@ -23,8 +22,8 @@ or a server shared with others.
 
 1. **A session per sender.** A request under a ceiling runs in a session of its own, slot
    `peer-<network>-<computer>-<agent>` (`Actor::slot`, next to a routine run's `routine-<run>`), kept in kv so a
-   restart resumes it and closed when unused like any session. Fresh, never a fork of the main one as a request's
-   task is now: a fork would carry the user's conversation along. It lasts across that sender's requests, so "now
+   restart resumes it and closed when unused like any session. Fresh, never a fork of the main one, as a request's
+   task already starts: a fork would carry the user's conversation along. It lasts across that sender's requests, so "now
    the second half" works. The conversation sheet with that peer shows the turn's trace and gets "Forget this
    conversation". Answers to this computer's own requests stay in the main session: the turn that works on the task
    has to read them.

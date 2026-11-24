@@ -26,6 +26,7 @@ import androidx.annotation.DrawableRes
     "goose" -> R.drawable.agent_goose
     "grok-build" -> R.drawable.agent_grok_build
     "harn" -> R.drawable.agent_harn
+    "imate" -> R.drawable.agent_imate
     "kilo" -> R.drawable.agent_kilo
     "kimchi" -> R.drawable.agent_kimchi
     "kimi" -> R.drawable.agent_kimi

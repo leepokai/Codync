@@ -260,7 +260,7 @@ pub fn annotate(store: &Store, agents: &mut [Value]) {
             Some(SignIn::Terminal) => "terminal".into(),
             None => Value::Null,
         };
-        agent["loginKeys"] = json!(accounts.map_or(&[][..], |a| a.login_keys));
+        agent["loginKeys"] = json!(login_keys(&id));
     }
 }
 
@@ -377,7 +377,17 @@ pub fn reads_vault(store: &Store, backend: &str, profile: Option<&str>) -> bool 
 /// The saved keys that choose `backend`'s login: a process on a profile starts without them, or its agent would
 /// run on the key and not on the profile.
 pub fn login_keys(backend: &str) -> &'static [&'static str] {
+    if agent_id(backend) == "imate" {
+        return &["IMATE_API_TOKEN"];
+    }
     accounts_of(backend).map_or(&[], |agent| agent.login_keys)
+}
+
+/// Signed-in login profiles of `backend`, for backends whose models come from an API call
+/// to the vendor (iMate) rather than from a local agent process.
+pub fn signed_in_for(store: &Store, backend: &str) -> Vec<Profile> {
+    let agent = agent_id(backend);
+    all(store).into_iter().filter(|p| p.account.agent == agent && p.account.signed_in).collect()
 }
 
 /// The profile a bot's agent runs on, when `backend` (the agent it's on now) is the profile's own.

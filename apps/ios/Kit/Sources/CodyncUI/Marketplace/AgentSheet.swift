@@ -115,6 +115,8 @@ struct AgentSheet: View {
             if let profile = backend.loginProfiles?.first(where: { $0.id == id }) {
                 LoginProfileKeysForm(backend: backend, profile: profile, back: back)
             }
+        case .imateToken:
+            ImateTokenForm(backend: backend, back: back)
         }
     }
 
@@ -209,6 +211,11 @@ struct AgentSheet: View {
 
     /// What the agent says about its sign-in, and the ways to sign the computer's own login in.
     @ViewBuilder private var signInOptions: some View {
+        if backend.id == "imate" {
+            SetupOptionRow(title: signedIn == true ? "Edit iMate token" : "Add iMate token",
+                           detail: "Uses the personal token from the iMate open platform.",
+                           icon: "key", busy: false) { go(.imateToken) }
+        } else {
         if signedIn != true, let detail = auth?.detail, !detail.isEmpty {
             Text(detail).font(.footnote).foregroundStyle(Palette.secondary).textSelection(.enabled)
         }
@@ -250,6 +257,7 @@ struct AgentSheet: View {
                 }
             }
         }
+        }
     }
 
     private var statusText: String {
@@ -270,6 +278,19 @@ struct AgentSheet: View {
 
     private func check() async {
         guard let client = model.client, !checking else { return }
+        if backend.id == "imate" {
+            checking = true
+            defer { checking = false }
+            do {
+                let status = try await client.imateStatus()
+                auth = try Self.agentAuth(signedIn: status.signedIn)
+                error = nil
+            } catch {
+                self.error = error.localizedDescription
+            }
+            await model.refreshBackends()
+            return
+        }
         checking = true
         defer { checking = false }
         do {
@@ -279,6 +300,11 @@ struct AgentSheet: View {
             self.error = error.localizedDescription
         }
         await model.refreshBackends()
+    }
+
+    private static func agentAuth(signedIn: Bool) throws -> AgentAuth {
+        let json = #"{"signedIn": \#(signedIn), "methods": [], "savedEnv": [], "login": false}"#
+        return try JSONDecoder().decode(AgentAuth.self, from: Data(json.utf8))
     }
 
     private func checkLoginProfile(_ loginProfile: String) async {
@@ -312,6 +338,8 @@ private enum SetupRoute: Hashable {
     case keys(AuthMethod)
     /// The key form of an API key login profile (its id).
     case profileKeys(String)
+    /// iMate has one personal token rather than named login profiles.
+    case imateToken
 }
 
 /// Asks the agent about its sign-in again; an orb while it's asked.

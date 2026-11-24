@@ -9,6 +9,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 
 ## 2.54.0
 ### zh-Hant
+- 可在「擴充功能」新增 iMate 個人令牌，並把 iMate 數字同事加入為 Bot。
 - Thread 不再於結束一週後被刪除：在 Threads 分頁捲到最底就會載入更早的 thread，可以照常打開和繼續傳訊息。想自動清理的話，在「電腦」裡該電腦的「刪除舊的 thread」選 7、30 或 90 天後，預設是永久保留。
 - 例行工作可以指定資料夾：在例行工作編輯器的「資料夾」選一個資料夾，每次執行都會在那個資料夾裡用自己的 thread 進行；不選就在 Bot 的資料夾。
 - Bot 設定的「工作區」新增「專案」：Bot 一律在自己的資料夾，thread 在預設專案工作；專案是 git 儲存庫時可選「worktree 模式」。原本在專案裡的 Bot 會搬回自己的資料夾，專案保留為第一個。
@@ -26,6 +27,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 點開 thread 會像電腦版一樣以聊天畫面全螢幕顯示：訊息和回覆是對話泡泡，卡片、檔案和 artifact 直接在 thread 裡處理；右上角「詳情」可打開 Bot 的詳細資訊。
 
 ### en-US
+- Add an iMate personal token in Extensions and use your iMate digital colleagues as bots.
 - Threads are no longer deleted a week after they end: scroll to the end of the Threads tab to load older ones, which open and take messages as before. To clean up on its own, pick 7, 30 or 90 days under Delete old threads for that computer in Computers; the default keeps them forever.
 - A routine can name a folder: pick one under Folder in the routine editor and each run works there in a thread of its own; without one it runs in the bot's folder.
 - Bot settings add Projects: a bot always lives in its own folder, and threads work in its default project. Worktree mode (Off, Side by side, Always) shows for git projects. Bots that worked in a project move home, the project kept as their first.

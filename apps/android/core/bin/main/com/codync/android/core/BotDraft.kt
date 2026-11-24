@@ -43,25 +43,50 @@ data class BotDraft(
     val compaction: Compaction? = null,
     /** The login profile it runs on; null, sent as null, is the login the computer already has. */
     val loginProfile: String? = null,
-    /** The most agents it runs at once ([Bot.maxAgents]); null where the host has none, so it isn't sent. */
-    val maxAgents: Int? = null,
-    /** A worktree per agent ([Bot.taskWorktrees]); null where the host has none, so it isn't sent. */
-    val taskWorktrees: Boolean? = null,
+    /** The most threads it runs at once ([Bot.maxThreads]); null where the host has none, so it isn't sent. */
+    val maxThreads: Int? = null,
+    /** A worktree per thread ([Bot.threadWorktrees]); null where the host has none, so it isn't sent. */
+    val threadWorktrees: Boolean? = null,
+    /** Advisor mode's agent for its threads ([Bot.threadAgent]); null, sent as null, turns it off. */
+    val threadAgent: Fallback? = null,
+    /** The threads' fallbacks; null where the host has no Advisor mode, so neither this nor [threadAgent] is sent. */
+    val threadFallbacks: List<Fallback>? = null,
 ) {
     /** A saved bot keeps a name; only a new one goes without (the host names it after its first conversations). */
     val isValid: Boolean get() = name.isNotBlank()
     fun toggleNotifications(): BotDraft = copy(notify = !(notify ?: true))
-    /** On agent [id], on the computer's own login: its model starts over, and a fallback on that login goes (each login is in the chain once). */
-    fun withAgent(id: String): BotDraft = copy(backend = id, loginProfile = null, model = null, modelOptions = emptyMap(), fallbacks = fallbacks?.filter { it.login != Login(id) },
-        // A picked mode becomes the new agent's Auto mode (or, without one, asking).
-        mode = mode?.let { AgentMode.AUTO })
+    /** On [login] (an agent on one of its logins): a fallback on that login goes (each login is in the chain once), and
+     *  another agent's model starts over. */
+    fun withAgent(login: Login): BotDraft = when {
+        login == this.login -> this
+        login.backend == backend -> copy(loginProfile = login.loginProfile, fallbacks = fallbacks?.filter { it.login != login })
+        else -> copy(backend = login.backend, loginProfile = login.loginProfile, model = null, modelOptions = emptyMap(),
+            fallbacks = fallbacks?.filter { it.login != login },
+            // A picked mode becomes the new agent's Auto mode (or, without one, asking).
+            mode = mode?.let { AgentMode.AUTO })
+    }
+    /** Advisor mode on: its threads start on the bot's own agent, model and fallbacks, for the user to change (on a custom
+     *  command, which the threads' picker doesn't offer, on the first installed agent of [backends]); off: none. */
+    fun withAdvisor(on: Boolean, backends: List<AgentBackend>): BotDraft = when {
+        !on -> copy(threadAgent = null, threadFallbacks = emptyList())
+        backend != "custom" -> copy(threadAgent = Fallback(backend, model = model, modelOptions = modelOptions, loginProfile = loginProfile),
+            threadFallbacks = fallbacks.orEmpty())
+        else -> (backends.firstOrNull { it.available } ?: backends.firstOrNull())?.let { copy(threadAgent = it.stepOn(emptyList()), threadFallbacks = emptyList()) }
+            ?: this
+    }
+    /** Its threads on [login], as [withAgent] puts the bot on one: a threads' fallback on that login goes. */
+    fun withThreadAgent(login: Login): BotDraft = if (threadAgent?.login == login) this
+        else copy(threadAgent = threadAgent?.takeIf { it.backend == login.backend }?.copy(loginProfile = login.loginProfile)
+            ?: Fallback(login.backend, loginProfile = login.loginProfile), threadFallbacks = threadFallbacks?.filter { it.login != login })
     fun body(): JsonObject {
         val normalized = if (backend == "custom") this else copy(command = null)
         // updateBot merges a patch: null clears model, command or the connector choice, but an unset
-        // switch or fallback list must stay out (the host's booleans and lists don't take null).
-        return JsonObject(WireJson.encodeToJsonElement(normalized).jsonObject.filterNot { (key, value) -> value == JsonNull && key in UNSET })
+        // switch or fallback list must stay out (the host's booleans and lists don't take null). Advisor mode's agent goes
+        // as null (off) only to a host that has it.
+        return JsonObject(WireJson.encodeToJsonElement(normalized).jsonObject.filterNot { (key, value) ->
+            value == JsonNull && key in UNSET || key == "threadAgent" && threadFallbacks == null })
     }
-    /** A template carries the bot's setup, not its fallbacks (they name this computer's agents): readable JSON, keys sorted as on iOS. */
+    /** A template carries the bot's setup, not its fallbacks or its threads' agent (they name this computer's agents): readable JSON, keys sorted as on iOS. */
     fun template(): String = TemplateJson.encodeToString(JsonObject.serializer(),
         JsonObject(body().filterKeys { it !in TEMPLATE_SKIPS }.toSortedMap()))
 
@@ -78,16 +103,18 @@ data class BotDraft(
     companion object {
         /** A new bot starts with a random face, like iOS. */
         val AVATAR_COLORS = listOf("black", "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray")
-        private val UNSET = setOf("fastMode", "notify", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants", "compaction", "maxAgents", "taskWorktrees")
+        private val UNSET = setOf("fastMode", "notify", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants", "compaction", "maxThreads", "threadWorktrees", "threadFallbacks")
         /** Who reaches a bot and the login profile it runs on belong to its computer, not its setup. */
         private val TEMPLATE_SKIPS =
-            setOf("id", "pinned", "hidden", "loginProfile", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants")
+            setOf("id", "pinned", "hidden", "loginProfile", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants",
+                "threadAgent", "threadFallbacks")
         private val TemplateJson = Json { prettyPrint = true; prettyPrintIndent = "  " }
         val AVATAR_SHAPES = listOf("blob", "pebble", "squircle", "tablet", "wedge", "hex", "cloud", "teardrop")
 
         fun from(bot: Bot): BotDraft = BotDraft(bot.id, bot.name, bot.description, bot.avatarColor, bot.avatarShape,
             bot.backend, bot.command, if (bot.managedWorkspace) "" else bot.cwd, bot.permission, bot.model,
             bot.modelOptions, bot.fastMode, bot.pinned, bot.hidden, bot.notify, bot.connectors, bot.skills, bot.computer, bot.manageTeam ?: false, bot.fallbacks, bot.selfFallbacks,
-            bot.offeredToNetwork, bot.reachableByAssistants, bot.mode, bot.compaction, bot.loginProfile, bot.maxAgents, bot.taskWorktrees)
+            bot.offeredToNetwork, bot.reachableByAssistants, bot.mode, bot.compaction, bot.loginProfile, bot.maxThreads, bot.threadWorktrees,
+            bot.threadAgent, bot.threadFallbacks)
     }
 }

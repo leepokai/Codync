@@ -30,6 +30,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 mod agent;
+pub(crate) mod imate;
 mod models;
 mod proxied;
 pub use agent::authenticate;
@@ -194,6 +195,15 @@ pub(crate) fn saved_env(store: &Store, backend: &str) -> Result<Vec<String>> {
 
 /// Runs a check and returns `{signedIn, detail, methods, savedEnv}`.
 pub async fn check(store: &Store, backend: &str) -> Result<Value> {
+    if backend == "imate" {
+        let status = imate::check(store)?;
+        backends::set_signed_in(backend, status.signed_in);
+        CHECKED.locked().insert(backend.to_owned(), status.clone());
+        let mut v = serde_json::to_value(&status)?;
+        v["savedEnv"] = json!(saved_env(store, backend)?);
+        v["login"] = json!(false);
+        return Ok(v);
+    }
     let mut status = probe(store, backend).await?;
     // Where a session proves nothing, a check that can't tell keeps what the last sign-in showed.
     if status.signed_in.is_none() && !backends::session_proves_sign_in(backend) {

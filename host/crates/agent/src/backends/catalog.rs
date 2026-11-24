@@ -321,6 +321,17 @@ pub const HARNESSES: &[Harness] = &[
         signed_in: None,
     },
     Harness {
+        id: "imate",
+        name: "iMate",
+        bins: &[],
+        local: None,
+        registry: None,
+        setup: "Add an iMate personal API token in Login profiles.",
+        install: None,
+        login: None,
+        signed_in: None,
+    },
+    Harness {
         id: "workbuddy",
         name: "WorkBuddy",
         // Its CLI is also named `codebuddy`, inside the app. PATH lookup would take CodeBuddy Code's.

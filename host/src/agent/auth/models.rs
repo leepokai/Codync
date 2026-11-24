@@ -23,7 +23,12 @@ pub struct InFlight(Mutex<HashMap<InFlightKey, Slot>>);
 type Slot = Arc<OnceCell<Result<Value, String>>>;
 
 impl InFlight {
-    async fn get(
+    /// Forgets cached catalogs for `backend` after its credentials change.
+    pub(crate) fn clear(&self, backend: &str) {
+        self.0.locked().retain(|(known, _), _| known != backend);
+    }
+
+    pub(crate) async fn get(
         &self,
         backend: &str,
         login_profile: Option<&str>,
@@ -44,6 +49,9 @@ impl InFlight {
 
 /// [`models`], shared with the asks for the same agent and login profile meanwhile.
 pub async fn shared_models(hub: &Hub, backend: &str, login_profile: Option<&str>) -> Result<Value> {
+    if backend == "imate" {
+        return super::imate::shared_models(hub).await;
+    }
     let login_profile = login_profile.filter(|s| !s.is_empty());
     Box::pin(hub.model_lists.get(backend, login_profile, Box::pin(models(&hub.store, backend, login_profile)))).await
 }

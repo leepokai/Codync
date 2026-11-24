@@ -132,6 +132,12 @@ pub fn access(rules: &[Rule], default: Access, computer: &str, agent: &str, to: 
     rules.iter().find(|r| r.matches(computer, agent, to)).map_or(default, |r| r.access)
 }
 
+/// Whether a rule lets someone write to `to` by name (`allow`, never `*`): what an agent that
+/// is offered only when the user opens it, a coding agent's session, needs.
+pub fn opens(rules: &[Rule], to: &str) -> bool {
+    rules.iter().any(|r| r.access == Access::Allow && r.to_agent.eq_ignore_ascii_case(to))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,5 +194,12 @@ mod tests {
         let json = serde_json::to_value(rule(Access::Allow, "lead@desk", "reviewer")).expect("serializes");
         assert_eq!(json["access"], "allow");
         assert_eq!(json["fromComputer"], "desk");
+    }
+
+    #[test]
+    fn only_an_allow_naming_an_agent_opens_it() {
+        let rules = [rule(Access::Allow, "*", "*"), rule(Access::Auto, "*", "api-claude")];
+        assert!(!opens(&rules, "api-claude"), "neither * nor a ceiling opens it");
+        assert!(opens(&[rule(Access::Allow, "lead@desk", "API-Claude")], "api-claude"));
     }
 }

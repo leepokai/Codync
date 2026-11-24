@@ -4,7 +4,8 @@
 
 use anyhow::Result;
 use serde_json::{Value, json};
-use std::{sync::Arc, time::Duration};
+use std::sync::{Arc, LazyLock, OnceLock};
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
@@ -36,7 +37,8 @@ pub enum Server {
     Manage,
     Memory,
     Composio,
-    /// For agents on this computer that aren't Codync bots; `bot` is the agent's name.
+    /// For coding agents' sessions on this computer that aren't Codync bots; `bot` is an address
+    /// to start from (`--name`), or empty.
     Network,
 }
 
@@ -89,6 +91,8 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
             ("codync", crate::chat::team::assistant::INSTRUCTIONS.to_owned(), crate::chat::team::assistant::tools())
         }
     };
+    // The client's name from `initialize` (`clientInfo.name`): which agent the network server serves.
+    let client: Arc<OnceLock<String>> = Arc::default();
     // Requests still running, by id: a cancelled one stops, and its host call with it (a team change's card expires).
     let mut running = std::collections::HashMap::<String, tokio::task::AbortHandle>::new();
     while let Some(line) = lines.next_line().await? {
@@ -105,22 +109,30 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         let key = id.to_string();
         let (replies, token, bot, available_tools) =
             (replies.clone(), token.clone(), bot.clone(), available_tools.clone());
-        let instructions = instructions.clone();
+        let (instructions, client) = (instructions.clone(), client.clone());
         let request = tokio::spawn(async move {
             let params = &msg["params"];
             let reply = match msg["method"].as_str().unwrap_or_default() {
-                "initialize" => Ok(json!({
-                    "protocolVersion": params["protocolVersion"].as_str().unwrap_or(PROTOCOL_VERSION),
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {"name": name, "version": env!("CARGO_PKG_VERSION")},
-                    "instructions": instructions,
-                })),
+                "initialize" => {
+                    let _ = client.set(params["clientInfo"]["name"].as_str().unwrap_or_default().to_owned());
+                    Ok(json!({
+                        "protocolVersion": params["protocolVersion"].as_str().unwrap_or(PROTOCOL_VERSION),
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": name, "version": env!("CARGO_PKG_VERSION")},
+                        "instructions": instructions,
+                    }))
+                }
                 "ping" => Ok(json!({})),
                 "tools/list" => Ok(match server {
                     Server::Computer => computer_tools(port, &token).await,
                     _ => json!({"tools": available_tools}),
                 }),
-                "tools/call" => Ok(call(port, &token, &bot, params, server).await),
+                "tools/call" => Ok(match server {
+                    Server::Network => {
+                        network_call(port, &token, &bot, client.get().map_or("", String::as_str), params).await
+                    }
+                    _ => call(port, &token, &bot, params, server).await,
+                }),
                 method => Err(json!({"code": -32601, "message": format!("unknown method {method}")})),
             };
             let _ = replies.send(match reply {
@@ -168,13 +180,47 @@ async fn computer_tools(port: u16, token: &str) -> Value {
     }
 }
 
+/// A `network` tool call: the host learns which session calls (`network::sessions`). A Codync bot's
+/// agent that loads the user's own `codync` server gets nothing from it: the bot has its team tools.
+async fn network_call(port: u16, token: &str, hint: &str, client: &str, params: &Value) -> Value {
+    // This server's process, with a nonce so a reused pid never takes over another's session.
+    static PROCESS: LazyLock<String> =
+        LazyLock::new(|| format!("{}-{}", std::process::id(), &uuid::Uuid::new_v4().simple().to_string()[..8]));
+    if let Some(refusal) = refuse_bot(std::env::var_os(BOT_ENV)) {
+        return refusal;
+    }
+    let kind = codync_network::AgentKind::of_mcp_client(client);
+    let meta = params.get("_meta").unwrap_or(&Value::Null);
+    let caller = crate::network::sessions::Caller {
+        kind,
+        session: codync_network::sessions::session_id(kind, |k| std::env::var(k).ok(), meta),
+        process: PROCESS.clone(),
+        cwd: std::env::current_dir().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default(),
+        hint: Some(hint.trim()).filter(|h| !h.is_empty()).map(str::to_owned),
+    };
+    send(port, token, Server::Network, params, json!({"agent": caller})).await
+}
+
+/// The network server's answer to an agent the host runs for a bot (`BOT_ENV` set): nothing.
+fn refuse_bot(bot: Option<std::ffi::OsString>) -> Option<Value> {
+    bot.map(|_| {
+        let text = "You are a Codync bot: message others with your team tools (list_bots, message_bot).";
+        json!({"content": [{"type": "text", "text": text}], "isError": true})
+    })
+}
+
+/// Set in the environment of every agent the host runs for a bot (its id).
+pub const BOT_ENV: &str = "CODYNC_BOT";
+
 /// One tool call through the host. Failures are tool errors the agent can read, not protocol errors.
 async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server) -> Value {
-    let body = json!({
-        "botId": bot,
-        "name": params["name"],
-        "arguments": params.get("arguments").filter(|a| a.is_object()).cloned().unwrap_or_else(|| json!({})),
-    });
+    send(port, token, server, params, json!({"botId": bot})).await
+}
+
+/// Posts a tool call (`body` says who calls) to the host's method for `server`.
+async fn send(port: u16, token: &str, server: Server, params: &Value, mut body: Value) -> Value {
+    body["name"] = params["name"].clone();
+    body["arguments"] = params.get("arguments").filter(|a| a.is_object()).cloned().unwrap_or_else(|| json!({}));
     let (method, timeout) = match server {
         Server::Connectors => ("connectorCall", Duration::from_secs(90)),
         Server::Routines => ("routineCall", Duration::from_secs(30)),
@@ -193,6 +239,10 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
         Server::Manage => ("manageCall", crate::chat::manage::APPROVAL_TIMEOUT + Duration::from_secs(30)),
         Server::Memory => ("memoryCall", Duration::from_mins(2)),
         Server::Composio => ("composioCall", Duration::from_mins(2)),
+        // A session may wait for its mail.
+        Server::Network if params["name"] == "check_inbox" => {
+            ("agentCall", Duration::from_secs(crate::chat::team::mailbox::WAIT_MAX_SECS + 15))
+        }
         // The first listing may wait for the other computers.
         Server::Network => ("agentCall", Duration::from_secs(30)),
     };
@@ -290,5 +340,11 @@ mod tests {
             assert!(!told.contains(gone), "a thread is told of {gone}: {told}");
         }
         assert!(!told.contains("(pass)"), "{told}");
+    }
+
+    #[test]
+    fn the_network_server_refuses_a_bots_agent() {
+        assert!(super::refuse_bot(Some("bot-1".into())).is_some_and(|v| v["isError"] == true));
+        assert!(super::refuse_bot(None).is_none());
     }
 }

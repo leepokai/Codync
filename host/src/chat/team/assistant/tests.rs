@@ -178,24 +178,112 @@ async fn an_answer_from_another_computer_waits_in_the_replies() {
     f.shutdown().await;
 }
 
+fn session(kind: codync_network::AgentKind, id: &str) -> Caller {
+    Caller { kind, session: Some(id.into()), process: "1-test".into(), cwd: "/work/api".into(), hint: None }
+}
+
 #[tokio::test]
-async fn an_agent_on_this_computer_asks_without_the_cloud_and_reads_only_its_own_replies() {
+async fn a_session_on_this_computer_asks_without_the_cloud_and_reads_only_its_own_replies() {
+    use codync_network::AgentKind::{ClaudeCode, Codex};
     let f = Fixture::new();
     let hub = &f.hub;
     // No cloud switch or account: it's on the computer, and the cloud scope doesn't apply to it.
     hub.update_bot(&json!({"id": "b", "reachableByAssistants": false})).unwrap();
-    let listed = local_call(hub, "Claude Code", "list_bots", &json!({})).await.unwrap();
+    let claude = session(ClaudeCode, "s1");
+    let listed = local_call(hub, &claude, "list_bots", &json!({})).await.unwrap();
     assert!(listed["bots"].as_array().unwrap().iter().any(|b| b["id"] == "b"), "{listed}");
-    let sent =
-        local_call(hub, "Claude Code", "message_bot", &json!({"botId": "b", "message": "review this"})).await.unwrap();
+    assert_eq!(listed["you"], "api-claude", "every result names the caller's address");
+    let sent = local_call(hub, &claude, "message_bot", &json!({"botId": "b", "message": "review this"})).await.unwrap();
     let request = sent["requestId"].as_str().unwrap().to_owned();
-    let read = |name: &str| hub.assistant.read(&Asker::local(name).unwrap().id, Some(&request))["replies"][0].clone();
-    f.until(|| read("Claude Code")["status"] == "completed").await;
-    assert_eq!(read("Claude Code")["reply"], "reply: review this");
-    assert!(read("Codex").is_null(), "another agent doesn't see it");
+    let read = |c: &Caller| hub.assistant.read(&format!("session:{}", c.key()), Some(&request))["replies"][0].clone();
+    f.until(|| read(&claude)["status"] == "completed").await;
+    assert_eq!(read(&claude)["reply"], "reply: review this");
+    assert!(read(&session(Codex, "t1")).is_null(), "another session doesn't see it");
     let history = hub.store.history("b", i64::MAX, 50).unwrap();
     let notice = history.into_iter().find(|e| e.data["delegationId"] == *request).unwrap();
-    assert_eq!(notice.data["botMessage"]["peerName"], "Claude Code (this computer)");
-    assert!(local_call(hub, " ", "list_bots", &json!({})).await.is_err(), "it needs a name");
+    assert_eq!(notice.data["botMessage"]["peerName"], "api-claude (this computer)");
+    f.shutdown().await;
+}
+
+#[tokio::test]
+async fn sessions_mail_each_other_and_read_it_once() {
+    use codync_network::AgentKind::{ClaudeCode, Codex};
+    let f = Fixture::new();
+    let hub = &f.hub;
+    let (claude, codex) = (session(ClaudeCode, "s1"), session(Codex, "t1"));
+    let me = local_call(hub, &codex, "whoami", &json!({})).await.unwrap();
+    assert_eq!((&me["address"], &me["kind"], &me["tier"]), (&json!("api-codex"), &json!("codex"), &json!("pull")));
+    let listed = local_call(hub, &claude, "list_bots", &json!({"kind": "codex"})).await.unwrap();
+    assert_eq!(listed["bots"][0]["id"], "api-codex", "{listed}");
+    let sent =
+        local_call(hub, &claude, "message_bot", &json!({"botId": "api-codex", "message": "did the API change?"}))
+            .await
+            .unwrap();
+    assert_eq!((&sent["status"], &sent["tier"]), (&json!("delivered"), &json!("pull")));
+    let notice = local_call(hub, &codex, "read_replies", &json!({})).await.unwrap();
+    assert_eq!(notice["unread"], 1, "a count, never the text: {notice}");
+    assert!(!notice.to_string().contains("did the API"));
+    let inbox = local_call(hub, &codex, "check_inbox", &json!({})).await.unwrap();
+    assert!(inbox["letters"].as_str().unwrap().contains("from=\"api-claude\""), "{inbox}");
+    assert!(local_call(hub, &codex, "whoami", &json!({})).await.unwrap().get("unread").is_none(), "read once taken");
+    // A wait ends when a letter comes.
+    let wait = json!({"waitSecs": 20});
+    let waiting = local_call(hub, &codex, "check_inbox", &wait);
+    let later = async {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        local_call(hub, &claude, "message_bot", &json!({"botId": "api-codex", "message": "again"})).await.unwrap();
+    };
+    let (inbox, ()) = tokio::join!(waiting, later);
+    assert_eq!(inbox.unwrap()["count"], 1);
+    // An explicit rename; the old address is never handed out again.
+    let renamed = local_call(hub, &codex, "set_name", &json!({"name": "API Reviewer"})).await.unwrap();
+    assert_eq!(renamed["address"], "api-reviewer");
+    let again = local_call(hub, &codex, "set_name", &json!({"name": "api-reviewer"})).await.unwrap();
+    assert_eq!(again["address"], "api-reviewer", "asking again keeps it");
+    let next = local_call(hub, &session(Codex, "t2"), "whoami", &json!({})).await.unwrap();
+    assert_eq!(next["address"], "api-codex-2");
+    f.shutdown().await;
+}
+
+#[tokio::test]
+async fn the_cloud_assistant_has_no_mailbox() {
+    let f = Fixture::new();
+    let hub = &f.hub;
+    hub.store.kv_set("cloud_assistants", "on").unwrap();
+    in_account(hub);
+    for tool in ["whoami", "set_name", "check_inbox"] {
+        refused(&call(hub, "user_1", tool, &json!({"name": "x"})).await, "unknown tool");
+    }
+    f.shutdown().await;
+}
+
+#[tokio::test]
+async fn letters_from_another_computer_wait_in_a_sessions_mailbox() {
+    let f = Fixture::new();
+    let hub = &f.hub;
+    let codex = session(codync_network::AgentKind::Codex, "t1");
+    let me = local_call(hub, &codex, "whoami", &json!({})).await.unwrap();
+    let address = me["address"].as_str().unwrap().to_owned();
+    let (tx, rx) = tokio::sync::mpsc::channel(4);
+    tokio::spawn(remote::listen(hub.clone(), "network".into(), rx));
+    let letter = |from: &str, body: &str| codync_network::Message {
+        id: uuid::Uuid::new_v4().to_string(),
+        from: from.parse().unwrap(),
+        to: address.clone(),
+        body: body.into(),
+        wake: true,
+        reply_to: None,
+        hops: 1,
+        meta: None,
+        access: Access::Allow,
+    };
+    // Cloud assistants are off here, so the cloud assistant's letter through another computer stays out.
+    tx.send(letter(&format!("{HANDLE}@laptop"), "from the cloud")).await.unwrap();
+    tx.send(letter("lead@laptop", "review the API")).await.unwrap();
+    f.until(|| hub.network.sessions.unread(&hub.store, &codex.key()) == 1).await;
+    let inbox = local_call(hub, &codex, "check_inbox", &json!({})).await.unwrap();
+    let letters = inbox["letters"].as_str().unwrap();
+    assert!(letters.contains("from=\"lead@laptop\"") && letters.contains("review the API"), "{inbox}");
+    assert!(!letters.contains("from the cloud"), "{inbox}");
     f.shutdown().await;
 }

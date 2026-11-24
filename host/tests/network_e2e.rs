@@ -529,3 +529,46 @@ async fn a_computer_in_two_networks_keeps_them_apart() {
     assert_eq!(names, ["home"]);
     assert!(!desk.home.join(work["network"].as_str().unwrap()).exists());
 }
+
+#[tokio::test]
+async fn a_session_a_rule_opens_takes_letters_from_another_computer_in_its_mailbox() {
+    let (desk, laptop, _, lead) = two_computers().await;
+    let call = |session: Option<&str>, name: &str| {
+        let agent = json!({"kind": "codex", "session": session, "process": "1-e2e", "cwd": "/work/api", "hint": null});
+        json!({"agent": agent, "name": name, "arguments": {}})
+    };
+    let address = desk.call("agentCall", call(Some("t1"), "whoami")).await["address"].as_str().unwrap().to_owned();
+    let temporary = desk.call("agentCall", call(None, "whoami")).await["address"].as_str().unwrap().to_owned();
+    let offered = async || {
+        let peers = laptop.call("networkPeers", json!({})).await;
+        let agents = computer(&peers, "desk")["agents"].as_array().unwrap().clone();
+        agents.iter().filter_map(|a| a["id"].as_str().map(str::to_owned)).collect::<Vec<_>>()
+    };
+    assert!(!offered().await.contains(&address), "`allow * -> *` doesn't open a session");
+    // A rule that names it opens it; never the temporary one.
+    let rules = json!({"rules": [
+        {"fromComputer": "laptop", "fromAgent": "lead", "toAgent": address, "access": "allow"},
+        {"fromComputer": "laptop", "fromAgent": "lead", "toAgent": temporary, "access": "allow"},
+        {"fromComputer": "*", "fromAgent": "*", "toAgent": "*", "access": "allow"},
+    ]});
+    desk.call("setNetworkRules", rules).await;
+    let listed = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let agents = offered().await;
+            if agents.contains(&address) {
+                return agents;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("the desk never offered the session");
+    assert!(!listed.contains(&temporary), "{listed:?}");
+    // A request is answered at once, and the letter waits in the session's mailbox.
+    laptop.call("send", json!({"botId": lead, "text": format!("DELEGATE {address}@desk hello session")})).await;
+    let delivered = |e: &Value| is_final(e) && e["data"]["text"].as_str().is_some_and(|t| t.contains("Delivered to"));
+    laptop.wait_for(&lead, delivered).await;
+    let inbox = desk.call("agentCall", call(Some("t1"), "check_inbox")).await;
+    let letters = inbox["letters"].as_str().unwrap();
+    assert!(letters.contains("from=\"lead@laptop\"") && letters.contains("hello session"), "{inbox}");
+}

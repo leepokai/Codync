@@ -12,6 +12,7 @@ use crate::agent::bot::Cmd;
 use crate::analytics::NetworkStage;
 use crate::hub::Hub;
 use crate::network::Target;
+use crate::network::sessions::Session;
 use crate::store::{BotConfig, EntryKind, Lane};
 use anyhow::{Result, anyhow};
 use codync_agent::acp::truncate;
@@ -78,6 +79,9 @@ fn take(hub: &Arc<Hub>, network: &str, m: &Message) -> Result<()> {
         return Ok(());
     }
     let back = Return { network: network.to_owned(), to: m.from.clone(), request: m.id.clone(), from: m.to.clone() };
+    if let Some(session) = hub.network.sessions.by_address(&hub.store, &m.to) {
+        return to_session(hub, &session, m, &back);
+    }
     let target = hub.network.bot_for(&m.to).ok_or_else(|| anyhow!("no bot called {} here", m.to));
     let target = target.and_then(|bot| visible_bot(hub, &bot)).and_then(|bot| {
         // The cloud assistant asking through another computer: this one's cloud switches decide too.
@@ -101,6 +105,28 @@ fn take(hub: &Arc<Hub>, network: &str, m: &Message) -> Result<()> {
         }
         Err(error) => Err(error),
     }
+}
+
+/// A letter for a coding agent's session here goes to its mailbox. A request is answered at once:
+/// the session reads its mail itself, and answers with a letter of its own.
+fn to_session(hub: &Arc<Hub>, session: &Session, m: &Message, back: &Return) -> Result<()> {
+    let request = m.wake && m.reply_to.is_none();
+    // The cloud assistant asking through another computer: this one's cloud switch decides too.
+    if m.from.agent == super::assistant::HANDLE
+        && m.reply_to.is_none()
+        && let Err(error) = super::assistant::switched_on(hub)
+    {
+        if request {
+            send_back(hub, back, format!("Couldn't take it: {error:#}"), RequestStatus::Failed, m.hops);
+        }
+        return Err(error);
+    }
+    super::mailbox::post(hub, session, &m.from.to_string(), &m.body, m.reply_to.as_deref())?;
+    if request {
+        let note = format!("Delivered to {}'s inbox: it reads its mail itself.", session.address);
+        send_back(hub, back, note, RequestStatus::Completed, m.hops);
+    }
+    Ok(())
 }
 
 /// How a bot on another computer is shown: its name and computer, from that network's directory.

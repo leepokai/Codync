@@ -578,7 +578,7 @@ function ChatSplitView() {
                 <Text size="title3" weight="semibold" tone="text" truncate className="sidebar-title crowded">{tr(list.title)}</Text>
                 <Spacer />
                 <HStack gap={6} className="no-drag">
-                  <IconButton title="Bot Manager" icon="slider.horizontal.3" size={32} className="sidebar-header-action" onClick={() => setModelManager(true)} />
+                  <IconButton title={tr('Bot Manager')} icon="slider.horizontal.3" size={32} className="sidebar-header-action" onClick={() => setModelManager(true)} />
                   <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setPage('computers')} options={listOptions} />
                   <IconButton title="Search" icon="magnifyingglass" size={32} className="sidebar-header-action" onClick={() => setSearching(true)} />
                   {list.add}

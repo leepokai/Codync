@@ -131,7 +131,8 @@ so this only matters if a bot's conversation title is ever shown.
 
 | Tier | Agents |
 |---|---|
-| push (wakes idle) | Claude Code (inbox socket) and pi (extension): read mid-turn; Codex (`codex queue`): queued as the thread's next input; opencode (plugin, once verified), Amp (not installed) |
+| push (wakes idle) | Claude Code (inbox socket) and pi (extension): read mid-turn; opencode (plugin, once verified), Amp (not installed) |
+| queued (idle wake unverified) | Codex (`codex queue`): queued as the thread's next input; whether it starts a turn on an idle thread without user input is not checked yet |
 | turn (next tool call or stop) | Cursor, Copilot CLI (hooks verified here); Grok, Gemini CLI (not verified: follow-up) |
 | pull (a proposed `check_inbox` tool + an unread notice) | any MCP client, including the above before their hooks or plugins are installed |
 
@@ -142,8 +143,9 @@ so this only matters if a bot's conversation title is ever shown.
    all, opencode 1.x unverified. Proposal: the `initialize` instructions say to call a new `whoami` tool (or read the
    first tool result, which names the address); the address is fixed at the first call that knows the session.
 2. **Agents with no session id over MCP** (pi and opencode without our extension, Cursor without hooks, any other
-   MCP client). Proposal: key them by the MCP process (`proc:<pid>`), so the address lasts while that process runs
-   and a restart gets a new one; the hooks/plugins of later phases give them real ids.
+   MCP client). Proposal: key them by the MCP process instance (`<pid>-<nonce>`, a fresh nonce for each process, so a
+   reused pid never gets an old mailbox), so the address lasts while that instance runs and a restart gets a new
+   one; the hooks/plugins of later phases give them real ids.
 3. **One MCP process, several sessions** (Codex, Antigravity): the registry is keyed by `(kind, session id)` per
    call, not per process. Cursor's calls carry no id, so its sessions are told apart only through hooks.
 

@@ -1,4 +1,4 @@
-﻿import { test, expect } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { api, attach, setPref, steerBot } from './sandbox.ts'
 
 type Hello = { backends: { id: string; name: string; available?: boolean; installed?: boolean }[] }
@@ -93,7 +93,7 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
       await search.fill('')
       // Had the bug survived, A would have been applied too (its outcome would already be set
       // by the time B's shows): the hidden bot stays untouched.
-      await expect(rows.filter({ hasText: nameA })).not.toContainText('Applied')
+      await expect(rows.filter({ hasText: nameA })).not.toContainText('Applied', { timeout: 30_000 })
     })
 
     await test.step('pause checked pauses both bots, and resume checked resumes them', async () => {

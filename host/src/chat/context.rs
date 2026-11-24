@@ -37,11 +37,22 @@ impl Identity {
         Self {
             name: cfg.name.trim().to_owned(),
             description: cfg.description.trim().to_owned(),
-            skills_brief: crate::market::skills_brief(store, &cfg.skills).unwrap_or_default(),
+            skills_brief: crate::market::skills_brief(store, &enabled_skills(store, cfg)).unwrap_or_default(),
             lead: Some(cfg.lead),
             projects: cfg.projects.clone(),
         }
     }
+}
+
+/// The skills on for `cfg`: its owner's saved list when present (so a thread sees skills saved or
+/// toggled on its bot since it started), else `cfg.skills`.
+pub fn enabled_skills<'a>(store: &Store, cfg: &'a BotConfig) -> std::borrow::Cow<'a, [String]> {
+    store
+        .bot(cfg.owner())
+        .ok()
+        .flatten()
+        .filter(|row| !row.deleted)
+        .map_or(std::borrow::Cow::Borrowed(&cfg.skills), |row| std::borrow::Cow::Owned(row.config.skills))
 }
 
 /// The start of `lead::BRIEF` in every version of it: instructions that hold it gave the bot the lead's role.
@@ -279,7 +290,7 @@ fn environment(cfg: &BotConfig, chat: bool) -> String {
 
 /// What every session ends with: the skills, the compaction keep-list and, told who the bot is, its memory.
 fn closing(store: &Store, cfg: &BotConfig, mut lines: Vec<String>, memory: bool) -> String {
-    if let Some(skills) = crate::market::skills_brief(store, &cfg.skills) {
+    if let Some(skills) = crate::market::skills_brief(store, &enabled_skills(store, cfg)) {
         lines.push(String::new());
         lines.push(skills);
     }
@@ -661,5 +672,26 @@ mod tests {
         assert!(resolve(&store, &a, "s1").expect("resolve").unprompted, "survives a restart");
         mark_prompted(&store, &a.id, &first).expect("mark");
         assert!(!resolve(&store, &a, "s1").expect("resolve").unprompted);
+    }
+
+    #[test]
+    fn a_thread_profile_reads_its_owners_current_skills() {
+        let store = store();
+        let mut owner = cfg("Fixer", "Fix bugs");
+        store.save_bot(&owner).expect("save owner");
+        let mut thread = owner.clone();
+        thread.id = "thread-1".into();
+        thread.thread_of = Some(owner.id.clone());
+        let snap = adopt(&store, &thread.as_owner(), "s-thread", "SYSTEM".into(), String::new()).expect("adopt");
+        assert!(profile_update(&store, &snap, &thread.as_owner()).is_none());
+
+        let list = serde_json::json!([{"id": "deploy", "name": "Deploy", "description": "Ship releases"}]);
+        store.kv_set("skills", &list.to_string()).expect("save skills");
+        owner.skills = vec!["deploy".into()];
+        store.save_bot(&owner).expect("save owner with skill");
+
+        let (update, _) = profile_update(&store, &snap, &thread.as_owner()).expect("thread hears parent's new skill");
+        assert!(update.contains("- Deploy: Ship releases"), "{update}");
+        assert!(render(&store, &thread.as_owner()).contains("- Deploy: Ship releases"));
     }
 }

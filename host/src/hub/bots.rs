@@ -92,6 +92,37 @@ impl Hub {
         Ok(self.bot_value(&id).unwrap_or(Value::Null))
     }
 
+    /// Adds `ids` to `id`'s enabled skills without re-validating its workspace folder, so a thread
+    /// saving a skill from its own folder still turns it on for its bot if the bot's folder is away.
+    pub(crate) fn enable_skills(&self, id: &str, ids: &[String]) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let changed = {
+            let _g = self.emit_lock.locked();
+            let row = self.store.bot(id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            let mut cfg = row.config;
+            if cfg.is_group() || ids.iter().all(|s| cfg.skills.contains(s)) {
+                None
+            } else {
+                for s in ids {
+                    if !cfg.skills.contains(s) {
+                        cfg.skills.push(s.clone());
+                    }
+                }
+                self.store.save_bot(&cfg)?;
+                Some(cfg)
+            }
+        };
+        if let Some(cfg) = changed {
+            if let Err(error) = self.send_cmd(id, Cmd::Reconfigure(Box::new(cfg))) {
+                tracing::warn!(bot = id, error = format!("{error:#}"), "couldn't reconfigure bot for new skills");
+            }
+            self.emit_bot(id);
+        }
+        Ok(())
+    }
+
     pub fn delete_bot(&self, id: &str) -> Result<()> {
         // Its threads go first: they are the bot's own work. Its box goes below.
         for thread in crate::chat::work::of(&self.store, id) {

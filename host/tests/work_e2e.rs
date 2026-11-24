@@ -2121,3 +2121,112 @@ async fn a_thread_without_a_bot_and_no_folder_works_in_one_of_its_own() {
     wait("its versions", async || own.join(".git").exists().then_some(())).await;
     assert!(done["worktree"].is_null());
 }
+
+#[tokio::test]
+async fn a_thread_saves_a_skill_for_its_bot_and_restart_adopts_old_thread_skills() {
+    let mut host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
+    host.reply(&bot, "ADD Ship it|HOLD gate").await;
+    let working = task(&host, &bot, "Ship it", "working").await;
+    let thread = working["thread"].as_str().unwrap().to_owned();
+
+    // Save a skill from the running background thread: the parent bot gets ownership, settings and chat notice.
+    let saved = host
+        .call(
+            "chatCall",
+            json!({
+                "botId": thread,
+                "name": "save_skill",
+                "arguments": {"name": "Deploy notes", "description": "Release steps.", "instructions": "1. Build."}
+            }),
+        )
+        .await;
+    let skill_id = saved["skill"]["id"].as_str().unwrap().to_owned();
+    let bot_skills = |snap: &Value| -> Vec<String> {
+        common::bot(snap, &bot)["skills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_owned))
+            .collect()
+    };
+    assert_eq!(bot_skills(&host.snapshot().await), [skill_id.as_str()], "turned on for the parent bot");
+    let notices: Vec<String> = history(&host, &bot)
+        .await
+        .into_iter()
+        .filter(|e| e["kind"] == "notice")
+        .filter_map(|e| e["data"]["text"].as_str().map(str::to_owned))
+        .collect();
+    assert!(notices.iter().any(|t| t == "Saved the skill Deploy notes"), "notice in parent chat: {notices:?}");
+
+    // The parent bot's main chat can rewrite the skill its thread saved.
+    let updated = host
+        .call(
+            "chatCall",
+            json!({
+                "botId": bot,
+                "name": "save_skill",
+                "arguments": {
+                    "id": skill_id,
+                    "name": "Deploy notes",
+                    "description": "Release steps updated.",
+                    "instructions": "1. Build.\n2. Tag."
+                }
+            }),
+        )
+        .await;
+    assert_eq!(updated["skill"]["id"], skill_id);
+
+    // A follow-up in the same thread sees the skill on its next prompt.
+    release(&host, &bot, "gate");
+    let done = task(&host, &bot, "Ship it", "done").await;
+    tell(&host, &bot, &done, "use the new skill").await;
+    let follow_up = wait("follow-up prompt in thread", async || {
+        logged(&host.workspace(&bot), "prompts.jsonl")
+            .into_iter()
+            .find(|p| p["text"].as_str().is_some_and(|t| t.contains("use the new skill")))
+    })
+    .await;
+    let text = follow_up["text"].as_str().unwrap();
+    assert!(
+        text.contains("<agent_profile_update>") && text.contains("Deploy notes: Release steps updated."),
+        "saving thread gets the skill on its next message: {text}"
+    );
+
+    // Restart with a legacy thread-owned skill in the DB: host start turns it on for the parent bot and hands over ownership.
+    let legacy_id = "legacy-thread-skill";
+    host.restart(|home| {
+        let dir = home.join("skills").join(legacy_id);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "---\nname: Legacy\ndescription: Old.\n---\n\nOld.\n").unwrap();
+        let db = rusqlite::Connection::open(home.join("codync.db")).unwrap();
+        let raw: String = db.query_row("SELECT v FROM kv WHERE k = 'skills'", [], |r| r.get(0)).unwrap();
+        let mut list: Vec<Value> = serde_json::from_str(&raw).unwrap();
+        list.push(json!({
+            "id": legacy_id,
+            "name": "Legacy",
+            "description": "Old.",
+            "source": "custom",
+            "writtenBy": thread,
+        }));
+        db.execute("UPDATE kv SET v = ?1 WHERE k = 'skills'", [serde_json::to_string(&list).unwrap()]).unwrap();
+    })
+    .await;
+
+    let skills_after = bot_skills(&host.snapshot().await);
+    assert!(
+        skills_after.contains(&legacy_id.to_owned()),
+        "legacy thread skill turned on after restart: {skills_after:?}"
+    );
+    let rewritten = host
+        .call(
+            "chatCall",
+            json!({
+                "botId": bot,
+                "name": "save_skill",
+                "arguments": {"id": legacy_id, "name": "Legacy", "description": "Adopted.", "instructions": "New."}
+            }),
+        )
+        .await;
+    assert_eq!(rewritten["skill"]["id"], legacy_id, "parent bot can rewrite adopted legacy skill");
+}

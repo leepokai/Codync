@@ -321,9 +321,11 @@ pub fn update_custom_skill(
 ) -> Result<Skill> {
     update_skills(store, |all| {
         let s = all.iter_mut().find(|s| s.id == id).ok_or_else(|| anyhow!("There's no skill with the id {id}"))?;
-        if s.written_by.as_deref() != Some(bot) {
+        let owner = s.written_by.as_deref().map(|writer| crate::chat::work::owner(store, writer));
+        if owner.as_deref() != Some(bot) {
             bail!("{} wasn't saved by you: only skills you saved can be changed", s.name);
         }
+        s.written_by = Some(bot.to_owned());
         s.name = one_line(name);
         s.description = one_line(description);
         write_skill_md(s, body)?;
@@ -408,6 +410,49 @@ pub fn turn_on_installed_once(store: &crate::store::Store) -> Result<()> {
         store.save_bot(&cfg)?;
     }
     store.kv_set(DONE, "1")
+}
+
+/// Skills saved by a thread before #584 recorded the thread as `written_by` and were never turned on for its bot:
+/// turn each on for its bot first, then hand ownership over so an interrupted run retries cleanly.
+pub fn adopt_thread_skills(store: &crate::store::Store) -> Result<()> {
+    let mut by_owner: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+    for s in skills(store) {
+        let Some(writer) = s.written_by.as_deref().filter(|w| crate::store::is_thread_id(w)) else {
+            continue;
+        };
+        let owner = crate::chat::work::owner(store, writer);
+        if owner != writer {
+            by_owner.entry(owner).or_default().push(s.id);
+        }
+    }
+    if by_owner.is_empty() {
+        return Ok(());
+    }
+    for (bot, ids) in &by_owner {
+        let Some(row) = store.bot(bot)? else { continue };
+        let mut cfg = row.config;
+        if row.deleted || cfg.is_group() || ids.iter().all(|id| cfg.skills.contains(id)) {
+            continue;
+        }
+        for id in ids {
+            if !cfg.skills.contains(id) {
+                cfg.skills.push(id.clone());
+            }
+        }
+        store.save_bot(&cfg)?;
+    }
+    update_skills(store, |all| {
+        for s in all.iter_mut() {
+            let Some(writer) = s.written_by.as_deref().filter(|w| crate::store::is_thread_id(w)) else {
+                continue;
+            };
+            let owner = crate::chat::work::owner(store, writer);
+            if by_owner.get(&owner).is_some_and(|ids| ids.contains(&s.id)) {
+                s.written_by = Some(owner);
+            }
+        }
+        Ok(())
+    })
 }
 
 /// The skills block of a bot's profile: what each is for and where to read it.
@@ -536,5 +581,108 @@ mod tests {
         store.save_bot(&cfg).expect("save bot");
         turn_on_installed_once(&store).expect("second run");
         assert!(skills_of(&store).is_empty(), "a skill turned off afterwards stays off");
+    }
+
+    #[test]
+    fn thread_owned_skills_are_adopted_by_their_bot() {
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("memory store");
+        let bot_cfg = |id: &str, thread_of: Option<&str>| -> crate::store::BotConfig {
+            let mut cfg: crate::store::BotConfig = serde_json::from_value(
+                json!({"id": id, "name": id, "backend": "fixture", "command": "true", "cwd": "/tmp", "notify": false}),
+            )
+            .expect("bot config");
+            cfg.thread_of = thread_of.map(str::to_owned);
+            cfg
+        };
+        store.save_bot(&bot_cfg("a", None)).expect("save a");
+        store.save_bot(&bot_cfg("b", None)).expect("save b");
+        store.save_bot(&bot_cfg("thread-1", Some("a"))).expect("save thread-1");
+        // Even a soft-deleted thread row keeps its `threadOf` in `bots`.
+        store.delete_bot("thread-1").expect("soft delete thread-1");
+
+        let tag = uuid::Uuid::new_v4().simple().to_string();
+        let orphan_id = format!("orphan-{}", &tag[..8]);
+        let direct_id = format!("direct-{}", &tag[..8]);
+        let list = vec![
+            Skill {
+                id: orphan_id.clone(),
+                name: "Orphan".into(),
+                description: "Saved in a thread".into(),
+                source: CUSTOM.into(),
+                written_by: Some("thread-1".into()),
+            },
+            Skill {
+                id: direct_id.clone(),
+                name: "Direct".into(),
+                description: "Rewritten before restart".into(),
+                source: CUSTOM.into(),
+                written_by: Some("thread-1".into()),
+            },
+            Skill {
+                id: "missing-thread".into(),
+                name: "Missing".into(),
+                description: "Thread row gone".into(),
+                source: CUSTOM.into(),
+                written_by: Some("thread-gone".into()),
+            },
+        ];
+        save(&store, "skills", &list).expect("save skills");
+
+        assert!(update_custom_skill(&store, "b", &direct_id, "Direct", "x", "body").is_err());
+        let updated =
+            update_custom_skill(&store, "a", &direct_id, "Direct", "x", "body").expect("owner updates orphan");
+        assert_eq!(updated.written_by.as_deref(), Some("a"));
+        let _ = std::fs::remove_dir_all(updated.dir());
+
+        adopt_thread_skills(&store).expect("adopt");
+        let after = skills(&store);
+        let orphan = after.iter().find(|s| s.id == orphan_id).expect("orphan skill");
+        assert_eq!(orphan.written_by.as_deref(), Some("a"));
+        let missing = after.iter().find(|s| s.id == "missing-thread").expect("missing skill");
+        assert_eq!(missing.written_by.as_deref(), Some("thread-gone"));
+
+        let skills_of = |id: &str| store.bot(id).expect("read").expect("bot").config.skills;
+        assert_eq!(skills_of("a"), [orphan_id.as_str()]);
+        assert!(skills_of("b").is_empty());
+
+        let mut cfg = store.bot("a").expect("read").expect("bot").config;
+        cfg.skills.clear();
+        store.save_bot(&cfg).expect("save a without skill");
+        adopt_thread_skills(&store).expect("second adopt");
+        assert!(skills_of("a").is_empty(), "a skill turned off afterwards stays off");
+
+        // Recovery after a mid-adoption interruption: bot `a` already had its skill enabled, `b` did not,
+        // and `written_by` still pointed to the threads. Re-running finishes enabling `b` without duplicating `a`.
+        store.save_bot(&bot_cfg("thread-2", Some("b"))).expect("save thread-2");
+        let mut a_cfg = store.bot("a").expect("read").expect("bot").config;
+        a_cfg.skills = vec!["partial-a".into()];
+        store.save_bot(&a_cfg).expect("save a with partial skill");
+        save(
+            &store,
+            "skills",
+            &[
+                Skill {
+                    id: "partial-a".into(),
+                    name: "Partial A".into(),
+                    description: "Already enabled before crash".into(),
+                    source: CUSTOM.into(),
+                    written_by: Some("thread-1".into()),
+                },
+                Skill {
+                    id: "pending-b".into(),
+                    name: "Pending B".into(),
+                    description: "Not yet enabled before crash".into(),
+                    source: CUSTOM.into(),
+                    written_by: Some("thread-2".into()),
+                },
+            ],
+        )
+        .expect("save interrupted skills");
+        adopt_thread_skills(&store).expect("recover interrupted adoption");
+        assert_eq!(skills_of("a"), ["partial-a"], "no duplicate when already enabled");
+        assert_eq!(skills_of("b"), ["pending-b"], "remaining bot gets its skill on retry");
+        let recovered = skills(&store);
+        assert_eq!(recovered.iter().find(|s| s.id == "partial-a").unwrap().written_by.as_deref(), Some("a"));
+        assert_eq!(recovered.iter().find(|s| s.id == "pending-b").unwrap().written_by.as_deref(), Some("b"));
     }
 }

@@ -24,7 +24,8 @@ pub fn of_entry(hub: &Hub, bot: &BotConfig, e: &Entry) -> String {
     let data = &e.data;
     let text = data["text"].as_str().unwrap_or_default();
     let attachments = data["attachments"].as_array().map_or(&[][..], Vec::as_slice);
-    let asked = of_message(&hub.store, &bot.skills, &uploads::root(bot), text, attachments);
+    let skills = crate::chat::context::enabled_skills(&hub.store, bot);
+    let asked = of_message(&hub.store, &skills, &uploads::root(bot), text, attachments);
     if bot.plain {
         return asked;
     }

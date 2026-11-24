@@ -7,6 +7,9 @@ const run = promisify(execFile);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // `ps` prints whole command lines (and, for `stopDaemons`, environments): far past execFile's 1 MiB default on a busy computer.
 const PS = { maxBuffer: 64 * 1024 * 1024 };
+// Daemons an agent detaches on purpose and shares with its other clients, listed on its docs/upstream-agents page:
+// they may outlive the host (stopDaemons ends them after the check).
+const DETACHED = /\bgateway run\b.*--idle-exit/u;
 
 /** Ends what an agent detached on purpose to outlive the host (Hermes's gateway), found by the check's own HOME. */
 export async function stopDaemons(home) {
@@ -29,7 +32,10 @@ export async function stopHost(host) {
   await sleep(10_000);
   // Compared by command line too, so a pid reused since reads as gone.
   const alive = new Map((await processTable()).map((p) => [p.pid, p.command]));
-  return tree.filter((p) => alive.get(p.pid) === p.command).map((p) => `${p.pid} ${p.command.slice(0, 100)}`).join("; ");
+  return tree
+    .filter((p) => alive.get(p.pid) === p.command && !DETACHED.test(p.command))
+    .map((p) => `${p.pid} ${p.command.slice(0, 200)}`)
+    .join("; ");
 }
 
 async function processTable() {

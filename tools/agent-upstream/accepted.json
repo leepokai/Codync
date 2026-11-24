@@ -45,8 +45,7 @@
     },
     "hermes": {
       "backend": "hermes",
-      "registry": false,
-      "mode": "default"
+      "registry": false
     }
   }
 }

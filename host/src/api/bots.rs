@@ -566,7 +566,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 .filter(|e| e.bot_id == bot && e.kind == EntryKind::User.as_str() && e.data["status"] == "scheduled")
                 .ok_or_else(|| anyhow!("that message isn't scheduled any more"))?;
             json!({"entry": crate::chat::messages::fire_scheduled(hub, &e)?
-                .ok_or_else(|| anyhow!("that message isn't scheduled any more"))?})
+                .ok_or_else(|| anyhow!("that message changed underneath you; take another look"))?})
         }
         "switchBack" => {
             hub.send_cmd(str_arg(&b, "botId")?, Cmd::SwitchBack)?;

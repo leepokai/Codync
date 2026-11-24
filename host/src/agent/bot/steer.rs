@@ -268,8 +268,8 @@ impl Actor {
             }
         }
         // The store row first: if the row can't be read or written, the message stays live-queued rather
-        // than falling out of both paths — a write that doesn't land (the row moved underneath us)
-        // leaves the queue row exactly where it was.
+        // than falling out of both paths — a write that doesn't land (the row is gone, or the write
+        // errored) leaves the queue row exactly where it was.
         if let Some(mut e) = self.hub.store.entry(entry_id) {
             if let Some(t) = text {
                 crate::chat::messages::set_text(&mut e.data, t);

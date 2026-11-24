@@ -86,13 +86,15 @@ export function stepTextSize(size: number, up: boolean) {
 export const DEFAULT_ROSTER_ICON_SIZE = 30
 export const ROSTER_ICON_MIN = 24
 export const ROSTER_ICON_MAX = 44
+/** The slider's step: every stored size is normalized onto this grid, so the control can always show it. */
+export const ROSTER_ICON_STEP = 2
 
 /** Keeps a stored roster icon size a whole number inside the range, on either end when past it,
  * and on the slider's own step grid — so a value the range input cannot show never renders. */
 export function clampRosterIconSize(size: number) {
   if (!Number.isFinite(size)) return DEFAULT_ROSTER_ICON_SIZE
   const clamped = Math.min(ROSTER_ICON_MAX, Math.max(ROSTER_ICON_MIN, Math.round(size)))
-  return ROSTER_ICON_MIN + Math.round((clamped - ROSTER_ICON_MIN) / 2) * 2
+  return ROSTER_ICON_MIN + Math.round((clamped - ROSTER_ICON_MIN) / ROSTER_ICON_STEP) * ROSTER_ICON_STEP
 }
 
 export const prefs = {

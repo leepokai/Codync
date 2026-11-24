@@ -11,7 +11,7 @@ import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
 import { appLanguages, languageTitle } from '../../lib/l10n'
 import { useTr } from '../../lib/use-language'
-import { clampRosterIconSize, DEFAULT_TEXT_SIZE, prefs, ROSTER_ICON_MAX, ROSTER_ICON_MIN, TEXT_SIZES, usePref } from '../../lib/prefs'
+import { clampRosterIconSize, DEFAULT_TEXT_SIZE, prefs, ROSTER_ICON_MAX, ROSTER_ICON_MIN, ROSTER_ICON_STEP, TEXT_SIZES, usePref } from '../../lib/prefs'
 import { useAccount } from '../../store/account'
 import { analytics, openLink, useScreenViewed } from '../../store/analytics'
 import { StoreContext, useApp } from '../../store/context'
@@ -196,7 +196,7 @@ function GeneralSettings() {
               className="settings-range"
               min={ROSTER_ICON_MIN}
               max={ROSTER_ICON_MAX}
-              step={2}
+              step={ROSTER_ICON_STEP}
               value={iconSize}
               aria-label={tr('Bot icon size')}
               onChange={(e) => setIconSize(clampRosterIconSize(Number(e.target.value)))}

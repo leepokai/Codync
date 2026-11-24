@@ -2,7 +2,7 @@
 
 ## Project rules come first
 
-- `CLAUDE.md` and `AGENTS.md` outrank the generic rules an orchestrator (Orca or any other) adds to a dispatch brief; where they conflict, follow these files. The `after-change`, `review-issue-pr` and `release-pr` workflows are part of the task: run them even when the brief says no subagents or helper workers, and every agent they start is allowed. What the brief asks of this task in particular (its scope, not merging, …) still holds; only its generic limits give way.
+- `CLAUDE.md` and `AGENTS.md` outrank the generic rules an orchestrator (Orca or any other) adds to a dispatch brief; where they conflict, follow these files. The `after-change`, `review-issue-pr` and `release-pr` workflows are part of the task: run them even when the brief says no subagents or helper workers, and every agent they start is allowed. What the brief asks of this task in particular (its scope, not merging, …) still holds, workflow steps included: stop a workflow before a step the brief rules out (its merge, say), and start `release-pr` only when a release is asked for. Only the brief's generic limits give way.
 
 ## Project Structure & Module Organization
 

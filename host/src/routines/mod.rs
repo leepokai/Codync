@@ -271,6 +271,20 @@ impl Routines {
             "followUps": follow_ups})
     }
 
+    /// All active runs (`Pending` / `Starting` / `Running` / `Recovering`) for `bot`, without `list`'s 200-run cap:
+    /// a run still owed its turn is never the newest of a busy bot's last 200 finished ones.
+    pub fn active_runs(&self, bot: &str) -> Value {
+        let state = self.state.locked();
+        let runs: Vec<_> = state.runs.iter().rev().filter(|r| r.bot_id == bot && r.status.active()).collect();
+        let routines: Vec<_> = state
+            .routines
+            .iter()
+            .filter(|r| r.bot_id == bot && (!r.deleted || runs.iter().any(|run| run.routine_id == r.id)))
+            .map(public)
+            .collect();
+        json!({"routines": routines, "runs": runs})
+    }
+
     pub fn owns(&self, bot: &str, id: &str) -> bool {
         self.state.locked().routines.iter().any(|r| r.is(bot, id))
     }

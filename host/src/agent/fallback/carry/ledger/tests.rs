@@ -266,20 +266,72 @@ fn every_collection_cap_accounts_for_its_overflow() {
 }
 
 #[test]
-fn servers_use_the_real_ports_array_and_enabled_routines() {
+fn servers_use_the_real_ports_array_and_only_active_runs_are_named() {
     let servers = json!([
         {"name":"web","status":"running","ports":[{"port":5173,"kind":"http"},{"port":9222,"kind":"tcp"}]},
         {"name":"gone","status":"stopped","ports":[{"port":9000}]}
     ]);
-    let routines = json!({"routines":[{"name":"daily","enabled":true},{"name":"disabled","enabled":false}]});
+    let active = json!({"routines":[{"id":"r1","name":"daily"}],"runs":[{"routineId":"r1","status":"pending"}]});
     assert_eq!(
-        running(&servers, &routines, &mut Vec::new()),
-        ["dev server web (ports: 5173, 9222)", "routine daily (enabled)"]
+        running(&servers, &active, &mut Vec::new()),
+        ["dev server web (ports: 5173, 9222)", "routine daily (pending)"]
     );
+    // A finished run is not what the next agent has to wait for, and a run whose definition is gone keeps its id.
+    let finished = json!({"routines":[{"id":"r1","name":"daily"}],"runs":[{"routineId":"r1","status":"succeeded"}]});
+    assert_eq!(running(&servers, &finished, &mut Vec::new()), ["dev server web (ports: 5173, 9222)"]);
+    let unnamed = json!({"routines":[],"runs":[{"routineId":"r2","status":"running"}]});
+    assert_eq!(running(&json!([]), &unnamed, &mut Vec::new()), ["routine r2 (running)"]);
     let many = Value::Array((0..20).map(|_| json!({"name":"server","status":"starting","ports":[]})).collect());
     let mut omitted = Vec::new();
     assert_eq!(running(&many, &json!({}), &mut omitted).len(), RUNNING);
     assert_eq!(omitted.len(), 8);
+}
+
+#[test]
+fn older_active_routine_runs_past_200_finished_runs_are_still_collected() {
+    let store = crate::store::Store::open(Path::new(":memory:")).unwrap();
+    let mut runs = vec![json!({
+        "id": "run-old-active",
+        "routineId": "r-active",
+        "botId": "b1",
+        "status": "pending",
+        "createdAt": 1,
+        "finishedAt": null,
+        "detail": null,
+        "event": null,
+        "deliveryId": null,
+        "notBefore": 9_999_999_999_999_i64
+    })];
+    for i in 0..210 {
+        runs.push(json!({
+            "id": format!("run-done-{i}"),
+            "routineId": "r-done",
+            "botId": "b1",
+            "status": "succeeded",
+            "createdAt": 100 + i,
+            "finishedAt": 101 + i,
+            "detail": null,
+            "event": null,
+            "deliveryId": null
+        }));
+    }
+    let state = json!({
+        "routines": [
+            {"id": "r-active", "botId": "b1", "name": "long-retry", "instruction": "do", "triggers": [], "enabled": true, "createdAt": 1, "updatedAt": 1, "nextRuns": [], "webhookKey": "k1", "deleted": false},
+            {"id": "r-done", "botId": "b1", "name": "frequent", "instruction": "do", "triggers": [], "enabled": true, "createdAt": 1, "updatedAt": 1, "nextRuns": [], "webhookKey": "k2", "deleted": false}
+        ],
+        "runs": runs,
+        "followUps": []
+    });
+    store.kv_set("routines.v1", &state.to_string()).unwrap();
+    let routines = crate::routines::Routines::default();
+    routines.restore(&store).unwrap();
+    // The list's newest 200 runs are all finished ones, so it shows no active run at all.
+    assert_eq!(running(&json!([]), &routines.list("b1"), &mut Vec::new()), Vec::<String>::new());
+    let mut omitted = Vec::new();
+    let collected = running(&json!([]), &routines.active_runs("b1"), &mut omitted);
+    assert_eq!(collected, ["routine long-retry (pending)"]);
+    assert_eq!(omitted, Vec::<String>::new());
 }
 
 #[test]

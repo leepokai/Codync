@@ -212,6 +212,12 @@ fn exit_status(output: &str) -> Option<i32> {
 
 fn running(servers: &Value, routines: &Value, omitted: &mut Vec<String>) -> Vec<String> {
     let mut out = Vec::new();
+    running_servers(servers, &mut out, omitted);
+    running_routines(routines, &mut out, omitted);
+    out
+}
+
+fn running_servers(servers: &Value, out: &mut Vec<String>, omitted: &mut Vec<String>) {
     for server in servers
         .as_array()
         .into_iter()
@@ -231,13 +237,34 @@ fn running(servers: &Value, routines: &Value, omitted: &mut Vec<String>) -> Vec<
             clipped(server["name"].as_str().unwrap_or("unnamed"), FACT_CHARS),
             if ports.is_empty() { "unknown" } else { &ports }
         );
-        collect_line(&mut out, line, RUNNING, "dev server", omitted);
+        collect_line(out, line, RUNNING, "dev server", omitted);
     }
-    for routine in routines["routines"].as_array().into_iter().flatten().filter(|r| r["enabled"] == true) {
-        let line = format!("routine {} (enabled)", clipped(routine["name"].as_str().unwrap_or("unnamed"), FACT_CHARS));
-        collect_line(&mut out, line, RUNNING, "routine", omitted);
+}
+
+/// The routines a bot is in the middle of, from `Routines::active_runs`: a run still owed its turn can be older than
+/// every run in `Routines::list`'s newest 200, so it would be invisible to a handoff that read only that list.
+fn running_routines(routines: &Value, out: &mut Vec<String>, omitted: &mut Vec<String>) {
+    let definitions = routines["routines"].as_array().into_iter().flatten().collect::<Vec<_>>();
+    let mut seen = std::collections::HashSet::new();
+    for run in routines["runs"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|run| matches!(run["status"].as_str(), Some("pending" | "starting" | "running" | "recovering")))
+    {
+        let Some(id) = run["routineId"].as_str() else { continue };
+        if !seen.insert(id) {
+            continue;
+        }
+        let name = definitions
+            .iter()
+            .find(|routine| routine["id"] == id)
+            .and_then(|routine| routine["name"].as_str())
+            .unwrap_or(id);
+        let status = run["status"].as_str().unwrap_or("active");
+        let line = format!("routine {} ({status})", clipped(name, FACT_CHARS));
+        collect_line(out, line, RUNNING, "routine", omitted);
     }
-    out
 }
 
 fn collect_line(out: &mut Vec<String>, line: String, cap: usize, kind: &str, omitted: &mut Vec<String>) {
@@ -354,7 +381,7 @@ fn build_blocking(
     ledger.references = references(&entries, &mut ledger.omitted);
     ledger.files = files::collect(&work, Path::new(&cfg.cwd), &roots, &mut ledger.omitted);
     ledger.commands = commands(&work, &mut ledger.omitted);
-    ledger.running = running(&hub.dev_servers.wire(&cfg.id), &hub.routines.list(&cfg.id), &mut ledger.omitted);
+    ledger.running = running(&hub.dev_servers.wire(&cfg.id), &hub.routines.active_runs(&cfg.id), &mut ledger.omitted);
     ledger.waiting = waiting(&entries, &mut ledger.omitted);
     Ok(ledger)
 }

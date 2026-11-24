@@ -297,4 +297,46 @@ fn a_reply_with_no_room_is_refused_not_kept_and_dropped() {
     }
     assert!(replies.add(Reply::queued("bot", "late", "Coder", "hi").unlimited()).is_none(), "no room for it");
     assert_eq!(replies.0.locked().len(), KEEP, "nothing else went");
+
+#[tokio::test]
+async fn a_bot_messages_a_session_and_gets_its_answer() {
+    use codync_network::AgentKind::Codex;
+    let f = Fixture::new();
+    let hub = &f.hub;
+    let codex = session(Codex, "t1");
+    let me = local_call(hub, &codex, "whoami", &json!({})).await.unwrap();
+    assert!(me["address"].is_string(), "{me}");
+    // A session can't take a bot's id as its address, so it can't catch the bot's messages.
+    let renamed = local_call(hub, &codex, "set_name", &json!({"name": "b"})).await.unwrap();
+    let address = renamed["address"].as_str().unwrap().to_owned();
+    assert_ne!(address, "b", "{renamed}");
+    hub.team.start_turn("b", crate::chat::team::Turn::Chat(0));
+    let listed = crate::chat::team::call_async(hub, "b", "b", "list_bots", &json!({"kind": "codex"})).await.unwrap();
+    assert_eq!(listed["bots"][0]["id"], *address, "{listed}");
+    let sent = crate::chat::team::call_async(
+        hub,
+        "b",
+        "b",
+        "message_bot",
+        &json!({"botId": address, "message": "is the API done?"}),
+    )
+    .await
+    .unwrap();
+    let request = sent["requestId"].as_str().unwrap().to_owned();
+    let inbox = local_call(hub, &codex, "check_inbox", &json!({})).await.unwrap();
+    assert!(inbox["letters"].as_str().unwrap().contains(&format!("id=\"{request}\"")), "{inbox}");
+    // Another session can't end it; the one it went to can.
+    let other = session(Codex, "t2");
+    let wrong =
+        local_call(hub, &other, "message_bot", &json!({"botId": "b", "message": "x", "replyTo": request})).await;
+    assert_ne!(wrong.as_ref().ok().map(|v| v["status"].clone()), Some(json!("delivered")));
+    let answer = json!({"botId": "b", "message": "yes, merged", "replyTo": request});
+    assert_eq!(local_call(hub, &codex, "message_bot", &answer).await.unwrap()["status"], "delivered");
+    let notice = || {
+        let history = hub.store.history("b", i64::MAX, 50).unwrap();
+        history.into_iter().find(|e| e.data["delegationId"] == *request).map(|e| e.data)
+    };
+    f.until(|| notice().is_some_and(|d| d["status"] == "completed")).await;
+    assert!(notice().unwrap().to_string().contains("yes, merged"));
+    f.shutdown().await;
 }

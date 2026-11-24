@@ -88,6 +88,8 @@ pub enum SessionAction {
     Posted,
     /// `check_inbox` handed it letters.
     Read,
+    /// It answered a request one of this computer's bots sent it.
+    Answered,
 }
 
 pub fn network_session(hub: &Hub, action: SessionAction, kind: codync_network::AgentKind) {
@@ -96,6 +98,7 @@ pub fn network_session(hub: &Hub, action: SessionAction, kind: codync_network::A
         SessionAction::Renamed => "renamed",
         SessionAction::Posted => "posted",
         SessionAction::Read => "read",
+        SessionAction::Answered => "answered",
     };
     capture(
         hub,

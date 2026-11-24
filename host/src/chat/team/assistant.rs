@@ -190,7 +190,7 @@ async fn run(hub: &Arc<Hub>, asker: &Asker, tool: &str, args: &Value) -> Result<
         // for a session the other sessions here.
         "list_bots" => {
             let sessions = match &asker.session {
-                Some(me) => others(hub, me).await?,
+                Some(me) => sessions_here(hub, Some(&me.key)).await?,
                 None => Vec::new(),
             };
             let remote = hub.network.directory().await;
@@ -205,10 +205,10 @@ async fn run(hub: &Arc<Hub>, asker: &Asker, tool: &str, args: &Value) -> Result<
     }
 }
 
-/// The sessions on this computer other than `me`, each with whether it is busy now.
-async fn others(hub: &Hub, me: &Session) -> Result<Vec<Session>> {
+/// The coding agents' sessions on this computer (but the one keyed `except`), each with whether it is busy now.
+pub(super) async fn sessions_here(hub: &Hub, except: Option<&str>) -> Result<Vec<Session>> {
     let mut others: Vec<Session> =
-        hub.network.sessions.all(&hub.store).into_iter().filter(|s| s.key != me.key).collect();
+        hub.network.sessions.all(&hub.store).into_iter().filter(|s| Some(s.key.as_str()) != except).collect();
     // ponytail: reads each session's agent files on every listing; cache briefly if listings get slow.
     let others = tokio::task::spawn_blocking(move || {
         for s in &mut others {
@@ -222,6 +222,13 @@ async fn others(hub: &Hub, me: &Session) -> Result<Vec<Session>> {
 async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
     let (to, message) = message_args(args)?;
     check_message(message)?;
+    // An answer to one of this computer's bots that asked this session.
+    if let Some(me) = &asker.session
+        && let Some(reply_to) = args["replyTo"].as_str()
+        && remote::session_replied(hub, me, reply_to, message)
+    {
+        return Ok(json!({"to": to, "status": "delivered"}));
+    }
     if let Some(me) = &asker.session
         && let Some(to) = hub.network.sessions.by_address(&hub.store, to)
     {

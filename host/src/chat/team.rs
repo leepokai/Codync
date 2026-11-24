@@ -52,7 +52,7 @@ pub fn tools() -> Value {
     json!([
         {
             "name": "list_bots",
-            "description": "List the Codync bots you can message, with their IDs, kinds, specialties and status: this computer's first, then those on the user's other computers (where Claude Code sessions and Codex threads can be offered too). Narrow it with query (words in a bot's name or description), computer, kind, or online; it returns at most limit at a time, with next for the rest.",
+            "description": "List the Codync bots you can message, with their IDs, kinds, specialties and status: this computer's first, then the coding agents' sessions here (tier pull: they read their mail themselves, so an answer may take a while or not come), then those on the user's other computers (where Claude Code sessions and Codex threads can be offered too). Narrow it with query (words in a bot's name or description), computer, kind, or online; it returns at most limit at a time, with next for the rest.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -498,10 +498,15 @@ pub async fn call_async(hub: &Arc<Hub>, from: &str, turn: &str, name: &str, args
         "list_bots" => {
             visible_bot(hub, from)?;
             let remote = hub.network.directory().await;
-            directory::list(hub, from, args, &remote, &[], |_| true)
+            let sessions = assistant::sessions_here(hub, None).await?;
+            directory::list(hub, from, args, &remote, &sessions, |_| true)
         }
         "message_bot" => {
             let (to, message) = message_args(args)?;
+            // A coding agent's session on this computer, by its address.
+            if let Some(session) = hub.network.sessions.by_address(&hub.store, to) {
+                return remote::to_local_session(hub, &visible_bot(hub, from)?, turn, &session, message);
+            }
             match hub.network.recipient(to)? {
                 Recipient::There(target) => {
                     remote::message(hub, &visible_bot(hub, from)?, turn, &target, message).await

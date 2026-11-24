@@ -1713,6 +1713,34 @@ async fn a_thread_the_user_starts_opens_with_their_message_and_takes_no_turn_in_
 }
 
 #[tokio::test]
+async fn a_thread_the_user_starts_opens_with_their_files() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    // Uploaded to the bot first, then named by the thread: its first message carries them, read from the thread.
+    let upload = uuid::Uuid::new_v4().to_string();
+    let chunk =
+        json!({"botId": bot, "uploadId": upload, "name": "shot.png", "offset": 0, "data": "aGk=", "done": true});
+    host.call("upload", chunk).await;
+    host.call("startThread", json!({"botId": bot, "text": "Look at this", "attachments": [upload]})).await;
+    let done = result(&host, &bot, "Look at this", "Thread").await;
+    let opened = transcript(&host, &bot, &done).await;
+    assert_eq!(opened[0]["data"]["attachments"][0]["name"], "shot.png");
+    let read = json!({"botId": done["thread"], "uploadId": upload, "offset": 0});
+    assert!(host.post("readUpload", &read).await.0, "the thread has the file");
+    let text = thread_prompts(&host, &bot)[0]["text"].as_str().unwrap().to_owned();
+    assert!(text.contains("[Attached files") && text.contains("shot.png"), "{text}");
+
+    // Files alone start one too, named by the first; one that was never uploaded starts nothing.
+    let alone = uuid::Uuid::new_v4().to_string();
+    let chunk = json!({"botId": bot, "uploadId": alone, "name": "log.txt", "offset": 0, "data": "aGk=", "done": true});
+    host.call("upload", chunk).await;
+    host.call("startThread", json!({"botId": bot, "text": "", "attachments": [alone]})).await;
+    result(&host, &bot, "log.txt", "Thread").await;
+    let missing = json!({"botId": bot, "text": "x", "attachments": [uuid::Uuid::new_v4().to_string()]});
+    assert!(host.refused("startThread", missing).await.starts_with("unknown upload"));
+}
+
+#[tokio::test]
 async fn a_thread_the_user_starts_works_where_its_setup_says() {
     let host = Host::start().await;
     let bot = bot_with(&host, 1).await;
@@ -1778,4 +1806,14 @@ async fn a_thread_without_a_bot_runs_its_agent_on_its_own() {
     tell(&host, &owner, &done, "and the docs").await;
     wait("the second message", async || heard_in(&folder).get(1).cloned()).await;
     assert_eq!(heard_in(&folder)[1], "and the docs");
+
+    // Its files go to the box, uploaded without a bot, and on to its thread.
+    let upload = uuid::Uuid::new_v4().to_string();
+    let chunk = json!({"uploadId": upload, "name": "notes.md", "offset": 0, "data": "aGk=", "done": true});
+    host.call("upload", chunk).await;
+    let with = json!({"text": "Read it", "setup": setup, "attachments": [upload]});
+    host.call("startThread", with).await;
+    let read = task(&host, &owner, "Read it", "done").await;
+    let opened = transcript(&host, &owner, &read).await;
+    assert_eq!(opened[0]["data"]["attachments"][0]["name"], "notes.md");
 }

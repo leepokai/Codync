@@ -167,10 +167,7 @@ pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, uploads: &[Strin
             reopen(hub, &owner, tasks::find(tasks, id)?, &mut thread)?;
         }
         let root = crate::chat::uploads::root(&thread);
-        let attachments = uploads
-            .iter()
-            .map(|upload| crate::chat::uploads::resolve(&root, upload).map(|(_, meta)| meta))
-            .collect::<Result<Vec<_>>>()?;
+        let attachments = crate::chat::uploads::resolve_all(&root, uploads)?;
         let data = json!({"text": text, "clientNonce": nonce, "attachments": attachments});
         let (entry, queued) = post_to(hub, &thread, data)?;
         Ok((entry, Some(reopened), Some(queued)))

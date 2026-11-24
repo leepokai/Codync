@@ -10,6 +10,7 @@ import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { refKey, sameRef, type BotRef, type RosterItem } from '../../store/app-model'
 import type { BotStore } from '../../store/bot-store'
+import type { OutgoingFile } from '../../store/outgoing-files'
 import { useAgentModels } from '../bots/agent-models'
 import { lastPathComponent } from '../bots/drafts'
 import { FolderPicker } from '../bots/FolderPicker'
@@ -43,8 +44,10 @@ const PLAIN_APPROVAL = { permission: 'ask', mode: 'auto' }
  * setup stays as it is. Sent, the thread is the one shown (`started`, with where its task is).
  * ponytail: the model menu lists every model without a search; the bot's settings have one if lists grow long.
  */
-export function ThreadStart({ bots, of, choose, started, base, folder, heading, placeholder }: {
+export function ThreadStart({ bots, computers = [], of, choose, started, base, folder, heading, placeholder }: {
   bots: RosterItem[]
+  /** The connected computers a thread without a bot may start on, one item each: picked in the Computer menu. */
+  computers?: RosterItem[]
   of: ThreadWith
   choose: (ref: BotRef, plain?: boolean) => void
   started: (ref: BotRef, taskId: string) => void
@@ -80,13 +83,24 @@ export function ThreadStart({ bots, of, choose, started, base, folder, heading, 
 
   const many = new Set(bots.map((r) => r.ref.computerId)).size > 1
   const plainOn = store.startsThreadsWithoutBot
+  const botItem = (r: RosterItem): MenuItem => ({
+    title: r.bot.name, verbatim: true,
+    leading: <BotAvatar bot={r.bot} size={22} animated={false} />, selected: bot !== null && sameRef(r.ref, of.ref), action: () => choose(r.ref),
+  })
+  // With several computers, the bots are grouped under their computer's name, in the roster's order.
+  const byComputer = (): MenuItem[] => [...new Set(bots.map((r) => r.ref.computerId))].flatMap((id, at) => {
+    const own = bots.filter((r) => r.ref.computerId === id)
+    return [{ title: own[0].store.hostName, verbatim: true, icon: 'desktopcomputer', disabled: true, divider: at > 0, action: () => {} }, ...own.map(botItem)]
+  })
   const others = (): MenuItem[] => [
-    ...bots.map((r) => ({
-      title: r.bot.name, verbatim: true, detail: many ? r.store.hostName : undefined,
-      leading: <BotAvatar bot={r.bot} size={22} animated={false} />, selected: bot !== null && sameRef(r.ref, of.ref), action: () => choose(r.ref),
-    })),
+    ...(many ? byComputer() : bots.map(botItem)),
     ...(plainOn ? [{ title: 'No bot', leading: <NoBotAvatar size={22} />, divider: bots.length > 0, selected: bot === null, action: () => choose(of.ref, true) }] : []),
   ]
+  // Without a bot, the computer it runs on is its own choice.
+  const places = (): MenuItem[] => computers.map((r) => ({
+    title: r.store.hostName, verbatim: true, icon: 'desktopcomputer', selected: r.ref.computerId === of.ref.computerId,
+    action: () => choose({ computerId: r.ref.computerId, botId: '' }, true),
+  }))
 
   const home = store.hello?.home ?? ''
   const ownFolder = folder ?? (bot ? folderName(bot, tr) : lastPathComponent(home) || home)
@@ -102,11 +116,11 @@ export function ThreadStart({ bots, of, choose, started, base, folder, heading, 
   const ways = useApprovalMenu(approval, models, (a) => change({ approval: { permission: a.permission, mode: a.mode ?? null } }))
   const model = setup.model ?? (own ? { id: own.model ?? null, options: own.modelOptions } : { id: null, options: {} })
 
-  const send = (text: string) => {
+  const send = (text: string, files: OutgoingFile[]) => {
     setFailed('')
     // Without a bot, all it runs on goes with it: there is no bot's setup to fall back on.
     const asked = { ...base, ...(own ? setup : bot ? { ...setup, model, approval } : { ...setup, backend, cwd: setup.cwd ?? (folder ? undefined : home), approval }) }
-    return store.startThread(bot?.id ?? null, text, asked).then(
+    return store.startThread(bot?.id ?? null, text, asked, files).then(
       (s) => started({ computerId: of.ref.computerId, botId: s.botId }, s.taskId),
       (error: unknown) => {
         setFailed(error instanceof Error ? error.message : String(error))
@@ -138,8 +152,9 @@ export function ThreadStart({ bots, of, choose, started, base, folder, heading, 
           <div className="composer-fade" />
           {/* What it runs on, in the box's row as in a bot's chat: who it is with first (with one bot and no other way
               there is nothing to choose). */}
-          <Composer key={refKey(of.ref) + (bot ? '' : '/plain')} botId={bot?.id ?? ''} thread={{ draftKey, placeholder: placeholder ?? tr('What should it work on?'), working: false, send, controls: <>
+          <Composer key={refKey(of.ref) + (bot ? '' : '/plain')} botId={bot?.id ?? ''} thread={{ draftKey, placeholder: placeholder ?? tr('What should it work on?'), working: false, files: store.startsThreadsWithFiles, keepFiles: `thread/new/${base?.workflow ?? ''}`, send, controls: <>
             <Option title="Choose a bot" items={others} search={bots.length > 8 ? 'Search bots' : undefined} disabled={bots.length + (plainOn ? 1 : 0) < 2} leading={bot ? <BotAvatar bot={bot} size={16} animated={false} /> : <NoBotAvatar size={16} />} label={bot ? bot.name : tr('No bot')} strong />
+            {bot ? null : <Option title="Computer" items={places} disabled={computers.length < 2} leading={<Icon name="desktopcomputer" size={11} />} label={store.hostName} />}
             <Option title="Workspace" items={folders} leading={<Icon name="folder" size={11} />} label={setup.cwd ? lastPathComponent(setup.cwd) : ownFolder} />
             {/* The agent and its login are in the panel's rail; another agent starts from its own defaults. */}
             <ModelPicker

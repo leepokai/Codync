@@ -1,6 +1,6 @@
 .chat-window {
   height: 100%;
-  min-width: 680px; /* chatWindowMinWidth in src/shared/chat-layout.ts */
+  min-width: 688px; /* chatWindowMinWidth in src/shared/chat-layout.ts */
   min-height: 500px; /* chatWindowMinHeight in src/shared/chat-layout.ts */
   background: var(--background);
   position: relative;
@@ -80,6 +80,17 @@
   height: 100%;
   /* Under the window's bar (window-bar.css). */
   padding-top: 46px;
+  background: var(--window-chrome);
+}
+/* The page (list and detail) as one rounded card inside the bar, the rail and a strip of the same chrome right of and under it. */
+.page-frame {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  margin: 0 8px 8px 0; /* frameInset in src/shared/chat-layout.ts */
+  border-radius: var(--radius-m);
+  overflow: hidden;
+  background: var(--background);
 }
 /* An open action menu takes the clicks. */
 .split.covered {

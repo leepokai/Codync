@@ -187,6 +187,57 @@ EOF
   pin_gnome_launcher
 }
 
+install_linux_dependencies() {
+  missing=""
+  add_missing() {
+    case " $missing " in
+      *" $1 "*) ;;
+      *) missing="$missing $1" ;;
+    esac
+  }
+  if [ $HOST_ONLY = 0 ] && command -v ldconfig >/dev/null && ! ldconfig -p 2>/dev/null | grep -q libfuse.so.2; then
+    if command -v apt-cache >/dev/null && apt-cache show libfuse2t64 >/dev/null 2>&1; then
+      add_missing libfuse2t64
+    else
+      add_missing libfuse2
+    fi
+  fi
+  if ldd "$BIN_DIR/codync-screen" 2>/dev/null | grep -q 'libgstwebrtc-1.0.so.0 => not found'; then
+    add_missing libgstreamer-plugins-bad1.0-0
+    add_missing gstreamer1.0-plugins-bad
+  fi
+  if [ $HOST_ONLY = 0 ] && [ -n "${WAYLAND_DISPLAY:-}" ] &&
+    { ! command -v gst-inspect-1.0 >/dev/null || ! gst-inspect-1.0 pipewiresrc >/dev/null 2>&1; }; then
+      add_missing gstreamer1.0-pipewire
+  fi
+  if [ -n "$missing" ] && command -v apt-get >/dev/null; then
+    if [ "$(id -u)" = 0 ]; then
+      say "Installing runtime dependencies:$missing"
+      DEBIAN_FRONTEND=noninteractive apt-get install -y $missing || say "Some runtime dependencies couldn't be installed"
+    elif [ -t 0 ] || { [ -r /dev/tty ] && [ -w /dev/tty ]; }; then
+      say "Installing runtime dependencies:$missing"
+      DEBIAN_FRONTEND=noninteractive sudo apt-get install -y $missing </dev/tty || say "Some runtime dependencies couldn't be installed"
+    else
+      echo "   Install runtime dependencies with: sudo apt-get install$missing"
+    fi
+  elif [ -n "$missing" ]; then
+    echo "   Install runtime dependencies with your package manager:$missing"
+  fi
+}
+
+ensure_host_service() {
+  unit=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/codync-host.service
+  if [ -f "$unit" ] || systemctl --user cat codync-host.service >/dev/null 2>&1; then
+    # Keep an existing unit and its custom port, but finish an interrupted install.
+    if ! systemctl --user is-enabled codync-host.service >/dev/null 2>&1 &&
+      ! systemctl --user enable --now codync-host.service; then
+      service_install_failed=1
+    fi
+  elif ! "$BIN_DIR/codync-host" install; then
+    service_install_failed=1
+  fi
+}
+
 if [ $OS = macos ] && [ $HOST_ONLY = 0 ]; then
   install_mac_app
   echo
@@ -197,49 +248,8 @@ else
     install_linux_app
   fi
   if [ $OS = linux ]; then
-    missing=""
-    add_missing() {
-      case " $missing " in
-        *" $1 "*) ;;
-        *) missing="$missing $1" ;;
-      esac
-    }
-    if [ $HOST_ONLY = 0 ] && command -v ldconfig >/dev/null && ! ldconfig -p 2>/dev/null | grep -q libfuse.so.2; then
-      if command -v apt-cache >/dev/null && apt-cache show libfuse2t64 >/dev/null 2>&1; then
-        add_missing libfuse2t64
-      else
-        add_missing libfuse2
-      fi
-    fi
-    if ldd "$BIN_DIR/codync-screen" 2>/dev/null | grep -q 'libgstwebrtc-1.0.so.0 => not found'; then
-      add_missing libgstreamer-plugins-bad1.0-0
-      add_missing gstreamer1.0-plugins-bad
-    fi
-    if [ $HOST_ONLY = 0 ] && [ -n "${WAYLAND_DISPLAY:-}" ] &&
-      { ! command -v gst-inspect-1.0 >/dev/null || ! gst-inspect-1.0 pipewiresrc >/dev/null 2>&1; }; then
-        add_missing gstreamer1.0-pipewire
-    fi
-    if [ -n "$missing" ] && command -v apt-get >/dev/null; then
-      if [ "$(id -u)" = 0 ]; then
-        say "Installing runtime dependencies:$missing"
-        DEBIAN_FRONTEND=noninteractive apt-get install -y $missing || say "Some runtime dependencies couldn't be installed"
-      elif [ -t 0 ] || { [ -r /dev/tty ] && [ -w /dev/tty ]; }; then
-        say "Installing runtime dependencies:$missing"
-        DEBIAN_FRONTEND=noninteractive sudo apt-get install -y $missing </dev/tty || say "Some runtime dependencies couldn't be installed"
-      else
-        echo "   Install runtime dependencies with: sudo apt-get install$missing"
-      fi
-    elif [ -n "$missing" ]; then
-      echo "   Install runtime dependencies with your package manager:$missing"
-    fi
-    if [ $HOST_ONLY = 0 ]; then
-      unit=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/codync-host.service
-      if [ ! -f "$unit" ] &&
-        ! systemctl --user cat codync-host.service >/dev/null 2>&1 &&
-        ! "$BIN_DIR/codync-host" install; then
-          service_install_failed=1
-      fi
-    fi
+    install_linux_dependencies
+    [ $HOST_ONLY = 1 ] || ensure_host_service
   fi
   echo
   if [ $HOST_ONLY = 0 ]; then

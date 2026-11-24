@@ -41,6 +41,17 @@
   background: var(--accent-fill);
 }
 
+/* A paused bot wears its state on its face (AvatarWithStatus): a pause mark pinned to the frame's
+   top-right, over whatever the avatar draws, legible by its background halo. The badge family keeps
+   the bottom corners — the agent's logo bottom-left, needs-you and unread bottom-right — and the
+   crown the top-center, so this one takes the top-right. */
+.avatar-paused {
+  position: absolute;
+  top: 0;
+  right: 0;
+  filter: drop-shadow(0 0 1.5px var(--background)) drop-shadow(0 0 1.5px var(--background));
+}
+
 .avatar-agent {
   position: absolute;
   left: 0;

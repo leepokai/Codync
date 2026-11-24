@@ -306,6 +306,11 @@ export function AvatarWithStatus({ bot, members = [], size = 44, agent = null }:
         </span>
       ) : null}
       {bot.lead ? <LeadAgentBadge size={Math.max(12, size * 0.34)} /> : null}
+      {/* A paused bot wears its state on its face too: the roster row fades, but a manager sheet row
+          doesn't — this mark says paused wherever the bot's face shows. */}
+      {bot.paused && !isGroup(bot) ? (
+        <Icon className="avatar-paused" name="pause.circle" size={Math.max(11, size * 0.34)} weight="medium" color="var(--secondary)" scaled={false} />
+      ) : null}
       {outsideStatus(bot) === 'needsInput' ? (
         <div className="avatar-badge needs-you" style={{ width: size * 0.36, height: size * 0.36 }}>
           <Icon name="exclamationmark" size={size * 0.2} weight="black" scaled={false} />

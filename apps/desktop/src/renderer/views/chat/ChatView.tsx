@@ -10,7 +10,7 @@ import { Text } from '../../components/Text'
 import { prefs, usePref } from '../../lib/prefs'
 import { connectedThrough } from '../../lib/relay-copy'
 import { useTr } from '../../lib/use-language'
-import { analytics, useScreenViewed } from '../../store/analytics'
+import { useScreenViewed } from '../../store/analytics'
 import { useStore } from '../../store/context'
 import { UpdateNeededCard } from '../UpdateNeededCard'
 import { buildChat, type ChatItem } from './chat-items'
@@ -32,8 +32,8 @@ import { outsideQueue } from './queued-messages'
 import { ChatSidePanel } from './ChatSidePanel'
 import { CONVERSATION_MIN, fitPanel, PANEL_MIN } from './side-panel-width'
 import { WindowBarSlots } from '../WindowBar'
-import { IconButton } from '../../components/Controls'
-import { DetailsPanel, showPanelView, splitPanel, type DetailsTab } from './DetailsPanel'
+import { DetailsPanel, showPanelView, type DetailsTab } from './DetailsPanel'
+import { PanelBarButtons } from './PanelBarButtons'
 import { TraceView } from './TraceView'
 import { workingSteps } from './trace-turns'
 import { useReading } from './reading'
@@ -167,10 +167,6 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
     setCompactDetails(false)
     if (bot) setTemplateDraft(draftOf(bot))
   }
-  const maximizePanel = () => setPanelFilled((on) => {
-    analytics.track({ event: 'panel_maximized', on: !on })
-    return !on
-  })
   const details = (
     <DetailsPanel
       key={routineRequest}
@@ -195,14 +191,9 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
           <TopFade />
           {/* The window's bar holds the bot, what runs it, and the panel's toggle with the open panel's own buttons
               before it; nothing while another page covers the conversation. */}
-          {bar.end ? createPortal(<>
-            {panelOpen && bot && !isGroup(bot) ? <>
-              <IconButton title="Create template" icon="square.and.arrow.up" size={28} onClick={shareBot} />
-              <IconButton title="Maximize panel" icon={panelFilled ? 'arrow.down.right.and.arrow.up.left' : 'arrow.up.left.and.arrow.down.right'} size={28} onClick={maximizePanel} />
-              <IconButton title="Split panel" icon="rectangle.split.1x2" size={28} onClick={splitPanel} />
-            </> : null}
-            <IconButton title="Conversation details" icon="sidebar.right" size={28} onClick={toggleDetails} />
-          </>, bar.end) : null}
+          {bar.end ? createPortal(bot && !isGroup(bot)
+            ? <PanelBarButtons open={panelOpen} filled={panelFilled} setFilled={setPanelFilled} share={shareBot} toggle={toggleDetails} />
+            : <PanelBarButtons open={false} filled={false} toggle={toggleDetails} />, bar.end) : null}
           {bar.title ? createPortal(<>
           <button className={`title-pill ${calling ? 'hidden-by-call' : ''}`} inert={calling} onClick={openFromTitle} aria-label={tr('{name}, view details').replaceAll('{name}', () => bot?.name ?? tr('Conversation'))} title={tr('View conversation details')}>
             <HStack as="span" gap={7}>

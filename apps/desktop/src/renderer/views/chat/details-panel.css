@@ -39,8 +39,8 @@
 .panel-pane + .panel-pane {
   border-top: 1px solid var(--border);
 }
-/* A pane's views as tabs, each with its close button (more than fit scroll sideways), then `+`; the panel's own
-   buttons, where it has them, end the row. */
+/* A pane's views as tabs, each with its close button, then `+`; the panel's own buttons, where it has them (a panel
+   in a sheet), end the row. */
 .panel-tabs {
   flex: none;
   display: flex;
@@ -49,17 +49,25 @@
   padding: 10px 12px 8px;
 }
 .panel-tabs-space {
-  flex: 1;
+  flex: 1 1 0;
 }
+/* The tabs share the row (it takes nearly all the room, up to every tab at its widest), as a browser's: each as wide
+   as the others, down to `--tab-min`, where they scroll; `+` stays after them. */
 .panel-tabs-row {
-  flex: 0 1 auto;
+  --tab-max: 132px;
+  --tab-min: 56px;
+  flex: 1000 1 0;
   min-width: 0;
+  max-width: calc(var(--tabs) * (var(--tab-max) + 2px));
   display: flex;
   gap: 2px;
   overflow-x: auto;
 }
 .panel-tab {
-  flex: none;
+  flex: 1 1 0;
+  min-width: var(--tab-min);
+  max-width: var(--tab-max);
+  container-type: inline-size;
   display: flex;
   align-items: center;
   height: calc(26px * var(--scale));
@@ -75,6 +83,8 @@
   color: var(--text);
 }
 .panel-tab-pick {
+  flex: 1;
+  min-width: 0;
   height: 100%;
   display: flex;
   align-items: center;
@@ -83,17 +93,26 @@
   font-size: var(--text-body);
   white-space: nowrap;
 }
-/* A thread's tab is named by its task: a long name ends in an ellipsis. */
 .panel-tab-name {
-  max-width: 160px;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* A narrow tab gives its name the close button's room until it is hovered or shown. */
+@container (max-width: 80px) {
+  .panel-tab:not(.on):not(:hover) .panel-tab-close {
+    display: none;
+  }
+  .panel-tab:not(.on):not(:hover) .panel-tab-pick {
+    padding-right: 6px;
+  }
 }
 /* A thread in a tab: the tabs above are its band, so its top neither moves the window nor blocks a click. */
 .panel-pane .thread-chat .top-chrome {
   -webkit-app-region: no-drag;
 }
 .panel-tab-close {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;

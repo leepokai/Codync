@@ -2496,5 +2496,8 @@
   "Remove folder": "Quitar carpeta",
   "iMate token": "Token de iMate",
   "Personal token": "Token personal",
-  "Create a personal token on the {name} open platform.": "Crea un token personal en la plataforma abierta de {name}."
+  "Create a personal token on the {name} open platform.": "Crea un token personal en la plataforma abierta de {name}.",
+  "Edit iMate token": "Editar el token de iMate",
+  "Add iMate token": "Añadir token de iMate",
+  "Uses the personal token from the iMate open platform.": "Usa el token personal de la plataforma abierta de iMate."
 }

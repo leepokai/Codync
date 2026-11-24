@@ -55,9 +55,11 @@ async fn default_connectors(hub: &Arc<Hub>) -> Result<Value> {
 }
 
 /// A new bot's agent (`agents` as `backends::list` gives them): Claude when it runs here, else the
-/// first one Codync knows that does. A registry agent nobody chose is never the default.
+/// first one Codync knows that does. A registry agent nobody chose is never the default, and neither
+/// is iMate: it is reachable without a local CLI, so it would otherwise become the default wherever
+/// nothing else is installed.
 fn default_backend(agents: &[Value]) -> &str {
-    let runnable = || agents.iter().filter(|a| a["available"] == true);
+    let runnable = || agents.iter().filter(|a| a["available"] == true && a["id"] != "imate");
     if runnable().any(|a| a["id"] == "claude") {
         return "claude";
     }
@@ -79,5 +81,10 @@ mod tests {
         assert_eq!(default_backend(&agents), "codex");
         agents[2]["available"] = true.into();
         assert_eq!(default_backend(&agents), "claude");
+        assert_eq!(
+            default_backend(&[json!({"id": "imate", "available": true, "curated": true})]),
+            "claude",
+            "iMate is not the default just because nothing else is installed",
+        );
     }
 }

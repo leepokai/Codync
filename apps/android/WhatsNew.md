@@ -27,7 +27,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 點開 thread 會像電腦版一樣以聊天畫面全螢幕顯示：訊息和回覆是對話泡泡，卡片、檔案和 artifact 直接在 thread 裡處理；右上角「詳情」可打開 Bot 的詳細資訊。
 
 ### en-US
-- iMate digital colleagues can be added as bots and show the iMate icon.
+- Add iMate colleagues as bots, with the iMate icon.
 - Threads are no longer deleted a week after they end: scroll to the end of the Threads tab to load older ones, which open and take messages as before. To clean up on its own, pick 7, 30 or 90 days under Delete old threads for that computer in Computers; the default keeps them forever.
 - A routine can name a folder: pick one under Folder in the routine editor and each run works there in a thread of its own; without one it runs in the bot's folder.
 - Bot settings add Projects: a bot always lives in its own folder, and threads work in its default project. Worktree mode (Off, Side by side, Always) shows for git projects. Bots that worked in a project move home, the project kept as their first.

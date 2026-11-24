@@ -2496,5 +2496,8 @@
   "Remove folder": "Убрать папку",
   "iMate token": "Токен iMate",
   "Personal token": "Личный токен",
-  "Create a personal token on the {name} open platform.": "Создайте личный токен на открытой платформе {name}."
+  "Create a personal token on the {name} open platform.": "Создайте личный токен на открытой платформе {name}.",
+  "Edit iMate token": "Изменить токен iMate",
+  "Add iMate token": "Добавить токен iMate",
+  "Uses the personal token from the iMate open platform.": "Использует личный токен открытой платформы iMate."
 }

@@ -18,6 +18,10 @@ suspend fun AppStore.agentAuthenticate(backend: String, method: String): AgentAu
     refreshBackends()
     return WireJson.decodeFromJsonElement(response)
 }
+suspend fun AppStore.imateSetToken(token: String) {
+    hostQuery("imateSetToken", body("token" to token), 60_000)
+    refreshBackends()
+}
 suspend fun AppStore.setAgentEnv(backend: String, values: Map<String, String>): AgentAuth {
     val response = hostQuery("setAgentEnv", buildJsonObject { put("backend", backend); put("vars", WireJson.encodeToJsonElement(values)) }, 300_000)
     refreshBackends()

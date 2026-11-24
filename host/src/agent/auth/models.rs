@@ -36,10 +36,13 @@ impl InFlight {
     ) -> Result<Value> {
         let key = (backend.to_owned(), login_profile.map(str::to_owned));
         let slot = self.0.locked().entry(key.clone()).or_default().clone();
+        let mine = Arc::clone(&slot);
         let answer = slot
-            .get_or_init(|| async {
+            .get_or_init(|| async move {
                 let answer = fetch.await.map_err(|e| format!("{e:#}"));
-                self.0.locked().remove(&key);
+                // A newer lookup for this key may already have replaced us (`clear` then `get`).
+                // Removing by key would drop that one and make the next ask start again.
+                self.0.locked().retain(|known, held| known != &key || !Arc::ptr_eq(held, &mine));
                 answer
             })
             .await;
@@ -138,6 +141,36 @@ mod tests {
         assert_eq!(p1_b.unwrap()["models"][0]["id"], "pro");
         assert_eq!(p2.unwrap()["models"][0]["id"], "ultra");
         assert_eq!(started.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn a_finished_lookup_does_not_drop_the_one_that_replaced_it() {
+        let lists = Arc::new(InFlight::default());
+        let (release, wait) = tokio::sync::oneshot::channel();
+        let started = Arc::new(tokio::sync::Notify::new());
+        let running = Arc::clone(&lists);
+        let ready = Arc::clone(&started);
+        let old = tokio::spawn(async move {
+            running
+                .get("imate", None, async move {
+                    ready.notify_one();
+                    let _ = wait.await;
+                    Ok(json!({"id": "old"}))
+                })
+                .await
+        });
+        started.notified().await;
+        lists.clear("imate");
+        let fresh = lists.get("imate", None, async {
+            tokio::time::sleep(Duration::from_millis(80)).await;
+            Ok(json!({"id": "fresh"}))
+        });
+        release.send(()).expect("release");
+        assert_eq!(old.await.expect("old task").expect("old list")["id"], "old");
+        let again = lists.get("imate", None, async { Ok(json!({"id": "again"})) });
+        let (fresh, again) = tokio::join!(fresh, again);
+        assert_eq!(fresh.expect("fresh")["id"], "fresh");
+        assert_eq!(again.expect("joined")["id"], "fresh");
     }
 
     #[tokio::test]

@@ -2496,5 +2496,8 @@
   "Remove folder": "폴더 제거",
   "iMate token": "iMate 토큰",
   "Personal token": "개인 토큰",
-  "Create a personal token on the {name} open platform.": "{name} 오픈 플랫폼에서 개인 토큰을 만드세요."
+  "Create a personal token on the {name} open platform.": "{name} 오픈 플랫폼에서 개인 토큰을 만드세요.",
+  "Edit iMate token": "iMate 토큰 편집",
+  "Add iMate token": "iMate 토큰 추가",
+  "Uses the personal token from the iMate open platform.": "iMate 오픈 플랫폼의 개인 토큰을 사용합니다."
 }

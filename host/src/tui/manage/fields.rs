@@ -77,6 +77,10 @@ impl App {
                 }
                 self.sheet("setAgentEnv", json!({"backend": backend, "vars": values}), Reply::FieldsSaved);
             }
+            Submit::ImateToken => {
+                let token = values.get("token").and_then(Value::as_str).unwrap_or_default().trim();
+                self.sheet("imateSetToken", json!({"token": token}), Reply::FieldsSaved);
+            }
             Submit::Connector(item) => {
                 let option = item["options"][f.choice]["id"].clone();
                 self.sheet(

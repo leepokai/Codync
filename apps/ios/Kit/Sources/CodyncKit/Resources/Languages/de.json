@@ -2496,5 +2496,8 @@
   "Remove folder": "Ordner entfernen",
   "iMate token": "iMate-Token",
   "Personal token": "Persönliches Token",
-  "Create a personal token on the {name} open platform.": "Erstelle ein persönliches Token auf der offenen Plattform von {name}."
+  "Create a personal token on the {name} open platform.": "Erstelle ein persönliches Token auf der offenen Plattform von {name}.",
+  "Edit iMate token": "iMate-Token bearbeiten",
+  "Add iMate token": "iMate-Token hinzufügen",
+  "Uses the personal token from the iMate open platform.": "Verwendet das persönliche Token der offenen iMate-Plattform."
 }

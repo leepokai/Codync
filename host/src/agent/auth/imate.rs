@@ -51,10 +51,13 @@ pub fn check(store: &Store) -> Result<Status> {
 /// The token a bridge starts with for `login_profile` (none: the agent's own, then a signed-in profile).
 /// The model picker uses the same choice, so the colleagues it lists are the ones that bot can reach.
 pub(crate) fn token_for(store: &Store, login_profile: Option<&str>) -> Result<Option<String>> {
-    if let Some(id) = login_profile.filter(|id| !id.is_empty())
-        && let Some(token) = profile_token(store, id)?
-    {
-        return Ok(Some(token));
+    // The same lookup the launch uses: a profile of another agent does not count, even when its
+    // saved variables happen to include this name.
+    if let Some(id) = login_profile.filter(|id| !id.is_empty()) {
+        let (env, _) = login_profiles::env(store, "imate", Some(id))?;
+        if let Some((_, token)) = env.into_iter().find(|(name, value)| name == TOKEN && !value.is_empty()) {
+            return Ok(Some(token));
+        }
     }
     saved_token(store)
 }
@@ -77,14 +80,6 @@ pub(crate) fn apply_launch(
         env.push(("IMATE_API_TOKEN".into(), token));
     }
     Ok(())
-}
-
-fn profile_token(store: &Store, id: &str) -> Result<Option<String>> {
-    let Some(raw) = crate::market::vault::read(store, &format!("login-profile:{id}"))? else {
-        return Ok(None);
-    };
-    let vars: Map<String, Value> = serde_json::from_str(&raw)?;
-    Ok(token_text(vars.get(TOKEN)))
 }
 
 fn saved_token(store: &Store) -> Result<Option<String>> {

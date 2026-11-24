@@ -2496,5 +2496,8 @@
   "Remove folder": "フォルダを削除",
   "iMate token": "iMate トークン",
   "Personal token": "個人トークン",
-  "Create a personal token on the {name} open platform.": "{name} のオープンプラットフォームで個人トークンを作成します。"
+  "Create a personal token on the {name} open platform.": "{name} のオープンプラットフォームで個人トークンを作成します。",
+  "Edit iMate token": "iMate トークンを編集",
+  "Add iMate token": "iMate トークンを追加",
+  "Uses the personal token from the iMate open platform.": "iMate オープンプラットフォームの個人トークンを使います。"
 }

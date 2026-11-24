@@ -2496,5 +2496,8 @@
   "Remove folder": "Retirer le dossier",
   "iMate token": "Jeton iMate",
   "Personal token": "Jeton personnel",
-  "Create a personal token on the {name} open platform.": "Créez un jeton personnel sur la plateforme ouverte de {name}."
+  "Create a personal token on the {name} open platform.": "Créez un jeton personnel sur la plateforme ouverte de {name}.",
+  "Edit iMate token": "Modifier le jeton iMate",
+  "Add iMate token": "Ajouter un jeton iMate",
+  "Uses the personal token from the iMate open platform.": "Utilise le jeton personnel de la plateforme ouverte iMate."
 }

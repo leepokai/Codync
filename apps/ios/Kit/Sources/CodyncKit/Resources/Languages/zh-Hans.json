@@ -2496,5 +2496,8 @@
   "Remove folder": "移除文件夹",
   "iMate token": "iMate 令牌",
   "Personal token": "个人令牌",
-  "Create a personal token on the {name} open platform.": "在 {name} 开放平台上创建个人令牌。"
+  "Create a personal token on the {name} open platform.": "在 {name} 开放平台上创建个人令牌。",
+  "Edit iMate token": "编辑 iMate 令牌",
+  "Add iMate token": "添加 iMate 令牌",
+  "Uses the personal token from the iMate open platform.": "使用 iMate 开放平台上的个人令牌。"
 }

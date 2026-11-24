@@ -263,6 +263,8 @@ pub enum SetupRow {
     Login,
     Method(Value),
     Check,
+    /// iMate's one personal token on this computer (`imateSetToken`), not a named login profile.
+    ImateToken,
     /// Opens the read-only lists of what this agent already brings.
     Brings,
     /// The default login profile, the login the computer already has (the agent's `defaultLoginProfile`): ↵ checks
@@ -290,6 +292,8 @@ pub struct Input {
 pub enum Submit {
     Icon(String),
     AgentEnv(String),
+    /// iMate's personal token (`imateSetToken`).
+    ImateToken,
     Connection(Box<super::connections::Connection>),
     Connector(Value),
     Import,

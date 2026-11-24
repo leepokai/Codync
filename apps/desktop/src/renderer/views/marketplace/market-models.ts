@@ -237,6 +237,7 @@ export const market = {
   agentAuth: (c: HostClient, backend: string) => c.call<AgentAuth>('agentAuth', { backend }, s(300)),
   agentAuthenticate: (c: HostClient, backend: string, method: string) => c.call<AgentAuth>('agentAuthenticate', { backend, method }, s(660)),
   setAgentEnv: (c: HostClient, backend: string, vars: Record<string, string>) => c.call<AgentAuth>('setAgentEnv', { backend, vars }, s(300)),
+  imateSetToken: (c: HostClient, token: string) => c.call('imateSetToken', { token }, s(60)),
   termInput: (c: HostClient, term: string, data: string) => c.call('termInput', { term, data }),
   termResize: (c: HostClient, term: string, cols: number, rows: number) => c.call('termResize', { term, cols, rows }),
   termClose: (c: HostClient, term: string) => c.call('termClose', { term }),

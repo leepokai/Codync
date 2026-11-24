@@ -247,6 +247,11 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
                 (icon, s(m, "name").to_owned(), d)
             }
             // A registry agent downloads on its first start; an app's own CLI comes from Install.
+            SetupRow::ImateToken => (
+                "⚿",
+                (if signed_in == Some(true) { "Edit iMate token" } else { "Add iMate token" }).to_owned(),
+                "Uses the personal token from the iMate open platform.".to_owned(),
+            ),
             SetupRow::Check if !set_up && !curated => (
                 "↓",
                 "Set up".to_owned(),

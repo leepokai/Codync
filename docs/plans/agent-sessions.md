@@ -131,7 +131,7 @@ so this only matters if a bot's conversation title is ever shown.
 
 | Tier | Agents |
 |---|---|
-| push (wakes idle) | Claude Code (inbox socket) and pi (extension): read mid-turn; opencode (plugin, once verified), Amp (not installed) |
+| push (wakes idle) | Claude Code (inbox socket): can wake an idle session or be read mid-turn, but it may hold a message from an outside sender, and a successful socket write confirms neither; pi (extension): read mid-turn; opencode (plugin, once verified), Amp (not installed) |
 | queued (idle wake unverified) | Codex (`codex queue`): queued as the thread's next input; whether it starts a turn on an idle thread without user input is not checked yet |
 | turn (next tool call or stop) | Cursor and Copilot CLI (hook events observed; delivery through hook output unverified; Cursor's `stop` did not fire in `-p`); Grok and Gemini CLI (not verified: follow-up) |
 | pull (a proposed `check_inbox` tool + an unread notice) | any MCP client, including the above before their hooks or plugins are installed |

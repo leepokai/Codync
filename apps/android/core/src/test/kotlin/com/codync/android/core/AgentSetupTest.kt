@@ -105,4 +105,11 @@ class AgentSetupTest {
         assertArrayEquals("hi".toByteArray(), (output as TerminalEvent.Output).bytes)
         try { TerminalEvent.decode(buildJsonObject { put("type", "output"); put("data", "!") }); fail("Reject malformed bytes") } catch (_: IllegalArgumentException) {}
     }
+    @Test fun anInstalledAgentWaitingForNodeIsNotCalledUninstalled() {
+        val codex = AgentBackend("codex", "Codex", installed = true, node = "missing")
+        assertEquals("Codex (needs Node.js)", codex.pickerLabel)
+        assertEquals("Codex (not ready)", codex.copy(node = null).pickerLabel)
+        assertEquals("Codex (not installed)", codex.copy(installed = false, node = null).pickerLabel)
+        assertEquals("Codex", codex.copy(available = true).pickerLabel)
+    }
 }

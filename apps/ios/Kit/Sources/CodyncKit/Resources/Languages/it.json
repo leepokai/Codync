@@ -1523,6 +1523,8 @@
   "{done} of {total} ready": "{done} di {total} pronti",
   "{error} Draft kept; Enter retries, Ctrl+C clears text.": "{error} Bozza conservata; Invio riprova, Ctrl+C cancella il testo.",
   "{name} (not installed)": "{name} (non installato)",
+  "{name} (not ready)": "{name} (non ancora pronto)",
+  "{name} (needs Node.js)": "{name} (richiede Node.js)",
   "{name} can be used by": "{name} può essere utilizzato da",
   "{name} can use": "{name} può usare",
   "{name} didn't finish updating. Try again, or update Codync on that computer.": "{name} non ha completato l'aggiornamento. Riprova o aggiorna Codync su quel computer.",

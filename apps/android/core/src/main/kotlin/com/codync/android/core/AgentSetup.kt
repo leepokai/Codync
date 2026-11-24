@@ -30,6 +30,13 @@ import kotlinx.serialization.json.*
     val loginKeys: List<String> = emptyList()) {
     /** Runs on Node.js and the computer has none yet. */
     val needsNode: Boolean get() = node == "missing"
+    /** Its name with the setup it still needs when the pickers can't choose it. */
+    val pickerLabel: String get() = when {
+        available -> name
+        needsNode -> "$name (needs Node.js)"
+        installed -> "$name (not ready)"
+        else -> "$name (not installed)"
+    }
     /** Its login profiles sign in through the agent, in a browser on the computer: no terminal opens. */
     val signsInBrowser: Boolean get() = loginProfileSignIn == "browser"
 }

@@ -54,7 +54,7 @@ placeholder reads "Reply…", and leaving the chat cancels the reply. See
 
 While the bot works anywhere (its own chat, a room, a routine), the user's queued messages leave the transcript and
 wait above the box, oldest first, one line each: the desktop's tray tucked under the composer's top edge
-(`views/chat/QueuedMessages.tsx`), the phones' card past the + button (`Chat/QueuedMessages.swift`,
+(`views/chat/QueuedMessages.tsx`), the phones' card over the box (`Chat/QueuedMessages.swift`,
 `QueuedMessages.kt`), the terminal's band over its input (`view/queue.rs`). An idle bot takes the next message at once,
 so the chat keeps showing that one.
 

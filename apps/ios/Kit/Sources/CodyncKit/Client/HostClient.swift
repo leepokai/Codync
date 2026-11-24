@@ -294,6 +294,13 @@ public extension HostClient {
         let _: Empty = try await call("renameSection", body)
     }
 
+    /// A thread the user starts with `botId`, opened by `text`, on the bot's own settings: its task's id.
+    func startThread(botId: String, text: String) async throws -> String {
+        struct Res: Decodable { var taskId: String }
+        let res: Res = try await call("startThread", ["botId": botId, "text": text])
+        return res.taskId
+    }
+
     /// The chat read; a no-op when nothing there is unread.
     func markRead(_ id: String) async throws {
         let _: Empty = try await call("markRead", ["botId": id])

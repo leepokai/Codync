@@ -32,9 +32,14 @@ import com.codync.android.core.ComputerSelection
 import com.codync.android.core.HostRoute
 import com.codync.android.core.LinkState
 import com.codync.android.design.*
+import com.kyant.shapes.Capsule
 
 // The roster's computers (iOS `ComputerSection`, `ComputerFilterHeader`): a heading per computer once several show,
 // and the header's filter. What's hidden or folded is kept on this device only (`RosterComputers`).
+
+/** A list option the filter menu checks and keeps open for (desktop `keepsOpen`). */
+internal fun layoutOption(title: String, on: Boolean, divider: Boolean = false, toggle: (Boolean) -> Unit) =
+    MenuItem(title, selected = on, divider = divider, keepsOpen = true) { toggle(!on) }
 
 /**
  * A computer's heading above its bots: badge, name and connection. Tap folds its bots away; touch and hold,
@@ -81,16 +86,24 @@ import com.codync.android.design.*
     }
 }
 
-/** The roster's only connection surface: a quiet summary, with the computers to show, reconnect and Computers on demand. */
+/** What the filter button needs to show and change the computers the lists follow (the Bots tab's). */
+internal class ComputerFilter(val states: List<AppState>, val hidden: String, val setHidden: (String) -> Unit, val reconnect: () -> Unit, val manage: () -> Unit)
+
+/**
+ * A list's filter button (the desktop list header's): [options], how the list is laid out, then the computers to show, each
+ * with its connection, Reconnect and Manage computers.
+ */
 @Composable internal fun ComputerFilterHeader(states: List<AppState>, hidden: String, setHidden: (String) -> Unit, reconnect: () -> Unit,
-    manage: () -> Unit) {
+    manage: () -> Unit, options: List<MenuItem> = emptyList()) {
     val selection = ComputerSelection(states.map { it.computer.id }, hidden)
     val shown = states.filter { it.computer.id in selection.shown }
     val translate = translator()
     val summary = connectionSummary(shown).let { it.filled(translate(it.template)) }
+    val filtered = selection.shown.size < states.size
     DropdownMenu({
-        listOf(
-            MenuItem("All computers", icon = "desktopcomputer", selected = selection.shown.size == states.size, keepsOpen = true) { setHidden("") },
+        options + listOf(
+            MenuItem("All computers", icon = "desktopcomputer", selected = selection.shown.size == states.size, divider = options.isNotEmpty(),
+                keepsOpen = true) { setHidden("") },
             *states.map { state ->
                 MenuItem(state.hostName, icon = computerSymbol(state.hello?.text("device")), selected = state.computer.id in selection.shown,
                     verbatim = true, detail = translate(connectionLabel(state)), keepsOpen = true) { setHidden(selection.toggling(state.computer.id)) }
@@ -98,10 +111,8 @@ import com.codync.android.design.*
             MenuItem("Reconnect", icon = "arrow.clockwise", divider = true, enabled = shown.isNotEmpty(), action = reconnect),
             MenuItem("Manage computers", icon = "desktopcomputer", action = manage),
         )
-    }, label = "Computers, $summary. Filter conversations") {
-        Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(summary, style = Type.system(12f).medium, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Symbol("chevron.down", size = 15.dp, tint = Palette.secondary)
-        }
+    }, Modifier.size(44.dp).glass(Capsule()), label = "Computers, $summary. Filter conversations") {
+        // Filled while a computer is left out.
+        Symbol(if (filtered) "line.3.horizontal.decrease.circle.fill" else "line.3.horizontal.decrease", size = 24.dp, tint = Palette.text)
     }
 }

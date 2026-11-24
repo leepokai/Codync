@@ -134,26 +134,3 @@ public enum WorkflowCopy {
         return trimmed.split(whereSeparator: \.isNewline).first.map(String.init)
     }
 }
-
-public extension WorkflowNode {
-    /// A new step with the fields the host accepts for that kind.
-    static func make(_ kind: WorkflowNodeKind, id: String = UUID().uuidString) -> WorkflowNode {
-        var fields: [String: JSONValue] = [:]
-        switch kind {
-        case .trigger: fields["trigger"] = .string("manual")
-        case .prompt: fields["text"] = .string("")
-        case .agent: fields["task"] = .string("")
-        case .condition: fields["op"] = .string("contains")
-        case .approval: fields["question"] = .string("")
-        case .output: fields["target"] = .string("notify")
-        case .text: fields["text"] = .string("")
-        case .note: fields["text"] = .string("")
-        case .shape:
-            fields["shape"] = .string("rectangle")
-            fields["text"] = .string("")
-        case .unknown:
-            break
-        }
-        return WorkflowNode(id: id, kind: kind, at: WorkflowPoint(x: 80, y: 80), fields: fields)
-    }
-}

@@ -40,27 +40,15 @@ import com.codync.android.design.*
 import java.util.Date
 import kotlinx.coroutines.CancellationException
 
-/** The Workflows tab: list, one workflow, its editor, its runs, or one run. */
+/** The Workflows tab, view only: list, one workflow, its runs, or one run, where an approval step is answered. */
 @Composable internal fun WorkflowsView(state: AppState, store: AppStore, computers: List<AppState>, bottomInset: Dp, selectComputer: (String) -> Unit) {
     val route = state.workflow ?: return
-    var editOn by rememberSaveable { mutableStateOf<String?>(null) }
-    var openedStep by rememberSaveable { mutableStateOf<String?>(null) }
     var runsOn by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(route.id, route.nodeId, route.stepId, route.runId) {
-        val node = route.nodeId?.takeIf { it.isNotBlank() }
-        val step = route.stepId?.takeIf { it.isNotBlank() } ?: node
-        if (node != null && route.runId.isNullOrBlank() && step != null && openedStep != step) {
-            openedStep = step
-            editOn = route.id
-        }
-    }
-    if (editOn != null && editOn != route.id) editOn = null
     val back = remember { mutableStateOf<() -> Unit>({}) }
-    val latest = rememberUpdatedState(Triple(route, editOn, runsOn))
+    val latest = rememberUpdatedState(route to runsOn)
     back.value = {
-        val (current, editing, runs) = latest.value
+        val (current, runs) = latest.value
         when {
-            editing != null && editing == current.id -> editOn = null
             current.runId != null -> store.showWorkflow(current.id, null)
             runs -> runsOn = false
             current.id != null -> store.showWorkflow(null)
@@ -71,17 +59,13 @@ import kotlinx.coroutines.CancellationException
         add(WorkflowPage.List)
         val id = route.id ?: return@buildList
         add(WorkflowPage.Detail(id))
-        if (editOn == id) add(WorkflowPage.Editor(id))
-        else {
-            if (runsOn) add(WorkflowPage.Runs(id))
-            route.runId?.let { add(WorkflowPage.Run(id, it)) }
-        }
+        if (runsOn) add(WorkflowPage.Runs(id))
+        route.runId?.let { add(WorkflowPage.Run(id, it)) }
     }
     NavStack(pages, key = { it.key }, pop = { back.value() }, Modifier.fillMaxSize()) { page ->
         when (page) {
-            WorkflowPage.List -> WorkflowListView(state, store, computers, bottomInset, selectComputer) { editOn = it }
-            is WorkflowPage.Detail -> WorkflowDetailView(state, store, page.id, { back.value() }, { editOn = page.id }, { runsOn = true })
-            is WorkflowPage.Editor -> WorkflowEditorView(state, store, page.id, route.nodeId, route.stepId) { back.value() }
+            WorkflowPage.List -> WorkflowListView(state, store, computers, bottomInset, selectComputer)
+            is WorkflowPage.Detail -> WorkflowDetailView(state, store, page.id, { back.value() }) { runsOn = true }
             is WorkflowPage.Runs -> WorkflowRunsView(state, store, page.id, { back.value() }) { store.showWorkflow(page.id, it) }
             is WorkflowPage.Run -> WorkflowRunView(state, store, page.id, page.runId) { back.value() }
         }
@@ -91,20 +75,18 @@ import kotlinx.coroutines.CancellationException
 private sealed class WorkflowPage {
     data object List : WorkflowPage()
     data class Detail(val id: String) : WorkflowPage()
-    data class Editor(val id: String) : WorkflowPage()
     data class Runs(val id: String) : WorkflowPage()
     data class Run(val id: String, val runId: String) : WorkflowPage()
     val key: String get() = when (this) {
         List -> "list"
         is Detail -> "detail:$id"
-        is Editor -> "editor:$id"
         is Runs -> "runs:$id"
         is Run -> "run:$runId"
     }
 }
 
 @Composable private fun WorkflowListView(state: AppState, store: AppStore, computers: List<AppState>, bottomInset: Dp,
-    selectComputer: (String) -> Unit, created: (String) -> Unit) {
+    selectComputer: (String) -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var pinRevision by remember { mutableIntStateOf(0) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -116,7 +98,6 @@ private sealed class WorkflowPage {
             catch (error: Exception) { loadError = error.message }
         }
     }
-    var drafting by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(Palette.background).statusBarsPadding()) {
         ScreenHeader(leading = {
             if (computers.size > 1) DropdownMenu({
@@ -126,9 +107,7 @@ private sealed class WorkflowPage {
             }, label = "Computer: ${state.hostName}") {
                 ComputerBadge(state.hello?.text("device"), 28.dp, state.computer.color)
             }
-        }, title = { Text(tr("Workflows"), style = Type.body.semibold, color = Palette.text) }, trailing = {
-            IconButton("New workflow", "plus", enabled = state.actualConnection is LinkState.Ready) { drafting = true }
-        })
+        }, title = { Text(tr("Workflows"), style = Type.body.semibold, color = Palette.text) })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp).padding(bottom = bottomInset),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             state.workflowMessage?.let { Text(tr(it), style = Type.callout, color = Palette.danger) }
@@ -137,7 +116,6 @@ private sealed class WorkflowPage {
                 Column(Modifier.fillMaxWidth().padding(top = 48.dp), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(tr("No workflows yet"), style = Type.headline, color = Palette.text)
-                    PrimaryButton("New workflow", enabled = state.actualConnection is LinkState.Ready) { drafting = true }
                 }
             }
             if (state.workflows.isNotEmpty()) CardSection(footer = "Hold a workflow to pin it on the bot list.") {
@@ -151,7 +129,6 @@ private sealed class WorkflowPage {
             }
         }
     }
-    WorkflowNewSheet(drafting, { drafting = false }, store, state) { created(it) }
 }
 
 @Composable internal fun PinnedWorkflowRow(workflow: WorkflowSummary, pinned: Boolean, onOpen: () -> Unit, onTogglePin: () -> Unit) {
@@ -175,7 +152,7 @@ private sealed class WorkflowPage {
         listOf(MenuItem(if (pinned) "Unpin" else "Pin", icon = if (pinned) "pin.slash" else "pin", action = onTogglePin))
     }).then(if (inCard) Modifier else Modifier.padding(vertical = 8.dp)), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.size(32.dp).background(if (inCard) Palette.background else Palette.surface, RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
-            Symbol("flowchart", size = 16.dp, tint = Palette.text)
+            Symbol("workflow", size = 16.dp, tint = Palette.text)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(workflow.title.ifBlank { tr("Workflow") }, style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -217,13 +194,6 @@ private sealed class WorkflowPage {
 
 internal fun AppState.workflowBotName(id: String?): String? =
     id?.let { wanted -> bots.firstOrNull { it.id == wanted && !it.deleted }?.name }
-
-internal fun AppState.workflowModel(id: String?): String? {
-    val bot = bots.firstOrNull { it.id == id && !it.deleted } ?: return null
-    return bot.model?.takeIf { it.isNotBlank() } ?: bot.backend.takeIf { it.isNotBlank() }
-}
-
-internal fun AppState.workflowAgents(): List<Bot> = bots.filter { !it.deleted && it.kind != "group" }
 
 internal fun workflowStamp(milliseconds: Long): String =
     DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(milliseconds))

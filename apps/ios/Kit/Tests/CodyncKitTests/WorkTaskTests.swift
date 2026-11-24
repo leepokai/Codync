@@ -212,26 +212,59 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
 
     // MARK: all bots' work
 
-    @Test func theViewOfAllBotsListsTheOnesWithLiveOrWaitingTasksInRosterOrderAndCountsWhatIsWorkedOn() {
-        let roster: [(ref: String, work: [WorkTask])] = [
-            ("idle", []),
-            ("ended", [task("a", .done), task("b", .stopped), task("c", .failed)]),
-            ("busy", [task("d"), task("e"), task("f", .waiting), task("g", .done)]),
-            ("asks", [task("h", .needsYou)]),
-            ("queued", [task("i", .waiting)]),
-            ("one", [task("j")]),
-        ]
-        let all = AllWork(roster) { $0.work }
-        #expect(all.bots.map(\.ref) == ["busy", "asks", "queued", "one"])
-        // Tasks that need the user or wait are not counted as working.
-        #expect(all.working == 3)
-        // Nothing live or waiting: no button, and an open view closes.
-        let none = AllWork(Array(roster.prefix(2))) { $0.work }
-        #expect(none.bots.isEmpty && none.working == 0)
-        // The button shows without a count.
-        let quiet = AllWork([roster[3], roster[4]]) { $0.work }
-        #expect(quiet.bots.count == 2 && quiet.working == 0)
+    @Test func theThreadsTabListsWhatNeedsYouThenTheGroupsThenTheRestNewestFirst() throws {
+        func work(_ id: String, _ status: WorkTask.Status, at: Int64, folder: String? = nil, routine: String? = nil) -> WorkTask {
+            WorkTask(id: id, title: routine == nil ? id : "Daily", status: status, createdAt: at, source: routine.map { .init(.routine, id: $0) },
+                     folder: folder)
+        }
+        var a = try bot(#","cwd":"/a""#)
+        a.work = [work("1", .done, at: 1, folder: "/p/x"), work("2", .needsYou, at: 5), work("3", .working, at: 3, routine: "r1"),
+                  work("4", .done, at: 7, folder: "/a")]
+        var b = try bot(#","cwd":"/b""#)
+        b.name = "B"
+        b.work = [work("5", .waiting, at: 4, folder: "/p/x"), work("6", .failed, at: 6)]
+        let roster = [(key: "a", bot: a), (key: "b", bot: b)]
+        func lists(_ grouping: ThreadGrouping, byStatus: Bool = false) -> (needsYou: [String], groups: [String], recent: [String]) {
+            let made = ThreadSections(roster, grouping: grouping, byStatus: byStatus, key: \.key, computer: { _ in "Mac" }, bot: \.bot)
+            return (made.needsYou.map(\.task.id), made.groups.map { "\($0.title):" + $0.rows.map(\.task.id).joined() }, made.recent.map(\.task.id))
+        }
+        // A folder of the bot's own, or none, is the rest; a routine's runs are their own group.
+        let folders = lists(.folder)
+        #expect(folders.needsYou == ["2"])
+        #expect(folders.groups == ["x:51", "Daily:3"])
+        #expect(folders.recent == ["4", "6"])
+        // By bot, in the roster's order.
+        #expect(lists(.bot).groups == ["Bot:431", "B:65"])
+        #expect(lists(.computer).groups == ["Mac:46531"])
+        // Sorted by status: working, then waiting, then the rest newest first.
+        #expect(lists(.none, byStatus: true).recent == ["3", "5", "4", "6", "1"])
+        // By last active: one added earlier but ended later comes first.
+        var c = try bot(#","cwd":"/c""#)
+        c.work = [WorkTask(id: "late", title: "late", status: .done, createdAt: 5), WorkTask(id: "early", title: "early", status: .done, createdAt: 1, endedAt: 9)]
+        let moved = ThreadSections([(key: "c", bot: c)], grouping: .none, byActivity: true, key: \.key, computer: { _ in "Mac" }, bot: \.bot)
+        #expect(moved.recent.map(\.task.id) == ["early", "late"])
+        // An empty folder names no place: the worktree's, if any.
+        #expect(WorkTask(id: "x", title: "x", status: .done, folder: "").wherePath == nil)
+        #expect(ThreadSections.working(in: roster, bot: \.bot) == 1)
         #expect(AnalyticsEvent.Screen.allWork.rawValue == "all_work")
+    }
+
+    @Test func threadSearchFindsThreadsByTitleOrBotNewestFirst() throws {
+        var a = try bot("")
+        a.name = "Ada"
+        a.work = [WorkTask(id: "old", title: "Fix login", status: .done, thread: "t1", createdAt: 1),
+                  WorkTask(id: "new", title: "Docs", status: .working, thread: "t2", createdAt: 3),
+                  WorkTask(id: "none", title: "Fix CI", status: .waiting, createdAt: 4)]
+        var box = try bot("")
+        (box.name, box.plain) = ("Ada box", true)
+        box.work = [WorkTask(id: "loose", title: "Loose fix", status: .done, thread: "t3", createdAt: 2)]
+        let roster = [(key: "a", bot: a), (key: "box", bot: box)]
+        let found = { (query: String) in ThreadSections.found(roster, matching: query, key: \.key, bot: \.bot).map(\.task.id) }
+        // Only tasks with a thread, newest first, across bots.
+        #expect(found("fix") == ["loose", "old"])
+        // A bot's name finds its threads; the box's name finds none.
+        #expect(found("ada") == ["new", "old"])
+        #expect(found("zzz").isEmpty)
     }
 
     // MARK: the capsule

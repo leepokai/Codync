@@ -41,11 +41,9 @@ internal fun CardRows.advisorRow(state: AppState, store: AppStore, draft: BotDra
                 val agent = shown.threadAgent ?: return@AnimatedVisibility
                 // While they fold away, they take no edits.
                 val edit = { next: BotDraft -> if (draft.threadAgent != null) change(next) }
-                // A row's padding on each side of its hairline, as the card draws them.
-                Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Hairline()
+                // One setting with its switch: no lines inside it.
+                Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     ThreadsAgent(state, store, agent, bot, { edit(draft.copy(threadAgent = it)) }) { edit(draft.withThreadAgent(it)) }
-                    Hairline()
                     FallbackList(state, store, agent.login, shown.threadFallbacks.orEmpty(), bot, { edit(draft.copy(threadFallbacks = it)) }, threads = true)
                 }
             }

@@ -5,25 +5,19 @@ import SwiftUI
 public struct WorkflowsView: View {
     var pendingWorkflowId: String?
     var pendingRunId: String?
-    var pendingNodeId: String?
-    var pendingStepId: String?
     var pendingToken: UUID?
     var onPendingHandled: () -> Void
 
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var opened: OpenedWorkflow?
-    @State private var editing: WorkflowEditorRoute?
     @State private var error: String?
     @State private var loaded = false
-    @State private var drafting = false
     @State private var pinRevision = 0
 
-    public init(pendingWorkflowId: String? = nil, pendingRunId: String? = nil, pendingNodeId: String? = nil, pendingStepId: String? = nil, pendingToken: UUID? = nil, onPendingHandled: @escaping () -> Void = {}) {
+    public init(pendingWorkflowId: String? = nil, pendingRunId: String? = nil, pendingToken: UUID? = nil, onPendingHandled: @escaping () -> Void = {}) {
         self.pendingWorkflowId = pendingWorkflowId
         self.pendingRunId = pendingRunId
-        self.pendingNodeId = pendingNodeId
-        self.pendingStepId = pendingStepId
         self.pendingToken = pendingToken
         self.onPendingHandled = onPendingHandled
     }
@@ -35,17 +29,10 @@ public struct WorkflowsView: View {
                     Text(L10n.tr(error)).font(.caption).foregroundStyle(Palette.danger).textSelection(.enabled)
                 }
                 if model.workflows.isEmpty {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text(L10n.tr(loaded ? "No workflows yet" : "Loading"))
-                            .font(.callout)
-                            .foregroundStyle(Palette.secondary)
-                        if loaded {
-                            Button(L10n.tr("New workflow")) { drafting = true }
-                                .buttonStyle(.primary)
-                                .disabled(model.isOffline)
-                        }
-                    }
-                    .padding(.top, 8)
+                    Text(L10n.tr(loaded ? "No workflows yet" : "Loading"))
+                        .font(.callout)
+                        .foregroundStyle(Palette.secondary)
+                        .padding(.top, 8)
                 } else {
                     CardSection(footer: "Hold a workflow to pin it on the bot list.") {
                         ForEach(model.workflows) { workflow in
@@ -60,46 +47,20 @@ public struct WorkflowsView: View {
         .background(Palette.background)
         .navigationTitle(L10n.tr("Workflows"))
         .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(L10n.tr("New workflow"), systemImage: "plus") { drafting = true }
-                    .disabled(model.isOffline)
-                    .accessibilityLabel(L10n.tr("New workflow"))
-            }
-        }
         .navigationDestination(item: $opened) { item in
-            WorkflowDetailView(workflowId: item.id, pendingRunId: item.runId, pendingNodeId: item.nodeId, pendingStepId: item.stepId)
-                .environment(model)
-        }
-        .navigationDestination(item: $editing) { route in
-            WorkflowEditorView(workflowId: route.id)
+            WorkflowDetailView(workflowId: item.id, pendingRunId: item.runId)
                 .environment(model)
         }
         .task(id: pendingToken) {
             let pending = pendingWorkflowId
             let run = pendingRunId
-            let node = pendingNodeId
-            let step = pendingStepId
             let token = pendingToken
             error = await model.reloadWorkflows()
             loaded = true
             // Coming back to the list restarts this task. A claimed link must not push the detail again.
             if let pending, let token, PendingWorkflowOpen.claim(token) {
-                opened = OpenedWorkflow(id: pending, runId: run, nodeId: node, stepId: step)
+                opened = OpenedWorkflow(id: pending, runId: run)
                 onPendingHandled()
-            }
-        }
-        .codyncSheet(isPresented: $drafting) {
-            WorkflowNewSheet { title, graph in
-                guard let client = model.client else { return "Offline" }
-                do {
-                    let created = try await client.createWorkflow(title: title, graph: graph)
-                    model.noteWorkflow(created.summary)
-                    editing = WorkflowEditorRoute(id: created.id)
-                    return nil
-                } catch {
-                    return error.localizedDescription
-                }
             }
         }
     }
@@ -122,14 +83,11 @@ public struct WorkflowsView: View {
             pinRevision += 1
         }
     }
-
 }
 
 struct OpenedWorkflow: Identifiable, Hashable {
     var id: String
     var runId: String?
-    var nodeId: String?
-    var stepId: String?
 }
 
 /// One deep link opens its workflow once, even if the list is created again on the way back.
@@ -138,12 +96,6 @@ enum PendingWorkflowOpen {
     private static var claimed: Set<UUID> = []
 
     static func claim(_ token: UUID) -> Bool { claimed.insert(token).inserted }
-}
-
-struct WorkflowEditorRoute: Identifiable, Hashable {
-    var id: String
-    var nodeId: String?
-    var stepId: String?
 }
 
 public struct WorkflowSummaryLine: View {
@@ -158,8 +110,9 @@ public struct WorkflowSummaryLine: View {
 
     public var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "flowchart")
-                .font(.system(size: 16, weight: .semibold))
+            Image("workflow")
+                .resizable()
+                .frame(width: 18, height: 18)
                 .foregroundStyle(Palette.text)
                 .frame(width: 32, height: 32)
                 .background(onCard ? Palette.background : Palette.surface, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -202,20 +155,14 @@ public struct WorkflowSummaryLine: View {
 /// The workflow's own id, so two workflows with the same name stay distinct.
 struct WorkflowIdLine: View {
     let id: String
-    var selectable = false
 
     var body: some View {
-        let line = Text(String(id.prefix(8)))
+        Text(String(id.prefix(8)))
             .font(.caption.monospaced())
             .foregroundStyle(Palette.tertiary)
             .lineLimit(1)
             .truncationMode(.middle)
             .frame(maxWidth: .infinity, alignment: .leading)
-        if selectable {
-            line.textSelection(.enabled)
-        } else {
-            line
-        }
     }
 }
 

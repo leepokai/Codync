@@ -259,6 +259,10 @@ pub(super) struct Task {
     /// What it reported before the user wrote to it again: a new session that picks the work up is told.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub said: Option<String>,
+    /// The files the user started it with (`startThread`), as uploaded to its bot (`{id, name, size}`): its thread
+    /// gets a copy of each as it starts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<Value>,
 }
 
 impl Task {
@@ -294,6 +298,7 @@ impl Task {
             worktree: None,
             told: Vec::new(),
             said: None,
+            files: Vec::new(),
         }
     }
 

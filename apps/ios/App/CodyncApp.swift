@@ -114,15 +114,13 @@ struct CodyncApp: App {
     }
 }
 
-enum AppTab: Hashable { case bots, workflows, settings }
+enum AppTab: Hashable { case bots, threads, workflows, settings }
 
-/// A workflow a notification asked to open on the Workflows tab.
+/// A workflow a notification or link asked to open on the Workflows tab, at one run when `runId` is set.
 struct WorkflowDeepLink: Equatable {
     var computerId: ComputerID
     var workflowId: String?
     var runId: String?
-    var nodeId: String?
-    var stepId: String?
     /// A new value each time a link should open. The list claims it once.
     var token = UUID()
 }
@@ -193,11 +191,11 @@ final class AppStore {
         accounts.storage.lastComputerId.flatMap(accounts.store(for:)) ?? accounts.computers.first.flatMap { accounts.store(for: $0.id) }
     }
 
-    /// Opens the Workflows tab on one computer, and one workflow when `workflowId` is set.
-    func showWorkflows(on computerId: ComputerID, workflowId: String? = nil, runId: String? = nil, nodeId: String? = nil, stepId: String? = nil) {
+    /// Opens the Workflows tab on one computer, and one workflow (at one run) when `workflowId` is set.
+    func showWorkflows(on computerId: ComputerID, workflowId: String? = nil, runId: String? = nil) {
         accounts.selection = nil
         workflowComputer = computerId
-        pendingWorkflow = WorkflowDeepLink(computerId: computerId, workflowId: workflowId, runId: runId, nodeId: nodeId, stepId: stepId)
+        pendingWorkflow = WorkflowDeepLink(computerId: computerId, workflowId: workflowId, runId: runId)
         workflowEpoch += 1
         tab = .workflows
     }
@@ -434,8 +432,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         let botId = info["botId"] as? String
         let workflowId = info["workflowId"] as? String
         let runId = info["runId"] as? String
-        let nodeId = info["nodeId"] as? String
-        let stepId = info["stepId"] as? String
         let kind = AnalyticsEvent.NotificationKind(category: response.notification.request.content.categoryIdentifier)
         // UIKit saves application state from this completion. The async delegate
         // bridge can complete off the main thread even after MainActor.run.
@@ -447,10 +443,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             let accounts = AppStore.shared.accounts
             guard ctx == accounts.storage.id, accounts.store(for: computerId) != nil else { return }
             if let workflowId, !workflowId.isEmpty {
-                let run = runId?.isEmpty == false ? runId : nil
-                let node = nodeId?.isEmpty == false ? nodeId : nil
-                let step = stepId?.isEmpty == false ? stepId : nil
-                AppStore.shared.showWorkflows(on: computerId, workflowId: workflowId, runId: run, nodeId: node, stepId: step)
+                AppStore.shared.showWorkflows(on: computerId, workflowId: workflowId, runId: runId?.isEmpty == false ? runId : nil)
                 return
             }
             guard let botId else { return }

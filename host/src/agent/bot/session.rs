@@ -2,7 +2,7 @@
 
 use super::fast_mode::Listing;
 use super::launch::{claude_meta, launch_commands, select_model, start_agent, start_first, system_prompt};
-use super::{Actor, Adapter, Conn, Instructions, ServerWatch, background_work, codex_names, pi_tools};
+use super::{Actor, Adapter, Conn, Instructions, ServerWatch, background_work};
 use crate::agent::own_memory;
 use crate::analytics::Retired;
 use crate::chat::{context, memory};
@@ -10,11 +10,22 @@ use crate::store::run_session_key;
 use anyhow::{Context, Result, anyhow, bail};
 use codync_agent::acp::{self, Incoming};
 use codync_agent::events::{Event, Update};
+use codync_agent::mcp_names::{self, Renamed};
 use codync_agent::registry::Candidate;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
+/// Seconds pi waits for a tool call (60 by default): past the host's own limit for any of them (`mcp::call`, the
+/// longest a team change waiting for its approval).
+const PI_CALL_TIMEOUT: u64 = crate::chat::manage::APPROVAL_TIMEOUT.as_secs() + 60;
+
 impl Actor {
+    /// Renames the servers `agent`'s own config already names (`codync_agent::mcp_names`).
+    async fn avoid_clashes(&self, agent: mcp_names::Agent, servers: &mut Value) -> Renamed {
+        let home = self.saved_env(agent.home_var());
+        mcp_names::avoid_clashes(agent, servers, &self.cfg.cwd, home, crate::agent::APP).await
+    }
+
     /// Which session the running turn uses: a routine run has one of its own (by its slot); everything else uses
     /// the main one.
     pub(super) fn slot(&self) -> Option<String> {
@@ -82,8 +93,8 @@ impl Actor {
     }
 
     /// What the turn's session calls Codync's MCP servers that it knows by another name.
-    pub(super) fn renamed(&self) -> &codex_names::Renamed {
-        static NONE: codex_names::Renamed = codex_names::Renamed::new();
+    pub(super) fn renamed(&self) -> &Renamed {
+        static NONE: Renamed = Renamed::new();
         let sid = self.turn_session.as_ref();
         self.conn.as_ref().zip(sid).and_then(|(c, sid)| c.renamed.get(sid)).unwrap_or(&NONE)
     }
@@ -185,13 +196,10 @@ impl Actor {
             c.acp.kill().await;
         }
         let mut servers = self.mcp_servers()?;
-        // pi gets its servers when it starts (`pi_tools`), so they take pi's names before that.
+        // pi gets its servers when it starts (`codync_agent::pi`), so they take pi's names before that.
         let pi = self.cfg.backend == "pi";
-        let mut renamed = if pi {
-            pi_tools::avoid_clashes(&mut servers, &self.cfg.cwd, self.saved_env("PI_CODING_AGENT_DIR")).await
-        } else {
-            codex_names::Renamed::new()
-        };
+        let mut renamed =
+            if pi { self.avoid_clashes(mcp_names::Agent::Pi, &mut servers).await } else { Renamed::new() };
         if self.conn.is_none() {
             let (hub, id) = (self.hub.clone(), self.cfg.id.clone());
             let progress = move |msg: &str| {
@@ -209,7 +217,8 @@ impl Actor {
                 env.push(("CODEX_CONFIG".into(), config.to_string()));
             }
             if pi {
-                env.extend(pi_tools::env(&servers).await?);
+                let dir = crate::service::data_dir().join("pi");
+                env.extend(codync_agent::pi::env(dir, crate::agent::APP, &servers, PI_CALL_TIMEOUT).await?);
             }
             let mut conn = start_first(candidates, &env, |candidate, env, fallback_left| {
                 // A local CLI too old for ACP just hangs; don't make the user wait long before the fallback.
@@ -224,7 +233,7 @@ impl Actor {
             self.conn = Some(conn);
         }
         if self.conn.as_ref().is_some_and(|c| c.adapter() == Adapter::Codex) {
-            renamed = codex_names::avoid_clashes(&mut servers, &self.cfg.cwd, self.saved_env("CODEX_HOME")).await;
+            renamed = self.avoid_clashes(mcp_names::Agent::Codex, &mut servers).await;
         }
         // An agent on its own gets no system prompt of Codync's, and `compose` adds no first-message one.
         let instructions = if self.cfg.plain {
@@ -358,7 +367,7 @@ impl Actor {
 
     /// Takes the session the agent just opened (`res`: its answer to `session/new` or `session/fork`) as `slot`'s
     /// and this turn's: on the bot's model, with its options noted. Its id.
-    async fn adopt_opened(&mut self, res: &Value, slot: Option<&str>, renamed: codex_names::Renamed) -> Result<String> {
+    async fn adopt_opened(&mut self, res: &Value, slot: Option<&str>, renamed: Renamed) -> Result<String> {
         let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone(), Instant::now());
@@ -379,7 +388,7 @@ impl Actor {
     async fn fork_owner_session(
         &mut self,
         servers: &Value,
-        renamed: &codex_names::Renamed,
+        renamed: &Renamed,
         instructions: Instructions,
     ) -> Result<bool> {
         let Some(source) = crate::chat::work::take_fork_source(&self.hub, &self.cfg) else {

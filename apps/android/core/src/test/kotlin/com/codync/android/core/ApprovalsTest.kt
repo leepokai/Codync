@@ -48,7 +48,7 @@ class ApprovalsTest {
         assertEquals("Ask me", ApprovalChoice.choices(BotDraft(name = "Bot"), plain).second.label)
         assertEquals(listOf("Auto", "Ask me", "Approve automatically"), labels(BotDraft(name = "Bot"), null))
         // Another agent's ids mean nothing: a picked mode becomes its Auto mode.
-        assertEquals("auto", BotDraft(name = "Bot", mode = "plan").withAgent("codex").mode)
-        assertEquals(null, BotDraft(name = "Bot", mode = null).withAgent("codex").mode)
+        assertEquals("auto", BotDraft(name = "Bot", mode = "plan").withAgent(Login("codex")).mode)
+        assertEquals(null, BotDraft(name = "Bot", mode = null).withAgent(Login("codex")).mode)
     }
 }

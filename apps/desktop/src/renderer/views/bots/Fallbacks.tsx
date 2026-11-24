@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MAX_FALLBACKS, moveFallback, restLine, restOf, runningAgent, sameLogin, stepAgents, stepBannerPhrase, stepLogin, stepLogins, stepOn, type Login } from '@shared/fallbacks'
+import { freeLogins, MAX_FALLBACKS, moveFallback, restLine, restOf, runningAgent, sameLogin, stepAgents, stepBannerPhrase, stepLogin, stepLogins, stepOn, type Login } from '@shared/fallbacks'
 import type { Backend, Bot, BotDraft, Fallback } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { Button, DropdownMenu, IconButton } from '../../components/Controls'
@@ -11,15 +11,12 @@ import { useTr } from '../../lib/use-language'
 import { fill } from '@shared/fill'
 import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
-import { LoginProfileRow } from './LoginProfileRow'
-import { AgentModelPicker } from './AgentModelPicker'
+import { ModelPicker } from './ModelPicker'
+import { loginSeats } from './seats'
 import './bots.css'
 
 const ABOUT =
   "When this bot's agent runs out of usage, is rate limited, signed out or won't start, the next agent here carries on in the same chat, with the same memory and workspace. The bot goes back to its own agent when it recovers. A fallback that uses an API key costs money. To fall back between one agent's models, set that in the agent itself (Claude Code's fallbackModel)."
-
-/** An agent as the Agent pickers list it: its logo, and "(not installed)" when it isn't. */
-export const agentChoice = (b: Backend) => ({ id: b.id, label: b.available ? b.name : `${b.name} (not installed)`, leading: <AgentIcon registry={b.registry ?? b.id} size={14} /> })
 
 /** The Agent card's first row while the bot runs on a fallback, with the way back to its own agent. */
 export function AgentStepBanner({ bot }: { bot: Bot }) {
@@ -116,7 +113,7 @@ export function FallbacksRow({ draft, bot, onChange, threads = false }: { draft:
   )
 }
 
-/** One fallback: its place, its agent, model and login picked in place, whether it's resting or in use, and its menu. */
+/** One fallback: its place, its agent's login and model picked in the model panel, whether it's resting or in use, and its menu. */
 function FallbackRow({ fallback, index, count, bot, inUse, now, backends, taken, expanded, onChange, move, remove }: {
   fallback: Fallback
   index: number
@@ -138,13 +135,17 @@ function FallbackRow({ fallback, index, count, bot, inUse, now, backends, taken,
   // The step as it was on its own agent while another is picked: picking that agent again brings back its model and login.
   const [own, setOwn] = useState<Fallback | null>(null)
   const choices = stepAgents(backends, taken, [fallback, own])
-  const agent = choices.find((b) => b.id === fallback.backend)
-  const loginProfile = fallback.loginProfile ?? null
-  const profile = loginProfile ? agent?.loginProfiles?.find((p) => p.id === loginProfile) : null
-  // The step's login shows beside its agent: "Claude Code (Work)".
-  const agents = choices.map((b) => {
-    const choice = agentChoice(b)
-    return b.id === fallback.backend && profile ? { ...choice, label: `${choice.label} (${profile.name ?? tr('New login profile')})` } : choice
+  // The logins the rest of the chain doesn't have, with its own (and the one it had on an agent before, while no other step took it).
+  const seats = loginSeats({
+    backends: choices, on: fallback, tr,
+    logins: (b) => b.id === fallback.backend ? stepLogins(b, fallback, taken)
+      : own?.backend === b.id && !taken.some((t) => sameLogin(t, own)) ? stepLogins(b, own, taken) : freeLogins(b, taken),
+    pick: (b, loginProfile) => {
+      if (b.id === fallback.backend) return onChange({ ...fallback, loginProfile })
+      const step = stepOn(b, taken, own)
+      setOwn(step === own ? null : own ?? fallback)
+      onChange({ ...step, loginProfile })
+    },
   })
   const rest = restOf(bot, fallback, now)
   return (
@@ -154,25 +155,15 @@ function FallbackRow({ fallback, index, count, bot, inUse, now, backends, taken,
           <Text tabular>{index + 1}</Text>
         </IconSlot>
         <VStack grow>
-          <AgentModelPicker
+          <ModelPicker
+            trigger="row"
             backend={fallback.backend}
             models={models}
-            selection={fallback.model}
-            onChange={(model, modelOptions) => onChange({ ...fallback, model, modelOptions })}
-            options={fallback.modelOptions}
-            sessionNote={false}
-            agents={agents}
-            onAgentChange={(id) => {
-              const next = choices.find((b) => b.id === id)
-              if (!next) return
-              const step = stepOn(next, taken, own)
-              setOwn(step === own ? null : own ?? fallback)
-              onChange(step)
-            }}
-            expanded={expanded}
-          >
-            {agent?.loginProfiles ? <LoginProfileRow backend={agent} loginProfile={loginProfile} free={stepLogins(agent, fallback, taken)} onChange={(id) => onChange({ ...fallback, loginProfile: id })} /> : null}
-          </AgentModelPicker>
+            model={{ id: fallback.model ?? null, options: fallback.modelOptions }}
+            set={(m) => onChange({ ...fallback, model: m.id, modelOptions: m.options })}
+            seats={seats}
+            startOpen={expanded}
+          />
         </VStack>
         {inUse ? <Text size="caption" weight="medium" tone="text" className="fallback-chip fade-in">{tr(`In use`)}</Text> : null}
         <DropdownMenu

@@ -880,7 +880,7 @@ dependencies = [
 
 [[package]]
 name = "codync-agent"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -896,6 +896,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tokio",
+ "toml_edit",
  "tracing",
  "uuid",
  "windows-sys 0.61.2",

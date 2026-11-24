@@ -186,7 +186,7 @@ export async function addAccount(page: Page, agent: Agent, made: (id: string) =>
 
 /** Sends `text` from the open chat's composer (not the box of a thread open in the inspector). */
 export async function typeMessage(page: Page, text: string) {
-  const box = page.locator('.composer:not(.work-thread-composer) textarea')
+  const box = page.locator('.composer:not(.thread-chat .composer) textarea')
   await box.fill(text)
   await box.press('Enter')
 }

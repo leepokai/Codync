@@ -28,7 +28,7 @@ pub(super) fn fresh_key(bot: &str) -> String {
 }
 
 /// This bookkeeping failing costs a resume or a catch-up, not the turn: logged.
-fn logged(bot: &str, what: &str, result: anyhow::Result<()>) {
+pub(super) fn logged(bot: &str, what: &str, result: anyhow::Result<()>) {
     if let Err(error) = result {
         tracing::warn!(bot, error = format!("{error:#}"), "couldn't {what}");
     }
@@ -127,6 +127,7 @@ impl Actor {
             logged(&bot, "forget a parked session", forgot);
         }
         self.relay.recap = None;
+        self.handed_off(false);
         logged(
             &bot,
             "mark the new session",

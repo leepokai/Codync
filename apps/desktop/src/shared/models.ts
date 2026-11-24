@@ -389,6 +389,13 @@ export interface AgentSwitch {
   resetsAt: number | null
   /** What the new agent was told, unfolded under the line. */
   carried: string | null
+  /** The user made the switch (another agent or login profile): the next message carries the conversation. */
+  manual?: boolean
+  /** Where a switch the user made is: its next message hasn't gone yet, it carried the conversation, or nothing. */
+  state?: 'pending' | 'handedOff' | 'switched'
+  /** What the chat calls each side: the agent, with its login profile ("Claude Code (Work)"). */
+  fromName?: string
+  toName?: string
 }
 
 /** A choice card's (`request_decision`) lifecycle, as the host writes it in `status`. */
@@ -712,6 +719,8 @@ export interface Hello {
   threadsWithoutBot?: boolean
   /** A thread may be started to build one workflow (`startThread` with `setup.workflow`). */
   workflowThreads?: boolean
+  /** A thread may be started on a login of its agent (`startThread` with `setup.loginProfile`). */
+  threadLogins?: boolean
   /** `resetCredentials` can be used on this computer (absent from older hosts, false on a Codync Cloud computer). */
   credentialsReset?: boolean
   /** The host can store workflows. Missing means it cannot. */

@@ -28,32 +28,33 @@ test('a fallback row is picked in place and keeps its place in the chain', async
     await expect(page.getByRole('menuitem', { name: 'Edit' })).toHaveCount(0)
     await page.keyboard.press('Escape')
 
-    // The first step's summary opens its pickers in place: its own agent and model.
+    // The first step's row opens its model panel: its own agent and model.
     const rows = panel.locator('.fallback-number').locator('..')
-    const first = rows.nth(0)
-    await expect(first.locator('.agent-picker-summary')).toContainText('Codex')
-    await expect(first.locator('.agent-picker-summary')).toContainText('e2e-model')
-    await first.locator('.agent-picker-summary').click()
+    const field = (i: number) => rows.nth(i).locator('.model-picker-field')
+    const picker = page.locator('.model-picker')
+    await expect(field(0)).toContainText('Codex')
+    await expect(field(0)).toContainText('e2e-model')
+    await field(0).click()
     // Another model (the agent's default, the one every agent lists), saved in the step's place.
-    await first.locator('.agent-picker-item').first().click()
+    await picker.locator('.model-picker-row').first().click()
+    await page.keyboard.press('Escape')
     const saved = async () => (await api<{ bot: { fallbacks: Fallback[] } }>(page, 'updateBot', { id: bot.id })).bot.fallbacks
     await expect.poll(async () => (await saved()).map((f) => [f.backend, f.model ?? null])).toEqual([['codex', null], ['gemini', null]])
     await expect(page.locator('.sheet-page')).toHaveCount(0) // no sheet anywhere
 
-    // Another agent for the second step: it stays second, on that agent.
-    const second = rows.nth(1)
-    await second.locator('.agent-picker-summary').click()
-    const agent = second.locator('.agent-picker-choice').first()
-    await expect(agent).toContainText('Gemini')
-    await agent.click()
-    await second.locator('.agent-picker-item[aria-pressed="false"]').first().click()
-    await expect(agent).not.toContainText('Gemini')
+    // Another agent for the second step, from the panel's rail: it stays second, on that agent.
+    await expect(field(1)).toContainText('Gemini')
+    await field(1).click()
+    await picker.locator('.model-picker-agent[aria-pressed="false"]:not(.model-picker-add)').first().click()
+    await expect(field(1)).not.toContainText('Gemini')
+    await page.keyboard.press('Escape')
     await expect.poll(async () => (await saved()).map((f) => f.backend)).toEqual(['codex', expect.not.stringMatching(/^(codex|gemini|kimi)$/)])
 
-    // + adds a step at the end, already open on its pickers.
+    // + adds a step at the end, already open on its model panel.
     await panel.getByRole('button', { name: 'Add fallback' }).click()
     await expect(rows).toHaveCount(3)
-    await expect(rows.nth(2).locator('.agent-picker-choice').first()).toBeVisible()
+    await expect(field(2)).toHaveAttribute('aria-expanded', 'true')
+    await expect(picker.locator('.model-picker-rail')).toBeVisible()
     await expect.poll(async () => (await saved()).length).toBe(3)
   } finally {
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})

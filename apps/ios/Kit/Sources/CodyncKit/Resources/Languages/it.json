@@ -2464,7 +2464,6 @@
   "Codync runs the CLI's own ACP mode.": "Codync esegue la modalità ACP propria della CLI.",
   "Codync runs the ACP build, which uses this CLI.": "Codync esegue la build ACP, che usa questa CLI.",
   "Brought in by default": "Incluso per impostazione predefinita",
-  "All workflows": "Tutti i workflow",
   "Build this workflow by talking": "Crea questo workflow parlando",
   "What should this workflow do?": "Cosa deve fare questo workflow?",
   "Hide chat": "Nascondi chat",
@@ -2474,5 +2473,8 @@
   "New chat": "Nuova chat",
   "in background": "in background",
   "{count} s": "{count} s",
-  "{count} min": "{count} min"
+  "{count} min": "{count} min",
+  "Context handoff pending": "Passaggio del contesto in sospeso",
+  "Context handed off": "Contesto passato",
+  "Switched": "Cambiato"
 }

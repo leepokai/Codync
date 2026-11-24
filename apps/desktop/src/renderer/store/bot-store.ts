@@ -245,6 +245,11 @@ export class BotStore extends BotSync {
     return this.hello?.workflowThreads === true
   }
 
+  /** A thread can be started on a login of its agent here (`startThread` with `setup.loginProfile`). */
+  get startsThreadsOnLogins() {
+    return this.hello?.threadLogins === true
+  }
+
   /** A thread the user starts with `botId` themselves (null: without a bot, on the agent `setup` names), opened by
    *  `text`, its task on `setup` where that differs from the bot's: where its task is, the bot's (or the box's) id
    *  and the task's. */

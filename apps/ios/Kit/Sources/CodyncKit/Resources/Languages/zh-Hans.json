@@ -2464,7 +2464,6 @@
   "Codync runs the CLI's own ACP mode.": "Codync 运行 CLI 自己的 ACP 模式。",
   "Codync runs the ACP build, which uses this CLI.": "Codync 运行 ACP 版本，由它调用这个 CLI。",
   "Brought in by default": "默认带入的项目",
-  "All workflows": "所有工作流",
   "Build this workflow by talking": "通过对话搭建这个工作流",
   "What should this workflow do?": "这个工作流要做什么？",
   "Hide chat": "隐藏对话",
@@ -2474,5 +2473,8 @@
   "New chat": "新对话",
   "in background": "在后台运行",
   "{count} s": "{count} 秒",
-  "{count} min": "{count} 分钟"
+  "{count} min": "{count} 分钟",
+  "Context handoff pending": "上下文交接待进行",
+  "Context handed off": "上下文已交接",
+  "Switched": "已切换"
 }

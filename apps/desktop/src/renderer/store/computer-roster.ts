@@ -1,6 +1,6 @@
 import { computerSections, moveInOrder, orderedComputers } from '../lib/computer-roster'
 import { renamedSectionOrder } from '../lib/roster-section-order'
-import { prefs, usePref } from '../lib/prefs'
+import { prefs, toggled, usePref } from '../lib/prefs'
 import { useModel } from '../lib/observable'
 import { foldsAfterRename, rosterGroups, rosterLines, rosterRows, sameRosterGroup, sectionRename, shownRows, shownSection } from '../lib/roster-sections'
 import type { BotStore } from './bot-store'
@@ -78,9 +78,4 @@ export function useComputerRoster(app: AppModel, shown: Set<string>) {
       if (target) section.store.reorder(moveInOrder(items.map((item) => item.bot.id), ref.botId, target.bot.id))
     },
   }
-}
-
-/** `list` with `value` added, or taken out when it's there. */
-function toggled(list: string[], value: string) {
-  return list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
 }

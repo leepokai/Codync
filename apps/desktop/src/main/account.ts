@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
-import { app, ipcMain, safeStorage, type BrowserWindow } from 'electron'
+import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import type { SignInFailure, SignInProvider } from '../shared/analytics'
 import type { AccountState } from '../shared/ipc'
 import { authenticate, AuthenticationEnded } from './auth'
@@ -118,7 +118,7 @@ export class AccountService extends EventEmitter {
 
   register(windows: () => BrowserWindow[]) {
     ipcMain.handle('account:state', () => this.state)
-    ipcMain.handle('account:signIn', (_e, provider: SignInProvider) => this.signIn(provider))
+    ipcMain.handle('account:signIn', (e, provider: SignInProvider) => this.signIn(provider, BrowserWindow.fromWebContents(e.sender)))
     ipcMain.handle('account:signOut', () => this.signOut())
     ipcMain.handle('account:delete', () => this.deleteAccount())
     ipcMain.handle('account:token', () => this.sessionToken())
@@ -235,7 +235,7 @@ export class AccountService extends EventEmitter {
   }
 
   /** Only a callback verified against this sign-in may finish its browser wait. */
-  private async browserSignIn(id: string, redirect: string, attempt: number) {
+  private async browserSignIn(id: string, redirect: string, attempt: number, window: BrowserWindow | null) {
     let verified: SignInResource | null = null
     const accept = async (url: string, isCurrent: () => boolean) => {
       if (attempt !== this.signInAttempt) return false
@@ -259,7 +259,7 @@ export class AccountService extends EventEmitter {
       }
     }
     // Closing the browser does not leave the app loading; another sign-in can replace it.
-    const authentication = authenticate(redirect, SCHEME, accept)
+    const authentication = authenticate(redirect, SCHEME, accept, window)
     this.set({ busy: false })
     const callback = new URL(await authentication)
     if (attempt !== this.signInAttempt || !verified) return null
@@ -267,7 +267,7 @@ export class AccountService extends EventEmitter {
   }
 
   /** Why it ended without an account (`sign_in_failed`); null once signed in. */
-  async signIn(provider: SignInProvider): Promise<SignInFailure | null> {
+  async signIn(provider: SignInProvider, window: BrowserWindow | null = null): Promise<SignInFailure | null> {
     if (this.state.busy) return null
     if (!this.base) {
       this.set({ error: "Sign-in setup isn't finished yet. You can continue using local pairing." })
@@ -283,7 +283,7 @@ export class AccountService extends EventEmitter {
       const prepared = await this.request<SignInResource>('POST', `/v1/client/sign_ins/${created.id}/prepare_first_factor`, { strategy, redirect_url: REDIRECT })
       const redirect = prepared.first_factor_verification?.external_verification_redirect_url
       if (!redirect) throw new ClerkError(0, 'Redirect URL is missing. Unable to start the sign-in.')
-      const authenticated = await this.browserSignIn(created.id, redirect, attempt)
+      const authenticated = await this.browserSignIn(created.id, redirect, attempt, window)
       if (!authenticated) return 'cancelled'
       const { callback, signIn } = authenticated
       const nonce = callback.searchParams.get('rotating_token_nonce')

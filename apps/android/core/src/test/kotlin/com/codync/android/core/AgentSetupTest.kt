@@ -110,6 +110,7 @@ class AgentSetupTest {
         assertEquals("Codex (needs Node.js)", codex.pickerLabel)
         assertEquals("Codex (not ready)", codex.copy(node = null).pickerLabel)
         assertEquals("Codex (not installed)", codex.copy(installed = false, node = null).pickerLabel)
-        assertEquals("Codex", codex.copy(available = true).pickerLabel)
+        assertEquals("Codex", codex.copy(available = true, node = null).pickerLabel)
+        assertEquals("Codex (needs Node.js)", codex.copy(available = true).pickerLabel)
     }
 }

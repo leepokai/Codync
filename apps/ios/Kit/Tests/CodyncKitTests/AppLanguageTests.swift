@@ -78,6 +78,8 @@ struct AppLanguageTests {
         #expect(L10n.tr("Voice input shortcut", preference: .zh, systemIsChinese: false) == "语音输入快捷键")
         #expect(L10n.tr("Right ⌘ twice", preference: .zh, systemIsChinese: false) == "右 ⌘ 两次")
         #expect(L10n.tr("Claude Code (not installed)", preference: .zh, systemIsChinese: false) == "Claude Code（未安装）")
+        #expect(L10n.tr("WorkBuddy (needs Node.js)", preference: .zh, systemIsChinese: false) == "WorkBuddy（需要 Node.js）")
+        #expect(L10n.tr("Codex (not ready)", preference: .zhHant, systemIsChinese: false) == "Codex（尚未就緒）")
         #expect(L10n.tr("Copy template", preference: .zh, systemIsChinese: false) == "复制模板")
         #expect(L10n.tr("Siri and Dictation are disabled", preference: .zh, systemIsChinese: false) == "Siri 和听写已关闭")
         #expect(L10n.tr("the Codync cloud refused (403 forbidden): Sign in on the computer to use remote screen relay.", preference: .zh, systemIsChinese: false) == "Codync 云拒绝了（403 禁止）：请先在电脑上登录，才能使用远程屏幕中继。")

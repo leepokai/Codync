@@ -9,8 +9,8 @@ export const initials = (name: string) => name.split(/[\s@._-]+/).filter(Boolean
 
 /** An agent's name with the setup it still needs when it can't be picked. */
 export const backendSeatName = (backend: Backend, tr: (text: string) => string) =>
-  backend.available ? backend.name
-    : backend.node === 'missing' ? tr(`${backend.name} (needs Node.js)`)
+  backend.node === 'missing' ? tr(`${backend.name} (needs Node.js)`)
+    : backend.available ? backend.name
     : backend.installed === true ? tr(`${backend.name} (not ready)`)
     : tr(`${backend.name} (not installed)`)
 

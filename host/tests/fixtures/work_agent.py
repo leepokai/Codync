@@ -23,8 +23,8 @@ What the user writes to a thread is a turn of its own: it answers `Thread <their
 notes say whether the session is the one that did the work (`same session`) or a new one told of it (`picked up`),
 and the words may hold `HOLD:<name>`, `NEST` and `ASK` as a brief does.
 
-Arguments: `as=<name>`: a task's report says `on <name>` (which agent did it). `no-fork`: the agent doesn't advertise `session/fork`. `no-load`: nor `session/load`, so a session can't
-be picked up again. `steer`: it takes a message into its running turn (`_session/steering`), and the turn's reply
+Arguments: `as=<name>`: a task's report says `on <name>` (which agent did it). `no-load`: the agent doesn't advertise `session/load`, so a
+session can't be picked up again. It always advertises `session/fork`, which no thread may take. `steer`: it takes a message into its running turn (`_session/steering`), and the turn's reply
 ends with `joined <the message>`. A `no-start` file in its folder: it doesn't start.
 A `signedout` file: every prompt fails asking to sign in (ACP's -32000). `thread-signedout` / `thread-limit`: a thread's
 turn does its work and then fails, asking to sign in or the way Claude's adapter reports a usage limit. A brief that
@@ -46,7 +46,6 @@ sys.stdout.reconfigure(encoding="utf-8")
 if pathlib.Path("no-start").exists():
     sys.exit(1)
 
-CAN_FORK = "no-fork" not in sys.argv
 CAN_LOAD = "no-load" not in sys.argv
 CAN_STEER = "steer" in sys.argv
 AGENT = next((arg.removeprefix("as=") for arg in sys.argv if arg.startswith("as=")), None)
@@ -315,11 +314,8 @@ for line in sys.stdin:
     method = message.get("method")
     params = message.get("params") or {}
     if method == "initialize":
-        capabilities = {"close": {}}
-        if CAN_FORK:
-            capabilities["fork"] = {}
         initialized = {"protocolVersion": 1, "agentCapabilities": {
-            "loadSession": CAN_LOAD, "sessionCapabilities": capabilities}}
+            "loadSession": CAN_LOAD, "sessionCapabilities": {"close": {}, "fork": {}}}}
         if CAN_STEER:
             initialized["_meta"] = {"steering": {"supported": True}}
         send({"id": message["id"], "result": initialized})
@@ -329,6 +325,8 @@ for line in sys.stdin:
         if method == "session/fork":
             forked.add(session)
             log("forks.jsonl", {"from": params["sessionId"], "to": session})
+        if method != "session/load":
+            log("servers.jsonl", {"session": session, "servers": [s["name"] for s in servers]})
         send({"id": message["id"], "result": {} if method == "session/load" else {"sessionId": session}})
     elif method == "session/close":
         send({"id": message["id"], "result": {}})

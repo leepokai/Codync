@@ -83,6 +83,12 @@ fn task_prompts(host: &Host, bot: &str, title: &str) -> Vec<Value> {
     task_prompts_in(&host.workspace(bot), title)
 }
 
+/// The servers the session `prompt` went to was given, by name.
+fn servers_of(host: &Host, bot: &str, prompt: &Value) -> Vec<String> {
+    let started = host.log(bot, "servers.jsonl").into_iter().find(|s| s["session"] == prompt["session"]).unwrap();
+    started["servers"].as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_owned()).collect()
+}
+
 /// The prompts the threads working in `dir` got for `title`, oldest first.
 fn task_prompts_in(dir: &Path, title: &str) -> Vec<Value> {
     let named = format!(" \"{title}\".");
@@ -178,6 +184,11 @@ async fn a_task_starts_from_its_brief_alone_and_its_report_comes_back_as_a_turn(
     assert!(text.contains("[The user's own words: «ADD Fix the login|Find why the redirect drops the path»]"));
     assert!(text.contains("<bot-profile>") && text.contains("You are doing one task"), "its own instructions: {text}");
     assert!(!text.contains("Title: Mika") && !text.contains("add_task"), "nothing of the chat's: {text}");
+    assert_eq!(
+        servers_of(&host, &bot, thread_prompt),
+        ["connectors", "chat", "memory", "workflows"],
+        "nor its servers"
+    );
 
     // No client lists the thread as a bot or mixes its transcript into a chat.
     let snapshot = host.snapshot().await;
@@ -221,7 +232,7 @@ async fn a_task_starts_from_its_brief_alone_and_its_report_comes_back_as_a_turn(
 #[tokio::test]
 async fn a_thread_hears_nothing_of_the_chat_it_was_handed_out_in() {
     let host = Host::start().await;
-    let bot = host.fixture_bot("Mika", "work_agent.py", "no-fork").await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "").await;
     host.reply(&bot, "Remember the blue theme").await;
     host.reply(&bot, "ADD Update the docs|Rewrite the install steps").await;
     assert_eq!(reply(&host, &bot, "Relayed:").await, "Relayed: Report Update the docs: briefed; no chat");
@@ -267,6 +278,14 @@ async fn a_threads_approval_card_is_answered_in_the_chat_and_it_cannot_add_task(
     let relayed = reply(&host, &bot, "Relayed:").await;
     assert!(relayed.contains("Refused: add_task isn't available in a thread"), "{relayed}");
     assert!(relayed.ends_with("approved"), "{relayed}");
+    // The chat's `chat` server lists `add_task`; the thread's leaves it out, and the host refused the call anyway.
+    let listed: Vec<bool> = host
+        .log(&bot, "listed.jsonl")
+        .iter()
+        .filter(|l| l["tool"] == "add_task")
+        .map(|l| l["listed"].as_bool().unwrap())
+        .collect();
+    assert_eq!(listed, [true, false]);
 }
 
 #[tokio::test]
@@ -718,7 +737,7 @@ async fn a_routine_run_is_a_task_and_its_last_message_is_the_routines_message_in
     // What a run may not do in the chat it may not do here, and its progress note is its routine's.
     assert!(result.contains("Progress: {\"ok\":true"), "{result}");
     assert!(result.contains("Refused: request_decision works only in the current turn of your own chat"), "{result}");
-    assert!(result.contains("Refused: send_message isn't available in this turn"), "{result}");
+    assert!(result.contains("Refused: send_message isn't available in a thread"), "{result}");
     assert!(result.contains("Refused: add_task isn't available in a thread"), "{result}");
     let posted = said(&host, &bot, "agent", "Routine done:").await.remove(0);
     assert_eq!(posted["turn"], line["turn"], "in the turn its line took");
@@ -739,7 +758,9 @@ async fn a_routine_run_is_a_task_and_its_last_message_is_the_routines_message_in
     // It starts as a run in the chat did: a new session with only its own prompt, though the agent can fork.
     assert_eq!(host.log(&bot, "forks.jsonl"), [] as [Value; 0], "a run never forks the chat");
     assert_ne!(ran["session"], prompts[0]["session"], "nor works in the chat's session");
-    assert!(!ran["text"].as_str().unwrap().contains("[The chat you come from, so far]"), "{ran}");
+    assert!(ran["text"].as_str().unwrap().contains("running one of your routines"), "a run's instructions: {ran}");
+    let servers = servers_of(&host, &bot, ran);
+    assert!(servers.contains(&"routines".to_owned()) && servers.contains(&"team".to_owned()), "{servers:?}");
     let threads = no_thread_bot_reached(&mut events).await;
     assert!(threads.iter().any(|thread| Some(thread.as_str()) == done["thread"].as_str()), "its trace is its thread's");
 
@@ -853,9 +874,15 @@ async fn another_bots_request_is_a_task_and_its_last_message_is_the_reply() {
     assert!(prompt.contains("Request done:"), "{prompt}");
     // What a request's turn may not do in the chat it may not do here.
     assert!(prompt.contains("Refused: request_decision works only in the current turn of your own chat"), "{prompt}");
-    assert!(prompt.contains("Refused: send_message isn't available in a bot request"), "{prompt}");
+    assert!(prompt.contains("Refused: send_message isn't available in a thread"), "{prompt}");
     assert!(prompt.contains("Refused: follow_up works only in your own chat"), "{prompt}");
     assert!(prompt.contains("Refused: add_task isn't available in a thread"), "{prompt}");
+    let prompts = host.log(&bot, "prompts.jsonl");
+    let answered = prompts.iter().find(|p| p["text"].as_str().unwrap().contains("sent you this request")).unwrap();
+    assert!(
+        answered["text"].as_str().unwrap().contains("another bot asked you"),
+        "a request's instructions: {answered}"
+    );
     let notice = said(&host, &bot, "notice", "Message from Ada").await.remove(0);
     assert_eq!(notice["data"]["status"], "completed");
     assert!(notice["data"]["botMessage"]["reply"].as_str().unwrap().starts_with("Request done:"), "{notice}");
@@ -1264,7 +1291,7 @@ async fn a_threads_sign_in_on_an_agent_that_cant_reopen_a_session_tells_the_new_
     assert_eq!(tries.len(), 2, "{tries:?}");
     assert_ne!(tries[0]["session"], tries[1]["session"], "{tries:?}");
     let text = tries[1]["text"].as_str().unwrap();
-    assert!(!text.contains("[The chat you come from, so far]") && !text.contains("blue theme"), "{text}");
+    assert!(!text.contains("blue theme"), "{text}");
 }
 
 #[tokio::test]
@@ -1288,7 +1315,7 @@ async fn a_thread_moves_past_a_signed_out_agent_asks_in_the_chat_and_its_next_ag
     let log = host.log(&bot, "standin.jsonl");
     let prompt = log.iter().rfind(|r| r["method"] == "session/prompt").unwrap()["params"]["prompt"][0]["text"].clone();
     let prompt = prompt.as_str().unwrap();
-    assert!(!prompt.contains("[The chat you come from, so far]") && !prompt.contains("blue theme"), "{prompt}");
+    assert!(!prompt.contains("blue theme"), "{prompt}");
 }
 
 #[tokio::test]
@@ -1688,8 +1715,9 @@ async fn a_thread_the_user_starts_opens_with_their_message_and_takes_no_turn_in_
     let prompts = thread_prompts(&host, &bot);
     let text = prompts[0]["text"].as_str().unwrap();
     assert!(text.contains("the user opened this thread to work with you"), "{text}");
-    assert!(!text.contains("[The chat you come from, so far]"), "{text}");
     assert!(!host.workspace(&bot).join("forks.jsonl").exists(), "it forks nothing of the chat");
+    let servers = servers_of(&host, &bot, &prompts[0]);
+    assert!(!servers.iter().any(|s| s == "routines" || s == "team"), "the chat's own servers: {servers:?}");
 
     // What it came to is read in the thread: the chat takes no turn for it.
     tokio::time::sleep(Duration::from_millis(400)).await;

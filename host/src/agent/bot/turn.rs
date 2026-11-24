@@ -52,11 +52,10 @@ impl Actor {
             // The instructions reaching the agent now hold memory as it was when they were rendered.
             memory::opened(&self.hub.store, self.cfg.owner(), sid, &snapshot.memory)?;
         }
-        // A thread on a handed-out task holds no memory in its instructions, so no change to it is news.
-        let told_memory = context::Profile::of(&self.hub.store, &self.cfg).as_bot();
-        if told_memory
-            && let Some((notice, revision)) = memory::change_notice(&self.hub.store, &self.cfg.as_owner(), sid)
-        {
+        // A thread on a handed-out task holds neither memory nor who the bot is in its instructions, so no change to
+        // them is news.
+        let as_bot = context::as_bot(&self.cfg, &self.task_source);
+        if as_bot && let Some((notice, revision)) = memory::change_notice(&self.hub.store, &self.cfg.as_owner(), sid) {
             prompt = format!("{notice}\n\n{prompt}");
             self.turn_memory_revision = revision;
         }
@@ -72,7 +71,7 @@ impl Actor {
             snapshot.announced = snapshot.system_identity.clone();
             prompt = format!("<bot-profile>\n{PROFILE_AGAIN}\n\n{}\n</bot-profile>\n\n{prompt}", snapshot.system);
         }
-        if let Some((update, identity)) = context::profile_update(&self.hub.store, &snapshot, &self.cfg) {
+        if as_bot && let Some((update, identity)) = context::profile_update(&self.hub.store, &snapshot, &self.cfg) {
             prompt = format!("{prompt}\n\n{update}");
             self.announce = Some((snapshot, identity));
         }
@@ -89,13 +88,12 @@ impl Actor {
             prompt = format!("{prompt}\n\n[Codync: {}]", crate::routines::BRIEF);
         }
         let known = codync_agent::backends::harness(&self.cfg.backend).is_some();
-        let own_box = own_chat;
-        if let Some(about) = work::reminder(briefed_on_threads, known).filter(|_| own_box) {
+        if let Some(about) = work::reminder(briefed_on_threads, known).filter(|_| own_chat) {
             prompt = format!("{prompt}\n\n[Codync: {about}]");
         }
         // Its box, so it can say what it is doing and place more work without asking. Where `EACH_TURN` goes: a
         // custom command gets the message as written.
-        if own_box
+        if own_chat
             && known
             && let Some(lines) = work::lines(&self.hub, &self.cfg, "Your")
         {

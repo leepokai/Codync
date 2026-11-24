@@ -2100,7 +2100,6 @@
   "A follow-up is the bot's own: x cancels it": "フォローアップはボット自身が設定したものです：x で取り消せます",
   "Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "自分の Boat または InstaBox アカウントでクラウドコンピュータを起動すれば、コンピュータの電源が切れていてもボットが作業を続けます。",
   "Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "エージェントの設定の「ログインプロファイル」で複数のアカウントにサインインしたり API キーを追加したりして、各ボットが使うものを選べます。",
-  "Picking up from the chat…": "チャットの内容を引き継いでいます…",
   "Stop this task?": "この task を停止しますか？",
   "What it already changed stays.": "すでに変更された内容は残ります。",
   "No work": "作業はありません",

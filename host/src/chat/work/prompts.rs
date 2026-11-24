@@ -30,9 +30,8 @@ pub fn reminder(briefed: bool, known: bool) -> Option<&'static str> {
     if briefed { known.then_some(EACH_TURN) } else { Some(BRIEF) }
 }
 
-/// What a thread is told to work on `task`: what it is, the work, what the user said, and how its words reach the
-/// user. `first`: the thread is new; otherwise it goes on in the session it has. What it says a thread can't do is what
-/// `tools::refuse_chat_only` and the other servers' `refuse_in_thread` refuse.
+/// What a thread is told to work on `task`: what it is, the work, what the user said, and that its last message is
+/// its report. `first`: the thread is new; otherwise it goes on in the session it has.
 pub(super) fn task_prompt(task: &Task, first: bool) -> String {
     let lead = if first { "[Task]" } else { "[Task] Next, in this same thread, with what you did before in mind:" };
     let mut said = said(task);

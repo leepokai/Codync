@@ -3,9 +3,9 @@
 //!
 //! What the bot should work on is a **task** in its box ([`tasks`]). A **thread** works tasks, one at a time: a
 //! **thread bot**, a `bots` row of its own (`BotConfig::thread_of`) copied from its bot, with its own actor, agent
-//! process, session and transcript, because everything a running turn touches is keyed by bot id. Its memory and
-//! instructions are its bot's (`BotConfig::as_owner`). It starts by forking its bot's main session where the agent
-//! can (`agent::bot::session`), otherwise from a new session and a brief. [`dispatch`] gives waiting tasks to
+//! process, session and transcript, because everything a running turn touches is keyed by bot id. Its memory is its
+//! bot's (`BotConfig::as_owner`). It starts in a new session of its own with its task's message, never told the chat;
+//! its instructions depend on where the task came from (`chat::context::render`). [`dispatch`] gives waiting tasks to
 //! threads, up to the bot's `maxThreads`; a thread's last message of a turn is its task's result and goes back as a turn
 //! in the bot's chat (`Cmd::TaskReport`). A routine run and another bot's request are tasks too ([`sources`]): their
 //! result goes to the chat as the routine's message, or to the asking bot as its reply. No client lists a thread bot:
@@ -37,7 +37,7 @@ pub use steer::{Steer, cut_in, drop_task, first, retry, stop};
 pub use tasks::put_working_for_test;
 pub use tasks::{Setup, Source, Status, doing, lines, outside, waiting_threads, wire, working_threads};
 pub use thread::{Refused as ThreadRefused, heard, message, picked_up, thread as thread_of, unhear, written};
-pub use tools::{TOOLS, acting_as, call, refuse_chat_only, refuse_in_thread, tools};
+pub use tools::{TOOLS, acting_as, call, chat_only, refuse_chat_only, refuse_in_thread, tools};
 pub use watch::Stuck;
 pub use worktree::{Worktree, enter as enter_worktree, in_repo, is_worktree};
 
@@ -301,8 +301,8 @@ pub fn began(hub: &Hub, cfg: &BotConfig) {
     }
 }
 
-/// `bot`'s own turn ended: the tasks it added may start now (a fork taken mid-turn would carry an unanswered tool
-/// call). A turn the user stopped takes the tasks it added with it.
+/// `bot`'s own turn ended: the tasks it added may start now, since stopping that turn drops them. A turn the user
+/// stopped takes the tasks it added with it.
 pub fn turn_over(hub: &Arc<Hub>, bot: &str, stopped: bool) {
     hub.work.chain.locked().remove(bot);
     let added = hub.work.added.locked().remove(bot).unwrap_or_default();

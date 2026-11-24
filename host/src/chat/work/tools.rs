@@ -42,12 +42,20 @@ pub fn acting_as(hub: &Hub, bot: &str, what: &str) -> Result<String> {
     Ok(cfg.owner().to_owned())
 }
 
-/// Refuses a thread the `chat` server's tools that change the bot or its box (`prompts::task_prompt` tells it so).
-/// What asks the user or shares with them goes to the thread's actor, which posts it in the bot's chat.
+/// The `chat` server's tools a thread neither lists (`mcp::chat_tools`) nor may call: `send_message` (its last message
+/// is its report), `react` (it answers no chat message), and what changes the bot, its skills or its box. What asks
+/// the user or shares with them goes to the thread's actor, which posts it in the bot's chat.
+pub fn chat_only(name: &str) -> bool {
+    use crate::chat::{fallbacks, profile, reactions, skills};
+    ["send_message", reactions::TOOL, skills::TOOL].contains(&name)
+        || TOOLS.contains(&name)
+        || profile::TOOLS.contains(&name)
+        || fallbacks::TOOLS.contains(&name)
+}
+
+/// Refuses a thread a call to a [`chat_only`] tool.
 pub fn refuse_chat_only(hub: &Hub, bot: &str, name: &str) -> Result<()> {
-    use crate::chat::{fallbacks, profile};
-    let chat_only = TOOLS.contains(&name) || profile::TOOLS.contains(&name) || fallbacks::TOOLS.contains(&name);
-    if chat_only { refuse_in_thread(hub, bot, name) } else { Ok(()) }
+    if chat_only(name) { refuse_in_thread(hub, bot, name) } else { Ok(()) }
 }
 
 pub fn tools() -> Vec<Value> {

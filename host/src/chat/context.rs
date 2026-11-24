@@ -11,6 +11,7 @@
 //! compaction. Memory changes in between are told on the next message the same way
 //! (see `memory::change_notice`).
 
+use crate::chat::work::Source;
 use crate::store::{BotConfig, Store};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -197,39 +198,10 @@ pub fn mark_prompted(store: &Store, bot_id: &str, sent: &Snapshot) -> Result<()>
     update_if_current(store, bot_id, sent, |current| std::mem::take(&mut current.unprompted))
 }
 
-/// Which instructions a session gets (`render`): the bot's own, or a thread's.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Profile {
-    /// The bot in its own sessions: its chat, rooms, a routine's run in the chat.
-    Bot,
-    /// A thread on a task the bot handed out: the task alone, written in its brief.
-    Task,
-    /// A thread the user opened with the bot: the bot, away from its chat.
-    User,
-    /// A thread on one of the bot's routines: the bot running it.
-    Routine,
-    /// A thread on another bot's request: the bot answering it.
-    Request,
-}
-
-impl Profile {
-    pub fn of(store: &Store, cfg: &BotConfig) -> Self {
-        use crate::chat::work::Source;
-        if !cfg.is_thread() {
-            return Self::Bot;
-        }
-        match crate::chat::work::source_of(store, cfg) {
-            Source::Bot => Self::Task,
-            Source::User => Self::User,
-            Source::Routine { .. } => Self::Routine,
-            Source::Request { .. } => Self::Request,
-        }
-    }
-
-    /// Whether it is told who the bot is (name, description, memory): all but a thread on a handed-out task.
-    pub fn as_bot(self) -> bool {
-        self != Self::Task
-    }
+/// Whether a session of `cfg` working for `source` is told who the bot is (name, description, memory): all but a
+/// thread on a task the bot handed out, which is told the task alone.
+pub fn as_bot(cfg: &BotConfig, source: &Source) -> bool {
+    !cfg.is_thread() || !source.is_bot()
 }
 
 /// What a thread on a handed-out task is told of itself.
@@ -255,11 +227,12 @@ final reply goes back to that bot as your answer, so write it for that bot.";
 
 const OTHER_COMPUTERS: &str = "Other computers: the user's other computers and their bots are reached through Codync's network. To see, ask or hand work to a bot or Codync on another computer, use list_bots and message_bot (ids like name@computer), not SSH, remote shells or your engine's own agent and session tools, which only see this computer. Use SSH only when the user asks for it or the request is about that computer's files or system rather than its bots.";
 
-/// The instructions of a session of `cfg` (a bot, or one of its threads, `Profile::of`), rendered live.
+/// The instructions of a session of `cfg`, a bot or one of its threads, rendered live.
 pub fn render(store: &Store, cfg: &BotConfig) -> String {
-    match Profile::of(store, cfg) {
-        Profile::Bot => render_bot(store, cfg),
-        profile => render_thread(store, cfg, profile),
+    if cfg.is_thread() {
+        render_thread(store, cfg, &crate::chat::work::source_of(store, cfg))
+    } else {
+        render_bot(store, cfg)
     }
 }
 
@@ -300,7 +273,7 @@ fn environment(cfg: &BotConfig, chat: bool) -> String {
 }
 
 /// What every session ends with: the skills, the compaction keep-list and, told who the bot is, its memory.
-fn closing(store: &Store, cfg: &BotConfig, lines: &mut Vec<String>, memory: bool) -> String {
+fn closing(store: &Store, cfg: &BotConfig, mut lines: Vec<String>, memory: bool) -> String {
     if let Some(skills) = crate::market::skills_brief(store, &cfg.skills) {
         lines.push(String::new());
         lines.push(skills);
@@ -326,7 +299,7 @@ fn render_bot(store: &Store, cfg: &BotConfig) -> String {
     // servers, tool descriptions) explain the tool, so they aren't repeated here.
     lines.push(environment(cfg, true));
     lines.push(String::new());
-    lines.push(format!("Messages: {}", crate::chat::outbox::instructions()));
+    lines.push(format!("Messages: {}", crate::chat::outbox::instructions(false)));
     lines.push(String::new());
     lines.push(
         "Other conversations: your history is shared across them. A group chat turn starts with [Group chat: ...]; a request from another bot or a routine run says so in its first line; in your own chat, each user message starts with [Codync: message <id>], the id send_message and send_file take as reply_to. In group chats, routines and requests from other bots, send_message isn't available: your final reply is what gets delivered (to the room, the run's result or the bot that asked), so write it for its reader; group chats and requests from other bots can't use message_bot either. Replies to your own message_bot requests arrive as a turn of their own in this chat, starting with [Codync: <bot> replied to your message_bot request ...] (or couldn't finish it): carry on with the user's request from there, and your final reply goes to the user. These rules apply to the current turn, not later turns in this session. Only @-mention in group chats, and don't assume a group sees your private chat."
@@ -342,19 +315,20 @@ fn render_bot(store: &Store, cfg: &BotConfig) -> String {
     lines.push(crate::routines::BRIEF.to_owned());
     lines.push(String::new());
     lines.push(crate::chat::work::BRIEF.to_owned());
-    closing(store, cfg, &mut lines, true)
+    closing(store, cfg, lines, true)
 }
 
 /// A thread's instructions: what its task needs, never the chat's own paragraphs (messages, rooms, the event box).
 /// On a handed-out task it is told the task alone; otherwise who the bot is too, as the bot away from its chat.
-fn render_thread(store: &Store, cfg: &BotConfig, profile: Profile) -> String {
-    let mut lines = if profile.as_bot() { identity(cfg) } else { Vec::new() };
+fn render_thread(store: &Store, cfg: &BotConfig, source: &Source) -> String {
+    let as_bot = as_bot(cfg, source);
+    let mut lines = if as_bot { identity(cfg) } else { Vec::new() };
     lines.push(
-        match profile {
-            Profile::Task | Profile::Bot => TASK,
-            Profile::User => USER,
-            Profile::Routine => ROUTINE,
-            Profile::Request => REQUEST,
+        match source {
+            Source::Bot => TASK,
+            Source::User => USER,
+            Source::Routine { .. } => ROUTINE,
+            Source::Request { .. } => REQUEST,
         }
         .to_owned(),
     );
@@ -369,15 +343,15 @@ fn render_thread(store: &Store, cfg: &BotConfig, profile: Profile) -> String {
     lines.push(String::new());
     lines.push(crate::dev_servers::BRIEF.to_owned());
     // The servers a run and a request keep (`Actor::mcp_servers`).
-    if matches!(profile, Profile::Routine | Profile::Request) {
+    if !source.own() {
         lines.push(String::new());
         lines.push(crate::routines::BRIEF.to_owned());
     }
-    if profile == Profile::Routine {
+    if matches!(source, Source::Routine { .. }) {
         lines.push(String::new());
         lines.push(OTHER_COMPUTERS.to_owned());
     }
-    closing(store, cfg, &mut lines, profile.as_bot())
+    closing(store, cfg, lines, as_bot)
 }
 
 /// Whose a thread's folder is.
@@ -405,10 +379,6 @@ fn workspace_origin(cfg: &BotConfig) -> &'static str {
 /// The `<agent_profile_update>` block to append to the next message when the
 /// bot's identity changed since the agent last heard it.
 pub fn profile_update(store: &Store, snapshot: &Snapshot, cfg: &BotConfig) -> Option<(String, Identity)> {
-    // A thread on a handed-out task was never told who the bot is.
-    if !Profile::of(store, cfg).as_bot() {
-        return None;
-    }
     let identity = Identity::of(store, cfg);
     if identity == snapshot.announced {
         return None;
@@ -489,7 +459,7 @@ mod tests {
     #[test]
     fn a_thread_on_a_handed_out_task_is_told_the_task_alone() {
         let store = store();
-        let text = render_thread(&store, &thread_of(&cfg("Fixer", "Fix bugs")), Profile::Task);
+        let text = render_thread(&store, &thread_of(&cfg("Fixer", "Fix bugs")), &Source::Bot);
         assert!(text.starts_with(TASK), "{text}");
         for absent in ["Fixer", "Description:", "add_task", "Other conversations", "Messages:", "Other computers"] {
             assert!(!text.contains(absent), "{absent} in: {text}");
@@ -501,7 +471,7 @@ mod tests {
     #[test]
     fn a_thread_the_user_opened_is_the_bot_away_from_its_chat() {
         let store = store();
-        let text = render_thread(&store, &thread_of(&cfg("Fixer", "Fix bugs")), Profile::User);
+        let text = render_thread(&store, &thread_of(&cfg("Fixer", "Fix bugs")), &Source::User);
         assert!(text.contains("Title: Fixer") && text.contains("Description: Fix bugs"), "{text}");
         assert!(text.contains(USER), "{text}");
         for absent in ["add_task", "Other conversations", "Messages:", crate::routines::BRIEF] {
@@ -513,9 +483,9 @@ mod tests {
     fn a_routines_run_and_a_request_keep_the_routines_they_can_use() {
         let store = store();
         let thread = thread_of(&cfg("Fixer", "Fix bugs"));
-        let run = render_thread(&store, &thread, Profile::Routine);
+        let run = render_thread(&store, &thread, &Source::Routine { id: "r1".into(), run: "run-1".into() });
         assert!(run.contains(crate::routines::BRIEF) && run.contains(OTHER_COMPUTERS), "{run}");
-        let asked = render_thread(&store, &thread, Profile::Request);
+        let asked = render_thread(&store, &thread, &Source::Request { id: None });
         assert!(asked.contains(crate::routines::BRIEF) && !asked.contains(OTHER_COMPUTERS), "{asked}");
         assert!(!run.contains("add_task") && !asked.contains("add_task"));
     }

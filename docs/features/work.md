@@ -237,7 +237,7 @@ With the rest:
 Every thread starts in a session of its own (`session/new`), never a fork of the chat's, and is told nothing of the
 chat: the chat may have talked about many things the task has nothing to do with, so the brief is where what the task
 needs is written (`work::BRIEF` and `add_task`'s `brief` say so). What its instructions hold depends on where its
-task came from (`chat::context::Profile`, `render_thread`):
+task came from (`chat::context::render_thread`, by the task's `Source`):
 
 | Task from | Told who the bot is | Told where it is | Servers besides `chat`, `memory`, connectors, `workflows` |
 | --- | --- | --- | --- |
@@ -250,7 +250,7 @@ Every thread is also told it runs inside Codync, its folder (the bot's, a projec
 dev servers work, the bot's skills and the compaction keep-list. None hears the chat's own paragraphs (Messages,
 Other conversations, `routines::BRIEF` outside a run or request, `work::BRIEF`). A thread's `chat` server lists only
 what a thread may call: `request_decision`, `send_file`, artifacts and dev servers; not `send_message` (its last
-message is its report), `react`, `save_skill`, the box's tools, the profile's or the fallbacks' (`mcp::chat_tools`;
+message is its report), `react`, `save_skill`, the box's tools, the profile's or the fallbacks' (`mcp::chat_tools`, `work::chat_only`;
 a call to one is still refused, and counted as `thread_tool_refused`). Its instructions are kept with its bot's
 sessions (`context::resolve` keys by `BotConfig::owner`), and a profile update is announced only to a thread that was
 told who the bot is.
@@ -718,8 +718,7 @@ and joining it where the agent steers; a message to an ended task reopening it p
 refused there, its second report, and a new session told the work where the agent can't load one; a message
 waiting behind a thread's card without answering it; Stop dropping what waited; a host restart failing it and the
 thread taking a message afterwards; what waited going with a task that gives way; a thread's sign-in asked in the
-chat and its task going on in the same thread once signed in, a thread moving past a signed-out agent and its next
-agent told the chat, a thread's offer to add a fallback in the chat and new fallbacks reaching a running thread, a thread
+chat and its task going on in the same thread once signed in, a thread's offer to add a fallback in the chat and new fallbacks reaching a running thread, a thread
 that starts on a fallback never forking the chat's session, a thread moving past a signed-out agent told its own work and not the chat; the watchdog's turn in the chat for a thread that makes one
 call again and again, once an hour, and its `(pass)` leaving nothing; `recall_task` and `tell_task` refused in a
 thread); `watchdog_e2e` (a hung host aborted with its mark, the next start reporting it, a second stall within 30

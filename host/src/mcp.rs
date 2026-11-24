@@ -75,7 +75,8 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
             ("codync-workflows", crate::workflows::INSTRUCTIONS.to_owned(), crate::workflows::tool_list())
         }
         Server::Chat => {
-            ("codync-chat", crate::chat::outbox::instructions(), chat_tools(crate::store::is_thread_id(&bot)))
+            let thread = crate::store::is_thread_id(&bot);
+            ("codync-chat", crate::chat::outbox::instructions(thread), chat_tools(thread))
         }
         Server::Team => ("codync-team", crate::chat::team::INSTRUCTIONS.to_owned(), crate::chat::team::tools()),
         Server::Manage => ("codync-manage", crate::chat::manage::INSTRUCTIONS.to_owned(), crate::chat::manage::tools()),
@@ -133,12 +134,8 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
     Ok(())
 }
 
-/// What a thread's `chat` server leaves out: its last message is its report (no `send_message`), it answers no
-/// chat message (no reaction), and the bot's box, profile, fallbacks and skills are the chat's to change.
-const NOT_IN_THREAD: [&str; 3] = ["send_message", crate::chat::reactions::TOOL, crate::chat::skills::TOOL];
-
-/// The `chat` server's tools, from each part of the host that answers them; a thread's (`thread`) without what only
-/// the chat may call (`work::refuse_chat_only` still refuses them behind this).
+/// The `chat` server's tools, from each part of the host that answers them; a thread's (`thread`) without
+/// `work::chat_only`'s.
 pub(crate) fn chat_tools(thread: bool) -> Value {
     let mut tools = crate::chat::outbox::tools();
     if let Some(list) = tools.as_array_mut() {
@@ -150,13 +147,7 @@ pub(crate) fn chat_tools(thread: bool) -> Value {
         list.extend(crate::dev_servers::tools());
         list.extend(crate::chat::work::tools());
         if thread {
-            let chat_only = |name: &str| {
-                NOT_IN_THREAD.contains(&name)
-                    || crate::chat::work::TOOLS.contains(&name)
-                    || crate::chat::profile::TOOLS.contains(&name)
-                    || crate::chat::fallbacks::TOOLS.contains(&name)
-            };
-            list.retain(|tool| !chat_only(tool["name"].as_str().unwrap_or_default()));
+            list.retain(|tool| !crate::chat::work::chat_only(tool["name"].as_str().unwrap_or_default()));
         }
     }
     tools
@@ -292,9 +283,12 @@ mod tests {
         for kept in ["request_decision", "send_file", "publish_artifact", "list_artifacts", "start_dev_server"] {
             assert!(thread.iter().any(|n| n == kept), "{kept} missing from {thread:?}");
         }
+        let told = crate::chat::outbox::instructions(true);
         for gone in ["send_message", "react", "save_skill", "add_task", "recall_task", "set_name", "set_fallbacks"] {
             assert!(chat.iter().any(|n| n == gone), "the chat has {gone}");
             assert!(!thread.iter().any(|n| n == gone), "{gone} offered to a thread");
+            assert!(!told.contains(gone), "a thread is told of {gone}: {told}");
         }
+        assert!(!told.contains("(pass)"), "{told}");
     }
 }

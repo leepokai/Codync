@@ -132,19 +132,14 @@ impl Actor {
         // A thread on the bot's own work or the user's gets neither `routines` nor `team`; a routine's run and a
         // request keep both, as that turn had them in the chat (a run saves its progress, sets follow-ups and may ask a
         // bot; an asked bot runs its own routine, and its `message_bot` is refused with why).
-        let away = !self.cfg.is_thread()
-            || matches!(
-                self.task_source,
-                crate::chat::work::Source::Routine { .. } | crate::chat::work::Source::Request { .. }
-            );
-        let (routines, team) = (away, away);
+        let bots_own = !self.cfg.is_thread() || !self.task_source.own();
         let builtin = [
             Some("connectors"),
             Some("chat"),
-            team.then_some("team"),
+            bots_own.then_some("team"),
             self.cfg.manage_team.then_some("manage"),
             Some("memory"),
-            routines.then_some("routines"),
+            bots_own.then_some("routines"),
             Some("workflows"),
             self.cfg.computer.then_some("computer"),
             composio.then_some("composio"),

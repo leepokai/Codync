@@ -11,7 +11,7 @@ import kotlinx.serialization.json.longOrNull
 enum class LinkPage { Bots, Usage, Computers, Extensions, Workflows }
 
 /** The workflow stack item between the roster and a chat. A null id is the list. */
-data class WorkflowRoute(val id: String? = null, val runId: String? = null, val nodeId: String? = null, val stepId: String? = null)
+data class WorkflowRoute(val id: String? = null, val runId: String? = null)
 
 /**
  * The active account as the UI renders it (iOS `AccountStore`): its computers, each with its own
@@ -153,6 +153,8 @@ data class AppState(
     /** The computer is online and its hello offered workflows. */
     internal val offersWorkflows: Boolean
         get() = workflowsSupported && hello?.get("workflows")?.jsonPrimitive?.booleanOrNull == true
+    /** The user can start a thread with a bot here (`startThread`). */
+    internal val startsThreads: Boolean get() = hello?.get("startThread")?.jsonPrimitive?.booleanOrNull == true
     /** The computer's home folder, which a folder on it shows as `~`; empty before its hello. */
     internal val home: String get() = hello?.get("home")?.jsonPrimitive?.contentOrNull.orEmpty()
 

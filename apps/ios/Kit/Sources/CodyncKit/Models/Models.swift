@@ -372,6 +372,8 @@ public struct Hello: Codable, Sendable {
     public var hopReview: Bool?
     /// This host serves workflows. Missing on older hosts, which is the same as false.
     public var workflows: Bool?
+    /// This host starts a thread the user asks for (`startThread`). Missing on older hosts: it doesn't.
+    public var startThread: Bool?
 }
 
 public struct RecentWorkspace: Codable, Sendable, Identifiable {

@@ -274,9 +274,8 @@ The same on iPhone, Android, desktop and terminal unless said; where it settles 
   have (another computer, the cloud assistant, a deleted bot) has no mark. **Try again** isn't offered on a
   request's row. **Cut in** shows only when some live task can give way (the bot's own), and the list it asks with
   holds only those.
-- **4.** The roster header's button (`tray.full`, titled **Work**, with the count of working tasks, no number at
-  none) shows only while a bot has a live or waiting task: a toolbar button on iPhone, a glass button on Android,
-  an icon button in the desktop's roster header. It opens a sheet titled **Work**: the bots in the roster's
+- **4.** On the phones the **Threads** tab (its badge the count of working tasks, none at zero; it replaced the
+  roster header's Work button and sheet), on the desktop the Threads page, lists the bots in the roster's
   on-screen order, each a heading (avatar, name, with the computer's name
   when there are several computers) that opens that bot's Details, over its Threads rows then its numbered Event
   box rows, with the rows' own actions. No `Free` rows, Later, Routines or Recent there. A row that needs you opens
@@ -499,7 +498,7 @@ The rules are one set, written three times: `apps/desktop/src/shared/work.ts` (`
   pushes `WorkThreadView` inside the details sheet; the system bar is hidden (`hidesSystemNavigationBar`, which keeps
   the edge swipe back) and the page draws its own header, as Android's: a `Back to details` icon button, the title
   over the status line, Stop. Android: `WorkThreadView` is pushed inside the sheet by the design module's
-  `NavStack`, with the same header. A row of the Work sheet opens the bot's chat with its
+  `NavStack`, with the same header. A row of the Threads tab opens the bot's chat with its
   details on that thread.
 - **A row that needs you still opens the chat at its card**, not the thread. In the task's thread the card is one
   line (below), which opens the chat at it; on the phones the thread has no card to answer.

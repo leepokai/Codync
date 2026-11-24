@@ -13,90 +13,9 @@ enum WorkflowStepDisplay: String {
     }
 }
 
-/// The source picker for one step: the current token, and each choice's token and label.
-func workflowSourceChoices(graph: WorkflowGraph, step: String, botName: (String) -> String?) -> (selection: String, options: [(id: String, label: String)]) {
-    let kinds = Dictionary(uniqueKeysWithValues: graph.nodes.map { ($0.id, $0.kind) })
-    guard let kind = kinds[step], kind != .trigger, kind != .prompt else { return ("", []) }
-    if let outline = WorkflowLayout.outline(of: graph) {
-        let numbers = graph.stepNumbers()
-        return workflowSourceChoices(outline: outline, kinds: kinds, step: step, triggerLabel: triggerLabel(graph.node(outline.trigger)),
-                                     number: { numbers[$0] }, title: { id in
-            graph.node(id).map { WorkflowCopy.heading($0, botName: botName) } ?? ""
-        })
-    }
-    return fieldSourceChoices(graph: graph, step: step, botName: botName)
-}
-
-/// Choices for a draft that is not a saved graph yet. `*trigger` stands in for the trigger.
-func workflowSourceChoices(outline: WorkflowOutline, kinds: [String: WorkflowNodeKind], step: String, triggerLabel: String,
-                           number: (String) -> Int?, title: (String) -> String, branches: Bool = true) -> (selection: String, options: [(id: String, label: String)]) {
-    guard let kind = kinds[step], kind != .trigger, kind != .prompt else { return ("", []) }
-    let selection = outline.sourceTarget(of: step, kinds: kinds)?.token ?? ""
-    var options: [(id: String, label: String)] = [(WorkflowOutline.SourceTarget.node(outline.trigger).token, triggerLabel)]
-    let pool = kind == .condition ? outline.main : outline.main + outline.yes + outline.no + outline.after
-    for id in pool where id != step {
-        guard let item = kinds[id], item != .output, item != .prompt, item != .trigger, let place = number(id) else { continue }
-        options.append((WorkflowOutline.SourceTarget.node(id).token, "\(place) · \(title(id))"))
-    }
-    if kind != .condition, outline.condition != nil, let condition = outline.condition, let place = number(condition) {
-        if branches {
-            options.append((WorkflowOutline.SourceTarget.yes.token, "\(place) · \(L10n.tr("Yes"))"))
-            options.append((WorkflowOutline.SourceTarget.no.token, "\(place) · \(L10n.tr("No"))"))
-        }
-        options.append((WorkflowOutline.SourceTarget.both.token, "Both branches"))
-    }
-    return (selection, options)
-}
-
-private func fieldSourceChoices(graph: WorkflowGraph, step: String, botName: (String) -> String?) -> (selection: String, options: [(id: String, label: String)]) {
-    let numbers = graph.stepNumbers()
-    let trigger = graph.nodes.first { $0.kind == .trigger }
-    var options: [(id: String, label: String)] = []
-    if let trigger {
-        options.append((trigger.id, triggerLabel(trigger)))
-    }
-    for node in graph.nodes where node.id != step && node.kind != .trigger && node.kind != .output && node.kind != .prompt && node.kind != .condition {
-        guard let place = numbers[node.id] else { continue }
-        options.append((node.id, "\(place) · \(WorkflowCopy.heading(node, botName: botName))"))
-    }
-    let parents = graph.parents(of: step).filter { graph.node($0)?.kind != .prompt }
-    let selection: String
-    if parents.count >= 2 {
-        selection = WorkflowOutline.SourceTarget.both.token
-    } else if let parent = parents.first, parent == graph.nodes.first(where: { $0.kind == .condition })?.id {
-        let branch = graph.edges.first { $0.to == step && $0.from == parent }?.branch
-        selection = branch == "no" ? WorkflowOutline.SourceTarget.no.token : WorkflowOutline.SourceTarget.yes.token
-    } else {
-        selection = parents.first ?? ""
-    }
-    if let condition = graph.nodes.first(where: { $0.kind == .condition }), let place = numbers[condition.id] {
-        func offer(_ branch: String, _ token: String, _ label: String) {
-            let owner = graph.edges.first { $0.from == condition.id && $0.branch == branch }?.to
-            if owner == nil || owner == step || selection == token {
-                options.append((token, label))
-            }
-        }
-        offer("yes", WorkflowOutline.SourceTarget.yes.token, "\(place) · \(L10n.tr("Yes"))")
-        offer("no", WorkflowOutline.SourceTarget.no.token, "\(place) · \(L10n.tr("No"))")
-        if WorkflowOutline.rewired(graph, step: step, to: .both) != nil || selection == WorkflowOutline.SourceTarget.both.token {
-            options.append((WorkflowOutline.SourceTarget.both.token, "Both branches"))
-        }
-    }
-    return (selection, options)
-}
-
-private func triggerLabel(_ node: WorkflowNode?) -> String {
-    switch node?.string("trigger") {
-    case "schedule": "Schedule"
-    case "webhook": "Webhook"
-    default: "Manual"
-    }
-}
-
-/// `From step {number}` and `From {name}`, side by side when they fit.
+/// `From step {number}` for each step that feeds this one, side by side when they fit.
 struct WorkflowSourceLine: View {
-    var numbers: [Int] = []
-    var names: [String] = []
+    var numbers: [Int]
 
     var body: some View {
         let labels = HStack(spacing: 12) { labelTexts }
@@ -108,9 +27,6 @@ struct WorkflowSourceLine: View {
     }
 
     @ViewBuilder private var labelTexts: some View {
-        ForEach(Array(names.enumerated()), id: \.offset) { _, name in
-            source(L10n.tr("From {name}").replacingOccurrences(of: "{name}", with: L10n.tr(name)))
-        }
         ForEach(numbers, id: \.self) { number in
             source(L10n.tr("From step {number}").replacingOccurrences(of: "{number}", with: "\(number)"))
         }

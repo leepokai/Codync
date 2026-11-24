@@ -152,14 +152,19 @@ impl Actor {
     /// a catch-up in its own; a retried turn gets what the agents before did. Not for hidden turns.
     pub(super) fn carry_in(&mut self) {
         let mut carried = Vec::new();
-        let mut user_switch = None;
-        if self.slot().is_none()
-            && let Some((agent, session)) = self.relay.recap.take().or_else(|| self.owed_recap())
-        {
-            carried.extend(self.chat_for_thread());
-            carried.extend(self.recap(&agent, session.as_deref()));
-            user_switch = self.owed_line();
+        let mut owed = None;
+        if self.slot().is_none() {
+            // A host restart drops `relay.recap`; what the user's switch or move owes is kept.
+            let kept = self.owed();
+            let recap = self.relay.recap.take().or_else(|| kept.as_ref().map(|o| (o.from.clone(), o.session.clone())));
+            if let Some((agent, session)) = recap {
+                let moved = kept.as_ref().is_some_and(|o| o.moved(&fallback::login::of(&self.cfg)));
+                carried.extend(self.chat_for_thread());
+                carried.extend(self.recap(&agent, session.as_deref(), moved));
+                owed = kept;
+            }
         }
+        let user_switch = owed.as_ref().and_then(|o| o.line.clone());
         carried.extend(carry::takeover(&self.relay.failed));
         let text = (!carried.is_empty()).then(|| carried.join("\n\n"));
         let excerpt = text.as_deref().map(|t| carry::excerpt(t, LINE_CARRIED));
@@ -171,7 +176,8 @@ impl Actor {
                 self.hub.set_entry(id, &line.data);
             }
         }
-        self.relay.handing_off = user_switch.is_some();
+        // What was kept for this message is let go once the prompt went (`handed_off`).
+        self.relay.handing_off = owed.is_some();
         self.relay.carried = text;
     }
 
@@ -264,8 +270,9 @@ impl Actor {
 
     /// What the agent the main session just moved to should hear first: a catch-up when it resumed its own
     /// session, a recap of the conversation when it started a new one. Only the user's messages and the bot's
-    /// replies count, never from before the user last started a new session.
-    fn recap(&self, from: &str, from_session: Option<&str>) -> Option<String> {
+    /// replies count, never from before the user last started a new session. `moved`: the same agent, moved by the
+    /// user to another folder.
+    fn recap(&self, from: &str, from_session: Option<&str>, moved: bool) -> Option<String> {
         // A session the agent never left is new, also one an agent's `/command` opened before this message.
         let left = self.left().filter(|_| !self.session_fresh);
         let (kind, room, text) = if let Some(left) = left {
@@ -273,7 +280,8 @@ impl Actor {
             (Carried::CatchUp, None, self.catch_up_text(left)?)
         } else {
             let room = self.agent_window().map(carry::room);
-            (Carried::Recap, room, self.recap_text(from, from_session, room)?)
+            let kind = if moved { Carried::Move } else { Carried::Recap };
+            (kind, room, self.recap_text(from, from_session, room, moved)?)
         };
         let on_profile = Login::of(&self.hub.store, &self.cfg).profile.is_some();
         crate::analytics::handoff_carried(&self.hub, &self.cfg.backend, on_profile, kind, text.len(), room.is_some());
@@ -307,8 +315,8 @@ impl Actor {
     }
 
     /// For an agent in a new session: the conversation so far with agent `from` (in its session `from_session`),
-    /// within `room` bytes.
-    fn recap_text(&self, from: &str, from_session: Option<&str>, room: Option<usize>) -> Option<String> {
+    /// within `room` bytes; `moved`: told as the same agent in another folder.
+    fn recap_text(&self, from: &str, from_session: Option<&str>, room: Option<usize>, moved: bool) -> Option<String> {
         let bot = &self.base.id;
         let fresh = self.fresh();
         let entries = self.main_messages(fresh)?;
@@ -334,6 +342,7 @@ impl Actor {
             bookmark: entries.last().map(|e| e.id.as_str()),
             ledger: ledger.as_deref(),
             room,
+            moved,
         };
         Some(recap.text())
     }

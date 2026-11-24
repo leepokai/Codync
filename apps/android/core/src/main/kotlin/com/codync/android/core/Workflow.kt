@@ -47,27 +47,13 @@ object NodeKindSerializer : KSerializer<NodeKind> {
     override fun serialize(encoder: Encoder, value: NodeKind) { encoder.encodeString(value.wire) }
 }
 
-/** How the phone may change a graph. Comes from the host detail; an unknown kind forces [ReadOnly]. */
-enum class EditMode { Outline, Fields, Script, ReadOnly }
-
-/** What a node accepts and emits. Annotations have neither. The only port is `text`. */
-fun ports(kind: NodeKind): Pair<List<String>, List<String>> = when (kind) {
-    NodeKind.Trigger, NodeKind.Prompt -> emptyList<String>() to listOf("text")
-    NodeKind.Agent, NodeKind.Condition, NodeKind.Approval -> listOf("text") to listOf("text")
-    NodeKind.Output -> listOf("text") to emptyList()
-    NodeKind.Text, NodeKind.Note, NodeKind.Shape, NodeKind.Unknown -> emptyList<String>() to emptyList()
-}
-
 @Serializable data class Point(val x: Double = 0.0, val y: Double = 0.0)
-@Serializable data class Size(val width: Double = 0.0, val height: Double = 0.0)
 
 @Serializable
 data class WorkflowNode(
     val id: String,
     @Serializable(with = NodeKindSerializer::class) val kind: NodeKind,
     val at: Point = Point(),
-    val size: Size? = null,
-    val locked: Boolean = false,
     val fields: JsonObject = JsonObject(emptyMap()),
     val schedule: JsonObject? = null,
 )
@@ -82,19 +68,9 @@ data class WorkflowEdge(
 )
 
 @Serializable
-data class WorkflowStroke(
-    val id: String,
-    val brush: String = "pen",
-    val color: String = "",
-    val width: Double = 0.0,
-    val points: List<Point> = emptyList(),
-)
-
-@Serializable
 data class Graph(
     val nodes: List<WorkflowNode> = emptyList(),
     val edges: List<WorkflowEdge> = emptyList(),
-    val strokes: List<WorkflowStroke> = emptyList(),
 ) {
     /** Steps that feed this one, in edge order, each once. */
     fun parentsOf(id: String): List<String> {
@@ -111,47 +87,25 @@ data class WorkflowSummary(
     val id: String,
     val title: String = "",
     val revision: Long = 0,
-    val enabled: Boolean = true,
     val updatedAt: Long = 0,
     val createdAt: Long = 0,
     val running: String? = null,
     val lastRun: WorkflowLastRun? = null,
 )
-
-@Serializable
-data class WorkflowWebhook(val nodeId: String = "", val url: String? = null, val localUrl: String = "", val secret: String? = null)
 
 @Serializable
 data class WorkflowDetail(
     val id: String,
     val title: String = "",
     val revision: Long = 0,
-    val enabled: Boolean = true,
     val updatedAt: Long = 0,
     val createdAt: Long = 0,
     val running: String? = null,
     val lastRun: WorkflowLastRun? = null,
     val graph: Graph = Graph(),
-    val editMode: String = "fields",
-    val webhooks: List<WorkflowWebhook> = emptyList(),
-) {
-    fun summary(): WorkflowSummary = WorkflowSummary(id, title, revision, enabled, updatedAt, createdAt, running, lastRun)
-}
+)
 
 @Serializable data class WorkflowList(val workflows: List<WorkflowSummary> = emptyList())
-
-@Serializable
-data class WorkflowVersion(val id: String, val revision: Long = 0, val kind: String = "auto", val createdAt: Long = 0)
-
-@Serializable data class WorkflowVersionList(val versions: List<WorkflowVersion> = emptyList())
-
-@Serializable
-data class WorkflowSaveResult(
-    val ok: Boolean = false,
-    val conflict: Boolean = false,
-    val revision: Long = 0,
-    val workflow: WorkflowDetail? = null,
-)
 
 @Serializable
 data class WorkflowRunSummary(
@@ -243,29 +197,7 @@ fun runStatusLabel(status: String): String = when (status) {
     else -> stepStatusLabel(status)
 }
 
-/**
- * The host's edit mode, except a kind or port this app cannot round-trip: that detail is read-only
- * so a save cannot drop it.
- */
-fun WorkflowDetail.resolvedMode(): EditMode {
-    val readable = graph.nodes.none { it.kind == NodeKind.Unknown } &&
-        graph.edges.all { it.type == "text" && (it.branch == null || it.branch == "yes" || it.branch == "no") }
-    if (!readable) return EditMode.ReadOnly
-    return when (editMode) {
-        "outline" -> EditMode.Outline
-        "script" -> EditMode.Script
-        "readOnly" -> EditMode.ReadOnly
-        else -> EditMode.Fields
-    }
-}
-
 fun JsonObject.field(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
-
-fun JsonObject.withField(key: String, value: String?): JsonObject {
-    val next = toMutableMap()
-    if (value == null) next.remove(key) else next[key] = JsonPrimitive(value)
-    return JsonObject(next)
-}
 
 private fun String?.firstLine(): String? = this?.trim()?.lineSequence()?.firstOrNull { it.isNotBlank() }
 

@@ -29,6 +29,9 @@ const ENTRIES: { id: AppPage; title: string; icon: string }[] = [
   { id: 'usage', title: 'Usage', icon: 'gauge.with.dots.needle.33percent' },
 ]
 
+/** A page's rail icon, also shown beside its list's title. */
+export const pageIcon = (page: AppPage) => ENTRIES.find((entry) => entry.id === page)?.icon ?? 'gearshape'
+
 /**
  * The window's pages down its leading edge, icons only: Bots, Threads, Workflows (`workflows`: while a computer
  * offers them), Computers, Network, Extensions and Usage,

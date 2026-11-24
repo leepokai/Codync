@@ -671,6 +671,46 @@ test("the Threads page groups every bot's work as chosen, shows a thread beside 
   }
 })
 
+test('a new thread starts with a picture: it opens with the file, read from the thread', async () => {
+  const { browser, page } = await attach()
+  const name = `Thread files e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name)
+    await openPage(page, 'Threads')
+    await page.locator('.sidebar-header').getByRole('button', { name: 'New thread', exact: true }).click()
+    const start = page.locator('.new-thread')
+    const chip = start.locator('.file-chips').getByRole('button', { name: 'Remove shot.png' })
+    // With No bot (where it starts) the box's + is there, as in a chat; a dropped picture waits in it as a chip.
+    await expect(start.getByRole('button', { name: 'Add files', exact: true })).toBeVisible()
+    await start.locator('.composer').evaluate((box, pixel) => {
+      const data = new DataTransfer()
+      data.items.add(new File([Uint8Array.from(atob(pixel), (c) => c.charCodeAt(0))], 'shot.png', { type: 'image/png' }))
+      box.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }))
+    }, PIXEL)
+    await expect(chip).toBeVisible()
+    // Picking a bot after it keeps the picture.
+    await start.locator('.thread-option[title="Choose a bot"]').click()
+    await page.getByRole('menuitemradio', { name, exact: true }).click()
+    await expect(start).toContainText(`New thread with ${name}`)
+    await expect(chip).toBeVisible()
+    await start.getByRole('textbox').fill('Look at the picture')
+    await start.getByRole('textbox').press('Enter')
+    // Sent, the thread opens with the message and its picture.
+    const thread = page.locator('.thread-chat')
+    await expect(thread).toContainText('Look at the picture')
+    await expect(thread.locator('.work-thread-mine .attachment-image-button img')).toBeVisible()
+    // Sent, the picture is gone from the next new thread's box.
+    await page.locator('.sidebar-header').getByRole('button', { name: 'New thread', exact: true }).click()
+    await expect(start.getByRole('button', { name: 'Add files', exact: true })).toBeVisible()
+    await expect(chip).toHaveCount(0)
+  } finally {
+    await openPage(page, 'Bots').catch(() => {})
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
 test("a thread's menu, from its … on hover or a right-click, offers what applies to it and does it", async () => {
   const { browser, page } = await attach()
   const name = `Work menu e2e ${Date.now()}`

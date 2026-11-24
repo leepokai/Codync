@@ -188,7 +188,7 @@ const plainStores = (roster: RosterItem[]) =>
  * Beside the list: the thread picked there, in the chat's form (`ThreadChat`); one that still waits for a place says
  * so. With none picked,
  * or one whose task left its bot's box, the page a new thread starts from (`NewThread`, with the bot `starting`
- * names, else the lead bot), or the page's mark where no bot can start one.
+ * names, else no bot where the computer allows it, else the lead bot), or the page's mark where no bot can start one.
  */
 export function ThreadDetail({ roster, picked, pick, starting, start, openChat }: {
   roster: RosterItem[]
@@ -219,15 +219,13 @@ export function ThreadDetail({ roster, picked, pick, starting, start, openChat }
     )
   }
   const bots = threadBots(roster)
-  // A ref without a bot (`botId` '') is a thread without one on that computer, as is the box's own ref.
+  // A thread starts with the bot `starting` names; otherwise (the header's +, or `botId` '' or the box of threads
+  // without a bot) with none, on its computer where it can, else the first computer that can.
   const plainOn = plainStores(roster)
-  const plain = starting && (starting.botId === '' || roster.some((r) => r.bot.plain && sameRef(r.ref, starting)))
-    ? plainOn.find((r) => r.ref.computerId === starting.computerId)
-    : undefined
-  const first: ThreadWith | undefined = plain
-    ? { ref: { computerId: plain.ref.computerId, botId: '' }, store: plain.store, bot: null }
-    : bots.find((r) => sameRef(r.ref, starting)) ?? bots.find((r) => r.bot.lead) ?? bots[0]
-      ?? (plainOn[0] ? { ref: { computerId: plainOn[0].ref.computerId, botId: '' }, store: plainOn[0].store, bot: null } : undefined)
+  const chosen = bots.find((r) => sameRef(r.ref, starting))
+  const plain = chosen ? undefined : plainOn.find((r) => r.ref.computerId === starting?.computerId) ?? plainOn[0]
+  const first: ThreadWith | undefined = chosen
+    ?? (plain ? { ref: { computerId: plain.ref.computerId, botId: '' }, store: plain.store, bot: null } : bots.find((r) => r.bot.lead) ?? bots[0])
   if (!first) {
     return (
       <div className="empty-detail">
@@ -241,6 +239,7 @@ export function ThreadDetail({ roster, picked, pick, starting, start, openChat }
       <ThreadStart
         key={refKey(first.ref)}
         bots={bots}
+        computers={plainOn}
         of={first}
         choose={(ref, none) => start(none ? { computerId: ref.computerId, botId: '' } : ref)}
         started={(ref, taskId) => pick({ ref, taskId })}

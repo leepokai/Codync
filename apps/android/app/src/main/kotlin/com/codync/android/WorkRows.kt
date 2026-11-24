@@ -92,16 +92,7 @@ internal fun cardLine(card: Entry?, tr: (String) -> String): String? = card?.dat
     // A change reaches the computer one at a time, and only while it's there.
     val enabled = state.actualConnection is LinkState.Ready && workKey(bot.id) !in state.busy
     val chat = state.entries.filter { it.botId == bot.id }
-    /** The task Stop or Cut in asks about. */
-    var stopping by remember(bot.id) { mutableStateOf<WorkTask?>(null) }
-    var cuttingIn by remember(bot.id) { mutableStateOf<WorkTask?>(null) }
-    fun run(action: WorkAction, task: WorkTask) = when (action) {
-        WorkAction.Stop -> stopping = task
-        WorkAction.CutIn -> cuttingIn = task
-        WorkAction.First -> store.workFirst(bot.id, task.id)
-        WorkAction.Drop -> store.dropWork(bot.id, task.id)
-        WorkAction.Retry -> store.retryWork(bot.id, task.id)
-    }
+    var question by remember(bot.id) { mutableStateOf<WorkQuestion?>(null) }
     content { tasks, numbered ->
         for ((index, task) in tasks.withIndex()) row {
             val card = if (task.status == WorkStatus.NeedsYou) pendingCard(chat, task) else null
@@ -110,12 +101,32 @@ internal fun cardLine(card: Entry?, tr: (String) -> String): String? = card?.dat
                 else -> task.thread?.let { { openThread(task) } }
             }
             WorkRow(task, cardLine(card, translator()) ?: taskLine(task, translator()), workActions(task, bot.work, bot.maxThreads), enabled, open, state.home,
-                number = (index + 1).takeIf { numbered }, source = { SourceMark(task, state.bots) }) { run(it, task) }
+                number = (index + 1).takeIf { numbered }, source = { SourceMark(task, state.bots) }) { store.runWork(it, task, bot) { question = it } }
         }
     }
-    val target = lastOf(stopping)
-    StopWorkDialog(stopping != null, { stopping = null }) { target?.let { store.stopWork(bot.id, it.id) } }
-    CutInDialog(cuttingIn, bot.work.filter(::givesWay), { cuttingIn = null }) { task, insteadOf -> store.workCutIn(bot.id, task.id, insteadOf.id) }
+    WorkQuestionDialogs(question) { question = null }
+}
+
+/** What Stop or Cut in asks about before it acts (iOS `WorkQuestion`): [task] of [bot]'s, on [store]'s computer. */
+internal class WorkQuestion(val cutIn: Boolean, val task: WorkTask, val bot: Bot, val store: AppStore)
+
+/** Does [action] on [task] of [bot]'s; Stop and Cut in ask first ([ask], answered by [WorkQuestionDialogs]). */
+internal fun AppStore.runWork(action: WorkAction, task: WorkTask, bot: Bot, ask: (WorkQuestion) -> Unit) = when (action) {
+    WorkAction.Stop -> ask(WorkQuestion(cutIn = false, task, bot, this))
+    WorkAction.CutIn -> ask(WorkQuestion(cutIn = true, task, bot, this))
+    WorkAction.First -> workFirst(bot.id, task.id)
+    WorkAction.Drop -> dropWork(bot.id, task.id)
+    WorkAction.Retry -> retryWork(bot.id, task.id)
+}
+
+/** Stop's and Cut in's dialogs for [question]; [dismiss] clears it. */
+@Composable internal fun WorkQuestionDialogs(question: WorkQuestion?, dismiss: () -> Unit) {
+    // Kept while its dialog fades out.
+    val asked = lastOf(question)
+    StopWorkDialog(question?.cutIn == false, dismiss) { asked?.let { it.store.stopWork(it.bot.id, it.task.id) } }
+    CutInDialog(question?.takeIf { it.cutIn }?.task, asked?.bot?.work.orEmpty().filter(::givesWay), dismiss) { task, insteadOf ->
+        asked?.let { it.store.workCutIn(it.bot.id, task.id, insteadOf.id) }
+    }
 }
 
 /**

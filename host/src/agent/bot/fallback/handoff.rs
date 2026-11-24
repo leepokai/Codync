@@ -1,7 +1,8 @@
 //! A switch the user made to another login (another agent, or another login profile of it: `Cmd::Reconfigure`). The
 //! main session is left as on a move down the chain, so the next message carries a recap of the chat; until then a
 //! line in the chat says a handoff is pending (`agentSwitch.manual`, `state`), and once it goes, it unfolds to what
-//! was carried. What is owed is kept (`kv` `fallback.handoff.<bot>`), so a host restart in between still carries it.
+//! was carried. A move to another folder owes the same recap, without a line. What is owed is kept (`kv`
+//! `fallback.handoff.<bot>`), so a host restart in between still carries it.
 
 use super::super::Actor;
 use crate::agent::fallback;
@@ -13,12 +14,21 @@ fn key(bot: &str) -> String {
     format!("fallback.handoff.{bot}")
 }
 
-/// The handoff the next main-chat message carries: its line, and `relay.recap` as it was owed.
+/// The handoff the next main-chat message carries: its line (none for a move to another folder), `relay.recap` as it
+/// was owed, and the login it left.
 #[derive(Serialize, Deserialize)]
-struct Owed {
-    line: String,
-    from: String,
-    session: Option<String>,
+pub(super) struct Owed {
+    pub(super) line: Option<String>,
+    pub(super) from: String,
+    pub(super) session: Option<String>,
+    login: Option<String>,
+}
+
+impl Owed {
+    /// A move to another folder, told to the same login it left (`fallback::login::of`), not one down the chain.
+    pub(super) fn moved(&self, login: &str) -> bool {
+        self.line.is_none() && self.login.as_deref() == Some(login)
+    }
 }
 
 /// The line's state (`agentSwitch.state`).
@@ -52,7 +62,7 @@ fn set_state(line: &mut Value, state: State) {
 }
 
 impl Actor {
-    fn owed(&self) -> Option<Owed> {
+    pub(super) fn owed(&self) -> Option<Owed> {
         self.hub.store.kv_get(&key(&self.base.id)).and_then(|v| serde_json::from_str(&v).ok())
     }
 
@@ -63,8 +73,9 @@ impl Actor {
             return;
         }
         let to_name = self.called(to);
-        if let Some(owed) = self.owed()
-            && let Some(mut line) = self.hub.store.entry(&owed.line)
+        let owed = self.owed();
+        if let Some(id) = owed.as_ref().and_then(|o| o.line.clone())
+            && let Some(mut line) = self.hub.store.entry(&id)
         {
             // Back where it came from: the line names the login it just left instead.
             if line.data["agentSwitch"]["fromName"] == to_name.as_str() {
@@ -74,11 +85,15 @@ impl Actor {
             line.data["agentSwitch"]["to"] = to.backend.clone().into();
             line.data["agentSwitch"]["toName"] = to_name.into();
             set_state(&mut line.data, State::Pending);
-            self.hub.set_entry(&owed.line, &line.data);
+            self.hub.set_entry(&id, &line.data);
             return;
         }
-        if self.session_id.is_none() {
+        if self.session_id.is_none() && owed.is_none() {
             return;
+        }
+        // A move to another folder still owed: the recap is of the session that move left.
+        if self.relay.recap.is_none() {
+            self.relay.recap = owed.map(|o| (o.from, o.session));
         }
         self.owe_recap();
         let Some((from, session)) = self.relay.recap.clone() else { return };
@@ -92,36 +107,45 @@ impl Actor {
         set_state(&mut data, State::Pending);
         // In the bot's own chat, whichever lane a running turn is in: the recap is of that chat.
         let Some(line) = self.main_line(&data) else { return };
-        let saved = serde_json::to_string(&Owed { line, from, session }).map_err(anyhow::Error::from);
+        self.keep(&Owed { line: Some(line), from, session, login: None });
+        crate::analytics::agent_switched_by_user(&self.hub, &to.backend, to.login_profile.is_some());
+    }
+
+    /// `Cmd::Reconfigure` to another folder: the agent starts again there in a new session (`restart_agent`), so the
+    /// next message carries a recap of the chat, as after a switch of login. No line: the chat shows the folder in
+    /// the bot's settings, not as a step of its conversation. A handoff already owed carries it as it is.
+    pub(in crate::agent::bot) fn moved_folder(&mut self) {
+        if self.owed().is_some() {
+            return;
+        }
+        self.owe_recap();
+        let Some((from, session)) = self.relay.recap.clone() else { return };
+        let login = Some(fallback::login::of(&self.cfg));
+        self.keep(&Owed { line: None, from, session, login });
+    }
+
+    fn keep(&self, owed: &Owed) {
+        let saved = serde_json::to_string(owed).map_err(anyhow::Error::from);
         super::park::logged(
             &self.base.id,
             "keep the owed handoff",
             saved.and_then(|v| self.hub.store.kv_set(&key(&self.base.id), &v)),
         );
-        crate::analytics::agent_switched_by_user(&self.hub, &to.backend, to.login_profile.is_some());
-    }
-
-    /// The recap a host restart dropped from `relay.recap`: the agent and session a user's switch left.
-    pub(super) fn owed_recap(&self) -> Option<(String, Option<String>)> {
-        self.owed().map(|o| (o.from, o.session))
-    }
-
-    /// The line of the user's switch the next message carries in.
-    pub(super) fn owed_line(&self) -> Option<String> {
-        self.owed().map(|o| o.line)
     }
 
     /// The user's switch stops being pending: handed off with what `carry_in` put on its line once the prompt went
     /// (`told`), or switched when that was nothing, or the user started a new session instead (`told`: false).
     pub(in crate::agent::bot) fn handed_off(&self, told: bool) {
         let Some(owed) = self.owed() else { return };
-        if let Some(mut line) = self.hub.store.entry(&owed.line) {
+        if let Some(id) = &owed.line
+            && let Some(mut line) = self.hub.store.entry(id)
+        {
             if !told {
                 line.data["agentSwitch"]["carried"] = Value::Null;
             }
             let carried = line.data["agentSwitch"]["carried"].is_string();
             set_state(&mut line.data, if carried { State::HandedOff } else { State::Switched });
-            self.hub.set_entry(&owed.line, &line.data);
+            self.hub.set_entry(id, &line.data);
         }
         super::park::logged(&self.base.id, "forget the owed handoff", self.hub.store.kv_delete(&key(&self.base.id)));
     }

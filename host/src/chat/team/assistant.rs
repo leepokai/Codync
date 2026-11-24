@@ -261,7 +261,7 @@ async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
     let exchange =
         Exchange { request: &request, source, target: &target.id, text: message, peer_name: Some(name), hops: None };
     lifetime.entries.push(exchange.notice(hub, &target.id, &format!("Message from {name}: {message}"), true)?);
-    let _ = hub.assistant.add(Reply::queued(&asker.id, &request, &target.name, message));
+    remote::keep_reply(hub, Reply::queued(&asker.id, &request, &target.name, message));
     lifetime.deliver(&target.id, Access::Allow, request_prompt(&asker.who, name, Access::Allow, message))?;
     Ok(json!({
         "requestId": request, "botId": target.id, "name": target.name, "status": RequestStatus::Queued,

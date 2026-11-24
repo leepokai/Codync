@@ -233,12 +233,11 @@ pub(super) fn ask_for_replies(
     hub.network.send_as(from)?;
     let letter = Letter::new(from, to.address.clone(), message);
     let (id, peer) = (letter.id.clone(), peer_name(hub, &to.network, &to.address));
-    // Kept before the letter goes, so an outcome as quick as a refusal finds them.
-    let reply = super::assistant::Reply::queued(asker, &id, &peer, message);
-    for forgotten in hub.assistant.add(if offers_bot(hub, to) { reply } else { reply.unlimited() }) {
-        hub.waiting.take(&forgotten);
-    }
+    // Kept before the letter goes, so an outcome as quick as a refusal finds them: the route first,
+    // so the reply record that may push out older ones (and their routes) never outlives its own.
     awaits_in_replies(hub, &id, &peer, message);
+    let reply = super::assistant::Reply::queued(asker, &id, &peer, message);
+    keep_reply(hub, if offers_bot(hub, to) { reply } else { reply.unlimited() });
     let (hub, request) = (hub.clone(), id.clone());
     tokio::spawn(async move {
         match node.send(letter).await {
@@ -260,6 +259,13 @@ fn offers_bot(hub: &Hub, to: &Target) -> bool {
     let peer = slot.node.directory().into_iter().find(|p| p.name == to.address.computer);
     let agent = peer.and_then(|p| p.agents.into_iter().find(|a| a.id == to.address.agent));
     agent.is_none_or(|a| a.kind == codync_network::AgentKind::Codync)
+}
+
+/// Keeps `reply` in its asker's replies, ending the routes of the running requests it pushes out.
+pub(super) fn keep_reply(hub: &Hub, reply: super::assistant::Reply) {
+    for forgotten in hub.assistant.add(reply) {
+        hub.waiting.take(&forgotten);
+    }
 }
 
 /// The answer to letter `id` goes to its asker's replies.

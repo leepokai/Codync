@@ -104,21 +104,23 @@ import kotlin.math.roundToInt
 }
 
 /** One tab of the system tab bar; [badge] is a count at its icon's corner (`.badge`), none at zero. */
-class TabItem<T>(val value: T, val title: String, val systemImage: String, val iconSize: Dp = 28.dp, val badge: Int = 0)
+class TabItem<T>(val value: T, val title: String, val systemImage: String, val badge: Int = 0)
 
 /** The iOS 26 tab bar: a floating glass capsule whose selection pill slides between tabs. */
 @Composable fun <T> GlassTabBar(selection: T, tabs: List<TabItem<T>>, select: (T) -> Unit, modifier: Modifier = Modifier) {
     val index = tabs.indexOfFirst { it.value == selection }.coerceAtLeast(0)
-    val pill by animateDpAsState(TAB_WIDTH * index, Motion.layout(), label = "Tab selection")
-    Box(modifier.glass(Capsule()).padding(4.dp)) {
-        Box(Modifier.offset(x = pill).size(TAB_WIDTH, 54.dp).clip(Capsule()).background(Palette.text.copy(alpha = 0.07f)))
+    BoxWithConstraints(modifier.glass(Capsule()).padding(4.dp)) {
+        // A narrow window shares its width among the tabs.
+        val width = minOf(TAB_WIDTH, maxWidth / tabs.size)
+        val pill by animateDpAsState(width * index, Motion.layout(), label = "Tab selection")
+        Box(Modifier.offset(x = pill).size(width, 54.dp).clip(Capsule()).background(Palette.text.copy(alpha = 0.07f)))
         Row {
             for (tab in tabs) {
                 val on = tab.value == selection
-                Column(Modifier.size(TAB_WIDTH, 54.dp).clip(Capsule()).selectable(on, role = Role.Tab) { select(tab.value) },
+                Column(Modifier.size(width, 54.dp).clip(Capsule()).selectable(on, role = Role.Tab) { select(tab.value) },
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                     Box {
-                        Symbol(tab.systemImage, size = tab.iconSize, height = 28.dp, tint = Palette.text)
+                        Symbol(tab.systemImage, size = 28.dp, tint = Palette.text)
                         if (tab.badge > 0) Box(Modifier.align(Alignment.TopEnd).offset(x = 10.dp, y = (-2).dp).height(16.dp).widthIn(min = 16.dp)
                             .clip(Capsule()).background(Palette.danger).padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
                             // Red like the iOS tab bar's badge.

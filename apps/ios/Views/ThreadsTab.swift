@@ -37,15 +37,3 @@ struct ThreadsTab: View {
         }
     }
 }
-
-extension AccountStore {
-    /// Every bot on the computers the list shows (`hidden`: the ones left out), in the order the Bots tab has them,
-    /// folded computers and sections included, with how much each one works on.
-    func work(hidden: String, sectionOrder: RosterSectionOrder) -> AllWork<RosterItem> {
-        let shown = ComputerSelection(all: computers.map(\.id), hidden: hidden).shown
-        let rows = computers.filter { shown.contains($0.id) }.flatMap { computer -> [RosterItem] in
-            RosterSection.onScreen(roster.filter { $0.ref.computerId == computer.id }, order: sectionOrder.saved(on: computer.id)) { $0.bot }
-        }
-        return AllWork(rows) { $0.bot.work }
-    }
-}

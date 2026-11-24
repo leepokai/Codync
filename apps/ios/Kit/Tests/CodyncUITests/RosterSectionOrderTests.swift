@@ -34,6 +34,14 @@ import Testing
     #expect(RosterSection.onScreen(bots) { $0 }.map(\.id) == shown([]))
 }
 
+@Test func searchFindsBotsByNameInTheListsOrderFoldedSectionsIncluded() throws {
+    let bots = try [#"{"id":"a","name":"Alpha","section":"Work"}"#, #"{"id":"b","name":"Beta"}"#, #"{"id":"g","name":"Gamma","section":"Work"}"#]
+        .map { try JSONDecoder().decode(Bot.self, from: Data($0.utf8)) }
+    #expect(RosterSection.onScreen(bots, order: ["", "Work"], matching: "ma") { $0 }.map(\.id) == ["g"])
+    #expect(RosterSection.onScreen(bots, order: ["Work", ""], matching: "A") { $0 }.map(\.id) == ["a", "g", "b"])
+    #expect(RosterSection.onScreen(bots, matching: "zeta") { $0 }.isEmpty)
+}
+
 @Test func mergingIntoANewGroupKeepsItsDisplayedPosition() {
     var order = RosterSectionOrder(data: Data())
     order.set(["Work", ""], on: "mac")

@@ -498,7 +498,7 @@ The rules are one set, written three times: `apps/desktop/src/shared/work.ts` (`
   pushes `WorkThreadView` inside the details sheet; the system bar is hidden (`hidesSystemNavigationBar`, which keeps
   the edge swipe back) and the page draws its own header, as Android's: a `Back to details` icon button, the title
   over the status line, Stop. Android: `WorkThreadView` is pushed inside the sheet by the design module's
-  `NavStack`, with the same header. A row of the Work sheet opens the bot's chat with its
+  `NavStack`, with the same header. A row of the Threads tab opens the bot's chat with its
   details on that thread.
 - **A row that needs you still opens the chat at its card**, not the thread. In the task's thread the card is one
   line (below), which opens the chat at it; on the phones the thread has no card to answer.

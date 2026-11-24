@@ -20,6 +20,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,11 +55,12 @@ internal enum class AppTab { Bots, Threads, Workflows, Settings }
         val id = app.currentComputerId ?: states.firstOrNull()?.computer?.id ?: return@LaunchedEffect
         accounts.store(id)?.openWorkflows()
     }
-    // The computers the Bots tab leaves out, which Threads follows too.
+    // The computers the Bots tab leaves out and each one's section order (the Bots tab loads it), which Threads follows too.
     val context = LocalContext.current
     var hidden by remember { mutableStateOf(RosterComputers.hidden(context)) }
+    val sectionOrders = remember(app.contextId) { mutableStateMapOf<String, List<String>>() }
     val shownIds = ComputerSelection(states.map { it.computer.id }, hidden).shown
-    val work = allWork(states.filter { it.computer.id in shownIds }) { SectionOrders.load(context, SectionOrders.key(app.contextId, it.computer.id)) }
+    val work = allWork(states.filter { it.computer.id in shownIds }) { sectionOrders[SectionOrders.key(app.contextId, it.computer.id)].orEmpty() }
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(when (tab) {
         AppTab.Bots -> AnalyticsScreen.Bots
         AppTab.Threads -> AnalyticsScreen.AllWork
@@ -104,7 +106,7 @@ internal enum class AppTab { Bots, Threads, Workflows, Settings }
             }) { entry ->
                 when {
                     entry == "roster" -> BotListView(app, states, accounts, account, manage, newBot, newGroup, edit, extensions, barSpace,
-                        hidden) { hidden = it; RosterComputers.setHidden(context, it) }
+                        hidden, { hidden = it; RosterComputers.setHidden(context, it) }, sectionOrders)
                     entry == REMOVED_CHAT -> RemovedComputer { accounts.openBot(null) }
                     else -> (states.firstOrNull { "${it.computer.id}/${it.selectedBot}" == entry } ?: shown)?.let { chat(it) }
                 }

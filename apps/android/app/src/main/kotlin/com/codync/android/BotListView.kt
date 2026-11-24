@@ -64,11 +64,18 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-/** One computer's roster while the list shows it: its rows' and sections' drags and its section order (kept on this device). */
-private class ComputerRoster(private val context: Context, val key: String) {
+/**
+ * One computer's roster while the list shows it: its rows' and sections' drags and its section order (kept on this
+ * device), held in [orders] by [key], which the Threads tab reads too.
+ */
+private class ComputerRoster(private val context: Context, val key: String, private val orders: MutableMap<String, List<String>>) {
     val reorder = RosterReorder()
     val sections = ListReorder()
-    var order by mutableStateOf(SectionOrders.load(context, key))
+    var order: List<String>
+        get() = orders[key].orEmpty()
+        set(value) { orders[key] = value }
+
+    init { if (key !in orders) orders[key] = SectionOrders.load(context, key) }
 
     /** Points the drags at [state]'s bots and sections as [list] shows them. */
     fun sync(state: AppState, list: LazyListState) {
@@ -90,7 +97,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
  */
 @Composable internal fun BotListView(app: AccountContext, states: List<AppState>, accounts: AccountStore, account: () -> Unit, manage: () -> Unit,
     newBot: (String) -> Unit, newGroup: (String) -> Unit, edit: (String, Bot) -> Unit, extensions: (String) -> Unit, bottomInset: Dp,
-    hidden: String, setHidden: (String) -> Unit) {
+    hidden: String, setHidden: (String) -> Unit, sectionOrders: MutableMap<String, List<String>>) {
     var confirmDelete by remember { mutableStateOf<Pair<String, Bot>?>(null) }
     // A bot whose agent starts over with a fresh context, once confirmed.
     var confirmNewSession by remember { mutableStateOf<Pair<String, Bot>?>(null) }
@@ -117,7 +124,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
     // A lifted heading folds every computer's bots into their headings while it moves.
     val movingComputer = computerReorder.dragged != null
     val ordered = computerReorder.shown.mapNotNull { id -> shown.firstOrNull { it.computer.id == id } }
-    for (state in shown) rosters.getOrPut(state.computer.id) { ComputerRoster(context, SectionOrders.key(app.contextId, state.computer.id)) }
+    for (state in shown) rosters.getOrPut(state.computer.id) { ComputerRoster(context, SectionOrders.key(app.contextId, state.computer.id), sectionOrders) }
         .sync(state, listState)
     // A folded section renamed or removed here stays folded under its new name, at once, like its bots; a refusal puts the
     // folds back, reading and writing the stored ones, as the list may have left the screen.
@@ -257,7 +264,7 @@ private fun LazyListScope.botLines(state: AppState, store: AppStore, roster: Com
     // the logos, and without it every badge would be the same generic one.
     val logos = agentLogos && state.hello != null && roster(state.bots).mixesAgents()
     val lines = if (search.isEmpty()) rosterLines(reorder.shown(roster(state.bots)), folded, sectionReorder.shown, sectionReorder.dragged != null)
-        else shownBots(roster(state.bots), roster.order).filter { it.name.contains(search, ignoreCase = true) }.map(RosterLine::Row)
+        else shownBots(roster(state.bots), roster.order, search).map(RosterLine::Row)
     items(lines, key = { "$id:${it.key}" }) { line ->
         when (line) {
             // Folding drops the section's rows from the list; animateItem fades them out and slides the rest up.
@@ -274,7 +281,8 @@ private fun LazyListScope.botLines(state: AppState, store: AppStore, roster: Com
                 Box(Modifier.onSizeChanged { reorder.heights[bot.id] = it.height }
                     .then(if (lifted) Modifier.zIndex(1f).graphicsLayer { translationY = reorder.offset; scaleX = 1.02f; scaleY = 1.02f }
                         else Modifier.animateItem())) {
-                    BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }, sections, grouped, agent, actions)
+                    // Search shows only some bots: no reordering among them.
+                    BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }.takeIf { search.isEmpty() }, sections, grouped, agent, actions)
                 }
             }
         }
@@ -340,7 +348,7 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
 
 private fun Bot.movesWith(other: Bot) = band == other.band && (pinned || section == other.section)
 
-@Composable private fun BotRowItem(bot: Bot, state: AppState, store: AppStore, drag: ContextDrag, sections: List<String>, grouped: Boolean,
+@Composable private fun BotRowItem(bot: Bot, state: AppState, store: AppStore, drag: ContextDrag?, sections: List<String>, grouped: Boolean,
     agent: AgentMark?, actions: RosterActions) {
     Box(Modifier.fillMaxWidth().contextActions(onClick = { store.openBot(bot.id) }, reorder = drag, preview = {
         Box(Modifier.padding(horizontal = 8.dp)) { BotRow(bot, state, agent) }
@@ -371,7 +379,7 @@ private fun Bot.movesWith(other: Bot) = band == other.band && (pinned || section
         // With several computers, which one it's on.
         contentDescription = if (grouped) "${bot.name}, on ${state.hostName}" else bot.name
         // TalkBack's way to reorder (the drag needs a touch and hold, then a move).
-        customActions = listOf(-1 to "Move up", 1 to "Move down").map { (offset, title) ->
+        if (drag != null) customActions = listOf(-1 to "Move up", 1 to "Move down").map { (offset, title) ->
             CustomAccessibilityAction(title) { moved(roster(state.bots), bot.id, offset)?.let(store::reorder) != null }
         }
     }) {

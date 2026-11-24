@@ -26,7 +26,7 @@ public struct ComputerFilterHeader: View {
     }
 
     private var stores: [BotStore] { selection.shown.compactMap { accounts.store(for: $0) } }
-    private var summary: String { ConnectionSummary(connections: stores.map(\.shownConnection), waking: stores.contains(where: \.isWaking)).text }
+    private var summary: String { Self.summary(accounts: accounts, hidden: hidden) }
 
     public var body: some View {
         Menu {
@@ -52,7 +52,7 @@ public struct ComputerFilterHeader: View {
     private var label: some View {
         Label(L10n.tr("Computers"), systemImage: selection.shown.count < accounts.computers.count
             ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease")
-            .help(Self.phrase(summary))
+            .help(summary)
     }
 
     /// "3 connected" and the other summaries, in the app's language.

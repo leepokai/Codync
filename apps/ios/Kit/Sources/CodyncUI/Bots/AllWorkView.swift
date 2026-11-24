@@ -47,7 +47,6 @@ public struct AllWorkView: View {
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: bots.map(\.id))
         }
         .background(Palette.background)
-        .tracked(.screenViewed(.allWork))
     }
 
     private func heading(_ row: RosterItem, members: [Bot]) -> some View {

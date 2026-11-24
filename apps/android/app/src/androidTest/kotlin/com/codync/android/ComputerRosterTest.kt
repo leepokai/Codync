@@ -36,7 +36,7 @@ class ComputerRosterTest {
             compose.setContent {
                 Hosted {
                     var shown by remember { mutableStateOf("") }
-                    BotListView(app, listOf(state(mac, "Mac bot"), state(linux, "Linux bot")), accounts, {}, {}, {}, {}, { _, _ -> }, {}, 0.dp, shown) { shown = it }
+                    BotListView(app, listOf(state(mac, "Mac bot"), state(linux, "Linux bot")), accounts, {}, {}, {}, {}, { _, _ -> }, {}, 0.dp, shown, { shown = it }, mutableMapOf())
                 }
             }
             compose.onNode(heading("Mac fixture")).assertIsDisplayed()

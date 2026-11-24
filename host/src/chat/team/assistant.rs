@@ -160,14 +160,14 @@ impl Asker {
         let (info, base) = tokio::task::spawn_blocking(move || looking.look()).await?;
         let owner = format!("session:{}", caller.key());
         let reserve = || hub.network.reserve(&hub.store, &base, &owner);
-        let (s, new) = hub.network.sessions.register(&hub.store, caller, info.title, reserve)?;
+        let (s, new, forgot) = hub.network.sessions.register(&hub.store, caller, info.title, reserve)?;
         if new {
             tracing::info!(kind = s.kind.as_str(), temporary = s.temporary, "a session joined the Network");
             crate::analytics::network_session(hub, crate::analytics::SessionAction::Registered, s.kind);
-            // A rule may already name its address.
-            if !s.temporary {
-                crate::network::publish(hub);
-            }
+        }
+        // A rule may already name a new session's address; a forgotten one is offered no more.
+        if (new && !s.temporary) || forgot {
+            crate::network::publish(hub);
         }
         Ok(Self {
             id: owner,
@@ -227,14 +227,18 @@ async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
     {
         return mail_here(hub, me, &to, message, args["replyTo"].as_str());
     }
-    if hub.assistant.running(&asker.id) >= MAX_RUNNING {
-        bail!("{MAX_RUNNING} requests are still running: read_replies first, then try again");
-    }
+    // Only a new request counts against the limit; an answer to one (`replyTo`) never waits on it.
+    let limit = || {
+        if hub.assistant.running(&asker.id) >= MAX_RUNNING {
+            bail!("{MAX_RUNNING} requests are still running: read_replies first, then try again");
+        }
+        Ok(())
+    };
     let to = match hub.network.recipient(to)? {
         Recipient::Here(bot) => bot,
-        Recipient::There(address) => match (&asker.session, args["replyTo"].as_str()) {
+        Recipient::There(address) => {
             // A session answering a letter from another computer.
-            (Some(me), Some(reply_to)) => {
+            if let (Some(me), Some(reply_to)) = (&asker.session, args["replyTo"].as_str()) {
                 // A slow connection keeps trying in the background; the call says so rather than time out.
                 let sending = remote::session_answer(hub, &me.address, &address, reply_to, message);
                 // Its own task: a slow connection keeps trying past this call, into the outbox.
@@ -247,9 +251,11 @@ async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
                 };
                 return Ok(json!({"to": hub.network.address_text(&address), "status": status}));
             }
-            _ => return message_elsewhere(hub, asker, &address, message),
-        },
+            limit()?;
+            return message_elsewhere(hub, asker, &address, message);
+        }
     };
+    limit()?;
     let target = visible_bot(hub, &to)?;
     if !asker.reaches(&target) {
         return Err(closed(&target));

@@ -110,7 +110,8 @@ pub struct Sessions {
 }
 
 impl Sessions {
-    /// The caller's session, registered on its first call (then `true`) with the address `reserve`
+    /// The caller's session, registered on its first call (then `true`, and `true` again when that
+    /// call forgot stale sessions that weren't temporary) with the address `reserve`
     /// gives out, one no bot or session ever had; `title` is what its agent calls it now.
     pub fn register(
         &self,
@@ -118,11 +119,11 @@ impl Sessions {
         caller: &Caller,
         title: Option<String>,
         reserve: impl FnOnce() -> Result<String>,
-    ) -> Result<(Session, bool)> {
+    ) -> Result<(Session, bool, bool)> {
         let _one = self.lock.locked();
         let now = now_ms();
         let mut all = load(store);
-        forget_stale(store, &mut all, now)?;
+        let forgot = forget_stale(store, &mut all, now)?;
         let key = caller.key();
         let new = !all.contains_key(&key);
         let session = match all.remove(&key) {
@@ -142,7 +143,7 @@ impl Sessions {
         let session = Session { title: title.or(session.title), seen: now, ..session };
         all.insert(key, session.clone());
         save(store, &all)?;
-        Ok((session, new))
+        Ok((session, new, forgot))
     }
 
     /// Gives the session at `key` the address `reserve` hands out; its old one is retired.
@@ -211,7 +212,9 @@ impl Sessions {
 }
 
 /// Forgets the sessions unseen for long (a temporary one with its mail); their addresses stay given.
-fn forget_stale(store: &Store, all: &mut BTreeMap<String, Session>, now: i64) -> Result<()> {
+/// Forgets the sessions gone stale; true when it forgot any that weren't temporary (those may be
+/// offered to a network).
+fn forget_stale(store: &Store, all: &mut BTreeMap<String, Session>, now: i64) -> Result<bool> {
     let mut mail = load_mail(store);
     let stale = |key: &String, s: &Session| {
         if s.temporary {
@@ -221,6 +224,7 @@ fn forget_stale(store: &Store, all: &mut BTreeMap<String, Session>, now: i64) ->
         }
     };
     let gone: Vec<String> = all.iter().filter(|(key, s)| stale(key, s)).map(|(key, _)| key.clone()).collect();
+    let offered = gone.iter().any(|key| all.get(key).is_some_and(|s| !s.temporary));
     let mut mail_gone = false;
     for key in &gone {
         all.remove(key);
@@ -229,7 +233,7 @@ fn forget_stale(store: &Store, all: &mut BTreeMap<String, Session>, now: i64) ->
     if mail_gone {
         save_mail(store, &mail)?;
     }
-    Ok(())
+    Ok(offered)
 }
 
 /// `<repo or folder>-<agent>`: `api-claude`.

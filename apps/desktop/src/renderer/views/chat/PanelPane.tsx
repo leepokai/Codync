@@ -53,7 +53,7 @@ export function PanelPane({ pane, views, show, close, choose, flush, first, acti
           {pane.tabs.flatMap((id) => views.find((v) => v.id === id) ?? []).map((v) => (
             <span key={v.id} className={v.id === pane.shown ? 'panel-tab on' : 'panel-tab'}>
               <button role="tab" aria-selected={v.id === pane.shown} className="panel-tab-pick" title={v.verbatim ? v.label : undefined} onClick={() => show(v.id)}>
-                {v.verbatim ? <Icon name={v.icon} size={11} color="var(--secondary)" /> : null}
+                {v.verbatim ? <Icon name={v.icon} size={11} color="var(--secondary)" className="panel-tab-icon" /> : null}
                 <span className="panel-tab-name">{name(v)}</span>
               </button>
               <button className="panel-tab-close" title={fill(tr('Close {name}'), { name: name(v) })} aria-label={fill(tr('Close {name}'), { name: name(v) })} onClick={() => close(v.id)}>

@@ -125,7 +125,8 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
   )
   return (
     <div className="chat-view thread-chat" data-work-thread={task.id} ref={view}>
-      <div className="conversation" ref={root}>
+      {/* Covered by the panel, it leaves the keyboard's reach too. */}
+      <div className="conversation" ref={root} inert={panelOpen && (panelFilled || !panel.beside)}>
         <div className="top-chrome">
           <div className="top-fade" />
           {bar.title ? createPortal(<>

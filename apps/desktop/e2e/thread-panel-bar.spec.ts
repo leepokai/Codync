@@ -25,9 +25,9 @@ test("a thread's panel puts its buttons in the window's bar as a bot's chat does
   const cdp = await page.context().newCDPSession(page)
   const name = `Thread bar e2e ${Date.now()}`
   const title = 'Header like the bot'
+  const restore = await withPrefs(page, { listHidden: false })
   let botId: string | undefined
   try {
-    await setPref(page, 'listHidden', false)
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1300, height: 760, deviceScaleFactor: 2, mobile: false })
     botId = (await workBot(page, name)).id
     // A task whose thread works until it is stopped (host/tests/fixtures/work_agent.py).
@@ -61,6 +61,8 @@ test("a thread's panel puts its buttons in the window's bar as a bot's chat does
     const view = page.locator('.thread-chat')
     await page.getByRole('button', { name: 'Maximize panel', exact: true }).click()
     await expect.poll(async () => (await panel.boundingBox())!.width).toBe((await view.boundingBox())!.width)
+    // The covered thread is out of the keyboard's reach.
+    await expect(view.locator('.conversation')).toHaveAttribute('inert', '')
     await page.getByRole('button', { name: 'Maximize panel', exact: true }).click()
     await expect.poll(async () => (await panel.boundingBox())!.width).toBeLessThan((await view.boundingBox())!.width)
 
@@ -72,6 +74,7 @@ test("a thread's panel puts its buttons in the window's bar as a bot's chat does
     await expect.poll(() => barButtons(page)).toEqual(['Conversation details'])
   } finally {
     await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {})
+    await restore()
     if (botId) {
       await api(page, 'stopWork', { botId }).catch(() => {})
       await api(page, 'deleteBot', { botId }).catch(() => {})
@@ -86,7 +89,7 @@ test("a panel's tabs share its width, narrow ones hide their close button, and +
   const name = `Panel tabs e2e ${Date.now()}`
   const title = 'Many tabs'
   const tabs = ['details', 'library', 'memory', 'computer', 'browser', 'settings', 'terminal']
-  const restore = await withPrefs(page, { listHidden: false, panelLayout: [{ tabs, shown: 'details' }] })
+  const restore = await withPrefs(page, { listHidden: false, detailsPanelWidth: 400, panelLayout: [{ tabs, shown: 'details' }] })
   let botId: string | undefined
   try {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 760, deviceScaleFactor: 2, mobile: false })
@@ -109,6 +112,16 @@ test("a panel's tabs share its width, narrow ones hide their close button, and +
         expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(1)
         // Wide enough for all, none scrolls out.
         if (width === 620) expect(await row.evaluate((r) => r.scrollWidth <= r.clientWidth)).toBe(true)
+        // Narrow, a tab shows its close button only while shown or hovered; the one shown keeps it.
+        if (width === 440) {
+          const shown = row.locator('.panel-tab.on .panel-tab-close')
+          const other = row.locator('.panel-tab:not(.on)').nth(1)
+          await expect(shown).toBeVisible()
+          await expect(other.locator('.panel-tab-close')).toBeHidden()
+          await other.hover()
+          await expect(other.locator('.panel-tab-close')).toBeVisible()
+          await page.mouse.move(0, 0)
+        }
         await page.screenshot({ path: info.outputPath(`${where}-tabs-${width}.png`) })
       }
     }
@@ -122,7 +135,6 @@ test("a panel's tabs share its width, narrow ones hide their close button, and +
   } finally {
     await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {})
     await restore()
-    await setPref(page, 'detailsPanelWidth', 400).catch(() => {})
     if (botId) {
       await api(page, 'stopWork', { botId }).catch(() => {})
       await api(page, 'deleteBot', { botId }).catch(() => {})

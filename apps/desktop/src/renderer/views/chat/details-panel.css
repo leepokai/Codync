@@ -98,12 +98,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* A narrow tab gives its name the close button's room until it is hovered or shown. */
+/* A narrow tab gives its name the close button's room until it is hovered, focused or shown, and a thread's tab its
+   symbol's. */
 @container (max-width: 80px) {
-  .panel-tab:not(.on):not(:hover) .panel-tab-close {
+  /* Over the symbol's own inline display. */
+  .panel-tab-icon {
+    display: none !important;
+  }
+  .panel-tab:not(.on):not(:hover):not(:focus-within) .panel-tab-close {
     display: none;
   }
-  .panel-tab:not(.on):not(:hover) .panel-tab-pick {
+  .panel-tab:not(.on):not(:hover):not(:focus-within) .panel-tab-pick {
     padding-right: 6px;
   }
 }

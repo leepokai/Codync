@@ -186,7 +186,8 @@ export const ChatView = memo(function ChatView({ botId }: { botId: string }) {
 
   return (
     <div className="chat-view" ref={root}>
-      <div className="conversation">
+      {/* Covered by the maximized panel, it leaves the keyboard's reach too. */}
+      <div className="conversation" inert={panelOpen && panelFilled}>
         <div className="top-chrome">
           <TopFade />
           {/* The window's bar holds the bot, what runs it, and the panel's toggle with the open panel's own buttons

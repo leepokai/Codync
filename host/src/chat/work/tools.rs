@@ -213,9 +213,19 @@ fn users_words(hub: &Hub, bot: &str) -> Option<String> {
     entry.data["text"].as_str().map(str::trim).filter(|t| !t.is_empty()).map(str::to_owned)
 }
 
+/// Refuses a task the user started as a thread: it is theirs, not the bot's to steer or write to.
+fn the_bots(hub: &Hub, bot: &str, id: &str) -> Result<()> {
+    if tasks::load(&hub.store, bot).iter().any(|i| i.id == id && i.source.is_user()) {
+        let why = "that thread is one the user started: it's theirs to steer, not yours".to_owned();
+        return Err(thread::Refused::error("users", why));
+    }
+    Ok(())
+}
+
 fn steer_task(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     let text = |key: &str| args[key].as_str().map(str::trim).filter(|t| !t.is_empty());
     let id = text("task").ok_or_else(|| anyhow!("task is required: its id, from work_status"))?;
+    the_bots(hub, bot, id)?;
     let refused = || anyhow!("how is first, now, replace or stop");
     let how = Steer::deserialize(&args["how"]).map_err(|_| refused())?;
     match how {
@@ -279,13 +289,14 @@ fn told(hub: &Arc<Hub>, bot: &str, args: &Value, now: bool) -> Result<(String, T
     if words.len() > MAX_BRIEF {
         return Err(invalid(format!("text is at most {MAX_BRIEF} bytes")));
     }
+    the_bots(hub, bot, id)?;
     Ok((id.to_owned(), thread::tell(hub, bot, id, words, now)?))
 }
 
 fn status(hub: &Hub, bot: &str) -> Result<Value> {
     let cfg = hub.store.bot(bot)?.ok_or_else(|| anyhow!("unknown bot"))?.config;
     let now = now_ms();
-    let tasks: Vec<Value> = tasks::shown(hub, &cfg)
+    let tasks: Vec<Value> = tasks::seen_by_bot(hub, &cfg)
         .into_iter()
         .map(|Shown { task, status, activity, wait }| {
             let seconds = task.started_at.map(|at| (task.ended_at.unwrap_or(now) - at) / 1000);
@@ -380,6 +391,35 @@ mod tests {
         assert!(refuse_chat_only(&hub, "thread-1", "tell_task").is_err(), "a thread can't tell its siblings");
         hub.ceilings.set("b1", codync_network::Access::Ask);
         assert!(hub.ceilings.check_tool("b1", "tell_task").is_err(), "it acts later: held under a ceiling");
+    }
+
+    #[test]
+    fn the_users_own_thread_is_neither_seen_nor_steered_by_the_bot() {
+        use crate::chat::calls::context::tests::{bot, hub};
+        let hub = hub();
+        hub.store.save_bot(&bot("b1", "Mika", "/tmp")).expect("saved");
+        let tasks = json!([
+            {"id": "i1", "title": "Docs", "brief": "x", "status": "waiting", "order": 1, "createdAt": 0},
+            {"id": "u1", "title": "Mine", "brief": "x", "status": "waiting", "order": 2, "createdAt": 0,
+                "source": {"kind": "user"}},
+        ]);
+        hub.store.kv_set(&format!("{}b1", tasks::PREFIX), &tasks.to_string()).expect("saved");
+
+        let category = |error: anyhow::Error| error.downcast_ref::<thread::Refused>().map(|refused| refused.category);
+        let told = call(&hub, "b1", "tell_task", &json!({"task": "u1", "text": "x"})).expect_err("the user's");
+        assert_eq!(category(told), Some("users"));
+        let steered = call(&hub, "b1", "steer_task", &json!({"task": "u1", "how": "first"})).expect_err("the user's");
+        assert_eq!(category(steered), Some("users"));
+        let listed = call(&hub, "b1", "work_status", &json!({})).expect("listed");
+        assert_eq!(
+            listed["tasks"].as_array().map(|t| t.iter().map(|i| i["taskId"].clone()).collect()),
+            Some(vec![json!("i1")])
+        );
+        let recalled = call(&hub, "b1", "recall_task", &json!({})).expect("recalled");
+        assert!(!recalled.to_string().contains("u1"), "{recalled}");
+        let cfg = hub.store.bot("b1").expect("read").expect("there").config;
+        let lines = tasks::lines(&hub, &cfg, "Your").expect("one live");
+        assert!(lines.contains("Docs") && !lines.contains("Mine"), "{lines}");
     }
 
     /// #386: work added too often in a row leaves the user one Continue notice a turn, as the handoff limit does.

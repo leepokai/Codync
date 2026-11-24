@@ -118,9 +118,13 @@ pub(super) fn standings(
         })
         .collect();
     let mut ahead = 0;
-    for standing in found.iter_mut().filter(|s| s.is_none()) {
+    for (task, standing) in waiting.iter().zip(found.iter_mut()).filter(|(_, s)| s.is_none()) {
         *standing = Some(if capacity.near_limit && running > 0 {
             Standing::Wait(Wait::Usage)
+        } else if task.source.is_user() {
+            // The user started it by hand: it starts now, past the bot's ceiling and its own turn.
+            running += 1;
+            Standing::Start
         } else if free > 0 && capacity.chat_free {
             free -= 1;
             running += 1;
@@ -170,9 +174,11 @@ pub(super) fn capacity(hub: &Hub, cfg: &BotConfig, tasks: &[Task], over: Option<
         .iter()
         .filter(|thread| tasks::of_thread(tasks, &thread.id).is_none() && turn_runs(hub, &thread.id, over))
         .count();
-    let asking = tasks.iter().filter(|i| tasks::asks_user(hub, i)).count();
+    let seated = |i: &&Task| i.source.seated();
+    let asking = tasks.iter().filter(seated).filter(|i| tasks::asks_user(hub, i)).count();
     let running = tasks::working(tasks) + stopping;
-    let free = free_seats(cfg.max_threads, running, asking);
+    let in_seats = tasks.iter().filter(seated).filter(|i| i.status == Status::Working).count() + stopping;
+    let free = free_seats(cfg.max_threads, in_seats, asking);
     // A turn the last host process left cut off is resumed by the bot's actor: it runs, though nothing says so yet.
     let chat_free = over == Some(cfg.id.as_str())
         || !(turn_runs(hub, &cfg.id, None) || crate::agent::bot::resumable(&hub.store, &cfg.id));
@@ -476,6 +482,22 @@ mod tests {
         assert_eq!(free_seats(3, 4, 2), 0, "never two past it, however many wait");
         assert_eq!(free_seats(1, 1, 1), 1);
         assert_eq!(free_seats(2, 4, 0), 0, "the ceiling was lowered: nothing new starts");
+    }
+
+    #[test]
+    fn a_users_thread_starts_past_the_ceiling_and_the_bots_own_turn_but_not_near_the_usage_limit() {
+        let user = |id: &str, order: i64| Task { source: Source::User, ..task(id, Status::Waiting, order) };
+        let tasks = [task("a", Status::Waiting, 1), user("u", 2), task("b", Status::Waiting, 3)];
+        let full = Capacity { chat_free: false, ..capacity(0, 1) };
+        let standings = stand(&tasks, full, ThreadState::Gone);
+        let expected = [
+            ("a", &Standing::Wait(Wait::Next)),
+            ("u", &Standing::Start),
+            ("b", &Standing::Wait(Wait::Behind { ahead: 1 })),
+        ];
+        assert_eq!(of(&standings), expected, "it takes no place in the bot's queue");
+        let near = Capacity { near_limit: true, ..capacity(0, 1) };
+        assert_eq!(stand(&tasks, near, ThreadState::Gone)[1].1, Standing::Wait(Wait::Usage));
     }
 
     #[test]

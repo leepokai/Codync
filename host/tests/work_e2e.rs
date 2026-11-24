@@ -1699,6 +1699,24 @@ async fn what_waited_in_a_thread_goes_with_a_task_that_gives_way() {
 }
 
 #[tokio::test]
+async fn a_users_thread_starts_past_the_ceiling_and_the_bot_never_sees_it() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "ADD Busy|HOLD:busy").await;
+    task(&host, &bot, "Busy", "working").await;
+    // The bot's one seat is taken; the user's thread starts anyway.
+    host.call("startThread", json!({"botId": bot, "text": "Mine HOLD:mine"})).await;
+    task(&host, &bot, "Mine HOLD:mine", "working").await;
+    host.reply(&bot, "STATUS").await;
+    let status = reply(&host, &bot, "Status:").await;
+    assert!(status.contains("Busy") && !status.contains("Mine"), "{status}");
+    release(&host, &bot, "busy");
+    release(&host, &bot, "mine");
+    task(&host, &bot, "Busy", "done").await;
+    task(&host, &bot, "Mine HOLD:mine", "done").await;
+}
+
+#[tokio::test]
 async fn a_thread_the_user_starts_opens_with_their_message_and_takes_no_turn_in_the_chat() {
     let host = Host::start().await;
     let bot = bot_with(&host, 1).await;

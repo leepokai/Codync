@@ -2499,5 +2499,11 @@
   "Search or enter a model ID": "搜尋或輸入模型 ID",
   "Approvals": "核准",
   "Speed": "速度",
-  "Close search": "關閉搜尋"
+  "Close search": "關閉搜尋",
+  "Coding agents": "程式開發代理",
+  "Bots and other coding agents message these sessions at their address; each reads its mail itself.": "Bot 與其他程式開發代理透過位址傳訊息給這些會話；每個會話會自己讀取信件。",
+  "Checks its mail": "自行查看信件",
+  "Idle": "閒置",
+  "Older sessions: {count}": "較早的會話：{count}",
+  "More sessions: {count}": "更多會話：{count}"
 }

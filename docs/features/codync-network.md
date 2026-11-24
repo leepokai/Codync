@@ -224,9 +224,21 @@ that was off learns of a removal.
 - A Codync bot's agent runs with `CODYNC_BOT` set, so a user-scope `codync` server it loads refuses its calls
   (the bot has its team tools).
 - PostHog: `network_session` with `action` (`registered`, `renamed`, `posted`, `read`, `answered`, `asked`, `ask_failed`, `expired`, `dropped`, `hooked`, `told`) and `kind` ([catalog](../reference/analytics-events.md)).
-- Not yet: the turn tier for Cursor (its MCP calls carry no session id), Gemini CLI and Antigravity; the push tier (plugins), showing sessions in the apps
-  (including picking one as a rule's target: today only `setNetworkRules` can name a session), and a setup command:
-  [plan](../plans/agent-sessions.md).
+- **In the apps** (`networkView`'s `sessions`, `Sessions::listed`): the sessions not temporary and seen in the last
+  week or named by a rule, each with its address, title, kind and logo (`registry`), tier, last call (`seen`) and
+  `state`: `working`/`idle` where its agent says (Claude Code's registry, unless the process it names is gone),
+  else `online`/`offline` by whether its MCP server's process (pid and start time, `Caller::running`) still runs;
+  none on Windows. The host sends them in order, running first (`runs`), then the most recent, and marks `older`
+  the ones neither running nor called in the last day. The state is kept in memory for the listed sessions only,
+  read again off the async workers when `networkView` is asked (not while a page stays open), and a change is a
+  `network` event; so is a new session, a new title or a rename. Every client shows them on its Network page
+  (desktop `SessionsCard`, for its own computer only; iPhone and Android `NetworkSheet`, for the computer open;
+  TUI network sheet): the older ones fold under "Older sessions: N" (the TUI lists them dimmed after the others as
+  far as room allows, then "More sessions: N"). A dot shows running; words only for working and idle. The rule
+  pickers (desktop, TUI) offer this computer's sessions as targets, with Allow and Deny only: `setNetworkRules`
+  refuses Auto or Ask on a session.
+- Not yet: the turn tier for Cursor (its MCP calls carry no session id), Gemini CLI and Antigravity; the push tier
+  (plugins), and a setup command: [plan](../plans/agent-sessions.md).
 
 ## Who reaches this computer's bots
 

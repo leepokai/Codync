@@ -83,6 +83,7 @@ fn set_name(hub: &Hub, s: &Session, args: &Value) -> Result<Value> {
         tracing::info!(kind = s.kind.as_str(), "a session took another address");
         crate::analytics::network_session(hub, crate::analytics::SessionAction::Renamed, s.kind);
         crate::network::publish(hub);
+        crate::network::emit(hub);
     }
     Ok(whoami(hub, &renamed))
 }

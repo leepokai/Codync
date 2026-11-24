@@ -2499,5 +2499,11 @@
   "Search or enter a model ID": "검색하거나 모델 ID 입력",
   "Approvals": "승인",
   "Speed": "속도",
-  "Close search": "검색 닫기"
+  "Close search": "검색 닫기",
+  "Coding agents": "코딩 에이전트",
+  "Bots and other coding agents message these sessions at their address; each reads its mail itself.": "봇과 다른 코딩 에이전트는 이 세션들의 주소로 메시지를 보냅니다. 각 세션은 메일을 직접 읽습니다.",
+  "Checks its mail": "메일을 직접 확인",
+  "Idle": "대기 중",
+  "Older sessions: {count}": "이전 세션 {count}개",
+  "More sessions: {count}": "다른 세션 {count}개"
 }

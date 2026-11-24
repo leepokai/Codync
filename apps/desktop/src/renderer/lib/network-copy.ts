@@ -1,6 +1,6 @@
 /** What the Network section says about this computer's networks (codync-network). */
 
-import type { Network, NetworkComputer, NetworkRole, NetworkRule } from '@shared/network'
+import type { Network, NetworkComputer, NetworkRole, NetworkRule, NetworkSession } from '@shared/network'
 import { fill } from '../../shared/fill.ts'
 
 /** How computers reach each other without a direct path. */
@@ -30,6 +30,16 @@ export const botsTemplate = (c: NetworkComputer) => (c.agents.length === 1 ? '1 
 export const expiryTime = (expiresAt: number) => new Date(expiresAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 
 export const ANY = '*'
+
+/** What a running session's agent does, untranslated, where it says (working or idle); the dot alone shows online or offline. */
+export const sessionStateTitle = (state: NetworkSession['state']) =>
+  state ? (({ working: 'Working', idle: 'Idle' }) as Record<string, string>)[state] ?? null : null
+
+/** How a session gets its mail, untranslated; null for a tier this app doesn't know. */
+export const tierTitle = (tier: string) => ({ pull: 'Checks its mail' } as Record<string, string>)[tier] ?? null
+
+/** The levels a rule can take: a coding agent's session reads its own mail, so no one is there to hold it to Auto or Ask. */
+export const levelsFor = (toSession: boolean): NetworkRule['access'][] => (toSession ? ['allow', 'deny'] : ['allow', 'auto', 'ask', 'deny'])
 
 /** The rules' footer, untranslated: what decides, and what a computer no rule matches gets. */
 export const rulesFooter = (net: Network) =>

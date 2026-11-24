@@ -6,7 +6,7 @@
 //! agent started from a Claude Code shell inherits that session's variables.
 //! ([agent sessions](../../../docs/plans/agent-sessions.md))
 
-use crate::reach::{claude_dir, claude_sessions};
+use crate::reach::{ClaudeSession, claude_dir, claude_sessions};
 use crate::wire::AgentKind;
 use serde_json::Value;
 use std::path::Path;
@@ -84,21 +84,37 @@ pub fn info(kind: AgentKind, id: &str) -> Info {
     }
 }
 
-/// Whether session `id` is working on a turn now, where its agent says so.
+/// Whether session `id` is working on a turn now, where its agent says so. Blocking: may run `ps`.
 pub fn busy(kind: AgentKind, id: &str) -> Option<bool> {
     match kind {
-        AgentKind::ClaudeCode => claude_dir().ok().and_then(|dir| claude_info(&dir, id).busy),
+        AgentKind::ClaudeCode => claude_dir().ok().and_then(|dir| claude_busy(&dir, id)),
         _ => None,
     }
 }
 
+/// The newest entry Claude Code's registry has for session `id`.
+fn claude_newest(dir: &Path, id: &str) -> Option<ClaudeSession> {
+    claude_sessions(dir).into_iter().filter(|s| s.session_id.as_deref() == Some(id)).max_by_key(|s| s.updated_at)
+}
+
 fn claude_info(dir: &Path, id: &str) -> Info {
-    let Some(s) =
-        claude_sessions(dir).into_iter().filter(|s| s.session_id.as_deref() == Some(id)).max_by_key(|s| s.updated_at)
-    else {
-        return Info::default();
-    };
+    let Some(s) = claude_newest(dir, id) else { return Info::default() };
     Info { title: s.name.as_deref().and_then(cut), busy: s.status.as_deref().map(|s| s == "busy") }
+}
+
+/// What the registry says of session `id`, unless its process is gone: Claude Code killed or
+/// crashed leaves its entry behind.
+fn claude_busy(dir: &Path, id: &str) -> Option<bool> {
+    let s = claude_newest(dir, id).filter(|s| s.pid.is_none_or(alive))?;
+    s.status.as_deref().map(|s| s == "busy")
+}
+
+/// Whether process `pid` still runs; true where this can't tell.
+fn alive(pid: u32) -> bool {
+    if cfg!(windows) {
+        return true;
+    }
+    std::process::Command::new("ps").args(["-p", &pid.to_string()]).output().map_or(true, |out| out.status.success())
 }
 
 /// Codex's own folder: `$CODEX_HOME`, else `~/.codex`.
@@ -166,6 +182,12 @@ mod tests {
         assert_eq!(claude_session_at(&dir, "/s.sock").as_deref(), Some("after-clear"));
         assert_eq!(claude_info(&dir, "after-clear"), Info { title: Some("Fix the login".into()), busy: Some(true) });
         assert_eq!(claude_info(&dir, "gone"), Info::default());
+        let me = std::process::id();
+        std::fs::write(dir.join(format!("sessions/{me}.json")), entry("running", 3, "Here", "idle").to_string())
+            .unwrap();
+        std::fs::write(dir.join("sessions/999999999.json"), entry("killed", 4, "Gone", "busy").to_string()).unwrap();
+        assert_eq!(claude_busy(&dir, "running"), Some(false));
+        assert_eq!(claude_busy(&dir, "killed"), None, "a killed Claude Code leaves its entry behind");
         let _ = std::fs::remove_dir_all(dir);
     }
 

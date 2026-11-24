@@ -2499,5 +2499,11 @@
   "Search or enter a model ID": "Suchen oder Modell-ID eingeben",
   "Approvals": "Freigaben",
   "Speed": "Tempo",
-  "Close search": "Suche schließen"
+  "Close search": "Suche schließen",
+  "Coding agents": "Coding-Agenten",
+  "Bots and other coding agents message these sessions at their address; each reads its mail itself.": "Bots und andere Coding-Agenten schreiben diesen Sitzungen an ihre Adresse; jede liest ihre Post selbst.",
+  "Checks its mail": "Liest Post bei Bedarf",
+  "Idle": "Bereit",
+  "Older sessions: {count}": "Ältere Sitzungen: {count}",
+  "More sessions: {count}": "Weitere Sitzungen: {count}"
 }

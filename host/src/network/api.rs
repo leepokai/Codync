@@ -2,12 +2,14 @@
 //! made at the computer (loopback only, like pairing a device).
 
 use super::saved::{self, Saved};
+use super::sessions::{Listed, Live, Session};
 use super::{Slot, default_name, start_node, take_in};
 use crate::LockExt;
 use crate::hub::Hub;
 use anyhow::{Context, Result, bail};
 use codync_network::{Connector, Node, Role, Rule};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -25,10 +27,50 @@ pub fn emit(hub: &Hub) {
 pub fn status(hub: &Hub) -> Value {
     let networks: Vec<Value> = hub.network.slots().iter().filter(|s| s.node.name().is_some()).map(network).collect();
     json!({
-        "joined": !networks.is_empty(), "networks": networks,
+        "joined": !networks.is_empty(), "networks": networks, "sessions": sessions(hub),
         "assistants": crate::chat::team::assistant::enabled(&hub.store),
         "assistantsAvailable": crate::chat::team::assistant::available(hub),
     })
+}
+
+/// Looks again at what the listed sessions' agents do, in the background; the `network` event
+/// brings a change.
+fn refresh_live(hub: &Arc<Hub>) {
+    let hub = hub.clone();
+    tokio::spawn(async move {
+        let listed: Vec<Session> = listed(&hub).into_iter().map(|l| l.session).collect();
+        let read = tokio::task::spawn_blocking(move || {
+            listed.iter().filter_map(|s| Some((s.key.clone(), Live::read(s)?))).collect::<HashMap<_, _>>()
+        });
+        if let Ok(now) = read.await
+            && hub.network.sessions.renew_live(now)
+        {
+            emit(&hub);
+        }
+    });
+}
+
+/// The coding agents' sessions on this computer the apps show (`Sessions::listed`), a rule that
+/// opens one keeping it listed.
+fn listed(hub: &Hub) -> Vec<Listed> {
+    let slots = hub.network.slots();
+    let opened = |s: &Session| slots.iter().any(|slot| codync_network::rules::opens(&slot.node.rules(), &s.address));
+    hub.network.sessions.listed(&hub.store, opened)
+}
+
+/// The sessions in the apps' order: each with its address, title, kind (and the registry id of its
+/// logo), how it gets its mail (`tier`), what its agent does, and whether it folds under the older ones.
+fn sessions(hub: &Hub) -> Vec<Value> {
+    listed(hub)
+        .into_iter()
+        .map(|Listed { session: s, state, older }| {
+            json!({
+                "address": s.address, "title": s.title, "kind": s.kind,
+                "registry": super::sessions::registry(s.kind), "tier": "pull",
+                "state": state, "runs": state.is_some_and(Live::runs), "older": older, "seen": s.seen,
+            })
+        })
+        .collect()
 }
 
 fn network(slot: &Slot) -> Value {
@@ -58,7 +100,8 @@ fn network(slot: &Slot) -> Value {
 /// `networkView`: `status`, asking the others in the background when what they offer is stale;
 /// the `network` event brings what they answer. Before the first bot listing it asks without
 /// counting as asked, so that listing still waits for the answers (`Network::directory`).
-pub fn view(hub: &Hub) -> Value {
+pub fn view(hub: &Arc<Hub>) -> Value {
+    refresh_live(hub);
     let never = hub.network.asked.locked().is_none();
     if never || hub.network.due().is_some() {
         for slot in hub.network.slots() {
@@ -195,6 +238,13 @@ pub fn recover(hub: &Hub, network: Option<&str>, code: &str) -> Result<Value> {
 pub async fn set_rules(hub: &Hub, network: Option<&str>, rules: &Value) -> Result<Value> {
     let rules: Vec<Rule> =
         serde_json::from_value(rules.clone()).context("rules are {fromComputer, fromAgent, toAgent, access}")?;
+    // A session reads its own mail: no one is there to hold it to a ceiling, so its letters would all be refused.
+    let held = |r: &&Rule| matches!(r.access, codync_network::Access::Auto | codync_network::Access::Ask);
+    if let Some(r) =
+        rules.iter().filter(held).find(|r| hub.network.sessions.by_address(&hub.store, &r.to_agent).is_some())
+    {
+        bail!("{} is a coding agent's session: a rule can only allow or deny it", r.to_agent);
+    }
     // The saved list has one writer at a time: a create or join holds it while its node starts.
     let _one = hub.network.changing.lock().await;
     let slot = joined(hub, network)?;

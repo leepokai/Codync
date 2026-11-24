@@ -28,7 +28,7 @@ fn register(
     book: &mut impl FnMut(&str) -> Result<String>,
 ) -> (Session, Registered) {
     let (info, base) = caller.look();
-    sessions.register(store, caller, info.title, || book(&base)).unwrap()
+    sessions.register(store, caller, info.title, None, || book(&base)).unwrap()
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn a_hook_tells_of_new_mail_once_and_never_registers() {
     let sessions = Sessions::default();
     assert_eq!(sessions.hook(&store, "codex:unknown").unwrap(), None, "a hook doesn't register");
     let (s, _) = sessions
-        .register(&store, &caller(AgentKind::Codex, Some("t1"), "/tmp"), None, || Ok("api-codex".into()))
+        .register(&store, &caller(AgentKind::Codex, Some("t1"), "/tmp"), None, None, || Ok("api-codex".into()))
         .unwrap();
     assert_eq!(s.key, session_key(AgentKind::Codex, "t1"));
     assert_eq!(s.tier(), Tier::Pull);
@@ -132,4 +132,85 @@ fn a_hook_tells_of_new_mail_once_and_never_registers() {
         "a late older confirmation undoes nothing"
     );
     assert_eq!(sessions.by_key(&store, &s.key).unwrap().tier(), Tier::Turn);
+}
+
+#[test]
+fn the_apps_list_recent_named_sessions_and_hear_of_changes() {
+    let (store, sessions, mut book) = (store(), Sessions::default(), book());
+    let mut reg = |c: &Caller, title: Option<&str>| {
+        sessions.register(&store, c, title.map(str::to_owned), None, || book("api-codex")).unwrap().1
+    };
+    let codex = caller(AgentKind::Codex, Some("t"), "/work/api");
+    let (new, same, changed) = (
+        Registered { new: true, offer: true },
+        Registered { new: false, offer: false },
+        Registered { new: false, offer: true },
+    );
+    assert_eq!(reg(&codex, Some("Fix login")), new);
+    assert_eq!(reg(&codex, Some("Fix login")), same);
+    assert_eq!(reg(&codex, None), same, "no title said keeps the one it had");
+    assert_eq!(reg(&codex, Some("Ship it")), changed);
+    assert_eq!(
+        reg(&caller(AgentKind::Other, None, "/"), None),
+        Registered { new: true, offer: false },
+        "temporary: not offered"
+    );
+    let listed = sessions.listed(&store, |_| false);
+    assert_eq!(
+        listed.iter().map(|l| l.session.title.as_deref()).collect::<Vec<_>>(),
+        [Some("Ship it")],
+        "temporary ones aren't"
+    );
+    assert_eq!(registry(AgentKind::Codex), Some("codex-acp"));
+}
+
+#[test]
+fn running_sessions_come_first_old_ones_fold_and_a_rule_keeps_one_listed() {
+    let (store, sessions, mut book) = (store(), Sessions::default(), book());
+    let now = now_ms();
+    let mut at = |session: &str, ago: i64| {
+        let c = caller(AgentKind::Codex, Some(session), &format!("/work/{session}"));
+        let key = register(&sessions, &store, &c, &mut book).0.key;
+        let mut all = load(&store);
+        all.get_mut(&key).unwrap().seen = now - ago;
+        save(&store, &all).unwrap();
+        key
+    };
+    let hour = 60 * 60 * 1000;
+    at("web", hour);
+    let billing = at("billing", 3 * hour);
+    at("infra", 3 * DAY_MS);
+    let ops = at("ops", 3 * DAY_MS);
+    let rule = at("old", LISTED_FOR_MS + hour);
+    sessions.set_live(&billing, Some(Live::Working));
+    sessions.set_live(&ops, Some(Live::Offline));
+    let order = |kept: &dyn Fn(&Session) -> bool| {
+        let listed = sessions.listed(&store, kept);
+        listed.iter().map(|l| (l.session.address.clone(), l.older)).collect::<Vec<_>>()
+    };
+    let shown = |a: &str, older| (a.to_owned(), older);
+    assert_eq!(
+        order(&|_| false),
+        [
+            shown("billing-codex", false),
+            shown("web-codex", false),
+            shown("infra-codex", true),
+            shown("ops-codex", true)
+        ],
+        "running first, then the newest; a week unseen leaves the list"
+    );
+    assert_eq!(order(&|s| s.key == rule).last(), Some(&shown("old-codex", true)), "a rule that opens it keeps it");
+}
+
+#[test]
+fn the_apps_hear_only_of_a_change_in_what_a_session_does() {
+    let sessions = Sessions::default();
+    assert!(sessions.set_live("a", Some(Live::Idle)));
+    assert!(!sessions.set_live("a", Some(Live::Idle)));
+    assert!(sessions.set_live("a", Some(Live::Working)));
+    assert!(sessions.set_live("a", None), "nothing can tell any more");
+    assert!(!sessions.set_live("a", None));
+    sessions.set_live("gone", Some(Live::Online));
+    assert!(sessions.renew_live(HashMap::from([("a".to_owned(), Live::Idle)])), "one no longer listed is forgotten");
+    assert!(!sessions.renew_live(HashMap::from([("a".to_owned(), Live::Idle)])));
 }

@@ -2499,5 +2499,11 @@
   "Search or enter a model ID": "Найдите или введите ID модели",
   "Approvals": "Одобрения",
   "Speed": "Скорость",
-  "Close search": "Закрыть поиск"
+  "Close search": "Закрыть поиск",
+  "Coding agents": "Агенты для кода",
+  "Bots and other coding agents message these sessions at their address; each reads its mail itself.": "Боты и другие агенты для кода пишут этим сеансам по их адресу; каждый сеанс сам читает свою почту.",
+  "Checks its mail": "Сам проверяет почту",
+  "Idle": "Ожидает",
+  "Older sessions: {count}": "Старых сеансов: {count}",
+  "More sessions: {count}": "Ещё сеансов: {count}"
 }

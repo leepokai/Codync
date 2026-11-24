@@ -16,7 +16,7 @@ use anyhow::{Context, Result, bail};
 use codync_network::AgentKind;
 use codync_network::sessions::{Info, info};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -29,6 +29,25 @@ const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 const TEMPORARY_FOR_MS: i64 = DAY_MS;
 /// A session with an id and no mail waiting is forgotten this long after its last call.
 const KEPT_FOR_MS: i64 = 30 * DAY_MS;
+/// How long after its last call a session still shows in the apps.
+const LISTED_FOR_MS: i64 = 7 * DAY_MS;
+
+/// The ACP registry id whose logo the apps draw for `kind` (their agent icons are keyed by it).
+pub fn registry(kind: AgentKind) -> Option<&'static str> {
+    Some(match kind {
+        AgentKind::ClaudeCode => "claude-acp",
+        AgentKind::Codex => "codex-acp",
+        AgentKind::Gemini => "gemini",
+        AgentKind::Cursor => "cursor",
+        AgentKind::Copilot => "github-copilot-cli",
+        AgentKind::Opencode => "opencode",
+        AgentKind::Pi => "pi-acp",
+        AgentKind::Amp => "amp-acp",
+        AgentKind::Grok => "grok-build",
+        AgentKind::Antigravity => "antigravity-acp",
+        AgentKind::Codync | AgentKind::Terminal | AgentKind::Other => return None,
+    })
+}
 
 /// Who calls, as its MCP server tells (`mcp::identity`).
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -55,6 +74,18 @@ impl Caller {
             Some(id) => session_key(self.kind, id),
             None => format!("process:{}", self.process),
         }
+    }
+
+    /// Its MCP server's pid, the first part of `process`.
+    pub fn pid(&self) -> Option<u32> {
+        self.process.split('-').next()?.parse().ok()
+    }
+
+    /// Its MCP server's process with that process's start, which tells later whether the agent
+    /// still runs; `None` where nothing can tell (Windows). Blocking: runs `ps`.
+    pub fn running(&self) -> Option<(u32, String)> {
+        let pid = self.pid()?;
+        Some((pid, crate::dev_servers::process_start(pid)?))
     }
 
     /// What its agent's own files say about its session, and the address it would start from.
@@ -91,6 +122,9 @@ pub struct Session {
     /// The newest letter a hook already told it of.
     #[serde(default)]
     pub announced: Option<String>,
+    /// Its MCP server's process at its last call (`Caller::running`).
+    #[serde(default)]
+    pub running: Option<(u32, String)>,
 }
 
 /// How a session hears of its mail.
@@ -112,6 +146,49 @@ pub struct Hooked {
     pub newest: Option<String>,
     /// The session's first hook: it has the turn tier now.
     pub first: bool,
+}
+
+/// Whether a session's agent runs now, as the apps show it: working or idle where its agent says
+/// (Claude Code), else running or not by its MCP server's process.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Live {
+    Working,
+    Idle,
+    Online,
+    Offline,
+}
+
+impl Live {
+    /// What its agent says: working on a turn, or idle.
+    pub fn of_busy(busy: Option<bool>) -> Option<Self> {
+        busy.map(|busy| if busy { Self::Working } else { Self::Idle })
+    }
+
+    pub fn runs(self) -> bool {
+        self != Self::Offline
+    }
+
+    /// What `s`'s agent and process say now; `None` where nothing can tell (Windows, no process
+    /// known). Blocking: reads files and runs `ps`.
+    pub fn read(s: &Session) -> Option<Self> {
+        if let Some(live) = Self::of_busy(s.id().and_then(|id| codync_network::sessions::busy(s.kind, id))) {
+            return Some(live);
+        }
+        let (pid, started) = s.running.as_ref()?;
+        // ponytail: one `ps` per session; one `ps -A` for all if listings grow long.
+        let now = crate::dev_servers::process_start(*pid);
+        Some(if now.as_ref() == Some(started) { Self::Online } else { Self::Offline })
+    }
+}
+
+/// A session as the apps list it.
+pub struct Listed {
+    pub session: Session,
+    /// What its agent was doing when last looked at.
+    pub state: Option<Live>,
+    /// Folded under the older ones: neither running nor called in the last day.
+    pub older: bool,
 }
 
 impl Session {
@@ -153,6 +230,8 @@ pub struct Sessions {
     lock: Mutex<()>,
     /// Woken when mail arrives, for `check_inbox` waits.
     pub arrived: tokio::sync::Notify,
+    /// What each session's agent was doing when last looked at, by key; never kept.
+    live: Mutex<HashMap<String, Live>>,
 }
 
 impl Sessions {
@@ -164,6 +243,7 @@ impl Sessions {
         store: &Store,
         caller: &Caller,
         title: Option<String>,
+        running: Option<(u32, String)>,
         reserve: impl FnOnce() -> Result<String>,
     ) -> Result<(Session, Registered)> {
         let _one = self.lock.locked();
@@ -186,14 +266,57 @@ impl Sessions {
                 seen: now,
                 hooked: false,
                 announced: None,
+                running: None,
             },
         };
         let retitled = title.is_some() && title != session.title;
-        let session = Session { title: title.or(session.title), seen: now, ..session };
+        let session =
+            Session { title: title.or(session.title), seen: now, running: running.or(session.running), ..session };
         all.insert(key, session.clone());
         save(store, &all)?;
         let offer = forgot || (!session.temporary && (new || retitled));
         Ok((session, Registered { new, offer }))
+    }
+
+    /// Takes what `key`'s agent does now; true when that changed what the apps show.
+    pub fn set_live(&self, key: &str, state: Option<Live>) -> bool {
+        let mut live = self.live.locked();
+        let before = match state {
+            Some(state) => live.insert(key.to_owned(), state),
+            None => live.remove(key),
+        };
+        before != state
+    }
+
+    /// Takes what the listed sessions' agents do now, forgetting the rest; true when that changed
+    /// what the apps show.
+    pub fn renew_live(&self, now: HashMap<String, Live>) -> bool {
+        let mut live = self.live.locked();
+        let changed = *live != now;
+        *live = now;
+        changed
+    }
+
+    /// The sessions the apps show: not temporary, and seen in the last week or named by `kept`
+    /// (a rule that opens it); running first, then the most recent.
+    pub fn listed(&self, store: &Store, kept: impl Fn(&Session) -> bool) -> Vec<Listed> {
+        let all = {
+            let _one = self.lock.locked();
+            load(store)
+        };
+        let now = now_ms();
+        let live = self.live.locked();
+        let mut listed: Vec<Listed> = all
+            .into_values()
+            .filter(|s| !s.temporary && (now - s.seen < LISTED_FOR_MS || kept(s)))
+            .map(|session| {
+                let state = live.get(&session.key).copied();
+                let runs = state.is_some_and(Live::runs);
+                Listed { older: !runs && now - session.seen >= DAY_MS, state, session }
+            })
+            .collect();
+        listed.sort_by_key(|l| (std::cmp::Reverse(l.state.is_some_and(Live::runs)), std::cmp::Reverse(l.session.seen)));
+        listed
     }
 
     /// Gives the session at `key` the address `reserve` hands out; its old one is retired.

@@ -13,17 +13,19 @@ import './controls.css'
 export const IconButton = IconButtonBase
 
 /** The filled call-to-action (`.primary`) or the quieter filled one (`.secondary`). */
-export function Button({ kind = 'primary', children, onClick, disabled, className, title }: {
+export function Button({ kind = 'primary', children, onClick, disabled, className, title, label }: {
   kind?: 'primary' | 'secondary' | 'destructive'
   children: ReactNode
   onClick?: () => void
   disabled?: boolean
   className?: string
   title?: string
+  /** The accessible name, for a button whose text can be hidden. */
+  label?: string
 }) {
   const tr = useTr()
   return (
-    <button className={`styled-button ${kind} ${className ?? ''}`} onClick={onClick} disabled={disabled} title={title ? tr(title) : title}>
+    <button className={`styled-button ${kind} ${className ?? ''}`} onClick={onClick} disabled={disabled} title={title ? tr(title) : title} aria-label={label ? tr(label) : label}>
       {typeof children === 'string' ? tr(children) : children}
     </button>
   )

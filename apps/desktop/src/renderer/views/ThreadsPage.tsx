@@ -6,7 +6,7 @@ import { IconButton } from '../components/Controls'
 import { AnchoredMenu, useContextMenu, type MenuItem } from '../components/Menu'
 import { Icon } from '../components/Icon'
 import { Text } from '../components/Text'
-import { prefs, usePref } from '../lib/prefs'
+import { prefs, toggled, usePref } from '../lib/prefs'
 import { useTr } from '../lib/use-language'
 import { useScreenViewed } from '../store/analytics'
 import { refKey, sameRef, type BotRef, type RosterItem } from '../store/app-model'
@@ -103,7 +103,7 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
                     title={title}
                     mark={loud ? <StatusMark status={loud.task.status} /> : null}
                     folded={isFolded}
-                    onFold={() => setFolded(isFolded ? folded.filter((key) => key !== group.key) : [...folded, group.key])}
+                    onFold={() => setFolded(toggled(folded, group.key))}
                     add={group.kind === 'bot' && (threadBots([of]).length || plainStores([of]).length) ? { title: 'New thread', action: () => start(of.ref) } : null}
                   />
                   <div className={`computer-roster-content ${isFolded ? 'collapsed' : ''}`} inert={isFolded} aria-hidden={isFolded}>

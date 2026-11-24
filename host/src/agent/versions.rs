@@ -55,6 +55,9 @@ enum Stage {
     Busy,
     Look,
     Add,
+    /// Saved, but without some files git couldn't read (a name Windows reserves, such as `nul`; a file locked or
+    /// not readable): they stay out until they can be read.
+    Unreadable,
     Commit,
 }
 
@@ -65,6 +68,7 @@ impl Stage {
             Self::Busy => "busy",
             Self::Look => "look",
             Self::Add => "add",
+            Self::Unreadable => "unreadable",
             Self::Commit => "commit",
         }
     }
@@ -166,33 +170,61 @@ fn lock(dir: &Path) -> Arc<tokio::sync::Mutex<()>> {
 }
 
 /// Saves `dir` as it is now, as a version named `message`, making it a repository first when it has none. It
-/// never holds a turn up with an error: what goes wrong is logged and counted. Whether it made the repository.
+/// never holds a turn up with an error: what goes wrong is logged and counted. Whether it saved the folder's first
+/// version.
 async fn save(hub: &Arc<Hub>, dir: &Path, message: &str) -> bool {
     if crate::git::program().await.is_none() {
         return false;
     }
     let lock = lock(dir);
     let _one = lock.lock().await;
-    match commit(dir, message).await {
-        Ok(true) => {
-            analytics::capture(hub, Event::OwnFolderVersioned, serde_json::Map::new());
-            true
-        }
-        Ok(false) => false,
-        Err((stage, error)) => {
-            tracing::warn!(dir = %dir.display(), stage = stage.as_str(), error = format!("{error:#}"), "couldn't save a version of a bot's folder");
-            let properties = json!({"stage": stage.as_str()}).as_object().cloned().unwrap_or_default();
-            analytics::capture(hub, Event::OwnFolderSaveFailed, properties);
-            false
-        }
+    let (first, failed) = match commit(dir, message).await {
+        Ok(Saved { first, unreadable }) => (first, unreadable.map(|e| (Stage::Unreadable, e))),
+        Err(failed) => (false, Some(failed)),
+    };
+    if let Some((stage, error)) = failed {
+        let error = format!("{error:#}");
+        tracing::warn!(dir = %dir.display(), stage = stage.as_str(), error, "couldn't save a version of a bot's folder");
+        let properties = json!({"stage": stage.as_str(), "reason": reason(&error)});
+        analytics::capture(hub, Event::OwnFolderSaveFailed, properties.as_object().cloned().unwrap_or_default());
+    }
+    if first {
+        analytics::capture(hub, Event::OwnFolderVersioned, serde_json::Map::new());
+    }
+    first
+}
+
+/// What a save did.
+#[derive(Debug)]
+struct Saved {
+    /// It saved the repository's first version.
+    first: bool,
+    /// Why some files stayed out of the version ([`Stage::Unreadable`]).
+    unreadable: Option<anyhow::Error>,
+}
+
+/// Why git failed, in words of Codync's own (git's message names files, which stay on the computer).
+fn reason(error: &str) -> &'static str {
+    let error = error.to_lowercase();
+    if error.contains("permission denied") || error.contains("insufficient permission") {
+        "permission"
+    } else if error.contains("filename too long") || error.contains("name too long") {
+        "long_path"
+    } else if error.contains("short read") || error.contains("invalid argument") || error.contains("invalid path") {
+        "unreadable_name"
+    } else if error.contains("being used by another process") || error.contains("resource busy") {
+        "locked"
+    } else if error.contains("does not have a commit checked out") || error.contains("embedded git repository") {
+        "nested_repository"
+    } else {
+        "other"
     }
 }
 
 /// Commits `dir` as it is now, making it a repository first when it has none; one Codync didn't make is left as it
-/// is. Whether it made the repository.
-async fn commit(dir: &Path, message: &str) -> Result<bool, (Stage, anyhow::Error)> {
-    let made = !dir.join(".git").exists();
-    if made {
+/// is. A file git can't read stays out, so one such file never stops every version after it.
+async fn commit(dir: &Path, message: &str) -> Result<Saved, (Stage, anyhow::Error)> {
+    if !dir.join(".git").exists() {
         // Its own repository, even inside another (a home folder kept in git): `add` stays in this one.
         git(dir, &["init", "-q"]).await.map_err(|e| (Stage::Init, e))?;
         let mark = "Codync made this repository to keep versions of the folder.\n";
@@ -202,7 +234,7 @@ async fn commit(dir: &Path, message: &str) -> Result<bool, (Stage, anyhow::Error
             tokio::fs::write(&ignore, IGNORED).await.map_err(|e| (Stage::Init, e.into()))?;
         }
     } else if !kept(dir) {
-        return Ok(false);
+        return Ok(Saved { first: false, unreadable: None });
     } else if let Some(busy) = BUSY.iter().find(|name| dir.join(".git").join(name).exists()) {
         return Err((Stage::Busy, anyhow!("git is at work there ({busy})")));
     }
@@ -213,13 +245,22 @@ async fn commit(dir: &Path, message: &str) -> Result<bool, (Stage, anyhow::Error
     reset.extend(unstaged.iter().map(String::as_str));
     git(dir, &reset).await.map_err(|e| (Stage::Add, e))?;
     let left_out: Vec<String> = too_big.iter().map(|name| format!(":(exclude,literal){name}")).collect();
-    let mut add = vec!["add", "-A", "--", ".", UPLOADS];
+    let mut add = vec!["add", "-A", "--ignore-errors", "--", ".", UPLOADS];
     add.extend(left_out.iter().map(String::as_str));
-    git(dir, &add).await.map_err(|e| (Stage::Add, e))?;
-    if !git(dir, &["diff", "--cached", "--name-only"]).await.map_err(|e| (Stage::Add, e))?.is_empty() {
-        git(dir, &["commit", "-q", "--no-verify", "-m", message]).await.map_err(|e| (Stage::Commit, e))?;
+    // With --ignore-errors, git stages every file it can read before it reports the ones it couldn't.
+    let unreadable = git(dir, &add).await.err();
+    let staged = git(dir, &["diff", "--cached", "--name-only"]).await.map_err(|e| (Stage::Add, e))?;
+    if staged.is_empty() {
+        // Nothing saved: a file git couldn't read was all there was, or git couldn't write at all.
+        return match unreadable {
+            Some(e) => Err((Stage::Add, e)),
+            None => Ok(Saved { first: false, unreadable: None }),
+        };
     }
-    Ok(made)
+    // No version yet (a new repository, or one whose first save failed): this one is its first.
+    let first = git(dir, &["rev-parse", "-q", "--verify", "HEAD"]).await.is_err();
+    git(dir, &["commit", "-q", "--no-verify", "-m", message]).await.map_err(|e| (Stage::Commit, e))?;
+    Ok(Saved { first, unreadable })
 }
 
 /// `git <args>` in `dir`, as Codync, to its end: a stopped `add` or `commit` would leave its lock behind, and no
@@ -271,9 +312,9 @@ mod tests {
         let Some(dir) = folder().await else { return };
         std::fs::write(dir.join("notes.md"), "one").expect("a file");
         std::fs::write(dir.join("uploads/photo.png"), "sent").expect("an upload");
-        assert_eq!(commit(&dir, "First").await.ok(), Some(true));
+        assert!(commit(&dir, "First").await.expect("saved").first);
         assert!(kept(&dir) && dir.join(".gitignore").exists(), "marked, and leaves out what tools fill again");
-        assert_eq!(commit(&dir, "Nothing new").await.ok(), Some(false));
+        assert!(!commit(&dir, "Nothing new").await.expect("nothing to save").first);
         std::fs::write(dir.join("notes.md"), "two").expect("a change");
         commit(&dir, "Second").await.expect("saved");
         assert_eq!(log(&dir).await, ["Second Codync", "First Codync"], "no version when nothing changed");
@@ -324,7 +365,7 @@ mod tests {
         commit(&dir, "First").await.expect("made");
         std::fs::write(dir.join(".git/index.lock"), "").expect("a lock");
         std::fs::write(dir.join("notes.md"), "new").expect("a change");
-        assert_eq!(commit(&dir, "Second").await.map_err(|(stage, _)| stage), Err(Stage::Busy));
+        assert_eq!(commit(&dir, "Second").await.err().map(|(stage, _)| stage), Some(Stage::Busy));
         assert_eq!(log(&dir).await, ["First Codync"]);
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -334,9 +375,54 @@ mod tests {
         let Some(dir) = folder().await else { return };
         git(&dir, &["init", "-q"]).await.expect("the bot's own repository");
         std::fs::write(dir.join("notes.md"), "new").expect("a change");
-        assert_eq!(commit(&dir, "Before: a turn").await.ok(), Some(false));
+        assert!(!commit(&dir, "Before: a turn").await.expect("left alone").first);
         assert!(!kept(&dir) && git(&dir, &["log"]).await.is_err(), "nothing committed on the user's branch");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_file_git_cannot_read_stays_out_and_the_rest_is_saved() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let Some(dir) = folder().await else { return };
+        let locked = dir.join("locked.txt");
+        std::fs::write(&locked, "unreadable").expect("a file");
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).expect("unreadable");
+        if std::fs::read(&locked).is_ok() {
+            // Root reads it anyway.
+            let _ = std::fs::remove_dir_all(dir);
+            return;
+        }
+        std::fs::write(dir.join("notes.md"), "kept").expect("a file");
+        let saved = commit(&dir, "First").await.expect("saved without it");
+        assert!(saved.first, "the first version, even with a file left out");
+        assert_eq!(saved.unreadable.map(|e| reason(&format!("{e:#}"))), Some("permission"));
+        assert_eq!(files(&dir).await, [".gitignore", "notes.md"]);
+        std::fs::write(dir.join("notes.md"), "changed").expect("a change");
+        assert!(commit(&dir, "Second").await.expect("saved again").unreadable.is_some());
+        assert_eq!(log(&dir).await, ["Second Codync", "First Codync"], "one unreadable file stops no version");
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o600)).expect("readable again");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn a_kept_repository_without_a_version_gets_its_first() {
+        let Some(dir) = folder().await else { return };
+        git(&dir, &["init", "-q"]).await.expect("a repository");
+        std::fs::write(dir.join(".git").join(MARK), "").expect("Codync's mark, its first save failed");
+        std::fs::write(dir.join("notes.md"), "one").expect("a file");
+        assert!(commit(&dir, "First").await.expect("saved").first);
+        std::fs::write(dir.join("notes.md"), "two").expect("a change");
+        assert!(!commit(&dir, "Second").await.expect("saved").first);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_reason_is_a_category_never_git_s_words() {
+        assert_eq!(reason("git add failed: error: open(\"a.txt\"): Permission denied"), "permission");
+        assert_eq!(reason("error: short read while indexing nul"), "unreadable_name");
+        assert_eq!(reason("error: unable to create file x: Filename too long"), "long_path");
+        assert_eq!(reason("something new"), "other");
     }
 
     #[test]

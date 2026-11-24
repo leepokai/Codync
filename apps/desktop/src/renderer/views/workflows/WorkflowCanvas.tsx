@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { Button, SearchField } from '../../components/Controls'
+import { Button, IconButton, SearchField } from '../../components/Controls'
+import { prefs, usePref } from '../../lib/prefs'
 import { Icon } from '../../components/Icon'
 import { AnchoredMenu, type MenuItem } from '../../components/Overlay'
 import { VStack } from '../../components/Stack'
@@ -18,7 +19,7 @@ import { pasteClip, rememberClip } from './clipboard'
 import { edgePath } from './edges'
 import { addConnection, addNode, addStroke, deleteSelection, duplicateNodes, eraseStrokes, moveNodes, nudgeNodes, replaceNode, spreadOverlaps } from './edit'
 import { keyAction, type Tool } from './keys'
-import { chord } from './WorkflowTip'
+import { chord, WorkflowTip } from './WorkflowTip'
 import { edgeId, newId, nodeBox, ports, resizeLimit, searchText, type Branch, type Graph, type Node, type Point, type WorkflowStep } from './workflow'
 import './workflows.css'
 
@@ -73,6 +74,7 @@ export function WorkflowCanvas({ workflowId, graph, readOnly, scripted, ready, s
   const [menu, setMenu] = useState<MenuAt | null>(null)
   const [canvasMenu, setCanvasMenu] = useState<MenuAt | null>(null)
   const [chrome, setChrome] = useState(true)
+  const [folded, setFolded] = usePref(prefs.workflowToolsFolded)
   const [draft, setDraft] = useState<string | null>(null)
   const [marquee, setMarquee] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
   const [minimap, setMinimap] = useState(false)
@@ -478,7 +480,14 @@ export function WorkflowCanvas({ workflowId, graph, readOnly, scripted, ready, s
         </div>
       ) : null}
       {hint ? <div className="workflow-banner"><Text size="caption">{hint}</Text></div> : null}
-      {chrome && !readOnly ? (
+      {chrome && folded ? (
+        <div className="workflow-zoom">
+          <WorkflowTip label="Tools">
+            <IconButton title="Tools" systemTip={false} icon="slider.horizontal.3" onClick={() => setFolded(false)} />
+          </WorkflowTip>
+        </div>
+      ) : null}
+      {chrome && !folded && !readOnly ? (
         <WorkflowTools
           tool={tool}
           onTool={setTool}
@@ -487,8 +496,8 @@ export function WorkflowCanvas({ workflowId, graph, readOnly, scripted, ready, s
           onAdd={scripted ? undefined : (kind) => place(kind, center())}
         />
       ) : null}
-      {chrome ? <WorkflowZoom scale={camera.scale} onZoom={zoom} onFit={fit} minimap={minimap} onMinimap={() => setMinimap((open) => !open)} /> : null}
-      {chrome && minimap && size.width > 0 ? <WorkflowMinimap graph={graph} camera={camera} viewport={size} heights={heights.current} onJump={(next) => { moved.current = true; setCamera(next) }} /> : null}
+      {chrome && !folded ? <WorkflowZoom scale={camera.scale} onZoom={zoom} onFit={fit} minimap={minimap} onMinimap={() => setMinimap((open) => !open)} onFold={() => setFolded(true)} /> : null}
+      {chrome && !folded && minimap && size.width > 0 ? <WorkflowMinimap graph={graph} camera={camera} viewport={size} heights={heights.current} onJump={(next) => { moved.current = true; setCamera(next) }} /> : null}
       {!chrome ? (
         <div className="workflow-chrome-back">
           <Button kind="secondary" onClick={toggleChrome}>

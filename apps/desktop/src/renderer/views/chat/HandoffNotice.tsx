@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import type { Entry, HandoffCard } from '@shared/models'
+import type { AgentSwitch, Entry, HandoffCard } from '@shared/models'
+import { AgentIcon } from '../../components/AgentIcon'
 import { Button, CardForm, CardSection, Disclosure, IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, Sheet, SheetPage } from '../../components/Overlay'
+import { VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore as useLiveStore } from '../../store/context'
 import { Field } from '../marketplace/pieces'
@@ -16,6 +18,43 @@ function Line({ icon, text }: { icon: string; text?: string }) {
       <Icon name={icon} size={11} />
       <span>{text}</span>
     </span>
+  )
+}
+
+/** One side of a switch: the agent's logo and what the chat calls it. */
+function SwitchSide({ backend, name }: { backend: string; name?: string }) {
+  const store = useLiveStore()
+  return (
+    <span className="switch-side">
+      <AgentIcon registry={store.agentRegistry(backend)} size={12} />
+      <span>{name}</span>
+    </span>
+  )
+}
+
+const SWITCH_STATE = { pending: 'Context handoff pending', handedOff: 'Context handed off', switched: 'Switched' } as const
+
+/** The user moved the bot to another login: a divider saying its next message carries the conversation, and once it
+ *  went, one that unfolds to what was carried. */
+export function UserSwitchNotice({ change }: { change: AgentSwitch }) {
+  const tr = useTr()
+  const [expanded, setExpanded] = useState(false)
+  const line = (
+    <span className="switch-divider-line">
+      <Icon name="arrow.left.arrow.right" size={11} />
+      {change.state ? <span>{tr(SWITCH_STATE[change.state])}</span> : null}
+      <SwitchSide backend={change.from} name={change.fromName} />
+      <Icon name="arrow.right" size={9} />
+      <SwitchSide backend={change.to} name={change.toName} />
+    </span>
+  )
+  return (
+    <VStack gap={8}>
+      <div className="switch-divider">
+        {change.carried ? <button className="switch-divider-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{line}</button> : line}
+      </div>
+      {expanded && change.carried ? <pre className="handoff-text agent-switch-carried fade-in">{change.carried}</pre> : null}
+    </VStack>
   )
 }
 

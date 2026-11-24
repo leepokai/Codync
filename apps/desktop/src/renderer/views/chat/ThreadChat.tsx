@@ -20,7 +20,8 @@ import { WindowBarSlots } from '../WindowBar'
 import { PANEL_VIEWS, type PanelPane as Pane } from '@shared/panel-layout'
 import { BrowserTab } from './BrowserTab'
 import { buildChat, type ChatItem } from './chat-items'
-import { ChatSidePanel } from './ChatSidePanel'
+import { ChatSidePanel, useSidePanelWidth } from './ChatSidePanel'
+import { CONVERSATION_MIN } from './side-panel-width'
 import { SideChat } from './ChatView'
 import { TerminalTab } from './TerminalTab'
 import { DetailsPanel } from './DetailsPanel'
@@ -81,8 +82,7 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
   const [templateDraft, setTemplateDraft] = useState<BotDraft | null>(null)
   const [panelWidth, setPanelWidth] = usePref(prefs.detailsPanelWidth)
   const view = useRef<HTMLDivElement>(null)
-  // The conversation keeps at least 380 beside the panel.
-  const fit = (w: number) => Math.min(Math.max(360, w), (view.current?.clientWidth ?? 1200) - 380)
+  const panel = useSidePanelWidth(view, CONVERSATION_MIN, panelWidth)
   const [stopping, setStopping] = useState(false)
   const bar = useContext(WindowBarSlots)
   const root = useRef<HTMLDivElement>(null)
@@ -186,7 +186,7 @@ export function ThreadChat({ bot, task, openChat }: { bot: Bot; task: WorkTask; 
         </div>
         {artifactId ? <ArtifactView botId={bot.id} artifactId={artifactId} close={() => setArtifactId(null)} /> : null}
       </div>
-      <ChatSidePanel open={panelOpen} filled={false} width={fit(panelWidth)} min={360} max={fit(Infinity)} onResize={(w) => setPanelWidth(fit(w))}>
+      <ChatSidePanel open={panelOpen} filled={!panel.beside} width={panel.width} max={panel.max} onResize={(w) => setPanelWidth(panel.fit(w))}>
         {bot.plain ? <div className="details-panel"><div className="details-page"><div className="details-panes">
           <PanelPane
             pane={pane}

@@ -99,6 +99,11 @@ public struct AgentRest: Codable, Hashable, Sendable {
 
 /// notice: the bot moved to another agent (`back`: to its own), with what the new one was told (`carried`).
 /// Lenient: a field it can't read is left out, so the line (and the chat) always decodes.
+/// A switch the user made: its next message hasn't gone yet, it carried the conversation, or nothing.
+public enum UserSwitchState: String, Codable, Hashable, Sendable {
+    case pending, handedOff, switched
+}
+
 public struct AgentSwitch: Codable, Hashable, Sendable {
     public var from: String?
     public var to: String?
@@ -106,6 +111,13 @@ public struct AgentSwitch: Codable, Hashable, Sendable {
     public var reason: String?
     public var resetsAt: Int64?
     public var carried: String?
+    /// The user made the switch (another agent or login profile): the next message carries the conversation.
+    public var manual: Bool?
+    /// Where a switch the user made is (nil from an older host, or a state this app doesn't know).
+    public var state: UserSwitchState?
+    /// What the chat calls each side: the agent, with its login profile ("Claude Code (Work)").
+    public var fromName: String?
+    public var toName: String?
 
     public init(from decoder: any Decoder) throws {
         guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
@@ -115,6 +127,10 @@ public struct AgentSwitch: Codable, Hashable, Sendable {
         reason = try? c.decodeIfPresent(String.self, forKey: .reason)
         resetsAt = try? c.decodeIfPresent(Int64.self, forKey: .resetsAt)
         carried = try? c.decodeIfPresent(String.self, forKey: .carried)
+        manual = try? c.decodeIfPresent(Bool.self, forKey: .manual)
+        state = try? c.decodeIfPresent(UserSwitchState.self, forKey: .state)
+        fromName = try? c.decodeIfPresent(String.self, forKey: .fromName)
+        toName = try? c.decodeIfPresent(String.self, forKey: .toName)
     }
 }
 

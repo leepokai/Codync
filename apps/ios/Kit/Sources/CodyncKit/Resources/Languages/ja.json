@@ -2473,5 +2473,8 @@
   "New chat": "新しいチャット",
   "in background": "バックグラウンドで実行",
   "{count} s": "{count} 秒",
-  "{count} min": "{count} 分"
+  "{count} min": "{count} 分",
+  "Context handoff pending": "コンテキストの引き継ぎ待ち",
+  "Context handed off": "コンテキストを引き継ぎました",
+  "Switched": "切り替えました"
 }

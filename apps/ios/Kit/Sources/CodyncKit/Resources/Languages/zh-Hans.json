@@ -2473,5 +2473,8 @@
   "New chat": "新对话",
   "in background": "在后台运行",
   "{count} s": "{count} 秒",
-  "{count} min": "{count} 分钟"
+  "{count} min": "{count} 分钟",
+  "Context handoff pending": "上下文交接待进行",
+  "Context handed off": "上下文已交接",
+  "Switched": "已切换"
 }

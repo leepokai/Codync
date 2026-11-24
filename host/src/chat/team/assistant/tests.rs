@@ -155,7 +155,7 @@ async fn an_answer_from_another_computer_waits_in_the_replies() {
     };
     for request in ["l1", "l2"] {
         let _ = hub.assistant.add(added(request));
-        remote::awaits_in_replies(hub, request, "Coder on laptop", "status?");
+        remote::awaits_in_replies(hub, request, "Coder on laptop", "status?", None);
     }
     let (tx, rx) = tokio::sync::mpsc::channel(4);
     tokio::spawn(remote::listen(hub.clone(), "network".into(), rx));

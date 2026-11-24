@@ -191,7 +191,7 @@ that was off learns of a removal.
   session answers with `message_bot` and `replyTo` = that id: an answer letter (`meta` completed) that ends the
   sender's request, which that computer takes since it asked; `message_bot` says `delivered`, or `queued` when the
   other computer is away or slow. A session may never answer, so a request to one (an agent that computer doesn't
-  offer as a Codync bot) doesn't hold one of the asker's 16 running slots. An answer to a session's own request
+  offer as a Codync bot) doesn't hold one of the asker's 16 running slots. Such a request (from a bot or a session) stops waiting after a week, as failed. An answer to a session's own request
   always gets in.
 - A Codync bot's agent runs with `CODYNC_BOT` set, so a user-scope `codync` server it loads refuses its calls
   (the bot has its team tools).

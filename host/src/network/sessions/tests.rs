@@ -26,7 +26,7 @@ fn register(
     store: &Store,
     caller: &Caller,
     book: &mut impl FnMut(&str) -> Result<String>,
-) -> (Session, bool, bool) {
+) -> (Session, Registered) {
     let (info, base) = caller.look();
     sessions.register(store, caller, info.title, || book(&base)).unwrap()
 }

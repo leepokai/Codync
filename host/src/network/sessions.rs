@@ -101,8 +101,18 @@ pub struct Mail {
     pub at: i64,
 }
 
+/// What a call that registers a session changed, for what this computer offers its networks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Registered {
+    New,
+    /// Its title, or other sessions forgotten.
+    Changed,
+    Same,
+}
+
 /// The sessions and their mail, kept in the store; one change at a time.
 #[derive(Default)]
+
 pub struct Sessions {
     lock: Mutex<()>,
     /// Woken when mail arrives, for `check_inbox` waits.
@@ -119,7 +129,7 @@ impl Sessions {
         caller: &Caller,
         title: Option<String>,
         reserve: impl FnOnce() -> Result<String>,
-    ) -> Result<(Session, bool, bool)> {
+    ) -> Result<(Session, Registered)> {
         let _one = self.lock.locked();
         let now = now_ms();
         let mut all = load(store);
@@ -140,10 +150,18 @@ impl Sessions {
                 seen: now,
             },
         };
+        let retitled = title.is_some() && title != session.title;
         let session = Session { title: title.or(session.title), seen: now, ..session };
         all.insert(key, session.clone());
         save(store, &all)?;
-        Ok((session, new, forgot))
+        let registered = if new {
+            Registered::New
+        } else if retitled || forgot {
+            Registered::Changed
+        } else {
+            Registered::Same
+        };
+        Ok((session, registered))
     }
 
     /// Gives the session at `key` the address `reserve` hands out; its old one is retired.
@@ -215,6 +233,11 @@ impl Sessions {
 /// Forgets the sessions gone stale; true when it forgot any that weren't temporary (those may be
 /// offered to a network).
 fn forget_stale(store: &Store, all: &mut BTreeMap<String, Session>, now: i64) -> Result<bool> {
+    // Most calls find nothing past its time: the mail is read only when something may go.
+    let due = |s: &Session| now - s.seen >= if s.temporary { TEMPORARY_FOR_MS } else { KEPT_FOR_MS };
+    if !all.values().any(due) {
+        return Ok(false);
+    }
     let mut mail = load_mail(store);
     let stale = |key: &String, s: &Session| {
         if s.temporary {

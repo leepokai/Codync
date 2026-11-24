@@ -32,7 +32,13 @@ struct Waiter {
     quote: String,
     /// How the recipient is shown ("Reviewer on desk").
     peer: String,
+    /// When it stops waiting (Unix ms): a request to an agent that isn't a Codync bot (a coding
+    /// agent's session) may never be answered. `None` for a bot, which always answers.
+    until: Option<i64>,
 }
+
+/// How long a request to an agent that isn't a Codync bot waits for its answer.
+const SESSION_WAIT_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
 /// Where an answer from another computer goes.
 enum ReplyTo {
@@ -51,6 +57,37 @@ impl Waiting {
     fn take(&self, id: &str) -> Option<Waiter> {
         self.0.locked().remove(id)
     }
+
+    /// The requests whose wait is over, taken.
+    fn expired(&self, now: i64) -> Vec<(String, Waiter)> {
+        let mut all = self.0.locked();
+        let over: Vec<String> =
+            all.iter().filter(|(_, w)| w.until.is_some_and(|until| until <= now)).map(|(id, _)| id.clone()).collect();
+        over.into_iter().filter_map(|id| all.remove(&id).map(|w| (id, w))).collect()
+    }
+}
+
+/// Ends the requests that waited their full time for an agent that never answered, as failed.
+fn expire(hub: &Hub) {
+    for (id, waiter) in hub.waiting.expired(crate::store::now_ms()) {
+        let m = Message {
+            id: uuid::Uuid::new_v4().to_string(),
+            from: Address { agent: waiter.peer.clone(), computer: String::new() },
+            to: String::new(),
+            body: "No answer within a week: it never read or answered this.".into(),
+            wake: false,
+            reply_to: Some(id.clone()),
+            hops: 0,
+            meta: Some(json!({"codync": RequestStatus::Failed})),
+            access: codync_network::Access::Allow,
+        };
+        replied(hub, &id, waiter, &m);
+    }
+}
+
+/// When a request to `to` stops waiting: never for a Codync bot.
+fn wait_until(hub: &Hub, to: &Target) -> Option<i64> {
+    (!offers_bot(hub, to)).then(|| crate::store::now_ms() + SESSION_WAIT_MS)
 }
 
 /// Where the outcome of a request from another computer goes.
@@ -193,7 +230,10 @@ async fn send(hub: &Arc<Hub>, node: &Node, source: &BotConfig, to: &Target, lett
     };
     let entry = exchange.notice(hub, &source.id, &heading, false)?;
     let quote = truncate(&letter.body, REQUEST_QUOTE_BYTES);
-    let waiter = Waiter { to: ReplyTo::Bot { id: source.id.clone(), entry: entry.clone() }, quote, peer: peer.clone() };
+    expire(hub);
+    let until = wait_until(hub, to);
+    let waiter =
+        Waiter { to: ReplyTo::Bot { id: source.id.clone(), entry: entry.clone() }, quote, peer: peer.clone(), until };
     hub.waiting.insert(id.clone(), waiter);
     let said = match node.send(letter).await {
         Ok(Sent::Delivered) => {
@@ -235,7 +275,8 @@ pub(super) fn ask_for_replies(
     let (id, peer) = (letter.id.clone(), peer_name(hub, &to.network, &to.address));
     // Kept before the letter goes, so an outcome as quick as a refusal finds them: the route first,
     // so the reply record that may push out older ones (and their routes) never outlives its own.
-    awaits_in_replies(hub, &id, &peer, message);
+    expire(hub);
+    awaits_in_replies(hub, &id, &peer, message, wait_until(hub, to));
     let reply = super::assistant::Reply::queued(asker, &id, &peer, message);
     keep_reply(hub, if offers_bot(hub, to) { reply } else { reply.unlimited() });
     let (hub, request) = (hub.clone(), id.clone());
@@ -269,9 +310,10 @@ pub(super) fn keep_reply(hub: &Hub, reply: super::assistant::Reply) {
 }
 
 /// The answer to letter `id` goes to its asker's replies.
-pub(super) fn awaits_in_replies(hub: &Hub, id: &str, peer: &str, message: &str) {
+/// `until`: when it stops waiting (`wait_until`).
+pub(super) fn awaits_in_replies(hub: &Hub, id: &str, peer: &str, message: &str, until: Option<i64>) {
     let quote = truncate(message, REQUEST_QUOTE_BYTES);
-    hub.waiting.insert(id.to_owned(), Waiter { to: ReplyTo::Replies, quote, peer: peer.to_owned() });
+    hub.waiting.insert(id.to_owned(), Waiter { to: ReplyTo::Replies, quote, peer: peer.to_owned(), until });
 }
 
 /// Says where a request waits, unless its reply already came (a quick one can beat this).
@@ -386,4 +428,21 @@ fn replied(hub: &Hub, id: &str, waiter: Waiter, m: &Message) {
         entry: None,
     };
     let _ = hub.send_cmd(&sender, Cmd::BotReply(reply));
+}
+
+#[cfg(test)]
+mod waiting_tests {
+    use super::*;
+
+    #[test]
+    fn only_a_wait_that_is_over_is_taken() {
+        let waiting = Waiting::default();
+        let waiter = |until| Waiter { to: ReplyTo::Replies, quote: String::new(), peer: "x".into(), until };
+        waiting.insert("bot".into(), waiter(None));
+        waiting.insert("session".into(), waiter(Some(100)));
+        assert!(waiting.expired(99).is_empty());
+        let over: Vec<String> = waiting.expired(100).into_iter().map(|(id, _)| id).collect();
+        assert_eq!(over, ["session"]);
+        assert!(waiting.take("bot").is_some(), "a bot's request waits for good");
+    }
 }

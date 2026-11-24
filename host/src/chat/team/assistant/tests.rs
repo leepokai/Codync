@@ -151,6 +151,7 @@ async fn an_answer_from_another_computer_waits_in_the_replies() {
         status: RequestStatus::Sent,
         text: None,
         at: now_ms(),
+        limited: true,
     };
     for request in ["l1", "l2"] {
         hub.assistant.add(added(request));

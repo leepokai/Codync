@@ -76,6 +76,9 @@ pub struct Session {
     pub busy: Option<bool>,
     /// Keyed by its MCP server's process: gone when that process is.
     pub temporary: bool,
+    /// The name its last `set_name` asked for (its address may be that name numbered).
+    #[serde(default)]
+    pub named: Option<String>,
     pub seen: i64,
 }
 
@@ -132,6 +135,7 @@ impl Sessions {
                 title: None,
                 busy: None,
                 temporary: caller.session.is_none(),
+                named: None,
                 seen: now,
             },
         };
@@ -142,11 +146,18 @@ impl Sessions {
     }
 
     /// Gives the session at `key` the address `reserve` hands out; its old one is retired.
-    pub fn rename(&self, store: &Store, key: &str, reserve: impl FnOnce() -> Result<String>) -> Result<Session> {
+    pub fn rename(
+        &self,
+        store: &Store,
+        key: &str,
+        named: &str,
+        reserve: impl FnOnce() -> Result<String>,
+    ) -> Result<Session> {
         let _one = self.lock.locked();
         let mut all = load(store);
         let Some(session) = all.get_mut(key) else { bail!("this session isn't registered") };
         session.address = reserve()?;
+        session.named = Some(named.to_owned());
         let session = session.clone();
         save(store, &all)?;
         Ok(session)

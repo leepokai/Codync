@@ -124,30 +124,7 @@ fn to_session(hub: &Arc<Hub>, session: &Session, m: &Message, back: &Return) -> 
     // Named with its network while this computer is in several, so the session can answer it.
     let from = hub.network.address_text(&Target { network: back.network.clone(), address: m.from.clone() });
     super::mailbox::post(hub, session, Some(&m.id), &from, &m.body, m.reply_to.as_deref())?;
-    // The sender's request ends with this receipt; the session's answer, if it sends one, comes
-    // after it (`session_answer`), which that computer still takes since it asked.
-    if request {
-        receipt(
-            hub,
-            back,
-            format!("Delivered to {}'s inbox: it reads its mail itself and may answer later.", session.address),
-            m.hops,
-        );
-    }
     Ok(())
-}
-
-/// A reply without `meta`: it ends the sender's request but not what that computer lets in as answers.
-fn receipt(hub: &Arc<Hub>, to: &Return, body: String, hops: u8) {
-    let Ok(slot) = hub.network.slot(Some(&to.network)) else { return };
-    let letter = Letter::new(to.from.clone(), to.to.clone(), body).reply_to(to.request.clone()).hops(hops);
-    let hub = hub.clone();
-    tokio::spawn(async move {
-        if let Err(error) = slot.node.send(letter).await {
-            tracing::warn!(error = format!("{error:#}"), "couldn't tell another computer its letter reached a session");
-            crate::analytics::network_failed(&hub, NetworkStage::Reply);
-        }
-    });
 }
 
 /// A session here answers letter `reply_to` from another computer: the answer that says how it
@@ -251,7 +228,8 @@ pub(super) fn ask_for_replies(
     let letter = Letter::new(from, to.address.clone(), message);
     let (id, peer) = (letter.id.clone(), peer_name(hub, &to.network, &to.address));
     // Kept before the letter goes, so an outcome as quick as a refusal finds them.
-    hub.assistant.add(super::assistant::Reply::queued(asker, &id, &peer, message));
+    let reply = super::assistant::Reply::queued(asker, &id, &peer, message);
+    hub.assistant.add(if offers_bot(hub, to) { reply } else { reply.unlimited() });
     awaits_in_replies(hub, &id, &peer, message);
     let (hub, request) = (hub.clone(), id.clone());
     tokio::spawn(async move {
@@ -266,6 +244,14 @@ pub(super) fn ask_for_replies(
         }
     });
     Ok((id, peer))
+}
+
+/// Whether `to` is a Codync bot there (as far as this computer heard), which always answers.
+fn offers_bot(hub: &Hub, to: &Target) -> bool {
+    let Ok(slot) = hub.network.slot(Some(&to.network)) else { return true };
+    let peer = slot.node.directory().into_iter().find(|p| p.name == to.address.computer);
+    let agent = peer.and_then(|p| p.agents.into_iter().find(|a| a.id == to.address.agent));
+    agent.is_none_or(|a| a.kind == codync_network::AgentKind::Codync)
 }
 
 /// The answer to letter `id` goes to its asker's replies.

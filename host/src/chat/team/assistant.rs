@@ -235,8 +235,13 @@ async fn message(hub: &Arc<Hub>, asker: &Asker, args: &Value) -> Result<Value> {
         Recipient::There(address) => match (&asker.session, args["replyTo"].as_str()) {
             // A session answering a letter from another computer.
             (Some(me), Some(reply_to)) => {
-                let sent = remote::session_answer(hub, &me.address, &address, reply_to, message).await?;
-                let status = if sent == codync_network::Sent::Delivered { "delivered" } else { "queued" };
+                // A slow connection keeps trying in the background; the call says so rather than time out.
+                let sending = remote::session_answer(hub, &me.address, &address, reply_to, message);
+                let status = match tokio::time::timeout(std::time::Duration::from_secs(10), sending).await {
+                    Ok(Ok(codync_network::Sent::Delivered)) => "delivered",
+                    Ok(Err(error)) => return Err(error),
+                    Ok(Ok(_)) | Err(_) => "queued",
+                };
                 return Ok(json!({"to": hub.network.address_text(&address), "status": status}));
             }
             _ => return message_elsewhere(hub, asker, &address, message),
@@ -345,6 +350,9 @@ pub(super) struct Reply {
     /// The reply, or why there is none.
     text: Option<String>,
     at: i64,
+    /// Counts toward `MAX_RUNNING`: a request to a bot, which always answers. One to a session (its
+    /// mailbox) may wait for good, so it doesn't hold a slot.
+    limited: bool,
 }
 
 impl Reply {
@@ -358,7 +366,13 @@ impl Reply {
             status: RequestStatus::Queued,
             text: None,
             at: now_ms(),
+            limited: true,
         }
+    }
+
+    /// A request to a coding agent's session, which may never answer.
+    pub(super) fn unlimited(self) -> Self {
+        Self { limited: false, ..self }
     }
 
     fn running(&self) -> bool {
@@ -379,13 +393,13 @@ impl Replies {
         let mut all = self.0.locked();
         all.push(reply);
         while all.len() > KEEP {
-            let Some(i) = all.iter().position(|r| !r.running()) else { break };
+            let Some(i) = all.iter().position(|r| !r.running() || !r.limited) else { break };
             all.remove(i);
         }
     }
 
     fn running(&self, asker: &str) -> usize {
-        self.0.locked().iter().filter(|r| r.asker == asker && r.running()).count()
+        self.0.locked().iter().filter(|r| r.asker == asker && r.limited && r.running()).count()
     }
 
     fn set(&self, request: &str, status: RequestStatus, text: Option<String>) {

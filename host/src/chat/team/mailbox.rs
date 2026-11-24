@@ -70,12 +70,12 @@ fn set_name(hub: &Hub, s: &Session, args: &Value) -> Result<Value> {
         args["name"].as_str().map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| anyhow!("name is required"))?;
     let base = crate::network::handle(name);
     // Asked again (a retry): the address that name gave it, not another number.
-    let numbered_from = |n: &str| n.parse::<u32>().is_ok();
-    if s.address == base || s.address.strip_prefix(&format!("{base}-")).is_some_and(numbered_from) {
+    if s.address == base || s.named.as_deref() == Some(base.as_str()) {
         return Ok(whoami(hub, s));
     }
     let owner = format!("session:{}", s.key);
-    let renamed = hub.network.sessions.rename(&hub.store, &s.key, || hub.network.reserve(&hub.store, &base, &owner))?;
+    let renamed =
+        hub.network.sessions.rename(&hub.store, &s.key, &base, || hub.network.reserve(&hub.store, &base, &owner))?;
     tracing::info!(kind = s.kind.as_str(), "a session took another address");
     crate::analytics::network_session(hub, crate::analytics::SessionAction::Renamed, s.kind);
     crate::network::publish(hub);

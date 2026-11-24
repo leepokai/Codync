@@ -187,11 +187,12 @@ that was off learns of a removal.
   session's address (`rules::opens`; `*` doesn't count), as `Reach::Mailbox`. Its letters, too, pass only a rule
   that names it (`rules::mailbox_access`: a `*` allow doesn't open it, while a `*` deny or ceiling still applies;
   no rule, denied), and a ceiling (`auto`, `ask`) refuses them: a session can't be held to one. A letter lands in the
-  mailbox under its own id, from its sender's address (with the network while this computer is in several), and a
-  request gets a receipt at once ("Delivered to …'s inbox", a reply without `meta`), so no sender waits on a session
-  that never reads its mail. The session answers with `message_bot` and `replyTo` = that id: an answer letter
-  (`meta` completed) the asking computer still takes, since it asked, into the asking bot's chat (or a session's
-  mailbox); `message_bot` says whether it was delivered or queued. An answer to a session's own request always gets in.
+  mailbox under its own id, from its sender's address (with the network while this computer is in several). The
+  session answers with `message_bot` and `replyTo` = that id: an answer letter (`meta` completed) that ends the
+  sender's request, which that computer takes since it asked; `message_bot` says `delivered`, or `queued` when the
+  other computer is away or slow. A session may never answer, so a request to one (an agent that computer doesn't
+  offer as a Codync bot) doesn't hold one of the asker's 16 running slots. An answer to a session's own request
+  always gets in.
 - A Codync bot's agent runs with `CODYNC_BOT` set, so a user-scope `codync` server it loads refuses its calls
   (the bot has its team tools).
 - PostHog: `network_session` with `action` (`registered`, `renamed`, `posted`, `read`) and `kind`.

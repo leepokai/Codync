@@ -21,13 +21,13 @@ export const agentPages: AgentPage[] = [
     title: "Claude Code on iPhone, free",
     description:
       "Run Claude Code from your iPhone with Codync, a 100% free, open-source app. Claude Code keeps running on your own Mac, Windows PC or Linux machine; you chat, approve edits and see your Claude limits from the phone.",
-    lead: "Claude Code keeps running on your own Mac, Windows PC or Linux machine, with the Claude login it already has. Codync turns it into named bots you message, approve and follow from your iPhone, for free.",
+    lead: "Claude Code keeps running on your own Mac, Windows PC or Linux machine, with the Claude login it already has. Codync turns it into named bots you message, approve and follow from your phone, for free.",
     login: "Claude Code signs in with your Claude plan on the computer, as it always does. Codync never sees or calls the Claude API with it.",
     usage: "Your Claude 5-hour and weekly limits, read locally from Claude Code, show on the phone, in widgets and in the Mac menu bar.",
     faq: [
       [
         "Is there a Claude Code app for iPhone?",
-        "Codync is a free iPhone app for Claude Code: it runs Claude Code on your computer and lets you chat with it, approve its edits and commands, and get notified when it needs you or finishes.",
+        "Codync is a free phone app for Claude Code (iPhone and Android): it runs Claude Code on your computer and lets you chat with it, approve its edits and commands, and get notified when it needs you or finishes.",
       ],
       [
         "Does it work with my Claude Pro or Max plan?",
@@ -49,13 +49,13 @@ export const agentPages: AgentPage[] = [
     title: "Codex on iPhone, free",
     description:
       "Run OpenAI Codex from your iPhone with Codync, a 100% free, open-source app. Codex keeps running on your own Mac, Windows PC or Linux machine; you chat, approve commands and see your Codex limits from the phone.",
-    lead: "Codex keeps running on your own Mac, Windows PC or Linux machine, with the ChatGPT login it already has. Codync turns it into named bots you message, approve and follow from your iPhone, for free.",
+    lead: "Codex keeps running on your own Mac, Windows PC or Linux machine, with the ChatGPT login it already has. Codync turns it into named bots you message, approve and follow from your phone, for free.",
     login: "Codex signs in with your ChatGPT plan on the computer, as it always does. Codync never sees or calls the OpenAI API with it.",
     usage: "Your Codex 5-hour and weekly limits, read on your computer through the Codex CLI, show on the phone, in widgets and in the Mac menu bar.",
     faq: [
       [
         "Can I use Codex on my iPhone?",
-        "Yes. Codync is a free iPhone app that runs Codex on your computer and lets you chat with it, approve its commands and edits, and get notified when it needs you or finishes.",
+        "Yes. Codync is a free phone app (iPhone and Android) that runs Codex on your computer and lets you chat with it, approve its commands and edits, and get notified when it needs you or finishes.",
       ],
       [
         "Does it work with my ChatGPT plan?",

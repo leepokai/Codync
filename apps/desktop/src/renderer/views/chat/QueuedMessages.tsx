@@ -143,7 +143,7 @@ function QueuedRow({
               grow
               className="queued-preview"
               onClick={() => setExpanded(!expanded)}
-              onDoubleClick={scheduling ? startEdit : undefined}
+              onDoubleClick={scheduling && !answering ? startEdit : undefined}
             >
               {expanded ? whole : messagePreview(text)}
             </Text>
@@ -152,7 +152,7 @@ function QueuedRow({
                 · {tr('Fires {time}').replaceAll('{time}', () => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(fireAt)))}
               </Text>
             ) : null}
-            <IconButton title={tr('Copy')} icon="doc.on.doc" size={26} onClick={() => window.codync.app.copy(text)} />
+            <IconButton title={tr('Copy')} icon="doc.on.doc" size={26} onClick={() => window.codync.app.copy(whole)} />
             {scheduling ? (
               <IconButton title={tr('Edit')} icon="pencil" size={26} disabled={answering} onClick={startEdit} />
             ) : null}

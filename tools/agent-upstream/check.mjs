@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { pointAtMock } from "./agents.mjs";
+import { stopDaemons, stopHost } from "./processes.mjs";
 import { PROMPT, respond } from "./scenario.mjs";
 
 const run = promisify(execFile);
@@ -60,7 +61,7 @@ const table = [
 ].join("\n");
 console.log(table);
 if (process.env.GITHUB_STEP_SUMMARY) {
-  const moved = rows.filter((r) => r.result === "passed" && r.now !== r.version).map((r) => `${r.id} to ${r.now}`);
+  const moved = rows.filter((r) => r.result === "passed" && r.now !== r.version && r.now !== "installed").map((r) => `${r.id} to ${r.now}`);
   const accept = moved.length ? `\n\nPassed on a new version: raise ${moved.join(", ")} in tools/agent-upstream/accepted.json.` : "";
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Upstream agents\n\n${table}${accept}\n`);
 }
@@ -70,20 +71,12 @@ if (rows.some((r) => r.result === "failed")) process.exitCode = 1;
 async function scriptedTurn(backend, mode) {
   const mock = new LLMock({ port: 0, responsesTools: "extended" });
   mock.on({ predicate: () => true }, respond);
-  await mock.start();
   const root = mkdtempSync(path.join(tmpdir(), "cu-"));
+  await mock.start();
   const [home, data, folder] = ["h", "d", "w"].map((dir) => path.join(root, dir));
-  for (const dir of [home, data, folder]) mkdirSync(dir, { recursive: true });
-  writeFileSync(path.join(folder, "notes.txt"), "alpha\n");
   const port = String(19500 + Math.floor(Math.random() * 400));
-  const env = {
-    ...withoutCredentials(process.env), HOME: home, CODYNC_HOME: data, CODYNC_CLOUD: "off", CODYNC_ANALYTICS_ENV: "dev",
-    ...pointAtMock(backend, { url: mock.url, home }),
-  };
-  const host = spawn(hostBin, ["serve", "--bind", "127.0.0.1", "--port", port], { env, stdio: ["ignore", "pipe", "pipe"] });
+  let host;
   let log = "";
-  host.stdout.on("data", (d) => (log += d));
-  host.stderr.on("data", (d) => (log += d));
   const api = async (method, body = {}) => {
     const token = readFileSync(path.join(data, "token"), "utf8").trim();
     const response = await fetch(`http://127.0.0.1:${port}/api/${method}`, {
@@ -96,6 +89,13 @@ async function scriptedTurn(backend, mode) {
     return JSON.parse(text || "null");
   };
   try {
+    for (const dir of [home, data, folder]) mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(folder, "notes.txt"), "alpha\n");
+    const base = { ...withoutCredentials(process.env), HOME: home, CODYNC_HOME: data, CODYNC_CLOUD: "off", CODYNC_ANALYTICS_ENV: "dev" };
+    const env = { ...base, ...pointAtMock(backend, { url: mock.url, home, env: base }) };
+    host = spawn(hostBin, ["serve", "--bind", "127.0.0.1", "--port", port], { env, stdio: ["ignore", "pipe", "pipe"] });
+    host.stdout.on("data", (d) => (log += d));
+    host.stderr.on("data", (d) => (log += d));
     // The registry loads after the host starts: until then its agents aren't available.
     for (let i = 0; ; i++) {
       const hello = await api("hello").catch(() => null);
@@ -118,7 +118,7 @@ async function scriptedTurn(backend, mode) {
   } catch (error) {
     throw new Error(`${error.message}\n${log.slice(-1500)}`);
   } finally {
-    host.kill("SIGTERM");
+    host?.kill("SIGTERM");
     await stopDaemons(home);
     await mock.stop();
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
@@ -147,13 +147,16 @@ function approveCards(api, botId) {
       const { entries } = await api("history", { botId }).catch(() => ({ entries: [] }));
       for (const card of entries.filter((e) => e.kind === "permission" && e.data.status === "pending" && !answered.has(e.id))) {
         const allow = card.data.options.find((o) => o.kind === "allow_once");
-        await api("respondPermission", { entryId: card.id, optionId: allow?.optionId });
+        if (!allow) throw new Error(`the permission card has no allow-once option: ${JSON.stringify(card.data.options)}`);
+        await api("respondPermission", { entryId: card.id, optionId: allow.optionId });
         answered.add(card.id);
       }
       await sleep(500);
     }
     return answered.size;
   })();
+  // Awaited only once the turn is over: a failed answer until then fails the turn, not the whole check.
+  done.catch(() => {});
   return { stop: () => (running = false), done };
 }
 
@@ -161,47 +164,4 @@ function approveCards(api, botId) {
  * DEEPSEEK_API_KEY it finds). */
 function withoutCredentials(env) {
   return Object.fromEntries(Object.entries(env).filter(([key]) => !/(_API_KEY|_AUTH_TOKEN|^GH_TOKEN|^GITHUB_TOKEN)$/u.test(key)));
-}
-
-/** Ends what an agent detached on purpose to outlive the host (Hermes's gateway), found by the check's own HOME. */
-async function stopDaemons(home) {
-  const { stdout } = await run("ps", ["axeww", "-o", "pid=,command="], { maxBuffer: 64 * 1024 * 1024 });
-  for (const line of stdout.split("\n").filter((l) => l.includes(` HOME=${home} `))) {
-    try {
-      process.kill(Number(line.trim().split(/\s+/u)[0]), "SIGKILL");
-    } catch (error) {
-      // Ended by itself between ps and kill.
-      if (error.code !== "ESRCH") throw error;
-    }
-  }
-}
-
-/** Stops the host and returns its descendants still running 10 s later, if any. */
-async function stopHost(host) {
-  const tree = descendants(await processTable(), host.pid);
-  host.kill("SIGTERM");
-  await new Promise((resolve) => (host.exitCode === null ? host.once("exit", resolve) : resolve()));
-  await sleep(10_000);
-  // Compared by command line too, so a pid reused since reads as gone.
-  const alive = new Map((await processTable()).map((p) => [p.pid, p.command]));
-  return tree.filter((p) => alive.get(p.pid) === p.command).map((p) => `${p.pid} ${p.command.slice(0, 100)}`).join("; ");
-}
-
-async function processTable() {
-  const { stdout } = await run("ps", ["-eo", "pid=,ppid=,command="]);
-  return stdout.split("\n").filter(Boolean).map((line) => {
-    const [pid, ppid, ...command] = line.trim().split(/\s+/u);
-    return { pid: Number(pid), ppid: Number(ppid), command: command.join(" ") };
-  });
-}
-
-/** Every process under `root` in `table`. */
-function descendants(table, root) {
-  const found = [];
-  for (let parents = new Set([root]); parents.size; ) {
-    const children = table.filter((p) => parents.has(p.ppid));
-    found.push(...children);
-    parents = new Set(children.map((c) => c.pid));
-  }
-  return found;
 }

@@ -43,14 +43,14 @@ jobs:
           node-version: "24"
       - working-directory: tools/agent-upstream
         run: npm ci
-      # A harness the host knows by name runs only when its CLI is on the computer: the latest of each, installed the
-      # way the host's catalog (host/crates/agent/src/backends/catalog.rs) tells a user to.
+      # A harness the host knows by name runs only when its CLI is on the computer: the latest of each, from npm where it
+      # ships there, else by the install script of the host's catalog (host/crates/agent/src/backends/catalog.rs).
       - name: Install the agents' CLIs
         run: |
           npm install -g @anthropic-ai/claude-code @openai/codex @github/copilot @earendil-works/pi-coding-agent @deepseek-ai/dsh @xai-official/grok
           curl -fsSL https://omp.sh/install | sh -s -- --binary
           curl -fsSL https://opencode.ai/install | bash
-          curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash < /dev/null
+          curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o /tmp/hermes-install.sh && bash /tmp/hermes-install.sh < /dev/null
           curl -fsSL https://antigravity.google/cli/install.sh | bash
           for dir in "$HOME/.local/bin" "$HOME/.opencode/bin" "$HOME/.hermes/bin"; do echo "$dir" >> "$GITHUB_PATH"; done
       - name: One turn on each new adapter
@@ -75,6 +75,6 @@ jobs:
           if [ -n "$open" ]; then
             gh issue comment "$open" --body "Still failing: $RUN"
           else
-            gh issue create --label agent-upstream --title "A new agent adapter version breaks Codync" \
+            gh issue create --label agent-upstream --title "The upstream agent check fails" \
               --body "The daily upstream check failed: $RUN (docs/guides/test-stack.md#upstream-agents)."
           fi

@@ -6,11 +6,12 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-/** Environment that points `backend` at the mock on `url`, writing any config it needs under `home`. */
-export function pointAtMock(backend, { url, home }) {
+/** Environment that points `backend` at the mock on `url`, writing any config it needs under `home`; `env` is the
+ * environment the agent starts in, for anything run here. */
+export function pointAtMock(backend, { url, home, env }) {
   const setup = AGENTS[backend];
   if (!setup) throw new Error(`no aimock setup for ${backend} in agents.mjs`);
-  return setup({ url, home });
+  return setup({ url, home, env });
 }
 
 /** `text` at `home`/`relative`, folders made. */
@@ -91,17 +92,17 @@ const AGENTS = {
   dsh: ({ url }) => ({ DEEPSEEK_BASE_URL: url, DEEPSEEK_API_KEY: "aimock", DSH_TELEMETRY_MODE: "DISABLED" }),
 
   // Hermes reads its provider from $HERMES_HOME/config.yaml: a custom OpenAI-compatible endpoint on an API key.
-  hermes: ({ url, home }) => {
+  hermes: ({ url, home, env: base }) => {
     // Hermes asks only before commands it deems dangerous: a pre_tool_call hook sends its terminal tool to the approval gate.
     const ask = put(home, ".hermes/ask.sh", `#!/bin/sh\necho '{"action": "approve", "message": "Run this command?"}'\n`);
     put(home, ".hermes/config.yaml", [
       "model:", "  provider: custom", "  default: gpt-4o", `  base_url: ${url}/v1`, "  api_key: aimock",
       "hooks:", "  pre_tool_call:", "    - matcher: terminal", `      command: sh ${ask}`, "hooks_auto_accept: true", "",
     ].join("\n"));
-    const env = { HOME: home, HERMES_HOME: path.join(home, ".hermes") };
+    const env = { HERMES_HOME: path.join(home, ".hermes") };
     // A new home builds its dependency environment on first launch, and a second hermes starting meanwhile (the host's
     // sign-in check beside the session) fails with "no dependency environment is committed": build it first.
-    execFileSync("hermes", ["acp", "--check"], { env: { ...process.env, ...env }, stdio: "ignore", timeout: 600_000 });
+    execFileSync("hermes", ["acp", "--check"], { env: { ...base, ...env }, stdio: "ignore", timeout: 600_000 });
     return env;
   },
 

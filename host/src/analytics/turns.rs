@@ -128,6 +128,8 @@ fn on_login_profile(mut p: Value, login_profile: bool) -> Value {
 pub enum Carried {
     /// A new session: the conversation so far.
     Recap,
+    /// A new session after the user moved the bot to another folder: the conversation so far, told as its own.
+    Move,
     /// A session it had before: what happened since it left.
     CatchUp,
 }

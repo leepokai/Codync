@@ -56,7 +56,7 @@ The **Workspace** setting is the folder the bot starts in.
 
 Either way, the bot can work in other folders when you ask it to. A working folder isn't a sandbox: the bot can reach whatever its agent's own permissions allow. Several bots working in the same project folder can get in each other's way, and Codync doesn't create separate Git worktrees for them. One bot's own [threads](/docs/conversations#work) do get a worktree each when they run side by side in a project folder: when that folder is in a Git repository, the bot's **Settings** show **Worktree per thread** under **Workspace**, on unless you turn it off. In its own folder they all work in that one folder. Codync never merges or deletes a branch that has work on it. Under the folder, **Settings** say whether it is a Git repository; what that changes, and what to do without one, is in [Working folders and git](/docs/working-folders).
 
-Changing the folder starts a new agent session.
+Changing the folder starts a new agent session there. Your next message carries a summary of the conversation, so the bot picks up where you left off.
 
 When there are no recent workspaces, **Browse other folders** appears first. After you choose a folder, recent workspaces and their search appear on your next visit.
 

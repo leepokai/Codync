@@ -97,7 +97,7 @@ import Testing
 
     await remote.setCanned("localDictation", throwing: HostError.unreachable)
     await status.load(on: store)
-    #expect(status.error == HostError.unreachable.localizedDescription)
+    #expect(status.error == HostError.unreachable.localizedDescription && status.local == nil)
 }
 
 @Test @MainActor func googleSearchOnlyChangesGeminiRealtimeEngineChoice() {

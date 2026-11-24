@@ -12,6 +12,7 @@ import Observation
     /// Asks `store`'s computer. Run while the card shows, again each time it (re)connects.
     func load(on store: BotStore) async {
         guard let client = store.client else {
+            local = nil
             error = "Not connected to \(store.hostName)."
             return
         }
@@ -19,6 +20,7 @@ import Observation
             local = try await client.localDictation()
             error = nil
         } catch {
+            local = nil
             self.error = error.localizedDescription
         }
     }

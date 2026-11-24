@@ -123,6 +123,17 @@ impl Waiting {
     }
 }
 
+/// Ends requests whose wait ran out, every hour, so one to a session that never answers doesn't
+/// wait on in the asker's chat until the next request comes.
+pub(crate) async fn expire_loop(hub: Arc<Hub>) {
+    let mut timer = tokio::time::interval(std::time::Duration::from_hours(1));
+    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        timer.tick().await;
+        expire(&hub);
+    }
+}
+
 /// Ends the requests that waited their full time for an agent that never answered, as failed.
 fn expire(hub: &Hub) {
     for (id, waiter) in hub.waiting.expired(crate::store::now_ms()) {

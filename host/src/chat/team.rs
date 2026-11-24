@@ -24,6 +24,7 @@ pub mod remote;
 mod requests;
 pub mod restart;
 pub use ceilings::Ceilings;
+pub(crate) use remote::expire_loop;
 pub use requests::{Requests, Turn};
 
 const MAX_MESSAGE_BYTES: usize = 32_000;

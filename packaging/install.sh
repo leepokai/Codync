@@ -138,7 +138,9 @@ if not launcher_added:
 print(repr(updated))
 PY
   ) || return 0
-  [ "$updated" = "$favorites" ] || gsettings set org.gnome.shell favorite-apps "$updated"
+  [ "$updated" = "$favorites" ] ||
+    gsettings set org.gnome.shell favorite-apps "$updated" ||
+    say "Couldn't pin Codync to the Dock"
 }
 
 install_linux_app() {
@@ -196,11 +198,26 @@ else
   fi
   if [ $OS = linux ]; then
     missing=""
+    add_missing() {
+      case " $missing " in
+        *" $1 "*) ;;
+        *) missing="$missing $1" ;;
+      esac
+    }
     if [ $HOST_ONLY = 0 ] && command -v ldconfig >/dev/null && ! ldconfig -p 2>/dev/null | grep -q libfuse.so.2; then
-      missing="$missing libfuse2t64"
+      if command -v apt-cache >/dev/null && apt-cache show libfuse2t64 >/dev/null 2>&1; then
+        add_missing libfuse2t64
+      else
+        add_missing libfuse2
+      fi
     fi
     if ldd "$BIN_DIR/codync-screen" 2>/dev/null | grep -q 'libgstwebrtc-1.0.so.0 => not found'; then
-      missing="$missing libgstreamer-plugins-bad1.0-0 gstreamer1.0-plugins-bad"
+      add_missing libgstreamer-plugins-bad1.0-0
+      add_missing gstreamer1.0-plugins-bad
+    fi
+    if [ $HOST_ONLY = 0 ] && [ -n "${WAYLAND_DISPLAY:-}" ] &&
+      { ! command -v gst-inspect-1.0 >/dev/null || ! gst-inspect-1.0 pipewiresrc >/dev/null 2>&1; }; then
+        add_missing gstreamer1.0-pipewire
     fi
     if [ -n "$missing" ] && command -v apt-get >/dev/null; then
       if [ "$(id -u)" = 0 ]; then
@@ -215,12 +232,21 @@ else
     elif [ -n "$missing" ]; then
       echo "   Install runtime dependencies with your package manager:$missing"
     fi
-    if ! "$BIN_DIR/codync-host" install; then
-      service_install_failed=1
+    if [ $HOST_ONLY = 0 ]; then
+      unit=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/codync-host.service
+      if [ ! -f "$unit" ] &&
+        ! systemctl --user cat codync-host.service >/dev/null 2>&1 &&
+        ! "$BIN_DIR/codync-host" install; then
+          service_install_failed=1
+      fi
     fi
   fi
   echo
-  echo "Next: open Codync, then choose Pair phone"
+  if [ $HOST_ONLY = 0 ]; then
+    echo "Next: open Codync, then choose Pair phone"
+  else
+    echo "Next: run $BIN_DIR/codync-host install, then $BIN_DIR/codync-host pair"
+  fi
 fi
 
 if [ "$OS" = linux ] && [ "$BIN_DIR" = "$HOME/.local/bin" ]; then

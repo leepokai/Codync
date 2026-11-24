@@ -14,9 +14,11 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
   if (await page.locator('.welcome').count()) await page.reload()
   await expect(page.locator('.welcome')).toHaveCount(0, { timeout: 15_000 })
   await expect(page.locator('.sidebar')).toBeVisible({ timeout: 15_000 })
-  // Previous failed runs may have left one or more sheets open over the app; close them all.
+  // Previous failed runs may have left one or more sheets open over the app, and maybe an anchored
+  // panel over them; dismiss the panel first, then close the sheets.
   for (let i = 0; i < 4 && (await page.locator('.model-manager').count()) > 0; i++) {
-    await page.locator('.model-manager').first().locator('.model-manager-head').getByRole('button').click().catch(() => {})
+    await page.keyboard.press('Escape').catch(() => {})
+    await page.locator('.model-manager').first().locator('.model-manager-head').getByRole('button').click({ timeout: 4000 }).catch(() => {})
     await page.waitForTimeout(400)
   }
   await expect(page.locator('.model-manager')).toHaveCount(0)
@@ -67,16 +69,17 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
       await expect(rows.filter({ hasText: nameB })).toHaveAttribute('aria-checked', 'false')
     })
 
-    await test.step('pick the installed agent through the picker', async () => {
-      // The shared picker opens on its models with the agents as its seat rail; one click picks.
-      // The seat's accessible name is the agent's own name (the rail shows no other text).
+    await test.step('pick the installed agent through the shared picker', async () => {
+      // The picker starts closed: its row opens the shared ModelPicker panel (portaled to the root,
+      // like every anchored menu); the seat rail picks the agent.
       await sheet.locator('.model-picker-field').click()
-      await page.locator('.model-picker-rail').getByRole('button', { name: agent!.name, exact: false }).click()
-      await expect(page.getByRole('textbox', { name: 'Search models' })).toBeVisible()
-      // The picker overlays the sheet until dismissed. The search box holds focus, so a user
-      // closes it by clicking the backdrop (the menu's own outside-click close), not Escape.
-      await page.mouse.click(10, 10)
-      await expect(page.locator('.model-picker')).toHaveCount(0)
+      const panel = page.locator('.anchored-panel.model-picker')
+      await expect(panel).toBeVisible()
+      await panel.locator(`.model-picker-agent[title^="${agent!.name}"]`).first().click()
+      await expect(panel.getByRole('textbox', { name: 'Search models' })).toBeVisible()
+      // Close the panel with Escape (the anchored menu's own key) so the rows beneath are bare.
+      await page.keyboard.press('Escape')
+      await expect(panel).toHaveCount(0)
     })
 
     await test.step('check both bots and apply', async () => {
@@ -87,9 +90,23 @@ test('the Bot Manager window opens from the header, filters, checks and applies'
       await expect(rows.filter({ hasText: nameB })).toContainText('Applied', { timeout: 30_000 })
     })
 
+    await test.step('an Apply clears what it changed from the selection', async () => {
+      await expect(rows.filter({ hasText: nameA })).toHaveAttribute('aria-checked', 'false')
+      await expect(rows.filter({ hasText: nameB })).toHaveAttribute('aria-checked', 'false')
+    })
+
+    await test.step('a second Apply starts fresh: only the newly checked bot changes', async () => {
+      await rows.filter({ hasText: nameB }).click()
+      await sheet.getByRole('button', { name: 'Apply' }).click()
+      await expect(rows.filter({ hasText: nameB })).toContainText('Applied', { timeout: 30_000 })
+      // A was applied by the first Apply and left the selection: this Apply must not touch it.
+      await expect(rows.filter({ hasText: nameA })).not.toContainText('Applied')
+      await expect(rows.filter({ hasText: nameA })).toHaveAttribute('aria-checked', 'false')
+    })
+
     await test.step('apply touches only the bots the filter shows (the hidden-checked pin)', async () => {
       const search = sheet.getByRole('textbox', { name: 'Search bots' })
-      await sheet.getByRole('button', { name: 'Unselect all', exact: true }).click()
+      // The Apply cleared the selection, so the pin starts from an empty one.
       await rows.filter({ hasText: nameA }).click()
       await search.fill(nameB)
       await rows.filter({ hasText: nameB }).click()

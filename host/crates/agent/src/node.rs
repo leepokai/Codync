@@ -64,7 +64,12 @@ impl State {
 
 /// `None` while the computer has its own Node; otherwise whether Codync's is there.
 pub fn state() -> Option<State> {
-    if backends::which("npx").is_some_and(|npx| !npx.starts_with(root())) {
+    state_for("npx")
+}
+
+/// `program` is the command the agent actually runs: npm adapters need `npx`, while `WorkBuddy` runs `node`.
+pub fn state_for(program: &str) -> Option<State> {
+    if backends::which(program).is_some_and(|path| !path.starts_with(root())) {
         return None;
     }
     Some(if root().join(".installed").exists() { State::Added } else { State::Missing })

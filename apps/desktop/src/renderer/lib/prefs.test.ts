@@ -25,11 +25,14 @@ test('A stored preference of another kind reads as the fallback', async () => {
   assert.equal(prefs.computerAccessSetup.get(), 'ready')
 })
 
-test('A roster icon size stays a whole number inside its range', async () => {
+test('A roster icon size stays a whole number inside its range, on the slider step grid', async () => {
   const { clampRosterIconSize } = await import('./prefs.ts')
   assert.equal(clampRosterIconSize(30), 30)
   assert.equal(clampRosterIconSize(12), 24)
   assert.equal(clampRosterIconSize(99), 44)
   assert.equal(clampRosterIconSize(31.6), 32)
+  // An odd whole number lands between the slider's steps: it snaps up to the grid, not off it.
+  assert.equal(clampRosterIconSize(31), 32)
+  assert.equal(clampRosterIconSize(31.4), 32)
   assert.equal(clampRosterIconSize(Number.NaN), 30)
 })

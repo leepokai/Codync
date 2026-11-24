@@ -52,6 +52,17 @@ export function pref<T>(key: string, fallback: T) {
 
 export type Pref<T> = ReturnType<typeof pref<T>>
 
+/** A number preference whose stored value is normalized on both read and write, so whatever
+ * another window or an older build left behind is always one the control can show. */
+function normalizedPref(key: string, normalize: (value: number) => number, fallback: number) {
+  const raw = pref(key, fallback)
+  return {
+    get: () => normalize(raw.get()),
+    set: (value: number) => raw.set(normalize(value)),
+    subscribe: raw.subscribe,
+  }
+}
+
 export function usePref<T>(p: Pref<T>): [T, (v: T) => void] {
   const value = useSyncExternalStore(p.subscribe, p.get)
   return [value, p.set]
@@ -76,9 +87,12 @@ export const DEFAULT_ROSTER_ICON_SIZE = 30
 export const ROSTER_ICON_MIN = 24
 export const ROSTER_ICON_MAX = 44
 
-/** Keeps a stored roster icon size a whole number inside the range, on either end when past it. */
+/** Keeps a stored roster icon size a whole number inside the range, on either end when past it,
+ * and on the slider's own step grid — so a value the range input cannot show never renders. */
 export function clampRosterIconSize(size: number) {
-  return Number.isFinite(size) ? Math.min(ROSTER_ICON_MAX, Math.max(ROSTER_ICON_MIN, Math.round(size))) : DEFAULT_ROSTER_ICON_SIZE
+  if (!Number.isFinite(size)) return DEFAULT_ROSTER_ICON_SIZE
+  const clamped = Math.min(ROSTER_ICON_MAX, Math.max(ROSTER_ICON_MIN, Math.round(size)))
+  return ROSTER_ICON_MIN + Math.round((clamped - ROSTER_ICON_MIN) / 2) * 2
 }
 
 export const prefs = {
@@ -117,8 +131,8 @@ export const prefs = {
   usageIconStyle: pref<'character' | 'original'>('usageIconStyle', 'character'),
   /** The roster marks each bot with its agent's logo while the bots run more than one agent. */
   agentLogos: pref('showAgentLogos', true),
-  /** The roster rows' avatar size (the Bots list's icons), for readability; the agent mark scales with it. On this device only. */
-  rosterIconSize: pref('rosterIconSize', DEFAULT_ROSTER_ICON_SIZE),
+  /** The roster rows' avatar size (the Bots list's icons), for readability; the agent mark scales with it. Clamped and stepped on read and write, so a stored value is always one the slider can show. On this device only. */
+  rosterIconSize: normalizedPref('rosterIconSize', clampRosterIconSize, DEFAULT_ROSTER_ICON_SIZE),
   onboardingDone: pref('macAccountOnboardingCompleted', false),
   /** Chose to go on without signing in; signing in ends it. */
   withoutAccount: pref('withoutAccount', false),

@@ -131,7 +131,10 @@ async function scriptedTurn(backend, mode) {
 function verdict({ answer, entries, file, cards }) {
   const tool = entries.find((e) => e.kind === "tool");
   const reply = entries.findLast((e) => e.kind === "agent" && e.data.final);
-  if (answer.status !== "completed") return `the turn ended ${answer.status} (${answer.stopReason}): ${answer.reply ?? answer.error ?? ""}`;
+  if (answer.status !== "completed") {
+    const notices = entries.filter((e) => e.kind === "notice").map((e) => e.data.text ?? JSON.stringify(e.data));
+    return `the turn ended ${answer.status} (${answer.stopReason}): ${answer.reply || answer.error || ""} ${notices.join(" / ")}`;
+  }
   if (!tool) return `no tool call in the transcript (${entries.map((e) => e.kind).join(", ")})`;
   if (tool.data.status !== "completed") return `the tool call ended ${tool.data.status}`;
   if (!cards) return "the agent never asked to run the command: no permission card";

@@ -5,14 +5,25 @@ import { useStore } from '../../store/context'
 import { MAX_FILE_SIZE, type OutgoingFile } from '../../store/outgoing-files'
 import { pastedFiles, readPicked } from './composer-files'
 
+/** The files of boxes that keep theirs beyond the box (`keep`), by key; memory only. */
+const kept = new Map<string, OutgoingFile[]>()
+
 /**
  * The files a message box sends with its next message: picked (`pick`), dropped on the box (`drop`) or pasted
- * (`paste`). Nothing is taken while `enabled` is false. A file over 100 MB is left out and says so.
+ * (`paste`). Nothing is taken while `enabled` is false. A file over 100 MB is left out and says so. With `keep`
+ * they are kept by that key beyond the box, so the box mounted again (a new thread's, as its bot changes) has them.
  */
-export function useComposerFiles(enabled: boolean) {
+export function useComposerFiles(enabled: boolean, keep?: string) {
   const store = useStore()
   const tr = useTr()
-  const [files, setFiles] = useState<OutgoingFile[]>([])
+  const [files, setOwn] = useState<OutgoingFile[]>(() => (keep && kept.get(keep)) || [])
+  // Kept ones are changed outside React's updater, so a send that ends after the box is gone still clears them.
+  const setFiles = (next: (list: OutgoingFile[]) => OutgoingFile[]) => {
+    if (!keep) return setOwn(next)
+    const changed = next(kept.get(keep) ?? [])
+    kept.set(keep, changed)
+    setOwn(changed)
+  }
   const append = (incoming: PickedFile[]) => {
     if (!enabled) return
     const accepted: OutgoingFile[] = []
@@ -27,7 +38,7 @@ export function useComposerFiles(enabled: boolean) {
   }
   return {
     files,
-    clear: () => setFiles([]),
+    clear: () => setFiles(() => []),
     remove: (id: string) => setFiles((list) => list.filter((x) => x.id !== id)),
     pick: () => void window.codync.app.pickFiles().then(append),
     drop: {

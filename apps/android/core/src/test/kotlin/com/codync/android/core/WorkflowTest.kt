@@ -1,7 +1,6 @@
 package com.codync.android.core
 
 import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
@@ -40,27 +39,15 @@ class WorkflowTest {
         assertEquals("s", step.change.stepId)
     }
 
-    @Test fun `an unknown step kind decodes and the detail stays read only`() {
+    @Test fun `an unknown step kind decodes`() {
         val node = WireJson.decodeFromString<WorkflowNode>("""{"id":"n","kind":"future","at":{"x":1,"y":2},"fields":{}}""")
         assertEquals(NodeKind.Unknown, node.kind)
-        val detail = WorkflowDetail(id = "w", editMode = "outline", graph = Graph(nodes = listOf(node)))
-        assertEquals(EditMode.ReadOnly, detail.resolvedMode())
         val known = WireJson.decodeFromString<WorkflowNode>("""{"id":"t","kind":"trigger","at":{"x":80,"y":80},"fields":{"trigger":"manual"}}""")
         assertEquals(NodeKind.Trigger, known.kind)
         assertEquals("Manual", known.stepTitle())
     }
 
-    @Test fun `ports follow the host and a summary puts an open run first`() {
-        assertEquals(listOf("text"), ports(NodeKind.Trigger).second)
-        assertEquals(0, ports(NodeKind.Trigger).first.size)
-        assertEquals(0, ports(NodeKind.Prompt).first.size)
-        assertEquals(listOf("text"), ports(NodeKind.Agent).first)
-        assertEquals(listOf("text"), ports(NodeKind.Agent).second)
-        assertEquals(listOf("text"), ports(NodeKind.Condition).second)
-        assertEquals(0, ports(NodeKind.Output).second.size)
-        assertEquals(0, ports(NodeKind.Note).first.size)
-        assertEquals(0, ports(NodeKind.Note).second.size)
-
+    @Test fun `a summary puts an open run first`() {
         val quiet = WorkflowSummary("old", updatedAt = 50, lastRun = WorkflowLastRun(1, "done"))
         val busy = WorkflowSummary("new", updatedAt = 10, running = "approval")
         assertEquals(listOf("new", "old"), listOf(quiet, busy).listed().map { it.id })
@@ -70,14 +57,12 @@ class WorkflowTest {
         assertNull(WorkflowSummary("empty").statusLabel())
     }
 
-    @Test fun `a graph round trips strokes edges and a condition branch`() {
+    @Test fun `a graph decodes edges with a condition branch and names its steps`() {
         val graph = Graph(
             nodes = listOf(node("t", NodeKind.Trigger), node("a", NodeKind.Agent)),
             edges = listOf(WorkflowEdge("t>a:text", "t", "a", "text", "yes")),
-            strokes = listOf(WorkflowStroke("s", "pen", "#1c1c1e", 2.5, listOf(Point(10.0, 12.0)))),
         )
         val again = WireJson.decodeFromString<Graph>(WireJson.encodeToString(graph))
-        assertEquals(graph.strokes, again.strokes)
         assertEquals("yes", again.edges.single().branch)
         assertEquals("text", again.edges.single().type)
         assertEquals("Agent", graph.nodes[1].stepTitle())

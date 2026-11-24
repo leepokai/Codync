@@ -1,17 +1,12 @@
 package com.codync.android
 
-import com.codync.android.core.EditMode
 import com.codync.android.core.Graph
 import com.codync.android.core.NodeKind
-import com.codync.android.core.Point
-import com.codync.android.core.WorkflowDetail
 import com.codync.android.core.WorkflowEdge
-import com.codync.android.core.WorkflowNode
-import com.codync.android.core.resolvedMode
 
 /**
  * The phone's step list. Same rules as `host/src/workflows/outline.rs`.
- * A graph the phone can express is edited as columns; any other shape keeps its lines.
+ * A graph the phone can express reads as columns; any other shape shows as on the canvas.
  * Shapes covered by the tests match `host/tests/fixtures/workflow-graph.json`.
  */
 internal data class Outline(
@@ -25,25 +20,6 @@ internal data class Outline(
 )
 
 internal enum class OutlineColumn { Main, Yes, No, After, Loose }
-
-/** Host mode, downgraded to fields when this phone cannot rebuild the lines. */
-internal fun WorkflowDetail.phoneMode(): EditMode {
-    val host = resolvedMode()
-    if (host != EditMode.Outline) return host
-    return if (outlineOf(graph) != null) EditMode.Outline else EditMode.Fields
-}
-
-internal fun editMode(graph: Graph): EditMode {
-    if (graph.nodes.any { it.kind == NodeKind.Unknown } || graph.edges.any { it.type != "text" }) return EditMode.ReadOnly
-    return if (outlineOf(graph) != null) EditMode.Outline else EditMode.Fields
-}
-
-/** Prompts at the end of a column that nothing downstream reads. */
-internal fun unfedPrompts(outline: Outline, kinds: Map<String, NodeKind>): Set<String> {
-    fun trailing(items: List<String>, feeds: Boolean) = if (feeds) emptyList() else items.takeLastWhile { kinds[it] == NodeKind.Prompt }
-    return (trailing(outline.main, outline.condition != null) + trailing(outline.yes, false) +
-        trailing(outline.no, false) + trailing(outline.after, false)).toSet()
-}
 
 internal fun Outline.columnOf(id: String): OutlineColumn? = when (id) {
     in main -> OutlineColumn.Main
@@ -69,29 +45,6 @@ internal fun Outline.with(column: OutlineColumn, items: List<String>): Outline =
     OutlineColumn.After -> copy(after = items)
     OutlineColumn.Loose -> copy(loose = items)
 }
-
-internal fun Outline.moved(id: String, down: Boolean): Outline? {
-    val column = columnOf(id) ?: return null
-    val items = items(column).toMutableList()
-    val index = items.indexOf(id)
-    val next = index + if (down) 1 else -1
-    if (index < 0 || next !in items.indices) return null
-    items[index] = items[next]
-    items[next] = id
-    return with(column, items)
-}
-
-internal fun Outline.inserted(column: OutlineColumn, after: String?, id: String): Outline {
-    val items = items(column).toMutableList()
-    val at = if (after == null) items.size else (items.indexOf(after) + 1).coerceAtLeast(0)
-    items.add(at.coerceAtMost(items.size), id)
-    return with(column, items)
-}
-
-/** Drop a step. Removing the condition keeps both branches, one after the other, on the main column. */
-internal fun Outline.without(id: String): Outline = if (condition == id) {
-    copy(condition = null, main = main + yes + no + after, yes = emptyList(), no = emptyList(), after = emptyList())
-} else copy(main = main - id, yes = yes - id, no = no - id, after = after - id, loose = loose - id)
 
 /** Edges that return to a step still on the walk. Those don't wait on the upstream step. */
 internal fun loopEdges(graph: Graph): Set<String> {
@@ -294,69 +247,6 @@ private fun runChain(
     return ChainRun(list, null, current)
 }
 
-/** Rewrites the lines of an outline and lays the steps out in columns. Notes and loose lines stay. */
-internal fun graphFromOutline(graph: Graph, outline: Outline): Graph {
-    val kinds = graph.nodes.associate { it.id to it.kind }
-    val edges = mutableListOf<WorkflowEdge>()
-    fun link(from: String, to: String, branch: String?) {
-        val id = if (branch == null) "$from>$to:text" else "$from.$branch>$to:text"
-        edges.add(WorkflowEdge(id, from, to, "text", branch))
-    }
-    data class Source(val from: String, val branch: String?)
-    fun walk(items: List<String>, start: List<Source>): Pair<List<Source>, List<String>> {
-        var sources = start
-        val prompts = mutableListOf<String>()
-        for (id in items) {
-            if (kinds[id] == NodeKind.Prompt) {
-                prompts.add(id)
-                continue
-            }
-            for (source in sources) link(source.from, id, source.branch)
-            for (prompt in prompts) link(prompt, id, null)
-            prompts.clear()
-            if (kinds[id] != NodeKind.Output) sources = listOf(Source(id, null))
-        }
-        return sources to prompts.toList()
-    }
-    val (mainSources, mainPrompts) = walk(outline.main, listOf(Source(outline.trigger, null)))
-    val condition = outline.condition
-    if (condition != null) {
-        for (source in mainSources) link(source.from, condition, source.branch)
-        for (prompt in mainPrompts) link(prompt, condition, null)
-        val (yes, _) = walk(outline.yes, listOf(Source(condition, "yes")))
-        val (no, _) = walk(outline.no, listOf(Source(condition, "no")))
-        if (outline.after.isNotEmpty()) walk(outline.after, yes + no)
-    }
-    val loose = outline.loose.toSet()
-    edges.addAll(graph.edges.filter { it.from in loose && it.to in loose })
-    return place(graph.copy(edges = edges), outline)
-}
-
-private fun place(graph: Graph, outline: Outline): Graph {
-    val nodes = graph.nodes.toMutableList()
-    fun set(id: String, column: Int, y: Double) {
-        val index = nodes.indexOfFirst { it.id == id }
-        if (index >= 0) nodes[index] = nodes[index].copy(at = Point(80.0 + column * 400.0, y))
-    }
-    fun placeList(items: List<String>, start: Int, y: Double): Int {
-        var column = start
-        for (id in items) {
-            column += 1
-            set(id, column, y)
-        }
-        return column
-    }
-    set(outline.trigger, 0, 80.0)
-    var column = placeList(outline.main, 0, 80.0)
-    val condition = outline.condition ?: return graph.copy(nodes = nodes)
-    column += 1
-    set(condition, column, 80.0)
-    val yes = placeList(outline.yes, column, 80.0)
-    val no = placeList(outline.no, column, 300.0)
-    placeList(outline.after, maxOf(yes, no), 80.0)
-    return graph.copy(nodes = nodes)
-}
-
 /** Rows for the line view. A step sits one row below the deepest numbered step that feeds it. */
 internal fun stepRanks(graph: Graph): List<List<String>> {
     val numbers = stepNumbers(graph)
@@ -425,153 +315,4 @@ internal fun readingOrder(graph: Graph): List<String> {
     }
     for (node in steps) if (node.id !in order) order.add(node.id)
     return order
-}
-
-/** Where a step reads from. A node id, a condition branch, or the join after both branches. */
-internal sealed interface SourceTarget {
-    data class Node(val id: String) : SourceTarget
-    data object Yes : SourceTarget
-    data object No : SourceTarget
-    data object Both : SourceTarget
-
-    val token: String
-        get() = when (this) {
-            is Node -> id
-            Yes -> "*yes"
-            No -> "*no"
-            Both -> "*both"
-        }
-
-    companion object {
-        fun from(token: String): SourceTarget = when (token) {
-            "*yes" -> Yes
-            "*no" -> No
-            "*both" -> Both
-            else -> Node(token)
-        }
-    }
-}
-
-/** The step this one reads. A prompt has none. */
-internal fun Outline.sourceTarget(step: String, kinds: Map<String, NodeKind>): SourceTarget? {
-    var found: SourceTarget? = null
-    fun walk(items: List<String>, start: SourceTarget): SourceTarget {
-        var source = start
-        for (item in items) {
-            val kind = kinds[item]
-            if (kind == NodeKind.Prompt) continue
-            if (item == step) found = source
-            if (kind != NodeKind.Output) source = SourceTarget.Node(item)
-        }
-        return source
-    }
-    val feeding = walk(main, SourceTarget.Node(trigger))
-    condition?.let { id ->
-        if (id == step) found = feeding
-        walk(yes, SourceTarget.Yes)
-        walk(no, SourceTarget.No)
-        walk(after, SourceTarget.Both)
-    }
-    return found
-}
-
-/** Moves [step] so it reads from [target]. The result stays an outline. */
-internal fun Outline.retargeted(step: String, target: SourceTarget): Outline? {
-    if (step == trigger || (target is SourceTarget.Node && target.id == step)) return null
-    if (condition == step) return retargetCondition(target)
-    val next = detach(step)
-    return when (target) {
-        SourceTarget.Both -> if (next.condition == null) null else next.copy(after = listOf(step) + next.after)
-        SourceTarget.Yes -> if (next.condition == null) null else next.copy(yes = listOf(step) + next.yes)
-        SourceTarget.No -> if (next.condition == null) null else next.copy(no = listOf(step) + next.no)
-        is SourceTarget.Node -> if (target.id == next.trigger) next.copy(main = listOf(step) + next.main) else next.place(step, target.id)
-    }
-}
-
-private fun Outline.retargetCondition(target: SourceTarget): Outline? {
-    val source = (target as? SourceTarget.Node)?.id ?: return null
-    if (source == trigger) return copy(main = emptyList(), after = main + after)
-    val index = main.indexOf(source)
-    if (index < 0) return null
-    return copy(main = main.take(index + 1), after = main.drop(index + 1) + after)
-}
-
-private fun Outline.detach(step: String) = copy(main = main - step, yes = yes - step, no = no - step, after = after - step, loose = loose - step)
-
-private fun Outline.place(step: String, afterId: String): Outline? {
-    fun into(items: List<String>): List<String>? {
-        val index = items.indexOf(afterId)
-        if (index < 0) return null
-        return items.toMutableList().apply { add(index + 1, step) }
-    }
-    into(main)?.let { return copy(main = it) }
-    into(yes)?.let { return copy(yes = it) }
-    into(no)?.let { return copy(no = it) }
-    into(after)?.let { return copy(after = it) }
-    return null
-}
-
-/** Applies a new source. An outline stays an outline; any other graph only changes this step's incoming lines. */
-internal fun Graph.withSource(step: String, token: String): Graph? {
-    val target = SourceTarget.from(token)
-    val kinds = nodes.associate { it.id to it.kind }
-    outlineOf(this)?.let { outline ->
-        if (outline.sourceTarget(step, kinds) == target) return null
-        return graphFromOutline(this, outline.retargeted(step, target) ?: return null)
-    }
-    return rewired(step, target)
-}
-
-private fun Graph.rewired(step: String, target: SourceTarget): Graph? {
-    val node = nodes.firstOrNull { it.id == step } ?: return null
-    if (node.kind == NodeKind.Trigger) return null
-    val edges = edges.filter { it.to != step }.toMutableList()
-    fun link(from: String, branch: String?) {
-        val id = if (branch == null) "$from>$step:text" else "$from.$branch>$step:text"
-        edges.add(WorkflowEdge(id, from, step, branch = branch))
-    }
-    when (target) {
-        is SourceTarget.Node -> {
-            if (target.id == step || nodes.none { it.id == target.id }) return null
-            link(target.id, null)
-        }
-        SourceTarget.Yes, SourceTarget.No -> {
-            val condition = nodes.firstOrNull { it.kind == NodeKind.Condition }?.id ?: return null
-            val branch = if (target == SourceTarget.No) "no" else "yes"
-            if (edges.any { it.from == condition && it.branch == branch }) return null
-            link(condition, branch)
-        }
-        SourceTarget.Both -> {
-            val condition = nodes.firstOrNull { it.kind == NodeKind.Condition }?.id ?: return null
-            val tails = branchTails(edges, nodes, condition, step) ?: return null
-            val linked = mutableSetOf<String>()
-            for ((from, branch) in tails) {
-                if (linked.add("$from|${branch.orEmpty()}")) link(from, branch)
-            }
-        }
-    }
-    return copy(edges = edges)
-}
-
-/** The node that can feed a step after one branch. An empty branch is the condition itself. */
-private fun branchTails(edges: List<WorkflowEdge>, nodes: List<WorkflowNode>, condition: String, step: String): List<Pair<String, String?>>? {
-    fun kind(id: String) = nodes.firstOrNull { it.id == id }?.kind
-    fun tail(branch: String): Pair<String, String?>? {
-        val first = edges.firstOrNull { it.from == condition && it.branch == branch && it.to != step }
-            ?: return condition to branch
-        var current = first.to
-        val seen = mutableSetOf(condition, step)
-        while (current !in seen) {
-            if (kind(current) == NodeKind.Output) return null
-            seen.add(current)
-            val outs = edges.filter { it.from == current && it.to != step }
-            if (outs.size != 1 || kind(outs[0].to) == NodeKind.Output) break
-            current = outs[0].to
-        }
-        if (kind(current) == NodeKind.Output) return null
-        return current to null
-    }
-    val yes = tail("yes") ?: return null
-    val no = tail("no") ?: return null
-    return listOf(yes, no)
 }

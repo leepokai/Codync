@@ -1,28 +1,17 @@
 import CodyncKit
 import SwiftUI
 
-/// A workflow: run, edit, steps, triggers, the latest run, delete, and the saved version.
+/// A workflow, read only: its steps, triggers and runs. Workflows are made and changed on the computer.
 public struct WorkflowDetailView: View {
     let workflowId: String
     var pendingRunId: String?
-    var pendingNodeId: String?
-    var pendingStepId: String?
 
     @Environment(BotStore.self) private var model
-    @Environment(\.dismiss) private var dismiss
     @State private var detail: WorkflowDetail?
-    @State private var versions: [WorkflowVersion] = []
     @State private var runs: [WorkflowRunSummary] = []
     @State private var scheduleLines: [String: String] = [:]
     @State private var error: String?
-    @State private var busy = false
-    @State private var confirmDelete = false
-    @State private var renaming = false
-    @State private var renameText = ""
-    @State private var editing: WorkflowEditorRoute?
-    @State private var didOpenPendingStep = false
     @State private var showingRuns: WorkflowRunsRoute?
-    @State private var showingVersions = false
     @State private var openedRun: WorkflowRunRoute?
     @State private var didOpenPendingRun = false
     @State private var showingDisplay = false
@@ -31,11 +20,9 @@ public struct WorkflowDetailView: View {
 
     private var display: WorkflowStepDisplay { WorkflowStepDisplay(rawValue: displayRaw) ?? .labels }
 
-    public init(workflowId: String, pendingRunId: String? = nil, pendingNodeId: String? = nil, pendingStepId: String? = nil) {
+    public init(workflowId: String, pendingRunId: String? = nil) {
         self.workflowId = workflowId
         self.pendingRunId = pendingRunId
-        self.pendingNodeId = pendingNodeId
-        self.pendingStepId = pendingStepId
     }
 
     public var body: some View {
@@ -46,19 +33,15 @@ public struct WorkflowDetailView: View {
                         .font(.body)
                         .foregroundStyle(Palette.secondary)
                 } else if let detail {
-                    notices
-                    controls(detail)
+                    if let error {
+                        Text(L10n.tr(error)).font(.caption).foregroundStyle(Palette.danger).textSelection(.enabled)
+                    }
                     steps(detail)
                     triggers(detail)
                     runHistory
-                    deleteButton
-                    Button { showingVersions = true } label: {
-                        Text(savedLine(detail))
-                            .font(.caption)
-                            .foregroundStyle(Palette.tertiary)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(versions.isEmpty)
+                    Text(savedLine(detail))
+                        .font(.caption)
+                        .foregroundStyle(Palette.tertiary)
                 } else if let error {
                     Text(L10n.tr(error)).font(.callout).foregroundStyle(Palette.danger)
                 } else {
@@ -74,13 +57,7 @@ public struct WorkflowDetailView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button(L10n.tr("Rename"), systemImage: "pencil") {
-                    renameText = detail?.title ?? ""
-                    renaming = true
-                }
-                .disabled(detail == nil || model.deletedWorkflows.contains(workflowId) || model.isOffline)
-                .accessibilityLabel(L10n.tr("Rename"))
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     showingDisplay = true
                 } label: {
@@ -91,10 +68,6 @@ public struct WorkflowDetailView: View {
                 }
                 .accessibilityLabel(L10n.tr("Mode"))
             }
-        }
-        .navigationDestination(item: $editing) { route in
-            WorkflowEditorView(workflowId: workflowId, openNodeId: route.nodeId, openStepId: route.stepId)
-                .environment(model)
         }
         .navigationDestination(item: $showingRuns) { _ in
             WorkflowRunsList(workflowId: workflowId, title: detail?.title ?? "")
@@ -107,57 +80,12 @@ public struct WorkflowDetailView: View {
         .task { await reload() }
         .onChange(of: model.workflowReload) { _, _ in Task { await reload() } }
         .onChange(of: model.workflows) { _, _ in applySummary() }
-        .onChange(of: model.deletedWorkflows) { _, gone in
-            if gone.contains(workflowId) { editing = nil }
-        }
-        .codyncDialog("Rename", isPresented: $renaming, field: DialogField("Name", text: $renameText)) {
-            [DialogAction("Save") { Task { await rename() } }]
-        }
-        .codyncDialog("Delete workflow", isPresented: $confirmDelete,
-                      message: "This deletes the workflow and its runs.") {
-            [DialogAction("Delete workflow", destructive: true) { Task { await remove() } }]
-        }
-        .codyncSheet(isPresented: $showingVersions) { versionsSheet }
         .codyncSheet(isPresented: $showingDisplay) {
             WorkflowDisplaySheet(display: display) { mode in
                 withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { displayRaw = mode.rawValue }
             }
         }
         .tracked(.screenViewed(.workflow))
-    }
-
-    @ViewBuilder private var notices: some View {
-        if let notice = model.workflowNotices[workflowId], !model.deletedWorkflows.contains(workflowId) {
-            Text(L10n.tr(notice)).font(.callout).foregroundStyle(Palette.secondary)
-        }
-        if let error {
-            Text(L10n.tr(error)).font(.caption).foregroundStyle(Palette.danger).textSelection(.enabled)
-        }
-    }
-
-    private func controls(_ detail: WorkflowDetail) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Toggle(isOn: Binding(get: { detail.enabled }, set: { on in
-                self.detail?.enabled = on
-                Task { await setEnabled(on) }
-            })) {
-                Text(L10n.tr("Enabled")).foregroundStyle(Palette.text)
-            }
-            .toggleStyle(.codync)
-            .disabled(busy || model.isOffline)
-            HStack(spacing: 10) {
-                Button(action: runOrStop) {
-                    Text(L10n.tr(detail.running == nil ? "Run now" : "Stop"))
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.primary)
-                .disabled(busy || model.isOffline)
-                Button(action: { editing = WorkflowEditorRoute(id: workflowId) }) {
-                    Text(L10n.tr("Edit")).frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.secondary)
-            }
-        }
     }
 
     @ViewBuilder private func steps(_ detail: WorkflowDetail) -> some View {
@@ -247,38 +175,6 @@ public struct WorkflowDetailView: View {
         .buttonStyle(.plain)
     }
 
-    private var deleteButton: some View {
-        CardSection {
-            Button(L10n.tr("Delete workflow")) { confirmDelete = true }
-                .font(.body.weight(.medium))
-                .foregroundStyle(Palette.danger)
-                .disabled(busy || model.isOffline)
-        }
-    }
-
-    private var versionsSheet: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                ModalHeader("Versions")
-                ForEach(versions) { version in
-                    HStack {
-                        Text(versionLine(version)).font(.callout).foregroundStyle(Palette.text)
-                        Spacer(minLength: 8)
-                        Button(L10n.tr("Make current")) { Task { await restore(version) } }
-                            .font(.callout)
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Palette.secondary)
-                            .disabled(busy || model.isOffline)
-                    }
-                    .padding(.horizontal, 20)
-                }
-            }
-            .padding(.bottom, 20)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .background(Palette.background)
-    }
-
     private func runLine(_ run: WorkflowRunSummary) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
@@ -328,21 +224,11 @@ public struct WorkflowDetailView: View {
         return L10n.tr("Version \(detail.revision) · Saved \(time)")
     }
 
-    private func versionLine(_ version: WorkflowVersion) -> String {
-        let time = Date(milliseconds: version.createdAt).formatted(date: .abbreviated, time: .shortened)
-        switch version.kind {
-        case "restore": return L10n.tr("Before this restore · \(time)")
-        case "run": return L10n.tr("When a run started · \(time)")
-        default: return time
-        }
-    }
-
     private func botName(_ id: String) -> String? { model.bots[id]?.name }
 
     private func applySummary() {
         guard var detail, let summary = model.workflows.first(where: { $0.id == workflowId }),
               summary.revision >= detail.revision else { return }
-        detail.enabled = summary.enabled
         detail.running = summary.running
         detail.lastRun = summary.lastRun
         detail.title = summary.title
@@ -360,19 +246,9 @@ public struct WorkflowDetailView: View {
             await loadScheduleLines(loaded)
             let page = try await client.workflowRuns(workflowId, limit: 20)
             runs = page.runs
-            do {
-                versions = try await client.workflowVersions(workflowId)
-            } catch is CancellationError {
-                return
-            } catch {
-                self.error = error.localizedDescription
-            }
             if let pendingRunId, !didOpenPendingRun {
                 didOpenPendingRun = true
                 openedRun = WorkflowRunRoute(id: pendingRunId)
-            } else if pendingRunId == nil, let pendingNodeId, !didOpenPendingStep {
-                didOpenPendingStep = true
-                editing = WorkflowEditorRoute(id: workflowId, nodeId: pendingNodeId, stepId: pendingStepId)
             }
         } catch {
             if detail == nil { self.error = error.localizedDescription }
@@ -397,79 +273,6 @@ public struct WorkflowDetailView: View {
         scheduleLines = lines
     }
 
-    private func setEnabled(_ on: Bool) async {
-        guard let client = model.client else { return }
-        busy = true
-        defer { busy = false }
-        do {
-            let summary = try await client.setWorkflowEnabled(workflowId, enabled: on)
-            model.noteWorkflow(summary)
-            detail?.enabled = on
-            error = nil
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-
-    private func runOrStop() {
-        guard let client = model.client, let detail else { return }
-        busy = true
-        Task {
-            defer { busy = false }
-            do {
-                if detail.running != nil {
-                    let open = runs.first { $0.isOpen }
-                    if let open { try await client.stopWorkflowRun(open.id) }
-                } else {
-                    let run = try await client.startWorkflowRun(workflowId, requestId: UUID().uuidString)
-                    openedRun = WorkflowRunRoute(id: run.id)
-                }
-                error = nil
-                await reload()
-            } catch {
-                self.error = error.localizedDescription
-            }
-        }
-    }
-
-    private func rename() async {
-        let title = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty, let client = model.client else { return }
-        do {
-            let summary = try await client.renameWorkflow(workflowId, title: title)
-            model.noteWorkflow(summary)
-            detail?.title = summary.title
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-
-    private func restore(_ version: WorkflowVersion) async {
-        guard let client = model.client else { return }
-        busy = true
-        defer { busy = false }
-        do {
-            let restored = try await client.restoreWorkflowVersion(workflowId, versionId: version.id)
-            detail = restored
-            model.noteWorkflow(restored.summary)
-            showingVersions = false
-            await reload()
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-
-    private func remove() async {
-        guard let client = model.client else { return }
-        do {
-            try await client.deleteWorkflow(workflowId)
-            PinnedWorkflows.remove(workflowId, computer: model.computer.id)
-            model.applyWorkflow(WorkflowEvent(change: .deleted, workflowId: workflowId, runId: nil, stepId: nil, enabled: nil))
-            dismiss()
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
 }
 
 struct WorkflowRunRoute: Identifiable, Hashable {
@@ -483,7 +286,6 @@ struct WorkflowRunsRoute: Identifiable, Hashable {
 struct WorkflowNodeLine: View {
     let node: WorkflowNode
     var schedule: String?
-    var caption: String?
     /// This step's place in the list. `parentNumbers` are the steps that feed it, as `From step {number}`.
     var number: Int?
     var parentNumbers: [Int] = []
@@ -519,9 +321,6 @@ struct WorkflowNodeLine: View {
                 }
                 if !parentNumbers.isEmpty {
                     WorkflowSourceLine(numbers: parentNumbers)
-                }
-                if let caption {
-                    Text(L10n.tr(caption)).font(.caption).foregroundStyle(Palette.secondary)
                 }
             }
         }

@@ -1,6 +1,6 @@
 # Workflows
 
-A workflow belongs to one computer. It is a graph of triggers, prompts, agents, conditions, approvals and outputs, and the same workflow is a script. The desktop app draws the graph. The iPhone and Android apps edit the same graph as a step list when the shape is an outline, and edit settings only when it is not. The terminal UI uses that list. The host (`host/src/workflows/`) saves the graph, validates it, runs it, and owns schedules and webhooks.
+A workflow belongs to one computer. It is a graph of triggers, prompts, agents, conditions, approvals and outputs, and the same workflow is a script. The desktop app draws and edits the graph. The terminal UI edits the same graph as a step list when the shape is an outline, and edits settings only when it is not. The iPhone and Android apps only view workflows (the list, a workflow's steps, triggers and run history, its runs, pins on the bot list) and answer an approval step in a run (Approve or Reject); they create, edit, run, stop, retry, pause, rename, delete, restore and rotate nothing. A notification with a `runId` opens that run on the phone, else the workflow's detail. The host (`host/src/workflows/`) saves the graph, validates it, runs it, and owns schedules and webhooks.
 
 Routines stay per bot (`host/src/routines/`). A workflow can call more than one bot on this computer in one run. The two are not merged and nothing is migrated between them.
 
@@ -44,4 +44,4 @@ The signature is checked before the workflow gate, and before a paused workflow 
 
 ## Next
 
-Still to walk on the real apps: desktop create, connect, run and history; the same path on the iPhone simulator and, where the SDK is installed, the Android emulator. Still out of this version: a phone canvas, a model node, image nodes, message triggers, output beyond a notification or a chat, a condition that asks a bot, a script that calls another workflow, a token budget, and a worktree per step. Details are in the design.
+Still to walk on the real apps: desktop create, connect, run and history; on the iPhone simulator and, where the SDK is installed, the Android emulator, the list, a workflow, a run and an approval. Still out of this version: a phone canvas, a model node, image nodes, message triggers, output beyond a notification or a chat, a condition that asks a bot, a script that calls another workflow, a token budget, and a worktree per step. Details are in the design.

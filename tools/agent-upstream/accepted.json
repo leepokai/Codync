@@ -1,13 +1,51 @@
 {
-  "$comment": "ACP registry adapter versions the daily upstream check (check.mjs) last passed. Raise one after a green run on its new version.",
+  "$comment": "Agents the upstream check (check.mjs) runs. A registry adapter keeps the version it last passed: raise it after a green run on its new version. registry: false marks an agent Codync runs from its installed CLI, which runs every day. mode: the bot mode in which its shell tool asks first.",
   "agents": {
     "claude-acp": {
       "backend": "claude",
-      "version": "0.110.0"
+      "version": "0.110.0",
+      "mode": "default"
     },
     "codex-acp": {
       "backend": "codex",
-      "version": "2.10.0"
+      "version": "2.10.0",
+      "mode": "read-only"
+    },
+    "github-copilot-cli": {
+      "backend": "copilot",
+      "version": "1.0.114",
+      "mode": "auto"
+    },
+    "pi-acp": {
+      "backend": "pi",
+      "version": "0.0.35"
+    },
+    "opencode": {
+      "backend": "opencode",
+      "version": "2.4.1",
+      "mode": "build"
+    },
+    "grok-build": {
+      "backend": "grok",
+      "version": "1.0.93"
+    },
+    "antigravity-acp": {
+      "backend": "antigravity",
+      "version": "1.5.2",
+      "mode": "default"
+    },
+    "omp": {
+      "backend": "omp",
+      "registry": false,
+      "mode": "default"
+    },
+    "dsh": {
+      "backend": "dsh",
+      "registry": false
+    },
+    "hermes": {
+      "backend": "hermes",
+      "registry": false
     }
   }
 }

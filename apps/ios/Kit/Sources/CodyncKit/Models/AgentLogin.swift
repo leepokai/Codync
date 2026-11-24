@@ -85,6 +85,13 @@ public extension Backend {
         return all.filter { !taken.contains(AgentLogin(backend: id, loginProfile: $0)) }
     }
 
+    /// The logins a chat's box can switch to (the desktop's `readySeats`): a default login still waiting on a sign-in is
+    /// left out, unless it's the one in use. Nil: the usual ones.
+    func readyLogins(on: AgentLogin) -> [String?]? {
+        guard signedIn == false, on != AgentLogin(backend: id) else { return nil }
+        return loginProfileChoices(picked: on.backend == id ? on.loginProfile : nil).map(\.id)
+    }
+
     /// The logins `step` can pick on this agent: the free ones, and its own, even one that has signed out since.
     func logins(for step: AgentLogin, taken: [AgentLogin]) -> [String?] {
         let free = freeLogins(taken: taken)

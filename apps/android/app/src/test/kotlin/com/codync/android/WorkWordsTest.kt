@@ -276,4 +276,16 @@ class WorkWordsTest {
         assertEquals("working" to false, watch.after(at(2, "working"), "Thinking…")!!.let { it.status to it.finished })
         assertEquals(true, going.after(at(3, "idle"), "")!!.finished)
     }
+
+    @Test fun `a status sort puts needs you, working and waiting work first and keeps the order within each`() {
+        val idle = bot().copy(id = "idle")
+        val busy = bot(status = "working").copy(id = "busy")
+        val asks = bot(status = "needsInput").copy(id = "asks")
+        val queued = bot(work = listOf(waiting)).copy(id = "queued")
+        val idle2 = bot().copy(id = "idle2")
+        assertEquals(listOf("asks", "busy", "queued", "idle", "idle2"), sortedByStatus(listOf(idle, busy, idle2, queued, asks)).map { it.id })
+        // A working chat comes before a quiet chat whose background task works (desktop `rosterRank`, iOS `rosterLine`).
+        val background = bot(work = listOf(working)).copy(id = "background")
+        assertEquals(listOf("busy", "background"), sortedByStatus(listOf(background, busy)).map { it.id })
+    }
 }

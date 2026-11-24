@@ -369,7 +369,7 @@ never taken for lost by the hourly look: its turn runs.
 
 ## Other sources
 
-**A thread the user starts** (`startThread {botId, text, setup?}` → `{taskId}`, `sources::add_thread`;
+**A thread the user starts** (`startThread {botId, text, setup?, attachments?}` → `{taskId}`, `sources::add_thread`;
 `Source::User`): the user's first message is a task of the bot's box, named by its first line, that waits for a free
 thread like any other and may get a worktree like the bot's own work. Its thread opens with that message as the
 user's own (no `from: "host"`), in a new session that is told it is a thread the user opened and gets nothing of the
@@ -377,6 +377,12 @@ chat (no fork, no chat so far). It is the bot's own work everywhere else: it tak
 thread](#talking-to-a-thread)), can be steered, stopped and tried again, and on the wire it has no `source`. **Its
 result takes no turn of the bot's**: the user reads it in the thread. Only a bot starts one (not a group, not a
 thread), with at most 32,000 bytes. `hello` says `startThread: true` on a host that has the method.
+
+**Its files** (`attachments`: upload ids, `hello.threadFiles`): the app uploads them to the bot first (`upload` without
+`taskId`; without a bot, without `botId`, which puts them in the computer's box of threads without a bot), and the
+task keeps their `{id, name, size}` (`Task::files`). As its thread starts (`dispatch::begin`), each is copied into
+the thread's own uploads and the opening message carries them, as a message the user writes to a thread does. Files
+alone start one too, named by the first file; an id that was never uploaded starts nothing.
 
 `setup` is what the thread runs with in place of the bot's own (`tasks::Setup`, kept on the task and applied to its
 thread bot's config, `Setup::over`): `cwd` (a full path to a folder that exists), `model` (`{id, options}`: a model
@@ -550,7 +556,7 @@ A task's end sends no alert of its own: its report is a turn of the bot's, whose
   `gitRepo` it gives the line under the folder in Settings: `Git repository`, `Not a git repository`, `Git isn't
   installed on this computer`. The manual's page for it: `/docs/working-folders` (`#without-git`).
 - `threadEntry` events `{rev, thread, entry}` for a thread's transcript; none in the catch-up.
-- `startThread {botId?, text, setup?: {backend?, loginProfile?, cwd?, model?: {id, options}, approval?: {permission, mode}}}` →
+- `startThread {botId?, text, attachments?, setup?: {backend?, loginProfile?, cwd?, model?: {id, options}, approval?: {permission, mode}}}` →
   `{botId, taskId}`: [a thread the user starts](#other-sources), without `botId` [without a bot](#threads-without-a-bot).
 - `threadEntries {botId, threadId}` → `{thread: {id, title, status, startedAt, endedAt, start}, entries}` (newest 500):
   `threadId` is a task's `thread`; `title`, `status` and the times are of the task it works on, else the last it

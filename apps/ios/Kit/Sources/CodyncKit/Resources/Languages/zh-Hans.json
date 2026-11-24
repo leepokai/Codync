@@ -2481,5 +2481,7 @@
   "It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled.": "在你恢复之前，它不回答任何消息，也不消耗任何用量：新消息会被拒绝，排队中的例行任务运行会被取消。",
   "Context handoff pending": "上下文交接待进行",
   "Context handed off": "上下文已交接",
-  "Switched": "已切换"
+  "Switched": "已切换",
+  "No threads right now": "当前没有线程",
+  "Tasks your bots work on show up here.": "你的 Bot 正在处理的任务会显示在这里。"
 }

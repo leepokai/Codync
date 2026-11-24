@@ -64,12 +64,14 @@ public struct NewBotView: View {
 }
 
 private extension BotStore {
-    /// Picks an installed agent we know (a registry agent nobody chose is never the default);
-    /// empty cwd requests the bot's own folder from the host. Connectors and skills stay unset:
-    /// the host turns on every one it can run.
+    /// Picks an installed agent we know (a registry agent nobody chose is never the default, and
+    /// neither is iMate: it is reachable without a local CLI). Empty cwd requests the bot's own
+    /// folder from the host. Connectors and skills stay unset: the host turns on every one it can run.
     func fillDefaults(_ draft: inout BotDraft) {
-        if hello?.backends.first(where: { $0.id == draft.backend })?.available != true,
-           let first = hello?.backends.first(where: { $0.available && $0.curated == true }) {
+        let backends = hello?.backends ?? []
+        if backends.contains(where: { $0.id == draft.backend && $0.available }) { return }
+        let usable = backends.filter { $0.available && $0.curated == true && $0.id != "imate" }
+        if let first = usable.first(where: { $0.id == "claude" }) ?? usable.first {
             draft.backend = first.id
         }
     }

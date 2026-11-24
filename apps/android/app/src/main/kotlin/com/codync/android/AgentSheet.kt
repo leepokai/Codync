@@ -169,7 +169,7 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
         val browserNote = if (signedIn != true && agentMethods) "Browser sign-ins open on $host itself. Away from it? Use Remote screen to finish there." else null
         val status = statusText(backend, setUp, auth, signedIn, checking, host)
         // The computer's own login: what the agent said of it, then the ways to sign it in.
-        val signInRows: CardRows.() -> Unit = {
+        val signInRows: CardRows.() -> Unit = signInRows@{
             if (backend.id == "imate") {
                 row {
                     OptionRow(if (signedIn == true) "Edit iMate token" else "Add iMate token",

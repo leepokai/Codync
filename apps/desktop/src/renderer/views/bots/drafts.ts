@@ -41,15 +41,17 @@ export const isValid = (d: BotDraft) => d.name.trim() !== ''
 export const normalized = (d: BotDraft): BotDraft => (d.backend === 'custom' ? d : { ...d, command: null })
 
 /**
- * Picks an installed agent we know (a registry agent nobody chose is never the default);
- * empty cwd requests the bot's own folder from the host. Connectors and skills stay unset:
- * the host turns on every one it can run.
+ * Picks an installed agent we know. A registry agent nobody chose is never the default, and neither
+ * is iMate: it is reachable without a local CLI. Empty cwd requests the bot's own folder from the host.
+ * Connectors and skills stay unset: the host turns on every one it can run.
  */
 export function fillDefaults(store: BotStore, draft: BotDraft): BotDraft {
   const next = { ...draft }
   const backends = store.hello?.backends ?? []
-  const first = backends.find((b) => b.available && b.curated === true)
-  if (backends.find((b) => b.id === next.backend)?.available !== true && first) next.backend = first.id
+  if (backends.find((b) => b.id === next.backend)?.available === true) return next
+  const usable = backends.filter((b) => b.available && b.curated === true && b.id !== 'imate')
+  const first = usable.find((b) => b.id === 'claude') ?? usable[0]
+  if (first) next.backend = first.id
   return next
 }
 

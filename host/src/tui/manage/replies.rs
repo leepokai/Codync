@@ -191,6 +191,10 @@ impl App {
                 self.shell =
                     Some(Shell { id: id.to_owned(), input, backend, login_profile, exited: None, out: vec![] });
             }
+            Reply::ImateTokenSaved => {
+                self.on_sheet_reply(Reply::FieldsSaved, Ok(v));
+                self.reload_models("imate");
+            }
             Reply::FieldsSaved => {
                 if let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Fields(_))) {
                     self.overlays.truncate(i);
@@ -235,7 +239,10 @@ impl App {
                     });
                 }
             }
-            Reply::Models(key) => {
+            Reply::Models(key, epoch) => {
+                if self.model_epoch.get(&key).copied().unwrap_or(0) != epoch {
+                    return;
+                }
                 let mut list: Vec<_> =
                     v["models"].as_array().into_iter().flatten().filter_map(AgentModel::parse).collect();
                 if v["defaultModelOptions"] == true
@@ -280,7 +287,10 @@ impl App {
         match r {
             // The page keeps what it has; the next try comes when the page opens again.
             Reply::OlderThreads(bot) => self.older_threads(bot, None),
-            Reply::Models(key) => {
+            Reply::Models(key, epoch) => {
+                if self.model_epoch.get(key).copied().unwrap_or(0) != *epoch {
+                    return;
+                }
                 self.models.insert(key.clone(), Some(vec![]));
             }
             Reply::RoutineSaved => {
@@ -289,13 +299,15 @@ impl App {
                     f.error = Some(e);
                 }
             }
-            Reply::FieldsSaved | Reply::SectionRenamed { .. } => match self.overlays.last_mut() {
-                Some(Overlay::Fields(f)) => {
-                    f.saving = false;
-                    f.error = Some(e);
+            Reply::FieldsSaved | Reply::ImateTokenSaved | Reply::SectionRenamed { .. } => {
+                match self.overlays.last_mut() {
+                    Some(Overlay::Fields(f)) => {
+                        f.saving = false;
+                        f.error = Some(e);
+                    }
+                    _ => self.flash(&e),
                 }
-                _ => self.flash(&e),
-            },
+            }
             Reply::LoginKeys(_) => self.login_keys_failed(e),
             Reply::ShellVariables(login_profile) => self.shell_variables(login_profile, Err(e)),
             Reply::Auth(backend) | Reply::LoginProfiles(backend) | Reply::LoginProfileAdded(backend) => {
@@ -492,5 +504,28 @@ mod tests {
         assert!(webhook_copied(&json!({"url": "https://x"})).contains("public URL"));
         assert!(webhook_copied(&json!({"url": null, "needsAccount": true})).contains("not in an account"));
         assert!(webhook_copied(&json!({"url": null, "needsAccount": false})).contains("the cloud is off"));
+    }
+
+    #[tokio::test]
+    async fn an_older_imate_list_does_not_replace_the_one_after_a_new_token() {
+        let (base, mut requests) = crate::tui::app::recording_host().await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(crate::tui::net::Client::new(&base, Some("token")), tx, String::new());
+        let key = App::model_key("imate", None);
+        app.models.insert(key.clone(), Some(vec![]));
+        app.on_sheet_reply(Reply::ImateTokenSaved, Ok(json!({"signedIn": true})));
+        assert!(matches!(app.models_for("imate", None), Some(None)), "the old list is loading again");
+        assert_eq!(app.model_epoch.get(&key).copied(), Some(1));
+        let request = loop {
+            let request = crate::tui::app::next_request(&mut requests).await;
+            if request.contains("agentModels") {
+                break request;
+            }
+        };
+        assert!(request.contains(r#""backend":"imate""#), "{request}");
+        app.on_sheet_reply(Reply::Models(key.clone(), 0), Ok(json!({"models": [{"id": "stale", "name": "Stale"}]})));
+        assert!(app.models_for("imate", None).expect("loading").is_none(), "the earlier lookup is ignored");
+        app.on_sheet_reply(Reply::Models(key, 1), Ok(json!({"models": [{"id": "zoe", "name": "Zoe"}]})));
+        assert_eq!(app.models_for("imate", None).expect("loaded").as_ref().expect("colleagues")[0].id, "zoe");
     }
 }

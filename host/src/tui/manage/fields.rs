@@ -79,7 +79,7 @@ impl App {
             }
             Submit::ImateToken => {
                 let token = values.get("token").and_then(Value::as_str).unwrap_or_default().trim();
-                self.sheet("imateSetToken", json!({"token": token}), Reply::FieldsSaved);
+                self.sheet("imateSetToken", json!({"token": token}), Reply::ImateTokenSaved);
             }
             Submit::Connector(item) => {
                 let option = item["options"][f.choice]["id"].clone();

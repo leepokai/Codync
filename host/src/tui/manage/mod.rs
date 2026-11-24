@@ -121,13 +121,17 @@ pub enum Reply {
     /// `loginShellVariables`, for the import list of that login profile.
     ShellVariables(String),
     FieldsSaved,
+    /// `imateSetToken`: the token form closes, then every open iMate colleague list loads again.
+    ImateTokenSaved,
     /// `renameSection` from a Fields sheet: saved like `FieldsSaved`, and the fold follows the name.
     SectionRenamed {
         from: String,
         to: Option<String>,
     },
     SignIn,
-    Models(super::app::ModelKey),
+    /// `agentModels` for that agent and login profile, from the ask numbered `u64`. A later ask
+    /// (a new iMate token) ignores an earlier reply.
+    Models(super::app::ModelKey, u64),
     Downloaded,
     /// Something changed: every open sheet loads again.
     Changed,
@@ -472,9 +476,26 @@ impl App {
     pub(super) fn want_models(&mut self, backend: &str, login_profile: Option<&str>) {
         let key = Self::model_key(backend, login_profile);
         if !backend.is_empty() && !self.models.contains_key(&key) {
-            self.models.insert(key.clone(), None);
-            self.sheet("agentModels", json!({"backend": backend, "loginProfile": key.1}), Reply::Models(key));
+            self.ask_models(key);
         }
+    }
+
+    /// Drops every cached list for `backend` and asks again. An answer already on its way is ignored.
+    pub(in crate::tui) fn reload_models(&mut self, backend: &str) {
+        let keys: Vec<_> = self.models.keys().filter(|key| key.0 == backend).cloned().collect();
+        for key in keys {
+            *self.model_epoch.entry(key.clone()).or_default() += 1;
+            self.fast_mode.remove(&key);
+            self.modes.remove(&key);
+            self.ask_models(key);
+        }
+    }
+
+    fn ask_models(&mut self, key: super::app::ModelKey) {
+        let epoch = self.model_epoch.get(&key).copied().unwrap_or(0);
+        let body = json!({"backend": key.0.clone(), "loginProfile": key.1.clone()});
+        self.models.insert(key.clone(), None);
+        self.sheet("agentModels", body, Reply::Models(key, epoch));
     }
 
     /// ←→ on the model field: "default", then each advertised model.

@@ -147,9 +147,10 @@ mod tests {
     async fn a_finished_lookup_does_not_drop_the_one_that_replaced_it() {
         let lists = Arc::new(InFlight::default());
         let (release, wait) = tokio::sync::oneshot::channel();
-        let started = Arc::new(tokio::sync::Notify::new());
+        let old_started = Arc::new(tokio::sync::Notify::new());
+        let fresh_entered = Arc::new(tokio::sync::Notify::new());
         let running = Arc::clone(&lists);
-        let ready = Arc::clone(&started);
+        let ready = Arc::clone(&old_started);
         let old = tokio::spawn(async move {
             running
                 .get("imate", None, async move {
@@ -159,18 +160,33 @@ mod tests {
                 })
                 .await
         });
-        started.notified().await;
+        old_started.notified().await;
         lists.clear("imate");
-        let fresh = lists.get("imate", None, async {
-            tokio::time::sleep(Duration::from_millis(80)).await;
-            Ok(json!({"id": "fresh"}))
+        let fetching = Arc::clone(&lists);
+        let entered = Arc::clone(&fresh_entered);
+        let fresh = tokio::spawn(async move {
+            fetching
+                .get("imate", None, async move {
+                    entered.notify_one();
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    Ok(json!({"id": "fresh"}))
+                })
+                .await
         });
+        fresh_entered.notified().await;
         release.send(()).expect("release");
         assert_eq!(old.await.expect("old task").expect("old list")["id"], "old");
-        let again = lists.get("imate", None, async { Ok(json!({"id": "again"})) });
-        let (fresh, again) = tokio::join!(fresh, again);
-        assert_eq!(fresh.expect("fresh")["id"], "fresh");
-        assert_eq!(again.expect("joined")["id"], "fresh");
+        let started = std::sync::atomic::AtomicUsize::new(0);
+        let again = lists
+            .get("imate", None, async {
+                started.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(json!({"id": "again"}))
+            })
+            .await
+            .expect("joined");
+        assert_eq!(again["id"], "fresh");
+        assert_eq!(started.load(std::sync::atomic::Ordering::SeqCst), 0, "the replacement lookup was still running");
+        assert_eq!(fresh.await.expect("fresh task").expect("fresh list")["id"], "fresh");
     }
 
     #[tokio::test]

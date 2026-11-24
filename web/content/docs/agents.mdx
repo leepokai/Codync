@@ -71,6 +71,12 @@ DeepSeek Harness runs its own `dsh --profile acp` mode; a `dsh` too old to have 
 
 Hermes Agent runs its own `hermes acp` mode, with the provider and model you pick in `hermes acp --setup`. On Windows, Codync also finds it in its install folders (`%LOCALAPPDATA%\hermes\bin`) without a `PATH` change. Hermes and Gemini CLI keep a memory of their own that every bot on them shares; see [Memory](/docs/memory#agents-with-a-memory-of-their-own).
 
+## iMate
+
+iMate doesn't run on your computer. Codync talks to it with a personal token from the [iMate open platform](https://imate.woa.com/open-platform). Open **Extensions**, choose **iMate**, and add the token. It is saved encrypted on that computer and never shown again. In the terminal UI, press `A`, open iMate, and add the token there.
+
+A bot on iMate picks one digital colleague: the colleagues are the agents that token can see, and the bot's model is which one answers. Your prompts go to iMate. iMate is not the default for a new bot. Pick it when you want that colleague. Replacing the token restarts iMate bots so the next message uses the new one, and the colleague list loads again.
+
 ## Other agents from the ACP registry
 
 Codync also lists every other agent in the ACP registry, about 40 more. These need no install: Codync fetches one the first time a bot uses it, through `npx`, `uvx` or a build for your platform, which it keeps in `~/.codync/agents`. Codync refreshes its copy of the registry once a day.

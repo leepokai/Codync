@@ -110,9 +110,11 @@ import com.codync.android.design.*
     }
 }
 
-/** Picks an installed agent we know (a registry agent nobody chose is never the default). */
+/** Picks an installed agent we know. A registry agent nobody chose is never the default, and neither is iMate. */
 private fun fillDefaults(draft: BotDraft, state: AppState): BotDraft {
     val backends = backends(state)
     if (backends.any { it.text("id") == draft.backend && it.available }) return draft
-    return backends.firstOrNull { it.available && it.curated }?.text("id")?.let { draft.copy(backend = it) } ?: draft
+    val usable = backends.filter { it.available && it.curated && it.text("id") != "imate" }
+    val first = usable.firstOrNull { it.text("id") == "claude" } ?: usable.firstOrNull()
+    return first?.text("id")?.let { draft.copy(backend = it) } ?: draft
 }

@@ -104,6 +104,43 @@ install_mac_app() {
   open /Applications/Codync.app
 }
 
+# Adds the launcher to GNOME's Dock once, replacing only its old identity.
+pin_gnome_launcher() {
+  command -v gsettings >/dev/null || return 0
+  command -v python3 >/dev/null || return 0
+  case ${XDG_CURRENT_DESKTOP:-} in
+    *GNOME* | *Unity*) ;;
+    *) return 0 ;;
+  esac
+  favorites=$(gsettings get org.gnome.shell favorite-apps 2>/dev/null) || return 0
+  updated=$(python3 - "$favorites" <<'PY'
+import ast
+import sys
+
+value = sys.argv[1]
+if value.startswith("@as "):
+    value = value[5:]
+favorites = ast.literal_eval(value)
+if not isinstance(favorites, list) or not all(isinstance(item, str) for item in favorites):
+    raise SystemExit(2)
+updated = []
+launcher_added = False
+for favorite in favorites:
+    if favorite == "com.pokai.Codync.desktop":
+        continue
+    if favorite == "codync.desktop":
+        if launcher_added:
+            continue
+        launcher_added = True
+    updated.append(favorite)
+if not launcher_added:
+    updated.append("codync.desktop")
+print(repr(updated))
+PY
+  ) || return 0
+  [ "$updated" = "$favorites" ] || gsettings set org.gnome.shell favorite-apps "$updated"
+}
+
 install_linux_app() {
   name=codync-linux-$ARCH
   fetch "$name.AppImage"
@@ -111,21 +148,41 @@ install_linux_app() {
   data=${XDG_DATA_HOME:-$HOME/.local/share}
   [ "$(id -u)" = 0 ] && data=/usr/local/share
   mkdir -p "$data/applications"
-  cat > "$data/applications/com.pokai.Codync.desktop" <<EOF
+  icons=$data/icons/hicolor/256x256/apps
+  mkdir -p "$icons"
+  # The AppImage carries the product icon. Its squashfs can be read without FUSE.
+  (
+    cd "$TMP"
+    "$BIN_DIR/codync" --appimage-extract usr/share/icons/hicolor/256x256/apps/codync.png >/dev/null
+  ) || die "Couldn't extract Codync's icon from the AppImage."
+  cp "$TMP/squashfs-root/usr/share/icons/hicolor/256x256/apps/codync.png" "$icons/com.pokai.Codync.png"
+  cat > "$data/applications/codync.desktop" <<EOF
 [Desktop Entry]
+Version=1.0
+Type=Application
 Name=Codync
 Comment=Your coding agents as teammates
 Exec=$BIN_DIR/codync %U
+TryExec=$BIN_DIR/codync
+Icon=com.pokai.Codync
 Terminal=false
-Type=Application
 Categories=Development;
 MimeType=x-scheme-handler/codync;x-scheme-handler/com.pokai.codync;
 StartupWMClass=Codync
+StartupNotify=true
+X-GNOME-UsesNotifications=true
 EOF
-  say "Installed the Codync desktop app to $BIN_DIR/codync"
-  if command -v ldconfig >/dev/null && ! ldconfig -p 2>/dev/null | grep -q libfuse.so.2; then
-    echo "   AppImages need FUSE 2 to start (Ubuntu: sudo apt install libfuse2t64)."
+  rm -f "$data/applications/com.pokai.Codync.desktop"
+  if command -v update-desktop-database >/dev/null; then update-desktop-database "$data/applications" || true; fi
+  if command -v gtk-update-icon-cache >/dev/null; then
+    gtk-update-icon-cache -f -t "$data/icons/hicolor" >/dev/null 2>&1 || true
   fi
+  say "Installed the Codync desktop app to $BIN_DIR/codync"
+  if command -v xdg-mime >/dev/null; then
+    xdg-mime default codync.desktop x-scheme-handler/codync || true
+    xdg-mime default codync.desktop x-scheme-handler/com.pokai.codync || true
+  fi
+  pin_gnome_launcher
 }
 
 if [ $OS = macos ] && [ $HOST_ONLY = 0 ]; then
@@ -137,13 +194,63 @@ else
   if [ $OS = linux ] && [ $HOST_ONLY = 0 ] && { [ $FORCE_APP = 1 ] || [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; }; then
     install_linux_app
   fi
+  if [ $OS = linux ]; then
+    missing=""
+    if [ $HOST_ONLY = 0 ] && command -v ldconfig >/dev/null && ! ldconfig -p 2>/dev/null | grep -q libfuse.so.2; then
+      missing="$missing libfuse2t64"
+    fi
+    if ldd "$BIN_DIR/codync-screen" 2>/dev/null | grep -q 'libgstwebrtc-1.0.so.0 => not found'; then
+      missing="$missing libgstreamer-plugins-bad1.0-0 gstreamer1.0-plugins-bad"
+    fi
+    if [ -n "$missing" ] && command -v apt-get >/dev/null; then
+      if [ "$(id -u)" = 0 ]; then
+        say "Installing runtime dependencies:$missing"
+        DEBIAN_FRONTEND=noninteractive apt-get install -y $missing || say "Some runtime dependencies couldn't be installed"
+      elif [ -t 0 ] || { [ -r /dev/tty ] && [ -w /dev/tty ]; }; then
+        say "Installing runtime dependencies:$missing"
+        DEBIAN_FRONTEND=noninteractive sudo apt-get install -y $missing </dev/tty || say "Some runtime dependencies couldn't be installed"
+      else
+        echo "   Install runtime dependencies with: sudo apt-get install$missing"
+      fi
+    elif [ -n "$missing" ]; then
+      echo "   Install runtime dependencies with your package manager:$missing"
+    fi
+    if ! "$BIN_DIR/codync-host" install; then
+      service_install_failed=1
+    fi
+  fi
   echo
-  echo "Next:"
-  echo "  codync-host install   # run in the background (again after upgrading from another path)"
-  echo "  codync-host pair      # QR code for the iPhone"
+  echo "Next: open Codync, then choose Pair phone"
 fi
 
-case :$PATH: in
-  *:"$BIN_DIR":*) ;;
-  *) echo; echo "Add $BIN_DIR to your PATH: export PATH=\"$BIN_DIR:\$PATH\"" ;;
-esac
+if [ "$OS" = linux ] && [ "$BIN_DIR" = "$HOME/.local/bin" ]; then
+  add_path='case ":$PATH:" in *:"$HOME/.local/bin":*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac'
+  changed=0
+  for file in "$HOME/.profile" "$HOME/.bashrc"; do
+    touch "$file"
+    # An existing entry (including Ubuntu's default .profile block) already does the job.
+    if ! grep -Fq "$BIN_DIR" "$file" &&
+      ! grep -Fq '$HOME/.local/bin' "$file" &&
+      ! grep -Fq '${HOME}/.local/bin' "$file"; then
+      printf '\n# Codync\n%s\n' "$add_path" >> "$file"
+      changed=1
+    fi
+  done
+  case :$PATH: in
+    *:"$BIN_DIR":*) ;;
+    *) echo; echo "Open a new terminal to use codync-host." ;;
+  esac
+  [ "$changed" = 0 ] || echo "Added $BIN_DIR to new login and interactive Bash shells."
+  echo "Open a new terminal, or run $BIN_DIR/codync-host pair."
+else
+  case :$PATH: in
+    *:"$BIN_DIR":*) ;;
+    *) echo; echo "Add $BIN_DIR to your PATH: export PATH=\"$BIN_DIR:\$PATH\"" ;;
+  esac
+fi
+
+if [ $OS = linux ] && [ -n "${service_install_failed:-}" ]; then
+  echo "codync-host is installed, but its background service could not start in this session."
+  echo "Run $BIN_DIR/codync-host install from a signed-in desktop session."
+  exit 0
+fi

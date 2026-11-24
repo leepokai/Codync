@@ -293,8 +293,8 @@ public struct Backend: Codable, Hashable, Sendable, Identifiable {
 
     /// Its name with the setup it still needs when the pickers can't choose it.
     public var pickerLabel: String {
-        if available { return name }
         if needsNode { return "\(name) (needs Node.js)" }
+        if available { return name }
         if installed == true { return "\(name) (not ready)" }
         return "\(name) (not installed)"
     }

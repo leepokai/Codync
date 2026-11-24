@@ -52,3 +52,8 @@ test('an installed agent missing Node names the dependency that blocks it', () =
   const codex = agent('codex', { available: false, installed: true, node: 'missing' })
   assert.deepEqual(loginSeats({ backends: [codex], on: { backend: 'claude' }, tr, pick: () => {} }).map((s) => s.name), ['CODEX (needs Node.js)'])
 })
+
+test('an available command still names missing Node as the dependency that blocks it', () => {
+  const workBuddy = agent('workbuddy', { available: true, installed: true, node: 'missing' })
+  assert.deepEqual(loginSeats({ backends: [workBuddy], on: { backend: 'claude' }, tr, pick: () => {} }).map((s) => s.name), ['WORKBUDDY (needs Node.js)'])
+})

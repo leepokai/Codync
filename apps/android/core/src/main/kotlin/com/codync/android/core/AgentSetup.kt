@@ -32,8 +32,8 @@ import kotlinx.serialization.json.*
     val needsNode: Boolean get() = node == "missing"
     /** Its name with the setup it still needs when the pickers can't choose it. */
     val pickerLabel: String get() = when {
-        available -> name
         needsNode -> "$name (needs Node.js)"
+        available -> name
         installed -> "$name (not ready)"
         else -> "$name (not installed)"
     }

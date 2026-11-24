@@ -262,6 +262,10 @@ private let claudeJSON = #"{"id":"claude","name":"Claude Code","available":true,
     let notReady = try JSONDecoder().decode(Backend.self, from: Data(
         #"{"id":"codex","name":"Codex","available":false,"installed":true,"command":"codex","installHint":""}"#.utf8))
     #expect(notReady.pickerLabel == "Codex (not ready)")
+    // A command can be found before Codync's Node.js copy is ready.
+    let foundButBlocked = try JSONDecoder().decode(Backend.self, from: Data(
+        #"{"id":"workbuddy","name":"WorkBuddy","available":true,"installed":true,"node":"missing","command":"workbuddy","installHint":""}"#.utf8))
+    #expect(foundButBlocked.pickerLabel == "WorkBuddy (needs Node.js)")
 }
 
 @Test func aChatsBoxLeavesOutADefaultLoginWaitingOnASignIn() throws {

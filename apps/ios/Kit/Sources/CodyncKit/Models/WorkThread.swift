@@ -58,7 +58,7 @@ public extension WorkTask {
     /// Nil before a thread took it. A host that names no folder still shows a worktree's branch. `home`: the
     /// computer's home folder, which a folder shows as `~`.
     func whereLine(home: String) -> WhereLine? {
-        let path = [folder, worktree?.path].compactMap(\.self).first { !$0.isEmpty }
+        let path = wherePath
         if let worktree { return WhereLine(kind: .branch, text: worktree.branch, path: path) }
         return path.map { WhereLine(kind: .folder, text: WhereLine.homeRelative($0, home: home), path: $0) }
     }

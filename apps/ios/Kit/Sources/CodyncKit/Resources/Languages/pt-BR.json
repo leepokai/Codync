@@ -2355,7 +2355,7 @@
   "Skipped": "Skipped",
   "Retry": "Retry",
   "Approve": "Approve",
-  "Reject": "Reject",
+  "Reject": "Rejeitar",
   "Show output": "Show output",
   "Hide output": "Hide output",
   "Show input": "Eingabe anzeigen",
@@ -2494,5 +2494,7 @@
   "It answers nothing and spends nothing until you resume it: new messages are refused, and its queued routine runs are cancelled.": "Ele não responde a nada e não gasta nada até você retomá-lo: mensagens novas são recusadas e as execuções de rotinas na fila são canceladas.",
   "Context handoff pending": "Passagem de contexto pendente",
   "Context handed off": "Contexto passado",
-  "Switched": "Trocado"
+  "Switched": "Trocado",
+  "No threads right now": "Nenhuma thread no momento",
+  "Tasks your bots work on show up here.": "As tarefas em que seus bots trabalham aparecem aqui."
 }

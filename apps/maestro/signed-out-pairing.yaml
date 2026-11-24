@@ -32,7 +32,7 @@ tags:
 - extendedWaitUntil:
     visible: "Settings"
     timeout: 100000
-- tapOn: ".*connected"
+- tapOn: "Computers, .*Filter conversations"
 - tapOn: "Manage computers"
 - assertVisible: "Connection"
 - assertVisible: "Wi-Fi/Tailscale only"

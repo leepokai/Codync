@@ -1,24 +1,8 @@
-import { test, expect, type Locator, type Page } from '@playwright/test'
-import { api, attach, openPage, setPref, workBot } from './sandbox.ts'
+import { test, expect, type Locator } from '@playwright/test'
+import { api, attach, holdTask, openPage, withPrefs, workBot } from './sandbox.ts'
 
 // The window's list at its default width, shown, so the page beside it is as wide as in an ordinary window.
 const LAYOUT = { desktopSidebarWidth: 266, listHidden: false, detailsPanelWidth: 360 }
-
-/** Sets `prefs` for the test; the function it returns puts back what the sandbox had. */
-async function withPrefs(page: Page, prefs: Record<string, unknown>) {
-  const keys = Object.keys(prefs)
-  const saved = await page.evaluate((keys) => keys.map((key) => localStorage.getItem(key)), keys)
-  for (const key of keys) await setPref(page, key, prefs[key])
-  return async () => {
-    for (const [i, key] of keys.entries()) {
-      await page.evaluate(([key, value]) => {
-        if (value === null) localStorage.removeItem(key)
-        else localStorage.setItem(key, value)
-        window.dispatchEvent(new StorageEvent('storage', { key, newValue: value }))
-      }, [key, saved[i] ?? null] as const).catch(() => {})
-    }
-  }
-}
 
 /** Drags the side panel's edge both ways: wider, then narrower than it started. */
 async function dragBothWays(panel: Locator) {
@@ -79,9 +63,7 @@ test("a thread's side panel drags wider and narrower in a window of ordinary wid
   try {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1100, height: 760, deviceScaleFactor: 1, mobile: false })
     botId = (await workBot(page, `Panel resize e2e ${Date.now()}`)).id
-    // A task whose thread works until it is stopped (host/tests/fixtures/work_agent.py).
-    await api(page, 'send', { botId, text: `ADD ${title}|HOLD:e2e` })
-    await expect.poll(async () => (await api<{ bot: { work: { title: string }[] } }>(page, 'updateBot', { id: botId })).bot.work.some((t) => t.title === title)).toBe(true)
+    await holdTask(page, botId, title)
     await openPage(page, 'Threads')
     await page.locator(`[data-thread-row="${title}"]`).click()
     await page.getByRole('button', { name: 'Conversation details', exact: true }).click()

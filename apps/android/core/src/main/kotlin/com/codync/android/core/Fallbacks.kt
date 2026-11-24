@@ -54,6 +54,11 @@ val BotDraft.login: Login get() = Login(backend, loginProfile)
 fun AgentBackend.freeLogins(taken: List<Login>): List<String?> =
     (listOf<String?>(null) + loginProfiles.orEmpty().filter { it.signedIn }.map { it.id }).filter { Login(id, it) !in taken }
 
+/** The logins a chat's box can switch to (the desktop's `readySeats`): a default login still waiting on a sign-in is left
+ *  out, unless it's the one in use ([on]). Null: the usual ones. */
+fun AgentBackend.readyLogins(on: Login): List<String?>? =
+    if (signedIn != false || on == Login(id)) null else loginProfileChoices(on.loginProfile.takeIf { on.backend == id }).map { it.id }
+
 /** The logins [step] can pick on this agent: the free ones, and its own, even one that has signed out since. */
 fun AgentBackend.stepLogins(step: Login, taken: List<Login>): List<String?> =
     freeLogins(taken).let { if (step.loginProfile in it) it else it + step.loginProfile }
@@ -72,7 +77,7 @@ data class LoginSeat(val login: Login, val name: String)
  * profiles, with [on]'s. The default login is named only on an agent that has login profiles ([default] until the user
  * names it); [unnamed] is a profile without a name.
  */
-fun List<AgentBackend>.loginSeats(on: Login, default: String, unnamed: String, logins: ((AgentBackend) -> List<String?>)? = null): List<LoginSeat> =
+fun List<AgentBackend>.loginSeats(on: Login, default: String, unnamed: String, logins: ((AgentBackend) -> List<String?>?)? = null): List<LoginSeat> =
     flatMap { backend ->
         val ids = logins?.invoke(backend) ?: (listOf<String?>(null) + backend.loginProfileChoices(on.loginProfile.takeIf { on.backend == backend.id }).map { it.id })
         ids.map { id ->

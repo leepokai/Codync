@@ -142,7 +142,10 @@ private fun taken(own: Login, list: List<Fallback>, but: Int): List<Login> = lis
             }
             if (inUse) Text("In use", Modifier.padding(top = 6.dp).clip(Capsule()).background(Palette.accentFill)
                 .padding(horizontal = 8.dp, vertical = 3.dp), style = Type.caption.medium, color = Palette.onAccent)
-            DropdownMenu(menu, label = "$name actions") {
+            // A menu of one action (Remove, for the only fallback) shows as that action.
+            val only = menu().singleOrNull()
+            if (only != null) IconButton(only.title, only.icon ?: "trash") { only.action() }
+            else DropdownMenu(menu, label = "$name actions") {
                 Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Symbol("ellipsis", size = 18.dp, tint = Palette.secondary) }
             }
         }

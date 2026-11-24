@@ -18,12 +18,11 @@ struct WorkflowsTab: View {
                 if let store {
                     let link = app.pendingWorkflow?.computerId == store.computer.id ? app.pendingWorkflow : nil
                     WorkflowsView(pendingWorkflowId: link?.workflowId, pendingRunId: link?.runId,
-                                  pendingNodeId: link?.nodeId, pendingStepId: link?.stepId,
                                   pendingToken: link?.workflowId == nil ? nil : link?.token)
                         .environment(store)
                         .id("\(store.computer.id)#\(app.workflowEpoch)")
                 } else {
-                    EmptyState(title: "No computer yet", systemImage: "flowchart")
+                    EmptyState(title: "No computer yet", image: Image("workflow").resizable())
                 }
             }
             .toolbar {

@@ -2477,5 +2477,9 @@
   "Context handed off": "Contexte transmis",
   "Switched": "Changé",
   "No threads right now": "Aucun fil pour le moment",
-  "Tasks your bots work on show up here.": "Les tâches sur lesquelles travaillent vos bots s’affichent ici."
+  "Tasks your bots work on show up here.": "Les tâches sur lesquelles travaillent vos bots s’affichent ici.",
+  "Folder": "Dossier",
+  "Bot's folder": "Dossier du bot",
+  "Use the bot's folder": "Utiliser le dossier du bot",
+  "Each run works here in a thread of its own.": "Chaque exécution travaille ici dans son propre thread."
 }

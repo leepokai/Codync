@@ -202,10 +202,18 @@ pub(super) fn begin(hub: &Hub, bot: &str, task: &mut Task) -> Result<Begin> {
         }
         Source::Routine { run, .. } => {
             let Some(prepared) = hub.routines.begin(hub, bot, run)? else { return Ok(Begin::Gone) };
+            // Its folder went since it was saved: the run fails and says so, rather than work somewhere else.
+            if let Some(folder) = prepared.folder.as_deref().filter(|f| !std::path::Path::new(f).is_dir()) {
+                let detail = routines::could_not_start(format!("its folder {folder} is gone"));
+                let ran = routines::Ran { timed_out: false, thread: None };
+                hub.routines.complete(hub, run, routines::Status::Failed, Some(detail), None, &ran)?;
+                return Ok(Begin::Gone);
+            }
             if let Err(error) = hub.routines.mark_started(&hub.store, run) {
                 tracing::warn!(run, error = format!("{error:#}"), "couldn't mark a routine run started");
             }
             task.brief = prepared.prompt;
+            task.setup.cwd = prepared.folder;
         }
         Source::Request { .. } => match hub.work.requests.locked().get_mut(&task.id) {
             Some(request) => request.mark_started(),

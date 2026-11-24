@@ -2477,5 +2477,9 @@
   "Context handed off": "脈絡已交接",
   "Switched": "已切換",
   "No threads right now": "目前沒有 Threads",
-  "Tasks your bots work on show up here.": "你的 Bot 正在處理的任務會顯示在這裡。"
+  "Tasks your bots work on show up here.": "你的 Bot 正在處理的任務會顯示在這裡。",
+  "Folder": "資料夾",
+  "Bot's folder": "Bot 的資料夾",
+  "Use the bot's folder": "改用 Bot 的資料夾",
+  "Each run works here in a thread of its own.": "每次執行都會在這裡用獨立的 thread 進行。"
 }

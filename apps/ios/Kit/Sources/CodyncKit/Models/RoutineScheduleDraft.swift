@@ -85,8 +85,9 @@ extension HostClient {
         return try await call("routineSchedule", Body(draft: draft))
     }
 
+    /// `folder`: the path its runs work in, or nil (sent as null) for the bot's folder.
     public func saveRoutine(botId: String, id: String?, name: String, instruction: String,
-                            schedule: RoutineScheduleDraft, timeoutSeconds: String) async throws -> Routine {
+                            schedule: RoutineScheduleDraft, timeoutSeconds: String, folder: String?) async throws -> Routine {
         struct Body: Encodable {
             let botId: String
             let id: String?
@@ -94,10 +95,23 @@ extension HostClient {
             let instruction: String
             let schedule: RoutineScheduleDraft
             let timeoutSeconds: String
+            let folder: String?
+            enum CodingKeys: String, CodingKey { case botId, id, name, instruction, schedule, timeoutSeconds, folder }
+
+            func encode(to encoder: any Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(botId, forKey: .botId)
+                try container.encodeIfPresent(id, forKey: .id)
+                try container.encode(name, forKey: .name)
+                try container.encode(instruction, forKey: .instruction)
+                try container.encode(schedule, forKey: .schedule)
+                try container.encode(timeoutSeconds, forKey: .timeoutSeconds)
+                try container.encode(folder, forKey: .folder) // null, not left out: the host keeps a missing one
+            }
         }
         struct Response: Decodable { let routine: Routine }
         let response: Response = try await call("saveRoutine", Body(botId: botId, id: id, name: name,
-            instruction: instruction, schedule: schedule, timeoutSeconds: timeoutSeconds))
+            instruction: instruction, schedule: schedule, timeoutSeconds: timeoutSeconds, folder: folder))
         return response.routine
     }
 }

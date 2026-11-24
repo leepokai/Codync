@@ -2477,5 +2477,9 @@
   "Context handed off": "上下文已交接",
   "Switched": "已切换",
   "No threads right now": "当前没有线程",
-  "Tasks your bots work on show up here.": "你的 Bot 正在处理的任务会显示在这里。"
+  "Tasks your bots work on show up here.": "你的 Bot 正在处理的任务会显示在这里。",
+  "Folder": "文件夹",
+  "Bot's folder": "Bot 的文件夹",
+  "Use the bot's folder": "改用 Bot 的文件夹",
+  "Each run works here in a thread of its own.": "每次运行都会在这里用独立的 thread 进行。"
 }

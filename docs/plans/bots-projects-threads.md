@@ -537,7 +537,8 @@ Each stage ships on its own, in this order; host-only stages need no client rele
    bot is, as a user's thread is (they act as the bot, not on a brief the bot wrote), with only their own paragraph.
 3. **A user's thread leaves the queue** (§6). Host only. Built; `waitedMs` went on `work_finished` (there is no start
    event).
-4. **Routine `folder`.** Host + clients (the routine editor).
+4. **Routine `folder`.** Host + clients (the routine editor). Built: any existing folder for now (projects come in 5);
+   a run with one always works in a thread, and a folder that went fails the run.
 5. **Projects**: `projects`, `add_task` `folder`, `worktreeMode`, side by side per repository, the Workspace line,
    the clients' Projects section, cleanup in the hourly look (§3, §4). Minor version, every client.
 6. **Migration** (§3). Needs 4 and 5.

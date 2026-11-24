@@ -258,6 +258,7 @@
     "hello.signKey": "string",
     "hello.startThread": "bool",
     "hello.threadLogins": "bool",
+    "hello.threadFiles": "bool",
     "hello.threadsWithoutBot": "bool",
     "hello.version": "string",
     "hello.workflowThreads": "bool",

@@ -10,6 +10,7 @@ import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { refKey, sameRef, type BotRef, type RosterItem } from '../../store/app-model'
 import type { BotStore } from '../../store/bot-store'
+import type { OutgoingFile } from '../../store/outgoing-files'
 import { useAgentModels } from '../bots/agent-models'
 import { lastPathComponent } from '../bots/drafts'
 import { FolderPicker } from '../bots/FolderPicker'
@@ -115,11 +116,11 @@ export function ThreadStart({ bots, computers = [], of, choose, started, base, f
   const ways = useApprovalMenu(approval, models, (a) => change({ approval: { permission: a.permission, mode: a.mode ?? null } }))
   const model = setup.model ?? (own ? { id: own.model ?? null, options: own.modelOptions } : { id: null, options: {} })
 
-  const send = (text: string) => {
+  const send = (text: string, files: OutgoingFile[]) => {
     setFailed('')
     // Without a bot, all it runs on goes with it: there is no bot's setup to fall back on.
     const asked = { ...base, ...(own ? setup : bot ? { ...setup, model, approval } : { ...setup, backend, cwd: setup.cwd ?? (folder ? undefined : home), approval }) }
-    return store.startThread(bot?.id ?? null, text, asked).then(
+    return store.startThread(bot?.id ?? null, text, asked, files).then(
       (s) => started({ computerId: of.ref.computerId, botId: s.botId }, s.taskId),
       (error: unknown) => {
         setFailed(error instanceof Error ? error.message : String(error))
@@ -151,7 +152,7 @@ export function ThreadStart({ bots, computers = [], of, choose, started, base, f
           <div className="composer-fade" />
           {/* What it runs on, in the box's row as in a bot's chat: who it is with first (with one bot and no other way
               there is nothing to choose). */}
-          <Composer key={refKey(of.ref) + (bot ? '' : '/plain')} botId={bot?.id ?? ''} thread={{ draftKey, placeholder: placeholder ?? tr('What should it work on?'), working: false, send, controls: <>
+          <Composer key={refKey(of.ref) + (bot ? '' : '/plain')} botId={bot?.id ?? ''} thread={{ draftKey, placeholder: placeholder ?? tr('What should it work on?'), working: false, files: store.startsThreadsWithFiles, keepFiles: `thread/new/${base?.workflow ?? ''}`, send, controls: <>
             <Option title="Choose a bot" items={others} search={bots.length > 8 ? 'Search bots' : undefined} disabled={bots.length + (plainOn ? 1 : 0) < 2} leading={bot ? <BotAvatar bot={bot} size={16} animated={false} /> : <NoBotAvatar size={16} />} label={bot ? bot.name : tr('No bot')} strong />
             {bot ? null : <Option title="Computer" items={places} disabled={computers.length < 2} leading={<Icon name="desktopcomputer" size={11} />} label={store.hostName} />}
             <Option title="Workspace" items={folders} leading={<Icon name="folder" size={11} />} label={setup.cwd ? lastPathComponent(setup.cwd) : ownFolder} />

@@ -30,34 +30,61 @@ public struct CardForm<Content: View>: View {
 public struct CardSection<Content: View, Accessory: View>: View {
     let title: String?
     let footer: String?
+    /// The key a section that folds is kept folded by, on this device; nil for one that doesn't fold.
+    let fold: String?
     let content: Content
     /// Trailing controls on the heading's line (add, refresh, clear).
     let accessory: Accessory
     @Environment(\.cardStyle) private var cardStyle
+    @AppStorage("foldedCardSections") private var foldedKeys = ""
 
-    public init(_ title: String? = nil, footer: String? = nil, @ViewBuilder content: () -> Content,
+    public init(_ title: String? = nil, footer: String? = nil, fold: String? = nil, @ViewBuilder content: () -> Content,
                 @ViewBuilder accessory: () -> Accessory) {
         self.title = title
         self.footer = footer
+        self.fold = fold
         self.content = content()
         self.accessory = accessory()
+    }
+
+    private var folded: Bool { fold.map { foldedKeys.split(separator: ",").contains(Substring($0)) } ?? false }
+
+    private func toggle() {
+        guard let fold else { return }
+        let keys = foldedKeys.split(separator: ",").map(String.init)
+        withAnimation(Motion.layout) {
+            foldedKeys = (folded ? keys.filter { $0 != fold } : keys + [fold]).joined(separator: ",")
+        }
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let title {
                 HStack(spacing: 8) {
-                    Text(L10n.tr(title))
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Palette.text)
-                        .accessibilityAddTraits(.isHeader)
+                    if fold != nil {
+                        // A section that folds: its title is the toggle, the chevron turns.
+                        Button(action: toggle) {
+                            HStack(spacing: 6) {
+                                heading(title)
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Palette.tertiary)
+                                    .rotationEffect(.degrees(folded ? -90 : 0))
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityValue(L10n.tr(folded ? "Collapsed" : "Expanded"))
+                    } else {
+                        heading(title)
+                    }
                     Spacer(minLength: 0)
-                    accessory
+                    if !folded { accessory }
                 }
                 .padding(.leading, 2)
             }
             // No rows (`{}`): a footer-only note, without an empty card.
-            if Content.self != EmptyView.self {
+            if !folded, Content.self != EmptyView.self {
                 VStack(alignment: .leading, spacing: 0) {
                     _VariadicView.Tree(HairlineRows()) { content }
                 }
@@ -69,7 +96,7 @@ public struct CardSection<Content: View, Accessory: View>: View {
                     }
                 }
             }
-            if let footer {
+            if !folded, let footer {
                 Text(L10n.tr(footer))
                     .font(.caption)
                     .foregroundStyle(Palette.secondary)
@@ -80,11 +107,18 @@ public struct CardSection<Content: View, Accessory: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    private func heading(_ title: String) -> some View {
+        Text(L10n.tr(title))
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(Palette.text)
+            .accessibilityAddTraits(.isHeader)
+    }
 }
 
 public extension CardSection where Accessory == EmptyView {
-    init(_ title: String? = nil, footer: String? = nil, @ViewBuilder content: () -> Content) {
-        self.init(title, footer: footer, content: content) { EmptyView() }
+    init(_ title: String? = nil, footer: String? = nil, fold: String? = nil, @ViewBuilder content: () -> Content) {
+        self.init(title, footer: footer, fold: fold, content: content) { EmptyView() }
     }
 }
 

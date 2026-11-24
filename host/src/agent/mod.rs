@@ -13,6 +13,10 @@ pub mod term;
 pub mod versions;
 pub mod workspace;
 
+/// How the host names itself to an agent where the agent crate asks: renamed MCP servers (`codync-notion`), pi's
+/// launcher and its notice.
+pub const APP: &str = "codync";
+
 /// Who the host is to Codex's own API (`codync_agent::codex_app`): the plan windows and where a bot's session is
 /// listed.
 pub const CODEX_CLIENT: codync_agent::codex_app::ClientInfo =

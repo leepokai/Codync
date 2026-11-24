@@ -62,6 +62,12 @@ private func updateBody(_ draft: BotDraft) throws -> [String: Any] {
     #expect(line.isChat && line.data.agentSwitch?.to == "codex" && line.data.agentSwitch?.carried == "This turn so far")
     let back = try entry(#"{"text":"Back on Claude Code.","style":"info","agentSwitch":{"from":"codex","to":"claude","back":true,"reason":null,"resetsAt":null,"carried":null}}"#)
     #expect(back.data.agentSwitch?.back == true && back.data.agentSwitch?.carried == nil)
+    // An older host's line has none of the fields of a switch the user made.
+    #expect(back.data.agentSwitch?.manual == nil && back.data.agentSwitch?.state == nil && back.data.agentSwitch?.fromName == nil)
+    let manual = try entry(#"{"text":"Context handoff pending: Claude Code → Codex (Work)","style":"info","agentSwitch":{"from":"claude","to":"codex","back":false,"reason":null,"resetsAt":null,"carried":null,"manual":true,"state":"pending","fromName":"Claude Code","toName":"Codex (Work)"}}"#)
+    let change = try #require(manual.data.agentSwitch)
+    #expect(change.manual == true && change.state == .pending && change.fromName == "Claude Code" && change.toName == "Codex (Work)")
+    #expect(try entry(#"{"text":"x","agentSwitch":{"manual":true,"state":"later"}}"#).data.agentSwitch?.state == nil)
     #expect(try entry(#"{"text":"x","agentSwitch":{"to":7,"newer":[1]}}"#).data.agentSwitch?.to == nil)
     #expect(try entry(#"{"text":"Usage limit","style":"error","addFallback":true}"#).data.addFallback == true)
 }
@@ -69,7 +75,7 @@ private func updateBody(_ draft: BotDraft) throws -> [String: Any] {
 @Test func choosingAFallbackAsTheAgentDropsItFromTheList() {
     var draft = BotDraft(name: "Lead")
     draft.fallbacks = [BotFallback(backend: "codex"), BotFallback(backend: "gemini")]
-    draft.setAgent("codex")
+    draft.setAgent(AgentLogin(backend: "codex"))
     #expect(draft.backend == "codex" && draft.fallbacks?.map(\.backend) == ["gemini"])
     // A change made elsewhere (the bot set its own list) reaches an open form that didn't touch it.
     let base = draft
@@ -89,10 +95,10 @@ private func updateBody(_ draft: BotDraft) throws -> [String: Any] {
     on.setAdvisor(true, backends: [])
     #expect(on.threadAgent == BotFallback(backend: "claude", model: "opus") && on.threadFallbacks == [codex])
     var moved = on
-    moved.setThreadAgent("codex")
+    moved.setThreadAgent(AgentLogin(backend: "codex"))
     #expect(moved.threadAgent == BotFallback(backend: "codex") && moved.threadFallbacks == [])
     var again = moved
-    again.setThreadAgent("codex")
+    again.setThreadAgent(AgentLogin(backend: "codex"))
     #expect(again == moved)
     #expect(moved.fallbacks == [codex], "the chat's chain is its own")
     let body = try updateBody(moved)
@@ -108,17 +114,33 @@ private func updateBody(_ draft: BotDraft) throws -> [String: Any] {
     #expect(custom.threadAgent?.backend == "gemini" && custom.threadFallbacks == [], "the picker has no custom command")
 }
 
+@Test func aLoginOfTheChainPickedForTheBotOrItsThreadsLeavesTheChainAndAnotherLoginOfItsAgentKeepsTheModel() {
+    let home = BotFallback(backend: "codex"), work = BotFallback(backend: "codex", loginProfile: "w")
+    var draft = BotDraft(name: "Lead")
+    draft.backend = "claude"
+    draft.fallbacks = [home, work]
+    draft.setAgent(work.login)
+    #expect(draft.login == work.login && draft.fallbacks == [home])
+    draft.model = "gpt"
+    draft.setAgent(home.login)
+    #expect(draft.model == "gpt" && draft.loginProfile == nil && draft.fallbacks == [])
+    draft.threadAgent = BotFallback(backend: "claude")
+    draft.threadFallbacks = [home, work]
+    draft.setThreadAgent(work.login)
+    #expect(draft.threadAgent?.login == work.login && draft.threadFallbacks == [home])
+}
+
 @Test func switchingHarnessResetsModelAndEffortTogether() {
     var draft = BotDraft(name: "Reviewer")
     draft.backend = "claude"
     draft.model = "opus"
     draft.modelOptions = ["effort": "high"]
-    draft.setAgent("claude")
+    draft.setAgent(AgentLogin(backend: "claude"))
     #expect(draft.model == "opus" && draft.modelOptions == ["effort": "high"])
-    draft.setAgent("codex")
+    draft.setAgent(AgentLogin(backend: "codex"))
     #expect(draft.model == nil && draft.modelOptions.isEmpty)
     draft.modelOptions = ["reasoning_effort": "low"]
-    draft.setAgent("claude")
+    draft.setAgent(AgentLogin(backend: "claude"))
     #expect(draft.model == nil && draft.modelOptions.isEmpty)
 }
 
@@ -221,6 +243,18 @@ private let claudeJSON = #"{"id":"claude","name":"Claude Code","available":true,
     #expect(plain.freeLogins(taken: []) == [nil] && plain.freeLogins(taken: [AgentLogin(backend: "codex")]).isEmpty)
 }
 
+@Test func anAgentIsPickedOncePerLogin() throws {
+    let claude = try JSONDecoder().decode(Backend.self, from: Data(claudeJSON.utf8))
+    let codex = try JSONDecoder().decode(Backend.self, from: Data(#"{"id":"codex","name":"Codex","available":true,"command":"codex","installHint":""}"#.utf8))
+    // Signed-out a2 only while it's the one picked; a profile without a name is a new one.
+    #expect(claude.loginSeats(label: "Claude Code", on: AgentLogin(backend: "codex")).map(\.name)
+        == ["Claude Code · Default login profile", "Claude Code · New login profile", "Claude Code · New login profile"])
+    #expect(claude.loginSeats(label: "Claude Code", on: AgentLogin(backend: "claude", loginProfile: "a2")).map(\.login.loginProfile) == [nil, "a1", "a2", "a3"])
+    #expect(claude.loginSeats(label: "Claude Code", on: AgentLogin(backend: "claude"), logins: ["a3"]).map(\.login) == [AgentLogin(backend: "claude", loginProfile: "a3")])
+    // Without login profiles, just the agent.
+    #expect(codex.loginSeats(label: "Codex", on: AgentLogin(backend: "claude")) == [LoginSeat(login: AgentLogin(backend: "codex"), name: "Codex")])
+}
+
 @Test func aStepPickedInPlaceGetsItsOwnBackOnItsOwnAgent() throws {
     let claude = try JSONDecoder().decode(Backend.self, from: Data(claudeJSON.utf8))
     let codex = try JSONDecoder().decode(Backend.self, from: Data(#"{"id":"codex","name":"Codex","available":true,"command":"codex","installHint":""}"#.utf8))
@@ -242,6 +276,6 @@ private let claudeJSON = #"{"id":"claude","name":"Claude Code","available":true,
 @Test func switchingAgentKeepsItsStepsOnOtherLoginProfiles() {
     var draft = BotDraft(name: "Lead")
     draft.fallbacks = [BotFallback(backend: "codex"), BotFallback(backend: "codex", loginProfile: "a1"), BotFallback(backend: "gemini")]
-    draft.setAgent("codex")
+    draft.setAgent(AgentLogin(backend: "codex"))
     #expect(draft.fallbacks?.map(\.login) == [AgentLogin(backend: "codex", loginProfile: "a1"), AgentLogin(backend: "gemini")])
 }

@@ -15,7 +15,7 @@ When Git is installed, a bot's own folder is a Git repository that Codync keeps 
 
 - **Before each turn** that works there, Codync saves the folder as it is, named `Before:` and the first line of what the bot was asked.
 - **After the turn**, it saves what the turn did, under that first line.
-- Nothing is saved when nothing changed. A file over 50 MB stays out of the versions, and so do the files you send the bot (its `uploads` folder). So do folders that tools fill again by themselves, such as `node_modules` and build output: they are listed in the folder's `.gitignore`, where you can add your own.
+- Nothing is saved when nothing changed. A file over 50 MB stays out of the versions, and so do the files you send the bot (its `uploads` folder). So do folders that tools fill again by themselves, such as `node_modules` and build output: they are listed in the folder's `.gitignore`, where you can add your own. A file Git can't read (locked by another program, not readable, or with a name Windows reserves such as `nul`) stays out too, until it can be read.
 
 The bot knows this. Ask it what a turn changed, or to bring back a file as it was before, and it looks through the versions with Git. Your **Settings** show **Git repository** under the folder.
 

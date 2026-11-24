@@ -1,6 +1,6 @@
 import { Button, IconButton, SearchField, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { ModalHeader, SheetPage, usePresence } from '../../components/Overlay'
+import { ModalHeader, SheetPage, useDismiss, usePresence } from '../../components/Overlay'
 import { Text } from '../../components/Text'
 import { useFolderPicker } from '../../store/use-folder-picker'
 import { useTr } from '../../lib/use-language'
@@ -10,6 +10,7 @@ import './folder-picker.css'
 /** The computer is fixed by the bot being edited; never select a path on another host. */
 export function FolderPicker({ start, onPick }: { start: string | null; onPick: (path: string) => void }) {
   const tr = useTr()
+  const dismiss = useDismiss()
   const { store, mode, showRecent, listing, selected, setSelected, filter, setFilter,
     error, busy, saving, pathOpen, setPathOpen, input, setInput, online, open, confirm } = useFolderPicker(onPick)
   const presence = usePresence(pathOpen, 180)
@@ -21,7 +22,8 @@ export function FolderPicker({ start, onPick }: { start: string | null; onPick: 
     <ModalHeader title="Choose workspace" />
     <div className="workspace-picker">
       <Text tone="secondary">{tr('Your bot will work in this folder.')}</Text>
-      <div className="workspace-computer"><Icon name="desktopcomputer" size={16} /><Text truncate>{store.hello?.name ?? tr('Computer')}</Text><Text tone="secondary">{tr(online ? 'Connected' : 'Disconnected')}</Text></div>
+      {/* Which computer the folders are on: a quiet line, the place the list below belongs to. */}
+      <div className="workspace-computer"><Icon name="desktopcomputer" size={13} color="var(--secondary)" /><Text truncate weight="medium">{store.hello?.name ?? tr('Computer')}</Text><Text size="caption" tone="tertiary">{tr(online ? 'Connected' : 'Disconnected')}</Text></div>
       {noRecent && browse}
       {mode === 'browse' && <div className="workspace-navigation">
         <IconButton title="Recent workspaces" icon="chevron.left" disabled={saving} onClick={showRecent} />
@@ -52,6 +54,11 @@ export function FolderPicker({ start, onPick }: { start: string | null; onPick: 
       {error && <Text tone="danger" role="alert">{error}</Text>}
       {mode === 'recent' && !noRecent && browse}
     </div>
-    <div className="workspace-footer"><div className="workspace-row-label"><Text tone="secondary" className="workspace-row-path">{tr(mode === 'recent' ? 'Selected folder' : 'Current folder')}</Text><Text truncate>{selected || tr('Choose a folder')}</Text></div><Button onClick={() => void confirm()} disabled={!selected || busy || saving || !online}>{saving ? <Spinner /> : tr('Use this folder')}</Button></div>
+    {/* The folder it will use, then Cancel and the answer, as a dialog's footer. */}
+    <div className="workspace-footer">
+      <Text size="caption" tone="tertiary" truncate grow title={selected || undefined}>{selected || tr('Choose a folder')}</Text>
+      <button className="dialog-button" onClick={dismiss}>{tr('Cancel')}</button>
+      <Button onClick={() => void confirm()} disabled={!selected || busy || saving || !online}>{saving ? <Spinner /> : tr('Use this folder')}</Button>
+    </div>
   </SheetPage>
 }

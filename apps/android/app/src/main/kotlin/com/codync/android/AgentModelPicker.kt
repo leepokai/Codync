@@ -27,34 +27,43 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import com.codync.android.core.AgentBackend
 import com.codync.android.core.AgentModels
 import com.codync.android.core.Bot
 import com.codync.android.core.LinkState
+import com.codync.android.core.Login
+import com.codync.android.core.LoginSeat
+import com.codync.android.core.loginSeats
 import com.codync.android.design.*
 import kotlinx.coroutines.CancellationException
 
 private enum class PickerStage { Closed, Agents, Models, Settings }
 
+/** A row of the agent or model list (iOS `AgentModelPicker.Choice`). */
+private class Choice(val name: String, val on: Boolean, val pick: () -> Unit)
+
 /**
  * Models come from the selected computer's agent, never a bundled list (iOS `AgentModelPicker`).
  * The selected model's settings follow it; Fast mode is its own row while the agent offers it. Without [setFast] (a
- * fallback's model), the bot's own session and Fast mode don't apply, so neither shows.
+ * fallback's model), the bot's own session and Fast mode don't apply, so neither shows. The agent is picked as one of its
+ * logins ([agents]); with [store], the list ends on "Add login profile…" for an agent that has login profiles.
  */
-@Composable internal fun AgentModelPicker(state: AppState, load: suspend (String) -> AgentModels, backend: String, selection: String?,
+@Composable internal fun AgentModelPicker(state: AppState, load: suspend (String, String?) -> AgentModels, backend: String, selection: String?,
     options: Map<String, String>, fastMode: Boolean, bot: Bot?, choose: (String?, Map<String, String>) -> Unit, setFast: ((Boolean) -> Unit)?,
-    agents: List<Pair<String, String>> = emptyList(), chooseAgent: ((String) -> Unit)? = null,
-    onReload: () -> Unit = {}, expanded: Boolean = false, agentDetails: @Composable () -> Unit = {}) {
+    agents: List<LoginSeat> = emptyList(), chooseAgent: ((Login) -> Unit)? = null,
+    onReload: () -> Unit = {}, expanded: Boolean = false, loginProfile: String? = null, store: AppStore? = null, agentDetails: @Composable () -> Unit = {}) {
     val online = state.actualConnection is LinkState.Ready
-    var catalog by remember(backend) { mutableStateOf<AgentModels?>(null) }
-    var loading by remember(backend) { mutableStateOf(false) }
-    var failure by remember(backend) { mutableStateOf<String?>(null) }
-    var retry by remember(backend) { mutableIntStateOf(0) }
-    LaunchedEffect(state.computer.id, backend, online, retry) {
+    // The list belongs to the agent and its login profile.
+    var catalog by remember(backend, loginProfile) { mutableStateOf<AgentModels?>(null) }
+    var loading by remember(backend, loginProfile) { mutableStateOf(false) }
+    var failure by remember(backend, loginProfile) { mutableStateOf<String?>(null) }
+    var retry by remember(backend, loginProfile) { mutableIntStateOf(0) }
+    LaunchedEffect(state.computer.id, backend, loginProfile, online, retry) {
         failure = null; loading = false
         if (backend == "custom") return@LaunchedEffect
         if (!online) { failure = "Connect to this computer to load its models. You can still enter a model ID."; return@LaunchedEffect }
         loading = true
-        try { catalog = load(backend) }
+        try { catalog = load(backend, loginProfile) }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) { failure = "Couldn't load models: ${error.message ?: "Try again."}" }
         finally { loading = false }
@@ -62,6 +71,9 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
     // expanded: a fallback just added starts open on its choices.
     var stage by remember { mutableStateOf(if (expanded) PickerStage.Settings else PickerStage.Closed) }
     var query by remember { mutableStateOf("") }
+    var adding by remember { mutableStateOf(false) }
+    val current = Login(backend, loginProfile)
+    val addsLogin = store?.let { agentBackends(state).firstOrNull { it.id == backend }?.takeIf { it.loginProfiles != null } }
     fun open(next: PickerStage) { query = ""; stage = next }
     // The agent's own "Default" entry is the same choice as no model.
     val agentDefault = catalog?.agentDefault
@@ -69,7 +81,7 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
     val selectedModel = catalog?.models?.firstOrNull { it.id == (selection ?: agentDefault?.id ?: catalog?.currentModelId) }
     val modelOptions = if (value.isNotEmpty() || catalog?.defaultModelOptions == true) selectedModel?.options.orEmpty() else emptyList()
     val modelChoices = catalog?.options(selection)?.map { it.id.orEmpty() to it.name } ?: listOf("" to "Default")
-    val agentName = agents.firstOrNull { it.first == backend }?.second ?: backend
+    val agentName = agents.firstOrNull { it.login == current }?.name ?: backend
     val modelName = if (value.isEmpty()) "Default" else modelChoices.firstOrNull { it.first == value }?.second ?: value
     val levels = modelOptions.mapNotNull { option -> option.values.firstOrNull { it.id == (options[option.id] ?: option.default) }?.name }
     val summary = (listOf(agentName, modelName) + levels + if (fastMode) listOf("Fast") else emptyList()).joinToString(" · ")
@@ -95,19 +107,27 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
                     Box(Modifier.weight(1f)) { PlainTextField(query, { query = it }, prompt = if (stage == PickerStage.Agents) "Search agents" else "Search models", singleLine = true) }
                     if (loading) Spinner(12.dp) else IconButton(if (failure == null) "Refresh model list" else "Retry model list", "arrow.clockwise") { retry++; onReload() }
                 }
-                val choices = (if (stage == PickerStage.Agents) agents else modelChoices).filter { it.second.contains(query, ignoreCase = true) }
+                val rows = if (stage == PickerStage.Agents) agents.map { seat ->
+                    Choice(seat.name, seat.login == current) { if (seat.login != current) chooseAgent?.invoke(seat.login); open(PickerStage.Models) }
+                } else modelChoices.map { (id, name) ->
+                    Choice(name, id == value) { if (id != value) choose(id.ifEmpty { null }, emptyMap()); open(PickerStage.Settings) }
+                }
+                val choices = rows.filter { it.name.contains(query, ignoreCase = true) }
                 val scroll = rememberScrollState()
                 // The rows blur under the edges into the card's fill (an outlined card has none: the page shows).
                 val ground = if (LocalCardStyle.current == CardStyle.Outlined) Palette.background else Palette.surface
                 ScrollEdges(scroll, Modifier.heightIn(max = 180.dp), ground) { Column(Modifier.verticalScroll(scroll)) {
-                    for ((id, name) in choices) Row(Modifier.fillMaxWidth().clickable {
-                        if (stage == PickerStage.Agents) { if (id != backend) chooseAgent?.invoke(id); open(PickerStage.Models) }
-                        else { if (id != value) choose(id.ifEmpty { null }, emptyMap()); open(PickerStage.Settings) }
-                    }.padding(horizontal = 6.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(name, Modifier.weight(1f), style = Type.body, color = Palette.text)
-                        if (id == if (stage == PickerStage.Agents) backend else value) Symbol("checkmark", size = 12.dp, tint = Palette.text)
+                    for (choice in choices) Row(Modifier.fillMaxWidth().clickable(onClick = choice.pick)
+                        .padding(horizontal = 6.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(choice.name, Modifier.weight(1f), style = Type.body, color = Palette.text)
+                        if (choice.on) Symbol("checkmark", size = 12.dp, tint = Palette.text)
                     }
                     if (choices.isEmpty()) Text("No results", style = Type.caption, color = Palette.secondary)
+                    if (stage == PickerStage.Agents && addsLogin != null) Row(Modifier.fillMaxWidth().clickable { adding = true }
+                        .padding(horizontal = 6.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(tr("Add login profile…"), Modifier.weight(1f), style = Type.body, color = Palette.secondary)
+                        Symbol("plus", size = 12.dp, tint = Palette.secondary)
+                    }
                 } }
                 if (stage == PickerStage.Models && (backend == "custom" || (!loading && catalog?.models.isNullOrEmpty())))
                     PlainTextField(value, { choose(it.ifEmpty { null }, emptyMap()) }, prompt = "Default", singleLine = true)
@@ -139,4 +159,10 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
             }
         }
     }
+    if (store != null && addsLogin != null) CodyncSheet(adding, { adding = false }) { AgentSheet(addsLogin, state, store) }
 }
+
+/** [agents] as the Agent pickers list them, one row per login ("(not installed)" after an agent that isn't), in the app's language. */
+@Composable internal fun pickerSeats(agents: List<AgentBackend>, on: Login, logins: ((AgentBackend) -> List<String?>)? = null): List<LoginSeat> =
+    agents.map { if (it.available) it else it.copy(name = "${it.name} (not installed)") }.loginSeats(on, tr("Default login profile"), tr("New login profile"), logins)
+

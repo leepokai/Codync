@@ -72,6 +72,7 @@
   margin: -6px -8px -6px -4px;
 }
 
+/* Files, as a round + at the row's start. */
 .composer-add {
   width: 25px;
   height: 25px;
@@ -81,7 +82,6 @@
   display: grid;
   place-items: center;
   flex: none;
-  margin-bottom: var(--first-line-inset);
 }
 .composer-surface {
   position: relative;
@@ -94,13 +94,27 @@
   display: flex;
   flex-direction: column;
 }
+/* The field over a row of controls, one box. */
 .composer-box {
-  /* Centers a 25 px control on the field's first line. */
-  --first-line-inset: calc(max(0px, (round(up, calc(var(--conversation) * 1.25), 1px) + 10px - 25px) / 2));
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 7px 8px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 10px 8px;
+}
+.composer-box > .composer-field {
+  padding: 0 4px;
+}
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.composer-toolbar-space {
+  flex: 1;
+}
+.composer-toolbar .thread-option {
+  flex: 0 1 auto;
 }
 .composer-field {
   flex: 1;
@@ -151,12 +165,12 @@
 .composer-symbol.active { opacity: 1; transform: scale(1) rotate(0); }
 /* Dictation, beside send / call (Grok Bot's): a light circle; a recording pill while it listens. */
 /* The mic and its engine menu share one light capsule. */
+/* The mic and its engine menu, one capsule on one fill. */
 .composer-mic-group {
   flex: none;
   height: 25px;
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--text) 7%, var(--composer-fill));
-  margin-bottom: var(--first-line-inset);
 }
 .composer-mic {
   width: 25px;
@@ -183,10 +197,9 @@
 .composer-engine:hover {
   color: var(--text);
 }
-/* Centered on the first line, like the mic it replaces. */
+/* In the mic's place in the row. */
 .composer-recording {
   height: 25px;
-  margin-bottom: var(--first-line-inset);
 }
 .composer-send {
   width: 25px;
@@ -195,7 +208,6 @@
   display: grid;
   place-items: center;
   flex: none;
-  margin-bottom: var(--first-line-inset);
   background: var(--accent-fill);
   color: var(--on-accent);
   transition: background-color var(--morph), color var(--morph), transform var(--press);

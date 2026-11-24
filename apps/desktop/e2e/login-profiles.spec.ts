@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { addAccount, api, attach, loginProfilesOf, openAgentSheet, standInAgent, typeMessage } from './sandbox.ts'
+import { addAccount, api, attach, loginProfilesOf, openLoginProfiles, openPage, standInAgent, typeMessage } from './sandbox.ts'
 
 // Both tests run on the stand-in Devin CLI of an e2e sandbox (`npm run dev -- --cdp`,
 // docs/guides/test-stack.md#stand-in-agents): its sign-in and its agent are that script, so nothing here starts a
@@ -15,13 +15,13 @@ const OWN = 'E2E default'
  */
 async function editFallbackModel(page: Page, botId: string, loginProfile: string) {
   const step = page.locator('.details-panel .fallback-number').locator('..')
-  // The row stays open by its place (a step + just added still is), so it is opened only when it's closed.
-  const summary = step.locator('.agent-picker-summary')
-  if ((await summary.getAttribute('aria-expanded')) === 'false') await summary.click()
-  await expect(step.locator('.value-row', { hasText: 'Login profile' }).locator('.choice-picker')).toHaveText(loginProfile)
-  const model = step.locator('.agent-picker-choice').nth(1)
-  if ((await model.getAttribute('aria-expanded')) === 'false') await model.click()
-  await step.locator('.agent-picker-item').first().click()
+  // The panel stays open by its place (a step + just added still is), so it is opened only when it's closed.
+  const field = step.locator('.model-picker-field')
+  if ((await field.getAttribute('aria-expanded')) === 'false') await field.click()
+  const panel = page.locator('.model-picker')
+  await expect(panel.locator('.model-picker-agent[aria-pressed="true"]')).toHaveAttribute('aria-label', new RegExp(` · ${loginProfile}$`))
+  await panel.locator('.model-picker-row').first().click()
+  await page.keyboard.press('Escape')
   let chain: (string | null)[][] = []
   await expect.poll(async () => {
     const { bot } = await api<{ bot: { fallbacks: { backend: string; loginProfile?: string | null; model?: string | null }[] } }>(page, 'updateBot', { id: botId })
@@ -42,16 +42,18 @@ test('an agent gets another login profile, it signs in, a bot runs on it, and it
   try {
     const agent = await standInAgent(page, 'devin')
     agentId = agent.id
+    // Its card on Extensions' Login profiles.
+    const logins = page.locator(`[data-agent="${agent.id}"]`)
     ownLabel = agent.defaultLoginProfile?.label ?? null
 
     // Add account opens the new login profile's sign-in in a terminal on the computer; leaving it signs nothing in.
     await addAccount(page, agent, (id) => (profileId = id))
     // The pencil names it; the default login profile, the login the computer already has, is named the same way.
-    await page.locator('.login-profile', { hasText: 'New login profile' }).getByRole('button', { name: 'Rename login profile' }).click()
+    await logins.locator('.login-profile', { hasText: 'New login profile' }).getByRole('button', { name: 'Rename login profile' }).click()
     await page.getByRole('textbox', { name: 'Login profile name' }).fill(WORK)
     await page.getByRole('textbox', { name: 'Login profile name' }).press('Enter')
-    await expect(page.locator('.login-profile', { hasText: WORK })).toContainText('Not signed in')
-    const own = page.locator('.login-profile').first()
+    await expect(logins.locator('.login-profile', { hasText: WORK })).toContainText('Not signed in')
+    const own = logins.locator('.login-profile').first()
     await expect(own).toContainText('Default')
     await own.getByRole('button', { name: 'Rename login profile' }).click()
     await page.getByRole('textbox', { name: 'Login profile name' }).fill(OWN)
@@ -61,7 +63,7 @@ test('an agent gets another login profile, it signs in, a bot runs on it, and it
     expect((await api<{ signedIn: boolean }>(page, 'agentAuth', { backend: agent.id, loginProfile: profileId })).signedIn).toBe(false)
 
     // Its row opens the sign-in again. Finished in the terminal, the login profile is signed in.
-    const work = page.locator('.login-profile', { hasText: WORK })
+    const work = logins.locator('.login-profile', { hasText: WORK })
     await work.getByRole('button', { name: 'Sign in' }).click()
     await expect(page.locator('.setup-terminal-surface')).toContainText('press Enter to sign in')
     await page.keyboard.press('Enter')
@@ -82,27 +84,64 @@ test('an agent gets another login profile, it signs in, a bot runs on it, and it
     // Its agent runs on the login profile's own sign-in.
     await typeMessage(page, 'hi')
     await expect(page.getByRole('log', { name: 'Messages' }).getByText(`Devin stand-in on ${profileId}, signed in`)).toBeVisible()
+
+    // The chat box's model panel moves the bot to another login in its rail, saved as its settings would.
+    const loginOf = async () => (await api<{ bot: { loginProfile?: string | null } }>(page, 'updateBot', { id: botId })).bot.loginProfile ?? null
+    const railSeat = (login: string) => page.locator(`.model-picker .model-picker-agent[aria-label="${agent.name} · ${login}"]`)
+    await page.locator('.thread-option[title="Model"]').first().click()
+    await railSeat(OWN).click()
+    await expect.poll(loginOf).toBe(null)
+    // The bot had a conversation: a divider says its next message carries it, and moving on again keeps that one.
+    const divider = page.getByRole('log', { name: 'Messages' }).locator('.switch-divider')
+    await expect(divider).toHaveCount(1)
+    await expect(divider).toContainText('Context handoff pending')
+    await railSeat(WORK).click()
+    await expect.poll(loginOf).toBe(profileId)
+    await page.keyboard.press('Escape')
+    await expect(divider).toHaveCount(1)
+
+    // A new thread with the bot runs on the login its model panel picks (`setup.loginProfile`); the bot keeps its own.
+    await openPage(page, 'Threads')
+    await page.locator('aside.sidebar .thread-row', { hasText: 'New thread' }).first().click()
+    const start = page.locator('.new-thread')
+    const chooser = start.locator('.thread-option[title="Choose a bot"]')
+    if (await chooser.isEnabled()) {
+      await chooser.click()
+      await page.getByRole('menuitemradio', { name, exact: true }).click()
+    }
+    await expect(start).toContainText(`New thread with ${name}`)
+    await start.locator('.thread-option[title="Model"]').click()
+    await expect(page.locator('.model-picker .model-picker-agent[aria-pressed="true"]')).toHaveAttribute('aria-label', `${agent.name} · ${WORK}`)
+    await railSeat(OWN).click()
+    await page.keyboard.press('Escape')
+    await start.getByRole('textbox').fill('Which login')
+    await start.getByRole('textbox').press('Enter')
+    await expect(page.getByText('Devin stand-in on the default login').first()).toBeVisible()
+    expect(await loginOf()).toBe(profileId)
+    await openPage(page, 'Bots')
+    await page.locator('.roster-row', { hasText: name }).click()
     await page.getByRole('button', { name: `${name}, view details` }).click()
     await page.locator('.details-panel').getByRole('tab', { name: 'Settings' }).click()
-    // Its own row under the picker, shown without opening it.
-    // The bot's own comes before any fallback's.
-    const chosen = page.locator('.details-panel .value-row', { hasText: 'Login profile' }).first().locator('.choice-picker')
-    await expect(chosen).toHaveText(WORK)
+    // Its agent's login, shown without opening the panel. The bot's own comes before any fallback's.
+    const chosen = page.locator('.details-panel .model-picker-field').first()
+    await expect(chosen).toContainText(`${agent.name} · ${WORK}`)
+    const seat = (login: string) => page.locator(`.model-picker .model-picker-agent[aria-label="${agent.name} · ${login}"]`)
 
     // + adds a step, open in place, that can be the bot's own agent again, on a login the chain doesn't have: with the
     // bot on the new login profile, that is the default one.
     await page.locator('.details-panel').getByRole('button', { name: 'Add fallback' }).click()
     const adding = page.locator('.details-panel .fallback-number').locator('..')
-    await adding.locator('.agent-picker-choice').first().click()
-    await adding.locator('.agent-picker-item').filter({ hasText: new RegExp(`^${agent.name}$`) }).click()
-    await expect(adding.locator('.value-row', { hasText: 'Login profile' }).locator('.choice-picker')).toHaveText(OWN)
+    await seat(OWN).click()
+    await expect(adding.locator('.model-picker-field')).toContainText(`${agent.name} · ${OWN}`)
+    await page.keyboard.press('Escape')
     const saved = async () => (await api<{ bot: { fallbacks: { backend: string; loginProfile?: string | null }[] } }>(page, 'updateBot', { id: botId })).bot.fallbacks
     await expect.poll(async () => (await saved()).map((f) => [f.backend, f.loginProfile ?? null])).toEqual([[agent.id, null]])
 
     // Back on the default login profile, that step is the bot's own login, so it goes.
     await chosen.click()
-    await page.getByRole('menuitemradio', { name: OWN }).click()
-    await expect(chosen).toHaveText(OWN)
+    await seat(OWN).click()
+    await page.keyboard.press('Escape')
+    await expect(chosen).toContainText(`${agent.name} · ${OWN}`)
     await expect.poll(saved).toHaveLength(0)
 
     // A fallback on the other login profile shows which one: the chain has each login once, not each agent.
@@ -110,12 +149,12 @@ test('an agent gets another login profile, it signs in, a bot runs on it, and it
       id: botId, loginProfile: null, fallbacks: [{ backend: agent.id, loginProfile: profileId, model: 'e2e-model', modelOptions: {} }],
     })
     expect(stepped.bot.fallbacks).toMatchObject([{ backend: agent.id, loginProfile: profileId }])
-    const summary = page.locator('.details-panel .fallback-number').locator('..').locator('.agent-picker-summary')
-    await expect(summary).toContainText(`${agent.name} (${WORK})`)
+    const summary = page.locator('.details-panel .fallback-number').locator('..').locator('.model-picker-field')
+    await expect(summary).toContainText(`${agent.name} · ${WORK}`)
     await expect(summary).toContainText('e2e-model')
     // Opened, the step keeps its own login: another model, and it stays on its login profile.
     expect(await editFallbackModel(page, botId, WORK)).toEqual([[agent.id, profileId, null]])
-    await expect(summary).toContainText(`${agent.name} (${WORK})`)
+    await expect(summary).toContainText(`${agent.name} · ${WORK}`)
     await expect(api(page, 'updateBot', {
       id: botId, fallbacks: [{ backend: agent.id, loginProfile: null, model: null, modelOptions: {} }], // without `loginProfile` the step keeps its saved one
     }).then((r) => (r as { bot: { fallbacks: unknown[] } }).bot.fallbacks)).resolves.toHaveLength(0) // the bot's own login again
@@ -123,10 +162,13 @@ test('an agent gets another login profile, it signs in, a bot runs on it, and it
     await api(page, 'updateBot', { id: botId, fallbacks: [] })
     await typeMessage(page, 'hi again')
     await expect(page.getByRole('log', { name: 'Messages' }).getByText('Devin stand-in on the default login, signed out')).toBeVisible()
+    // That message carried the conversation, which the divider unfolds to.
+    await expect(divider).toContainText('Context handed off')
+    await divider.getByRole('button').click()
+    await expect(page.locator('.agent-switch-carried')).toContainText(`Devin stand-in on ${profileId}, signed in`)
 
-    // The agent's sheet lists the login profile and removes it, now that no bot runs on it.
-    await openAgentSheet(page, agent.name)
-    const row = page.locator('.login-profile', { hasText: WORK })
+    // Login profiles lists it and removes it, now that no bot runs on it.
+    const row = (await openLoginProfiles(page, agent)).locator('.login-profile', { hasText: WORK })
     await expect(row).toContainText('Signed in')
     await row.getByRole('button', { name: 'Remove login profile' }).click()
     await expect(row).toHaveCount(0)
@@ -156,8 +198,7 @@ test('an API key login profile gets its keys from its sign-in card and its key f
     const header = page.locator('.market-screen-header')
 
     // Add API key makes the login profile and opens its key form.
-    await openAgentSheet(page, agent.name)
-    await page.getByRole('button', { name: /Add API key/ }).click()
+    await (await openLoginProfiles(page, agent)).getByRole('button', { name: /Add API key/ }).click()
     await expect(page.locator('.market-screen-title', { hasText: 'API key' })).toBeVisible()
     await expect.poll(async () => (profileId = (await profilesOf()).find((p) => !before.has(p.id))?.id)).toBeTruthy()
     if (!profileId) return
@@ -204,8 +245,7 @@ test('an API key login profile gets its keys from its sign-in card and its key f
     botId = undefined
 
     // Edit keys opens the form again, on the saved variable (its value stays on the computer).
-    await openAgentSheet(page, agent.name)
-    const row = page.locator('.login-profile', { hasText: KEY_NAME })
+    const row = (await openLoginProfiles(page, agent)).locator('.login-profile', { hasText: KEY_NAME })
     await row.getByRole('button', { name: 'Edit keys' }).click()
     await expect(page.locator('.login-profile-key', { hasText: KEY_NAME }).getByLabel('Value')).toHaveAttribute('placeholder', 'Saved (type to replace)')
 

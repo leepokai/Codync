@@ -64,16 +64,11 @@ struct AgentSwitchRow: View {
     @State private var expanded = false
 
     var body: some View {
-        if let carried = change.carried, !carried.isEmpty {
+        if change.manual == true {
+            UserSwitchRow(change: change)
+        } else if let carried = change.carried, !carried.isEmpty {
             Disclosure(isExpanded: $expanded) {
-                Text(carried)
-                    .font(.footnote)
-                    .foregroundStyle(Palette.secondary)
-                    .textSelection(.enabled)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 12))
-                    .transition(.opacity)
+                CarriedText(text: carried)
             } label: {
                 line
             }
@@ -86,6 +81,82 @@ struct AgentSwitchRow: View {
         Label(entry.data.text ?? "", systemImage: "arrow.turn.down.right")
             .font(.footnote)
             .foregroundStyle(Palette.secondary)
+    }
+}
+
+/// The user moved the bot to another login: a divider saying its next message carries the conversation, and once it
+/// went, one that unfolds to what was carried.
+struct UserSwitchRow: View {
+    let change: AgentSwitch
+    @Environment(BotStore.self) private var model
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                rule
+                if let carried = change.carried, !carried.isEmpty {
+                    Button { withAnimation(Motion.layout) { expanded.toggle() } } label: { line }
+                        .buttonStyle(.plain)
+                } else {
+                    line
+                }
+                rule
+            }
+            if expanded, let carried = change.carried {
+                CarriedText(text: carried)
+            }
+        }
+    }
+
+    private var state: String? {
+        switch change.state {
+        case .pending: "Context handoff pending"
+        case .handedOff: "Context handed off"
+        case .switched: "Switched"
+        case nil: nil
+        }
+    }
+
+    private var line: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "arrow.left.arrow.right")
+            if let state { Text(L10n.tr(state)) }
+            side(change.from, change.fromName)
+            Image(systemName: "arrow.right").imageScale(.small)
+            side(change.to, change.toName)
+        }
+        .font(.caption)
+        .foregroundStyle(Palette.secondary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+    }
+
+    private func side(_ backend: String?, _ name: String?) -> some View {
+        HStack(spacing: 4) {
+            AgentIcon(registry: backend.map(model.agentRegistry), size: 12)
+            Text(name ?? "").foregroundStyle(Palette.text)
+        }
+    }
+
+    private var rule: some View {
+        Rectangle().fill(Palette.border).frame(height: 1).frame(maxWidth: .infinity)
+    }
+}
+
+/// What an agent taking over was told, unfolded under its line.
+private struct CarriedText: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(Palette.secondary)
+            .textSelection(.enabled)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 12))
+            .transition(.opacity)
     }
 }
 

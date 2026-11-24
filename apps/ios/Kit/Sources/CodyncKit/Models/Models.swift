@@ -370,6 +370,8 @@ public struct Hello: Codable, Sendable {
     public var autoOrder: Bool?
     /// Another bot may review a chain stopped at the hop limit (missing from older hosts). Off when false.
     public var hopReview: Bool?
+    /// This host serves workflows. Missing on older hosts, which is the same as false.
+    public var workflows: Bool?
 }
 
 public struct RecentWorkspace: Codable, Sendable, Identifiable {

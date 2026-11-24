@@ -65,6 +65,17 @@ public final class BotStore {
     public internal(set) var hostRoute: HostRoute?
     public internal(set) var client: HostClient?
     public internal(set) var hello: Hello?
+    /// Summaries for the roster pins and the workflow list. Not written into the bot cache, and not a rev.
+    public internal(set) var workflows: [WorkflowSummary] = []
+    /// Editors with unsaved graph edits. A graph event does not reload those.
+    var dirtyWorkflowGraphs: Set<String> = []
+    /// Bumped when a clean workflow should reload its graph.
+    public internal(set) var workflowReload = 0
+    /// Bumped when an open run should reload. Run and step events do not reload a graph.
+    public internal(set) var workflowRunReload = 0
+    public internal(set) var deletedWorkflows: Set<String> = []
+    /// Sentences for an open workflow, such as a delete or a save conflict.
+    public internal(set) var workflowNotices: [String: String] = [:]
     /// The host's version and `minApp`, kept even when the rest of its `hello` can't be read.
     public internal(set) var hostVersion: HostVersion?
     /// An update this phone asked of the computer; cleared when its version changes.
@@ -330,6 +341,11 @@ public final class BotStore {
     /// An agent as the Agent pickers list it.
     func agentLabel(_ backend: Backend) -> String {
         backend.available ? backend.name : "\(backend.name) (not installed)"
+    }
+
+    /// `backends` as the Agent pickers list them, once per login (`Backend.loginSeats`).
+    func loginSeats(_ backends: [Backend], on: AgentLogin, logins: (Backend) -> [String?]? = { _ in nil }) -> [LoginSeat] {
+        backends.flatMap { $0.loginSeats(label: agentLabel($0), on: on, logins: logins($0)) }
     }
 
     public var hiddenBots: [Bot] { bots.values.filter(\.hidden).sorted { $0.name < $1.name } }

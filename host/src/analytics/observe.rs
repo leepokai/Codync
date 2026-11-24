@@ -169,6 +169,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("by".into(), serde_json::json!(crate::routines::Cancelled::User));
             Event::FollowUpCancelled
         }
+        "botTerminal" => Event::BotTerminalOpened,
         "devServerStop" | "devServerRestart" | "devServerRemove" | "devServerLogs" => {
             let action = method.trim_start_matches("devServer").to_ascii_lowercase();
             p.insert("action".into(), action.into());

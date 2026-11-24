@@ -148,7 +148,7 @@ async fn supervise(hub: &Arc<Hub>, address: &cloud::Address) {
             continue;
         }
         let started = Instant::now();
-        let outcome = session(hub, address).await;
+        let outcome = Box::pin(session(hub, address)).await;
         cloud::update_status(hub, |s| s.connected = false);
         if !owner::wants_relay(hub, address) {
             continue;
@@ -245,6 +245,8 @@ async fn session(hub: &Arc<Hub>, address: &cloud::Address) -> Result<Option<u16>
     auth.mark_unchanged();
     let mut hooks = hub.routines.subscribe_hooks();
     hooks.mark_unchanged();
+    let mut workflow_hooks = hub.workflows.subscribe_hooks();
+    workflow_hooks.mark_unchanged();
     s.publish_acl().await?;
     let mut ping = tokio::time::interval(PING_EVERY);
     ping.reset();
@@ -273,6 +275,14 @@ async fn session(hub: &Arc<Hub>, address: &cloud::Address) -> Result<Option<u16>
                 s.publish_acl().await?;
             }
             changed = hooks.changed() => {
+                if changed.is_err() {
+                    return Ok(None);
+                }
+                if s.ready {
+                    s.publish_hooks().await?;
+                }
+            }
+            changed = workflow_hooks.changed() => {
                 if changed.is_err() {
                     return Ok(None);
                 }
@@ -364,7 +374,8 @@ impl Session {
 
     /// The whole webhook set; the relay replaces what it had.
     async fn publish_hooks(&mut self) -> Result<()> {
-        let hooks = self.hub.routines.hooks();
+        let mut hooks = self.hub.routines.hooks();
+        hooks.extend(crate::workflows::published_hooks(&self.hub.store));
         self.send(&json!({"t": "hooks", "hooks": hooks})).await
     }
 

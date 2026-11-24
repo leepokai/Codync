@@ -1,23 +1,25 @@
-/* Black and white: a pure black (or white) ground, grey bubbles, and color that comes only
-   from the bots; amber marks "needs you" and red marks errors. (kit Palette) */
+/* Black and white: a white (or #181818) ground, quiet grey steps of the ink over it, and color that comes only
+   from the bots; amber marks "needs you" and red marks errors. Values per docs/design/visual-language.md. */
 :root {
   color-scheme: light dark;
   --background: #ffffff;
-  --surface: #f4f4f4;
+  --surface: #f6f6f6;
+  /* The window's bar and rail: a step off the list column beside them, in either theme. */
+  --window-chrome: color-mix(in srgb, var(--surface), var(--text) 5%);
   --bubble-agent: #f0f0f0;
   --bubble-user: #e2e2e2;
-  --border: #e6e6e6;
-  --text: #141414;
-  --text-rgb: 20, 20, 20;
-  --secondary: #6b6b6b;
-  --tertiary: #6e6e6e;
-  --accent-fill: #000000;
-  --accent: #000000;
+  --border: rgba(26, 28, 31, 0.078);
+  --text: #1a1c1f;
+  --text-rgb: 26, 28, 31;
+  --secondary: #5f6062;
+  --tertiary: #8e8f90;
+  --accent-fill: #1a1c1f;
+  --accent: #1a1c1f;
   --on-accent: #ffffff;
   --accent-dim: #d9d9d9;
-  --danger: #c23a2b;
+  --danger: #e02e2a;
   /* Destructive buttons: a deeper red that keeps white text readable in both schemes. */
-  --danger-fill: #c23a2b;
+  --danger-fill: #e02e2a;
   --on-danger: #ffffff;
   --warning: #f0a030;
   --star: #b88700;
@@ -27,7 +29,7 @@
   --added: #2e7d32;
   --removed: #c62828;
   /* Floating menus and account panel. */
-  --panel: #fafafa;
+  --panel: #ffffff;
   /* The Mac chat's bubbles (a step stronger than the iPhone's). */
   --chat-agent: #eeeeee;
   --chat-user: #e2e2e2;
@@ -36,35 +38,35 @@
   /* Light: the message box is the page color; dark: a lighter fill. */
   --composer-fill: var(--background);
   /* The 1px outline on floating layers: the message box, sheets, dialogs and menus. */
-  --outline: color-mix(in srgb, var(--text) 18%, transparent);
+  --outline: rgba(26, 28, 31, 0.117);
   --chrome-fill: #f3f3f3;
-  --chrome-stroke: rgba(0, 0, 0, 0.09);
-  --stroke-strong: rgba(0, 0, 0, 0.14);
-  --roster-selected: #ececec;
+  --chrome-stroke: rgba(26, 28, 31, 0.078);
+  --stroke-strong: rgba(26, 28, 31, 0.117);
+  --roster-selected: rgba(26, 28, 31, 0.053);
   /* Grok's frosted floating surfaces (title pill, call bar). */
   --frosted: rgba(244, 244, 244, 0.82);
   /* The dim behind sheets and dialogs. */
-  --scrim: rgba(0, 0, 0, 0.4);
+  --scrim: rgba(0, 0, 0, 0.3);
   /* Sheets and dialogs: a card a step above the page, groups of rows and text fields as quiet
      tints over it (they stack, so a field inside a group reads a step stronger). */
   --sheet: #ffffff;
-  --group: rgba(var(--text-rgb), 0.04);
-  --field: rgba(var(--text-rgb), 0.06);
+  --group: rgba(var(--text-rgb), 0.049);
+  --field: rgba(var(--text-rgb), 0.053);
   /* The chosen option in segmented choices and chips. */
   --chip-on: #ffffff;
   --chip-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 
   /* Corner radii and shadows: one scale for every surface. */
-  --radius-xs: 6px;
+  --radius-xs: 7.5px;
   --radius-s: 10px;
-  --radius-m: 12px;
-  --radius-l: 16px;
-  --radius-xl: 22px;
+  --radius-m: 12.5px;
+  --radius-l: 15px;
+  --radius-xl: 20px;
   --radius-pill: 999px;
   --shadow-s: 0 2px 20px rgba(0, 0, 0, 0.06);
-  --shadow-m: 0 4px 32px rgba(0, 0, 0, 0.12);
-  --shadow-l: 0 8px 40px rgba(0, 0, 0, 0.25);
-  --shadow-xl: 0 12px 60px rgba(0, 0, 0, 0.3);
+  --shadow-m: 0 0 0 0.5px var(--border), 0 8px 16px -4px rgba(0, 0, 0, 0.12);
+  --shadow-l: 0 8px 16px rgba(0, 0, 0, 0.07), 0 2px 6px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 8px 16px rgba(0, 0, 0, 0.07), 0 2px 6px rgba(0, 0, 0, 0.05);
 
   /* The Mac text preference: conversation size / 12 pt scales the chrome too. */
   --scale: 1;
@@ -84,7 +86,7 @@
   --spring: linear(0, 0.0712, 0.2244, 0.3992, 0.5638, 0.7018, 0.8077, 0.8834, 0.9342, 0.9663, 0.9853, 0.9958, 1.0009, 1.0028, 1.0029, 1);
   --layout: 0.3s var(--spring);
 
-  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace;
 }
 
@@ -93,52 +95,56 @@
 :root,
 .island {
   --text-large-title: calc(26px * var(--scale));
-  --text-title: calc(22px * var(--scale));
-  --text-title2: calc(17px * var(--scale));
-  --text-title3: calc(15px * var(--scale));
-  --text-body: calc(13px * var(--scale));
-  --text-callout: calc(12px * var(--scale));
-  --text-caption: calc(11px * var(--scale));
+  --text-title: calc(20px * var(--scale));
+  --text-title2: calc(18px * var(--scale));
+  --text-title3: calc(16px * var(--scale));
+  --text-body: calc(14px * var(--scale));
+  --text-callout: calc(13px * var(--scale));
+  --text-caption: calc(12px * var(--scale));
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #070707;
-    --surface: #111111;
+    --background: #181818;
+    --surface: #141414;
     --bubble-agent: #1c1c1c;
     --bubble-user: #3a3a3a;
-    --border: #262626;
-    --text: #fafafa;
+    --border: rgba(255, 255, 255, 0.084);
+    --text: #dfdfdf;
     --star: #f5c542;
-    --text-rgb: 250, 250, 250;
-    --secondary: #a0a0a0;
-    --tertiary: #9a9a9a;
-    --accent-fill: #ffffff;
-    --accent: #ffffff;
-    --on-accent: #000000;
+    --text-rgb: 255, 255, 255;
+    --secondary: #bcbcbc;
+    --tertiary: #8b8b8b;
+    --accent-fill: #dfdfdf;
+    --accent: #dfdfdf;
+    --on-accent: #2d2d2d;
     --accent-dim: #333333;
-    --danger: #f0a7a7;
-    --danger-fill: #b3261e;
+    --danger: #ff6764;
+    --danger-fill: #e02e2a;
     --code-background: #111111;
     --attention: #ecaf52;
     --added: #8fd18b;
     --removed: #f0a7a7;
-    --panel: #1b1b1b;
+    --panel: #2d2d2d;
     --chat-agent: #262626;
     --chat-user: #363636;
     --chat-button: #303030;
-    --composer-fill: #2f2f2f;
+    --composer-fill: #2d2d2d;
     --chrome-fill: #181818;
-    --chrome-stroke: rgba(255, 255, 255, 0.10);
-    --stroke-strong: rgba(255, 255, 255, 0.17);
-    --roster-selected: #292929;
+    --chrome-stroke: rgba(255, 255, 255, 0.084);
+    --stroke-strong: rgba(255, 255, 255, 0.156);
+    --roster-selected: rgba(255, 255, 255, 0.078);
     --frosted: rgba(35, 35, 35, 0.82);
-    --scrim: rgba(0, 0, 0, 0.55);
-    --sheet: #161616;
-    --group: rgba(var(--text-rgb), 0.045);
-    --field: rgba(var(--text-rgb), 0.075);
+    --scrim: rgba(0, 0, 0, 0.5);
+    --sheet: #363636;
+    --group: rgba(var(--text-rgb), 0.052);
+    --field: rgba(var(--text-rgb), 0.078);
     --chip-on: rgba(var(--text-rgb), 0.15);
     --chip-shadow: none;
+    --outline: rgba(255, 255, 255, 0.156);
+    --shadow-m: 0 0 0 0.5px var(--border), 0 8px 16px -4px rgba(0, 0, 0, 0.35);
+    --shadow-l: 0 8px 16px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.2);
+    --shadow-xl: 0 8px 16px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.2);
   }
 }
 
@@ -170,8 +176,8 @@ body {
   background: var(--background);
   color: var(--text);
   font-family: var(--font);
-  /* macOS .body */
-  font-size: calc(13px * var(--scale));
+  font-size: calc(14px * var(--scale));
+  font-weight: 430;
   line-height: normal;
   -webkit-font-smoothing: antialiased;
   user-select: none;
@@ -264,6 +270,9 @@ a {
 }
 .truncate {
   min-width: 0;
+  /* Never wider than its box: in a column that doesn't stretch it (align flex-start), a nowrap line would
+     otherwise be as wide as its text and run over what sits beside the column. */
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -305,4 +314,53 @@ h3 {
 }
 .no-drag {
   -webkit-app-region: no-drag;
+}
+
+/* A scrolling page's edges: what scrolls past its top or bottom blurs and fades into the ground, shown only while
+   there is more that way (scroll-driven, so a page that doesn't scroll has none). Each sits in the scroller's flow,
+   taking no room. */
+:is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::before,
+:is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::after {
+  content: '';
+  position: sticky;
+  z-index: 3;
+  display: block;
+  flex: none;
+  height: 28px;
+  pointer-events: none;
+  opacity: 0;
+  backdrop-filter: blur(12px);
+  animation: linear both;
+  animation-timeline: scroll(nearest block);
+}
+:is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::before {
+  top: 0;
+  margin-bottom: -28px;
+  background: linear-gradient(to bottom, var(--background), transparent);
+  -webkit-mask-image: linear-gradient(to bottom, #000 30%, transparent);
+  mask-image: linear-gradient(to bottom, #000 30%, transparent);
+  animation-name: scroll-edge-in;
+  animation-range: 0 24px;
+}
+:is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::after {
+  bottom: 0;
+  margin-top: -28px;
+  background: linear-gradient(to top, var(--background), transparent);
+  -webkit-mask-image: linear-gradient(to top, #000 30%, transparent);
+  mask-image: linear-gradient(to top, #000 30%, transparent);
+  animation-name: scroll-edge-out;
+  animation-range: calc(100% - 24px) 100%;
+}
+@keyframes scroll-edge-in {
+  to { opacity: 1; }
+}
+@keyframes scroll-edge-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::before,
+  :is(.card-form, .settings-computers, .market-scroll, .market-panel-scroll, .details-scroll, .bot-form, .group-scroll, .routine-form, .bot-conversation-scroll, .create-body, .import-body, .bot-template-body)::after {
+    backdrop-filter: none;
+  }
 }

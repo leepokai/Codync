@@ -213,6 +213,7 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
             {store !== app.local && store.screen ? (
               <IconButton title="Screen" icon="display" disabled={!app.canOpenScreen(store)} onClick={() => app.openScreen(store.computer.id)} />
             ) : null}
+            <IconButton title="Reconnect" icon="arrow.clockwise" onClick={() => store.restartStream()} />
             <IconButton title="Pair phone" icon="qrcode" selected={showPairing} disabled={!online} onClick={() => setShowPairing((s) => !s)} />
           </div>,
           // Until the host gives its cloud status, there's no way to tell its relay or account.
@@ -271,12 +272,6 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
                   : []),
               ]
             : []),
-          // Hosts before 2.45.1 have no automatic order.
-          online && store.autoOrder != null ? (
-            <Switch key="auto-order" className="settings-appear" on={store.autoOrder} onChange={(on) => void run(() => store.setAutoOrder(on))}>
-              Move active bots to the top
-            </Switch>
-          ) : null,
           online && store.hopReview != null ? (
             <Switch key="hop-review" className="settings-appear" on={store.hopReview} onChange={(on) => void run(() => store.setHopReview(on))}>
               Let another bot review a stopped chain.

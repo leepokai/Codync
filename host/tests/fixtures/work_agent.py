@@ -8,7 +8,8 @@ works until a `release-<name>` file is in its folder, `PERMISSION` asks for an a
 choose, `SHARE` sends a file (`QUOTE`: quoting the chat message that added the task), `ARTIFACT` publishes one,
 `NEST` tries what a thread may not, `REMEMBER` adds a line to `MEMORY.md` with `edit_memory` and `FORGET` tries to take
 one out (both once it is released), `TOUCH` writes `made.txt` in its folder, `LOOP` makes the same tool call six
-times. The watchdog's turn in the chat answers `Watchdog: <why the task looks stuck>`, or `(pass)` for a task whose title
+times, `COMMAND` starts a shell command with a long title (`LONG_COMMAND`), which the task shows as what it does.
+The watchdog's turn in the chat answers `Watchdog: <why the task looks stuck>`, or `(pass)` for a task whose title
 has `PASS`.
 
 A routine run and another bot's request read the same words in the routine's instruction or the request, and also
@@ -57,6 +58,10 @@ LIMIT = {
     "message": "Internal error: You've hit your limit · resets 3pm (Asia/Taipei)",
     "data": {"errorKind": "rate_limit"},
 }
+LONG_COMMAND = (
+    "agentctl wait 3f2a9c1e-7b44-4d1a-9e0f-0a1b2c3d4e5f --until idle --timeout 3600"
+    " --workspace /home/example/.codync/bots/0bcd2c28-ac38-4db8-b932-4ec2da5be7a3/workspace"
+)
 output_lock = threading.Lock()
 cancel = threading.Event()
 permission = threading.Event()
@@ -177,6 +182,11 @@ def work(text, session):
         for n in range(6):
             send({"method": "session/update", "params": {"sessionId": session, "update": {
                 "sessionUpdate": "tool_call", "toolCallId": f"loop-{n}", "title": "Read the log", "status": "completed"}}})
+    if "COMMAND" in brief:
+        send({"method": "session/update", "params": {"sessionId": session, "update": {
+            "sessionUpdate": "tool_call", "toolCallId": "command", "title": LONG_COMMAND, "kind": "execute",
+            "status": "in_progress",
+        }}})
     if "PERMISSION" in brief:
         later = re.search(r"PERMISSION:(\w+)", brief)
         if later:

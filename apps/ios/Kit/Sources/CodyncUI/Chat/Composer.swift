@@ -19,6 +19,8 @@ struct Composer: View {
     var onInterrupt: (() -> Void)?
     /// An artifact's viewer: every message is about the artifact (a reply to its card), from a draft of its own.
     var artifact: Artifact?
+    /// Under a task's thread: Stop while it runs, which asks before it stops the thread.
+    var stopThread: (() -> Void)?
     @Environment(BotStore.self) private var model
     @Environment(\.workThread) private var thread
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -41,8 +43,10 @@ struct Composer: View {
 
     private var bot: Bot? { model.bots[botId] }
     private var draftKey: String { thread?.draftKey ?? artifact.map(BotStore.artifactDraftKey) ?? botId }
-    /// The chat's own turn, which its Stop is for; a thread's Stop is in its header.
-    private var working: Bool { thread == nil && bot?.isWorking(in: botId) == true }
+    /// The task a thread's box writes to.
+    private var threadTask: WorkTask? { thread.flatMap { thread in bot?.work.first { $0.id == thread.taskId } } }
+    /// The turn its Stop is for: the chat's own, or the thread's task while it runs.
+    private var working: Bool { thread == nil ? bot?.isWorking(in: botId) == true : threadTask?.status.isLive == true }
 
     private var isEmpty: Bool { draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && files.isEmpty }
 
@@ -56,8 +60,8 @@ struct Composer: View {
     /// A thread takes files only where its host says so (`talkFiles`).
     private var canAttach: Bool {
         guard let bot else { return false }
-        guard let thread else { return true }
-        return bot.work.first { $0.id == thread.taskId }?.talkFiles == true
+        guard thread != nil else { return true }
+        return threadTask?.talkFiles == true
     }
 
     private var placeholder: String {
@@ -182,7 +186,7 @@ struct Composer: View {
         return Button {
             switch state {
             case .interrupt: onInterrupt?()
-            case .stop: model.stop(botId)
+            case .stop: if thread == nil { model.stop(botId) } else { stopThread?() }
             case .call:
                 // The call takes the microphone.
                 dictation.stop()
@@ -259,8 +263,9 @@ struct Composer: View {
             HStack(spacing: 8) {
                 if canAttach { addButton }
                 Spacer(minLength: 0)
-                // A bot's own chat: a group's bots each run on their own, a thread on its task's agent.
+                // A bot's own chat: a group's bots each run on their own; a thread, on its task's agent, fixed.
                 if thread == nil, let bot, !bot.isGroup { ModelChip(bot: bot) }
+                if let bot, let threadTask { ThreadComposerChips(bot: bot, task: threadTask) }
                 if thread == nil { micButton.layoutPriority(1) }
                 trailingButton
                     .layoutPriority(1)

@@ -3,9 +3,9 @@ import CodyncUI
 import SwiftUI
 
 /// The Threads tab, the desktop's Threads list: every task of the bots on the computers the Bots tab shows, in its
-/// order, laid out as its filter menu says. A tap opens the bot's chat (on the Bots tab) at its card, its details on
-/// the task's thread, or its details. Its header, the Bots tab's: the account, the title over how the computers are
-/// connected, then the desktop's buttons: the filter menu, Search (threads by title or bot, flat
+/// order, laid out as its filter menu says. A tap pushes the task's thread chat over the list, or opens the bot's chat
+/// (on the Bots tab) at its card, or its details. Its header, the Bots tab's: the account, the title over how the
+/// computers are connected, then the desktop's buttons: the filter menu, Search (threads by title or bot, flat
 /// and newest first) and New thread, with no bot where a computer can start one so, else with a bot.
 struct ThreadsTab: View {
     let roster: [RosterItem]
@@ -21,8 +21,8 @@ struct ThreadsTab: View {
     @State private var newThread = false
     /// A thread just started here, opened once it has its thread.
     @State private var starting: (computer: ComputerID, botId: String, taskId: String)?
-    /// A thread of a box without a bot, open over the list.
-    @State private var looseThread: LooseThread?
+    /// The thread pushed over the list.
+    @State private var thread: ThreadTarget?
 
     var body: some View {
         let key = { (item: RosterItem) in "\(item.ref.computerId)/\(item.ref.botId)" }
@@ -44,12 +44,12 @@ struct ThreadsTab: View {
                                    if task.status == .needsYou { accounts.store(for: item.ref.computerId)?.requestCard(of: item.bot.id, task: task) }
                                    accounts.selection = item.ref
                                },
-                               openThread: openThread, looseThread: $looseThread,
+                               thread: $thread,
                                loadMore: { shownStores.forEach { $0.loadOlderThreads() } })
                 }
             }
             .background(Palette.background)
-            .looseThread($looseThread, store: { accounts.store(for: $0.ref.computerId) })
+            .threadChat($thread, store: { accounts.store(for: $0.ref.computerId) })
             .navigationTitle(L10n.tr("Threads"))
             .navigationBarTitleDisplayMode(.inline)
             .navigationSubtitle(accounts.connectionSummary(hidden: hiddenComputers))
@@ -89,8 +89,7 @@ struct ThreadsTab: View {
             starting = nil
             guard !Task.isCancelled, let item = accounts.item(computer, botId: botId) else { return }
             switch (task, item.bot.plain) {
-            case let (task?, true): looseThread = LooseThread(of: item, task: task)
-            case let (task?, false): openThread(item, task)
+            case let (task?, _): thread = ThreadTarget(of: item, task: task)
             case (nil, false): openDetails(item)
             case (nil, true): break
             }
@@ -120,11 +119,6 @@ struct ThreadsTab: View {
 
     private func openDetails(_ item: RosterItem) {
         accounts.store(for: item.ref.computerId)?.requestDetails(of: item.bot.id)
-        accounts.selection = item.ref
-    }
-
-    private func openThread(_ item: RosterItem, _ task: WorkTask) {
-        accounts.store(for: item.ref.computerId)?.requestThread(of: item.bot.id, task: task)
         accounts.selection = item.ref
     }
 

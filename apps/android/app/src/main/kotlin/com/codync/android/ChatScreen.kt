@@ -190,8 +190,7 @@ import kotlinx.coroutines.delay
     CodyncSheet(details, { details = null }) { request ->
         val shown = state.bots.firstOrNull { it.id == (request.botId ?: bot.id) }
         // A card is in this chat: another bot's details (a group member's) have none to go to.
-        if (shown != null) BotDetailsView(shown, request, state, store, openInChat = { details = null; reveal(it.id) },
-            openCard = { task: WorkTask -> details = null; store.openCard(bot.id, task) }.takeIf { shown.id == bot.id }) { viewing = it }
+        if (shown != null) BotDetailsView(shown, request, state, store, openCard = { task: WorkTask -> details = null; store.openCard(bot.id, task) }.takeIf { shown.id == bot.id }) { viewing = it }
     }
     ArtifactLayer(viewing) { open ->
         state.bots.firstOrNull { it.id == open.botId }?.let { owner -> ArtifactViewer(open, owner, state, store) { viewing = null } }

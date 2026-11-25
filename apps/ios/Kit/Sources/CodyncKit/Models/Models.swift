@@ -372,6 +372,8 @@ public struct Hello: Codable, Sendable {
     public var workflows: Bool?
     /// This host starts a thread the user asks for (`startThread`). Missing on older hosts: it doesn't.
     public var startThread: Bool?
+    /// A thread may start without a bot, on an agent it names (`startThread` without `botId`). Missing on older hosts.
+    public var threadsWithoutBot: Bool?
     /// A routine can name the folder its runs work in (`folder`). Missing on older hosts: it can't.
     public var routineFolder: Bool?
     /// A bot has projects (`Bot.projects`) and lives in its own folder. Missing on older hosts: its `cwd` is the project.

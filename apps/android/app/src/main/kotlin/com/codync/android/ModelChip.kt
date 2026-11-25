@@ -1,14 +1,8 @@
 package com.codync.android
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -16,7 +10,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
@@ -50,27 +43,25 @@ import java.io.IOException
         delay(600)
         store.saveSettings(draft) { error -> if (open) saveError = error else error?.let { store.showError(IOException(it)) } }
     }
-    Row(Modifier.height(34.dp).clip(Capsule()).clickable(enabled = online, role = Role.Button) { open = true }
-        .semantics { contentDescription = "Model" }.padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+    ChipLabel(Modifier.clip(Capsule()).clickable(enabled = online, role = Role.Button) { open = true }.semantics { contentDescription = "Model" }) {
         AgentIcon(agentRegistry(state, bot.backend), 14.dp)
         Text(bot.model ?: tr("Default"), style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Symbol("chevron.down", size = 9.dp, tint = Palette.tertiary)
     }
     CodyncSheet(open, { open = false }) { ModelSheet(bot, draft, { draft = it }, saveError, state, store) }
 }
 
 /** The bot's agent, login and model. */
 @Composable private fun ModelSheet(bot: Bot, draft: BotDraft, edit: (BotDraft) -> Unit, error: String?, state: AppState, store: AppStore) {
+    val notes = buildList {
+        bot.restOf(draft.login)?.let { add(tr(it.line(RelativeTime.clock(it.until))) to Palette.secondary) }
+        add(tr("Changing the model starts a new agent session. Chat history is kept.") to Palette.secondary)
+        error?.let { add(tr(it) to Palette.danger) }
+    }
     Column(Modifier.fillMaxSize()) {
         ModalHeader("Model")
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            AgentModelPicker(state, store::agentModels, draft.backend, draft.model, draft.modelOptions, draft.fastMode ?: false, bot,
-                { model, options -> edit(draft.copy(model = model, modelOptions = options)) }, { edit(draft.copy(fastMode = it)) },
-                agents = readySeats(state, draft.login), chooseAgent = { edit(draft.withAgent(it)) }, expanded = true, loginProfile = draft.loginProfile) {
-                bot.restOf(draft.login)?.let { Text(tr(it.line(RelativeTime.clock(it.until))), style = Type.caption, color = Palette.secondary) }
-            }
-            error?.let { Text(tr(it), style = Type.footnote, color = Palette.danger) }
-        }
+        ModelPanel(state, store, backend = draft.backend, loginProfile = draft.loginProfile, model = draft.model, options = draft.modelOptions,
+            choose = { model, options -> edit(draft.copy(model = model, modelOptions = options)) }, fast = draft.fastMode ?: false,
+            setFast = { edit(draft.copy(fastMode = it)) }, bot = bot, seats = readySeats(state, draft.login), pickSeat = { edit(draft.withAgent(it)) },
+            notes = notes)
     }
 }

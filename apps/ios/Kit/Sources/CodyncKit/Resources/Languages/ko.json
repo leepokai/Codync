@@ -677,6 +677,7 @@
   "Set up": "설정",
   "Installed": "설치됨",
   "Not installed": "설치되지 않음",
+  "Not ready": "준비되지 않음",
   "Needs Node.js": "Node.js 필요",
   "Sets up on first use": "처음 사용할 때 설정됨",
   "Couldn't load connectors.": "커넥터를 불러오지 못했습니다.",

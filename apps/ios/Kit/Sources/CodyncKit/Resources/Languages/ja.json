@@ -677,6 +677,7 @@
   "Set up": "設定",
   "Installed": "インストール済み",
   "Not installed": "インストールされていません",
+  "Not ready": "準備未完了",
   "Needs Node.js": "Node.jsが必要",
   "Sets up on first use": "初めて使用するときにセットアップする",
   "Couldn't load connectors.": "コネクタをロードできませんでした。",

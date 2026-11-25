@@ -677,6 +677,7 @@
   "Set up": "Einrichten",
   "Installed": "Installiert",
   "Not installed": "Nicht installiert",
+  "Not ready": "Noch nicht bereit",
   "Needs Node.js": "Benötigt Node.js",
   "Sets up on first use": "Einrichtung bei erster Verwendung",
   "Couldn't load connectors.": "Konnektoren konnten nicht geladen werden.",

@@ -118,6 +118,7 @@ struct AppLanguageTests {
         #expect(L10n.tr("Codync 2.47.0 is available", preference: .zh, systemIsChinese: false) == "Codync 2.47.0 已推出")
         #expect(L10n.tr("You have reached your limit.", preference: .zh, systemIsChinese: false) == "You have reached your limit.")
         #expect(L10n.tr("Not installed", preference: .zh, systemIsChinese: false) == "未安装")
+        #expect(L10n.tr("Not ready", preference: .zh, systemIsChinese: false) == "尚未就绪")
         #expect(L10n.tr("Set up", preference: .zh, systemIsChinese: false) == "设置")
         #expect(L10n.tr("Writing a reply…", preference: .zh, systemIsChinese: false) == "正在写回复…")
         #expect(L10n.tr("Downloading Codebuddy Code…", preference: .zh, systemIsChinese: false) == "正在下载 Codebuddy Code…")

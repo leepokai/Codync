@@ -677,6 +677,7 @@
   "Set up": "设置",
   "Installed": "已安装",
   "Not installed": "未安装",
+  "Not ready": "尚未就绪",
   "Needs Node.js": "需要 Node.js",
   "Sets up on first use": "首次使用时设置",
   "Couldn't load connectors.": "无法加载连接器。",

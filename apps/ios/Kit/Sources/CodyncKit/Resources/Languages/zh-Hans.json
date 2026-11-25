@@ -701,6 +701,7 @@
   "Couldn't load more connectors.": "无法加载更多连接器。",
   "Couldn't load skills.": "无法加载技能。",
   "not installed": "未安装",
+  "not ready": "尚未就绪",
   "needs Node.js": "需要 Node.js",
   "signed in": "已登录",
   "not signed in": "未登录",

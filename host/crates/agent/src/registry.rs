@@ -227,11 +227,12 @@ pub async fn command(agent: &Value, progress: impl Fn(&str)) -> Result<Cmd> {
 
 fn npx_cmd(npx_path: &Path, npx: &Value) -> Result<Cmd> {
     let path = crate::node::launch_path(npx_path)?;
+    let env = npx["env"].as_object().into_iter().flatten().filter_map(|(k, v)| Some((k.as_str(), v.as_str()?)));
     Ok(Cmd {
+        // `PATH` is always part of the environment prefix so `exec` has a command, not an assignment, to run.
         program: format!(
-            "{}PATH={} {} -y {}",
-            env_prefix(&npx["env"]),
-            shell::quote(&path),
+            "{} {} -y {}",
+            shell::env_prefix(env.chain([("PATH", path.as_str())])),
             shell::quote(&npx_path.to_string_lossy()),
             shell::quote(npx["package"].as_str().unwrap_or_default())
         ),
@@ -511,7 +512,7 @@ mod tests {
         let command = command(&adapter, |_| {}).await.unwrap();
         assert!(command.acp().contains(&npx.to_string_lossy().into_owned()), "{}", command.acp());
 
-        let mut process = shell::line(&command.acp()).tokio();
+        let mut process = shell::exec(&command.acp()).tokio();
         assert!(process.output().await.unwrap().status.success());
         let invoked = std::fs::read_to_string(&log).unwrap();
         assert!(invoked.lines().next().unwrap().starts_with(&bin.to_string_lossy().into_owned()), "{invoked}");

@@ -1486,6 +1486,7 @@
   "n add rule · x delete · K J move · esc back": "n aggiungi regola · x elimina · K J sposta · esc indietro",
   "needs Node.js": "richiede Node.js",
   "not installed": "non installato",
+  "not ready": "non ancora pronto",
   "not signed in": "accesso non effettuato",
   "o recover ownership · r refresh · esc close": "o recupera la proprietà · r aggiorna · esc chiudi",
   "o recover ownership · w rules · c new · J join · L leave · esc": "o recupera la proprietà · w regole · c nuova · J unisciti · L esci · esc",

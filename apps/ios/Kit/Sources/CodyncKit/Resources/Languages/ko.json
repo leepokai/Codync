@@ -701,6 +701,7 @@
   "Couldn't load more connectors.": "커넥터를 더 불러오지 못했습니다.",
   "Couldn't load skills.": "스킬을 불러오지 못했습니다.",
   "not installed": "설치되지 않음",
+  "not ready": "준비되지 않음",
   "needs Node.js": "Node.js 필요",
   "signed in": "로그인됨",
   "not signed in": "로그인되지 않음",

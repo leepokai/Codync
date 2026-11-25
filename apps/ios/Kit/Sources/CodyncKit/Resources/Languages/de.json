@@ -701,6 +701,7 @@
   "Couldn't load more connectors.": "Weitere Konnektoren konnten nicht geladen werden.",
   "Couldn't load skills.": "Skills konnten nicht geladen werden.",
   "not installed": "nicht installiert",
+  "not ready": "noch nicht bereit",
   "needs Node.js": "benötigt Node.js",
   "signed in": "angemeldet",
   "not signed in": "nicht angemeldet",

@@ -701,6 +701,7 @@
   "Couldn't load more connectors.": "これ以上コネクタをロードできませんでした。",
   "Couldn't load skills.": "スキルをロードできませんでした。",
   "not installed": "インストールされていません",
+  "not ready": "準備未完了",
   "needs Node.js": "Node.jsが必要",
   "signed in": "サインインしました",
   "not signed in": "サインインしていません",

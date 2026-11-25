@@ -69,6 +69,8 @@ fn mail_waits_for_its_session_and_follows_a_rename() {
     assert_eq!(sessions.unread(&store, &s.key), MAIL_MAX);
     let renamed = sessions.rename(&store, &s.key, "reviewer", || book("reviewer")).unwrap();
     assert_eq!(renamed.address, "reviewer");
+    let again = sessions.rename(&store, &s.key, "reviewer", || book("reviewer")).unwrap();
+    assert_eq!(again.address, "reviewer", "the same name again keeps its address");
     assert_eq!(sessions.by_address(&store, "Reviewer").map(|s| s.key), Some(s.key.clone()));
     let taken = sessions.take(&store, &s.key).unwrap();
     assert_eq!((taken.len(), taken[0].id.as_str()), (MAIL_MAX, "2"), "the oldest went first");

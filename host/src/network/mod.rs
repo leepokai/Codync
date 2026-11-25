@@ -363,6 +363,10 @@ async fn watch(hub: Arc<Hub>, mut changes: tokio::sync::watch::Receiver<()>) {
 /// kept off it, which only send. Called after every change to a bot's name, description,
 /// visibility or network switch.
 pub fn publish(hub: &Hub) {
+    // One at a time, from reading the bots and sessions to offering them: an older list can't
+    // land after a newer one. ponytail: one lock for every hub in the process; per hub if tests mind.
+    static ONE: Mutex<()> = Mutex::new(());
+    let _one = ONE.locked();
     let slots = hub.network.slots();
     if slots.is_empty() {
         return;

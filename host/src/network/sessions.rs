@@ -169,6 +169,10 @@ impl Sessions {
         let _one = self.lock.locked();
         let mut all = load(store);
         let Some(session) = all.get_mut(key) else { bail!("this session isn't registered") };
+        // Checked under the lock: an overlapping call for the same name keeps the address it got.
+        if session.named.as_deref() == Some(named) {
+            return Ok(session.clone());
+        }
         session.address = reserve()?;
         session.named = Some(named.to_owned());
         let session = session.clone();

@@ -582,7 +582,7 @@ public extension HostClient {
     }
 
     func imateSetToken(_ token: String) async throws -> ImateStatus {
-        try await call("imateSetToken", ["token": token])
+        try await call("imateSetToken", ["token": token], timeout: 60)
     }
 
     /// A new login profile for `backend` (an account one is signed out, an API key one has no key yet), and the

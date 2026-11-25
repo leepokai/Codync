@@ -13,9 +13,14 @@ use codync_agent::backends;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
+use std::time::Duration;
 
 const TOKEN: &str = "IMATE_API_TOKEN";
 const BASE: &str = "https://imate.woa.com/server/web-api";
+/// A colleague list. Short enough that the next ask starts its own lookup instead of waiting on this one.
+const LOOKUP_TIMEOUT: Duration = Duration::from_secs(30);
+/// Checking a token before it replaces the one already saved. The phone waits 60 seconds for `imateSetToken`.
+const TOKEN_CHECK: Duration = Duration::from_secs(20);
 
 /// What the phone needs to show iMate's token field and sign-in state.
 pub async fn status(hub: Arc<Hub>) -> Result<Value> {
@@ -28,12 +33,20 @@ pub async fn status(hub: Arc<Hub>) -> Result<Value> {
 }
 
 /// Saves the personal token in the host's vault and refreshes the agent catalog.
+/// iMate has to accept the token first. A refusal leaves the token already saved in place.
 pub async fn set_token(hub: Arc<Hub>, token: &str) -> Result<Value> {
     let token = token.trim();
     if token.is_empty() {
         bail!("token is empty");
     }
     crate::market::vault::unlock(hub.clone()).await?;
+    match fetch_colleagues(token, TOKEN_CHECK).await {
+        Ok(_) => listed(&hub, "success", None, "save"),
+        Err(error) => {
+            listed(&hub, "failed", Some(failure_category(&error)), "save");
+            return Err(error.context("iMate rejected this token"));
+        }
+    }
     super::save_env(&hub.store, "agent-env:imate", &[(TOKEN.to_owned(), Some(token.to_owned()))])?;
     backends::set_signed_in("imate", Some(true));
     hub.model_lists.clear("imate");
@@ -114,12 +127,10 @@ pub async fn shared_models(hub: &Arc<Hub>, login_profile: Option<&str>) -> Resul
     hub.model_lists
         .get("imate", login_profile, async {
             let result = list_colleagues(&hub.store, login_profile).await;
-            let mut properties = Map::new();
-            properties.insert("outcome".into(), json!(if result.is_ok() { "success" } else { "failed" }));
-            if let Err(error) = &result {
-                properties.insert("category".into(), json!(failure_category(error)));
+            match &result {
+                Ok(_) => listed(hub, "success", None, "list"),
+                Err(error) => listed(hub, "failed", Some(failure_category(error)), "list"),
             }
-            capture(hub, Event::ImateAgentsListed, properties);
             result
         })
         .await
@@ -127,29 +138,10 @@ pub async fn shared_models(hub: &Arc<Hub>, login_profile: Option<&str>) -> Resul
 
 async fn list_colleagues(store: &Store, login_profile: Option<&str>) -> Result<Value> {
     let token = token_for(store, login_profile)?.context("add an iMate API token in Extensions first")?;
-    let mut headers = HeaderMap::new();
-    headers
-        .insert(AUTHORIZATION, HeaderValue::from_str(&format!("Bearer {token}")).context("invalid iMate API token")?);
-    let response = http()
-        .get(format!("{BASE}/api/v1/open/imates"))
-        .headers(headers)
-        .send()
-        .await
-        .context("listing iMate agents")?;
-    let status = response.status();
-    let body = response.text().await.context("reading the iMate agent list")?;
-    if !status.is_success() {
-        bail!("iMate agent list failed ({status}): {}", first_line(&body));
-    }
-    let value: Value = serde_json::from_str(first_line(&body)).context("decoding the iMate agent list")?;
-    if value["code"] != 0 {
-        bail!("iMate agent list failed: {}", value["message"].as_str().unwrap_or("unknown error"));
-    }
+    let listed = fetch_colleagues(&token, LOOKUP_TIMEOUT).await?;
     // The same order as the bridge's default colleague: first by name, so "Default" is that person.
-    let mut models: Vec<Value> = value["data"]
-        .as_array()
-        .into_iter()
-        .flatten()
+    let mut models: Vec<Value> = listed
+        .iter()
         .filter_map(|imate| {
             let id = imate["clientUuid"].as_str()?;
             Some(json!({"id": id, "name": colleague_name(imate), "description": null, "options": []}))
@@ -171,6 +163,44 @@ pub(crate) fn colleague_name(imate: &Value) -> &str {
         .as_str()
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| imate["clientUuid"].as_str().unwrap_or_default())
+}
+
+fn listed(hub: &Hub, outcome: &str, category: Option<&str>, when: &str) {
+    let mut properties = Map::new();
+    properties.insert("outcome".into(), json!(outcome));
+    properties.insert("when".into(), json!(when));
+    if let Some(category) = category {
+        properties.insert("category".into(), json!(category));
+    }
+    capture(hub, Event::ImateAgentsListed, properties);
+}
+
+/// The colleagues `token` can see. `timeout` bounds the whole request, so a silent iMate cannot hold the lookup open.
+async fn fetch_colleagues(token: &str, timeout: Duration) -> Result<Vec<Value>> {
+    let mut headers = HeaderMap::new();
+    headers
+        .insert(AUTHORIZATION, HeaderValue::from_str(&format!("Bearer {token}")).context("invalid iMate API token")?);
+    let response = http()
+        .get(format!("{BASE}/api/v1/open/imates"))
+        .headers(headers)
+        .timeout(timeout)
+        .send()
+        .await
+        .context("listing iMate agents")?;
+    let status = response.status();
+    let body = response.text().await.context("reading the iMate agent list")?;
+    colleagues_from(status.as_u16(), &body)
+}
+
+fn colleagues_from(status: u16, body: &str) -> Result<Vec<Value>> {
+    if !(200..300).contains(&status) {
+        bail!("iMate agent list failed ({status}): {}", first_line(body));
+    }
+    let value: Value = serde_json::from_str(first_line(body)).context("decoding the iMate agent list")?;
+    if value["code"] != 0 {
+        bail!("iMate agent list failed: {}", value["message"].as_str().unwrap_or("unknown error"));
+    }
+    Ok(value["data"].as_array().cloned().unwrap_or_default())
 }
 
 fn first_line(body: &str) -> &str {
@@ -197,6 +227,16 @@ mod tests {
     #[test]
     fn first_line_ignores_the_framework_suffix() {
         assert_eq!(first_line("{\"error\":\"x\"}\n{\"code\":0}"), "{\"error\":\"x\"}");
+    }
+
+    #[test]
+    fn a_refused_token_is_not_a_colleague_list() {
+        let denied = colleagues_from(401, "{\"error\":\"unauthorized\"}\n{\"code\":0}");
+        assert!(denied.unwrap_err().to_string().contains("401"));
+        let rejected = colleagues_from(200, "{\"code\":10001,\"message\":\"invalid token\"}");
+        assert!(rejected.unwrap_err().to_string().contains("invalid token"));
+        let accepted = colleagues_from(200, "{\"code\":0,\"data\":[{\"clientUuid\":\"a\"}]}").expect("colleagues");
+        assert_eq!(accepted[0]["clientUuid"], "a");
     }
 
     #[test]

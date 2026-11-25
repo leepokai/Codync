@@ -12,8 +12,11 @@ use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValu
 use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 const BASE: &str = "https://imate.woa.com/server/web-api";
+/// A frame POST or a colleague list. The event stream stays open and has no deadline of its own.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const TOKEN_VAR: &str = "IMATE_API_TOKEN";
 /// The bot's chosen colleague (`clientUuid`). The host sets it before the process starts: the tunnel URL needs it
 /// on `initialize`, and the model is chosen only after `session/new`.
@@ -30,7 +33,7 @@ async fn connect(what: &'static str, request: impl Fn() -> reqwest::RequestBuild
             Ok(response) => return Ok(response),
             Err(error) if attempt == 0 && (error.is_connect() || error.is_timeout()) => {
                 tracing::info!(error = %error, "{what} failed to connect; trying once more");
-                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+                tokio::time::sleep(Duration::from_millis(400)).await;
                 failed = Some(error);
             }
             Err(error) => return Err(error).context(what),
@@ -65,8 +68,10 @@ impl Client {
 
     async fn imates(&self) -> Result<Vec<Value>> {
         let url = self.url("/api/v1/open/imates");
-        let response =
-            connect("listing iMate agents", || self.http.get(url.clone()).headers(self.headers.clone())).await?;
+        let response = connect("listing iMate agents", || {
+            self.http.get(url.clone()).headers(self.headers.clone()).timeout(REQUEST_TIMEOUT)
+        })
+        .await?;
         let status = response.status();
         let body = response.text().await.context("reading the iMate agent list")?;
         if !status.is_success() {
@@ -82,7 +87,7 @@ impl Client {
     async fn open(&self, client_uuid: &str, frame: &str) -> Result<(String, String)> {
         let url = self.url(&format!("/api/v1/open/imates/{client_uuid}/acp"));
         let response = connect("opening an iMate ACP tunnel", || {
-            self.http.post(url.clone()).headers(self.headers.clone()).body(frame.to_owned())
+            self.http.post(url.clone()).headers(self.headers.clone()).timeout(REQUEST_TIMEOUT).body(frame.to_owned())
         })
         .await?;
         let status = response.status();
@@ -105,6 +110,7 @@ impl Client {
             self.http
                 .post(url.clone())
                 .headers(self.headers.clone())
+                .timeout(REQUEST_TIMEOUT)
                 .header(CONNECTION_HEADER, connection)
                 .body(frame.to_owned())
         })

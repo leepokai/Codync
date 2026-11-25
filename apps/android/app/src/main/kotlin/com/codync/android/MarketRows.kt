@@ -93,11 +93,13 @@ import com.kyant.shapes.RoundedRectangle
     }
 }
 
-/** A coding agent's logo by ACP registry id, in its brand color when it has one; a terminal glyph otherwise. */
+/** A coding agent's logo by ACP registry id, in its brand color when it has one; a terminal glyph otherwise.
+ *  iMate's mark is already colored, so it is not tinted (the iPhone draws it the same way). */
 @Composable internal fun AgentIcon(registry: String?, size: Dp) {
     val tint = AGENT_TINTS[registry]?.let { Color(it) } ?: Palette.text
     val res = agentIconRes(registry)
-    if (res != null) Image(painterResource(res), null, Modifier.size(size).clearAndSetSemantics {}, colorFilter = ColorFilter.tint(tint))
+    val filter = if (registry == "imate") null else ColorFilter.tint(tint)
+    if (res != null) Image(painterResource(res), null, Modifier.size(size).clearAndSetSemantics {}, colorFilter = filter)
     else Symbol("terminal", Modifier.padding(size * 0.1f), size = size * 0.8f, tint = tint)
 }
 

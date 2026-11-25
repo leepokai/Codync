@@ -32,8 +32,12 @@ pub struct Waiting {
     /// The latest requests to sessions here that ended, by `(session key, id)`, and whether their
     /// session answered them: an answer sent again (a retry) is taken as delivered, and one after
     /// the request expired is refused, rather than either becoming a new request.
-    ended: Mutex<std::collections::VecDeque<(String, String, bool)>>,
+    /// The bot that asked and the address its letter was signed with, when it was answered.
+    ended: Mutex<std::collections::VecDeque<Ended>>,
 }
+
+/// A request to a session here that ended: `(session key, id, (asking bot, signed address) if answered)`.
+type Ended = (String, String, Option<(String, String)>);
 
 /// How many ended requests to sessions `Waiting` remembers.
 const ANSWERED_KEPT: usize = 256;
@@ -82,7 +86,13 @@ impl Waiting {
         let mut all = self.all.locked();
         let Some(w) = all.get(id) else {
             let ended = self.ended.locked();
-            return ended.iter().find(|(k, i, _)| k == key && i == id).map_or(Answer::Unknown, |e| Answer::Ended(e.2));
+            return match ended.iter().find(|(k, i, _)| k == key && i == id) {
+                None => Answer::Unknown,
+                Some((.., None)) => Answer::Ended(false),
+                // A retry counts as delivered only to the bot it went to.
+                Some((.., Some((asker, signed)))) if named != asker && to != signed => Answer::WrongBot(asker.clone()),
+                Some(_) => Answer::Ended(true),
+            };
         };
         let (asker, signed) = match (&w.session, &w.to) {
             (Some((k, signed, _)), ReplyTo::Bot { id, .. }) if k == key => (id, signed),
@@ -95,8 +105,9 @@ impl Waiting {
             return Answer::WrongBot(asker.clone());
         }
         let gone = !alive(asker);
+        let answered = (!gone).then(|| (asker.clone(), signed.clone()));
         let waiter = all.remove(id).expect("found above, under the same lock");
-        self.mark_ended(key, id, !gone);
+        self.mark_ended(key, id, answered);
         if gone { Answer::Ended(false) } else { Answer::Ends(waiter) }
     }
 
@@ -108,7 +119,7 @@ impl Waiting {
     }
 
     /// Request `id` to the session `key` ended, answered or not. Called with `all` locked.
-    fn mark_ended(&self, key: &str, id: &str, answered: bool) {
+    fn mark_ended(&self, key: &str, id: &str, answered: Option<(String, String)>) {
         let mut ended = self.ended.locked();
         ended.push_back((key.to_owned(), id.to_owned(), answered));
         if ended.len() > ANSWERED_KEPT {
@@ -131,7 +142,7 @@ impl Waiting {
         let taken: Vec<(String, Waiter)> = over.into_iter().filter_map(|id| all.remove(&id).map(|w| (id, w))).collect();
         for (id, w) in &taken {
             if let Some((key, ..)) = &w.session {
-                self.mark_ended(key, id, false);
+                self.mark_ended(key, id, None);
             }
         }
         taken
@@ -660,8 +671,12 @@ mod waiting_tests {
         let over: Vec<String> = waiting.expired(100).into_iter().map(|(id, _)| id).collect();
         assert_eq!(over, ["session"]);
         assert!(waiting.take("bot").is_some(), "a bot's request waits for good");
-        waiting.mark_ended("codex:t", "late", false);
-        waiting.mark_ended("codex:t", "done", true);
+        waiting.mark_ended("codex:t", "late", None);
+        waiting.mark_ended("codex:t", "done", Some(("b".into(), "b".into())));
+        assert!(
+            matches!(waiting.answer("done", "codex:t", "other", "other", |_| true), Answer::WrongBot(_)),
+            "a retry naming another bot isn't confirmed"
+        );
         let ended = |key, id| match waiting.answer(id, key, "b", "b", |_| true) {
             Answer::Ended(answered) => Some(answered),
             _ => None,

@@ -190,7 +190,7 @@ async fn run(hub: &Arc<Hub>, asker: &Asker, tool: &str, args: &Value) -> Result<
         // for a session the other sessions here.
         "list_bots" => {
             let sessions = match &asker.session {
-                Some(me) => sessions_here(hub, Some(&me.key)).await?,
+                Some(me) => sessions_here(hub, Some(&me.key), args).await?,
                 None => Vec::new(),
             };
             let sessions: Vec<_> = sessions.into_iter().filter(|s| !super::names_bot(hub, &s.address)).collect();
@@ -207,9 +207,16 @@ async fn run(hub: &Arc<Hub>, asker: &Asker, tool: &str, args: &Value) -> Result<
 }
 
 /// The coding agents' sessions on this computer (but the one keyed `except`), each with whether it is busy now.
-pub(super) async fn sessions_here(hub: &Hub, except: Option<&str>) -> Result<Vec<Session>> {
-    let mut others: Vec<Session> =
-        hub.network.sessions.all(&hub.store).into_iter().filter(|s| Some(s.key.as_str()) != except).collect();
+/// `args`: `list_bots`'s, whose `kind` leaves the others out before any agent's files are read.
+pub(super) async fn sessions_here(hub: &Hub, except: Option<&str>, args: &Value) -> Result<Vec<Session>> {
+    let kind = directory::kind_of(args);
+    let mut others: Vec<Session> = hub
+        .network
+        .sessions
+        .all(&hub.store)
+        .into_iter()
+        .filter(|s| Some(s.key.as_str()) != except && kind.is_none_or(|k| k == s.kind))
+        .collect();
     // ponytail: reads each session's agent files on every listing; cache briefly if listings get slow.
     let others = tokio::task::spawn_blocking(move || {
         for s in &mut others {

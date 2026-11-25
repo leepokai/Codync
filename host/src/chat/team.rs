@@ -500,7 +500,7 @@ pub async fn call_async(hub: &Arc<Hub>, from: &str, turn: &str, name: &str, args
             visible_bot(hub, from)?;
             let remote = hub.network.directory().await;
             // A session whose saved address is a bot's id stays unlisted: the id means the bot.
-            let mut sessions = assistant::sessions_here(hub, None).await?;
+            let mut sessions = assistant::sessions_here(hub, None, args).await?;
             sessions.retain(|s| !names_bot(hub, &s.address));
             directory::list(hub, from, args, &remote, &sessions, |_| true)
         }

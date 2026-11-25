@@ -5,7 +5,7 @@ import SwiftUI
 /// too); inline styling comes from `AttributedString(markdown:)`.
 /// Equatable so a reply that didn't change skips its body, and incremental block caching skips
 /// rebuilding unchanged prefix blocks while streaming.
-public struct MarkdownText: View, Equatable {
+public struct MarkdownText: View {
     let source: String
     let isStreaming: Bool
     let fadeKey: String?
@@ -25,10 +25,6 @@ public struct MarkdownText: View, Equatable {
         self.source = source
         self.isStreaming = isStreaming
         self.fadeKey = fadeKey
-    }
-
-    public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.source == rhs.source && lhs.isStreaming == rhs.isStreaming && lhs.fadeKey == rhs.fadeKey
     }
 
     public var body: some View {
@@ -84,23 +80,14 @@ public struct MarkdownText: View, Equatable {
 }
 
 /// One block of a reply. Equatable so completed prefix blocks skip body evaluation while the tail streams.
-private struct MarkdownBlockView: View, Equatable {
+private struct MarkdownBlockView: View {
     let rendered: RenderedMarkdownBlock
     let fadeState: TailFadeSweepState?
     let tableFadeStates: [MarkdownFadeCoordinator.TableCellKey: TailFadeSweepState]
     let now: TimeInterval
 
-    private var isAnimating: Bool {
+    fileprivate var isAnimating: Bool {
         fadeState?.isAnimating == true || !tableFadeStates.isEmpty
-    }
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        guard lhs.rendered == rhs.rendered,
-              lhs.fadeState == rhs.fadeState,
-              lhs.tableFadeStates == rhs.tableFadeStates else {
-            return false
-        }
-        return lhs.isAnimating ? lhs.now == rhs.now : true
     }
 
     @ViewBuilder var body: some View {
@@ -158,20 +145,11 @@ private struct MarkdownBlockView: View, Equatable {
 }
 
 /// A Markdown table: a bold header and hairlines between rows, scrolling sideways when wide.
-private struct MarkdownTable: View, Equatable {
+private struct MarkdownTable: View {
     let header: [AttributedString]
     let rows: [[AttributedString]]
     let tableFadeStates: [MarkdownFadeCoordinator.TableCellKey: TailFadeSweepState]
     let now: TimeInterval
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        guard lhs.header == rhs.header,
-              lhs.rows == rhs.rows,
-              lhs.tableFadeStates == rhs.tableFadeStates else {
-            return false
-        }
-        return !lhs.tableFadeStates.isEmpty ? lhs.now == rhs.now : true
-    }
 
     var body: some View {
         let columns = max(header.count, rows.map(\.count).max() ?? 0)
@@ -208,5 +186,33 @@ private struct MarkdownTable: View, Equatable {
         var copy = base
         TailFadeSweepState.applyFade(to: &copy, state: fadeState, at: now, baseColor: Palette.text)
         return copy
+    }
+}
+
+extension MarkdownText: @MainActor Equatable {
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.source == rhs.source && lhs.isStreaming == rhs.isStreaming && lhs.fadeKey == rhs.fadeKey
+    }
+}
+
+extension MarkdownBlockView: @MainActor Equatable {
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        guard lhs.rendered == rhs.rendered,
+              lhs.fadeState == rhs.fadeState,
+              lhs.tableFadeStates == rhs.tableFadeStates else {
+            return false
+        }
+        return lhs.isAnimating ? lhs.now == rhs.now : true
+    }
+}
+
+extension MarkdownTable: @MainActor Equatable {
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        guard lhs.header == rhs.header,
+              lhs.rows == rhs.rows,
+              lhs.tableFadeStates == rhs.tableFadeStates else {
+            return false
+        }
+        return !lhs.tableFadeStates.isEmpty ? lhs.now == rhs.now : true
     }
 }

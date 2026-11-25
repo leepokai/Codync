@@ -55,7 +55,7 @@ import Testing
     #expect(state.batches.isEmpty)
 }
 
-@Test func tailFadeSweepApplyFadePreservesTextVerbatimWithZeroZeroWidthCharacters() {
+@MainActor @Test func tailFadeSweepApplyFadePreservesTextVerbatimWithZeroZeroWidthCharacters() {
     let raw = "Check [link](https://example.com) and `code` tail"
     var attributed = MarkdownText.inline(raw)
     let expectedPlain = String(attributed.characters)

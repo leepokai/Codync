@@ -154,7 +154,7 @@ import Testing
 
     // Live thought arrival is eligible; artifact/voice/file card arrivals are not.
     await remote.emit(#"{"type":"entry","entry":{"id":"thought-1","seq":4,"botId":"b1","rev":6,"kind":"thought","turn":3,"data":{"text":"Thinking step"},"createdAt":4,"updatedAt":4}}"#)
-    await remote.emit(#"{"type":"entry","entry":{"id":"file-1","seq":5,"botId":"b1","rev":7,"kind":"agent","turn":3,"data":{"text":"","final":true,"files":[{"id":"f1","name":"out.txt","size":12}]},"createdAt":5,"updatedAt":5}}"#)
+    await remote.emit(#"{"type":"entry","entry":{"id":"file-1","seq":5,"botId":"b1","rev":7,"kind":"agent","turn":3,"data":{"text":"","final":true,"files":[{"id":"f1","name":"out.txt","size":12,"sha256":"abc"}]},"createdAt":5,"updatedAt":5}}"#)
     #expect(await until { store.rev >= 7 })
 
     let thoughtEntry = try #require(store.entries["b1"]?.first { $0.id == "thought-1" })

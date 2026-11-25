@@ -179,7 +179,7 @@ export class FakeHost {
       case 'hello':
         return {
           hostId: this.hostId, computerId: this.computer.id, signKey: '', boxKey: '', cloud: null, name: this.computer.name,
-          version: this.version, minApp: this.version, os: 'macos', device: this.computer.device, home: '/Users/demo', projects: true, rev: this.rev, analytics: this.analytics,
+          version: this.version, minApp: this.version, os: 'macos', device: this.computer.device, home: '/Users/demo', projects: true, threadPlace: true, worktreeFill: true, threadFolders: true, rev: this.rev, analytics: this.analytics,
           urls: [], backends: [
             { id: 'claude', name: 'Claude Code', available: true, installed: true, signedIn: true, command: 'claude', installHint: '' },
             { id: 'codex', name: 'Codex', available: true, installed: true, signedIn: true, command: 'codex', installHint: '' },

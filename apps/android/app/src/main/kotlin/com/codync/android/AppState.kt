@@ -155,13 +155,19 @@ data class AppState(
         get() = workflowsSupported && hello?.get("workflows")?.jsonPrimitive?.booleanOrNull == true
     /** The user can start a thread with a bot here (`startThread`). */
     internal val startsThreads: Boolean get() = hello?.get("startThread")?.jsonPrimitive?.booleanOrNull == true
+    /** A thread may start here without a bot, on an agent it names (`threadsWithoutBot`). */
+    internal val startsThreadsWithoutBot: Boolean get() = startsThreads && hello?.get("threadsWithoutBot")?.jsonPrimitive?.booleanOrNull == true
     /** A routine here can name the folder its runs work in (`routineFolder`). */
     internal val routineFolders: Boolean get() = hello?.get("routineFolder")?.jsonPrimitive?.booleanOrNull == true
     /** Bots have projects and a worktree mode, and live in their own folder (`hello.projects`). */
     internal val botProjects: Boolean get() = hello?.get("projects")?.jsonPrimitive?.booleanOrNull == true
+    /** A bot's git projects can list shared folders, linked into each new worktree (`hello.worktreeFill`). */
+    internal val worktreeFill: Boolean get() = hello?.get("worktreeFill")?.jsonPrimitive?.booleanOrNull == true
     /** The computer's name, as its hello gives it. */
     internal val computerName: String get() = hello?.get("name")?.jsonPrimitive?.contentOrNull ?: "Computer"
     /** The computer's home folder, which a folder on it shows as `~`; empty before its hello. */
+    /** A thread without a bot gets a folder of its own when none is sent (`hello.threadFolders`). */
+    internal val threadFolders: Boolean get() = hello?.get("threadFolders")?.jsonPrimitive?.booleanOrNull == true
     internal val home: String get() = hello?.get("home")?.jsonPrimitive?.contentOrNull.orEmpty()
 
     /** Connection alone cannot make a cached roster current before event catch-up. */

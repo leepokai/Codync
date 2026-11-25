@@ -9,9 +9,9 @@ pub(crate) use migrate::migrate;
 use super::Hub;
 use crate::analytics::{self, Event};
 use crate::store::BotConfig;
-use anyhow::{Result, ensure};
+use anyhow::{Result, anyhow, ensure};
 use serde_json::json;
-use std::path::Path;
+use std::path::{Component, Path};
 
 /// Whether `cfg` is a bot that has projects: not a group, a thread, or the box of threads without a bot (which works
 /// in the user's home folder on purpose).
@@ -38,6 +38,7 @@ pub(super) fn settle(cfg: &mut BotConfig, before: Option<&BotConfig>) -> Result<
     }
     if !has_projects(cfg) {
         cfg.projects.clear();
+        cfg.shared_folders.clear();
         return Ok(());
     }
     dedupe(&mut cfg.projects);
@@ -46,7 +47,35 @@ pub(super) fn settle(cfg: &mut BotConfig, before: Option<&BotConfig>) -> Result<
             check(project)?;
         }
     }
+    shared_folders(cfg)
+}
+
+/// Keeps `cfg`'s shared folders to its projects (an older app that takes a project off sends none: its list goes
+/// with it), each project's names once as [`shared_folder_name`] writes them, and refuses a name it refuses.
+fn shared_folders(cfg: &mut BotConfig) -> Result<()> {
+    let projects = &cfg.projects;
+    cfg.shared_folders.retain(|project, _| projects.contains(project));
+    for names in cfg.shared_folders.values_mut() {
+        *names = names
+            .iter()
+            .map(|name| {
+                shared_folder_name(name)
+                    .ok_or_else(|| anyhow!("a shared folder is a folder inside its project, like node_modules: {name}"))
+            })
+            .collect::<Result<_>>()?;
+        dedupe(names);
+    }
+    cfg.shared_folders.retain(|_, names| !names.is_empty());
     Ok(())
+}
+
+/// A shared folder's name (or a `.worktreeinclude` line) as the host keeps it: a plain path inside its project
+/// (`node_modules`, `.cache/pip`), `/`-separated, without `./` or a trailing slash. None for nothing, an absolute
+/// path or one with `..`.
+pub(crate) fn shared_folder_name(typed: &str) -> Option<String> {
+    let parts: Vec<_> = Path::new(typed.trim()).components().filter(|part| *part != Component::CurDir).collect();
+    let plain = !parts.is_empty() && parts.iter().all(|part| matches!(part, Component::Normal(_)));
+    plain.then(|| parts.iter().map(|part| part.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/"))
 }
 
 /// Each project once, where it first is.
@@ -112,6 +141,29 @@ mod tests {
         let mut plain = bot(&json!({"plain": true, "hidden": true, "cwd": a}));
         settle(&mut plain, None).unwrap();
         assert_eq!((plain.cwd, plain.projects.len()), (a, 0), "the box of threads without a bot keeps its folder");
+    }
+
+    #[test]
+    fn shared_folders_are_kept_to_the_projects_and_stay_inside_them() {
+        let (a, gone) = (folder(), "/no/longer/a/project".to_owned());
+        let shared = |names: serde_json::Value| {
+            let mut map = serde_json::Map::new();
+            map.insert(a.clone(), names);
+            map
+        };
+        let mut lists = shared(json!(["node_modules", "./node_modules", "node_modules/", ".cache/pip"]));
+        lists.insert(gone, json!(["x"]));
+        let mut cfg = bot(&json!({"projects": [a], "sharedFolders": lists}));
+        settle(&mut cfg, None).unwrap();
+        assert_eq!(cfg.shared_folders.len(), 1, "a project taken off takes its list");
+        assert_eq!(cfg.shared_folders[&a], ["node_modules", ".cache/pip"]);
+        for bad in ["../up", "/abs", "a/../../b", ""] {
+            let mut cfg = bot(&json!({"projects": [a], "sharedFolders": shared(json!([bad]))}));
+            assert!(settle(&mut cfg, None).is_err(), "{bad}");
+        }
+        let mut group = bot(&json!({"kind": "group", "cwd": "", "sharedFolders": shared(json!(["x"]))}));
+        settle(&mut group, None).unwrap();
+        assert!(group.shared_folders.is_empty());
     }
 
     #[test]

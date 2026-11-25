@@ -1,4 +1,4 @@
-import type { BotStatus, UsageProvider } from './models'
+import type { BotStatus, Entry, UsageProvider } from './models'
 
 // The notch island: a black shape at the top of the screen (in the notch on a
 // MacBook) that shows working bots and takes approvals. The chat window owns the stores and
@@ -9,6 +9,12 @@ export interface IslandStep {
   title: string
   /** The ACP tool kind: execute | edit | read | search | fetch | … */
   kind: string
+}
+
+/** The newest final agent reply in a bot's own chat. */
+export interface IslandReply {
+  id: string
+  text: string
 }
 
 /** One bot as the island shows it (`ref` = computerId/botId). */
@@ -24,6 +30,10 @@ export interface IslandBot {
   status: BotStatus | string
   /** Its chat's own status: done and failed follow the chat's turns. */
   chat: BotStatus | string
+  /** True while the bot's running turn talks in another conversation (e.g. a group room). */
+  away?: boolean
+  /** The newest final agent reply in this bot's own chat, or null if none. */
+  reply?: IslandReply | null
   /** The agent it runs, as the app names it ("Claude Code"). */
   backend: string
   /** Its working folder's name. */
@@ -34,6 +44,8 @@ export interface IslandBot {
   steps: IslandStep[]
   /** Why it stopped, when it failed. */
   error: string | null
+  /** The newest error notice entry id in this bot's own chat, or null if none. */
+  errorId?: string | null
 }
 
 export interface IslandOption {
@@ -92,6 +104,16 @@ export type IslandTab = 'auto' | 'bots' | 'message' | 'usage'
 export interface IslandNotice {
   kind: 'finished' | 'failed'
   ref: string
+  /** The fresh reply or failure text from the turn that just ended; never a stale chat preview. */
+  text?: string | null
+}
+
+/** Per-bot turn baseline tracked across summaries so only fresh own-chat turns trigger a notice. */
+export interface BotTurnState {
+  chat: string
+  away: boolean
+  baselineReplyId: string | null
+  baselineErrorId: string | null
 }
 
 /** How long a bot that just finished stays in the island. */
@@ -138,13 +160,80 @@ export function islandMode(
   return summary.bots.some(isActive) ? 'overview' : 'empty'
 }
 
-/** Bots whose chat just ended its turn since `before` (their chats' last statuses by ref): done or failed. Never an
- * item's end: its report arrives as the bot's message, in a turn of the chat's own. */
-export function transitions(before: ReadonlyMap<string, string>, bots: IslandBot[]): IslandNotice[] {
+/** The newest final agent reply in a bot's own chat (excluding calls and removed entries). */
+export function islandReply(entries: readonly Entry[], formatPreview: (text: string) => string = (t) => t): IslandReply | null {
+  const entry = entries.findLast((e) => e.kind === 'agent' && e.data.final === true && !e.data.call && !e.data.removed)
+  if (!entry) return null
+  const raw =
+    entry.data.text?.trim() ||
+    entry.data.files?.map((f) => f.name).filter(Boolean).join(', ') ||
+    entry.data.attachments?.map((a) => a.name).filter(Boolean).join(', ') ||
+    entry.data.artifact?.title?.trim() ||
+    ''
+  return { id: entry.id, text: raw ? formatPreview(raw) : '' }
+}
+
+/** The newest error notice in a bot's own chat. */
+export function islandLastError(entries: readonly Entry[]): { id: string; text: string } | null {
+  const entry = entries.findLast((e) => e.kind === 'notice' && e.data.style === 'error' && !e.data.removed)
+  return entry ? { id: entry.id, text: entry.data.text ?? '' } : null
+}
+
+/** Tool calls from the bot's active turn and conversation, never stale calls from an earlier chat turn. */
+export function islandTurnSteps(
+  bot: { id: string; status: string; workingChat?: string | null; startedAt?: number | null },
+  ownEntries: readonly Entry[],
+  workingEntries: readonly Entry[],
+  limit: number,
+  fallbackTitle: string,
+): IslandStep[] {
+  if (!inTurn(bot.status)) return []
+  const away = Boolean(bot.workingChat && bot.workingChat !== bot.id)
+  const source = away ? workingEntries.filter((e) => e.data.author === bot.id) : ownEntries
+  const since = bot.startedAt
+  return source
+    .filter((e) => e.kind === 'tool' && !e.data.removed && (since == null || e.createdAt >= since))
+    .slice(-limit)
+    .map((e) => ({ title: e.data.title || fallbackTitle, kind: e.data.toolKind ?? 'other' }))
+}
+
+/** Advances the per-bot turn baselines, preserving pre-turn ids while a turn is running. */
+export function nextTurnStates(before: ReadonlyMap<string, BotTurnState> | null, bots: IslandBot[]): Map<string, BotTurnState> {
+  const next = new Map<string, BotTurnState>()
+  for (const b of bots) {
+    const prev = before?.get(b.ref)
+    if (inTurn(b.chat)) {
+      next.set(b.ref, {
+        chat: b.chat,
+        away: Boolean(b.away),
+        baselineReplyId: prev ? prev.baselineReplyId : (b.reply?.id ?? null),
+        baselineErrorId: prev ? prev.baselineErrorId : (b.errorId ?? null),
+      })
+    } else {
+      next.set(b.ref, {
+        chat: b.chat,
+        away: false,
+        baselineReplyId: b.reply?.id ?? null,
+        baselineErrorId: b.errorId ?? null,
+      })
+    }
+  }
+  return next
+}
+
+/** Bots whose own-chat turn just ended with a new reply or failure; skips bot-to-bot, group, and silent turns. */
+export function transitions(before: ReadonlyMap<string, BotTurnState>, bots: IslandBot[]): IslandNotice[] {
   return bots.flatMap((b): IslandNotice[] => {
-    if (!inTurn(before.get(b.ref) ?? '')) return []
-    if (b.chat === 'idle') return [{ kind: 'finished', ref: b.ref }]
-    if (b.chat === 'error') return [{ kind: 'failed', ref: b.ref }]
+    const prev = before.get(b.ref)
+    if (!prev || !inTurn(prev.chat) || prev.away) return []
+    if (b.chat === 'idle') {
+      if (!b.reply || b.reply.id === prev.baselineReplyId) return []
+      return [{ kind: 'finished', ref: b.ref, text: b.reply.text || null }]
+    }
+    if (b.chat === 'error') {
+      const freshError = b.error && b.errorId !== prev.baselineErrorId ? b.error : null
+      return [{ kind: 'failed', ref: b.ref, text: freshError }]
+    }
     return []
   })
 }

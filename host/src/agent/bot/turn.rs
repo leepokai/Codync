@@ -365,6 +365,7 @@ impl Actor {
         if self.turn.is_none() {
             return;
         }
+        let compacting = self.compacting.is_some();
         self.after_turn(done);
         self.versions.after(&self.hub);
         // The bot's own edits to its memory files, checked and shown in the chat it made them from.
@@ -555,6 +556,7 @@ impl Actor {
         if !self.stop_requested
             && !delegated
             && !grouped
+            && !compacting
             && host_turn.is_none_or(HostTurn::alerts)
             && let Some(kind) = turn_alert(failed, &stop_reason, more || held_back || passed)
         {

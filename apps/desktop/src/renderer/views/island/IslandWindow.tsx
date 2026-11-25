@@ -88,7 +88,7 @@ function View({ model, mode }: { model: IslandModel; mode: IslandMode }) {
       return model.permission ? <Approval model={model} card={model.permission} /> : null
     case 'finished':
     case 'failed':
-      return model.noticeBot ? <Notice model={model} bot={model.noticeBot} failed={mode === 'failed'} /> : null
+      return model.notice && model.noticeBot ? <Notice model={model} bot={model.noticeBot} notice={model.notice} /> : null
     case 'message':
       return <Message model={model} />
     case 'usage':

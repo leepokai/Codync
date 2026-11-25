@@ -6,6 +6,15 @@ use serde_json::{Value, json};
 
 use super::{After, App, Bot, Dir, Entry, Focus, Kind, Msg, Overlay, Status, merge_toggles};
 
+/// Whether a finished turn left a new bot reply in this chat (not a bot-to-bot turn, pass, or queued user send).
+fn turn_replied(old: &Bot, new: &Bot) -> bool {
+    let from_bot = !new.last_message.is_empty() && !new.last_message.starts_with("You: ");
+    if let Some(started_at) = old.started_at {
+        return new.unread > old.unread || (new.last_at >= started_at && from_bot);
+    }
+    new.unread > old.unread || ((new.last_at != old.last_at || new.last_message != old.last_message) && from_bot)
+}
+
 /// An entry the mirror doesn't hold, below the floor its bot's loaded chat had when this
 /// connection began: `seq` grows with insertion, so it predates the window and only arrived because
 /// its rev was bumped (a rewrite, a reaction). History paging brings it.
@@ -171,7 +180,7 @@ impl App {
         }
         if new.status == Status::NeedsInput && old.status != Status::NeedsInput {
             self.toast(format!("{} needs you", new.name), true);
-        } else if old.status == Status::Working && new.status == Status::Idle {
+        } else if old.status == Status::Working && new.status == Status::Idle && turn_replied(&old, &new) {
             self.toast(format!("{} is done", new.name), false);
         } else if old.status != Status::Error && new.status == Status::Error {
             self.toast(format!("{} hit an error", new.name), true);
@@ -552,5 +561,24 @@ mod tests {
         app.host_version = "2.50.1".into();
         app.on_msg(Msg::Online(false));
         assert!(app.host_version.is_empty(), "the host that answers next may be another build");
+    }
+
+    #[test]
+    fn done_toast_skips_turns_that_left_no_new_reply_in_this_chat() {
+        let mut app = test_app();
+        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"working", "startedAt":200, "lastAt":100, "lastMessage":"old X", "unread":0}));
+        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"idle", "startedAt":null, "lastAt":100, "lastMessage":"old X", "unread":0}));
+        assert!(app.toasts.is_empty(), "bot-to-bot or silent turn must not toast with stale chat preview");
+
+        // User queued a message while Alpha worked on another bot's request.
+        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"working", "startedAt":300, "lastAt":310, "lastMessage":"You: hey", "unread":0}));
+        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"idle", "startedAt":null, "lastAt":310, "lastMessage":"You: hey", "unread":0}));
+        assert!(app.toasts.is_empty(), "a queued user message is not a bot reply");
+
+        // A real reply in Alpha's own chat (including mid-turn send_message) toasts as done.
+        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"working", "startedAt":400, "lastAt":410, "lastMessage":"Fresh reply", "unread":1}));
+        app.upsert_bot(&json!({"id":"a", "name":"Alpha", "status":"idle", "startedAt":null, "lastAt":410, "lastMessage":"Fresh reply", "unread":1}));
+        assert_eq!(app.toasts.len(), 1);
+        assert_eq!(app.toasts[0].text, "Alpha is done");
     }
 }

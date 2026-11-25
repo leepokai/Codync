@@ -7,6 +7,13 @@ export interface Seat { key: string; backend: string; name: string; badge?: stri
 /** The initials a login's badge shows. */
 export const initials = (name: string) => name.split(/[\s@._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()
 
+/** An agent's name with the setup it still needs when it can't be picked. */
+export const backendSeatName = (backend: Backend, tr: (text: string) => string) =>
+  backend.node === 'missing' ? tr(`${backend.name} (needs Node.js)`)
+    : backend.available ? backend.name
+    : backend.installed === true ? tr(`${backend.name} (not ready)`)
+    : tr(`${backend.name} (not installed)`)
+
 /**
  * Every login of `backends` as the rail's seats, `on` the one in use: each agent's default login, then its login
  * profiles. `logins`: the ones of an agent that can be picked (`null` its default login), when not all can; by default
@@ -22,7 +29,7 @@ export function loginSeats({ backends, on, pick, tr, logins }: {
   return backends.flatMap((b) => {
     const current = b.id === on.backend ? on.loginProfile ?? null : undefined
     const ids = logins?.(b) ?? [null, ...loginProfileChoices(b, current ?? null).map((p) => p.id)]
-    const agent = b.available ? b.name : tr(`${b.name} (not installed)`)
+    const agent = backendSeatName(b, tr)
     return ids.map((id) => {
       const login = id
         ? b.loginProfiles?.find((p) => p.id === id)?.name ?? tr('New login profile')

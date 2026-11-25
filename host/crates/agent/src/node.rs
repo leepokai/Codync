@@ -62,18 +62,87 @@ impl State {
     }
 }
 
+/// Whether every npm agent on this computer can start: its own `npx`, Codync's installed
+/// copy, or a checksum-pinned archive for its operating system and architecture.
+pub fn npm_supported() -> bool {
+    backends::which("npx").is_some_and(|path| !path.starts_with(root()))
+        || root().join(".installed").exists()
+        || archive(std::env::consts::OS, std::env::consts::ARCH).is_some()
+}
+
 /// `None` while the computer has its own Node; otherwise whether Codync's is there.
 pub fn state() -> Option<State> {
-    if backends::which("npx").is_some_and(|npx| !npx.starts_with(root())) {
+    state_for("npx")
+}
+
+/// `program` is the command the agent actually runs: npm adapters need `npx`, while `WorkBuddy` runs `node`.
+pub fn state_for(program: &str) -> Option<State> {
+    if backends::which(program).is_some_and(|path| !path.starts_with(root())) {
         return None;
     }
     Some(if root().join(".installed").exists() { State::Added } else { State::Missing })
 }
 
+/// The command `program` for starting an agent, adding Codync's Node when the computer has neither.
+///
+/// Agents launched from npm need this before their ACP process starts. A system command wins;
+/// otherwise the download is checksum-pinned and shared by every npm agent.
+pub async fn prepare(program: &str, progress: &impl Fn(&str)) -> Result<PathBuf> {
+    if let Some(path) = backends::which(program).filter(|path| !path.starts_with(root())) {
+        return Ok(path);
+    }
+    install(progress).await?;
+    let path = codync_program(program).context("Codync's Node.js is missing a required command")?;
+    ensure!(path.is_file(), "Codync's Node.js is missing {program}");
+    Ok(path)
+}
+
+/// PATH for an agent that runs Codync's Node: its bin folder first, then the computer's own.
+/// `npx` starts npm by name, and a downloaded CLI's shim runs `node` by name.
+pub fn launch_path(program: &Path) -> Result<String> {
+    if program.starts_with(root()) { path_value_for(&root()) } else { Ok(std::env::var("PATH").unwrap_or_default()) }
+}
+
+/// A command that runs beside `program`: its own folder for Codync's Node, else the normal search path.
+pub fn program_for(program: &Path, command: &str, path: &str) -> Result<PathBuf> {
+    if program.starts_with(root()) {
+        return codync_program(command).context("Codync's Node.js is missing a required command");
+    }
+    let path = std::env::split_paths(path)
+        .flat_map(|dir| {
+            let names: &[&str] = if cfg!(windows) { &[".exe", ".cmd", ".bat", ""] } else { &[""] };
+            names.iter().map(move |extension| dir.join(format!("{command}{extension}")))
+        })
+        .find(|candidate| candidate.is_file());
+    path.with_context(|| format!("{command} is missing"))
+}
+
+fn path_value_for(root: &Path) -> Result<String> {
+    let bin = bin_dir(root.to_path_buf());
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let dirs = std::iter::once(bin).chain(std::env::split_paths(&path));
+    Ok(std::env::join_paths(dirs)?.to_string_lossy().into_owned())
+}
+
+/// The path of `program` under Codync's Node, trying the extensions Windows runs.
+fn codync_program(program: &str) -> Option<PathBuf> {
+    let dir = bin_dir(root());
+    let extensions: &[&str] = if cfg!(windows) { &[".cmd", ".exe", ".bat", ""] } else { &[""] };
+    extensions.iter().map(|extension| dir.join(format!("{program}{extension}"))).find(|path| path.is_file())
+}
+
 /// `codync-host node`: adds Codync's Node (an agent's setup step runs it in a terminal).
-pub async fn add() -> Result<()> {
-    if state().is_none() {
-        println!("This computer already has Node.js.");
+///
+/// `program` is the command the agent actually uses. `None` checks both `node` and
+/// `npx`, for the marketplace's Add Node.js row that belongs to the computer rather
+/// than one agent.
+pub async fn add(program: Option<&str>) -> Result<()> {
+    let present = match program {
+        Some(program) => state_for(program).is_none(),
+        None => state_for("node").is_none() && state_for("npx").is_none(),
+    };
+    if present {
+        println!("This computer already has the required Node.js command.");
         return Ok(());
     }
     install(&|line| println!("{line}")).await?;
@@ -93,11 +162,10 @@ pub async fn npm(args: &[String]) -> Result<i32> {
 /// npm on Codync's Node (downloaded first), with its own Node first on PATH.
 async fn codync_npm() -> Result<tokio::process::Command> {
     install(&|line| println!("{line}")).await?;
-    let bin = bin_dir(root());
-    let mut command = tokio::process::Command::new(bin.join(if cfg!(windows) { "npm.cmd" } else { "npm" }));
-    let path = std::env::var_os("PATH").unwrap_or_default();
-    let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(&path)))?;
-    command.env("PATH", path).env("npm_config_prefix", global_prefix());
+    let node_root = root();
+    let mut command =
+        tokio::process::Command::new(bin_dir(node_root.clone()).join(if cfg!(windows) { "npm.cmd" } else { "npm" }));
+    command.env("PATH", path_value_for(&node_root)?).env("npm_config_prefix", global_prefix());
     Ok(command)
 }
 
@@ -175,6 +243,15 @@ fn remove_other_versions(root: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn node_path_comes_first() {
+        let root = std::env::temp_dir().join(format!("codync-node-path-{}", uuid::Uuid::new_v4()));
+        let value = path_value_for(&root).unwrap();
+        let first = std::env::split_paths(&value).next().unwrap();
+        assert_eq!(first, root.join("bin"));
+    }
 
     #[test]
     fn every_supported_platform_has_a_pinned_archive() {

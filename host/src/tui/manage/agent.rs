@@ -4,12 +4,44 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};
 
 use super::super::app::{After, App, Editor, Overlay};
+use super::super::l10n::tr;
 use super::{AgentSetup, Fields, Input, Reply, SetupRow, Submit, ctrl, s};
+
+/// What an agent still needs, when its name alone would wrongly suggest it can run.
+pub fn agent_setup_label(agent: &Value) -> Option<&'static str> {
+    if agent["node"] == "missing" {
+        Some("needs Node.js")
+    } else if agent["available"] == true {
+        None
+    } else if agent["installed"] == true {
+        Some("not ready")
+    } else {
+        Some("not installed")
+    }
+}
+
+/// How an agent row in Extensions describes what the user can do now.
+pub fn agent_market_status(agent: &Value) -> &'static str {
+    match (agent_setup_label(agent), agent["signedIn"].as_bool()) {
+        (Some(status), _) => status,
+        (None, Some(true)) => "signed in",
+        (None, Some(false)) => "not signed in",
+        (None, None) if agent["installed"] == true => "installed",
+        (None, None) => "sets up on first use",
+    }
+}
 
 impl App {
     /// What the user calls agent `id` on this computer ("Claude Code").
     pub fn agent_name(&self, id: &str) -> String {
         self.backends.iter().find(|b| b["id"] == id).and_then(|b| b["name"].as_str()).unwrap_or(id).to_owned()
+    }
+
+    /// What a settings form calls agent `id`, with the setup it still needs.
+    pub fn form_agent_label(&self, id: &str) -> String {
+        let Some(agent) = self.backends.iter().find(|b| b["id"] == id) else { return id.to_owned() };
+        let name = agent["name"].as_str().unwrap_or(id);
+        agent_setup_label(agent).map_or_else(|| name.to_owned(), |status| format!("{name} ({})", tr(status)))
     }
 
     /// `recheck`: opened from a chat's sign-in request, whose agent refused a turn, so the agent
@@ -410,6 +442,17 @@ pub fn key_bytes(k: KeyEvent) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn setup_status_explains_why_an_agent_cannot_run() {
+        let label = |agent| agent_setup_label(&agent);
+        assert_eq!(label(json!({"available": true})), None);
+        assert_eq!(label(json!({"available": true, "node": "missing"})), Some("needs Node.js"));
+        assert_eq!(label(json!({"installed": true, "available": false})), Some("not ready"));
+        assert_eq!(label(json!({"installed": false, "available": false})), Some("not installed"));
+        assert_eq!(agent_market_status(&json!({"available": true, "installed": false})), "sets up on first use");
+        assert_eq!(agent_market_status(&json!({"available": true, "installed": true})), "installed");
+    }
 
     #[test]
     fn keys_become_terminal_bytes() {

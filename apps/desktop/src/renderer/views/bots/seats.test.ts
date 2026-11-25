@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { Backend } from '../../../shared/models.ts'
 import { loginSeats, readySeats } from './seats.ts'
 
-const agent = (id: string, rest: Partial<Backend> = {}) => ({ id, name: id.toUpperCase(), available: true, ...rest }) as Backend
+const agent = (id: string, rest: Partial<Backend> = {}) => ({ id, name: id.toUpperCase(), available: true, installed: true, ...rest }) as Backend
 const claude = agent('claude', {
   defaultLoginProfile: { name: 'me@home' },
   loginProfiles: [{ id: 'w', name: 'Work Team', signedIn: true }, { id: 'x', name: 'Old', signedIn: false }],
@@ -40,5 +40,20 @@ test('a chat or a new thread runs on installed agents and signed-in logins, and 
 })
 
 test('an agent that is not installed says so', () => {
-  assert.deepEqual(loginSeats({ backends: [agent('kiro', { available: false })], on: { backend: 'claude' }, tr, pick: () => {} }).map((s) => s.name), ['KIRO (not installed)'])
+  assert.deepEqual(loginSeats({ backends: [agent('kiro', { available: false, installed: false })], on: { backend: 'claude' }, tr, pick: () => {} }).map((s) => s.name), ['KIRO (not installed)'])
+})
+
+test('an installed agent that is not ready is not called uninstalled', () => {
+  const codex = agent('codex', { available: false, installed: true })
+  assert.deepEqual(loginSeats({ backends: [codex], on: { backend: 'claude' }, tr, pick: () => {} }).map((s) => s.name), ['CODEX (not ready)'])
+})
+
+test('an installed agent missing Node names the dependency that blocks it', () => {
+  const codex = agent('codex', { available: false, installed: true, node: 'missing' })
+  assert.deepEqual(loginSeats({ backends: [codex], on: { backend: 'claude' }, tr, pick: () => {} }).map((s) => s.name), ['CODEX (needs Node.js)'])
+})
+
+test('an available command still names missing Node as the dependency that blocks it', () => {
+  const workBuddy = agent('workbuddy', { available: true, installed: true, node: 'missing' })
+  assert.deepEqual(loginSeats({ backends: [workBuddy], on: { backend: 'claude' }, tr, pick: () => {} }).map((s) => s.name), ['WORKBUDDY (needs Node.js)'])
 })

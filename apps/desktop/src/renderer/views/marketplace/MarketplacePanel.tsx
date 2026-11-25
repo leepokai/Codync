@@ -141,8 +141,9 @@ export function SkillsPanel({ skills, loading, query, installedSkillIds, busySki
 
 function AgentCard({ backend, onClick }: { backend: Backend; onClick: () => void }) {
   const tr = useTr()
-  const status = backend.installed !== true && backend.curated === true ? 'Not installed'
-    : backend.node === 'missing' ? 'Needs Node.js'
+  const status = backend.node === 'missing' ? 'Needs Node.js'
+    : backend.installed === true && backend.available === false ? 'Not ready'
+    : backend.installed !== true && backend.curated === true ? 'Not installed'
     : backend.installed !== true ? 'Sets up on first use'
     : backend.signedIn === false ? 'Not signed in'
     : 'Installed'

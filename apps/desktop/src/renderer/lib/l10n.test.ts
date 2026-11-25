@@ -113,6 +113,7 @@ test('known chrome becomes Chinese and everything else stays', () => {
   assert.equal(translate('Codync 2.47.0 is available', 'zh', false), 'Codync 2.47.0 已推出')
   assert.equal(translate('You have reached your limit.', 'zh', false), 'You have reached your limit.')
   assert.equal(translate('Not installed', 'zh', false), '未安装')
+  assert.equal(translate('Not ready', 'zh', false), '尚未就绪')
   assert.equal(translate('Set up', 'zh', false), '设置')
   assert.equal(translate('Writing a reply…', 'zh', false), '正在写回复…')
   assert.equal(translate('Downloading Codebuddy Code…', 'zh', false), '正在下载 Codebuddy Code…')

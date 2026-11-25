@@ -39,7 +39,7 @@ export const agentPages: AgentPage[] = [
       ],
       [
         "What do I need on the computer?",
-        "A Mac, Windows PC or Linux machine with Claude Code installed and Node.js (Codync starts Claude Code through its ACP adapter with npx).",
+        "A Mac, Windows PC or Linux machine with Claude Code installed. Codync starts its ACP adapter with Codync's own Node.js when the computer has none.",
       ],
     ],
   },
@@ -67,7 +67,7 @@ export const agentPages: AgentPage[] = [
       ],
       [
         "What do I need on the computer?",
-        "A Mac, Windows PC or Linux machine with Codex installed and Node.js (Codync starts Codex through its ACP adapter with npx).",
+        "A Mac, Windows PC or Linux machine with Codex installed. Codync starts its ACP adapter with Codync's own Node.js when the computer has none, and uses the Codex you already installed.",
       ],
     ],
   },

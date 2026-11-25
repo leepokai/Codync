@@ -21,7 +21,8 @@ pub struct ClientInfo {
 /// Starts the installed Codex CLI's API (blocking: looks the program up). `None`: Codex isn't installed.
 /// `env` points it at another `CODEX_HOME`; empty for the computer's own.
 pub fn start(env: &[(String, String)]) -> Result<Option<Arc<Acp>>> {
-    let Some(bin) = crate::backends::which("codex") else { return Ok(None) };
+    let Some(codex) = crate::backends::harness("codex") else { return Ok(None) };
+    let Some(bin) = crate::backends::installed_cli(codex) else { return Ok(None) };
     let home = dirs::home_dir().context("locating the user's home directory")?;
     let command = format!("{} app-server", crate::shell::quote(&bin.to_string_lossy()));
     let (client, _events) = Acp::spawn(&command, &home.to_string_lossy(), env)?;

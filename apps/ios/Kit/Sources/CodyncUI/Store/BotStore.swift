@@ -336,7 +336,7 @@ public final class BotStore {
 
     /// An agent as the Agent pickers list it.
     func agentLabel(_ backend: Backend) -> String {
-        backend.available ? backend.name : "\(backend.name) (not installed)"
+        L10n.tr(backend.pickerLabel)
     }
 
     /// `backends` as the Agent pickers list them, once per login (`Backend.loginSeats`).

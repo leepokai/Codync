@@ -318,6 +318,19 @@ func helloJSON(version: String, minApp: String? = nil, backends: String = "[]", 
     return #"{"hostId":"h1","name":"Mac","version":"\#(version)"\#(min)\#(latest),"os":"macos","backends":\#(backends),"rev":0,"canUpdate":\#(canUpdate)}"#
 }
 
+@MainActor @Test func agentPickerLabelsMissingNodeBeforeAnAvailableCommand() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.ready(.direct))
+    let backend = #"{"id":"workbuddy","name":"WorkBuddy","available":true,"installed":true,"node":"missing","command":"workbuddy","installHint":""}"#
+    await fake.setHello(helloJSON(version: "2.54.0", backends: "[\(backend)]"))
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
+    defer { store.retire() }
+    store.setActive(true)
+    #expect(await until { store.hello != nil })
+    #expect(store.agentLabel(try #require(store.hello?.backends.first)) == L10n.tr("WorkBuddy (needs Node.js)"))
+}
+
 @MainActor @Test func hostNeedingANewerAppStopsSyncAndAsksForTheUpdate() async throws {
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }

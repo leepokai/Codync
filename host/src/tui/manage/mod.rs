@@ -5,7 +5,7 @@
 // Key handlers read best with k (key), m / l / f / a (the sheet), n (rows).
 #![allow(clippy::many_single_char_names)]
 
-mod agent;
+pub(crate) mod agent;
 mod all_work;
 mod analytics;
 mod bot_chat;

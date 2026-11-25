@@ -2,6 +2,7 @@
 
 use super::{App, Buffer, Rect, centered, footer, frame_box, put, row, rput, s, theme, truncate, u, window};
 use crate::tui::l10n::tr;
+use crate::tui::manage::agent::agent_market_status;
 use crate::tui::manage::{Market, Row, TABS, Tab};
 use crate::tui::view::field_line;
 
@@ -47,15 +48,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
                 String::new(),
             ),
             Row::Agent(b) => {
-                let status = match (b["installed"] == true, b["signedIn"].as_bool()) {
-                    (false, _) if b["curated"] == true => "not installed",
-                    _ if b["node"] == "missing" => "needs Node.js",
-                    (_, Some(true)) => "signed in",
-                    (true, Some(false)) => "not signed in",
-                    (true, None) => "installed",
-                    (false, _) => "sets up on first use",
-                };
-                let status = tr(status);
+                let status = tr(agent_market_status(b));
                 let mark = if b["signedIn"] == true || b["installed"] == true { "✓" } else { "↓" };
                 (mark, s(b, "name").into(), s(b, "description").into(), status.into_owned())
             }

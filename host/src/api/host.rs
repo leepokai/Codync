@@ -212,8 +212,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let step: crate::agent::term::Step =
                 serde_json::from_value(b["step"].clone()).context("`step` is install or login")?;
             let (cols, rows) = term_size(&b);
-            // Node.js belongs to the computer, not to one agent.
-            let backend = if step == crate::agent::term::Step::Node { "" } else { str_arg(&b, "backend")? };
+            // A Node.js setup still names its agent, so it checks the command that
+            // agent runs; an empty backend is the computer-wide Add Node.js row.
+            let backend = if step == crate::agent::term::Step::Node {
+                b["backend"].as_str().unwrap_or_default()
+            } else {
+                str_arg(&b, "backend")?
+            };
             let term = match b["loginProfile"].as_str().filter(|_| step == crate::agent::term::Step::Login) {
                 Some(id) => {
                     let command = crate::agent::login_profiles::login_command(&hub.store, id).await?;

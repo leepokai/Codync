@@ -96,11 +96,109 @@ fn workbuddy_starts_its_lite_bundle() {
 }
 
 #[test]
+fn codex_adapter_runs_the_installed_codex() {
+    let dir = TempDir::new();
+    let codex = dir.0.join(if cfg!(windows) { "codex.cmd" } else { "codex" });
+    write_cli(&dir.0, "codex");
+    let _path = TestSearchPath::set(dir.0.clone());
+    let mut env = vec![];
+    apply_process_env("codex", &mut env);
+    assert_eq!(env, vec![("CODEX_PATH".to_owned(), codex.to_string_lossy().into_owned())]);
+
+    let mut saved = vec![("CODEX_PATH".to_owned(), "/opt/custom/codex".to_owned())];
+    apply_process_env("codex", &mut saved);
+    assert_eq!(saved[0].1, "/opt/custom/codex", "the user's setting wins");
+    assert_eq!(saved.len(), 1);
+}
+
+#[test]
+fn a_saved_codex_path_checks_the_same_cli() {
+    let dir = TempDir::new();
+    write_cli(&dir.0, "codex");
+    let codex = dir.0.join(if cfg!(windows) { "codex.cmd" } else { "codex" });
+    let _path = TestSearchPath::set(dir.0.clone());
+    let previous = configured::path("codex");
+    let saved = configured::set_path("codex", &codex).unwrap();
+    assert_eq!(installed_cli(harness("codex").unwrap()), Some(saved));
+    configured::clear("codex").unwrap();
+    if let Some(previous) = previous {
+        let saved_path = crate::setup::get().data_dir.join("agent-paths/codex");
+        std::fs::create_dir_all(saved_path.parent().unwrap()).unwrap();
+        std::fs::write(saved_path, format!("{}\n", previous.display())).unwrap();
+    }
+}
+
+#[test]
 fn workbuddy_cli_is_not_codebuddy_code() {
     let bundled = "/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy";
     assert!(!belongs_to_other("workbuddy", bundled));
     assert!(belongs_to_other("codebuddy", bundled), "the app's CLI is WorkBuddy's, not CodeBuddy Code's");
     assert!(belongs_to_other("workbuddy", "/opt/homebrew/bin/codebuddy"));
+}
+
+#[test]
+fn workbuddy_accepts_node_without_npx() {
+    let dir = TempDir::new();
+    write_cli(&dir.0, "node");
+    let _path = TestSearchPath::set(dir.0.clone());
+    let workbuddy = harness("workbuddy").unwrap();
+    assert_eq!(node_state(workbuddy, true, None), None);
+    let npm_adapter = json!({
+        "id": "codex-acp",
+        "distribution": {"npx": {"package": "@agentclientprotocol/codex-acp"}}
+    });
+    assert_eq!(node_state(harness("codex").unwrap(), false, Some(&npm_adapter)), None);
+    assert_eq!(node_program(workbuddy, true, None), Some("node"));
+}
+
+#[test]
+fn a_workbuddy_setup_checks_node_even_when_an_npx_shim_remains() {
+    let dir = TempDir::new();
+    write_cli(&dir.0, "npx");
+    let _path = TestSearchPath::set(dir.0.clone());
+    let workbuddy = harness("workbuddy").unwrap();
+    assert_eq!(node_state(workbuddy, true, None), Some(node::State::Missing));
+    assert_eq!(node_program_for("workbuddy"), Some("node"));
+}
+
+#[test]
+fn codex_needs_no_manual_node_setup() {
+    let dir = TempDir::new();
+    write_cli(&dir.0, "node");
+    let _path = TestSearchPath::set(dir.0.clone());
+    let adapter = json!({
+        "id": "codex-acp",
+        "distribution": {"npx": {"package": "@agentclientprotocol/codex-acp"}}
+    });
+    registry::set_cache(Some(json!({"agents": [adapter]})));
+    let program = node_program_for("codex");
+    registry::set_cache(None);
+    assert_eq!(program, None, "npx is added by the agent's launch, not a setup step");
+}
+
+#[test]
+fn codex_stays_selectable_when_codync_can_add_npx() {
+    let dir = TempDir::new();
+    write_cli(&dir.0, "codex");
+    let _path = TestSearchPath::set(dir.0.clone());
+    let adapter = json!({
+        "id": "codex-acp",
+        "distribution": {"npx": {"package": "@agentclientprotocol/codex-acp"}}
+    });
+    registry::set_cache(Some(json!({"agents": [adapter]})));
+    let codex = list().into_iter().find(|b| b["id"] == "codex").expect("Codex is listed");
+    registry::set_cache(None);
+    assert_eq!((codex["installed"].as_bool(), codex["available"].as_bool()), (Some(true), Some(true)));
+    assert_eq!(codex["node"], Value::Null, "Codync prepares npx during launch");
+}
+
+#[test]
+fn a_native_agent_does_not_need_its_registry_adapters_node() {
+    let dir = TempDir::new();
+    write_cli(&dir.0, "node");
+    let _path = TestSearchPath::set(dir.0.clone());
+    let npm_adapter = json!({"distribution": {"npx": {"package": "gemini-cli"}}});
+    assert_eq!(node_state(harness("gemini").unwrap(), true, Some(&npm_adapter)), None);
 }
 
 #[test]

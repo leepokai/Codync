@@ -1,6 +1,6 @@
 //! Whether each harness is signed in, as its own CLI tells it.
 
-use super::{HARNESSES, Harness, on_path, which};
+use super::{HARNESSES, Harness, installed_cli};
 use crate::LockExt;
 use serde_json::Value;
 use std::sync::Mutex;
@@ -77,7 +77,7 @@ pub fn set_signed_in(id: &str, state: Option<bool>) {
 
 /// Re-checks every installed harness that can report its sign-in state.
 pub async fn refresh_sign_in() {
-    let installed = HARNESSES.iter().filter(|h| h.signed_in.is_some() && h.bins.iter().any(|b| on_path(b)));
+    let installed = HARNESSES.iter().filter(|h| h.signed_in.is_some() && installed_cli(h).is_some());
     let results =
         futures::future::join_all(installed.map(|h| async move { (h.id, cli_signed_in(h, &[]).await) })).await;
     for (id, ok) in results {
@@ -99,7 +99,7 @@ pub async fn run_cli(h: &Harness, args: &str, env: &[(String, String)]) -> Optio
     if agent_checks_off() {
         return None;
     }
-    let bin = h.bins.iter().find_map(|b| which(b))?;
+    let bin = installed_cli(h)?;
     let mut command = tokio::process::Command::new(bin);
     crate::shell::apply_env(command.as_std_mut(), env);
     let run = command

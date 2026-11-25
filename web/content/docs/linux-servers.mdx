@@ -7,7 +7,7 @@ The host, `codync-host`, runs on any 64-bit Linux machine, including a home serv
 | x86_64 or arm64 Linux | Release builds exist for both. The distribution doesn't matter: the host is a static binary. |
 | `ca-certificates` | For HTTPS. Normal VM images have it. Bare container images need `apt-get install ca-certificates`; without it every command stops with `TLS setup failed: install the ca-certificates package`. |
 | systemd | Only for running the host as a background service. Without systemd, run `codync-host serve` under your own supervisor. |
-| Node.js (optional) | Claude Code, Codex and Pi run through adapters started with `npx`. Without Node, an agent's setup offers to add Codync's own copy (on glibc distributions; over SSH, run `codync-host node`). On musl distributions such as Alpine, install Node.js yourself. |
+| Node.js (optional) | Claude Code, Codex and Pi run through ACP adapters. Codync downloads and checks its own Node.js when the computer has none. On musl distributions such as Alpine, install Node.js yourself. |
 | Your agents, signed in | The host runs the agent CLIs installed on this machine with their own logins. Sign in over SSH (`claude`, `codex login`, …) as the same user that runs the host. |
 
 ## Install
@@ -23,7 +23,7 @@ codync-host status
 ```
 
 - The script puts `codync-host` in `~/.local/bin` (`/usr/local/bin` as root; set `CODYNC_BIN_DIR` to choose), checks its checksum, and restarts the service when you run it again to upgrade.
-- `codync-host install` sets up a systemd user service and saves your current `PATH` into it, so install Node and your agents first. If you add an agent later and the host doesn't find it, run `codync-host install` again.
+- `codync-host install` sets up a systemd user service and saves your current `PATH` into it, so install your agents first. If you add one later and the host doesn't find it, run `codync-host install` again.
 - Run `codync-host install` from a real login session (an SSH login, not `sudo su user`), or systemd can't reach your user's services.
 
 `--host-only` also works on a Mac without a display.

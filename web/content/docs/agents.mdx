@@ -95,15 +95,23 @@ Agents are set up from **Extensions**, which belongs to one computer:
 - **iPhone:** tap the filter button at the top right of the Bots tab, choose **Manage computers**, and tap **Extensions** on the computer.
 - **Terminal UI:** press `A`.
 
-The **Agents** section shows each agent's status: **Installed**, **Not installed**, **Not signed in**, **Needs Node.js**, or **Sets up on first use** (registry agents). Select an agent to open its setup sheet. It walks through up to three steps.
+The **Agents** section shows each agent's status: **Installed**, **Not installed**, **Not signed in**, **Needs Node.js** (an agent's own native bundle needs it), or **Sets up on first use** (registry agents). Select an agent to open its setup sheet. It walks through up to three steps.
 
 ### Install
 
 For an agent Codync knows by name, **Install** runs the agent's official installer on the computer. Agents published only on npm (such as Gemini CLI, Cline, Auggie and Kilo) install with npm. The install runs in a terminal on the computer, and you watch it from the device you're on. Where Codync has no installer for your platform, the sheet tells you how to install the agent yourself.
 
+If an agent is installed somewhere Codync's search path doesn't reach, save its executable once:
+
+```sh
+codync-host agent codex path "$(command -v codex)"
+```
+
+`codync-host agent codex` shows the saved or automatically detected path. `codync-host agent codex clear` removes the saved path and returns to automatic detection.
+
 ### Node.js
 
-Some agents run through an adapter that needs Node.js, such as Claude Code, Codex and Pi. If the computer has no Node.js, Extensions shows **Add Node.js** and those agents read **Needs Node.js**. Adding it downloads an official Node.js into `~/.codync/node`, used only by Codync's agents. Nothing outside `~/.codync` changes, and a Node.js you install yourself always comes first. On Linux distributions that use musl, such as Alpine, install Node.js yourself.
+Some agents run through a registry adapter that needs Node.js, such as Claude Code, Codex and Pi. Codync installs a private copy into `~/.codync/node` the first time that adapter starts, so the agent stays selectable even when the computer has no system Node.js. Nothing outside `~/.codync` changes, and a Node.js you install yourself always comes first. If a bundled agent's own runtime needs Node.js and the computer has none, Extensions shows **Add Node.js**. On Linux distributions that use musl, such as Alpine, install Node.js yourself.
 
 ### Signing in
 

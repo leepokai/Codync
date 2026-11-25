@@ -144,7 +144,7 @@ Building the desktop app yourself: `cd apps/desktop && npm ci && npm run dev`.
 
 **Remote access** is direct on the same network or over Tailscale, with no account. From anywhere else, a free Cloudflare relay, end-to-end encrypted, needs the computer and the phone in the same account. Details: [Remote access](https://www.codync.dev/docs/remote-access) ([protocol](docs/reference/remote-relay.md)).
 
-**Agents** — install and sign in to whichever you use; Codync finds them. Claude Code, Codex and Pi run through their ACP adapters (fetched by `npx`, so Node.js is needed for those).
+**Agents** — install and sign in to whichever you use; Codync finds them. Claude Code, Codex and Pi run through their ACP adapters. Codync fetches the adapter with its own checked Node.js when the computer has none; no separate Node.js install is needed.
 
 `codync-host install` also routes Claude Code's status line through `codync-host statusline` so live limits reach the host; an existing status line keeps working (it's wrapped, and restored on `uninstall`).
 
@@ -170,6 +170,7 @@ and computer identity; do not use **Reset all data**, a cleanup utility, or Home
 | `codync-host status` | installed? running? |
 | `codync-host serve [--port 19222]` | run in the foreground |
 | `codync-host statusline [-- <your command>]` | Claude Code status line command (wraps yours) |
+| `codync-host agent codex path <executable>` | Save where an agent CLI is installed when Codync can't find it automatically; `clear` restores auto-detection |
 | `codync-host reset-token` | rotate the local loopback bearer token |
 | `codync-host cloud [--assistants on\|off] [--leave]` | cloud enablement, URL and status; whether ChatGPT, Claude and other connected assistants may message this computer's bots; `--leave` takes this computer out of its account |
 | `codync-host network` | codync-network, your computers' network: create, invite, join, status, promote, remove, recover |

@@ -1,6 +1,6 @@
 //! Durable bot routines, shared by API clients and the built-in MCP server.
 mod check;
-pub use check::Checked;
+pub use check::{Checked, Folder};
 mod editor;
 pub use editor::{ScheduleDraft, preview as schedule_preview};
 mod follow_up;
@@ -57,6 +57,9 @@ pub struct Routine {
     /// Where its runs stand, for the next one (`progress.rs`).
     #[serde(default)]
     pub progress: Option<String>,
+    /// The folder its runs work in, an absolute path; none: the bot's. A run with one always works in a thread.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -172,12 +175,36 @@ fn webhook_key() -> String {
     format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple())
 }
 
+/// The stored routines.
+fn stored(store: &Store) -> Result<State> {
+    let Some(raw) = store.kv_read(STATE_KEY)? else { return Ok(State::default()) };
+    serde_json::from_str(&raw).context("reading routines")
+}
+
+/// The stored routines of `bots`, deleted ones too (`hub::projects::migrate`'s backup).
+pub fn of_bots(store: &Store, bots: &[&str]) -> Result<Vec<Routine>> {
+    Ok(stored(store)?.routines.into_iter().filter(|r| bots.contains(&r.bot_id.as_str())).collect())
+}
+
+/// Before `Routines::restore` reads them (`hub::projects::migrate`): `bot`'s routines that name no folder are stamped
+/// with `folder` in the stored state.
+pub fn stamp_folder(store: &Store, bot: &str, folder: &str) -> Result<()> {
+    let mut state = stored(store)?;
+    let unstamped = |r: &&mut Routine| r.bot_id == bot && !r.deleted && r.folder.is_none();
+    let mut stamped = false;
+    for routine in state.routines.iter_mut().filter(unstamped) {
+        routine.folder = Some(folder.to_owned());
+        stamped = true;
+    }
+    if stamped {
+        store.kv_set(STATE_KEY, &serde_json::to_string(&state)?)?;
+    }
+    Ok(())
+}
+
 impl Routines {
     pub fn restore(&self, store: &Store) -> Result<()> {
-        let mut state = match store.kv_read(STATE_KEY)? {
-            Some(raw) => serde_json::from_str::<State>(&raw).context("reading routines")?,
-            None => State::default(),
-        };
+        let mut state = stored(store)?;
         let mut active = self.active.locked();
         active.clear();
         for run in &mut state.runs {
@@ -250,7 +277,7 @@ impl Routines {
 
     pub fn save(&self, hub: &Hub, bot: &str, body: &Value) -> Result<Value> {
         let row = agent_bot(hub, bot)?;
-        let Checked { name, instruction, triggers, timeout } = Checked::parse(body)?;
+        let Checked { name, instruction, triggers, timeout, folder } = Checked::parse(body)?;
         let now = now_ms();
         let id = body["id"].as_str().map_or_else(|| uuid::Uuid::new_v4().to_string(), str::to_owned);
         let updated = body["id"].is_string();
@@ -282,6 +309,7 @@ impl Routines {
                     .unwrap_or_else(|| old.as_ref().map_or_else(default_timeout, |r| r.timeout_seconds)),
                 last_error: None,
                 progress: old.as_ref().and_then(|r| r.progress.clone()),
+                folder: folder.applied(old.as_ref().and_then(|r| r.folder.clone()))?,
             };
             if !(1..=86_400).contains(&r.timeout_seconds) {
                 bail!("timeoutSeconds must be between 1 and 86400");
@@ -450,7 +478,7 @@ fn required<'a>(body: &'a Value, key: &str) -> Result<&'a str> {
 }
 fn public(r: &Routine) -> Value {
     json!({"id":r.id,"botId":r.bot_id,"name":r.name,"instruction":r.instruction,"triggers":r.triggers,"enabled":r.enabled,"createdAt":r.created_at,"updatedAt":r.updated_at,
-        "timeoutSeconds":r.timeout_seconds,"lastError":r.last_error,
+        "timeoutSeconds":r.timeout_seconds,"lastError":r.last_error,"folder":r.folder,
         "triggerDescriptions":r.triggers.iter().map(Trigger::description).collect::<Vec<_>>(),"nextRunAt": if r.enabled {r.next_runs.iter().flatten().min().copied()} else {None}})
 }
 fn new_run(r: &Routine, event: Value, delivery_id: Option<String>) -> Run {

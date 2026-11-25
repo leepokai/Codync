@@ -36,7 +36,7 @@ tags:
     visible: "1 connected"
     timeout: 180000
 # The other computer can't be woken: it reads Offline, not Waking.
-- tapOn: "1 connected"
+- tapOn: "Computers, .*Filter conversations"
 - tapOn: "Manage computers"
 - extendedWaitUntil:
     visible: "Offline · In your account"

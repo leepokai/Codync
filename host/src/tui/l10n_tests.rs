@@ -273,6 +273,11 @@ fn event_box_words_read_in_traditional_chinese() {
         ("Threads at once", "同時幾個 thread"),
         ("Work", "工作"),
         ("Worktree per thread", "每個 thread 一個 worktree"),
+        ("Projects", "專案"),
+        ("Worktree mode", "worktree 模式"),
+        ("Side by side", "並行時"),
+        ("Always", "一律"),
+        ("Threads work in the project itself", "thread 直接在專案裡工作"),
         ("Git repository", "Git repository"),
         ("Not a git repository", "不是 git repository"),
         ("Git isn't installed on this computer", "這台電腦沒有安裝 git"),
@@ -294,7 +299,6 @@ fn event_box_words_read_in_traditional_chinese() {
         ("B opens", "B 開啟"),
         ("X stops", "X 停止"),
         ("↵ opens", "↵ 開啟"),
-        ("Picking up from the chat…", "正在從聊天接著做…"),
     ] {
         assert_eq!(translate_with(english, &super::HANT), chinese);
     }

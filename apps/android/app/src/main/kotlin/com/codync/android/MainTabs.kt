@@ -20,6 +20,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -27,17 +28,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
+import com.codync.android.core.ComputerSelection
 import com.codync.android.design.*
 
-internal enum class AppTab { Bots, Workflows, Settings }
+internal enum class AppTab { Bots, Threads, Workflows, Settings }
 
 /**
- * The system tab bar over Bots, Workflows and Settings, as iOS `RootView.tabs`: every tab stays alive, the bar
- * floats as glass over their content and hides while a conversation or a workflow step is open.
+ * The system tab bar over Bots, Threads, Workflows and Settings, as iOS `RootView.tabs`: every tab stays alive, the bar
+ * floats as glass over their content and hides while a conversation, a workflow step or a thread is open.
  */
 @Composable internal fun MainTabs(app: AccountContext, states: List<AppState>, accounts: AccountStore, account: () -> Unit, manage: () -> Unit,
     newBot: (String) -> Unit, newGroup: (String) -> Unit, edit: (String, Bot) -> Unit, extensions: (String) -> Unit,
@@ -45,6 +48,9 @@ internal enum class AppTab { Bots, Workflows, Settings }
     // The open chat, on whichever computer it lives (one at a time).
     val open = states.firstOrNull { it.selectedBot != null }
     val workflowDetail = tab == AppTab.Workflows && states.any { it.workflow?.id != null }
+    // A thread of a box without a bot, open over the Threads tab.
+    var loose by remember { mutableStateOf<LooseThread?>(null) }
+    val covering = open != null || workflowDetail || (tab == AppTab.Threads && loose != null)
     // Opening a bot (notification, widget, link) always lands on the Bots tab.
     if (open != null && tab != AppTab.Bots) onTab(AppTab.Bots)
     LaunchedEffect(tab) {
@@ -52,8 +58,17 @@ internal enum class AppTab { Bots, Workflows, Settings }
         val id = app.currentComputerId ?: states.firstOrNull()?.computer?.id ?: return@LaunchedEffect
         accounts.store(id)?.openWorkflows()
     }
+    // The computers the Bots tab leaves out and each one's section order (the Bots tab loads it), which Threads follows too.
+    val context = LocalContext.current
+    var hidden by remember { mutableStateOf(RosterComputers.hidden(context)) }
+    val sectionOrders = remember(app.contextId) { mutableStateMapOf<String, List<String>>() }
+    val shownIds = ComputerSelection(states.map { it.computer.id }, hidden).shown
+    val threads = threadRoster(states.filter { it.computer.id in shownIds }) { sectionOrders[SectionOrders.key(app.contextId, it.computer.id)].orEmpty() }
+    val filter = ComputerFilter(states, hidden, { hidden = it; RosterComputers.setHidden(context, it) },
+        { for (state in states) if (state.computer.id in shownIds) accounts.store(state.computer.id)?.reconnect() }, manage)
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(when (tab) {
         AppTab.Bots -> AnalyticsScreen.Bots
+        AppTab.Threads -> AnalyticsScreen.AllWork
         AppTab.Workflows -> AnalyticsScreen.Workflows
         AppTab.Settings -> AnalyticsScreen.Settings
     }))
@@ -62,7 +77,7 @@ internal enum class AppTab { Bots, Workflows, Settings }
     GlassStage(Modifier.fillMaxSize(), chrome = {
         // Access requests still waiting after their sheet closed: the code to check, until the computer answers.
         val tickets = app.access.values.sortedBy { it.requestId }
-        AnimatedVisibility(tickets.isNotEmpty() && open == null && !workflowDetail, Modifier.align(Alignment.BottomCenter).padding(bottom = barSpace - 16.dp),
+        AnimatedVisibility(tickets.isNotEmpty() && !covering, Modifier.align(Alignment.BottomCenter).padding(bottom = barSpace - 16.dp),
             enter = fadeIn(Motion.fade()) + slideInVertically(Motion.layoutOffset) { it }, exit = fadeOut(Motion.fade()) + slideOutVertically(Motion.layoutOffset) { it }) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (ticket in tickets) key(ticket.computerId) {
@@ -73,13 +88,13 @@ internal enum class AppTab { Bots, Workflows, Settings }
                 }
             }
         }
-        AnimatedVisibility(open == null && !workflowDetail, Modifier.align(Alignment.BottomCenter),
+        AnimatedVisibility(!covering, Modifier.align(Alignment.BottomCenter),
             enter = fadeIn(Motion.fade()) + slideInVertically(Motion.layoutOffset) { it / 2 },
             exit = fadeOut(Motion.fade()) + slideOutVertically(Motion.layoutOffset) { it / 2 }) {
             Box(contentAlignment = Alignment.BottomCenter) {
                 ScrollEdge(Edge.Bottom, barSpace)
-                GlassTabBar(tab, listOf(TabItem(AppTab.Bots, "Bots", "bubble.left.and.bubble.right.fill", 33.dp),
-                    TabItem(AppTab.Workflows, "Workflows", "flowchart"), TabItem(AppTab.Settings, "Settings", "gearshape")),
+                GlassTabBar(tab, listOf(TabItem(AppTab.Bots, "Bots", "bot"), TabItem(AppTab.Threads, "Threads", "checklist", badge = workingCount(threads)),
+                    TabItem(AppTab.Workflows, "Workflows", "workflow"), TabItem(AppTab.Settings, "Settings", "gearshape")),
                     onTab, Modifier.padding(bottom = maxOf(bottom - 4.dp, 12.dp)))
             }
         }
@@ -95,19 +110,21 @@ internal enum class AppTab { Bots, Workflows, Settings }
                 if (open != null || app.removedChat) accounts.openBot(null)
             }) { entry ->
                 when {
-                    entry == "roster" -> BotListView(app, states, accounts, account, manage, newBot, newGroup, edit, extensions, barSpace)
+                    entry == "roster" -> BotListView(app, states, accounts, account, manage, newBot, newGroup, edit, extensions, barSpace,
+                        hidden, filter.setHidden, sectionOrders)
                     entry == REMOVED_CHAT -> RemovedComputer { accounts.openBot(null) }
                     else -> (states.firstOrNull { "${it.computer.id}/${it.selectedBot}" == entry } ?: shown)?.let { chat(it) }
                 }
             }
         }
+        Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Threads)) { ThreadsView(app, account, threads, filter, accounts, barSpace, loose, active = tab == AppTab.Threads) { loose = it } }
         Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Workflows)) {
             val shown = states.firstOrNull { it.workflow != null }
                 ?: states.firstOrNull { it.computer.id == app.currentComputerId }
                 ?: states.firstOrNull()
             val store = shown?.let { accounts.store(it.computer.id) }
-            if (shown != null && store != null) WorkflowsView(shown, store, states, barSpace) { accounts.focusWorkflows(it) }
-            else EmptyState("flowchart", "No computer yet", Modifier.fillMaxSize().statusBarsPadding())
+            if (shown != null && store != null) WorkflowsView(app, account, shown, store, states, barSpace) { accounts.focusWorkflows(it) }
+            else EmptyState("workflow", "No computer yet", Modifier.fillMaxSize().statusBarsPadding())
         }
         Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Settings)) { SettingsView(app, states, accounts, barSpace, status) }
     }

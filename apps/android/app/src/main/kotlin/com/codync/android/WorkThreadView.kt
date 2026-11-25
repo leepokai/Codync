@@ -1,6 +1,5 @@
 package com.codync.android
 
-import android.content.ClipData
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,15 +22,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.ClipEntry
-import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -61,8 +57,6 @@ import com.codync.android.core.whereLine
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
  * The thread of [bot]'s task [taskId] (iOS `WorkThreadView`), pushed over the bot's details: its header (title, status,
@@ -170,16 +164,8 @@ import kotlinx.coroutines.launch
 /** Where the thread works, as its row says it; a tap copies the full path and says so for a moment. */
 @Composable private fun WherePath(where: WhereLine, modifier: Modifier) {
     val path = where.path ?: return WhereLabel(where, modifier)
-    val clipboard = LocalClipboard.current
-    val scope = rememberCoroutineScope()
-    var copied by remember { mutableStateOf(false) }
-    val copy = tr("Copy path")
-    WhereLabel(where, modifier.testTag("thread-where").clickable(role = Role.Button, onClickLabel = copy) {
-        scope.launch {
-            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Path", path)))
-            copied = true; delay(1500); copied = false
-        }
-    }.semantics { liveRegion = LiveRegionMode.Polite }, text = if (copied) tr("Path copied") else where.text)
+    val (copied, copy) = rememberCopyPath()
+    WhereLabel(where, modifier.testTag("thread-where").clickable(role = Role.Button, onClickLabel = tr("Copy path")) { copy(path) }.semantics { liveRegion = LiveRegionMode.Polite }, text = if (copied) tr("Path copied") else where.text)
 }
 
 /** What the host told the thread first (the task's prompt), folded on top of its thread. */

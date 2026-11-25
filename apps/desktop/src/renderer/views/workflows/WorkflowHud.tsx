@@ -103,16 +103,20 @@ export function WorkflowHud({ title, enabled, graph, steps, live, runs, hasMore,
           </span>
         ) : null}
         {title ? (
-          <button ref={historyButton} type="button" className="workflow-history" aria-expanded={historyOpen} onClick={() => setHistoryOpen((open) => { if (!open) onShowHistory(); return !open })}>
-            <Icon name="clock" size={14} />
-            <span>{tr('History')}</span>
-            <span className="workflow-history-count">{runs.length}</span>
-          </button>
+          <WorkflowTip label="History" below>
+            <button ref={historyButton} type="button" className="workflow-history" aria-label={tr('History')} aria-expanded={historyOpen} onClick={() => setHistoryOpen((open) => { if (!open) onShowHistory(); return !open })}>
+              <Icon name="clock" size={14} />
+              <span className="workflow-hud-label">{tr('History')}</span>
+              <span className="workflow-history-count">{runs.length}</span>
+            </button>
+          </WorkflowTip>
         ) : null}
         <AnchoredMenu open={historyOpen} onClose={() => setHistoryOpen(false)} anchor={historyButton} items={history} />        {title && !previewLabel ? (
-          <Button className="workflow-run-now" onClick={live ? onStop : onRun}>
-            {live ? tr('Stop') : <><Icon name="play.fill" size={12} /><span>{tr('Run workflow')}</span></>}
-          </Button>
+          <WorkflowTip label={live ? 'Stop' : 'Run workflow'} below>
+            <Button className="workflow-run-now" label={live ? 'Stop' : 'Run workflow'} onClick={live ? onStop : onRun}>
+              {live ? tr('Stop') : <><Icon name="play.fill" size={12} /><span className="workflow-hud-label">{tr('Run workflow')}</span></>}
+            </Button>
+          </WorkflowTip>
         ) : null}
       </HStack>
       {notice ? (

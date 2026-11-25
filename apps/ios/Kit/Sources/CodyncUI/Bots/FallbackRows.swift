@@ -185,16 +185,22 @@ private struct FallbackRow: View {
                         .padding(.vertical, 3)
                         .background(Palette.bubbleUser, in: Capsule())
                 }
-                DropdownMenu { menu() } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(Palette.secondary)
-                        .frame(width: 36, height: 36)
-                        .contentShape(Rectangle())
+                // A menu of one action (Remove, for the only fallback) shows as that action.
+                if menu().count == 1, let only = menu().first {
+                    IconButton(only.title, systemImage: only.icon ?? "trash") { only.action() }
+                        .padding(.vertical, -8)
+                } else {
+                    DropdownMenu { menu() } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(Palette.secondary)
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
+                    }
+                    // The 36pt target centered on the summary's first line.
+                    .padding(.vertical, -8)
+                    .accessibilityLabel("\(name) fallback actions")
                 }
-                // The 36pt target centered on the summary's first line.
-                .padding(.vertical, -8)
-                .accessibilityLabel("\(name) fallback actions")
             }
             if let rest = bot?.rest(of: fallback.login) {
                 Text(L10n.tr(rest.line)).font(.caption).foregroundStyle(Palette.secondary)

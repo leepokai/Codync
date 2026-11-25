@@ -25,6 +25,8 @@ import { AnchoredPanel, AutoTextArea, AvatarPicker, Field, SwitchRow } from './p
 import { NetworkSwitches } from './NetworkSwitches'
 import { FolderPicker } from './FolderPicker'
 import { GitStateLine } from './GitStateLine'
+import { HomeFolderRow, ProjectsRow, WorktreeModeRow } from './ProjectsRows'
+import { withProject } from './projects'
 import './bots.css'
 import { useTr } from '../../lib/use-language'
 import { CustomIconEditor } from './CustomIconEditor'
@@ -171,20 +173,22 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
       onChange={(on) => set('selfFallbacks', on)}
     />,
   ] : null
-  // Advisor mode, from a host that has it: its threads' agent and fallbacks show once it's on.
-  const advisor = saved && saved.threadFallbacks !== null ? [
-    <SwitchRow
-      key="advisor"
-      title="Advisor mode"
-      detail="The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks."
-      on={!!draft.threadAgent}
-      onChange={(on) => onChange((d) => withAdvisor(d, on, backends))}
-    />,
-    ...(draft.threadAgent ? [
-      <ThreadsAgentRow key="threads-agent" agent={draft.threadAgent} bot={saved} onChange={onChange} />,
-      <FallbacksRow key="threads-fallbacks" threads draft={draft} bot={saved} onChange={onChange} />,
-    ] : []),
-  ] : null
+  // Advisor mode, from a host that has it: its threads' agent and fallbacks show once it's on, in its row (one setting,
+  // no lines inside it).
+  const advisor = saved && saved.threadFallbacks !== null ? (
+    <VStack key="advisor" gap={16}>
+      <SwitchRow
+        title="Advisor mode"
+        detail="The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks."
+        on={!!draft.threadAgent}
+        onChange={(on) => onChange((d) => withAdvisor(d, on, backends))}
+      />
+      {draft.threadAgent ? <>
+        <ThreadsAgentRow agent={draft.threadAgent} bot={saved} onChange={onChange} />
+        <FallbacksRow threads draft={draft} bot={saved} onChange={onChange} />
+      </> : null}
+    </VStack>
+  ) : null
   // Only where Codync summarizes the chat (its bot says): CardSection gives every child a row.
   const compaction = saved && saved.compaction !== null ? <CompactionRow key="compaction" draft={draft} bot={saved} onChange={onChange} /> : null
 
@@ -222,31 +226,39 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
           <ValueRow label="Computer">
             <Text truncate>{store.hostName}</Text>
           </ValueRow>
-          <VStack gap={6}>
-            <ValueRow
-              label="Workspace"
-              detail={
-                draft.cwd
-                  ? 'This project is the default starting folder. The bot can work elsewhere when you ask.'
-                  : 'This bot has its own space for files. It can work in other folders when you ask.'
-              }
-            >
-              <DropdownMenu
-                title={draft.cwd || tr('A persistent workspace allocated for this bot')}
-                items={() => [
-                  { title: 'Own folder', selected: !draft.cwd, action: () => set('cwd', '') },
-                  { title: 'Choose project folder…', selected: !!draft.cwd, action: () => setPickingFolder(true) },
-                ]}
+          {/* A host whose bots have projects keeps each in its own folder, which a new bot gets once it's created. */}
+          {store.hasProjects ? [
+            saved ? <HomeFolderRow key="home" bot={saved} /> : null,
+            <ProjectsRow key="projects" draft={draft} bot={saved} sharesFolders={store.fillsWorktrees} onChange={onChange} onAdd={() => setPickingFolder(true)} />,
+            // Under the list, only where it matters: a project in a git repository.
+            saved?.projectGitRepos.some(Boolean) ? <WorktreeModeRow key="worktrees" draft={draft} bot={saved} onChange={onChange} /> : null,
+          ] : (
+            <VStack gap={6}>
+              <ValueRow
+                label="Workspace"
+                detail={
+                  draft.cwd
+                    ? 'This project is the default starting folder. The bot can work elsewhere when you ask.'
+                    : 'This bot has its own space for files. It can work in other folders when you ask.'
+                }
               >
-                <Pill outlined className="workspace-pill">
-                  <Text truncate className="workspace-pill-label">{draft.cwd ? lastPathComponent(draft.cwd) : tr('Own folder')}</Text>
-                  <Icon name="chevron.down" size={10} weight="semibold" color="var(--secondary)" />
-                </Pill>
-              </DropdownMenu>
-            </ValueRow>
-            {/* Of the saved folder, from a host that says (one with worktrees). */}
-            {saved && saved.threadWorktrees !== null ? <GitStateLine bot={saved} /> : null}
-          </VStack>
+                <DropdownMenu
+                  title={draft.cwd || tr('A persistent workspace allocated for this bot')}
+                  items={() => [
+                    { title: 'Own folder', selected: !draft.cwd, action: () => set('cwd', '') },
+                    { title: 'Choose project folder…', selected: !!draft.cwd, action: () => setPickingFolder(true) },
+                  ]}
+                >
+                  <Pill outlined className="workspace-pill">
+                    <Text truncate className="workspace-pill-label">{draft.cwd ? lastPathComponent(draft.cwd) : tr('Own folder')}</Text>
+                    <Icon name="chevron.down" size={10} weight="semibold" color="var(--secondary)" />
+                  </Pill>
+                </DropdownMenu>
+              </ValueRow>
+              {/* Of the saved folder, from a host that says (one with worktrees). */}
+              {saved && saved.threadWorktrees !== null ? <GitStateLine bot={saved} /> : null}
+            </VStack>
+          )}
           <ApprovalRow draft={draft} catalog={models.catalog} onChange={onChange} />
           {/* Only from a host that has the box (its bots say). */}
           {saved && saved.maxThreads !== null ? (
@@ -255,8 +267,8 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
             </ValueRow>
           ) : null}
           {/* Only where it matters (a project folder in a git repository: a bot's own folder keeps all its work in
-              one place), from a host that has it. */}
-          {saved?.gitRepo && !saved.managedWorkspace && saved.threadWorktrees !== null ? (
+              one place), from a host that has it and no projects. */}
+          {!store.hasProjects && saved?.gitRepo && !saved.managedWorkspace && saved.threadWorktrees !== null ? (
             <SwitchRow
               title="Worktree per thread"
               detail="Threads that work at once in this repository each get their own branch."
@@ -321,9 +333,10 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
       </FormSheet>
       <Sheet open={pickingFolder} onClose={() => setPickingFolder(false)} width={460} height={520}>
         <FolderPicker
-          start={draft.cwd || store.hello?.home || null}
+          start={(store.hasProjects ? draft.projects?.at(-1) : draft.cwd) || store.hello?.home || null}
           onPick={(path) => {
-            set('cwd', path)
+            if (store.hasProjects) onChange((d) => withProject(d, path))
+            else set('cwd', path)
             setPickingFolder(false)
           }}
         />

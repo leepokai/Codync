@@ -29,9 +29,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Graph
-import com.codync.android.core.NodeKind
 import com.codync.android.core.WorkflowNode
-import com.codync.android.core.field
 import com.codync.android.design.CodyncSheet
 import com.codync.android.design.ModalHeader
 import com.codync.android.design.Palette
@@ -171,86 +169,4 @@ internal object StepDisplay {
     Column(modifier.background(Palette.surface, RoundedCornerShape(14.dp)).padding(12.dp)) {
         StepLine(node, names, number, parents)
     }
-}
-
-/** The source picker: current token, then each choice. A prompt and the trigger have none. */
-@Composable internal fun sourceChoices(graph: Graph, step: String, names: (String) -> String?): Pair<String, List<Pair<String, String>>> {
-    val kinds = graph.nodes.associate { it.id to it.kind }
-    val kind = kinds[step] ?: return "" to emptyList()
-    if (kind == NodeKind.Trigger || kind == NodeKind.Prompt) return "" to emptyList()
-    val outline = outlineOf(graph)
-    if (outline != null) {
-        val numbers = stepNumbers(graph)
-        val titles = graph.nodes.associate { it.id to stepHeading(it, names) }
-        return outlineChoices(outline, kinds, step, triggerLabel(graph.nodes.firstOrNull { it.id == outline.trigger }), number = { numbers[it] }, title = { titles[it].orEmpty() })
-    }
-    return fieldChoices(graph, step, names)
-}
-
-@Composable internal fun outlineChoices(outline: Outline, kinds: Map<String, NodeKind>, step: String, triggerLabel: String, branches: Boolean = true,
-    number: (String) -> Int?, title: (String) -> String): Pair<String, List<Pair<String, String>>> {
-    val kind = kinds[step] ?: return "" to emptyList()
-    if (kind == NodeKind.Trigger || kind == NodeKind.Prompt) return "" to emptyList()
-    val selection = outline.sourceTarget(step, kinds)?.token.orEmpty()
-    val options = mutableListOf(SourceTarget.Node(outline.trigger).token to triggerLabel)
-    val pool = if (kind == NodeKind.Condition) outline.main else outline.main + outline.yes + outline.no + outline.after
-    for (id in pool) {
-        if (id == step) continue
-        val item = kinds[id] ?: continue
-        val place = number(id) ?: continue
-        if (item == NodeKind.Output || item == NodeKind.Prompt || item == NodeKind.Trigger) continue
-        options.add(id to "$place · ${title(id)}")
-    }
-    val condition = outline.condition
-    if (kind != NodeKind.Condition && condition != null) {
-        val place = number(condition)
-        if (place != null) {
-            if (branches) {
-                options.add(SourceTarget.Yes.token to "$place · ${tr("Yes")}")
-                options.add(SourceTarget.No.token to "$place · ${tr("No")}")
-            }
-            options.add(SourceTarget.Both.token to "Both branches")
-        }
-    }
-    return selection to options
-}
-
-@Composable private fun fieldChoices(graph: Graph, step: String, names: (String) -> String?): Pair<String, List<Pair<String, String>>> {
-    val numbers = stepNumbers(graph)
-    val options = mutableListOf<Pair<String, String>>()
-    graph.nodes.firstOrNull { it.kind == NodeKind.Trigger }?.let { options.add(it.id to triggerLabel(it)) }
-    for (node in graph.nodes) {
-        if (node.id == step || node.kind == NodeKind.Trigger || node.kind == NodeKind.Output || node.kind == NodeKind.Prompt || node.kind == NodeKind.Condition) continue
-        val place = numbers[node.id] ?: continue
-        options.add(node.id to "$place · ${stepHeading(node, names)}")
-    }
-    val parents = graph.parentsOf(step).filter { id -> graph.nodes.firstOrNull { it.id == id }?.kind != NodeKind.Prompt }
-    val condition = graph.nodes.firstOrNull { it.kind == NodeKind.Condition }
-    val selection = when {
-        parents.size >= 2 -> SourceTarget.Both.token
-        parents.singleOrNull() == condition?.id -> {
-            val branch = graph.edges.firstOrNull { it.to == step && it.from == condition?.id }?.branch
-            if (branch == "no") SourceTarget.No.token else SourceTarget.Yes.token
-        }
-        else -> parents.firstOrNull().orEmpty()
-    }
-    val place = condition?.id?.let { numbers[it] }
-    if (condition != null && place != null) {
-        fun offer(branch: String, token: String, label: String) {
-            val owner = graph.edges.firstOrNull { it.from == condition.id && it.branch == branch }?.to
-            if (owner == null || owner == step || selection == token) options.add(token to label)
-        }
-        offer("yes", SourceTarget.Yes.token, "$place · ${tr("Yes")}")
-        offer("no", SourceTarget.No.token, "$place · ${tr("No")}")
-        if (graph.withSource(step, SourceTarget.Both.token) != null || selection == SourceTarget.Both.token) {
-            options.add(SourceTarget.Both.token to "Both branches")
-        }
-    }
-    return selection to options
-}
-
-private fun triggerLabel(node: WorkflowNode?) = when (node?.fields?.field("trigger")) {
-    "schedule" -> "Schedule"
-    "webhook" -> "Webhook"
-    else -> "Manual"
 }

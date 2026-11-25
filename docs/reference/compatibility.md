@@ -93,7 +93,12 @@ in **one release** that raises the floor, and updates are held back only as long
 couldn't get the matching side yet.
 
 - **Additive changes need no floor change**: new fields (clients decode leniently; new
-  Swift fields are optional), new methods, new enum values (kept as strings).
+  Swift fields are optional), new methods, new enum values (kept as strings). A new field may stand in for an old one
+  while the old one keeps its meaning for older apps: a bot's `projects` and `worktreeMode` came with the
+  host still taking an older app's `cwd` (as the first project) and `threadWorktrees`, and still sending
+  `threadWorktrees` and `gitRepo` ([where a thread works](../features/work.md#where-a-thread-works)). Such an older app
+  can't change the worktree setting on a newer host: every bot there says `managedWorkspace`, which hides its
+  Worktree per thread switch.
 - **Renaming, removing or changing the meaning** of anything an older client reads or sends:
   change it, set `MIN_APP` to this release (the phone apps ship with it: `Submit iOS` and
   `Submit Android` ship any release whose `MIN_APP` is above their store's version, even

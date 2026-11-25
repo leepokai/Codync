@@ -65,6 +65,8 @@ export interface WorkTask {
   seat: boolean | null
 }
 
+export type ThreadPlace = 'here' | 'worktree'
+
 /** What a thread the user starts changes from its bot's setup, for its own task (`startThread`'s `setup`): the folder
  * it works in, its model with that model's settings, and how it is approved. What it leaves out is the bot's. */
 export interface ThreadSetup {
@@ -73,6 +75,8 @@ export interface ThreadSetup {
   /** The agent's login profile, `''` its default login; left out, the bot's. */
   loginProfile?: string
   cwd?: string
+  /** In a git project: its own worktree or the project itself; left out, the bot's worktree mode decides. */
+  place?: ThreadPlace
   model?: { id: string | null; options: Record<string, string> }
   approval?: { permission: string; mode: string | null }
   /** A thread opened beside a workflow to build it by talking: its workflow tools reach that one only. */
@@ -367,9 +371,9 @@ export function taskLine(task: WorkTask, tr: Translate): string {
  * answer already. A routine's task runs the routine again. */
 export const canRetry = (task: WorkTask) => (task.status === 'failed' || task.status === 'stopped') && task.source?.kind !== 'request'
 
-/** A thread has it and it may give way to a task that cuts in: only work the bot added. A routine's run or another
- * bot's request is stopped, never set aside. */
-export const givesWay = (task: WorkTask) => isLive(task) && task.source === null
+/** A thread has it and it may give way to a task that cuts in: only work the bot added that holds a seat. A routine's
+ * run or another bot's request is stopped, never set aside, and a thread the user started (no seat) never gives way. */
+export const givesWay = (task: WorkTask) => isLive(task) && task.source === null && task.seat !== false
 
 /** Every seat is taken, so the task first in line can only start now if a thread gives way, and one may. Not one that
  * follows unfinished work or waits for usage: a freed thread wouldn't start it. */

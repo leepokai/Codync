@@ -129,13 +129,17 @@ impl Actor {
                 .filter_map(|c| c.acp(&exe, port))
                 .collect();
         let composio = crate::market::composio::enabled_for(&self.hub.store, &self.cfg.connectors)?;
+        // A thread on the bot's own work or the user's gets neither `routines` nor `team`; a routine's run and a
+        // request keep both, as that turn had them in the chat (a run saves its progress, sets follow-ups and may ask a
+        // bot; an asked bot runs its own routine, and its `message_bot` is refused with why).
+        let bots_own = !self.cfg.is_thread() || !self.task_source.own();
         let builtin = [
             Some("connectors"),
             Some("chat"),
-            Some("team"),
+            bots_own.then_some("team"),
             self.cfg.manage_team.then_some("manage"),
             Some("memory"),
-            Some("routines"),
+            bots_own.then_some("routines"),
             Some("workflows"),
             self.cfg.computer.then_some("computer"),
             composio.then_some("composio"),
@@ -158,6 +162,8 @@ impl Actor {
         progress: impl Fn(&str),
     ) -> Result<Conn> {
         let mut command = [candidate.resolve(progress).await?.acp()];
+        // A user-scope `codync` network server the agent loads knows it serves a bot.
+        env.push((crate::mcp::BOT_ENV.into(), self.cfg.id.clone()));
         self.hub.set_runtime(&self.id(), |r| r.activity = "Starting agent…".into());
         own_memory::apply(&self.cfg, &mut env, &mut command).await;
         let conn = start_agent(&self.cfg.backend, &command[0], &self.cfg.cwd, &env, budget).await.inspect_err(|e| {
@@ -319,29 +325,14 @@ impl Actor {
                 }
             }
         }
-        // A thread's first session: a fork of its bot's main one where the agent can, so it starts knowing the chat;
-        // otherwise a new session that is told the chat so far. A routine's run gets neither (no fork source, no
-        // chat): a new session with its own prompt, as a run in the chat has.
-        if slot.is_none() && crate::chat::work::first_session(&self.hub.store, &self.cfg) {
-            match self.fork_owner_session(&servers, &renamed, instructions).await {
-                Ok(true) => return Ok(()),
-                Ok(false) => {}
-                Err(error) => {
-                    tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't fork the chat's session; starting from a brief");
-                    crate::chat::work::fork_failed(&self.hub, &self.cfg);
-                }
-            }
-            // A fork that timed out stopped the agent: start over, on the brief's way.
-            if self.conn.is_none() {
-                return Box::pin(self.ensure_session(slot)).await;
-            }
-            self.handoff = self.told_chat();
-            crate::chat::work::started(&self.hub, &self.cfg, crate::chat::work::Start::Brief);
+        // A thread starts from its task alone, never from the chat (`context::render` gives it its own profile).
+        if slot.is_none() {
+            crate::chat::work::began(&self.hub, &self.cfg);
         }
         let (revision, system) = {
-            let (hub, cfg) = (self.hub.clone(), self.cfg.as_owner());
+            let (hub, cfg) = (self.hub.clone(), self.cfg.clone());
             tokio::task::spawn_blocking(move || {
-                (memory::current_revision(&hub.store, &cfg.id), context::render(&hub.store, &cfg))
+                (memory::current_revision(&hub.store, cfg.owner()), context::render(&hub.store, &cfg))
             })
             .await?
         };
@@ -349,7 +340,7 @@ impl Actor {
         self.instruct(&mut params, instructions, &system);
         let res = self.session_request("session/new", params).await?;
         let sid = self.adopt_opened(&res, slot, renamed).await?;
-        context::adopt(&self.hub.store, &self.cfg.as_owner(), &sid, system.clone(), revision)?;
+        context::adopt(&self.hub.store, &self.cfg, &sid, system.clone(), revision)?;
         if instructions == Instructions::ClaudeMeta {
             self.applied_system.insert(sid, system);
         }
@@ -365,7 +356,7 @@ impl Actor {
         }
     }
 
-    /// Takes the session the agent just opened (`res`: its answer to `session/new` or `session/fork`) as `slot`'s
+    /// Takes the session the agent just opened (`res`: its answer to `session/new`) as `slot`'s
     /// and this turn's: on the bot's model, with its options noted. Its id.
     async fn adopt_opened(&mut self, res: &Value, slot: Option<&str>, renamed: Renamed) -> Result<String> {
         let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
@@ -380,52 +371,6 @@ impl Actor {
         self.session_fresh = true;
         self.turn_session = Some(sid.clone());
         Ok(sid)
-    }
-
-    /// Opens a thread's session as a fork of its bot's main one (`session/fork`), from this thread's own agent process:
-    /// the same instructions and MCP servers, so the prompt cache is the chat's. `false`: there is nothing to fork
-    /// (the thread starts from a brief, or the agent can't fork).
-    async fn fork_owner_session(
-        &mut self,
-        servers: &Value,
-        renamed: &Renamed,
-        instructions: Instructions,
-    ) -> Result<bool> {
-        let Some(source) = crate::chat::work::take_fork_source(&self.hub, &self.cfg) else {
-            return Ok(false);
-        };
-        // The chat's session is its own agent's: a thread that starts on a fallback (that agent rests) can't fork it.
-        if self.step() != Some(0) || !self.conn.as_ref().is_some_and(|c| c.sessions.fork) {
-            return Ok(false);
-        }
-        // The chat's frozen instructions, as its session holds them.
-        let owner = self.cfg.as_owner();
-        let parent = {
-            let (hub, owner, source) = (self.hub.clone(), owner.clone(), source.clone());
-            tokio::task::spawn_blocking(move || context::resolve(&hub.store, &owner, &source)).await??
-        };
-        let mut params = self.session_params(servers, Some(&source));
-        self.instruct(&mut params, instructions, &parent.system);
-        self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Picking up from the chat…".into());
-        let res = self.session_request("session/fork", params).await?;
-        // A fork may replay the chat's history, as a reopened session does.
-        let about_agent = match self.conn.as_mut() {
-            Some(conn) => drop_replay(conn),
-            None => Vec::new(),
-        };
-        let sid = self.adopt_opened(&res, None, renamed.clone()).await?;
-        for update in &about_agent {
-            self.on_session_wide(update);
-        }
-        // It already holds the instructions and memory as the chat's session had them: nothing to send again.
-        let adopted = context::adopt(&self.hub.store, &owner, &sid, parent.system.clone(), parent.memory.clone())?;
-        context::mark_prompted(&self.hub.store, &owner.id, &adopted)?;
-        memory::opened(&self.hub.store, &owner.id, &sid, &parent.memory)?;
-        if instructions == Instructions::ClaudeMeta {
-            self.applied_system.insert(sid, parent.system);
-        }
-        crate::chat::work::started(&self.hub, &self.cfg, crate::chat::work::Start::Fork);
-        Ok(true)
     }
 
     /// A session request the agent doesn't answer in time stops the agent: a hung one
@@ -495,7 +440,7 @@ async fn watch_servers(conn: &mut Conn) {
 /// How long opening a session (`session/new`, `session/load`, `session/resume`) may take.
 const SESSION_TIMEOUT: Duration = Duration::from_mins(3);
 
-/// An agent replays a session's history as `session/update` before it answers a reopen or a fork: drops it, and
+/// An agent replays a session's history as `session/update` before it answers a reopen: drops it, and
 /// refuses the requests in it. What it says about itself meanwhile (its commands) isn't history: returned for
 /// `on_session_wide`.
 fn drop_replay(conn: &mut Conn) -> Vec<Update> {

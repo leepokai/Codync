@@ -1,9 +1,12 @@
-import type { KeyboardEvent, ReactNode } from 'react'
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import { fill } from '@shared/fill'
-import type { PanelPane as Pane } from '@shared/panel-layout'
+import type { Bot } from '@shared/models'
+import { multiTabs, multiView, type PanelPane as Pane } from '@shared/panel-layout'
 import { IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Text } from '../../components/Text'
+import { BrowserTab } from './BrowserTab'
+import { TerminalTab } from './TerminalTab'
 import { useTr } from '../../lib/use-language'
 
 /** A view a pane can show: its tab's name, its symbol in the chooser, and the key that opens it there. A thread's tab
@@ -16,9 +19,27 @@ export interface PaneView {
   verbatim?: boolean
 }
 
+/** The tabs of browsers and terminals among `tabs`, each named after its view (`base`), numbered from the second on
+ * ("Terminal 2"), its view's symbol on the tab. */
+export function multiTabViews(tabs: readonly string[], base: readonly PaneView[], tr: (s: string) => string): PaneView[] {
+  return multiTabs(tabs).flatMap(({ id, view, n }) => {
+    const of = base.find((v) => v.id === view)
+    return of ? [{ id, label: n > 1 ? `${tr(of.label)} ${n}` : tr(of.label), icon: of.icon, verbatim: true }] : []
+  })
+}
+
+/** A browser's or a terminal's tab `tab` of `bot`'s panel, its terminal in `thread`'s folder when given. */
+export function MultiTab({ bot, thread, tab }: { bot: Bot; thread?: string | null; tab: string }) {
+  const view = multiView(tab)
+  return view === 'browser' ? <BrowserTab key={`${bot.id}/${tab}`} bot={bot} tab={tab} />
+    : view === 'terminal' ? <TerminalTab key={`${thread ?? bot.id}/${tab}`} bot={bot} thread={thread} tab={tab} />
+    : null
+}
+
 /**
- * One pane of the panel beside a conversation: its views as tabs, each with its own close button (more than fit
- * scroll sideways), then `+`, which shows the chooser in place of a view: every view of the bot, opened by a click or
+ * One pane of the panel beside a conversation: its views as tabs, each with its own close button, sharing the row's
+ * width as a browser's do (a narrow tab shows its close button only while hovered or shown; more than fit at their
+ * narrowest scroll sideways), then `+`, which shows the chooser in place of a view: every view of the bot, opened by a click or
  * by its key while the pane has the focus. `flush`: the view shown fills the pane itself (a web page). `first`: the
  * pane the sheet gives the focus to, so the keys scroll it. `actions`: the panel's own buttons, at the end of the row.
  */
@@ -47,11 +68,12 @@ export function PanelPane({ pane, views, show, close, choose, flush, first, acti
   return (
     <section className="panel-pane" onKeyDown={onKey}>
       <div className="panel-tabs">
-        <div className="panel-tabs-row" role="tablist" aria-label={tr('Conversation details')}>
+        {/* Its tabs share its width (`--tabs` caps it at each one's widest), down to each one's narrowest, then scroll. */}
+        <div className="panel-tabs-row" role="tablist" aria-label={tr('Conversation details')} style={{ '--tabs': pane.tabs.length } as CSSProperties}>
           {pane.tabs.flatMap((id) => views.find((v) => v.id === id) ?? []).map((v) => (
             <span key={v.id} className={v.id === pane.shown ? 'panel-tab on' : 'panel-tab'}>
               <button role="tab" aria-selected={v.id === pane.shown} className="panel-tab-pick" title={v.verbatim ? v.label : undefined} onClick={() => show(v.id)}>
-                {v.verbatim ? <Icon name={v.icon} size={11} color="var(--secondary)" /> : null}
+                {v.verbatim ? <Icon name={v.icon} size={11} color="var(--secondary)" className="panel-tab-icon" /> : null}
                 <span className="panel-tab-name">{name(v)}</span>
               </button>
               <button className="panel-tab-close" title={fill(tr('Close {name}'), { name: name(v) })} aria-label={fill(tr('Close {name}'), { name: name(v) })} onClick={() => close(v.id)}>

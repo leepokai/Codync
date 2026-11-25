@@ -46,10 +46,9 @@ each thread's first user reply got a `replyTo` quoting its root.
 
 ## Session fork, as it was implemented
 
-Threads were the first user of ACP `session/fork` (a draft RFD, "Session Fork"). Forking is in use again: a
-[thread](../features/work.md#how-a-threads-session-begins)'s first session is a fork of the
-bot's main one (`fork_owner_session` in `host/src/agent/bot/session.rs`), with the same request and the same steps
-after it. What follows is the thread fork as it was, in `host/src/agent/bot/session.rs` at `ecc955018da2`: the fork
+Threads were the first user of ACP `session/fork` (a draft RFD, "Session Fork"). Forking was in use again for a
+while: a thread's first session was a fork of the bot's main one (`fork_owner_session`), until
+[threads stopped forking](../features/work.md#how-a-threads-session-begins) the chat's session. What follows is the thread fork as it was, in `host/src/agent/bot/session.rs` at `ecc955018da2`: the fork
 branch of `ensure_session` (lines 200–236) and `thread_intro` (lines 62–95).
 
 - **Capability.** At `initialize`, `launch.rs` set `SessionCaps.fork` when the agent advertised

@@ -30,7 +30,7 @@ pub use observe::{answered, failed, observe_call};
 pub use reported::track;
 pub use turns::{
     Carried, Retired, Steer, TurnEnd, TurnOutcome, TurnSource, agent_command_sent, agent_fell_back, agent_retired,
-    context_compacted, handoff_carried, message_steered, turn_finished,
+    agent_switched_by_user, context_compacted, handoff_carried, message_steered, turn_finished,
 };
 
 const KV_ENABLED: &str = "analytics_enabled";
@@ -75,6 +75,48 @@ pub fn network_failed(hub: &Hub, stage: NetworkStage) {
         NetworkStage::Migrate => "migrate",
     };
     capture(hub, Event::NetworkFailed, Map::from_iter([("stage".into(), stage.into())]));
+}
+
+/// What a coding agent's session did with its Network mailbox.
+#[derive(Clone, Copy)]
+pub enum SessionAction {
+    /// It called for the first time and got an address.
+    Registered,
+    /// `set_name`.
+    Renamed,
+    /// A letter was left for it.
+    Posted,
+    /// `check_inbox` handed it letters.
+    Read,
+    /// It answered a request one of this computer's bots sent it.
+    Answered,
+    /// One of this computer's bots left it a request (also counted as `posted`).
+    Asked,
+    /// A bot's request couldn't be left: saving its notice or the letter failed.
+    AskFailed,
+    /// A bot's request to it waited a week unanswered and ended.
+    Expired,
+    /// Its full inbox dropped a bot's request unread.
+    Dropped,
+}
+
+pub fn network_session(hub: &Hub, action: SessionAction, kind: codync_network::AgentKind) {
+    let action = match action {
+        SessionAction::Registered => "registered",
+        SessionAction::Renamed => "renamed",
+        SessionAction::Posted => "posted",
+        SessionAction::Read => "read",
+        SessionAction::Answered => "answered",
+        SessionAction::Asked => "asked",
+        SessionAction::AskFailed => "ask_failed",
+        SessionAction::Expired => "expired",
+        SessionAction::Dropped => "dropped",
+    };
+    capture(
+        hub,
+        Event::NetworkSession,
+        Map::from_iter([("action".into(), action.into()), ("kind".into(), kind.as_str().into())]),
+    );
 }
 
 pub struct Analytics {

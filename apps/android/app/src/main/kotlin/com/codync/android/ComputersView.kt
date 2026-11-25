@@ -90,7 +90,7 @@ import kotlinx.serialization.json.put
                 }
             }
             if (signedIn) CloudSettings(app, accounts)
-            val hidden = states.flatMap { state -> state.bots.filter { it.hidden && !it.deleted }.map { state to it } }
+            val hidden = states.flatMap { state -> state.bots.filter { it.hidden && !it.plain && !it.deleted }.map { state to it } }
             if (hidden.isNotEmpty()) CardSection("Hidden bots") {
                 for ((state, bot) in hidden) row { accounts.store(state.computer.id)?.let { HiddenBotRow(state, it, bot) } }
             }
@@ -146,16 +146,11 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
         row { RowLabel("Voice chat", "waveform", chevron = true, modifier = Modifier.plainButton(action = actions.voice)) }
         if (state.screen != null) row { RowLabel("Screen", "display", chevron = true, modifier = Modifier.plainButton(action = actions.screen)) }
         if (state.network?.shown == true) row { RowLabel("Network", NETWORK_ICON, chevron = true, modifier = Modifier.plainButton(action = actions.network)) }
+        threadKeepDays(state.hello)?.let { days -> row { DeleteOldThreadsRow(days, store::setThreadKeepDays) } }
     }
     if (state.connection !is LinkState.Ready && state.offersWorkflows) row { WorkflowsComputerRow(state, online = false, action = {}) }
     if (BuildConfig.PUSH_CONFIGURED) row {
         ComputerNotificationsRow(state.computer.notifications, store::notifications)
-    }
-    val autoOrder = autoOrder(state.hello)
-    if (state.connection is LinkState.Ready && autoOrder != null) row {
-        CodyncSwitch(autoOrder, store::setAutoOrder, Modifier.fillMaxWidth()) {
-            RowLabel("Move active bots to the top", "arrow.up", modifier = Modifier.weight(1f))
-        }
     }
     row { ConnectionRow(state.computer, store) }
     if (canAddToAccount(signedIn, state)) row { AddToAccount(store) }
@@ -168,7 +163,7 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
 @Composable private fun WorkflowsComputerRow(state: AppState, online: Boolean, action: () -> Unit) {
     Column(Modifier.fillMaxWidth().plainButton(enabled = online, action = action), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Symbol("flowchart", size = 20.dp, tint = Palette.text)
+            Symbol("workflow", size = 20.dp, tint = Palette.text)
             Text(tr("Workflows"), Modifier.weight(1f), style = Type.body, color = Palette.text)
             if (online) Symbol("chevron.right", size = 14.dp, tint = Palette.tertiary)
         }
@@ -191,7 +186,7 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
             MenuItem("Color", icon = "paintpalette", action = actions.color),
             if (canRename(state)) MenuItem("Rename…", icon = "pencil", action = actions.rename) else null,
             if (online) MenuItem("Extensions", icon = "square.grid.2x2", action = actions.extensions) else null,
-            if (online && state.offersWorkflows) MenuItem("Workflows", icon = "flowchart", action = actions.workflows) else null,
+            if (online && state.offersWorkflows) MenuItem("Workflows", icon = "workflow", action = actions.workflows) else null,
             if (online) MenuItem("Voice chat", icon = "waveform", action = actions.voice) else null,
             if (online && state.screen != null) MenuItem("Screen", icon = "display", action = actions.screen) else null,
             if (online && state.network?.shown == true) MenuItem("Network", icon = NETWORK_ICON, action = actions.network) else null,
@@ -270,6 +265,25 @@ private const val NETWORK_ICON = "codync.network"
     DropdownMenu({ ConnectionRoute.entries.map { route -> MenuItem(routeTitle(route, computer.cloud), icon = route.icon, selected = route == computer.route) { store.setRoute(route) } } },
         Modifier.fillMaxWidth(), label = "Connection") {
         ConnectionRowContent(computer.route, computer.cloud, chevron = true)
+    }
+}
+
+/** How long the computer keeps a thread after it last finished (iOS `ThreadKeepRow`): never, or so many days. */
+@Composable private fun DeleteOldThreadsRow(days: Int, choose: (Int) -> Unit) {
+    val choices = threadKeepChoices(days)
+    val current = choices.first { it.first == days }.second
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        DropdownMenu({ choices.map { (value, title) -> MenuItem(title, selected = value == days) { choose(value) } } }, Modifier.fillMaxWidth(),
+            label = "Delete old threads") {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.width(26.dp), contentAlignment = Alignment.Center) { Symbol("clock.arrow.circlepath", size = 20.dp, tint = Palette.text) }
+                Text(tr("Delete old threads"), Modifier.weight(1f), style = Type.body, color = Palette.text)
+                Text(tr(current), style = Type.body, color = Palette.secondary, maxLines = 1)
+                Symbol("chevron.down", size = 13.dp, tint = Palette.tertiary)
+            }
+        }
+        Text(tr("Counts from when a thread last finished. Its chat and its own folder are deleted with it."), Modifier.padding(start = 38.dp),
+            style = Type.footnote, color = Palette.secondary)
     }
 }
 

@@ -3,13 +3,14 @@ import { useListFlip } from '../lib/slide'
 import { alertAnalyticsKind } from '@shared/alerts'
 import type { WindowCommand } from '@shared/ipc'
 import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startup'
-import { detailMinWidth, railWidth, sidebarMinWidth } from '@shared/chat-layout'
+import { detailMinWidth, frameInset, railWidth, sidebarMinWidth } from '@shared/chat-layout'
 import { draftOf, isGroup, type Bot, type BotDraft } from '@shared/models'
 import { isLive, threadSections } from '@shared/work'
 import { CharacterAvatar } from '../components/Avatar'
 import { Button, IconButton, ResizeHandle } from '../components/Controls'
 import { Dialog, ModalHeader, Sheet } from '../components/Overlay'
 import { AnchoredMenu, type MenuItem } from '../components/Menu'
+import { Icon } from '../components/Icon'
 import { HStack, Spacer } from '../components/Stack'
 import { noVisits, step, visit } from '../lib/visits'
 import { NO_BAR_SLOTS, WindowBar, WindowBarSlots } from './WindowBar'
@@ -22,8 +23,9 @@ import { analytics } from '../store/analytics'
 import { refKey, sameRef, parseRef, type AppModel, type BotRef } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
+import { withOlderThreads } from '../store/older-threads'
 import { BotRoster } from './BotRoster'
-import { NavRail, OpenExtensions, type AppPage } from './NavRail'
+import { NavRail, OpenExtensions, pageIcon, type AppPage } from './NavRail'
 import { ThreadDetail, ThreadList, canStartThread, type ThreadPick } from './ThreadsPage'
 import { botItems, threadItems, workflowItems } from './search-items'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
@@ -44,6 +46,7 @@ import { useFindBar } from './use-conversation-find'
 import { SearchPalette } from './SearchPalette'
 import { WorkflowsView, type WorkflowFocus } from './workflows/WorkflowsView'
 import { WorkflowList, type WorkflowPlace } from './workflows/WorkflowList'
+import { computerSymbol } from './ComputerBadge'
 import { canOpenWorkflows } from './workflows/pins'
 import { computerChoice, firstAmong } from './computer-choice'
 import { AccountWelcomeView, useWelcomeGate } from './AccountWelcomeView'
@@ -267,7 +270,7 @@ function ChatSplitView() {
   useEffect(() => {
     const onResize = () => {
       setWindowSize({ width: window.innerWidth, height: window.innerHeight })
-      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(sidebarMinWidth, window.innerWidth - railWidth - detailMinWidth)))
+      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(sidebarMinWidth, window.innerWidth - railWidth - frameInset - detailMinWidth)))
     }
     // A window opened narrow starts with a list that fits it.
     onResize()
@@ -286,8 +289,8 @@ function ChatSplitView() {
   const localOnline = !!app.local && onlineStores.includes(app.local)
   const roster = useComputerRoster(app, shown)
   const visibleRoster = roster.items
-  // The Threads page lists the boxes of threads without a bot too, of the computers shown.
-  const threadRoster = [...roster.ordered, ...app.plainBoxes.filter((r) => shown.has(r.ref.computerId))]
+  // The Threads page lists the boxes of threads without a bot too, of the computers shown, and their older threads.
+  const threadRoster = withOlderThreads([...roster.ordered, ...app.plainBoxes.filter((r) => shown.has(r.ref.computerId))], (of) => of.store.olderThreads.shown)
   const threads = threadSections(threadRoster, threadsGroup, (of) => refKey(of.ref), (of) => of.store.hostName, { status: threadsByStatus, active: threadsByActivity })
   /** A bot's chat, on the Bots page. */
   const openBot = (ref: BotRef) => {
@@ -318,12 +321,19 @@ function ChatSplitView() {
     if (next !== page) setPage(next)
     else if (listed) setListHidden(!listHidden)
   }
+  /** The Workflows list unfolds a computer whose workflow the canvas turns to, so its row shows. */
+  const unfoldWorkflows = (computerId: string) => {
+    const folded = prefs.foldedWorkflowComputers.get()
+    if (folded.includes(computerId)) prefs.foldedWorkflowComputers.set(folded.filter((id) => id !== computerId))
+  }
   /** A new workflow on `computerId`, shown once made. */
   const newWorkflow = (computerId: string) => {
+    unfoldWorkflows(computerId)
     setWorkflowsOf(computerId)
     setWorkflowFocus({ create: true })
   }
   const openWorkflows = (computerId: string, workflowId?: string) => {
+    unfoldWorkflows(computerId)
     setWorkflowsOf(computerId)
     setWorkflowFocus(workflowId ? { id: workflowId } : null)
     setPage('workflows')
@@ -399,6 +409,9 @@ function ChatSplitView() {
   // Of the computers offering workflows: the one asked for, else the selected bot's, this one, any.
   const workflowStores = onlineStores.filter(canOpenWorkflows)
   const workflowStore = firstAmong(workflowStores, [workflowsOf ? app.store(workflowsOf) : null, selectedStore, app.local])
+  // The header's + on Workflows: the computers listed that take a new workflow, picked from a menu when there are several.
+  const workflowHomes = shownStores.filter(canOpenWorkflows)
+  const newWorkflowItems = (): MenuItem[] => workflowHomes.map((s) => ({ title: s.hostName, verbatim: true, icon: computerSymbol(s.computer.device), action: () => newWorkflow(s.computer.id) }))
   const extensionsStore = (extensionsOf ? app.store(extensionsOf) : null) ?? selectedStore ?? app.local ?? onlineStores[0] ?? null
   const extensionsChoice = computerChoice(onlineStores, extensionsStore?.computer.id, setExtensionsOf)
 
@@ -435,7 +448,7 @@ function ChatSplitView() {
 
   // The list's edge drags its width; dragged most of the way shut, it folds away.
   const [resizing, setResizing] = useState(false)
-  const sidebarMax = Math.min(420, window.innerWidth - railWidth - detailMinWidth)
+  const sidebarMax = Math.min(420, window.innerWidth - railWidth - frameInset - detailMinWidth)
   const resizeSidebar = (proposed: number) => {
     const hide = proposed < 120
     if (hide !== listHidden) setListHidden(hide)
@@ -475,21 +488,25 @@ function ChatSplitView() {
   }
 
   const width = listHidden ? 0 : sidebarWidth
-  // The pages with a list beside their content: its title, its header's +, and what its Search finds.
+  // The pages with a list beside their content: its title, its header's + (and the menu that + opens), and what its Search finds.
   const lists = {
     bots: {
       title: 'Bots',
       add: <IconButton title="New" icon="plus" size={32} className="sidebar-header-action" buttonRef={newButton} menuOpen={newMenu} onClick={() => setNewMenu((o) => !o)} disabled={!onlineStores.length} />,
+      menu: newItems,
       search: { label: 'Search bots', empty: 'No matching bots', items: () => botItems(visibleRoster, openBot) },
     },
     threads: {
       title: 'Threads',
       add: <IconButton title="New thread" icon="plus" size={32} className="sidebar-header-action" onClick={() => startThread(null)} disabled={!canStartThread(threadRoster)} />,
+      menu: undefined,
       search: { label: 'Search', empty: 'No results', items: () => threadItems(threadRoster, setPicked) },
     },
     workflows: {
       title: 'Workflows',
-      add: <IconButton title="New workflow" icon="plus" size={32} className="sidebar-header-action" onClick={() => workflowStore && newWorkflow(workflowStore.computer.id)} disabled={!workflowStore} />,
+      add: <IconButton title="New workflow" icon="plus" size={32} className="sidebar-header-action" buttonRef={newButton} menuOpen={workflowHomes.length > 1 ? newMenu : undefined}
+        onClick={() => (workflowHomes.length > 1 ? setNewMenu((o) => !o) : workflowHomes[0] && newWorkflow(workflowHomes[0].computer.id))} disabled={!workflowHomes.length} />,
+      menu: newWorkflowItems,
       search: { label: 'Search', empty: 'No results', items: () => workflowItems(shownStores, openWorkflows) },
     },
   }
@@ -549,12 +566,14 @@ function ChatSplitView() {
         setEnd={setBarEnd}
       />
       <NavRail page={page} go={go} working={threads.working} approvals={app.approvals.length} workflows={!!workflowStore} />
+      <div className="page-frame">
       {list ? (
         <>
           <aside ref={sidebar} className={`sidebar ${resizing ? 'resizing' : ''}`} style={{ width }} inert={listHidden}>
             {/* Keeps its width while the sidebar opens or closes: the list slides under the edge instead of squeezing. */}
             <div className="sidebar-content" style={{ width: sidebarWidth }}>
               <div className="sidebar-header drag">
+                <Icon name={pageIcon(page)} size={18} weight="semibold" className="sidebar-title crowded" />
                 <Text size="title3" weight="semibold" tone="text" truncate className="sidebar-title crowded">{tr(list.title)}</Text>
                 <Spacer />
                 <HStack gap={6} className="no-drag">
@@ -562,7 +581,7 @@ function ChatSplitView() {
                   <IconButton title="Search" icon="magnifyingglass" size={32} className="sidebar-header-action" onClick={() => setSearching(true)} />
                   {list.add}
                 </HStack>
-                <AnchoredMenu open={newMenu} onClose={() => setNewMenu(false)} anchor={newButton} items={newItems} />
+                <AnchoredMenu open={newMenu} onClose={() => setNewMenu(false)} anchor={newButton} items={list.menu} />
               </div>
               {page === 'bots' ? (
                 <div className="roster" ref={listRef} tabIndex={0} onKeyDown={onListKey}>
@@ -583,7 +602,7 @@ function ChatSplitView() {
                 </div>
               ) : page === 'workflows' ? (
                 <div className="roster">
-                  <WorkflowList stores={shownStores} place={shownWorkflow} open={openWorkflows} create={newWorkflow} />
+                  <WorkflowList stores={shownStores} place={shownWorkflow} open={openWorkflows} />
                 </div>
               ) : (
                 <div className="roster">
@@ -647,6 +666,7 @@ function ChatSplitView() {
           )}
         </main>
       )}
+      </div>
 
       {context ? (
         <div className="context-layer" onMouseDown={(e) => e.target === e.currentTarget && setContext(null)}>

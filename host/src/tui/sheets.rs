@@ -87,7 +87,9 @@ pub fn page_tabs(buf: &mut Buffer, inner: Rect, current: Page) -> Rect {
 
 pub fn routine(buf: &mut Buffer, area: Rect, f: &RoutineForm) {
     let t = theme();
-    let r = centered(area, 84, 15);
+    // The folder row and its hint push the schedule down.
+    let d = if f.folder.is_some() { 3 } else { 0 };
+    let r = centered(area, 84, 15 + d);
     let title = if f.id.is_some() { "Edit routine" } else { "New routine" };
     let inner = frame_box(buf, r, t.text, t.panel, Some((title, t.text)));
     let label = |on: bool| if on { t.bold } else { t.secondary }.patch(t.panel);
@@ -104,20 +106,34 @@ pub fn routine(buf: &mut Buffer, area: Rect, f: &RoutineForm) {
         "What the bot does each time",
         f.field == RoutineField::Instruction,
     );
-    put(buf, inner.x, inner.y + 7, 9, "When", label(f.field == RoutineField::When));
+    if let Some(folder) = &f.folder {
+        let on = f.field == RoutineField::Folder;
+        put(buf, inner.x, inner.y + 7, 9, tr("Folder").as_ref(), label(on));
+        input_line(buf, at(inner.y + 7), inner.y + 7, folder, "Bot's folder", on, false);
+        let hint = tr("Each run works here in a thread of its own.");
+        put(buf, vx, inner.y + 8, vw, hint.as_ref(), t.dim.patch(t.panel));
+    }
+    put(buf, inner.x, inner.y + 7 + d, 9, "When", label(f.field == RoutineField::When));
     let placeholder = if f.original_text.is_empty() {
         "daily 09:00 · weekdays 09:00 · every 2h · 0 9 * * 1-5 · webhook"
     } else {
         &f.original_text
     };
-    input_line(buf, at(inner.y + 7), inner.y + 7, &f.when, placeholder, f.field == RoutineField::When, false);
-    put(buf, vx, inner.y + 8, vw, "or hourly :30 · weekly mon 09:00 · 2026-10-01 09:00 (once)", t.dim.patch(t.panel));
-    put(buf, vx, inner.y + 9, vw, "every = from now on · webhook = when called", t.dim.patch(t.panel));
+    input_line(buf, at(inner.y + 7 + d), inner.y + 7 + d, &f.when, placeholder, f.field == RoutineField::When, false);
+    put(
+        buf,
+        vx,
+        inner.y + 8 + d,
+        vw,
+        "or hourly :30 · weekly mon 09:00 · 2026-10-01 09:00 (once)",
+        t.dim.patch(t.panel),
+    );
+    put(buf, vx, inner.y + 9 + d, vw, "every = from now on · webhook = when called", t.dim.patch(t.panel));
     let (zone_hint, zone_style) = match super::manage::complete_zone(&f.when.text, crate::store::now_ms()) {
         Some(done) => (format!("tab → {done}"), t.secondary),
         None => (format!("times in {}; end with a zone to change it", crate::routines::local_zone()), t.dim),
     };
-    put(buf, vx, inner.y + 10, vw, &zone_hint, zone_style.patch(t.panel));
+    put(buf, vx, inner.y + 10 + d, vw, &zone_hint, zone_style.patch(t.panel));
     let by = inner.bottom() - 1;
     if let Some(e) = &f.error {
         put(buf, inner.x, by - 1, inner.width, e, t.red.patch(t.panel));

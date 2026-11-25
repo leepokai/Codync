@@ -130,16 +130,19 @@ struct BotSettingsForm: View {
         }
     }
 
-    /// Advisor mode, from a host that has it: its threads' agent and fallbacks show once it's on.
+    /// Advisor mode, from a host that has it: its threads' agent and fallbacks show once it's on, in its row (one
+    /// setting, no lines inside it).
     @ViewBuilder private var advisor: some View {
         if draft.threadFallbacks != nil {
-            SwitchRow("Advisor mode", detail: "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.",
-                      isOn: Binding(get: { draft.threadAgent != nil }, set: { on in
-                          withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.setAdvisor(on, backends: model.hello?.backends ?? []) }
-                      }))
-            if draft.threadAgent != nil {
-                ThreadsAgentRow(draft: $draft, bot: bot)
-                FallbackList(draft: $draft, bot: bot, threads: true)
+            VStack(alignment: .leading, spacing: 16) {
+                SwitchRow("Advisor mode", detail: "The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.",
+                          isOn: Binding(get: { draft.threadAgent != nil }, set: { on in
+                              withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.setAdvisor(on, backends: model.hello?.backends ?? []) }
+                          }))
+                if draft.threadAgent != nil {
+                    ThreadsAgentRow(draft: $draft, bot: bot)
+                    FallbackList(draft: $draft, bot: bot, threads: true)
+                }
             }
         }
     }
@@ -149,6 +152,36 @@ struct BotSettingsForm: View {
         if bot?.compaction != nil, draft.compaction != nil {
             CompactionPicker(selection: Binding(get: { draft.compaction ?? .off }, set: { draft.compaction = $0 }),
                              range: bot?.compactionTokens)
+        }
+    }
+
+    /// The bot's one folder, on a host without projects: its own, or a project the user picks.
+    @ViewBuilder private var folderPicker: some View {
+        ValueRow("Workspace", detail: draft.cwd.isEmpty
+                 ? "This bot has its own space for files. It can work in other folders when you ask."
+                 : "This project is the default starting folder. The bot can work elsewhere when you ask.") {
+            DropdownMenu {
+                [
+                    MenuItem("Own folder", selected: draft.cwd.isEmpty) {
+                        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.cwd = "" }
+                    },
+                    MenuItem("Choose project folder…", selected: !draft.cwd.isEmpty) {
+                        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { pickingFolder = true }
+                    },
+                ]
+            } label: {
+                HStack(spacing: 6) {
+                    Text(draft.cwd.isEmpty ? L10n.tr("Own folder") : (draft.cwd as NSString).lastPathComponent).lineLimit(1)
+                    Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(Palette.secondary)
+                }
+                .foregroundStyle(Palette.text)
+                .outlinedPill()
+            }
+            .help(draft.cwd.isEmpty ? "A persistent workspace allocated for this bot" : draft.cwd)
+        }
+        // From a host that says, for any folder (one Codync made too).
+        if let bot, bot.threadWorktrees != nil {
+            GitStateRow(state: bot.gitState)
         }
     }
 
@@ -198,31 +231,10 @@ struct BotSettingsForm: View {
                 ValueRow("Computer") {
                     Text(model.hostName).lineLimit(1)
                 }
-                ValueRow("Workspace", detail: draft.cwd.isEmpty
-                         ? "This bot has its own space for files. It can work in other folders when you ask."
-                         : "This project is the default starting folder. The bot can work elsewhere when you ask.") {
-                    DropdownMenu {
-                        [
-                            MenuItem("Own folder", selected: draft.cwd.isEmpty) {
-                                withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.cwd = "" }
-                            },
-                            MenuItem("Choose project folder…", selected: !draft.cwd.isEmpty) {
-                                withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { pickingFolder = true }
-                            },
-                        ]
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text(draft.cwd.isEmpty ? L10n.tr("Own folder") : (draft.cwd as NSString).lastPathComponent).lineLimit(1)
-                            Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(Palette.secondary)
-                        }
-                        .foregroundStyle(Palette.text)
-                        .outlinedPill()
-                    }
-                    .help(draft.cwd.isEmpty ? "A persistent workspace allocated for this bot" : draft.cwd)
-                }
-                // From a host that says, for any folder (one Codync made too).
-                if let bot, bot.threadWorktrees != nil {
-                    GitStateRow(state: bot.gitState)
+                if model.hello?.projects == true {
+                    BotProjects(draft: $draft, bot: bot)
+                } else {
+                    folderPicker
                 }
                 ApprovalPicker(draft: $draft, reload: modelReload)
                 // Only from a host with a box (its bots say).
@@ -238,7 +250,7 @@ struct BotSettingsForm: View {
                 }
                 // Only in a project folder in a git repository (a bot's own folder keeps all its work in one place),
                 // from a host that has the setting.
-                if bot?.gitRepo == true, bot?.managedWorkspace == false, let worktrees = draft.threadWorktrees {
+                if model.hello?.projects != true, bot?.gitRepo == true, bot?.managedWorkspace == false, let worktrees = draft.threadWorktrees {
                     SwitchRow("Worktree per thread", detail: "Threads that work at once in this repository each get their own branch.",
                               isOn: Binding(get: { worktrees }, set: { draft.threadWorktrees = $0 }))
                 }

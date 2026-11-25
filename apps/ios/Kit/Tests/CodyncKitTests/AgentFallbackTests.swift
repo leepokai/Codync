@@ -62,6 +62,12 @@ private func updateBody(_ draft: BotDraft) throws -> [String: Any] {
     #expect(line.isChat && line.data.agentSwitch?.to == "codex" && line.data.agentSwitch?.carried == "This turn so far")
     let back = try entry(#"{"text":"Back on Claude Code.","style":"info","agentSwitch":{"from":"codex","to":"claude","back":true,"reason":null,"resetsAt":null,"carried":null}}"#)
     #expect(back.data.agentSwitch?.back == true && back.data.agentSwitch?.carried == nil)
+    // An older host's line has none of the fields of a switch the user made.
+    #expect(back.data.agentSwitch?.manual == nil && back.data.agentSwitch?.state == nil && back.data.agentSwitch?.fromName == nil)
+    let manual = try entry(#"{"text":"Context handoff pending: Claude Code → Codex (Work)","style":"info","agentSwitch":{"from":"claude","to":"codex","back":false,"reason":null,"resetsAt":null,"carried":null,"manual":true,"state":"pending","fromName":"Claude Code","toName":"Codex (Work)"}}"#)
+    let change = try #require(manual.data.agentSwitch)
+    #expect(change.manual == true && change.state == .pending && change.fromName == "Claude Code" && change.toName == "Codex (Work)")
+    #expect(try entry(#"{"text":"x","agentSwitch":{"manual":true,"state":"later"}}"#).data.agentSwitch?.state == nil)
     #expect(try entry(#"{"text":"x","agentSwitch":{"to":7,"newer":[1]}}"#).data.agentSwitch?.to == nil)
     #expect(try entry(#"{"text":"Usage limit","style":"error","addFallback":true}"#).data.addFallback == true)
 }
@@ -247,6 +253,15 @@ private let claudeJSON = #"{"id":"claude","name":"Claude Code","available":true,
     #expect(claude.loginSeats(label: "Claude Code", on: AgentLogin(backend: "claude"), logins: ["a3"]).map(\.login) == [AgentLogin(backend: "claude", loginProfile: "a3")])
     // Without login profiles, just the agent.
     #expect(codex.loginSeats(label: "Codex", on: AgentLogin(backend: "claude")) == [LoginSeat(login: AgentLogin(backend: "codex"), name: "Codex")])
+}
+
+@Test func aChatsBoxLeavesOutADefaultLoginWaitingOnASignIn() throws {
+    var claude = try JSONDecoder().decode(Backend.self, from: Data(claudeJSON.utf8))
+    #expect(claude.readyLogins(on: AgentLogin(backend: "codex")) == nil, "signed in: the usual logins")
+    claude.signedIn = false
+    #expect(claude.readyLogins(on: AgentLogin(backend: "codex")) == claude.loginProfileChoices(picked: nil).map(\.id))
+    #expect(claude.readyLogins(on: AgentLogin(backend: "claude")) == nil, "the one in use stays")
+    #expect(claude.readyLogins(on: AgentLogin(backend: "claude", loginProfile: "a2"))?.contains(nil) == false)
 }
 
 @Test func aStepPickedInPlaceGetsItsOwnBackOnItsOwnAgent() throws {

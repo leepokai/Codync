@@ -135,7 +135,7 @@ the account approval flow. **Start over** resets the onboarding choice.
 
 The desktop app's menu bar **Settings → Reset all data…**, or **Reset everything** under Reset on the Computers page (both asked twice in the window), is
 the computer's start over: it removes this computer from the account, revokes every
-paired device, signs out, uninstalls the host, deletes its data folder and the app's
+paired device, signs out, uninstalls the host, removes the Codync Screen helper (macOS), deletes its data folder and the app's
 settings, and relaunches into the welcome screen. The host comes back with a new
 identity, so phones see the old computer as **No access** (if they were connected),
 and phones and the desktop app see it as an older copy once the new one is reachable

@@ -128,6 +128,8 @@ export type HostEvent =
   | { type: 'name'; name: string }
   /** The computer's automatic bot order was switched (from any device): its `hello` says it from now on. */
   | { type: 'autoOrder'; enabled: boolean }
+  /** The computer's choice of when old threads are deleted changed (from any device): its `hello` says it from now on. */
+  | { type: 'threadKeepDays'; days: number }
   /** This computer's network changed (members, roles, presence, offered bots) or cloud assistants were switched. */
   | { type: 'network'; network: NetworkView }
   /** For the voice of a call in this app (only the computer's own apps receive this computer's calls' cues). */
@@ -199,6 +201,8 @@ export function parseEvent(line: string): HostEvent | null {
       return typeof raw.name === 'string' ? { type, name: raw.name } : null
     case 'autoOrder':
       return typeof raw.enabled === 'boolean' ? { type, enabled: raw.enabled } : null
+    case 'threadKeepDays':
+      return typeof raw.days === 'number' ? { type, days: raw.days } : null
     case 'network':
       return raw.network ? { type, network: raw.network as NetworkView } : null
     case 'call': {
@@ -285,12 +289,13 @@ export class HostClient {
   /** Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message. */
   static uploadChunk = 384 * 1024
 
-  /** One file for a message, in chunks: to `botId`'s chat, or with `taskId` to the thread of that task of the bot's. */
+  /** One file for a message, in chunks: to `botId`'s chat, or with `taskId` to the thread of that task of the bot's;
+   *  with no `botId` (''), for a thread starting without a bot. */
   async upload(botId: string, uploadId: string, name: string, data: Uint8Array, taskId?: string) {
     let offset = 0
     do {
       const end = Math.min(offset + HostClient.uploadChunk, data.length)
-      await this.call('upload', { botId, ...(taskId ? { taskId } : {}), uploadId, name, data: toBase64(data.subarray(offset, end)), offset, done: end === data.length }, 60_000)
+      await this.call('upload', { ...(botId ? { botId } : {}), ...(taskId ? { taskId } : {}), uploadId, name, data: toBase64(data.subarray(offset, end)), offset, done: end === data.length }, 60_000)
       offset = end
     } while (offset < data.length)
   }

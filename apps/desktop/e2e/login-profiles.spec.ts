@@ -91,13 +91,18 @@ test('an agent gets another login profile, it signs in, a bot runs on it, and it
     await page.locator('.thread-option[title="Model"]').first().click()
     await railSeat(OWN).click()
     await expect.poll(loginOf).toBe(null)
+    // The bot had a conversation: a divider says its next message carries it, and moving on again keeps that one.
+    const divider = page.getByRole('log', { name: 'Messages' }).locator('.switch-divider')
+    await expect(divider).toHaveCount(1)
+    await expect(divider).toContainText('Context handoff pending')
     await railSeat(WORK).click()
     await expect.poll(loginOf).toBe(profileId)
     await page.keyboard.press('Escape')
+    await expect(divider).toHaveCount(1)
 
     // A new thread with the bot runs on the login its model panel picks (`setup.loginProfile`); the bot keeps its own.
     await openPage(page, 'Threads')
-    await page.locator('aside.sidebar .thread-row', { hasText: 'New thread' }).first().click()
+    await page.locator('aside.sidebar .sidebar-header-action[aria-label="New thread"]').click()
     const start = page.locator('.new-thread')
     const chooser = start.locator('.thread-option[title="Choose a bot"]')
     if (await chooser.isEnabled()) {
@@ -157,6 +162,10 @@ test('an agent gets another login profile, it signs in, a bot runs on it, and it
     await api(page, 'updateBot', { id: botId, fallbacks: [] })
     await typeMessage(page, 'hi again')
     await expect(page.getByRole('log', { name: 'Messages' }).getByText('Devin stand-in on the default login, signed out')).toBeVisible()
+    // That message carried the conversation, which the divider unfolds to.
+    await expect(divider).toContainText('Context handed off')
+    await divider.getByRole('button').click()
+    await expect(page.locator('.agent-switch-carried')).toContainText(`Devin stand-in on ${profileId}, signed in`)
 
     // Login profiles lists it and removes it, now that no bot runs on it.
     const row = (await openLoginProfiles(page, agent)).locator('.login-profile', { hasText: WORK })

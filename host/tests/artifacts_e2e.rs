@@ -13,13 +13,11 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedReceiver;
 
-/// A bot on the artifact fixture, working in `<home>/workspace`: that folder and the bot's id.
+/// A bot on the artifact fixture, working in its own folder: that folder and the bot's id.
 async fn artifact_bot(host: &Host) -> (PathBuf, String) {
-    let cwd = host.home.join("workspace");
-    std::fs::create_dir_all(&cwd).unwrap();
     let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/artifact_agent.py");
-    let created = host.call("createBot", json!({"name":"Artifacts", "backend":"custom", "cwd":cwd, "command":common::python_agent(&agent), "connectors":[], "notify":false})).await;
-    (cwd, created["bot"]["id"].as_str().unwrap().to_owned())
+    let created = host.call("createBot", json!({"name":"Artifacts", "backend":"custom", "command":common::python_agent(&agent), "connectors":[], "notify":false})).await;
+    (common::folder(&host.home, "Artifacts"), created["bot"]["id"].as_str().unwrap().to_owned())
 }
 
 /// The bot's chat cards once `turns` turns have ended with `Done.` and it holds `cards` artifact cards.
@@ -191,10 +189,8 @@ async fn groups_and_other_bots_requests_post_no_artifact_card() {
     let group = host.call("createBot", json!({"name":"Group", "kind":"group", "members":[bot]})).await;
     let group = group["bot"]["id"].as_str().unwrap();
     host.call("send", json!({"botId": group, "text": "make-artifact"})).await;
-    let caller_dir = host.home.join("caller");
-    std::fs::create_dir_all(&caller_dir).unwrap();
     let caller_agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
-    let caller = host.call("createBot", json!({"name":"Caller", "backend":"custom", "cwd":caller_dir, "command":common::python_agent(&caller_agent), "connectors":[], "notify":false})).await;
+    let caller = host.call("createBot", json!({"name":"Caller", "backend":"custom", "command":common::python_agent(&caller_agent), "connectors":[], "notify":false})).await;
     let caller = caller["bot"]["id"].as_str().unwrap();
     host.call("send", json!({"botId": caller, "text": "warm up"})).await;
 

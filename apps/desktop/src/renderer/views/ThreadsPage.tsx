@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { isGroup } from '@shared/models'
 import { taskLine, threadSections, type WorkTask } from '@shared/work'
 import { BotAvatar, NoBotAvatar } from '../components/Avatar'
@@ -6,7 +6,7 @@ import { IconButton } from '../components/Controls'
 import { AnchoredMenu, useContextMenu, type MenuItem } from '../components/Menu'
 import { Icon } from '../components/Icon'
 import { Text } from '../components/Text'
-import { prefs, usePref } from '../lib/prefs'
+import { prefs, toggled, usePref } from '../lib/prefs'
 import { useTr } from '../lib/use-language'
 import { useScreenViewed } from '../store/analytics'
 import { refKey, sameRef, type BotRef, type RosterItem } from '../store/app-model'
@@ -79,6 +79,9 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
   )
   const label = (title: string) => <Text as="div" size="caption" tone="tertiary" className="thread-label">{tr(title)}</Text>
   const shownRecent = more ? recent : recent.slice(0, SHOWN_RECENT)
+  // Older threads: each computer's first page once the list shows, the next as its end scrolls into view.
+  const stores = [...new Set(roster.map((r) => r.store))]
+  useEffect(() => stores.forEach((s) => s.loadFirstOlderThreads()))
   return (
     <>
       {needsYou.length ? <section aria-label={tr('Needs you')}>{label('Needs you')}{needsYou.map((r) => row(r))}</section> : null}
@@ -103,7 +106,7 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
                     title={title}
                     mark={loud ? <StatusMark status={loud.task.status} /> : null}
                     folded={isFolded}
-                    onFold={() => setFolded(isFolded ? folded.filter((key) => key !== group.key) : [...folded, group.key])}
+                    onFold={() => setFolded(toggled(folded, group.key))}
                     add={group.kind === 'bot' && (threadBots([of]).length || plainStores([of]).length) ? { title: 'New thread', action: () => start(of.ref) } : null}
                   />
                   <div className={`computer-roster-content ${isFolded ? 'collapsed' : ''}`} inert={isFolded} aria-hidden={isFolded}>
@@ -127,6 +130,7 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
           ) : null}
         </section>
       ) : null}
+      {recent.length > shownRecent.length ? null : <ListEnd reached={() => stores.forEach((s) => s.loadOlderThreads())} />}
       {asking ? (
         <StoreContext.Provider value={asking.of.store}>
           <StopWorkDialog botId={asking.of.bot.id} taskId={asking.kind === 'stop' ? asking.task.id : null} onClose={() => setAsking(null)} />
@@ -135,6 +139,17 @@ export function ThreadList({ roster, picked, pick, start, openChat }: {
       ) : null}
     </>
   )
+}
+
+/** The list's end: `reached` while it is in view (watched again on each render, so a page that leaves it in view asks for the next). */
+function ListEnd({ reached }: { reached: () => void }) {
+  const end = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const seen = new IntersectionObserver((at) => at.some((e) => e.isIntersecting) && reached())
+    if (end.current) seen.observe(end.current)
+    return () => seen.disconnect()
+  }, [reached])
+  return <div ref={end} aria-hidden />
 }
 
 /** How a thread stands, at the end of its row: working, needs the user, went wrong, waits; nothing once it is done. */
@@ -188,7 +203,7 @@ const plainStores = (roster: RosterItem[]) =>
  * Beside the list: the thread picked there, in the chat's form (`ThreadChat`); one that still waits for a place says
  * so. With none picked,
  * or one whose task left its bot's box, the page a new thread starts from (`NewThread`, with the bot `starting`
- * names, else the lead bot), or the page's mark where no bot can start one.
+ * names, else no bot where the computer allows it, else the lead bot), or the page's mark where no bot can start one.
  */
 export function ThreadDetail({ roster, picked, pick, starting, start, openChat }: {
   roster: RosterItem[]
@@ -219,15 +234,13 @@ export function ThreadDetail({ roster, picked, pick, starting, start, openChat }
     )
   }
   const bots = threadBots(roster)
-  // A ref without a bot (`botId` '') is a thread without one on that computer, as is the box's own ref.
+  // A thread starts with the bot `starting` names; otherwise (the header's +, or `botId` '' or the box of threads
+  // without a bot) with none, on its computer where it can, else the first computer that can.
   const plainOn = plainStores(roster)
-  const plain = starting && (starting.botId === '' || roster.some((r) => r.bot.plain && sameRef(r.ref, starting)))
-    ? plainOn.find((r) => r.ref.computerId === starting.computerId)
-    : undefined
-  const first: ThreadWith | undefined = plain
-    ? { ref: { computerId: plain.ref.computerId, botId: '' }, store: plain.store, bot: null }
-    : bots.find((r) => sameRef(r.ref, starting)) ?? bots.find((r) => r.bot.lead) ?? bots[0]
-      ?? (plainOn[0] ? { ref: { computerId: plainOn[0].ref.computerId, botId: '' }, store: plainOn[0].store, bot: null } : undefined)
+  const chosen = bots.find((r) => sameRef(r.ref, starting))
+  const plain = chosen ? undefined : plainOn.find((r) => r.ref.computerId === starting?.computerId) ?? plainOn[0]
+  const first: ThreadWith | undefined = chosen
+    ?? (plain ? { ref: { computerId: plain.ref.computerId, botId: '' }, store: plain.store, bot: null } : bots.find((r) => r.bot.lead) ?? bots[0])
   if (!first) {
     return (
       <div className="empty-detail">
@@ -241,6 +254,7 @@ export function ThreadDetail({ roster, picked, pick, starting, start, openChat }
       <ThreadStart
         key={refKey(first.ref)}
         bots={bots}
+        computers={plainOn}
         of={first}
         choose={(ref, none) => start(none ? { computerId: ref.computerId, botId: '' } : ref)}
         started={(ref, taskId) => pick({ ref, taskId })}

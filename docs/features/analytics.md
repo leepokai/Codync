@@ -70,13 +70,28 @@ can be traced from the events around it:
   [analytics events](../reference/analytics-events.md), and check they arrive in PostHog
   (`env = dev`) during the change's e2e test.
 
+## Fixing a bug
+
+Every bug fix leaves a way to see in PostHog whether the bug still happens in the versions after it:
+
+- **A failure event that names the bug.** The fix keeps, or adds in the same change, a failure event
+  (or an `outcome`/`error` category) that fires when this bug happens, distinct enough that its count
+  is this bug and not a neighbour's. When the fix turns a failure into a handled case, give that case
+  its own category (as `own_folder_save_failed` got `stage: unreadable`), so the handled path shows
+  apart from the bug.
+- **An insight on the *Bug fixes* dashboard** (id 2404829), named `Fixed in X.Y.Z: <the bug>`: that
+  event, production only (`env = main`), users per day broken down by `app_version`, with the fix's
+  commit in its description. The bug is gone when the fixed versions stop showing it; if they don't,
+  reopen the issue.
+
 ## Where events come from
 
 - **Host** (`host/src/analytics.rs`, `analytics/`): `api::dispatch` maps successful API calls to
   events (`analytics::observe_call`), so every client is covered once; a resent message (same
   `clientNonce`) is not counted again. Bot actors report `turn_finished`, `agent_fell_back` (a turn moved on to the bot's next
   agent: the agent and why, see [agent fallbacks](agent-fallback.md)), `handoff_carried` (what the agent taking over
-  was told first, by size) and `agent_retired` (an agent stopped between
+  was told first, by size; `kind: move` after the user moved the bot to another folder), `agent_switched_by_user` (the user moved a bot with a conversation to another agent or
+  login profile: the agent, `loginProfile` when on one) and `agent_retired` (an agent stopped between
   turns to give back its processes, or because it dropped Codync's MCP servers, and why), the phone channel
   reports pairing and daily phone connections, and the host reports its own start. Each event
   carries its own `timestamp` and `uuid` (a resent batch counts once) and the computer's key

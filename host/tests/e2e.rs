@@ -531,8 +531,10 @@ async fn own_folders_are_unique_persistent_and_optional() {
     assert_eq!(renamed["bot"]["cwd"], first["cwd"]);
     let project = host.home.join("project");
     std::fs::create_dir(&project).unwrap();
+    // An older app's folder picker: the folder becomes the first project, and the bot stays in its own folder.
     let explicit = host.call("updateBot", json!({"id": first["id"], "cwd": project})).await;
-    assert_eq!(explicit["bot"]["managedWorkspace"], false);
+    assert_eq!((&explicit["bot"]["cwd"], &explicit["bot"]["projects"]), (&first["cwd"], &json!([project])));
+    assert_eq!(explicit["bot"]["managedWorkspace"], true);
     let restored = host.call("updateBot", json!({"id": first["id"], "cwd": ""})).await;
     assert_eq!(restored["bot"]["cwd"], first["cwd"]);
     assert_eq!(std::fs::read_to_string(dir.join("keep.txt")).unwrap(), "persistent output");

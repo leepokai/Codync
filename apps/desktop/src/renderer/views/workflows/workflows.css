@@ -753,6 +753,24 @@
     display: none;
   }
 }
+/* Too narrow for the two bars side by side: the tools stand over the zoom, the minimap over the tools
+   (and the pen's row), and History and Run show only their icons. */
+@container (max-width: 640px) {
+  .workflow-tools {
+    left: 16px;
+    right: auto;
+    bottom: 60px;
+  }
+  .workflow-tools-sub {
+    bottom: 104px;
+  }
+  .workflow-minimap {
+    bottom: 148px;
+  }
+  .workflow-hud-label {
+    display: none;
+  }
+}
 
 .workflow-pin {
   width: 100%;

@@ -2,7 +2,7 @@
 
 Files travel in both directions: users attach inputs, and bots explicitly share generated outputs.
 
-- Composer: the **+** button left of the message box. iPhone: a menu with Photos (sent as JPEG) and
+- Composer: the **+** button at the bottom left of the message box. iPhone: a menu with Photos (sent as JPEG) and
   Files (plus Paste when the clipboard has an image); desktop: an open panel. Files and images can
   also be dropped on the box or pasted: ⌘V / Ctrl+V on the desktop takes a copied image or file
   (`apps/desktop/src/renderer/views/chat/use-composer-files.ts`); on the iPhone through Paste in the
@@ -12,10 +12,11 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
   HEIC/TIFF/BMP become JPEG (`OutgoingFile.prepared`, CodyncKit). Picked files show as chips above
   the text and can be removed; a message can be files only. Group chats take files too: they're
   kept in the group's uploads folder and listed to each member under the message. Up to 100 MB per file.
-- Upload: `upload {botId, taskId?, uploadId, name, offset, data (base64), done}`, 384 KiB per call so each
+- Upload: `upload {botId?, taskId?, uploadId, name, offset, data (base64), done}`, 384 KiB per call so each
   stays under the channel's 1 MiB message limit. A repeated chunk is accepted (retry); anything out
   of order is refused. Then `send {…, attachments: [uploadId]}`; the text may be empty. With `taskId` both go to
-  the thread of that task of the bot's.
+  the thread of that task of the bot's. A new thread's files go with `startThread {…, attachments}` instead; without
+  `botId` they go to the computer's box of threads without a bot ([its files](work.md#other-sources)).
 - Storage (`host/src/chat/uploads.rs`): `<workspace>/uploads/<uploadId>/<name>` for a personal
   workspace (so reading needs no extra approval), otherwise
   `~/.codync/bots/<bot>/uploads/<uploadId>/<name>`; a thread's files are there under the thread's id, and go

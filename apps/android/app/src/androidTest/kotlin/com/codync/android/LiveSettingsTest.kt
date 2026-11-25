@@ -17,7 +17,7 @@ import java.util.UUID
 /** A disposable bot on the isolated fake-agent host; no actual agent work is started. */
 class LiveSettingsTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
-    @Test fun botSettingsSaveAHostFolderAndTurnDefaultNotificationsOff() {
+    @Test fun botSettingsSaveAProjectAndTurnDefaultNotificationsOff() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("liveHost") == "true")
         assumeTrue(Build.PRODUCT.startsWith("sdk"))
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -32,7 +32,7 @@ class LiveSettingsTest {
             val bots = runBlocking { HostClient.bots(channel) }
             val parent = bots.single { it.name == "Android chat acceptance" }
             val response = runBlocking { channel.call("createBot", BotDraft.from(parent).copy(id = null,
-                name = "Settings acceptance " + UUID.randomUUID().toString().take(6), cwd = "/tmp", notify = null).body()) }
+                name = "Settings acceptance " + UUID.randomUUID().toString().take(6), projects = emptyList(), notify = null).body()) }
             val bot = HostClient.decode(response.jsonObject.getValue("bot").jsonObject)
             clone = bot.id
             val listingResponse = runBlocking { channel.call("listDirs", body("path" to "/tmp")) }
@@ -42,8 +42,7 @@ class LiveSettingsTest {
             compose.runOnUiThread { store.openBot(null) }
             compose.rosterAction(bot.name, "Edit profile")
             compose.onNode(hasSetTextAction() and hasText(bot.name)).performTextReplacement("Unsaved draft")
-            compose.onNodeWithContentDescription("Workspace").performScrollTo().performClick()
-            compose.onNodeWithText("Choose project folder…").performClick()
+            compose.onNodeWithContentDescription("Add project").performScrollTo().performClick()
             val useFolder = "Use “${listing.path.trimEnd('/').substringAfterLast('/').ifEmpty { "/" }}”"
             compose.waitUntil(15_000) { compose.onAllNodesWithText(useFolder).fetchSemanticsNodes().size == 1 }
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
@@ -54,21 +53,20 @@ class LiveSettingsTest {
             val cancelledBots = runBlocking { HostClient.bots(channel) }
             val cancelled = cancelledBots.single { it.id == bot.id }
             assertEquals(bot.name, cancelled.name)
-            assertEquals(bot.cwd, cancelled.cwd)
+            assertEquals(bot.projects, cancelled.projects)
             assertNull(cancelled.notify)
             compose.rosterAction(bot.name, "Edit profile")
-            compose.onNodeWithContentDescription("Workspace").performScrollTo().performClick()
-            compose.onNodeWithText("Choose project folder…").performClick()
+            compose.onNodeWithContentDescription("Add project").performScrollTo().performClick()
             compose.waitUntil(15_000) { compose.onAllNodesWithText(useFolder).fetchSemanticsNodes().size == 1 }
             compose.onNodeWithText(useFolder).performClick()
             compose.waitUntil(5_000) { compose.onAllNodesWithText(useFolder).fetchSemanticsNodes().isEmpty() }
-            compose.onNodeWithContentDescription("Workspace").assert(hasText(listing.path.trimEnd('/').substringAfterLast('/')))
+            compose.onNodeWithText(listing.path).performScrollTo().assertIsDisplayed()
             compose.onNode(hasText("Notifications") and isToggleable()).performScrollTo().assertIsOn().performClick().assertIsOff()
             compose.onNodeWithContentDescription("Save").performClick()
-            compose.waitUntil(15_000) { store.state.value.bots.firstOrNull { it.id == bot.id }?.let { it.notify == false && it.cwd == listing.path } == true && "editor" !in store.state.value.busy }
+            compose.waitUntil(15_000) { store.state.value.bots.firstOrNull { it.id == bot.id }?.let { it.notify == false && it.projects == listOf(listing.path) } == true && "editor" !in store.state.value.busy }
             val finalBots = runBlocking { HostClient.bots(channel) }
             val saved = finalBots.single { it.id == bot.id }
-            assertEquals(listing.path, saved.cwd)
+            assertEquals(listOf(listing.path), saved.projects)
             assertEquals(false, saved.notify)
             assertEquals(parent.command, saved.command)
             assertEquals(parent.backend, saved.backend)

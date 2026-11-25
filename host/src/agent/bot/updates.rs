@@ -431,8 +431,25 @@ impl Actor {
     }
 
     pub(super) fn close_seg(&mut self) {
+        self.end_seg(true);
+    }
+
+    /// Closes the open segment. `mid_turn`: more of the turn may follow, so a message that answers the bot's question
+    /// isn't the turn's report; at the turn's end (`close_attempt`) it stands as that too, the turn's last text.
+    pub(super) fn end_seg(&mut self, mid_turn: bool) {
         self.flush(true);
-        self.seg = Seg::None;
+        let text = match std::mem::replace(&mut self.seg, Seg::None) {
+            Seg::Open { kind: SegKind::Text, entry_id, buf, .. } if !buf.trim().is_empty() => Some((entry_id, buf)),
+            _ => None,
+        };
+        // A thread's message that answers its bot's question (`ask_task`) goes to the bot, not into its report.
+        if let Some((entry_id, text)) = text
+            && crate::chat::work::ask::answered(&self.hub, &self.cfg, &text)
+            && mid_turn
+            && self.last_text.as_deref() == Some(entry_id.as_str())
+        {
+            self.last_text = None;
+        }
     }
 }
 

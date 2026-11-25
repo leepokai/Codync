@@ -242,13 +242,16 @@ install_linux_dependencies() {
   web_rtc_missing=0
   if ldd "$BIN_DIR/codync-screen" 2>/dev/null | grep -q 'libgstwebrtc-1.0.so.0 => not found' ||
     ! command -v gst-inspect-1.0 >/dev/null ||
-    ! gst-inspect-1.0 webrtcbin >/dev/null 2>&1; then
+    ! gst-inspect-1.0 webrtcbin >/dev/null 2>&1 ||
+    ! gst-inspect-1.0 nicesrc >/dev/null 2>&1 ||
+    ! gst-inspect-1.0 nicesink >/dev/null 2>&1; then
     web_rtc_missing=1
   fi
   if [ "$web_rtc_missing" = 1 ]; then
     add_missing libgstreamer-plugins-bad1.0-0
     add_missing gstreamer1.0-plugins-bad
     add_missing gstreamer1.0-tools
+    add_missing gstreamer1.0-nice
   fi
   if [ $HOST_ONLY = 0 ] && [ -n "${WAYLAND_DISPLAY:-}" ] &&
     { ! command -v gst-inspect-1.0 >/dev/null || ! gst-inspect-1.0 pipewiresrc >/dev/null 2>&1; }; then
@@ -327,7 +330,21 @@ fi
 if [ "$OS" = linux ] && [ "$BIN_DIR" = "$HOME/.local/bin" ]; then
   add_path='case ":$PATH:" in *:"$HOME/.local/bin":*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac'
   changed=0
-  for file in "$HOME/.profile" "$HOME/.bashrc"; do
+  path_shells=""
+  case ${SHELL##*/} in
+    zsh)
+      path_files="$HOME/.zprofile $HOME/.zshrc"
+      path_shells="Zsh"
+      ;;
+    bash | sh | dash | ksh)
+      path_files="$HOME/.profile $HOME/.bashrc"
+      path_shells="login and interactive Bash shells"
+      ;;
+    *)
+      path_files=""
+      ;;
+  esac
+  for file in $path_files; do
     touch "$file"
     # An existing entry (including Ubuntu's default .profile block) already does the job.
     if ! grep -Fq "$BIN_DIR" "$file" &&
@@ -339,10 +356,14 @@ if [ "$OS" = linux ] && [ "$BIN_DIR" = "$HOME/.local/bin" ]; then
   done
   case :$PATH: in
     *:"$BIN_DIR":*) ;;
-    *) echo; echo "Open a new terminal to use codync-host." ;;
+    *) [ -z "$path_files" ] || { echo; echo "Open a new terminal to use codync-host."; } ;;
   esac
-  [ "$changed" = 0 ] || echo "Added $BIN_DIR to new login and interactive Bash shells."
-  echo "Open a new terminal, or run $BIN_DIR/codync-host pair."
+  [ "$changed" = 0 ] || echo "Added $BIN_DIR to new $path_shells."
+  if [ -n "$path_files" ]; then
+    echo "Open a new terminal, or run $BIN_DIR/codync-host pair."
+  else
+    echo "Add $BIN_DIR to your ${SHELL##*/} PATH: export PATH=\"$BIN_DIR:\$PATH\""
+  fi
 else
   case :$PATH: in
     *:"$BIN_DIR":*) ;;

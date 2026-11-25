@@ -217,7 +217,7 @@ fn sessions(buf: &mut Buffer, body: Rect, mut y: u16, below: u16, n: &NetworkShe
         // Two columns for the dot and its space, two between title and details: the address goes in whole first, then
         // the state and the mail text as room allows, and the title gets what is left (12 to 34).
         let fixed = 2 + 2 + 12;
-        let width = |d: &[String]| u16::try_from(d.join(" · ").chars().count()).unwrap_or(u16::MAX);
+        let width = |d: &[String]| u16::try_from(md::width(&d.join(" · "))).unwrap_or(u16::MAX);
         while detail.len() > 1 && fixed + width(&detail) > body.width {
             detail.pop();
         }
@@ -423,6 +423,18 @@ mod tests {
                 .collect::<String>()
                 .contains("billing-claude · Working")
         };
+        // Wide characters count by the columns they take: at 46 a CJK address and its state still fit whole.
+        let wide = {
+            let view = json!({"joined": false, "assistantsAvailable": true, "sessions": [
+                {"address": "界-codex", "title": "A title long enough to be cut", "state": "working", "runs": true},
+            ]});
+            let n = NetworkSheet { view: Some(view), ..Default::default() };
+            let mut buf = Buffer::empty(Rect::new(0, 0, 46, 30));
+            let area = buf.area;
+            network(&mut buf, area, &n);
+            buf.content.iter().map(ratatui::buffer::Cell::symbol).collect::<String>()
+        };
+        assert!(wide.contains("-codex · Working"), "{wide}");
         let first = (30..90).find(|w| fits(*w)).expect("the state fits somewhere");
         assert!((first..90).all(fits), "once it fits, wider keeps it");
     }

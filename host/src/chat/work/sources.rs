@@ -44,13 +44,6 @@ pub fn access_of(hub: &Hub, cfg: &BotConfig) -> Access {
     }
 }
 
-/// Whether a thread that takes a task from `source` starts from the chat (a fork of its session, else the chat so
-/// far). A routine's run doesn't: in the chat it had a session of its own with only its prompt, and it costs and
-/// sees the same here.
-pub fn from_chat(source: &Source) -> bool {
-    !matches!(source, Source::Routine { .. } | Source::User)
-}
-
 /// `work_added` for a task that came from `source`.
 fn added(hub: &Hub, source: &Source) {
     let properties = json!({"outcome": "added", "after": false, "source": source.kind()});
@@ -82,7 +75,7 @@ pub fn add_routine(hub: &Arc<Hub>, bot: &str, routine: &str, run: &str, name: &s
 /// A thread the user starts with `bot` themselves (`startThread`): `text`, their first message, waits in its box as
 /// a task of its own, named by its first line, and starts when a place is free. `setup`: what its thread runs with
 /// in place of the bot's own, checked as a bot's setup is. Answers the task's id.
-pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, mut setup: Setup) -> Result<String> {
+pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, uploads: &[String], mut setup: Setup) -> Result<String> {
     let changes = (
         setup.cwd.is_some(),
         setup.model.is_some(),
@@ -96,6 +89,7 @@ pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, mut setup: Setup) -> Re
         let properties = json!({
             "outcome": outcome, "after": false, "source": Source::User.kind(),
             "folder": changes.0, "model": changes.1, "approval": changes.2, "workflow": changes.3, "login": changes.4, "bot": !plain,
+            "files": !uploads.is_empty(),
         });
         analytics::capture(hub, Event::WorkAdded, properties.as_object().cloned().unwrap_or_default());
     };
@@ -111,7 +105,7 @@ pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, mut setup: Setup) -> Re
     let checked = (|| {
         let Some(cfg) = cfg.filter(|cfg| !cfg.is_thread() && !cfg.is_group()) else { bail!("unknown bot") };
         ensure!(
-            !text.is_empty() && text.len() <= MAX_BRIEF,
+            (!text.is_empty() || !uploads.is_empty()) && text.len() <= MAX_BRIEF,
             "a thread starts with a message of at most {MAX_BRIEF} bytes"
         );
         ensure!(!cfg.plain || setup.backend.is_some(), "a thread without a bot names its agent");
@@ -124,13 +118,21 @@ pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, mut setup: Setup) -> Re
         let run = setup.over(&crate::agent::fallback::threads(&cfg));
         let login = crate::agent::login_profiles::of_bot(&hub.store, &run.backend, &run);
         ensure!(run.login_profile.as_deref() == login, "unknown login profile");
-        crate::hub::validate(&run)
+        crate::hub::validate(&run)?;
+        // Its files, as they were uploaded to the bot (`upload`).
+        crate::chat::uploads::resolve_all(&crate::chat::uploads::root(&cfg), uploads)
     })();
-    if let Err(error) = checked {
-        outcome("invalid");
-        return Err(error);
-    }
-    let task = Task { source: Source::User, setup, ..Task::waiting(&title(text), text, None, None, 0) };
+    let files: Vec<serde_json::Value> = match checked {
+        Ok(files) => files,
+        Err(error) => {
+            outcome("invalid");
+            return Err(error);
+        }
+    };
+    // Files alone are named by the first of them.
+    let named =
+        title(if text.is_empty() { files.first().and_then(|f| f["name"].as_str()).unwrap_or_default() } else { text });
+    let task = Task { source: Source::User, setup, files, ..Task::waiting(&named, text, None, None, 0) };
     let id = task.id.clone();
     put(hub, bot, task)?;
     outcome("added");
@@ -200,10 +202,18 @@ pub(super) fn begin(hub: &Hub, bot: &str, task: &mut Task) -> Result<Begin> {
         }
         Source::Routine { run, .. } => {
             let Some(prepared) = hub.routines.begin(hub, bot, run)? else { return Ok(Begin::Gone) };
+            // Its folder went since it was saved: the run fails and says so, rather than work somewhere else.
+            if let Some(folder) = prepared.folder.as_deref().filter(|f| !std::path::Path::new(f).is_dir()) {
+                let detail = routines::could_not_start(format!("its folder {folder} is gone"));
+                let ran = routines::Ran { timed_out: false, thread: None };
+                hub.routines.complete(hub, run, routines::Status::Failed, Some(detail), None, &ran)?;
+                return Ok(Begin::Gone);
+            }
             if let Err(error) = hub.routines.mark_started(&hub.store, run) {
                 tracing::warn!(run, error = format!("{error:#}"), "couldn't mark a routine run started");
             }
             task.brief = prepared.prompt;
+            task.setup.cwd = prepared.folder;
         }
         Source::Request { .. } => match hub.work.requests.locked().get_mut(&task.id) {
             Some(request) => request.mark_started(),

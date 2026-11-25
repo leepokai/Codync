@@ -2,7 +2,7 @@
 
 use super::dispatch::{self, Standing, Wait};
 use super::worktree::{Left, Place, Worktree};
-use super::{Failure, Report, Start};
+use super::{Failure, Report};
 use crate::LockExt;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, Permission, Store, now_ms};
@@ -68,8 +68,18 @@ impl Source {
         *self == Self::Bot
     }
 
-    /// The bot's own work, whoever added it (the bot, or the user as a thread): it may be steered, tried again and
-    /// written to, where a routine's run or another bot's request has an owner elsewhere.
+    /// A thread the user started: theirs, so the bot doesn't see or steer it.
+    pub fn is_user(&self) -> bool {
+        *self == Self::User
+    }
+
+    /// It takes one of the bot's seats under `maxThreads` while it works: everything but a thread the user started.
+    pub fn seated(&self) -> bool {
+        !self.is_user()
+    }
+
+    /// The bot's own work, whoever added it (the bot, or the user as a thread): the user may steer it, try it again
+    /// and write to it, where a routine's run or another bot's request has an owner elsewhere.
     pub fn own(&self) -> bool {
         matches!(self, Self::Bot | Self::User)
     }
@@ -236,15 +246,9 @@ pub(super) struct Task {
     /// the task as it ends, never saved.
     #[serde(skip)]
     pub undispatched: bool,
-    /// How its thread's session began, once known.
+    /// Its thread's session began on it (or on the task it follows, in the same session).
     #[serde(default)]
-    pub start: Option<Start>,
-    /// Its bot's main session, for its new thread to fork; none when it starts from a brief.
-    #[serde(default)]
-    pub fork_from: Option<String>,
-    /// The agent refused or didn't answer the fork, so its thread started from a brief.
-    #[serde(default)]
-    pub fork_failed: bool,
+    pub began: bool,
     /// Where its new thread works: in a git worktree of its own when another thread of the bot worked in the
     /// repository as it began, or when it has one from before.
     #[serde(default)]
@@ -259,6 +263,10 @@ pub(super) struct Task {
     /// What it reported before the user wrote to it again: a new session that picks the work up is told.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub said: Option<String>,
+    /// The files the user started it with (`startThread`), as uploaded to its bot (`{id, name, size}`): its thread
+    /// gets a copy of each as it starts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<Value>,
 }
 
 impl Task {
@@ -287,13 +295,12 @@ impl Task {
             report: None,
             failure: None,
             undispatched: false,
-            start: None,
-            fork_from: None,
-            fork_failed: false,
+            began: false,
             place: Place::Folder,
             worktree: None,
             told: Vec::new(),
             said: None,
+            files: Vec::new(),
         }
     }
 
@@ -303,8 +310,7 @@ impl Task {
         self.order = front;
         self.thread = None;
         self.started_at = None;
-        self.start = None;
-        self.fork_from = None;
+        self.began = false;
     }
 }
 
@@ -455,6 +461,11 @@ pub(super) fn shown(hub: &Hub, cfg: &BotConfig) -> Vec<Shown> {
         .collect()
 }
 
+/// What the bot sees of its box: [`shown`] without the threads the user started, which are theirs.
+pub(super) fn seen_by_bot(hub: &Hub, cfg: &BotConfig) -> Vec<Shown> {
+    shown(hub, cfg).into_iter().filter(|s| !s.task.source.is_user()).collect()
+}
+
 /// Where `task`'s thread works, of its row's folder `cwd`: not a worktree that had nothing in it and went.
 fn folder_of<'a>(task: &Task, cwd: Option<&'a String>) -> Option<&'a String> {
     let gone = |worktree: &Worktree| worktree.left == Left::Removed && cwd == Some(&worktree.cwd);
@@ -477,11 +488,12 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
             .into_iter()
             .map(|Shown { task, status, activity, wait }| {
                 // It takes one of the bot's seats.
-                let seat = match status {
-                    Status::Working => true,
-                    Status::NeedsYou => std::mem::replace(&mut lent, true),
-                    _ => false,
-                };
+                let seat = task.source.seated()
+                    && match status {
+                        Status::Working => true,
+                        Status::NeedsYou => std::mem::replace(&mut lent, true),
+                        _ => false,
+                    };
                 let cwd = task.thread.as_ref().and_then(|thread| folders.get(thread));
                 let folder = folder_of(&task, cwd);
                 let talk = task.source.own() && cwd.is_some();
@@ -518,7 +530,7 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
 /// The box in a few lines: counts and the ceiling, then the live and waiting titles with their ids. None when
 /// nothing is live or waiting. `whose`: `Your` for the bot's own turns, `Its` for who asks about the bot (a call).
 pub fn lines(hub: &Hub, cfg: &BotConfig, whose: &str) -> Option<String> {
-    let live: Vec<Shown> = shown(hub, cfg).into_iter().filter(|s| !s.status.ended()).collect();
+    let live: Vec<Shown> = seen_by_bot(hub, cfg).into_iter().filter(|s| !s.status.ended()).collect();
     let live: Vec<_> = live.iter().map(|s| (s.status, s.task.title.as_str(), s.task.id.as_str())).collect();
     summary(&live, cfg.max_threads, whose)
 }
@@ -807,6 +819,13 @@ mod tests {
         hub.set_runtime("thread-a", |r| r.status = BotStatus::NeedsInput);
         hub.set_runtime("thread-b", |r| r.status = BotStatus::NeedsInput);
         assert_eq!(seats(), [false, true, true], "one seat is lent, as the dispatcher counts it");
+
+        let mut tasks = tasks;
+        tasks[2]["source"] = json!({"kind": "user"});
+        hub.store.kv_set(&key(&cfg.id), &tasks.to_string()).expect("saved");
+        hub.set_runtime("thread-c", |r| r.status = BotStatus::NeedsInput);
+        hub.set_runtime("thread-a", |r| r.status = BotStatus::Working);
+        assert_eq!(seats(), [true, false, false], "the user's thread takes no seat and leaves the lent one to b");
     }
 
     #[test]

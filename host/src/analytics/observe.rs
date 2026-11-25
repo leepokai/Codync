@@ -372,6 +372,10 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
             let heard = answer["text"].as_str().is_some_and(|t| !t.is_empty());
             p.insert("outcome".into(), if heard { "transcribed" } else { "silent" }.into());
         }
+        // Whether the saved routine names a folder of its own (kept or just set), never the path.
+        Event::RoutineSaved => {
+            p.insert("folder".into(), (!answer["routine"]["folder"].is_null()).into());
+        }
         // An id it couldn't quote: the message went out without the quote.
         Event::BotQuoted => {
             p.insert("outcome".into(), if answer["warning"].is_null() { "quoted" } else { "unquoted" }.into());

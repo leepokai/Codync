@@ -3,7 +3,7 @@ import { useListFlip } from '../lib/slide'
 import { alertAnalyticsKind } from '@shared/alerts'
 import type { WindowCommand } from '@shared/ipc'
 import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startup'
-import { detailMinWidth, railWidth, sidebarMinWidth } from '@shared/chat-layout'
+import { detailMinWidth, frameInset, railWidth, sidebarMinWidth } from '@shared/chat-layout'
 import { draftOf, isGroup, type Bot, type BotDraft } from '@shared/models'
 import { isLive, threadSections } from '@shared/work'
 import { CharacterAvatar } from '../components/Avatar'
@@ -271,7 +271,7 @@ function ChatSplitView() {
   useEffect(() => {
     const onResize = () => {
       setWindowSize({ width: window.innerWidth, height: window.innerHeight })
-      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(sidebarMinWidth, window.innerWidth - railWidth - detailMinWidth)))
+      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(sidebarMinWidth, window.innerWidth - railWidth - frameInset - detailMinWidth)))
     }
     // A window opened narrow starts with a list that fits it.
     onResize()
@@ -450,7 +450,7 @@ function ChatSplitView() {
 
   // The list's edge drags its width; dragged most of the way shut, it folds away.
   const [resizing, setResizing] = useState(false)
-  const sidebarMax = Math.min(420, window.innerWidth - railWidth - detailMinWidth)
+  const sidebarMax = Math.min(420, window.innerWidth - railWidth - frameInset - detailMinWidth)
   const resizeSidebar = (proposed: number) => {
     const hide = proposed < 120
     if (hide !== listHidden) setListHidden(hide)
@@ -568,6 +568,7 @@ function ChatSplitView() {
         setEnd={setBarEnd}
       />
       <NavRail page={page} go={go} working={threads.working} approvals={app.approvals.length} workflows={!!workflowStore} />
+      <div className="page-frame">
       {list ? (
         <>
           <aside ref={sidebar} className={`sidebar ${resizing ? 'resizing' : ''}`} style={{ width }} inert={listHidden}>
@@ -667,6 +668,7 @@ function ChatSplitView() {
           )}
         </main>
       )}
+      </div>
 
       {context ? (
         <div className="context-layer" onMouseDown={(e) => e.target === e.currentTarget && setContext(null)}>

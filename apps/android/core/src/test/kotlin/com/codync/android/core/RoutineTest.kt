@@ -45,6 +45,15 @@ class RoutineTest {
         assertEquals(JsonPrimitive("3600"), payload.getValue("timeoutSeconds"))
     }
 
+    @Test fun `a routine's folder goes out as its path, and the bot's folder as null`() {
+        assertEquals(JsonPrimitive("/work/app"), RoutineDraft(folder = "/work/app").body("bot")["folder"])
+        assertEquals(JsonNull, RoutineDraft(name = "n", instruction = "i").body("bot")["folder"])
+        assertEquals("app", folderName("/work/app/"))
+        assertEquals("app", folderName("C:\\code\\app"))
+        assertEquals("/work/app", WireJson.decodeFromString<Routine>("""{"id":"r","botId":"b","name":"n","instruction":"i","triggers":[],"enabled":true,"folder":"/work/app"}""").folder)
+        assertNull(WireJson.decodeFromString<Routine>("""{"id":"r","botId":"b","name":"n","instruction":"i","triggers":[],"enabled":true}""").folder)
+    }
+
     @Test fun `mobile cron fields preserve the exact host expression and zone`() {
         val draft = RoutineScheduleDraft(calendarStyle = "days", expression = "5 23 * * 1,3,6", zone = "Asia/Taipei")
         assertEquals("custom", draft.forMobileEditor().calendarStyle)

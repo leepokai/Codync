@@ -81,6 +81,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var memoryRev: Int64?
     /// Created without a name: the host names it after its first few conversations.
     public var autoName: Bool = false
+    /// The box of threads that run without a bot: the Threads tab's "No bot". False from an older host.
+    public var plain: Bool = false
     public var createdAt: Int64
 
     // Runtime, filled in by the host.
@@ -191,6 +193,7 @@ extension Bot {
         compactionTokens = try? c.decodeIfPresent(TokenRange.self, forKey: .compactionTokens)
         memoryRev = try c.decodeIfPresent(Int64.self, forKey: .memoryRev)
         autoName = try c.decodeIfPresent(Bool.self, forKey: .autoName) ?? false
+        plain = (try? c.decodeIfPresent(Bool.self, forKey: .plain)) ?? false
         createdAt = try c.decodeIfPresent(Int64.self, forKey: .createdAt) ?? 0
         rev = try c.decodeIfPresent(Int64.self, forKey: .rev) ?? 0
         status = try c.decodeIfPresent(String.self, forKey: .status) ?? "idle"
@@ -212,5 +215,12 @@ extension Bot {
         waiting = try c.decodeIfPresent(Int.self, forKey: .waiting) ?? 0
         lastMessage = try c.decodeIfPresent(String.self, forKey: .lastMessage)
         lastAt = try c.decodeIfPresent(Int64.self, forKey: .lastAt) ?? createdAt
+    }
+}
+
+extension String {
+    /// A folder path's name: its last component (`/` or `\` separated), or the path itself.
+    public var folderName: String {
+        split { $0 == "/" || $0 == "\\" }.last.map(String.init) ?? self
     }
 }

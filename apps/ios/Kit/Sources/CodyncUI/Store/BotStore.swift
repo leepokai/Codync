@@ -67,15 +67,11 @@ public final class BotStore {
     public internal(set) var hello: Hello?
     /// Summaries for the roster pins and the workflow list. Not written into the bot cache, and not a rev.
     public internal(set) var workflows: [WorkflowSummary] = []
-    /// Editors with unsaved graph edits. A graph event does not reload those.
-    var dirtyWorkflowGraphs: Set<String> = []
-    /// Bumped when a clean workflow should reload its graph.
+    /// Bumped when an open workflow should reload its graph.
     public internal(set) var workflowReload = 0
     /// Bumped when an open run should reload. Run and step events do not reload a graph.
     public internal(set) var workflowRunReload = 0
     public internal(set) var deletedWorkflows: Set<String> = []
-    /// Sentences for an open workflow, such as a delete or a save conflict.
-    public internal(set) var workflowNotices: [String: String] = [:]
     /// The host's version and `minApp`, kept even when the rest of its `hello` can't be read.
     public internal(set) var hostVersion: HostVersion?
     /// An update this phone asked of the computer; cleared when its version changes.
@@ -353,7 +349,9 @@ public final class BotStore {
         loginSeats((hello?.backends ?? []).filter { $0.available || $0.id == on.backend }, on: on) { $0.readyLogins(on: on) }
     }
 
-    public var hiddenBots: [Bot] { bots.values.filter(\.hidden).sorted { $0.name < $1.name } }
+    public var hiddenBots: [Bot] { bots.values.filter { $0.hidden && !$0.plain }.sorted { $0.name < $1.name } }
+    /// The box of threads that run without a bot: a hidden bot of the host's own, listed only on the Threads tab.
+    public var plainBox: Bot? { bots.values.first(where: \.plain) }
 
     /// Everything in a bot's or group's chat this device has, oldest first (trace included).
     /// A chat as the views read it. A message taken back (`unqueue`) stays only in `entries`, for `upsert`'s rev guard

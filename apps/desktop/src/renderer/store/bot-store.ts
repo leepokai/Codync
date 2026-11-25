@@ -250,11 +250,25 @@ export class BotStore extends BotSync {
     return this.hello?.threadLogins === true
   }
 
+  /** A thread can start with files here (`startThread` with `attachments`). */
+  get startsThreadsWithFiles() {
+    return this.hello?.threadFiles === true
+  }
+
+  /** A routine can name the folder its runs work in here (`saveRoutine` with `folder`). */
+  get routinesHaveFolders() {
+    return this.hello?.routineFolder === true
+  }
+
   /** A thread the user starts with `botId` themselves (null: without a bot, on the agent `setup` names), opened by
    *  `text`, its task on `setup` where that differs from the bot's: where its task is, the bot's (or the box's) id
    *  and the task's. */
-  async startThread(botId: string | null, text: string, setup: ThreadSetup = {}): Promise<{ botId: string; taskId: string }> {
-    const started = await this.withLink((c) => c.call<{ botId: string; taskId: string }>('startThread', { ...(botId ? { botId } : {}), text: text.trim(), setup }))
+  async startThread(botId: string | null, text: string, setup: ThreadSetup = {}, files: OutgoingFile[] = []): Promise<{ botId: string; taskId: string }> {
+    // Its files go to the bot first (without one, to the computer's box of threads without a bot).
+    const started = await this.withLink(async (c) => {
+      const attachments = files.length ? await uploadFiles(c, botId ?? '', files) : undefined
+      return c.call<{ botId: string; taskId: string }>('startThread', { ...(botId ? { botId } : {}), text: text.trim(), setup, ...(attachments ? { attachments } : {}) })
+    })
     noteActiveDay()
     return started
   }

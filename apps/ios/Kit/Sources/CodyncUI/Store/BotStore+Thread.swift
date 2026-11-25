@@ -56,6 +56,26 @@ extension BotStore {
         send(entry.data.text ?? "", to: thread, files: files, nonce: (local ? entry.data.clientNonce : nil) ?? UUID().uuidString)
     }
 
+    /// Whether this computer starts a thread the user asks for; false before hello or on older hosts.
+    public var startsThreads: Bool { hello?.startThread == true }
+
+    /// A thread the user starts with `botId`, opened by `text`: its task's id. Not replayed: a retry could start two.
+    public func startThread(botId: String, text: String) async throws -> String {
+        try await withLink { try await $0.startThread(botId: botId, text: text.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    }
+
+    /// `taskId`'s task once sync brings it with a thread, or nil when it has none within `wait` (it waits behind
+    /// others, or never came). Android's `startThread` waits as long.
+    public func threadStarted(botId: String, taskId: String, wait: Duration = .seconds(10)) async -> WorkTask? {
+        let deadline = ContinuousClock.now + wait
+        while ContinuousClock.now < deadline {
+            if let task = bots[botId]?.work.first(where: { $0.id == taskId }), task.thread != nil { return task }
+            // ponytail: polls the roster; an observation stream if this ever needs to be instant.
+            guard (try? await Task.sleep(for: .milliseconds(250))) != nil else { return nil }
+        }
+        return nil
+    }
+
     /// Has the bot's conversation open its details on `task`'s thread once it is on screen.
     public func requestThread(of botId: String, task: WorkTask) { threadRequest = (botId, task) }
 

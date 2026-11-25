@@ -184,7 +184,7 @@ apply are reused; `{count} tasks running` goes.
 ## Analytics
 
 `work_added {outcome: added | elsewhere | invalid | full | hops | failed, after, source}`, `work_finished {outcome,
-agent, start, forkFailed, minutes, error, source, worktree, kept, worktreeFailed}` (`source`: `bot`, `routine`, `request`), `work_steered {how, by: bot |
+agent, minutes, error, source, worktree, kept, worktreeFailed}` (`source`: `bot`, `routine`, `request`), `work_steered {how, by: bot |
 user}`, replacing the `task_*` events. Screen `thread`
 (sent as `task` before the rename) is the task's thread view (a thread's transcript before stage 11). A thread's `turn_finished` carries `work`
 (its task's source), which is where a task's failure gets its reason (the agent's error, a sign-in, a rate limit);
@@ -274,9 +274,8 @@ The same on iPhone, Android, desktop and terminal unless said; where it settles 
   have (another computer, the cloud assistant, a deleted bot) has no mark. **Try again** isn't offered on a
   request's row. **Cut in** shows only when some live task can give way (the bot's own), and the list it asks with
   holds only those.
-- **4.** The roster header's button (`tray.full`, titled **Work**, with the count of working tasks, no number at
-  none) shows only while a bot has a live or waiting task: a toolbar button on iPhone, a glass button on Android,
-  an icon button in the desktop's roster header. It opens a sheet titled **Work**: the bots in the roster's
+- **4.** On the phones the **Threads** tab (its badge the count of working tasks, none at zero; it replaced the
+  roster header's Work button and sheet), on the desktop the Threads page, lists the bots in the roster's
   on-screen order, each a heading (avatar, name, with the computer's name
   when there are several computers) that opens that bot's Details, over its Threads rows then its numbered Event
   box rows, with the rows' own actions. No `Free` rows, Later, Routines or Recent there. A row that needs you opens
@@ -346,8 +345,8 @@ routine's id) or `request` (with the asking bot's id). A routine run and another
 become tasks in the bot's box instead of turns in its chat, so the chat stays free and they count under `maxThreads`.
 Their result does not go through a turn of the coordinator: a routine task's last message is posted in the chat as
 the routine's message exactly as a routine run posts today (title, progress note, follow-ups and alerts unchanged);
-a request task's last message is the reply the asking bot receives. They start like any task (fork where the agent
-can, else a brief that carries the routine's instructions or the request). A bot whose `maxThreads` threads are all
+a request task's last message is the reply the asking bot receives. They start like any task (a new session and a
+brief that carries the routine's instructions or the request). A bot whose `maxThreads` threads are all
 busy makes them wait in the box like anything else. Rows show the source as the existing symbol of a routine or
 the asking bot's avatar before the title; no new words. `Try again` on a failed routine task runs the routine again.
 Rooms (group chats) keep their own path.
@@ -499,7 +498,7 @@ The rules are one set, written three times: `apps/desktop/src/shared/work.ts` (`
   pushes `WorkThreadView` inside the details sheet; the system bar is hidden (`hidesSystemNavigationBar`, which keeps
   the edge swipe back) and the page draws its own header, as Android's: a `Back to details` icon button, the title
   over the status line, Stop. Android: `WorkThreadView` is pushed inside the sheet by the design module's
-  `NavStack`, with the same header. A row of the Work sheet opens the bot's chat with its
+  `NavStack`, with the same header. A row of the Threads tab opens the bot's chat with its
   details on that thread.
 - **A row that needs you still opens the chat at its card**, not the thread. In the task's thread the card is one
   line (below), which opens the chat at it; on the phones the thread has no card to answer.

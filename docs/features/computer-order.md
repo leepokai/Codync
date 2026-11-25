@@ -61,12 +61,12 @@ stay put and a new bot appears at the top of its band. Hidden bots keep their po
 they return.
 
 **Move active bots to the top** (a switch per computer, off by default; `setAutoOrder`, read from
-`hello.autoOrder`, kept in the host's `kv`; apps connected when it's switched hear an `autoOrder` event, so every device's switch shows it): while on, a message the roster preview shows (the
+`hello.autoOrder`, kept in the host's `kv`; apps connected when it's switched hear an `autoOrder` event, so every device's choice shows it): while on, a message the roster preview shows (the
 user's, or an agent's finished reply, so conversations and routine runs alike) gives its chat a
 position above every other bot (`Hub::order_on_message`). Clients sort as before, so the bot rises to
-the top of its band and section. Dragging still works; the bot's next message moves it again. Phones
-show the switch in the computer's card (Bots tab connection status › Manage computers), the desktop app as **Sort by
-last active** in the Bots list's filter menu (one choice for the computers shown), the TUI in the command palette.
+the top of its band and section. Dragging still works; the bot's next message moves it again. The phones and
+the desktop app show it as **Sort by last active** in the Bots list's filter menu (one choice for the computers shown, on the
+phones only while a shown online computer has `hello.autoOrder`), the TUI in the command palette.
 
 A bot or group chat can be in one section, a name the user picks (`section`, set with `updateBot`;
 `renameSection` renames, merges into another section's name, or removes one; `host/src/hub/sections.rs`).

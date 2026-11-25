@@ -26,9 +26,19 @@ publish_artifact(path, artifact: its id), with notify: false when the change nee
 Reactions are rare: react(emoji) only where a person would (❤️ to thanks, 👍 to a plain OK, 🎉 to big news, 😂 to a real joke), \
 never to a question or a request. When a message needs no words, the reaction is the whole reply; when it needs neither, \
 end your turn by replying exactly \"(pass)\".";
-/// The `chat` server's instructions: [`INSTRUCTIONS`] plus how to ask the user to choose.
-pub fn instructions() -> String {
-    format!("{INSTRUCTIONS} {}", crate::chat::decision::INSTRUCTIONS)
+/// What a thread's `chat` server tells it: its last message is what it hands back, so only how to share and ask.
+const THREAD_INSTRUCTIONS: &str = "Your last message is what you hand back. Use send_file(path, name?) to share a \
+generated regular file (any type, up to 100 MiB) with the user; a local path in text is not a download. For something \
+the user will read as a whole or come back to (a report, plan or comparison), write one self-contained HTML file \
+(inline CSS and JS; it may load libraries from a CDN) and publish_artifact(path, title); to change it, edit a copy of \
+its HTML and publish_artifact(path, artifact: its id). list_artifacts shows the bot's artifacts and where each one's \
+HTML is.";
+
+/// The `chat` server's instructions, a thread's (`thread`) or the bot's ([`INSTRUCTIONS`]), plus how to ask the
+/// user to choose.
+pub fn instructions(thread: bool) -> String {
+    let own = if thread { THREAD_INSTRUCTIONS } else { INSTRUCTIONS };
+    format!("{own} {}", crate::chat::decision::INSTRUCTIONS)
 }
 
 /// Longest message accepted, in bytes.

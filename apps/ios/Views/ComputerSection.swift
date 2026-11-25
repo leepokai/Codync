@@ -72,8 +72,9 @@ struct ComputerSection: View {
                 .accessibilityHidden(true)
             if let workflows {
                 Button(action: workflows) {
-                    Image(systemName: "flowchart")
-                        .font(.subheadline.weight(.semibold))
+                    Image("workflow")
+                        .resizable()
+                        .frame(width: 17, height: 17)
                         .foregroundStyle(Palette.secondary)
                         .frame(width: 44, height: 40)
                         .contentShape(Rectangle())

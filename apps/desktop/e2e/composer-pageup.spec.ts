@@ -100,7 +100,6 @@ test('a large paste leaves PageUp to the box, never the conversation behind it',
     await expect.poll(async () => (await scrollers(page)).fieldTop, { timeout: 10_000 }).toBeGreaterThan(0)
 
     const before = await settledBox(page)
-    const fieldStep = Math.round(before.fieldHeight * 0.87)
 
     // The first PageUp is spent bringing the caret's own line to the top of the box (the standard
     // behaviour when the caret sits at the end). It must still move nothing behind the box.

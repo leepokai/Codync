@@ -127,7 +127,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     let vx = fx + label_w;
     let vw = inner.right().saturating_sub(vx);
     let mut y = inner.y + 1;
-    let agent_name = app.agent_name(&f.backend);
+    let agent_name = app.form_agent_label(&f.backend);
     // The form can outgrow the terminal: it starts as far down as keeps the focused field in sight.
     let room = inner.bottom().saturating_sub(FOOTER).saturating_sub(y);
     let shown = |field: &Field| app.field_shown(f, *field);

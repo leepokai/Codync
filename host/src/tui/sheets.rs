@@ -166,11 +166,12 @@ fn multiline(buf: &mut Buffer, r: Rect, e: &Editor, placeholder: &str, active: b
 pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
     let t = theme();
     let b = app.backends.iter().find(|b| b["id"] == a.backend.as_str());
+    let title = app.form_agent_label(&a.backend);
     let name = b.map_or(a.backend.as_str(), |b| s(b, "name"));
     let rows = app.agent_rows(a);
     let login_profiles = usize::from(rows.iter().any(|r| matches!(r, SetupRow::DefaultLoginProfile))) * 2;
     let r = centered(area, 90, u(rows.len() * 2 + login_profiles + 11).max(14));
-    let inner = frame_box(buf, r, t.text, t.panel, Some((name, t.text)));
+    let inner = frame_box(buf, r, t.text, t.panel, Some((&title, t.text)));
     let mut y = inner.y;
     let mut headed = false;
     if let Some(d) = b.map(|b| s(b, "description")).filter(|d| !d.is_empty()) {

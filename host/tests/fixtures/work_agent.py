@@ -1,7 +1,7 @@
 """Deterministic ACP agent for the tests of a bot's box: a bot that adds and steers work, and the thread that does it.
 
-In the chat: `ADD title|brief[|hold][|after=<title>]`, `STEER how|title[|brief, or the title that gives way]`,
-`TELL title|words[|now]` (passes words on to a task), `STATUS`, `MESSAGE <bot id>|<request>` (asks another bot),
+In the chat: `ADD title|brief[|hold][|after=<title>][|folder=<path>][|place=<here or worktree>]`, `STEER how|title[|brief, or the title that gives way]`,
+`TELL title|words[|now]` (passes words on to a task), `ASKTASK title|question` (asks a working task), `STATUS`, `MESSAGE <bot id>|<request>` (asks another bot),
 `RECALL words` (looks back at the first task `recall_task` finds with them: its status, result and thread's steps). In a thread, the brief says what it does: `HOLD:<name>`
 works until a `release-<name>` file is in its folder, `PERMISSION` asks for an approval (`PERMISSION:<name>`: once
 `release-<name>` is there), `ASK` asks the user to
@@ -25,7 +25,8 @@ and the words may hold `HOLD:<name>`, `NEST` and `ASK` as a brief does.
 
 Arguments: `as=<name>`: a task's report says `on <name>` (which agent did it). `no-load`: the agent doesn't advertise `session/load`, so a
 session can't be picked up again. It always advertises `session/fork`, which no thread may take. `steer`: it takes a message into its running turn (`_session/steering`), and the turn's reply
-ends with `joined <the message>`. A `no-start` file in its folder: it doesn't start.
+ends with `joined <the message>`; the bot's question (`ask_task`) it answers at once with `Answer: <the question>` (`SLOW` in it: after 62 seconds), and
+a late answer's turn in the chat replies `Late: <the answer>`. A `no-start` file in its folder: it doesn't start.
 A `signedout` file: every prompt fails asking to sign in (ACP's -32000). `thread-signedout` / `thread-limit`: a thread's
 turn does its work and then fails, asking to sign in or the way Claude's adapter reports a usage limit. A brief that
 says `SIGNIN` does that once: its turn leaves a `sign-in-asked` file and fails asking to sign in, and the message,
@@ -227,8 +228,26 @@ def thread(text):
     return f"Thread {' + '.join(words)}: " + "; ".join(notes)
 
 
+ASKED = "[Codync: the bot that gave you this task asks you this"
+
+
+def answer_asked(session, question):
+    """The bot's question, steered into a running turn: one short message, closed by a step, then on with the task.
+    `SLOW` in it answers after the bot's call stopped waiting."""
+    if "SLOW" in question:
+        cancel.wait(62)
+    for update in ({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Answer: " + question}},
+                   {"sessionUpdate": "tool_call", "toolCallId": "after-answer", "title": "Go on", "status": "completed"}):
+        send({"method": "session/update", "params": {"sessionId": session, "update": update}})
+
+
 def answer(text, session):
     """What this turn replies."""
+    if ASKED in text:
+        # An agent that can't take it mid-turn: the question is a turn of its own.
+        return "Answer: " + text.split("\n\n" + ASKED, 1)[0].strip().splitlines()[-1]
+    if "answered the question you asked it" in text:
+        return "Late: " + re.search(r"after your call stopped waiting\.\]\n([^\n]*)", text).group(1)
     if "[Codync watchdog]" in text:
         return "(pass)" if "PASS" in text else "Watchdog: " + text.split("looks stuck: ", 1)[1].split(". Look at it", 1)[0]
     if "[Codync: your task" in text:
@@ -243,7 +262,7 @@ def answer(text, session):
         return elsewhere("Routine", text)
     if "sent you this request" in text:
         return elsewhere("Request", text)
-    command = re.search(r"^(ADD|STEER|TELL|STATUS|MESSAGE|RECALL)\b ?(.*)$", text, re.M)
+    command = re.search(r"^(ADD|STEER|TELL|ASKTASK|STATUS|MESSAGE|RECALL)\b ?(.*)$", text, re.M)
     if not command:
         return "reply: " + text.strip().splitlines()[-1]
     name, rest = command.groups()
@@ -256,6 +275,10 @@ def answer(text, session):
         for flag in flags:
             if flag.startswith("after="):
                 arguments["after"] = task_id(flag.removeprefix("after="))
+            if flag.startswith("folder="):
+                arguments["folder"] = flag.removeprefix("folder=")
+            if flag.startswith("place="):
+                arguments["place"] = flag.removeprefix("place=")
         added = said(chat_tool("add_task", arguments), "Added: ")
         while "hold" in flags and not cancel.wait(0.01):
             pass
@@ -275,6 +298,9 @@ def answer(text, session):
         title, words, *flags = rest.split("|")
         arguments = {"task": task_id(title), "text": words, "now": "now" in flags}
         return said(chat_tool("tell_task", arguments), "Told: ")
+    if name == "ASKTASK":
+        title, question = rest.split("|", 1)
+        return said(chat_tool("ask_task", {"task": task_id(title), "question": question}), "Asked: ")
     if name == "RECALL":
         found = json.loads(chat_tool("recall_task", {"query": rest})["content"][0]["text"])["tasks"]
         if not found:
@@ -337,8 +363,12 @@ for line in sys.stdin:
         threading.Thread(target=prompt, args=(message,), daemon=True).start()
     elif method == "_session/steering" and CAN_STEER:
         # The user's words, between Codync's own lines (the message's id before them, a thread's note after).
-        words = [line for line in params["prompt"][0]["text"].splitlines() if line and not line.startswith("[Codync:")]
-        joined.append(words[-1])
+        text = params["prompt"][0]["text"]
+        words = [line for line in text.splitlines() if line and not line.startswith("[Codync:")]
+        if ASKED in text:
+            threading.Thread(target=answer_asked, args=(params["sessionId"], words[-1]), daemon=True).start()
+        else:
+            joined.append(words[-1])
         send({"id": message["id"], "result": {"outcome": "injected"}})
     elif method == "session/cancel":
         cancel.set()

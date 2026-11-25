@@ -6,6 +6,7 @@ extension BotStore {
     /// Stores a bot the host sent, with its custom icon.
     @discardableResult
     func putHostBot(_ bot: Bot) -> Bot {
+        olderThreads.keep(bot.id, was: bots[bot.id]?.work ?? [], now: bot.work)
         let bot = withIcon(bot)
         bots[bot.id] = bot
         return bot

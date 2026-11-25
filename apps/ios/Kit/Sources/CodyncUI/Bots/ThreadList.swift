@@ -4,9 +4,9 @@ import SwiftUI
 /// The Threads tab's list, the desktop's: what needs the user, then the groups the list's options make (folders and
 /// routines, bots or computers; a group's heading folds it, on this device), then the rest, newest first, the last of
 /// it on demand. A row is a thread's title (a routine's run: when it started) and one mark at its end for how it
-/// stands. A row that needs the user opens its bot's chat at its card; one with a thread, the bot's details on that
-/// thread; any other, the bot's details. The box of threads without a bot has no chat or details: its rows open their
-/// thread over this list, and one without a thread opens nothing (the desktop's). Touch and hold: the thread's menu
+/// stands. A row with a thread pushes its thread chat (`ThreadChatView`) over this list; one without, its bot's chat at
+/// its card when it needs the user, else the bot's details. The box of threads without a bot has no chat or details:
+/// its row without a thread opens nothing (the desktop's). Touch and hold: the thread's menu
 /// (the desktop's `threadMenuItems`). While searching, `found` replaces the sections: one flat list of those rows.
 public struct ThreadList: View {
     let sections: ThreadSections<RosterItem>
@@ -15,27 +15,28 @@ public struct ThreadList: View {
     let openDetails: (RosterItem) -> Void
     /// The bot's chat, at the card `task` waits on when it needs the user.
     let openChat: (RosterItem, WorkTask) -> Void
-    /// The bot's details, on the thread of `task`.
-    let openThread: (RosterItem, WorkTask) -> Void
+    /// The list reached its end: older threads load from there.
+    let loadMore: (() -> Void)?
     /// Group headings folded on this device, by key, one per line.
     @AppStorage("foldedThreadSections") private var foldedKeys = ""
     @State private var showsAll = false
     @State private var question: WorkQuestion?
-    /// A thread of the box without a bot, pushed over the list.
-    @State private var looseThread: ThreadSections<RosterItem>.Item?
+    /// The thread pushed over the list (one just started there too).
+    @Binding var thread: ThreadTarget?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let shownRecent = 8
 
     public init(sections: ThreadSections<RosterItem>, found: [ThreadSections<RosterItem>.Item]? = nil, store: @escaping (RosterItem) -> BotStore?,
                 openDetails: @escaping (RosterItem) -> Void, openChat: @escaping (RosterItem, WorkTask) -> Void,
-                openThread: @escaping (RosterItem, WorkTask) -> Void) {
+                thread: Binding<ThreadTarget?>, loadMore: (() -> Void)? = nil) {
+        self.loadMore = loadMore
         self.sections = sections
+        _thread = thread
         self.found = found
         self.store = store
         self.openDetails = openDetails
         self.openChat = openChat
-        self.openThread = openThread
     }
 
     private var folded: Set<String> { Set(foldedKeys.split(separator: "\n").map(String.init)) }
@@ -54,13 +55,6 @@ public struct ThreadList: View {
         }
         .background(Palette.background)
         .workQuestion($question)
-        .navigationDestination(isPresented: Binding(get: { looseThread != nil }, set: { if !$0 { looseThread = nil } })) {
-            if let looseThread, let store = store(looseThread.of) {
-                WorkThreadView(botId: looseThread.of.bot.id, task: looseThread.task, openInChat: nil)
-                    .environment(store)
-                    .toolbar(.hidden, for: .tabBar)
-            }
-        }
     }
 
     /// What needs the user, the groups, then the rest.
@@ -87,6 +81,15 @@ public struct ThreadList: View {
                 .buttonStyle(.plain)
             }
         }
+        // Not while Recent hides rows behind Show more. A new id each time rows come, so an end still in view asks
+        // again. ponytail: rows landing in folded groups keep the end in view and page on; fine at 30 a page.
+        if let loadMore, recent.count == sections.recent.count {
+            Color.clear.frame(height: 1).onAppear(perform: loadMore).id(rowCount)
+        }
+    }
+
+    private var rowCount: Int {
+        sections.needsYou.count + sections.groups.reduce(0) { $0 + $1.rows.count } + sections.recent.count
     }
 
     private func title(_ kind: ThreadSections<RosterItem>.Group.Kind) -> String {
@@ -161,21 +164,15 @@ public struct ThreadList: View {
     }
 
     private func open(_ item: ThreadSections<RosterItem>.Item) {
-        if item.of.bot.plain {
-            showThread(item)
+        if item.task.thread != nil {
+            thread = ThreadTarget(of: item.of, task: item.task)
+        } else if item.of.bot.plain {
+            return
         } else if item.task.status == .needsYou {
             openChat(item.of, item.task)
-        } else if item.task.thread != nil {
-            showThread(item)
         } else {
             openDetails(item.of)
         }
-    }
-
-    /// Its thread: over this list for the box without a bot, else in its bot's details.
-    private func showThread(_ item: ThreadSections<RosterItem>.Item) {
-        guard item.task.thread != nil else { return }
-        if item.of.bot.plain { looseThread = item } else { openThread(item.of, item.task) }
     }
 
     /// Where it goes (its thread, its bot's chat), what its bot's box does with it (as its bot's details offer), what
@@ -187,7 +184,7 @@ public struct ThreadList: View {
         let offline = store.isOffline
         let act = { (action: WorkAction) in store.run(action, on: task, of: bot) { question = $0 } }
         var go: [MenuItem] = []
-        if task.thread != nil { go.append(MenuItem("Open thread", icon: "arrow.triangle.branch") { showThread(item) }) }
+        if task.thread != nil { go.append(MenuItem("Open thread", icon: "arrow.triangle.branch") { thread = ThreadTarget(of: item.of, task: task) }) }
         // The box of threads without a bot has no chat of its own.
         if !bot.plain {
             go.append(MenuItem(task.status == .needsYou ? "Answer in chat" : "Open chat", icon: "bubble.left") { openChat(item.of, task) })

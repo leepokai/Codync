@@ -82,6 +82,11 @@ public final class BotStore {
     public internal(set) var entries: [String: [Entry]] = [:]
     /// Threads' transcripts as they come in, by thread id: never part of a chat, and gone with the thread.
     public internal(set) var threadEntries: [String: [Entry]] = [:]
+    /// Ended threads older than the bots' `work` carries, as far as the Threads list paged them (`BotStore+OlderThreads`).
+    public internal(set) var olderThreads = OlderThreadList()
+    /// Moved on when the older threads start over (a new `hello`, another keep choice): a page asked before is dropped.
+    public internal(set) var olderThreadsGeneration = 0
+    var loadingOlderThreads = false
     public internal(set) var usage: Usage
     /// The newest order still to send, and the task sending them (`setUsageOrder`).
     @ObservationIgnored var usageOrderWaiting: [String]?
@@ -111,9 +116,6 @@ public final class BotStore {
 
     /// A task whose card its bot's conversation should bring into view, consumed by it.
     public internal(set) var cardRequest: (botId: String, task: WorkTask)?
-
-    /// A task whose thread its bot's conversation should open, in the bot's details; consumed by it.
-    public internal(set) var threadRequest: (botId: String, task: WorkTask)?
 
     /// A Shortcuts request, consumed by the matching conversation.
     public internal(set) var voiceCallRequest: String?
@@ -345,7 +347,7 @@ public final class BotStore {
     }
 
     /// The agents a chat's box can switch its bot to, once per login: the installed ones and the one in use (`readyLogins`).
-    func readySeats(on: AgentLogin) -> [LoginSeat] {
+    public func readySeats(on: AgentLogin) -> [LoginSeat] {
         loginSeats((hello?.backends ?? []).filter { $0.available || $0.id == on.backend }, on: on) { $0.readyLogins(on: on) }
     }
 

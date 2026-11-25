@@ -51,6 +51,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * from the bot's work, and which task. Nothing for the chat's own.
  */
 @Composable internal fun WorkThreadLine(entry: Entry, modifier: Modifier = Modifier) {
+    if (LocalInThread.current) return
     val title = (entry.data["thread"] as? JsonObject)?.let { (it["title"] as? JsonPrimitive)?.contentOrNull }?.takeIf(String::isNotEmpty) ?: return
     // A clock leads it, as the computer leads "Runs on" (iOS `Label(…, systemImage: "clock")`).
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -58,6 +59,9 @@ import kotlinx.serialization.json.jsonPrimitive
         Text(tr("Work") + " · " + title, style = Type.caption, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
+
+/** Rows drawn inside a thread's own chat (iOS `workThread` in the environment). */
+internal val LocalInThread = androidx.compose.runtime.compositionLocalOf { false }
 
 /** One of the bot's threads put [this] in the chat (iOS `EntryData.isFromThread`): it names its thread's task, by title or by id. */
 internal val Entry.isFromThread: Boolean

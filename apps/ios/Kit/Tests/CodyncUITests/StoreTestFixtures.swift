@@ -136,6 +136,9 @@ actor FakeRemote: RemoteTransport {
             return Data(#"{"instructions":"Be the relay.","tools":[],"credential":"token-\#(n)"}"#.utf8)
         case "setUsageOrder":
             return Data(#"{"providers":[]}"#.utf8)
+        case "olderThreads":
+            let row = #"{"botId":"b1","id":"t1","title":"Old","status":"done","thread":"th-1","createdAt":1,"endedAt":5}"#
+            return Data(#"{"threads":[\#(row)],"more":false}"#.utf8)
         case "createBot", "updateBot":
             // The host's reply bot, which never carries a custom icon (icons sync on their own).
             let id = (try JSONSerialization.jsonObject(with: body) as? [String: Any])?["id"] as? String ?? "new"

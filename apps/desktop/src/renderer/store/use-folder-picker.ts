@@ -64,3 +64,19 @@ export function useFolderPicker(onPick: (path: string) => void) {
 }
 
 function errorText(error: unknown) { return error instanceof Error ? error.message : String(error) }
+
+/** The folders the computer remembers using, newest first (a folder chip's list); none until `on`. */
+export function useRecentFolders(on: boolean): string[] {
+  const store = useStore()
+  const [recent, setRecent] = useState<string[]>([])
+  useEffect(() => {
+    if (!on) return
+    let live = true
+    // The chip still lists the projects and Browse when the list can't be read (offline): nothing to tell the user.
+    store.listDirs(null).then((l) => live && setRecent((l.recent ?? []).map((r) => r.path)), () => {})
+    return () => {
+      live = false
+    }
+  }, [store, on])
+  return recent
+}

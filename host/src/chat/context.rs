@@ -27,6 +27,9 @@ pub struct Identity {
     /// could move (`parse` reads it from the instructions).
     #[serde(default)]
     pub lead: Option<bool>,
+    /// Its projects (`BotConfig::projects`), the first its default: where its tasks work.
+    #[serde(default)]
+    pub projects: Vec<String>,
 }
 
 impl Identity {
@@ -36,6 +39,7 @@ impl Identity {
             description: cfg.description.trim().to_owned(),
             skills_brief: crate::market::skills_brief(store, &cfg.skills).unwrap_or_default(),
             lead: Some(cfg.lead),
+            projects: cfg.projects.clone(),
         }
     }
 }
@@ -210,7 +214,8 @@ everything you know about it is in the message that gives it to you, and you don
 need isn't there, look it up (search_memory and read_memory, the files) before you ask. Your last message is your \
 report: the bot that gave you the task tells the user what matters, so say what you did, what you found, what is left \
 and where (files, branch). When the user must choose before you can go on, call request_decision; to hand over a file \
-or a page, send_file or publish_artifact. Save what should outlast this task with edit_memory.";
+or a page, send_file or publish_artifact. Save what should outlast this task with edit_memory. When the bot that gave \
+you the task asks you a question, answer it in one short message, then go on with your task.";
 
 /// What a thread the user opened with the bot is told of where it is.
 const USER: &str = "Away from your chat: the user opened this thread to work with you directly. It starts without \
@@ -308,7 +313,7 @@ fn render_bot(store: &Store, cfg: &BotConfig) -> String {
     lines.push(String::new());
     lines.push(OTHER_COMPUTERS.to_owned());
     lines.push(String::new());
-    lines.push(format!("Workspace: your default working directory is {}. {} Keep your own files and outputs there. For another project, use explicit paths or change directory for that command; don't change your bot configuration to work elsewhere. This directory is not a sandbox or a grant of access: follow the user's instructions and your permissions, and don't assume other bots' files are yours.", cfg.cwd, workspace_origin(cfg)));
+    lines.push(workspace(cfg));
     lines.push(String::new());
     lines.push(crate::dev_servers::BRIEF.to_owned());
     lines.push(String::new());
@@ -365,6 +370,29 @@ fn thread_origin(cfg: &BotConfig) -> &'static str {
     }
 }
 
+/// The bot's Workspace paragraph: its own folder, and its projects.
+fn workspace(cfg: &BotConfig) -> String {
+    format!(
+        "Workspace: your own folder is {}, your working directory. {} Keep your own files and outputs there, and never change your own folder or your bot configuration to work elsewhere. {} This directory is not a sandbox or a grant of access: follow the user's instructions and your permissions, and don't assume other bots' files are yours.",
+        cfg.cwd,
+        workspace_origin(cfg),
+        projects_line(&cfg.projects)
+    )
+}
+
+/// What the bot is told of its projects, in its instructions and a profile update.
+fn projects_line(projects: &[String]) -> String {
+    match projects {
+        [] => "You have no projects: code work in a folder the user names goes to a task with that folder (add_task folder). To read a folder's files yourself, use explicit paths.".to_owned(),
+        [default, rest @ ..] => {
+            let others = if rest.is_empty() { String::new() } else { format!("; also {}", rest.join(", ")) };
+            format!(
+                "Your projects, the user's folders: {default} (your default){others}. Code work in a project goes to a task with that folder (add_task folder; left out, your default project), not into your own folder. To read a project's files yourself, use explicit paths."
+            )
+        }
+    }
+}
+
 /// Whose the bot's working directory is, and for its own folder, the versions Codync keeps there.
 fn workspace_origin(cfg: &BotConfig) -> &'static str {
     match crate::agent::workspace::own_folder(cfg) {
@@ -399,6 +427,8 @@ pub fn profile_update(store: &Store, snapshot: &Snapshot, cfg: &BotConfig) -> Op
         format!("Current name: {}", or_none(&identity.name, "(no name)")),
         format!("Current description: {}", or_none(&identity.description, "(no description)")),
         skills.to_owned(),
+        // A thread has none: the bot's projects are the bot's to send work to.
+        if cfg.is_thread() { String::new() } else { projects_line(&identity.projects) },
         role.to_owned(),
         "Use this identity until a future conversation summary folds it into the Agent profile section.".to_owned(),
         "</agent_profile_update>".to_owned(),
@@ -498,6 +528,32 @@ mod tests {
         assert!(system.contains("Replies to your own message_bot requests arrive as a turn of their own"));
         assert!(system.contains("These rules apply to the current turn"));
         assert!(system.contains("use list_bots and message_bot (ids like name@computer), not SSH"));
+    }
+
+    #[test]
+    fn a_bot_is_told_its_projects_and_hears_when_they_change() {
+        let store = store();
+        let mut bot = cfg("Fixer", "");
+        let alone = render(&store, &bot);
+        assert!(
+            alone.contains("Workspace: your own folder is /tmp") && alone.contains("You have no projects"),
+            "{alone}"
+        );
+        bot.projects = vec!["/code/app".into(), "/code/site".into()];
+        let system = render(&store, &bot);
+        assert!(
+            system.contains("Your projects, the user's folders: /code/app (your default); also /code/site."),
+            "{system}"
+        );
+        assert!(system.contains("add_task folder") && system.contains("never change your own folder"), "{system}");
+        assert!(!render_thread(&store, &thread_of(&cfg("Fixer", "")), &Source::User).contains("Your projects"));
+
+        let first = adopt(&store, &cfg("Fixer", ""), "s1", "SYSTEM".into(), String::new()).expect("adopt");
+        let (text, _) = profile_update(&store, &first, &bot).expect("its projects changed");
+        assert!(text.contains("/code/app (your default)"), "{text}");
+        let renamed = thread_of(&cfg("Fixer 2", ""));
+        let (text, _) = profile_update(&store, &first, &renamed).expect("its name changed");
+        assert!(!text.contains("projects") && !text.contains("add_task"), "a thread runs no tasks: {text}");
     }
 
     #[test]

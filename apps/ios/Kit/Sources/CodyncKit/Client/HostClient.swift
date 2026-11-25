@@ -23,6 +23,8 @@ public enum HostEvent: Sendable {
     case name(String)
     /// The computer's automatic bot order was switched (from any device): its `hello` says it from now on.
     case autoOrder(Bool)
+    /// How long the computer keeps ended threads changed (from any device): its `hello` says it from now on.
+    case threadKeepDays(Int)
     case resync
     /// One this app has no use for.
     case skipped
@@ -169,6 +171,9 @@ public struct HostClient: Sendable {
         case "autoOrder":
             struct AutoOrderWrap: Decodable { var enabled: Bool }
             return (try? d.decode(AutoOrderWrap.self, from: data)).map { .autoOrder($0.enabled) }
+        case "threadKeepDays":
+            struct KeepWrap: Decodable { var days: Int }
+            return (try? d.decode(KeepWrap.self, from: data)).map { .threadKeepDays($0.days) }
         case "resync":
             return .resync
         case "workflow":
@@ -294,11 +299,14 @@ public extension HostClient {
         let _: Empty = try await call("renameSection", body)
     }
 
-    /// A thread the user starts with `botId`, opened by `text`, on the bot's own settings: its task's id.
-    func startThread(botId: String, text: String) async throws -> String {
-        struct Res: Decodable { var taskId: String }
-        let res: Res = try await call("startThread", ["botId": botId, "text": text])
-        return res.taskId
+    /// A thread the user starts, opened by `text`: with `botId` on the bot's own settings (in its default project, else
+    /// its own folder), or with none on what `setup` names. The bot it went to (a thread without one: the computer's box
+    /// of them) and its task's id.
+    func startThread(botId: String?, text: String, setup: ThreadSetup?) async throws -> (botId: String, taskId: String) {
+        struct Req: Encodable { var botId: String?; var text: String; var setup: ThreadSetup? }
+        struct Res: Decodable { var botId: String; var taskId: String }
+        let res: Res = try await call("startThread", Req(botId: botId, text: text, setup: setup))
+        return (res.botId, res.taskId)
     }
 
     /// The chat read; a no-op when nothing there is unread.
@@ -387,6 +395,20 @@ public extension HostClient {
     /// Whether a bot with a new message moves to the top of the roster.
     func setAutoOrder(_ enabled: Bool) async throws {
         let _: Empty = try await self.call("setAutoOrder", ["enabled": enabled])
+    }
+
+    /// How many days after a thread last finished the computer deletes it (0 never, else 7 to 3650); answers the
+    /// days it keeps now.
+    func setThreadKeepDays(_ days: Int) async throws -> Int {
+        struct Kept: Decodable { var days: Int }
+        let kept: Kept = try await self.call("setThreadKeepDays", ["days": days])
+        return kept.days
+    }
+
+    /// A page of the ended threads of every bot that ended before `before` (the newest when nil), newest first.
+    func olderThreads(before: Int64?) async throws -> OlderThreadsPage {
+        struct Body: Encodable { var before: Int64? }
+        return try await self.call("olderThreads", Body(before: before))
     }
 
     /// The user makes this bot the lead, in place of the one before.

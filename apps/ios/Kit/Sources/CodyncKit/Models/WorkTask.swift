@@ -120,13 +120,15 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
     /// It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); nil from an
     /// older host, where every live task takes one (`takesSeat`).
     public var seat: Bool?
+    /// The agent a thread the user started runs on, where it isn't its bot's (always without a bot); nil for the bot's.
+    public var agent: String?
 
     /// Where its thread works on the computer: its folder, else its worktree's; nil when the host names neither.
     public var wherePath: String? { [folder, worktree?.path].compactMap(\.self).first { !$0.isEmpty } }
 
     public init(id: String, title: String, status: Status, activity: String = "", thread: String? = nil, wait: Wait? = nil,
                 cutIn: Bool = false, createdAt: Int64 = 0, startedAt: Int64? = nil, endedAt: Int64? = nil, result: String = "",
-                source: Source? = nil, worktree: Worktree? = nil, talk: Bool = false, talkFiles: Bool = false, folder: String? = nil, seat: Bool? = nil) {
+                source: Source? = nil, worktree: Worktree? = nil, talk: Bool = false, talkFiles: Bool = false, folder: String? = nil, seat: Bool? = nil, agent: String? = nil) {
         self.id = id
         self.title = title
         self.status = status
@@ -144,6 +146,7 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
         self.talkFiles = talkFiles
         self.folder = folder
         self.seat = seat
+        self.agent = agent
     }
 
     /// Lenient, but for what says which task it is and where it stands: one without an id, or with a status this
@@ -168,6 +171,7 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
         talkFiles = (try? c.decodeIfPresent(Bool.self, forKey: .talkFiles)) ?? false
         folder = try? c.decodeIfPresent(String.self, forKey: .folder)
         seat = try? c.decodeIfPresent(Bool.self, forKey: .seat)
+        agent = try? c.decodeIfPresent(String.self, forKey: .agent)
     }
 
     /// It takes one of the bot's seats (`maxThreads`): the host's word, else a live task.
@@ -177,9 +181,10 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
     /// its answer already. A routine's task runs the routine again.
     public var canRetry: Bool { (status == .failed || status == .stopped) && source?.kind != .request }
 
-    /// A thread has it and it may give way to a task that cuts in: only work the bot added. A routine's run or
-    /// another bot's request is stopped, never set aside.
-    public var givesWay: Bool { status.isLive && source == nil }
+    /// A thread has it and it may give way to a task that cuts in: only work the bot added that holds a seat. A
+    /// routine's run or another bot's request is stopped, never set aside, and a thread the user started never holds
+    /// a seat (`seat`).
+    public var givesWay: Bool { status.isLive && takesSeat && source == nil }
 }
 
 /// A bot's `work` as the host sent it, each task that doesn't read left out.

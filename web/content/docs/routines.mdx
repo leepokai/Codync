@@ -1,6 +1,6 @@
 A routine is work a bot does on its own: on a schedule, at a set time, or whenever another service sends it a webhook. Use one for a morning summary, a nightly check of a repository, or a review each time a pull request opens.
 
-Each routine belongs to one bot and runs on your computer, with that bot's agent, folder, tools and approval setting. Its results show up in the bot's chat.
+Each routine belongs to one bot and runs on your computer, with that bot's agent, tools and approval setting, in the bot's folder or one you pick for the routine. Its results show up in the bot's chat.
 
 The lead bot Codync sets up comes with one routine, **Check in**, twice a day; it's an ordinary routine you can change, pause or delete, and it stays with that bot if you pick another lead. See [Your lead bot](/docs/bots#your-lead-bot).
 
@@ -34,6 +34,7 @@ Choose **+** (**Set up a routine**) in the routine list, or press `n` in the ter
 
 - **Name** and **Instruction**: what the bot should do each time it runs.
 - **When to run**: **Schedule** or **Webhook**.
+- **Folder**: where its runs work. Without one a run works in the bot's folder; with one, each run works in that folder in a thread of its own (on the Threads page), so it can work in a project while the bot stays in its own folder. In the terminal UI type the folder's full path. If the folder is gone when a run starts, the run fails and says so. A routine of a bot that worked in a project before it [moved to its own folder](/docs/bots#bots-that-worked-in-a-project) got that project as its folder, so its runs still work there, unless the bot has computer use or **Manage the team** on.
 - **Run settings**: the **Timeout**.
 
 Choose **Create routine** to save it (desktop: ⌘S or Ctrl+S; terminal UI: Ctrl+S). Open a routine from the list to change it, then choose **Save changes**.
@@ -66,7 +67,7 @@ For one more look at something in a conversation you're already having ("check t
 
 ## Where results appear
 
-A run posts in the bot's chat: a line with the routine's name, such as "Routine · Morning summary", then the bot's reply, which is the result. The run's steps are in its thread (the bot's **Details**, under **Threads** while it runs and **Recent** after). Tap the routine line to open the routine.
+A run posts in the bot's chat: a line with the routine's name, such as "Routine · Morning summary", then the bot's reply, which is the result. The run has its own thread (on the **Threads** tab, and in the bot's **Details** under **Threads** while it runs and **Recent** after). Tap the routine line to open the routine.
 
 - A successful run sends you a notification with its reply.
 - If there's nothing to report and the instruction allows silence, the run finishes without a message: a reply that is `(pass)`, or whose last line ends with `(pass)` right after a finished sentence ("Nothing new. (pass)"), is not posted. Anything the bot wrote before it stays in the run's steps.

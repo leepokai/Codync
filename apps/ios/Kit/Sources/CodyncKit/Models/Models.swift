@@ -372,6 +372,19 @@ public struct Hello: Codable, Sendable {
     public var workflows: Bool?
     /// This host starts a thread the user asks for (`startThread`). Missing on older hosts: it doesn't.
     public var startThread: Bool?
+    /// A thread may start without a bot, on an agent it names (`startThread` without `botId`). Missing on older hosts.
+    public var threadsWithoutBot: Bool?
+    /// A routine can name the folder its runs work in (`folder`). Missing on older hosts: it can't.
+    public var routineFolder: Bool?
+    /// A bot has projects (`Bot.projects`) and lives in its own folder. Missing on older hosts: its `cwd` is the project.
+    public var projects: Bool?
+    /// A new worktree gets the bot's `sharedFolders` linked: the setting shows. Missing on older hosts.
+    public var worktreeFill: Bool?
+    /// A thread without a bot gets a folder of its own when none is sent.
+    public var threadFolders: Bool?
+    /// How many days after a thread last finished the computer deletes it, 0 never (`setThreadKeepDays`). Missing on
+    /// older hosts, which don't list older threads (`olderThreads`) either.
+    public var threadKeepDays: Int?
 }
 
 public struct RecentWorkspace: Codable, Sendable, Identifiable {
@@ -466,6 +479,12 @@ public struct BotDraft: Codable, Hashable, Sendable {
     public var maxThreads: Int?
     /// Nil where the host has no such setting, so it isn't sent.
     public var threadWorktrees: Bool?
+    /// The whole list, the first the default. Nil where the host has no projects (an older one), so it isn't sent.
+    public var projects: [String]?
+    /// Nil where the host has no such setting, so it isn't sent.
+    public var worktreeMode: WorktreeMode?
+    /// The whole map, per project. Nil where the host has no such setting, so it isn't sent.
+    public var sharedFolders: [String: [String]]?
 
     public init(name: String = "", description: String = "", avatarColor: String = AvatarPalette.colors.randomElement()!.id,
                 avatarShape: String = AvatarPalette.shapes.randomElement()!, backend: String = "claude", cwd: String = "",
@@ -511,6 +530,56 @@ public struct BotDraft: Codable, Hashable, Sendable {
         compaction = bot.compaction
         maxThreads = bot.maxThreads
         threadWorktrees = bot.threadWorktrees
+        projects = bot.projects
+        worktreeMode = bot.worktreeMode
+        sharedFolders = bot.sharedFolders
+    }
+
+    /// Adds `path` as the last project (the default when it's the first); one already there stays where it is.
+    public mutating func addProject(_ path: String) {
+        var list = projects ?? []
+        if !list.contains(path) { list.append(path) }
+        projects = list
+    }
+
+    public mutating func removeProject(_ path: String) {
+        projects?.removeAll { $0 == path }
+        sharedFolders?[path] = nil
+    }
+
+    /// The folders of `project` linked into each of its new worktrees.
+    public func sharedFolders(of project: String) -> [String] { sharedFolders?[project] ?? [] }
+
+    /// `input` as the host takes a shared folder's name, a plain path inside the project (`node_modules`, `.cache/pip`):
+    /// trimmed, no `./` or trailing slash; nil for an absolute path, one with `..`, or nothing.
+    public static func sharedFolderName(_ input: String) -> String? {
+        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = text.split { $0 == "/" || $0 == "\\" }.filter { $0 != "." }
+        let absolute = text.hasPrefix("/") || text.hasPrefix("\\") || text.range(of: "^[A-Za-z]:", options: .regularExpression) != nil
+        guard !absolute, !parts.isEmpty, !parts.contains("..") else { return nil }
+        return parts.joined(separator: "/")
+    }
+
+    /// Adds `input` to `project`'s shared folders (once); false for a name `sharedFolderName` refuses.
+    @discardableResult
+    public mutating func addSharedFolder(_ input: String, to project: String) -> Bool {
+        guard let name = Self.sharedFolderName(input) else { return false }
+        var list = sharedFolders(of: project)
+        if !list.contains(name) { list.append(name) }
+        sharedFolders = (sharedFolders ?? [:]).merging([project: list]) { $1 }
+        return true
+    }
+
+    public mutating func removeSharedFolder(_ name: String, from project: String) {
+        let list = sharedFolders(of: project).filter { $0 != name }
+        sharedFolders?[project] = list.isEmpty ? nil : list
+    }
+
+    /// Moves `path` first: threads start there.
+    public mutating func makeDefaultProject(_ path: String) {
+        guard var list = projects, let index = list.firstIndex(of: path) else { return }
+        list.insert(list.remove(at: index), at: 0)
+        projects = list
     }
 
     /// This draft with each field it hasn't changed from `base` (the bot as the form loaded it) taken from `fresh`
@@ -526,7 +595,8 @@ public struct BotDraft: Codable, Hashable, Sendable {
         follow(\.fastMode); follow(\.fallbacks); follow(\.selfFallbacks); follow(\.threadAgent); follow(\.threadFallbacks); follow(\.pinned); follow(\.hidden)
         follow(\.notify); follow(\.connectors); follow(\.skills); follow(\.computer); follow(\.manageTeam)
         follow(\.sharedMemory); follow(\.harnessMemory); follow(\.offeredToNetwork); follow(\.reachableByAssistants)
-        follow(\.compaction); follow(\.maxThreads); follow(\.threadWorktrees)
+        follow(\.compaction); follow(\.maxThreads); follow(\.threadWorktrees); follow(\.projects); follow(\.worktreeMode)
+        follow(\.sharedFolders)
         return draft
     }
 }

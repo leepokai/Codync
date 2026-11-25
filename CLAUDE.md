@@ -87,6 +87,7 @@ Build targets, folder layout, file naming and shared terms: [docs/architecture/f
 
 ## Several agents share `dev`
 
+- **Every change, large or small (docs and one-line fixes included), is made in its own worktree**, never in the shared checkout: `git worktree add -b <fix|feat>/<slug> .claude/worktrees/<fix|feat>-<slug> dev`, work, test and commit there, then merge into `dev`, push and delete the worktree ([after every change](docs/guides/clean-code.md#after-every-change-review-e2e-cleanup)).
 - Several agents often work in this checkout on `dev` at once. When you start a task, name your session after its area (`/rename kit-markdown`, `host-voice`, …; ask the user if you can't rename yourself) so others can find you in `ListAgents`.
 - Before starting any task, sync with origin: `git pull --rebase --autostash origin dev`, then push any finished local commits that aren't on `origin/dev` yet (`git push origin dev`). The pull is tree-wide, so the next rule applies; if the autostash conflicts, keep both sides' intent and never drop another agent's hunk.
 - Before touching files with someone else's uncommitted changes, or anything tree-wide (renames, `xcodegen`, version bump, `git stash`/`reset`/`checkout`), `SendMessage` the agents involved with what you'll change and wait for or answer their replies. Never discard, revert or reformat hunks that aren't yours.
@@ -101,4 +102,4 @@ Follow the Conventional Commit and PR rules in [AGENTS.md](AGENTS.md#commit--pul
 
 - CLAUDE.md and AGENTS.md hold only rules an agent needs on every task. Reference material (file structure, naming tables, API details, audits, how-tos) goes in `docs/` as its own file, with a one-line pointer here.
 - Whenever you edit either file, check its length: past ~100 lines, or a section past a few lines of reference detail, refactor that detail into `docs/` and leave the pointer, without being asked.
-- Keep `docs/` current: update the doc in the same change that makes it stale. A change users can see also updates its page of the user manual (`web/content/docs/`): [user docs](docs/guides/user-docs.md).
+- Keep `docs/` in step with the codebase: update the doc in the same change that makes it stale, plans included (mark a part Built and drop "next"/"proposed" once it lands); a doc you read that disagrees with the code gets fixed in that change, not left for later. A change users can see also updates its page of the user manual (`web/content/docs/`): [user docs](docs/guides/user-docs.md).

@@ -45,6 +45,19 @@ public extension AccountStore {
             guard let store = store(for: computer.id), let box = store.plainBox else { return nil }
             return RosterItem(ref: BotReference(accountId: accountId, computerId: computer.id, botId: box.id), bot: box, computer: store.computer)
         }
-        return computers.flatMap { onScreen($0.id, order: sectionOrder) } + boxes
+        let older = Dictionary(uniqueKeysWithValues: computers.compactMap { c in store(for: c.id).map { (c.id, $0.olderThreads.byBot) } })
+        return (computers.flatMap { onScreen($0.id, order: sectionOrder) } + boxes).map { item in
+            // Older threads (`olderThreads`) join their bot's work as ended ones.
+            guard let tasks = older[item.ref.computerId]?[item.bot.id] else { return item }
+            var item = item
+            item.bot.work = WorkTask.merging(item.bot.work, older: tasks)
+            return item
+        }
+    }
+
+    /// `botId` of `computer` as a roster row, hidden ones (the box of threads without a bot) included.
+    func item(_ computer: ComputerID, botId: String) -> RosterItem? {
+        guard let store = store(for: computer), let bot = store.bots[botId] else { return nil }
+        return RosterItem(ref: BotReference(accountId: accountId, computerId: computer, botId: botId), bot: bot, computer: store.computer)
     }
 }

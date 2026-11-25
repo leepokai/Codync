@@ -122,10 +122,11 @@ export async function steerBot(page: Page, name: string, seconds: number) {
   return bot
 }
 
-/** A bot on the scripted agent that answers each message with `mode read-only · <the message>`, in `cwd` when given (the agent logs its calls to calls.jsonl there). */
-export async function echoBot(page: Page, name: string, cwd?: string) {
-  const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-    name, backend: 'custom', command: fixtureCommand(echoAgent), cwd, connectors: [], skills: [], notify: false,
+/** A bot on the scripted agent that answers each message with `mode read-only · <the message>`, with `project` as its
+ * default project when given. Its chat runs in the bot's own folder (`cwd`), where the agent logs its calls to calls.jsonl. */
+export async function echoBot(page: Page, name: string, project?: string) {
+  const { bot } = await api<{ bot: { id: string; cwd: string } }>(page, 'createBot', {
+    name, backend: 'custom', command: fixtureCommand(echoAgent), cwd: project, connectors: [], skills: [], notify: false,
   })
   return bot
 }

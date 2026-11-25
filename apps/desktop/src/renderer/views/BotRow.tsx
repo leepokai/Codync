@@ -8,6 +8,7 @@ import { Text } from '../components/Text'
 import { ThinkingOrb } from '../components/ThinkingOrb'
 import { UnreadBadge } from '../components/UnreadBadge'
 import { messagePreview } from '../lib/message-preview'
+import { rowPauseMarkSize } from '../lib/avatar-marks'
 import { useModel } from '../lib/observable'
 import { prefs, usePref } from '../lib/prefs'
 import { useTr } from '../lib/use-language'
@@ -29,7 +30,7 @@ export const BotRow = memo(function BotRow({ bot, store, usingComputer, members,
         <HStack align="baseline" gap={4} shrink>
           {bot.pinned ? <Icon name="pin.fill" size={10} color="var(--tertiary)" /> : null}
           <Text size="body" weight={bot.lead ? 'bold' : bot.unread > 0 ? 'semibold' : 'medium'} tone="text" truncate>{bot.name}</Text>
-          {paused ? <Icon name="pause.circle" size={11} color="var(--tertiary)" title={tr(`Paused`)} /> : null}
+          {paused ? <Icon name="pause.circle" size={rowPauseMarkSize(iconSize)} color="var(--attention)" title={tr(`Paused`)} /> : null}
           {usingComputer ? <Icon name="cursorarrow.motionlines" size={10} color="var(--accent)" title="Using the computer" /> : null}
         </HStack>
         <HStack gap={6} shrink>

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefO
 import { Spinner } from '../../components/Controls'
 import { usePresence } from '../../components/Overlay'
 import { useTr } from '../../lib/use-language'
+import { anchorFor, rowsCanScroll, scrollTopFor } from '../../lib/scroll-anchor'
 import { rowIn, useArrivals, type ChatItem } from './chat-items'
 import { MacChatButton } from './MacChatButton'
 
@@ -100,7 +101,9 @@ export function ChatLog({ items: all, fresh, canLoadOlder, loadOlder, revealed =
     if (loadingEarlier) return
     setLoadingEarlier(true)
     const el = scroller.current
-    keepPlace.current = el ? el.scrollHeight - el.scrollTop : null
+    // A reader at the newest keeps no anchor: the rows are brought to the bottom after every render, and an anchor
+    // taken there would be applied later, once the view had left the bottom, as a distance the rows have outgrown.
+    keepPlace.current = el ? anchorFor(followingRef.current, el.scrollHeight, el.scrollTop) : null
     let list = all
     let at = start
     if (at === 0) {
@@ -118,9 +121,14 @@ export function ChatLog({ items: all, fresh, canLoadOlder, loadOlder, revealed =
     const el = scroller.current
     if (!el) return
     if (keepPlace.current !== null && !followingRef.current) {
-      el.scrollTop = el.scrollHeight - keepPlace.current
+      el.scrollTop = scrollTopFor(keepPlace.current, el.scrollHeight)
       keepPlace.current = null
-    } else if (followingRef.current) toBottom()
+    } else if (followingRef.current) {
+      // Cleared here too: an anchor that outlived the render which took it would move a reader who has since
+      // left the bottom, and never be cleared by the branch above.
+      keepPlace.current = null
+      toBottom()
+    }
   })
 
   // A message the user sends brings the chat back to the newest.
@@ -155,7 +163,9 @@ export function ChatLog({ items: all, fresh, canLoadOlder, loadOlder, revealed =
           if (el.scrollTop < lastScrollTop.current - 1 && !atEnd) setFollowing(false)
           else if (atEnd) setFollowing(true)
           lastScrollTop.current = el.scrollTop
-          if (more && el.scrollTop < 200 && !loadingEarlier) void showEarlier()
+          // Rows shorter than the view sit at their top permanently, where "near the top" says nothing: there are
+          // no earlier rows to bring in, and asking would take an anchor from a view that never moved.
+          if (more && rowsCanScroll(el.scrollHeight, el.clientHeight) && el.scrollTop < 200 && !loadingEarlier) void showEarlier()
         }}
       >
         <div className="transcript-content">

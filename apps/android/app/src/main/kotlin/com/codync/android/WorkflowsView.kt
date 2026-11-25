@@ -36,12 +36,14 @@ import com.codync.android.core.Bot
 import com.codync.android.core.LinkState
 import com.codync.android.core.WorkflowSummary
 import com.codync.android.core.statusLabel
+import com.codync.android.core.workflowMatches
 import com.codync.android.design.*
+import com.kyant.shapes.Capsule
 import java.util.Date
 import kotlinx.coroutines.CancellationException
 
 /** The Workflows tab, view only: list, one workflow, its runs, or one run, where an approval step is answered. */
-@Composable internal fun WorkflowsView(state: AppState, store: AppStore, computers: List<AppState>, bottomInset: Dp, selectComputer: (String) -> Unit) {
+@Composable internal fun WorkflowsView(app: AccountContext, account: () -> Unit, state: AppState, store: AppStore, computers: List<AppState>, bottomInset: Dp, selectComputer: (String) -> Unit) {
     val route = state.workflow ?: return
     var runsOn by rememberSaveable { mutableStateOf(false) }
     val back = remember { mutableStateOf<() -> Unit>({}) }
@@ -64,7 +66,7 @@ import kotlinx.coroutines.CancellationException
     }
     NavStack(pages, key = { it.key }, pop = { back.value() }, Modifier.fillMaxSize()) { page ->
         when (page) {
-            WorkflowPage.List -> WorkflowListView(state, store, computers, bottomInset, selectComputer)
+            WorkflowPage.List -> WorkflowListView(app, account, state, store, computers, bottomInset, selectComputer)
             is WorkflowPage.Detail -> WorkflowDetailView(state, store, page.id, { back.value() }) { runsOn = true }
             is WorkflowPage.Runs -> WorkflowRunsView(state, store, page.id, { back.value() }) { store.showWorkflow(page.id, it) }
             is WorkflowPage.Run -> WorkflowRunView(state, store, page.id, page.runId) { back.value() }
@@ -85,11 +87,15 @@ private sealed class WorkflowPage {
     }
 }
 
-@Composable private fun WorkflowListView(state: AppState, store: AppStore, computers: List<AppState>, bottomInset: Dp,
+@Composable private fun WorkflowListView(app: AccountContext, account: () -> Unit, state: AppState, store: AppStore, computers: List<AppState>, bottomInset: Dp,
     selectComputer: (String) -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var pinRevision by remember { mutableIntStateOf(0) }
     var loadError by remember { mutableStateOf<String?>(null) }
+    // The search field is open, and what it finds workflows by (title or id).
+    var searching by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    val shown = remember(state.workflows, query) { workflowMatches(state.workflows, query) }
     val pinned = remember(pinRevision, state.workflows) { WorkflowPins.load(context, state.computer.id).toSet() }
     LaunchedEffect(state.actualConnection, state.offersWorkflows) {
         if (state.actualConnection is LinkState.Ready && state.offersWorkflows) {
@@ -99,15 +105,17 @@ private sealed class WorkflowPage {
         }
     }
     Column(Modifier.fillMaxSize().background(Palette.background).statusBarsPadding()) {
-        ScreenHeader(leading = {
+        // The Bots tab's header: the title over the computer shown, then the computer to show and Search; no New yet.
+        ListHeader(app, account, "Workflows", state.hostName, searching, query, { query = it }, { searching = false; query = "" }) {
             if (computers.size > 1) DropdownMenu({
                 computers.map { other ->
                     MenuItem(other.hostName, selected = other.computer.id == state.computer.id, verbatim = true) { selectComputer(other.computer.id) }
                 }
-            }, label = "Computer: ${state.hostName}") {
-                ComputerBadge(state.hello?.text("device"), 28.dp, state.computer.color)
+            }, Modifier.size(44.dp).glass(Capsule()), label = "Computer: ${state.hostName}") {
+                Symbol("line.3.horizontal.decrease", size = 24.dp, tint = Palette.text)
             }
-        }, title = { Text(tr("Workflows"), style = Type.body.semibold, color = Palette.text) })
+            HeaderButton("magnifyingglass", "Search") { searching = true }
+        }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp).padding(bottom = bottomInset),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             state.workflowMessage?.let { Text(tr(it), style = Type.callout, color = Palette.danger) }
@@ -118,8 +126,9 @@ private sealed class WorkflowPage {
                     Text(tr("No workflows yet"), style = Type.headline, color = Palette.text)
                 }
             }
-            if (state.workflows.isNotEmpty()) CardSection(footer = "Hold a workflow to pin it on the bot list.") {
-                for (workflow in state.workflows) row {
+            if (state.workflows.isNotEmpty() && shown.isEmpty()) Text(tr("No results"), Modifier.padding(top = 8.dp), style = Type.callout, color = Palette.secondary)
+            if (shown.isNotEmpty()) CardSection(footer = "Hold a workflow to pin it on the bot list.") {
+                for (workflow in shown) row {
                     WorkflowSummaryRow(workflow, workflow.id in pinned, { store.showWorkflow(workflow.id) }, inCard = true) {
                         val computer = state.computer.id
                         WorkflowPins.toggle(context, computer, workflow.id)

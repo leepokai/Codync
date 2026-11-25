@@ -1,6 +1,7 @@
 package com.codync.android
 
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withTimeoutOrNull
 import com.codync.android.core.Login
 import kotlinx.serialization.json.JsonObject
@@ -14,7 +15,10 @@ import kotlinx.serialization.json.put
 internal fun AppStore.workFirst(botId: String, taskId: String) = changeWork("workFirst", botId, taskId)
 
 /** A waiting task, or one that ended, leaves the box. */
-internal fun AppStore.dropWork(botId: String, taskId: String) = changeWork("dropWork", botId, taskId)
+internal fun AppStore.dropWork(botId: String, taskId: String) {
+    mutableState.update { it.copy(olderThreads = it.olderThreads?.drop(botId, taskId)) }
+    changeWork("dropWork", botId, taskId)
+}
 
 /** A working task's thread stops. */
 internal fun AppStore.stopWork(botId: String, taskId: String) = changeWork("stopWork", botId, taskId)

@@ -199,6 +199,7 @@ impl Actor {
             }
             .into();
             r.started_at = Some(now_ms());
+            r.turn_key = Some(uuid::Uuid::new_v4());
             r.lane = Some(lane.clone());
             r.message = message;
         });
@@ -240,6 +241,7 @@ impl Actor {
                 r.status = BotStatus::Idle;
                 r.activity = String::new();
                 r.started_at = None;
+                r.turn_key = None;
                 r.lane = None;
                 r.message = None;
                 r.session = None;
@@ -542,6 +544,7 @@ impl Actor {
             };
             r.activity = needs.unwrap_or_default();
             r.started_at = None;
+            r.turn_key = None;
             r.lane = None;
             r.message = None;
             r.session = None;

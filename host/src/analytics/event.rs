@@ -228,6 +228,10 @@ pub enum Event {
     NetworkFailed,
     /// A coding agent's session used its Network mailbox (`SessionAction`, with the agent's kind).
     NetworkSession,
+    /// A bot reads another bot, or an explicitly approved action is applied to it.
+    BotInspected,
+    /// How `answer_approval` or `stop_bot` ended, including declined, stale, invalid and failed calls.
+    BotInspectOutcome,
     /// Error tracking (`errors`): a panic or an uncaught error.
     Exception,
 }
@@ -377,6 +381,8 @@ impl Event {
             Self::NetworkChanged => "network_changed",
             Self::NetworkFailed => "network_failed",
             Self::NetworkSession => "network_session",
+            Self::BotInspected => "bot_inspected",
+            Self::BotInspectOutcome => "bot_inspect_outcome",
             Self::Exception => "$exception",
         }
     }

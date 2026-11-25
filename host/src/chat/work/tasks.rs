@@ -391,50 +391,21 @@ pub(super) fn change<T>(hub: &Hub, bot: &str, change: impl FnOnce(&mut Vec<Task>
     Ok(out)
 }
 
-/// A deleted bot's box goes with it, and its past tasks.
+/// A deleted bot's box goes with it.
 pub(super) fn forget(store: &Store, bot: &str) {
-    for key in [key(bot), past_key(bot)] {
-        if let Err(error) = store.kv_delete(&key) {
-            tracing::warn!(bot, error = format!("{error:#}"), "couldn't drop a bot's work");
-        }
+    if let Err(error) = store.kv_delete(&key(bot)) {
+        tracing::warn!(bot, error = format!("{error:#}"), "couldn't drop a bot's work");
     }
 }
 
-/// Where a bot's tasks that ended over a week ago wait for `recall_task`: out of its box, which the wire and every
-/// change read whole.
-const PAST_PREFIX: &str = "work-past.";
 /// How long an ended task can still be recalled.
 pub(super) const PAST_MS: i64 = 30 * 24 * 60 * 60 * 1000;
-/// Past tasks a bot keeps at most, the newest.
-const PAST_MOST: usize = 200;
-
-fn past_key(bot: &str) -> String {
-    format!("{PAST_PREFIX}{bot}")
-}
-
-/// `bot`'s tasks that left its box, ended within [`PAST_MS`].
-pub(super) fn past(store: &Store, bot: &str, now: i64) -> Vec<Task> {
-    let all: Vec<Task> =
-        store.kv_get(&past_key(bot)).and_then(|json| serde_json::from_str(&json).ok()).unwrap_or_default();
-    all.into_iter().filter(|i| i.ended_at.is_some_and(|at| within_past(at, now))).collect()
-}
+/// Tasks out of the box (`archive`) `recall_task` reads at most, the newest.
+pub(super) const PAST_MOST: usize = 200;
 
 /// Whether a task that ended `at` can still be recalled `now`.
 pub(super) fn within_past(at: i64, now: i64) -> bool {
     now - at <= PAST_MS
-}
-
-/// Keeps `old`, ended tasks leaving `bot`'s box, for `recall_task`, with the past ones still young enough.
-pub(super) fn put_past(store: &Store, bot: &str, old: Vec<Task>, now: i64) -> Result<()> {
-    if old.is_empty() {
-        return Ok(());
-    }
-    let mut all = past(store, bot, now);
-    all.extend(old.into_iter().map(|task| Task { report: None, ..task }));
-    all.retain(|i| i.ended_at.is_some_and(|at| within_past(at, now)));
-    all.sort_by_key(|i| std::cmp::Reverse(i.ended_at));
-    all.truncate(PAST_MOST);
-    store.kv_set(&past_key(bot), &serde_json::to_string(&all)?)
 }
 
 /// An order before every waiting task's.
@@ -547,36 +518,48 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
                         _ => false,
                     };
                 let cwd = task.thread.as_ref().and_then(|thread| folders.get(thread));
-                let folder = folder_of(&task, cwd);
-                let talk = task.source.own() && cwd.is_some();
-                let mut row = json!({
-                    "id": task.id, "title": task.title, "status": status, "activity": activity, "thread": task.thread,
-                    "wait": wait, "cutIn": task.cut_in, "createdAt": task.created_at, "startedAt": task.started_at,
-                    "endedAt": task.ended_at,
-                    "result": task.result.map(|r| codync_agent::acp::truncate(&r, WIRE_RESULT)),
-                    // The user may write to its thread: the bot's own work, whose thread is still there; with files
-                    // too, which a host from before them doesn't say.
-                    "talk": talk,
-                    "talkFiles": talk,
-                    "seat": seat,
-                });
-                if let Some(folder) = folder {
-                    row["folder"] = folder.clone().into();
-                }
-                if let Some(source) = task.source.wire() {
-                    row["source"] = source;
-                }
-                if let Some(worktree) = task.worktree.as_ref().and_then(Worktree::wire) {
-                    row["worktree"] = worktree;
-                }
-                // The agent a thread the user started runs on, where it isn't its bot's (always without a bot).
-                if let Some(agent) = &task.setup.backend {
-                    row["agent"] = agent.clone().into();
-                }
-                row
+                row(task, status, &activity, wait, seat, cwd)
             })
             .collect(),
     )
+}
+
+/// One of a bot's `work` rows: `task` as it reads now, `cwd` the folder of its thread bot when it has one.
+pub(super) fn row(
+    task: Task,
+    status: Status,
+    activity: &str,
+    wait: Option<Wait>,
+    seat: bool,
+    cwd: Option<&String>,
+) -> Value {
+    let folder = folder_of(&task, cwd);
+    let writable = task.source.own() && cwd.is_some();
+    let mut row = json!({
+        "id": task.id, "title": task.title, "status": status, "activity": activity, "thread": task.thread,
+        "wait": wait, "cutIn": task.cut_in, "createdAt": task.created_at, "startedAt": task.started_at,
+        "endedAt": task.ended_at,
+        "result": task.result.map(|r| codync_agent::acp::truncate(&r, WIRE_RESULT)),
+        // The user may write to its thread: the bot's own work, whose thread is still there (parked too); with files
+        // too, which a host from before them doesn't say.
+        "talk": writable,
+        "talkFiles": writable,
+        "seat": seat,
+    });
+    if let Some(folder) = folder {
+        row["folder"] = folder.clone().into();
+    }
+    if let Some(source) = task.source.wire() {
+        row["source"] = source;
+    }
+    if let Some(worktree) = task.worktree.as_ref().and_then(Worktree::wire) {
+        row["worktree"] = worktree;
+    }
+    // The agent a thread the user started runs on, where it isn't its bot's (always without a bot).
+    if let Some(agent) = &task.setup.backend {
+        row["agent"] = agent.clone().into();
+    }
+    row
 }
 
 /// The box in a few lines: counts and the ceiling, then the live and waiting titles with their ids. None when

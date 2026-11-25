@@ -70,7 +70,7 @@ test("a panel's tabs share its width, narrow ones hide their close button, and +
   const cdp = await page.context().newCDPSession(page)
   const name = `Panel tabs e2e ${Date.now()}`
   const title = 'Many tabs'
-  const tabs = ['details', 'library', 'memory', 'computer', 'browser', 'settings', 'terminal']
+  const tabs = ['details', 'library', 'memory', 'computer', 'browser:e2e1', 'settings', 'terminal:e2e1']
   const restore = await withPrefs(page, { listHidden: false, detailsPanelWidth: 400, panelLayout: [{ tabs, shown: 'details' }] })
   let botId: string | undefined
   try {

@@ -1,14 +1,14 @@
 # Bots, projects and threads
 
-Status (2026-11-24): one plan for where a bot lives, where its work happens and what a thread is given. It replaces
+Status (2026-11-25): every part below is built on `dev`; only [Open](#open) is left for the owner. One plan for where a bot lives, where its work happens and what a thread is given. It replaces
 the separate "bot home and projects" and "thread profile" plans. Answers part of stage A in
 [personal agent: daily and project work](personal-agent-experience.md). What is built, decided or only proposed:
 
 | Part | State |
 | --- | --- |
 | Recap when a bot's folder changes | **Built**, in dev (`a5fccdbf7`) |
-| [Bot home and projects](#3-bot-home-and-projects) | **Built**, host (stages 5 and 6); the clients' Projects section next |
-| [Worktree mode](#worktree-mode) (Off / Side by side / Always) | **Built**, host (stage 5); the clients' choice next |
+| [Bot home and projects](#3-bot-home-and-projects) | **Built** (stages 5 and 6), host and all four clients |
+| [Worktree mode](#worktree-mode) (Off / Side by side / Always) | **Built** (stage 5), host and all four clients |
 | [Worktrees counted per repository](#count-side-by-side-per-repository) | **Built** (stage 5) |
 | [Thread profile, no fork](#7-thread-profile-no-fork) | **Built** (stage 2) |
 | [A user's thread leaves the bot's queue](#6-a-users-thread-leaves-the-bots-queue) | **Built** (stage 3) |
@@ -52,15 +52,16 @@ Three ways work starts:
 
 | | The bot hands it out (`add_task`) | The user starts a thread with a bot | The user starts a thread without a bot |
 | --- | --- | --- | --- |
-| Where it waits | The bot's event box, under `maxThreads` | No wait: starts at once ([§6](#6-a-users-thread-leaves-the-bots-queue)) | The computer's box of threads without a bot (6 at once) |
+| Where it waits | The bot's event box, under `maxThreads` | No wait: starts at once ([§6](#6-a-users-thread-leaves-the-bots-queue)) | No wait: starts at once, no ceiling on the computer |
 | What the thread is told | The bot's brief ([§7](#7-thread-profile-no-fork)) | The bot's profile and memory, then the user's own words ([§7](#a-users-thread-is-the-bot)) | The user's own words, as written, nothing of Codync's |
 | What it has of the bot | Skills, memory (to look up), tools for its source | Name, description, skills, memory opening, the same tools | Nothing: the agent's own tools |
 | Its result | A report the bot turns into a message in the chat | Read in the thread | Read in the thread |
 | The bot sees and steers it | Yes | No | There is no bot |
 
-## 2. Today (dev, 2026-11-24)
+## 2. Before this plan (dev, 2026-11-24)
 
-What the code does, read from it, before any change here.
+What the code did, read from it, before any change here. Kept as the reason for each part; what runs now is §1 and
+[work](../features/work.md).
 
 ### Where a thread works
 
@@ -276,9 +277,8 @@ carried: the report says the worktree started from the last commit. Each copy or
 
 ### Cleanup
 
-Kept worktrees are looked at again only at host start (`worktree.rs`, the `ponytail` note). With threads in several
-projects that can pile up; the hourly look (`sweep.rs`) also checks them. Not urgent; done with the stage that
-brings projects.
+Kept worktrees were looked at again only at host start. With threads in several
+projects that can pile up, so the hourly look (`sweep.rs`) also checks them. Built with projects (stage 5).
 
 ### How another tool does it
 
@@ -300,7 +300,7 @@ default choice; **Browse other folders** still picks a project.
 
 - Host: `sources::add_thread` fills `setup.cwd` with it when a thread without a bot has none;
   `workspace::own_folder` counts it as the thread's own, so it never gets a worktree. It goes with the thread bot
-  (seven days after the task ends, as its transcript does).
+  (when the task is deleted with its transcript: [older threads](../features/work.md#older-threads)).
 - Desktop: the folder choice's first item reads **Own folder** instead of the home folder's name; the app stops
   sending `cwd: home` only when `hello` says the host makes the folder (a new flag), so an older host keeps today's.
 - Phones and TUI don't start threads today: nothing to change.
@@ -454,7 +454,7 @@ chat's prompt). A user's thread gets the bot's profile instead ([above](#a-users
 5. **Reported.** Its turn ends: the last message is the report; the bot gets a turn with it and tells the user (a
    user's thread: it stays in the thread). Its worktree is removed or kept (§4).
 6. **Next or gone.** A task that follows it (`after`) goes on in the same thread and session; otherwise the thread
-   ends (its agent stops, its transcript stays), and it is deleted seven days after its last task.
+   ends (its agent stops, its transcript stays), and it is deleted only as the user's Delete old threads says ([older threads](../features/work.md#older-threads)).
 
 ### No fork
 
@@ -540,12 +540,12 @@ Each stage ships on its own, in this order; host-only stages need no client rele
 5. **Projects**: `projects`, `add_task` `folder`, `worktreeMode`, side by side per repository, the Workspace line,
    the clients' Projects section, cleanup in the hourly look (§3, §4). Minor version, every client. Host built: as
    [work: where a thread works](../features/work.md#where-a-thread-works) says. Beyond the plan: the box of threads
-   without a bot keeps the home folder as its `cwd` (it gets no projects; §5 is proposed); a thread in a worktree
+   without a bot keeps the home folder as its `cwd` (it gets no projects; stage 7 then gave each of its threads a folder of its own, §5); a thread in a worktree
    doesn't count toward side by side (its checkout is its own); the bot hears a change to its projects as a profile
    update; `projectGitRepos` (bools in `projects`' order) tells the clients which projects are repositories, and
    `gitRepo` means the default project for older apps; schema 14 stores `worktreeMode` in place of the bool.
    `market/verify.rs` keeps checking a connector in the bot's own folder, where the chat's agent starts it now.
-   Clients next.
+   Clients built in the same change (the Projects section and Worktree mode on all four).
 6. **Migration** (§3). Needs 4 and 5. Built with 5 (`hub/projects/migrate.rs`). A routine stamped with the old folder
    always runs in a thread, so on a bot that uses the computer or manages the team (whose runs were turns in its chat)
    it loses those tools: that is the price of keeping the folder, kept as the plan says.
@@ -553,8 +553,8 @@ Each stage ships on its own, in this order; host-only stages need no client rele
    and clients built, as [work](../features/work.md) says: the desktop's new-thread place menu (Here / New worktree)
    and Own folder, and the Shared folders editor under each git project on the desktop, iPhone, Android and TUI. Beyond the plan: the place is kept in the task's `setup`, so a task
    tried again or replaced keeps it, and `add_task` answers `placeNote` when the place can't apply; the folder of a
-   thread without a bot is made as its task is added and goes when the task leaves the box (dropped, or a week after
-   it ended), which is when its thread bot and transcript go; a shared folder is linked only into worktrees of its
+   thread without a bot is made as its task is added and goes when the task is deleted (dropped, or by Delete old threads:
+   [older threads](../features/work.md#older-threads)), which is when its thread bot and transcript go; a shared folder is linked only into worktrees of its
    project's repository, at the project's place inside it, and the links Codync made don't keep an untouched
    worktree (each link is listed in the repository's `info/exclude`, so a thread can't commit it); `ask_task` takes one question at a time a task, and a task that ends before it answers counts as
    `late`; a late answer is its own host turn (`Cmd::TaskAnswer`). `hello.threadPlace`, `hello.worktreeFill`,

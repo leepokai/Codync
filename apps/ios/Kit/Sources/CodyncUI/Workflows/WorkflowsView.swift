@@ -7,15 +7,21 @@ public struct WorkflowsView: View {
     var pendingRunId: String?
     var pendingToken: UUID?
     var onPendingHandled: () -> Void
+    /// Search: only the workflows whose title holds it or whose id starts with it.
+    var query: String
+    /// The workflow pushed over the list, kept by the tab so the list built again (Search opening or closing) keeps it.
+    @Binding var opened: OpenedWorkflow?
 
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var opened: OpenedWorkflow?
     @State private var error: String?
     @State private var loaded = false
     @State private var pinRevision = 0
 
-    public init(pendingWorkflowId: String? = nil, pendingRunId: String? = nil, pendingToken: UUID? = nil, onPendingHandled: @escaping () -> Void = {}) {
+    public init(opened: Binding<OpenedWorkflow?>, pendingWorkflowId: String? = nil, pendingRunId: String? = nil, pendingToken: UUID? = nil,
+                query: String = "", onPendingHandled: @escaping () -> Void = {}) {
+        _opened = opened
+        self.query = query
         self.pendingWorkflowId = pendingWorkflowId
         self.pendingRunId = pendingRunId
         self.pendingToken = pendingToken
@@ -33,9 +39,14 @@ public struct WorkflowsView: View {
                         .font(.callout)
                         .foregroundStyle(Palette.secondary)
                         .padding(.top, 8)
+                } else if shown.isEmpty {
+                    Text(L10n.tr("No results"))
+                        .font(.callout)
+                        .foregroundStyle(Palette.secondary)
+                        .padding(.top, 8)
                 } else {
                     CardSection(footer: "Hold a workflow to pin it on the bot list.") {
-                        ForEach(model.workflows) { workflow in
+                        ForEach(shown) { workflow in
                             row(workflow)
                         }
                     }
@@ -46,7 +57,6 @@ public struct WorkflowsView: View {
         }
         .background(Palette.background)
         .navigationTitle(L10n.tr("Workflows"))
-        .navigationBarTitleDisplayMode(.large)
         .navigationDestination(item: $opened) { item in
             WorkflowDetailView(workflowId: item.id, pendingRunId: item.runId)
                 .environment(model)
@@ -64,6 +74,8 @@ public struct WorkflowsView: View {
             }
         }
     }
+
+    private var shown: [WorkflowSummary] { WorkflowSummary.matching(model.workflows, query) }
 
     private func row(_ workflow: WorkflowSummary) -> some View {
         Button {
@@ -85,9 +97,9 @@ public struct WorkflowsView: View {
     }
 }
 
-struct OpenedWorkflow: Identifiable, Hashable {
-    var id: String
-    var runId: String?
+public struct OpenedWorkflow: Identifiable, Hashable, Sendable {
+    public var id: String
+    public var runId: String?
 }
 
 /// One deep link opens its workflow once, even if the list is created again on the way back.

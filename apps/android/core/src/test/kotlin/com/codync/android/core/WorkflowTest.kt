@@ -10,6 +10,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WorkflowTest {
+    @Test fun `search finds workflows by title or id prefix and keeps them all for a blank query`() {
+        val list = listOf(WorkflowSummary("a1b2", "Nightly build"), WorkflowSummary("c3d4", "Release notes"))
+        assertEquals(list, workflowMatches(list, " "))
+        assertEquals(listOf("a1b2"), workflowMatches(list, "BUILD").map { it.id })
+        assertEquals(listOf("c3d4"), workflowMatches(list, " c3 ").map { it.id })
+        assertEquals(emptyList<WorkflowSummary>(), workflowMatches(list, "b2"))
+    }
+
     @Test fun `hello workflows defaults to false and a workflow event that does not parse is ignored`() {
         val plain = MirrorEvent.decode(buildJsonObject { put("type", "hello"); put("hostId", "h"); put("rev", 1) }) as MirrorEvent.Hello
         assertFalse(plain.workflows)

@@ -3,6 +3,7 @@
 
 use super::visible_bots;
 use crate::hub::Hub;
+use crate::network::sessions::Session;
 use crate::store::BotConfig;
 use anyhow::Result;
 use codync_network::{AgentKind, Peer};
@@ -24,24 +25,32 @@ struct Row {
     kind: AgentKind,
 }
 
-/// `keep` picks which of this computer's bots the caller may see.
+/// `keep` picks which of this computer's bots the caller may see; `sessions` are the coding
+/// agents' sessions here it may message.
 pub(super) fn list(
     hub: &Hub,
     from: &str,
     args: &Value,
     remote: &[Peer],
+    sessions: &[Session],
     keep: impl Fn(&BotConfig) -> bool,
 ) -> Result<Value> {
     let filter = Filter::of(args);
     let here = hub.network.my_name();
     let rows: Vec<Row> =
-        rows(hub, from, remote, keep)?.into_iter().filter(|r| filter.keeps(r, here.as_deref())).collect();
+        rows(hub, from, remote, sessions, keep)?.into_iter().filter(|r| filter.keeps(r, here.as_deref())).collect();
     Ok(page(&rows, args, !filter.narrows()))
 }
 
 /// Everyone `from` can message, nearest first: this computer's bots, then the ones on computers
 /// that can take a message now.
-fn rows(hub: &Hub, from: &str, remote: &[Peer], keep: impl Fn(&BotConfig) -> bool) -> Result<Vec<Row>> {
+fn rows(
+    hub: &Hub,
+    from: &str,
+    remote: &[Peer],
+    sessions: &[Session],
+    keep: impl Fn(&BotConfig) -> bool,
+) -> Result<Vec<Row>> {
     let mut rows: Vec<Row> = visible_bots(&hub.store)?
         .into_iter()
         .filter(|c| c.id != from && keep(c))
@@ -49,7 +58,9 @@ fn rows(hub: &Hub, from: &str, remote: &[Peer], keep: impl Fn(&BotConfig) -> boo
             words: format!("{} {}", c.name, c.description).to_lowercase(),
             value: json!({
                 "id": c.id, "name": c.name, "description": c.description, "kind": AgentKind::Codync,
-                "backend": c.backend, "cwd": c.cwd, "status": hub.runtime(&c.id).status,
+                // Where its code work is: its default project, else its own folder.
+                "backend": c.backend, "cwd": crate::agent::workspace::work_folder(&c), "projects": c.projects,
+                "status": hub.runtime(&c.id).status,
                 "model": c.model, "modelOptions": c.model_options, "fallbacks": crate::chat::fallbacks::wire(&c.fallbacks),
                 "paused": c.paused,
             }),
@@ -58,6 +69,7 @@ fn rows(hub: &Hub, from: &str, remote: &[Peer], keep: impl Fn(&BotConfig) -> boo
             kind: AgentKind::Codync,
         })
         .collect();
+    rows.extend(sessions.iter().map(session_row));
     let mut others: Vec<Row> = remote
         .iter()
         .flat_map(|p| {
@@ -78,6 +90,29 @@ fn rows(hub: &Hub, from: &str, remote: &[Peer], keep: impl Fn(&BotConfig) -> boo
     Ok(rows)
 }
 
+/// A coding agent's session here: its address, and its own title when it says one. A temporary
+/// one (no session id) shows no title, so nobody takes its address for a lasting one.
+fn session_row(s: &Session) -> Row {
+    let status = match s.busy {
+        Some(true) => "busy",
+        Some(false) => "idle",
+        None => "unknown",
+    };
+    let mut value = json!({"id": s.address, "kind": s.kind, "cwd": s.cwd, "status": status, "tier": "pull"});
+    if s.temporary {
+        value["temporary"] = true.into();
+    } else if let Some(title) = &s.title {
+        value["title"] = title.clone().into();
+    }
+    Row {
+        words: format!("{} {}", s.address, s.title.as_deref().unwrap_or_default()).to_lowercase(),
+        value,
+        computer: None,
+        online: true,
+        kind: s.kind,
+    }
+}
+
 /// What `query`, `computer`, `online` and `kind` keep.
 struct Filter {
     words: Vec<String>,
@@ -93,7 +128,7 @@ impl Filter {
             words: args["query"].as_str().unwrap_or_default().split_whitespace().map(str::to_lowercase).collect(),
             computer: args["computer"].as_str().map(str::to_lowercase),
             online: args["online"].as_bool() == Some(true),
-            kind: AgentKind::deserialize(&args["kind"]).ok(),
+            kind: kind_of(args),
         }
     }
 
@@ -115,12 +150,17 @@ impl Filter {
     }
 }
 
+/// The kind `list_bots`'s `args` keep, if it names one.
+pub(super) fn kind_of(args: &Value) -> Option<AgentKind> {
+    AgentKind::deserialize(&args["kind"]).ok()
+}
+
 /// The `kind` argument of the tools' `list_bots`, which [`Filter::of`] reads.
 pub(super) fn kind_property() -> Value {
     json!({
         "type": "string",
-        "enum": ["codync", "claude-code", "codex", "terminal", "other"],
-        "description": "Only this kind of agent: codync (Codync bots), claude-code (Claude Code sessions), codex (Codex threads), terminal (a person at a terminal on another computer) or other (on a computer whose Codync doesn't say its kind yet).",
+        "enum": AgentKind::ALL.map(AgentKind::as_str),
+        "description": "Only this kind of agent: codync (Codync bots), a coding agent's sessions (claude-code, codex, gemini, cursor, copilot, opencode, pi, amp, grok, antigravity), terminal (a person at a terminal on another computer) or other (any other agent, or one on a computer whose Codync doesn't say its kind).",
     })
 }
 
@@ -212,7 +252,7 @@ mod tests {
         assert_eq!(kept(&rows, &json!({"kind": "claude-code"}), None), ["main"]);
         assert_eq!(kept(&rows, &json!({"kind": "codex", "computer": "laptop"}), None), ["refactor"]);
         assert_eq!(
-            kept(&rows, &json!({"kind": "gemini"}), None),
+            kept(&rows, &json!({"kind": "nonsense"}), None),
             Vec::<&str>::new(),
             "an unknown kind isn't no filter"
         );

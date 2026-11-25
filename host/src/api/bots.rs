@@ -136,10 +136,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 crate::chat::outbox::call(hub, bot, name, &b["arguments"]).await?
             }
         }
-        // An agent on this computer that isn't a bot (`codync-host mcp network`).
+        // A coding agent's session on this computer that isn't a bot (`codync-host mcp network`).
         "agentCall" => {
-            crate::chat::team::assistant::local_call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"])
-                .await?
+            let caller: crate::network::sessions::Caller =
+                serde_json::from_value(b["agent"].clone()).context("agent is {kind, session, process, cwd, hint}")?;
+            crate::chat::team::assistant::local_call(hub, &caller, str_arg(&b, "name")?, &b["arguments"]).await?
         }
         "teamCall" => {
             let (caller, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
@@ -224,13 +225,14 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             tokio::task::spawn_blocking(move || hub.rename_section(&from, to.as_deref())).await??;
             json!({})
         }
-        // A terminal in the bot's folder: the user's own shell there (`termInput` / `termResize` / `termClose` and
+        // A terminal where the bot's code work is (its default project, else its own folder): the user's own shell there (`termInput` / `termResize` / `termClose` and
         // `/term/<id>` as for a setup terminal). Opening it again while it runs returns the same one.
         "botTerminal" => {
             let bot_id = str_arg(&b, "botId")?;
             let cfg = hub.store.bot(bot_id)?.filter(|row| !row.deleted).map(|row| row.config).context("unknown bot")?;
             let (cols, rows) = super::host::term_size(&b);
-            json!({"term": hub.terms.shell(bot_id, std::path::Path::new(&cfg.cwd), cols, rows)?})
+            let folder = std::path::Path::new(crate::agent::workspace::work_folder(&cfg));
+            json!({"term": hub.terms.shell(bot_id, folder, cols, rows)?})
         }
         // The apps name a dev server, and never send a command.
         "devServerStop" => {

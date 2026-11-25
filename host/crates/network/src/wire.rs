@@ -36,19 +36,65 @@ pub struct Agent {
     pub kind: AgentKind,
 }
 
-/// What kind of agent is offered: a Codync bot, a Claude Code session, a Codex thread, a person
-/// at a terminal.
+/// What kind of agent is offered: a Codync bot, a coding agent's session (Claude Code, a Codex
+/// thread, Cursor, …), a person at a terminal. A computer that doesn't know a kind reads it as
+/// `other`, so new kinds never break older ones.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AgentKind {
     Codync,
     ClaudeCode,
     Codex,
+    Gemini,
+    Cursor,
+    Copilot,
+    Opencode,
+    Pi,
+    Amp,
+    Grok,
+    Antigravity,
     Terminal,
     /// Not said (a computer from before kinds), or one this version doesn't know.
     #[default]
     #[serde(other)]
     Other,
+}
+
+impl AgentKind {
+    pub const ALL: [Self; 13] = [
+        Self::Codync,
+        Self::ClaudeCode,
+        Self::Codex,
+        Self::Gemini,
+        Self::Cursor,
+        Self::Copilot,
+        Self::Opencode,
+        Self::Pi,
+        Self::Amp,
+        Self::Grok,
+        Self::Antigravity,
+        Self::Terminal,
+        Self::Other,
+    ];
+
+    /// The kind as the wire spells it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Codync => "codync",
+            Self::ClaudeCode => "claude-code",
+            Self::Codex => "codex",
+            Self::Gemini => "gemini",
+            Self::Cursor => "cursor",
+            Self::Copilot => "copilot",
+            Self::Opencode => "opencode",
+            Self::Pi => "pi",
+            Self::Amp => "amp",
+            Self::Grok => "grok",
+            Self::Antigravity => "antigravity",
+            Self::Terminal => "terminal",
+            Self::Other => "other",
+        }
+    }
 }
 
 /// A letter on the wire. The sending computer is whoever opened the connection (iroh proves
@@ -244,5 +290,12 @@ mod tests {
         assert_eq!((back.network, back.secret, back.addr), (ticket.network, ticket.secret, addr));
         assert!(Ticket::decode("hello").is_err());
         assert!(Ticket::decode(&text[..text.len() - 4]).is_err());
+    }
+
+    #[test]
+    fn a_kind_is_spelled_as_the_wire_spells_it() {
+        for kind in AgentKind::ALL {
+            assert_eq!(serde_json::to_value(kind).unwrap(), kind.as_str());
+        }
     }
 }

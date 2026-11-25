@@ -1,14 +1,11 @@
-import { useEffect, useState } from 'react'
 import { whereLine, wherePath, type WhereLine, type WorkTask } from '@shared/work'
 import { Icon } from '../../components/Icon'
 import { HStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { useCopied } from '../../lib/use-copied'
 import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
 import './work.css'
-
-/** How long `Path copied` stands in for the where line. */
-const COPIED_MS = 1600
 
 /**
  * Where a task's thread works, in one quiet line: the folder symbol and its folder, or the branch symbol and its
@@ -34,22 +31,14 @@ export function WhereCopy({ task }: { task: WorkTask }) {
   const store = useStore()
   const where = whereLine(task, store.hello?.home ?? '')
   const path = wherePath(task)
-  const [copied, setCopied] = useState(false)
-  useEffect(() => {
-    if (!copied) return
-    const timer = setTimeout(() => setCopied(false), COPIED_MS)
-    return () => clearTimeout(timer)
-  }, [copied])
+  const [copied, copy] = useCopied()
   if (!where || !path) return null
   return (
     <button
       className="work-where-copy"
       title={tr('Copy path')}
       aria-label={`${tr('Copy path')}: ${path}`}
-      onClick={() => {
-        window.codync.app.copy(path)
-        setCopied(true)
-      }}
+      onClick={() => copy(path)}
     >
       {copied ? (
         <HStack as="span" gap={4} className="fade-in" role="status">

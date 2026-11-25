@@ -294,7 +294,8 @@ public extension HostClient {
         let _: Empty = try await call("renameSection", body)
     }
 
-    /// A thread the user starts with `botId`, opened by `text`, on the bot's own settings: its task's id.
+    /// A thread the user starts with `botId`, opened by `text`, on the bot's own settings (in its default project, else
+    /// its own folder): its task's id.
     func startThread(botId: String, text: String) async throws -> String {
         struct Res: Decodable { var taskId: String }
         let res: Res = try await call("startThread", ["botId": botId, "text": text])

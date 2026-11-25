@@ -1228,7 +1228,7 @@ async fn a_thread_beside_another_in_one_repository_works_in_a_worktree_of_its_ow
     // Codync keeps versions in: all the bot's work stays there.
     let (plain, plain_dir) = project_bot(&host, 3).await;
     let own = bot_with(&host, 3).await;
-    wait("its own folder to keep versions", async || (row(&host, &own).await["gitRepo"] == true).then_some(())).await;
+    wait("its own folder to keep versions", async || host.workspace(&own).join(".git").exists().then_some(())).await;
     for (bot, dir) in [(&plain, plain_dir), (&own, host.workspace(&own))] {
         host.reply(bot, "ADD One|HOLD:one").await;
         task(&host, bot, "One", "working").await;
@@ -1238,6 +1238,55 @@ async fn a_thread_beside_another_in_one_repository_works_in_a_worktree_of_its_ow
         assert!(work(&host, bot).await.iter().all(|i| i["worktree"].is_null()));
     }
     assert_eq!(row(&host, &plain).await["gitRepo"], false);
+}
+
+#[tokio::test]
+async fn a_bot_lives_at_home_and_sends_work_to_its_projects_by_its_worktree_mode() {
+    let host = Host::start().await;
+    assert_eq!(host.call("hello", json!({})).await["projects"], true);
+    let bot = bot_with(&host, 3).await;
+    let projects = host.home.join("projects");
+    let (a, b) = (projects.join("a"), projects.join("b"));
+    for dir in [&a, &b] {
+        std::fs::create_dir_all(dir).unwrap();
+        if !git_repo(dir) {
+            return;
+        }
+    }
+    // An older app picking a project folder: it becomes the first project, and the bot stays home.
+    host.call("updateBot", json!({"id": bot, "cwd": a, "name": "Mika"})).await;
+    let settings = row(&host, &bot).await;
+    let home = host.workspace(&bot);
+    assert_eq!((&settings["cwd"], &settings["projects"]), (&json!(home), &json!([a])));
+    assert_eq!((&settings["gitRepo"], &settings["projectGitRepos"]), (&json!(true), &json!([true])));
+    assert_eq!((&settings["worktreeMode"], &settings["threadWorktrees"]), (&json!("sideBySide"), &json!(true)));
+    host.call("updateBot", json!({"id": bot, "projects": [a, b, a]})).await;
+    assert_eq!(row(&host, &bot).await["projects"], json!([a, b]), "each once");
+    let missing = projects.join("missing");
+    assert!(host.refused("updateBot", json!({"id": bot, "projects": [a, missing]})).await.contains("does not exist"));
+
+    // Side by side counts the threads in one checkout: one in another repository doesn't give it a worktree.
+    host.reply(&bot, "ADD In A|HOLD:a").await;
+    task(&host, &bot, "In A", "working").await;
+    wait("its prompt in the default project", async || task_prompts_in(&a, "In A").pop()).await;
+    host.reply(&bot, &format!("ADD In B|HOLD:b|folder={}", b.display())).await;
+    wait("its prompt in the folder it names", async || task_prompts_in(&b, "In B").pop()).await;
+    assert!(work(&host, &bot).await.iter().all(|i| i["worktree"].is_null()), "one thread in each checkout");
+    host.reply(&bot, "ADD Bad|x|folder=projects/b").await;
+    reply(&host, &bot, "Refused: folder must be the full path").await;
+
+    // Always: the first thread in a checkout gets one too. An older app's switch, saved with another field, keeps it.
+    host.call("updateBot", json!({"id": bot, "worktreeMode": "always"})).await;
+    host.call("updateBot", json!({"id": bot, "description": "Ships", "threadWorktrees": true})).await;
+    assert_eq!(row(&host, &bot).await["worktreeMode"], "always");
+    std::fs::write(a.join("release-a"), "").unwrap();
+    task(&host, &bot, "In A", "done").await;
+    host.reply(&bot, "ADD First in A|HOLD:c").await;
+    let first = in_worktree(&host, &bot, "First in A").await;
+    assert_eq!(first["worktree"]["branch"], "codync/first-in-a");
+    assert!(task_prompts_in(&a, "First in A").is_empty(), "not in the user's checkout");
+    host.call("updateBot", json!({"id": bot, "threadWorktrees": false})).await;
+    assert_eq!(row(&host, &bot).await["worktreeMode"], "off");
 }
 
 #[tokio::test]
@@ -1855,6 +1904,13 @@ async fn a_thread_the_user_starts_works_where_its_setup_says() {
     host.call("startThread", json!({"botId": bot, "text": "Elsewhere", "setup": {"cwd": elsewhere}})).await;
     let done = result(&host, &bot, "Elsewhere", "Thread").await;
     assert_eq!(done["folder"], json!(elsewhere), "its thread works in the folder the user chose");
+    // Without one, in the bot's default project.
+    let project = host.home.join("projects").join("mika");
+    std::fs::create_dir_all(&project).unwrap();
+    host.call("updateBot", json!({"id": bot, "projects": [project]})).await;
+    host.call("startThread", json!({"botId": bot, "text": "In the project"})).await;
+    let done = result(&host, &bot, "In the project", "Thread").await;
+    assert_eq!(done["folder"], json!(project), "the bot's default project");
 
     // A setup is checked as a bot's is, and one that can't be read starts nothing.
     let start = |setup: Value| host.refused("startThread", json!({"botId": bot, "text": "x", "setup": setup}));

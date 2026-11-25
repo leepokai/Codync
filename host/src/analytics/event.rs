@@ -106,6 +106,12 @@ pub enum Event {
     WorkSteered,
     /// At host start, worktrees no task knew any more went, their work merged (`removed`).
     WorktreesTidied,
+    /// Projects were added to a bot (`count`), by any client or tool (`hub::projects`).
+    BotProjectAdded,
+    /// Projects were taken off a bot (`count`).
+    BotProjectRemoved,
+    /// At host start, once: bots that worked in a project moved to their own folder, the project kept (`count`).
+    BotProjectsMigrated,
     /// A task's turn couldn't go on until the user signs in to its agent, so it waits for them (`agent`, `source`).
     WorkNeedsSignIn,
     /// A bot's `tell_task` finished (`outcome`): where the words went (`to`) or why not (`error`), and `now`.
@@ -215,6 +221,8 @@ pub enum Event {
     NetworkChanged,
     /// A network step failed (`NetworkStage`): starting a node, a letter, or a `network*` call.
     NetworkFailed,
+    /// A coding agent's session used its Network mailbox (`SessionAction`, with the agent's kind).
+    NetworkSession,
     /// Error tracking (`errors`): a panic or an uncaught error.
     Exception,
 }
@@ -293,6 +301,9 @@ impl Event {
             Self::ThreadToolRefused => "thread_tool_refused",
             Self::WorkSteered => "work_steered",
             Self::WorktreesTidied => "worktrees_tidied",
+            Self::BotProjectAdded => "bot_project_added",
+            Self::BotProjectRemoved => "bot_project_removed",
+            Self::BotProjectsMigrated => "bot_projects_migrated",
             Self::WorkNeedsSignIn => "work_needs_sign_in",
             Self::WorkTold => "work_told",
             Self::WorkRecalled => "work_recalled",
@@ -357,6 +368,7 @@ impl Event {
             Self::NetworkJoined => "network_joined",
             Self::NetworkChanged => "network_changed",
             Self::NetworkFailed => "network_failed",
+            Self::NetworkSession => "network_session",
             Self::Exception => "$exception",
         }
     }

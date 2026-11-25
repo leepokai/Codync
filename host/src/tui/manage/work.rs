@@ -425,6 +425,14 @@ pub(in crate::tui) mod tests {
     }
 
     #[test]
+    fn only_a_task_holding_a_seat_gives_way() {
+        let task = |id: &str, seat: Option<bool>| json!({"id": id, "title": "Fix login", "status": "working", "thread": format!("thread-{id}"), "seat": seat});
+        let work = WorkTask::list(&json!([task("own", Some(true)), task("user", Some(false)), task("old", None)]));
+        let ids: Vec<&str> = giving_way(&work).into_iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(ids, ["own", "old"], "a thread the user started never gives way; an older host doesn't say");
+    }
+
+    #[test]
     fn each_row_offers_its_own_keys() {
         use WorkAct::{CutIn, Drop, First, Open, Retry, Stop};
         let task = |status: &str, thread: bool| {

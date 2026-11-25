@@ -2486,5 +2486,17 @@
   "Folder": "フォルダ",
   "Bot's folder": "Bot のフォルダ",
   "Use the bot's folder": "Bot のフォルダを使う",
-  "Each run works here in a thread of its own.": "各実行はここで専用の thread で動きます。"
+  "Each run works here in a thread of its own.": "各実行はここで専用の thread で動きます。",
+  "Projects": "プロジェクト",
+  "Threads start in the default project. The bot can work elsewhere when you ask.": "thread はデフォルトのプロジェクトで始まります。頼めば Bot は別の場所でも作業できます。",
+  "Add project": "プロジェクトを追加",
+  "Make default": "デフォルトにする",
+  "Remove project": "プロジェクトを削除",
+  "Worktree mode": "worktree モード",
+  "Side by side": "並行時",
+  "Always": "常に",
+  "Threads work in the project itself": "thread はプロジェクト自体で作業します",
+  "A thread gets its own worktree when another thread works in the same repository": "同じリポジトリで別の thread が作業中なら、thread は専用の worktree を使います",
+  "Every thread works in a worktree of its own; your checkout is never touched": "すべての thread が専用の worktree で作業し、あなたのチェックアウトには触れません",
+  "Its chat, routines and files live here.": "チャット、ルーティン、ファイルはここにあります。"
 }

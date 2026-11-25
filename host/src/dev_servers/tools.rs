@@ -34,7 +34,7 @@ pub fn tools() -> Vec<Value> {
                 "properties": {
                     "command": {"type": "string", "description": "The command line, e.g. npm run dev."},
                     "name": {"type": "string", "description": "A short name the user sees, e.g. web. Default: the folder's name."},
-                    "folder": {"type": "string", "description": "Where to run it, absolute or relative to your working directory. Default: your working directory."},
+                    "folder": {"type": "string", "description": "Where to run it, absolute or relative to your default project (a thread: its own folder). Default: that folder."},
                 },
                 "required": ["command"],
             },
@@ -153,7 +153,9 @@ async fn ask(hub: &Hub, cfg: &BotConfig, command: &str, folder: &str) -> Result<
 /// (`.`, a trailing separator) is one server.
 async fn folder_for(cfg: &BotConfig, asked: Option<&str>) -> Result<String> {
     let asked = asked.map(str::trim).filter(|folder| !folder.is_empty());
-    let path = asked.map_or_else(|| PathBuf::from(&cfg.cwd), |folder| Path::new(&cfg.cwd).join(folder));
+    // Code work is in the bot's default project, or the thread's own folder.
+    let base = Path::new(crate::agent::workspace::work_folder(cfg));
+    let path = asked.map_or_else(|| base.to_path_buf(), |folder| base.join(folder));
     let found = tokio::fs::metadata(&path).await.is_ok_and(|meta| meta.is_dir());
     if !found {
         bail!("no folder at {}", path.display());

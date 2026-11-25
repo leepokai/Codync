@@ -157,6 +157,8 @@ data class AppState(
     internal val startsThreads: Boolean get() = hello?.get("startThread")?.jsonPrimitive?.booleanOrNull == true
     /** A routine here can name the folder its runs work in (`routineFolder`). */
     internal val routineFolders: Boolean get() = hello?.get("routineFolder")?.jsonPrimitive?.booleanOrNull == true
+    /** Bots have projects and a worktree mode, and live in their own folder (`hello.projects`). */
+    internal val botProjects: Boolean get() = hello?.get("projects")?.jsonPrimitive?.booleanOrNull == true
     /** The computer's name, as its hello gives it. */
     internal val computerName: String get() = hello?.get("name")?.jsonPrimitive?.contentOrNull ?: "Computer"
     /** The computer's home folder, which a folder on it shows as `~`; empty before its hello. */

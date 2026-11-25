@@ -200,6 +200,8 @@ pub async fn set_rules(hub: &Hub, network: Option<&str>, rules: &Value) -> Resul
     let slot = joined(hub, network)?;
     slot.node.set_rules(rules.clone())?;
     saved::update(&hub.store, &slot.id, |saved| saved.rules = rules)?;
+    // A rule may open a session to the network, or close it.
+    super::publish(hub);
     emit(hub);
     Ok(status(hub))
 }

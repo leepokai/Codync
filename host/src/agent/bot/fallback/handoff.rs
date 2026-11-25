@@ -6,7 +6,7 @@
 
 use super::super::Actor;
 use crate::agent::fallback;
-use crate::store::BotConfig;
+use crate::store::{BotConfig, Store};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -59,6 +59,17 @@ fn set_state(line: &mut Value, state: State) {
         state.text(change["fromName"].as_str().unwrap_or_default(), change["toName"].as_str().unwrap_or_default());
     line["agentSwitch"]["state"] = json!(state);
     line["text"] = text.into();
+}
+
+/// Bot `cfg` moved to its own folder while no actor ran (`hub::projects::migrate`): its next message carries a recap
+/// of `session`, the main session it left, as after a move `Cmd::Reconfigure` makes. A handoff already owed carries it
+/// as it is.
+pub(crate) fn owe_move(store: &Store, cfg: &BotConfig, session: Option<String>) -> anyhow::Result<()> {
+    if store.kv_get(&key(&cfg.id)).is_some() {
+        return Ok(());
+    }
+    let owed = Owed { line: None, from: cfg.backend.clone(), session, login: Some(fallback::login::of(cfg)) };
+    store.kv_set(&key(&cfg.id), &serde_json::to_string(&owed)?)
 }
 
 impl Actor {

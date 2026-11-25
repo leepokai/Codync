@@ -132,6 +132,22 @@ pub fn access(rules: &[Rule], default: Access, computer: &str, agent: &str, to: 
     rules.iter().find(|r| r.matches(computer, agent, to)).map_or(default, |r| r.access)
 }
 
+/// Whether a rule lets someone write to `to` by name (`allow`, never `*`): what an agent that
+/// is offered only when the user opens it, a coding agent's session, needs.
+pub fn opens(rules: &[Rule], to: &str) -> bool {
+    rules.iter().any(|r| r.access == Access::Allow && r.to_agent.eq_ignore_ascii_case(to))
+}
+
+/// How `agent` on `computer` may write to a session's mailbox `to`: like [`access`], but a `*`
+/// allow doesn't let it in (only one that names `to` does), while a `*` deny or ceiling still
+/// applies, and with no rule it is denied.
+pub fn mailbox_access(rules: &[Rule], computer: &str, agent: &str, to: &str) -> Access {
+    rules
+        .iter()
+        .find(|r| r.matches(computer, agent, to) && (r.access != Access::Allow || r.to_agent != ANY))
+        .map_or(Access::Deny, |r| r.access)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,5 +204,23 @@ mod tests {
         let json = serde_json::to_value(rule(Access::Allow, "lead@desk", "reviewer")).expect("serializes");
         assert_eq!(json["access"], "allow");
         assert_eq!(json["fromComputer"], "desk");
+    }
+
+    #[test]
+    fn only_an_allow_naming_an_agent_opens_it() {
+        let rules = [rule(Access::Allow, "*", "*"), rule(Access::Auto, "*", "api-claude")];
+        assert!(!opens(&rules, "api-claude"), "neither * nor a ceiling opens it");
+        assert!(opens(&[rule(Access::Allow, "lead@desk", "API-Claude")], "api-claude"));
+    }
+
+    #[test]
+    fn a_mailbox_takes_only_the_senders_a_rule_names_it_for() {
+        let rules = [rule(Access::Allow, "lead@desk", "api-claude"), rule(Access::Allow, "*", "*")];
+        assert_eq!(mailbox_access(&rules, "desk", "lead", "api-claude"), Access::Allow);
+        assert_eq!(mailbox_access(&rules, "desk", "other", "api-claude"), Access::Deny, "* doesn't open it");
+        let closed = [rule(Access::Deny, "*@server", "*"), rule(Access::Allow, "*@server", "api-claude")];
+        assert_eq!(mailbox_access(&closed, "server", "x", "api-claude"), Access::Deny, "a * deny still applies");
+        let held = [rule(Access::Ask, "*@cloud", "*"), rule(Access::Allow, "*@cloud", "api-claude")];
+        assert_eq!(mailbox_access(&held, "cloud", "x", "api-claude"), Access::Ask, "so does a * ceiling");
     }
 }

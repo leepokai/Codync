@@ -1,6 +1,7 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { runningAgent } from '@shared/fallbacks'
+import { hoverTip, modelPath } from '@shared/model-path'
 import { isGroup, type Bot } from '@shared/models'
 import { moveInOrder } from '../lib/computer-roster'
 import { pointerDrag, type Point } from '../lib/pointer-drag'
@@ -197,12 +198,16 @@ export function BotRoster({ roster, onContext, onSectionContext, openExtensions,
     const many = roster.sections.length > 1
     const agent = logoAgent(item, agentLogos)
     const name = agent ? `${item.bot.name}, ${item.store.backendName(agent)}` : item.bot.name
+    // The hover tip says what the row cannot when the sidebar is narrow: the name it truncates,
+    // and the agent and model a bot runs, which otherwise take a right-click and the editor.
+    const heading = many ? `${item.bot.name} · ${item.store.hostName}` : item.bot.name
+    const path = modelPath(item.bot, item.store.backendName(item.bot.backend))
     return (
       <RosterRow
         key={key}
         hovered={hovered === key || held}
         label={many ? `${name}, on ${item.store.hostName}` : name}
-        title={many ? `${item.bot.name} · ${item.store.hostName}` : item.bot.name}
+        title={hoverTip([heading, path])}
         selected={isSelected}
         dragKey={key}
         flipKey={key}

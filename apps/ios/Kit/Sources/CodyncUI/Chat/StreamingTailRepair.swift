@@ -496,7 +496,6 @@ private struct InlineScanner {
         var stack: [Opener] = []
         var keep = trimmedEnd
         var closer = ""
-        var heldImage = false
         var index = scope.lowerBound
 
         scan: while index < trimmedEnd {
@@ -617,7 +616,6 @@ private struct InlineScanner {
                 }
                 if isImage, index + 1 == trimmedEnd, start >= lastLineStart {
                     keep = start
-                    heldImage = true
                     break scan
                 }
                 guard index + 1 < trimmedEnd, bytes[index + 1] == .openParen else {
@@ -632,7 +630,6 @@ private struct InlineScanner {
                 }
                 if isImage, start >= lastLineStart {
                     keep = start
-                    heldImage = true
                     break scan
                 }
                 closer = destinationCloser(from: index + 1, before: trimmedEnd)
@@ -684,11 +681,10 @@ private struct InlineScanner {
             case let .bracket(position, _):
                 outKeep = position
                 outSuffix = ""
-                heldImage = true
             }
         }
 
-        if outSuffix.isEmpty, !heldImage {
+        if outSuffix.isEmpty {
             while outKeep > scope.lowerBound, bytes[outKeep - 1].isSpaceOrTab {
                 outKeep -= 1
             }

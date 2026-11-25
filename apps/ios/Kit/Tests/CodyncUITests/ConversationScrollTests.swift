@@ -171,6 +171,7 @@ func bottomPinningPreservesNativeOverscrollDuringInteraction(_ phase: String) {
     defer { window.isHidden = true; view.removeFromSuperview() }
 
     view.layoutIfNeeded()
+    view.contentSize = layout.collectionViewContentSize
     view.pinToEnd()
     view.animatesContentGrowth = true
 
@@ -209,6 +210,7 @@ func bottomPinningPreservesNativeOverscrollDuringInteraction(_ phase: String) {
     defer { window.isHidden = true; view.removeFromSuperview() }
 
     view.layoutIfNeeded()
+    view.contentSize = layout.collectionViewContentSize
     view.pinToEnd()
     view.animatesContentGrowth = true
     layout.height = 1_800
@@ -244,6 +246,7 @@ func bottomPinningPreservesNativeOverscrollDuringInteraction(_ phase: String) {
     defer { window.isHidden = true; view.removeFromSuperview() }
 
     view.layoutIfNeeded()
+    view.contentSize = layout.collectionViewContentSize
     view.pinToEnd()
     view.animatesContentGrowth = true
 

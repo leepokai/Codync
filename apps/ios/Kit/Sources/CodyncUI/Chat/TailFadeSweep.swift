@@ -16,31 +16,18 @@ enum ThoughtChunking {
         var pieceStart = source.startIndex
         var cursor = source.startIndex
         var bytesInPiece = 0
-        var lastNewlineAfter: String.Index?
 
         while cursor < source.endIndex {
             let next = source.index(after: cursor)
             let ch = source[cursor]
             bytesInPiece += ch.utf8.count
-            if ch == "\n" {
-                lastNewlineAfter = next
-            }
 
             if bytesInPiece >= limit {
-                if let split = lastNewlineAfter, split > pieceStart {
-                    result.append(String(source[pieceStart ..< split]))
-                    pieceStart = split
-                    cursor = split
-                    bytesInPiece = 0
-                    lastNewlineAfter = nil
-                    continue
-                }
-                if bytesInPiece >= limit * 2 || ch == " " || ch == "\t" {
+                if ch == "\n" || bytesInPiece >= limit * 2 {
                     result.append(String(source[pieceStart ..< next]))
                     pieceStart = next
                     cursor = next
                     bytesInPiece = 0
-                    lastNewlineAfter = nil
                     continue
                 }
             }

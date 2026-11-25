@@ -1,7 +1,7 @@
 //! A bot's box: its tasks (kv `work.<bot>`, one JSON list), how they read on the wire and to the bot itself.
 
 use super::dispatch::{self, Standing, Wait};
-use super::worktree::{Left, Place, Worktree};
+use super::worktree::{Left, Place, PlaceChoice, Worktree};
 use super::{Failure, Report};
 use crate::LockExt;
 use crate::hub::{BotStatus, Hub};
@@ -128,6 +128,10 @@ pub struct Setup {
     /// A thread opened beside a workflow to build it by talking (`BotConfig::workflow`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workflow: Option<String>,
+    /// Where its thread works, its folder or a worktree, when the task names it (`add_task`'s and `startThread`'s
+    /// `place`); none: the bot's worktree mode decides (`worktree::wanted`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub place: Option<PlaceChoice>,
 }
 
 /// A model with its own settings (`BotConfig::model`, `model_options`): they go together, as in a bot's setup.
@@ -270,18 +274,22 @@ pub(super) struct Task {
 }
 
 /// Where a task's thread works, as `work_added` says it (`folder`), never the path: the bot's own folder, one of
-/// its projects, or another folder.
+/// its projects, or another folder; for a thread without a bot, its own folder or another.
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub(super) enum FolderKind {
     Home,
     Project,
+    Own,
     Other,
 }
 
 impl FolderKind {
     /// What `folder` is to bot `cfg`.
     pub(super) fn of(cfg: &BotConfig, folder: &str) -> Self {
+        if cfg.plain {
+            return if super::plain::is_own_folder(folder) { Self::Own } else { Self::Other };
+        }
         if cfg.projects.iter().any(|p| p == folder) {
             Self::Project
         } else if folder == cfg.cwd {

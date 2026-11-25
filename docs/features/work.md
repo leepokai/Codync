@@ -92,9 +92,12 @@ The decisions are one pure function (`dispatch::standings`), which the wire's `w
 
 ## Tools (on the `chat` MCP server)
 
-- `add_task {title, brief, after?, folder?}` → `{taskId, status, note}`: puts a task in the box and answers at once.
+- `add_task {title, brief, after?, folder?, place?}` → `{taskId, status, note, placeNote?}`: puts a task in the box and answers at once.
   `folder` is where its thread works, the full path of any folder that exists (the bot proposes its
-  [projects](#where-a-thread-works); `invalid` otherwise); left out, the bot's default project, else its own folder. Refused
+  [projects](#where-a-thread-works); `invalid` otherwise); left out, the bot's default project, else its own folder.
+  `place` (`here` | `worktree`) is where in a git repository it works, over the bot's [worktree mode](#worktrees);
+  left out, the mode decides. A worktree asked of the bot's own folder, or of a folder outside a git repository, is
+  left out, and `placeNote` says why; with `after` it says the task works where that one does. Refused
   outside the bot's own chat with the user (a room, another bot's request, a routine run: `add_task works only in
   your own chat with the user`), in a thread, past 20 waiting tasks, when `after` names
   no task that is working or waiting, and for the ninth task added in a row with no message from the user (a task
@@ -113,6 +116,22 @@ The decisions are one pure function (`dispatch::standings`), which the wire's `w
   where the agent can, else the turn stops for it), and keeps the task going until a turn takes it, so the chat
   still gets one report. Refused for a task that ended (add a new one), for a routine's run and another bot's request
   (read only, as [their thread](#talking-to-a-thread) is), and under a ceiling, as `add_task` is.
+- `ask_task {task, question}` → `{taskId, answer}`, or `{taskId, status: "no answer yet", note}` (`work/ask.rs`; the
+  name is one macro, `ask_tool!`, in `work/mod.rs`): the bot asks a working task a question. It goes into the
+  thread's running turn as `tell_task`'s `now` does, a message from the host marked `data.ask` (and `data.relay`, so
+  every client quotes it as what the thread was told), which the thread hears with a line saying the bot asks and to
+  answer in one short message, then go on; the thread's instructions say the same. It is never kept in `relayed`. The
+  thread's next message after it (the first text the agent writes once the question reached it: joined the running
+  turn, or began a turn of its own where the agent can't take it mid-turn, whose running turn then stops for it) is
+  the call's result, not the report: it stays in the thread's transcript, and only if it is the turn's last message
+  is it the report too. The call
+  waits a minute (`ask::WAIT`; the MCP request 20 seconds more); after that it answers `no answer yet` and the
+  answer, when it comes, starts a turn of its own in the bot's chat (`Cmd::TaskAnswer`, which alerts as a reply
+  does), as a `message_bot` reply does. A question the thread never answers goes when its task ends or is set aside;
+  one waiting is lost with the host process. A task the late answer's turn adds carries the task's hops on. Refused
+  (counted in `task_asked`) for a task that waits (`tell_task` it) or ended (its report came), a thread the user
+  started, a routine's run, another bot's request, and while a question to the same task still waits for its answer;
+  refused too in a thread and under a ceiling, as `add_task` is (those not counted there).
 - `work_status {}` → `{tasks: […]}`: every task that is working or waiting, and those ended in the last day: status, what its thread
   does now, why it waits, seconds, result.
 - `recall_task {task?, query?, before?}` (`work/recall.rs`): the bot looks back at its tasks, ended ones too, from
@@ -123,7 +142,7 @@ The decisions are one pure function (`dispatch::standings`), which the wire's `w
   `query`: the tasks whose title, brief or result has it (any case); with neither, the latest; 20 at most, each result
   cut at 280 bytes. Read only: allowed under a ceiling.
 
-Refused in a thread: these five and changes to the bot's profile or fallbacks (`work::refuse_chat_only`, the `chat`
+Refused in a thread: these six and changes to the bot's profile or fallbacks (`work::refuse_chat_only`, the `chat`
 server's), and the `routines`, `team` and `manage` tools (`work::acting_as`, `work::refuse_in_thread`). The refusal
 says to put what it needs in its report. `request_decision`, `send_file` and artifacts work from a thread
 ([below](#asking-and-sharing-from-a-thread)). A thread on a routine's run or another bot's request has that turn's own
@@ -450,8 +469,14 @@ What differs from the bot's own tasks:
 ### Threads without a bot
 
 `startThread` without `botId` starts a thread that runs an agent on its own (`work::plain`): `setup.backend` names
-the agent (refused without one: `a thread without a bot names its agent`), and the app sends the folder (the home
-folder unless the user picked one), the approvals and the model with it. Its task waits in the computer's **box of
+the agent (refused without one: `a thread without a bot names its agent`), and the app sends the folder the user
+picked, the approvals and the model with it. With no folder picked it works in **a folder of its own**,
+`<data dir>/threads/<task id>/` (`plain::own_folder`), made as the task is added and versioned as a bot's own folder is
+(`agent::versions`: a git repository of its own, saved before and after each turn), so threads without a bot no longer
+share the home folder. It counts as the thread's own folder (`workspace::own_folder`), so it never gets a worktree,
+and it goes with the task when the task leaves the box (a week after it ended, at host start, as its transcript does;
+or when the user drops the task). An app sends no `cwd` for it only on a host that says `hello.threadFolders: true`;
+an older host gets the home folder, as before. Its task waits in the computer's **box of
 threads without a bot**, a bot the host makes the first time one starts (`BotConfig::plain`, named `Agents`): always
 hidden (`updateBot` can't show it, `createBot` can't make one), in the home folder, no connectors, skills, shared
 memory or alerts, `maxThreads` 6, the harness's own memory kept. Apps that know it (`hello.threadsWithoutBot: true`)
@@ -496,6 +521,7 @@ stays (an older app can't take it off). Groups, threads and the box of threads w
 | --- | --- |
 | The bot (`add_task`) | `folder` if named, else the default project, else the bot's own folder |
 | The user (`startThread`) | `setup.cwd` if picked, else the default project, else the bot's own folder |
+| The user, without a bot | `setup.cwd` if picked, else [a folder of its own](#threads-without-a-bot) |
 | A routine's run | The routine's `folder` if it has one, else the bot's own folder |
 | Another bot's request | The bot's own folder |
 | A task that follows another (`after`) | That thread's folder or worktree |
@@ -534,7 +560,13 @@ in a git repository) says when a thread of the bot's own work or the user's gets
 (`worktree::top`: the folder with `.git` above the thread's folder, as `git rev-parse --show-toplevel` says; a
 thread in a worktree is in a checkout of its own, so it doesn't count); **always**, every one, the first included,
 so the user's checkout is never touched; **off**, never. A bot's [own folder](bot-workspaces.md#versions) never gets
-one: it keeps all its work in one place, with its versions.
+one: it keeps all its work in one place, with its versions; nor does a thread without a bot's own folder.
+
+A task may **name its place** (`add_task`'s `place`, `startThread`'s `setup.place`: `here` | `worktree`, kept in
+the task's `setup`), which wins over the mode (`worktree::wanted`): `worktree` gets one even in Off mode (outside a
+git repository it works in the folder, logged), `here` keeps the folder even in Always mode or beside another
+thread. The rest holds whatever the task asks: a routine's run and a request never get one, a task that follows
+another stays in that one's folder, and the bot's own folder never gets one.
 
 - `~/.codync/worktrees/<bot id>/<task id>`, on a new branch `codync/<title in lowercase, dashes>` (`-2`, `-3`… when
   taken), from the commit the thread's folder is on. The thread's agent starts there (in the same place of the
@@ -570,6 +602,32 @@ one: it keeps all its work in one place, with its versions.
   worktree it didn't make: what a box says is checked first (the folder is `~/.codync/worktrees/<id>/<id>`, the
   branch `codync/…`). Git runs with an argument list, never through a shell, each command for at most a minute.
 - Dev servers, `send_file` and `publish_artifact` of a thread in a worktree start from the worktree.
+
+### Filling a new worktree
+
+A new worktree is a clean checkout: none of the main checkout's ignored files, none of the user's uncommitted
+changes. Right after Codync makes one, before the thread's agent starts (`work/fill.rs`, from `worktree::enter`;
+not for a worktree a task already had):
+
+- **`.worktreeinclude`** at the top of the main checkout lists ignored files or folders to **copy** in (`.env`,
+  `.env.local`, editor settings): one literal path a line, relative to the repository's top, `#` for a comment. A
+  path that is absolute, leaves the repository, is missing, tracked or not ignored (`git check-ignore`, which also
+  passes over tracked paths) is passed over, logged.
+- **Shared folders**: per bot and project, the ignored folders to **link** into each new worktree (`node_modules`,
+  `.cache`), so a thread doesn't fill them again: the bot's `sharedFolders`, `{<project path>: [<folder inside it>]}`,
+  set with `updateBot` and kept to the bot's projects (a project taken off takes its list; a name must be a plain
+  relative path, no `..`, kept without `./` or a trailing slash). Only the projects in the worktree's repository count, each at its place inside it. A link
+  is a symlink on macOS and Linux and a folder link on Windows (it needs Developer Mode there). Each link is listed
+  in the repository's `info/exclude` (`/node_modules`, no trailing slash, which a link wouldn't match), so git never
+  shows it: a thread's `git add -A` can't commit it, and a merged link to the main checkout's own folder would
+  replace that folder. The thread is told not to commit them.
+- Nothing already in the worktree is replaced (a tracked folder of the same name stays as the commit has it). The
+  user's uncommitted changes are never carried: the thread is told it started from the project's last commit, and so
+  is the report. Each file or folder that can't be copied or linked is logged and counted (`worktree_fill_failed`,
+  `stage: include | link`), never fatal.
+- When the task is over, the links Codync made don't count as work: git passes over them in the look at
+  `git status`, and each path `info/exclude` lists that is a link to the same path in the main checkout is removed (the
+  link only) before `git worktree remove`, so an untouched worktree still goes. The copied files are ignored, which git's removal allows.
 
 ## Outside the chat
 
@@ -616,8 +674,13 @@ A task's end sends no alert of its own: its report is a turn of the bot's, whose
   `gitRepo` it gives the line under the folder in Settings: `Git repository`, `Not a git repository`, `Git isn't
   installed on this computer`. The manual's page for it: `/docs/working-folders` (`#without-git`).
 - `threadEntry` events `{rev, thread, entry}` for a thread's transcript; none in the catch-up.
-- `startThread {botId?, text, attachments?, setup?: {backend?, loginProfile?, cwd?, model?: {id, options}, approval?: {permission, mode}}}` →
+- Bot: `sharedFolders` (`{<project path>: [<folder>]}`, `updateBot`; [filling a new worktree](#filling-a-new-worktree)).
+  `hello.worktreeFill: true` on a host that fills new worktrees.
+- `hello.threadFolders: true`: a thread without a bot that names no `cwd` gets [a folder of its own](#threads-without-a-bot).
+- `startThread {botId?, text, attachments?, setup?: {backend?, loginProfile?, cwd?, place?, model?: {id, options}, approval?: {permission, mode}}}` →
   `{botId, taskId}`: [a thread the user starts](#other-sources), without `botId` [without a bot](#threads-without-a-bot).
+  `setup.place` (`here` | `worktree`, `hello.threadPlace: true`) is where it works in a git repository, over the
+  bot's [worktree mode](#worktrees); an older host ignores it.
 - `threadEntries {botId, threadId}` → `{thread: {id, title, status, startedAt, endedAt, start}, entries}` (newest 500):
   `threadId` is a task's `thread`; `title`, `status` and the times are of the task it works on, else the last it
   worked on. A user entry there is what the thread was told (`data.from: "host"`: a task, as its thread read it) or the

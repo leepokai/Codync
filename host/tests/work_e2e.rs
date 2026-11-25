@@ -1978,3 +1978,146 @@ async fn a_thread_without_a_bot_runs_its_agent_on_its_own() {
     let opened = transcript(&host, &owner, &read).await;
     assert_eq!(opened[0]["data"]["attachments"][0]["name"], "notes.md");
 }
+
+#[tokio::test]
+async fn the_bot_asks_a_working_task_and_gets_its_answer_apart_from_its_report() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "steer").await;
+    host.reply(&bot, "ADD Working|HOLD:working").await;
+    task(&host, &bot, "Working", "working").await;
+    host.reply(&bot, "ASKTASK Working|How far along are you?").await;
+    let asked = reply(&host, &bot, "Asked:").await;
+    assert!(asked.contains("\"answer\":\"Answer: How far along are you?\""), "{asked}");
+    // The thread heard it as its bot's question.
+    let heard = logged(&host.workspace(&bot), "prompts.jsonl");
+    assert!(heard.iter().all(|p| !p["text"].as_str().unwrap().contains("asks you this")), "it joined the turn");
+
+    // It goes on with its task, and its report is its last message, not the answer.
+    release(&host, &bot, "working");
+    let report = relayed_for(&host, &bot, "Working").await;
+    assert!(!report.contains("Answer:"), "{report}");
+    task(&host, &bot, "Working", "done").await;
+    // An ended task is refused: its report came already.
+    host.reply(&bot, "ASKTASK Working|And now?").await;
+    let refused = reply(&host, &bot, "Refused:").await;
+    assert!(refused.contains("has ended"), "{refused}");
+}
+
+/// The first message in `bot`'s chat that starts with `prefix`.
+async fn text_starting(host: &Host, bot: &str, prefix: &str) -> Option<String> {
+    let texts = history(host, bot).await.into_iter().filter_map(|e| e["data"]["text"].as_str().map(str::to_owned));
+    texts.into_iter().find(|t| t.starts_with(prefix))
+}
+
+#[tokio::test]
+async fn an_agent_that_cannot_take_the_question_mid_turn_answers_it_in_a_turn_of_its_own() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "ADD Working|HOLD:working").await;
+    task(&host, &bot, "Working", "working").await;
+    host.reply(&bot, "ASKTASK Working|Which file?").await;
+    let asked = reply(&host, &bot, "Asked:").await;
+    assert!(asked.contains("\"answer\":\"Answer: Which file?\""), "{asked}");
+    // Its running turn stopped for the question, and its answer, the turn's last message, is its report too.
+    task(&host, &bot, "Working", "done").await;
+    let report = wait("its report", async || relayed(&host, &bot).await.pop()).await;
+    assert_eq!(report, "Relayed: Answer: Which file?");
+}
+
+#[tokio::test]
+async fn an_answer_after_the_minute_comes_to_the_bot_as_a_turn_of_its_own() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "work_agent.py", "steer").await;
+    host.reply(&bot, "ADD Working|HOLD:working").await;
+    task(&host, &bot, "Working", "working").await;
+    host.call("send", json!({"botId": bot, "text": "ASKTASK Working|SLOW how far?"})).await;
+    let said = async |prefix: &str| text_starting(&host, &bot, prefix).await;
+    common::eventually("the call to give up", Duration::from_secs(90), async || said("Asked:").await.is_some()).await;
+    assert!(said("Asked:").await.unwrap().contains("no answer yet"));
+    common::eventually("the late answer's turn", Duration::from_secs(30), async || said("Late:").await.is_some()).await;
+    assert_eq!(said("Late:").await.unwrap(), "Late: Answer: SLOW how far?");
+    release(&host, &bot, "working");
+    let report = relayed_for(&host, &bot, "Working").await;
+    assert!(!report.contains("Answer:"), "{report}");
+}
+
+#[tokio::test]
+async fn a_task_names_its_place_and_a_new_worktree_gets_the_ignored_files_and_shared_folders() {
+    let host = Host::start().await;
+    let (bot, dir) = project_bot(&host, 3).await;
+    if !git_repo(&dir) {
+        return;
+    }
+    // `.env` and `node_modules` are ignored, and `.worktreeinclude` lists the one to copy.
+    std::fs::write(dir.join(".gitignore"), "*.jsonl\nrelease-*\n.env\nnode_modules/\n").unwrap();
+    std::fs::write(dir.join(".worktreeinclude"), ".env\nREADME.md\n").unwrap();
+    let commit = |args: &[&str]| assert!(git_in(&dir).args(args).output().unwrap().status.success());
+    commit(&["add", "."]);
+    commit(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "ignores"]);
+    std::fs::write(dir.join(".env"), "KEY=1").unwrap();
+    std::fs::create_dir_all(dir.join("node_modules/pkg")).unwrap();
+    std::fs::write(dir.join("uncommitted.txt"), "the user's").unwrap();
+    let project = dir.to_string_lossy().into_owned();
+    let mut shared = serde_json::Map::new();
+    shared.insert(project.clone(), json!(["node_modules"]));
+    host.call("updateBot", json!({"id": bot, "worktreeMode": "off", "sharedFolders": shared})).await;
+    assert_eq!(row(&host, &bot).await["sharedFolders"][&project], json!(["node_modules"]));
+
+    // Off mode, but the task asks for a worktree: it gets one, filled before its agent starts.
+    host.reply(&bot, "ADD Alone|HOLD:alone|place=worktree").await;
+    let alone = in_worktree(&host, &bot, "Alone").await;
+    let folder = PathBuf::from(alone["worktree"]["path"].as_str().unwrap());
+    assert_eq!(std::fs::read_to_string(folder.join(".env")).unwrap(), "KEY=1");
+    // A link on Windows needs Developer Mode; without it the thread starts all the same.
+    if cfg!(unix) {
+        assert!(folder.join("node_modules").symlink_metadata().unwrap().file_type().is_symlink());
+    }
+    assert!(!folder.join("uncommitted.txt").exists(), "never the user's uncommitted changes");
+    let told = wait("its prompt", async || std::fs::read_to_string(folder.join("prompts.jsonl")).ok()).await;
+    assert!(told.contains("from the project's last commit"), "{told}");
+
+    // Always mode, but the task asks to stay: it works in the folder itself.
+    host.call("updateBot", json!({"id": bot, "worktreeMode": "always"})).await;
+    host.reply(&bot, "ADD Here|HOLD:here|place=here").await;
+    wait("its prompt in the folder", async || task_prompts_in(&dir, "Here").pop()).await;
+    assert!(task(&host, &bot, "Here", "working").await["worktree"].is_null());
+    // The bot's own folder never gets one: the call says why.
+    let own = host.workspace(&bot).to_string_lossy().into_owned();
+    host.reply(&bot, &format!("ADD Mine|x|folder={own}|place=worktree")).await;
+    wait("why it gets no worktree", async || {
+        let texts =
+            history(&host, &bot).await.into_iter().filter_map(|e| e["data"]["text"].as_str().map(str::to_owned));
+        texts.into_iter().find(|t| t.starts_with("Added:") && t.contains("your own folder never gets a worktree"))
+    })
+    .await;
+
+    // Untouched, it goes with its link, and the project keeps its own folder.
+    std::fs::write(folder.join("release-alone"), "").unwrap();
+    std::fs::write(dir.join("release-here"), "").unwrap();
+    let report = relayed_for(&host, &bot, "Alone").await;
+    if !cfg!(windows) {
+        assert!(report.contains("was removed with its branch"), "{report}");
+        assert!(!folder.exists() && dir.join("node_modules/pkg").is_dir());
+    }
+}
+
+#[tokio::test]
+async fn a_thread_without_a_bot_and_no_folder_works_in_one_of_its_own() {
+    let host = Host::start().await;
+    let agent = common::fixture_command("work_agent.py", "");
+    // The first start makes the computer's box; then it runs the scripted agent.
+    let gone = json!({"backend": "claude", "cwd": std::env::temp_dir().join("codync-no-such-folder")});
+    host.refused("startThread", json!({"text": "x", "setup": gone})).await;
+    let snapshot = host.snapshot().await;
+    let owner = snapshot["bots"].as_array().unwrap().iter().find(|b| b["plain"] == true).unwrap()["id"].clone();
+    let owner = owner.as_str().unwrap().to_owned();
+    host.call("updateBot", json!({"id": owner, "backend": "custom", "command": agent})).await;
+    let started = host.call("startThread", json!({"text": "Look around", "setup": {"backend": "custom"}})).await;
+    let done = task(&host, &owner, "Look around", "done").await;
+    let own = host.home.join("threads").join(started["taskId"].as_str().unwrap());
+    assert_eq!(done["folder"], json!(own), "not the home folder");
+    assert_eq!(heard_in(&own), [json!("Look around")]);
+    // Versioned as a bot's own folder is, and never given a worktree of itself.
+    wait("its versions", async || own.join(".git").exists().then_some(())).await;
+    assert!(done["worktree"].is_null());
+}

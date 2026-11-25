@@ -252,6 +252,7 @@ mod tests {
             section: None,
             notify: None,
             projects: vec![],
+            shared_folders: std::collections::BTreeMap::new(),
             connectors: vec![],
             skills: vec![],
             computer: false,

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { draftOf, normalizeBot } from '../../../shared/models.ts'
-import { withDefaultProject, withProject, withoutProject } from './projects.ts'
+import { sharedFolderName, withDefaultProject, withProject, withSharedFolder, withoutProject, withoutSharedFolder } from './projects.ts'
 
 /** What a save sends, as the host reads it. */
 const body = (d: ReturnType<typeof draftOf>) => JSON.parse(JSON.stringify(d)) as Record<string, unknown>
@@ -25,4 +25,18 @@ test('a host before projects gets neither field, and keeps its switch', () => {
   assert.deepEqual([old.projects, old.projectGitRepos, old.worktreeMode], [[], [], null])
   const sent = body(draftOf(old))
   assert.deepEqual(['projects' in sent, 'worktreeMode' in sent, sent.threadWorktrees, sent.cwd], [false, false, false, '/p/a'])
+})
+
+test("a save sends every project's shared folders as one map; a project left with none leaves it", () => {
+  const bot = normalizeBot({ id: 'b', cwd: '/h', projects: ['/p/a', '/p/b'], projectGitRepos: [true, true], worktreeMode: 'off', sharedFolders: { '/p/a': ['node_modules'] } })
+  const added = withSharedFolder(withSharedFolder(draftOf(bot), '/p/b', '.cache/pip'), '/p/a', 'node_modules')
+  assert.deepEqual(body(added).sharedFolders, { '/p/a': ['node_modules'], '/p/b': ['.cache/pip'] }, 'one already there stays once')
+  assert.deepEqual(body(withoutSharedFolder(added, '/p/a', 'node_modules')).sharedFolders, { '/p/b': ['.cache/pip'] })
+  assert.deepEqual(body(withoutSharedFolder(withoutSharedFolder(added, '/p/a', 'node_modules'), '/p/b', '.cache/pip')).sharedFolders, {}, 'the last one goes as an empty map')
+  assert.equal('sharedFolders' in body(draftOf(normalizeBot({ id: 'b', cwd: '/h', projects: ['/p/a'], worktreeMode: 'off' }))), false, 'a host before shared folders gets none')
+})
+
+test('a typed shared folder is a plain path inside the project, or nothing', () => {
+  assert.deepEqual(['node_modules', ' ./.cache/pip/ ', 'a\\b'].map(sharedFolderName), ['node_modules', '.cache/pip', 'a/b'])
+  assert.deepEqual(['', '  ', '.', '/abs', 'C:\\x', '\\x', '../up', 'a/../b'].map(sharedFolderName), Array(8).fill(null))
 })

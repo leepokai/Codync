@@ -79,14 +79,4 @@ extension BotStore {
         }
         return nil
     }
-
-    /// Has the bot's conversation open its details on `task`'s thread once it is on screen.
-    public func requestThread(of botId: String, task: WorkTask) { threadRequest = (botId, task) }
-
-    /// Consumed once, including when the conversation was already on screen.
-    func takeThreadRequest(for botId: String) -> WorkTask? {
-        guard let request = threadRequest, request.botId == botId else { return nil }
-        threadRequest = nil
-        return request.task
-    }
 }

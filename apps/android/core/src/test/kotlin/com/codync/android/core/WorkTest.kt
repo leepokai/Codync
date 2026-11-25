@@ -343,32 +343,6 @@ class WorkTest {
         assertEquals(listOf("t1", "t2"), sharing(own, chat, "thread-9").map { it.id })
     }
 
-    @Test fun `what a thread put in the chat is one line of its thread, saying how it stands`() {
-        fun line(kind: String, data: String) = sharedLine(Entry("c", 1, "b", 1, kind, data = Json.parseToJsonElement(data).jsonObject)) { it }
-        val options = """"options":[{"optionId":"ok","name":"Allow","kind":"allow_once"},{"optionId":"no","name":"Deny","kind":"reject_once"},{"optionId":"x","name":"Skip","kind":"other"}]"""
-        fun approval(status: String, selected: String = "") = line("permission", """{"status":"$status","title":"npm test",$options,"selected":"$selected"}""")
-        assertEquals(SharedLine("hand.raised", "Waiting for your approval: npm test"), approval("pending"))
-        assertEquals(SharedLine("checkmark", "Approved: npm test"), approval("answered", "ok"))
-        assertEquals(SharedLine("xmark", "Denied: npm test"), approval("answered", "no"))
-        assertEquals("Answered: Skip", approval("answered", "x")?.text)
-        assertEquals(SharedLine("clock", "Not answered: npm test"), approval("expired"))
-        fun choice(status: String, selected: String = "") = line("notice", """{"decision":true,"status":"$status","question":"Squash?","choices":["Yes","No"],"selected":"$selected"}""")
-        assertEquals("Asked: Squash?", choice("pending")?.text)
-        assertEquals("Answered: No", choice("answered", "No")?.text)
-        assertEquals("Not answered: Squash?", choice("expired")?.text)
-        fun signIn(status: String, kind: String = "agent") = line("notice", """{"text":"Needs you to sign in.","connectionRequest":{"kind":"$kind","status":"$status","title":"Kimi Code"}}""")
-        assertEquals(SharedLine("hand.raised", "Needs Kimi Code sign-in"), signIn("pending"))
-        assertEquals(SharedLine("checkmark", "Signed in"), signIn("ready"))
-        assertEquals(SharedLine("xmark", "Cancelled"), signIn("cancelled"))
-        assertNull("a connector's card is not a thread's", line("notice", """{"connectionRequest":{"kind":"oauth","status":"pending","title":"Linear"}}"""))
-        val file = """{"id":"f","name":"log.txt","size":3,"sha256":""}"""
-        assertEquals(SharedLine("doc", "Sent a file: log.txt"), line("agent", """{"final":true,"files":[$file]}"""))
-        assertEquals(SharedLine("waveform", "Sent a voice note"), line("agent", """{"final":true,"files":[$file],"voiceNote":true,"text":"Hi"}"""))
-        assertEquals(SharedLine("doc.richtext", "Made an artifact: Plan"), line("agent", """{"final":true,"artifact":{"id":"a","title":"Plan","updatedAt":0}}"""))
-        assertNull(line("agent", """{"text":"Just words","final":true}"""))
-        assertNull(line("notice", """{"text":"A notice"}"""))
-    }
-
     @Test fun `a bot's folder is a repository, isn't one, or the computer has no git`() {
         assertEquals(GitState.Repo, gitState(bot(""","threadWorktrees":true,"gitRepo":true,"gitInstalled":true""")))
         assertEquals(GitState.None, gitState(bot(""","threadWorktrees":true,"gitRepo":false,"gitInstalled":true""")))

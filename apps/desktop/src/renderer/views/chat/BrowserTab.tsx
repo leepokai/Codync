@@ -9,7 +9,7 @@ import { analytics, useScreenViewed } from '../../store/analytics'
 import { useApp, useStore } from '../../store/context'
 import './browser-tab.css'
 
-/** The address each bot's browser shows, kept while the app runs: a tab left and shown again is where it was. */
+/** The address each bot's browser tab shows, kept while the app runs: a tab left and shown again is where it was. */
 const shown = new Map<string, string>()
 
 /**
@@ -18,11 +18,11 @@ const shown = new Map<string, string>()
  */
 // ponytail: a frame, so a site that refuses to be framed stays blank (Open in browser shows it); a view of its own
 // in the main process when that matters.
-export function BrowserTab({ bot }: { bot: Bot }) {
+export function BrowserTab({ bot, tab }: { bot: Bot; tab: string }) {
   const tr = useTr()
   const store = useStore()
   const app = useApp()
-  const [address, setAddress] = useState(() => shown.get(bot.id) ?? '')
+  const [address, setAddress] = useState(() => shown.get(`${bot.id}/${tab}`) ?? '')
   const [typed, setTyped] = useState(address)
   const [refused, setRefused] = useState(false)
   // Refresh loads the page again in a new frame.
@@ -32,7 +32,7 @@ export function BrowserTab({ bot }: { bot: Bot }) {
     const next = previewAddress(text, location.origin)
     setRefused(!next)
     if (!next) return
-    shown.set(bot.id, next)
+    shown.set(`${bot.id}/${tab}`, next)
     setAddress(next)
     setTyped(next)
     setTurn((t) => t + 1)

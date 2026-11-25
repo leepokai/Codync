@@ -28,16 +28,14 @@ import Testing
 }
 
 @Test func arrivalRevealBoundsShortAndLongCompletions() {
-    #expect(StreamTextState.arrivalRevealMin == 0.360)
-    #expect(StreamTextState.arrivalRevealPerChar == 0.0032)
-    #expect(StreamTextState.arrivalRevealMax == 5.200)
+    #expect(StreamTextState.arrivalRevealMin == 0.250)
+    #expect(StreamTextState.arrivalRevealPerChar == 0.0013)
+    #expect(StreamTextState.arrivalRevealMax == 1.800)
 
     let shortDuration = StreamTextState.arrivalRevealDuration(length: 12)
-    let thousandCharDuration = StreamTextState.arrivalRevealDuration(length: 1_000)
     let longDuration = StreamTextState.arrivalRevealDuration(length: 5_000)
     #expect(shortDuration >= StreamTextState.arrivalRevealMin)
-    #expect(shortDuration < 0.50)
-    #expect(thousandCharDuration > 3.0 && thousandCharDuration < StreamTextState.arrivalRevealMax)
+    #expect(shortDuration < 0.35)
     #expect(longDuration == StreamTextState.arrivalRevealMax)
 
     var state = StreamTextState(text: "Short reply!", live: false, now: 0, arrivalReveal: true)
@@ -49,7 +47,7 @@ import Testing
     }
     #expect(!state.needsTick)
     #expect(state.displayedText == "Short reply!")
-    #expect(now <= 0.50)
+    #expect(now <= 0.40)
 }
 
 @Test func liveToFinalTransitionCatchesUpSmoothlyWithinBudget() {

@@ -2,18 +2,11 @@ import Foundation
 
 /// Critically damped motion: one continuous velocity even when self-sizing rows move the end.
 struct ConversationScrollMotion {
-    static let defaultResponse: CGFloat = 18
-    static let contentGrowthResponse: CGFloat = 12.6
-
-    var response: CGFloat
     private(set) var velocity: CGFloat = 0
-
-    init(response: CGFloat = defaultResponse) {
-        self.response = response
-    }
 
     mutating func step(from position: CGFloat, to target: CGFloat, elapsed: TimeInterval) -> CGFloat {
         let dt = CGFloat(min(max(elapsed, 0), 1.0 / 15))
+        let response: CGFloat = 18
         let distance = position - target
         let decay = exp(-response * dt)
         let coefficient = velocity + response * distance

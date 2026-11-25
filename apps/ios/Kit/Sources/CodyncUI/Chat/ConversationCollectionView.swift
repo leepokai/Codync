@@ -117,7 +117,7 @@ class ConversationCollectionView: UICollectionView {
         }
         if end - contentOffset.y > 0.5 {
             followingContentGrowth = true
-            startFrames(response: ConversationScrollMotion.contentGrowthResponse)
+            startFrames()
         }
     }
 
@@ -160,16 +160,13 @@ class ConversationCollectionView: UICollectionView {
         }
         followingContentGrowth = false
         scrollingToEnd = true
-        startFrames(response: ConversationScrollMotion.defaultResponse)
+        startFrames()
     }
 
-    private func startFrames(response: CGFloat = ConversationScrollMotion.defaultResponse) {
+    private func startFrames() {
         // Repeated requests retarget the existing motion; they never rewind or restart it.
-        if displayLink != nil {
-            motion.response = response
-            return
-        }
-        motion = ConversationScrollMotion(response: response)
+        guard displayLink == nil else { return }
+        motion = ConversationScrollMotion()
         motionPosition = nil
         lastFrame = nil
         let link = CADisplayLink(target: ConversationScrollFrames(self), selector: #selector(ConversationScrollFrames.tick(_:)))

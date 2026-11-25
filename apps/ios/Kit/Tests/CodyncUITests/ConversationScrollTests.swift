@@ -257,28 +257,6 @@ func bottomPinningPreservesNativeOverscrollDuringInteraction(_ phase: String) {
     #expect(abs(view.contentOffset.y - view.endOffset) < 1)
 }
 
-@Test func contentGrowthMotionSlowsPaceWithoutOvershoot() {
-    #expect(ConversationScrollMotion.contentGrowthResponse == 12.6)
-    var fast = ConversationScrollMotion(response: ConversationScrollMotion.defaultResponse)
-    var gentle = ConversationScrollMotion(response: ConversationScrollMotion.contentGrowthResponse)
-    var fastPos: CGFloat = 0
-    var gentlePos: CGFloat = 0
-    for _ in 0 ..< 10 {
-        fastPos = fast.step(from: fastPos, to: 1_000, elapsed: 1.0 / 60)
-        gentlePos = gentle.step(from: gentlePos, to: 1_000, elapsed: 1.0 / 60)
-    }
-    #expect(gentlePos < fastPos)
-    #expect(gentlePos > 0)
-
-    for _ in 0 ..< 120 {
-        let next = gentle.step(from: gentlePos, to: 1_000, elapsed: 1.0 / 60)
-        #expect(next >= gentlePos)
-        #expect(next <= 1_000)
-        gentlePos = next
-    }
-    #expect(gentle.isSettled(at: gentlePos, target: 1_000))
-}
-
 @MainActor @Test func disablingContentGrowthAnimationStopsDisplayLinkAndSettlesToEnd() {
     let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 600))
     let controller = UIViewController()

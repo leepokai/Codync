@@ -3,9 +3,9 @@ import Testing
 @testable import CodyncUI
 
 @Test func tailFadeSweepUsesExactDurationStaggerAndLinearOpacity() {
-    #expect(TailFadeSweepState.duration == 0.715)
-    #expect(TailFadeSweepState.staggerInterval == 0.028)
-    #expect(TailFadeSweepState.maxTotalDelay == 0.36)
+    #expect(TailFadeSweepState.duration == 0.50)
+    #expect(TailFadeSweepState.staggerInterval == 0.02)
+    #expect(TailFadeSweepState.maxTotalDelay == 0.25)
 
     var state = TailFadeSweepState()
     state.sync(text: "alpha beta", isStreaming: true, now: 10.0)
@@ -14,7 +14,7 @@ import Testing
     #expect(abs(state.batches[1].startTime - (10.0 + TailFadeSweepState.staggerInterval)) < 0.0001)
     #expect(state.batches[0].duration == TailFadeSweepState.duration)
 
-    // First batch hits 0.5 opacity halfway through its 0.715s duration.
+    // First batch hits 0.5 opacity halfway through its 0.5s duration.
     let mid = state.opacity(forCharacterAt: 0, at: 10.0 + TailFadeSweepState.duration * 0.5)
     #expect(abs(mid - 0.5) < 0.001)
     let end = state.opacity(forCharacterAt: 0, at: 10.0 + TailFadeSweepState.duration)

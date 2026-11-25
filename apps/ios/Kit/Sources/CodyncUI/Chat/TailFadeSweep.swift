@@ -42,14 +42,14 @@ enum ThoughtChunking {
 }
 
 /// Pure, deterministic state machine for trailing token fade-in sweeps during streaming text reveal.
-/// Tracks character-level opacity batches across frames with bounded total delay (`0.36 s`) and
+/// Tracks character-level opacity batches across frames with bounded total delay (`0.25 s`) and
 /// bounded active batch count (`32`) without mutating plain text or inserting invisible characters.
 struct TailFadeSweepState: Equatable, Sendable {
-    static let duration: TimeInterval = 0.715
-    static let staggerInterval: TimeInterval = 0.028
-    static let maxTotalDelay: TimeInterval = 0.36
+    static let duration: TimeInterval = 0.50
+    static let staggerInterval: TimeInterval = 0.02
+    static let maxTotalDelay: TimeInterval = 0.25
     static let maxBatches = 32
-    static let coarseGap: TimeInterval = 0.13
+    static let coarseGap: TimeInterval = 0.09
     static let maxWaveUnits = 12
 
     struct Batch: Equatable, Sendable {

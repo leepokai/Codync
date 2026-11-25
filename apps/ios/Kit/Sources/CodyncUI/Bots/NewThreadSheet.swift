@@ -4,7 +4,7 @@ import SwiftUI
 /// A thread the user starts from the Threads tab, as the desktop's New thread does. It opens on no bot, on the first
 /// computer that starts one that way, and otherwise on the lead bot. It has a first message, then who it's with under
 /// the field: a bot from `bots` (on that bot's own model, approvals and folder) or **No bot**. Without a bot, it runs
-/// on the agent and model the chip beside it picks (the desktop's model panel), in the computer's home folder, asking
+/// on the agent and model the chip beside it picks (the desktop's model panel), in a folder of its own (an older host: the computer's home folder), asking
 /// before anything it does, in the agent's Auto mode. `started` gets the bot it went to and the task's id once the
 /// computer took it and the sheet is gone, so what it opens doesn't push while the sheet still slides away (a push then
 /// lands blank).
@@ -144,7 +144,7 @@ public struct NewThreadSheet: View {
         guard !sending, ready else { return }
         let target: (BotStore, String?, ThreadSetup?)
         if with == nil, let plain {
-            target = (plain, nil, .plain(login, home: plain.hello?.home, model: model, options: options))
+            target = (plain, nil, .plain(login, home: plain.hello?.threadFolders == true ? nil : plain.hello?.home, model: model, options: options))
         } else if let bot, let botStore = store(bot.ref.computerId) {
             target = (botStore, bot.bot.id, nil)
         } else {

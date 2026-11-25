@@ -73,6 +73,7 @@ fn release(hub: &Hub, task: &mut Task, front: i64) -> Option<String> {
     let thread = task.thread.clone();
     if let Some(thread) = &thread {
         super::thread::carry(&hub.store, task, thread);
+        super::ask::forget(hub, thread);
     }
     task.set_aside(front);
     thread
@@ -206,8 +207,9 @@ pub fn drop_task(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
     if dropped.status == Status::Waiting {
         sources::deliver(hub, bot, &dropped);
     }
-    // A worktree it had from before it gave way goes with it, if nothing was done there.
+    // A worktree it had from before it gave way goes with it, if nothing was done there; so does a thread's own folder.
     super::worktree::leave(std::slice::from_ref(&dropped));
+    super::plain::forget_folders(std::slice::from_ref(&dropped));
     settle(hub, bot, None);
     Ok(())
 }

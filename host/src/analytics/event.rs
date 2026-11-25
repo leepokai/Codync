@@ -121,6 +121,10 @@ pub enum Event {
     WorkNeedsSignIn,
     /// A bot's `tell_task` finished (`outcome`): where the words went (`to`) or why not (`error`), and `now`.
     WorkTold,
+    /// A bot's `ask_task` finished (`outcome`): the thread answered in time, later, or the question was refused.
+    TaskAsked,
+    /// Filling a new worktree failed at one file or folder (`stage`: `include`, `link`); the thread starts anyway.
+    WorktreeFillFailed,
     /// A bot's `recall_task` finished (`outcome`), looking up one task, a query or the latest (`by`).
     WorkRecalled,
     /// The user wrote to a task's thread (`chat::work::thread`): whether it reopened the task, and whether it waits.
@@ -314,6 +318,8 @@ impl Event {
             Self::BotProjectsMigrated => "bot_projects_migrated",
             Self::WorkNeedsSignIn => "work_needs_sign_in",
             Self::WorkTold => "work_told",
+            Self::TaskAsked => "task_asked",
+            Self::WorktreeFillFailed => "worktree_fill_failed",
             Self::WorkRecalled => "work_recalled",
             Self::WorkMessaged => "work_messaged",
             Self::WatchdogFlagged => "watchdog_flagged",

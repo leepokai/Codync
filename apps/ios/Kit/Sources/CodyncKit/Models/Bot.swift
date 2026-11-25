@@ -118,6 +118,9 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var projectGitRepos: [Bool] = []
     /// When its threads get a git worktree. Nil from an older host (`threadWorktrees`) or a mode this app doesn't know.
     public var worktreeMode: WorktreeMode?
+    /// Per project path: folders of its main checkout, relative to it, linked into each new worktree of it
+    /// (`node_modules`). Nil from an older host: no setting to show.
+    public var sharedFolders: [String: [String]]?
 
     /// `path` is one of its projects and in a git repository: looked up by path, so a reorder or an unsaved add in
     /// a form can't shift it.
@@ -228,6 +231,7 @@ extension Bot {
         projects = try? c.decodeIfPresent([String].self, forKey: .projects)
         projectGitRepos = (try? c.decodeIfPresent([Bool].self, forKey: .projectGitRepos)) ?? []
         worktreeMode = try? c.decodeIfPresent(WorktreeMode.self, forKey: .worktreeMode)
+        sharedFolders = try? c.decodeIfPresent([String: [String]].self, forKey: .sharedFolders)
         gitInstalled = try? c.decodeIfPresent(Bool.self, forKey: .gitInstalled)
         outside = try? c.decodeIfPresent(Outside.self, forKey: .outside)
         unread = try c.decodeIfPresent(Int.self, forKey: .unread) ?? 0

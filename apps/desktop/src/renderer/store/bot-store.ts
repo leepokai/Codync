@@ -260,6 +260,21 @@ export class BotStore extends BotSync {
     return this.hello?.projects === true
   }
 
+  /** A new thread can name its place in a git project here (`startThread` with `setup.place`). */
+  get startsThreadsInPlace() {
+    return this.hello?.threadPlace === true
+  }
+
+  /** Bots have shared folders here, linked into each new worktree of a project. */
+  get fillsWorktrees() {
+    return this.hello?.worktreeFill === true
+  }
+
+  /** A thread without a bot sent no folder gets one of its own here (an older host: the home folder). */
+  get givesThreadsOwnFolders() {
+    return this.hello?.threadFolders === true
+  }
+
   /** A routine can name the folder its runs work in here (`saveRoutine` with `folder`). */
   get routinesHaveFolders() {
     return this.hello?.routineFolder === true

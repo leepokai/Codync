@@ -227,13 +227,20 @@ install_linux_dependencies() {
 
 ensure_host_service() {
   unit=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/codync-host.service
+  target=$BIN_DIR/codync-host
   if [ -f "$unit" ] || systemctl --user cat codync-host.service >/dev/null 2>&1; then
-    # Keep an existing unit and its custom port, but finish an interrupted install.
-    if ! systemctl --user is-enabled codync-host.service >/dev/null 2>&1 &&
-      ! systemctl --user enable --now codync-host.service; then
+    # Keep an existing unit and its custom port, but only finish an interrupted
+    # install of this same binary.
+    exec_start=$(systemctl --user show codync-host.service -p ExecStart --value 2>/dev/null) || exec_start=""
+    owner=${exec_start#*path=}
+    owner=${owner%% ;*}
+    if [ "$owner" != "$target" ]; then
+      service_owner=${owner:-unknown}
+      say "An existing codync-host service belongs to another installation${owner:+ at $owner}; leaving it unchanged."
+    elif ! systemctl --user enable --now codync-host.service; then
       service_install_failed=1
     fi
-  elif ! "$BIN_DIR/codync-host" install; then
+  elif ! "$target" install; then
     service_install_failed=1
   fi
 }
@@ -291,4 +298,9 @@ if [ $OS = linux ] && [ -n "${service_install_failed:-}" ]; then
   echo "codync-host is installed, but its background service could not start in this session."
   echo "Run $BIN_DIR/codync-host install from a signed-in desktop session."
   exit 0
+fi
+
+if [ $OS = linux ] && [ -n "${service_owner:-}" ]; then
+  echo "codync-host is installed, but an existing service for another installation was left unchanged."
+  echo "Stop or remove the service that runs $service_owner before installing Codync at $BIN_DIR."
 fi

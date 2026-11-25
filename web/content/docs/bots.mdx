@@ -80,7 +80,7 @@ A project in a Git repository shows a branch icon on its row, others a folder ic
 - **Side by side** (the default): a thread gets its own worktree when another thread works in the same repository. The first one works in the project itself.
 - **Always:** every thread works in a worktree of its own, the first one included, so your checkout is never touched.
 
-Terminal UI: ←/→ on the **Worktree mode** field. Routine runs, other bots' requests and threads in the bot's own folder never get a worktree. Codync never merges or deletes a branch that has work on it. What it keeps and removes, and what to do without Git, is in [Working folders and git](/docs/working-folders).
+A task can name its place over the mode: the bot chooses, for each task it hands out, the project itself or a worktree, and on the desktop you choose for a thread you start. **Shared folders** on a Git project's row lists folders, such as `node_modules`, linked into each new worktree so a thread doesn't install them again; a `.worktreeinclude` file at the top of the repository lists ignored files, such as `.env`, copied in: see [Filling a new copy](/docs/working-folders#filling-a-new-copy). Terminal UI: ←/→ on the **Worktree mode** field, and the **Shared folders** field for the project picked on **Projects**. Routine runs, other bots' requests and threads in the bot's own folder never get a worktree. Codync never merges or deletes a branch that has work on it. What it keeps and removes, and what to do without Git, is in [Working folders and git](/docs/working-folders).
 
 ### What the chat no longer loads
 

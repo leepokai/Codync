@@ -233,6 +233,22 @@ class WorkTest {
         assertNull(BotDraft.from(bot(""","projects":[],"worktreeMode":"later"""")).worktreeMode)
     }
 
+    @Test fun `shared folders go as the whole map, only names the host takes`() {
+        val bot = bot(""","projects":["/p/app","/p/docs"],"projectGitRepos":[true,false],"worktreeMode":"sideBySide",
+            "sharedFolders":{"/p/app":["node_modules"]}""")
+        val draft = BotDraft.from(bot)
+        assertEquals(listOf("node_modules"), draft.sharedFolders("/p/app"))
+        fun sent(edit: BotDraft) = edit.body().getValue("sharedFolders").toString()
+        assertEquals("""{"/p/app":["node_modules",".cache/pip"]}""", sent(draft.withSharedFolder("/p/app", " .cache/pip/ ")))
+        assertEquals("""{"/p/app":["node_modules"],"/p/docs":["vendor"]}""", sent(draft.withSharedFolder("/p/docs", "vendor")))
+        for (refused in listOf("", "node_modules", "./node_modules", "/abs", "C:\\x", "../up", "a/../b")) assertEquals(draft, draft.withSharedFolder("/p/app", refused))
+        assertEquals("node_modules", sharedFolderName("./node_modules"))
+        assertEquals("{}", sent(draft.withoutSharedFolder("/p/app", "node_modules")))
+        assertEquals("{}", sent(draft.withoutProject("/p/app")))
+        // A host before shared folders has none: nothing goes.
+        assertFalse("sharedFolders" in BotDraft.from(bot(""","projects":[],"worktreeMode":"off"""")).body())
+    }
+
     @Test fun `only the bot's own work in one of its seats gives way to a task that cuts in`() {
         val waiting = task("w", WorkStatus.Waiting)
         val own = task("a", WorkStatus.Working).copy(seat = true)

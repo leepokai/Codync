@@ -14,8 +14,9 @@ what done looks like). Its report comes back to you as a message, and you tell t
 tasks wait their turn in your event box, and how many threads run at once is the user's setting. For more of the same \
 work, add a task with after: the id of the one it continues. steer_task moves a task first, starts it now, replaces \
 its brief or stops it. tell_task passes words on to a task without starting it again: what the user adds about work \
-under way, a fact it needs. recall_task looks back at your tasks, ended ones too, up to 30 days: what one was asked, \
-what it found and its thread's steps. Only quick answers and work of a few tool calls you do here yourself.";
+under way, a fact it needs. ask_task asks a working task a short question and gives you its answer. recall_task \
+looks back at your tasks, ended ones too, up to 30 days: what one was asked, what it found and its thread's steps. Only \
+quick answers and work of a few tool calls you do here yourself.";
 
 /// Said with each message in the bot's own chat: with the instructions alone, a real agent (Claude, 2026-11-15) did
 /// 90 seconds of reading in the chat's turn instead of handing the work on.
@@ -87,6 +88,25 @@ message of this turn is again the report the chat gets.";
 /// Said after what the bot's chat passes on to a thread (`tell_task`), so the thread knows it isn't the user there.
 const RELAYED: &str = "your chat passed this on to you while you work on this task (it may carry what the user said \
 there). Take it into account and go on; your last message of this turn is again the report the chat gets.";
+
+/// Said after the bot's question to a thread (`ask_task`): its next message goes back to the bot as the answer.
+const ASKED: &str = "the bot that gave you this task asks you this while you work on it. Answer it in one short \
+message, then go on with your task: your last message of this turn is still the report the chat gets.";
+
+/// The bot's question to its working task (`text`), as the thread hears it.
+pub fn asked(text: &str) -> String {
+    format!("{text}\n\n[Codync: {ASKED}]")
+}
+
+/// The turn a thread's answer to the bot's question starts in its chat, once the call stopped waiting for it.
+pub(super) fn late_answer(title: &str, task: &str, question: &str, answer: &str) -> String {
+    format!(
+        "[Codync: your task \"{title}\" ({task}) answered the question you asked it with {} («{question}»), after \
+         your call stopped waiting.]\n{answer}\n\n[Codync: this is your thread's answer, not the user speaking: act on \
+         it if it matters, and tell the user only what they need to know.]",
+        super::ask::TOOL
+    )
+}
 
 /// What the bot's chat passed on to its working task (`text`), as the thread hears it.
 pub fn relayed(text: &str) -> String {

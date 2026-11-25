@@ -37,6 +37,7 @@ impl App {
             Field::MaxThreads => f.max_threads.is_some(),
             Field::ThreadWorktrees => f.thread_worktrees.is_some(),
             Field::Projects => f.projects.is_some(),
+            Field::SharedFolders => self.shared_project(f).is_some(),
             Field::WorktreeMode => {
                 let bot = self.bots.get(&f.bot_id);
                 f.projects.iter().flatten().any(|p| bot.is_some_and(|b| b.git_project(p)))

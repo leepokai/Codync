@@ -354,6 +354,7 @@ pub(crate) mod tests {
             section: None,
             notify: None,
             projects: vec![],
+            shared_folders: std::collections::BTreeMap::new(),
             connectors: vec!["github".into()],
             skills: vec![],
             computer: false,

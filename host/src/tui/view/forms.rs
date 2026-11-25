@@ -115,6 +115,9 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
             tr("Threads that work at once in this repository each get their own branch.").into_owned()
         }
         Field::WorktreeMode => tr(worktree_mode_text(f.worktree_mode).1).into_owned(),
+        Field::SharedFolders => {
+            tr("Linked into each new worktree, so installed packages don't have to be installed again.").into_owned()
+        }
         Field::Team => {
             tr("Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.").into_owned()
         }
@@ -173,6 +176,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::ThreadAgent => "Threads' agent",
             Field::ThreadFallbacks => "Threads' fallbacks",
             Field::Projects => "Projects",
+            Field::SharedFolders => "Shared folders",
             Field::WorktreeMode => "Worktree mode",
             Field::Folder if f.projects.is_some() => "Own folder",
             Field::Folder => "Workspace",
@@ -371,6 +375,43 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     put(buf, vx, y + 1, vw, &tilde(path, &app.home), t.dim.patch(t.panel));
                 }
             }
+            Field::SharedFolders => {
+                let project = app.shared_project(f).unwrap_or_default();
+                let names =
+                    f.shared_folders.as_ref().and_then(|s| s.get(project)).map(Vec::as_slice).unwrap_or_default();
+                let typing = !f.shared_name.text.is_empty();
+                let mut x = vx;
+                for (j, name) in names.iter().enumerate() {
+                    let picked = active && !typing && j == f.sub;
+                    let s = if picked { t.bold.add_modifier(Modifier::UNDERLINED) } else { t.text };
+                    if x + u(w(name)) >= inner.right() {
+                        put(buf, x, y, 2, "…", t.dim.patch(base));
+                        break;
+                    }
+                    x = put(buf, x, y, u(w(name)), name, s.patch(base)) + 2;
+                }
+                if active || names.is_empty() {
+                    let room = inner.right().saturating_sub(x);
+                    let e = &f.shared_name;
+                    let (text, style) = match (e.text.as_str(), names.is_empty()) {
+                        ("", true) => ("node_modules", t.dim),
+                        ("", false) => ("+ add", t.dim),
+                        (typed, _) => (typed, t.bold),
+                    };
+                    let end = put(buf, x, y, room, text, style.patch(base));
+                    if active {
+                        set_cursor(Position::new(
+                            if e.text.is_empty() { x } else { end.min(x + u(w(&e.text[..e.cursor]))) },
+                            y,
+                        ));
+                    }
+                }
+                // Whose folders these are.
+                let name = folder_name(project);
+                if usize::from(x.saturating_sub(vx)) + w(&name) + 16 < usize::from(vw) {
+                    rput(buf, inner.right(), y, &name, t.dim.patch(base));
+                }
+            }
             Field::WorktreeMode => {
                 let label = tr(worktree_mode_text(f.worktree_mode).0);
                 put(buf, vx, y, vw, &format!("‹ {label} ›"), t.text.patch(base));
@@ -498,6 +539,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         Field::Folder if f.projects.is_some() => "c copy · tab next field",
         Field::Folder => "↵ project folder · backspace own folder · tab next field",
         Field::Projects => "←→ pick · ↵ add · d make default · x remove · tab next",
+        Field::SharedFolders => "type a name ↵ add · ←→ pick · ⌫ remove · tab next",
         Field::Connectors => "←→ move · space toggle · tab next",
         Field::ModelOptions => "←→ move · space change · tab next",
         Field::Skills => "←→ move · space toggle · i details · tab next",

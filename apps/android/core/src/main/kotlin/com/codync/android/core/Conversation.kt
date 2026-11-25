@@ -219,6 +219,8 @@ sealed interface MirrorEvent {
     data class Name(val name: String) : MirrorEvent
     /** The computer's automatic bot order was switched (from any device): live only, its `hello` says it from now on. */
     data class AutoOrder(val enabled: Boolean) : MirrorEvent
+    /** How many days after a thread last finished the computer deletes it (0: never) changed (from any device): live only, its `hello` says it from now on. */
+    data class ThreadKeepDays(val days: Int) : MirrorEvent
     /** A workflow changed. Live only, no `rev`, so it never moves the sync cursor. */
     data class Workflow(val change: WorkflowChanged) : MirrorEvent
     data object Resync : MirrorEvent
@@ -247,6 +249,7 @@ sealed interface MirrorEvent {
             "network" -> runCatching { Network(NetworkView.decode(value.getValue("network"))) }.getOrDefault(Ignored)
             "name" -> value.text("name")?.let(::Name) ?: Ignored
             "autoOrder" -> value["enabled"]?.jsonPrimitive?.booleanOrNull?.let(::AutoOrder) ?: Ignored
+            "threadKeepDays" -> runCatching { value["days"]?.jsonPrimitive?.intOrNull }.getOrNull()?.let(::ThreadKeepDays) ?: Ignored
             // A workflow event this app cannot read is ignored. It has no rev, so sync does not rewind.
             "workflow" -> runCatching { workflowEvent(value) }.getOrDefault(Ignored)
             "resync" -> Resync

@@ -15,8 +15,9 @@
 //! [`tools`] the bot's tools ([`recall`] the one that looks back, [`ask`] the one that asks a thread and waits for its
 //! answer), [`prompts`] the words, [`worktree`] the git worktree of a thread that works beside another in one
 //! repository ([`fill`] what a new one is given), [`plain`] threads without a bot, [`watch`] the watchdog that wakes
-//! the bot for a thread that looks stuck.
+//! the bot for a thread that looks stuck, [`archive`] the threads that ended over a week ago.
 
+pub mod archive;
 pub mod ask;
 mod dispatch;
 mod fill;
@@ -62,8 +63,8 @@ const MAX_HOPS: u8 = 8;
 const _: () = assert!(MAX_HOPS == 8, "chat::team::limit::NOTICE and its translations say 8");
 /// Tasks a box holds waiting at most.
 const MAX_WAITING: usize = 20;
-/// An ended task stays in its box, and a thread's transcript with its last task, this long; `recall_task` still reads
-/// the task for [`tasks::PAST_MS`].
+/// An ended task stays in its box this long, then goes to the [`archive`] with its thread, kept until the user's
+/// `threadKeepDays`; `recall_task` still reads it for [`tasks::PAST_MS`].
 const KEEP_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 const MAX_TITLE: usize = 80;
 const MAX_BRIEF: usize = 32_000;
@@ -482,6 +483,26 @@ pub fn forget(hub: &Hub, bot: &str) {
     worktree::leave(&tasks);
     plain::forget_folders(&tasks);
     tasks::forget(&hub.store, bot);
+    archive::forget(hub, bot);
+}
+
+/// `bot`'s tasks that ended over [`KEEP_MS`] ago leave its box for the archive.
+fn age(hub: &Hub, bot: &str) {
+    let now = now_ms();
+    let aged = tasks::change(hub, bot, |tasks| {
+        let old = |i: &Task| i.ended_at.is_some_and(|at| now - at > KEEP_MS);
+        if !tasks.iter().any(old) {
+            return Ok(());
+        }
+        let (old, kept): (Vec<Task>, Vec<Task>) = std::mem::take(tasks).into_iter().partition(old);
+        // On an error `change` saves nothing: the box stays as it was.
+        archive::put(hub, bot, &old, &kept)?;
+        *tasks = kept;
+        Ok(())
+    });
+    if let Err(error) = aged {
+        host_error!(hub, "couldn't archive a bot's old threads", bot, error = format!("{error:#}"));
+    }
 }
 
 /// The reports of these tasks of `bot` arrived: the bot's turn for them is over (they reached the user, from the
@@ -502,6 +523,7 @@ pub fn reported(hub: &Hub, bot: &str, delivered: &[String]) {
 pub fn restore(hub: &Arc<Hub>) {
     look_when_seats_free(hub);
     watch::start(hub);
+    archive::move_old_past(hub);
     let lives = |bot: &str| hub.store.bot(bot).ok().flatten().is_some_and(|r| !r.deleted);
     let threads = hub.store.thread_bots().unwrap_or_default();
     for thread in threads.iter().filter(|thread| !thread.config.thread_of.as_deref().is_some_and(lives)) {
@@ -523,20 +545,15 @@ pub fn restore(hub: &Arc<Hub>) {
     }
     sources::settle_runs(hub);
     worktree::tidy(hub);
+    archive::prune(hub);
+    archive::look_daily(hub);
 }
 
 /// `bot`'s box at host start: its threads resume the turns the last process cut off, a task whose thread can't ends,
 /// and the reports that never arrived are sent again.
 fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
+    age(hub, bot);
     let (resumed, failed, undelivered, recheck) = tasks::change(hub, bot, |tasks| {
-        let now = now_ms();
-        let (old, kept) =
-            std::mem::take(tasks).into_iter().partition(|i| i.ended_at.is_some_and(|at| now - at > KEEP_MS));
-        *tasks = kept;
-        plain::forget_folders(&old);
-        if let Err(error) = tasks::put_past(&hub.store, bot, old, now) {
-            tracing::warn!(bot, error = format!("{error:#}"), "couldn't keep a bot's past tasks");
-        }
         let recheck = worktree::recheck(tasks);
         // A request lived in the last process (its notices already say it was interrupted): it is never replayed.
         tasks.retain(|i| i.status.ended() || !matches!(i.source, Source::Request { .. }));
@@ -576,11 +593,14 @@ fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
 
 /// `threadEntries`: a thread's transcript, newest `limit`, for its details. `bot` must be the thread's own.
 pub fn entries(hub: &Hub, bot: &str, id: &str, limit: i64) -> Result<Value> {
-    let row = hub.store.bot(id)?.filter(|r| !r.deleted && r.config.thread_of.as_deref() == Some(bot));
-    let cfg = row.ok_or_else(|| anyhow!("unknown thread"))?.config;
+    // A thread that ended over a week ago is parked, its task in the archive.
+    let cfg = archive::thread(&hub.store, bot, id).ok_or_else(|| anyhow!("unknown thread"))?;
     // What it works on, else what it worked on last.
     let mut worked: Vec<Task> =
         tasks::load(&hub.store, bot).into_iter().filter(|i| i.thread.as_deref() == Some(id)).collect();
+    if worked.is_empty() {
+        worked.extend(archive::last_of(&hub.store, bot, id));
+    }
     worked.sort_by_key(|i| (i.status.ended(), i.started_at));
     let task = worked.iter().find(|i| !i.status.ended()).or(worked.last()).ok_or_else(|| anyhow!("unknown thread"))?;
     Ok(json!({
@@ -595,7 +615,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn at_host_start_a_task_ended_over_a_week_ago_leaves_the_box_and_stays_for_recall() {
+    fn at_host_start_a_task_ended_over_a_week_ago_leaves_the_box_for_the_archive() {
         use crate::chat::calls::context::tests::{bot, hub};
         let hub = hub();
         hub.store.save_bot(&bot("b1", "Mika", "/tmp")).expect("saved");
@@ -611,7 +631,7 @@ mod tests {
         pick_up(&hub, "b1").expect("picked up");
         let ids = |tasks: Vec<Task>| tasks.into_iter().map(|i| i.id).collect::<Vec<_>>();
         assert_eq!(ids(tasks::load(&hub.store, "b1")), ["new"]);
-        assert_eq!(ids(tasks::past(&hub.store, "b1", now)), ["old"]);
+        assert_eq!(ids(archive::recent(&hub.store, "b1", 0, 10)), ["old"]);
     }
 
     fn working(id: &str, thread: &str) -> Task {

@@ -196,6 +196,7 @@ pub fn stop(hub: &Arc<Hub>, bot: &str, id: Option<&str>) -> Result<()> {
 /// Takes a waiting task, or one that ended, out of the box. A waiting routine run is cancelled, and the bot whose
 /// request waited hears it was.
 pub fn drop_task(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
+    super::archive::bring_back(hub, bot, id)?;
     let dropped = tasks::change(hub, bot, |tasks| {
         let task = find(tasks, id)?.clone();
         if task.status == Status::Working {
@@ -217,6 +218,7 @@ pub fn drop_task(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
 /// A stopped or failed task goes back to waiting, last. A routine's run isn't done again as it was: the routine
 /// runs again, as a new task.
 pub fn retry(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
+    super::archive::bring_back(hub, bot, id)?;
     let task = tasks::load(&hub.store, bot).into_iter().find(|i| i.id == id).ok_or_else(|| anyhow!("no such task"))?;
     if !matches!(task.status, Status::Stopped | Status::Failed) {
         bail!("only work that was stopped or failed can be tried again");

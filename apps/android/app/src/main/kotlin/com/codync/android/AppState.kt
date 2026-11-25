@@ -104,8 +104,8 @@ data class AppState(
     val selectedBot: String? = null,
     /** A call to start in this bot's chat once it shows ("Talk to Codync"). */
     val callRequest: String? = null,
-    /** A bot whose details open over its chat once it shows, at the thread of the task named (null: its Details page): a heading or a row of the view of all bots' work. */
-    val detailsRequest: Pair<String, String?>? = null,
+    /** A bot whose details open over its chat once it shows: a heading or a row of the view of all bots' work. */
+    val detailsRequest: String? = null,
     /** A bot and the task of its whose card its chat brings into view once it holds it (a needs-you row of the view of all bots' work). */
     val cardRequest: Pair<String, WorkTask>? = null,
     /** Workflows open between the roster and a chat: the list, or one workflow and an optional run. */
@@ -130,6 +130,8 @@ data class AppState(
     val threadEntries: Map<String, List<Entry>> = emptyMap(),
     /** The user's messages to a thread on their way or refused, by task id, until the thread's transcript has them; in memory only, like the transcript. */
     val threadSends: Map<String, List<PendingSend>> = emptyMap(),
+    /** The computer's ended threads past the day its bots' `work` keeps, as far as the Threads list has read them; null until it does. */
+    val olderThreads: OlderThreads? = null,
     val plugins: PluginListing? = null,
     val voice: VoiceCallViewState? = null,
     /** The computer's remote screen (`null`: the host predates it). */

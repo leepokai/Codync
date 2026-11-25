@@ -2499,5 +2499,17 @@
   "Folder": "資料夾",
   "Bot's folder": "Bot 的資料夾",
   "Use the bot's folder": "改用 Bot 的資料夾",
-  "Each run works here in a thread of its own.": "每次執行都會在這裡用獨立的 thread 進行。"
+  "Each run works here in a thread of its own.": "每次執行都會在這裡用獨立的 thread 進行。",
+  "Projects": "專案",
+  "Threads start in the default project. The bot can work elsewhere when you ask.": "thread 從預設專案開始。你要求時，Bot 也可以在別處工作。",
+  "Add project": "新增專案",
+  "Make default": "設為預設",
+  "Remove project": "移除專案",
+  "Worktree mode": "worktree 模式",
+  "Side by side": "並行時",
+  "Always": "一律",
+  "Threads work in the project itself": "thread 直接在專案裡工作",
+  "A thread gets its own worktree when another thread works in the same repository": "同一個儲存庫裡已有其他 thread 在工作時，thread 會有自己的 worktree",
+  "Every thread works in a worktree of its own; your checkout is never touched": "每個 thread 都在自己的 worktree 裡工作，你的 checkout 永遠不會被動到",
+  "Its chat, routines and files live here.": "它的聊天、例行任務和檔案都在這裡。"
 }

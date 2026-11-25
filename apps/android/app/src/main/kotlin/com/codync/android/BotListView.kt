@@ -56,6 +56,7 @@ import coil3.compose.AsyncImage
 import com.codync.android.core.Bot
 import com.codync.android.core.ComputerSelection
 import com.codync.android.core.LinkState
+import com.codync.android.core.folderName
 import com.codync.android.core.mixesAgents
 import com.codync.android.core.runningAgent
 import com.codync.android.design.*
@@ -459,7 +460,7 @@ private fun Bot.movesWith(other: Bot) = band == other.band && (pinned || section
         bot.status == "error" -> Text(messagePreview(bot.lastMessage ?: "Something went wrong"), style = Type.subheadline, color = Palette.danger,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         else -> Text(messagePreview(bot.lastMessage ?: if (bot.kind == "group") "${bot.members.size} bots"
-            else "${backendName(state, bot.backend)} · ${if (bot.managedWorkspace) tr("Own folder") else bot.cwd.trimEnd('/').substringAfterLast('/')}"),
+            else "${backendName(state, bot.backend)} · ${bot.folderName ?: tr("Own folder")}"),
             style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

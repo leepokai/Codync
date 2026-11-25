@@ -82,7 +82,7 @@ a choice, a sign-in) it doesn't count toward `maxThreads`, so the next task can 
 lets it go on even past the ceiling. Every live thread still counts toward `maxThreads + 1`, so only one seat is ever
 lent. A thread that begins to wait on the user looks its bot's box over again (`Work::seat_freed`). Near the usage
 limit it still counts as running, so nothing else starts. Where the next thread gets no worktree of its own (a folder
-that isn't a Git repository, **Worktree per thread** off, the bot's own folder) it works in the same folder as the
+that isn't a Git repository, **Worktree mode** Off, the bot's own folder) it works in the same folder as the
 one that waits, even at `maxThreads` 1.
 
 A new thread waits for any turn of the bot to end, a routine run's or a room's too (they share its actor); that turn's
@@ -92,7 +92,9 @@ The decisions are one pure function (`dispatch::standings`), which the wire's `w
 
 ## Tools (on the `chat` MCP server)
 
-- `add_task {title, brief, after?}` → `{taskId, status, note}`: puts a task in the box and answers at once. Refused
+- `add_task {title, brief, after?, folder?}` → `{taskId, status, note}`: puts a task in the box and answers at once.
+  `folder` is where its thread works, the full path of any folder that exists (the bot proposes its
+  [projects](#where-a-thread-works); `invalid` otherwise); left out, the bot's default project, else its own folder. Refused
   outside the bot's own chat with the user (a room, another bot's request, a routine run: `add_task works only in
   your own chat with the user`), in a thread, past 20 waiting tasks, when `after` names
   no task that is working or waiting, and for the ninth task added in a row with no message from the user (a task
@@ -195,7 +197,7 @@ chat's own queue: nothing here is a second copy of it.
   opens its session as an actor does after a restart: `session/load` or `session/resume` where the agent can, so
   the session holds the work; else a new session that is told the task first (`prompts::picked_up`: title, brief,
   the user's words and notes, what it reported). A worktree that was kept is its folder again; one that was
-  removed leaves the thread in the bot's folder. When that turn ends the task ends again and reports again. A
+  removed leaves the thread in its folder (`Task::folder`). When that turn ends the task ends again and reports again. A
   restart or the hourly look that cuts a reopened task's turn off, where the session can't be picked up, ends it
   `failed` (`restarted` is set as it reopens): the work was done once and isn't started again from its brief.
 - **What the thread hears.** The user's words as written, then one line saying the user wrote them in the task's
@@ -482,23 +484,67 @@ credited to its bot and made in the thread's session, for the bot's own tasks, a
   recorded as the bot's.
 - The thread's session knows what it wrote itself; the chat's hears of the change with its next message.
 
+## Where a thread works
+
+A bot lives in its **own folder** (`cwd`, always `agent::workspace::path`: `~/.codync/bots/<id>/workspace`): its chat,
+routine runs, group turns and calls start there, and it keeps its own files there, with versions. The user's folders
+it sends work to are its **projects** (`BotConfig::projects`, `hub/projects.rs`): absolute paths of folders, each
+once, the first its **default**. A new project must be a folder that exists; one saved before whose folder went
+stays (an older app can't take it off). Groups, threads and the box of threads without a bot have none.
+
+| Task from | Its thread's folder (`Task::folder`) |
+| --- | --- |
+| The bot (`add_task`) | `folder` if named, else the default project, else the bot's own folder |
+| The user (`startThread`) | `setup.cwd` if picked, else the default project, else the bot's own folder |
+| A routine's run | The routine's `folder` if it has one, else the bot's own folder |
+| Another bot's request | The bot's own folder |
+| A task that follows another (`after`) | That thread's folder or worktree |
+
+The folder is fixed when the thread starts (a task that waited picks up the default project as it is then), and a
+thread keeps it until its task ends. The bot is told its projects in its instructions (the Workspace paragraph:
+code work in a project goes to a task with that folder, a project's files are read with explicit paths, its own
+folder never changes), and a change to them reaches a running session as a profile update. Readers that mean "the
+project" read the default project (`workspace::work_folder`: a thread's own folder for a thread): the terminal tab,
+a call's `Folder` line, the team directory's `cwd` and `start_dev_server`'s base.
+
+**Whatever sets `cwd` to another folder** (an older app's folder picker, a managing bot's `folder`, a client's
+`createBot`) puts that folder first among the projects instead, and the bot stays home
+(`projects::settle`, under `Hub::settle_config`): no `minApp` raise. An edit that leaves `cwd` as it was takes
+nothing in.
+
+**Moving bots home, once** (`hub/projects/migrate.rs`, at host start before the routines and actors are read, kv
+`projects.migrated`): a bot whose `cwd` is a project gets `projects = [cwd] + its own` and `cwd` its own folder.
+Before anything changes, every config and routine it rewrites goes to `<data dir>/backups/bot-projects-<ms>.json`
+(logged). Per bot: its uploads move from `bots/<id>/uploads` into its own folder's `uploads` (`uploads::root`
+follows `workspace::is_managed`; one already there stays), each routine without a folder is stamped with the old
+`cwd` (so its runs keep working there, in a thread; not on a bot whose routines run in its chat, computer use or
+Manage the team on, which keep their tools and run at home), `sharedMemory` is stamped `false` where unset (it followed
+`is_managed`), the chat owes a recap of the session it leaves (as a folder move does: `owe_move`, read by
+`carry_in`), its sessions are let go, and the config is saved last. A failure is logged and the host starts; the
+next start finishes it. Groups, threads and the box of threads without a bot are left as they are; a working
+thread keeps its folder until its task ends. The harness's own memory and the Memory screen's Claude Code section
+now read the bot's own folder, not the project's.
+
 ## Worktrees
 
-Two threads in one git repository would write over each other's files. With **`threadWorktrees`** on (per bot, on
-unless set; it matters only where the bot's folder is a project folder in a git repository, `gitRepo` on the wire:
-a bot's [own folder](bot-workspaces.md#versions) keeps all its work in one place, with its versions), a thread for one
-of the bot's own tasks that starts **while another thread of the bot is working** gets a git worktree of its own
-(`worktree.rs`):
+Two threads in one checkout, or a thread and the user, would write over each other's files. The bot's
+**`worktreeMode`** (`off | sideBySide | always`, `sideBySide` unless set; it matters only where a thread's folder is
+in a git repository) says when a thread of the bot's own work or the user's gets a git worktree of its own
+(`worktree::beside`, `worktree.rs`): **side by side**, when another thread of the bot works now in the same checkout
+(`worktree::top`: the folder with `.git` above the thread's folder, as `git rev-parse --show-toplevel` says; a
+thread in a worktree is in a checkout of its own, so it doesn't count); **always**, every one, the first included,
+so the user's checkout is never touched; **off**, never. A bot's [own folder](bot-workspaces.md#versions) never gets
+one: it keeps all its work in one place, with its versions.
 
 - `~/.codync/worktrees/<bot id>/<task id>`, on a new branch `codync/<title in lowercase, dashes>` (`-2`, `-3`… when
-  taken), from the commit the bot's folder is on. The thread's agent starts there (in the same place of the
-  repository as the bot's folder, when that is a folder inside it), is told so with its task, and starts from a
-  brief. Uncommitted changes of the bot's folder aren't in it.
-- **The first thread alone keeps the bot's folder**; a routine's run and a request never get a worktree; a task that
-  follows another (`after`) goes on in that thread's folder, worktree or not.
+  taken), from the commit the thread's folder is on. The thread's agent starts there (in the same place of the
+  repository as its folder, when that is a folder inside it), is told so with its task, and starts from a
+  brief. Uncommitted changes of the user's checkout aren't in it.
+- Side by side, **the first thread in a checkout keeps it**; a routine's run and a request never get a worktree; a
+  task that follows another (`after`) goes on in that thread's folder, worktree or not.
 - It is made by the thread itself as its first turn starts. When git fails (no commit yet, git missing, the folder in
-  the way, a checkout hook that fails) or the checkout lacks the bot's folder (git doesn't track it: ignored, or
-  never added), the thread works in the bot's folder as before, and the failure is logged. A worktree git made and
+  the way, a checkout hook that fails) or the checkout lacks the thread's folder (git doesn't track it: ignored, or
+  never added), the thread works in its folder itself, and the failure is logged. A worktree git made and
   the thread can't use is taken back at once, with its branch (`git worktree remove --force`, `git branch -D`):
   nothing has worked there.
 - **When the task is over** and nothing waits to follow it (a task the hourly look or a host restart ended
@@ -513,8 +559,9 @@ of the bot's own tasks that starts **while another thread of the bot is working*
   (`recheck`, from `pick_up`): one the user has merged since goes, with its branch. So does a worktree under
   `~/.codync/worktrees` that no task has as its own or works in any more (one inherited by a task that followed
   counts, though it is named after the earlier task; it goes once its last task ended more than a week ago, or its
-  bot was deleted: `known`, `tidy_orphans`), once its commits are merged; one that isn't merged stays, as the user's work. Between restarts a
-  kept worktree stays as it is.
+  bot was deleted: `known`, `tidy_orphans`), once its commits are merged; one that isn't merged stays, as the user's work.
+- **In the hourly look** at a box ([restart and cleanup](#restart-and-cleanup)) every kept worktree is looked over
+  again the same way (`worktree::kept`, from `sweep`): one the user merged since goes, without a restart.
 - A task that gave way, got a new brief or is tried again starts again in the worktree it had. While an ended
   task's worktree is being looked over (`Left::Settling`) the task tried again waits; the look notes kept or removed
   and runs the dispatcher again. A message to the task's thread meanwhile takes the worktree back as in use, which
@@ -542,7 +589,7 @@ A task's end sends no alert of its own: its report is a turn of the bot's, whose
 
 - Bot: `work: [task]`: every working task (oldest first), then the waiting in dispatch order, then the tasks ended
   in the last 24 hours (newest first, at most 20). Task: `{id, title, status, activity, thread, wait, cutIn,
-  createdAt, startedAt, endedAt, result, talk, seat, folder?, source?, worktree?}`; `seat` whether it takes one of the bot's seats (a working task's thread; one waiting on the user lends its own, [the dispatcher](#the-dispatcher); never a thread the user started), absent on an older host, where every live task takes one; `activity` is its thread's, `thread` the thread bot that has or had it (null while it waits), `talk` whether the user may write to its [thread](#talking-to-a-thread) (the bot's own task whose thread bot is there), `folder` where its thread works (the worktree's folder for one in a worktree, else the bot's folder as it was when the thread began; absent before a thread took it, and once its worktree was removed with nothing in it), `wait`
+  createdAt, startedAt, endedAt, result, talk, seat, folder?, source?, worktree?}`; `seat` whether it takes one of the bot's seats (a working task's thread; one waiting on the user lends its own, [the dispatcher](#the-dispatcher); never a thread the user started), absent on an older host, where every live task takes one; `activity` is its thread's, `thread` the thread bot that has or had it (null while it waits), `talk` whether the user may write to its [thread](#talking-to-a-thread) (the bot's own task whose thread bot is there), `folder` where its thread works (the worktree's folder for one in a worktree, else the folder its thread began in; absent before a thread took it, and once its worktree was removed with nothing in it), `wait`
   is `{kind: next | behind | after | usage, ahead?}` on a waiting task and null otherwise, `result` at most 280
   characters. `source` is `{kind: routine, id: <routine id>}` or `{kind: request, id?: <asking bot id>}`, and absent
   on a task the bot added, so a client that doesn't know it shows the row as before. `worktree` is
@@ -556,9 +603,13 @@ A task's end sends no alert of its own: its report is a turn of the bot's, whose
 - Bot: `threadAgent` and `threadFallbacks` ([Advisor mode](#advisor-mode)), set with `updateBot`. Absent on an older host.
 - Bot: `outside: {status, startedAt}`: how the bot stands [outside its chat](#outside-the-chat) (`idle`, `working`,
   `needsInput`, `error`), where `status` is the chat's alone. Absent on an older host: `status` then.
-- Bot: `threadWorktrees` (true unless set; `updateBot`), and `gitRepo`: whether the bot's folder is in a git
-  repository, which, for a project folder (not `managedWorkspace`), is where the setting matters and a client shows
-  its switch. Both absent on an older host.
+- Bot: `projects` (strings, the first the default; `createBot` / `updateBot`, the whole list), and `projectGitRepos`
+  (bools in the same order: which projects are in a git repository, where the worktree mode matters and a client
+  shows it). `cwd` is always the bot's own folder (`managedWorkspace` true). `hello.projects: true` on a host that
+  has them; absent on an older host.
+- Bot: `worktreeMode` (`off | sideBySide | always`; `updateBot`). For older apps also `threadWorktrees` (true unless
+  `off`; sending `true` turns `off` into `sideBySide` and keeps `always`, `false` sets `off`, and `worktreeMode` wins
+  when both are sent) and `gitRepo` (the default project is in a git repository; false without projects).
 - Bot: `gitInstalled`: whether the host can run git (`git::installed`: the answer of `git::program`, kept for the
   process and looked up again in the background at most every five minutes, so a snapshot never waits for it; true
   until the first look ends, which the host starts as it starts). Absent on an older host: read as installed. With
@@ -585,7 +636,8 @@ aliases: the host sends and takes only the new names. What it had stored is read
 
 - **Bot config**: schema 9 (`migrate_9` in `store/schema.rs`) renames `taskOf`, `maxAgents` and `taskWorktrees` to
   `threadOf`, `maxThreads` and `threadWorktrees` in each stored `bots.config`, once at startup. After that nothing
-  reads the old names, not even `updateBot`.
+  reads the old names, not even `updateBot`. Schema 14 (`worktree_modes`) turns a stored `threadWorktrees` into
+  `worktreeMode` (`false`: `off`, `true`: `sideBySide`); only the wire keeps the bool, for older apps.
 - **The box** (kv `work.<bot>`): a task's `thread` also reads `task`, and a kept report's `task` also reads `item`
   (`work/tasks.rs`, `Report` in `work/mod.rs`); the box is saved under the new names at its next change.
 - **Entries a thread put in its bot's chat**: schema 9 (`migrate_9` in `store/schema.rs`) rewrites each stored entry
@@ -599,7 +651,7 @@ aliases: the host sends and takes only the new names. What it had stored is read
 ## In the apps
 
 The capsule, the bot's Details (Threads, Event box, Later, Routines, Dev servers, Recent), `Threads at once` in its
-Settings and cutting in are specified in [the event box](../plans/event-box.md#in-the-apps) (stage 2). The sheet of every bot's work, the rows' source marks, the `Work · <title>` line on what a thread posts, the **Worktree per thread** switch and what follows `bot.outside` are in [as built, clients](../plans/event-box.md#as-built-clients-stages-3-to-8). A task's thread view, the where line on a row and in the thread's header, and the git state in Settings are in [stage 11, as built on the terminal](../plans/event-box.md#as-built-host-and-terminal-stage-11) and [on iPhone, Android and desktop](../plans/event-box.md#as-built-iphone-android-and-desktop-stage-11). A client reads `bot.work` and `bot.maxThreads`; both are
+Settings and cutting in are specified in [the event box](../plans/event-box.md#in-the-apps) (stage 2). The sheet of every bot's work, the rows' source marks, the `Work · <title>` line on what a thread posts, the worktree setting (now **Worktree mode**, [where a thread works](#where-a-thread-works)) and what follows `bot.outside` are in [as built, clients](../plans/event-box.md#as-built-clients-stages-3-to-8). A task's thread view, the where line on a row and in the thread's header, and the git state in Settings are in [stage 11, as built on the terminal](../plans/event-box.md#as-built-host-and-terminal-stage-11) and [on iPhone, Android and desktop](../plans/event-box.md#as-built-iphone-android-and-desktop-stage-11). A client reads `bot.work` and `bot.maxThreads`; both are
 absent on an older host, where the feature doesn't show.
 
 ## Restart and cleanup
@@ -614,7 +666,8 @@ queued again if it waited, and ends `interrupted` if it ran. Thread bots whose b
 task names, are deleted. Deleting a bot deletes its box and its threads, and cancels the requests it hadn't answered.
 
 The hourly look (`work/sweep.rs`) catches what no event said. After every dispatcher pass that leaves waiting or
-working tasks in a box, one timer per bot is set for an hour later (reset by the next pass, none for an empty box).
+working tasks, or a kept [worktree](#worktrees), in a box, one timer per bot is set for an hour later (reset by the
+next pass, none for an empty box). It also looks each kept worktree over again.
 When it fires, the host takes a dispatcher pass again, and a working task whose thread runs no turn (its actor is
 gone or idle, and nothing is about to resume) follows the restart rule: back to waiting once, then failed with a
 report (`work_finished` `error: lost`). A turn that runs is never touched, however long and quiet (the

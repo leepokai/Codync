@@ -6,6 +6,7 @@
 mod handoff;
 mod park;
 
+pub(crate) use handoff::owe_move;
 pub(super) use park::resume_step;
 
 use super::sign_in::Held;

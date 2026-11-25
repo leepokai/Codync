@@ -1,0 +1,88 @@
+import CodyncKit
+import SwiftUI
+
+/// Bot settings' Workspace on a host with projects (`hello.projects`), each a row of the card: the folders the bot
+/// sends work to (the first its default), when its threads get a worktree there, and its own folder, where it lives.
+struct BotProjects: View {
+    @Binding var draft: BotDraft
+    let bot: Bot?
+    @Environment(BotStore.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var picking = false
+
+    private var projects: [String] { draft.projects ?? [] }
+
+    var body: some View {
+        ValueRow("Projects", detail: "Threads start in the default project. The bot can work elsewhere when you ask.") {
+            IconButton("Add project", systemImage: "plus") { picking = true }
+                .padding(.vertical, -8)
+        }
+        .codyncSheet(isPresented: $picking) {
+            FolderPicker(start: projects.first ?? model.hello?.home) { path in
+                animate { draft.addProject(path) }
+                picking = false
+            }
+        }
+        ForEach(projects, id: \.self) { row($0) }
+        // Only once one of its projects is a git repository (as the host last said): elsewhere no worktree is made.
+        if let bot, projects.contains(where: bot.isGitProject) {
+            let mode = draft.worktreeMode ?? .sideBySide
+            ValueRow("Worktree mode", detail: mode.line) {
+                ChoicePicker(selection: Binding(get: { mode }, set: { next in animate { draft.worktreeMode = next } }),
+                             options: WorktreeMode.allCases.map { (id: $0, label: $0.title) })
+            }
+        }
+        // A new bot has no folder until it's created.
+        if let home = bot?.cwd, !home.isEmpty { HomeFolderRow(home: home) }
+    }
+
+    /// A project: its name over its full path, "Default" on the first, Make default on the others, and Remove.
+    private func row(_ path: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: bot?.isGitProject(path) == true ? "arrow.triangle.branch" : "folder").foregroundStyle(Palette.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: path.folderName).foregroundStyle(Palette.text).lineLimit(1)
+                Text(verbatim: path).font(.caption).foregroundStyle(Palette.secondary).lineLimit(1).truncationMode(.middle)
+            }
+            Spacer(minLength: 4)
+            if path == projects.first {
+                Text(L10n.tr("Default")).font(.caption).foregroundStyle(Palette.secondary)
+            } else {
+                IconButton("Make default", systemImage: "star") { animate { draft.makeDefaultProject(path) } }
+                    .padding(.vertical, -8)
+            }
+            IconButton("Remove project", systemImage: "minus.circle") { animate { draft.removeProject(path) } }
+                .padding(.vertical, -8)
+        }
+        .transition(.opacity)
+    }
+
+    private func animate(_ action: () -> Void) { withAnimation(Motion.reduced(Motion.layout, reduceMotion), action) }
+}
+
+/// The bot's own folder, where its chat, routines and files live: shown as it is, with a button that copies it.
+private struct HomeFolderRow: View {
+    let home: String
+    @State private var copied = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(L10n.tr("Bot's folder")).foregroundStyle(Palette.text)
+                Text(L10n.tr("Its chat, routines and files live here.")).font(.caption).foregroundStyle(Palette.secondary)
+                Text(verbatim: copied ? L10n.tr("Path copied") : home).font(.caption).foregroundStyle(Palette.secondary)
+                    .lineLimit(1).truncationMode(.middle)
+            }
+            Spacer(minLength: 4)
+            IconButton("Copy path", systemImage: "square.on.square") {
+                Pasteboard.copy(home)
+                copied = true
+            }
+            .padding(.vertical, -8)
+        }
+        .task(id: copied) {
+            guard copied, (try? await Task.sleep(for: .seconds(1.5))) != nil else { return }
+            copied = false
+        }
+    }
+}

@@ -2,7 +2,7 @@
 //! thread itself may not call.
 
 use super::steer::{self, Steer};
-use super::tasks::{self, Shown, Status, Task};
+use super::tasks::{self, FolderKind, Shown, Status, Task};
 use super::thread::{self, Told};
 use super::{MAX_BRIEF, MAX_HOPS, MAX_TITLE, MAX_WAITING, dispatch, recall, sources};
 use crate::LockExt;
@@ -67,6 +67,7 @@ pub fn tools() -> Vec<Value> {
                 "title": {"type": "string", "description": "A few words the user sees while it works, e.g. \"Fix the login redirect\"."},
                 "brief": {"type": "string", "description": "Everything needed to do the work, standing alone (the thread sees nothing of this chat): the goal, what you already know, the user's words that matter, what done looks like."},
                 "after": {"type": "string", "description": "The id of a task that is working or waiting: this one is done after it, in the same thread, knowing what that one did. For more of the same work."},
+                "folder": {"type": "string", "description": "The full path of the folder the thread works in: one of your projects, or another folder the user named. Leave out for your default project (your own folder when you have none). With after, it works where that task does."},
             }, "required": ["title", "brief"]},
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
         }),
@@ -139,9 +140,10 @@ enum Admission {
 fn add(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     let added = admit(hub, bot, args);
     let outcome = added.as_ref().map_or_else(|(reason, _)| *reason, |_| Admission::Added);
-    let properties = json!({"outcome": outcome, "after": args["after"].is_string(), "source": "bot"});
+    let folder = added.as_ref().ok().map(|(_, folder)| *folder);
+    let properties = json!({"outcome": outcome, "after": args["after"].is_string(), "source": "bot", "folder": folder});
     analytics::capture(hub, Event::WorkAdded, properties.as_object().cloned().unwrap_or_default());
-    let id = added.map_err(|(_, error)| error)?;
+    let (id, _) = added.map_err(|(_, error)| error)?;
     dispatch(hub, bot);
     Ok(json!({
         "taskId": id, "status": Status::Waiting,
@@ -180,11 +182,12 @@ fn place(tasks: &mut Vec<Task>, mut task: Task) -> Result<String, Refusal> {
     Ok(id)
 }
 
-/// Puts a task in `bot`'s box, or says why not: the refusal's `work_added` outcome and its words for the bot.
-fn admit(hub: &Hub, bot: &str, args: &Value) -> Result<String, Refusal> {
+/// Puts a task in `bot`'s box, or says why not: the refusal's `work_added` outcome and its words for the bot. Answers
+/// the task's id and what its folder is to the bot.
+fn admit(hub: &Hub, bot: &str, args: &Value) -> Result<(String, FolderKind), Refusal> {
     let failed = |error: anyhow::Error| (Admission::Failed, error);
     let row = hub.store.bot(bot).map_err(failed)?.filter(|r| !r.deleted);
-    row.ok_or_else(|| failed(anyhow!("unknown bot")))?;
+    let cfg = row.ok_or_else(|| failed(anyhow!("unknown bot")))?.config;
     // A room's turn, another bot's request, a routine run: their reply goes elsewhere, and so would the report's.
     let own_chat = hub.runtime(bot).lane.is_some_and(|lane| lane.chat == bot);
     if !own_chat || hub.team.answering(bot) || hub.routines.running(bot) {
@@ -201,10 +204,21 @@ fn admit(hub: &Hub, bot: &str, args: &Value) -> Result<String, Refusal> {
         );
         return Err((Admission::Hops, why));
     }
-    let task = Task::waiting(title, brief, users_words(hub, bot), text("after"), hops);
+    let folder = text("folder").map(checked_folder).transpose()?;
+    let mut task = Task::waiting(title, brief, users_words(hub, bot), text("after"), hops);
+    task.setup.cwd = folder;
+    let kind = FolderKind::of(&cfg, &task.existing_folder(&cfg).map_err(|error| (Admission::Invalid, error))?);
     let id = tasks::change(hub, bot, |tasks| Ok(place(tasks, task))).map_err(failed)??;
     hub.work.added.locked().entry(bot.to_owned()).or_default().push(id.clone());
-    Ok(id)
+    Ok((id, kind))
+}
+
+/// A folder `add_task` names: the full path of one that exists (any folder: the bot proposes its projects).
+fn checked_folder(folder: &str) -> Result<String, Refusal> {
+    if !crate::agent::workspace::is_existing_folder(folder) {
+        return Err((Admission::Invalid, anyhow!("folder must be the full path of a folder that exists: {folder}")));
+    }
+    Ok(folder.to_owned())
 }
 
 /// The user's own typed message the bot's running turn answers.

@@ -4,8 +4,7 @@
 // write, so this runs before the Maestro run and stays up; Ctrl-C deletes the bots and their folders.
 //   node apps/maestro/chain-continue-setup.mjs <sandbox port> "$(cat ~/.codync-dev-<sandbox name>/token)" &
 // Once it prints the `-e CHAIN_IOS=… -e CHAIN_ANDROID=…` line, pass that to the Maestro run.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const [port, token] = process.argv.slice(2)
@@ -19,23 +18,19 @@ const api = async (method, body) => {
   if (!res.ok) throw new Error(`${method}: ${res.status} ${await res.text()}`)
   return res.json()
 }
-const folder = mkdtempSync(join(tmpdir(), 'chain-continue-'))
 const made = []
 const bot = async (name) => {
-  const cwd = join(folder, name)
-  mkdirSync(cwd)
   const { bot } = await api('createBot', {
-    name, backend: 'custom', command: `python3 -X utf8 -u '${agent}'`, cwd, connectors: [], skills: [], notify: false,
+    name, backend: 'custom', command: `python3 -X utf8 -u '${agent}'`, connectors: [], skills: [], notify: false,
   })
   made.push(bot.id)
-  return { id: bot.id, cwd }
+  return bot
 }
 const cleanUp = async () => {
   for (const botId of made) {
     await api('stop', { botId }).catch(() => {})
     await api('deleteBot', { botId }).catch(() => {})
   }
-  rmSync(folder, { recursive: true, force: true })
 }
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => cleanUp().then(() => process.exit(0)))
 

@@ -86,6 +86,11 @@ test("the Bot Manager lists each bot's model path, and its search reads the mode
       const toggle = sheet.locator('.model-manager-model-search')
       await expect(toggle).toBeVisible()
       await expect(toggle).toHaveAttribute('aria-checked', 'true')
+      // The switch's own name is readable, not squeezed to nothing by the shared switch's
+      // full-width label: the band beside the agent filter sizes it to its label.
+      const label = toggle.locator('.switch-label')
+      await expect(label).toHaveText('Search models too')
+      await expect(label).toBeVisible()
       await toggle.click()
       await expect(toggle).toHaveAttribute('aria-checked', 'false')
       // The prompt says what the search covers now, so the field never promises more than it does.

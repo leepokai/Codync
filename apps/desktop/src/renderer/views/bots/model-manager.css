@@ -85,7 +85,7 @@
 
 /* The search's switch says only its own name, so it takes the width of its label rather than
    pushing the provider filter across: a layout need of this band, not a restyling of the shared
-   switch (its track and label keep the one component's own styling). */
+   switch (its track and knob keep the one component's own styling). */
 .model-manager-model-search {
   width: auto;
   flex: 0 0 auto;

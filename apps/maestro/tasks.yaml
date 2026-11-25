@@ -95,11 +95,15 @@ onFlowComplete:
 # the computer's installed agents, not the flow's stand-in, so the flow sends with its bot (as the desktop's work.spec.ts).
 - tapOn: "Model"
 - assertVisible: "Search models"
+# Approvals are a bot's: none without one.
+- assertNotVisible: "Approvals"
 - runFlow:
     when:
       platform: iOS
     commands:
+      # From the panel's top row, not its list, whose pull reads the models again.
       - swipe:
+          from: "Search models"
           direction: DOWN
 - runFlow:
     when:

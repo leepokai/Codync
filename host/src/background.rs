@@ -31,6 +31,7 @@ pub fn start(hub: &Arc<Hub>) -> JoinSet<()> {
         async move { market::agent_sign_in::refresh(&hub).await }
     });
     agent_checks.spawn(usage::poll(hub.clone()));
+    agent_checks.spawn(crate::agent::auth::warm_models(hub.clone()));
     tokio::spawn(update::automatic_loop(hub.clone()));
     tokio::spawn(update::release_watch());
     tokio::spawn(screen::serve_helpers(hub.screen.clone()));

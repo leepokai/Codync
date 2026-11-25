@@ -49,7 +49,7 @@ private class Choice(val name: String, val on: Boolean, val pick: () -> Unit)
  * fallback's model), the bot's own session and Fast mode don't apply, so neither shows. The agent is picked as one of its
  * logins ([agents]); with [store], the list ends on "Add login profile…" for an agent that has login profiles.
  */
-@Composable internal fun AgentModelPicker(state: AppState, load: suspend (String, String?) -> AgentModels, backend: String, selection: String?,
+@Composable internal fun AgentModelPicker(state: AppState, load: ModelLoad, backend: String, selection: String?,
     options: Map<String, String>, fastMode: Boolean, bot: Bot?, choose: (String?, Map<String, String>) -> Unit, setFast: ((Boolean) -> Unit)?,
     agents: List<LoginSeat> = emptyList(), chooseAgent: ((Login) -> Unit)? = null,
     onReload: () -> Unit = {}, expanded: Boolean = false, loginProfile: String? = null, store: AppStore? = null, agentDetails: @Composable () -> Unit = {}) {

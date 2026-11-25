@@ -2493,5 +2493,11 @@
   "Every thread works in a worktree of its own; your checkout is never touched": "每个 thread 都在自己的 worktree 里工作，你的 checkout 永远不会被动到",
   "Its chat, routines and files live here.": "它的聊天、例行任务和文件都在这里。",
   "Add folder": "添加文件夹",
-  "Remove folder": "移除文件夹"
+  "Remove folder": "移除文件夹",
+  "Fewer models": "收起旧模型",
+  "More models (%d)": "更多模型（%d）",
+  "Search or enter a model ID": "搜索或输入模型 ID",
+  "Approvals": "批准",
+  "Speed": "速度",
+  "Close search": "关闭搜索"
 }

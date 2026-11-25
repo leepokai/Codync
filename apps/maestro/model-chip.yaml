@@ -30,10 +30,13 @@ onFlowComplete:
           appId: com.pokai.Codync.android.dev
 - tapOn: ${output.bot.name}
 - tapOn: "Model"
-# The panel opens straight on the agent's models under their search field; the agent's default model is one every
+# The panel opens straight on the agent's models, its search behind a button; the agent's default model is one every
 # agent lists.
 - assertVisible: "Search models"
-# A model ID the agent doesn't list: typed in the search field, picked from the row offered for it, and saved.
+# A bot's chat sets its approvals here too.
+- assertVisible: "Approvals"
+# A model ID the agent doesn't list: typed in the search field the button opens, picked from the row offered for it,
+# and saved.
 - tapOn: "Search models"
 - inputText: "e2e-typed"
 - tapOn: ".*Model ID"
@@ -51,7 +54,9 @@ onFlowComplete:
     when:
       platform: iOS
     commands:
+      # From the panel's top row (search is still open), not its list, whose pull reads the models again.
       - swipe:
+          from: "Close search"
           direction: DOWN
 - runFlow:
     when:

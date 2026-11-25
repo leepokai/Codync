@@ -124,6 +124,7 @@ host answers and sends it once the host is up.
 | `own_folder_save_failed` | host | Saving a version of a bot's own folder failed (the turn goes on) | `stage` (`init`/`busy`: git was at work in the folder, so no version this time/`look`: listing the files too big to keep/`add`/`unreadable`: saved without files git couldn't read/`commit`), `reason` (`permission`/`long_path`/`unreadable_name`/`locked`/`nested_repository`/`other`; never git's own words, which name files) |
 | `context_compacted` | host | Codync starts summarizing a bot's chat ([context and memory](../features/context-and-memory.md)) | `agent`, `when` (`turn_end`/`idle`), `threshold` (the bot's Summarize long chats: `early`/`nearLimit`/`tokens`) |
 | `usage_read_failed` | host | Reading an agent's usage stopped, once per failing run, for the readers that start the agent's server or read a CLI's JSON report ([usage limits](../features/usage-limits.md#failures)) | `agent`, `stage` (`start`/`session`/`no_command`/`prompt`/`timeout`/`parse`: the agent's report changed format) |
+| `model_list_fetched` | host | The host read an agent's model list from the agent (`agent::auth::model_cache`) | `agent`, `outcome` (`loaded`/`failed`), `background` (true when a kept list answered the client, or at start), `seconds` |
 | `session_reset` | host | `newSession` | — |
 | `permission_answered` | host | `respondPermission` | `choice` (`allow_once`/`allow_always`/`reject_once`/`reject_always`/`other`) |
 | `reaction_added` | host | `react` | — |

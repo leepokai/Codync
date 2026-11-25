@@ -7,7 +7,7 @@ import type { AppModel } from '../src/renderer/store/app-model'
 import type { BotStore } from '../src/renderer/store/bot-store'
 import { AppContext, StoreContext } from '../src/renderer/store/context'
 import { BotSettingsPanel } from '../src/renderer/views/bots/BotEditorView'
-import type { ModelOption } from '../src/renderer/views/bots/agent-models'
+import type { AgentModels, ModelOption } from '../src/shared/agent-models'
 import { mountOverlay } from './overlay'
 
 export interface RecordedCall {
@@ -68,6 +68,7 @@ class FakeStore extends Observable {
   readonly icons = {}
   readonly screen = null
   readonly calls: RecordedCall[] = []
+  private readonly modelLists = new Map<string, AgentModels>()
   readonly bots = new Map([
     [
       'bot-1',
@@ -108,6 +109,15 @@ class FakeStore extends Observable {
       }
       return {}
     },
+  }
+
+  modelsFor(backend: string, loginProfile: string | null) {
+    return this.modelLists.get(`${backend}/${loginProfile ?? ''}`) ?? null
+  }
+
+  keepModels(backend: string, loginProfile: string | null, list: AgentModels) {
+    this.modelLists.set(`${backend}/${loginProfile ?? ''}`, list)
+    this.changed()
   }
 
   backendName(id: string) {

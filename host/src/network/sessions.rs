@@ -283,18 +283,21 @@ impl Sessions {
 
     /// The session's hook printed the notice of the letters up to `letter`: later hooks keep quiet
     /// about them. Recorded only once printed, so a notice its hook never got is told again.
-    pub fn told(&self, store: &Store, key: &str, letter: &str) -> Result<()> {
+    /// True when it saved that: false when the letter is no longer the newest waiting (read, or
+    /// a newer one came) or was already told.
+    pub fn told(&self, store: &Store, key: &str, letter: &str) -> Result<bool> {
         let _one = self.lock.locked();
         let mut all = load(store);
-        let Some(session) = all.get_mut(key) else { return Ok(()) };
+        let Some(session) = all.get_mut(key) else { return Ok(false) };
         // An older hook's late confirmation doesn't undo a newer one.
         let mail = load_mail(store);
         let newest = mail.get(key).and_then(|waiting| waiting.last()).map(|m| m.id.as_str());
         if newest != Some(letter) || session.announced.as_deref() == Some(letter) {
-            return Ok(());
+            return Ok(false);
         }
         session.announced = Some(letter.to_owned());
-        save(store, &all)
+        save(store, &all)?;
+        Ok(true)
     }
 
     /// The waiting mail of the session at `key`, oldest first; it counts as read once taken.

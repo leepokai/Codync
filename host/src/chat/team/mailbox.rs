@@ -156,9 +156,11 @@ pub(crate) fn post(
 pub(crate) fn hook(hub: &Hub, kind: AgentKind, id: &str, told: Option<&str>) -> Result<Value> {
     let key = crate::network::sessions::session_key(kind, id);
     if let Some(letter) = told {
-        hub.network.sessions.told(&hub.store, &key, letter)?;
-        crate::analytics::network_session(hub, crate::analytics::SessionAction::Told, kind);
-        return Ok(json!({}));
+        let saved = hub.network.sessions.told(&hub.store, &key, letter)?;
+        if saved {
+            crate::analytics::network_session(hub, crate::analytics::SessionAction::Told, kind);
+        }
+        return Ok(json!({"saved": saved}));
     }
     let Some(hooked) = hub.network.sessions.hook(&hub.store, &key)? else { return Ok(json!({})) };
     if hooked.first {

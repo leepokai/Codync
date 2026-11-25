@@ -153,10 +153,10 @@ async fn hook(port: u16, kind: AgentKind) {
     let told = json!({"kind": kind, "session": session, "told": letter});
     let confirm = local_call_for(port, "networkHook", told, HOOK_WAIT);
     match event {
-        // A `Stop` that blocks keeps the turn going: only once the host has the notice as told, so a
-        // host that can't save it lets the turn end instead of blocking on the same letter again.
+        // A `Stop` that blocks keeps the turn going: only once the host saved the notice as told, so
+        // a host that can't save it, or letters read or told meanwhile, let the turn end.
         HookEvent::Stop => {
-            if confirm.await.is_ok() {
+            if confirm.await.is_ok_and(|v| v["saved"] == true) {
                 println!("{}", hook_output(kind, event, notice));
             }
         }

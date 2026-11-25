@@ -390,7 +390,8 @@ async fn a_hook_tells_its_session_of_new_mail_once() {
     assert!(told["notice"].as_str().unwrap().contains("1 letter(s)"), "{told}");
     assert!(!told.to_string().contains("did the API"), "a count, never the text");
     assert_eq!(hook(hub, Codex, "t1", None).unwrap(), told, "told again until its hook confirms it");
-    hook(hub, Codex, "t1", told["letter"].as_str()).unwrap();
+    assert_eq!(hook(hub, Codex, "t1", told["letter"].as_str()).unwrap()["saved"], true);
+    assert_eq!(hook(hub, Codex, "t1", told["letter"].as_str()).unwrap()["saved"], false, "nothing new");
     assert_eq!(hook(hub, Codex, "t1", None).unwrap(), json!({}), "told once");
     f.shutdown().await;
 }

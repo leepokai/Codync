@@ -119,12 +119,13 @@ fn a_hook_tells_of_new_mail_once_and_never_registers() {
     let told = Some(Hooked { unread: 1, newest: Some("1".into()), first: false });
     assert_eq!(sessions.hook(&store, &s.key).unwrap(), told);
     assert_eq!(sessions.hook(&store, &s.key).unwrap(), told, "a notice its hook didn't confirm is told again");
-    sessions.told(&store, &s.key, "1").unwrap();
+    assert!(sessions.told(&store, &s.key, "1").unwrap());
+    assert!(!sessions.told(&store, &s.key, "1").unwrap(), "already told");
     assert_eq!(sessions.hook(&store, &s.key).unwrap().map(|h| h.unread), Some(0), "told once");
     sessions.post(&store, &s.key, letter("2")).unwrap();
     assert_eq!(sessions.hook(&store, &s.key).unwrap().map(|h| h.unread), Some(2), "a new letter: told again");
-    sessions.told(&store, &s.key, "2").unwrap();
-    sessions.told(&store, &s.key, "1").unwrap();
+    assert!(sessions.told(&store, &s.key, "2").unwrap());
+    assert!(!sessions.told(&store, &s.key, "1").unwrap());
     assert_eq!(
         sessions.hook(&store, &s.key).unwrap().map(|h| h.unread),
         Some(0),

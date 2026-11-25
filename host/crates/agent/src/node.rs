@@ -76,9 +76,17 @@ pub fn state_for(program: &str) -> Option<State> {
 }
 
 /// `codync-host node`: adds Codync's Node (an agent's setup step runs it in a terminal).
-pub async fn add() -> Result<()> {
-    if state().is_none() {
-        println!("This computer already has Node.js.");
+///
+/// `program` is the command the agent actually uses. `None` checks both `node` and
+/// `npx`, for the marketplace's Add Node.js row that belongs to the computer rather
+/// than one agent.
+pub async fn add(program: Option<&str>) -> Result<()> {
+    let present = match program {
+        Some(program) => state_for(program).is_none(),
+        None => state_for("node").is_none() && state_for("npx").is_none(),
+    };
+    if present {
+        println!("This computer already has the required Node.js command.");
         return Ok(());
     }
     install(&|line| println!("{line}")).await?;

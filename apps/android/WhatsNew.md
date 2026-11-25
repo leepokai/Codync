@@ -23,6 +23,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 選 agent 時一起選登入設定檔：Bot 設定和 fallback 的 agent 清單裡，每個 agent 依登入設定檔各列一次，清單最後可以新增登入設定檔；原本獨立的「登入設定檔」列已移除。
 - 聊天的輸入框改成上下兩層：上面打字，下面一排是加檔案的 +、Bot 目前的 agent 和模型、麥克風和送出鍵。點模型會打開和電腦版一樣的模型面板：左邊是 agent，右邊直接列出模型可以搜尋，下面是推理強度和快速模式，不必進 Bot 設定。
 - 在中國大陸也能收到推播通知了。
+- 點開 thread 會像電腦版一樣以聊天畫面全螢幕顯示：訊息和回覆是對話泡泡，卡片、檔案和 artifact 直接在 thread 裡處理；右上角「詳情」可打開 Bot 的詳細資訊。
 
 ### en-US
 - Threads are no longer deleted a week after they end: scroll to the end of the Threads tab to load older ones, which open and take messages as before. To clean up on its own, pick 7, 30 or 90 days under Delete old threads for that computer in Computers; the default keeps them forever.
@@ -39,6 +40,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Pick an agent and its login profile in one step: a bot's and each fallback's agent list shows every agent once per login profile and ends with Add login profile. The separate Login profile row is gone.
 - The message box now has two layers: you type on top, and under it are the + for files, the bot's agent and model, the mic and send. Tap the model for the same model panel as on the desktop: the agents on the left, their models listed right away with a search, then effort and Fast mode, without opening the bot's settings.
 - Push notifications now reach phones and computers in mainland China.
+- A thread now opens full screen as a chat, like on the desktop: messages and replies as bubbles, its cards, files and artifacts right there; Details at the top right opens the bot's details.
 
 ## 2.53.0
 ### zh-Hant

@@ -726,6 +726,8 @@ export interface Hello {
   threadLogins?: boolean
   /** A thread may start with files (`startThread` with `attachments`; `upload` without `botId` for one without a bot). */
   threadFiles?: boolean
+  /** A routine may name the folder its runs work in (`saveRoutine` with `folder`). Absent from older hosts. */
+  routineFolder?: boolean
   /** `resetCredentials` can be used on this computer (absent from older hosts, false on a Codync Cloud computer). */
   credentialsReset?: boolean
   /** The host can store workflows. Missing means it cannot. */

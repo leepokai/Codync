@@ -187,6 +187,7 @@ pub struct DetailsPage {
 pub enum RoutineField {
     Name,
     Instruction,
+    Folder,
     When,
 }
 
@@ -196,6 +197,8 @@ pub struct RoutineForm {
     pub name: Editor,
     pub instruction: Editor,
     pub when: Editor,
+    /// The full path its runs work in, empty for the bot's own folder; `None` on a host without `routineFolder`.
+    pub folder: Option<Editor>,
     /// What an edited routine runs on; kept when `when` stays empty.
     pub original: Value,
     pub original_text: String,

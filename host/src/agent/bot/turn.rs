@@ -22,7 +22,7 @@ const PROFILE_AGAIN: &str = "Your context was summarized. This is your full, cur
 impl Actor {
     /// This session's frozen instructions (reads memory files when re-rendering).
     pub(super) async fn snapshot(&self, session: &str) -> Result<Snapshot> {
-        let (hub, cfg, session) = (self.hub.clone(), self.cfg.as_owner(), session.to_owned());
+        let (hub, cfg, session) = (self.hub.clone(), self.cfg.clone(), session.to_owned());
         tokio::task::spawn_blocking(move || context::resolve(&hub.store, &cfg, &session)).await?
     }
 
@@ -52,7 +52,10 @@ impl Actor {
             // The instructions reaching the agent now hold memory as it was when they were rendered.
             memory::opened(&self.hub.store, self.cfg.owner(), sid, &snapshot.memory)?;
         }
-        if let Some((notice, revision)) = memory::change_notice(&self.hub.store, &self.cfg.as_owner(), sid) {
+        // A thread on a handed-out task holds neither memory nor who the bot is in its instructions, so no change to
+        // them is news.
+        let as_bot = context::as_bot(&self.cfg, &self.task_source);
+        if as_bot && let Some((notice, revision)) = memory::change_notice(&self.hub.store, &self.cfg.as_owner(), sid) {
             prompt = format!("{notice}\n\n{prompt}");
             self.turn_memory_revision = revision;
         }
@@ -68,11 +71,13 @@ impl Actor {
             snapshot.announced = snapshot.system_identity.clone();
             prompt = format!("<bot-profile>\n{PROFILE_AGAIN}\n\n{}\n</bot-profile>\n\n{prompt}", snapshot.system);
         }
-        if let Some((update, identity)) = context::profile_update(&self.hub.store, &snapshot, &self.cfg.as_owner()) {
+        if as_bot && let Some((update, identity)) = context::profile_update(&self.hub.store, &snapshot, &self.cfg) {
             prompt = format!("{prompt}\n\n{update}");
             self.announce = Some((snapshot, identity));
         }
-        let own_chat = self.in_own_chat() && self.active_workflow.is_none();
+        // A thread's instructions are its own (`context::render`): the reminders below are for a bot's own sessions
+        // opened before what they remind of.
+        let own_chat = self.in_own_chat() && self.active_workflow.is_none() && !self.cfg.is_thread();
         if remind_files && own_chat {
             prompt.push_str("\n\n[Codync: send_file(path, name?) shares any regular file up to 100 MiB as a downloadable card. Use it instead of sending a local path.]");
         }
@@ -83,13 +88,12 @@ impl Actor {
             prompt = format!("{prompt}\n\n[Codync: {}]", crate::routines::BRIEF);
         }
         let known = codync_agent::backends::harness(&self.cfg.backend).is_some();
-        let own_box = own_chat && !self.cfg.is_thread();
-        if let Some(about) = work::reminder(briefed_on_threads, known).filter(|_| own_box) {
+        if let Some(about) = work::reminder(briefed_on_threads, known).filter(|_| own_chat) {
             prompt = format!("{prompt}\n\n[Codync: {about}]");
         }
         // Its box, so it can say what it is doing and place more work without asking. Where `EACH_TURN` goes: a
         // custom command gets the message as written.
-        if own_box
+        if own_chat
             && known
             && let Some(lines) = work::lines(&self.hub, &self.cfg, "Your")
         {
@@ -234,6 +238,8 @@ impl Actor {
         self.ensure_turn_session(slot.as_deref()).await?;
         let written = self.written_to_thread(entry_ids);
         let picked_up = self.hear_thread(&written);
+        // A question of its bot's among them: the thread's next message answers it.
+        work::ask::heard(&self.hub, &self.cfg, entry_ids);
         let session = self.turn_session.clone();
         self.hub.set_runtime(&self.id(), |r| r.session.clone_from(&session));
         if let Some(sid) = session {
@@ -613,8 +619,7 @@ impl Actor {
     /// answered after the turn) and tool calls the agent never closed out (they'd spin forever in the trace).
     pub(super) fn close_attempt(&mut self, failed: bool) {
         self.files.cancel();
-        self.flush(true);
-        self.seg = Seg::None;
+        self.end_seg(false);
         self.expire_decisions(crate::chat::decision::Expiry::TurnEnded);
         self.expire_perms();
         for entry_id in self.tools.values() {

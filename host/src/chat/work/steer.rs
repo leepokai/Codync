@@ -73,6 +73,7 @@ fn release(hub: &Hub, task: &mut Task, front: i64) -> Option<String> {
     let thread = task.thread.clone();
     if let Some(thread) = &thread {
         super::thread::carry(&hub.store, task, thread);
+        super::ask::forget(hub, thread);
     }
     task.set_aside(front);
     thread
@@ -92,6 +93,27 @@ fn give_way(hub: &Hub, tasks: &mut [Task], id: &str, gives_way: Option<&str>) ->
     Ok(released)
 }
 
+/// The working task that gives way to one cutting in: `instead_of`, else the one that started last. Only the bot's
+/// own work in one of its seats gives way: it starts again later, which a routine run or a request never does, and a
+/// thread the user started frees no seat.
+fn giver(tasks: &mut [Task], instead_of: Option<&str>) -> Result<Option<String>> {
+    let Some(named) = instead_of else {
+        let working = tasks.iter().filter(|i| i.status == Status::Working && i.source.is_bot());
+        return Ok(working.max_by_key(|i| i.started_at).map(|i| i.id.clone()));
+    };
+    let task = find(tasks, named)?;
+    if task.status != Status::Working {
+        bail!("\"{}\" isn't working: nothing to give way", task.title);
+    }
+    if task.source.is_user() {
+        bail!("\"{}\" is a thread the user started: it takes no seat, so it can't give way", task.title);
+    }
+    if !task.source.own() {
+        bail!("\"{}\" is a routine run or another bot's request: it can't give way, stop it instead", task.title);
+    }
+    Ok(Some(named.to_owned()))
+}
+
 /// A waiting task starts now. With every thread busy a working task gives way (`instead_of`, else the one that
 /// started last): its thread is closed, and it waits at the front to start again in a new session. With a thread free,
 /// or when the task couldn't start anyway (it follows unfinished work, or waits for usage), this is
@@ -101,24 +123,7 @@ pub fn cut_in(hub: &Arc<Hub>, bot: &str, id: &str, instead_of: Option<&str>) -> 
     let released = tasks::change(hub, bot, |tasks| {
         waiting(tasks, id)?;
         let full = dispatch::capacity(hub, &cfg, tasks, None).free == 0;
-        // Only the bot's own work gives way: it starts again later, which a routine run or a request never does.
-        let gives_way = if let Some(named) = instead_of {
-            let task = find(tasks, named)?;
-            if task.status != Status::Working {
-                bail!("\"{}\" isn't working: nothing to give way", task.title);
-            }
-            if !task.source.own() {
-                bail!(
-                    "\"{}\" is a routine run or another bot's request: it can't give way, stop it instead",
-                    task.title
-                );
-            }
-            Some(named.to_owned())
-        } else {
-            let working = tasks.iter().filter(|i| i.status == Status::Working && i.source.own());
-            working.max_by_key(|i| i.started_at).map(|i| i.id.clone())
-        };
-        let gives_way = gives_way.filter(|_| full);
+        let gives_way = giver(tasks, instead_of)?.filter(|_| full);
         // Tried on a copy first: a session is only closed for a task that then starts.
         let mut freed = tasks.clone();
         let closed = give_way(hub, &mut freed, id, gives_way.as_deref())?;
@@ -202,8 +207,9 @@ pub fn drop_task(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
     if dropped.status == Status::Waiting {
         sources::deliver(hub, bot, &dropped);
     }
-    // A worktree it had from before it gave way goes with it, if nothing was done there.
+    // A worktree it had from before it gave way goes with it, if nothing was done there; so does a thread's own folder.
     super::worktree::leave(std::slice::from_ref(&dropped));
+    super::plain::forget_folders(std::slice::from_ref(&dropped));
     settle(hub, bot, None);
     Ok(())
 }
@@ -235,4 +241,26 @@ pub fn retry(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
     })?;
     settle(hub, bot, None);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn working(id: &str, started: i64, kind: &str) -> Task {
+        serde_json::from_value(json!({
+            "id": id, "title": id, "brief": "x", "status": "working", "order": 1, "createdAt": 0,
+            "startedAt": started, "source": {"kind": kind},
+        }))
+        .expect("a task")
+    }
+
+    #[test]
+    fn the_users_thread_never_gives_way() {
+        let mut tasks = [working("a", 1, "bot"), working("u", 2, "user")];
+        assert_eq!(giver(&mut tasks, None).expect("picked").as_deref(), Some("a"), "it holds no seat to free");
+        assert!(giver(&mut tasks, Some("u")).is_err(), "not when named either");
+        assert_eq!(giver(&mut tasks, Some("a")).expect("named").as_deref(), Some("a"));
+    }
 }

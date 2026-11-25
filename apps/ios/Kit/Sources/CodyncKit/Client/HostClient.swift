@@ -299,11 +299,14 @@ public extension HostClient {
         let _: Empty = try await call("renameSection", body)
     }
 
-    /// A thread the user starts with `botId`, opened by `text`, on the bot's own settings: its task's id.
-    func startThread(botId: String, text: String) async throws -> String {
-        struct Res: Decodable { var taskId: String }
-        let res: Res = try await call("startThread", ["botId": botId, "text": text])
-        return res.taskId
+    /// A thread the user starts, opened by `text`: with `botId` on the bot's own settings (in its default project, else
+    /// its own folder), or with none on what `setup` names. The bot it went to (a thread without one: the computer's box
+    /// of them) and its task's id.
+    func startThread(botId: String?, text: String, setup: ThreadSetup?) async throws -> (botId: String, taskId: String) {
+        struct Req: Encodable { var botId: String?; var text: String; var setup: ThreadSetup? }
+        struct Res: Decodable { var botId: String; var taskId: String }
+        let res: Res = try await call("startThread", Req(botId: botId, text: text, setup: setup))
+        return (res.botId, res.taskId)
     }
 
     /// The chat read; a no-op when nothing there is unread.

@@ -22,6 +22,7 @@ mod navigate;
 mod new_bot;
 mod overlay_keys;
 mod pair;
+mod projects;
 mod queue;
 mod roster;
 mod section_order;
@@ -188,6 +189,12 @@ pub struct App {
     pub workflows: bool,
     /// Whether `resetCredentials` can be used here (`hello`): not on a Codync Cloud computer or an older host.
     pub credentials_reset: bool,
+    /// `hello.routineFolder`: a routine can name the folder its runs work in.
+    pub routine_folder: bool,
+    /// `hello.projects`: bots have a list of projects and a worktree mode, and `cwd` is always the bot's home.
+    pub projects: bool,
+    /// `hello.worktreeFill`: a git project's shared folders are linked into each new worktree (`sharedFolders`).
+    pub worktree_fill: bool,
     /// What usage analytics has reported this run (`app_opened`, `screen_viewed`).
     seen: analytics::Seen,
 }
@@ -266,6 +273,9 @@ impl App {
             hop_review: None,
             workflows: false,
             credentials_reset: false,
+            routine_folder: false,
+            projects: false,
+            worktree_fill: false,
             seen: analytics::Seen::default(),
         }
     }

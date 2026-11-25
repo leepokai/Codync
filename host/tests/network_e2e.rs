@@ -90,14 +90,12 @@ impl Host {
     }
 
     async fn bot(&self, name: &str) -> String {
-        let cwd = self.home.join(name);
-        std::fs::create_dir_all(&cwd).unwrap();
         let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
         let result = self
             .call(
                 "createBot",
                 json!({
-                    "name": name, "backend": "custom", "cwd": cwd, "permission": "ask", "notify": false,
+                    "name": name, "backend": "custom", "permission": "ask", "notify": false,
                     "command": common::python_agent(&agent),
                 }),
             )
@@ -347,12 +345,12 @@ async fn a_bot_kept_off_the_network_and_a_deny_rule_keep_letters_out() {
 fn list_modes(host: &Host, bot: &str, ids: &[&str]) {
     let modes: Vec<Value> = ids.iter().map(|id| json!({"id": id, "name": id})).collect();
     let listed = json!({"modes": {"currentModeId": ids[0], "availableModes": modes}});
-    std::fs::write(host.home.join(bot).join("modes.json"), listed.to_string()).unwrap();
+    std::fs::write(common::folder(&host.home, bot).join("modes.json"), listed.to_string()).unwrap();
 }
 
 /// The modes the host switched a bot's agent to, in order.
 fn switched(host: &Host, bot: &str) -> Vec<String> {
-    let log = std::fs::read_to_string(host.home.join(bot).join("modes.jsonl")).unwrap_or_default();
+    let log = std::fs::read_to_string(common::folder(&host.home, bot).join("modes.jsonl")).unwrap_or_default();
     log.lines().map(|l| serde_json::from_str(l).unwrap()).collect()
 }
 
@@ -377,7 +375,7 @@ async fn a_rule_at_ask_holds_a_bot_that_approves_by_itself_to_asking() {
     laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk PERMISSION second"})).await;
     let card = desk.wait_for(&reviewer, pending).await;
     assert_eq!(switched(&desk, "Reviewer"), ["default"]);
-    let prompts = std::fs::read_to_string(desk.home.join("Reviewer/prompts.jsonl")).unwrap();
+    let prompts = std::fs::read_to_string(common::folder(&desk.home, "Reviewer").join("prompts.jsonl")).unwrap();
     let told = prompts.lines().last().unwrap();
     assert!(told.contains("a computer the user trusts less than this one"), "{told}");
 
@@ -405,7 +403,7 @@ async fn a_rule_at_ask_holds_a_bot_that_approves_by_itself_to_asking() {
     laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk third"})).await;
     laptop.wait_for(&lead, relayed("Relayed: reply: third")).await;
     assert_eq!(switched(&laptop, "Lead"), ["default"]);
-    let prompts = std::fs::read_to_string(laptop.home.join("Lead/prompts.jsonl")).unwrap();
+    let prompts = std::fs::read_to_string(common::folder(&laptop.home, "Lead").join("prompts.jsonl")).unwrap();
     let told = prompts.lines().last().unwrap();
     assert!(told.contains("these are bot replies") && told.contains("a computer the user trusts less"), "{told}");
     // The ceiling stands past that turn's end: background work would run without it.
@@ -414,8 +412,8 @@ async fn a_rule_at_ask_holds_a_bot_that_approves_by_itself_to_asking() {
     assert!(refused.contains("add_task isn't available in this turn"), "{refused}");
 
     // That turn messages no one: the answer's text can't travel on to a bot that isn't held to the ceiling.
-    std::fs::write(desk.home.join("Reviewer/handoff.json"), r#"{"target":"lead@laptop"}"#).unwrap();
-    std::fs::write(laptop.home.join("Lead/handoff.json"), r#"{"target":"reviewer@desk"}"#).unwrap();
+    std::fs::write(common::folder(&desk.home, "Reviewer").join("handoff.json"), r#"{"target":"lead@laptop"}"#).unwrap();
+    std::fs::write(common::folder(&laptop.home, "Lead").join("handoff.json"), r#"{"target":"reviewer@desk"}"#).unwrap();
     laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk CHAIN"})).await;
     let stopped = laptop
         .wait_for(&lead, |e| is_final(e) && e["data"]["text"].as_str().is_some_and(|t| t.starts_with("Chain stopped")))
@@ -528,4 +526,53 @@ async fn a_computer_in_two_networks_keeps_them_apart() {
     let names: Vec<&str> = left["networks"].as_array().unwrap().iter().map(|n| n["name"].as_str().unwrap()).collect();
     assert_eq!(names, ["home"]);
     assert!(!desk.home.join(work["network"].as_str().unwrap()).exists());
+}
+
+#[tokio::test]
+async fn a_session_a_rule_opens_takes_letters_from_another_computer_in_its_mailbox() {
+    let (desk, laptop, _, lead) = two_computers().await;
+    let call = |session: Option<&str>, name: &str| {
+        let agent = json!({"kind": "codex", "session": session, "process": "1-e2e", "cwd": "/work/api", "hint": null});
+        json!({"agent": agent, "name": name, "arguments": {}})
+    };
+    let address = desk.call("agentCall", call(Some("t1"), "whoami")).await["address"].as_str().unwrap().to_owned();
+    let temporary = desk.call("agentCall", call(None, "whoami")).await["address"].as_str().unwrap().to_owned();
+    let offered = async || {
+        let peers = laptop.call("networkPeers", json!({})).await;
+        let agents = computer(&peers, "desk")["agents"].as_array().unwrap().clone();
+        agents.iter().filter_map(|a| a["id"].as_str().map(str::to_owned)).collect::<Vec<_>>()
+    };
+    assert!(!offered().await.contains(&address), "`allow * -> *` doesn't open a session");
+    // A rule that names it opens it; never the temporary one.
+    let rules = json!({"rules": [
+        {"fromComputer": "laptop", "fromAgent": "lead", "toAgent": address, "access": "allow"},
+        {"fromComputer": "laptop", "fromAgent": "lead", "toAgent": temporary, "access": "allow"},
+        {"fromComputer": "*", "fromAgent": "*", "toAgent": "*", "access": "allow"},
+    ]});
+    desk.call("setNetworkRules", rules).await;
+    let listed = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let agents = offered().await;
+            if agents.contains(&address) {
+                return agents;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("the desk never offered the session");
+    assert!(!listed.contains(&temporary), "{listed:?}");
+    // The letter waits in the session's mailbox under its own id, and the session's answer ends the request.
+    laptop.call("send", json!({"botId": lead, "text": format!("DELEGATE {address}@desk hello session")})).await;
+    let mut wait = call(Some("t1"), "check_inbox");
+    wait["arguments"] = json!({"waitSecs": 20});
+    let inbox = desk.call("agentCall", wait).await;
+    let letters = inbox["letters"].as_str().unwrap();
+    assert!(letters.contains("from=\"lead@laptop\"") && letters.contains("hello session"), "{inbox}");
+    let id = letters.split(" id=\"").nth(1).and_then(|rest| rest.split('"').next()).unwrap().to_owned();
+    let mut answer = call(Some("t1"), "message_bot");
+    answer["arguments"] = json!({"botId": "lead@laptop", "message": "hi back", "replyTo": id});
+    assert_eq!(desk.call("agentCall", answer).await["status"], "delivered");
+    let answered = |e: &Value| is_final(e) && e.to_string().contains("hi back");
+    laptop.wait_for(&lead, answered).await;
 }

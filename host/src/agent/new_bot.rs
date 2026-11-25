@@ -14,6 +14,10 @@ pub async fn with_defaults(hub: &Arc<Hub>, mut b: Value) -> Result<BotConfig> {
     // without a bot only by the host (`chat::work::plain`).
     b["lead"] = false.into();
     b["plain"] = false.into();
+    // An older app names when threads get worktrees with a bool.
+    if let Some(on) = b["threadWorktrees"].as_bool().filter(|_| b["worktreeMode"].is_null()) {
+        b["worktreeMode"] = json!(crate::store::WorktreeMode::default().with_switch(on));
+    }
     // Connectors are on for a new bot unless the client picked them.
     if b["connectors"].is_null() && b["kind"] != "group" {
         b["connectors"] = default_connectors(hub).await?;

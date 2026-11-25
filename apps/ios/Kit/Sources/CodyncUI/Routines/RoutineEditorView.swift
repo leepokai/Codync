@@ -23,6 +23,9 @@ struct RoutineEditorView: View {
     @State private var confirmDelete = false
     @State private var started = false
     @State private var pickingZone = false
+    /// Where its runs work; nil = the bot's folder.
+    @State private var folder: String?
+    @State private var pickingFolder = false
     /// Any text field is being edited; cleared on save so nothing sits under the keyboard.
     @FocusState private var typing: Bool
 
@@ -76,10 +79,17 @@ struct RoutineEditorView: View {
                 pickingZone = false
             }
         }
+        .codyncSheet(isPresented: $pickingFolder) {
+            FolderPicker(start: folder ?? model.hello?.home) {
+                folder = $0
+                pickingFolder = false
+            }
+        }
         .task {
             if let routine {
                 name = routine.name
                 instruction = routine.instruction
+                folder = routine.folder
                 timeout = String(routine.timeoutSeconds ?? 3600)
             }
             await loadSchedule()
@@ -102,6 +112,7 @@ struct RoutineEditorView: View {
                         TextField("Instruction", text: $instruction, prompt: Text(L10n.tr("Describe what this bot should do each time it runs.")).foregroundStyle(Palette.secondary), axis: .vertical)
                             .lineLimit(3...8).routineInput().focused($typing)
                     }
+                    if model.hello?.routineFolder == true { folderField }
                 }
                 VStack(alignment: .leading, spacing: 14) {
                     Field("When to run") {
@@ -140,6 +151,43 @@ struct RoutineEditorView: View {
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The folder its runs work in, each in a thread of its own: the bot's own unless one is chosen.
+    private var folderField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Field("Folder") {
+                HStack(spacing: 8) {
+                    Button { pickingFolder = true } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "folder").foregroundStyle(Palette.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(folder?.folderName ?? L10n.tr("Bot's folder")).lineLimit(1)
+                                if let folder {
+                                    Text(folder).font(.caption).foregroundStyle(Palette.secondary)
+                                        .lineLimit(1).truncationMode(.middle)
+                                }
+                            }
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(Palette.tertiary)
+                        }
+                        .foregroundStyle(Palette.text)
+                        .routineInput()
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(folder ?? L10n.tr("Bot's folder"))
+                    if folder != nil {
+                        IconButton("Use the bot's folder", systemImage: "xmark.circle") {
+                            withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { folder = nil }
+                        }
+                        .transition(.opacity)
+                    }
+                }
+            }
+            Text(L10n.tr("Each run works here in a thread of its own."))
+                .font(.caption).foregroundStyle(Palette.secondary).padding(.leading, 4)
+        }
     }
 
     private func checkSchedule() async {
@@ -368,7 +416,8 @@ struct RoutineEditorView: View {
             defer { busy = false }
             do {
                 let result = try await client.saveRoutine(botId: botId, id: routine?.id, name: name,
-                    instruction: instruction, schedule: schedule, timeoutSeconds: timeout)
+                    instruction: instruction, schedule: schedule, timeoutSeconds: timeout,
+                    folder: folder)
                 saved(result)
             } catch { self.error = error.localizedDescription }
         }

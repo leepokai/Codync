@@ -84,13 +84,30 @@ onFlowComplete:
     visible: "Close details"
     timeout: 10000
 - tapOn: "Close details"
-# New thread, in the Threads header, starts one with a bot on its first message and opens it once it has its thread.
-# It ends at once, so one task still works below.
+# New thread, in the Threads header, starts one on its first message and opens it once it has its thread: it opens on
+# No bot (as the desktop's), and the bot chip picks the bot. It ends at once, so one task still works below.
 - runFlow: subflows/bot-list.yaml
 - tapOn: "Threads(, .*)?"
 - tapOn: "New thread"
+- assertVisible: "No bot"
+# Without a bot, the chip beside it opens the model panel on the agent's models. A thread without a bot runs on one of
+# the computer's installed agents, not the flow's stand-in, so the flow sends with its bot (as the desktop's work.spec.ts).
+- tapOn: "Model"
+- assertVisible: "Search models"
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - swipe:
+          direction: DOWN
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- tapOn: "Choose a bot"
 - tapOn: ${output.bot.name}
-- tapOn: "Message"
+- tapOn: "What should it work on\\?"
 - inputText: "Say hello"
 - tapOn: "Send"
 - extendedWaitUntil:

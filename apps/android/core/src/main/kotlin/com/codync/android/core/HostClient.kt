@@ -114,6 +114,15 @@ data class Bot(
     val threadWorktrees: Boolean? = null,
     /** Its folder is in a git repository: where [threadWorktrees] matters. */
     val gitRepo: Boolean = false,
+    /** The user's folders it sends work to, the first its default; empty from a host before projects (`hello.projects`). */
+    val projects: List<String> = emptyList(),
+    /** Whether each of [projects], in the same order, is in a git repository: where [worktreeMode] matters. */
+    val projectGitRepos: List<Boolean> = emptyList(),
+    /** Per project (a path in [projects]): the folders, relative to it, linked into each new worktree of it; null from a
+     *  host before `hello.worktreeFill`. */
+    val sharedFolders: Map<String, List<String>>? = null,
+    /** Where its threads work ([WorktreeMode], by its wire name); null from a host before projects. */
+    val worktreeMode: String? = null,
     /** Git is on the computer; null from an older host, which is counted as having it ([gitState]). */
     val gitInstalled: Boolean? = null,
     /** How it stands outside its chat ([Outside]); null from an older host. */
@@ -121,6 +130,9 @@ data class Bot(
     val outside: Outside? = null,
     val customIcon: CustomIcon? = null,
 ) {
+    /** Whether its saved project [path] is in a git repository; false for one it hasn't saved yet. */
+    fun isGitProject(path: String): Boolean = projects.zip(projectGitRepos).any { (project, git) -> project == path && git }
+
     /** The messages in the badge the user hasn't read: what `markRead` clears (waiting cards stay counted). */
     val unseen: Int get() = unread - waiting
 

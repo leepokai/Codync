@@ -90,7 +90,7 @@ New ways of working together don't change the layers below them:
 |---|---|
 | Computers (`Node`) | keys, the signed roster and its roles, invites, the connector, the outbox |
 | Letters (`Letter`, `Message`) | text from agent to agent, `wake` or notice; `reply_to` links letters, `meta` carries an app's own structure untouched |
-| Reach (`Reach`) | how a letter gets into the agent: the app, Claude Code, Codex |
+| Reach (`Reach`) | how a letter gets into the agent: the app, Claude Code, Codex, or a mailbox the app keeps for a session that reads its own mail |
 | Budgets (`guard`) | chain length, bursts, repeats |
 | Rules (`rules`) | who on the other computers may write to which agents here |
 
@@ -128,7 +128,7 @@ It builds iroh on rustls with ring. An app that already uses rustls with aws-lc-
 aren't built in together (rustls then can't pick a provider by itself):
 
 ```toml
-codync-network = { version = "0.3", default-features = false, features = ["tls-aws-lc-rs"] }
+codync-network = { version = "0.4", default-features = false, features = ["tls-aws-lc-rs"] }
 ```
 
 ## Try it
@@ -191,8 +191,21 @@ while let Some(message) = inbox.recv().await {
 }
 ```
 
-An agent's `kind` (`AgentKind`: Codync, ClaudeCode, Codex, Terminal, Other) says what it is, so others can pick one
-kind; `set_agents` sets it to ClaudeCode or Codex for a `Reach::ClaudeCode` or `Reach::Codex` agent.
+An agent's `kind` (`AgentKind`: Codync, ClaudeCode, Codex, Gemini, Cursor, Copilot, Opencode, Pi, Amp, Grok,
+Antigravity, Terminal, Other; `AgentKind::ALL`, `as_str` for its wire spelling) says what it is, so others can pick
+one kind; a kind a computer doesn't know reads as `Other`, and a `match` on it needs a catch-all arm. `set_agents`
+sets it to ClaudeCode or Codex for a `Reach::ClaudeCode` or `Reach::Codex` agent.
+
+`Reach::Mailbox { session }` is for a coding agent's session that reads its mail itself (an MCP tool): its letters
+come out of the inbox like the app's own agents', but it can't be held to a ceiling, so a letter under `auto` or
+`ask` is refused, except an answer to a request it sent. Offer such a session only where a rule opens it:
+`rules::opens(rules, address)` is true for an `allow` that names the address (`*` doesn't count). A letter to
+it passes only such a rule too (`rules::mailbox_access`: a `*` allow doesn't open it, a `*` deny or ceiling still
+applies).
+
+`sessions` tells an MCP server which session of which agent it serves: `AgentKind::of_mcp_client` (the client's
+`clientInfo.name`), `session_id(kind, env, meta)` (from the server's environment or a tool call's `_meta`), and
+`info` / `busy` (the title and busy/idle the agent writes in its own files).
 
 `node.changes()` ticks whenever `node.directory()` would show something new (a computer joins or leaves, a role,
 name or presence changes, another computer offers different agents), for an app that shows the network live.

@@ -3,20 +3,23 @@
 //!
 //! What the bot should work on is a **task** in its box ([`tasks`]). A **thread** works tasks, one at a time: a
 //! **thread bot**, a `bots` row of its own (`BotConfig::thread_of`) copied from its bot, with its own actor, agent
-//! process, session and transcript, because everything a running turn touches is keyed by bot id. Its memory and
-//! instructions are its bot's (`BotConfig::as_owner`). It starts by forking its bot's main session where the agent
-//! can (`agent::bot::session`), otherwise from a new session and a brief. [`dispatch`] gives waiting tasks to
+//! process, session and transcript, because everything a running turn touches is keyed by bot id. Its memory is its
+//! bot's (`BotConfig::as_owner`). It starts in a new session of its own with its task's message, never told the chat;
+//! its instructions depend on where the task came from (`chat::context::render`). [`dispatch`] gives waiting tasks to
 //! threads, up to the bot's `maxThreads`; a thread's last message of a turn is its task's result and goes back as a turn
 //! in the bot's chat (`Cmd::TaskReport`). A routine run and another bot's request are tasks too ([`sources`]): their
 //! result goes to the chat as the routine's message, or to the asking bot as its reply. No client lists a thread bot:
 //! they see `work` on the bot and fetch a thread's transcript by id.
 //!
 //! Here: a thread's life from its turn's end to its report. [`steer`] has what the user and the bot do to a task,
-//! [`tools`] the bot's tools ([`recall`] the one that looks back), [`prompts`] the words, [`worktree`] the git
-//! worktree of a thread that works beside another in one repository, [`watch`] the watchdog that wakes the bot for a
-//! thread that looks stuck.
+//! [`tools`] the bot's tools ([`recall`] the one that looks back, [`ask`] the one that asks a thread and waits for its
+//! answer), [`prompts`] the words, [`worktree`] the git worktree of a thread that works beside another in one
+//! repository ([`fill`] what a new one is given), [`plain`] threads without a bot, [`watch`] the watchdog that wakes
+//! the bot for a thread that looks stuck.
 
+pub mod ask;
 mod dispatch;
+mod fill;
 pub mod plain;
 mod prompts;
 mod recall;
@@ -30,16 +33,16 @@ mod watch;
 mod worktree;
 
 pub use dispatch::{Wait, dispatch};
-pub use prompts::{BRIEF, in_thread, relayed, reminder, report_notice, report_prompt};
-pub use sources::{access_of, add_request, add_routine, add_thread, boxed, from_chat, routines_changed, source_of};
+pub use prompts::{BRIEF, asked, in_thread, relayed, reminder, report_notice, report_prompt};
+pub use sources::{access_of, add_request, add_routine, add_thread, boxed, routines_changed, source_of};
 pub use steer::{Steer, cut_in, drop_task, first, retry, stop};
 #[cfg(test)]
 pub use tasks::put_working_for_test;
 pub use tasks::{Setup, Source, Status, doing, lines, outside, waiting_threads, wire, working_threads};
 pub use thread::{Refused as ThreadRefused, heard, message, picked_up, thread as thread_of, unhear, written};
-pub use tools::{TOOLS, acting_as, call, refuse_chat_only, refuse_in_thread, tools};
+pub use tools::{TOOLS, acting_as, call, chat_only, refuse_chat_only, refuse_in_thread, tools};
 pub use watch::Stuck;
-pub use worktree::{Worktree, enter as enter_worktree, in_repo};
+pub use worktree::{Worktree, enter as enter_worktree, in_repo, is_worktree};
 
 use crate::LockExt;
 use crate::agent::bot::Cmd;
@@ -70,14 +73,6 @@ const MAX_REPORT: usize = 8_000;
 pub const CUT_OFF: &str = "the computer's Codync restarted while it worked";
 /// Why a task whose thread's turn never began didn't finish; the error follows.
 const NOT_STARTED: &str = "it could not start: ";
-
-/// How a thread's session began.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "camelCase")]
-pub enum Start {
-    Fork,
-    Brief,
-}
 
 /// What a task came to, for its bot.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -161,6 +156,9 @@ pub struct Work {
     seat_freed: tokio::sync::Notify,
     /// What the watchdog remembers of the threads it looks at (`watch`).
     watch: Mutex<watch::Memory>,
+    /// Thread → the question of its bot's it hasn't answered (`ask`). Gone with the host process: an answer that
+    /// comes after a restart is the thread's report's.
+    asks: Mutex<HashMap<String, ask::Pending>>,
 }
 
 impl Work {
@@ -301,37 +299,16 @@ pub fn mark(store: &Store, cfg: &BotConfig) -> Option<TaskMark> {
     Some(TaskMark { bot, thread: cfg.id.clone(), title: title.unwrap_or_default(), task })
 }
 
-/// The session a thread's first session forks, if any; taken once.
-pub fn take_fork_source(hub: &Hub, cfg: &BotConfig) -> Option<String> {
-    let mut source = None;
-    update(hub, cfg, "its fork", |task| source = task.fork_from.take());
-    source
+/// Thread `cfg`'s session began on its task: once, so a later session of the thread (a restart, a fallback) doesn't
+/// make the task's worktree again.
+pub fn began(hub: &Hub, cfg: &BotConfig) {
+    if cfg.is_thread() && task_of(&hub.store, cfg).is_some_and(|task| !task.began) {
+        update(hub, cfg, "its start", |task| task.began = true);
+    }
 }
 
-/// Whether `cfg` is a thread whose session hasn't begun yet.
-pub fn first_session(store: &Store, cfg: &BotConfig) -> bool {
-    cfg.is_thread() && task_of(store, cfg).is_some_and(|task| task.start.is_none())
-}
-
-/// The agent couldn't fork the chat's session for this thread.
-pub fn fork_failed(hub: &Hub, cfg: &BotConfig) {
-    update(hub, cfg, "its failed fork", |task| task.fork_failed = true);
-}
-
-/// How the thread's session began, once its actor knows.
-pub fn started(hub: &Hub, cfg: &BotConfig, start: Start) {
-    update(hub, cfg, "how it started", |task| task.start = Some(start));
-}
-
-/// What a thread that starts from a new session is told of the chat it comes from.
-pub fn chat_so_far(store: &Store, bot: &str) -> Option<String> {
-    let session = store.bot(bot).ok().flatten()?.session_id.unwrap_or_default();
-    let text = crate::chat::handoff::build(store, bot, &session).ok()?;
-    Some(format!("[The chat you come from, so far]\n{text}"))
-}
-
-/// `bot`'s own turn ended: the tasks it added may start now (a fork taken mid-turn would carry an unanswered tool
-/// call). A turn the user stopped takes the tasks it added with it.
+/// `bot`'s own turn ended: the tasks it added may start now, since stopping that turn drops them. A turn the user
+/// stopped takes the tasks it added with it.
 pub fn turn_over(hub: &Arc<Hub>, bot: &str, stopped: bool) {
     hub.work.chain.locked().remove(bot);
     let added = hub.work.added.locked().remove(bot).unwrap_or_default();
@@ -447,10 +424,13 @@ fn end(tasks: &mut [Task], thread: &str, outcome: Outcome) -> Option<Task> {
 /// that fell back names the agent it ran on in `turn_finished`).
 fn finished_properties(task: &Task, agent: Option<&str>) -> serde_json::Map<String, Value> {
     let mut properties = json!({
-        "outcome": task.status, "start": task.start, "forkFailed": task.fork_failed,
+        "outcome": task.status,
         "minutes": (now_ms() - task.started_at.unwrap_or(task.created_at)) / 60_000,
         "source": task.source.kind(), "worktree": task.worktree.is_some(),
     });
+    if let Some(started) = task.started_at {
+        properties["waitedMs"] = (started - task.created_at).max(0).into();
+    }
     if let Some(agent) = agent {
         properties["agent"] = agent.into();
     }
@@ -486,6 +466,9 @@ fn deliver(hub: &Hub, bot: &str, task: &Task) {
 
 /// `task` of `bot` ended: says so (`work_finished`), and its result goes where its source reads it.
 fn ended(hub: &Hub, bot: &str, task: &Task) {
+    if let Some(thread) = &task.thread {
+        ask::forget(hub, thread);
+    }
     let thread = task.thread.as_deref().and_then(|thread| hub.store.bot(thread).ok().flatten());
     let agent = thread.as_ref().map(|thread| thread.config.backend.as_str());
     analytics::capture(hub, Event::WorkFinished, finished_properties(task, agent));
@@ -497,6 +480,7 @@ pub fn forget(hub: &Hub, bot: &str) {
     let tasks = tasks::load(&hub.store, bot);
     sources::forget_requests(hub, &tasks);
     worktree::leave(&tasks);
+    plain::forget_folders(&tasks);
     tasks::forget(&hub.store, bot);
 }
 
@@ -549,6 +533,7 @@ fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
         let (old, kept) =
             std::mem::take(tasks).into_iter().partition(|i| i.ended_at.is_some_and(|at| now - at > KEEP_MS));
         *tasks = kept;
+        plain::forget_folders(&old);
         if let Err(error) = tasks::put_past(&hub.store, bot, old, now) {
             tracing::warn!(bot, error = format!("{error:#}"), "couldn't keep a bot's past tasks");
         }
@@ -600,7 +585,7 @@ pub fn entries(hub: &Hub, bot: &str, id: &str, limit: i64) -> Result<Value> {
     let task = worked.iter().find(|i| !i.status.ended()).or(worked.last()).ok_or_else(|| anyhow!("unknown thread"))?;
     Ok(json!({
         "thread": {"id": cfg.id, "title": task.title, "status": task.status, "startedAt": task.started_at,
-                 "endedAt": task.ended_at, "start": task.start},
+                 "endedAt": task.ended_at},
         "entries": hub.store.history(id, i64::MAX, limit)?,
     }))
 }
@@ -669,9 +654,12 @@ mod tests {
             (&told["outcome"], &told["error"], &told["agent"]),
             (&json!("failed"), &json!("dispatch"), &json!("claude"))
         );
+        assert_eq!(told["waitedMs"], json!(1), "from added to started");
         let never = end(&mut tasks, "t2", Outcome::not_started(&error)).expect("ended");
         let told = finished_properties(&never, None);
         assert_eq!((told["error"].as_str(), told.get("agent")), (Some("start"), None), "no thread, no agent");
+        let unstarted = Task { started_at: None, ..never };
+        assert_eq!(finished_properties(&unstarted, None).get("waitedMs"), None, "it never started");
     }
 
     #[test]

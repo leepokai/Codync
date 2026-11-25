@@ -2,6 +2,7 @@
 //! a thread whose end never arrived. It runs in the host alone and wakes no agent unless something is lost.
 
 use super::dispatch::{self, ThreadState};
+use super::worktree;
 use super::{Failure, Outcome, Status, close, end_claimed, tasks};
 use crate::LockExt;
 use crate::analytics::errors::host_error;
@@ -14,14 +15,15 @@ const EVERY: Duration = Duration::from_hours(1);
 /// Why a task whose thread is gone, and that already started again once, didn't finish.
 pub const LOST: &str = "its agent stopped without finishing";
 
-/// Sets `bot`'s next look, or none once its box holds nothing waiting or working. Called after every dispatcher
-/// pass, so the hour counts from the last time anything happened.
+/// Sets `bot`'s next look, or none once its box holds nothing waiting or working and keeps no worktree the user may
+/// still merge. Called after every dispatcher pass, so the hour counts from the last time anything happened.
 pub(super) fn arm(hub: &Arc<Hub>, bot: &str) {
     let mut sweeps = hub.work.sweeps.locked();
     if let Some(old) = sweeps.remove(bot) {
         old.abort();
     }
-    if tasks::load(&hub.store, bot).iter().all(|i| i.status.ended()) {
+    let tasks = tasks::load(&hub.store, bot);
+    if tasks.iter().all(|i| i.status.ended()) && !worktree::any_kept(&tasks) {
         return;
     }
     // Unit tests drive the dispatcher without a runtime: they have no later.
@@ -40,28 +42,39 @@ pub(super) fn arm(hub: &Arc<Hub>, bot: &str) {
 }
 
 /// Looks `bot`'s box over: a working task whose thread runs no turn waits again once, then fails (as after a host
-/// restart), and the dispatcher takes a pass, which sets the next look if work is left.
+/// restart), a kept worktree goes once the user merged it, and the dispatcher takes a pass, which sets the next look
+/// if work is left.
 pub(super) fn sweep(hub: &Arc<Hub>, bot: &str) {
     if hub.store.bot(bot).ok().flatten().is_none_or(|row| row.deleted) {
         return;
     }
     let lost = tasks::change(hub, bot, |tasks| {
+        let kept = worktree::kept(tasks);
         let threads: Vec<String> = tasks
             .iter()
             .filter(|i| i.status == Status::Working)
             .filter_map(|i| i.thread.clone())
             .filter(|thread| is_lost(hub, thread))
             .collect();
-        Ok(threads
+        let failed = threads
             .iter()
             .filter_map(|thread| {
                 tracing::warn!(bot, thread, "a thread stopped without ending its task");
                 end_claimed(tasks, thread, Outcome::Failed(Failure::Lost, LOST.into()))
             })
-            .collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        Ok((failed, kept))
     });
     match lost {
-        Ok(failed) => failed.into_iter().for_each(|over| close(hub, bot, over, |_| {})),
+        Ok((failed, kept)) => {
+            for over in failed {
+                close(hub, bot, over, |_| {});
+            }
+            for (task, worktree) in kept {
+                let owner = bot.to_owned();
+                worktree::settle_then(hub, bot, &task, worktree, move |hub| dispatch::dispatch(hub, &owner));
+            }
+        }
         Err(error) => host_error!(hub, "couldn't look a bot's work over", bot, error = format!("{error:#}")),
     }
     dispatch::dispatch(hub, bot);
@@ -102,6 +115,18 @@ mod tests {
         // Nothing left to look at: no next look is set.
         arm(&hub, "b1");
         assert!(hub.work.sweeps.locked().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_box_that_keeps_a_worktree_is_looked_at_again() {
+        let hub = hub();
+        hub.store.save_bot(&bot("b1", "Mika", "/tmp")).expect("saved");
+        let worktree = json!({"branch": "codync/t", "path": "/w", "cwd": "/w", "base": "abc", "left": "kept"});
+        let ended = json!({"id": "i1", "title": "Work", "brief": "x", "status": "done", "order": 1, "createdAt": 0,
+            "worktree": worktree});
+        hub.store.kv_set(&format!("{}b1", tasks::PREFIX), &json!([ended]).to_string()).expect("saved");
+        arm(&hub, "b1");
+        assert!(hub.work.sweeps.locked().contains_key("b1"), "the user may still merge it");
     }
 
     #[test]

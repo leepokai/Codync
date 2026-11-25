@@ -41,7 +41,7 @@ impl std::error::Error for Refused {}
 
 /// Whether `task` takes words at all: the bot's own work does; a routine's run and another bot's request have an
 /// owner for their result already.
-fn writable(task: &Task) -> Result<()> {
+pub(super) fn writable(task: &Task) -> Result<()> {
     let whose = match &task.source {
         Source::Bot | Source::User => return Ok(()),
         Source::Routine { .. } => "a routine's run",
@@ -52,7 +52,7 @@ fn writable(task: &Task) -> Result<()> {
 }
 
 /// The thread that takes the user's messages for `task`, or why it takes none.
-fn thread_of(store: &Store, task: &Task) -> Result<BotConfig> {
+pub(super) fn thread_of(store: &Store, task: &Task) -> Result<BotConfig> {
     writable(task)?;
     let title = &task.title;
     let Some(thread) = task.thread.as_deref() else {
@@ -138,7 +138,7 @@ fn reopen(hub: &Hub, owner: &BotConfig, task: &mut Task, thread: &mut BotConfig)
         kept.left = worktree::Left::InUse;
     } else if !Path::new(&thread.cwd).is_dir() {
         // Its worktree had nothing in it and went: the folder a thread without one works in.
-        thread.cwd.clone_from(task.setup.cwd.as_ref().unwrap_or(&owner.cwd));
+        thread.cwd = task.folder(owner);
         let _g = hub.emit_lock.locked();
         hub.store.save_bot(thread)?;
     }
@@ -181,7 +181,7 @@ pub fn message(hub: &Arc<Hub>, bot: &str, id: &str, text: &str, uploads: &[Strin
 
 /// Posts `data` to `thread`'s chat as a message, its actor started again if it ended. Answers the entry, and whether
 /// it waits behind a running turn.
-fn post_to(hub: &Arc<Hub>, thread: &BotConfig, data: Value) -> Result<(Entry, bool)> {
+pub(super) fn post_to(hub: &Arc<Hub>, thread: &BotConfig, data: Value) -> Result<(Entry, bool)> {
     if !hub.has_actor(&thread.id) {
         hub.spawn_bot(thread.clone());
     }

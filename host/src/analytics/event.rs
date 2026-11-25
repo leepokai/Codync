@@ -97,16 +97,28 @@ pub enum Event {
     FollowUpCancelled,
     /// A bot's `add_task` ended (`outcome`).
     WorkAdded,
-    /// A task of a bot's box ended (`outcome`), and how its thread's session had begun.
+    /// A task of a bot's box ended (`outcome`).
     WorkFinished,
+    /// A thread called a tool only its bot's chat may call (`tool`): one its tool list still offered it.
+    ThreadToolRefused,
     /// A task was moved, cut in, replaced, stopped, dropped or tried again (`how`), by the bot or the user (`by`).
     WorkSteered,
     /// At host start, worktrees no task knew any more went, their work merged (`removed`).
     WorktreesTidied,
+    /// Projects were added to a bot (`count`), by any client or tool (`hub::projects`).
+    BotProjectAdded,
+    /// Projects were taken off a bot (`count`).
+    BotProjectRemoved,
+    /// At host start, once: bots that worked in a project moved to their own folder, the project kept (`count`).
+    BotProjectsMigrated,
     /// A task's turn couldn't go on until the user signs in to its agent, so it waits for them (`agent`, `source`).
     WorkNeedsSignIn,
     /// A bot's `tell_task` finished (`outcome`): where the words went (`to`) or why not (`error`), and `now`.
     WorkTold,
+    /// A bot's `ask_task` finished (`outcome`): the thread answered in time, later, or the question was refused.
+    TaskAsked,
+    /// Filling a new worktree failed at one file or folder (`stage`: `include`, `link`); the thread starts anyway.
+    WorktreeFillFailed,
     /// A bot's `recall_task` finished (`outcome`), looking up one task, a query or the latest (`by`).
     WorkRecalled,
     /// The user wrote to a task's thread (`chat::work::thread`): whether it reopened the task, and whether it waits.
@@ -212,6 +224,8 @@ pub enum Event {
     NetworkChanged,
     /// A network step failed (`NetworkStage`): starting a node, a letter, or a `network*` call.
     NetworkFailed,
+    /// A coding agent's session used its Network mailbox (`SessionAction`, with the agent's kind).
+    NetworkSession,
     /// Error tracking (`errors`): a panic or an uncaught error.
     Exception,
 }
@@ -287,10 +301,16 @@ impl Event {
             Self::FollowUpCancelled => "follow_up_cancelled",
             Self::WorkAdded => "work_added",
             Self::WorkFinished => "work_finished",
+            Self::ThreadToolRefused => "thread_tool_refused",
             Self::WorkSteered => "work_steered",
             Self::WorktreesTidied => "worktrees_tidied",
+            Self::BotProjectAdded => "bot_project_added",
+            Self::BotProjectRemoved => "bot_project_removed",
+            Self::BotProjectsMigrated => "bot_projects_migrated",
             Self::WorkNeedsSignIn => "work_needs_sign_in",
             Self::WorkTold => "work_told",
+            Self::TaskAsked => "task_asked",
+            Self::WorktreeFillFailed => "worktree_fill_failed",
             Self::WorkRecalled => "work_recalled",
             Self::WorkMessaged => "work_messaged",
             Self::WatchdogFlagged => "watchdog_flagged",
@@ -353,6 +373,7 @@ impl Event {
             Self::NetworkJoined => "network_joined",
             Self::NetworkChanged => "network_changed",
             Self::NetworkFailed => "network_failed",
+            Self::NetworkSession => "network_session",
             Self::Exception => "$exception",
         }
     }

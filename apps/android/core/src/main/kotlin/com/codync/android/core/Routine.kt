@@ -15,6 +15,8 @@ import java.util.Locale
     val createdAt: Long = 0, val updatedAt: Long = 0,
     val triggerDescriptions: List<String> = emptyList(), val nextRunAt: Long? = null,
     val timeoutSeconds: Int? = null, val lastError: String? = null,
+    /** The folder its runs work in, each in a thread of its own; null: where the bot works. */
+    val folder: String? = null,
 ) {
     val keepsOriginal: Boolean get() = triggers.size != 1 || triggers.single()["type"]?.jsonPrimitive?.content !in listOf("cron", "webhook")
     val hasWebhook: Boolean get() = triggers.any { it["type"]?.jsonPrimitive?.content in listOf("webhook", "event") }
@@ -115,7 +117,9 @@ val routineRepeats = listOf("hourly" to "Hourly", "daily" to "Daily", "weekdays"
 enum class TimeoutUnit { Hour, Minute, Second }
 
 data class RoutineDraft(val id: String? = null, val name: String = "", val instruction: String = "",
-    val schedule: RoutineScheduleDraft = RoutineScheduleDraft(), val timeoutSeconds: String = "3600") {
+    val schedule: RoutineScheduleDraft = RoutineScheduleDraft(), val timeoutSeconds: String = "3600",
+    /** The run folder, sent whole each time: null puts it back to the bot's folder. */
+    val folder: String? = null) {
     /** The timeout as whole hours, else whole minutes, else seconds; null when it isn't a number (shown as typed). */
     val timeoutParts: Pair<Long, TimeoutUnit>? get() {
         val seconds = timeoutSeconds.toLongOrNull() ?: return null
@@ -129,5 +133,6 @@ data class RoutineDraft(val id: String? = null, val name: String = "", val instr
     fun body(botId: String): JsonObject = buildJsonObject {
         put("botId", botId); id?.let { put("id", it) }; put("name", name); put("instruction", instruction)
         put("schedule", WireJson.encodeToJsonElement(schedule)); put("timeoutSeconds", timeoutSeconds)
+        put("folder", folder)
     }
 }

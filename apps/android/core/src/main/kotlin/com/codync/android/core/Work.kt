@@ -199,7 +199,7 @@ fun <T> threadSections(roster: List<T>, bot: (T) -> Bot, keyOf: (T) -> String, c
             grouping == ThreadGrouping.None -> null
             source?.kind == SourceKind.Routine -> ThreadGroup("routine:${keyOf(of)}:${source.id ?: task.title}", ThreadGroupKind.Routine, task.title, emptyList())
             path != null && task.worktree == null && path != bot(of).cwd ->
-                ThreadGroup("folder:$path", ThreadGroupKind.Folder, path.split('/', '\\').lastOrNull { it.isNotEmpty() } ?: path, emptyList())
+                ThreadGroup("folder:$path", ThreadGroupKind.Folder, folderName(path), emptyList())
             else -> null
         }
         if (group == null) recent += row
@@ -250,9 +250,9 @@ fun workSections(work: List<WorkTask>, maxThreads: Int?): WorkSections {
 /** A stopped or failed task can go back to waiting: not another bot's request, which that bot asks again. A routine's runs the routine again. */
 fun canRetry(task: WorkTask): Boolean = (task.status == WorkStatus.Failed || task.status == WorkStatus.Stopped) && task.source?.kind != SourceKind.Request
 
-/** A thread has it and it may give way to one that cuts in: only work the bot added. A routine's run or another
- *  bot's request is stopped, never set aside. */
-fun givesWay(task: WorkTask): Boolean = task.status.live && task.source == null
+/** A thread has it and it may give way to one that cuts in: only work the bot added, in one of its seats. A routine's
+ *  run or another bot's request is stopped, never set aside, and a thread the user started holds no seat to free. */
+fun givesWay(task: WorkTask): Boolean = task.status.live && task.source == null && task.seat != false
 
 /**
  * Every thread of the bot is busy, so the task first in line can only start now if a working one gives way, and one may. Not
@@ -410,3 +410,10 @@ fun sharing(entries: List<Entry>, chat: List<Entry>, thread: String): List<Entry
     }
     return out + shared
 }
+
+/** A folder's name: its path's last part (`/` or `\` separated), or the path itself. */
+fun folderName(path: String): String = path.split('/', '\\').lastOrNull { it.isNotEmpty() } ?: path
+
+/** Where it works, as a list shows it (CodyncKit `Bot.folderName`): its default project's name; null for its own folder,
+ *  which the caller names in its language; or (an older host) its project folder's name. */
+val Bot.folderName: String? get() = projects.firstOrNull()?.let(::folderName) ?: if (managedWorkspace) null else folderName(cwd)

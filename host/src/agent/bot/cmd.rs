@@ -27,6 +27,12 @@ pub enum Cmd {
     },
     /// One of the bot's tasks looks stuck (`chat::work::watch`): a turn in its chat to look at it.
     Watchdog(crate::chat::work::Stuck),
+    /// A thread answered the bot's `ask_task` after the call gave up waiting: a turn in its chat with the answer.
+    TaskAnswer {
+        prompt: String,
+        /// The task's hops: a task added in that turn carries them on.
+        hops: u8,
+    },
     /// The user wrote in the bot's chat.
     Send {
         lane: Lane,
@@ -140,6 +146,10 @@ pub(super) enum Queued {
     TaskReport(crate::chat::work::Report),
     WorkflowStep(String),
     Watchdog(crate::chat::work::Stuck),
+    TaskAnswer {
+        prompt: String,
+        hops: u8,
+    },
     User {
         lane: Lane,
         entry_id: String,
@@ -181,13 +191,16 @@ pub(super) enum HostTurn {
     Watchdog,
     /// A hop-limit lift (`Cmd::HopLift`): alerts no one and isn't resumed after a restart.
     HopLift,
+    /// A thread's answer to the bot's `ask_task` that came after the call gave up (`Cmd::TaskAnswer`): the bot acts on
+    /// it, which alerts like a reply. A restart doesn't resume it.
+    TaskAnswer,
 }
 
 impl HostTurn {
     /// Whether a host restart in the middle of it resumes it.
     pub(super) fn resumed(self) -> bool {
         match self {
-            Self::Opening | Self::TaskReport | Self::Watchdog | Self::HopLift => false,
+            Self::Opening | Self::TaskReport | Self::Watchdog | Self::HopLift | Self::TaskAnswer => false,
             Self::FollowUp => true,
         }
     }
@@ -196,14 +209,14 @@ impl HostTurn {
     pub(super) fn alerts(self) -> bool {
         match self {
             Self::Opening | Self::HopLift => false,
-            Self::FollowUp | Self::TaskReport | Self::Watchdog => true,
+            Self::FollowUp | Self::TaskReport | Self::Watchdog | Self::TaskAnswer => true,
         }
     }
 
     /// What `turn_finished` reports as its source.
     pub(super) fn source(self) -> TurnSource {
         match self {
-            Self::Opening | Self::TaskReport | Self::HopLift => TurnSource::Host,
+            Self::Opening | Self::TaskReport | Self::HopLift | Self::TaskAnswer => TurnSource::Host,
             Self::FollowUp => TurnSource::FollowUp,
             Self::Watchdog => TurnSource::Watchdog,
         }

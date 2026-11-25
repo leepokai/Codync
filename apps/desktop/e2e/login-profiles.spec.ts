@@ -102,7 +102,7 @@ test('an agent gets another login profile, it signs in, a bot runs on it, and it
 
     // A new thread with the bot runs on the login its model panel picks (`setup.loginProfile`); the bot keeps its own.
     await openPage(page, 'Threads')
-    await page.locator('aside.sidebar .thread-row', { hasText: 'New thread' }).first().click()
+    await page.locator('aside.sidebar .sidebar-header-action[aria-label="New thread"]').click()
     const start = page.locator('.new-thread')
     const chooser = start.locator('.thread-option[title="Choose a bot"]')
     if (await chooser.isEnabled()) {

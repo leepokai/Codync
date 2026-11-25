@@ -103,7 +103,7 @@ struct FolderPicker: View {
                     HStack(spacing: 12) {
                         Image(systemName: "folder").foregroundStyle(Palette.secondary)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(item.path.split(whereSeparator: { $0 == "/" || $0 == "\\" }).last.map(String.init) ?? item.path)
+                            Text(item.path.folderName)
                                 .lineLimit(1)
                             Text(item.path).font(.caption).foregroundStyle(Palette.secondary).lineLimit(1).truncationMode(.middle)
                         }

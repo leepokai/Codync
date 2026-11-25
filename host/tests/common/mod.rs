@@ -215,6 +215,16 @@ pub fn routine_sessions(home: &Path) -> i64 {
         .expect("read the host's store")
 }
 
+/// Bot `name`'s own folder in `home`'s store: where its agent runs, and a fixture agent logs.
+#[allow(dead_code, reason = "not every test binary looks folders up")]
+pub fn folder(home: &Path, name: &str) -> std::path::PathBuf {
+    let db = rusqlite::Connection::open(home.join("codync.db")).expect("read the host's store");
+    let sql =
+        "SELECT json_extract(config, '$.cwd') FROM bots WHERE json_extract(config, '$.name') = ?1 AND deleted = 0";
+    let cwd: String = db.query_row(sql, [name], |r| r.get(0)).expect("a bot of that name");
+    cwd.into()
+}
+
 /// Bot `id` in a [`snapshot`] (which also holds the lead bot every host makes).
 #[allow(dead_code, reason = "not every test binary looks bots up")]
 pub fn bot<'a>(sync: &'a serde_json::Value, id: &str) -> &'a serde_json::Value {

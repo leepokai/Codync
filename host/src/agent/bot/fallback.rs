@@ -6,6 +6,7 @@
 mod handoff;
 mod park;
 
+pub(crate) use handoff::owe_move;
 pub(super) use park::resume_step;
 
 use super::sign_in::Held;
@@ -159,7 +160,6 @@ impl Actor {
             let recap = self.relay.recap.take().or_else(|| kept.as_ref().map(|o| (o.from.clone(), o.session.clone())));
             if let Some((agent, session)) = recap {
                 let moved = kept.as_ref().is_some_and(|o| o.moved(&fallback::login::of(&self.cfg)));
-                carried.extend(self.chat_for_thread());
                 carried.extend(self.recap(&agent, session.as_deref(), moved));
                 owed = kept;
             }
@@ -179,19 +179,6 @@ impl Actor {
         // What was kept for this message is let go once the prompt went (`handed_off`).
         self.relay.handing_off = owed.is_some();
         self.relay.carried = text;
-    }
-
-    /// A thread's new session on another agent: the chat it comes from, which its first session had (by a fork, or
-    /// told), unless this session is its first and is told it already.
-    fn chat_for_thread(&self) -> Option<String> {
-        let new = self.cfg.is_thread() && self.session_fresh && self.handoff.is_none();
-        new.then(|| self.told_chat()).flatten()
-    }
-
-    /// What a thread from the chat is told of it in a new session: the chat so far. Not a routine's run.
-    pub(super) fn told_chat(&self) -> Option<String> {
-        let from_chat = crate::chat::work::from_chat(&self.task_source);
-        from_chat.then(|| crate::chat::work::chat_so_far(&self.hub.store, self.cfg.owner())).flatten()
     }
 
     /// What the chat calls the agent `cfg` runs: its name, with the login profile it runs on ("Claude Code

@@ -452,3 +452,11 @@ private fun plainDecoration(empty: Boolean, prompt: String, style: TextStyle, si
 
 /** An outlined value pill, like ChatGPT's settings dropdowns (outline or fill, never both). */
 @Composable fun Modifier.outline() = border(1.dp, Palette.border, RoundedRectangle(10.dp))
+
+/** A chip's label in a row of chips (a chat's model chip, New thread's bot and model; iOS `ChipLabel`): [content], then a small chevron. */
+@Composable fun ChipLabel(modifier: Modifier = Modifier, content: @Composable RowScope.() -> Unit) {
+    Row(modifier.height(34.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        content()
+        Symbol("chevron.down", size = 9.dp, tint = Palette.tertiary)
+    }
+}

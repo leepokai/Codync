@@ -15,6 +15,12 @@ class WorkTest {
     private fun work(json: String) = bot(""","work":$json""").work
     private fun task(id: String, status: WorkStatus) = WorkTask(id, status = status)
 
+    @Test fun `a bot's folder name is its default project's, else its own folder's (null) or its project folder's`() {
+        assertEquals("app", bot(""","cwd":"/home/b","managedWorkspace":true,"projects":["/p/app","/p/web"]""").folderName)
+        assertNull(bot(""","cwd":"/home/b","managedWorkspace":true,"projects":[]""").folderName)
+        assertEquals("site", bot(""","cwd":"/p/site/"""").folderName)
+    }
+
     @Test fun `a bot's work decodes, and survives the mirror's copy`() {
         val bot = bot(""","maxThreads":4,"work":[
             {"id":"w1","title":"Fix login","status":"working","activity":"Reading","thread":"thread-1","wait":null,"cutIn":false,"createdAt":3,"startedAt":5,"endedAt":null,"result":"","brief":"x"},
@@ -198,6 +204,63 @@ class WorkTest {
         assertTrue(canCutIn(listOf(task("a", WorkStatus.Working).copy(source = routine), task("b", WorkStatus.Working), waiting), 2))
         // A routine task may cut in itself.
         assertTrue(canCutIn(listOf(task("a", WorkStatus.Working), waiting.copy(source = routine)), 1))
+    }
+
+    @Test fun `a host with projects gets the whole list, default first, and the worktree mode, never a cwd`() {
+        val bot = bot(""","cwd":"/home/me/.codync/bots/b/workspace","managedWorkspace":true,"threadWorktrees":true,
+            "projects":["/p/app","/p/docs"],"projectGitRepos":[true,false],"worktreeMode":"sideBySide"""")
+        assertTrue(bot.isGitProject("/p/app"))
+        assertFalse(bot.isGitProject("/p/docs"))
+        assertFalse(bot.isGitProject("/p/new"))
+        val draft = BotDraft.from(bot)
+        assertEquals(WorktreeMode.SideBySide, draft.worktreeMode)
+        fun sent(edit: BotDraft) = edit.body().let { body -> assertFalse("cwd" in body); body.getValue("projects").toString() }
+        assertEquals("""["/p/app","/p/docs","/p/new"]""", sent(draft.withProject("/p/new")))
+        assertEquals("""["/p/app","/p/docs"]""", sent(draft.withProject("/p/docs")))
+        assertEquals("""["/p/docs"]""", sent(draft.withoutProject("/p/app")))
+        assertEquals("""["/p/docs","/p/app"]""", sent(draft.withDefaultProject("/p/docs")))
+        assertEquals("[]", sent(draft.withoutProject("/p/app").withoutProject("/p/docs")))
+        assertEquals("\"always\"", draft.copy(worktreeMode = WorktreeMode.Always).body().getValue("worktreeMode").toString())
+        assertEquals("\"off\"", draft.copy(worktreeMode = WorktreeMode.Off).body().getValue("worktreeMode").toString())
+        // A new bot on such a host sends the projects it was given, and no mode (the host's default).
+        val created = BotDraft(name = "New").withProject("/p/app").body()
+        assertEquals("""["/p/app"]""", created.getValue("projects").toString())
+        assertFalse("worktreeMode" in created || "cwd" in created)
+        // An older host has neither: its cwd goes as before, and a mode this app doesn't know is none.
+        val old = BotDraft.from(bot(""","cwd":"/p/app","threadWorktrees":true""")).body()
+        assertFalse("projects" in old || "worktreeMode" in old)
+        assertEquals("\"/p/app\"", old.getValue("cwd").toString())
+        assertNull(BotDraft.from(bot(""","projects":[],"worktreeMode":"later"""")).worktreeMode)
+    }
+
+    @Test fun `shared folders go as the whole map, only names the host takes`() {
+        val bot = bot(""","projects":["/p/app","/p/docs"],"projectGitRepos":[true,false],"worktreeMode":"sideBySide",
+            "sharedFolders":{"/p/app":["node_modules"]}""")
+        val draft = BotDraft.from(bot)
+        assertEquals(listOf("node_modules"), draft.sharedFolders("/p/app"))
+        fun sent(edit: BotDraft) = edit.body().getValue("sharedFolders").toString()
+        assertEquals("""{"/p/app":["node_modules",".cache/pip"]}""", sent(draft.withSharedFolder("/p/app", " .cache/pip/ ")))
+        assertEquals("""{"/p/app":["node_modules"],"/p/docs":["vendor"]}""", sent(draft.withSharedFolder("/p/docs", "vendor")))
+        for (refused in listOf("", "node_modules", "./node_modules", "/abs", "C:\\x", "../up", "a/../b")) assertEquals(draft, draft.withSharedFolder("/p/app", refused))
+        assertEquals("node_modules", sharedFolderName("./node_modules"))
+        assertEquals("{}", sent(draft.withoutSharedFolder("/p/app", "node_modules")))
+        assertEquals("{}", sent(draft.withoutProject("/p/app")))
+        // A host before shared folders has none: nothing goes.
+        assertFalse("sharedFolders" in BotDraft.from(bot(""","projects":[],"worktreeMode":"off"""")).body())
+    }
+
+    @Test fun `only the bot's own work in one of its seats gives way to a task that cuts in`() {
+        val waiting = task("w", WorkStatus.Waiting)
+        val own = task("a", WorkStatus.Working).copy(seat = true)
+        val user = task("u", WorkStatus.Working).copy(seat = false)
+        assertTrue(givesWay(own))
+        assertFalse("a thread the user started holds no seat", givesWay(user))
+        // A host that doesn't say goes by the task alone.
+        assertTrue(givesWay(task("o", WorkStatus.Working)))
+        // Every seat taken by the bot's work and the user's threads: nothing of the bot's own is there to give way.
+        assertEquals(listOf(own), listOf(own, user).filter(::givesWay))
+        assertTrue(canCutIn(listOf(own, user, waiting), 1))
+        assertFalse(canCutIn(listOf(user, user.copy(id = "u2"), waiting), 1))
     }
 
     @Test fun `a worktree per agent is the bot's setting, shown where its folder is a git repository`() {

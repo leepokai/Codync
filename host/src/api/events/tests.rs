@@ -82,6 +82,38 @@ async fn incremental_sync_replays_deletions_only_after_the_saved_cursor() {
 }
 
 #[tokio::test]
+async fn catch_up_brings_a_message_held_for_later_however_old_it_is() {
+    let f = Fixture::new();
+    f.add_bot("b");
+    let lane = crate::store::Lane::main("b");
+    // Held before the chat filled up: a fresh client's window is the newest entries per bot, so this one
+    // is outside it — and the tray is the only place it can be seen, edited or taken back.
+    let held = f
+        .hub
+        .add_entry(
+            &lane,
+            crate::store::EntryKind::User,
+            0,
+            &json!({"text": "later", "status": "scheduled", "notBefore": 4_102_444_800_000i64}),
+        )
+        .unwrap();
+    for i in 0..CATCH_UP_PER_BOT {
+        f.hub.add_entry(&lane, crate::store::EntryKind::User, 0, &json!({"text": format!("after {i}")})).unwrap();
+    }
+    let events = f.catch_up(0).await;
+    assert!(
+        events.iter().any(|e| e["type"] == "entry" && e["entry"]["id"] == held.id),
+        "a held message older than the window still reaches the client"
+    );
+    assert!(events[2..].windows(2).all(|pair| pair[0]["rev"].as_i64() < pair[1]["rev"].as_i64()), "in rev order");
+
+    // Taken back, it is no longer held: no client hears of it again.
+    f.hub.store.update_entry(&held.id, &json!({"text": "later", "status": "cancelled", "removed": true})).unwrap();
+    let events = f.catch_up(0).await;
+    assert!(!events.iter().any(|e| e["entry"]["id"] == held.id), "a message taken back is not held any more");
+}
+
+#[tokio::test]
 async fn catch_up_brings_an_artifact_renamed_while_the_client_was_offline() {
     let f = Fixture::new();
     f.add_bot("b");

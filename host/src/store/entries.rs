@@ -294,6 +294,19 @@ impl Store {
         Ok(st.query_map(params![bot_id, now_ms], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Every message held for a later time, in any chat (`scheduleSend`), oldest first — due or not. A
+    /// client hears about all of these however far back they sit (`events_stream`): the tray is the only
+    /// place such a message can be seen, edited or taken back.
+    pub fn scheduled_pending(&self) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE kind = 'user'
+               AND json_extract(data, '$.status') = 'scheduled' AND {NOT_REMOVED}
+             ORDER BY seq"
+        ))?;
+        Ok(st.query_map([], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Cards still waiting for the user to sign in to agent `backend`, oldest first.
     // ponytail: scans notices without an index; sign-ins are rare, add one if it shows up in profiles.
     pub fn pending_sign_ins(&self, backend: &str) -> Result<Vec<Entry>> {

@@ -193,10 +193,20 @@ that was off learns of a removal.
   other computer is away or slow. A session may never answer, so a request to one (an agent that computer doesn't
   offer as a Codync bot) doesn't hold one of the asker's 16 running slots. Such a request (from a bot or a session) stops waiting after a week, as failed. An answer to a session's own request
   always gets in.
+- **Bots**: a bot's `list_bots` lists the sessions here too, and its `message_bot` to a session's address leaves a
+  letter under the request's id, from the bot's id, which no rename or restart changes (`remote::to_local_session`); the bot's exchange notice
+  waits. When the session answers with `replyTo` = that id, the answer ends the notice and comes back as the bot's
+  reply turn, as from another computer, carrying the chain's hops; only the session it went to can end it, and only with the asking bot as `botId`. A letter a full inbox
+  (100) drops unread ends its request as failed. A bot's id or address name wins over a session's saved address that
+  happens to equal it (such a session isn't listed to bots). The
+  request is checked like any other (the bot's turn, the hop limit) but holds no running slot. A bot's request to a
+  session on another computer goes as a letter like any other, and the session's answer comes back the same way.
+  Kept in memory: after a host restart the session's answer reaches the bot as a new request, and an answer the bot
+  hadn't taken yet (it was busy) is lost, its notice already completed.
 - A Codync bot's agent runs with `CODYNC_BOT` set, so a user-scope `codync` server it loads refuses its calls
   (the bot has its team tools).
-- PostHog: `network_session` with `action` (`registered`, `renamed`, `posted`, `read`) and `kind`.
-- Not yet: bots messaging sessions, the turn tier (hooks) and push tier (plugins), showing sessions in the apps
+- PostHog: `network_session` with `action` (`registered`, `renamed`, `posted`, `read`, `answered`, `asked`, `ask_failed`, `expired`, `dropped`) and `kind` ([catalog](../reference/analytics-events.md)).
+- Not yet: the turn tier (hooks) and push tier (plugins), showing sessions in the apps
   (including picking one as a rule's target: today only `setNetworkRules` can name a session), and a setup command:
   [plan](../plans/agent-sessions.md).
 

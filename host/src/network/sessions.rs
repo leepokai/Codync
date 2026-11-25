@@ -196,18 +196,25 @@ impl Sessions {
     }
 
     /// Leaves `mail` for the session at `key`.
-    pub fn post(&self, store: &Store, key: &str, mail: Mail) -> Result<()> {
-        {
+    /// Leaves `mail` for the session at `key`; returns the ids of the oldest letters a full mailbox
+    /// dropped unread to make room.
+    pub fn post(&self, store: &Store, key: &str, mail: Mail) -> Result<Vec<String>> {
+        let dropped = {
             let _one = self.lock.locked();
+            // Checked under the same lock as the write: a session forgotten meanwhile gets no mail.
+            if !load(store).contains_key(key) {
+                bail!("that session is gone: it was forgotten after a long time unseen");
+            }
             let mut all = load_mail(store);
             let waiting = all.entry(key.to_owned()).or_default();
             waiting.push(mail);
             let over = waiting.len().saturating_sub(MAIL_MAX);
-            waiting.drain(..over);
+            let dropped = waiting.drain(..over).map(|m| m.id).collect();
             save_mail(store, &all)?;
-        }
+            dropped
+        };
         self.arrived.notify_waiters();
-        Ok(())
+        Ok(dropped)
     }
 
     pub fn unread(&self, store: &Store, key: &str) -> usize {

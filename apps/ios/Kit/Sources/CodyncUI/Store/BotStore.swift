@@ -345,7 +345,7 @@ public final class BotStore {
     }
 
     /// The agents a chat's box can switch its bot to, once per login: the installed ones and the one in use (`readyLogins`).
-    func readySeats(on: AgentLogin) -> [LoginSeat] {
+    public func readySeats(on: AgentLogin) -> [LoginSeat] {
         loginSeats((hello?.backends ?? []).filter { $0.available || $0.id == on.backend }, on: on) { $0.readyLogins(on: on) }
     }
 

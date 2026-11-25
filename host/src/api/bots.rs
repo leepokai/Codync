@@ -118,8 +118,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let (bot, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
             work::refuse_chat_only(hub, bot, name)?;
             if work::TOOLS.contains(&name) {
-                let (hub, bot, name, args) = (hub.clone(), bot.to_owned(), name.to_owned(), b["arguments"].clone());
-                tokio::task::spawn_blocking(move || work::call(&hub, &bot, &name, &args)).await??
+                work::call(hub, bot, name, &b["arguments"]).await?
             } else if crate::chat::profile::TOOLS.contains(&name) {
                 crate::chat::profile::call(hub, bot, name, &b["arguments"]).await?
             } else if name == crate::chat::decision::TOOL {

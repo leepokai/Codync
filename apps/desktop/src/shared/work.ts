@@ -65,6 +65,8 @@ export interface WorkTask {
   seat: boolean | null
 }
 
+export type ThreadPlace = 'here' | 'worktree'
+
 /** What a thread the user starts changes from its bot's setup, for its own task (`startThread`'s `setup`): the folder
  * it works in, its model with that model's settings, and how it is approved. What it leaves out is the bot's. */
 export interface ThreadSetup {
@@ -73,6 +75,8 @@ export interface ThreadSetup {
   /** The agent's login profile, `''` its default login; left out, the bot's. */
   loginProfile?: string
   cwd?: string
+  /** In a git project: its own worktree or the project itself; left out, the bot's worktree mode decides. */
+  place?: ThreadPlace
   model?: { id: string | null; options: Record<string, string> }
   approval?: { permission: string; mode: string | null }
   /** A thread opened beside a workflow to build it by talking: its workflow tools reach that one only. */

@@ -1,4 +1,6 @@
 {
+  "Here": "Hier",
+  "New worktree": "Neuer Worktree",
   "About usage analytics": "Über Nutzungsanalysen",
   "Access": "Zugang",
   "Account": "Konto",
@@ -7,7 +9,9 @@
   "Add a widget": "Widget hinzufügen",
   "Add a key to choose from {name}'s models.": "Füge einen Schlüssel hinzu, um aus den Modellen von {name} zu wählen.",
   "{name} wants to: {title}": "{name} möchte: {title}",
+  "Folder name": "Ordnername",
   "in {path}": "in {path}",
+  "Linked into each new worktree, so installed packages don't have to be installed again.": "Wird in jeden neuen Worktree verlinkt, damit installierte Pakete nicht erneut installiert werden müssen.",
   "N reject + say why": "N ablehnen + Grund nennen",
   "Add account": "Konto hinzufügen",
   "All providers": "Alle Anbieter",
@@ -56,6 +60,7 @@
   "Connecting…": "Verbindung wird hergestellt…",
   "If Codync saves you trips to your desk, a star on GitHub helps other people find it.": "Wenn Codync dir Wege zum Schreibtisch spart, hilft ein Stern auf GitHub anderen, es zu finden.",
   "No answer — the bot moved on": "Keine Antwort — der Bot ist weitergegangen",
+  "Shared folders": "Geteilte Ordner",
   "Suggested": "Empfohlen",
   "Something else": "Etwas anderes",
   "Updating…": "Wird aktualisiert…",
@@ -2514,5 +2519,7 @@
   "Every thread works in a worktree of its own; your checkout is never touched": "Jeder Thread arbeitet in einem eigenen Worktree; dein Checkout bleibt unberührt",
   "Its chat, routines and files live here.": "Hier liegen sein Chat, seine Routinen und Dateien.",
   "Search bots or models": "Bots oder Modelle suchen",
-  "Search models too": "Auch Modelle durchsuchen"
+  "Search models too": "Auch Modelle durchsuchen",
+  "Add folder": "Ordner hinzufügen",
+  "Remove folder": "Ordner entfernen"
 }

@@ -1,4 +1,6 @@
 {
+  "Here": "ここ",
+  "New worktree": "新しい worktree",
   "About usage analytics": "使用状況分析について",
   "Access": "アクセス",
   "Account": "アカウント",
@@ -7,7 +9,9 @@
   "Add a widget": "ウィジェットを追加する",
   "Add a key to choose from {name}'s models.": "キーを追加すると {name} のモデルを選べます。",
   "{name} wants to: {title}": "{name} の操作: {title}",
+  "Folder name": "フォルダ名",
   "in {path}": "場所: {path}",
+  "Linked into each new worktree, so installed packages don't have to be installed again.": "新しい worktree ごとにリンクされるので、インストール済みのパッケージを入れ直す必要はありません。",
   "N reject + say why": "N 拒否して理由を伝える",
   "Add account": "アカウントを追加",
   "All providers": "すべてのプロバイダ",
@@ -56,6 +60,7 @@
   "Connecting…": "接続中…",
   "If Codync saves you trips to your desk, a star on GitHub helps other people find it.": "Codync で机に戻る手間を省けているなら、GitHub でスターを付けていただくと、他の人にも見つけてもらいやすくなります。",
   "No answer — the bot moved on": "回答なし — ボットは先に進みました",
+  "Shared folders": "共有フォルダ",
   "Suggested": "おすすめ",
   "Something else": "その他の回答",
   "Updating…": "アップデート中…",
@@ -2514,5 +2519,7 @@
   "Every thread works in a worktree of its own; your checkout is never touched": "すべての thread が専用の worktree で作業し、あなたのチェックアウトには触れません",
   "Its chat, routines and files live here.": "チャット、ルーティン、ファイルはここにあります。",
   "Search bots or models": "ボットまたはモデルを検索",
-  "Search models too": "モデルも検索する"
+  "Search models too": "モデルも検索する",
+  "Add folder": "フォルダを追加",
+  "Remove folder": "フォルダを削除"
 }

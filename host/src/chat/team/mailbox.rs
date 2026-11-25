@@ -76,9 +76,12 @@ fn set_name(hub: &Hub, s: &Session, args: &Value) -> Result<Value> {
     let owner = format!("session:{}", s.key);
     let renamed =
         hub.network.sessions.rename(&hub.store, &s.key, &base, || hub.network.reserve(&hub.store, &base, &owner))?;
-    tracing::info!(kind = s.kind.as_str(), "a session took another address");
-    crate::analytics::network_session(hub, crate::analytics::SessionAction::Renamed, s.kind);
-    crate::network::publish(hub);
+    // An overlapping retry found the name already taken by this session: nothing changed.
+    if renamed.address != s.address {
+        tracing::info!(kind = s.kind.as_str(), "a session took another address");
+        crate::analytics::network_session(hub, crate::analytics::SessionAction::Renamed, s.kind);
+        crate::network::publish(hub);
+    }
     Ok(whoami(hub, &renamed))
 }
 

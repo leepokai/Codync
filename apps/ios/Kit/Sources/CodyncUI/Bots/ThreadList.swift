@@ -21,16 +21,17 @@ public struct ThreadList: View {
     @AppStorage("foldedThreadSections") private var foldedKeys = ""
     @State private var showsAll = false
     @State private var question: WorkQuestion?
-    /// A thread of the box without a bot, pushed over the list.
-    @State private var looseThread: ThreadSections<RosterItem>.Item?
+    /// A thread of the box without a bot, pushed over the list (one just started there too).
+    @Binding var looseThread: LooseThread?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let shownRecent = 8
 
     public init(sections: ThreadSections<RosterItem>, found: [ThreadSections<RosterItem>.Item]? = nil, store: @escaping (RosterItem) -> BotStore?,
                 openDetails: @escaping (RosterItem) -> Void, openChat: @escaping (RosterItem, WorkTask) -> Void,
-                openThread: @escaping (RosterItem, WorkTask) -> Void) {
+                openThread: @escaping (RosterItem, WorkTask) -> Void, looseThread: Binding<LooseThread?>) {
         self.sections = sections
+        _looseThread = looseThread
         self.found = found
         self.store = store
         self.openDetails = openDetails
@@ -54,13 +55,6 @@ public struct ThreadList: View {
         }
         .background(Palette.background)
         .workQuestion($question)
-        .navigationDestination(isPresented: Binding(get: { looseThread != nil }, set: { if !$0 { looseThread = nil } })) {
-            if let looseThread, let store = store(looseThread.of) {
-                WorkThreadView(botId: looseThread.of.bot.id, task: looseThread.task, openInChat: nil)
-                    .environment(store)
-                    .toolbar(.hidden, for: .tabBar)
-            }
-        }
     }
 
     /// What needs the user, the groups, then the rest.
@@ -175,7 +169,7 @@ public struct ThreadList: View {
     /// Its thread: over this list for the box without a bot, else in its bot's details.
     private func showThread(_ item: ThreadSections<RosterItem>.Item) {
         guard item.task.thread != nil else { return }
-        if item.of.bot.plain { looseThread = item } else { openThread(item.of, item.task) }
+        if item.of.bot.plain { looseThread = LooseThread(of: item.of, task: item.task) } else { openThread(item.of, item.task) }
     }
 
     /// Where it goes (its thread, its bot's chat), what its bot's box does with it (as its bot's details offer), what
@@ -209,6 +203,31 @@ public struct ThreadList: View {
         var keys = folded
         if keys.remove(key) == nil { keys.insert(key) }
         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { foldedKeys = keys.sorted().joined(separator: "\n") }
+    }
+}
+
+/// A thread of a computer's box without a bot: that box has no chat or details, so it opens over the list.
+public struct LooseThread {
+    public var of: RosterItem
+    public var task: WorkTask
+
+    public init(of: RosterItem, task: WorkTask) {
+        self.of = of
+        self.task = task
+    }
+}
+
+public extension View {
+    /// Pushes `thread` (a thread of a box without a bot) over this view, inside its navigation stack; `store` is its
+    /// computer's. Put it outside what the stack swaps (a list and its empty states), so it pushes whichever shows.
+    func looseThread(_ thread: Binding<LooseThread?>, store: @escaping (RosterItem) -> BotStore?) -> some View {
+        navigationDestination(isPresented: Binding(get: { thread.wrappedValue != nil }, set: { if !$0 { thread.wrappedValue = nil } })) {
+            if let loose = thread.wrappedValue, let store = store(loose.of) {
+                WorkThreadView(botId: loose.of.bot.id, task: loose.task, openInChat: nil)
+                    .environment(store)
+                    .toolbar(.hidden, for: .tabBar)
+            }
+        }
     }
 }
 

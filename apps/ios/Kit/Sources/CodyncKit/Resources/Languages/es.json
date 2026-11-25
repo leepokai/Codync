@@ -1,4 +1,6 @@
 {
+  "Here": "Aquí",
+  "New worktree": "Nuevo worktree",
   "About usage analytics": "Acerca del análisis de uso",
   "Access": "Acceso",
   "Account": "Cuenta",
@@ -7,7 +9,9 @@
   "Add a widget": "Agregar un widget",
   "Add a key to choose from {name}'s models.": "Añade una clave para elegir entre los modelos de {name}.",
   "{name} wants to: {title}": "{name} quiere: {title}",
+  "Folder name": "Nombre de la carpeta",
   "in {path}": "en {path}",
+  "Linked into each new worktree, so installed packages don't have to be installed again.": "Se enlaza en cada worktree nuevo, para no tener que volver a instalar los paquetes.",
   "N reject + say why": "N rechazar + decir por qué",
   "Add account": "Agregar cuenta",
   "Appearance": "Apariencia",
@@ -55,6 +59,7 @@
   "Connecting…": "Conectando…",
   "If Codync saves you trips to your desk, a star on GitHub helps other people find it.": "Si Codync te ahorra viajes a tu escritorio, una estrella en GitHub ayuda a otras personas a encontrarlo.",
   "No answer — the bot moved on": "Sin respuesta: el bot continuó",
+  "Shared folders": "Carpetas compartidas",
   "Suggested": "Sugerido",
   "Something else": "Otra cosa",
   "Updating…": "Actualizando…",
@@ -2497,5 +2502,7 @@
   "Threads work in the project itself": "Los threads trabajan en el propio proyecto",
   "A thread gets its own worktree when another thread works in the same repository": "Un thread recibe su propio worktree cuando otro thread trabaja en el mismo repositorio",
   "Every thread works in a worktree of its own; your checkout is never touched": "Cada thread trabaja en su propio worktree; tu checkout nunca se toca",
-  "Its chat, routines and files live here.": "Aquí viven su chat, sus rutinas y sus archivos."
+  "Its chat, routines and files live here.": "Aquí viven su chat, sus rutinas y sus archivos.",
+  "Add folder": "Añadir carpeta",
+  "Remove folder": "Quitar carpeta"
 }

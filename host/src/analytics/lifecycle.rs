@@ -31,6 +31,22 @@ pub fn host_started(hub: &Hub, service: bool, loopback: bool) {
     capture(hub, Event::HostStarted, p);
 }
 
+/// `host_install_failed`, once after an installer couldn't start the service. The
+/// marker carries no content and is removed after it is queued.
+pub fn host_install_failed(hub: &Hub) {
+    let marker = crate::service::data_dir().join("host-install-failed");
+    if !marker.exists() {
+        return;
+    }
+    if !hub.analytics.state() {
+        return;
+    }
+    capture(hub, Event::HostInstallFailed, Map::new());
+    if let Err(e) = std::fs::remove_file(&marker) {
+        tracing::warn!(error = format!("{e:#}"), "couldn't remove the host install failure marker");
+    }
+}
+
 /// `host_started`'s properties, from the version the host last started as (`None`: a host
 /// from before this was kept, which is neither new nor known to have changed).
 fn started(last: Option<&str>, version: &str, service: bool, loopback: bool) -> Map<String, Value> {
@@ -228,6 +244,21 @@ mod tests {
             "a host from before this was kept"
         );
         assert_eq!(started(None, "2.20.0", true, true)["loopback"], json!(true));
+    }
+
+    #[test]
+    fn an_install_failure_is_reported_once() {
+        let data = crate::service::data_dir();
+        std::fs::create_dir_all(&data).unwrap();
+        let marker = data.join("host-install-failed");
+        std::fs::write(&marker, b"").unwrap();
+        let sent = queued(|hub| {
+            host_install_failed(hub);
+            host_install_failed(hub);
+        });
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0]["event"], "host_install_failed");
+        assert!(!marker.exists());
     }
 
     /// The events `report` queued on a throwaway host.

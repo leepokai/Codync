@@ -323,7 +323,8 @@ async fn a_hop_limit_notice_reaches_the_lead_and_a_reset_reopens_the_chain() {
     let first = host.bot("first").await;
     let second = host.bot("second").await;
     for (name, target) in [("first", &second), ("second", &first)] {
-        std::fs::write(host.home.join(name).join("handoff.json"), json!({"target": target}).to_string()).unwrap();
+        std::fs::write(common::folder(&host.home, name).join("handoff.json"), json!({"target": target}).to_string())
+            .unwrap();
     }
     host.call("send", json!({"botId": first, "text": "CHAIN"})).await;
     let stopped = host
@@ -378,7 +379,7 @@ async fn a_hop_limit_notice_reaches_the_lead_and_a_reset_reopens_the_chain() {
     .await;
     tokio::time::timeout(Duration::from_secs(20), async {
         loop {
-            let path = host.home.join("first").join("prompts.jsonl");
+            let path = common::folder(&host.home, "first").join("prompts.jsonl");
             if std::fs::read_to_string(&path).unwrap_or_default().contains("starts at 0") {
                 return;
             }

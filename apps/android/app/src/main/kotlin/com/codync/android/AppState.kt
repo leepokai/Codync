@@ -155,6 +155,8 @@ data class AppState(
         get() = workflowsSupported && hello?.get("workflows")?.jsonPrimitive?.booleanOrNull == true
     /** The user can start a thread with a bot here (`startThread`). */
     internal val startsThreads: Boolean get() = hello?.get("startThread")?.jsonPrimitive?.booleanOrNull == true
+    /** A thread may start here without a bot, on an agent it names (`threadsWithoutBot`). */
+    internal val startsThreadsWithoutBot: Boolean get() = startsThreads && hello?.get("threadsWithoutBot")?.jsonPrimitive?.booleanOrNull == true
     /** A routine here can name the folder its runs work in (`routineFolder`). */
     internal val routineFolders: Boolean get() = hello?.get("routineFolder")?.jsonPrimitive?.booleanOrNull == true
     /** Bots have projects and a worktree mode, and live in their own folder (`hello.projects`). */

@@ -136,10 +136,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 crate::chat::outbox::call(hub, bot, name, &b["arguments"]).await?
             }
         }
-        // An agent on this computer that isn't a bot (`codync-host mcp network`).
+        // A coding agent's session on this computer that isn't a bot (`codync-host mcp network`).
         "agentCall" => {
-            crate::chat::team::assistant::local_call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"])
-                .await?
+            let caller: crate::network::sessions::Caller =
+                serde_json::from_value(b["agent"].clone()).context("agent is {kind, session, process, cwd, hint}")?;
+            crate::chat::team::assistant::local_call(hub, &caller, str_arg(&b, "name")?, &b["arguments"]).await?
         }
         "teamCall" => {
             let (caller, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);

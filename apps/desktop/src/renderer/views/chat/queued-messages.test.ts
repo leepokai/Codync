@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { canSchedule, canSteer, outsideQueue, waitingMessages } from './queued-messages.ts'
+import { canSchedule, canSteer, heldOutside, outsideQueue, waitingMessages } from './queued-messages.ts'
 import { withoutRemoved, type Entry, type EntryData } from '../../../shared/models.ts'
 
 const user = (id: string, status: string, data: EntryData = {}): Entry => ({
@@ -38,6 +38,18 @@ test('a scheduled message is always in the tray, by its fire time, and never in 
   const entriesBusy = [user('sent', 'sent'), user('q', 'queued'), user('soon', 'scheduled', { notBefore: 2_000 })]
   assert.deepEqual(waitingMessages(entriesBusy, true).map((e) => e.id), ['q', 'soon'], 'the live queue first, scheduled at the tail')
   assert.deepEqual(outsideQueue(entriesBusy, true).map((e) => e.id), ['sent'], 'neither kind shows in the chat while it waits')
+})
+
+test('a scheduled message older than the loaded window still reaches the tray, from the host', () => {
+  // The chat's window holds the newest entries only; `hello.held` lists every message still held.
+  const entries = [user('sent', 'sent'), user('queued', 'queued')]
+  const held = [user('old', 'scheduled', { notBefore: 1_000 }), { ...user('other', 'scheduled', { notBefore: 1_000 }), botId: 'c' }]
+  assert.deepEqual(heldOutside(entries, 'b', held).map((e) => e.id), ['old'], 'this chat only')
+  assert.deepEqual(waitingMessages([...entries, ...heldOutside(entries, 'b', held)], true).map((e) => e.id), ['queued', 'old'])
+  // An entry the chat holds wins: an edit, a cancel or the fire itself lands there first.
+  const edited = [user('old', 'scheduled', { notBefore: 9_000 })]
+  assert.deepEqual(heldOutside(edited, 'b', held), [], 'the chat\u2019s own copy is the newer one')
+  assert.deepEqual(heldOutside(entries, 'b', undefined), [], 'an older host sends none')
 })
 
 test('only a host that schedules gets the schedule affordances', () => {

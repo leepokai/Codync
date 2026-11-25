@@ -127,10 +127,12 @@ waiting one is moved by its actor, as `steer` and `unqueue` are). *Send now* and
 `sendScheduledNow` delivers through the ordinary queue, `cancelScheduled` never delivers. Hosts
 before the feature advertise no `scheduleSend` capability, so clients hide the affordances.
 
-A held message reaches the tray however far back its place in the chat is: the connect catch-up
-(`events_stream`) adds every entry still `scheduled`, which a fresh client's newest-entries-per-bot
-window would otherwise drop — the tray being the one place such a message can be seen, edited or
-taken back, while the sweep would still deliver it.
+A held message reaches the tray however far back its place in the chat is: the host's `hello` lists every
+entry still `scheduled` in any chat (`hello.held`), and the tray shows what the chat's own loaded window
+does not carry — the window holding the newest entries per bot, an older held message would otherwise be
+missing from the one place it can be seen, edited or taken back, while the sweep still delivered it. An
+entry the chat holds wins over the hello's copy, since an edit, a cancel or the fire itself lands there
+first, and a message taken back is no longer held.
 
 Analytics: `message_scheduled` (`scheduleSend`; `kind`, `agent`, `reply`),
 `message_schedule_edited` (`what`: `time`/`text`), `scheduled_message_removed`,

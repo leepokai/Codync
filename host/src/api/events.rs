@@ -63,19 +63,7 @@ pub fn events_stream(
     for bot in hub.bots_json(since)? {
         catch_up.push(json!({"type": "bot", "rev": bot["rev"], "bot": bot}));
     }
-    let mut caught = std::collections::HashSet::new();
     for e in hub.store.entries_since(since, CATCH_UP_PER_BOT)? {
-        caught.insert(e.id.clone());
-        catch_up.push(json!({"type": "entry", "rev": e.rev, "entry": e}));
-    }
-    // A message held for a later time reaches the client however far back its place in the transcript is.
-    // A fresh client's window is the newest entries per bot, so an older held message would otherwise be
-    // dropped — and the tray, the one place it can be seen, edited or taken back, would be empty of it
-    // while the sweep still delivers it. Duplicates are fine (clients upsert by id); skip them anyway.
-    for e in hub.store.scheduled_pending()? {
-        if caught.contains(&e.id) {
-            continue;
-        }
         catch_up.push(json!({"type": "entry", "rev": e.rev, "entry": e}));
     }
     catch_up.extend(crate::chat::artifacts::since(&hub.store, since));
@@ -98,6 +86,9 @@ pub fn events_stream(
         "workflows": true,
         // A message can be scheduled for later (`scheduleSend`; the sweep delivers it).
         "scheduleSend": true,
+        // Every message still held for later, in any chat: the client's tray shows them without loading
+        // each chat's whole transcript (a held message can sit far outside the newest-entries window).
+        "held": hub.store.scheduled_pending()?,
     });
     catch_up.insert(0, hello);
 

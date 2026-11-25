@@ -11,7 +11,7 @@ import { messagePreview } from '../../lib/message-preview'
 import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
 import { ComposerReveal } from './Composer'
-import { canSchedule, canSteer, waitingMessages } from './queued-messages'
+import { canSchedule, canSteer, heldOutside, waitingMessages } from './queued-messages'
 import { ScheduleSheet } from './ScheduleSheet'
 import './queued-messages.css'
 import './schedule-sheet.css'
@@ -26,7 +26,9 @@ const EXIT_MS = 300
 export function QueuedMessages({ botId }: { botId: string }) {
   const store = useStore()
   const bot = store.bots.get(botId)
-  const waiting = waitingMessages(hidingCalls(store.allEntries(botId)), !!bot && isWorking(bot))
+  // A held message can sit far behind the loaded window (`hello.held` carries it), so the tray reads both.
+  const entries = hidingCalls(store.allEntries(botId))
+  const waiting = waitingMessages([...entries, ...heldOutside(entries, botId, store.hello?.held)], !!bot && isWorking(bot))
   const rows = useLeaving(waiting)
   const list = useRevealSent(waiting.at(-1), store.lastSentNonce)
   const tray = usePresence(waiting.length > 0, EXIT_MS)

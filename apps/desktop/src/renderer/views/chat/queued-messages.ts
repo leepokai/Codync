@@ -30,6 +30,16 @@ export function waitingMessages(entries: Entry[], botWorking: boolean): Entry[] 
   return [...live, ...held]
 }
 
+/**
+ * The held messages the chat's own entries do not carry: the host's `hello.held` lists every message still
+ * scheduled in any chat, so one older than the chat's loaded window still reaches the tray. An entry the chat
+ * holds wins — an edit, a cancel or the fire itself lands there first.
+ */
+export function heldOutside(entries: Entry[], botId: string, held: Entry[] | undefined): Entry[] {
+  if (!held?.length) return []
+  return held.filter((e) => e.botId === botId && scheduled(e) && !entries.some((x) => x.id === e.id))
+}
+
 /** The chat's entries without the ones the queue shows. */
 export function outsideQueue(entries: Entry[], botWorking: boolean): Entry[] {
   return entries.filter((e) => !(botWorking && waits(e)) && !scheduled(e))

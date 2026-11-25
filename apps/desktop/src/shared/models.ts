@@ -758,6 +758,10 @@ export interface Hello {
   projects?: boolean
   /** A message can be scheduled for later (`scheduleSend`; the host's sweep delivers it). Missing means it cannot. */
   scheduleSend?: boolean
+  /** Every message still held for later, in any chat. A held message can sit far outside the chat's loaded
+   * window, where the tray would never see it; this is where it comes from. Missing on an older host, or
+   * when nothing is held. */
+  held?: Entry[]
   /** A new thread may name its place in a git project (`startThread` with `setup.place`). */
   threadPlace?: boolean
   /** Bots have `sharedFolders`, linked into each new worktree of their projects. */

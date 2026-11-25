@@ -131,6 +131,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "workflows": true,
                 // A message can be scheduled for later (`scheduleSend`; the sweep delivers it).
                 "scheduleSend": true,
+                // Every message still held for later, in any chat: the client's tray shows them without
+                // loading each chat's whole transcript (an old held message sits outside its window).
+                "held": hub.store.scheduled_pending()?,
             })
         }
         "refreshBackends" => {

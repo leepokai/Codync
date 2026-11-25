@@ -82,7 +82,7 @@ async fn incremental_sync_replays_deletions_only_after_the_saved_cursor() {
 }
 
 #[tokio::test]
-async fn catch_up_brings_a_message_held_for_later_however_old_it_is() {
+async fn the_hello_lists_a_held_message_however_old_it_is_in_the_chat() {
     let f = Fixture::new();
     f.add_bot("b");
     let lane = crate::store::Lane::main("b");
@@ -102,15 +102,23 @@ async fn catch_up_brings_a_message_held_for_later_however_old_it_is() {
     }
     let events = f.catch_up(0).await;
     assert!(
-        events.iter().any(|e| e["type"] == "entry" && e["entry"]["id"] == held.id),
-        "a held message older than the window still reaches the client"
+        events[0]["held"].as_array().is_some_and(|rows| rows.iter().any(|e| e["id"] == held.id)),
+        "the held message is in the hello, whatever its place in the chat"
     );
-    assert!(events[2..].windows(2).all(|pair| pair[0]["rev"].as_i64() < pair[1]["rev"].as_i64()), "in rev order");
+    // It is not a transcript entry: `loadOlder` pages from the lowest `seq` it holds, so one far below the
+    // window would make paging skip everything in between.
+    assert!(
+        !events.iter().any(|e| e["type"] == "entry" && e["entry"]["id"] == held.id),
+        "and not among the window's entries"
+    );
 
-    // Taken back, it is no longer held: no client hears of it again.
+    // Taken back, it is no longer held: no client is told about it again.
     f.hub.store.update_entry(&held.id, &json!({"text": "later", "status": "cancelled", "removed": true})).unwrap();
     let events = f.catch_up(0).await;
-    assert!(!events.iter().any(|e| e["entry"]["id"] == held.id), "a message taken back is not held any more");
+    assert!(
+        !events[0]["held"].as_array().is_some_and(|rows| rows.iter().any(|e| e["id"] == held.id)),
+        "a message taken back is not held any more"
+    );
 }
 
 #[tokio::test]

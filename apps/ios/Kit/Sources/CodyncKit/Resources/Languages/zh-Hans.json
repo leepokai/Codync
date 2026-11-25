@@ -2481,5 +2481,17 @@
   "Folder": "文件夹",
   "Bot's folder": "Bot 的文件夹",
   "Use the bot's folder": "改用 Bot 的文件夹",
-  "Each run works here in a thread of its own.": "每次运行都会在这里用独立的 thread 进行。"
+  "Each run works here in a thread of its own.": "每次运行都会在这里用独立的 thread 进行。",
+  "Projects": "项目",
+  "Threads start in the default project. The bot can work elsewhere when you ask.": "thread 从默认项目开始。你要求时，Bot 也可以在别处工作。",
+  "Add project": "添加项目",
+  "Make default": "设为默认",
+  "Remove project": "移除项目",
+  "Worktree mode": "worktree 模式",
+  "Side by side": "并行时",
+  "Always": "总是",
+  "Threads work in the project itself": "thread 直接在项目里工作",
+  "A thread gets its own worktree when another thread works in the same repository": "同一个仓库里已有其他 thread 在工作时，thread 会有自己的 worktree",
+  "Every thread works in a worktree of its own; your checkout is never touched": "每个 thread 都在自己的 worktree 里工作，你的 checkout 永远不会被动到",
+  "Its chat, routines and files live here.": "它的聊天、例行任务和文件都在这里。"
 }

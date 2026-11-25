@@ -11,6 +11,7 @@ import { useTr } from '../../lib/use-language'
 import { refKey, sameRef, type BotRef, type RosterItem } from '../../store/app-model'
 import type { BotStore } from '../../store/bot-store'
 import type { OutgoingFile } from '../../store/outgoing-files'
+import { useRecentFolders } from '../../store/use-folder-picker'
 import { useAgentModels } from '../bots/agent-models'
 import { lastPathComponent } from '../bots/drafts'
 import { FolderPicker } from '../bots/FolderPicker'
@@ -19,6 +20,7 @@ import { Composer } from './Composer'
 import { ModelPicker } from '../bots/ModelPicker'
 import { readySeats } from '../bots/seats'
 import { Option, useApprovalMenu } from './RunOptions'
+import { defaultFolder, threadFolders } from './thread-folders'
 import './chat.css'
 import './composer.css'
 import './chat-controls.css'
@@ -104,7 +106,23 @@ export function ThreadStart({ bots, computers = [], of, choose, started, base, f
 
   const home = store.hello?.home ?? ''
   const ownFolder = folder ?? (bot ? folderName(bot, tr) : lastPathComponent(home) || home)
-  const folders = (): MenuItem[] => [
+  // From a host with projects: the bot's projects first, then its own folder, then recent folders.
+  const listsProjects = !!bot && !folder && store.hasProjects
+  const recent = useRecentFolders(listsProjects)
+  const projectFolders = (b: Bot): MenuItem[] => {
+    const list = threadFolders(b, recent)
+    const picked = setup.cwd ?? defaultFolder(b)
+    return [
+      ...list.map((f, at): MenuItem => ({
+        title: f.home ? 'Own folder' : lastPathComponent(f.path), verbatim: !f.home, detail: f.path,
+        divider: f.recent && !list[at - 1]?.recent, selected: picked === f.path, action: () => change({ cwd: f.cwd }),
+      })),
+      // One picked with Browse that isn't listed.
+      ...(list.some((f) => f.path === picked) ? [] : [{ title: lastPathComponent(picked), verbatim: true, detail: picked, selected: true, action: () => {} }]),
+      { title: 'Browse other folders', icon: 'folder', divider: true, action: () => setBrowsing(true) },
+    ]
+  }
+  const folders = (): MenuItem[] => listsProjects && bot ? projectFolders(bot) : [
     { title: ownFolder, verbatim: true, detail: folder || bot?.managedWorkspace ? undefined : (bot?.cwd ?? home), selected: !setup.cwd, action: () => change({ cwd: undefined }) },
     ...(setup.cwd ? [{ title: lastPathComponent(setup.cwd), verbatim: true, detail: setup.cwd, selected: true, action: () => {} }] : []),
     { title: 'Browse other folders', icon: 'folder', divider: true, action: () => setBrowsing(true) },
@@ -155,7 +173,7 @@ export function ThreadStart({ bots, computers = [], of, choose, started, base, f
           <Composer key={refKey(of.ref) + (bot ? '' : '/plain')} botId={bot?.id ?? ''} thread={{ draftKey, placeholder: placeholder ?? tr('What should it work on?'), working: false, files: store.startsThreadsWithFiles, keepFiles: `thread/new/${base?.workflow ?? ''}`, send, controls: <>
             <Option title="Choose a bot" items={others} search={bots.length > 8 ? 'Search bots' : undefined} disabled={bots.length + (plainOn ? 1 : 0) < 2} leading={bot ? <BotAvatar bot={bot} size={16} animated={false} /> : <NoBotAvatar size={16} />} label={bot ? bot.name : tr('No bot')} strong />
             {bot ? null : <Option title="Computer" items={places} disabled={computers.length < 2} leading={<Icon name="desktopcomputer" size={11} />} label={store.hostName} />}
-            <Option title="Workspace" items={folders} leading={<Icon name="folder" size={11} />} label={setup.cwd ? lastPathComponent(setup.cwd) : ownFolder} />
+            <Option title="Workspace" items={folders} leading={<Icon name="folder" size={11} />} label={setup.cwd ? (setup.cwd === bot?.cwd ? tr('Own folder') : lastPathComponent(setup.cwd)) : ownFolder} />
             {/* The agent and its login are in the panel's rail; another agent starts from its own defaults. */}
             <ModelPicker
               backend={backend} model={model} models={models} set={(m) => change({ model: m })} approval={ways} seats={seats}
@@ -166,9 +184,9 @@ export function ThreadStart({ bots, computers = [], of, choose, started, base, f
       </div>
       <Sheet open={browsing} onClose={() => setBrowsing(false)} width={460} height={520}>
         <FolderPicker
-          start={setup.cwd ?? (bot?.cwd || home || null)}
+          start={setup.cwd ?? ((bot ? defaultFolder(bot) : home) || null)}
           onPick={(path) => {
-            change({ cwd: path === (bot?.cwd ?? home) ? undefined : path })
+            change({ cwd: path === (bot ? defaultFolder(bot) : home) ? undefined : path })
             setBrowsing(false)
           }}
         />

@@ -250,6 +250,7 @@ mod tests {
             workflow: None,
             section: None,
             notify: None,
+            projects: vec![],
             connectors: vec![],
             skills: vec![],
             computer: false,
@@ -263,7 +264,7 @@ mod tests {
             auto_name: false,
             thread_of: None,
             max_threads: 3,
-            thread_worktrees: true,
+            worktree_mode: crate::store::WorktreeMode::SideBySide,
             created_at: 0,
         };
         // Several at once: each with its own rev, in order.

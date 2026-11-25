@@ -16,14 +16,33 @@ use super::overlay::input_line;
 use super::set_cursor;
 use super::style::{FACE, avatar, bot_color, face_style, theme};
 use super::time::{MONTHS, local, month_day};
+use crate::store::WorktreeMode;
 use codync_mem::compaction::Threshold;
 
-/// A compaction threshold as the apps name it: a choice, or the size as "120K".
+/// A worktree mode's name and its one line.
+fn worktree_mode_text(mode: WorktreeMode) -> (&'static str, &'static str) {
+    match mode {
+        WorktreeMode::Off => ("Off", "Threads work in the project itself"),
+        WorktreeMode::SideBySide => {
+            ("Side by side", "A thread gets its own worktree when another thread works in the same repository")
+        }
+        WorktreeMode::Always => {
+            ("Always", "Every thread works in a worktree of its own; your checkout is never touched")
+        }
+    }
+}
+
+/// A folder's last name, the whole path when it has none.
+fn folder_name(path: &str) -> String {
+    std::path::Path::new(path).file_name().map_or_else(|| path.to_owned(), |n| n.to_string_lossy().into_owned())
+}
+
 /// A switch field's value.
 fn switch(on: bool) -> &'static str {
     if on { "◉ On   ○ Off" } else { "○ On   ◉ Off" }
 }
 
+/// A compaction threshold as the apps name it: a choice, or the size as "120K".
 fn compaction_label(at: Threshold) -> String {
     match at {
         Threshold::Off => tr("Auto (default)").into_owned(),
@@ -95,6 +114,7 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
         Field::ThreadWorktrees => {
             tr("Threads that work at once in this repository each get their own branch.").into_owned()
         }
+        Field::WorktreeMode => tr(worktree_mode_text(f.worktree_mode).1).into_owned(),
         Field::Team => {
             tr("Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.").into_owned()
         }
@@ -152,6 +172,9 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::Advisor => "Advisor mode",
             Field::ThreadAgent => "Threads' agent",
             Field::ThreadFallbacks => "Threads' fallbacks",
+            Field::Projects => "Projects",
+            Field::WorktreeMode => "Worktree mode",
+            Field::Folder if f.projects.is_some() => "Own folder",
             Field::Folder => "Workspace",
             Field::MaxThreads => "Threads at once",
             Field::ThreadWorktrees => "Worktree per thread",
@@ -325,6 +348,37 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     }
                 }
             }
+            Field::Projects => {
+                let list = f.projects.as_deref().unwrap_or_default();
+                let mut items: Vec<String> = list.iter().map(|p| folder_name(p)).collect();
+                if let Some(first) = items.first_mut() {
+                    *first = format!("{first} · {}", tr("Default"));
+                }
+                let mut x = vx;
+                for (j, item) in items.iter().chain([&"+ add".to_owned()]).enumerate() {
+                    let picked = active && j == f.sub && j < list.len();
+                    let s = if picked { t.bold.add_modifier(Modifier::UNDERLINED) } else { t.text };
+                    if x + u(w(item)) >= inner.right() {
+                        put(buf, x, y, 2, "…", t.dim.patch(base));
+                        break;
+                    }
+                    x = put(buf, x, y, u(w(item)), item, s.patch(base)) + 2;
+                }
+                // The picked one's full path, on the line under the field.
+                if let Some(path) = list.get(f.sub).filter(|_| active)
+                    && y + 1 < inner.bottom().saturating_sub(FOOTER)
+                {
+                    put(buf, vx, y + 1, vw, &tilde(path, &app.home), t.dim.patch(t.panel));
+                }
+            }
+            Field::WorktreeMode => {
+                let label = tr(worktree_mode_text(f.worktree_mode).0);
+                put(buf, vx, y, vw, &format!("‹ {label} ›"), t.text.patch(base));
+            }
+            Field::Folder if f.projects.is_some() => {
+                let home = app.bots.get(&f.bot_id).map(|b| tilde(&b.cwd, &app.home)).unwrap_or_default();
+                put(buf, vx, y, vw, &truncate(&home, usize::from(vw)), t.text.patch(base));
+            }
             Field::Folder => {
                 put(
                     buf,
@@ -441,7 +495,9 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     let x = put(buf, inner.x, by, 14, save, t.btn_primary) + 1;
     put(buf, x, by, 12, " esc Cancel ", t.text.patch(t.btn).add_modifier(Modifier::BOLD));
     let hint = match f.current() {
+        Field::Folder if f.projects.is_some() => "c copy · tab next field",
         Field::Folder => "↵ project folder · backspace own folder · tab next field",
+        Field::Projects => "←→ pick · ↵ add · d make default · x remove · tab next",
         Field::Connectors => "←→ move · space toggle · tab next",
         Field::ModelOptions => "←→ move · space change · tab next",
         Field::Skills => "←→ move · space toggle · i details · tab next",
@@ -457,6 +513,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         | Field::Advisor
         | Field::MaxThreads
         | Field::ThreadWorktrees
+        | Field::WorktreeMode
         | Field::Color
         | Field::Shape
         | Field::Approvals
@@ -531,11 +588,7 @@ pub(super) fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm)
         put(buf, inner.x, y, 2, if on { "☑" } else { "☐" }, if on { t.bold } else { t.dim }.patch(base));
         put_line(buf, inner.x + 2, y, 2, &avatar(app, b));
         put(buf, inner.x + 5, y, inner.width / 2, &b.name, if sel { t.bold } else { t.text }.patch(base));
-        let folder = if b.managed_workspace {
-            "own folder".to_owned()
-        } else {
-            std::path::Path::new(&b.cwd).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default()
-        };
+        let folder = b.work_folder().map_or_else(|| "own folder".to_owned(), folder_name);
         rput(buf, inner.right(), y, &truncate(&folder, usize::from(inner.width / 3)), t.dim.patch(base));
     }
     let by = inner.bottom() - 1;

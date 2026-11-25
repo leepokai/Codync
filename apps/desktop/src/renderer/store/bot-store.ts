@@ -255,6 +255,11 @@ export class BotStore extends BotSync {
     return this.hello?.threadFiles === true
   }
 
+  /** Bots have a list of projects and a worktree mode here; their `cwd` is always their own folder. */
+  get hasProjects() {
+    return this.hello?.projects === true
+  }
+
   /** A routine can name the folder its runs work in here (`saveRoutine` with `folder`). */
   get routinesHaveFolders() {
     return this.hello?.routineFolder === true

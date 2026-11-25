@@ -49,7 +49,9 @@ fn rows(hub: &Hub, from: &str, remote: &[Peer], keep: impl Fn(&BotConfig) -> boo
             words: format!("{} {}", c.name, c.description).to_lowercase(),
             value: json!({
                 "id": c.id, "name": c.name, "description": c.description, "kind": AgentKind::Codync,
-                "backend": c.backend, "cwd": c.cwd, "status": hub.runtime(&c.id).status,
+                // Where its code work is: its default project, else its own folder.
+                "backend": c.backend, "cwd": crate::agent::workspace::work_folder(&c), "projects": c.projects,
+                "status": hub.runtime(&c.id).status,
             }),
             computer: None,
             online: true,

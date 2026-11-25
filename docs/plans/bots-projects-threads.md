@@ -7,9 +7,9 @@ the separate "bot home and projects" and "thread profile" plans. Answers part of
 | Part | State |
 | --- | --- |
 | Recap when a bot's folder changes | **Built**, in dev (`a5fccdbf7`) |
-| [Bot home and projects](#3-bot-home-and-projects) | **Decided**, not built |
-| [Worktree mode](#worktree-mode) (Off / Side by side / Always) | **Decided**, not built |
-| [Worktrees counted per repository](#count-side-by-side-per-repository) | **Decided**, not built |
+| [Bot home and projects](#3-bot-home-and-projects) | **Built**, host (stages 5 and 6); the clients' Projects section next |
+| [Worktree mode](#worktree-mode) (Off / Side by side / Always) | **Built**, host (stage 5); the clients' choice next |
+| [Worktrees counted per repository](#count-side-by-side-per-repository) | **Built** (stage 5) |
 | [Thread profile, no fork](#7-thread-profile-no-fork) | **Built** (stage 2) |
 | [A user's thread leaves the bot's queue](#6-a-users-thread-leaves-the-bots-queue) | **Built** (stage 3) |
 | [A task names its place](#a-task-names-its-place) (`add_task` `place`) | Proposed |
@@ -190,7 +190,8 @@ until its task ends. Moving the bot home flips `workspace::is_managed`, so the m
 - **Stamps `sharedMemory: false`** where unset (it is derived from `is_managed` when unset, `chat/memory/mod.rs`),
   so a project bot doesn't silently start reading and writing "yours".
 - **Moves its uploads**: `bots/<id>/uploads` into `workspace/uploads` (`uploads::root` changes with `is_managed`).
-- **Stamps each routine with the old folder**, so it keeps running where it did.
+- **Stamps each routine with the old folder**, so it keeps running where it did; not on a bot whose routines run in
+  its chat (computer use, Manage the team), whose runs keep those tools and run at home.
 - Notes that the harness's own memory changes folder: `own_memory` writes its switch into the home folder, and the
   Memory screen's Claude Code section (`chat/memory/api.rs` `project_memory`, keyed by `cwd`) shows the home's.
 
@@ -540,8 +541,17 @@ Each stage ships on its own, in this order; host-only stages need no client rele
 4. **Routine `folder`.** Host + clients (the routine editor). Built: any existing folder for now (projects come in 5);
    a run with one always works in a thread, and a folder that went fails the run.
 5. **Projects**: `projects`, `add_task` `folder`, `worktreeMode`, side by side per repository, the Workspace line,
-   the clients' Projects section, cleanup in the hourly look (§3, §4). Minor version, every client.
-6. **Migration** (§3). Needs 4 and 5.
+   the clients' Projects section, cleanup in the hourly look (§3, §4). Minor version, every client. Host built: as
+   [work: where a thread works](../features/work.md#where-a-thread-works) says. Beyond the plan: the box of threads
+   without a bot keeps the home folder as its `cwd` (it gets no projects; §5 is proposed); a thread in a worktree
+   doesn't count toward side by side (its checkout is its own); the bot hears a change to its projects as a profile
+   update; `projectGitRepos` (bools in `projects`' order) tells the clients which projects are repositories, and
+   `gitRepo` means the default project for older apps; schema 14 stores `worktreeMode` in place of the bool.
+   `market/verify.rs` keeps checking a connector in the bot's own folder, where the chat's agent starts it now.
+   Clients next.
+6. **Migration** (§3). Needs 4 and 5. Built with 5 (`hub/projects/migrate.rs`). A routine stamped with the old folder
+   always runs in a thread, so on a bot that uses the computer or manages the team (whose runs were turns in its chat)
+   it loses those tools: that is the price of keeping the folder, kept as the plan says.
 7. Proposed parts, once decided: a task's place, filling a new worktree, threads without a bot's own folder,
    `ask_task`.
 

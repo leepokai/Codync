@@ -9,6 +9,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 
 ## 2.54.0
 ### zh-Hant
+- Thread 不再於結束一週後被刪除：在 Threads 分頁捲到最底就會載入更早的 thread，可以照常打開和繼續傳訊息。想自動清理的話，在「電腦」裡該電腦的「刪除舊的 thread」選 7、30 或 90 天後，預設是永久保留。
 - 例行工作可以指定資料夾：在例行工作編輯器的「資料夾」選一個資料夾，每次執行都會在那個資料夾裡用自己的 thread 進行；不選就在 Bot 的資料夾。
 - Bot 設定的「工作區」新增「專案」：Bot 一律在自己的資料夾，thread 在預設專案工作；專案是 git 儲存庫時可選「worktree 模式」。原本在專案裡的 Bot 會搬回自己的資料夾，專案保留為第一個。
 - git 專案新增「共用資料夾」：列出的資料夾（例如 node_modules）會連結到每個新的 worktree，不必重新安裝套件。
@@ -24,6 +25,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 在中國大陸也能收到推播通知了。
 
 ### en-US
+- Threads are no longer deleted a week after they end: scroll to the end of the Threads tab to load older ones, which open and take messages as before. To clean up on its own, pick 7, 30 or 90 days under Delete old threads for that computer in Computers; the default keeps them forever.
 - A routine can name a folder: pick one under Folder in the routine editor and each run works there in a thread of its own; without one it runs in the bot's folder.
 - Bot settings add Projects: a bot always lives in its own folder, and threads work in its default project. Worktree mode (Off, Side by side, Always) shows for git projects. Bots that worked in a project move home, the project kept as their first.
 - Git projects add Shared folders: folders like node_modules are linked into each new worktree, so packages aren't installed again.

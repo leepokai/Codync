@@ -196,6 +196,10 @@ class AppStore internal constructor(
         val screen = snapshot.screen?.let { runCatching { ScreenState.decode(it) }.getOrNull() }
         mirrorBots = snapshot.bots
         mutableState.update { current -> current.copy(bots = withMoves(snapshot.bots, pendingSectionMoves), entries = withRemovals(snapshot.entries, pendingRemovals),
+            // An ended thread that leaves its bot's work stays among the older threads listed.
+            olderThreads = current.olderThreads?.let { older ->
+                snapshot.bots.fold(older) { o, bot -> o.keep(bot.id, current.bots.firstOrNull { it.id == bot.id }?.work.orEmpty(), bot.work) }
+            },
             pending = snapshot.pending, usage = snapshot.usage, screen = screen, mirrorRevision = snapshot.rev, icons = snapshot.icons,
             historyEnd = if (stranded) current.historyEnd - open!! else current.historyEnd,
             selectedBot = current.selectedBot?.takeIf { id -> snapshot.bots.any { it.id == id } }) }

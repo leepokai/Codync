@@ -97,7 +97,8 @@ private sealed interface DetailsPage {
     var thread by remember(request) { mutableStateOf(request.taskId) }
     NavStack(listOfNotNull(DetailsPage.Root, thread?.let(DetailsPage::Thread)), key = { (it as? DetailsPage.Thread)?.taskId.orEmpty() }, pop = { thread = null }) { page ->
         when (page) {
-            is DetailsPage.Thread -> WorkThreadView(bot, page.taskId, state, store, openInChat = openInChat) { thread = null }
+            // An older thread of the bot's opens here too.
+            is DetailsPage.Thread -> WorkThreadView(state.withOlder(bot), page.taskId, state, store, openInChat = openInChat) { thread = null }
             DetailsPage.Root -> Box(Modifier.fillMaxSize().background(Palette.background)) {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally) {

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -24,6 +25,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +52,7 @@ import com.codync.android.core.threadSections
 import com.codync.android.core.wherePath
 import com.codync.android.core.workActions
 import com.codync.android.design.*
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /** A bot in the Threads list, with its computer's state. */
 internal class WorkingBot(val state: AppState, val bot: Bot)
@@ -56,11 +60,12 @@ internal class WorkingBot(val state: AppState, val bot: Bot)
 /**
  * The bots of the computers the roster shows ([shown], in its order), each computer's in the order its roster shows them
  * (pinned, then section by section as [sectionOrder] has that computer's), a folded section's or computer's included; then
- * each of those computers' box of threads started without a bot, which the roster hides.
+ * each of those computers' box of threads started without a bot, which the roster hides. Each bot's `work` holds its
+ * computer's older threads it doesn't ([withOlder]), so the list, search and a thread's page treat them as its own.
  */
 internal fun threadRoster(shown: List<AppState>, sectionOrder: (AppState) -> List<String>): List<WorkingBot> =
-    shown.flatMap { state -> shownBots(roster(state.bots), sectionOrder(state)).map { WorkingBot(state, it) } } +
-        shown.mapNotNull { state -> state.bots.firstOrNull { it.plain && !it.deleted }?.let { WorkingBot(state, it) } }
+    shown.flatMap { state -> shownBots(roster(state.bots), sectionOrder(state)).map { WorkingBot(state, state.withOlder(it)) } } +
+        shown.mapNotNull { state -> state.bots.firstOrNull { it.plain && !it.deleted }?.let { WorkingBot(state, state.withOlder(it)) } }
 
 /** How many of [roster]'s tasks a thread works on now: the tab's badge. */
 internal fun workingCount(roster: List<WorkingBot>): Int = roster.sumOf { of -> of.bot.work.count { it.status == WorkStatus.Working } }
@@ -81,10 +86,10 @@ internal data class LooseThread(val computerId: String, val botId: String, val t
  * [openLoose] sets and clears), and one without a thread opens nothing (the desktop's).
  */
 @Composable internal fun ThreadsView(app: AccountContext, account: () -> Unit, roster: List<WorkingBot>, filter: ComputerFilter, accounts: AccountStore,
-    bottomInset: Dp, loose: LooseThread?, openLoose: (LooseThread?) -> Unit) {
+    bottomInset: Dp, loose: LooseThread?, active: Boolean, openLoose: (LooseThread?) -> Unit) {
     NavStack(listOfNotNull<Any>(ThreadsPage, loose), key = { (it as? LooseThread)?.let { l -> "${l.computerId}/${l.botId}/${l.taskId}" } ?: "threads" }, pop = { openLoose(null) }) { page ->
         if (page is LooseThread) LooseThreadPage(page, roster, accounts) { openLoose(null) }
-        else ThreadsList(app, account, roster, filter, accounts, bottomInset, openLoose)
+        else ThreadsList(app, account, roster, filter, accounts, bottomInset, active, openLoose)
     }
 }
 
@@ -102,7 +107,8 @@ private data object ThreadsPage
     }
 }
 
-@Composable private fun ThreadsList(app: AccountContext, account: () -> Unit, roster: List<WorkingBot>, filter: ComputerFilter, accounts: AccountStore, bottomInset: Dp, openLoose: (LooseThread) -> Unit) {
+@Composable private fun ThreadsList(app: AccountContext, account: () -> Unit, roster: List<WorkingBot>, filter: ComputerFilter, accounts: AccountStore, bottomInset: Dp, active: Boolean,
+    openLoose: (LooseThread) -> Unit) {
     val context = LocalContext.current
     var grouping by remember { mutableStateOf(ThreadsLayout.grouping(context)) }
     var byStatus by remember { mutableStateOf(ThreadsLayout.byStatus(context)) }
@@ -131,6 +137,8 @@ private data object ThreadsPage
     val shown = ComputerSelection(filter.states.map { it.computer.id }, filter.hidden).shown.mapNotNull { id -> filter.states.firstOrNull { it.computer.id == id } }
     val plain = plainComputer(shown)
     val line: @Composable (ThreadRow<WorkingBot>, String) -> Unit = { row, label -> ThreadLine(row, label, accounts, { question = it }, openLoose) }
+    val scroll = rememberScrollState()
+    OlderThreadsPaging(roster, accounts, active, scroll, more)
     Column(Modifier.fillMaxSize().background(Palette.background).statusBarsPadding()) {
         // The Bots tab's header: the title over how the shown computers are connected, then the computers to show, Search and New thread.
         val summary = connectionSummary(shown)
@@ -148,7 +156,7 @@ private data object ThreadsPage
             EmptyState("checklist", "No threads right now", Modifier.fillMaxSize(), message = "Tasks your bots work on show up here.")
             return@Column
         }
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = bottomInset),
+        Column(Modifier.verticalScroll(scroll).padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = bottomInset),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (sections.needsYou.isNotEmpty()) ThreadSection("Needs you") { for (row in sections.needsYou) line(row, row.task.title) }
             for (kind in ThreadGroupKind.entries) {
@@ -170,6 +178,24 @@ private data object ThreadsPage
     }
     WorkQuestionDialogs(question) { question = null }
     NewThreadSheet(starting, bots, plain, accounts, { starting = false }, openLoose)
+}
+
+/**
+ * Reads the older threads of [roster]'s computers while the list shows ([active]): each one's first page once its link
+ * is up, then the next page of every one with more each time the list scrolls to its end (or "Show more" shows the rest).
+ */
+@Composable private fun OlderThreadsPaging(roster: List<WorkingBot>, accounts: AccountStore, active: Boolean, scroll: ScrollState, showingAll: Boolean) {
+    val states = roster.map { it.state }.distinctBy { it.computer.id }
+    val unread = if (active) states.filter { it.olderThreads == null && it.actualConnection is LinkState.Ready && threadKeepDays(it.hello) != null }
+        .map { it.computer.id } else emptyList()
+    LaunchedEffect(unread) { unread.forEach { accounts.store(it)?.loadOlderThreads() } }
+    val paged by rememberUpdatedState(states.filter { it.olderThreads?.more == true }.map { it.computer.id })
+    LaunchedEffect(active, scroll, showingAll) {
+        if (!active) return@LaunchedEffect
+        snapshotFlow { !scroll.canScrollForward }.distinctUntilChanged().collect { atEnd ->
+            if (atEnd) paged.forEach { accounts.store(it)?.loadOlderThreads() }
+        }
+    }
 }
 
 /** Search's threads, flat and newest first, as the list draws its rows. */

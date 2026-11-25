@@ -180,6 +180,7 @@ private struct ComputerRows: View {
                 Button { networkSheet = true } label: { RowLabel("Network", image: .codyncNetwork, chevron: true) }
                     .buttonStyle(.plain)
             }
+            if store.hello?.threadKeepDays != nil { ThreadKeepRow(store: store) }
         }
         ComputerNotificationsRow(store: store)
         ComputerConnectionRow(store: store)
@@ -347,6 +348,25 @@ private struct SwatchPanel: View {
             }
         }
         .padding(14)
+    }
+}
+
+/// How long the computer keeps a thread once it last finished (`threadKeepDays`).
+private struct ThreadKeepRow: View {
+    let store: BotStore
+
+    var body: some View {
+        let days = store.hello?.threadKeepDays ?? 0
+        VStack(alignment: .leading, spacing: 4) {
+            ValueRow("Delete old threads") {
+                ChoicePicker(selection: Binding(get: { days }, set: store.setThreadKeepDays),
+                             options: ThreadKeep.choices(with: days).map { ($0, ThreadKeep.label($0)) })
+            }
+            Text(L10n.tr("Counts from when a thread last finished. Its chat and its own folder are deleted with it."))
+                .font(.footnote)
+                .foregroundStyle(Palette.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

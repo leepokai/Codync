@@ -44,7 +44,8 @@ struct ThreadsTab: View {
                                    if task.status == .needsYou { accounts.store(for: item.ref.computerId)?.requestCard(of: item.bot.id, task: task) }
                                    accounts.selection = item.ref
                                },
-                               openThread: openThread, looseThread: $looseThread)
+                               openThread: openThread, looseThread: $looseThread,
+                               loadMore: { shownStores.forEach { $0.loadOlderThreads() } })
                 }
             }
             .background(Palette.background)
@@ -70,6 +71,10 @@ struct ThreadsTab: View {
                 }
             }
             .modifier(ListSearch(searching: $searching, query: $query, prompt: "Search"))
+        }
+        // Older threads, first page of each computer that lists them, again whenever a computer starts them over.
+        .task(id: shownStores.map { "\($0.computer.id)/\($0.olderThreadsGeneration)/\($0.listsOlderThreads)" }) {
+            shownStores.forEach { $0.loadFirstOlderThreads() }
         }
         .codyncSheet(isPresented: $newThread) {
             NewThreadSheet(bots: threadBots, plain: plainStore, store: { accounts.store(for: $0) }) { computer, botId, taskId in
@@ -107,6 +112,10 @@ struct ThreadsTab: View {
         ComputerSelection(all: accounts.computers.map(\.id), hidden: hiddenComputers).shown.lazy
             .compactMap { accounts.store(for: $0) }
             .first { $0.startsThreadsWithoutBot && $0.connection == .online && !$0.readySeats(on: AgentLogin(backend: "")).isEmpty }
+    }
+
+    private var shownStores: [BotStore] {
+        ComputerSelection(all: accounts.computers.map(\.id), hidden: hiddenComputers).shown.compactMap { accounts.store(for: $0) }
     }
 
     private func openDetails(_ item: RosterItem) {

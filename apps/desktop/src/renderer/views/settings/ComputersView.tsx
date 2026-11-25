@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import type { AccountApproval, PairingInfo } from '@shared/models'
 import { newSSHProfile, type SSHProfile } from '@shared/ssh'
-import { Button, CardSection, IconButton, Reveal, Switch } from '../../components/Controls'
+import { Button, CardSection, ChoicePicker, IconButton, Reveal, Switch, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Dialog, ModalHeader, Sheet, useDismiss } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
@@ -12,6 +12,7 @@ import { useAccount } from '../../store/account'
 import { analytics } from '../../store/analytics'
 import type { CloudComputer } from '../../store/cloud'
 import type { BotStore } from '../../store/bot-store'
+import { keepChoices } from '../../store/older-threads'
 import { StoreContext, useApp } from '../../store/context'
 import { ComputerBadge } from '../ComputerBadge'
 import { PairingCode } from '../PairingCode'
@@ -272,6 +273,16 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
                   : []),
               ]
             : []),
+          // Hosts before thread retention delete a thread a week after it ends, with no choice.
+          online && store.threadKeepDays !== undefined ? (
+            <ValueRow key="thread-keep" label="Delete old threads" detail="Counts from when a thread last finished. Its chat and its own folder are deleted with it.">
+              <ChoicePicker
+                selection={store.threadKeepDays}
+                options={keepChoices(store.threadKeepDays).map((n) => ({ id: n, label: n === 0 ? 'Keep forever' : tr('After {count} days').replace('{count}', String(n)) }))}
+                onChange={(days) => void store.setThreadKeepDays(days).catch((e: unknown) => store.setError(errorText(e)))}
+              />
+            </ValueRow>
+          ) : null,
           // On macOS and Windows this computer's Codync is this app: its version and update are on the Updates page.
           // Kept while an update asked from here restarts the computer: its spinner says it's updating.
           (online || store.isUpdating) && store.hello && !(store === app.local && window.codync.platform !== 'linux')

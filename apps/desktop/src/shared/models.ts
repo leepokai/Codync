@@ -733,6 +733,9 @@ export interface Hello {
   analytics?: boolean
   /** A bot with a new message moves to the top of the roster (`setAutoOrder`). Absent from older hosts. */
   autoOrder?: boolean
+  /** Days after a thread last ended that the computer deletes it, 0 never (`setThreadKeepDays`); it lists older threads
+   * (`olderThreads`). Absent from older hosts. */
+  threadKeepDays?: number
   /** The user can start a thread with a bot themselves (`startThread`). Absent from older hosts. */
   startThread?: boolean
   /** A thread may start without a bot, on an agent the user names (`startThread` without `botId`). */

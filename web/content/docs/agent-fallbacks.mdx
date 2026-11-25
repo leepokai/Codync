@@ -58,6 +58,8 @@ When a fallback takes a turn over, it hears what it needs before the turn's mess
 
 Once Codync knows the agent's context window, the recap takes at most a tenth of it (about 20,000 tokens at most). It lists file paths and command lines, not their contents, so the agent reads a file again before changing it. Rules you want every agent to follow belong in the bot's [memory](/docs/memory), which each agent gets in full.
 
+A new session also gets a Context Manifest gathered from the chat: your recent constraints and references, the files this turn created, changed, read or only proposed (with sizes and hashes where available), commands and their exit codes, running services, enabled routines and pending approvals. When the context allowance is too small, each item it could not expand is named with its path or short label, size and reason. **New session** clears the history boundary for both the recap and this manifest.
+
 **New session** (in the bot's menu) clears every agent's session, and none of them is told what was said before.
 
 ## What the chat shows

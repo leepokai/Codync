@@ -4,7 +4,8 @@
 
 use std::collections::HashMap;
 
-const MAX_LEN: usize = 40;
+/// An address name's longest, in characters.
+pub(super) const MAX_LEN: usize = 40;
 
 /// A bot or computer name as an address holds it: lowercase letters and digits (any script),
 /// `_`, and dashes for everything else.

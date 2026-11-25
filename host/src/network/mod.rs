@@ -11,6 +11,7 @@
 mod api;
 mod handles;
 mod saved;
+pub mod sessions;
 
 use crate::LockExt;
 use crate::hub::Hub;
@@ -22,7 +23,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub use api::{create, emit, invite, join, leave, peers, promote, recover, remove, set_rules, status, view};
-pub use handles::handle;
+pub use handles::{handle, numbered};
 
 /// Every address name ever given to one of this computer's bots (name → bot id).
 const KV_HANDLES: &str = "network_handles";
@@ -64,6 +65,8 @@ pub struct Network {
     unoffered: Mutex<Vec<String>>,
     /// One change to the saved networks at a time: create, join, leave, rules.
     changing: tokio::sync::Mutex<()>,
+    /// Coding agents' sessions on this computer, with their mail.
+    pub sessions: sessions::Sessions,
 }
 
 /// Who a `message_bot` request is for.
@@ -228,6 +231,18 @@ impl Network {
         }
     }
 
+    /// An address name no bot or session was ever given, from `base`, kept for `owner` (a
+    /// session's key) from now on: a bot never takes it, also after the session is renamed.
+    pub fn reserve(&self, store: &crate::store::Store, base: &str, owner: &str) -> Result<String> {
+        // The lock `publish` holds while it gives the bots theirs.
+        let _handles = self.handles.locked();
+        let mut given = given_handles(store);
+        let free = numbered(base, given.len(), |h| !given.contains_key(h));
+        given.insert(free.clone(), owner.to_owned());
+        store.kv_set(KV_HANDLES, &json!(given).to_string()).context("couldn't save the address names")?;
+        Ok(free)
+    }
+
     /// This computer's bot behind an address name, if any.
     pub fn bot_for(&self, handle: &str) -> Option<String> {
         self.handles.locked().bot(handle)
@@ -348,6 +363,10 @@ async fn watch(hub: Arc<Hub>, mut changes: tokio::sync::watch::Receiver<()>) {
 /// kept off it, which only send. Called after every change to a bot's name, description,
 /// visibility or network switch.
 pub fn publish(hub: &Hub) {
+    // One at a time, from reading the bots and sessions to offering them: an older list can't
+    // land after a newer one. ponytail: one lock for every hub in the process; per hub if tests mind.
+    static ONE: Mutex<()> = Mutex::new(());
+    let _one = ONE.locked();
     let slots = hub.network.slots();
     if slots.is_empty() {
         return;
@@ -360,10 +379,7 @@ pub fn publish(hub: &Hub) {
         }
     };
     let mut handles = hub.network.handles.locked();
-    let mut given: HashMap<String, String> =
-        hub.store.kv_get(KV_HANDLES).and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default();
-    // The cloud assistant's address name never goes to a bot (`chat::team::assistant::HANDLE`).
-    given.entry(crate::chat::team::assistant::HANDLE.into()).or_insert_with(|| "assistant".into());
+    let mut given = given_handles(&hub.store);
     let before = given.len();
     *handles = handles::Handles::of(bots.iter().map(|b| (b.id.clone(), b.name.clone())), &mut given);
     if given.len() != before
@@ -383,9 +399,26 @@ pub fn publish(hub: &Hub) {
     *hub.network.unoffered.locked() = kept_off.iter().filter_map(|b| handles.handle(&b.id)).collect();
     drop(handles);
     hub.network.share_senders();
+    let sessions: Vec<_> = hub.network.sessions.all(&hub.store).into_iter().filter(|s| !s.temporary).collect();
     for slot in slots {
-        slot.node.set_agents(agents.clone());
+        // A session is offered only where a rule opens it by name ([`codync_network::rules::opens`]).
+        let rules = slot.node.rules();
+        let opened = sessions.iter().filter(|s| codync_network::rules::opens(&rules, &s.address)).map(|s| {
+            let name = s.title.clone().unwrap_or_else(|| s.address.clone());
+            let agent = Agent { id: s.address.clone(), name, about: String::new(), kind: s.kind };
+            (agent, Reach::Mailbox { session: s.key.clone() })
+        });
+        slot.node.set_agents(agents.iter().cloned().chain(opened).collect::<Vec<_>>());
     }
+}
+
+/// Every address name ever given out (name → bot id, or a session's key).
+fn given_handles(store: &crate::store::Store) -> HashMap<String, String> {
+    let mut given: HashMap<String, String> =
+        store.kv_get(KV_HANDLES).and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default();
+    // The cloud assistant's address name never goes to a bot (`chat::team::assistant::HANDLE`).
+    given.entry(crate::chat::team::assistant::HANDLE.into()).or_insert_with(|| "assistant".into());
+    given
 }
 
 /// This computer's host name, as a network name can hold it.

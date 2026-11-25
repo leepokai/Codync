@@ -185,11 +185,12 @@ that was off learns of a removal.
   `unread` (a count, never text). The tier is `pull`, or `turn` once its agent runs our hook (below).
 - **Turn tier** (`codync-host network hook <codex|copilot|grok>`, local API `networkHook`, loopback only): the
   agent's `PostToolUse` and `Stop` hooks run it with the hook's JSON on stdin (`hook_event_name`, `session_id`,
-  the same id its MCP server gives). It tells the session how many letters wait (a count, never their text), once
-  for each newest letter (`announced`, kept with the session), so a hook that runs at every step doesn't repeat
-  it and a `Stop` that keeps the turn going (`decision: block`) can't loop; the agent reads them with
+  the same id its MCP server gives). It tells the session how many letters wait (a count, never their text) and, once it printed that,
+  confirms with a second call (`told`: the newest letter's id, kept as `announced`), so a hook that runs at every
+  step doesn't repeat it and a `Stop` that keeps the turn going (`decision: block`) can't loop, while a notice the
+  hook never got (a timeout) is told again; a hook also counts as the session being seen (saved once a day); the agent reads them with
   `check_inbox` as before. It never registers a session (only its MCP server does) and prints nothing when the host
-  is down, the event isn't one of those two, or `CODYNC_BOT` is set; it waits at most 2 s. The first hook marks the
+  is down, the event isn't one of those two, or `CODYNC_BOT` is set; it waits at most 2 s for its stdin and the answer, and 2 s for the confirmation. The first hook marks the
   session `hooked` (tier `turn`). What each agent reads back is `codync_network::hooks` (Codex and Grok:
   `hookSpecificOutput.additionalContext`, Codex refusing any other field; Copilot CLI: top-level
   `additionalContext`). Checked end to end with each agent's CLI on aimock. Adding the hooks (the setup command) is

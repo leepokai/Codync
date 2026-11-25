@@ -151,22 +151,24 @@ pub(crate) fn post(
 }
 
 /// `networkHook`, the turn tier: what `kind`'s hook (`codync-host network hook`) tells session
-/// `id` — that letters wait, once for each new one — as the text its agent reads; nothing for a
-/// session its MCP server never registered.
-pub(crate) fn hook(hub: &Hub, kind: AgentKind, id: &str) -> Result<Value> {
+/// `id` — that letters wait, until it confirms it told them (`told`, the newest letter's id) — as
+/// the text its agent reads; nothing for a session its MCP server never registered.
+pub(crate) fn hook(hub: &Hub, kind: AgentKind, id: &str, told: Option<&str>) -> Result<Value> {
     let key = crate::network::sessions::session_key(kind, id);
+    if let Some(letter) = told {
+        hub.network.sessions.told(&hub.store, &key, letter)?;
+        crate::analytics::network_session(hub, crate::analytics::SessionAction::Told, kind);
+        return Ok(json!({}));
+    }
     let Some(hooked) = hub.network.sessions.hook(&hub.store, &key)? else { return Ok(json!({})) };
     if hooked.first {
         tracing::info!(kind = kind.as_str(), "a session's agent runs our hook");
         crate::analytics::network_session(hub, crate::analytics::SessionAction::Hooked, kind);
         crate::network::emit(hub);
     }
-    if hooked.unread == 0 {
-        return Ok(json!({}));
-    }
-    crate::analytics::network_session(hub, crate::analytics::SessionAction::Told, kind);
+    let Some(letter) = hooked.newest else { return Ok(json!({})) };
     let n = hooked.unread;
-    Ok(json!({"notice": format!(
+    Ok(json!({"letter": letter, "notice": format!(
         "Codync Network: {n} letter(s) from other agents wait for you. Read them with the check_inbox tool (codync MCP server) when you can."
     )}))
 }

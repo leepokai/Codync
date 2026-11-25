@@ -104,10 +104,12 @@ pub enum Tier {
 }
 
 /// What a hook of a session finds.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Hooked {
     /// The letters waiting, when one came since the last hook told of them; else 0.
     pub unread: usize,
+    /// The newest of them, which the hook confirms once it told of them (`told`).
+    pub newest: Option<String>,
     /// The session's first hook: it has the turn tier now.
     pub first: bool,
 }
@@ -258,26 +260,35 @@ impl Sessions {
         load_mail(store).get(key).map_or(0, Vec::len)
     }
 
-    /// What a hook of the session at `key` tells it: how many letters wait, once for each newest
-    /// letter, so a hook that runs at every step says it once. `None` for a session not registered
-    /// (a hook never registers one: only its MCP server knows the session the same way).
+    /// What a hook of the session at `key` tells it: how many letters wait, while its newest letter
+    /// isn't one a hook already told it of (`told`), so a hook that runs at every step says it once.
+    /// `None` for a session not registered (a hook never registers one: only its MCP server knows
+    /// the session the same way). A hook counts as the session being seen, saved once a day.
     pub fn hook(&self, store: &Store, key: &str) -> Result<Option<Hooked>> {
         let _one = self.lock.locked();
         let mut all = load(store);
         let Some(session) = all.get_mut(key) else { return Ok(None) };
         let mail = load_mail(store);
         let waiting = mail.get(key).map_or(&[][..], Vec::as_slice);
-        let newest = waiting.last().map(|m| m.id.clone());
-        let tell = newest.is_some() && newest != session.announced;
+        let newest = waiting.last().map(|m| m.id.clone()).filter(|id| session.announced.as_ref() != Some(id));
         let first = !session.hooked;
-        if first || tell {
+        let now = now_ms();
+        if first || now - session.seen >= DAY_MS {
             session.hooked = true;
-            if tell {
-                session.announced = newest;
-            }
+            session.seen = now;
             save(store, &all)?;
         }
-        Ok(Some(Hooked { unread: if tell { waiting.len() } else { 0 }, first }))
+        Ok(Some(Hooked { unread: if newest.is_some() { waiting.len() } else { 0 }, newest, first }))
+    }
+
+    /// The session's hook printed the notice of the letters up to `letter`: later hooks keep quiet
+    /// about them. Recorded only once printed, so a notice its hook never got is told again.
+    pub fn told(&self, store: &Store, key: &str, letter: &str) -> Result<()> {
+        let _one = self.lock.locked();
+        let mut all = load(store);
+        let Some(session) = all.get_mut(key) else { return Ok(()) };
+        session.announced = Some(letter.to_owned());
+        save(store, &all)
     }
 
     /// The waiting mail of the session at `key`, oldest first; it counts as read once taken.

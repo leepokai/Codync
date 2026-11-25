@@ -26,7 +26,7 @@ message can be put into the session. Checked on macOS on 2026-11-24.
 | Antigravity CLI (`agy`) | `antigravity` | 1.4.9 | ran |
 | pi | `pi` | 1.4.0 | ran |
 | opencode | `opencode` | 1.19.5 | `initialize` only: the model call failed (provider auth), so no `tools/call` |
-| Grok CLI | `grok` | 1.0.77 | not run: not signed in |
+| Grok CLI | `grok` | 1.0.77 | not run in the first probe (not signed in); later run on aimock for its MCP identity and hooks (rows below marked ran) |
 | Gemini CLI | `gemini` | — | — |
 | Amp | `amp` | — | — |
 
@@ -51,7 +51,7 @@ What this means for registration:
   Claude Code session's `CLAUDE_CODE_SESSION_ID`, `CLAUDECODE` and inbox socket, because those agents were started
   from a Claude Code shell (ran). So the kind comes from `clientInfo.name`, and an env id counts only for that
   kind: an agent started from a Claude shell must not register as that Claude session.
-- **When the id is known.** At spawn: Claude Code, Copilot CLI (env; Grok per ref, unverified). Only with the first
+- **When the id is known.** At spawn: Claude Code, Copilot CLI, Grok (env; Grok ran on aimock). Only with the first
   tool call: Codex, Antigravity (`_meta`). Only through hooks: Cursor (and Gemini per ref). Not at all without our
   own extension or plugin: pi; opencode 1.x too unless its calls carry the 2.x `_meta` (unverified: rerun the probe
   signed in).

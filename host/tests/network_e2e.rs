@@ -637,5 +637,10 @@ async fn an_agents_hook_tells_its_session_of_new_mail_in_the_shape_its_agent_rea
     mail(&copilot).await;
     let copilot_told = told("copilot", "PostToolUse", "c1").await;
     assert!(copilot_told["additionalContext"].as_str().unwrap().contains("1 letter(s)"), "{copilot_told}");
+    let grok = address("grok", "g1").await;
+    mail(&grok).await;
+    let grok_told = told("grok", "PostToolUse", "g1").await;
+    let text = grok_told["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
+    assert!(text.contains("1 letter(s)"), "{grok_told}");
     assert_eq!(host.call("agentCall", tool("codex", "t1", "whoami", json!({}))).await["tier"], "turn");
 }

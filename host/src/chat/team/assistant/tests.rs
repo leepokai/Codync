@@ -375,9 +375,9 @@ async fn a_hook_tells_its_session_of_new_mail_once() {
     let f = Fixture::new();
     let hub = &f.hub;
     let (claude, codex) = (session(ClaudeCode, "s1"), session(Codex, "t1"));
-    assert_eq!(hook(hub, Codex, "t1").unwrap(), json!({}), "a session its MCP server never registered");
+    assert_eq!(hook(hub, Codex, "t1", None).unwrap(), json!({}), "a session its MCP server never registered");
     local_call(hub, &codex, "whoami", &json!({})).await.unwrap();
-    assert_eq!(hook(hub, Codex, "t1").unwrap(), json!({}), "no mail");
+    assert_eq!(hook(hub, Codex, "t1", None).unwrap(), json!({}), "no mail");
     assert_eq!(local_call(hub, &codex, "whoami", &json!({})).await.unwrap()["tier"], "turn", "its hook runs");
     let listed = local_call(hub, &claude, "list_bots", &json!({"kind": "codex"})).await.unwrap();
     assert_eq!(listed["bots"][0]["tier"], "turn", "{listed}");
@@ -386,9 +386,11 @@ async fn a_hook_tells_its_session_of_new_mail_once() {
             .await
             .unwrap();
     assert_eq!(sent["tier"], "turn");
-    let told = hook(hub, Codex, "t1").unwrap();
+    let told = hook(hub, Codex, "t1", None).unwrap();
     assert!(told["notice"].as_str().unwrap().contains("1 letter(s)"), "{told}");
     assert!(!told.to_string().contains("did the API"), "a count, never the text");
-    assert_eq!(hook(hub, Codex, "t1").unwrap(), json!({}), "told once");
+    assert_eq!(hook(hub, Codex, "t1", None).unwrap(), told, "told again until its hook confirms it");
+    hook(hub, Codex, "t1", told["letter"].as_str()).unwrap();
+    assert_eq!(hook(hub, Codex, "t1", None).unwrap(), json!({}), "told once");
     f.shutdown().await;
 }

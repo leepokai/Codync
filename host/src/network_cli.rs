@@ -6,8 +6,8 @@ use clap::Subcommand;
 use codync_network::AgentKind;
 use codync_network::hooks::{hook_input, hook_output};
 use serde_json::{Value, json};
-use std::io::Read;
 use std::time::Duration;
+use tokio::io::AsyncReadExt;
 
 #[derive(clap::Args)]
 pub struct NetworkArgs {
@@ -128,28 +128,32 @@ pub async fn run(args: NetworkArgs) -> Result<()> {
     Ok(())
 }
 
-/// The longest a hook holds up its agent's step.
+/// The longest a hook waits for its stdin and the host's answer, and again for its confirmation.
 const HOOK_WAIT: Duration = Duration::from_secs(2);
 /// The most of a hook's stdin read (a tool's whole output can be on it).
 const HOOK_STDIN_MAX: u64 = 4 << 20;
 
 /// Prints what the agent reads, or nothing. Never fails the agent's step: a host that's down, an
-/// event it doesn't answer or stdin it can't read all print nothing.
+/// event it doesn't answer, stdin it can't read (or that stays open) all print nothing.
 async fn hook(port: u16, kind: AgentKind) {
     // A bot's own agent: its mail comes through the host, not this.
     if std::env::var_os(crate::mcp::BOT_ENV).is_some() {
         return;
     }
-    let mut stdin = String::new();
-    if std::io::stdin().take(HOOK_STDIN_MAX).read_to_string(&mut stdin).is_err() {
-        return;
-    }
-    let Some((session, event)) = serde_json::from_str(&stdin).ok().as_ref().and_then(hook_input) else { return };
-    let body = json!({"kind": kind, "session": session});
-    let Ok(answer) = local_call_for(port, "networkHook", body, HOOK_WAIT).await else { return };
-    if let Some(notice) = answer["notice"].as_str() {
-        println!("{}", hook_output(kind, event, notice));
-    }
+    let ask = async {
+        let mut stdin = String::new();
+        tokio::io::stdin().take(HOOK_STDIN_MAX).read_to_string(&mut stdin).await.ok()?;
+        let (session, event) = serde_json::from_str(&stdin).ok().as_ref().and_then(hook_input)?;
+        let answer =
+            local_call_for(port, "networkHook", json!({"kind": kind, "session": session}), HOOK_WAIT).await.ok()?;
+        Some((session, event, answer))
+    };
+    let Ok(Some((session, event, answer))) = tokio::time::timeout(HOOK_WAIT, ask).await else { return };
+    let (Some(notice), Some(letter)) = (answer["notice"].as_str(), answer["letter"].as_str()) else { return };
+    println!("{}", hook_output(kind, event, notice));
+    // Printed: later hooks keep quiet about these letters. Unconfirmed, the next one tells them again.
+    let told = json!({"kind": kind, "session": session, "told": letter});
+    let _ = local_call_for(port, "networkHook", told, HOOK_WAIT).await;
 }
 
 fn print_status(v: &Value) {

@@ -1,14 +1,14 @@
 # Bots, projects and threads
 
-Status (2026-11-24): one plan for where a bot lives, where its work happens and what a thread is given. It replaces
+Status (2026-11-25): every part below is built on `dev`; only [Open](#open) is left for the owner. One plan for where a bot lives, where its work happens and what a thread is given. It replaces
 the separate "bot home and projects" and "thread profile" plans. Answers part of stage A in
 [personal agent: daily and project work](personal-agent-experience.md). What is built, decided or only proposed:
 
 | Part | State |
 | --- | --- |
 | Recap when a bot's folder changes | **Built**, in dev (`a5fccdbf7`) |
-| [Bot home and projects](#3-bot-home-and-projects) | **Built**, host (stages 5 and 6); the clients' Projects section next |
-| [Worktree mode](#worktree-mode) (Off / Side by side / Always) | **Built**, host (stage 5); the clients' choice next |
+| [Bot home and projects](#3-bot-home-and-projects) | **Built** (stages 5 and 6), host and all four clients |
+| [Worktree mode](#worktree-mode) (Off / Side by side / Always) | **Built** (stage 5), host and all four clients |
 | [Worktrees counted per repository](#count-side-by-side-per-repository) | **Built** (stage 5) |
 | [Thread profile, no fork](#7-thread-profile-no-fork) | **Built** (stage 2) |
 | [A user's thread leaves the bot's queue](#6-a-users-thread-leaves-the-bots-queue) | **Built** (stage 3) |
@@ -58,9 +58,10 @@ Three ways work starts:
 | Its result | A report the bot turns into a message in the chat | Read in the thread | Read in the thread |
 | The bot sees and steers it | Yes | No | There is no bot |
 
-## 2. Today (dev, 2026-11-24)
+## 2. Before this plan (dev, 2026-11-24)
 
-What the code does, read from it, before any change here.
+What the code did, read from it, before any change here. Kept as the reason for each part; what runs now is §1 and
+[work](../features/work.md).
 
 ### Where a thread works
 
@@ -276,9 +277,8 @@ carried: the report says the worktree started from the last commit. Each copy or
 
 ### Cleanup
 
-Kept worktrees are looked at again only at host start (`worktree.rs`, the `ponytail` note). With threads in several
-projects that can pile up; the hourly look (`sweep.rs`) also checks them. Not urgent; done with the stage that
-brings projects.
+Kept worktrees were looked at again only at host start. With threads in several
+projects that can pile up, so the hourly look (`sweep.rs`) also checks them. Built with projects (stage 5).
 
 ### How another tool does it
 
@@ -540,12 +540,12 @@ Each stage ships on its own, in this order; host-only stages need no client rele
 5. **Projects**: `projects`, `add_task` `folder`, `worktreeMode`, side by side per repository, the Workspace line,
    the clients' Projects section, cleanup in the hourly look (§3, §4). Minor version, every client. Host built: as
    [work: where a thread works](../features/work.md#where-a-thread-works) says. Beyond the plan: the box of threads
-   without a bot keeps the home folder as its `cwd` (it gets no projects; §5 is proposed); a thread in a worktree
+   without a bot keeps the home folder as its `cwd` (it gets no projects; stage 7 then gave each of its threads a folder of its own, §5); a thread in a worktree
    doesn't count toward side by side (its checkout is its own); the bot hears a change to its projects as a profile
    update; `projectGitRepos` (bools in `projects`' order) tells the clients which projects are repositories, and
    `gitRepo` means the default project for older apps; schema 14 stores `worktreeMode` in place of the bool.
    `market/verify.rs` keeps checking a connector in the bot's own folder, where the chat's agent starts it now.
-   Clients next.
+   Clients built in the same change (the Projects section and Worktree mode on all four).
 6. **Migration** (§3). Needs 4 and 5. Built with 5 (`hub/projects/migrate.rs`). A routine stamped with the old folder
    always runs in a thread, so on a bot that uses the computer or manages the team (whose runs were turns in its chat)
    it loses those tools: that is the price of keeping the folder, kept as the plan says.

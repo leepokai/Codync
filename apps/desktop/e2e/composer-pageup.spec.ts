@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, attach, echoBot, holdTask, setPref, workBot } from './sandbox.ts'
+import { api, attach, echoBot, holdTask, setPref, withPrefs, workBot } from './sandbox.ts'
 
 /**
  * Where the two scrollers are, read from the box nearest `scope`.
@@ -108,6 +108,9 @@ test('a very large paste never lets PageUp scroll the chat behind the box', asyn
   const { page } = await attach()
   await settle(page)
   const name = `Composer page up ${Date.now()}`
+  // The test changes the text size, so it puts back the size the window had: a run must not leave a saved
+  // setting on whatever the test used last.
+  const restore = await withPrefs(page, { conversationFontSize: 12 })
   let botId: string | undefined
   try {
     const bot = await echoBot(page, name)
@@ -176,7 +179,7 @@ test('a very large paste never lets PageUp scroll the chat behind the box', asyn
       expect(regrown.viewTop, 'growing the draft again scrolled the conversation').toBe(0)
     }
   } finally {
-    await setPref(page, 'conversationFontSize', 12).catch(() => {})
+    await restore()
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
   }
 })

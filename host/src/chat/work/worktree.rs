@@ -35,6 +35,17 @@ pub enum Place {
     NoWorktree,
 }
 
+/// Where a task asks its new thread to work (`add_task` and `startThread`'s `place`); none: the bot's worktree mode
+/// decides ([`wanted`]).
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub enum PlaceChoice {
+    /// In its folder, even beside another thread or in Always mode.
+    Here,
+    /// In a worktree of its own, even in Off mode, where its folder is in a git repository.
+    Worktree,
+}
+
 /// What became of a worktree once its task was over.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
 #[serde(rename_all = "camelCase")]
@@ -82,12 +93,14 @@ impl Worktree {
                 .to_owned(),
             Left::Kept | Left::Settling => format!(
                 "[Codync: it worked in a git worktree of its own, away from the user's checkout: branch {branch}, \
-                 in {path}. Its changes are there, not in the project folder, and nothing was merged: tell the user \
-                 the branch, and merge it when they ask.]"
+                 in {path}, started from the project's last commit (without the user's uncommitted changes). Its \
+                 changes are there, not in the project folder, and nothing was merged: tell the user the branch, and \
+                 merge it when they ask.]"
             ),
             Left::InUse => format!(
-                "[Codync: it worked in a git worktree of its own: branch {branch}, in {path}. The work that follows \
-                 it goes on there.]"
+                "[Codync: it worked in a git worktree of its own: branch {branch}, in {path}, started from the \
+                 project's last commit (without the user's uncommitted changes). The work that follows it goes on \
+                 there.]"
             ),
         }
     }
@@ -96,9 +109,9 @@ impl Worktree {
     pub fn brief(&self) -> String {
         format!(
             "[Codync: you work in a git worktree of your own, away from the user's checkout: {}, on branch {}, \
-             started from the folder's current commit. Uncommitted changes of the main folder aren't here. Commit \
-             what you want kept; don't merge, and don't change the main folder's branch: your report tells where \
-             the work is.]",
+             started from the project's last commit: the user's uncommitted changes aren't here. Commit \
+             what you want kept, but never the shared folders linked in from the main folder (like node_modules); \
+             don't merge, and don't change the main folder's branch: your report tells where the work is.]",
             self.cwd, self.branch
         )
     }
@@ -134,6 +147,22 @@ pub(super) fn beside(mode: WorktreeMode, cwd: &str, others: &[PathBuf]) -> bool 
         WorktreeMode::Off => false,
         WorktreeMode::SideBySide => others.iter().any(|other| other == checkout),
         WorktreeMode::Always => true,
+    }
+}
+
+/// Whether a thread that starts in `cwd` gets a worktree of its own: as its task asks (`choice`), else as [`beside`]
+/// says for the bot's `mode`. Never outside a repository: a task that asks for one there works in the folder.
+pub(super) fn wanted(choice: Option<PlaceChoice>, mode: WorktreeMode, cwd: &str, others: &[PathBuf]) -> bool {
+    match choice {
+        Some(PlaceChoice::Here) => false,
+        Some(PlaceChoice::Worktree) => {
+            let repo = in_repo(cwd);
+            if !repo {
+                tracing::info!(cwd, "a task asked for a worktree outside a git repository: it works in the folder");
+            }
+            repo
+        }
+        None => beside(mode, cwd, others),
     }
 }
 
@@ -255,11 +284,11 @@ async fn remove_if_done(worktree: &Worktree) -> Result<Left> {
     }
     let git = |args: &'static [&'static str]| crate::git::run(dir, args, LIMIT);
     // Untracked files count whatever the user's `status.showUntrackedFiles` says, which git's own check on
-    // removal follows: this one is what keeps a thread's new files.
-    let dirty = !git(&["status", "--porcelain", "--untracked-files=all"]).await?.is_empty();
+    // removal follows: this one is what keeps a thread's new files. The shared folders Codync linked in git passes over.
+    let status = git(&["status", "--porcelain", "--untracked-files=all"]).await?;
     let on = git(&["rev-parse", "--abbrev-ref", "HEAD"]).await?;
     // On another branch: it did something there.
-    if dirty || on != worktree.branch {
+    if !status.is_empty() || on != worktree.branch {
         return Ok(Left::Kept);
     }
     let tip = git(&["rev-parse", "HEAD"]).await?;
@@ -272,6 +301,7 @@ async fn remove_if_done(worktree: &Worktree) -> Result<Left> {
     {
         return Ok(Left::Kept);
     }
+    super::fill::unlink(dir, repo.parent().unwrap_or(repo)).await?;
     // Without --force: git refuses a worktree that changed meanwhile, and a branch that isn't merged.
     crate::git::run(repo, &["worktree", "remove", &worktree.path], LIMIT).await?;
     if let Err(error) = crate::git::run(repo, &["branch", "-d", &worktree.branch], LIMIT).await {
@@ -425,7 +455,10 @@ pub async fn enter(hub: &Arc<Hub>, cfg: &BotConfig) -> Option<Worktree> {
     let worktree = match task.worktree.filter(usable) {
         Some(worktree) => worktree,
         None => match create(&cfg.cwd, bot, &task.id, &task.title).await {
-            Ok(worktree) => worktree,
+            Ok(worktree) => {
+                super::fill::fill(hub, bot, &cfg.cwd, &worktree).await;
+                worktree
+            }
             Err(error) => {
                 tracing::warn!(thread = %cfg.id, error = format!("{error:#}"), "no worktree: it works in the bot's folder");
                 super::update(hub, cfg, "its missing worktree", |task| task.place = Place::NoWorktree);
@@ -462,6 +495,11 @@ mod tests {
         assert!(beside(Always, &web, &[]), "always: the first one too");
         assert!(!beside(Off, &web, std::slice::from_ref(&a)));
         assert!(!beside(Always, &path(&plain), &[]), "never outside a repository");
+        // A task that names its place: the mode is only the default.
+        assert!(wanted(Some(PlaceChoice::Worktree), Off, &web, &[]), "a worktree even in Off mode");
+        assert!(!wanted(Some(PlaceChoice::Here), Always, &web, &[]), "its folder even in Always mode");
+        assert!(!wanted(Some(PlaceChoice::Worktree), Always, &path(&plain), &[]), "outside a repository: the folder");
+        assert!(wanted(None, SideBySide, &web, std::slice::from_ref(&a)));
         std::fs::remove_dir_all(base).ok();
     }
 
@@ -636,6 +674,60 @@ mod tests {
         assert!(create(&notes, BOT, &id, "Notes").await.is_err());
         assert!(!folder(BOT, &id).expect("a folder").exists(), "the checkout it made is taken back");
         assert_eq!(branches(&repo).await, "", "and so is its branch");
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    #[tokio::test]
+    async fn a_new_worktree_gets_the_ignored_files_listed_and_links_to_shared_folders_and_still_goes_untouched() {
+        use crate::chat::work::fill;
+        let Some(repo) = repo().await else { return };
+        let write = |path: &str, text: &str| {
+            let path = repo.join(path);
+            std::fs::create_dir_all(path.parent().expect("a parent")).expect("a folder");
+            std::fs::write(path, text).expect("a file");
+        };
+        write(".gitignore", ".env\nsecret/\nnode_modules/\n");
+        let list = ".env\n# a comment\nsecret\nmissing.txt\nweb/index.html\nnotes.txt\n../escape\n/etc/hosts\n";
+        write(".worktreeinclude", list);
+        let commit = ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "ignores"];
+        for args in [&["add", "."][..], &commit] {
+            crate::git::run(&repo, args, LIMIT).await.expect("git");
+        }
+        write(".env", "KEY=1");
+        write("secret/key", "k");
+        write("notes.txt", "not ignored");
+        write("node_modules/pkg/index.js", "module.exports = 1");
+
+        let copies = fill::included(&repo).await;
+        assert_eq!(copies, [PathBuf::from(".env"), PathBuf::from("secret")], "only what is there and ignored");
+        let project = repo.to_string_lossy().into_owned();
+        let shared = std::collections::BTreeMap::from([(project.clone(), vec!["node_modules".to_owned()])]);
+        let mut links = fill::shared_in(&repo, &shared);
+        assert_eq!(links, [PathBuf::from("node_modules")]);
+        // A link on Windows needs Developer Mode, which a test machine may lack.
+        if cfg!(windows) {
+            links.clear();
+        }
+        let made = create(&project, BOT, &task(), "Fill").await.expect("a worktree");
+        let new = Path::new(&made.path);
+        let exclude =
+            crate::git::run(new, &["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"], LIMIT);
+        let exclude = PathBuf::from(exclude.await.expect("its exclude file"));
+        assert!(fill::place(&repo, new, &copies, &links, &exclude).is_empty());
+        assert_eq!(std::fs::read_to_string(new.join(".env")).expect("copied"), "KEY=1");
+        assert!(new.join("secret/key").exists() && !new.join("notes.txt").exists());
+        let linked = new.join("node_modules");
+        if cfg!(unix) {
+            assert!(linked.symlink_metadata().expect("a link").file_type().is_symlink());
+            assert!(linked.join("pkg/index.js").exists(), "the main checkout's, through the link");
+        }
+        // `node_modules/` matches no link: git still passes over it, so a thread can't commit it.
+        let status = crate::git::run(new, &["status", "--porcelain", "--untracked-files=all"], LIMIT).await;
+        assert_eq!(status.expect("a status"), "");
+
+        // Nothing done in it: it goes, with its link, and the main checkout keeps its folder.
+        assert_eq!(settle(&made).await, Left::Removed);
+        assert!(!new.exists() && repo.join("node_modules/pkg/index.js").exists());
         let _ = std::fs::remove_dir_all(repo);
     }
 

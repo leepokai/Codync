@@ -36,7 +36,7 @@ import com.kyant.shapes.Capsule
 // A thread the user starts from the Threads tab (the desktop's New thread): its first message, then who it's with under
 // the field. It opens on no bot, on the first computer the tab shows that starts one so, else on the lead bot. A bot's
 // thread runs on that bot's own model, approvals and folder; one without a bot on the agent and model its chip picks (the
-// model panel), in the computer's home folder, asking before anything it does, in the agent's Auto mode.
+// model panel), in a folder of its own (an older host: the computer's home folder), asking before anything it does, in the agent's Auto mode.
 
 /** The bots a thread can start with now (desktop `threadBots`): [roster]'s own bots, no group chats, on computers online that start threads. */
 internal fun threadBots(roster: List<WorkingBot>): List<WorkingBot> = roster.filter { of ->
@@ -80,7 +80,7 @@ internal fun threadBots(roster: List<WorkingBot>): List<WorkingBot> = roster.fil
                 if (busy) Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Spinner(18.dp) }
                 // A failure shows as every action's does and keeps the message here.
                 else IconButton("Send", "arrow.up", enabled = text.isNotBlank() && store != null) {
-                    val setup = if (with == null && plain != null) plainSetup(login, plain.home, model, options) else null
+                    val setup = if (with == null && plain != null) plainSetup(login, if (plain.threadFolders) "" else plain.home, model, options) else null
                     store?.startThread(bot?.bot?.id, text, setup, dismiss, openLoose)
                 }
             }

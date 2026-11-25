@@ -78,13 +78,14 @@ pub fn add_routine(hub: &Arc<Hub>, bot: &str, routine: &str, run: &str, name: &s
 pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, uploads: &[String], mut setup: Setup) -> Result<String> {
     let changes =
         (setup.model.is_some(), setup.approval.is_some(), setup.workflow.is_some(), setup.login_profile.is_some());
+    let place = setup.place;
     let cfg = hub.store.bot(bot)?.filter(|row| !row.deleted).map(|row| row.config);
     let plain = cfg.as_ref().is_some_and(|cfg| cfg.plain);
     let outcome = |outcome: &str, folder: Option<FolderKind>| {
         let properties = json!({
             "outcome": outcome, "after": false, "source": Source::User.kind(),
             "folder": folder, "model": changes.0, "approval": changes.1, "workflow": changes.2, "login": changes.3, "bot": !plain,
-            "files": !uploads.is_empty(),
+            "files": !uploads.is_empty(), "place": place,
         });
         analytics::capture(hub, Event::WorkAdded, properties.as_object().cloned().unwrap_or_default());
     };
@@ -127,8 +128,14 @@ pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, uploads: &[String], mut
     // Files alone are named by the first of them.
     let named =
         title(if text.is_empty() { files.first().and_then(|f| f["name"].as_str()).unwrap_or_default() } else { text });
-    let task = Task { source: Source::User, setup, files, ..Task::waiting(&named, text, None, None, 0) };
+    let mut task = Task { source: Source::User, setup, files, ..Task::waiting(&named, text, None, None, 0) };
     let id = task.id.clone();
+    // A thread without a bot works in a folder of its own unless the user picked one.
+    if plain && task.setup.cwd.is_none() {
+        let dir = super::plain::own_folder(&id)?;
+        std::fs::create_dir_all(&dir).context("creating the thread's own folder")?;
+        task.setup.cwd = Some(dir.to_string_lossy().into_owned());
+    }
     let folder = match cfg
         .as_ref()
         .map(|cfg| task.existing_folder(cfg).map(|folder| FolderKind::of(cfg, &folder)))
@@ -140,7 +147,10 @@ pub fn add_thread(hub: &Arc<Hub>, bot: &str, text: &str, uploads: &[String], mut
             return Err(error);
         }
     };
-    put(hub, bot, task)?;
+    if let Err(error) = put(hub, bot, task.clone()) {
+        super::plain::forget_folders(std::slice::from_ref(&task));
+        return Err(error);
+    }
     outcome("added", folder);
     dispatch(hub, bot);
     Ok(id)

@@ -38,7 +38,15 @@ curl -fsSL https://raw.githubusercontent.com/leepokai/Codync/main/packaging/inst
 
 The script installs `codync-host` and, when you run it in a graphical session, the desktop app with its icon and Dock entry. It also adds the command to the `PATH` of new shells, installs the runtime packages remote screen needs, and sets up the host as a systemd user service. Open a new terminal after it finishes.
 
-You can also install the host with Homebrew (`brew install leepokai/codync/codync-host`), or download the AppImage, `.deb` or `.tar.gz` from [GitHub Releases](https://github.com/leepokai/Codync/releases/latest). Running the installer again upgrades the host without changing an existing service's port. The AppImage needs FUSE 2 to start; the installer adds the package your Ubuntu version provides.
+Homebrew installs only the host. Finish its service and pairing from a new terminal:
+
+```bash
+brew install leepokai/codync/codync-host
+codync-host install
+codync-host pair
+```
+
+That path does not install the desktop app; install the AppImage separately when you want it. You can also download the AppImage, `.deb` or `.tar.gz` from [GitHub Releases](https://github.com/leepokai/Codync/releases/latest). Running the installer again upgrades the host without changing an existing service's port. The AppImage needs FUSE 2 to start; the installer adds the package your Ubuntu version provides.
 
 ### The first launch of the desktop app
 

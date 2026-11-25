@@ -421,6 +421,13 @@ impl Replies {
         self.0.locked().iter().filter(|r| r.asker == asker && r.limited && r.running()).count()
     }
 
+    /// Whether one more reply can be kept without forgetting it at once: room left, or an older
+    /// one that may go.
+    pub(super) fn has_room(&self) -> bool {
+        let all = self.0.locked();
+        all.len() < KEEP || all.iter().any(|r| !r.running() || !r.limited)
+    }
+
     fn set(&self, request: &str, status: RequestStatus, text: Option<String>) {
         if let Some(r) = self.0.locked().iter_mut().find(|r| r.request == request) {
             r.status = status;

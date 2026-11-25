@@ -148,9 +148,10 @@ fn take(hub: &Arc<Hub>, network: &str, m: &Message) -> Result<()> {
 /// answers it (`replyTo`) with a letter of its own, which reaches the sender's waiting request.
 fn to_session(hub: &Arc<Hub>, session: &Session, m: &Message, back: &Return) -> Result<()> {
     let request = m.wake && m.reply_to.is_none();
-    // The cloud assistant asking through another computer: this one's cloud switch decides too.
+    // The cloud assistant writing through another computer: this one's cloud switch decides too.
+    // Any `replyTo` here matched none of this computer's requests (`take` ends those first), so
+    // it gets no pass.
     if m.from.agent == super::assistant::HANDLE
-        && m.reply_to.is_none()
         && let Err(error) = super::assistant::switched_on(hub)
     {
         if request {
@@ -271,6 +272,9 @@ pub(super) fn ask_for_replies(
 ) -> Result<(String, String)> {
     let node = hub.network.slot(Some(&to.network))?.node;
     hub.network.send_as(from)?;
+    if !hub.assistant.has_room() {
+        anyhow::bail!("too many requests are still running on this computer to track another: try again later");
+    }
     let letter = Letter::new(from, to.address.clone(), message);
     let (id, peer) = (letter.id.clone(), peer_name(hub, &to.network, &to.address));
     // Kept before the letter goes, so an outcome as quick as a refusal finds them: the route first,

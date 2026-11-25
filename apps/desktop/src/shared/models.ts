@@ -9,6 +9,8 @@ import { normalizeMaxThreads, normalizeOutside, normalizeWork, type OutsideStatu
 export type BotStatus = 'idle' | 'working' | 'needsInput' | 'error'
 
 export interface Bot {
+  /** Missing on older hosts; null when no goal has been set. */
+  goal?: { id: string; text: string; maxTurns: number; maxMinutes: number; startedAt: number; turns: number; stopped: string | null } | null
   customIcon?: import('./custom-icons').CustomIcon
   id: string
   /** `agent`, or `group`: several bots and the user in one chat. */
@@ -63,6 +65,8 @@ export interface Bot {
   hidden: boolean
   /** The computer's box for threads without a bot: an agent on its own. Never a bot to the user. */
   plain: boolean
+  /** The workflow a thread was started to build; null when not bound to a workflow. */
+  workflow?: string | null
   notify?: boolean | null
   connectors: string[]
   skills: string[]
@@ -154,6 +158,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     agentCommands: raw.agentCommands ?? [],
     resting: raw.resting ?? [],
     devServers: (raw.devServers ?? []).map(normalizeDevServer),
+    goal: raw.goal,
     pinned: raw.pinned ?? false,
     lead: raw.lead ?? false,
     position: raw.position ?? 0,
@@ -161,6 +166,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     section: raw.section || undefined,
     hidden: raw.hidden ?? false,
     plain: raw.plain === true,
+    workflow: raw.workflow ?? null,
     notify: raw.notify ?? null,
     connectors: raw.connectors ?? [],
     skills: raw.skills ?? [],

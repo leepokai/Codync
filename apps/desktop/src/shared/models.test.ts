@@ -86,3 +86,8 @@ test("a message's voice note plays in its bubble only when the computer marks it
   // An older computer doesn't mark it: the plain file card, whatever the name says.
   assert.equal(voiceNoteOf({ text: 'Here is the plan.', voiceNote: true, files: [file('note.m4a')] }), undefined)
 })
+
+test('a bot keeps its workflow id when set, and defaults to null', () => {
+  assert.equal(normalizeBot({ id: 'b' }).workflow, null)
+  assert.equal(normalizeBot({ id: 'b', workflow: 'wf-1' }).workflow, 'wf-1')
+})

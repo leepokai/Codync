@@ -82,6 +82,8 @@ import Testing
     #expect(try json(.imagePreviewOpened) == "{}")
     #expect(AnalyticsEvent.imagePreviewOpened.name == "image_preview_opened")
     #expect(AnalyticsEvent.imagePreviewAction(.zoom, from: .viewer).name == "image_preview_action")
+    #expect(try json(.codeBlockCopied) == "{}")
+    #expect(AnalyticsEvent.codeBlockCopied.name == "code_block_copied")
     #expect(try json(.voiceCallStarted(.onDevice)) == #"{"engine":"on_device"}"#)
     #expect(try json(.voiceCallQuality(.gemini, readyMs: 1200, reconnects: 1, stuck: .none, failure: .connection))
         == #"{"engine":"gemini","failure":"connection","ready_ms":1200,"reconnects":1,"stuck":"none"}"#)

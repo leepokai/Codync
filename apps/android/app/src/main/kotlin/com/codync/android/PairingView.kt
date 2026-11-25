@@ -119,7 +119,9 @@ private enum class ComputerOS { Mac, Linux }
 // MARK: - Install
 
 @Composable private fun InstallPage(os: ComputerOS, choose: (ComputerOS) -> Unit, email: String?, startCloud: (() -> Unit)?, next: () -> Unit) {
-    val (linkCopied, copyLink) = rememberCopy(WEBSITE_LINK, OutboundLink.InstallLink)
+    val (linkCopied, copyLink) = rememberCopy(WEBSITE_LINK, clipLabel = "Command") {
+        Analytics.capture(AnalyticsEvent.LinkOpened(OutboundLink.InstallLink))
+    }
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -189,16 +191,20 @@ private enum class ComputerOS { Mac, Linux }
 /** A small label above a `CommandBlock`. */
 @Composable private fun Hint(text: String) = Text(tr(text), style = Type.footnote, color = Palette.secondary)
 
-/** Whether [text] was just copied, and what copies it; copying counts as opening [records]. */
-@Composable private fun rememberCopy(text: String, records: OutboundLink?): Pair<Boolean, () -> Unit> {
+/** Whether [text] was just copied, and what copies it; tapping again restarts the timer. */
+@Composable internal fun rememberCopy(text: String, clipLabel: String = "Codync", onCopied: (() -> Unit)? = null): Pair<Boolean, () -> Unit> {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     var copied by remember { mutableStateOf(false) }
+    var copies by remember { mutableIntStateOf(0) }
+    LaunchedEffect(copies) {
+        if (copies > 0) { delay(1500); copied = false }
+    }
     val copy: () -> Unit = {
         scope.launch {
-            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Command", text)))
-            records?.let { Analytics.capture(AnalyticsEvent.LinkOpened(it)) }
-            copied = true; delay(1500); copied = false
+            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(clipLabel, text)))
+            onCopied?.invoke()
+            copied = true; copies++
         }
     }
     return copied to copy
@@ -206,7 +212,9 @@ private enum class ComputerOS { Mac, Linux }
 
 /** A terminal command or link with a copy button; copying it counts as opening `records`. */
 @Composable private fun CommandBlock(command: String, records: OutboundLink? = null) {
-    val (copied, copy) = rememberCopy(command, records)
+    val (copied, copy) = rememberCopy(command, clipLabel = "Command") {
+        records?.let { Analytics.capture(AnalyticsEvent.LinkOpened(it)) }
+    }
     Row(Modifier.fillMaxWidth().clip(RoundedRectangle(12.dp)).background(Palette.codeBackground).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         SelectionContainer(Modifier.weight(1f).padding(vertical = 6.dp)) {

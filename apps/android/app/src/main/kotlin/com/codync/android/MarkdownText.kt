@@ -19,9 +19,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -83,10 +85,20 @@ val LocalNetworkImages = staticCompositionLocalOf<ImageLoader> { error("Missing 
             Box(Modifier.width(3.dp).fillMaxHeight().background(Palette.border))
             Text(inline(block.text, code), Modifier.padding(start = 10.dp), style = Type.body, color = Palette.secondary)
         }
-        is Block.Code -> Box(Modifier.fillMaxWidth().clip(RoundedRectangle(8.dp)).background(Palette.codeBackground)
-            .horizontalScroll(rememberScrollState())) {
-            Text(block.text, Modifier.padding(10.dp), style = Type.footnote.monospaced, color = Palette.text, softWrap = false)
+        is Block.Code -> CodeBlock(block.text)
+    }
+}
+
+/** A fenced code block: the code, and a button in its corner that copies it without the fences. */
+@Composable private fun CodeBlock(text: String) {
+    val (copied, copy) = rememberCopy(text) { Analytics.capture(AnalyticsEvent.CodeBlockCopied) }
+    Box(Modifier.fillMaxWidth().clip(RoundedRectangle(8.dp)).background(Palette.codeBackground)) {
+        Box(Modifier.horizontalScroll(rememberScrollState())) {
+            Text(text, Modifier.padding(10.dp).padding(top = 34.dp), style = Type.footnote.monospaced, color = Palette.text, softWrap = false)
         }
+        // Own merge root so AgentBubble's contextActions(mergeDescendants = true) leaves this button's onClick and label intact.
+        IconButton(if (copied) "Copied" else "Copy code", if (copied) "checkmark" else "doc.on.doc",
+            Modifier.align(Alignment.TopEnd).padding(2.dp).semantics(mergeDescendants = true) {}, action = copy)
     }
 }
 

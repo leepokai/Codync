@@ -179,7 +179,9 @@ impl App {
         let Some(id) = self.selected.clone() else { return false };
         let picked = self.pick.as_ref().and_then(|p| self.lane(&id).into_iter().find(|e| &e.id == p).cloned());
         // A picked card waiting for an answer: its own keys answer it (`to_answer`).
-        if picked.as_ref().is_some_and(Entry::pending) && matches!(k.code, KeyCode::Char('1'..='9')) {
+        if picked.as_ref().is_some_and(Entry::pending)
+            && matches!(k.code, KeyCode::Char('1'..='9' | 'y' | 'a' | 'n' | 'N'))
+        {
             return false;
         }
         match k.code {
@@ -283,6 +285,23 @@ impl App {
                     self.flash("Copied");
                 }
             }
+            KeyCode::Char('y') => {
+                if let Some(e) = picked {
+                    if e.is_bot_message()
+                        && group(&id, &self.lane(&id)).iter().any(|i| matches!(i, Item::Group(g) if g.first.id == e.id))
+                    {
+                        self.flash("Bot conversations are read-only");
+                    } else if let Some(code) = Self::picked_code_block(&id, &e) {
+                        copy(&code);
+                        self.track(Reported::CodeBlockCopied);
+                        self.flash("Copied code");
+                    } else {
+                        self.flash("No code block to copy");
+                    }
+                } else {
+                    self.flash("No code block to copy");
+                }
+            }
             KeyCode::Esc => self.pick = None,
             _ => return false,
         }
@@ -308,6 +327,14 @@ impl App {
                 self.flash("Trying it again");
             }
             None => self.flash("No failed routine run to try again here"),
+        }
+    }
+
+    pub(in crate::tui) fn picked_code_block(chat: &str, e: &Entry) -> Option<String> {
+        if e.is_bot_message() {
+            super::Exchange::of(chat, e).and_then(|x| crate::tui::md::last_code_block(&x.text))
+        } else {
+            crate::tui::md::last_code_block(e.text())
         }
     }
 

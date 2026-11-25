@@ -328,3 +328,48 @@ fn update_notices_name_the_side_that_needs_updating() {
         "Update Codync on Office Mac: it runs 2.20.0; that computer needs Codync 2.46.3 or newer. ^k → Check for updates."
     );
 }
+
+#[tokio::test]
+async fn y_on_a_picked_message_copies_its_last_code_block() {
+    use crossterm::event::{KeyCode, KeyEvent};
+
+    let (base, mut requests) = recording_host().await;
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut app = App::new(Client::new(&base, Some("token")), tx, base);
+    app.bots.insert("b".into(), Bot::parse(&json!({"id": "b", "name": "Bot"})).expect("a bot with an id parses"));
+    app.selected = Some("b".into());
+    let messages = [
+        (1, "agent", json!({"text": "No fenced block here.", "final": true})),
+        (
+            2,
+            "agent",
+            json!({"text": "First:\n```sh\necho 1\n```\nSecond:\n```rust\nprintln!(\"hi\");\n```\nDone.", "final": true}),
+        ),
+        (
+            3,
+            "permission",
+            json!({"title": "Run tool", "status": "pending", "options": [{"optionId": "allow_once", "name": "Allow once", "kind": "allow_once"}]}),
+        ),
+    ];
+    for (seq, kind, data) in messages {
+        let v = json!({"botId": "b", "id": format!("e{seq}"), "seq": seq, "turn": 1, "kind": kind, "data": data});
+        let (bot, e) = Entry::parse(&v).expect("a full entry parses");
+        app.entries.entry(bot).or_default().insert(e.seq, e);
+    }
+    let y = KeyEvent::from(KeyCode::Char('y'));
+
+    app.pick = Some("e2".into());
+    let picked = app.lane("b").into_iter().find(|e| e.id == "e2").cloned().unwrap();
+    assert_eq!(App::picked_code_block("b", &picked).as_deref(), Some("println!(\"hi\");"));
+    assert!(app.pick_key(y));
+    assert_eq!(app.hint.as_ref().map(|(text, _)| text.as_str()), Some("Copied code"));
+    let tracked = next_request(&mut requests).await;
+    assert!(tracked.contains("\"code_block_copied\"") && tracked.contains("\"tui\""), "{tracked}");
+
+    app.pick = Some("e1".into());
+    assert!(app.pick_key(y));
+    assert_eq!(app.hint.as_ref().map(|(text, _)| text.as_str()), Some("No code block to copy"));
+
+    app.pick = Some("e3".into());
+    assert!(!app.pick_key(y), "pending approval cards still keep y for allow once");
+}

@@ -13,7 +13,7 @@ use super::style::theme;
 /// The key of the page of every bot's work: listed only while some bot has a live or waiting task.
 const WORK_KEY: &str = "E";
 
-const HELP: [(&str, &str, &str); 87] = [
+const HELP: [(&str, &str, &str); 88] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -46,6 +46,7 @@ const HELP: [(&str, &str, &str); 87] = [
     ("CHAT", "f", "picking: save its files or artifact"),
     ("CHAT", "o", "picking an artifact: open it in the browser"),
     ("CHAT", "o", "picking: show a summary, handoff or note change"),
+    ("CHAT", "y", "picking: copy its last code block"),
     ("CHAT", "q", "picking a quote: show the quoted message"),
     ("CHAT", "e K", "picking a handoff: edit / keep the chat"),
     ("CHAT", "A", "picking a failure: add a fallback agent"),

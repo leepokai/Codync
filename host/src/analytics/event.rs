@@ -226,6 +226,8 @@ pub enum Event {
     NetworkChanged,
     /// A network step failed (`NetworkStage`): starting a node, a letter, or a `network*` call.
     NetworkFailed,
+    /// A coding agent's session used its Network mailbox (`SessionAction`, with the agent's kind).
+    NetworkSession,
     /// Error tracking (`errors`): a panic or an uncaught error.
     Exception,
 }
@@ -374,6 +376,7 @@ impl Event {
             Self::NetworkJoined => "network_joined",
             Self::NetworkChanged => "network_changed",
             Self::NetworkFailed => "network_failed",
+            Self::NetworkSession => "network_session",
             Self::Exception => "$exception",
         }
     }

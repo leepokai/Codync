@@ -80,7 +80,9 @@ import androidx.compose.ui.semantics.semantics
         error?.let { Text(tr(it), style = Type.footnote, color = Palette.danger) }
     }
     CodyncSheet(folders, { folders = false }) {
-        FolderPicker(draft.cwd.ifEmpty { state.hello?.get("home")?.jsonPrimitive?.contentOrNull }, online, state.computerName, store::listDirs, store::selectWorkspace) {
+        // With projects, as on the iPhone: from the default project, else the computer's home.
+        val start = if (state.botProjects) draft.projects?.firstOrNull() else draft.cwd.ifEmpty { null }
+        FolderPicker(start ?: state.hello?.get("home")?.jsonPrimitive?.contentOrNull, online, state.computerName, store::listDirs, store::selectWorkspace) {
             change(if (state.botProjects) draft.withProject(it) else draft.copy(cwd = it)); folders = false
         }
     }

@@ -198,6 +198,13 @@ impl Grants {
         self.tokens.is_empty()
     }
 
+    /// Hands them to `acp`, revoked when it ends; none leave it holding nothing, so a keeper restart leaves it be.
+    pub fn held_by(self, acp: &codync_agent::acp::Acp) {
+        if !self.is_empty() {
+            acp.hold(self);
+        }
+    }
+
     /// Takes over `other`'s grants: they are revoked with these.
     pub fn absorb(&mut self, mut other: Self) {
         #[cfg(unix)]

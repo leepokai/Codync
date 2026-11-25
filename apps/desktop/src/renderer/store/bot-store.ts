@@ -17,7 +17,7 @@ import {
 } from '@shared/models'
 import type { CallLine } from '@shared/calls'
 import { localEntryId } from '@shared/threads'
-import { pendingCards } from '@shared/work'
+import { pendingCards, type ThreadSetup } from '@shared/work'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
 import { errorText } from '../lib/error-text'
@@ -91,17 +91,8 @@ export class BotStore extends BotSync {
       try {
         // Safe to repeat: the computer skips a nonce it already has.
         const e = await this.withLink(async (client) => {
-          let ids: string[] | null = null
           const pending = this.outgoingFiles.get(nonce)
-          if (pending) {
-            ids = []
-            for (const file of pending) {
-              const id = crypto.randomUUID()
-              await client.upload(botId, id, file.name, file.data)
-              cacheAttachment(id, file.data)
-              ids.push(id)
-            }
-          }
+          const ids = pending ? await uploadFiles(client, botId, pending) : null
           return client.send(botId, trimmed, nonce, ids, pasted, replyTo, call)
         }, true)
         this.outgoingFiles.delete(nonce)
@@ -239,6 +230,69 @@ export class BotStore extends BotSync {
     this.changed()
   }
 
+  /** Whether this computer starts a thread the user asks for themselves; false before hello or on older hosts. */
+  get startsThreads() {
+    return this.hello?.startThread === true
+  }
+
+  /** Threads may start without a bot here (`startThread` without `botId`). */
+  get startsThreadsWithoutBot() {
+    return this.hello?.threadsWithoutBot === true
+  }
+
+  /** A workflow can be built by talking to a thread here (`startThread` with `setup.workflow`). */
+  get buildsWorkflowsInThreads() {
+    return this.hello?.workflowThreads === true
+  }
+
+  /** A thread can be started on a login of its agent here (`startThread` with `setup.loginProfile`). */
+  get startsThreadsOnLogins() {
+    return this.hello?.threadLogins === true
+  }
+
+  /** A thread can start with files here (`startThread` with `attachments`). */
+  get startsThreadsWithFiles() {
+    return this.hello?.threadFiles === true
+  }
+
+  /** Bots have a list of projects and a worktree mode here; their `cwd` is always their own folder. */
+  get hasProjects() {
+    return this.hello?.projects === true
+  }
+
+  /** A new thread can name its place in a git project here (`startThread` with `setup.place`). */
+  get startsThreadsInPlace() {
+    return this.hello?.threadPlace === true
+  }
+
+  /** Bots have shared folders here, linked into each new worktree of a project. */
+  get fillsWorktrees() {
+    return this.hello?.worktreeFill === true
+  }
+
+  /** A thread without a bot sent no folder gets one of its own here (an older host: the home folder). */
+  get givesThreadsOwnFolders() {
+    return this.hello?.threadFolders === true
+  }
+
+  /** A routine can name the folder its runs work in here (`saveRoutine` with `folder`). */
+  get routinesHaveFolders() {
+    return this.hello?.routineFolder === true
+  }
+
+  /** A thread the user starts with `botId` themselves (null: without a bot, on the agent `setup` names), opened by
+   *  `text`, its task on `setup` where that differs from the bot's: where its task is, the bot's (or the box's) id
+   *  and the task's. */
+  async startThread(botId: string | null, text: string, setup: ThreadSetup = {}, files: OutgoingFile[] = []): Promise<{ botId: string; taskId: string }> {
+    // Its files go to the bot first (without one, to the computer's box of threads without a bot).
+    const started = await this.withLink(async (c) => {
+      const attachments = files.length ? await uploadFiles(c, botId ?? '', files) : undefined
+      return c.call<{ botId: string; taskId: string }>('startThread', { ...(botId ? { botId } : {}), text: text.trim(), setup, ...(attachments ? { attachments } : {}) })
+    })
+    noteActiveDay()
+    return started
+  }
+
   /** Whether a bot with a new message moves to the top of this computer's roster; undefined before hello or on older hosts. */
   get autoOrder() {
     return this.hello?.autoOrder
@@ -253,6 +307,38 @@ export class BotStore extends BotSync {
       this.showAutoOrder(!enabled)
       throw e
     }
+  }
+
+  /** Days after a thread last ended that this computer deletes it (0: never); undefined before hello or on older hosts. */
+  get threadKeepDays() {
+    return this.hello?.threadKeepDays
+  }
+
+  /** Shown at once, put back if the computer refuses. */
+  async setThreadKeepDays(days: number) {
+    const before = this.hello?.threadKeepDays
+    this.showThreadKeepDays(days)
+    try {
+      const res = await (await this.ready()).call<{ days: number }>('setThreadKeepDays', { days })
+      this.showThreadKeepDays(res.days)
+    } catch (e) {
+      if (before !== undefined) this.showThreadKeepDays(before)
+      throw e
+    }
+  }
+
+  /** The Threads list's first page of older threads on this computer, once. */
+  loadFirstOlderThreads() {
+    if (!this.olderThreads.started) this.loadOlderThreads()
+  }
+
+  /** The Threads list's next page of older threads, as the list reaches its end. Only while connected to a host that
+   * lists them. */
+  loadOlderThreads() {
+    if (this.hello?.threadKeepDays === undefined || this.connection.kind !== 'online') return
+    this.olderThreads
+      .loadNext(async (before) => (await this.ready()).call('olderThreads', before === undefined ? {} : { before }))
+      .catch((e: unknown) => this.setError(errorText(e)))
   }
 
   /** The user's name for this computer, empty for its hostname (a cloud computer is named in Codync Cloud). */
@@ -351,22 +437,32 @@ export class BotStore extends BotSync {
    * once, and the computer's own entry replaces it (queued while the thread's turn runs; the first one to an ended
    * task reopens it). A refusal leaves it as failed and says why. `nonce` again sends the same message once more.
    */
-  sendToThread(thread: ThreadRef, threadId: string, text: string, nonce: string = crypto.randomUUID()) {
+  sendToThread(thread: ThreadRef, threadId: string, text: string, { files = [], nonce = crypto.randomUUID() }: { files?: OutgoingFile[]; nonce?: string } = {}) {
     const trimmed = text.trim()
-    if (!trimmed || this.retired) return
+    if ((!trimmed && !files.length) || this.retired) return
     const show = (e: Entry) => {
       this.mergeThread(threadId, [e])
       this.changed()
     }
+    const data: Entry['data'] = { text: trimmed, status: 'sending', clientNonce: nonce }
+    if (files.length) {
+      data.attachments = files.map((f) => ({ id: f.id, name: f.name, size: f.data.length }))
+      this.outgoingFiles.set(nonce, files)
+    }
     const local: Entry = {
       id: localEntryId(nonce), seq: Number.MAX_SAFE_INTEGER, botId: threadId, rev: 0, kind: 'user',
-      turn: 0, data: { text: trimmed, status: 'sending', clientNonce: nonce }, createdAt: Date.now(), updatedAt: 0,
+      turn: 0, data, createdAt: Date.now(), updatedAt: 0,
     }
     show(local)
     // Safe to repeat: the computer answers a nonce it already has with the same entry.
-    void this.withLink((c) => c.call<{ entry: Entry }>('send', { ...thread, text: trimmed, clientNonce: nonce }), true).then(
+    void this.withLink(async (c) => {
+      const pending = this.outgoingFiles.get(nonce)
+      const attachments = pending ? await uploadFiles(c, thread.botId, pending, thread.taskId) : undefined
+      return c.call<{ entry: Entry }>('send', { ...thread, text: trimmed, clientNonce: nonce, ...(attachments ? { attachments } : {}) })
+    }, true).then(
       (res) => {
         noteActiveDay()
+        this.outgoingFiles.delete(nonce)
         show({ ...res.entry, data: res.entry.data ?? {} })
       },
       (error: unknown) => {
@@ -378,8 +474,16 @@ export class BotStore extends BotSync {
     )
   }
 
+  /** Resend on a message that never reached the thread: the same nonce, with its files while this app still holds them. */
+  resendToThread(thread: ThreadRef, entry: Entry) {
+    const files = filesToResend(entry, this.outgoingFiles)
+    if (!files) return this.setError(trNow("This message's files aren't on this device anymore. Delete it and attach them again."))
+    this.sendToThread(thread, entry.botId, entry.data.text ?? '', { files, nonce: entry.data.clientNonce })
+  }
+
   /** Takes a message that never reached the thread out of its transcript. */
   discardFromThread(entry: Entry) {
+    if (entry.data.clientNonce) this.outgoingFiles.delete(entry.data.clientNonce)
     this.mergeThread(entry.botId, [{ ...entry, data: { ...entry.data, removed: true } }])
     this.changed()
   }
@@ -544,7 +648,8 @@ export class BotStore extends BotSync {
 
   /** Takes a waiting task, or one that ended, out of the box. */
   dropWork(botId: string, taskId: string) {
-    this.perform((c) => c.call('dropWork', { botId, taskId }))
+    // An older thread leaves the list at once; it comes back if the computer refuses.
+    this.perform((c) => c.call('dropWork', { botId, taskId }), false, this.olderThreads.drop(botId, taskId))
   }
 
   /** Puts a stopped or failed task back in the box, last. */
@@ -685,6 +790,18 @@ export class BotStore extends BotSync {
 
 // ponytail: in-memory attachment cache; a disk cache (main process) if relaunches refetching hurts.
 const attachmentCache = new Map<string, Uint8Array>()
+/** Uploads `files` for one message (to the thread of `taskId` when given), each cached as sent; their upload ids. */
+async function uploadFiles(client: HostClient, botId: string, files: OutgoingFile[], taskId?: string): Promise<string[]> {
+  const ids: string[] = []
+  for (const file of files) {
+    const id = crypto.randomUUID()
+    await client.upload(botId, id, file.name, file.data, taskId)
+    cacheAttachment(id, file.data)
+    ids.push(id)
+  }
+  return ids
+}
+
 function cacheAttachment(id: string, data: Uint8Array) {
   attachmentCache.set(id, data)
 }

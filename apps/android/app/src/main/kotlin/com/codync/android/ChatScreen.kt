@@ -11,7 +11,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,7 +51,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -192,8 +190,7 @@ import kotlinx.coroutines.delay
     CodyncSheet(details, { details = null }) { request ->
         val shown = state.bots.firstOrNull { it.id == (request.botId ?: bot.id) }
         // A card is in this chat: another bot's details (a group member's) have none to go to.
-        if (shown != null) BotDetailsView(shown, request, state, store, openInChat = { details = null; reveal(it.id) },
-            openCard = { task: WorkTask -> details = null; store.openCard(bot.id, task) }.takeIf { shown.id == bot.id }) { viewing = it }
+        if (shown != null) BotDetailsView(shown, request, state, store, openCard = { task: WorkTask -> details = null; store.openCard(bot.id, task) }.takeIf { shown.id == bot.id }) { viewing = it }
     }
     ArtifactLayer(viewing) { open ->
         state.bots.firstOrNull { it.id == open.botId }?.let { owner -> ArtifactViewer(open, owner, state, store) { viewing = null } }
@@ -232,18 +229,6 @@ import kotlinx.coroutines.delay
                 ComputerButton(operating, Modifier) { store.openScreen(bot.id.takeIf { operating }) }
             }
         }
-    }
-}
-
-/** A glass button in the header's corner. */
-@Composable private fun HeaderButton(symbol: String, title: String, modifier: Modifier = Modifier, symbolModifier: Modifier = Modifier,
-    action: () -> Unit) {
-    val (source, pressed) = rememberPress()
-    val label = tr(title)
-    Box(modifier.size(44.dp).glass(Capsule(), pressed = pressed)
-        .clickable(source, null, role = Role.Button, onClick = action).semantics { contentDescription = label },
-        contentAlignment = Alignment.Center) {
-        Symbol(symbol, symbolModifier, size = 22.dp, tint = Palette.text)
     }
 }
 
@@ -324,7 +309,8 @@ private fun AppState.chatItems(bot: Bot) =
     // Find's shown match, else the card or quoted message brought into view: its row, after the earlier-messages row when
     // there is one. `revealed` is an entry id, and a user row is keyed by its nonce.
     val reveal = items.rowOf(found ?: revealed)?.let { ConversationReveal(items[it].id, it + if (more) 1 else 0, findStep) }
-    ConversationList(list, items.lastOrNull()?.id, entries.lastOrNull()?.rev, working, padding, store::refreshConnection, indicatorTop,
+    ConversationList(list, first = items.firstOrNull()?.id, last = items.lastOrNull()?.id, rev = entries.lastOrNull()?.rev, working = working,
+        padding = padding, refresh = store::refreshConnection, indicatorTop = indicatorTop,
         reveal = reveal, onOpened = { settled = true }) {
         if (more) item("earlier") {
             Box(Modifier.fillMaxWidth().padding(vertical = 14.dp).clearAndSetSemantics { contentDescription = "Loading earlier messages" },

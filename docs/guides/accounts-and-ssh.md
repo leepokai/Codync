@@ -32,7 +32,7 @@ Confirm Apple, Google and GitHub sign-in, Native API and the native app registra
 
 ### GitHub sign-in
 
-**Continue with GitHub** sits under Google on every sign-in surface (welcome, account menu, custom icon dialog; desktop Settings → General → Account). It is Clerk's built-in GitHub connection, run like Google: `oauth_github` through the system browser on the desktop, `clerk.auth.signInWithOAuth(provider: .github)` on iOS, `OAuthProvider.GITHUB` on Android. GitHub gives Clerk the account's verified email, so nothing in `cloud/` changes. The development instance can use Clerk's shared credentials; production needs a GitHub OAuth App (GitHub → Settings → Developer settings → OAuth Apps) whose callback URL is the one Clerk shows under SSO connections → GitHub → Use custom credentials, with its Client ID and secret pasted there. Enable it in production before a release with the button ships.
+**Continue with GitHub** sits under Google on every sign-in surface (welcome, the phones' account sheet, custom icon dialog; desktop Settings → General → Account). It is Clerk's built-in GitHub connection, run like Google: `oauth_github` through the system browser on the desktop, `clerk.auth.signInWithOAuth(provider: .github)` on iOS, `OAuthProvider.GITHUB` on Android. GitHub gives Clerk the account's verified email, so nothing in `cloud/` changes. The development instance can use Clerk's shared credentials; production needs a GitHub OAuth App (GitHub → Settings → Developer settings → OAuth Apps) whose callback URL is the one Clerk shows under SSO connections → GitHub → Use custom credentials, with its Client ID and secret pasted there. Enable it in production before a release with the button ships.
 
 ### Desktop Sign in with Apple
 
@@ -116,7 +116,15 @@ from it. With computers in the account, the first page lists them (**Ask for acc
 is requested until the tap, since the user may be here to set up another computer) next to
 **Pair a new computer**, which leads to the install page. With none, or only older copies, setup
 goes straight to the install page. That page has a button that copies the website's link,
-to open on the computer. A computer that joins the account meanwhile brings up the first page the next
+to open on the computer. Signed in, while Codync Cloud is open to the account, both pages also offer
+**Start a cloud computer** (first run only, not the pairing sheet from Computers): once one is created, a wait page
+(`CloudStartView`) replaces the setup pages, preparing → connecting → the tabs once it's reached; it fails → its
+message. While connecting, the page asks the account again every 5 s (`reachCloudComputer`), so a lookup or an access
+request the network lost doesn't leave it waiting: a cloud computer the account lists as asked while the phone holds no
+request for it is asked again, and such a request fails without a dialog. **Back** in any stage returns to the pages
+and stops waiting for that one, **Skip** finishes setup. A cloud
+computer of the account still preparing, made on another device too, also leads there
+([Codync Cloud](../plans/codync-cloud.md)). A computer that joins the account meanwhile brings up the first page the next
 time the app is opened, unless the user already chose to pair or moved on to scanning. Only
 reaching a computer or **Skip** finishes setup. The first page and the scan step always offer
 **Skip**. Skipping finishes onboarding and opens the main
@@ -125,9 +133,9 @@ offers **Computers** to pair later. Skipping while adding a computer from settin
 only closes that pairing sheet. It does not grant access to a computer or change
 the account approval flow. **Start over** resets the onboarding choice.
 
-The desktop app's menu bar **Settings → Reset all data…**, or **Reset everything** in Settings → Computers → Reset (both asked twice in the window), is
+The desktop app's menu bar **Settings → Reset all data…**, or **Reset everything** under Reset on the Computers page (both asked twice in the window), is
 the computer's start over: it removes this computer from the account, revokes every
-paired device, signs out, uninstalls the host, deletes its data folder and the app's
+paired device, signs out, uninstalls the host, removes the Codync Screen helper (macOS), deletes its data folder and the app's
 settings, and relaunches into the welcome screen. The host comes back with a new
 identity, so phones see the old computer as **No access** (if they were connected),
 and phones and the desktop app see it as an older copy once the new one is reachable
@@ -164,11 +172,11 @@ uses the SDK's system browser authentication session. Clerk handles new-user
 transfer, callback validation, session restoration and Keychain storage.
 Incomplete sign-in/sign-up results are reported explicitly; additional MFA or
 required profile fields need a separate continuation UI if enabled later. Browser cancellation is silent;
-network failures leave the user in the custom account menu with a retryable
+network failures leave the user where they signed in with a retryable
 error. Log out calls Clerk's sign-out API. The desktop app follows the same
 flow over the Frontend API (`apps/desktop/src/main/account.ts`).
 
-The custom account menu displays the authenticated email and avatar when
+The account's avatar (the phones' account button, the bottom of the desktop's rail) and its email (the account sheet, the desktop's Settings › General) show when
 available. `AccountSession.sessionToken()` (desktop: `AccountService.sessionToken()`, used by `cloud.ts`)
 hands the session JWT to the Codync cloud client. A Clerk session never authorizes a computer by itself: each
 computer approves each device after comparing a 6-digit code
@@ -178,8 +186,7 @@ computer approves each device after comparing a 6-digit code
 
 - Build the iOS scheme after `xcodegen generate --spec apps/project.yml`, and run the
   desktop app with `npm run dev` in `apps/desktop/`.
-- Open the account menu from either sidebar layout; test arrows, Return, Escape
-  and clicking outside the panel.
+- Open Settings from the avatar at the bottom of the desktop's rail, and the account sheet on the phones.
 - Sign in with Apple, Google and GitHub test users, verify the avatar/email, restart the app and
   verify session restoration, then log out and verify the anonymous state.
 - Cancel the browser flow and verify no error; retry with networking unavailable
@@ -195,8 +202,8 @@ References:
 ## iOS account switching
 
 The iOS app now uses the same ClerkKit dependency and shared AccountSession.
-Its top-left button opens Accounts. Settings, the tab to the right of State,
-holds the phone's own settings. Manage computers opens Computer management,
+Its top-left button opens Accounts. Settings, the tab to the right of Workflows,
+holds the phone's own settings, including Show status. Manage computers opens Computer management,
 which holds each computer's settings. The iOS native application must be registered in the same Clerk
 instance with bundle ID `com.pokai.Codync.ios` and its own callback
 `com.pokai.Codync.ios://callback`. The iOS public configuration is in

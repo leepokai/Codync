@@ -71,6 +71,7 @@ Name Swift files after their main `UpperCamelCase` type; use `snake_case.rs` and
 - Inspect every client's corresponding implementation before finishing a UI task. Implement applicable changes together; do not silently defer another client. For a platform-only change or an unsupported capability, document which clients are unaffected and the concrete reason in the change summary.
 - Validate each affected client with its relevant build/tests and UI checks. Report any checks that could not run and why.
 - The desktop app is one codebase for macOS, Linux and Windows: platform differences go through `window.codync.platform` checks or the main process, never a fork of a view.
+- The website shows the apps too: a UI change also updates, in the same change, every place on the site (`web/`) that pictures that UI: the rebuilt app views in `web/app/components/` (`mac-window`, `phone`, `sidebar-rows`, `demo`, …), the screenshots in `web/public/screens/` and the demo in `web/public/demo/`, so the site never shows an older look.
 
 ## Testing Guidelines
 
@@ -78,7 +79,7 @@ Use Swift Testing (`@Test`, `#expect`), Rust unit tests, `node --test` in the de
 
 ## Several agents share `dev`
 
-- Every large feature and every bug fix must use its own branch in a separate git worktree, including implementation, builds, tests and app E2E; never do that work in the shared checkout. Use the [worktree sandbox](docs/guides/dev-app.md#worktree-sandboxes) and follow the [handoff and cleanup workflow](docs/guides/clean-code.md#after-every-change-review-e2e-cleanup).
+- Every change, large or small (docs and one-line fixes included), must use its own branch in a separate git worktree branched from `dev`, including implementation, builds, tests and app E2E; never do that work in the shared checkout. Use the [worktree sandbox](docs/guides/dev-app.md#worktree-sandboxes) and follow the [handoff and cleanup workflow](docs/guides/clean-code.md#after-every-change-review-e2e-cleanup).
 - After creating or selecting a task worktree, `cd` into it and show `pwd` and `git branch --show-current` so the user can see where the work is happening. Run subsequent task commands from that worktree; tools without a persistent working directory must explicitly set it on every call.
 - Several agents often work in this checkout on `dev` at once. Before touching files with someone else's uncommitted changes, or anything tree-wide (renames, `xcodegen`, version bump, `git stash`/`reset`/`checkout`), tell the other agents what you'll change if your tool can message them; otherwise ask the user first. Never discard, revert or reformat hunks that aren't yours.
 - Before starting any task, sync with origin: `git pull --rebase --autostash origin dev`, then push any finished local commits that aren't on `origin/dev` yet (`git push origin dev`). The pull is tree-wide, so the rule above applies; if the autostash conflicts, keep both sides' intent and never drop another agent's hunk.
@@ -100,4 +101,4 @@ PRs should explain behavior changes, link relevant issues, list validation perfo
 
 - CLAUDE.md and AGENTS.md hold only rules an agent needs on every task. Reference material (file structure, naming tables, API details, audits, how-tos) goes in `docs/` as its own file, with a one-line pointer here.
 - Whenever you edit either file, check its length: past ~100 lines, or a section past a few lines of reference detail, refactor that detail into `docs/` and leave the pointer, without being asked.
-- Keep `docs/` current: update the doc in the same change that makes it stale. A change users can see also updates its page of the user manual (`web/content/docs/`): [user docs](docs/guides/user-docs.md).
+- Keep `docs/` in step with the codebase: update the doc in the same change that makes it stale, plans included (mark a part Built and drop "next"/"proposed" once it lands); a doc you read that disagrees with the code gets fixed in that change, not left for later. A change users can see also updates its page of the user manual (`web/content/docs/`): [user docs](docs/guides/user-docs.md).

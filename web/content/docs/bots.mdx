@@ -23,7 +23,7 @@ The host on your computer runs every bot. A bot's agent starts when you send it 
 ## Where to change a bot's settings
 
 - **iPhone:** open the bot's chat and tap its name at the top. The tabs are **Details**, **Computer**, **Library**, **Memory** and **Settings**. **Details** shows what the bot does: its [work](/docs/conversations#work) away from the chat, follow-ups, routines and [dev servers](/docs/dev-servers); **Computer** shows the computer it runs on, a picture of that computer's screen once you tap **Tap to see the screen**, and [Use the computer](/docs/computer-use#let-a-bot-use-the-computer); **Settings** shows how it is set up: its instructions, agent and model first, then its profile, workspace, activity, and the Codync skills and connectors it passes on. Changes save as you edit. You can also touch and hold the bot in the list and choose **Edit profile**.
-- **Desktop:** click the bot's name at the top of the chat to open the details panel, with the same tabs. Changes save as you edit. You can also right-click the bot in the sidebar and choose **Edit Profile…**
+- **Desktop:** click the bot's name at the top of the window to open the details panel. It starts as a list of views to open: the same ones as on the phone, **Browser**, which previews a web page such as one of the bot's dev servers, and **Terminal**, a shell on the bot's computer that opens in the bot's folder and keeps running while you look at other tabs (closing its tab ends it). Each view you open becomes a tab with a close button; picking **Browser** or **Terminal** again opens another one beside the first, so you can keep several pages and shells open, and the **+** after the tabs shows the list again; tabs share the panel's width like a browser's, and when they get narrow a tab shows its close button only while you point at it or it is the one shown; the layout is the same for every bot on that computer's app. While the panel is open, **Split panel** at the top right of the window adds a second set of tabs under the first, and **Maximize panel** lets the panel fill the chat's place. Changes save as you edit. You can also right-click the bot in the sidebar and choose **Edit Profile…**
 - **Android:** the same sheet and tabs as the iPhone.
 - **Terminal UI:** select the bot and press `e` for settings. Shift+Left and Shift+Right move between **Details**, **Computer**, **Library**, **Memory** and **Settings**. Press Ctrl+S to save, or Esc to drop your changes.
 
@@ -37,28 +37,66 @@ You can also ask a bot in its chat to rename itself or change its own instructio
 
 ## Agent and model
 
-- **Agent:** the coding agent this bot runs, picked from the agents Codync finds on the computer. Choose **Custom command** to run any agent that speaks the Agent Client Protocol (ACP) by its command line. See [Agents](/docs/agents).
-- **Login profile:** which of the agent's logins the bot runs on: the default one (the login the computer already has), or another account or API key you added in the agent's setup. See [Login profiles](/docs/agents#login-profiles).
+- **Agent and login profile:** the coding agent this bot runs and which of its logins, picked together: each agent Codync finds on the computer is listed once per login, its default one (the login the computer already has) first, then each account or API key you added as a [login profile](/docs/agents#login-profiles). On the desktop they are the icons down the left of the model panel, a login profile's with its initials; on the phones, the agent list. Choose **Custom command** to run any agent that speaks the Agent Client Protocol (ACP) by its command line. See [Agents](/docs/agents). Changing either on a bot with a conversation carries a summary of it with your next message ([what the chat shows](/docs/agent-fallbacks#what-the-chat-shows)).
 - **Model:** **Default** or one of the models the agent lists. Some models have their own options, such as reasoning effort, each with its own row.
 - **Fast mode:** shown when the agent offers it for the model (Claude Code and Codex do). Faster replies for more usage.
 - **Fallbacks:** other agents that carry on when this one runs out of usage or can't answer. See [Agent fallbacks](/docs/agent-fallbacks).
+- **Advisor mode:** the bot's [threads](/docs/conversations#work) run on an agent of their own, set under **Threads' agent** with its model and login profile, and carry on along **Threads' fallbacks**, while the chat stays on the agent above. Turning it on starts the threads on the bot's own agent, model and fallbacks.
 
 Changing the agent or the model starts a new agent session. The chat history stays.
 
 When a computer's bots use more than one agent, the bot list shows each bot's agent logo at the bottom-left of its avatar (the agent it runs on right now, a fallback included), so you can tell your Claude Code bots from your Codex ones at a glance. To hide the logos, turn off **Show agent logos** in Settings, under **Appearance** (desktop: **Settings → General**). It only changes the device you set it on. The terminal UI doesn't show agent logos.
 
-## Workspace: its own folder or a project
+## Workspace: its own folder and its projects
 
-The **Workspace** setting is the folder the bot starts in.
+Every bot lives in a folder of its own, and sends work to your folders, its projects. Both are under **Workspace** in the bot's **Settings**.
 
-- **Own folder** (the default): a folder of its own inside Codync's data folder, `~/.codync/bots/`. It stays when you rename the bot, change its model, restart the computer or start a new session. When Git is installed, Codync keeps a version of it before and after each turn, so you can ask the bot to show or undo what a turn changed: see [versions of its own folder](/docs/working-folders#versions-of-a-bots-own-folder).
-- **Choose project folder…**: an existing folder on the computer, such as a Git repository. The folder picker browses the computer's folders, wherever you are. Start with **Recent workspaces**, or choose **Browse other folders**. In the browser, use the path breadcrumbs and **Parent folder** to move through folders or Windows drives, or **Enter folder path** to paste an absolute path (including `~/`). Search filters the visible recent list or the current folder, not the whole computer. Confirm with **Use this folder** at the bottom. Recent selections are stored on that computer and shared across its connected clients; older hosts support browsing without recent history. Linked folders (symlinks, junctions, mounted drives) show up like any other folder.
+### The bot's own folder
 
-Either way, the bot can work in other folders when you ask it to. A working folder isn't a sandbox: the bot can reach whatever its agent's own permissions allow. Several bots working in the same project folder can get in each other's way, and Codync doesn't create separate Git worktrees for them. One bot's own [threads](/docs/conversations#work) do get a worktree each when they run side by side in a project folder: when that folder is in a Git repository, the bot's **Settings** show **Worktree per thread** under **Workspace**, on unless you turn it off. In its own folder they all work in that one folder. Codync never merges or deletes a branch that has work on it. Under the folder, **Settings** say whether it is a Git repository; what that changes, and what to do without one, is in [Working folders and git](/docs/working-folders).
+**Bot's folder** shows where the bot lives: a folder Codync makes for it inside its data folder, `~/.codync/bots/`. Its chat, routines and files live there. You can't change it; the button beside it copies its path (**Copy path**). It stays when you rename the bot, change its model, restart the computer or start a new session. When Git is installed, Codync keeps a version of it before and after each turn, so you can ask the bot to show or undo what a turn changed: see [versions of its own folder](/docs/working-folders#versions-of-a-bots-own-folder). Terminal UI: the field is **Own folder**; press `c` to copy its path.
 
-Changing the folder starts a new agent session.
+The chat always works in this folder, and so do routine runs (unless the routine names a folder), group chats, calls and other bots' requests. The bot keeps your projects' files apart from its own: what it writes for itself, and the files you send it, stay here.
 
-When there are no recent workspaces, **Browse other folders** appears first. After you choose a folder, recent workspaces and their search appear on your next visit.
+### Projects
+
+**Projects** lists your folders the bot works on, such as a project's Git repository. The first one is its default: [threads](/docs/conversations#work) start there, the ones the bot starts for its own work and the ones you start with it. The bot can still work in other folders when you ask, and it reads a project's files from the chat by their full path.
+
+- **Add a project:** **Add project** (**+**) opens the folder picker, and the folder goes at the end of the list. A bot with no projects gets it as its default.
+- **Make another the default:** **Make default** (the star) on its row moves it first. The first row reads **Default**.
+- **Remove one:** **Remove project** on its row. Nothing in the folder changes.
+- **Terminal UI:** on the **Projects** field, ←/→ picks a project, Enter adds one with the folder picker, `d` makes the picked one the default and `x` removes it.
+
+The folder picker browses the computer's folders, wherever you are. Start with **Recent workspaces**, or choose **Browse other folders**. In the browser, use the path breadcrumbs and **Parent folder** to move through folders or Windows drives, or **Enter folder path** to paste an absolute path (including `~/`). Search filters the visible recent list or the current folder, not the whole computer. Confirm with **Use this folder** at the bottom. Recent selections are stored on that computer and shared across its connected clients. Linked folders (symlinks, junctions, mounted drives) show up like any other folder. When there are no recent workspaces, **Browse other folders** appears first; after you choose a folder, recent workspaces and their search appear on your next visit.
+
+Adding, removing or reordering projects doesn't restart the bot's session.
+
+A project in a Git repository shows a branch icon on its row, others a folder icon.
+
+### Worktree mode
+
+**Worktree mode** shows under the projects once one of them is in a Git repository. It decides when a thread gets a Git worktree of its own, a separate checkout on a branch of its own, so threads and you don't change the same files:
+
+- **Off:** threads work in the project itself.
+- **Side by side** (the default): a thread gets its own worktree when another thread works in the same repository. The first one works in the project itself.
+- **Always:** every thread works in a worktree of its own, the first one included, so your checkout is never touched.
+
+A task can name its place over the mode: the bot chooses, for each task it hands out, the project itself or a worktree, and on the desktop you choose for a thread you start. **Shared folders** on a Git project's row lists folders, such as `node_modules`, linked into each new worktree so a thread doesn't install them again; a `.worktreeinclude` file at the top of the repository lists ignored files, such as `.env`, copied in: see [Filling a new copy](/docs/working-folders#filling-a-new-copy). Terminal UI: ←/→ on the **Worktree mode** field, and the **Shared folders** field for the project picked on **Projects**. Routine runs, other bots' requests and threads in the bot's own folder never get a worktree. Codync never merges or deletes a branch that has work on it. What it keeps and removes, and what to do without Git, is in [Working folders and git](/docs/working-folders).
+
+### What the chat no longer loads
+
+Because the chat works in the bot's own folder, its agent doesn't load what a project folder gives an agent that starts there: the project's `CLAUDE.md` or `AGENTS.md`, its `.mcp.json` connectors, its project skills, and the agent's own memory for that folder. Threads in the project still load all of these. Ask about the code in the chat and the bot reads the files it needs; for real work in the code, it starts a thread in the project, or you start one.
+
+A working folder isn't a sandbox: the bot can reach whatever its agent's own permissions allow. Several bots working in the same project can get in each other's way: Codync makes worktrees only between one bot's own threads.
+
+### Bots that worked in a project
+
+Before this version a bot could live in a project folder. The first time Codync starts on a computer after the update, each such bot moves to its own folder:
+
+- The project becomes its first project, its default, so threads still work there.
+- Its routines keep running in the project, each run in a thread of its own. A bot with [computer use](/docs/computer-use) or **Manage the team** on runs its routines in its chat instead, in its own folder.
+- Your next message carries a summary of the conversation, so the bot picks up where you left off in its new folder.
+- **Use what your bots share** stays off for it, as it was in the project (see [Memory](/docs/memory#two-layers)). The files you had sent it move into its own folder.
+- Nothing in the project changes, and a thread that was already working there finishes in it.
 
 ## Permissions
 
@@ -93,7 +131,7 @@ For a Claude Code or Codex bot, **Summarize long chats** decides who summarizes 
 | **Near the limit** | Just before the window fills: 40K short of it (960K on a 1M window), and never sooner than Early. |
 | **Set a size** | At the size you pick: 100K, 200K and so on up to the largest the window allows, or **Custom size…** to type your own, in thousands of tokens (from 50K, rounded to 10K). |
 
-With Near the limit or a size, nothing summarizes the chat or starts it over before it reaches that size, except that a chat already summarized three times starts fresh after eight hours away. The sizes appear once the bot has replied and its agent has said how large its window is. A size larger than a new model's window counts as that window's largest. A longer chat costs more usage on every turn, because the agent reads all of it each time. In the terminal UI this field is called **Summarize** and sits under the fallbacks: ←/→ goes through the same choices, then each listed size, and typing digits sets a size of your own in K.
+With Near the limit or a size, nothing summarizes the chat or starts it over before it reaches that size, except that a chat already summarized three times starts fresh after eight hours away. The sizes appear once the bot has replied and its agent has said how large its window is. A size larger than a new model's window counts as that window's largest. A longer chat costs more usage on every turn, because the agent reads all of it each time. In the terminal UI this field is called **Summarize** and sits under the fallbacks and Advisor mode: ←/→ goes through the same choices, then each listed size, and typing digits sets a size of your own in K.
 
 ## Activity
 
@@ -117,11 +155,13 @@ Each bot keeps a long-term memory across sessions, which you can read on its **M
 
 - **Pin:** pinned bots stay at the top of the list. iPhone: touch and hold the bot. Desktop: right-click it. Terminal UI: `p`.
 - **Order:** drag bots into the order you want. The computer keeps the order, so it's the same on every device. iPhone: touch and hold a bot, then drag it. Desktop: drag it, or select it and press Alt+Up or Alt+Down. Terminal UI: `J` and `K`.
-- **Move active bots to the top:** turn this on for a computer and a bot moves to the top of its list whenever it has a new message, from you, its reply, or a routine run. You can still drag; the bot's next message moves it again. iPhone and Android: tap the connection status at the top of the Bots tab, choose **Manage computers**, then the switch on the computer's card. Desktop: the computer in Settings › Computers. Terminal UI: the command palette.
-- **Name a computer:** every app shows a computer by its hostname until you name it, which helps when two computers share one. iPhone and Android: in **Manage computers**, touch and hold the computer's card, then **Rename…**. Desktop: the pencil on the computer in Settings › Computers. Terminal UI: **Computer name** in the command palette. Leave the name empty to go back to the hostname. A Codync Cloud computer is renamed from its **⋯** menu instead.
-- **Computers:** with more than one computer, each has a heading above its bots. Drag a heading (iPhone and Android: touch and hold it first) to move that computer and its bots up or down; this order stays on the device. Click or tap a heading to fold its bots away.
+- **Move active bots to the top:** turn this on for a computer and a bot moves to the top of its list whenever it has a new message, from you, its reply, or a routine run. You can still drag; the bot's next message moves it again. The computer keeps this choice, so it's the same on every device. iPhone, Android and Desktop: the filter button at the top of the Bots list (top right of the Bots tab on the phone), then **Sort by last active** (it sets the computers the list shows, and shows while one of them is connected and has it). Terminal UI: the command palette.
+- **Group and sort:** the same filter button holds **Group by computer** and **Sort by status**, kept on each device. **Group by computer** is on until you turn it off: with more than one computer, each gets a heading above its bots; off, their bots show as one list. **Sort by status** is off until you turn it on: bots that need you come first, then those working, then those with work waiting, then the rest. While it's on you can't drag bots.
+- **Search:** iPhone and Android: tap the magnifying glass at the top right of the Bots tab and type part of a name. The list shows the matching bots of every computer it shows, without headings, folded ones included; **Cancel** brings the list back. Desktop: ⌘K (Ctrl+K on Linux and Windows).
+- **Name a computer:** every app shows a computer by its hostname until you name it, which helps when two computers share one. iPhone and Android: in **Manage computers**, touch and hold the computer's card, then **Rename…**. Desktop: the pencil on the computer on the Computers page. Terminal UI: **Computer name** in the command palette. Leave the name empty to go back to the hostname. A Codync Cloud computer is renamed from its **⋯** menu instead.
+- **Computers:** with more than one computer, each has a heading above its bots (unless **Group by computer** is off). Drag a heading (iPhone and Android: touch and hold it first) to move that computer and its bots up or down; this order stays on the device. Click or tap a heading to fold its bots away.
 - **Hide:** iPhone: touch and hold the bot, then **Hide from list**. Desktop: right-click it, then **Hide from sidebar**. A hidden bot sends no notifications. To bring it back:
-  - **iPhone:** tap the connection status at the top of the Bots tab (such as **1 connected**), choose **Manage computers**, and tap the eye button (**Unhide**) beside the bot under **Hidden bots**.
+  - **iPhone:** tap the filter button at the top right of the Bots tab, choose **Manage computers**, and tap the eye button (**Unhide**) beside the bot under **Hidden bots**.
   - **Desktop:** open **Settings → General** and click the eye button (**Unhide**) beside the bot under **Hidden bots**.
   - **Terminal UI:** press Ctrl+K, type `unhide`, and pick **Unhide** followed by the bot's name.
 - **Mark as read:** clears a bot's unread badge, from the same menus. An [approval card](/docs/conversations#approval-cards) still waiting stays counted until you answer it.
@@ -138,9 +178,9 @@ Sections group a computer's bots under headings you name, such as Work and Perso
 
 ## Sessions
 
-A bot's chat and its agent's session are two different things. The chat is the permanent record you scroll through. The session is the agent's working context: what the model currently remembers of the conversation.
+A bot's chat and its agent's session are two different things. The chat is the permanent record you scroll through. The session is the agent's working context: what the model currently remembers of the chat. Each [thread](/docs/conversations#work) has a session of its own in the same way.
 
-**New session** starts the agent with a fresh context. Use it before unrelated work, or when the agent's context has drifted.
+**New session** starts the chat's agent with a fresh context; the bot's threads keep theirs. Use it before unrelated work, or when the agent's context has drifted.
 
 - **iPhone and Android:** touch and hold the bot in the list, then **New session**.
 - **Desktop:** right-click the bot in the sidebar, then **New session**.

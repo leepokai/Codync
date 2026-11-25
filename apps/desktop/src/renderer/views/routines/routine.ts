@@ -27,6 +27,8 @@ export interface Routine {
   nextRunAt?: number | null
   timeoutSeconds?: number | null
   lastError?: string | null
+  /** The folder its runs work in (each in a thread of its own); null or absent: the bot's own. */
+  folder?: string | null
 }
 
 export interface RoutineRun {
@@ -42,6 +44,9 @@ export interface RoutineRun {
 }
 
 export const isActiveRun = (run: RoutineRun) => ['pending', 'starting', 'running', 'recovering'].includes(run.status)
+
+/** `saveRoutine`'s `folder`, on a host that has it: the path, or null for the bot's own folder. */
+export const folderField = (folder: string | null, supported: boolean) => (supported ? { folder: folder || null } : {})
 
 /** A run's status in the routines list; a waiting retry says when it goes. */
 export function runLabel(run: RoutineRun, now = Date.now()) {
@@ -164,6 +169,32 @@ export const repeatChoices = [
 export type RepeatChoice = (typeof repeatChoices)[number]['id']
 
 export const repeatChoice = (style: string): RepeatChoice => repeatChoices.find((c) => c.id === style)?.id ?? 'custom'
+
+const weekdayKey = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
+const twoDigits = (n: number) => String(n).padStart(2, '0')
+
+/**
+ * The line under the schedule fields. The host's cron sentence is English, so this is
+ * built from the draft and translated with the same words as the fields above it.
+ */
+export function scheduleCaption(schedule: RoutineScheduleDraft, tr: (key: string) => string): string {
+  const time = `${twoDigits(schedule.hour)}:${twoDigits(schedule.minute)}`
+  const zone = schedule.zone
+  switch (schedule.calendarStyle) {
+    case 'hourly':
+      return `${tr('Hourly')} · :${twoDigits(schedule.minute)} · ${zone}`
+    case 'daily':
+      return `${tr('Daily')} · ${time} · ${zone}`
+    case 'weekdays':
+      return `${tr('Weekdays')} · ${time} · ${zone}`
+    case 'weekly':
+      return `${tr('Weekly')} · ${tr(weekdayKey[schedule.weekday] ?? 'Mon')} · ${time} · ${zone}`
+    default: {
+      const expression = schedule.expression.trim()
+      return expression ? `${expression} · ${zone}` : zone
+    }
+  }
+}
 
 /** The cron the host compiled for a checked schedule, to start Custom from the same times. */
 export const compiledCron = (preview: RoutineSchedulePreview | null) => {

@@ -1,14 +1,15 @@
 //! The dispatcher: which waiting task a thread takes next, which thread ends, and why a task still waits.
 
 use super::sources::{self, Begin};
-use super::tasks::{self, Status, Task};
+use super::tasks::{self, Source, Status, Task};
 use super::worktree::{self, Place, Worktree};
 use super::{Outcome, finished, of, prompts};
 use crate::LockExt;
+use crate::agent::fallback;
 use crate::analytics::errors::host_error;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, THREAD_PREFIX, now_ms};
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
@@ -18,12 +19,12 @@ use std::sync::Arc;
 pub(super) struct Capacity {
     /// New threads the bot may start now, under its ceiling.
     pub free: usize,
-    /// The bot's threads at work.
+    /// The bot's threads at work, those waiting on the user included.
     pub running: usize,
     /// The bot's agent is near its usage limit: one thread at a time.
     pub near_limit: bool,
-    /// The bot's own turn is over: a new thread forks the chat's session, which a running turn would leave with an
-    /// unanswered tool call.
+    /// The bot's own turn is over. A task the turn adds starts once it ends, since stopping that turn drops the task;
+    /// a routine's run or a room's turn shares the bot's actor and ends first too.
     pub chat_free: bool,
 }
 
@@ -41,7 +42,7 @@ pub(super) enum ThreadState {
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Wait {
-    /// It starts when a thread is free.
+    /// It starts when a thread is free, or it can't start yet (`dispatch::held`) and takes no place meanwhile.
     Next,
     /// So many tasks are ahead of it.
     Behind { ahead: usize },
@@ -86,11 +87,13 @@ fn follows<'a>(tasks: &'a [Task], task: &Task, thread: &impl Fn(&str) -> ThreadS
 }
 
 /// Where each waiting task of `tasks` stands, lowest `order` first. Tasks that follow a finished one go to its
-/// thread first: that thread already runs.
+/// thread first: that thread already runs. A `held` task can't start whatever is free, so it waits without taking a
+/// place the tasks behind it could use.
 pub(super) fn standings(
     tasks: &[Task],
     capacity: &Capacity,
     thread: impl Fn(&str) -> ThreadState,
+    held: impl Fn(&Task) -> bool,
 ) -> Vec<(String, Standing)> {
     let mut waiting: Vec<&Task> = tasks.iter().filter(|i| i.status == Status::Waiting).collect();
     waiting.sort_by_key(|i| i.order);
@@ -98,21 +101,30 @@ pub(super) fn standings(
     let mut taken: Vec<&str> = Vec::new();
     let mut found: Vec<Option<Standing>> = waiting
         .iter()
-        .map(|task| match follows(tasks, task, &thread) {
-            Follows::Nothing => None,
-            Follows::Thread(id) if !taken.contains(&id) => {
-                taken.push(id);
-                free = free.saturating_sub(1);
-                running += 1;
-                Some(Standing::Join(id.to_owned()))
+        .map(|task| {
+            if held(task) {
+                return Some(Standing::Wait(Wait::Next));
             }
-            Follows::Thread(_) | Follows::Unfinished => Some(Standing::Wait(Wait::After)),
+            match follows(tasks, task, &thread) {
+                Follows::Nothing => None,
+                Follows::Thread(id) if !taken.contains(&id) => {
+                    taken.push(id);
+                    free = free.saturating_sub(1);
+                    running += 1;
+                    Some(Standing::Join(id.to_owned()))
+                }
+                Follows::Thread(_) | Follows::Unfinished => Some(Standing::Wait(Wait::After)),
+            }
         })
         .collect();
     let mut ahead = 0;
-    for standing in found.iter_mut().filter(|s| s.is_none()) {
+    for (task, standing) in waiting.iter().zip(found.iter_mut()).filter(|(_, s)| s.is_none()) {
         *standing = Some(if capacity.near_limit && running > 0 {
             Standing::Wait(Wait::Usage)
+        } else if task.source.is_user() {
+            // The user started it by hand: it starts now, past the bot's ceiling and its own turn.
+            running += 1;
+            Standing::Start
         } else if free > 0 && capacity.chat_free {
             free -= 1;
             running += 1;
@@ -123,6 +135,11 @@ pub(super) fn standings(
         });
     }
     waiting.iter().zip(found).filter_map(|(task, standing)| Some((task.id.clone(), standing?))).collect()
+}
+
+/// Whether waiting `task` can't start now: its source holds it, or the worktree it had is still being looked over.
+pub(super) fn held(hub: &Hub, task: &Task) -> bool {
+    sources::held(hub, task) || task.worktree.as_ref().is_some_and(|w| w.left == worktree::Left::Settling)
 }
 
 /// Whether a turn of `id` runs. `over`: the actor whose turn is ending as this is asked (its status still says it
@@ -141,6 +158,15 @@ pub(super) fn thread_state(hub: &Hub, thread: &str, over: Option<&str>) -> Threa
     }
 }
 
+/// How many new threads a bot that runs at most `most` threads may still start. `live`: its threads that have a task
+/// or are still stopping; `asking`: those of them that wait on the user (a card, a sign-in). One that waits gives its
+/// seat up, so other work goes on meanwhile; the user's answer then takes it back past the ceiling, so every live
+/// thread counts toward one more than it.
+fn free_seats(most: u8, live: usize, asking: usize) -> usize {
+    let most = usize::from(most);
+    most.saturating_sub(live.saturating_sub(asking)).min((most + 1).saturating_sub(live))
+}
+
 /// What `cfg`'s waiting tasks can count on now. `tasks`: its box.
 pub(super) fn capacity(hub: &Hub, cfg: &BotConfig, tasks: &[Task], over: Option<&str>) -> Capacity {
     // A thread told to stop (its task stopped, gave way or was replaced) still works until its turn ends.
@@ -148,18 +174,18 @@ pub(super) fn capacity(hub: &Hub, cfg: &BotConfig, tasks: &[Task], over: Option<
         .iter()
         .filter(|thread| tasks::of_thread(tasks, &thread.id).is_none() && turn_runs(hub, &thread.id, over))
         .count();
+    let seated = |i: &&Task| i.source.seated();
+    let asking = tasks.iter().filter(seated).filter(|i| tasks::asks_user(hub, i)).count();
     let running = tasks::working(tasks) + stopping;
+    let in_seats = tasks.iter().filter(seated).filter(|i| i.status == Status::Working).count() + stopping;
+    let free = free_seats(cfg.max_threads, in_seats, asking);
     // A turn the last host process left cut off is resumed by the bot's actor: it runs, though nothing says so yet.
     let chat_free = over == Some(cfg.id.as_str())
         || !(turn_runs(hub, &cfg.id, None) || crate::agent::bot::resumable(&hub.store, &cfg.id));
-    // The limit of the agent a new thread starts on: past a resting one, its fallback's.
-    let starts_on = crate::agent::fallback::starting(&hub.store, cfg, now_ms());
-    Capacity {
-        free: usize::from(cfg.max_threads).saturating_sub(running),
-        running,
-        near_limit: crate::usage::near_limit(hub, &starts_on),
-        chat_free,
-    }
+    // The limit of the agent a new thread starts on (the threads' own in Advisor mode): past a resting one, its
+    // fallback's.
+    let starts_on = fallback::starting(&hub.store, &fallback::threads(cfg), now_ms());
+    Capacity { free, running, near_limit: crate::usage::near_limit(hub, &starts_on), chat_free }
 }
 
 /// What a pass decided, done once the box is saved.
@@ -238,24 +264,25 @@ fn plan(hub: &Hub, cfg: &BotConfig, tasks: &mut Vec<Task>, over: Option<&str>) -
     // A run whose routine was paused or deleted while it waited, a request the last host process took with it.
     tasks.retain(|i| i.status != Status::Waiting || !sources::withdrawn(hub, i));
     let capacity = capacity(hub, cfg, tasks, over);
-    for (id, standing) in standings(tasks, &capacity, |thread| thread_state(hub, thread, over)) {
+    let standings = standings(tasks, &capacity, |thread| thread_state(hub, thread, over), |task| held(hub, task));
+    for (id, standing) in standings {
         if matches!(standing, Standing::Wait(_)) {
             continue;
         }
-        // What it follows began its thread's session.
+        // What it follows began its thread's session, which it goes on in.
         let before = tasks.iter().find(|i| i.id == id).and_then(|i| i.after.clone());
         let before = before.and_then(|id| tasks.iter().position(|i| i.id == id));
-        let began = before.and_then(|at| tasks[at].start);
-        // Another thread of the bot works in its folder now: a new one beside it gets a worktree, in a repository.
-        let side_by_side = tasks::working(tasks) > 0;
+        let began = before.is_some_and(|at| tasks[at].began);
+        // The checkouts the bot's other threads work in now: a new one in the same checkout may get a worktree.
+        let others = if matches!(standing, Standing::Join(_)) { Vec::new() } else { checkouts(hub, tasks, &id) };
         let Some(at) = tasks.iter().position(|i| i.id == id) else { continue };
-        // Tried again while the worktree it had is looked over: it starts once that is done, which looks again.
-        if tasks[at].worktree.as_ref().is_some_and(|w| w.left == worktree::Left::Settling) {
-            continue;
-        }
         match sources::begin(hub, &cfg.id, &mut tasks[at])? {
             Begin::Go => {}
-            Begin::Later => continue,
+            // It became held in this pass (a run of its routine just began): another pass gives its place on.
+            Begin::Later => {
+                plan.again = true;
+                continue;
+            }
             Begin::Gone => {
                 tasks.remove(at);
                 plan.again = true;
@@ -270,28 +297,21 @@ fn plan(hub: &Hub, cfg: &BotConfig, tasks: &mut Vec<Task>, over: Option<&str>) -
         task.status = Status::Working;
         task.started_at = Some(now_ms());
         if let Standing::Join(thread) = standing {
-            task.start = began;
+            task.began = began;
             task.thread = Some(thread.clone());
             task.worktree = inherited.or(task.worktree.take());
             plan.join.push((thread, task.clone()));
         } else {
-            let thread = thread_bot(cfg);
-            task.start = None;
-            task.fork_failed = false;
+            let thread = thread_bot(cfg, task);
+            task.began = false;
             // One it has from before (it gave way, or is tried again) is where its work is.
             task.worktree.take_if(|w| !worktree::usable(w));
-            // A bot's own folder keeps all its work in one place, with its versions (`agent::versions`).
-            let beside = cfg.thread_worktrees
-                && !crate::agent::workspace::is_managed(cfg)
-                && task.source.is_bot()
-                && side_by_side
-                && worktree::in_repo(&cfg.cwd);
+            // A bot's own folder keeps all its work in one place, with its versions (`agent::versions`); a routine's
+            // run and another bot's request work where the bot said.
+            let beside = task.source.own()
+                && crate::agent::workspace::own_folder(&thread).is_none()
+                && worktree::wanted(task.setup.place, cfg.worktree_mode, &thread.cwd, &others);
             task.place = if task.worktree.is_some() || beside { Place::Worktree } else { Place::Folder };
-            // A routine's run starts as it did in the chat: a new session that knows only its own prompt.
-            // ponytail: a thread in a worktree starts from a brief, not a fork: a fork is taken in another folder
-            // than its session's, which no agent is checked to honor. Fork there once one is (stage 10's spikes).
-            let forks = sources::from_chat(&task.source) && task.place == Place::Folder;
-            task.fork_from = forks.then(|| fork_source(hub, &cfg.id)).flatten();
             task.thread = Some(thread.id.clone());
             {
                 let _g = hub.emit_lock.locked();
@@ -317,7 +337,10 @@ fn plan(hub: &Hub, cfg: &BotConfig, tasks: &mut Vec<Task>, over: Option<&str>) -
 /// Hands `task` of `bot` to `thread` as its next turn. `first`: the thread is new, and starts here. A routine run's
 /// prompt and another bot's request go as they are: they say themselves what the turn is and where its reply goes.
 /// Under the box's lock, and only while the task is still on that thread: a Stop since the plan found no turn to stop.
+/// The files a user's task starts with are copied before it.
 fn begin(hub: &Arc<Hub>, bot: &str, thread: &BotConfig, task: &Task, first: bool) {
+    // Copied before the lock, which every bot's box shares: a copy again is harmless.
+    let files = if task.source == Source::User { handed(hub, bot, thread, &task.files) } else { Ok(Vec::new()) };
     let posted = {
         let _g = hub.work.boxes.locked();
         if tasks::of_thread(&tasks::load(&hub.store, bot), &thread.id).is_none_or(|on| on.id != task.id) {
@@ -327,8 +350,14 @@ fn begin(hub: &Arc<Hub>, bot: &str, thread: &BotConfig, task: &Task, first: bool
             hub.spawn_bot(thread.clone());
             sources::watch(hub, bot, &thread.id, task);
         }
-        let text = if task.source.is_bot() { prompts::task_prompt(task, first) } else { task.brief.clone() };
-        crate::chat::messages::post(hub, thread, json!({"text": text, "from": "host"}))
+        let message = match task.source {
+            Source::Bot => Ok(json!({"text": prompts::task_prompt(task, first), "from": "host"})),
+            // The user's own words, as the message that opens their thread (`thread`'s turn says who speaks), with
+            // the files they started it with.
+            Source::User => files.map(|files| json!({"text": task.brief, "attachments": files})),
+            Source::Routine { .. } | Source::Request { .. } => Ok(json!({"text": task.brief, "from": "host"})),
+        };
+        message.and_then(|message| crate::chat::messages::post(hub, thread, message))
     };
     if let Err(error) = posted {
         host_error!(hub, "couldn't hand work to a thread", thread = %thread.id, error = format!("{error:#}"));
@@ -336,10 +365,43 @@ fn begin(hub: &Arc<Hub>, bot: &str, thread: &BotConfig, task: &Task, first: bool
     }
 }
 
-/// A thread bot for `cfg`: its config, without what stays with the chat.
-fn thread_bot(cfg: &BotConfig) -> BotConfig {
+/// The files the user started a task of `bot`'s with, copied from the bot's uploads to `thread`'s, where the thread
+/// reads them; their chat metadata.
+/// ponytail: the bot's copies stay until its uploads are cleared, as a chat's do; delete them with the task if they
+/// pile up.
+fn handed(
+    hub: &Arc<Hub>,
+    bot: &str,
+    thread: &BotConfig,
+    files: &[serde_json::Value],
+) -> Result<Vec<serde_json::Value>> {
+    if files.is_empty() {
+        return Ok(Vec::new());
+    }
+    let owner = hub.store.bot(bot)?.filter(|row| !row.deleted).context("unknown bot")?.config;
+    let (from, to) = (crate::chat::uploads::root(&owner), crate::chat::uploads::root(thread));
+    for meta in files {
+        crate::chat::uploads::copy(&from, &to, meta)?;
+    }
+    Ok(files.to_vec())
+}
+
+/// The checkouts (`worktree::top`) the threads of `tasks` other than `except` work in now, outside a worktree.
+fn checkouts(hub: &Hub, tasks: &[Task], except: &str) -> Vec<std::path::PathBuf> {
+    let threads = tasks.iter().filter(|i| i.id != except && i.status.live() && !i.in_worktree());
+    let folders = threads.filter_map(|i| hub.store.bot(i.thread.as_deref()?).ok().flatten()).map(|row| row.config.cwd);
+    folders.filter_map(|cwd| worktree::top(&cwd).map(std::path::Path::to_path_buf)).collect()
+}
+
+/// A thread bot for `cfg`: its config (on the threads' own agent, in Advisor mode) with what `task`'s `setup`
+/// changes, without what stays with the chat: it works in `task.folder(cfg)` and has no projects.
+fn thread_bot(cfg: &BotConfig, task: &Task) -> BotConfig {
     BotConfig {
         id: format!("{THREAD_PREFIX}{}", uuid::Uuid::new_v4()),
+        cwd: task.folder(cfg),
+        // Its folder is its own: the bot's projects are the bot's to send work to, with their shared folders.
+        projects: Vec::new(),
+        shared_folders: std::collections::BTreeMap::new(),
         thread_of: Some(cfg.id.clone()),
         created_at: now_ms(),
         // Its alerts are its bot's: the cards it raises in the chat, and the turn its report starts there.
@@ -357,19 +419,11 @@ fn thread_bot(cfg: &BotConfig) -> BotConfig {
         manage_team: false,
         // As its bot's, wherever the thread works (a worktree isn't the bot's own folder).
         shared_memory: Some(crate::chat::memory::shared(cfg)),
-        ..cfg.clone()
+        // A thread runs no threads of its own.
+        thread_agent: None,
+        thread_fallbacks: Vec::new(),
+        ..task.setup.over(&fallback::threads(cfg))
     }
-}
-
-/// `bot`'s main session, when a thread may start as a fork of it: the bot is on its own agent, and the session has
-/// used under half its window (a fork carries all of it). Whether the agent can fork is its actor's to find out.
-fn fork_source(hub: &Hub, bot: &str) -> Option<String> {
-    let session = hub.store.bot(bot).ok().flatten()?.session_id.filter(|s| !s.is_empty())?;
-    if hub.runtime(bot).agent_step.is_some() {
-        return None;
-    }
-    let chat = crate::agent::bot::conversation(&hub.store, bot, &session);
-    (chat.size == 0 || chat.used * 2 < chat.size).then_some(session)
 }
 
 #[cfg(test)]
@@ -397,7 +451,7 @@ mod tests {
     }
 
     fn stand(tasks: &[Task], capacity: Capacity, thread: ThreadState) -> Vec<(String, Standing)> {
-        standings(tasks, &capacity, |_| thread)
+        standings(tasks, &capacity, |_| thread, |_| false)
     }
 
     fn of(standings: &[(String, Standing)]) -> Vec<(&str, &Standing)> {
@@ -429,6 +483,32 @@ mod tests {
     }
 
     #[test]
+    fn a_thread_waiting_on_the_user_gives_its_seat_up_but_one_past_the_ceiling_is_the_most() {
+        assert_eq!(free_seats(3, 3, 0), 0, "every seat taken");
+        assert_eq!(free_seats(3, 3, 1), 1, "one waits on the user: its seat is free");
+        assert_eq!(free_seats(3, 4, 1), 0, "the one that took it: four live threads, one past the ceiling");
+        assert_eq!(free_seats(3, 4, 2), 0, "never two past it, however many wait");
+        assert_eq!(free_seats(1, 1, 1), 1);
+        assert_eq!(free_seats(2, 4, 0), 0, "the ceiling was lowered: nothing new starts");
+    }
+
+    #[test]
+    fn a_users_thread_starts_past_the_ceiling_and_the_bots_own_turn_but_not_near_the_usage_limit() {
+        let user = |id: &str, order: i64| Task { source: Source::User, ..task(id, Status::Waiting, order) };
+        let tasks = [task("a", Status::Waiting, 1), user("u", 2), task("b", Status::Waiting, 3)];
+        let full = Capacity { chat_free: false, ..capacity(0, 1) };
+        let standings = stand(&tasks, full, ThreadState::Gone);
+        let expected = [
+            ("a", &Standing::Wait(Wait::Next)),
+            ("u", &Standing::Start),
+            ("b", &Standing::Wait(Wait::Behind { ahead: 1 })),
+        ];
+        assert_eq!(of(&standings), expected, "it takes no place in the bot's queue");
+        let near = Capacity { near_limit: true, ..capacity(0, 1) };
+        assert_eq!(stand(&tasks, near, ThreadState::Gone)[1].1, Standing::Wait(Wait::Usage));
+    }
+
+    #[test]
     fn a_new_thread_waits_for_the_bots_own_turn_to_end() {
         let tasks = [task("a", Status::Waiting, 1)];
         let busy = Capacity { chat_free: false, ..capacity(3, 0) };
@@ -441,6 +521,9 @@ mod tests {
         let near = Capacity { near_limit: true, ..capacity(3, 0) };
         let standings = stand(&tasks, near, ThreadState::Gone);
         assert_eq!(of(&standings), [("a", &Standing::Start), ("b", &Standing::Wait(Wait::Usage))]);
+        // A thread waiting on the user lends its seat, but still runs.
+        let asking = Capacity { near_limit: true, ..capacity(1, 1) };
+        assert_eq!(stand(&tasks, asking, ThreadState::Gone)[0].1, Standing::Wait(Wait::Usage));
     }
 
     #[test]
@@ -467,6 +550,17 @@ mod tests {
         let waiting = [task("a", Status::Waiting, 5), after("b", 1, "a")];
         let standings = stand(&waiting, capacity(1, 0), ThreadState::Gone);
         assert_eq!(of(&standings), [("b", &Standing::Wait(Wait::After)), ("a", &Standing::Start)]);
+    }
+
+    #[test]
+    fn a_task_that_cant_start_yet_leaves_its_place_to_the_ones_behind_it() {
+        // A routine's next runs wait for the one under way: the bot's ordinary task behind them starts.
+        let tasks = [task("r1", Status::Waiting, 0), task("r2", Status::Waiting, 1), task("b", Status::Waiting, 2)];
+        let standings = standings(&tasks, &capacity(1, 1), |_| ThreadState::Gone, |i| i.id.starts_with('r'));
+        assert_eq!(
+            of(&standings),
+            [("r1", &Standing::Wait(Wait::Next)), ("r2", &Standing::Wait(Wait::Next)), ("b", &Standing::Start)]
+        );
     }
 
     #[test]
@@ -508,6 +602,36 @@ mod tests {
     }
 
     #[test]
+    fn a_routines_next_run_gives_its_place_to_the_task_behind_it() {
+        let hub = hub();
+        let cfg = BotConfig { max_threads: 2, ..bot("b1", "Mika", "/tmp") };
+        hub.store.save_bot(&cfg).expect("saved");
+        let routine = json!({"name": "Check", "instruction": "x", "triggers": [{"type": "interval", "seconds": 1800}]});
+        let routine =
+            hub.routines.save(&hub, "b1", &routine).expect("saved")["routine"]["id"].as_str().map(str::to_owned);
+        let routine = routine.expect("its id");
+        let run = |n: usize| {
+            let run = hub.routines.enqueue(&hub.store, "b1", &routine, json!({}), Some(format!("d{n}")), false);
+            let run = run.expect("queued")["run"]["id"].as_str().map(str::to_owned).expect("its id");
+            let source = Source::Routine { id: routine.clone(), run };
+            Task { source, order: i64::try_from(n).expect("small"), ..Task::waiting("Check", "", None, None, 0) }
+        };
+        let ordinary = Task { order: 2, ..Task::waiting("Dig", "x", None, None, 0) };
+        let box_ = [run(0), run(1), ordinary];
+        let ids: Vec<String> = box_.iter().map(|i| i.id.clone()).collect();
+        hub.store.kv_set(&format!("{}b1", tasks::PREFIX), &serde_json::to_string(&box_).expect("json")).expect("saved");
+        let pass = || tasks::change(&hub, "b1", |tasks| plan(&hub, &cfg, tasks, None)).expect("planned");
+        let started = |p: &Plan| p.start.iter().map(|(_, task)| task.id.clone()).collect::<Vec<_>>();
+
+        let first = pass();
+        assert_eq!((started(&first), first.again), (vec![ids[0].clone()], true), "the second run waits for the first");
+        let shown = tasks::shown(&hub, &cfg);
+        let wait = shown.iter().find(|i| i.task.id == ids[1]).and_then(|i| i.wait);
+        assert_eq!(wait, Some(Wait::Next));
+        assert_eq!(started(&pass()), [ids[2].clone()], "the task behind it takes the free thread");
+    }
+
+    #[test]
     fn a_thread_still_stopping_keeps_its_place() {
         let hub = hub();
         let cfg = BotConfig { max_threads: 1, ..bot("b1", "Mika", "/tmp") };
@@ -519,6 +643,17 @@ mod tests {
         let p = super::capacity(&hub, &cfg, &replaced, None);
         assert_eq!((p.free, p.running), (0, 1), "the replacement waits for it");
         assert_eq!(super::capacity(&hub, &cfg, &replaced, Some("thread-1")).free, 1, "its turn is over");
+    }
+
+    #[test]
+    fn a_thread_waiting_on_the_user_lends_its_seat_and_still_runs() {
+        let hub = hub();
+        let cfg = BotConfig { max_threads: 1, ..bot("b1", "Mika", "/tmp") };
+        hub.store.save_bot(&cfg).expect("saved");
+        hub.set_runtime("thread-1", |rt| rt.status = BotStatus::NeedsInput);
+        let asking = [on("thread-1", task("a", Status::Working, 0)), task("b", Status::Waiting, 1)];
+        let p = super::capacity(&hub, &cfg, &asking, None);
+        assert_eq!((p.free, p.running), (1, 1), "the next may start; near the usage limit it waits");
     }
 
     #[test]

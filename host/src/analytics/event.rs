@@ -10,6 +10,8 @@ pub enum Event {
     AppOpened,
     WindowOpened,
     HostStarted,
+    /// The watchdog aborted the last host process, which had stopped answering, and the service started this one.
+    HostRestartedStuck,
     OnboardingCompleted,
     ComputerAccessFinished,
     SignInStarted,
@@ -48,6 +50,9 @@ pub enum Event {
     TurnFinished,
     /// A turn moved on to the bot's next agent (`agent::fallback`).
     AgentFellBack,
+    /// The user moved a bot with a conversation to another login: its next message carries a recap
+    /// (`agent::bot::fallback::handoff`).
+    AgentSwitchedByUser,
     /// An agent taking over a bot's chat was told what came before (`agent::fallback::carry`).
     HandoffCarried,
     /// A bot's agent stopped to give back what it held (`agent::bot::lifecycle`).
@@ -67,6 +72,8 @@ pub enum Event {
     DecisionExpired,
     /// The user's choice was saved but its tool call had already stopped waiting.
     DecisionFailed,
+    /// An agent's own question (`elicitation/create`) got its reply (`action`; why it was declined: `reason`).
+    ElicitationReplied,
     ReactionAdded,
     HandoffAnswered,
     RoutineSaved,
@@ -88,16 +95,39 @@ pub enum Event {
     FollowUpCancelled,
     /// A bot's `add_task` ended (`outcome`).
     WorkAdded,
-    /// A task of a bot's box ended (`outcome`), and how its thread's session had begun.
+    /// A task of a bot's box ended (`outcome`).
     WorkFinished,
+    /// A thread called a tool only its bot's chat may call (`tool`): one its tool list still offered it.
+    ThreadToolRefused,
     /// A task was moved, cut in, replaced, stopped, dropped or tried again (`how`), by the bot or the user (`by`).
     WorkSteered,
     /// At host start, worktrees no task knew any more went, their work merged (`removed`).
     WorktreesTidied,
+    /// Projects were added to a bot (`count`), by any client or tool (`hub::projects`).
+    BotProjectAdded,
+    /// Projects were taken off a bot (`count`).
+    BotProjectRemoved,
+    /// At host start, once: bots that worked in a project moved to their own folder, the project kept (`count`).
+    BotProjectsMigrated,
     /// A task's turn couldn't go on until the user signs in to its agent, so it waits for them (`agent`, `source`).
     WorkNeedsSignIn,
+    /// A bot's `tell_task` finished (`outcome`): where the words went (`to`) or why not (`error`), and `now`.
+    WorkTold,
+    /// A bot's `ask_task` finished (`outcome`): the thread answered in time, later, or the question was refused.
+    TaskAsked,
+    /// Filling a new worktree failed at one file or folder (`stage`: `include`, `link`); the thread starts anyway.
+    WorktreeFillFailed,
+    /// A bot's `recall_task` finished (`outcome`), looking up one task, a query or the latest (`by`).
+    WorkRecalled,
+    /// Threads that last ended longer ago than the user keeps them were deleted (`count`, `days`) (`work::archive`).
+    ThreadsDeleted,
+    /// An app listed a page of older threads (`count`, `more`, `first`: the first page) (`olderThreads`).
+    OlderThreadsListed,
     /// The user wrote to a task's thread (`chat::work::thread`): whether it reopened the task, and whether it waits.
     WorkMessaged,
+    /// The watchdog found one of a bot's own tasks looking stuck (`signal`) and woke the bot, reminded the user of a
+    /// card, or let it be (`action`, `reason`) (`chat::work::watch`).
+    WatchdogFlagged,
     /// A bot's `start_dev_server` ended (`outcome`).
     DevServerStarted,
     /// A dev server ended (`by`).
@@ -139,6 +169,8 @@ pub enum Event {
     /// Every saved credential deleted, for a computer whose key is gone (`outcome`).
     CredentialsReset,
     AgentSetupStarted,
+    /// A bot's terminal opened (or shown again) in its folder.
+    BotTerminalOpened,
     AgentSignedIn,
     /// A login profile was added, renamed or removed, or got its keys (`action`); never its name, who it signs in or
     /// its variables.
@@ -169,6 +201,17 @@ pub enum Event {
     /// An important release's highlights were on screen (docs/features/whats-new.md; desktop and terminal UI here,
     /// phones send their own).
     WhatsNewShown,
+    /// The desktop's details panel was split into two panes or joined, and took the conversation's place or gave
+    /// it back; a page was opened in its Browser tab.
+    PanelSplit,
+    PanelMaximized,
+    PreviewOpened,
+    /// Group by computer or Sort by status was switched on the desktop's Bots or Threads list.
+    ListLayoutChanged,
+    /// The desktop app's system notifications were turned on or off (Settings → General → System).
+    DesktopNotificationsSet,
+    /// A desktop system notification was clicked, opening its chat.
+    DesktopNotificationOpened,
     /// A Codync Cloud computer's host started: how its keeper stood, and whether its agents could still use sudo.
     CloudKeeperChecked,
     /// A Codync Cloud computer's host, idle long enough, asked the cloud to put it to sleep (`remote::managed`).
@@ -183,6 +226,8 @@ pub enum Event {
     NetworkChanged,
     /// A network step failed (`NetworkStage`): starting a node, a letter, or a `network*` call.
     NetworkFailed,
+    /// A coding agent's session used its Network mailbox (`SessionAction`, with the agent's kind).
+    NetworkSession,
     /// Error tracking (`errors`): a panic or an uncaught error.
     Exception,
 }
@@ -193,6 +238,7 @@ impl Event {
             Self::AppOpened => "app_opened",
             Self::WindowOpened => "window_opened",
             Self::HostStarted => "host_started",
+            Self::HostRestartedStuck => "host_restarted_stuck",
             Self::OnboardingCompleted => "onboarding_completed",
             Self::ComputerAccessFinished => "computer_access_finished",
             Self::SignInStarted => "sign_in_started",
@@ -227,6 +273,7 @@ impl Event {
             Self::TurnStopped => "turn_stopped",
             Self::TurnFinished => "turn_finished",
             Self::AgentFellBack => "agent_fell_back",
+            Self::AgentSwitchedByUser => "agent_switched_by_user",
             Self::HandoffCarried => "handoff_carried",
             Self::AgentRetired => "agent_retired",
             Self::OwnFolderVersioned => "own_folder_versioned",
@@ -239,6 +286,7 @@ impl Event {
             Self::DecisionAnswered => "decision_answered",
             Self::DecisionExpired => "decision_expired",
             Self::DecisionFailed => "decision_failed",
+            Self::ElicitationReplied => "elicitation_replied",
             Self::ReactionAdded => "reaction_added",
             Self::HandoffAnswered => "handoff_answered",
             Self::RoutineSaved => "routine_saved",
@@ -254,10 +302,21 @@ impl Event {
             Self::FollowUpCancelled => "follow_up_cancelled",
             Self::WorkAdded => "work_added",
             Self::WorkFinished => "work_finished",
+            Self::ThreadToolRefused => "thread_tool_refused",
             Self::WorkSteered => "work_steered",
             Self::WorktreesTidied => "worktrees_tidied",
+            Self::BotProjectAdded => "bot_project_added",
+            Self::BotProjectRemoved => "bot_project_removed",
+            Self::BotProjectsMigrated => "bot_projects_migrated",
             Self::WorkNeedsSignIn => "work_needs_sign_in",
+            Self::WorkTold => "work_told",
+            Self::TaskAsked => "task_asked",
+            Self::WorktreeFillFailed => "worktree_fill_failed",
+            Self::WorkRecalled => "work_recalled",
+            Self::ThreadsDeleted => "threads_deleted",
+            Self::OlderThreadsListed => "older_threads_listed",
             Self::WorkMessaged => "work_messaged",
+            Self::WatchdogFlagged => "watchdog_flagged",
             Self::DevServerStarted => "dev_server_started",
             Self::DevServerStopped => "dev_server_stopped",
             Self::DevServerAction => "dev_server_action",
@@ -286,6 +345,7 @@ impl Event {
             Self::CredentialSaved => "credential_saved",
             Self::CredentialsReset => "credentials_reset",
             Self::AgentSetupStarted => "agent_setup_started",
+            Self::BotTerminalOpened => "bot_terminal_opened",
             Self::AgentSignedIn => "agent_signed_in",
             Self::LoginProfileChanged => "login_profile_changed",
             Self::SettingChanged => "setting_changed",
@@ -302,6 +362,12 @@ impl Event {
             Self::KofiInviteShown => "kofi_invite_shown",
             Self::KofiInviteAnswered => "kofi_invite_answered",
             Self::WhatsNewShown => "whats_new_shown",
+            Self::PanelSplit => "panel_split",
+            Self::PanelMaximized => "panel_maximized",
+            Self::PreviewOpened => "preview_opened",
+            Self::ListLayoutChanged => "list_layout_changed",
+            Self::DesktopNotificationsSet => "desktop_notifications_set",
+            Self::DesktopNotificationOpened => "desktop_notification_opened",
             Self::CloudKeeperChecked => "cloud_keeper_checked",
             Self::CloudSleepAsked => "cloud_sleep_asked",
             Self::JoinFromPhoneAnswered => "join_from_phone_answered",
@@ -310,6 +376,7 @@ impl Event {
             Self::NetworkJoined => "network_joined",
             Self::NetworkChanged => "network_changed",
             Self::NetworkFailed => "network_failed",
+            Self::NetworkSession => "network_session",
             Self::Exception => "$exception",
         }
     }

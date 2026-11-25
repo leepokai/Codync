@@ -105,9 +105,34 @@ export function moveFallback(list: Fallback[], index: number, by: number): Fallb
   return next
 }
 
-/** The bot on agent `backend`, on the computer's own login: a fallback on that login goes (a login is in the chain once, as the host keeps it). */
-export const withBackend = (d: BotDraft, backend: string): BotDraft => d.backend === backend ? d : ({
-  ...d, backend, loginProfile: null, model: null, modelOptions: {}, fallbacks: d.fallbacks?.filter((f) => !sameLogin(f, { backend })),
+/** Advisor mode on: its threads start on the bot's own agent, model and fallbacks, for the user to change (on a custom
+ * command, which the threads' picker doesn't offer, on the first agent that is installed); off: none. */
+export function withAdvisor(d: BotDraft, on: boolean, backends: Backend[]): BotDraft {
+  if (!on) return { ...d, threadAgent: null, threadFallbacks: [] }
+  if (d.backend !== 'custom') {
+    const own = { backend: d.backend, loginProfile: d.loginProfile ?? null, model: d.model ?? null, modelOptions: d.modelOptions ?? {} }
+    return { ...d, threadAgent: own, threadFallbacks: d.fallbacks ?? [] }
+  }
+  const first = backends.find((b) => b.available) ?? backends[0]
+  return first ? { ...d, threadAgent: stepOn(first, []), threadFallbacks: [] } : d
+}
+
+/** Its threads on `login`, as `withBackend` puts the bot on one: a threads' fallback on that login goes. */
+export function withThreadBackend(d: BotDraft, login: Login): BotDraft {
+  const on = d.threadAgent
+  if (on && sameLogin(on, login)) return d
+  const loginProfile = login.loginProfile ?? null
+  const threadAgent = on?.backend === login.backend ? { ...on, loginProfile } : { backend: login.backend, loginProfile, model: null, modelOptions: {} }
+  return { ...d, threadAgent, threadFallbacks: d.threadFallbacks?.filter((f) => !sameLogin(f, login)) }
+}
+
+/** The bot on `login` (an agent on one of its logins, by default the computer's own): a fallback on that login goes (a
+ * login is in the chain once, as the host keeps it). Another agent starts on its default model. */
+export function withBackend(d: BotDraft, login: Login): BotDraft {
+  if (sameLogin(d, login)) return d
+  const loginProfile = login.loginProfile ?? null
+  const fallbacks = d.fallbacks?.filter((f) => !sameLogin(f, login))
+  if (d.backend === login.backend) return { ...d, loginProfile, fallbacks }
   // A picked mode becomes the new agent's Auto mode (or, without one, asking).
-  mode: d.mode ? AUTO_MODE : d.mode,
-})
+  return { ...d, backend: login.backend, loginProfile, model: null, modelOptions: {}, fallbacks, mode: d.mode ? AUTO_MODE : d.mode }
+}

@@ -108,6 +108,12 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("on".into(), (b["shown"] == true).into());
             Event::SettingChanged
         }
+        "setThreadKeepDays" => {
+            p.insert("setting".into(), "thread_keep_days".into());
+            p.insert("on".into(), (b["days"].as_u64().unwrap_or(0) > 0).into());
+            p.insert("days".into(), b["days"].as_u64().unwrap_or(0).into());
+            Event::SettingChanged
+        }
         "setUsageOrder" => {
             p.insert("setting".into(), "usage_order".into());
             p.insert("on".into(), true.into());
@@ -128,7 +134,10 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         }
         "deleteBot" => Event::BotDeleted,
         // To a task's thread: what came of it is the answer's to say (`answered`). Never the text.
-        "send" if b["taskId"].is_string() => Event::WorkMessaged,
+        "send" if b["taskId"].is_string() => {
+            p.insert("attachments".into(), b["attachments"].as_array().map_or(0, Vec::len).into());
+            Event::WorkMessaged
+        }
         // Send now and Remove on a message that waits in a task's thread.
         "steer" | "unqueue" if b["taskId"].is_string() => {
             p.insert("how".into(), (if method == "steer" { "sendNow" } else { "remove" }).into());
@@ -165,6 +174,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("by".into(), serde_json::json!(crate::routines::Cancelled::User));
             Event::FollowUpCancelled
         }
+        "botTerminal" => Event::BotTerminalOpened,
         "devServerStop" | "devServerRestart" | "devServerRemove" | "devServerLogs" => {
             let action = method.trim_start_matches("devServer").to_ascii_lowercase();
             p.insert("action".into(), action.into());
@@ -302,11 +312,28 @@ pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Opti
         }
         Event::BotUpdated => {
             if let Ok(Some(row)) = hub.store.bot(b["id"].as_str().unwrap_or_default()) {
-                let fields = changed_fields(&row.config, b);
+                let mut fields = changed_fields(&row.config, b);
+                // The worktree mode picked, an older app's `threadWorktrees` included.
+                let mode = crate::hub::patched(&row.config, b).ok().map(|after| after.worktree_mode);
+                if let Some(mode) = mode.filter(|mode| *mode != row.config.worktree_mode) {
+                    p.insert("worktreeMode".into(), serde_json::json!(mode));
+                    if !fields.iter().any(|f| f == "worktreeMode") {
+                        fields.push("worktreeMode".into());
+                        fields.sort();
+                    }
+                }
                 // Which kind of threshold the user picked, never its size.
                 if fields.iter().any(|f| f == "compaction") {
                     let picked = Threshold::deserialize(&b["compaction"]).unwrap_or_default();
                     p.insert("compaction".into(), picked.kind().into());
+                }
+                // Advisor mode turned on or off, and the agent its threads run on.
+                if fields.iter().any(|f| f == "threadAgent") {
+                    let agent = b["threadAgent"]["backend"].as_str();
+                    p.insert("advisorMode".into(), agent.is_some().into());
+                    if let Some(agent) = agent {
+                        p.insert("threadAgent".into(), agent.into());
+                    }
                 }
                 p.insert("fields".into(), fields.into());
             }
@@ -348,6 +375,10 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
         }
         Event::ConnectorUpdated => {
             p.insert("outcome".into(), if answer["verify"].is_null() { "saved" } else { "ready" }.into());
+        }
+        // Whether the saved routine names a folder of its own (kept or just set), never the path.
+        Event::RoutineSaved => {
+            p.insert("folder".into(), (!answer["routine"]["folder"].is_null()).into());
         }
         // An id it couldn't quote: the message went out without the quote.
         Event::BotQuoted => {
@@ -407,7 +438,7 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
             Some((event, p))
         }
         // `read_only`: a routine's run or another bot's request. `not_started`, `gone`: no thread to write to.
-        // `text_only`: files, a quote or a call.
+        // `unsupported`: a quote or a call.
         Event::WorkMessaged => {
             let category = error.downcast_ref::<crate::chat::work::ThreadRefused>().map_or("other", |e| e.category);
             p.insert("outcome".into(), "failed".into());

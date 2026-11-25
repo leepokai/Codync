@@ -3,11 +3,15 @@ package com.codync.android
 import com.codync.android.core.*
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 
-// A thread's own transcript, read and written to from its page ([WorkThreadView]). Its entries never enter a chat
+// A thread's own transcript, read and written to from its chat ([ThreadChat]). Its entries never enter a chat
 // (`AppState.entries`) nor the mirror: they are held per thread id while the thread is open.
 
 /**
@@ -24,8 +28,14 @@ internal suspend fun AppStore.loadThread(botId: String, threadId: String) {
     }
 }
 
-/** The thread's transcript closed: it is let go. */
-internal fun AppStore.closeThread(threadId: String) = mutableState.update { it.copy(threadEntries = it.threadEntries - threadId) }
+/** One more thread chat shows [threadId] (the same thread can show under its bot's details over it). */
+internal fun AppStore.watchThread(threadId: String) { threadViews.merge(threadId, 1, Int::plus) }
+
+/** A thread chat of [threadId] closed: its transcript is let go once none shows it. */
+internal fun AppStore.closeThread(threadId: String) {
+    if (threadViews.compute(threadId) { _, shown -> ((shown ?: 1) - 1).takeIf { it > 0 } } != null) return
+    mutableState.update { it.copy(threadEntries = it.threadEntries - threadId) }
+}
 
 internal fun AppStore.receiveThreads(events: List<MirrorEvent>) = mutableState.update { state ->
     val received = state.threadEntries.receivingThreads(events)
@@ -33,13 +43,17 @@ internal fun AppStore.receiveThreads(events: List<MirrorEvent>) = mutableState.u
 }
 
 /**
- * The user writes [text] to the thread of [botId]'s task [taskId]. It shows at once (`AppState.threadSends`), and one
- * the computer refuses (a task that takes no message, one that ended too long ago) stays with why, to send again or drop.
+ * The user writes [text] to the thread of [botId]'s task [taskId], with the files of its box's draft [draftKey], which
+ * leaves the draft. It shows at once (`AppState.threadSends`), and one the computer refuses (a task that takes no
+ * message, one that ended too long ago) stays with why, to send again or drop.
  */
-internal fun AppStore.sendToThread(botId: String, taskId: String, text: String) {
-    if (text.isBlank()) return
-    val send = PendingSend(UUID.randomUUID().toString(), botId, text.trim(), System.currentTimeMillis())
+internal fun AppStore.sendToThread(botId: String, taskId: String, draftKey: String, text: String) {
+    val files = state.value.drafts[draftKey]?.files.orEmpty()
+    if (text.isBlank() && files.isEmpty()) return
+    val send = PendingSend(UUID.randomUUID().toString(), botId, text.trim(), System.currentTimeMillis(), files = files)
     lastSentNonce = send.nonce
+    mutableState.update { it.copy(drafts = it.drafts - draftKey) }
+    persistDrafts()
     deliverToThread(taskId, send)
 }
 
@@ -48,9 +62,14 @@ internal fun AppStore.deliverToThread(taskId: String, send: PendingSend) {
     mutableState.update { it.holdingThreadSend(taskId, send.copy(status = SendStatus.Sending, error = null)) }
     contextScope.launch {
         try {
-            val reply = hostCall("send", body("botId" to send.botId, "taskId" to taskId, "text" to send.text, "clientNonce" to send.nonce), 30_000)
+            val connection = ready()
+            val ids = uploadFiles(connection, send, taskId)
+            // Hosts before 2.51.0 ([hostCallFor]): goes when MIN_HOST reaches 2.51.0.
+            val (method, body) = hostCallFor(state.value.hello?.text("version"), "send", send.body(ids, taskId))
+            val reply = connection.call(method, body, 30_000)
             val entry = Entry.decode(reply.jsonObject.getValue("entry").jsonObject)
             mutableState.update { it.withoutThreadSend(taskId, send.nonce).receivingThreadEntry(entry) }
+            withContext(Dispatchers.IO) { send.files.forEach(attachments::discard) }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) {
             mutableState.update { it.holdingThreadSend(taskId, send.copy(status = SendStatus.Failed, error = error.message ?: "Couldn't send.")) }
@@ -59,7 +78,11 @@ internal fun AppStore.deliverToThread(taskId: String, send: PendingSend) {
 }
 
 /** A message to [taskId]'s thread that didn't go is dropped. */
-internal fun AppStore.discardThreadSend(taskId: String, nonce: String) = mutableState.update { it.withoutThreadSend(taskId, nonce) }
+internal fun AppStore.discardThreadSend(taskId: String, nonce: String) {
+    val files = state.value.threadSends[taskId].orEmpty().firstOrNull { it.nonce == nonce }?.files.orEmpty()
+    mutableState.update { it.withoutThreadSend(taskId, nonce) }
+    if (files.isNotEmpty()) contextScope.launch(Dispatchers.IO) { files.forEach(attachments::discard) }
+}
 
 /** A message waiting in [taskId]'s thread goes now, as a chat's does ([steer]); the caller names the bot's task, never its thread. */
 internal fun AppStore.steerThread(botId: String, taskId: String, entry: Entry) =
@@ -86,3 +109,29 @@ internal fun AppState.receivingThreadEntry(entry: Entry): AppState {
     val held = threadEntries[entry.botId] ?: return this
     return copy(threadEntries = threadEntries + (entry.botId to mergeThreadEntries(held, listOf(entry))))
 }
+
+/**
+ * Reads the computer's next page of older threads (`olderThreads`): the newest first, then the ones before the oldest held.
+ * Nothing on a host without them, off the link, while a page loads or once none are left. A page that lands after the
+ * list was dropped (a new hello, another Delete old threads) is let go.
+ */
+internal fun AppStore.loadOlderThreads() {
+    val now = state.value
+    if (threadKeepDays(now.hello) == null || now.actualConnection !is LinkState.Ready) return
+    val held = now.olderThreads
+    if (held?.more == false) return
+    val host = now.hello?.text("hostId")
+    action("olderThreads") {
+        val reply = hostQuery("olderThreads", buildJsonObject { held?.before?.let { put("before", it) } })
+        val page = OlderThreads.decode(reply.jsonObject)
+        // Dropped meanwhile (a new hello, another Delete old threads): the page is let go.
+        mutableState.update {
+            if (it.hello?.text("hostId") != host || (held != null && it.olderThreads == null)) it
+            else it.copy(olderThreads = (it.olderThreads ?: OlderThreads(more = true)) + page)
+        }
+    }
+}
+
+/** [bot] with its computer's older threads it doesn't hold among its `work`, as the Threads list and a thread's page show them. */
+internal fun AppState.withOlder(bot: Bot): Bot =
+    olderThreads?.of(bot.id)?.takeIf { it.isNotEmpty() }?.let { bot.copy(work = mergedWork(bot.work, it)) } ?: bot

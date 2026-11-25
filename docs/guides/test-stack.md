@@ -30,11 +30,28 @@ Run them one at a time: never start a test binary several times in parallel, or 
 
 ## Real agents
 
-Everyday tests use the fake agents, which only answer the way we expect. Run the real ones too, one short turn per agent on the cheapest model, with nothing in parallel (it uses your own plan), when:
+Everyday tests use the fake agents, which only answer the way we expect. Every agent the [upstream agents](#upstream-agents) check covers is tested through it (`node check.mjs … --all`, aimock in place of the model, no logins); only Cursor, which aimock can't stand in for, still runs as a real agent, one short turn on its cheapest model (it uses your own plan), when:
 
 1. The registry version of `claude-acp` or `codex-acp` moves ([upstream agent bugs](../upstream-agents/README.md)).
 2. A change touches how the host talks to an agent: ACP methods, sessions, turns.
 3. Before a release.
+
+Each check ends by stopping the host: no agent process may outlive it, except a daemon an agent detaches on purpose and shares with its other clients, which its [upstream page](../upstream-agents/README.md) lists (Hermes's `gateway run --idle-exit`).
+
+## Upstream agents
+
+Every computer running Codync takes an adapter's new [ACP registry](https://agentclientprotocol.com/registry) version within a day (`registry.rs` refreshes it daily), so a daily CI job (`.github/workflows/agent-upstream.yml`) runs a scripted turn of each agent in [`tools/agent-upstream/accepted.json`](../../tools/agent-upstream/accepted.json): each registry adapter whose version moved, and every day each agent Codync runs from its own CLI (`registry: false`). Each runs in a real host built from the branch, with the agent's latest CLI, a new bot on that agent in its asking mode, and `codync-host send --wait`. The adapter is the real one the host downloads; only the model is a stand-in, an [aimock](https://www.npmjs.com/package/@copilotkit/aimock) server on the runner speaking the provider's own API (Anthropic Messages, OpenAI Responses and Chat Completions, Gemini), on an API key in a home of the check's own, so no login or token is used.
+
+The turn (`scenario.mjs`) has the agent run `printf beta > notes.txt` through its own shell tool, and passes when the transcript holds the tool call, its permission card was answered, the file reads `beta`, the reply comes after the command's result reached the model, and no agent process outlives the stopped host. `agents.mjs` points each agent at the mock and makes its shell tool ask first where it wouldn't by itself (a pi extension, an OpenCode `permission`, a Hermes hook). It finds an adapter that no longer starts, opens a session, runs a tool, asks for approval or ends a turn; it stands in for a real-model turn on every agent it covers.
+
+Covered: Claude Code, Codex, Copilot, pi, oh-my-pi, OpenCode, Grok Build, DeepSeek Harness, Hermes and Antigravity. Not covered: Cursor, whose CLI speaks Cursor's own protobuf RPC (`aiserver.v1`) to its backend, which aimock doesn't, and WorkBuddy, which ships only inside the macOS and Windows desktop app. Adding an agent: its setup in `agents.mjs`, its row in `accepted.json` (with the `mode` in which its shell tool asks) and its install line in the workflow (npm where the CLI ships there, else the install script in the host's catalog).
+
+A failing scheduled run opens an issue labeled `agent-upstream` (later failures comment on the open one). Opening it starts the "Codync upstream agent fix" Claude routine (claude.ai, the maintainer's account, no connectors). The routine builds `dev` and runs the check again on the failing agents (`--only <backend>`, with the workflow's CLIs installed), and stops there if `dev` already passes. Otherwise it fixes the adapter, opens a PR into `dev` and merges that PR itself when all three hold: the PR changes only agent code (`host/crates/agent`, `host/src/agent`, `host/tests`, `docs/upstream-agents`, `accepted.json`'s version), every check passes and Greptile scores it 4/5 or more. It never touches the check or CI. After three PRs for one adapter version (for a `registry: false` agent, one issue) it leaves the issue to a person. These limits live in the routine's prompt, so the `main` release gate's [real agents](#real-agents) check is what catches a wrong fix. A passing run on a new registry version says so in its summary: raise that version in `accepted.json` (`registry: false` rows have none). A pull request that changes the check, or the host's agent code (`host/crates/agent`, `host/src/agent`), runs every agent. To run it on this computer, with the CLIs of the agents it runs installed (the workflow's install step; a missing one fails its row; about eight minutes for all of them, one at a time; it starts each agent in a home of its own, never on your logins, without your shell's provider keys; `--only <backend>` runs one):
+
+```sh
+cd host && cargo build --bin codync-host
+cd ../tools/agent-upstream && npm ci && node check.mjs ../../host/target/debug/codync-host --all
+```
 
 ## Desktop: Playwright
 
@@ -90,10 +107,11 @@ The devices are the worktree's own simulator `Codync <sandbox name>` and the sha
 
 A flow past the welcome screen (`agent-logos.yaml`) needs the phone signed in with `npm run phone-account` and keeps the app's state. `welcome.yaml` (`smoke`) clears it. That signs the Android app out, but the iPhone's sign-in stays in the simulator's Keychain, so run `xcrun simctl keychain <device> reset` before `smoke` on a signed-in simulator. `sign-in-cancel.yaml` (`sign-in`) clears it the same way and needs the phone online, since it opens Google's page and leaves it. `signed-out-pairing.yaml` needs a sandbox in no account and the phone signed out, and takes the pairing link as `PAIRING_URL`. Run a flow past the welcome screen in a Maestro run of its own, after the sign-in. Signed in isn't past first-run setup: `agent-logos.yaml` skips the choice page when it's there. The `computer-choice` flows need setup unfinished (fresh app data) and each finishes or changes it, so each gets its own run with its own start: `computer-choice` and `computer-choice-skip` with a computer in the account (`npm run dev -- --cloud`, or the sandbox's own local cloud on a branch that changes `cloud/`), `computer-choice-empty` without one.
 
-Two things that look like failures but aren't the app's:
+Three things that look like failures but aren't the app's:
 
 - A tag no flow carries yet makes Maestro stop with "Include / Exclude tags did not match any Flows" and exit 1. Leave out area tags that have no flows.
 - Right after a cold boot the emulator can cover the app with "Pixel Launcher isn't responding", and the flow fails on its first assertion. Each run keeps a screenshot of the failure in `~/.maestro/tests/<run>/`: when a system dialog covers the app, clear it with `adb -s <serial> shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS` and run again. It happened twice in a row on 2026-11-03 until the dialog was cleared.
+- On iOS, `inputText` types as a hardware keyboard and hides the simulator's keyboard until the next touch brings it back, which lifts the composer: a `tapOn: "Send"` right after the typing can land on the keyboard and send nothing (`reply-part.yaml` failed this way about half the time). Touch the field first and `waitForAnimationToEnd`, as `reply-part.yaml` does, or wait for a keyboard key, as `compaction.yaml` does.
 
 **One Maestro process per Mac.** Two at once break each other: with Maestro 2.1.0, an iPhone run beside an Android run made the Android driver refuse connections on port 7001 in three of three tries, and two runs starting in the same second removed each other's log folder in `~/Library/Logs/maestro`. Shard inside one run instead. Across worktrees, take the lock folder `/private/tmp/claude-$(id -u)/maestro.lock` the way the emulator lock works: `mkdir` it (it fails while another run holds it), write your worktree's path into `owner`, `rm -r` it when done; one older than an hour, or whose worktree is gone, is stale.
 

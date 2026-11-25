@@ -3,8 +3,10 @@
 //! what the agents before it did. Each agent keeps its own session (`park`), so going back resumes it, with a
 //! catch-up of what was said meanwhile.
 
+mod handoff;
 mod park;
 
+pub(crate) use handoff::owe_move;
 pub(super) use park::resume_step;
 
 use super::sign_in::Held;
@@ -64,6 +66,8 @@ pub(super) struct Relay {
     recap: Option<(String, Option<String>)>,
     /// This attempt's move in the chat, which shows what the agent was told once its session is up.
     line: Option<String>,
+    /// This attempt carries in the user's switch (`handoff`): its line stops being pending once the prompt is out.
+    pub(super) handing_off: bool,
     /// What this attempt's agent hears first after the user's handoff (`carry_in`); this turn's only.
     pub(super) carried: Option<String>,
     /// The turn's messages, held for a sign-in or sent again: a thread's task goes on past the turn (`task_goes_on`).
@@ -110,6 +114,7 @@ impl Actor {
         self.relay.exhausted = false;
         self.relay.line = None;
         self.relay.carried = None;
+        self.relay.handing_off = false;
         self.relay.attempt = Some(Attempt { lane: lane.clone(), entries: entries.to_vec(), text: text.to_owned() });
         let now = now_ms();
         let target = self.next_step(now).unwrap_or(0);
@@ -148,35 +153,32 @@ impl Actor {
     /// a catch-up in its own; a retried turn gets what the agents before did. Not for hidden turns.
     pub(super) fn carry_in(&mut self) {
         let mut carried = Vec::new();
-        if self.slot().is_none()
-            && let Some((agent, session)) = self.relay.recap.take()
-        {
-            carried.extend(self.chat_for_thread());
-            carried.extend(self.recap(&agent, session.as_deref()));
+        let mut owed = None;
+        if self.slot().is_none() {
+            // A host restart drops `relay.recap`; what the user's switch or move owes is kept.
+            let kept = self.owed();
+            let recap = self.relay.recap.take().or_else(|| kept.as_ref().map(|o| (o.from.clone(), o.session.clone())));
+            if let Some((agent, session)) = recap {
+                let moved = kept.as_ref().is_some_and(|o| o.moved(&fallback::login::of(&self.cfg)));
+                carried.extend(self.recap(&agent, session.as_deref(), moved));
+                owed = kept;
+            }
         }
+        let user_switch = owed.as_ref().and_then(|o| o.line.clone());
         carried.extend(carry::takeover(&self.relay.failed));
         let text = (!carried.is_empty()).then(|| carried.join("\n\n"));
-        if let Some(text) = &text
-            && let Some(id) = self.relay.line.take()
-            && let Some(mut line) = self.hub.store.entry(&id)
-        {
-            line.data["agentSwitch"]["carried"] = carry::excerpt(text, LINE_CARRIED).into();
-            self.hub.set_entry(&id, &line.data);
+        let excerpt = text.as_deref().map(|t| carry::excerpt(t, LINE_CARRIED));
+        // A move of the chain shows what it carried; the user's switch shows that or nothing (`handed_off`).
+        let moved = self.relay.line.take().filter(|_| excerpt.is_some());
+        for id in moved.iter().chain(&user_switch) {
+            if let Some(mut line) = self.hub.store.entry(id) {
+                line.data["agentSwitch"]["carried"] = excerpt.clone().into();
+                self.hub.set_entry(id, &line.data);
+            }
         }
+        // What was kept for this message is let go once the prompt went (`handed_off`).
+        self.relay.handing_off = owed.is_some();
         self.relay.carried = text;
-    }
-
-    /// A thread's new session on another agent: the chat it comes from, which its first session had (by a fork, or
-    /// told), unless this session is its first and is told it already.
-    fn chat_for_thread(&self) -> Option<String> {
-        let new = self.cfg.is_thread() && self.session_fresh && self.handoff.is_none();
-        new.then(|| self.told_chat()).flatten()
-    }
-
-    /// What a thread from the chat is told of it in a new session: the chat so far. Not a routine's run.
-    pub(super) fn told_chat(&self) -> Option<String> {
-        let from_chat = crate::chat::work::from_chat(&self.task_source);
-        from_chat.then(|| crate::chat::work::chat_so_far(&self.hub.store, self.cfg.owner())).flatten()
     }
 
     /// What the chat calls the agent `cfg` runs: its name, with the login profile it runs on ("Claude Code
@@ -231,12 +233,16 @@ impl Actor {
 
     /// A notice with its own fields in the running turn's lane (or the bot's own chat between turns).
     fn line(&self, data: Value) -> Option<String> {
-        let entry = if let Some(turn) = self.turn {
-            self.add(EntryKind::Notice, turn, data)
-        } else {
-            let main = Lane::main(&self.base.id);
-            self.hub.add_entry(&main, EntryKind::Notice, self.hub.store.max_turn(&self.base.id), &data)
-        };
+        match self.turn {
+            Some(turn) => self.add(EntryKind::Notice, turn, data).map(|e| e.id),
+            None => self.main_line(&data),
+        }
+    }
+
+    /// A notice with its own fields in the bot's own chat.
+    fn main_line(&self, data: &Value) -> Option<String> {
+        let main = Lane::main(&self.base.id);
+        let entry = self.hub.add_entry(&main, EntryKind::Notice, self.hub.store.max_turn(&self.base.id), data);
         entry.map(|e| e.id)
     }
 
@@ -251,14 +257,18 @@ impl Actor {
 
     /// What the agent the main session just moved to should hear first: a catch-up when it resumed its own
     /// session, a recap of the conversation when it started a new one. Only the user's messages and the bot's
-    /// replies count, never from before the user last started a new session.
-    fn recap(&self, from: &str, from_session: Option<&str>) -> Option<String> {
-        let (kind, room, text) = if self.session_fresh {
-            let room = self.agent_window().map(carry::room);
-            (Carried::Recap, room, self.recap_text(from, from_session, room)?)
-        } else {
+    /// replies count, never from before the user last started a new session. `moved`: the same agent, moved by the
+    /// user to another folder.
+    fn recap(&self, from: &str, from_session: Option<&str>, moved: bool) -> Option<String> {
+        // A session the agent never left is new, also one an agent's `/command` opened before this message.
+        let left = self.left().filter(|_| !self.session_fresh);
+        let (kind, room, text) = if let Some(left) = left {
             // A catch-up isn't sized to the agent's window.
-            (Carried::CatchUp, None, self.catch_up_text()?)
+            (Carried::CatchUp, None, self.catch_up_text(left)?)
+        } else {
+            let room = self.agent_window().map(carry::room);
+            let kind = if moved { Carried::Move } else { Carried::Recap };
+            (kind, room, self.recap_text(from, from_session, room, moved)?)
         };
         let on_profile = Login::of(&self.hub.store, &self.cfg).profile.is_some();
         crate::analytics::handoff_carried(&self.hub, &self.cfg.backend, on_profile, kind, text.len(), room.is_some());
@@ -278,21 +288,22 @@ impl Actor {
         Some(entries)
     }
 
-    /// For an agent back in the session it had: what was said, and what the other agents did, since it left.
-    fn catch_up_text(&self) -> Option<String> {
-        let left = self
-            .hub
-            .store
-            .kv_get(&park::left_key(&self.base.id, &fallback::login::of(&self.cfg)))
-            .and_then(|v| v.parse().ok());
-        let since = left.unwrap_or(i64::MAX).max(self.fresh());
+    /// The main chat's last entry when the main session last left the agent the bot is on.
+    fn left(&self) -> Option<i64> {
+        let key = park::left_key(&self.base.id, &fallback::login::of(&self.cfg));
+        self.hub.store.kv_get(&key).and_then(|v| v.parse().ok())
+    }
+
+    /// For an agent back in the session it had: what was said, and what the other agents did, since it `left`.
+    fn catch_up_text(&self, left: i64) -> Option<String> {
+        let since = left.max(self.fresh());
         let ledger = self.ledger(since);
         carry::catch_up(&carry::said(&self.main_messages(since)?), ledger.as_deref())
     }
 
     /// For an agent in a new session: the conversation so far with agent `from` (in its session `from_session`),
-    /// within `room` bytes.
-    fn recap_text(&self, from: &str, from_session: Option<&str>, room: Option<usize>) -> Option<String> {
+    /// within `room` bytes; `moved`: told as the same agent in another folder.
+    fn recap_text(&self, from: &str, from_session: Option<&str>, room: Option<usize>, moved: bool) -> Option<String> {
         let bot = &self.base.id;
         let fresh = self.fresh();
         let entries = self.main_messages(fresh)?;
@@ -318,6 +329,7 @@ impl Actor {
             bookmark: entries.last().map(|e| e.id.as_str()),
             ledger: ledger.as_deref(),
             room,
+            moved,
         };
         Some(recap.text())
     }
@@ -443,7 +455,7 @@ impl Actor {
     /// agent answers them, unless none can: `fall_back`). Signing in there brings the bot back (`fallback::signed_in`).
     /// Once per turn.
     fn left_signed_out(&mut self, login: &Login) {
-        if crate::agent::backends::harness(&login.backend).is_some() && !self.relay.signed_out.contains(login) {
+        if codync_agent::backends::harness(&login.backend).is_some() && !self.relay.signed_out.contains(login) {
             self.relay.signed_out.push(login.clone());
             self.sign_in_card(login, &[]);
         }
@@ -461,6 +473,7 @@ impl Actor {
         self.relay.retrying = false;
         self.relay.exhausted = false;
         self.relay.carried = None;
+        self.relay.handing_off = false;
         self.relay.held = None;
     }
 

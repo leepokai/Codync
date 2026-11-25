@@ -6,7 +6,7 @@ use serde_json::Value;
 
 /// `stored` with `patch` laid over it: a field the patch leaves out keeps its saved value, a `null`
 /// clears it. The id, creation and lead fields never change here.
-pub(super) fn patched(stored: &BotConfig, patch: &Value) -> Result<BotConfig> {
+pub(crate) fn patched(stored: &BotConfig, patch: &Value) -> Result<BotConfig> {
     let mut merged = serde_json::to_value(stored)?;
     for (k, v) in patch.as_object().into_iter().flatten() {
         if !matches!(k.as_str(), "id" | "createdAt" | "createdBy" | "lead") {
@@ -37,11 +37,14 @@ pub(super) fn patched(stored: &BotConfig, patch: &Value) -> Result<BotConfig> {
         cfg.model_options.clear();
     }
     // So do modes, to one agent: on another, a picked mode becomes its Auto mode, as the apps do it.
-    if cfg.backend != stored.backend
-        && patch.get("mode").is_none()
-        && cfg.mode.as_deref().is_some_and(|m| m != crate::agent::modes::AUTO)
+    if cfg.backend != stored.backend && patch.get("mode").is_none() {
+        cfg.mode = codync_agent::modes::on_other_agent(cfg.mode.as_deref());
+    }
+    // An older app sends the bool it knows: on keeps Always, off is Off.
+    if patch.get("worktreeMode").is_none()
+        && let Some(on) = patch.get("threadWorktrees").and_then(Value::as_bool)
     {
-        cfg.mode = Some(crate::agent::modes::AUTO.into());
+        cfg.worktree_mode = stored.worktree_mode.with_switch(on);
     }
     if cfg.kind != stored.kind {
         bail!("a bot can't become a group, or a group a bot");
@@ -82,6 +85,21 @@ mod tests {
         assert_eq!(profiles(older), [Some("a1".into()), None, Some("a2".into())], "a list of agents alone");
         let cleared = json!([{"backend": "claude", "loginProfile": null}, {"backend": "claude", "loginProfile": "a1"}]);
         assert_eq!(profiles(cleared), [None, Some("a1".into())], "a step that names its login profile, or none");
+    }
+
+    #[test]
+    fn an_older_apps_thread_worktrees_switch_never_drops_always() {
+        use crate::store::WorktreeMode::{Always, Off, SideBySide};
+        let stored = |mode: &str| -> BotConfig {
+            serde_json::from_value(json!({"id": "a", "name": "a", "backend": "claude", "worktreeMode": mode}))
+                .expect("a bot config")
+        };
+        let mode = |from: &str, patch| patched(&stored(from), &patch).expect("a valid patch").worktree_mode;
+        assert_eq!(mode("always", json!({"name": "b", "threadWorktrees": true})), Always, "saving another field");
+        assert_eq!(mode("off", json!({"threadWorktrees": true})), SideBySide);
+        assert_eq!(mode("always", json!({"threadWorktrees": false})), Off);
+        assert_eq!(mode("off", json!({"threadWorktrees": true, "worktreeMode": "always"})), Always, "the new key wins");
+        assert_eq!(mode("always", json!({"name": "b"})), Always);
     }
 
     #[test]

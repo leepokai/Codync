@@ -1,11 +1,11 @@
 //! Starting an agent for a check, and letting it sign itself in.
 
 use super::{check, launch_env, probe_dir};
-use crate::agent::acp::{self, Acp, Incoming};
-use crate::agent::backends;
-use crate::agent::registry::{Candidate, Cmd};
 use crate::store::Store;
 use anyhow::{Context, Result, anyhow, bail};
+use codync_agent::acp::{self, Acp, Incoming};
+use codync_agent::backends;
+use codync_agent::registry::{Candidate, Cmd};
 use serde_json::{Value, json};
 use std::ffi::OsStr;
 use std::sync::Arc;
@@ -79,7 +79,7 @@ pub(crate) async fn start_with(
         );
         match tokio::time::timeout(budget, init).await {
             Ok(Ok(init)) => {
-                acp.hold(std::mem::take(&mut grants));
+                std::mem::take(&mut grants).held_by(&acp);
                 return Ok(Started { acp, inbox: rx, init, cmd });
             }
             Ok(Err(e)) => last = Some(backends::explain_exit(backend, e, &mut rx).await),
@@ -112,7 +112,7 @@ pub async fn authenticate(store: &Store, backend: &str, method: &str) -> Result<
 pub(crate) async fn authenticate_account(store: &Store, backend: &str, id: &str) -> Result<()> {
     let Started { acp, inbox, init, cmd } = start_with(store, backend, Some(id), &[]).await?;
     let own = |m: &super::Method| matches!(m.kind, super::MethodKind::Agent);
-    let Some(method) = super::methods(backend, &init, &cmd).into_iter().find(own) else {
+    let Some(method) = acp::auth::methods(backend, &init, &cmd.program).into_iter().find(own) else {
         acp.kill().await;
         bail!("the agent offers no sign-in of its own");
     };
@@ -139,12 +139,14 @@ async fn sign_in(acp: &Acp, inbox: &mut mpsc::UnboundedReceiver<Incoming>, metho
         tokio::select! {
             result = &mut request => return result,
             incoming = inbox.recv() => match incoming {
-                Some(Incoming::Request { id, .. }) => acp.respond_error(id, -32601, "not supported during sign-in").await?,
+                Some(Incoming::Request(request)) => {
+                    request.refuse(acp::METHOD_NOT_FOUND, "not supported during sign-in").await?;
+                }
                 Some(Incoming::Closed { .. }) | None => bail!("the agent closed during sign-in"),
                 Some(notification) => {
                     if !opened && let Some(url) = acp::codebuddy::sign_in_url(&notification) {
                         opened = true;
-                        if !crate::shell::open(OsStr::new(&url)) {
+                        if !crate::service::open(OsStr::new(&url)) {
                             tracing::warn!("couldn't open the sign-in page");
                         }
                     }

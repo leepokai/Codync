@@ -18,6 +18,23 @@ export const workAgent = join(root, 'host/tests/fixtures/work_agent.py')
 // The stand-in agent CLIs a `--cdp` sandbox's host finds first on its PATH (host/tests/fixtures/bin/README.md).
 const standIns = join(root, 'host/tests/fixtures/bin')
 
+/** A scripted agent whose turn starts each of `calls` and stays on them until it is stopped. */
+export const toolCallAgent = (calls: { kind: string; title: string }[]) => `import json,sys
+def send(m): sys.stdout.write(json.dumps(m)+"\\n"); sys.stdout.flush()
+def upd(u): send({"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":u}})
+turn=[None]
+for line in sys.stdin:
+    m=json.loads(line)
+    meth=m.get("method")
+    if meth=="initialize": send({"jsonrpc":"2.0","id":m["id"],"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":False}}})
+    elif meth=="session/new": send({"jsonrpc":"2.0","id":m["id"],"result":{"sessionId":"s1"}})
+    elif meth=="session/prompt":
+        turn[0]=m["id"]
+        for i,c in enumerate(json.loads(${JSON.stringify(JSON.stringify(calls))})):
+            upd({"sessionUpdate":"tool_call","toolCallId":"t%d"%i,"title":c["title"],"kind":c["kind"],"status":"in_progress"})
+    elif meth=="session/cancel" and turn[0] is not None: send({"jsonrpc":"2.0","id":turn[0],"result":{"stopReason":"cancelled"}})
+`
+
 /** This worktree's sandbox: its name, data folder, host port, DevTools port (`npm run dev -- --cdp` opens port + 10000) and whether it runs headless. */
 export function sandbox() {
   const name = sandboxName(basename(root))
@@ -68,6 +85,8 @@ export async function attach(): Promise<{ browser: Browser; page: Page }> {
     const notNow = sheet.getByRole('button', { name: 'Not now' })
     if (await notNow.isVisible()) await notNow.click()
   }
+  // A spec starts on the Bots page, whichever page the last one left open (on Bots itself the entry would fold the list).
+  await page.evaluate(() => document.querySelector<HTMLElement>('.nav-rail [data-page="bots"]:not([aria-current])')?.click())
   return { browser, page }
 }
 
@@ -79,6 +98,22 @@ export async function setPref(page: Page, key: string, value: unknown) {
   }, [key, JSON.stringify(value)] as const)
 }
 
+/** Sets `prefs` for the test; the function it returns puts back what the sandbox had. */
+export async function withPrefs(page: Page, prefs: Record<string, unknown>) {
+  const keys = Object.keys(prefs)
+  const saved = await page.evaluate((keys) => keys.map((key) => localStorage.getItem(key)), keys)
+  for (const key of keys) await setPref(page, key, prefs[key])
+  return async () => {
+    for (const [i, key] of keys.entries()) {
+      await page.evaluate(([key, value]) => {
+        if (value === null) localStorage.removeItem(key)
+        else localStorage.setItem(key, value)
+        window.dispatchEvent(new StorageEvent('storage', { key, newValue: value }))
+      }, [key, saved[i] ?? null] as const).catch(() => {})
+    }
+  }
+}
+
 /** A bot on the scripted agent, which waits up to `seconds` for a steered message. */
 export async function steerBot(page: Page, name: string, seconds: number) {
   const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
@@ -87,10 +122,11 @@ export async function steerBot(page: Page, name: string, seconds: number) {
   return bot
 }
 
-/** A bot on the scripted agent that answers each message with `mode read-only · <the message>`, in `cwd` when given (the agent logs its calls to calls.jsonl there). */
-export async function echoBot(page: Page, name: string, cwd?: string) {
-  const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-    name, backend: 'custom', command: fixtureCommand(echoAgent), cwd, connectors: [], skills: [], notify: false,
+/** A bot on the scripted agent that answers each message with `mode read-only · <the message>`, with `project` as its
+ * default project when given. Its chat runs in the bot's own folder (`cwd`), where the agent logs its calls to calls.jsonl. */
+export async function echoBot(page: Page, name: string, project?: string) {
+  const { bot } = await api<{ bot: { id: string; cwd: string } }>(page, 'createBot', {
+    name, backend: 'custom', command: fixtureCommand(echoAgent), cwd: project, connectors: [], skills: [], notify: false,
   })
   return bot
 }
@@ -103,6 +139,12 @@ export async function workBot(page: Page, name: string, backend = 'custom') {
   })
   await api(page, 'updateBot', { id: bot.id, permission: 'ask' })
   return bot
+}
+
+/** Has a `workBot` add the task `title`, whose thread works until it is stopped (`stopWork`), and waits for it. */
+export async function holdTask(page: Page, botId: string, title: string) {
+  await api(page, 'send', { botId, text: `ADD ${title}|HOLD:e2e` })
+  await expect.poll(async () => (await api<{ bot: { work: { title: string }[] } }>(page, 'updateBot', { id: botId })).bot.work.some((t) => t.title === title)).toBe(true)
 }
 
 type LoginProfile = { id: string; kind: 'account' | 'apiKey'; name: string | null; signedIn: boolean; vars: string[] }
@@ -125,21 +167,35 @@ export async function loginProfilesOf(page: Page, id: string) {
   return (await agents(page)).find((b) => b.id === id)?.loginProfiles ?? []
 }
 
+/** Opens one of the window's pages from its rail (Settings is the account's avatar). */
+export async function openPage(page: Page, name: 'Bots' | 'Threads' | 'Computers' | 'Network' | 'Extensions' | 'Usage' | 'Settings') {
+  const entry = page.locator('.nav-rail').getByRole('button', { name, exact: true })
+  // The entry of the page already shown folds its list: only another page is clicked to.
+  if ((await entry.getAttribute('aria-current')) !== 'page') await entry.click()
+}
+
+/** The page a rail entry other than Bots and Threads shows. */
+export const appPage = (page: Page) => page.locator('.app-page')
+
 /** Opens the agent's sheet from Extensions. */
-export async function openAgentSheet(page: Page, name: string) {
-  await page.getByRole('button', { name: /Extensions/ }).click()
-  await page.locator('.agent-grid').getByText(name, { exact: true }).click()
+/** Extensions' Login profiles tab, at the agent's card. */
+export async function openLoginProfiles(page: Page, agent: { id: string }) {
+  await openPage(page, 'Extensions')
+  await page.getByRole('tab', { name: 'Login profiles' }).click()
+  const card = page.locator(`[data-agent="${agent.id}"]`)
+  await card.scrollIntoViewIfNeeded()
+  return card
 }
 
 /**
- * Add account on the agent's sheet: its sign-in opens in a terminal, and leaving it signs nothing in. Returns the new
- * login profile's id, with the sheet showing its "New login profile" row; `made` hears the id as soon as the host has
+ * Add account on the agent's Login profiles card: its sign-in opens in a terminal, and leaving it signs nothing in.
+ * Returns the new login profile's id, with the card showing its "New login profile" row; `made` hears the id as soon as the host has
  * it, so a test that fails later still removes it.
  */
 export async function addAccount(page: Page, agent: Agent, made: (id: string) => void) {
   const before = new Set((await loginProfilesOf(page, agent.id)).map((p) => p.id))
-  await openAgentSheet(page, agent.name)
-  await page.getByRole('button', { name: /Add account/ }).click()
+  const card = await openLoginProfiles(page, agent)
+  await card.getByRole('button', { name: /Add account/ }).click()
   await expect(page.locator('.market-screen-title', { hasText: `Sign in to ${agent.name}` })).toBeVisible()
   await expect(page.locator('.setup-terminal-surface')).toBeVisible()
   let id: string | undefined
@@ -147,21 +203,21 @@ export async function addAccount(page: Page, agent: Agent, made: (id: string) =>
   if (!id) throw new Error('Add account made no login profile.')
   made(id)
   await page.locator('.market-screen-header').getByRole('button', { name: 'Back' }).click()
-  await expect(page.locator('.login-profile', { hasText: 'New login profile' })).toContainText('Not signed in')
+  await expect(card.locator('.login-profile', { hasText: 'New login profile' })).toContainText('Not signed in')
   return id
 }
 
 /** Sends `text` from the open chat's composer (not the box of a thread open in the inspector). */
 export async function typeMessage(page: Page, text: string) {
-  const box = page.locator('.composer:not(.work-thread-composer) textarea')
+  const box = page.locator('.composer:not(.thread-chat .composer) textarea')
   await box.fill(text)
   await box.press('Enter')
 }
 
-/** Opens Settings from the account panel, on its General page. */
+/** Opens Settings from the rail, on its General page. */
 export async function openGeneralSettings(page: Page) {
-  await page.locator('.sidebar-account').click()
-  await page.locator('.account-panel').getByText('Settings', { exact: true }).click()
+  await openPage(page, 'Settings')
+  await page.locator('.settings-item', { hasText: 'General' }).click()
 }
 
 /** Settings › Voice chat. */

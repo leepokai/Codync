@@ -178,8 +178,9 @@ internal suspend fun AppStore.hostQuery(method: String, payload: JsonObject, tim
     }
     try { return request.await() } finally { request.cancel() }
 }
-suspend fun AppStore.agentModels(backend: String): AgentModels {
-    val response = hostQuery("agentModels", body("backend" to backend), timeoutMillis = 300_000)
+/** [loginProfile]: the login profile to list them for; null for the default login. */
+suspend fun AppStore.agentModels(backend: String, loginProfile: String?): AgentModels {
+    val response = hostQuery("agentModels", body("backend" to backend, "loginProfile" to loginProfile), timeoutMillis = 300_000)
     return WireJson.decodeFromJsonElement(response)
 }
 /** A forced usage read that returns when it's done, for pull to refresh. */
@@ -265,6 +266,29 @@ internal fun AppStore.setAutoOrder(on: Boolean) {
 /** The automatic order switch as the computer has it: switched here, or its `autoOrder` event (switched from another device). */
 internal fun AppStore.showAutoOrder(on: Boolean) =
     mutableState.update { state -> state.hello?.let { state.copy(hello = JsonObject(it + ("autoOrder" to JsonPrimitive(on)))) } ?: state }
+
+/** How many days after a thread last finished the computer deletes it, 0 for never (iOS `threadKeepDays`); missing from older hosts. */
+internal fun threadKeepDays(hello: JsonObject?): Int? = hello?.get("threadKeepDays")?.jsonPrimitive?.intOrNull
+
+/** The choices of Delete old threads: never or after so many days, with a number the computer has that they don't. */
+internal fun threadKeepChoices(days: Int): List<Pair<Int, String>> =
+    (listOf(0, 7, 30, 90) + days).distinct().sorted().map { it to if (it == 0) "Keep forever" else "After $it days" }
+
+/** Sets how long the computer keeps ended threads, shown at once and put back if the computer refuses (iOS `setThreadKeepDays`). */
+internal fun AppStore.setThreadKeepDays(days: Int) {
+    val was = threadKeepDays(state.value.hello) ?: return
+    if (was == days) return
+    showThreadKeepDays(days)
+    command("setThreadKeepDays", buildJsonObject { put("days", days) }, "threadKeepDays", onFailure = { showThreadKeepDays(was) })
+}
+
+/** Delete old threads as the computer has it: chosen here, or its `threadKeepDays` event (chosen on another device). A new
+ *  choice may have deleted older threads, so they're read again. */
+internal fun AppStore.showThreadKeepDays(days: Int) = mutableState.update { state ->
+    val hello = state.hello ?: return@update state
+    if (threadKeepDays(hello) == days) state
+    else state.copy(hello = JsonObject(hello + ("threadKeepDays" to JsonPrimitive(days))), olderThreads = null)
+}
 
 /** Whether the bot's harness keeps its own memory on beside Codync's (iOS `setHarnessMemory`). */
 internal fun AppStore.setHarnessMemory(bot: Bot, on: Boolean) =

@@ -10,7 +10,7 @@ use super::buffer::u;
 use super::style::{spin, theme};
 use super::time::clock;
 use super::transcript::Built;
-use crate::chat::decision::Status;
+use crate::chat::decision::{Answers, Status};
 
 /// An answer's label: Codync's own words for the usual kinds, in the app's language; an agent's own option keeps
 /// its name, as on the other apps.
@@ -100,8 +100,8 @@ pub(super) fn decision_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, widt
             out.buttons.push((li, 3, u(inner), Click::Option { entry: e.id.clone(), option: option.clone() }));
         }
     }
-    // The message box below takes the user's own words.
-    if from.is_none() {
+    // The message box below takes the user's own words, unless only an option answers the card.
+    if from.is_none() && Answers::of(&e.data) == Answers::OptionsOrOwnWords {
         card_row(out, vec![Span::styled(format!(" ↓ {}", tr("Something else")), t.dim)], inner);
     }
     card_foot(out, bw);
@@ -229,54 +229,23 @@ pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, wi
         }
     }
     card_row(out, vec![], inner);
-    // Buttons, wrapping onto more lines when narrow.
+    // The answers as the choice card's rows, one tone, each with its key.
     let opts = e.options();
     let keys = option_keys(&opts);
-    let mut line: Vec<Span<'static>> = vec![];
-    let mut used = 0usize;
-    let mut pending: Vec<(u16, u16, Click)> = vec![];
-    let flush =
-        |out: &mut Built, line: &mut Vec<Span<'static>>, used: &mut usize, pending: &mut Vec<(u16, u16, Click)>| {
-            let li = out.lines.len();
-            card_row(out, std::mem::take(line), inner);
-            for (x, bw, c) in pending.drain(..) {
-                out.buttons.push((li, x, bw, c));
-            }
-            *used = 0;
-        };
     for (i, (id, name, kind)) in opts.iter().enumerate() {
         let key = format!(" {} ", if answering == Some(id) { spin(app) } else { keys[i].as_str() });
-        let label = format!("{} ", option_label(name, kind));
-        let bw_ = w(&key) + w(&label);
-        if used > 0 && used + bw_ + 1 > inner {
-            flush(out, &mut line, &mut used, &mut pending);
+        let style = if answering.is_some_and(|a| a != id) { t.dim.patch(t.btn) } else { t.text.patch(t.btn) };
+        let content = [
+            Span::styled(key, style.add_modifier(Modifier::BOLD)),
+            Span::styled(format!("{} ", option_label(name, kind)), style),
+        ];
+        for line in md::wrap(&content, inner, &[], &[]) {
+            let li = out.lines.len();
+            card_row(out, line.spans, inner);
+            out.buttons.push((li, 3, u(inner), Click::Option { entry: e.id.clone(), option: id.clone() }));
         }
-        let style = if answering.is_some_and(|a| a != id) {
-            t.dim.patch(t.btn)
-        } else if i == 0 {
-            t.btn_primary
-        } else if kind.starts_with("reject") {
-            t.red.patch(t.btn)
-        } else {
-            t.text.patch(t.btn)
-        };
-        if used > 0 {
-            line.push(Span::raw(" "));
-            used += 1;
-        }
-        pending.push((u(3 + used), u(bw_), Click::Option { entry: e.id.clone(), option: id.clone() }));
-        line.push(Span::styled(key, style.add_modifier(Modifier::BOLD)));
-        line.push(Span::styled(label, style));
-        used += bw_;
     }
-    if !line.is_empty() {
-        let hint = tr("N reject + say why").into_owned();
-        if used + w(&hint) + 3 <= inner {
-            line.push(Span::raw(" ".repeat(inner - used - w(&hint))));
-            line.push(Span::styled(hint, t.dim));
-        }
-        flush(out, &mut line, &mut used, &mut pending);
-    }
+    card_row(out, vec![Span::styled(tr("N reject + say why").into_owned(), t.dim)], inner);
     card_foot(out, bw);
 }
 
@@ -350,6 +319,8 @@ mod tests {
         let (own, own_buttons) = card(json!({}));
         let (thread, thread_buttons) = card(json!({"thread": {"id": "thread-1", "title": "Fix login"}, "task": "i"}));
         assert!(own.iter().any(|l| l.contains("↓ Something else")), "{own:?}");
+        let (options_only, _) = card(json!({"ownWords": false}));
+        assert!(!options_only.iter().any(|l| l.contains("Something else")), "only an option answers it");
         assert!(!own.iter().any(|l| l.contains("Work")));
         assert!(thread[1].contains("Work · Fix login"), "{thread:?}");
         assert!(thread[2].contains("Squash or merge?"), "{thread:?}");

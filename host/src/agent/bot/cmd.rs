@@ -17,6 +17,22 @@ pub enum Cmd {
     FollowUp(String),
     /// One of the bot's tasks ended (`chat::work`): its report, for a turn in the bot's chat.
     TaskReport(crate::chat::work::Report),
+    /// One assistant step of a workflow. `step_id` is `workflow_steps.id`.
+    WorkflowStep {
+        step_id: String,
+    },
+    /// Stop that step if it is the current turn, or drop it if it is still queued.
+    WorkflowStop {
+        step_id: String,
+    },
+    /// One of the bot's tasks looks stuck (`chat::work::watch`): a turn in its chat to look at it.
+    Watchdog(crate::chat::work::Stuck),
+    /// A thread answered the bot's `ask_task` after the call gave up waiting: a turn in its chat with the answer.
+    TaskAnswer {
+        prompt: String,
+        /// The task's hops: a task added in that turn carries them on.
+        hops: u8,
+    },
     /// The user wrote in the bot's chat.
     Send {
         lane: Lane,
@@ -30,7 +46,7 @@ pub enum Cmd {
     /// What the agent made of a steered message (`_session/steering`).
     Steered {
         entry_id: String,
-        outcome: Result<Value>,
+        outcome: Result<codync_agent::acp::Steered>,
     },
     /// The user took back a queued message of theirs (`unqueue`).
     Unqueue {
@@ -121,6 +137,12 @@ pub(super) enum Queued {
     Routine(String),
     FollowUp(String),
     TaskReport(crate::chat::work::Report),
+    WorkflowStep(String),
+    Watchdog(crate::chat::work::Stuck),
+    TaskAnswer {
+        prompt: String,
+        hops: u8,
+    },
     User {
         lane: Lane,
         entry_id: String,
@@ -151,13 +173,19 @@ pub(super) enum HostTurn {
     /// The reports of the bot's tasks (`Cmd::TaskReport`): the bot tells the user what they found, which alerts like
     /// a reply. A restart doesn't resume it: the reports it didn't answer come again (`work::restore`).
     TaskReport,
+    /// The watchdog's look at a task that seems stuck (`Cmd::Watchdog`): the bot acts on it, which alerts like a
+    /// reply, or passes. A restart doesn't resume it: the next look asks again if the task still seems stuck.
+    Watchdog,
+    /// A thread's answer to the bot's `ask_task` that came after the call gave up (`Cmd::TaskAnswer`): the bot acts on
+    /// it, which alerts like a reply. A restart doesn't resume it.
+    TaskAnswer,
 }
 
 impl HostTurn {
     /// Whether a host restart in the middle of it resumes it.
     pub(super) fn resumed(self) -> bool {
         match self {
-            Self::Opening | Self::TaskReport => false,
+            Self::Opening | Self::TaskReport | Self::Watchdog | Self::TaskAnswer => false,
             Self::FollowUp => true,
         }
     }
@@ -166,15 +194,16 @@ impl HostTurn {
     pub(super) fn alerts(self) -> bool {
         match self {
             Self::Opening => false,
-            Self::FollowUp | Self::TaskReport => true,
+            Self::FollowUp | Self::TaskReport | Self::Watchdog | Self::TaskAnswer => true,
         }
     }
 
     /// What `turn_finished` reports as its source.
     pub(super) fn source(self) -> TurnSource {
         match self {
-            Self::Opening | Self::TaskReport => TurnSource::Host,
+            Self::Opening | Self::TaskReport | Self::TaskAnswer => TurnSource::Host,
             Self::FollowUp => TurnSource::FollowUp,
+            Self::Watchdog => TurnSource::Watchdog,
         }
     }
 }

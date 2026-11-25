@@ -1,17 +1,19 @@
-//! Setup terminals: installing an agent's CLI or signing in to it runs in a
-//! real PTY on this computer, streamed to the client that started it. The
-//! host picks the command (from `backends::HARNESSES`); clients only type.
+//! Terminals: installing an agent's CLI or signing in to it runs in a real PTY on
+//! this computer, streamed to the client that started it; the host picks the
+//! command (from `backends::HARNESSES`) and clients only type. A bot's own
+//! terminal is the user's login shell in the bot's folder.
 
 use crate::LockExt;
-use crate::agent::backends;
 use anyhow::{Result, anyhow, bail};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
+use codync_agent::backends;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtyPair, PtySize, native_pty_system};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::io::{Read as _, Write as _};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
@@ -28,6 +30,9 @@ pub enum Step {
     /// Codync's Node.js, for agents that run on it (one terminal for every agent).
     Node,
     Login,
+    /// A bot's own shell, in its folder (`shell`); never asked for by name.
+    #[serde(skip)]
+    Shell,
 }
 
 enum Input {
@@ -41,8 +46,15 @@ struct Output {
     exit: Option<i32>,
 }
 
-/// What a terminal is for: an agent, the step, and the account login profile a sign-in is for.
-type Key = (String, Step, Option<String>);
+/// What a terminal is for: an agent (a bot, for its shell), the step, the account login profile a sign-in is for, and
+/// the app's tab a shell is drawn in.
+#[derive(PartialEq, Eq)]
+struct Key {
+    agent: String,
+    step: Step,
+    profile: Option<String>,
+    tab: Option<String>,
+}
 
 pub struct Term {
     key: Key,
@@ -87,8 +99,9 @@ impl Term {
 pub struct Terms(Mutex<HashMap<String, Arc<Term>>>);
 
 impl Terms {
+    /// A setup still running: a bot's shell stays open as long as its tab does, and holds nothing up.
     pub fn busy(&self) -> bool {
-        self.0.locked().values().any(|term| term.output.locked().exit.is_none())
+        self.0.locked().values().any(|term| term.key.step != Step::Shell && term.output.locked().exit.is_none())
     }
 
     pub fn get(&self, id: &str) -> Option<Arc<Term>> {
@@ -97,7 +110,7 @@ impl Terms {
 
     /// Whether a sign-in to login profile `id` is open.
     pub fn signing_in(&self, id: &str) -> bool {
-        let open = |term: &Arc<Term>| term.key.2.as_deref() == Some(id) && term.output.locked().exit.is_none();
+        let open = |term: &Arc<Term>| term.key.profile.as_deref() == Some(id) && term.output.locked().exit.is_none();
         self.0.locked().values().any(open)
     }
 
@@ -110,7 +123,30 @@ impl Terms {
         cols: u16,
         rows: u16,
     ) -> Result<String> {
-        self.spawn((backend.to_owned(), Step::Login, Some(id.to_owned())), command, cols, rows)
+        self.spawn(
+            Key { agent: backend.to_owned(), step: Step::Login, profile: Some(id.to_owned()), tab: None },
+            command_line(command),
+            Some(command),
+            home(),
+            cols,
+            rows,
+        )
+    }
+
+    /// The user's login shell in bot `bot`'s folder `cwd` for the app's tab `tab` (a bot can have several), or the one
+    /// already open for it.
+    pub fn shell(self: &Arc<Self>, bot: &str, tab: Option<&str>, cwd: &Path, cols: u16, rows: u16) -> Result<String> {
+        if !cwd.is_dir() {
+            bail!("{} is not a folder on this computer", cwd.display());
+        }
+        self.spawn(
+            Key { agent: bot.to_owned(), step: Step::Shell, profile: None, tab: tab.map(str::to_owned) },
+            login_shell(),
+            None,
+            cwd.to_owned(),
+            cols,
+            rows,
+        )
     }
 
     /// Starts `step` for `backend` (a sign-in `method` the agent advertised, or
@@ -126,7 +162,9 @@ impl Terms {
         let h = backends::harness(backend);
         let name = h.map_or(backend, |h| h.name);
         let command = match step {
-            Step::Node => format!("{} node", crate::shell::quote(&crate::service::current_exe()?.to_string_lossy())),
+            Step::Node => {
+                format!("{} node", codync_agent::shell::quote(&crate::service::current_exe()?.to_string_lossy()))
+            }
             Step::Install => {
                 let h = h.ok_or_else(|| anyhow!("Codync downloads {name} by itself"))?;
                 h.install.and_then(backends::Install::command).ok_or_else(|| anyhow!("{}", h.setup))?
@@ -138,25 +176,31 @@ impl Terms {
                     .ok_or_else(|| anyhow!("That sign-in option is gone; check {name} again"))?,
                 None => backends::login_command(backend).await?,
             },
+            Step::Shell => bail!("a shell opens from its bot"),
         };
-        self.spawn((backend.to_owned(), step, None), &command, cols, rows)
+        let key = Key { agent: backend.to_owned(), step, profile: None, tab: None };
+        self.spawn(key, command_line(&command), Some(&command), home(), cols, rows)
     }
 
-    fn spawn(self: &Arc<Self>, key: Key, command: &str, cols: u16, rows: u16) -> Result<String> {
+    /// Runs `builder` in `cwd` on a new PTY, its `banner` (the command) shown first, or returns the open terminal for
+    /// `key`.
+    fn spawn(
+        self: &Arc<Self>,
+        key: Key,
+        mut builder: CommandBuilder,
+        banner: Option<&str>,
+        cwd: PathBuf,
+        cols: u16,
+        rows: u16,
+    ) -> Result<String> {
         let mut map = self.0.locked();
         if let Some((id, _)) = map.iter().find(|(_, t)| t.key == key && t.output.locked().exit.is_none()) {
             return Ok(id.clone());
         }
         let PtyPair { master, slave } = native_pty_system().openpty(size(cols, rows))?;
-        let shell = crate::shell::line(command);
-        let mut builder = CommandBuilder::new(shell.program);
-        builder.args(&shell.args);
-        for (k, v) in &shell.env {
-            if v.is_empty() { builder.env_remove(k) } else { builder.env(k, v) }
-        }
         builder.env("TERM", "xterm-256color");
         builder.env("COLORTERM", "truecolor");
-        builder.cwd(dirs::home_dir().unwrap_or_else(|| "/".into()));
+        builder.cwd(cwd);
         let child = slave.spawn_command(builder)?;
         // Only the child may hold the terminal side, or the output never ends.
         drop(slave);
@@ -167,10 +211,12 @@ impl Terms {
             output: Mutex::new(Output { scrollback: vec![], exit: None }),
             events: broadcast::channel(256).0,
         });
-        term.push(format!("\x1b[2m$ {command}\x1b[0m\r\n").as_bytes());
+        if let Some(command) = banner {
+            term.push(format!("\x1b[2m$ {command}\x1b[0m\r\n").as_bytes());
+        }
         let id = uuid::Uuid::new_v4().to_string();
         map.insert(id.clone(), term.clone());
-        tracing::info!(backend = term.key.0, step = ?term.key.1, term = %id, "setup terminal started");
+        tracing::info!(backend = term.key.agent, step = ?term.key.step, term = %id, "setup terminal started");
         tokio::spawn(run(self.clone(), id.clone(), term, master, child, rx));
         Ok(id)
     }
@@ -188,6 +234,17 @@ impl Terms {
         if let Some(t) = self.0.locked().remove(id) {
             let _ = t.input.send(Input::Kill);
         }
+    }
+
+    /// Ends the shells drawn in the app's tab `tab`, one for each bot it was shown for.
+    pub fn close_shells(&self, tab: &str) {
+        self.0.locked().retain(|_, t| {
+            let shell = t.key.step == Step::Shell && t.key.tab.as_deref() == Some(tab);
+            if shell {
+                let _ = t.input.send(Input::Kill);
+            }
+            !shell
+        });
     }
 
     fn send(&self, id: &str, input: Input) -> Result<()> {
@@ -208,6 +265,35 @@ const CURSOR_REPLY: &[u8] = b"\x1b[2;1R";
 fn without_cursor_query(chunk: &[u8]) -> Option<Vec<u8>> {
     let at = chunk.windows(CURSOR_QUERY.len()).position(|w| w == CURSOR_QUERY)?;
     Some([&chunk[..at], &chunk[at + CURSOR_QUERY.len()..]].concat())
+}
+
+/// `command` as the platform's shell runs one line.
+fn command_line(command: &str) -> CommandBuilder {
+    let shell = codync_agent::shell::line(command);
+    let mut builder = CommandBuilder::new(shell.program);
+    builder.args(&shell.args);
+    for (k, v) in &shell.env {
+        if v.is_empty() { builder.env_remove(k) } else { builder.env(k, v) }
+    }
+    builder
+}
+
+/// The user's own interactive shell: `$SHELL` as a login shell on Unix, PowerShell on Windows.
+fn login_shell() -> CommandBuilder {
+    if cfg!(windows) {
+        let mut builder = CommandBuilder::new("powershell.exe");
+        builder.arg("-NoLogo");
+        return builder;
+    }
+    let fallback = if cfg!(target_os = "macos") { "/bin/zsh" } else { "/bin/bash" };
+    let mut builder =
+        CommandBuilder::new(std::env::var("SHELL").ok().filter(|s| !s.is_empty()).as_deref().unwrap_or(fallback));
+    builder.arg("-l");
+    builder
+}
+
+fn home() -> PathBuf {
+    dirs::home_dir().unwrap_or_else(|| "/".into())
 }
 
 fn size(cols: u16, rows: u16) -> PtySize {
@@ -282,8 +368,8 @@ async fn run(
     tracing::info!(term = %id, code, "setup terminal finished");
     // A finished sign-in is believed again, over the prompt that login (the login profile's, or the agent's own)
     // refused before.
-    if term.key.1 == Step::Login && code == 0 {
-        backends::clear_prompt_refused(term.key.2.as_deref().unwrap_or(&term.key.0));
+    if term.key.step == Step::Login && code == 0 {
+        backends::clear_prompt_refused(term.key.profile.as_deref().unwrap_or(&term.key.agent));
     }
     term.finish(code);
     tokio::time::sleep(LINGER).await;
@@ -309,7 +395,16 @@ mod tests {
         } else {
             ("[ -t 0 ] && echo tty; read x; echo got-$x", "\n")
         };
-        let id = terms.spawn(("test".into(), Step::Login, None), command, 80, 24).unwrap();
+        let id = terms
+            .spawn(
+                Key { agent: "test".into(), step: Step::Login, profile: None, tab: None },
+                command_line(command),
+                Some(command),
+                home(),
+                80,
+                24,
+            )
+            .unwrap();
         let term = terms.get(&id).unwrap();
         let (_, mut rx) = term.attach();
         terms.write(&id, &B64.encode(format!("hi{enter}"))).unwrap();
@@ -327,5 +422,35 @@ mod tests {
         let (head, _) = term.attach();
         let text = String::from_utf8(B64.decode(head[0]["data"].as_str().unwrap()).unwrap()).unwrap();
         assert!(text.contains("tty") && text.contains("got-hi"), "{text}");
+    }
+
+    /// A bot's shell opens in its folder, a second open for the same tab while it runs is the same terminal, another tab
+    /// gets its own, and closing a tab ends its shell on every bot and no other.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_bot_shell_opens_in_its_folder() {
+        let terms = Arc::new(Terms::default());
+        let dir = std::env::temp_dir().join(format!("codync-term-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let id = terms.shell("bot", Some("t1"), &dir, 80, 24).unwrap();
+        assert_eq!(terms.shell("bot", Some("t1"), &dir, 80, 24).unwrap(), id);
+        let other = terms.shell("bot", Some("t2"), &dir, 80, 24).unwrap();
+        assert_ne!(other, id, "another tab, another shell");
+        let elsewhere = terms.shell("bot2", Some("t2"), &dir, 80, 24).unwrap();
+        assert!(!terms.signing_in("t2"), "a tab is no login profile");
+        terms.close_shells("t2");
+        assert!(terms.get(&other).is_none() && terms.get(&elsewhere).is_none(), "the tab's shells end");
+        assert!(!terms.busy(), "an open shell holds nothing up");
+        let term = terms.get(&id).unwrap();
+        let (_, mut rx) = term.attach();
+        terms.write(&id, &B64.encode("pwd; exit\n")).unwrap();
+        tokio::time::timeout(Duration::from_secs(10), async { while rx.recv().await.unwrap()["type"] != "exit" {} })
+            .await
+            .unwrap();
+        let (head, _) = term.attach();
+        let text = String::from_utf8(B64.decode(head[0]["data"].as_str().unwrap()).unwrap()).unwrap();
+        let name = dir.file_name().unwrap().to_string_lossy().into_owned();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(text.contains(&name), "{text}");
     }
 }

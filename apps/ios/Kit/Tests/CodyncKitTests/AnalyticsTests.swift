@@ -94,6 +94,8 @@ import Testing
     #expect(try json(.linkOpened(.installCommand)) == #"{"link":"install_command"}"#)
     #expect(try json(.linkOpened(.installLink)) == #"{"link":"install_link"}"#)
     #expect(try json(.onboardingStepViewed(.choose)) == #"{"step":"choose"}"#)
+    #expect(try json(.onboardingStepViewed(.cloud)) == #"{"step":"cloud"}"#)
+    #expect(try json(.onboardingCompleted(via: .cloud)) == #"{"via":"cloud"}"#)
     #expect(try json(.signedOutPairingsMoved(computers: 2, keys: .rescan)) == #"{"computers":2,"keys":"rescan"}"#)
     #expect(try json(.cloudKeySaved(.refused, provider: "instabox")) == #"{"outcome":"refused","provider":"instabox"}"#)
     #expect(try json(.cloudOfferOpened(provider: "instabox")) == #"{"provider":"instabox"}"#)
@@ -173,6 +175,23 @@ import Testing
     let unknown = CrashReports.properties(callStack: Data("{}".utf8), exceptionType: 99, signal: nil, appVersion: "1")
     let encoded = String(decoding: try JSONEncoder().encode(unknown), as: UTF8.self)
     #expect(encoded.contains(#""type":"Crash""#) && encoded.contains(#""frames":[]"#) && unknown["$debug_images"] == nil)
+    // A crash without frames says why, in the payload's key names only.
+    #expect(unknown["stack_problem"] == .string("no callStacks"))
+    #expect(p["stack_problem"] == nil)
+    let broken = CrashReports.stack(Data(#"{"callStacks":[{"callStackRootFrames":[{"subFrames":"secret"}]}]}"#.utf8))
+    #expect(broken.frames.isEmpty)
+    #expect(broken.problem == "unreadable: callStacks.0.callStackRootFrames.0.subFrames: type mismatch")
+    // An attributed thread with no frames falls back to one that has them, and says so.
+    let empty = CrashReports.stack(Data(#"{"callStacks":[{"threadAttributed":true,"callStackRootFrames":[]},{"callStackRootFrames":[\#(frame("Codync", 7))]}]}"#.utf8))
+    #expect(empty.frames.count == 1)
+    #expect(empty.problem == "attributed thread has no frames")
+    let none = CrashReports.stack(Data(#"{"callStacks":[{"threadAttributed":true}]}"#.utf8))
+    #expect(none.frames.isEmpty && none.problem == "no frames")
+    // An address written as a float still counts.
+    let float = CrashReports.stack(Data(#"{"callStacks":[{"callStackRootFrames":[{"binaryName":"Codync","address":4370464775.0,"offsetIntoBinaryTextSegment":7.0}]}]}"#.utf8))
+    #expect(float.frames == [.object(["platform": .string("apple"), "function": .string("Codync + 7"), "module": .string("Codync"),
+                                      "in_app": .bool(true), "instruction_addr": .string("0x104800007"), "image_addr": .string("0x104800000")])])
+    #expect(float.problem == nil)
 
     // A runaway stack keeps the 200 frames nearest the crash, all in one binary.
     var deep = frame("Codync", 0)

@@ -11,6 +11,8 @@ impl Hub {
         let cfg = &row.config;
         let mut v = serde_json::to_value(cfg).expect("BotConfig is plain data and always serializes");
         v["managedWorkspace"] = crate::agent::workspace::is_managed(cfg).into();
+        // `worktreeMode` as the bool older apps read and send back.
+        v["threadWorktrees"] = cfg.worktree_mode.as_bool().into();
         // Null where there is no switch to show.
         v["harnessMemory"] =
             (!cfg.is_group() && crate::agent::own_memory::switchable(cfg)).then_some(cfg.harness_memory).into();
@@ -26,16 +28,19 @@ impl Hub {
             v["devServers"] = self.dev_servers.wire(&cfg.id);
             // What the bot works on away from the chat, and what waits for it.
             v["work"] = crate::chat::work::wire(self, cfg);
-            // Its folder is in a git repository. For a project folder (not `managedWorkspace`) that is where
-            // `threadWorktrees` matters, and a client shows its switch: the bot's own folder never gets worktrees.
-            v["gitRepo"] = crate::chat::work::in_repo(&cfg.cwd).into();
+            // Which of its projects are in a git repository (`projectGitRepos`, in `projects`' order): where the
+            // worktree mode matters, and a client shows it. `gitRepo`, for older apps: its default project is one
+            // (the bot's own folder never gets worktrees).
+            let repos: Vec<bool> = cfg.projects.iter().map(|p| crate::chat::work::in_repo(p)).collect();
+            v["gitRepo"] = repos.first().copied().unwrap_or_default().into();
+            v["projectGitRepos"] = repos.into();
             // Whether the host can run git at all: without it a repository gets no worktrees either.
             v["gitInstalled"] = crate::git::installed().into();
         }
         let rt = if cfg.is_group() {
             // A group has no agent: Fast mode belongs to its members.
             crate::hub::Runtime {
-                fast_mode: crate::agent::config::FastModeSupport::default(),
+                fast_mode: codync_agent::config::FastModeSupport::default(),
                 ..self.group_runtime(cfg)
             }
         } else {
@@ -71,7 +76,7 @@ impl Hub {
             Some(_) => l.text.clone(),
             None => format!("You: {}", l.text),
         });
-        v["lastMessage"] = preview.map(|p| crate::agent::acp::truncate(&p, 280)).into();
+        v["lastMessage"] = preview.map(|p| codync_agent::acp::truncate(&p, 280)).into();
         v["lastAt"] = last.map_or(cfg.created_at, |l| l.at).into();
         v
     }

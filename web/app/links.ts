@@ -15,8 +15,10 @@ export const APP_STORE = "https://apps.apple.com/app/codync/id6760984418";
 export const GOOGLE_PLAY = "https://play.google.com/store/apps/details?id=com.pokai.Codync.android";
 export const GITHUB = "https://github.com/leepokai/Codync";
 export const DISCORD = "https://discord.gg/KBAX3Qznxh";
-// The Telegram group for users in China; vercel.json sends the old /wechat page here.
-export const CHINA_COMMUNITY = "https://t.me/+e5egWrp5z4BlOWNl";
+// Telegram, for anyone who can't reach Discord.
+export const TELEGRAM = "https://t.me/+e5egWrp5z4BlOWNl";
+// The Feishu group for users in China (a permanent invite); vercel.json sends the old /wechat page here.
+export const CHINA_COMMUNITY = "https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=49eq6f1e-ef72-40d8-aaf9-9864ee289ba3";
 // Donation page.
 export const KO_FI = "https://ko-fi.com/leepokai";
 export const EMAIL = "kevin@codync.dev";

@@ -7,16 +7,16 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
 
-use super::super::app::{App, Entry, Kind, Source, WorkStatus, WorkTask, shared_line, tilde};
+use super::super::app::{App, Entry, Kind, Source, WorkStatus, WorkTask, nested, shared_line, tilde};
 use super::super::l10n::tr;
 use super::super::manage::{Fetched, ThreadSheet};
 use super::super::md::{self, truncate};
 use super::buffer::{centered, frame_box, hline, put, put_line, rput, u};
-use super::chat::composer_lines;
+use super::chat::{composer_lines, file_names};
 use super::queue::{QueueKeys, queued_rows};
 use super::set_cursor;
 use super::style::theme;
-use super::trace::push_step;
+use super::trace::push_nested;
 use super::work::{mark, standing};
 
 /// What a thread was told shows this many lines until `T` unfolds it.
@@ -82,6 +82,16 @@ fn thread_composer(buf: &mut Buffer, inner: Rect, app: &App, s: &ThreadSheet, bo
     if s.typing {
         set_cursor(Position::new(inner.x + 2 + u(cursor.0), top + u(cursor.1.saturating_sub(first))));
     }
+    // Files going with the next message: one row over the field, as in a chat.
+    let top = if s.files.is_empty() {
+        top
+    } else {
+        let row = top.saturating_sub(1);
+        let hint = if s.typing && s.draft.text.is_empty() { "⌫ removes" } else { "" };
+        let room = rput(buf, inner.right(), row, hint, t.dim.patch(t.panel)).saturating_sub(inner.x + 2);
+        put(buf, inner.x + 2, row, room, &file_names(&s.files), t.secondary.patch(t.panel));
+        row
+    };
     let keys = if s.typing { QueueKeys::AfterEsc } else { QueueKeys::Ready };
     let waiting = queued_rows(&app.thread_entries.queued(&s.thread), keys);
     let strip = top.saturating_sub(u(waiting.len()));
@@ -185,7 +195,7 @@ fn detail_lines(app: &App, s: &ThreadSheet, width: usize) -> (Vec<Line<'static>>
     // Stable: at the same moment the thread's own entry comes first.
     entries.sort_by_key(|(e, _)| e.created_at);
     let mut picked = None;
-    for (e, shared) in entries {
+    for ((e, shared), depth) in nested(&entries, |(e, _)| e) {
         if shared {
             if s.pick.as_ref() == Some(&e.id) {
                 picked = Some(out.len());
@@ -198,7 +208,7 @@ fn detail_lines(app: &App, s: &ThreadSheet, width: usize) -> (Vec<Line<'static>>
         } else if e.queued() {
             // The user's message that waits for its turn: over the composer, not here.
         } else {
-            push_step(&mut out, app, e, width, s.full);
+            push_nested(&mut out, app, e, depth, width, s.full);
         }
     }
     if out.is_empty() {

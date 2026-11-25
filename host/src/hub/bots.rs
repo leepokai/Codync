@@ -1,6 +1,6 @@
 //! Creating, changing and deleting bots.
 
-use super::{Hub, patch, sections, validate};
+use super::{Hub, patch, projects, sections, validate};
 use crate::LockExt;
 use crate::agent::bot::Cmd;
 use crate::store::BotConfig;
@@ -9,12 +9,13 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 impl Hub {
-    /// Makes `cfg` ready to save. Called under `emit_lock`, with the save: its login profile can't be removed in
-    /// between (`login_profiles::remove`).
-    fn settle_config(&self, cfg: &mut BotConfig) -> Result<()> {
+    /// Makes `cfg` ready to save over `before` (none: a new bot). Called under `emit_lock`, with the save: its login
+    /// profile can't be removed in between (`login_profiles::remove`).
+    fn settle_config(&self, cfg: &mut BotConfig, before: Option<&BotConfig>) -> Result<()> {
         crate::agent::login_profiles::settle(&self.store, cfg)?;
         crate::agent::fallback::tidy(cfg);
         cfg.section = sections::normalize_section(cfg.section.as_deref())?;
+        projects::settle(cfg, before)?;
         // ponytail: validated under the lock, so a workspace folder on a hung network share (its `is_dir`)
         // stalls every bot's events until it answers. Upgrade: build and validate outside the lock from a
         // snapshot, then save under it only if the stored config is unchanged (compare the serialized configs,
@@ -41,9 +42,10 @@ impl Hub {
         }
         {
             let _g = self.emit_lock.locked();
-            self.settle_config(&mut cfg)?;
+            self.settle_config(&mut cfg, None)?;
             self.store.save_bot(&cfg)?;
         }
+        projects::changed(self, &[], &cfg.projects);
         crate::network::publish(self);
         if !cfg.is_group() {
             self.spawn_bot(cfg.clone());
@@ -64,17 +66,23 @@ impl Hub {
             if cfg.is_group() {
                 cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
             }
-            self.settle_config(&mut cfg)?;
+            // Only the host makes the box of threads without a bot (`chat::work::plain`).
+            cfg.plain = row.config.plain;
+            self.settle_config(&mut cfg, Some(&row.config))?;
             crate::agent::own_memory::settle(&mut cfg, &row.config, patch);
             self.store.save_bot(&cfg)?;
             (row.config, cfg)
         };
+        projects::changed(self, &before.projects, &cfg.projects);
         crate::network::publish(self);
         if !cfg.is_group() {
             if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&before) {
                 crate::chat::memory::changed(self, Some(&id));
             }
-            if cfg.fallbacks != before.fallbacks {
+            if cfg.fallbacks != before.fallbacks
+                || cfg.thread_agent != before.thread_agent
+                || cfg.thread_fallbacks != before.thread_fallbacks
+            {
                 crate::chat::work::fallbacks_changed(self, &cfg);
             }
             self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
@@ -90,6 +98,7 @@ impl Hub {
             self.delete_bot(&thread.id)?;
         }
         self.routines.disable_bot(&self.store, id)?;
+        crate::workflows::clear_bot(self, id);
         self.team.end_turn(id);
         self.ceilings.set(id, codync_network::Access::Allow);
         crate::chat::group::stop(self, id);
@@ -108,8 +117,9 @@ impl Hub {
         }
         crate::chat::work::forget(self, id);
         crate::network::publish(self);
-        // Its shared files and artifacts are unreachable once the bot is deleted.
-        let folders = [crate::chat::files::root(id), crate::chat::artifacts::root(id)];
+        // Its shared files, artifacts and the files sent to it (a thread's, a group's) are unreachable once it is deleted.
+        let folders =
+            [crate::chat::files::root(id), crate::chat::artifacts::root(id), crate::chat::uploads::data_root(id)];
         let bot = id.to_owned();
         tokio::task::spawn_blocking(move || {
             crate::chat::memory::files::remove_bot(&bot);

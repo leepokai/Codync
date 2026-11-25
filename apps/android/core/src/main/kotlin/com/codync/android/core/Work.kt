@@ -20,7 +20,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlin.math.roundToInt
 
 // The event box: what a bot works on away from its chat is a task in its box, and a bounded number of its threads
-// take tasks from it. A thread is the agent session working a task (`WorkThreads.kt` reads its transcript).
+// take tasks from it. A thread is where a task is worked, with its own session (`WorkThreads.kt` reads its transcript).
 
 /** The six words for work, the same on the wire and in every client. */
 @Serializable
@@ -78,9 +78,80 @@ data class WorkTask(
     val worktree: Worktree? = null,
     /** It takes the user's messages ([canTalk]): the bot's own task whose thread still exists. False from an older host. */
     val talk: Boolean = false,
+    /** Its thread takes files with the user's messages too. False from a host before them, where the box has no +. */
+    val talkFiles: Boolean = false,
     /** Where its thread works (a worktree's folder for one in a worktree); null for one no thread has taken, and from an older host. */
     val folder: String? = null,
-)
+    /** The agent its thread runs on (a backend id); null for the bot's own, and from an older host. */
+    val agent: String? = null,
+    /** It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); null from an older host ([takesSeat]). */
+    val seat: Boolean? = null,
+) {
+    /** It takes one of the bot's seats (`maxThreads`): the host's word, else a live task. */
+    val takesSeat: Boolean get() = seat ?: status.live
+}
+
+/** An ended thread from `olderThreads`: its bot ([botId], which may be the box of threads without a bot) and its task. */
+data class OlderThread(val botId: String, val task: WorkTask)
+
+/**
+ * A computer's older threads (`olderThreads`, the ones past the day a bot's `work` keeps), newest first, page by page;
+ * [more] while it holds older ones still.
+ */
+data class OlderThreads(
+    val threads: List<OlderThread> = emptyList(),
+    val more: Boolean = true,
+    /** Ended threads that left their bot's `work` (past its last day) while connected, as they last read. */
+    val kept: List<OlderThread> = emptyList(),
+    /** Threads dropped here: their bot's next `work` without them doesn't keep them. */
+    val dropped: Set<Pair<String, String>> = emptySet(),
+) {
+    /** Where the next page starts: the end of the oldest paged; null before the first. */
+    val before: Long? get() = threads.mapNotNull { it.task.endedAt }.minOrNull()
+
+    /** [botId]'s tasks among them: a kept one over its paged row. */
+    fun of(botId: String): List<WorkTask> = (kept + threads).filter { it.botId == botId }.map { it.task }.distinctBy { it.id }
+
+    /** [page] after these, without a thread already held, and whether the computer has more. */
+    operator fun plus(page: OlderThreads): OlderThreads {
+        val held = threads.mapTo(HashSet()) { it.botId to it.task.id }
+        return copy(threads = threads + page.threads.filter { (it.botId to it.task.id) !in held }, more = page.more)
+    }
+
+    /** [botId]'s `work` went from [was] to [now]: an ended thread it no longer carries stays listed, as it last read. */
+    fun keep(botId: String, was: List<WorkTask>, now: List<WorkTask>): OlderThreads {
+        val carried = now.mapTo(HashSet()) { it.id }
+        val left = was.filter { it.endedAt != null && it.id !in carried && (botId to it.id) !in dropped }
+        if (left.isEmpty()) return this
+        val ids = left.mapTo(HashSet()) { it.id }
+        return copy(kept = kept.filterNot { it.botId == botId && it.task.id in ids } + left.map { OlderThread(botId, it) })
+    }
+
+    /** [taskId] of [botId] dropped (`dropWork`): out of the list, and not kept once it leaves its bot's `work`. */
+    fun drop(botId: String, taskId: String): OlderThreads = copy(
+        threads = threads.filterNot { it.botId == botId && it.task.id == taskId },
+        kept = kept.filterNot { it.botId == botId && it.task.id == taskId },
+        dropped = dropped + (botId to taskId),
+    )
+
+    companion object {
+        /** A page as the computer answers it; each row is read on its own, so one this app can't read is left out alone. */
+        fun decode(value: JsonObject): OlderThreads = OlderThreads(
+            (value["threads"] as? JsonArray).orEmpty().mapNotNull { row ->
+                val botId = ((row as? JsonObject)?.get("botId") as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return@mapNotNull null
+                WireJson.decodeFromJsonElement(WorkSerializer, JsonArray(listOf(row))).firstOrNull()?.let { OlderThread(botId, it) }
+            },
+            (value["more"] as? JsonPrimitive)?.booleanOrNull == true,
+        )
+    }
+}
+
+/** A bot's [work] with the [older] tasks it doesn't hold after it: the bot's own row of a task wins. */
+fun mergedWork(work: List<WorkTask>, older: List<WorkTask>): List<WorkTask> {
+    if (older.isEmpty()) return work
+    val held = work.mapTo(HashSet()) { it.id }
+    return work + older.filter { it.id !in held }
+}
 
 /** The most threads a bot may run at once. */
 const val MAX_THREADS = 6
@@ -146,42 +217,106 @@ internal object MaxThreadsSerializer : KSerializer<Int?> {
     }
 }
 
-/** All bots' work in one view: the roster's bots that have a live or waiting task, in roster order ([bots]), and how
- *  many tasks are worked on in all ([working]: the count on the view's button). */
-data class AllWork<T>(val bots: List<T>, val working: Int)
+/** How the Threads list groups the threads that don't need the user (desktop `threadsGroup`); [None] lists them all under Recent. */
+enum class ThreadGrouping { None, Folder, Bot, Computer }
 
-fun <T> allWork(roster: List<T>, work: (T) -> List<WorkTask>): AllWork<T> {
-    val bots = roster.filter { bot -> work(bot).any { it.status.open } }
-    return AllWork(bots, bots.sumOf { bot -> work(bot).count { it.status == WorkStatus.Working } })
+/** What a Threads group gathers: a folder a thread works in outside its bot's own, a routine's runs, a bot, or a computer. */
+enum class ThreadGroupKind { Folder, Routine, Bot, Computer }
+
+data class ThreadRow<T>(val of: T, val task: WorkTask)
+
+/** One group of the Threads list; [title] is the folder's last name, the routine's, the bot's or the computer's. */
+data class ThreadGroup<T>(val key: String, val kind: ThreadGroupKind, val title: String, val rows: List<ThreadRow<T>>)
+
+data class ThreadSections<T>(val needsYou: List<ThreadRow<T>>, val groups: List<ThreadGroup<T>>, val recent: List<ThreadRow<T>>)
+
+/** Where a task's thread works: its folder, else its worktree's. */
+val WorkTask.wherePath: String? get() = listOfNotNull(folder, worktree?.path).firstOrNull { it.isNotEmpty() }
+
+/** When a thread last moved: it ended, else it started, else it was added. */
+private val WorkTask.lastActive: Long get() = endedAt ?: startedAt ?: createdAt
+
+/** Where a thread stands in a list sorted by status: working, waiting, the rest. */
+private fun threadRank(status: WorkStatus) = when (status) { WorkStatus.Working -> 0; WorkStatus.Waiting -> 1; else -> 2 }
+
+/**
+ * Every task of [roster]'s bots as the Threads list shows it (desktop `threadSections`), newest first (by last activity with
+ * [byActivity], else by when it was added; by status first with [byStatus]): what needs the user, then the groups [grouping]
+ * makes (folder grouping also gathers routines' runs; a bot's and a computer's groups keep the roster's order, the others
+ * come newest first), then the rest. [keyOf] tells bots apart across computers; [computerOf] names a bot's computer.
+ */
+fun <T> threadSections(roster: List<T>, bot: (T) -> Bot, keyOf: (T) -> String, computerOf: (T) -> String, grouping: ThreadGrouping,
+    byStatus: Boolean = false, byActivity: Boolean = false): ThreadSections<T> {
+    val time: (WorkTask) -> Long = if (byActivity) { task -> task.lastActive } else { task -> task.createdAt }
+    val order = compareBy<ThreadRow<T>> { if (byStatus) threadRank(it.task.status) else 0 }.thenByDescending { time(it.task) }
+    val rows = roster.flatMap { of -> bot(of).work.map { ThreadRow(of, it) } }
+    val (needsYou, rest) = rows.partition { it.task.status == WorkStatus.NeedsYou }
+    val groups = linkedMapOf<String, ThreadGroup<T>>()
+    val recent = mutableListOf<ThreadRow<T>>()
+    for (row in rest.sortedWith(order)) {
+        val (of, task) = row
+        val path = task.wherePath
+        val source = task.source
+        val group: ThreadGroup<T>? = when {
+            grouping == ThreadGrouping.Bot -> ThreadGroup("bot:${keyOf(of)}", ThreadGroupKind.Bot, bot(of).name, emptyList())
+            grouping == ThreadGrouping.Computer -> ThreadGroup("computer:${computerOf(of)}", ThreadGroupKind.Computer, computerOf(of), emptyList())
+            grouping == ThreadGrouping.None -> null
+            source?.kind == SourceKind.Routine -> ThreadGroup("routine:${keyOf(of)}:${source.id ?: task.title}", ThreadGroupKind.Routine, task.title, emptyList())
+            path != null && task.worktree == null && path != bot(of).cwd ->
+                ThreadGroup("folder:$path", ThreadGroupKind.Folder, folderName(path), emptyList())
+            else -> null
+        }
+        if (group == null) recent += row
+        else groups[group.key] = (groups[group.key] ?: group).let { it.copy(rows = it.rows + row) }
+    }
+    val ordered = when (grouping) {
+        ThreadGrouping.Bot -> roster.map { "bot:${keyOf(it)}" }.distinct().mapNotNull(groups::get)
+        ThreadGrouping.Computer -> roster.map { "computer:${computerOf(it)}" }.distinct().mapNotNull(groups::get)
+        else -> groups.values.toList()
+    }
+    return ThreadSections(needsYou.sortedWith(order), ordered, recent)
+}
+
+/**
+ * What the Threads list's search finds (desktop `threadItems`): [roster]'s tasks that have a thread whose title or bot's
+ * name holds [query] (the box without a bot has no name to match), newest first; all of them for an empty [query].
+ */
+fun <T> threadMatches(roster: List<T>, bot: (T) -> Bot, query: String): List<ThreadRow<T>> {
+    val words = query.trim()
+    return roster.flatMap { of -> bot(of).work.filter { it.thread != null }.map { ThreadRow(of, it) } }
+        .filter { (of, task) -> task.title.contains(words, ignoreCase = true) || !bot(of).plain && bot(of).name.contains(words, ignoreCase = true) }
+        .sortedByDescending { it.task.createdAt }
 }
 
 /** The Details timeline's sections of tasks, each in the order its rows show. */
 data class WorkSections(
-    /** The agent sessions that run now: tasks that need the user, then the working ones. */
+    /** The threads that run now: tasks that need the user, then the working ones. */
     val threads: List<WorkTask>,
-    /** The most the bot runs at once: the Threads heading's `2 / 3` is how many run of this (`2 / 1` right after it was lowered). */
+    /** The seats taken: the Threads heading's `2` of `2 / 3` (a thread waiting on the user takes none). */
+    val inUse: Int,
+    /** The most the bot runs at once: the Threads heading's `3` of `2 / 3` (`2 / 1` right after it was lowered). */
     val atOnce: Int,
     /** What waits for a thread, in the order it will be taken. */
     val box: List<WorkTask>,
     /** Tasks that ended in the last day, newest first. */
     val recent: List<WorkTask>,
 ) {
-    /** The threads the bot could still start: the ceiling less the ones that run. */
-    val free: Int get() = maxOf(0, atOnce - threads.size)
+    /** The threads the bot could still start: the ceiling less the seats taken. */
+    val free: Int get() = maxOf(0, atOnce - inUse)
 }
 
 fun workSections(work: List<WorkTask>, maxThreads: Int?): WorkSections {
     val threads = work.filter { it.status == WorkStatus.NeedsYou } + work.filter { it.status == WorkStatus.Working }
-    return WorkSections(threads, atOnce = maxThreads ?: DEFAULT_MAX_THREADS,
+    return WorkSections(threads, inUse = work.count { it.takesSeat }, atOnce = maxThreads ?: DEFAULT_MAX_THREADS,
         box = work.filter { it.status == WorkStatus.Waiting }, recent = work.filter { it.status.ended })
 }
 
 /** A stopped or failed task can go back to waiting: not another bot's request, which that bot asks again. A routine's runs the routine again. */
 fun canRetry(task: WorkTask): Boolean = (task.status == WorkStatus.Failed || task.status == WorkStatus.Stopped) && task.source?.kind != SourceKind.Request
 
-/** A thread has it and it may give way to one that cuts in: only work the bot added. A routine's run or another
- *  bot's request is stopped, never set aside. */
-fun givesWay(task: WorkTask): Boolean = task.status.live && task.source == null
+/** A thread has it and it may give way to one that cuts in: only work the bot added, in one of its seats. A routine's
+ *  run or another bot's request is stopped, never set aside, and a thread the user started holds no seat to free. */
+fun givesWay(task: WorkTask): Boolean = task.status.live && task.source == null && task.seat != false
 
 /**
  * Every thread of the bot is busy, so the task first in line can only start now if a working one gives way, and one may. Not
@@ -189,7 +324,7 @@ fun givesWay(task: WorkTask): Boolean = task.status.live && task.source == null
  */
 fun canCutIn(work: List<WorkTask>, maxThreads: Int?): Boolean {
     val held = work.firstOrNull { it.status == WorkStatus.Waiting }?.wait?.kind.let { it == WaitKind.After || it == WaitKind.Usage }
-    return !held && work.any(::givesWay) && work.count { it.status.live } >= (maxThreads ?: DEFAULT_MAX_THREADS)
+    return !held && work.any(::givesWay) && work.count { it.takesSeat } >= (maxThreads ?: DEFAULT_MAX_THREADS)
 }
 
 /** What the user can do to a task from its row (iOS `WorkAction`): a phrase to look up and its symbol. */
@@ -266,58 +401,19 @@ fun threadTranscript(entries: List<Entry>): ThreadTranscript {
     return ThreadTranscript(told, kept.filterNot { it === told })
 }
 
-/** One quiet line of a thread for what it put in the bot's chat ([sharedLine]): an SF Symbol name and its words. */
-data class SharedLine(val symbol: String, val text: String)
+/** A message of the user's that waits in the thread: what the host told it, the chat passing words on included, never does. */
+private val Entry.waitsInThread: Boolean get() = isQueued && !isToldToThread
 
-/**
- * What the chat [entry] a thread put in the bot's chat (a card, its agent's sign-in card, a file, a voice note, an
- * artifact) says in that thread (iOS `Entry.sharedLine`): one line with a symbol, where the entry itself stays in
- * the chat, which the line opens. Null for anything else. [tr] looks a phrase up.
- */
-fun sharedLine(entry: Entry, tr: (String) -> String): SharedLine? {
-    val data = entry.data
-    fun line(symbol: String, key: String, vararg values: Pair<String, String>) = SharedLine(symbol, fill(tr(key), *values))
-    // A sign-in reads as its card does: the needs-you row's words while it waits, then the card's own.
-    val request = data["connectionRequest"] as? JsonObject
-    if (request?.text("kind") == "agent") return when (request.text("status")) {
-        "pending" -> line("hand.raised", "Needs {agent} sign-in", "agent" to request.text("title").orEmpty())
-        "ready" -> line("checkmark", "Signed in")
-        else -> line("xmark", "Cancelled")
-    }
-    if (entry.kind == "permission") {
-        val title = data.text("title").orEmpty()
-        when (entry.status) {
-            "pending" -> return line("hand.raised", "Waiting for your approval: {title}", "title" to title)
-            "answered" -> {}
-            else -> return line("clock", "Not answered: {text}", "text" to title)
-        }
-        val selected = data.text("selected")
-        val chosen = (data["options"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.firstOrNull { it.text("optionId") == selected }
-        val kind = chosen?.text("kind").orEmpty()
-        return when {
-            kind.startsWith("allow") -> line("checkmark", "Approved: {title}", "title" to title)
-            kind.startsWith("reject") -> line("xmark", "Denied: {title}", "title" to title)
-            else -> line("checkmark", "Answered: {choice}", "choice" to (chosen?.text("name") ?: selected.orEmpty()))
-        }
-    }
-    if (entry.isDecision) {
-        val question = data.text("question").orEmpty()
-        return when (entry.status) {
-            "pending" -> line("hand.raised", "Asked: {question}", "question" to question)
-            "answered" -> line("checkmark", "Answered: {choice}", "choice" to data.text("selected").orEmpty())
-            else -> line("clock", "Not answered: {text}", "text" to question)
-        }
-    }
-    if (entry.kind != "agent") return null
-    entry.artifact?.let { return line("doc.richtext", "Made an artifact: {title}", "title" to it.title) }
-    if (data["voiceNote"]?.jsonPrimitive?.booleanOrNull == true) return line("waveform", "Sent a voice note")
-    val files = entry.files
-    return if (files.isEmpty()) null else line("doc", "Sent a file: {name}", "name" to files.joinToString(", ") { it.name })
-}
+/** While the thread works, the user's messages that wait above the composer, oldest first (iOS `ThreadTranscript.queue`).
+ *  What the host told it stays quoted where it came. */
+fun ThreadTranscript.queue(working: Boolean): List<Entry> = if (working) rest.filter { it.waitsInThread }.sortedBy(Entry::seq) else emptyList()
+
+/** [ThreadTranscript.rest] without that queue. */
+fun ThreadTranscript.hidingQueue(working: Boolean): List<Entry> = if (working) rest.filterNot { it.waitsInThread } else rest
 
 /**
  * A thread's [entries] with what it ([thread]: its id) put in the bot's [chat] (a file, a voice note, an artifact, a card,
- * answered or not; each a [sharedLine]) where it came (`createdAt`), each kept in its order; at the same moment the
+ * answered or not) where it came (`createdAt`), each kept in its order; at the same moment the
  * thread's own first.
  */
 fun sharing(entries: List<Entry>, chat: List<Entry>, thread: String): List<Entry> {
@@ -329,3 +425,10 @@ fun sharing(entries: List<Entry>, chat: List<Entry>, thread: String): List<Entry
     }
     return out + shared
 }
+
+/** A folder's name: its path's last part (`/` or `\` separated), or the path itself. */
+fun folderName(path: String): String = path.split('/', '\\').lastOrNull { it.isNotEmpty() } ?: path
+
+/** Where it works, as a list shows it (CodyncKit `Bot.folderName`): its default project's name; null for its own folder,
+ *  which the caller names in its language; or (an older host) its project folder's name. */
+val Bot.folderName: String? get() = projects.firstOrNull()?.let(::folderName) ?: if (managedWorkspace) null else folderName(cwd)

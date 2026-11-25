@@ -30,11 +30,12 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
 import com.codync.android.core.BotDraft
 import com.codync.android.core.CloudComputer
+import com.codync.android.core.CloudMachine
 import com.codync.android.core.GroupDraft
 import com.codync.android.core.LinkState
 import com.codync.android.design.*
 
-private enum class Root { Loading, AwaitingAccount, Welcome, Choose, Pairing, Tabs }
+private enum class Root { Loading, AwaitingAccount, Welcome, CloudStart, Choose, Pairing, Tabs }
 
 /** A new bot or group chat, on the computer it's made on. */
 private data class NewTarget(val group: Boolean, val computerId: String)
@@ -56,7 +57,11 @@ private data class Editing<T>(val computerId: String, val draft: T)
     var showComputers by rememberSaveable { mutableStateOf(false) }
     var showPairing by rememberSaveable { mutableStateOf(false) }
     var showUsage by rememberSaveable { mutableStateOf(false) }
+    var showStatus by rememberSaveable { mutableStateOf(false) }
     var marketplace by rememberSaveable { mutableStateOf<String?>(null) }
+    // New cloud computer, opened from the first-run pages, and a provider's key sheet over it.
+    var startsCloud by rememberSaveable { mutableStateOf(false) }
+    var cloudKeyFor by rememberSaveable { mutableStateOf<String?>(null) }
     var creating by remember { mutableStateOf<NewTarget?>(null) }
     var access by remember { mutableStateOf<CloudComputer?>(null) }
     var editor by remember { mutableStateOf<Editing<BotDraft>?>(null) }
@@ -66,19 +71,24 @@ private data class Editing<T>(val computerId: String, val draft: T)
     var handledNavigation by rememberSaveable { mutableStateOf(accounts.activityOwnerId to 0) }
     var handledGeneration by rememberSaveable { mutableIntStateOf(app.generation) }
     fun closeAll() {
-        showAccount = false; showComputers = false; showPairing = false; marketplace = null
+        showAccount = false; showComputers = false; showPairing = false; marketplace = null; startsCloud = false; cloudKeyFor = null
         creating = null; access = null; editor = null; groupEditor = null
     }
     // A new account or a fresh start drops whatever was open for the old one.
-    LaunchedEffect(app.generation) { if (handledGeneration != app.generation) { closeAll(); showUsage = false; pairingNew = false; handledGeneration = app.generation } }
+    LaunchedEffect(app.generation) { if (handledGeneration != app.generation) { closeAll(); showUsage = false; showStatus = false; pairingNew = false; handledGeneration = app.generation } }
     // A notification, widget or link: close everything, then pick the tab as the iPhone does (usage on State, the rest over Bots)
-    // and maybe show usage, the computers or extensions.
+    // and maybe show usage, the computers, extensions or a workflow.
     LaunchedEffect(app.navigationRequest) {
         val handled = handledNavigation.second.takeIf { handledNavigation.first == accounts.activityOwnerId } ?: 0
         if (handled != app.navigationRequest) {
             closeAll()
-            tab = if (app.navigationPage == LinkPage.Usage) AppTab.State else AppTab.Bots
+            tab = when (app.navigationPage) {
+                LinkPage.Usage -> AppTab.Settings
+                LinkPage.Workflows -> AppTab.Workflows
+                else -> AppTab.Bots
+            }
             showUsage = app.navigationPage == LinkPage.Usage
+            showStatus = app.navigationPage == LinkPage.Usage
             showComputers = app.navigationPage == LinkPage.Computers
             if (app.navigationPage == LinkPage.Extensions) marketplace = app.currentComputerId
             handledNavigation = accounts.activityOwnerId to app.navigationRequest
@@ -90,18 +100,30 @@ private data class Editing<T>(val computerId: String, val draft: T)
     val onboarding = !app.setupComplete && app.computers.isEmpty()
     // What the choice page offers: an older copy of a computer doesn't count as one more.
     val askable = app.cloudComputers.filterNot(app::isOlderCopy)
+    // The cloud computer setup waits for: one still preparing (made here, or on another device) and not left with Back,
+    // or the one made here.
+    val cloudStart = app.cloudOffer?.starting(app.startedCloud, app.passedCloud)?.takeIf { signedIn }
+    // Opens New cloud computer from the setup pages, while Codync Cloud is open to the account.
+    val startCloud = { startsCloud = true }.takeIf { signedIn && app.cloudOffer?.available == true }
     val root = when {
         app.loading || app.account.restoring -> Root.Loading
         required && !signedIn -> Root.Welcome
         onboarding && !welcomed && !signedIn && !app.withoutAccount -> Root.Welcome
         // Whether the account has computers decides the first page: none flashes by before that's known.
         onboarding && signedIn && !app.cloudLoaded -> Root.AwaitingAccount
+        onboarding && cloudStart != null -> Root.CloudStart
         onboarding && !pairingNew && askable.isNotEmpty() -> Root.Choose
         onboarding -> Root.Pairing
         else -> Root.Tabs
     }
     BackHandler(root == Root.Pairing && !signedIn) { welcomed = false; accounts.backToWelcome() }
     BackHandler(root == Root.Pairing && askable.isNotEmpty()) { pairingNew = false }
+    BackHandler(root == Root.CloudStart) { cloudStart?.let(accounts::passCloud) }
+    // Whether Codync Cloud is open to the account, and a cloud computer still preparing from before (iOS `RootView.setup`).
+    val settingUp = signedIn && (root == Root.CloudStart || root == Root.Choose || root == Root.Pairing)
+    LaunchedEffect(app.generation, settingUp) { if (settingUp) accounts.refreshCloudMachines() }
+    // The wait page keeps its machine while it fades away.
+    val waitingFor = lastOf(cloudStart)
     val states = app.computers.mapNotNull { computers[it.id] }
     val edit = { computerId: String, bot: Bot ->
         if (bot.kind == "group") groupEditor = Editing(computerId, GroupDraft.from(bot)) else editor = Editing(computerId, BotDraft.from(bot))
@@ -124,13 +146,24 @@ private data class Editing<T>(val computerId: String, val draft: T)
                     Root.Welcome -> WelcomeView(app, accounts, signedOutComputers = if (required) app.computers.size else 0) {
                         if (app.account.configured) accounts.continueWithoutAccount() else welcomed = true
                     }
+                    Root.CloudStart -> Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+                        waitingFor?.let { machine ->
+                            // In the account, not on this phone yet: a lookup or request the network lost is asked
+                            // again while it waits (iOS too).
+                            val reaching = machine.computerId.takeIf { machine.start == CloudMachine.Start.Connecting }
+                            LaunchedEffect(reaching) { if (reaching != null) accounts.reachCloudComputer(reaching) }
+                            CloudStartView(machine, back = { accounts.passCloud(machine) }, skip = accounts::skipSetup) {
+                                AccountSwitcherButton(app) { showAccount = true }
+                            }
+                        }
+                    }
                     Root.Choose -> Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-                        ChooseComputerView(app, askable, { access = it }, { pairingNew = true }, accounts::skipSetup) {
+                        ChooseComputerView(app, askable, { access = it }, { pairingNew = true }, accounts::skipSetup, startCloud) {
                             AccountSwitcherButton(app) { showAccount = true }
                         }
                     }
                     Root.Pairing -> Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-                        PairingView(app, accounts, onSkip = accounts::skipSetup, onContinue = { pairingNew = true }) {
+                        PairingView(app, accounts, onSkip = accounts::skipSetup, onContinue = { pairingNew = true }, startCloud = startCloud) {
                             when {
                                 askable.isNotEmpty() -> BackButton { pairingNew = false }
                                 signedIn -> AccountSwitcherButton(app) { showAccount = true }
@@ -138,10 +171,11 @@ private data class Editing<T>(val computerId: String, val draft: T)
                             }
                         }
                     }
-                    Root.Tabs -> MainTabs(app, states, accounts, account = { showAccount = true }, manage = { showComputers = true }, usage = { showUsage = true },
+                    Root.Tabs -> MainTabs(app, states, accounts, account = { showAccount = true }, manage = { showComputers = true },
                         newBot = { creating = NewTarget(group = false, computerId = it) }, newGroup = { creating = NewTarget(group = true, computerId = it) },
-                        edit = edit, extensions = openMarketplace, tab = tab, onTab = { tab = it }, covered = showAccount || showComputers || showPairing || showUsage ||
-                            marketplace != null || creating != null || access != null || editor != null || groupEditor != null || app.error != null) { chat ->
+                        edit = edit, extensions = openMarketplace, tab = tab, onTab = { tab = it }, covered = showAccount || showComputers || showPairing || showUsage || showStatus ||
+                            marketplace != null || creating != null || access != null || editor != null || groupEditor != null || app.error != null,
+                        status = { showStatus = true }) { chat ->
                         // A conversation, talking to the computer the bot lives on.
                         accounts.store(chat.computer.id)?.let { store -> ChatScreen(chat, store) { bot -> edit(chat.computer.id, bot) } }
                     }
@@ -154,15 +188,27 @@ private data class Editing<T>(val computerId: String, val draft: T)
         }
         CodyncSheet(showComputers && !app.loading, { showComputers = false }) {
             AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Computers))
-            ComputersView(app, states, accounts, { showPairing = true }, { access = it }, openMarketplace)
+            ComputersView(app, states, accounts, { showPairing = true }, { access = it }, openMarketplace) { id ->
+                accounts.focusWorkflows(id)
+            }
         }
         CodyncSheet(access, { access = null }) { AccessRequestView(app, accounts, it) }
         CodyncSheet(showPairing && !app.loading, { showPairing = false }) {
             AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Pairing))
             PairingView(app, accounts, inModal = true)
         }
+        // Here, not on the setup pages: the wait for the new computer replaces them as the sheet closes.
+        CodyncSheet(app.cloudOffer?.takeIf { startsCloud }, { startsCloud = false }) { offer ->
+            NewCloudComputerSheet(offer, app, accounts, created = accounts::startedCloud) { cloudKeyFor = it }
+        }
+        CodyncSheet(cloudKeyFor, { cloudKeyFor = null }) { provider -> app.cloudOffer?.let { CloudKeySheet(provider, it, app, accounts) } }
         // What another app shared: which bot it goes to.
         CodyncSheet(app.sharing?.takeIf { root == Root.Tabs }, accounts::finishSharing) { shared -> ShareToBot(shared, app, states, accounts) }
+        CodyncSheet(showStatus && !app.loading, { showStatus = false }) {
+            AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.State))
+            val current = states.firstOrNull { it.computer.id == app.currentComputerId }
+            StateScreen(app, current?.usage, accounts, { showUsage = true }, 24.dp, close = { showStatus = false })
+        }
         CodyncSheet(showUsage && !app.loading, { showUsage = false }) {
             AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Usage))
             UsageSheet(app, states, accounts)

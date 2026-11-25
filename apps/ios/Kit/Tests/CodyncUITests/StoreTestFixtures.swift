@@ -50,6 +50,8 @@ actor FakeRemote: RemoteTransport {
     private(set) var calls: [String] = []
     /// What the newest call of each method carried, where it was all text.
     private(set) var bodies: [String: [String: String]] = [:]
+    /// What the newest call of each method carried, as sent.
+    private(set) var rawBodies: [String: Data] = [:]
     /// A method the computer refuses, with its sentence.
     private var refusals: [String: String] = [:]
     func refuse(_ method: String, _ sentence: String?) { refusals[method] = sentence }
@@ -107,6 +109,7 @@ actor FakeRemote: RemoteTransport {
         calls.append(method)
         record(.called(method))
         bodies[method] = (try? JSONSerialization.jsonObject(with: body)) as? [String: String]
+        rawBodies[method] = body
         if let sentence = refusals[method] { throw HostError.http(400, sentence) }
         if let left = failures[method], left > 0 {
             failures[method] = left - 1
@@ -133,6 +136,9 @@ actor FakeRemote: RemoteTransport {
             return Data(#"{"instructions":"Be the relay.","tools":[],"credential":"token-\#(n)"}"#.utf8)
         case "setUsageOrder":
             return Data(#"{"providers":[]}"#.utf8)
+        case "olderThreads":
+            let row = #"{"botId":"b1","id":"t1","title":"Old","status":"done","thread":"th-1","createdAt":1,"endedAt":5}"#
+            return Data(#"{"threads":[\#(row)],"more":false}"#.utf8)
         case "createBot", "updateBot":
             // The host's reply bot, which never carries a custom icon (icons sync on their own).
             let id = (try JSONSerialization.jsonObject(with: body) as? [String: Any])?["id"] as? String ?? "new"

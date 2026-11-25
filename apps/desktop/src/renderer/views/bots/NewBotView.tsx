@@ -7,16 +7,10 @@ import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import { useTr } from '../../lib/use-language'
+import type { ComputerChoice } from '../computer-choice'
 import { errorText, fillDefaults, newDraft } from './drafts'
 import { AvatarPicker } from './parts'
 import './bots.css'
-
-/** Which computer a new bot or group goes to; shown when more than one is online. */
-export interface ComputerChoice {
-  options: { id: string; label: string }[]
-  selection: string
-  onChange: (id: string) => void
-}
 
 /**
  * A new bot from its looks and an optional name (Grok Bot's "Create New Bot"); the rest starts on

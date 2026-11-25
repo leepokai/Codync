@@ -176,9 +176,9 @@ data class PendingSend(
     /** What came from another app rather than the user (iOS `EntryData.pasted`), which memory never takes as their own words. */
     val pasted: List<String> = emptyList(),
 ) {
-    /** The `send` request for it (the relay mailbox's too), with the ids of its uploaded files. */
-    fun body(attachments: List<String> = emptyList()): JsonObject = buildJsonObject {
-        put("botId", botId); put("text", text); put("clientNonce", nonce)
+    /** The `send` request for it (the relay mailbox's too), with the ids of its uploaded files; with [taskId], to that task's thread. */
+    fun body(attachments: List<String> = emptyList(), taskId: String? = null): JsonObject = buildJsonObject {
+        put("botId", botId); taskId?.let { put("taskId", it) }; put("text", text); put("clientNonce", nonce)
         replyTo?.let { put("replyTo", it.id); if (it.part) put("replyPart", it.text) }
         call?.let { put("call", it) }
         if (pasted.isNotEmpty()) put("pasted", JsonArray(pasted.map(::JsonPrimitive)))
@@ -191,8 +191,18 @@ data class OutgoingFile(val path: String, val name: String, val size: Long)
 
 sealed interface MirrorEvent {
     data class Icons(val icons: Map<String, CustomIcon>, val revision: Long = 0) : MirrorEvent
-    /** The stream's first event; `network` is null from hosts before the network view (or one this app can't read). */
-    data class Hello(val hostId: String, val rev: Long, val usage: JsonObject, val screen: JsonObject?, val network: NetworkView? = null) : MirrorEvent
+    /**
+     * The stream's first event. `network` is null from hosts before the network view.
+     * `workflows` defaults to false when the host does not offer them.
+     */
+    data class Hello(
+        val hostId: String,
+        val rev: Long,
+        val usage: JsonObject,
+        val screen: JsonObject?,
+        val network: NetworkView? = null,
+        val workflows: Boolean = false,
+    ) : MirrorEvent
     data class BotChanged(val bot: Bot) : MirrorEvent
     data class EntryChanged(val entry: Entry) : MirrorEvent
     /** An entry of a thread's own transcript ([thread]: its id), never a chat's: live only, never a checkpoint. */
@@ -209,6 +219,10 @@ sealed interface MirrorEvent {
     data class Name(val name: String) : MirrorEvent
     /** The computer's automatic bot order was switched (from any device): live only, its `hello` says it from now on. */
     data class AutoOrder(val enabled: Boolean) : MirrorEvent
+    /** How many days after a thread last finished the computer deletes it (0: never) changed (from any device): live only, its `hello` says it from now on. */
+    data class ThreadKeepDays(val days: Int) : MirrorEvent
+    /** A workflow changed. Live only, no `rev`, so it never moves the sync cursor. */
+    data class Workflow(val change: WorkflowChanged) : MirrorEvent
     data object Resync : MirrorEvent
     data object Ignored : MirrorEvent
 
@@ -218,7 +232,8 @@ sealed interface MirrorEvent {
             "hello" -> Hello(requireNotNull(value.text("hostId")),
                 requireNotNull(value["rev"]?.jsonPrimitive?.longOrNull),
                 value["usage"]?.jsonObject ?: JsonObject(emptyMap()), value["screen"]?.takeUnless { it == JsonNull }?.jsonObject,
-                value["network"]?.takeUnless { it == JsonNull }?.let { runCatching { NetworkView.decode(it) }.getOrNull() })
+                value["network"]?.takeUnless { it == JsonNull }?.let { runCatching { NetworkView.decode(it) }.getOrNull() },
+                runCatching { value["workflows"]?.jsonPrimitive?.booleanOrNull }.getOrNull() == true)
             "bot" -> BotChanged(HostClient.decode(value.getValue("bot").jsonObject))
             "entry" -> EntryChanged(Entry.decode(value.getValue("entry").jsonObject))
             // One this app can't read is passed over: the catch-up carries none, and the thread's page fetches them again.
@@ -234,11 +249,26 @@ sealed interface MirrorEvent {
             "network" -> runCatching { Network(NetworkView.decode(value.getValue("network"))) }.getOrDefault(Ignored)
             "name" -> value.text("name")?.let(::Name) ?: Ignored
             "autoOrder" -> value["enabled"]?.jsonPrimitive?.booleanOrNull?.let(::AutoOrder) ?: Ignored
+            "threadKeepDays" -> runCatching { value["days"]?.jsonPrimitive?.intOrNull }.getOrNull()?.let(::ThreadKeepDays) ?: Ignored
+            // A workflow event this app cannot read is ignored. It has no rev, so sync does not rewind.
+            "workflow" -> runCatching { workflowEvent(value) }.getOrDefault(Ignored)
             "resync" -> Resync
             // Match the existing clients: unknown events do not advance the cursor.
             else -> Ignored
         }
     }
+}
+
+private val WORKFLOW_CHANGES = setOf("graph", "enabled", "run", "step", "deleted")
+
+/** A workflow event, or [MirrorEvent.Ignored] when the body is not one this app can apply. */
+private fun workflowEvent(value: JsonObject): MirrorEvent {
+    val id = value.text("workflowId")?.takeIf { it.isNotBlank() } ?: return MirrorEvent.Ignored
+    val change = value.text("change")?.takeIf { it in WORKFLOW_CHANGES } ?: return MirrorEvent.Ignored
+    val runId = value["runId"]?.takeUnless { it == JsonNull }?.jsonPrimitive?.content
+    val stepId = value.text("stepId")?.takeIf { it.isNotBlank() }
+    val enabled = value["enabled"]?.takeUnless { it == JsonNull }?.jsonPrimitive?.booleanOrNull
+    return MirrorEvent.Workflow(WorkflowChanged(change, id, runId, stepId, enabled))
 }
 
 data class MirrorSnapshot(

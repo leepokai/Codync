@@ -8,7 +8,7 @@ use crate::agent::bot::Cmd;
 use crate::chat::naming::MAX_NAME_CHARS;
 use crate::chat::profile::{MAX_INSTRUCTIONS_CHARS, checked_instructions, checked_name};
 use crate::hub::Hub;
-use crate::routines::Trigger;
+use crate::routines::{Folder, Trigger};
 use crate::store::{AVATAR_COLORS, AVATAR_SHAPES, BotConfig, EntryKind, Lane};
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Map, Value, json};
@@ -46,7 +46,7 @@ const FIELDS: [(&str, &str); 13] = [
     ("model", "Model"),
     ("modelOptions", "Model settings"),
     ("fallbacks", "Fallbacks"),
-    ("cwd", "Folder"),
+    ("cwd", "Project"),
     ("permission", "Approvals"),
     ("mode", "Mode"),
     ("manageTeam", "Manage the team"),
@@ -103,7 +103,7 @@ pub fn tools() -> Value {
     });
     let mut create = setup.clone();
     create["agent"] = json!({"type": "string", "description": "The agent that runs it (claude, codex…), as list_team shows; leave out for this computer's default."});
-    create["folder"] = json!({"type": "string", "description": "Absolute path of a project folder it starts in; leave out for a workspace of its own."});
+    create["folder"] = json!({"type": "string", "description": "Absolute path of a project folder: its default project, where its tasks work (the bot itself lives in a folder of its own). Leave out for none."});
     setup["botId"] = json!({"type": "string", "description": "The bot's id from list_team."});
     setup["hidden"] = json!({"type": "boolean", "description": "Hide it from the user's bot list, or show it again."});
     json!([
@@ -194,7 +194,7 @@ async fn create(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     let cfg = crate::agent::new_bot::with_defaults(hub, body).await?;
     // A mode is its agent's: on another agent, the new bot would work in that one's default, which may ask less.
     if cfg.backend != source.backend
-        && let Some(mode) = source.mode.as_deref().filter(|m| *m != crate::agent::modes::AUTO)
+        && let Some(mode) = source.mode.as_deref().filter(|m| *m != codync_agent::modes::AUTO)
     {
         bail!(
             "you work in your agent's {mode} mode, which {} may not have: create this bot on {}, or ask the user to",
@@ -203,7 +203,8 @@ async fn create(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         );
     }
     crate::hub::validate(&cfg)?;
-    check_model_options(hub, &cfg.backend, cfg.model.as_deref(), &fields, deadline).await?;
+    check_model_options(hub, &cfg.backend, cfg.login_profile.as_deref(), cfg.model.as_deref(), &fields, deadline)
+        .await?;
     fields.insert("backend".into(), cfg.backend.clone().into());
     let name = cfg.name.clone();
     approve(hub, source, format!("Create bot {name}"), describe(&hub.store, &fields, &lines), deadline).await?;
@@ -233,7 +234,7 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
         bail!("nothing to change");
     }
     let model = model_after(&fields, target.model.as_deref());
-    check_model_options(hub, &target.backend, model, &fields, deadline).await?;
+    check_model_options(hub, &target.backend, target.login_profile.as_deref(), model, &fields, deadline).await?;
     let detail = describe(&hub.store, &fields, &lines);
     approve(hub, source, format!("Change bot {}", target.name), detail, deadline).await?;
     let mut changed: Vec<String> =
@@ -292,11 +293,10 @@ fn agent_bot(hub: &Hub, id: &str) -> Result<BotConfig> {
 
 /// A bot's setup and routines, as `list_team` and the changes return it.
 fn setup(hub: &Hub, cfg: &BotConfig) -> Value {
-    let folder = (!crate::agent::workspace::is_managed(cfg)).then_some(&cfg.cwd);
     json!({
         "id": cfg.id, "name": cfg.name, "instructions": cfg.description, "agent": cfg.backend, "model": cfg.model,
         "modelOptions": cfg.model_options, "fallbacks": crate::chat::fallbacks::wire(&cfg.fallbacks), "avatarColor": cfg.avatar_color, "avatarShape": cfg.avatar_shape,
-        "folder": folder, "hidden": cfg.hidden, "approvals": cfg.permission, "mode": cfg.mode, "manageTeam": cfg.manage_team, "createdBy": cfg.created_by,
+        "projects": cfg.projects, "hidden": cfg.hidden, "approvals": cfg.permission, "mode": cfg.mode, "manageTeam": cfg.manage_team, "createdBy": cfg.created_by,
         "routines": hub.routines.list(&cfg.id)["routines"],
     })
 }
@@ -356,6 +356,7 @@ fn model_after<'a>(fields: &'a Map<String, Value>, stored: Option<&'a str>) -> O
 async fn check_model_options(
     hub: &Hub,
     backend: &str,
+    login_profile: Option<&str>,
     model: Option<&str>,
     fields: &Map<String, Value>,
     deadline: Instant,
@@ -363,18 +364,19 @@ async fn check_model_options(
     let Some(options) = fields.get("modelOptions").and_then(Value::as_object).filter(|o| !o.is_empty()) else {
         return Ok(());
     };
-    let catalog = match tokio::time::timeout_at(deadline, crate::agent::auth::shared_models(hub, backend)).await {
-        Ok(Ok(catalog)) => catalog,
-        Ok(Err(e)) => {
-            return Err(Refused::error(
-                "catalog",
-                format!("couldn't load the agent's model list to check modelOptions: {e:#}"),
-            ));
-        }
-        Err(_) => return Err(Refused::error("catalog", "the agent's model list took too long to load".to_owned())),
-    };
+    let catalog =
+        match tokio::time::timeout_at(deadline, crate::agent::auth::shared_models(hub, backend, login_profile)).await {
+            Ok(Ok(catalog)) => catalog,
+            Ok(Err(e)) => {
+                return Err(Refused::error(
+                    "catalog",
+                    format!("couldn't load the agent's model list to check modelOptions: {e:#}"),
+                ));
+            }
+            Err(_) => return Err(Refused::error("catalog", "the agent's model list took too long to load".to_owned())),
+        };
     let options = options.iter().map(|(id, value)| (id.as_str(), value.as_str().unwrap_or_default()));
-    crate::agent::auth::check_options(&catalog, model.filter(|m| !m.is_empty()), options)
+    codync_agent::acp::models::check_options(&catalog, model.filter(|m| !m.is_empty()), options)
         .map_err(|e| Refused::error("options", e.to_string()))
 }
 
@@ -391,7 +393,12 @@ fn routines(hub: &Hub, bot: &str, args: &Value) -> Result<(Vec<Value>, Vec<Strin
         .map(|r| {
             let routine = hub.routines.check(bot, r)?;
             let when: Vec<String> = routine.triggers.iter().map(Trigger::description).collect();
-            Ok(format!("• {} ({}): {}", routine.name, when.join("; "), routine.instruction))
+            let folder = match &routine.folder {
+                Folder::Keep => String::new(),
+                Folder::Bots => " in the bot's folder".to_owned(),
+                Folder::Path(path) => format!(" in {path}"),
+            };
+            Ok(format!("• {} ({}){folder}: {}", routine.name, when.join("; "), routine.instruction))
         })
         .collect::<Result<_>>()?;
     Ok((list, lines))

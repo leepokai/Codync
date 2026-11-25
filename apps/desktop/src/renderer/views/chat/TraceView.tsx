@@ -12,7 +12,7 @@ import { useScreenViewed } from '../../store/analytics'
 import { MarkdownText } from './Markdown'
 import { CodeBox, DiffView } from './PermissionCard'
 import { useFollowEnd } from './follow-end'
-import { runningTurn, traceTurns } from './trace-turns'
+import { nestedSteps, runningTurn, subagentLine, traceTurns } from './trace-turns'
 import './trace.css'
 import { useTr } from '../../lib/use-language'
 
@@ -22,14 +22,18 @@ import { useTr } from '../../lib/use-language'
  * and diffs, plans) grouped by turn.
  */
 export function TraceView({ botId }: { botId: string }) {
-  const tr = useTr()
   const store = useStore()
+  const bot = store.bots.get(botId)
+  return <TracePage entries={store.allEntries(botId)} working={!!bot && isWorkingIn(bot, botId)} />
+}
+
+/** The same sheet for any transcript (`entries`), a chat's or a thread's; `working`: its last turn still runs. */
+export function TracePage({ entries: all, working }: { entries: Entry[]; working: boolean }) {
+  const tr = useTr()
   useScreenViewed('trace')
-  const all = store.allEntries(botId)
   const sorted = traceTurns(all)
   // The running turn's thoughts start unfolded.
-  const bot = store.bots.get(botId)
-  const running = runningTurn(all, !!bot && isWorkingIn(bot, botId))
+  const running = runningTurn(all, working)
   const follow = useFollowEnd()
   return (
     <SheetPage>
@@ -43,8 +47,10 @@ export function TraceView({ botId }: { botId: string }) {
                 {entries.find((e) => e.kind === 'user')?.data.text ?? tr('Turn {turn}').replaceAll('{turn}', () => String(turn))}
               </Text>
               <CardSection>
-                {entries.map((e) => (
-                  <TraceRow key={e.id} entry={e} unfolded={turn === running} />
+                {nestedSteps(entries).map(({ entry, depth }) => (
+                  <Nested key={entry.id} depth={depth}>
+                    <TraceRow entry={entry} unfolded={turn === running} />
+                  </Nested>
                 ))}
               </CardSection>
             </VStack>
@@ -53,6 +59,12 @@ export function TraceView({ botId }: { botId: string }) {
       </div>
     </SheetPage>
   )
+}
+
+/** A step a subagent took, indented under the call that launched it. ponytail: one indent for any depth; Claude's
+ * subagents launch none of their own. */
+export function Nested({ depth, children }: { depth: number; children: React.ReactNode }) {
+  return depth > 0 ? <div className="trace-nested">{children}</div> : children
 }
 
 /** An icon centered on the first line of caption text beside it. */
@@ -147,12 +159,16 @@ export function ToolRow({ data }: { data: EntryData }) {
   const [expanded, setExpanded] = useState(false)
   const hasBody = !!data.output || !!data.diffs?.length
   const title = data.title ?? 'Tool'
+  const subagent = subagentLine(data.subagent, tr)
   const label = (
     <HStack as="span" gap={8} grow>
       <IconSlot width={18} tone="secondary">
         <Icon name={toolIcon(data.toolKind)} size={10} />
       </IconSlot>
-      <Text size="subheadline" tone="text" lines={2} grow>{title === 'Tool' ? tr('Tool') : title}</Text>
+      <VStack gap={2} grow>
+        <Text size="subheadline" tone="text" lines={2}>{title === 'Tool' ? tr('Tool') : title}</Text>
+        {subagent ? <Text size="footnote" tone="tertiary" truncate>{subagent}</Text> : null}
+      </VStack>
       {data.status === 'completed' ? (
         <Icon name="checkmark" size={10} color="var(--accent)" />
       ) : data.status === 'failed' ? (

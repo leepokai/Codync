@@ -187,6 +187,20 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         #expect(sections(task("a", .waiting)).free(maxThreads: nil) == 3)
     }
 
+    @Test func aThreadWaitingOnTheUserGivesItsSeatUpAsTheHostSays() throws {
+        var working = task("a"), asking = task("b", .needsYou)
+        working.seat = true
+        asking.seat = false
+        let work = sections(working, asking, task("c", .waiting))
+        #expect(work.threadsCount(maxThreads: 2) == "1 / 2")
+        #expect(work.free(maxThreads: 2) == 1)
+        #expect(!work.canCutIn(maxThreads: 2), "a seat is free: nothing has to give way")
+        // An older host says nothing: every live task takes one.
+        #expect(sections(task("a"), task("b", .needsYou)).threadsCount(maxThreads: 2) == "2 / 2")
+        let wire = try bot(#","work":[{"id":"b","status":"needsYou","seat":false}]"#)
+        #expect(wire.work.first?.seat == false)
+    }
+
     @Test func everyThreadIsBusyOnlyWhenAsManyAreLiveAsMayBe() {
         #expect(!sections(task("a", .waiting)).isFull(maxThreads: 1))
         #expect(sections(task("a"), task("b", .needsYou)).isFull(maxThreads: 2))
@@ -198,26 +212,59 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
 
     // MARK: all bots' work
 
-    @Test func theViewOfAllBotsListsTheOnesWithLiveOrWaitingTasksInRosterOrderAndCountsWhatIsWorkedOn() {
-        let roster: [(ref: String, work: [WorkTask])] = [
-            ("idle", []),
-            ("ended", [task("a", .done), task("b", .stopped), task("c", .failed)]),
-            ("busy", [task("d"), task("e"), task("f", .waiting), task("g", .done)]),
-            ("asks", [task("h", .needsYou)]),
-            ("queued", [task("i", .waiting)]),
-            ("one", [task("j")]),
-        ]
-        let all = AllWork(roster) { $0.work }
-        #expect(all.bots.map(\.ref) == ["busy", "asks", "queued", "one"])
-        // Tasks that need the user or wait are not counted as working.
-        #expect(all.working == 3)
-        // Nothing live or waiting: no button, and an open view closes.
-        let none = AllWork(Array(roster.prefix(2))) { $0.work }
-        #expect(none.bots.isEmpty && none.working == 0)
-        // The button shows without a count.
-        let quiet = AllWork([roster[3], roster[4]]) { $0.work }
-        #expect(quiet.bots.count == 2 && quiet.working == 0)
+    @Test func theThreadsTabListsWhatNeedsYouThenTheGroupsThenTheRestNewestFirst() throws {
+        func work(_ id: String, _ status: WorkTask.Status, at: Int64, folder: String? = nil, routine: String? = nil) -> WorkTask {
+            WorkTask(id: id, title: routine == nil ? id : "Daily", status: status, createdAt: at, source: routine.map { .init(.routine, id: $0) },
+                     folder: folder)
+        }
+        var a = try bot(#","cwd":"/a""#)
+        a.work = [work("1", .done, at: 1, folder: "/p/x"), work("2", .needsYou, at: 5), work("3", .working, at: 3, routine: "r1"),
+                  work("4", .done, at: 7, folder: "/a")]
+        var b = try bot(#","cwd":"/b""#)
+        b.name = "B"
+        b.work = [work("5", .waiting, at: 4, folder: "/p/x"), work("6", .failed, at: 6)]
+        let roster = [(key: "a", bot: a), (key: "b", bot: b)]
+        func lists(_ grouping: ThreadGrouping, byStatus: Bool = false) -> (needsYou: [String], groups: [String], recent: [String]) {
+            let made = ThreadSections(roster, grouping: grouping, byStatus: byStatus, key: \.key, computer: { _ in "Mac" }, bot: \.bot)
+            return (made.needsYou.map(\.task.id), made.groups.map { "\($0.title):" + $0.rows.map(\.task.id).joined() }, made.recent.map(\.task.id))
+        }
+        // A folder of the bot's own, or none, is the rest; a routine's runs are their own group.
+        let folders = lists(.folder)
+        #expect(folders.needsYou == ["2"])
+        #expect(folders.groups == ["x:51", "Daily:3"])
+        #expect(folders.recent == ["4", "6"])
+        // By bot, in the roster's order.
+        #expect(lists(.bot).groups == ["Bot:431", "B:65"])
+        #expect(lists(.computer).groups == ["Mac:46531"])
+        // Sorted by status: working, then waiting, then the rest newest first.
+        #expect(lists(.none, byStatus: true).recent == ["3", "5", "4", "6", "1"])
+        // By last active: one added earlier but ended later comes first.
+        var c = try bot(#","cwd":"/c""#)
+        c.work = [WorkTask(id: "late", title: "late", status: .done, createdAt: 5), WorkTask(id: "early", title: "early", status: .done, createdAt: 1, endedAt: 9)]
+        let moved = ThreadSections([(key: "c", bot: c)], grouping: .none, byActivity: true, key: \.key, computer: { _ in "Mac" }, bot: \.bot)
+        #expect(moved.recent.map(\.task.id) == ["early", "late"])
+        // An empty folder names no place: the worktree's, if any.
+        #expect(WorkTask(id: "x", title: "x", status: .done, folder: "").wherePath == nil)
+        #expect(ThreadSections.working(in: roster, bot: \.bot) == 1)
         #expect(AnalyticsEvent.Screen.allWork.rawValue == "all_work")
+    }
+
+    @Test func threadSearchFindsThreadsByTitleOrBotNewestFirst() throws {
+        var a = try bot("")
+        a.name = "Ada"
+        a.work = [WorkTask(id: "old", title: "Fix login", status: .done, thread: "t1", createdAt: 1),
+                  WorkTask(id: "new", title: "Docs", status: .working, thread: "t2", createdAt: 3),
+                  WorkTask(id: "none", title: "Fix CI", status: .waiting, createdAt: 4)]
+        var box = try bot("")
+        (box.name, box.plain) = ("Ada box", true)
+        box.work = [WorkTask(id: "loose", title: "Loose fix", status: .done, thread: "t3", createdAt: 2)]
+        let roster = [(key: "a", bot: a), (key: "box", bot: box)]
+        let found = { (query: String) in ThreadSections.found(roster, matching: query, key: \.key, bot: \.bot).map(\.task.id) }
+        // Only tasks with a thread, newest first, across bots.
+        #expect(found("fix") == ["loose", "old"])
+        // A bot's name finds its threads; the box's name finds none.
+        #expect(found("ada") == ["new", "old"])
+        #expect(found("zzz").isEmpty)
     }
 
     // MARK: the capsule
@@ -411,6 +458,10 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         // The chat's own card keeps the row for the user's own words.
         #expect(try !data(#"{"decision":true,"question":"Which?"}"#).isFromThread)
         #expect(try !data(#"{"decision":true,"question":"Which?","thread":"thread-1","task":7}"#).isFromThread)
+        // Own words answer the chat's card unless only an option does (an agent's own question).
+        #expect(try data(#"{"decision":true,"question":"Which?"}"#).takesOwnWords)
+        #expect(try !data(#"{"decision":true,"question":"Which?","ownWords":false}"#).takesOwnWords)
+        #expect(try !data(#"{"decision":true,"question":"Which?","task":"i1"}"#).takesOwnWords)
     }
 
     // MARK: worktrees
@@ -508,6 +559,97 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         // A routine task may cut in itself.
         #expect(sections(task("a"), task("w", .waiting, wait: .init(.next), source: routine)).canCutIn(maxThreads: 1))
         #expect(!sections(task("a")).canCutIn(maxThreads: 1))
+    }
+
+    @Test func onlyATaskHoldingASeatGivesWayAndAUsersThreadNever() throws {
+        let work = try bot(#","work":[{"id":"own","status":"working","seat":true},{"id":"user","status":"working","seat":false},{"id":"asking","status":"needsYou","seat":false},{"id":"w","status":"waiting","wait":{"kind":"next"}}]"#).work
+        let all = WorkSections(work)
+        #expect(all.givingWay.map(\.id) == ["own"])
+        #expect(all.canCutIn(maxThreads: 1))
+        // Only the user's thread is busy: nothing may give way, so Cut in isn't offered.
+        let usersOnly = WorkSections(work.filter { $0.id != "own" })
+        #expect(usersOnly.givingWay.isEmpty && !usersOnly.canCutIn(maxThreads: 1))
+        // An older host says nothing: every live task of the bot's own may give way.
+        #expect(sections(task("a"), task("b", .needsYou)).givingWay.map(\.id) == ["b", "a"])
+    }
+
+    @Test func aBotsProjectsAndWorktreeModeAreSavedWhole() throws {
+        func sent(_ draft: BotDraft) throws -> [String: Any] {
+            try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(BotUpdate(draft: draft))) as? [String: Any])
+        }
+        // An older host: neither is read nor sent.
+        let old = try bot(#","cwd":"/p/app","gitRepo":true"#)
+        #expect(old.projects == nil && old.worktreeMode == nil && old.folderName == "app")
+        let unsent = try sent(BotDraft(old))
+        #expect(unsent["projects"] == nil && unsent["worktreeMode"] == nil)
+
+        let saved = try bot(#","cwd":"/h/bots/b1/workspace","managedWorkspace":true,"projects":["/p/a","/p/b"],"projectGitRepos":[true,false],"worktreeMode":"always","threadWorktrees":true"#)
+        #expect(saved.projects == ["/p/a", "/p/b"] && saved.projectGitRepos == [true, false] && saved.worktreeMode == .always)
+        #expect(saved.folderName == "a")
+        #expect(saved.isGitProject("/p/a") && !saved.isGitProject("/p/b") && !saved.isGitProject("/p/c"))
+        #expect(try bot(#","worktreeMode":"sometimes""#).worktreeMode == nil)
+        var draft = BotDraft(saved)
+        #expect(draft.cwd.isEmpty)
+        // Add (once), make default, remove: the whole list goes, the default first.
+        draft.addProject("/p/c")
+        draft.addProject("/p/a")
+        #expect(draft.projects == ["/p/a", "/p/b", "/p/c"])
+        draft.makeDefaultProject("/p/c")
+        #expect(draft.projects == ["/p/c", "/p/a", "/p/b"])
+        draft.removeProject("/p/a")
+        draft.worktreeMode = .off
+        let body = try sent(draft)
+        #expect(body["projects"] as? [String] == ["/p/c", "/p/b"])
+        #expect(body["worktreeMode"] as? String == "off")
+        // Removing the default makes the next one it; removing the last sends an empty list.
+        draft.removeProject("/p/c")
+        draft.removeProject("/p/b")
+        #expect(try sent(draft)["projects"] as? [String] == [])
+        // A new bot on a host with projects: its first folder is the default.
+        var fresh = BotDraft(name: "New")
+        fresh.addProject("/p/x")
+        #expect(fresh.projects == ["/p/x"])
+        // A change made elsewhere is kept unless the form changed the same field.
+        let base = BotDraft(saved)
+        let elsewhere = BotDraft(try bot(#","projects":["/p/b"],"worktreeMode":"off""#))
+        #expect(base.rebased(from: base, onto: elsewhere).projects == ["/p/b"])
+        #expect(base.rebased(from: base, onto: elsewhere).worktreeMode == .off)
+        var edited = base
+        edited.makeDefaultProject("/p/b")
+        #expect(edited.rebased(from: base, onto: elsewhere).projects == ["/p/b", "/p/a"])
+    }
+
+    @Test func aBotsSharedFoldersAreSavedWholeAndStayInsideTheProject() throws {
+        func sent(_ draft: BotDraft) throws -> [String: Any] {
+            try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(BotUpdate(draft: draft))) as? [String: Any])
+        }
+        // An older host: not read, not sent.
+        #expect(try sent(BotDraft(try bot(#","projects":["/p/a"]"#)))["sharedFolders"] == nil)
+
+        var draft = BotDraft(try bot(#","projects":["/p/a","/p/b"],"projectGitRepos":[true,true],"sharedFolders":{"/p/a":["node_modules"]}"#))
+        #expect(draft.sharedFolders(of: "/p/a") == ["node_modules"] && draft.sharedFolders(of: "/p/b").isEmpty)
+        // Trimmed, once; absolute names and `..` are refused, as the host would.
+        let added = draft.addSharedFolder(" .cache/pip/ ", to: "/p/a")
+        #expect(added)
+        draft.addSharedFolder("node_modules", to: "/p/a")
+        let refused = ["/etc", "C:\\x", "a/../..", "  "].filter { !draft.addSharedFolder($0, to: "/p/a") }
+        #expect(refused.count == 4)
+        #expect(BotDraft.sharedFolderName("./node_modules") == "node_modules")
+        draft.addSharedFolder("vendor", to: "/p/b")
+        var body = try sent(draft)
+        #expect(body["sharedFolders"] as? [String: [String]] == ["/p/a": ["node_modules", ".cache/pip"], "/p/b": ["vendor"]])
+        // Removing a project's last folder, or the project, takes its entry off.
+        draft.removeSharedFolder("vendor", from: "/p/b")
+        draft.removeProject("/p/a")
+        body = try sent(draft)
+        #expect(body["sharedFolders"] as? [String: [String]] == [:])
+    }
+
+    @Test func eachWorktreeModeIsTranslated() {
+        for mode in WorktreeMode.allCases {
+            #expect(L10n.tr(mode.line, preference: .zhHant) != mode.line)
+            #expect(L10n.tr(mode.title, preference: .zhHant) != mode.title)
+        }
     }
 
     @Test func theTranscriptReportsItsScreen() throws {

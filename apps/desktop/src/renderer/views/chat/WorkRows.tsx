@@ -24,7 +24,7 @@ import './work.css'
 export function LiveWork({ bot, openCard, openThread, plain = false }: { bot: Bot; openCard: (taskId: string) => void; openThread: (taskId: string) => void; plain?: boolean }) {
   const tr = useTr()
   const store = useStore()
-  const { threads, atOnce, free, box } = workSections(bot.work, bot.maxThreads)
+  const { threads, inUse, atOnce, free, box } = workSections(bot.work, bot.maxThreads)
   const asks = pendingAsks(store.allEntries(bot.id), tr)
   const cutIn = canCutIn(bot.work, bot.maxThreads)
   const offline = store.isOffline
@@ -66,7 +66,7 @@ export function LiveWork({ bot, openCard, openThread, plain = false }: { bot: Bo
         <VStack className="outlined-card">{threadRows}{boxRows}</VStack>
       ) : (
         <>
-          <WorkSection title="Threads" count={`${threads.length} / ${atOnce}`} shown={threads.length + box.length > 0}>
+          <WorkSection title="Threads" count={`${inUse} / ${atOnce}`} shown={threads.length + box.length > 0}>
             {threadRows}
             {Array.from({ length: free }, (_, at) => <FreeRow key={`free-${at}`} />)}
           </WorkSection>
@@ -106,7 +106,7 @@ function FreeRow() {
 }
 
 /**
- * One task: its mark (or `number`, its place in line), its title over `line` and where its thread works, and `time`. `open` makes the row a button. `always` is an action that
+ * One task: its mark (or `number`, its place in line), its title with `line` beside it over where its thread works, and `time`. `open` makes the row a button. `always` is an action that
  * always shows (Cut in, Try again); `onHover` holds the icon actions, out of sight until the row is hovered or
  * holds the focus.
  */
@@ -120,11 +120,14 @@ export function WorkRow({ task, number, line, time, open, always, onHover }: { t
       <Open className="work-row-open" onClick={open}>
         {number ? <Text size="callout" tone="tertiary" tabular className="work-row-number">{number}</Text> : <WorkDot mark={mark} />}
         <VStack as="span" gap={2} align="flex-start" grow shrink>
-          <HStack as="span" gap={5} className="work-row-title">
-            <SourceMark task={task} />
-            <Text tone="text" truncate>{task.title}</Text>
+          {/* The title and how it stands share the first line, a gap apart. */}
+          <HStack as="span" gap={8} className="work-row-title">
+            <HStack as="span" gap={5} className="work-row-name">
+              <SourceMark task={task} />
+              <Text tone="text" truncate>{task.title}</Text>
+            </HStack>
+            <Text size="caption" tone={mark === 'danger' ? 'danger' : mark === 'attention' ? 'attention' : 'secondary'} truncate className="work-row-line">{line}</Text>
           </HStack>
-          <Text size="caption" tone={mark === 'danger' ? 'danger' : mark === 'attention' ? 'attention' : 'secondary'} truncate>{line}</Text>
           {where ? <span className="work-row-where" title={wherePath(task) ?? undefined}><WorkWhere where={where} /></span> : null}
         </VStack>
         {time}
@@ -137,7 +140,7 @@ export function WorkRow({ task, number, line, time, open, always, onHover }: { t
 
 /** Before a task's title, where it came from: a routine's symbol, or the face of the bot that asked. Nothing for
  * what the bot added itself, or a bot this computer doesn't have. */
-function SourceMark({ task }: { task: WorkTask }) {
+export function SourceMark({ task }: { task: WorkTask }) {
   const tr = useTr()
   const store = useStore()
   if (task.source?.kind === 'routine') return <Icon name="clock.arrow.circlepath" size={11} color="var(--secondary)" title={tr('Routine')} className="work-row-source" />

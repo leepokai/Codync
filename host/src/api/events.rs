@@ -83,18 +83,22 @@ pub fn events_stream(
         "network": crate::network::status(hub),
         // How many catch-up events follow: `rev` can be ahead of all of them (a write no event carries).
         "catchUp": catch_up.len(),
+        "workflows": true,
     });
     catch_up.insert(0, hello);
 
     let local = matches!(caller, Caller::Local);
     let key = caller.device_key().to_owned();
-    let guard = Arc::new(matches!(client, Some("ios" | "android")).then(|| PhoneClientGuard::new(hub.clone())));
+    let phone = matches!(client, Some("ios" | "android"));
+    let guard = Arc::new(phone.then(|| PhoneClientGuard::new(hub.clone())));
     let tail = live.filter_map(move |msg| {
         let _keep = guard.clone();
         let key = key.clone();
         async move {
             match msg {
                 Ok(v) if !local && v["type"].as_str().is_some_and(|t| LOCAL_EVENTS.contains(&t)) => None,
+                // A phone gets its alerts as pushes.
+                Ok(v) if phone && v["type"] == "alert" => None,
                 // What a call's voice should say goes to the device holding that call only.
                 Ok(v) if v["type"] == "call" && v["owner"] != key.as_str() => None,
                 Ok(v) => Some(v),

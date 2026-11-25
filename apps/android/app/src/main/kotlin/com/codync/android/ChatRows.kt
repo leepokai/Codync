@@ -128,10 +128,10 @@ internal fun findable(items: List<ChatItem>): List<Pair<String, String>> =
         color = Palette.tertiary, textAlign = TextAlign.Center)
 }
 
-/** One chat-visible entry, with what can be done to it. `reply` quotes it in the composer, and `selectText` opens its text
+/** One chat-visible entry, with what can be done to it. `openTrace` shows its turn's steps (null: none, in a thread's chat). `reply` quotes it in the composer, and `selectText` opens its text
  *  to reply to a part of it (null where the computer's host takes no part); `addFallback` opens a bot's fallbacks; `openArtifact` opens an artifact card's artifact. */
 @Composable internal fun ChatRow(entry: Entry, groupStart: Boolean, chat: Bot?, state: AppState, store: AppStore,
-    openTrace: () -> Unit, reply: (() -> Unit)?, selectText: (() -> Unit)?, connect: ConnectionRequestActions, addFallback: (Bot) -> Unit,
+    openTrace: (() -> Unit)?, reply: (() -> Unit)?, selectText: (() -> Unit)?, connect: ConnectionRequestActions, addFallback: ((Bot) -> Unit)?,
     openArtifact: (OpenArtifact) -> Unit, openQuote: ((String) -> Unit)? = null) {
     val group = chat?.kind == "group"
     when (entry.kind) {
@@ -159,13 +159,18 @@ internal fun findable(items: List<ChatItem>): List<Pair<String, String>> =
                 reply = { store.sendText(entry.botId, it) })
         } else if (entry.data["connectionRequest"] is JsonObject) Box(Modifier.padding(top = 12.dp)) {
             ConnectionRequestCard(entry, state, store, connect.openApp, connect.install)
+        } else if (entry.data["agentSwitch"] is JsonObject) Box(Modifier.padding(top = 10.dp)) {
+            val change = entry.data["agentSwitch"] as JsonObject
+            // A switch the user made is a divider of its own.
+            if (change["manual"]?.jsonPrimitive?.booleanOrNull == true) UserSwitchRow(change, state)
+            else AgentSwitchLine(tr(entry.text), change.text("carried"))
         } else if (entry.data["handoff"] is JsonObject) Box(Modifier.padding(top = 10.dp)) {
             // A fresh conversation starts at the left, as on the iPhone.
             HandoffCardRow(entry, entry.data["handoff"] as JsonObject, state, store)
         } else Box(Modifier.padding(top = 10.dp)) {
             // In a group, the member whose agent failed.
             val owner = state.bots.firstOrNull { it.id == (entry.data.text("author") ?: entry.botId) && it.kind != "group" }
-            NoticeRow(entry, owner?.let { { addFallback(it) } }, continuing = "continue:" + entry.id in state.busy) { store.continueChain(entry) }
+            NoticeRow(entry, addFallback?.let { add -> owner?.let { { add(it) } } }, continuing = "continue:" + entry.id in state.busy) { store.continueChain(entry) }
         }
     }
 }
@@ -184,11 +189,13 @@ internal class ConnectionRequestActions(val openApp: (String, ComposioApp) -> Un
 
 internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonArray)?.map { it.jsonPrimitive.content }.orEmpty()
 
+internal val Entry.attachments: List<Attachment> get() = data["attachments"]?.jsonArray?.map { WireJson.decodeFromJsonElement<Attachment>(it) }.orEmpty()
+
 @Composable private fun UserBubble(entry: Entry, state: AppState, store: AppStore, reply: (() -> Unit)?, selectText: (() -> Unit)?,
     openQuote: ((String) -> Unit)?) {
     val context = LocalContext.current
     val focus = LocalFocusManager.current
-    val attachments = entry.data["attachments"]?.jsonArray?.map { WireJson.decodeFromJsonElement<Attachment>(it) }.orEmpty()
+    val attachments = entry.attachments
     val menu = MessageMenu.of(entry, store, reply, trace = null, selectText)
     Column(Modifier.padding(start = 56.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, menu, state, store)
@@ -229,17 +236,19 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
 }
 
 /**
- * A message of a thread's own transcript ([WorkThreadView]): the chat's bubble with Copy alone in its menu.
- * Those entries are the thread's, never the chat's, so the chat's reactions and replies don't reach them.
+ * A message of a thread's own transcript ([ThreadChat]): the chat's bubble with Copy alone in its menu, under the
+ * user's files. Those entries are the thread's, never the chat's, so the chat's reactions and replies don't reach them.
  */
-@Composable internal fun PlainMessageRow(entry: Entry) {
+@Composable internal fun PlainMessageRow(entry: Entry, state: AppState, store: AppStore) {
     val context = LocalContext.current
     val user = entry.kind == "user"
     val menu = { listOf(textCopyItem(context, entry.text)) }
     Column(Modifier.fillMaxWidth().padding(start = if (user) 56.dp else 0.dp, end = if (user) 0.dp else 40.dp),
         horizontalAlignment = if (user) Alignment.End else Alignment.Start, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (user) {
-            Box(Modifier.clip(RoundedRectangle(18.dp)).contextActions(items = menu)) { UserText(entry.text) }
+            val attachments = entry.attachments
+            if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, MessageMenu.copyOnly, state, store)
+            if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).contextActions(items = menu)) { UserText(entry.text) }
             SendStatusLine(entry.status)
         } else Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
             .contextActions(preview = { AgentText(entry.text, selectable = true) }, items = menu)) { AgentText(entry.text, selectable = false) }
@@ -278,7 +287,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     }
 }
 
-@Composable private fun AgentBubble(entry: Entry, state: AppState, store: AppStore, openTrace: () -> Unit, reply: (() -> Unit)?,
+@Composable private fun AgentBubble(entry: Entry, state: AppState, store: AppStore, openTrace: (() -> Unit)?, reply: (() -> Unit)?,
     selectText: (() -> Unit)?, openArtifact: (OpenArtifact) -> Unit, openQuote: ((String) -> Unit)?) {
     val context = LocalContext.current
     val focus = LocalFocusManager.current
@@ -430,7 +439,6 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
                 if (addFallback != null && entry.data["addFallback"]?.jsonPrimitive?.booleanOrNull == true) SecondaryButton("Add a fallback", action = addFallback)
             }
         }
-        "agentSwitch" in entry.data -> AgentSwitchLine(text, (entry.data["agentSwitch"] as? JsonObject)?.text("carried"))
         entry.data["continueChain"]?.jsonPrimitive?.booleanOrNull == true -> Column(Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(tr(text), style = Type.footnote, color = Palette.secondary, textAlign = TextAlign.Center)
@@ -449,11 +457,14 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
     }
     var expanded by remember { mutableStateOf(false) }
     if (carried.isNullOrEmpty()) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, content = label)
-    else Disclosure(expanded, { expanded = !expanded }, Modifier.fillMaxWidth(), label) {
-        SelectionContainer {
-            Text(carried, Modifier.fillMaxWidth().clip(RoundedRectangle(12.dp)).background(Palette.bubbleAgent).padding(12.dp),
-                style = Type.footnote, color = Palette.secondary)
-        }
+    else Disclosure(expanded, { expanded = !expanded }, Modifier.fillMaxWidth(), label) { CarriedText(carried) }
+}
+
+/** What an agent taking over was told, unfolded under its line. */
+@Composable internal fun CarriedText(text: String) {
+    SelectionContainer {
+        Text(text, Modifier.fillMaxWidth().clip(RoundedRectangle(12.dp)).background(Palette.bubbleAgent).padding(12.dp),
+            style = Type.footnote, color = Palette.secondary)
     }
 }
 
@@ -499,7 +510,7 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
     }
     Column(Modifier.padding(top = 12.dp).heightIn(max = 280.dp).verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (steps.isEmpty()) Text(tr("Nothing yet."), style = Type.body, color = Palette.tertiary)
-        for (entry in steps) key(entry.id) { TraceRow(entry, unfolded = true) }
+        for ((entry, depth) in nestedSteps(steps)) key(entry.id) { Box(Modifier.nested(depth)) { TraceRow(entry, unfolded = true) } }
     }
 }
 

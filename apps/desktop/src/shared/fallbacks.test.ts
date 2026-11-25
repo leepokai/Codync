@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { clockTime, freeLogins, mixesAgents, moveFallback, restLine, restOf, restPhrase, runningAgent, sameLogin, stepAgents, stepBannerPhrase, stepLogins, stepOn, withBackend } from './fallbacks.ts'
+import { clockTime, freeLogins, mixesAgents, moveFallback, restLine, restOf, restPhrase, runningAgent, sameLogin, stepAgents, stepBannerPhrase, stepLogins, stepOn, withAdvisor, withBackend, withThreadBackend } from './fallbacks.ts'
 import { fill } from './fill.ts'
 import { draftOf, normalizeBot, type Backend, type Bot } from './models.ts'
 
@@ -97,28 +97,58 @@ test('fallbacks move within the list', () => {
 
 test('making a fallback the bot\'s own agent drops it from the list', () => {
   const draft = draftOf(normalizeBot({ id: 'b', backend: 'claude', fallbacks: [{ backend: 'codex', model: 'gpt-5.5', modelOptions: {} }, { backend: 'gemini', model: null, modelOptions: {} }] }))
-  const next = withBackend(draft, 'codex')
+  const next = withBackend(draft, { backend: 'codex' })
   assert.equal(next.backend, 'codex')
   assert.deepEqual(next.fallbacks?.map((f) => f.backend), ['gemini'])
+})
+
+test('Advisor mode starts the threads on the bot\'s own agent and chain, and another threads\' agent drops its login from theirs', () => {
+  const codex = { backend: 'codex', model: null, modelOptions: {} }
+  const draft = draftOf(normalizeBot({ id: 'b', backend: 'claude', model: 'opus', fallbacks: [codex], threadAgent: null, threadFallbacks: [] }))
+  assert.equal(draft.threadAgent, null, 'a host with Advisor mode: off is sent as null')
+  const on = withAdvisor(draft, true, [])
+  assert.deepEqual(on.threadAgent, { backend: 'claude', loginProfile: null, model: 'opus', modelOptions: {} })
+  assert.deepEqual(on.threadFallbacks, [codex])
+  const moved = withThreadBackend(on, { backend: 'codex' })
+  assert.deepEqual([moved.threadAgent?.backend, moved.threadAgent?.model, moved.threadFallbacks], ['codex', null, []])
+  assert.equal(withThreadBackend(moved, { backend: 'codex' }), moved)
+  assert.deepEqual(moved.fallbacks, [codex], 'the chat\'s chain is its own')
+  assert.deepEqual([withAdvisor(moved, false, []).threadAgent, withAdvisor(moved, false, []).threadFallbacks], [null, []])
+  const installed = { id: 'gemini', name: 'Gemini', available: true } as Backend
+  assert.equal(withAdvisor({ ...draft, backend: 'custom' }, true, [installed]).threadAgent?.backend, 'gemini', 'the picker has no custom command')
 })
 
 test('an older host has no fallbacks to show or send', () => {
   const bot = normalizeBot({ id: 'b' })
   assert.equal(bot.selfFallbacks, null)
   assert.equal(draftOf(bot).selfFallbacks, undefined)
+  assert.equal(bot.threadFallbacks, null)
+  assert.equal('threadAgent' in draftOf(bot), false, 'nor Advisor mode')
   assert.equal(normalizeBot({ id: 'b', selfFallbacks: false }).selfFallbacks, false)
 })
 
 
 test('switching harness clears its model and effort, selecting the same harness preserves them', () => {
   const draft = draftOf(normalizeBot({ id: 'b', backend: 'claude', loginProfile: 'a1', model: 'opus', modelOptions: { effort: 'high' } }))
-  assert.equal(withBackend(draft, 'claude'), draft)
-  const changed = withBackend(draft, 'codex')
+  assert.equal(withBackend(draft, { backend: 'claude', loginProfile: 'a1' }), draft)
+  const changed = withBackend(draft, { backend: 'codex' })
   assert.equal(changed.model, null)
   assert.equal(changed.loginProfile, null, 'a login profile is its own agent\'s')
   assert.deepEqual(changed.modelOptions, {})
-  const defaultModel = withBackend({ ...draft, model: null }, 'codex')
+  const defaultModel = withBackend({ ...draft, model: null }, { backend: 'codex' })
   assert.deepEqual(defaultModel.modelOptions, {})
+})
+
+test('a login of the chain picked for the bot or its threads leaves the chain, and another login of its agent keeps the model', () => {
+  const work = { backend: 'codex', loginProfile: 'w', model: null, modelOptions: {} }
+  const home = { backend: 'codex', loginProfile: null, model: null, modelOptions: {} }
+  const draft = draftOf(normalizeBot({ id: 'b', backend: 'claude', model: 'opus', fallbacks: [home, work], threadAgent: null, threadFallbacks: [] }))
+  const onWork = withBackend(draft, { backend: 'codex', loginProfile: 'w' })
+  assert.deepEqual([onWork.backend, onWork.loginProfile, onWork.fallbacks], ['codex', 'w', [home]])
+  const sameAgent = withBackend({ ...draft, backend: 'codex', model: 'gpt' }, { backend: 'codex', loginProfile: 'w' })
+  assert.deepEqual([sameAgent.model, sameAgent.loginProfile, sameAgent.fallbacks], ['gpt', 'w', [home]])
+  const threads = withThreadBackend(withAdvisor(draft, true, []), { backend: 'codex', loginProfile: 'w' })
+  assert.deepEqual([threads.threadAgent?.loginProfile, threads.threadFallbacks], ['w', [home]])
 })
 
 test('bots mix agents when they run more than one, counting a fallback and leaving groups out', () => {

@@ -1,7 +1,8 @@
 //! Background services started alongside the host API.
 
 use crate::remote::{claim, managed, relay};
-use crate::{agent::registry, hub::Hub, market, screen, update, usage, voice};
+use crate::{hub::Hub, market, screen, update, usage, voice};
+use codync_agent::registry;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -22,6 +23,7 @@ pub fn start(hub: &Arc<Hub>) -> JoinSet<()> {
     tokio::spawn(market::automatic_loop(hub.clone()));
     tokio::spawn(voice::refresh_loop(hub.clone()));
     tokio::spawn(crate::chat::calls::sweep_loop(hub.clone()));
+    tokio::spawn(crate::chat::team::expire_loop(hub.clone()));
     tokio::spawn(crate::dev_servers::scan_loop(hub.clone()));
     let mut agent_checks = JoinSet::new();
     agent_checks.spawn({

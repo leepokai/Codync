@@ -1,6 +1,6 @@
 .chat-window {
   height: 100%;
-  min-width: 680px; /* chatWindowMinWidth in src/shared/chat-layout.ts */
+  min-width: 688px; /* chatWindowMinWidth in src/shared/chat-layout.ts */
   min-height: 500px; /* chatWindowMinHeight in src/shared/chat-layout.ts */
   background: var(--background);
   position: relative;
@@ -75,10 +75,24 @@
 
 
 .split {
+  position: relative;
   display: flex;
   height: 100%;
+  /* Under the window's bar (window-bar.css). */
+  padding-top: 46px;
+  background: var(--window-chrome);
 }
-/* An open account panel or action menu takes the clicks. */
+/* The page (list and detail) as one rounded card inside the bar, the rail and a strip of the same chrome right of and under it. */
+.page-frame {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  margin: 0 8px 8px 0; /* frameInset in src/shared/chat-layout.ts */
+  border-radius: var(--radius-m);
+  overflow: hidden;
+  background: var(--background);
+}
+/* An open action menu takes the clicks. */
 .split.covered {
   pointer-events: none;
 }
@@ -91,7 +105,29 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  timeline-scope: --roster;
   transition: width var(--layout);
+}
+.sidebar-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+  transition: opacity var(--layout);
+}
+.sidebar[inert] .sidebar-content {
+  opacity: 0;
+}
+/* Beside Search and New, the list's name gives way to them at the narrowest. */
+@container (max-width: 230px) {
+  .sidebar-title.crowded {
+    display: none;
+  }
+}
+/* The conversation behind another page keeps its state, out of sight. */
+.detail[hidden] {
+  display: none;
 }
 .sidebar.resizing {
   transition: none;
@@ -105,19 +141,6 @@
   padding-right: 14px;
   flex: none;
   transition: opacity var(--layout), padding var(--layout);
-}
-/* Clears the traffic lights. */
-html[data-platform="darwin"] .sidebar-header {
-  padding-left: 80px;
-}
-.sidebar.compact .sidebar-header {
-  padding-left: 0;
-  opacity: 0;
-}
-/* The rail's computer filter. */
-.rail-header {
-  width: 70px;
-  align-self: center;
 }
 
 .roster {
@@ -134,9 +157,6 @@ html[data-platform="darwin"] .sidebar-header {
   outline: 2px solid var(--secondary);
   outline-offset: -2px;
 }
-.sidebar.compact .roster {
-  padding-top: 4px;
-}
 .roster-row {
   width: 100%;
   padding: 0 8px;
@@ -144,9 +164,6 @@ html[data-platform="darwin"] .sidebar-header {
   display: flex;
   transition: background-color var(--hover);
   flex: none;
-}
-.roster-row.compact {
-  padding: 0;
 }
 /* Hover is tracked in JS, so rows passed over during a drag don't light up. */
 .roster-row.hovered {
@@ -204,11 +221,6 @@ html[data-platform="darwin"] .sidebar-header {
   line-height: calc(16px * var(--scale));
   transition: opacity var(--layout);
 }
-.bot-row-text.collapsed {
-  flex: none;
-  width: 0;
-  opacity: 0;
-}
 .unread-badge {
   display: grid;
   place-items: center;
@@ -230,24 +242,6 @@ html[data-platform="darwin"] .sidebar-header {
 /* A selected row's fill doesn't touch its hovered neighbour's. */
 .roster-row + .roster-row {
   margin-top: 4px;
-}
-/* Once, with several computers: where Extensions went. A filled card, so no outline. */
-.extensions-tip {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 4px 0 6px;
-  padding: 10px 6px 10px 10px;
-  border-radius: var(--radius-m);
-  background: var(--bubble-agent);
-}
-.extensions-tip-icon {
-  height: 20px;
-  align-items: center;
-}
-.extensions-tip-text {
-  gap: 2px;
-  min-width: 0;
 }
 .roster-empty {
   position: absolute;
@@ -275,26 +269,6 @@ html[data-platform="darwin"] .sidebar-header {
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-.rail-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 0 10px;
-  flex: none;
-}
-.rail-profile {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-m);
-  display: grid;
-  place-items: center;
-  margin-top: 4px;
-}
-.rail-profile.open {
-  background: var(--bubble-agent);
 }
 
 
@@ -335,7 +309,6 @@ html[data-platform="darwin"] .sidebar-header {
   pointer-events: auto;
   -webkit-app-region: no-drag;
 }
-.account-panel,
 .action-menu,
 .action-submenu {
   position: absolute;
@@ -343,16 +316,6 @@ html[data-platform="darwin"] .sidebar-header {
   background: var(--panel);
   box-shadow: var(--shadow-l);
   animation: panel-in var(--fade) both;
-}
-.account-panel {
-  left: 16px;
-  bottom: 64px;
-  border-radius: var(--radius-l);
-  transform-origin: bottom left;
-}
-/* Above the rail's profile button. */
-.account-panel.compact {
-  bottom: 68px;
 }
 .action-menu,
 .action-submenu {
@@ -393,17 +356,6 @@ html[data-platform="darwin"] .sidebar-header {
   height: 0.5px;
   background: rgba(var(--text-rgb), 0.13);
   margin: 5px 10px;
-}
-.panel-identity {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 10px;
-  color: var(--secondary);
-}
-.panel-error {
-  padding: 8px 10px;
 }
 
 /* Welcome, computer access and host state fill the window with no chrome: their top edge moves it. */

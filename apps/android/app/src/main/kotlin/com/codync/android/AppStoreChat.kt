@@ -42,18 +42,17 @@ fun AppStore.requestCall(botId: String) {
     }
 }
 
-/** Opens [botId]'s chat with its details over it, at the thread of its task [taskId] when one is named; the chat takes the request (`takeDetailsRequest`). */
-internal fun AppStore.openDetails(botId: String, taskId: String? = null) {
+/** Opens [botId]'s chat with its details over it; the chat takes the request (`takeDetailsRequest`). */
+internal fun AppStore.openDetails(botId: String) {
     openBot(botId)
-    mutableState.update { it.copy(detailsRequest = botId to taskId) }
+    mutableState.update { it.copy(detailsRequest = botId) }
 }
 
 /** Once: what [botId]'s details were asked to open on, or null when they weren't. */
 internal fun AppStore.takeDetailsRequest(botId: String): DetailsRequest? {
-    val (asked, taskId) = state.value.detailsRequest ?: return null
-    if (asked != botId) return null
+    if (state.value.detailsRequest != botId) return null
     mutableState.update { it.copy(detailsRequest = null) }
-    return DetailsRequest(taskId = taskId)
+    return DetailsRequest()
 }
 
 /** Opens [botId]'s chat at the card its [task] waits on (iOS `requestCard`); the chat takes the request (`takeCardRequest`). */
@@ -81,6 +80,19 @@ internal fun AppStore.pageToCard(botId: String, task: WorkTask) = action(history
     } finally {
         if (!found() && state.value.cardRequest == (botId to task)) takeCardRequest(botId)
     }
+}
+
+/**
+ * Keeps [botId]'s chat in memory while one of its threads is open outside it, for what the thread put there, and pages
+ * it back for the card [task] waits on (null: none) while the rows loaded don't hold it (desktop `cardOf`, iOS
+ * `card(for:in:)`).
+ */
+internal fun AppStore.holdChat(botId: String, task: WorkTask?) = action(historyKey(botId)) {
+    residents.touch(botId)
+    refresh()
+    if (task == null) return@action
+    val found = { pendingCard(state.value.entries.filter { it.botId == botId }, task) != null }
+    pageUntil(found, more = { botId !in state.value.historyEnd }) { pageHistory(botId) }
 }
 
 /** How many older pages opening a task's card loads to find it, like the iPhone. */
@@ -167,10 +179,11 @@ private suspend fun AppStore.pageHistory(id: String) {
     if (!withContext(Dispatchers.IO) { requireNotNull(database).hasOlder(id, before) } && !fetchHistoryPage(id, before)) return
     // The older rows are on the phone now. The window grows over them whatever they hold, so a page of only tool or
     // thought rows moves the chat too.
-    if (state.value.selectedBot == id) windows[id] = residency().widened(id)
+    // ponytail: a thread's chat held outside it ([holdChat]) keeps its widened window until the store resets; drop it as the thread closes if memory shows.
+    windows[id] = residency().widened(id)
     refresh()
     // The window grew and the same rows came back: this chat's memory budget is spent.
-    if (floors[id] == before && state.value.selectedBot == id) mutableState.update { it.copy(historyEnd = it.historyEnd + (id to HistoryEnd.MemoryFull)) }
+    if (floors[id] == before) mutableState.update { it.copy(historyEnd = it.historyEnd + (id to HistoryEnd.MemoryFull)) }
 }
 
 /** Stores the computer's page of [id]'s rows older than [before]. Whether it held any. */
@@ -270,18 +283,10 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
             }
         }
         val connection = ready()
-        val ids = mutableListOf<String>()
-        var completed = 0L
         val total = send.files.sumOf { it.size }
-        for (file in send.files) {
-            val id = UUID.randomUUID().toString()
-            HostFiles(connection).upload(send.botId, id, file) { offset ->
-                val percent = if (total == 0L) 100 else ((completed + offset) * 100 / total).toInt()
-                mutableState.update { it.copy(uploadProgress = it.uploadProgress + (send.nonce to percent)) }
-            }
-            completed += file.size
-            ids.add(id)
-            withContext(Dispatchers.IO) { attachments.cache(id, file) }
+        val ids = uploadFiles(connection, send) { sent ->
+            val percent = if (total == 0L) 100 else (sent * 100 / total).toInt()
+            mutableState.update { it.copy(uploadProgress = it.uploadProgress + (send.nonce to percent)) }
         }
         val result = connection.call("send", send.body(ids))
         val entry = Entry.decode(result.jsonObject.getValue("entry").jsonObject)
@@ -303,6 +308,22 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
     } finally {
         sends.remove(send.nonce)
         mutableState.update { it.copy(uploadProgress = it.uploadProgress - send.nonce) }
+    }
+}
+
+/**
+ * Uploads [send]'s files for its `send` (to [taskId]'s thread when given), each cached as sent: their upload ids. Each
+ * attempt takes new ids, so a retry never appends to a half-sent file. [progress] hears the bytes of all of them sent so far.
+ */
+internal suspend fun AppStore.uploadFiles(connection: EncryptedChannel, send: PendingSend, taskId: String? = null,
+    progress: (Long) -> Unit = {}): List<String> {
+    var completed = 0L
+    return send.files.map { file ->
+        UUID.randomUUID().toString().also { id ->
+            HostFiles(connection).upload(send.botId, id, file, taskId) { offset -> progress(completed + offset) }
+            completed += file.size
+            withContext(Dispatchers.IO) { attachments.cache(id, file) }
+        }
     }
 }
 

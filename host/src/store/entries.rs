@@ -28,6 +28,16 @@ const ENTRY_COLS: &str = "seq, id, bot_id, rev, kind, turn, data, created_at, up
 const LIVE_CHAT: &str = "WHERE NOT EXISTS (SELECT 1 FROM bots WHERE id = ?2 AND deleted = 1)";
 /// Leaves out a message the user took back before it went out (`unqueue`): no bot, model or list reads it.
 pub(super) const NOT_REMOVED: &str = "json_extract(data, '$.removed') IS NOT 1";
+/// An approval or choice card still waiting on the user.
+const OPEN_CARD: &str = "(kind = 'permission' AND json_extract(data, '$.status') = 'pending')
+  OR (kind = 'notice' AND json_extract(data, '$.decision') = 1 AND json_extract(data, '$.status') = 'pending')";
+
+/// A request between this computer's bots (no other side named), which `chat::team::restart` settles at start.
+const LOCAL_REQUEST: &str = "kind = 'notice' AND json_extract(data, '$.delegationId') IS NOT NULL
+    AND json_extract(data, '$.botMessage') IS NOT NULL AND json_extract(data, '$.botMessage.peerName') IS NULL";
+
+/// Why a request that was running when the host stopped has no reply.
+pub const INTERRUPTED: &str = "Interrupted by host restart. Partial work may have happened; check before retrying.";
 
 /// What `expire_pending` closed out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,6 +114,37 @@ impl Store {
             params![id, rev, data.to_string(), now_ms(), turn],
         )?;
         Ok(c.query_row(&format!("SELECT {ENTRY_COLS} FROM entries WHERE id = ?1"), [id], row_entry).optional()?)
+    }
+
+    /// Updates `entries` (each stamped with the next rev), deletes the `delete` kv rows and saves the `set` ones in one
+    /// transaction, so a crash keeps all of it or none; the entries as updated.
+    pub fn update_entries_kv(
+        &self,
+        entries: &[(String, Value)],
+        delete: &[String],
+        set: &[(String, String)],
+    ) -> Result<Vec<Entry>> {
+        let mut c = self.db.locked();
+        let tx = c.transaction()?;
+        let mut updated = Vec::with_capacity(entries.len());
+        for (id, data) in entries {
+            let rev = next_rev(&tx)?;
+            tx.execute(
+                "UPDATE entries SET rev = ?2, data = ?3, updated_at = ?4 WHERE id = ?1",
+                params![id, rev, data.to_string(), now_ms()],
+            )?;
+            updated.extend(
+                tx.query_row(&format!("SELECT {ENTRY_COLS} FROM entries WHERE id = ?1"), [id], row_entry).optional()?,
+            );
+        }
+        for k in delete {
+            tx.execute("DELETE FROM kv WHERE k = ?1", [k])?;
+        }
+        for (k, v) in set {
+            tx.execute("INSERT INTO kv(k, v) VALUES(?1, ?2) ON CONFLICT(k) DO UPDATE SET v = ?2", params![k, v])?;
+        }
+        tx.commit()?;
+        Ok(updated)
     }
 
     /// Moves an entry back in time, for tests of what happens to old entries.
@@ -208,14 +249,14 @@ impl Store {
         Ok(st.query_map(params![bot_id, limit], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// The user's own messages in `bot_id`'s chat that still wait for their turn (not what the host wrote there),
-    /// oldest first.
+    /// The user's own messages in `bot_id`'s chat that still wait for their turn (not what the host wrote there, but
+    /// what a thread's chat passed on to it: `relay`), oldest first.
     pub fn queued_messages(&self, bot_id: &str) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
             "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND kind = 'user'
                AND json_extract(data, '$.status') = 'queued'
-               AND COALESCE(json_extract(data, '$.from'), '') != 'host'
+               AND (COALESCE(json_extract(data, '$.from'), '') != 'host' OR json_extract(data, '$.relay') = 1)
              ORDER BY seq"
         ))?;
         Ok(st.query_map([bot_id], row_entry)?.collect::<rusqlite::Result<_>>()?)
@@ -233,6 +274,20 @@ impl Store {
              ORDER BY rev"
         ))?;
         Ok(st.query_map([backend], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The approval and choice cards thread `thread` put in `bot_id`'s chat that still wait on the user, oldest
+    /// first.
+    // ponytail: scans the chat's entries without an index; the watchdog asks every few minutes, only while the thread
+    // works. Add one if it shows up in profiles.
+    pub fn open_cards(&self, bot_id: &str, thread: &str) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND ({OPEN_CARD})
+               AND json_extract(data, '$.thread.id') = ?2
+             ORDER BY seq"
+        ))?;
+        Ok(st.query_map([bot_id, thread], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
     /// Chat-visible messages (the user's, final replies) in `bot_id`'s chat that
@@ -346,18 +401,41 @@ impl Store {
         logged("last spoke", n).unwrap_or(0)
     }
 
+    /// Every exchange notice of requests between this computer's bots that one of them shows still open (`queued`,
+    /// `sent`), oldest first, so a request's sender's notice comes before its recipient's. Ended ones too: a host
+    /// that stopped between saving a request's two notices left only one of them ended.
+    pub fn unfinished_requests(&self) -> Result<Vec<Entry>> {
+        self.local_requests(&format!(
+            "json_extract(data, '$.delegationId') IN (SELECT json_extract(data, '$.delegationId') FROM entries
+              WHERE {LOCAL_REQUEST} AND json_extract(data, '$.status') IN ('queued', 'sent'))"
+        ))
+    }
+
+    /// Local senders' exchange notices whose outcome their reply turn never took (`relaying`), oldest first.
+    pub fn unrelayed_replies(&self) -> Result<Vec<Entry>> {
+        self.local_requests("json_extract(data, '$.relaying') = 1")
+    }
+
+    // ponytail: scans notices without an index, once per host start.
+    fn local_requests(&self, condition: &str) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st =
+            c.prepare(&format!("SELECT {ENTRY_COLS} FROM entries WHERE {LOCAL_REQUEST} AND {condition} ORDER BY seq"))?;
+        Ok(st.query_map([], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Permission and choice cards left `pending` (and sends left `queued`) by a crash or restart
-    /// can never be honored; returns how many were closed out.
+    /// can never be honored; returns how many were closed out. Requests between this computer's bots are left to
+    /// `chat::team::restart`, which sends them again or tells their senders.
     pub fn expire_pending(&self) -> Result<Expired> {
         let ids: Vec<String> = {
             let c = self.db.locked();
-            let mut st = c.prepare(
-                "SELECT id FROM entries WHERE (kind = 'permission' AND json_extract(data, '$.status') = 'pending')
-                  OR (kind = 'notice' AND json_extract(data, '$.decision') = 1 AND json_extract(data, '$.status') = 'pending')
+            let mut st = c.prepare(&format!(
+                "SELECT id FROM entries WHERE {OPEN_CARD}
                   OR (kind = 'user' AND json_extract(data, '$.status') = 'queued')
                   OR (kind = 'notice' AND json_extract(data, '$.delegationId') IS NOT NULL
-                      AND json_extract(data, '$.status') IN ('queued', 'sent'))",
-            )?;
+                      AND json_extract(data, '$.status') IN ('queued', 'sent') AND NOT ({LOCAL_REQUEST}))"
+            ))?;
             st.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
         };
         let mut decisions = 0;
@@ -370,16 +448,9 @@ impl Store {
                     continue;
                 } else if e.kind == EntryKind::Notice.as_str() {
                     let heading = e.data["heading"].as_str().unwrap_or("Bot request");
-                    e.data["text"] = format!(
-                        "{heading}\nInterrupted by host restart. Partial work may have happened; check before retrying."
-                    )
-                    .into();
+                    e.data["text"] = format!("{heading}\n{INTERRUPTED}").into();
                     if let Some(message) = e.data.get_mut("botMessage").and_then(Value::as_object_mut) {
-                        message.insert(
-                            "detail".into(),
-                            "Interrupted by host restart. Partial work may have happened; check before retrying."
-                                .into(),
-                        );
+                        message.insert("detail".into(), INTERRUPTED.into());
                     }
                     e.data["style"] = "error".into();
                     "failed"

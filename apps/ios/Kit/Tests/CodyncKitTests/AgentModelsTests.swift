@@ -78,3 +78,45 @@ import Testing
     draft.model = "haiku"
     #expect(draft.rebased(from: base, onto: fresh).model == "haiku")
 }
+
+@Test func modelListAsksForTheBotsLoginProfile() throws {
+    func body(_ request: AgentModelsRequest) throws -> [String: Any] {
+        try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any])
+    }
+    let profile = try body(AgentModelsRequest(backend: "gemini", loginProfile: "pro-7"))
+    #expect(profile["backend"] as? String == "gemini")
+    #expect(profile["loginProfile"] as? String == "pro-7")
+    // The default login sends none, as older apps did.
+    #expect(try body(AgentModelsRequest(backend: "gemini", loginProfile: nil)).keys.sorted() == ["backend"])
+}
+
+@Test func modelChoicesFoldTheAgentDefaultAndKeepAnUnlistedSelection() throws {
+    let catalog = try JSONDecoder().decode(AgentModels.self, from: Data(#"{"models":[{"id":"default-id","name":"Default (recommended)"},{"id":"on-host","name":"Host model","options":[{"id":"effort","name":"Effort","values":[{"id":"low","name":"Low"}]}]}],"currentModelId":"on-host"}"#.utf8))
+    let choices = AgentModels.choices(catalog, selection: "removed-model")
+    #expect(choices.map(\.id) == ["", "on-host", "removed-model"])
+    #expect(choices.first?.name == "Default (recommended)")
+    let withoutDefault = try JSONDecoder().decode(AgentModels.self, from: Data(#"{"models":[{"id":"on-host","name":"Host model"}],"currentModelId":"on-host"}"#.utf8))
+    #expect(AgentModels.choices(withoutDefault, selection: nil).first?.name == "Default · Host model")
+    #expect(AgentModels.choices(nil, selection: nil).map(\.name) == ["Default"])
+    // The agent's own default reads as Default, and Default shows no settings unless the agent gives it some.
+    #expect(AgentModels.listValue(catalog, model: "default-id") == "")
+    #expect(AgentModels.listValue(catalog, model: "on-host") == "on-host")
+    #expect(AgentModels.settings(catalog, model: "on-host").map(\.id) == ["effort"])
+    #expect(AgentModels.settings(withoutDefault, model: nil).isEmpty)
+    #expect(AgentModels.selected(withoutDefault, model: nil)?.id == "on-host")
+}
+
+@Test func threadWithoutBotNamesItsWholeSetup() throws {
+    let setup = ThreadSetup.plain(AgentLogin(backend: "claude", loginProfile: "work"), home: "/Users/me", model: nil, options: ["effort": "high"])
+    let body = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(setup)) as? [String: Any])
+    #expect(body["backend"] as? String == "claude")
+    #expect(body["loginProfile"] as? String == "work")
+    #expect(body["cwd"] as? String == "/Users/me")
+    let model = try #require(body["model"] as? [String: Any])
+    #expect(model["id"] == nil)
+    #expect(model["options"] as? [String: String] == ["effort": "high"])
+    #expect(body["approval"] as? [String: String] == ["permission": "ask", "mode": "auto"])
+    let other = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(ThreadSetup.plain(AgentLogin(backend: "codex"), home: nil, model: "gpt", options: [:]))) as? [String: Any])
+    #expect(other["loginProfile"] as? String == "")
+    #expect((other["model"] as? [String: Any])?["id"] as? String == "gpt")
+}

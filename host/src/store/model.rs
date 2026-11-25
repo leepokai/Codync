@@ -79,12 +79,21 @@ pub struct BotConfig {
     /// already has.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub login_profile: Option<String>,
-    /// Empty for a group.
+    /// The bot's own folder (`agent::workspace::path`), always; empty for a group. A thread's: the folder it works
+    /// in (a project, a worktree of one, or its bot's own folder).
     #[serde(default)]
     pub cwd: String,
+    /// The user's folders the bot sends work to (`hub::projects`): absolute paths, no two alike, the first its
+    /// default. Never a thread's or a group's.
+    #[serde(default)]
+    pub projects: Vec<String>,
+    /// Per project (a path in `projects`): the ignored folders of its main checkout, relative to it, that each new
+    /// worktree of it links to (`node_modules`), so a thread there doesn't fill them again (`chat::work::fill`).
+    #[serde(default)]
+    pub shared_folders: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub permission: Permission,
-    /// The agent mode to work in (see `agent::modes`): its own id, or `auto` for its Auto mode under any id (an agent
+    /// The agent mode to work in (see `codync_agent::modes`): its own id, or `auto` for its Auto mode under any id (an agent
     /// without one keeps its own). None: the mode its sessions open in, the agent's default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
@@ -99,6 +108,13 @@ pub struct BotConfig {
     /// Agents that carry on, in order, when the bot's own can't answer (see `agent::fallback`).
     #[serde(default)]
     pub fallbacks: Vec<Fallback>,
+    /// Advisor mode: the agent the bot's threads run on when it isn't the chat's own (`agent::fallback::threads`);
+    /// none: the chat's, with the chat's fallbacks.
+    #[serde(default)]
+    pub thread_agent: Option<Fallback>,
+    /// In Advisor mode, the agents that carry on, in order, when the threads' own can't answer.
+    #[serde(default)]
+    pub thread_fallbacks: Vec<Fallback>,
     /// The bot may set its own fallbacks (`chat` server's `set_fallbacks`). On unless the user turns it off.
     #[serde(default = "yes")]
     pub self_fallbacks: bool,
@@ -114,6 +130,15 @@ pub struct BotConfig {
     pub position: i64,
     #[serde(default)]
     pub hidden: bool,
+    /// The computer's box for threads without a bot (`chat::work::plain`): they run an agent on its own, told
+    /// nothing of Codync's (no instructions, memory, tools or connectors). Always hidden; apps that know it keep it
+    /// out of every list of bots.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub plain: bool,
+    /// The workflow a thread was started to build (`Setup::workflow`): its workflow tools read, save and run that
+    /// one only, and the thread gets them even without a bot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<String>,
     /// The roster section it shows in; none when unset. Trimmed and checked (`hub::sections`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub section: Option<String>,
@@ -165,12 +190,42 @@ pub struct BotConfig {
     /// The most threads that work on the bot's box at once (see `chat::work`): 1 to [`MAX_THREADS`].
     #[serde(default = "default_max_threads")]
     pub max_threads: u8,
-    /// A thread that starts while another of the bot's works in the same git repository gets a worktree of its own
-    /// (see `chat::work::worktree`). Only matters where the workspace is in a repository.
-    #[serde(default = "yes")]
-    pub thread_worktrees: bool,
+    /// When a thread of the bot's own work or the user's gets a git worktree of its own (see
+    /// `chat::work::worktree`). Only matters where the thread's folder is in a repository.
+    #[serde(default)]
+    pub worktree_mode: WorktreeMode,
     #[serde(default)]
     pub created_at: i64,
+}
+
+/// When a thread gets a git worktree (`worktreeMode`; older apps read and send `threadWorktrees`, a bool).
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum WorktreeMode {
+    /// Never: every thread works in its folder.
+    Off,
+    /// When another thread of the bot works in the same checkout.
+    #[default]
+    SideBySide,
+    /// Every thread of the bot's own work or the user's, the first included.
+    Always,
+}
+
+impl WorktreeMode {
+    /// `threadWorktrees` on the wire: on unless off.
+    pub fn as_bool(self) -> bool {
+        self != Self::Off
+    }
+
+    /// The mode an older app means by `threadWorktrees` (`on`) over the saved `self`: on keeps Always, off is off.
+    #[must_use]
+    pub fn with_switch(self, on: bool) -> Self {
+        match (on, self) {
+            (false, _) => Self::Off,
+            (true, Self::Off) => Self::SideBySide,
+            (true, mode) => mode,
+        }
+    }
 }
 
 /// The most threads a bot may be set to run at once.
@@ -217,6 +272,16 @@ impl BotConfig {
     #[must_use]
     pub fn as_owner(&self) -> Self {
         Self { id: self.owner().to_owned(), thread_of: None, ..self.clone() }
+    }
+
+    /// The steps the bot runs besides its own agent: its fallbacks and, in Advisor mode, its threads' agent and theirs.
+    pub fn fallback_steps(&self) -> impl Iterator<Item = &Fallback> {
+        self.fallbacks.iter().chain(&self.thread_agent).chain(&self.thread_fallbacks)
+    }
+
+    /// [`Self::fallback_steps`], to change.
+    pub fn fallback_steps_mut(&mut self) -> impl Iterator<Item = &mut Fallback> {
+        self.fallbacks.iter_mut().chain(&mut self.thread_agent).chain(&mut self.thread_fallbacks)
     }
 }
 
@@ -338,7 +403,10 @@ mod tests {
         let old = serde_json::json!({"id": "b", "name": "B", "backend": "claude", "taskOf": "b1",
             "maxAgents": 5, "taskWorktrees": false});
         let cfg: BotConfig = serde_json::from_value(old).expect("a bot");
-        assert_eq!((cfg.thread_of, cfg.max_threads, cfg.thread_worktrees), (None, DEFAULT_THREADS, true));
+        assert_eq!(
+            (cfg.thread_of, cfg.max_threads, cfg.worktree_mode),
+            (None, DEFAULT_THREADS, WorktreeMode::SideBySide)
+        );
     }
 
     #[test]

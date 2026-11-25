@@ -198,6 +198,13 @@ class WorkWordsTest {
         assertTrue(choice("c").isFromThread)
         assertTrue(card("t", thread = "thread-1").isFromThread)
         assertFalse(card("chat").isFromThread)
+        // Own words answer the chat's card unless only an option does (an agent's own question).
+        fun decision(ownWords: Boolean?) = Entry("d", 1, "b", 1, "notice", data = buildJsonObject {
+            put("decision", true); ownWords?.let { put("ownWords", it) }
+        })
+        assertTrue(decision(null).takesOwnWords)
+        assertFalse(decision(false).takesOwnWords)
+        assertFalse(choice("c").takesOwnWords)
     }
 
     @Test fun `a needs-you row says what its card asks`() {
@@ -268,5 +275,17 @@ class WorkWordsTest {
         // An older host names no outside: the chat's own status.
         assertEquals("working" to false, watch.after(at(2, "working"), "Thinking…")!!.let { it.status to it.finished })
         assertEquals(true, going.after(at(3, "idle"), "")!!.finished)
+    }
+
+    @Test fun `a status sort puts needs you, working and waiting work first and keeps the order within each`() {
+        val idle = bot().copy(id = "idle")
+        val busy = bot(status = "working").copy(id = "busy")
+        val asks = bot(status = "needsInput").copy(id = "asks")
+        val queued = bot(work = listOf(waiting)).copy(id = "queued")
+        val idle2 = bot().copy(id = "idle2")
+        assertEquals(listOf("asks", "busy", "queued", "idle", "idle2"), sortedByStatus(listOf(idle, busy, idle2, queued, asks)).map { it.id })
+        // A working chat comes before a quiet chat whose background task works (desktop `rosterRank`, iOS `rosterLine`).
+        val background = bot(work = listOf(working)).copy(id = "background")
+        assertEquals(listOf("busy", "background"), sortedByStatus(listOf(background, busy)).map { it.id })
     }
 }

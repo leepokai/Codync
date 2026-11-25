@@ -4,7 +4,8 @@
 
 use anyhow::Result;
 use serde_json::{Value, json};
-use std::{sync::Arc, time::Duration};
+use std::sync::{Arc, LazyLock, OnceLock};
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
@@ -30,12 +31,14 @@ pub enum Server {
     Chat,
     Connectors,
     Routines,
+    Workflows,
     Computer,
     Team,
     Manage,
     Memory,
     Composio,
-    /// For agents on this computer that aren't Codync bots; `bot` is the agent's name.
+    /// For coding agents' sessions on this computer that aren't Codync bots; `bot` is an address
+    /// to start from (`--name`), or empty.
     Network,
 }
 
@@ -70,7 +73,13 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         // Listed by the host: they depend on this computer's driver.
         Server::Computer => ("codync-computer", INSTRUCTIONS.to_owned(), Value::Null),
         Server::Routines => ("codync-routines", crate::routines::INSTRUCTIONS.to_owned(), crate::routines::tools()),
-        Server::Chat => ("codync-chat", crate::chat::outbox::instructions(), chat_tools()),
+        Server::Workflows => {
+            ("codync-workflows", crate::workflows::INSTRUCTIONS.to_owned(), crate::workflows::tool_list())
+        }
+        Server::Chat => {
+            let thread = crate::store::is_thread_id(&bot);
+            ("codync-chat", crate::chat::outbox::instructions(thread), chat_tools(thread))
+        }
         Server::Team => ("codync-team", crate::chat::team::INSTRUCTIONS.to_owned(), crate::chat::team::tools()),
         Server::Manage => ("codync-manage", crate::chat::manage::INSTRUCTIONS.to_owned(), crate::chat::manage::tools()),
         Server::Memory => ("codync-memory", crate::chat::memory::INSTRUCTIONS.to_owned(), crate::chat::memory::tools()),
@@ -82,6 +91,8 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
             ("codync", crate::chat::team::assistant::INSTRUCTIONS.to_owned(), crate::chat::team::assistant::tools())
         }
     };
+    // The client's name from `initialize` (`clientInfo.name`): which agent the network server serves.
+    let client: Arc<OnceLock<String>> = Arc::default();
     // Requests still running, by id: a cancelled one stops, and its host call with it (a team change's card expires).
     let mut running = std::collections::HashMap::<String, tokio::task::AbortHandle>::new();
     while let Some(line) = lines.next_line().await? {
@@ -98,22 +109,30 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         let key = id.to_string();
         let (replies, token, bot, available_tools) =
             (replies.clone(), token.clone(), bot.clone(), available_tools.clone());
-        let instructions = instructions.clone();
+        let (instructions, client) = (instructions.clone(), client.clone());
         let request = tokio::spawn(async move {
             let params = &msg["params"];
             let reply = match msg["method"].as_str().unwrap_or_default() {
-                "initialize" => Ok(json!({
-                    "protocolVersion": params["protocolVersion"].as_str().unwrap_or(PROTOCOL_VERSION),
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {"name": name, "version": env!("CARGO_PKG_VERSION")},
-                    "instructions": instructions,
-                })),
+                "initialize" => {
+                    let _ = client.set(params["clientInfo"]["name"].as_str().unwrap_or_default().to_owned());
+                    Ok(json!({
+                        "protocolVersion": params["protocolVersion"].as_str().unwrap_or(PROTOCOL_VERSION),
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": name, "version": env!("CARGO_PKG_VERSION")},
+                        "instructions": instructions,
+                    }))
+                }
                 "ping" => Ok(json!({})),
                 "tools/list" => Ok(match server {
                     Server::Computer => computer_tools(port, &token).await,
                     _ => json!({"tools": available_tools}),
                 }),
-                "tools/call" => Ok(call(port, &token, &bot, params, server).await),
+                "tools/call" => Ok(match server {
+                    Server::Network => {
+                        network_call(port, &token, &bot, client.get().map_or("", String::as_str), params).await
+                    }
+                    _ => call(port, &token, &bot, params, server).await,
+                }),
                 method => Err(json!({"code": -32601, "message": format!("unknown method {method}")})),
             };
             let _ = replies.send(match reply {
@@ -127,8 +146,9 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
     Ok(())
 }
 
-/// The `chat` server's tools, from each part of the host that answers them.
-pub(crate) fn chat_tools() -> Value {
+/// The `chat` server's tools, from each part of the host that answers them; a thread's (`thread`) without
+/// `work::chat_only`'s.
+pub(crate) fn chat_tools(thread: bool) -> Value {
     let mut tools = crate::chat::outbox::tools();
     if let Some(list) = tools.as_array_mut() {
         list.extend(crate::chat::artifacts::tools());
@@ -138,6 +158,9 @@ pub(crate) fn chat_tools() -> Value {
         list.push(crate::chat::skills::tool());
         list.extend(crate::dev_servers::tools());
         list.extend(crate::chat::work::tools());
+        if thread {
+            list.retain(|tool| !crate::chat::work::chat_only(tool["name"].as_str().unwrap_or_default()));
+        }
     }
     tools
 }
@@ -157,16 +180,55 @@ async fn computer_tools(port: u16, token: &str) -> Value {
     }
 }
 
+/// A `network` tool call: the host learns which session calls (`network::sessions`). A Codync bot's
+/// agent that loads the user's own `codync` server gets nothing from it: the bot has its team tools.
+async fn network_call(port: u16, token: &str, hint: &str, client: &str, params: &Value) -> Value {
+    // This server's process, with a nonce so a reused pid never takes over another's session.
+    static PROCESS: LazyLock<String> =
+        LazyLock::new(|| format!("{}-{}", std::process::id(), &uuid::Uuid::new_v4().simple().to_string()[..8]));
+    if let Some(refusal) = refuse_bot(std::env::var_os(BOT_ENV)) {
+        return refusal;
+    }
+    let kind = codync_network::AgentKind::of_mcp_client(client);
+    let meta = params.get("_meta").cloned().unwrap_or(Value::Null);
+    // Claude Code's session is read from its registry: file work, off the async workers.
+    let looked = tokio::task::spawn_blocking(move || {
+        codync_network::sessions::session_id(kind, |k| std::env::var(k).ok(), &meta)
+    });
+    let caller = crate::network::sessions::Caller {
+        kind,
+        session: looked.await.unwrap_or_default(),
+        process: PROCESS.clone(),
+        cwd: std::env::current_dir().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default(),
+        hint: Some(hint.trim()).filter(|h| !h.is_empty()).map(str::to_owned),
+    };
+    send(port, token, Server::Network, params, json!({"agent": caller})).await
+}
+
+/// The network server's answer to an agent the host runs for a bot (`BOT_ENV` set): nothing.
+fn refuse_bot(bot: Option<std::ffi::OsString>) -> Option<Value> {
+    bot.map(|_| {
+        let text = "You are a Codync bot: message others with your team tools (list_bots, message_bot).";
+        json!({"content": [{"type": "text", "text": text}], "isError": true})
+    })
+}
+
+/// Set in the environment of every agent the host runs for a bot (its id).
+pub const BOT_ENV: &str = "CODYNC_BOT";
+
 /// One tool call through the host. Failures are tool errors the agent can read, not protocol errors.
 async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server) -> Value {
-    let body = json!({
-        "botId": bot,
-        "name": params["name"],
-        "arguments": params.get("arguments").filter(|a| a.is_object()).cloned().unwrap_or_else(|| json!({})),
-    });
+    send(port, token, server, params, json!({"botId": bot})).await
+}
+
+/// Posts a tool call (`body` says who calls) to the host's method for `server`.
+async fn send(port: u16, token: &str, server: Server, params: &Value, mut body: Value) -> Value {
+    body["name"] = params["name"].clone();
+    body["arguments"] = params.get("arguments").filter(|a| a.is_object()).cloned().unwrap_or_else(|| json!({}));
     let (method, timeout) = match server {
         Server::Connectors => ("connectorCall", Duration::from_secs(90)),
         Server::Routines => ("routineCall", Duration::from_secs(30)),
+        Server::Workflows => ("workflowCall", crate::chat::manage::APPROVAL_TIMEOUT + Duration::from_secs(30)),
         Server::Computer => ("computerCall", Duration::from_mins(1)),
         // Starting a dev server may wait on an approval card, then for its port.
         Server::Chat if params["name"] == crate::dev_servers::START => {
@@ -176,11 +238,19 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
         Server::Chat if params["name"] == crate::chat::decision::TOOL => {
             ("chatCall", crate::chat::decision::WAIT + Duration::from_secs(20))
         }
+        // `ask_task` waits for the thread's answer.
+        Server::Chat if params["name"] == crate::chat::work::ask::TOOL => {
+            ("chatCall", crate::chat::work::ask::WAIT + Duration::from_secs(20))
+        }
         Server::Chat => ("chatCall", Duration::from_secs(if params["name"] == "send_file" { 70 } else { 30 })),
         Server::Team => ("teamCall", Duration::from_secs(30)),
         Server::Manage => ("manageCall", crate::chat::manage::APPROVAL_TIMEOUT + Duration::from_secs(30)),
         Server::Memory => ("memoryCall", Duration::from_mins(2)),
         Server::Composio => ("composioCall", Duration::from_mins(2)),
+        // A session may wait for its mail.
+        Server::Network if params["name"] == "check_inbox" => {
+            ("agentCall", Duration::from_secs(crate::chat::team::mailbox::WAIT_MAX_SECS + 15))
+        }
         // The first listing may wait for the other computers.
         Server::Network => ("agentCall", Duration::from_secs(30)),
     };
@@ -204,6 +274,7 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
                         | Server::Manage
                         | Server::Memory
                         | Server::Routines
+                        | Server::Workflows
                         | Server::Network
                         | Server::Connectors => {
                             json!({"content": [{"type": "text", "text": v.to_string()}]})
@@ -235,7 +306,7 @@ pub async fn serve_local(connector: String, port: u16) -> Result<()> {
     }
     let v: Value = res.json().await?;
     let command = v["command"].as_str().ok_or_else(|| anyhow::anyhow!("Not a local connector"))?;
-    let mut child = tokio::process::Command::new(crate::shell::program(command));
+    let mut child = tokio::process::Command::new(codync_agent::shell::program(command));
     child.args(v["args"].as_array().into_iter().flatten().filter_map(Value::as_str));
     for (k, v) in v["env"].as_object().into_iter().flatten() {
         if let Some(v) = v.as_str() {
@@ -254,4 +325,34 @@ pub async fn serve_local(connector: String, port: u16) -> Result<()> {
         anyhow::bail!("Connector exited unsuccessfully");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_threads_chat_server_lists_only_what_a_thread_may_call() {
+        let names = |thread: bool| -> Vec<String> {
+            let tools = chat_tools(thread);
+            tools.as_array().into_iter().flatten().filter_map(|t| t["name"].as_str().map(str::to_owned)).collect()
+        };
+        let (chat, thread) = (names(false), names(true));
+        for kept in ["request_decision", "send_file", "publish_artifact", "list_artifacts", "start_dev_server"] {
+            assert!(thread.iter().any(|n| n == kept), "{kept} missing from {thread:?}");
+        }
+        let told = crate::chat::outbox::instructions(true);
+        for gone in ["send_message", "react", "save_skill", "add_task", "recall_task", "set_name", "set_fallbacks"] {
+            assert!(chat.iter().any(|n| n == gone), "the chat has {gone}");
+            assert!(!thread.iter().any(|n| n == gone), "{gone} offered to a thread");
+            assert!(!told.contains(gone), "a thread is told of {gone}: {told}");
+        }
+        assert!(!told.contains("(pass)"), "{told}");
+    }
+
+    #[test]
+    fn the_network_server_refuses_a_bots_agent() {
+        assert!(refuse_bot(Some("bot-1".into())).is_some_and(|v| v["isError"] == true));
+        assert!(refuse_bot(None).is_none());
+    }
 }

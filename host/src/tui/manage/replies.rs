@@ -78,6 +78,7 @@ impl App {
                     }
                 }
             }
+            Reply::Workflow(reply) => self.workflow_reply(reply, &v),
             Reply::Routines(bot) => {
                 if v["routines"].is_array() {
                     let (work, max_threads) = self.bots.get(&bot).map_or((&[][..], None), |b| (&b.work, b.max_threads));
@@ -98,6 +99,7 @@ impl App {
                     self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.clone()));
                 }
             }
+            Reply::OlderThreads(bot) => self.older_threads(&bot, Some(&v)),
             Reply::Library(bot) => self.library_loaded(&bot, v["items"].as_array().map_or(&[], Vec::as_slice)),
             Reply::Gear(backend) => {
                 let lists = super::gear::GearLists {
@@ -233,7 +235,7 @@ impl App {
                     });
                 }
             }
-            Reply::Models(backend) => {
+            Reply::Models(key) => {
                 let mut list: Vec<_> =
                     v["models"].as_array().into_iter().flatten().filter_map(AgentModel::parse).collect();
                 if v["defaultModelOptions"] == true
@@ -255,10 +257,10 @@ impl App {
                     );
                 }
                 if v["fastMode"] == true {
-                    self.fast_mode.insert(backend.clone());
+                    self.fast_mode.insert(key.clone());
                 }
-                self.modes.insert(backend.clone(), crate::tui::app::parse_modes(&v));
-                self.models.insert(backend, Some(list));
+                self.modes.insert(key.clone(), crate::tui::app::parse_modes(&v));
+                self.models.insert(key, Some(list));
             }
             Reply::Downloaded => {
                 let paths: Vec<String> =
@@ -276,8 +278,10 @@ impl App {
 
     fn sheet_error(&mut self, r: &Reply, e: String) {
         match r {
-            Reply::Models(backend) => {
-                self.models.insert(backend.clone(), Some(vec![]));
+            // The page keeps what it has; the next try comes when the page opens again.
+            Reply::OlderThreads(bot) => self.older_threads(bot, None),
+            Reply::Models(key) => {
+                self.models.insert(key.clone(), Some(vec![]));
             }
             Reply::RoutineSaved => {
                 if let Some(Overlay::Routine(f)) = self.overlays.last_mut() {
@@ -376,6 +380,7 @@ impl App {
                 }
                 self.flash(&e);
             }
+            Reply::Workflow(reply) => self.workflow_failed(reply, &e),
             Reply::Memory(_) | Reply::MemorySaved(_) | Reply::MemoryFile(_) | Reply::Routines(_) => {
                 for o in &mut self.overlays {
                     match o {

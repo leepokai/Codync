@@ -40,12 +40,12 @@ onFlowComplete:
       visible: "Skip"
     commands:
       - tapOn: "Skip"
-# The bot list's header (Computers, or how many are connected) opens a menu that leads there.
+# The bot list's filter button (top right; named Computers and how many are connected) opens a menu that leads there.
 - runFlow:
     when:
       notVisible: "Manage computers"
     commands:
-      - tapOn: "(Computers|\\d+ connected)"
+      - tapOn: "Computers, .*Filter conversations"
 - runFlow:
     when:
       visible: "Manage computers"

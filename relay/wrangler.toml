@@ -2,3 +2,7 @@ name = "codync-relay"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
+# push.codync.dev is the address phones register (*.workers.dev is blocked in mainland China, #570); the
+# workers.dev address stays on for the phones and hosts that still use it.
+workers_dev = true
+routes = [{ pattern = "push.codync.dev", custom_domain = true }]

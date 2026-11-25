@@ -10,8 +10,14 @@ use std::sync::Arc;
 /// The bot or group `b` asks for, with the defaults for what the caller left out.
 pub async fn with_defaults(hub: &Arc<Hub>, mut b: Value) -> Result<BotConfig> {
     b["id"] = "".into();
-    // A lead is made by the host or picked by the user (`chat::lead`), never on creation.
+    // A lead is made by the host or picked by the user (`chat::lead`), never on creation; the box of threads
+    // without a bot only by the host (`chat::work::plain`).
     b["lead"] = false.into();
+    b["plain"] = false.into();
+    // An older app names when threads get worktrees with a bool.
+    if let Some(on) = b["threadWorktrees"].as_bool().filter(|_| b["worktreeMode"].is_null()) {
+        b["worktreeMode"] = json!(crate::store::WorktreeMode::default().with_switch(on));
+    }
     // Connectors are on for a new bot unless the client picked them.
     if b["connectors"].is_null() && b["kind"] != "group" {
         b["connectors"] = default_connectors(hub).await?;
@@ -22,11 +28,11 @@ pub async fn with_defaults(hub: &Arc<Hub>, mut b: Value) -> Result<BotConfig> {
     }
     // A bot works in its agent's Auto mode and asks about the rest, unless the client picked how it approves.
     if b["permission"].is_null() && b["mode"].is_null() && b["kind"] != "group" {
-        b["mode"] = crate::agent::modes::AUTO.into();
+        b["mode"] = codync_agent::modes::AUTO.into();
     }
     // And the agent, when the client names none.
     if b["backend"].as_str().is_none_or(str::is_empty) && b["kind"] != "group" {
-        let agents = tokio::task::spawn_blocking(super::backends::list).await?;
+        let agents = tokio::task::spawn_blocking(codync_agent::backends::list).await?;
         b["backend"] = default_backend(&agents).into();
     }
     serde_json::from_value(b).context("invalid bot")

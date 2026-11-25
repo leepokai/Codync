@@ -7,18 +7,79 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.54.0
+### zh-Hant
+- Thread 不再於結束一週後被刪除：在 Threads 分頁捲到最底就會載入更早的 thread，可以照常打開和繼續傳訊息。想自動清理的話，在「電腦」裡該電腦的「刪除舊的 thread」選 7、30 或 90 天後，預設是永久保留。
+- 例行工作可以指定資料夾：在例行工作編輯器的「資料夾」選一個資料夾，每次執行都會在那個資料夾裡用自己的 thread 進行；不選就在 Bot 的資料夾。
+- Bot 設定的「工作區」新增「專案」：Bot 一律在自己的資料夾，thread 在預設專案工作；專案是 git 儲存庫時可選「worktree 模式」。原本在專案裡的 Bot 會搬回自己的資料夾，專案保留為第一個。
+- git 專案新增「共用資料夾」：列出的資料夾（例如 node_modules）會連結到每個新的 worktree，不必重新安裝套件。
+- 新增 Threads 分頁：列出 Bot 所有的 thread，需要你處理的排最上面，接著是分組和最近的 thread。右上角的篩選按鈕可以「依資料夾分組」、「依 Bot 分組」或「依電腦分組」，也能「依狀態排序」或「依最近活動排序」；旁邊的搜尋可以用標題或 Bot 名稱找 thread，+ 和電腦版一樣預設開一個不使用 Bot 的 thread（可以選 agent 和模型），也可以改選一個 Bot，寫下第一則訊息就開始；長按 thread 可以停止、插隊、重試、複製標題或移除。分頁上的數字是正在處理的數量；原本 Bot 列表上方的「工作」按鈕已移除。
+- Bot 分頁的篩選選單新增「依電腦分組」和「依狀態排序」；「將有新動態的機器人移到最前面」改成這裡的「依最近活動排序」，不再放在管理電腦裡。
+- Bot 分頁的圖示改成機器人，和電腦版一致；右上角改成篩選、搜尋和新增三個按鈕，搜尋可以用名稱找 Bot，連線狀態移到標題下方；Threads 分頁也一樣。
+- 換 Bot 的 agent 或登入設定檔後，新的 agent 不再從零開始：下一則訊息會帶上目前對話的摘要。送出前聊天裡會出現「脈絡交接待進行」的分隔線，標出從哪個 agent 換到哪個，送出後可以點開看帶了什麼。
+- 新增 Workflows 分頁（圖示和電腦版相同）：查看這台電腦的 workflow、它的步驟、觸發條件和執行紀錄，並直接核准或拒絕等待你核准的步驟。右上角可以用標題搜尋 workflow，有多台電腦時可以切換電腦。Workflow 在電腦版建立和編輯；長按 workflow 可以釘選到 Bot 列表上方。
+- 用量畫面和小工具把 Claude 的用量標示為「Claude Code」，與 Bot 使用的 agent 名稱一致。
+- 在 Bot 列表長按刪除 Bot 或群組聊天，確認後會真的刪掉。
+- 選 agent 時一起選登入設定檔：Bot 設定和 fallback 的 agent 清單裡，每個 agent 依登入設定檔各列一次，清單最後可以新增登入設定檔；原本獨立的「登入設定檔」列已移除。
+- 聊天的輸入框改成上下兩層：上面打字，下面一排是加檔案的 +、Bot 目前的 agent 和模型、麥克風和送出鍵。點模型會打開和電腦版一樣的模型面板：左邊是 agent，右邊直接列出模型可以搜尋，下面是推理強度和快速模式，不必進 Bot 設定。
+- 在中國大陸也能收到推播通知了。
+- 點開 thread 會像電腦版一樣以聊天畫面全螢幕顯示：訊息和回覆是對話泡泡，卡片、檔案和 artifact 直接在 thread 裡處理；右上角「詳情」可打開 Bot 的詳細資訊。
+
+### en-US
+- Threads are no longer deleted a week after they end: scroll to the end of the Threads tab to load older ones, which open and take messages as before. To clean up on its own, pick 7, 30 or 90 days under Delete old threads for that computer in Computers; the default keeps them forever.
+- A routine can name a folder: pick one under Folder in the routine editor and each run works there in a thread of its own; without one it runs in the bot's folder.
+- Bot settings add Projects: a bot always lives in its own folder, and threads work in its default project. Worktree mode (Off, Side by side, Always) shows for git projects. Bots that worked in a project move home, the project kept as their first.
+- Git projects add Shared folders: folders like node_modules are linked into each new worktree, so packages aren't installed again.
+- A new Threads tab lists every thread of your bots: what needs you on top, then groups, then recent ones. Its filter button groups them by folder, bot or computer and sorts them by status or last active; Search beside it finds threads by title or bot, and + starts a new thread from its first message, like the desktop's: without a bot by default (pick its agent and model), or with a bot you choose; touch and hold a thread to stop it, let it cut in, try it again, copy its title or drop it. Its badge counts what is being worked on. The Work button at the top of the bot list is gone.
+- The Bots tab's filter menu adds Group by computer and Sort by status. Move active bots to the top is now Sort by last active there, no longer in Manage computers.
+- The Bots tab has the robot icon the desktop app uses, and its top right holds Filter, Search and New: search finds bots by name, and the connection status sits under the title, on the Threads tab too.
+- Changing a bot's agent or login profile no longer starts it from nothing: your next message carries a summary of the conversation. Until then a divider in the chat reads Context handoff pending with both agents; afterwards tap it to see what was carried.
+- A Workflows tab, with the desktop's icon: see a computer's workflows, their steps, triggers and run history, and approve or reject a step that waits for you. Search at the top right finds a workflow by title, and with more computers than one the filter button switches computer. Workflows are built and edited in the desktop app. Long-press a workflow to pin it above the bots.
+- Usage and widgets name Claude's usage "Claude Code", the same name bots use for that agent.
+- Deleting a bot or group chat from its long-press menu in the bot list works again.
+- Pick an agent and its login profile in one step: a bot's and each fallback's agent list shows every agent once per login profile and ends with Add login profile. The separate Login profile row is gone.
+- The message box now has two layers: you type on top, and under it are the + for files, the bot's agent and model, the mic and send. Tap the model for the same model panel as on the desktop: the agents on the left, their models listed right away with a search, then effort and Fast mode, without opening the bot's settings.
+- Push notifications now reach phones and computers in mainland China.
+- A thread now opens full screen as a chat, like on the desktop: messages and replies as bubbles, its cards, files and artifacts right there; Details at the top right opens the bot's details.
+
+## 2.53.0
+### zh-Hant
+- Claude Code 的 Bot 使用 subagent 時，展開的工作步驟、「完整對話」和 task 的 thread 裡，subagent 做的步驟會縮排在啟動它的那一步底下；那一步也會顯示 subagent 的類型、用了多少 token 和花了多久，在背景執行的則顯示「在背景執行」。
+- 第一次打開很長的聊天時，會直接停在最新的訊息，不會再跳到較早的訊息。
+
+### en-US
+- When a Claude Code bot uses subagents, each subagent's steps sit indented under the step that started it, in the unfolded working steps, Full conversation and a task's thread. That step also shows the subagent's type, the tokens it used and how long it took, or "in background" for one that runs in the background.
+- Opening a long chat for the first time now lands on its newest message instead of earlier ones.
+
+## 2.52.0
+### zh-Hant
+- 有些 agent（例如 Hermes）會在回覆中途問你問題，現在這些問題會顯示在聊天的選擇卡片上，等你回答，不會再被「自動核准」替你選第一個選項。有選項的問題只能選其中一個，卡片上不再顯示「其他答案」那一列。
+- Bot 設定新增「顧問模式」：thread 可以用自己的 agent、模型和備用列表。
+- 等你回覆的 thread 不再佔名額，下一件 task 可以先開始。
+- 你補充正在進行的 task，Bot 會轉給它的 thread。
+- 寫給 thread 的訊息也能附照片和檔案。
+
+### en-US
+- Some agents, such as Hermes, ask you questions mid-reply. These now wait for you on the chat's choice card, and Approve automatically no longer picks their first option for you. A question with options takes one of them, so its card has no Something else row.
+- Advisor mode: a bot's threads can run on their own agent, model and fallbacks.
+- A thread waiting for you frees its place for the next task.
+- The bot passes what you add about a task on to its thread.
+- Messages to a thread can carry photos and files.
+
 ## 2.51.0
 ### zh-Hant
-- Bot 離開聊天做的事現在有兩個清楚的名稱：一件工作叫 task，被啟動來做 task 的那段工作階段叫 thread。一個 thread 一次做一件 task，做完可以接下一件。
+- Bot 離開聊天做的事現在有兩個清楚的名稱：一件工作叫 task，Bot 做 task 的地方叫 thread，有自己的工作階段。一個 thread 一次做一件 task，做完可以接下一件。
 - 聊天上方的「背景」那一行改名為「工作」，和「工作」頁同名。
 - thread 都在忙、要選一件讓位時，提示改成「所有 thread 都在忙」；停止一件工作時問的是「停止這個 task？」。
 - 配對說明改成「配對手機」，和電腦選單上的名稱一致：Mac 選單列原本的「配對 iPhone…」現在叫「配對手機…」。
+- 第一次設定時可以直接建立 Codync Cloud 雲端電腦，不用先在電腦上安裝 Codync。
 
 ### en-US
-- A bot's work away from the chat has two names: a task is one piece of work, a thread the session that does tasks, one at a time.
+- A bot's work away from the chat has two names: a task is one piece of work, a thread where the bot does tasks, one at a time, with its own session.
 - The "In the background" line above the chat is now "Work".
 - Prompts say "Every thread is busy" and "Stop this task?".
 - Pairing instructions now say Pair phone, as the computer's menu does.
+- First-time setup can start a Codync Cloud computer instead of installing Codync on yours.
 
 ## 2.50.0
 ### zh-Hant

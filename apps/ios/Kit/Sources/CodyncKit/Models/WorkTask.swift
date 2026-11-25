@@ -1,7 +1,7 @@
 import Foundation
 
 /// One piece of work in a bot's box (the host's `chat/work/`), as its bot carries it (`bot.work`): the live and
-/// waiting tasks in dispatch order, then the ones that ended in the last day. A thread (an agent session) works it;
+/// waiting tasks in dispatch order, then the ones that ended in the last day. A thread (with its own session) works it;
 /// `thread` names it, for its transcript (`threadEntries`). What the words say is decided here, the same on Android
 /// and the desktop.
 public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
@@ -113,12 +113,22 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
     public var worktree: Worktree?
     /// Its thread takes the user's messages (`WorkThread.swift`). False from an older host.
     public var talk: Bool
+    /// Its thread takes files with the user's messages too. False from a host before them, where the composer has no +.
+    public var talkFiles: Bool
     /// The folder its thread works in on the computer; nil before a thread took it, and from an older host.
     public var folder: String?
+    /// It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); nil from an
+    /// older host, where every live task takes one (`takesSeat`).
+    public var seat: Bool?
+    /// The agent a thread the user started runs on, where it isn't its bot's (always without a bot); nil for the bot's.
+    public var agent: String?
+
+    /// Where its thread works on the computer: its folder, else its worktree's; nil when the host names neither.
+    public var wherePath: String? { [folder, worktree?.path].compactMap(\.self).first { !$0.isEmpty } }
 
     public init(id: String, title: String, status: Status, activity: String = "", thread: String? = nil, wait: Wait? = nil,
                 cutIn: Bool = false, createdAt: Int64 = 0, startedAt: Int64? = nil, endedAt: Int64? = nil, result: String = "",
-                source: Source? = nil, worktree: Worktree? = nil, talk: Bool = false, folder: String? = nil) {
+                source: Source? = nil, worktree: Worktree? = nil, talk: Bool = false, talkFiles: Bool = false, folder: String? = nil, seat: Bool? = nil, agent: String? = nil) {
         self.id = id
         self.title = title
         self.status = status
@@ -133,7 +143,10 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
         self.source = source
         self.worktree = worktree
         self.talk = talk
+        self.talkFiles = talkFiles
         self.folder = folder
+        self.seat = seat
+        self.agent = agent
     }
 
     /// Lenient, but for what says which task it is and where it stands: one without an id, or with a status this
@@ -155,16 +168,23 @@ public struct WorkTask: Codable, Identifiable, Hashable, Sendable {
         source = try? c.decodeIfPresent(Source.self, forKey: .source)
         worktree = try? c.decodeIfPresent(Worktree.self, forKey: .worktree)
         talk = (try? c.decodeIfPresent(Bool.self, forKey: .talk)) ?? false
+        talkFiles = (try? c.decodeIfPresent(Bool.self, forKey: .talkFiles)) ?? false
         folder = try? c.decodeIfPresent(String.self, forKey: .folder)
+        seat = try? c.decodeIfPresent(Bool.self, forKey: .seat)
+        agent = try? c.decodeIfPresent(String.self, forKey: .agent)
     }
+
+    /// It takes one of the bot's seats (`maxThreads`): the host's word, else a live task.
+    public var takesSeat: Bool { seat ?? status.isLive }
 
     /// Try again is offered on a task that failed or was stopped, unless another bot asked for it: that bot has
     /// its answer already. A routine's task runs the routine again.
     public var canRetry: Bool { (status == .failed || status == .stopped) && source?.kind != .request }
 
-    /// A thread has it and it may give way to a task that cuts in: only work the bot added. A routine's run or
-    /// another bot's request is stopped, never set aside.
-    public var givesWay: Bool { status.isLive && source == nil }
+    /// A thread has it and it may give way to a task that cuts in: only work the bot added that holds a seat. A
+    /// routine's run or another bot's request is stopped, never set aside, and a thread the user started never holds
+    /// a seat (`seat`).
+    public var givesWay: Bool { status.isLive && takesSeat && source == nil }
 }
 
 /// A bot's `work` as the host sent it, each task that doesn't read left out.
@@ -246,6 +266,9 @@ public enum WorkAction: String, Sendable {
         case .retry: "arrow.clockwise"
         }
     }
+
+    /// It ends or takes away what the task did so far: shown in red.
+    public var destructive: Bool { self == .stop || self == .drop }
 }
 
 /// A bot's tasks as its details list them: Threads (what needs the user, then what is worked on), the event box
@@ -275,8 +298,11 @@ public struct WorkSections: Equatable, Sendable {
 
     /// How many more threads the bot may run. A host that doesn't say how many it runs at once: three.
     public func free(maxThreads: Int?) -> Int {
-        max(0, (maxThreads ?? Bot.defaultMaxThreads) - live.count)
+        max(0, (maxThreads ?? Bot.defaultMaxThreads) - inUse)
     }
+
+    /// The seats taken: a thread waiting on the user takes none.
+    public var inUse: Int { live.filter(\.takesSeat).count }
 
     /// Every thread is busy: a task starts now only when a live one gives way.
     public func isFull(maxThreads: Int?) -> Bool {
@@ -293,9 +319,9 @@ public struct WorkSections: Equatable, Sendable {
         return isFull(maxThreads: maxThreads) && !givingWay.isEmpty && first.wait?.kind != .after && first.wait?.kind != .usage
     }
 
-    /// The Threads heading's `2 / 3`: how many run, of the most allowed.
+    /// The Threads heading's `2 / 3`: the seats taken, of the most allowed.
     public func threadsCount(maxThreads: Int?) -> String {
-        "\(live.count) / \(maxThreads ?? Bot.defaultMaxThreads)"
+        "\(inUse) / \(maxThreads ?? Bot.defaultMaxThreads)"
     }
 
     /// What a task's row offers, the one that shows on the row first.
@@ -321,18 +347,6 @@ public struct WorkSections: Equatable, Sendable {
     public func capsuleLabel(_ tr: (String) -> String = { L10n.tr($0) }) -> String {
         let said = needsYou.isEmpty ? [solo?.what(tr) ?? counts(tr)] : [tr("Needs you"), counts(tr)]
         return ([tr("Work")] + said).filter { !$0.isEmpty }.joined(separator: " · ")
-    }
-}
-
-/// All bots' work in one view: the roster's rows whose bot has a live or waiting task, in roster order, and how
-/// many tasks are worked on in all (the count on the view's button).
-public struct AllWork<Row> {
-    public var bots: [Row]
-    public var working: Int
-
-    public init(_ roster: [Row], work: (Row) -> [WorkTask]) {
-        bots = roster.filter { !WorkSections(work($0)).isIdle }
-        working = bots.reduce(0) { $0 + work($1).count { $0.status == .working } }
     }
 }
 
@@ -404,6 +418,17 @@ public extension Bot {
         if needsInput || !work.needsYou.isEmpty { return .needsYou }
         if isWorking { return .activity }
         return work.isIdle ? .lastMessage : .work
+    }
+
+    /// Where the bot stands in a list sorted by status (the desktop's `rosterRank`): it needs the user, it works, it
+    /// has work going on, the rest.
+    var statusRank: Int {
+        switch rosterLine {
+        case .needsYou: 0
+        case .activity: 1
+        case .work: 2
+        case .lastMessage: 3
+        }
     }
 }
 

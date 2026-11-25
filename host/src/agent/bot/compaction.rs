@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use super::{Actor, Adapter, Done, Instructions, Queued};
+use super::{Actor, Adapter, Conn, Done, Instructions, Queued};
 use crate::chat::{context, handoff, memory};
 use crate::store::{BotConfig, EntryKind, Lane, Store, now_ms};
 use codync_mem::compaction::{self as rules, CacheLife, Conversation, Decision, Threshold};
@@ -54,7 +54,7 @@ fn conversation_key(bot: &str, session: &str) -> String {
 }
 
 /// What is known of `bot`'s conversation in `session`: how full its window is, and its compactions.
-pub(crate) fn conversation(store: &Store, bot: &str, session: &str) -> Conversation {
+fn conversation(store: &Store, bot: &str, session: &str) -> Conversation {
     store.kv_get(&conversation_key(bot, session)).and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default()
 }
 
@@ -101,6 +101,7 @@ impl Actor {
         self.lane.chat == self.cfg.id
             && self.active_group.is_none()
             && self.active_routine.is_none()
+            && self.active_workflow.is_none()
             && self.active_request.is_none()
             && self.turn_session.is_some()
             && self.turn_session == self.session_id
@@ -108,7 +109,7 @@ impl Actor {
 
     /// The adapter the bot's agent runs; before it runs, its harness's.
     fn adapter(&self) -> Adapter {
-        self.conn.as_ref().map_or_else(|| harness_adapter(&self.cfg.backend), |c| c.adapter)
+        self.conn.as_ref().map_or_else(|| harness_adapter(&self.cfg.backend), Conn::adapter)
     }
 
     /// The command that makes the agent compact, with the keep-list where it takes one.
@@ -121,7 +122,7 @@ impl Actor {
     }
 
     fn threshold(&self) -> Threshold {
-        threshold(&self.hub.store, &self.cfg, self.conn.as_ref().map(|c| c.adapter))
+        threshold(&self.hub.store, &self.cfg, self.conn.as_ref().map(Conn::adapter))
     }
 
     /// Keeps the main chat's window for the apps, which offer sizes up to what it holds; none for an agent Codync

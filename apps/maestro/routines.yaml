@@ -1,5 +1,5 @@
 # Routines on the phones in Italian: the list row's schedule line, then the editor's trigger choice, the host's sentence
-# and the next run, and the run settings' timeout and seconds label. The phone must already be signed in and paired with
+# and the next run, the run settings' timeout and seconds label, and the routine's folder, cleared and saved. The phone must already be signed in and paired with
 # the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`; the iPhone
 # gets Italian from its launch arguments, Android from its language file, written before the run:
 #   adb shell run-as com.pokai.Codync.android.dev sh -c 'mkdir -p shared_prefs && echo "<map><string name=\"appLanguage\">it</string></map>" > shared_prefs/codync-language.xml'
@@ -43,13 +43,37 @@ onFlowComplete:
 - tapOn: "Daily check"
 - assertVisible: "Pianificazione"
 - assertVisible: "Ogni giorno alle 09:00 · Europe/Rome"
-- assertVisible: "Prossima esecuzione: .*"
+# The folder row above pushes the sentence's next run and the run settings below the fold on a phone.
+- scrollUntilVisible:
+    element: "Prossima esecuzione: .*"
+    direction: DOWN
 - assertVisible: "Timeout 1 ora"
 - takeScreenshot: routines-editor
+- scrollUntilVisible:
+    element: "Impostazioni di esecuzione"
+    direction: DOWN
+    centerElement: true
 - tapOn: "Impostazioni di esecuzione"
-- assertVisible: "Timeout \\(secondi\\)"
+- scrollUntilVisible:
+    element: "Timeout \\(secondi\\)"
+    direction: DOWN
 - takeScreenshot: routines-run-settings
 # The trigger menu offers Webhook in the same language; picking it leaves the sentence for the webhook's note.
 - tapOn: "Pianificazione"
 - tapOn: "Webhook"
 - assertNotVisible: "Ogni giorno alle 09:00 · Europe/Rome"
+# Its folder shows by name; the x puts it back to the bot's folder, and the save keeps that.
+- scrollUntilVisible:
+    element: "Cartella"
+    direction: UP
+- assertVisible: "tmp"
+- takeScreenshot: routines-folder
+- tapOn: "Usa la cartella del bot"
+- assertVisible: "Cartella del bot"
+# The editor's save button isn't translated yet.
+- tapOn: "Save changes"
+- assertNotVisible: "Save changes"
+- runScript:
+    file: routines.js
+    env:
+      CHECK_FOLDER: "true"

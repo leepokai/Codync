@@ -63,6 +63,10 @@ onFlowComplete:
 - assertVisible: "“mode”"
 - tapOn: "Reply…"
 - inputText: "why this one"
+# Maestro types on iOS as a hardware keyboard, which hides the simulator's keyboard; the next touch brings it back and
+# lifts the composer, so the Send tap would land on the keyboard. Touch the field first and let the keyboard settle.
+- tapOn: "why this one"
+- waitForAnimationToEnd
 - tapOn: "Send"
 # The bubble keeps the part, and the bot is told which part the reply is about (its agent answers with what it was sent).
 - extendedWaitUntil:

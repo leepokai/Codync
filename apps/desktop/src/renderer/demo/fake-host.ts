@@ -20,6 +20,7 @@ export class FakeHost {
   private nextReply = new Map<string, number>()
   /** Already chosen, so the demo never asks for consent. */
   private analytics = true
+  private threadKeepDays = 0
 
   constructor(
     readonly version: string,
@@ -27,7 +28,9 @@ export class FakeHost {
     now = Date.now(),
   ) {
     for (const b of computer.bots) {
-      this.bots.set(b.id, normalizeBot({ ...b, cwd: b.kind === 'group' ? '' : story.cwd, createdAt: now - 86_400_000, permission: b.permission ?? 'auto' }))
+      // Each bot lives in its own folder and works on the demo's project (a git repository), as a host with projects has it.
+      const place = b.kind === 'group' ? { cwd: '' } : { ...home(b.id), projects: [story.cwd], projectGitRepos: [true], worktreeMode: 'sideBySide' as const }
+      this.bots.set(b.id, normalizeBot({ ...b, ...place, createdAt: now - 86_400_000, permission: b.permission ?? 'auto' }))
     }
     for (const s of computer.entries) this.add({ botId: s.botId, kind: s.kind, data: s.data }, s.id, now - s.at * 60_000, false)
     for (const b of this.bots.values()) {
@@ -177,7 +180,7 @@ export class FakeHost {
       case 'hello':
         return {
           hostId: this.hostId, computerId: this.computer.id, signKey: '', boxKey: '', cloud: null, name: this.computer.name,
-          version: this.version, minApp: this.version, os: 'macos', device: this.computer.device, home: '/Users/demo', rev: this.rev, analytics: this.analytics,
+          version: this.version, minApp: this.version, os: 'macos', device: this.computer.device, home: '/Users/demo', projects: true, threadPlace: true, worktreeFill: true, threadFolders: true, rev: this.rev, analytics: this.analytics, threadKeepDays: this.threadKeepDays,
           urls: [], backends: [
             { id: 'claude', name: 'Claude Code', available: true, installed: true, signedIn: true, command: 'claude', installHint: '' },
             { id: 'codex', name: 'Codex', available: true, installed: true, signedIn: true, command: 'codex', installHint: '' },
@@ -288,6 +291,11 @@ export class FakeHost {
       case 'setAnalytics':
         this.analytics = b.enabled === true
         return { enabled: this.analytics }
+      case 'setThreadKeepDays':
+        this.threadKeepDays = typeof b.days === 'number' ? b.days : 0
+        return { days: this.threadKeepDays }
+      case 'olderThreads':
+        return { threads: [], more: false }
       case 'track':
         return {}
       default:
@@ -316,17 +324,21 @@ export class FakeHost {
 
   private saveBot(draft: BotDraft | GroupDraft) {
     const existing = draft.id ? this.bots.get(draft.id) : undefined
-    const bot = normalizeBot({
-      ...(existing ?? { createdAt: Date.now(), cwd: 'cwd' in draft ? draft.cwd || story.cwd : '' }),
-      ...(draft as Partial<Bot>),
-      id: existing?.id ?? crypto.randomUUID(),
-    })
+    const id = existing?.id ?? crypto.randomUUID()
+    const base = existing ?? { createdAt: Date.now(), ...('members' in draft ? { cwd: '' } : { ...home(id), worktreeMode: 'sideBySide' as const }) }
+    // A bot stays in its own folder: what it works on is in its projects.
+    const bot = normalizeBot({ ...base, ...(draft as Partial<Bot>), cwd: base.cwd, id })
     if (existing) Object.assign(existing, bot)
     const saved = existing ?? bot
     this.bots.set(saved.id, saved)
     this.emitBot(saved)
     return this.botJSON(saved)
   }
+}
+
+/** Bot `id`'s own folder, where it lives. */
+function home(id: string) {
+  return { cwd: `/Users/demo/.codync/bots/${id}/workspace`, managedWorkspace: true }
 }
 
 function fail(message: string): CallError {

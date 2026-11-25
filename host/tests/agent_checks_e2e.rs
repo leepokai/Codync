@@ -84,7 +84,7 @@ async fn a_usage_reading_starts_the_agent_with_no_browser_to_open() {
     let home = std::env::temp_dir().join(format!("codync-agent-checks-{}", uuid::Uuid::new_v4()));
     let bin = home.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/usage_command_agent.py");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/agent/tests/fixtures/usage_command_agent.py");
     // Each start logs to a file named for the `BROWSER` it got: the host's sign-in checks start the agent too.
     let script = format!(
         "#!/bin/sh\nUSAGE_AGENT_LOG=\"{home}/calls-${{BROWSER:-none}}.log\" USAGE_AGENT_COMMAND=usage PATH='{path}' exec {python} '{fixture}'\n",

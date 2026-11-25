@@ -61,7 +61,7 @@ pub async fn instructions(
 ) -> String {
     let tenths = if provider == Some(Provider::OpenAi) { OPENAI_TENTHS } else { 10 };
     let cap = |n: usize| n * tenths / 10;
-    let project = super::project::now(&cfg.cwd).await;
+    let project = super::project::now(crate::agent::workspace::work_folder(cfg)).await;
     let (h, c, l) = (hub.clone(), cfg.clone(), language.map(str::to_owned));
     let sections = tokio::task::spawn_blocking(move || background(&h, &c, l.as_deref())).await.unwrap_or_default();
     let mut out = vec![rules(hub, cfg, google_search)];
@@ -81,7 +81,7 @@ pub async fn instructions(
     for (title, from, body, n) in named {
         let body = body.trim();
         if !body.is_empty() {
-            out.push(format!("## {title} (from {from})\n{}", crate::agent::acp::truncate(body, cap(n))));
+            out.push(format!("## {title} (from {from})\n{}", codync_agent::acp::truncate(body, cap(n))));
         }
     }
     out.join("\n\n")
@@ -119,7 +119,7 @@ fn now(language: Option<&str>) -> String {
     if let Some(language) = language.filter(|l| !l.trim().is_empty()) {
         lines.push(format!(
             "The phone's language setting: {} (only for speaking before the user has; then follow the language they speak)",
-            crate::agent::acp::truncate(language.trim(), 40)
+            codync_agent::acp::truncate(language.trim(), 40)
         ));
     }
     lines.join("\n")
@@ -174,12 +174,13 @@ fn bot(hub: &Hub, cfg: &BotConfig) -> String {
     }
     let model = cfg.model.as_deref().map(|m| format!(", model {m}")).unwrap_or_default();
     lines.push(format!("Runs on: {}{model}", crate::agent::fallback::name(&cfg.backend)));
-    let project = Path::new(&cfg.cwd).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    lines.push(format!("Folder: {} (project {project})", cfg.cwd));
+    let folder = crate::agent::workspace::work_folder(cfg);
+    let project = Path::new(folder).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    lines.push(format!("Folder: {folder} (project {project})"));
     // What the bot does before it acts: the agent's mode, then what Codync does with what still asks.
     let mode = match cfg.mode.as_deref() {
         None => "the agent's default mode".to_owned(),
-        Some(crate::agent::modes::AUTO) => "the agent's Auto mode (it decides what's safe)".to_owned(),
+        Some(codync_agent::modes::AUTO) => "the agent's Auto mode (it decides what's safe)".to_owned(),
         Some(mode) => format!("the agent's {mode} mode"),
     };
     let rest = match cfg.permission {
@@ -268,7 +269,7 @@ fn conversation(hub: &Hub, cfg: &BotConfig, recent: &[Entry]) -> String {
 }
 
 /// When something happened, on this computer's clock (as "Now" reads).
-fn local_time(ms: i64) -> String {
+pub(crate) fn local_time(ms: i64) -> String {
     chrono::DateTime::from_timestamp_millis(ms)
         .map_or_else(|| "unknown date".into(), |t| t.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
 }
@@ -342,12 +343,18 @@ pub(crate) mod tests {
             model_options: std::collections::BTreeMap::new(),
             fast_mode: false,
             fallbacks: vec![],
+            thread_agent: None,
+            thread_fallbacks: Vec::new(),
             self_fallbacks: true,
             pinned: false,
             position: 0,
             hidden: false,
+            plain: false,
+            workflow: None,
             section: None,
             notify: None,
+            projects: vec![],
+            shared_folders: std::collections::BTreeMap::new(),
             connectors: vec!["github".into()],
             skills: vec![],
             computer: false,
@@ -361,7 +368,7 @@ pub(crate) mod tests {
             auto_name: false,
             thread_of: None,
             max_threads: 3,
-            thread_worktrees: true,
+            worktree_mode: crate::store::WorktreeMode::SideBySide,
             lead: false,
             created_at: 0,
         }

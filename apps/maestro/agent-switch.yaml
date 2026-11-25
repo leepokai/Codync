@@ -1,0 +1,50 @@
+# A switch the user makes on the phones (docs/features/agent-fallback.md): a bot with a conversation moved to another
+# agent shows a divider "Context handoff pending: Custom command → Codex"; the next message carries the conversation,
+# the divider reads "Context handed off" and unfolds to what was carried. The phone must already be signed in and
+# paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes); the flow makes its own bot:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags fallbacks \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e FIXTURE_AGENT="$PWD/host/tests/fixtures/relay_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - fallbacks
+onFlowComplete:
+  - runScript:
+      file: agent-switch.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: agent-switch.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+- extendedWaitUntil:
+    visible: ".*Context handoff pending.*"
+    timeout: 10000
+- assertVisible: ".*Codex.*"
+- takeScreenshot: agent-switch-pending
+- runScript:
+    file: agent-switch.js
+    env:
+      STEP: send
+- extendedWaitUntil:
+    visible: ".*Context handed off.*"
+    timeout: 15000
+- assertNotVisible: ${output.carried}
+- tapOn: ".*Context handed off.*"
+- extendedWaitUntil:
+    visible: ${output.carried}
+    timeout: 5000
+- takeScreenshot: agent-switch-handed-off

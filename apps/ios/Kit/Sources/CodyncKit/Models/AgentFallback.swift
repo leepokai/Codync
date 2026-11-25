@@ -99,6 +99,11 @@ public struct AgentRest: Codable, Hashable, Sendable {
 
 /// notice: the bot moved to another agent (`back`: to its own), with what the new one was told (`carried`).
 /// Lenient: a field it can't read is left out, so the line (and the chat) always decodes.
+/// A switch the user made: its next message hasn't gone yet, it carried the conversation, or nothing.
+public enum UserSwitchState: String, Codable, Hashable, Sendable {
+    case pending, handedOff, switched
+}
+
 public struct AgentSwitch: Codable, Hashable, Sendable {
     public var from: String?
     public var to: String?
@@ -106,6 +111,13 @@ public struct AgentSwitch: Codable, Hashable, Sendable {
     public var reason: String?
     public var resetsAt: Int64?
     public var carried: String?
+    /// The user made the switch (another agent or login profile): the next message carries the conversation.
+    public var manual: Bool?
+    /// Where a switch the user made is (nil from an older host, or a state this app doesn't know).
+    public var state: UserSwitchState?
+    /// What the chat calls each side: the agent, with its login profile ("Claude Code (Work)").
+    public var fromName: String?
+    public var toName: String?
 
     public init(from decoder: any Decoder) throws {
         guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
@@ -115,22 +127,52 @@ public struct AgentSwitch: Codable, Hashable, Sendable {
         reason = try? c.decodeIfPresent(String.self, forKey: .reason)
         resetsAt = try? c.decodeIfPresent(Int64.self, forKey: .resetsAt)
         carried = try? c.decodeIfPresent(String.self, forKey: .carried)
+        manual = try? c.decodeIfPresent(Bool.self, forKey: .manual)
+        state = try? c.decodeIfPresent(UserSwitchState.self, forKey: .state)
+        fromName = try? c.decodeIfPresent(String.self, forKey: .fromName)
+        toName = try? c.decodeIfPresent(String.self, forKey: .toName)
     }
 }
 
 public extension BotDraft {
-    /// The bot on agent `backend`, on the computer's own login: a fallback on that login goes (a login is in the
-    /// chain once, as the host keeps it).
-    mutating func setAgent(_ backend: String) {
-        guard self.backend != backend else { return }
-        self.backend = backend
-        // A login profile belongs to one agent.
-        loginProfile = nil
+    /// The bot on `login` (an agent on one of its logins): a fallback on that login goes (a login is in the chain once,
+    /// as the host keeps it). Another agent starts on its default model.
+    mutating func setAgent(_ login: AgentLogin) {
+        guard self.login != login else { return }
+        loginProfile = login.loginProfile
+        fallbacks?.removeAll { $0.login == login }
+        guard backend != login.backend else { return }
+        backend = login.backend
         model = nil
         modelOptions = [:]
         // A picked mode becomes the new agent's Auto mode (or, without one, asking).
         if mode != nil { mode = AgentMode.auto }
-        fallbacks?.removeAll { $0.login == AgentLogin(backend: backend) }
+    }
+
+    /// Advisor mode on: its threads start on the bot's own agent, model and fallbacks, for the user to change (on a
+    /// custom command, which the threads' picker doesn't offer, on the first installed agent); off: none.
+    mutating func setAdvisor(_ on: Bool, backends: [Backend]) {
+        guard on else {
+            threadAgent = nil
+            threadFallbacks = []
+            return
+        }
+        guard backend == "custom" else {
+            threadAgent = BotFallback(backend: backend, loginProfile: loginProfile, model: model, modelOptions: modelOptions)
+            threadFallbacks = fallbacks ?? []
+            return
+        }
+        guard let first = backends.first(where: \.available) ?? backends.first else { return }
+        threadAgent = BotFallback.on(first, taken: [])
+        threadFallbacks = []
+    }
+
+    /// Its threads on `login`, as `setAgent` puts the bot on one: a threads' fallback on that login goes.
+    mutating func setThreadAgent(_ login: AgentLogin) {
+        guard threadAgent?.login != login else { return }
+        if threadAgent?.backend == login.backend { threadAgent?.loginProfile = login.loginProfile }
+        else { threadAgent = BotFallback(backend: login.backend, loginProfile: login.loginProfile) }
+        threadFallbacks?.removeAll { $0.login == login }
     }
 }
 

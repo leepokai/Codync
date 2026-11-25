@@ -19,7 +19,7 @@ import { Updates, yieldsToInstall } from './updates'
 import { handleURL, registerAuthIPC, registerSchemes, urlFromArgv } from './auth'
 import { registerSpeech } from './speech'
 import { VoiceShortcutKeys } from './voice-shortcut'
-import { registerScreenIPC } from './screen'
+import { registerScreenIPC, setScreenAgent } from './screen'
 import { registerCloud } from './cloud'
 import { registerCloudAccess } from './cloud-access'
 import { registerChannels } from './channel'
@@ -28,6 +28,7 @@ import { registerSSH } from './ssh'
 import { registerSSHConfig } from './ssh-config'
 import { QuitLifecycle } from './quit-lifecycle'
 import { Island } from './island'
+import { registerNotifications } from './notifications'
 import { registerErrorReports } from './error-reports'
 import { registerRendererRecovery } from './renderer-recovery'
 import { reportHostSetupFailure } from './analytics'
@@ -55,7 +56,7 @@ if (!app.isPackaged && process.env.CODYNC_REMOTE_DEBUG) {
 }
 
 const host = new HostController()
-registerErrorReports(host)
+const reportError = registerErrorReports(host)
 registerRendererRecovery(host)
 host.on('setupFailed', reportHostSetupFailure)
 const account = new AccountService()
@@ -205,6 +206,8 @@ function registerIPC(tray: Tray) {
     for (const device of devices.devices) await host.call('revokeDevice', { key: device.key }).catch(() => {})
     await account.signOutAll()
     if (!(await host.uninstall())) throw new Error('The host could not be safely uninstalled. Data was preserved.')
+    // Codync Screen is a login item of its own, which deleting the data leaves behind.
+    setScreenAgent(false)
     const { rm } = await import('node:fs/promises')
     const { dataDir } = await import('./host-controller')
     await rm(dataDir, { recursive: true, force: true })
@@ -251,6 +254,7 @@ if (yieldsToInstall()) {
     updates.on('upToDate', () => send({ kind: 'upToDate' }))
     registerIPC(tray)
     island.register()
+    registerNotifications(send, reportError)
     // Voice input goes to the island while it's on, else to the chat window's composer.
     new VoiceShortcutKeys((key) => (island.enabled ? island.voiceKey(key) : send({ kind: 'voiceKey', key }, key === 'double'))).register()
     registerAuthIPC()

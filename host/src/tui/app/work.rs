@@ -59,11 +59,16 @@ pub struct WorkTask {
     pub folder: Option<String>,
     /// The user may write to its thread: the bot's own work, whose thread is still there.
     pub talk: bool,
+    /// Its thread takes files too; a host from before them doesn't say, and the terminal types a dropped path there.
+    pub talk_files: bool,
+    /// It takes one of the bot's seats, as the host says (one waiting on the user gives its seat up); none from an
+    /// older host, where every live task takes one ([`Self::takes_seat`]).
+    pub seat: Option<bool>,
 }
 
 impl WorkTask {
     /// A task with an id and a status this terminal knows; any other is left out.
-    fn parse(v: &Value) -> Option<Self> {
+    pub(in crate::tui) fn parse(v: &Value) -> Option<Self> {
         let text = |key: &str| v[key].as_str().unwrap_or_default().to_owned();
         Some(Self {
             id: v["id"].as_str()?.to_owned(),
@@ -84,7 +89,14 @@ impl WorkTask {
             branch: v["worktree"]["branch"].as_str().filter(|b| !b.is_empty()).map(str::to_owned),
             folder: v["folder"].as_str().filter(|f| !f.is_empty()).map(str::to_owned),
             talk: v["talk"] == true,
+            talk_files: v["talkFiles"] == true,
+            seat: v["seat"].as_bool(),
         })
+    }
+
+    /// It takes one of the bot's seats (`maxThreads`): the host's word, else a live task.
+    pub fn takes_seat(&self) -> bool {
+        self.seat.unwrap_or_else(|| self.status.live())
     }
 
     /// A bot's `work`; a host from before the box sends none, and the feature doesn't show.
@@ -129,10 +141,11 @@ impl WorkTask {
             && !matches!(self.source, Some(Source::Request(_)))
     }
 
-    /// A thread has it and it may give way to a task that cuts in: only work the bot added. A routine's run or
-    /// another bot's request is stopped, never set aside.
+    /// A thread has it and it may give way to a task that cuts in: only work the bot added that holds a seat. A
+    /// routine's run or another bot's request is stopped, never set aside, and a thread the user started holds no
+    /// seat (`seat` false), so it never gives way.
     pub fn gives_way(&self) -> bool {
-        self.status.live() && self.source.is_none()
+        self.takes_seat() && self.source.is_none()
     }
 }
 
@@ -166,12 +179,12 @@ pub fn can_cut_in(work: &[WorkTask], max_threads: Option<u8>) -> bool {
     let first = work.iter().find(|i| i.status == WorkStatus::Waiting);
     first.is_some_and(|first| !matches!(first.wait, Some(Wait::After | Wait::Usage)))
         && work.iter().any(WorkTask::gives_way)
-        && work.iter().filter(|i| i.status.live()).count() >= threads_at_once(max_threads)
+        && work.iter().filter(|i| i.takes_seat()).count() >= threads_at_once(max_threads)
 }
 
 /// The Details page's sections of tasks, each in the order its rows show.
 pub struct Sections<'a> {
-    /// The agent sessions that run now: tasks that need the user, then the working ones.
+    /// The threads that run now: tasks that need the user, then the working ones.
     pub threads: Vec<&'a WorkTask>,
     /// What waits for a thread, in the order it will be taken.
     pub waiting: Vec<&'a WorkTask>,
@@ -229,7 +242,7 @@ impl Background {
 
 /// What the chat entry `e` a thread put in the bot's chat (a card, its agent's sign-in card, a file, a voice note, an
 /// artifact) says in that thread: one dim line, its mark and its words, where the entry itself stays in the
-/// chat, which `↵` on the line opens. None for anything else. The apps' `sharedLine`.
+/// chat, which `↵` on the line opens. None for anything else. The apps show the entry itself instead.
 pub fn shared_line(e: &Entry) -> Option<(&'static str, String)> {
     let line = |mark, key: &str, values: &[(&str, &str)]| Some((mark, fill(&tr(key), values)));
     let text = |key: &str| e.data[key].as_str().unwrap_or_default();

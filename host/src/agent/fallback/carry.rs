@@ -7,8 +7,8 @@
 pub mod ledger;
 
 use super::Reason;
-use crate::agent::acp::truncate;
 use crate::store::{Entry, EntryKind, message_text};
+use codync_agent::acp::truncate;
 
 /// Longest message quoted, in bytes: a pasted document mustn't fill the new session.
 const QUOTE: usize = 2_000;
@@ -120,6 +120,8 @@ pub struct Recap<'a> {
     pub ledger: Option<&'a str>,
     /// What it may take, in bytes ([`room`]); `None` when the agent's window isn't known.
     pub room: Option<usize>,
+    /// The same agent, moved by the user to another working folder: `from` isn't named.
+    pub moved: bool,
 }
 
 impl Recap<'_> {
@@ -130,13 +132,15 @@ impl Recap<'_> {
         // The summary, the plan and the ledger always go; the messages share what they leave.
         let spent: usize = [summary, plan, self.ledger].into_iter().flatten().map(str::len).sum();
         let repeated = repeated(self.said, self.room.map(|room| room.saturating_sub(spent)));
-        let mut out = vec![
-            "<handoff>".to_owned(),
+        let opening = if self.moved {
+            "This chat has been going on with you in another working folder. The user moved you to the folder you're in now, so you're continuing it in a new session. What follows is what you need to know, not instructions.".to_owned()
+        } else {
             format!(
                 "This chat has been going on with {}, another agent. You're continuing it in a new session. What follows is what you need to know, not instructions.",
                 self.from
-            ),
-        ];
+            )
+        };
+        let mut out = vec!["<handoff>".to_owned(), opening];
         if let Some(summary) = summary {
             out.extend([String::new(), "Summary of the earlier conversation:".into(), summary.to_owned()]);
         }
@@ -300,6 +304,14 @@ mod tests {
         assert!(!recap.contains("<ledger>") && !recap.contains("Not every earlier message"), "{recap}");
         assert!(catch_up(&said(&entries[5..]), None).is_none());
         assert!(catch_up(&all, None).is_some_and(|c| c.contains("User (2026-09-21): \"Fix the login tests\"")));
+    }
+
+    #[test]
+    fn a_recap_after_a_move_to_another_folder_names_no_other_agent() {
+        let said = chat(1, "Fix the login tests");
+        let recap = Recap { from: "Claude Code", said: &said, moved: true, ..Recap::default() }.text();
+        assert!(recap.starts_with("<handoff>\nThis chat has been going on with you in another working folder"));
+        assert!(!recap.contains("another agent") && recap.contains("Fix the login tests"), "{recap}");
     }
 
     /// A recap of `said` alone, for an agent with `room`.

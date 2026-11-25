@@ -2,21 +2,37 @@
 
 use super::fast_mode::Listing;
 use super::launch::{claude_meta, launch_commands, select_model, start_agent, start_first, system_prompt};
-use super::{Actor, Adapter, Conn, Instructions, codex_names, pi_tools};
-use crate::agent::acp::{self, Incoming};
+use super::{Actor, Adapter, Conn, Instructions, ServerWatch, background_work};
 use crate::agent::own_memory;
-use crate::agent::registry::Candidate;
+use crate::analytics::Retired;
 use crate::chat::{context, memory};
 use crate::store::run_session_key;
 use anyhow::{Context, Result, anyhow, bail};
+use codync_agent::acp::{self, Incoming};
+use codync_agent::events::{Event, Update};
+use codync_agent::mcp_names::{self, Renamed};
+use codync_agent::registry::Candidate;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
+/// Seconds pi waits for a tool call (60 by default): past the host's own limit for any of them (`mcp::call`, the
+/// longest a team change waiting for its approval).
+const PI_CALL_TIMEOUT: u64 = crate::chat::manage::APPROVAL_TIMEOUT.as_secs() + 60;
+
 impl Actor {
+    /// Renames the servers `agent`'s own config already names (`codync_agent::mcp_names`).
+    async fn avoid_clashes(&self, agent: mcp_names::Agent, servers: &mut Value) -> Renamed {
+        let home = self.saved_env(agent.home_var());
+        mcp_names::avoid_clashes(agent, servers, &self.cfg.cwd, home, crate::agent::APP).await
+    }
+
     /// Which session the running turn uses: a routine run has one of its own (by its slot); everything else uses
     /// the main one.
     pub(super) fn slot(&self) -> Option<String> {
-        self.active_routine.as_deref().map(crate::routines::session_slot)
+        self.active_workflow
+            .as_deref()
+            .map(crate::workflows::session_slot)
+            .or_else(|| self.active_routine.as_deref().map(crate::routines::session_slot))
     }
 
     pub(super) fn session_for(&mut self, slot: Option<&str>) -> Option<String> {
@@ -70,15 +86,15 @@ impl Actor {
         if let Some(sid) = session {
             params["sessionId"] = sid.into();
         }
-        if self.conn.as_ref().is_some_and(|c| c.sessions.additional_directories) {
+        if !self.cfg.plain && self.conn.as_ref().is_some_and(|c| c.sessions.additional_directories) {
             params["additionalDirectories"] = json!(memory::files::folders(&self.cfg.as_owner()));
         }
         params
     }
 
     /// What the turn's session calls Codync's MCP servers that it knows by another name.
-    pub(super) fn renamed(&self) -> &codex_names::Renamed {
-        static NONE: codex_names::Renamed = codex_names::Renamed::new();
+    pub(super) fn renamed(&self) -> &Renamed {
+        static NONE: Renamed = Renamed::new();
         let sid = self.turn_session.as_ref();
         self.conn.as_ref().zip(sid).and_then(|(c, sid)| c.renamed.get(sid)).unwrap_or(&NONE)
     }
@@ -94,11 +110,18 @@ impl Actor {
 
     /// ACP connectors, team collaboration, and optional team management and computer control.
     pub(super) fn mcp_servers(&self) -> Result<Value> {
+        // An agent on its own (`BotConfig::plain`) has its own tools only, and a thread building a workflow its tools.
+        if self.cfg.plain && self.cfg.workflow.is_none() {
+            return Ok(json!([]));
+        }
         let Ok(exe) = std::env::current_exe() else {
             tracing::warn!("can't locate codync-host for MCP servers");
             return Ok(json!([]));
         };
         let port = self.hub.port;
+        if self.cfg.plain {
+            return Ok(json!([crate::mcp::acp_server("workflows", &exe, &["workflows", "--bot", &self.cfg.id], port)]));
+        }
         let mut servers: Vec<Value> =
             (if self.cfg.connectors.is_empty() { Vec::new() } else { crate::market::connectors(&self.hub.store)? })
                 .iter()
@@ -106,13 +129,18 @@ impl Actor {
                 .filter_map(|c| c.acp(&exe, port))
                 .collect();
         let composio = crate::market::composio::enabled_for(&self.hub.store, &self.cfg.connectors)?;
+        // A thread on the bot's own work or the user's gets neither `routines` nor `team`; a routine's run and a
+        // request keep both, as that turn had them in the chat (a run saves its progress, sets follow-ups and may ask a
+        // bot; an asked bot runs its own routine, and its `message_bot` is refused with why).
+        let bots_own = !self.cfg.is_thread() || !self.task_source.own();
         let builtin = [
             Some("connectors"),
             Some("chat"),
-            Some("team"),
+            bots_own.then_some("team"),
             self.cfg.manage_team.then_some("manage"),
             Some("memory"),
-            Some("routines"),
+            bots_own.then_some("routines"),
+            Some("workflows"),
             self.cfg.computer.then_some("computer"),
             composio.then_some("composio"),
         ];
@@ -134,6 +162,8 @@ impl Actor {
         progress: impl Fn(&str),
     ) -> Result<Conn> {
         let mut command = [candidate.resolve(progress).await?.acp()];
+        // A user-scope `codync` network server the agent loads knows it serves a bot.
+        env.push((crate::mcp::BOT_ENV.into(), self.cfg.id.clone()));
         self.hub.set_runtime(&self.id(), |r| r.activity = "Starting agent…".into());
         own_memory::apply(&self.cfg, &mut env, &mut command).await;
         let conn = start_agent(&self.cfg.backend, &command[0], &self.cfg.cwd, &env, budget).await.inspect_err(|e| {
@@ -166,19 +196,16 @@ impl Actor {
         // A stale process starts again and resumes its session. One that can't resume keeps its process and session:
         // its next new session gets the new tools.
         if std::mem::take(&mut self.restart_before_turn)
-            && self.conn.as_ref().is_some_and(|c| c.sessions.reopen.is_some())
+            && self.conn.as_ref().is_some_and(|c| c.sessions.reopen().is_some())
             && let Some(c) = self.conn.take()
         {
             c.acp.kill().await;
         }
         let mut servers = self.mcp_servers()?;
-        // pi gets its servers when it starts (`pi_tools`), so they take pi's names before that.
+        // pi gets its servers when it starts (`codync_agent::pi`), so they take pi's names before that.
         let pi = self.cfg.backend == "pi";
-        let mut renamed = if pi {
-            pi_tools::avoid_clashes(&mut servers, &self.cfg.cwd, self.saved_env("PI_CODING_AGENT_DIR")).await
-        } else {
-            codex_names::Renamed::new()
-        };
+        let mut renamed =
+            if pi { self.avoid_clashes(mcp_names::Agent::Pi, &mut servers).await } else { Renamed::new() };
         if self.conn.is_none() {
             let (hub, id) = (self.hub.clone(), self.cfg.id.clone());
             let progress = move |msg: &str| {
@@ -196,7 +223,8 @@ impl Actor {
                 env.push(("CODEX_CONFIG".into(), config.to_string()));
             }
             if pi {
-                env.extend(pi_tools::env(&servers).await?);
+                let dir = crate::service::data_dir().join("pi");
+                env.extend(codync_agent::pi::env(dir, crate::agent::APP, &servers, PI_CALL_TIMEOUT).await?);
             }
             let mut conn = start_first(candidates, &env, |candidate, env, fallback_left| {
                 // A local CLI too old for ACP just hangs; don't make the user wait long before the fallback.
@@ -204,16 +232,21 @@ impl Actor {
                 self.start_candidate(candidate, env, budget, &progress)
             })
             .await?;
-            conn.acp.hold(grants);
+            grants.held_by(&conn.acp);
             conn.on_profile = on_profile;
             conn.codex_home =
                 env.iter().find(|(key, home)| key == "CODEX_HOME" && !home.is_empty()).map(|(_, home)| home.clone());
             self.conn = Some(conn);
         }
-        if self.conn.as_ref().is_some_and(|c| c.adapter == Adapter::Codex) {
-            renamed = codex_names::avoid_clashes(&mut servers, &self.cfg.cwd, self.saved_env("CODEX_HOME")).await;
+        if self.conn.as_ref().is_some_and(|c| c.adapter() == Adapter::Codex) {
+            renamed = self.avoid_clashes(mcp_names::Agent::Codex, &mut servers).await;
         }
-        let instructions = self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions);
+        // An agent on its own gets no system prompt of Codync's, and `compose` adds no first-message one.
+        let instructions = if self.cfg.plain {
+            Instructions::FirstMessage
+        } else {
+            self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions)
+        };
         // Claude gets the frozen instructions as its system prompt. When a compaction
         // re-rendered them, loading the session again swaps the prompt in (the adapter
         // rebuilds its query and resumes the same conversation).
@@ -227,10 +260,14 @@ impl Actor {
             let prompt_current =
                 snapshot.as_ref().is_none_or(|s| self.applied_system.get(&sid).is_some_and(|t| *t == s.system));
             if conn.loaded.contains_key(&sid) && prompt_current {
-                self.turn_session = Some(sid);
-                return Ok(());
+                if !self.servers_dropped().await {
+                    self.turn_session = Some(sid);
+                    return Ok(());
+                }
+                self.retire(Retired::ServersLost).await;
+                return Box::pin(self.ensure_session(slot)).await;
             }
-            let Some(reopen) = conn.sessions.reopen else {
+            let Some(reopen) = conn.sessions.reopen() else {
                 tracing::info!(bot = %self.cfg.id, "the agent can't resume sessions; starting a fresh one");
                 self.set_session(slot, None);
                 return Box::pin(self.ensure_session(slot)).await;
@@ -243,9 +280,9 @@ impl Actor {
             if instructions == Instructions::SystemPrompt {
                 params["systemPrompt"] = system_prompt(&self.snapshot(&sid).await?.system);
             }
-            let res = self.session_request(reopen, params).await;
+            let res = self.session_request(reopen.method(), params).await;
             let Some(conn) = self.conn.as_mut() else { return res.map(drop) };
-            let about_agent = drop_replay(conn).await;
+            let about_agent = drop_replay(conn);
             match res {
                 Ok(res) => {
                     // A resumed session can come back on the agent's last-used model (Cursor
@@ -256,7 +293,7 @@ impl Actor {
                             Err(error) => {
                                 // The agent now holds a session the host doesn't track, and `session/resume` refuses
                                 // one it holds. Stopped, it takes the session again on the next message.
-                                if reopen == "session/resume"
+                                if reopen == acp::Reopen::Resume
                                     && let Some(c) = self.conn.take()
                                 {
                                     c.acp.kill().await;
@@ -269,6 +306,7 @@ impl Actor {
                     };
                     conn.loaded.insert(sid.clone(), Instant::now());
                     conn.renamed.insert(sid.clone(), renamed);
+                    watch_servers(conn).await;
                     self.note_options(&sid, &res, Listing::Session);
                     for update in &about_agent {
                         self.on_session_wide(update);
@@ -283,33 +321,18 @@ impl Actor {
                     return Ok(());
                 }
                 Err(e) => {
-                    tracing::warn!(bot = %self.cfg.id, method = reopen, error = format!("{e:#}"), "couldn't reopen the session; starting fresh");
+                    tracing::warn!(bot = %self.cfg.id, method = reopen.method(), error = format!("{e:#}"), "couldn't reopen the session; starting fresh");
                 }
             }
         }
-        // A thread's first session: a fork of its bot's main one where the agent can, so it starts knowing the chat;
-        // otherwise a new session that is told the chat so far. A routine's run gets neither (no fork source, no
-        // chat): a new session with its own prompt, as a run in the chat has.
-        if slot.is_none() && crate::chat::work::first_session(&self.hub.store, &self.cfg) {
-            match self.fork_owner_session(&servers, &renamed, instructions).await {
-                Ok(true) => return Ok(()),
-                Ok(false) => {}
-                Err(error) => {
-                    tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't fork the chat's session; starting from a brief");
-                    crate::chat::work::fork_failed(&self.hub, &self.cfg);
-                }
-            }
-            // A fork that timed out stopped the agent: start over, on the brief's way.
-            if self.conn.is_none() {
-                return Box::pin(self.ensure_session(slot)).await;
-            }
-            self.handoff = self.told_chat();
-            crate::chat::work::started(&self.hub, &self.cfg, crate::chat::work::Start::Brief);
+        // A thread starts from its task alone, never from the chat (`context::render` gives it its own profile).
+        if slot.is_none() {
+            crate::chat::work::began(&self.hub, &self.cfg);
         }
         let (revision, system) = {
-            let (hub, cfg) = (self.hub.clone(), self.cfg.as_owner());
+            let (hub, cfg) = (self.hub.clone(), self.cfg.clone());
             tokio::task::spawn_blocking(move || {
-                (memory::current_revision(&hub.store, &cfg.id), context::render(&hub.store, &cfg))
+                (memory::current_revision(&hub.store, cfg.owner()), context::render(&hub.store, &cfg))
             })
             .await?
         };
@@ -317,7 +340,7 @@ impl Actor {
         self.instruct(&mut params, instructions, &system);
         let res = self.session_request("session/new", params).await?;
         let sid = self.adopt_opened(&res, slot, renamed).await?;
-        context::adopt(&self.hub.store, &self.cfg.as_owner(), &sid, system.clone(), revision)?;
+        context::adopt(&self.hub.store, &self.cfg, &sid, system.clone(), revision)?;
         if instructions == Instructions::ClaudeMeta {
             self.applied_system.insert(sid, system);
         }
@@ -333,66 +356,21 @@ impl Actor {
         }
     }
 
-    /// Takes the session the agent just opened (`res`: its answer to `session/new` or `session/fork`) as `slot`'s
+    /// Takes the session the agent just opened (`res`: its answer to `session/new`) as `slot`'s
     /// and this turn's: on the bot's model, with its options noted. Its id.
-    async fn adopt_opened(&mut self, res: &Value, slot: Option<&str>, renamed: codex_names::Renamed) -> Result<String> {
+    async fn adopt_opened(&mut self, res: &Value, slot: Option<&str>, renamed: Renamed) -> Result<String> {
         let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone(), Instant::now());
         conn.renamed.insert(sid.clone(), renamed);
-        self.unfiled.opened(conn.adapter, &sid);
+        watch_servers(conn).await;
+        self.unfiled.opened(conn.adapter(), &sid);
         let options = select_model(&conn.acp, res, &sid, &self.cfg).await?;
         self.note_options(&sid, &options, Listing::Session);
         self.set_session(slot, Some(&sid));
         self.session_fresh = true;
         self.turn_session = Some(sid.clone());
         Ok(sid)
-    }
-
-    /// Opens a thread's session as a fork of its bot's main one (`session/fork`), from this thread's own agent process:
-    /// the same instructions and MCP servers, so the prompt cache is the chat's. `false`: there is nothing to fork
-    /// (the thread starts from a brief, or the agent can't fork).
-    async fn fork_owner_session(
-        &mut self,
-        servers: &Value,
-        renamed: &codex_names::Renamed,
-        instructions: Instructions,
-    ) -> Result<bool> {
-        let Some(source) = crate::chat::work::take_fork_source(&self.hub, &self.cfg) else {
-            return Ok(false);
-        };
-        // The chat's session is its own agent's: a thread that starts on a fallback (that agent rests) can't fork it.
-        if self.step() != Some(0) || !self.conn.as_ref().is_some_and(|c| c.sessions.fork) {
-            return Ok(false);
-        }
-        // The chat's frozen instructions, as its session holds them.
-        let owner = self.cfg.as_owner();
-        let parent = {
-            let (hub, owner, source) = (self.hub.clone(), owner.clone(), source.clone());
-            tokio::task::spawn_blocking(move || context::resolve(&hub.store, &owner, &source)).await??
-        };
-        let mut params = self.session_params(servers, Some(&source));
-        self.instruct(&mut params, instructions, &parent.system);
-        self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Picking up from the chat…".into());
-        let res = self.session_request("session/fork", params).await?;
-        // A fork may replay the chat's history, as a reopened session does.
-        let about_agent = match self.conn.as_mut() {
-            Some(conn) => drop_replay(conn).await,
-            None => Vec::new(),
-        };
-        let sid = self.adopt_opened(&res, None, renamed.clone()).await?;
-        for update in &about_agent {
-            self.on_session_wide(update);
-        }
-        // It already holds the instructions and memory as the chat's session had them: nothing to send again.
-        let adopted = context::adopt(&self.hub.store, &owner, &sid, parent.system.clone(), parent.memory.clone())?;
-        context::mark_prompted(&self.hub.store, &owner.id, &adopted)?;
-        memory::opened(&self.hub.store, &owner.id, &sid, &parent.memory)?;
-        if instructions == Instructions::ClaudeMeta {
-            self.applied_system.insert(sid, parent.system);
-        }
-        crate::chat::work::started(&self.hub, &self.cfg, crate::chat::work::Start::Fork);
-        Ok(true)
     }
 
     /// A session request the agent doesn't answer in time stops the agent: a hung one
@@ -419,7 +397,7 @@ impl Actor {
         if !std::mem::take(&mut conn.opening) {
             return;
         }
-        if conn.sessions.reopen.is_none() {
+        if conn.sessions.reopen().is_none() {
             // ponytail: that session lasts until the agent next stops; keep the cut-short request's Answer past the
             // time limit and session/close the id it returns, if that ever matters.
             tracing::warn!(bot = %self.cfg.id, "a session request was cut short; the agent can't resume, so it keeps running");
@@ -434,27 +412,45 @@ impl Actor {
     pub(super) fn forget_session(&mut self) {
         self.set_session(None, None);
     }
+
+    /// Whether the agent dropped Codync's MCP servers from its sessions (OpenCode 2.x once it has been idle a while,
+    /// #508), so it must start again to get them back: loading a session again in the same process doesn't, OpenCode
+    /// registers a session's servers once. Not while stopping it would end work it runs detached: the next turn looks
+    /// again.
+    async fn servers_dropped(&self) -> bool {
+        let Some(conn) = &self.conn else { return false };
+        if conn.servers != ServerWatch::Seen || background_work::codync_servers_run(&conn.acp).await {
+            return false;
+        }
+        if background_work::holds_restart(&conn.acp).await {
+            tracing::warn!(bot = %self.cfg.id, "the agent dropped Codync's MCP servers; keeping it for the work it runs detached");
+            return false;
+        }
+        true
+    }
+}
+
+/// Marks Codync's MCP servers seen once a session opened with them shows them under the agent (`ServerWatch`).
+async fn watch_servers(conn: &mut Conn) {
+    if conn.servers == ServerWatch::Unseen && background_work::codync_servers_run(&conn.acp).await {
+        conn.servers = ServerWatch::Seen;
+    }
 }
 
 /// How long opening a session (`session/new`, `session/load`, `session/resume`) may take.
 const SESSION_TIMEOUT: Duration = Duration::from_mins(3);
 
-/// An agent replays a session's history as `session/update` before it answers a reopen or a fork: drops it, and
+/// An agent replays a session's history as `session/update` before it answers a reopen: drops it, and
 /// refuses the requests in it. What it says about itself meanwhile (its commands) isn't history: returned for
 /// `on_session_wide`.
-async fn drop_replay(conn: &mut Conn) -> Vec<Value> {
+fn drop_replay(conn: &mut Conn) -> Vec<Update> {
     let mut about_agent = Vec::new();
     while let Ok(inc) = conn.rx.try_recv() {
-        match inc {
-            Incoming::Request { id, .. } => {
-                let _ = conn.acp.respond_error(id, -32601, "not supported").await;
-            }
-            Incoming::Notification { method, params }
-                if method == "session/update" && params["update"]["sessionUpdate"] == "available_commands_update" =>
-            {
-                about_agent.push(params);
-            }
-            _ => {}
+        // A request in it is refused as it drops.
+        if let Incoming::Update(update) = inc
+            && matches!(update.event, Event::Commands(_))
+        {
+            about_agent.push(update);
         }
     }
     about_agent

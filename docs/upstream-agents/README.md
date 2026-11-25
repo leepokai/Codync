@@ -1,10 +1,16 @@
 # Upstream agent bugs
 
-Codync drives every agent through its ACP adapter (`host/src/agent/acp.rs`, `host/src/agent/bot/`). Some adapters and
+Codync drives every agent through its ACP adapter (`host/crates/agent/src/acp.rs`, `host/src/agent/bot/`). Some adapters and
 the agents behind them have bugs, ignore part of the protocol or behave in their own way. This folder records them, one
 page per agent: what goes wrong, how the host patches around it (or that it doesn't), where upstream tracks it, and when
 the patch can go. When enough of an agent's rows are gone, we can reconsider how Codync uses it, or replace it with
 another implementation.
+
+A daily check runs a scripted turn (a shell command, its permission card, its result) of each adapter's new registry
+version and of each agent Codync runs from its own CLI, against a scripted model, and
+[`tools/agent-upstream/accepted.json`](../../tools/agent-upstream/accepted.json) holds the agents it runs and the
+versions it last passed ([upstream agents](../guides/test-stack.md#upstream-agents)). That check finds an adapter that no
+longer runs a turn or loses part of it; the other rows here are what a person found by reading and testing.
 
 Last checked: **2026-11-02**. Versions in the ACP registry then: claude-acp 0.99.1, codex-acp 2.5.0, pi-acp 0.0.34,
 cursor 2026.10.22, gemini 0.66.0, github-copilot-cli 1.0.105, grok-build 1.0.73, kilo 7.8.18, opencode 2.2.5,

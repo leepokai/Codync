@@ -16,7 +16,31 @@ use super::overlay::input_line;
 use super::set_cursor;
 use super::style::{FACE, avatar, bot_color, face_style, theme};
 use super::time::{MONTHS, local, month_day};
+use crate::store::WorktreeMode;
 use codync_mem::compaction::Threshold;
+
+/// A worktree mode's name and its one line.
+fn worktree_mode_text(mode: WorktreeMode) -> (&'static str, &'static str) {
+    match mode {
+        WorktreeMode::Off => ("Off", "Threads work in the project itself"),
+        WorktreeMode::SideBySide => {
+            ("Side by side", "A thread gets its own worktree when another thread works in the same repository")
+        }
+        WorktreeMode::Always => {
+            ("Always", "Every thread works in a worktree of its own; your checkout is never touched")
+        }
+    }
+}
+
+/// A folder's last name, the whole path when it has none.
+fn folder_name(path: &str) -> String {
+    std::path::Path::new(path).file_name().map_or_else(|| path.to_owned(), |n| n.to_string_lossy().into_owned())
+}
+
+/// A switch field's value.
+fn switch(on: bool) -> &'static str {
+    if on { "◉ On   ○ Off" } else { "○ On   ◉ Off" }
+}
 
 /// A compaction threshold as the apps name it: a choice, or the size as "120K".
 fn compaction_label(at: Threshold) -> String {
@@ -65,6 +89,13 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
         Field::SelfFallbacks => {
             tr("Let the bot change its fallbacks: it can set this list itself, for example when you ask it to.").into_owned()
         }
+        Field::Advisor => {
+            tr("The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks.").into_owned()
+        }
+        Field::ThreadFallbacks => {
+            let agent = f.thread_agent.as_ref().map(|a| app.agent_name(&a.backend)).unwrap_or_default();
+            tr("If {agent} runs out of usage or can't answer, threads carry on with the next one.").replace("{agent}", &agent)
+        }
         Field::Approvals => {
             let choice = app.approval(f);
             [choice.note.unwrap_or_default(), tr(choice.detail).into_owned()].join(" ").trim().to_owned()
@@ -82,6 +113,10 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
         }
         Field::ThreadWorktrees => {
             tr("Threads that work at once in this repository each get their own branch.").into_owned()
+        }
+        Field::WorktreeMode => tr(worktree_mode_text(f.worktree_mode).1).into_owned(),
+        Field::SharedFolders => {
+            tr("Linked into each new worktree, so installed packages don't have to be installed again.").into_owned()
         }
         Field::Team => {
             tr("Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.").into_owned()
@@ -137,6 +172,13 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::Fast => "Fast mode",
             Field::Fallbacks => "Fallbacks",
             Field::SelfFallbacks => "Bot edits",
+            Field::Advisor => "Advisor mode",
+            Field::ThreadAgent => "Threads' agent",
+            Field::ThreadFallbacks => "Threads' fallbacks",
+            Field::Projects => "Projects",
+            Field::SharedFolders => "Shared folders",
+            Field::WorktreeMode => "Worktree mode",
+            Field::Folder if f.projects.is_some() => "Own folder",
             Field::Folder => "Workspace",
             Field::MaxThreads => "Threads at once",
             Field::ThreadWorktrees => "Worktree per thread",
@@ -190,7 +232,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             }
             Field::Model => {
                 text_field(buf, &f.model, "default", y);
-                let hint = match app.models.get(&f.backend) {
+                let hint = match app.models_for(&f.backend, f.login_profile.as_deref()) {
                     Some(None) => "loading models…".to_owned(),
                     Some(Some(list)) if !list.is_empty() => {
                         let id = f.model.text.trim();
@@ -205,22 +247,23 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 }
             }
             Field::Fast => {
-                let s = if f.fast { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
+                let s = switch(f.fast);
                 // Known once the agent's model list loads, or once the bot's own sessions say.
                 let saved = app.bots.get(&f.bot_id).filter(|b| b.backend == f.backend);
-                let offered = match app.models.get(&f.backend) {
+                let offered = match app.models_for(&f.backend, f.login_profile.as_deref()) {
                     _ if saved.is_some_and(Bot::fast_shown) => "",
-                    Some(Some(_)) if !app.fast_mode.contains(&f.backend) => "  · not offered by this agent",
+                    Some(Some(_)) if !app.has_fast_mode(&f.backend, f.login_profile.as_deref()) => {
+                        "  · not offered by this agent"
+                    }
                     _ => "",
                 };
                 put(buf, vx, y, vw, &format!("{s}{offered}"), t.text.patch(base));
             }
             Field::ModelOptions => {
-                let offered = app.model_settings(&f.backend, f.model.text.trim());
+                let offered = app.model_settings(&f.backend, f.login_profile.as_deref(), f.model.text.trim());
                 if offered.is_empty() {
                     let error = app
-                        .models
-                        .get(&f.backend)
+                        .models_for(&f.backend, f.login_profile.as_deref())
                         .and_then(Option::as_ref)
                         .and_then(|models| models.iter().find(|m| m.id == f.model.text.trim()))
                         .and_then(|model| model.options_error.as_deref());
@@ -271,11 +314,14 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     rput(buf, inner.right(), y, &tr("Not signed in"), t.amber.patch(base));
                 }
             }
-            Field::Fallbacks => {
+            Field::Fallbacks | Field::ThreadFallbacks => {
                 let bot = app.bots.get(&f.bot_id);
+                // "In use" is the chat's step: Advisor mode's threads each run their own.
+                let chat = *field == Field::Fallbacks;
+                let list = if chat { &f.fallbacks } else { &f.thread_fallbacks };
                 let mut items: Vec<String> =
-                    f.fallbacks.iter().enumerate().map(|(j, x)| super::fallbacks::step_item(app, bot, j, x)).collect();
-                if f.fallbacks.len() < crate::agent::fallback::MAX_FALLBACKS {
+                    list.iter().enumerate().map(|(j, x)| super::fallbacks::step_item(app, bot, j, x, chat)).collect();
+                if list.len() < crate::agent::fallback::MAX_FALLBACKS {
                     items.push("+ add".into());
                 }
                 let mut x = vx;
@@ -289,8 +335,90 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 }
             }
             Field::SelfFallbacks => {
-                let s = if f.self_fallbacks { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
-                put(buf, vx, y, vw, s, t.text.patch(base));
+                put(buf, vx, y, vw, switch(f.self_fallbacks), t.text.patch(base));
+            }
+            Field::Advisor => {
+                put(buf, vx, y, vw, switch(f.thread_agent.is_some()), t.text.patch(base));
+            }
+            Field::ThreadAgent => {
+                if let Some(agent) = &f.thread_agent {
+                    let label = super::fallbacks::step_label(app, agent);
+                    put(buf, vx, y, vw, &format!("‹ {label} ›"), t.text.patch(base));
+                    let bot = app.bots.get(&f.bot_id);
+                    if let Some(note) =
+                        bot.and_then(|b| super::fallbacks::rest_note(b, &agent.backend, agent.login_profile.as_deref()))
+                    {
+                        rput(buf, inner.right(), y, &note, t.amber.patch(base));
+                    }
+                }
+            }
+            Field::Projects => {
+                let list = f.projects.as_deref().unwrap_or_default();
+                let mut items: Vec<String> = list.iter().map(|p| folder_name(p)).collect();
+                if let Some(first) = items.first_mut() {
+                    *first = format!("{first} · {}", tr("Default"));
+                }
+                let mut x = vx;
+                for (j, item) in items.iter().chain([&"+ add".to_owned()]).enumerate() {
+                    let picked = active && j == f.sub && j < list.len();
+                    let s = if picked { t.bold.add_modifier(Modifier::UNDERLINED) } else { t.text };
+                    if x + u(w(item)) >= inner.right() {
+                        put(buf, x, y, 2, "…", t.dim.patch(base));
+                        break;
+                    }
+                    x = put(buf, x, y, u(w(item)), item, s.patch(base)) + 2;
+                }
+                // The picked one's full path, on the line under the field.
+                if let Some(path) = list.get(f.sub).filter(|_| active)
+                    && y + 1 < inner.bottom().saturating_sub(FOOTER)
+                {
+                    put(buf, vx, y + 1, vw, &tilde(path, &app.home), t.dim.patch(t.panel));
+                }
+            }
+            Field::SharedFolders => {
+                let project = app.shared_project(f).unwrap_or_default();
+                let names =
+                    f.shared_folders.as_ref().and_then(|s| s.get(project)).map(Vec::as_slice).unwrap_or_default();
+                let typing = !f.shared_name.text.is_empty();
+                let mut x = vx;
+                for (j, name) in names.iter().enumerate() {
+                    let picked = active && !typing && j == f.sub;
+                    let s = if picked { t.bold.add_modifier(Modifier::UNDERLINED) } else { t.text };
+                    if x + u(w(name)) >= inner.right() {
+                        put(buf, x, y, 2, "…", t.dim.patch(base));
+                        break;
+                    }
+                    x = put(buf, x, y, u(w(name)), name, s.patch(base)) + 2;
+                }
+                if active || names.is_empty() {
+                    let room = inner.right().saturating_sub(x);
+                    let e = &f.shared_name;
+                    let (text, style) = match (e.text.as_str(), names.is_empty()) {
+                        ("", true) => ("node_modules", t.dim),
+                        ("", false) => ("+ add", t.dim),
+                        (typed, _) => (typed, t.bold),
+                    };
+                    let end = put(buf, x, y, room, text, style.patch(base));
+                    if active {
+                        set_cursor(Position::new(
+                            if e.text.is_empty() { x } else { end.min(x + u(w(&e.text[..e.cursor]))) },
+                            y,
+                        ));
+                    }
+                }
+                // Whose folders these are.
+                let name = folder_name(project);
+                if usize::from(x.saturating_sub(vx)) + w(&name) + 16 < usize::from(vw) {
+                    rput(buf, inner.right(), y, &name, t.dim.patch(base));
+                }
+            }
+            Field::WorktreeMode => {
+                let label = tr(worktree_mode_text(f.worktree_mode).0);
+                put(buf, vx, y, vw, &format!("‹ {label} ›"), t.text.patch(base));
+            }
+            Field::Folder if f.projects.is_some() => {
+                let home = app.bots.get(&f.bot_id).map(|b| tilde(&b.cwd, &app.home)).unwrap_or_default();
+                put(buf, vx, y, vw, &truncate(&home, usize::from(vw)), t.text.patch(base));
             }
             Field::Folder => {
                 put(
@@ -320,8 +448,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 put(buf, vx, y, vw, &format!("‹ {n} ›"), t.text.patch(base));
             }
             Field::ThreadWorktrees => {
-                let s = if f.thread_worktrees == Some(true) { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
-                put(buf, vx, y, vw, s, t.text.patch(base));
+                put(buf, vx, y, vw, switch(f.thread_worktrees == Some(true)), t.text.patch(base));
             }
             Field::Approvals => {
                 let label = app.approval(f).label;
@@ -335,16 +462,12 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 put(buf, vx, y, vw, &value, style.patch(base));
             }
             Field::Computer => {
-                let s = if f.computer { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
+                let s = switch(f.computer);
                 let status = super::computer_access::status(&app.screen, app.online);
                 put(buf, vx, y, vw, &format!("{s}  · {status}"), t.text.patch(base));
             }
             Field::Team => {
-                let s = match f.manage_team {
-                    Some(true) => "◉ On   ○ Off",
-                    Some(false) => "○ On   ◉ Off",
-                    None => "Needs a newer Codync host",
-                };
+                let s = f.manage_team.map_or("Needs a newer Codync host", switch);
                 put(buf, vx, y, vw, s, t.text.patch(base));
             }
             Field::Network | Field::Assistants => {
@@ -353,11 +476,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 } else {
                     (f.reachable_by_assistants, app.network["assistants"] == true, "cloud assistants are off here")
                 };
-                let s = match on {
-                    Some(true) => "◉ On   ○ Off",
-                    Some(false) => "○ On   ◉ Off",
-                    None => "Needs a newer Codync host",
-                };
+                let s = on.map_or("Needs a newer Codync host", switch);
                 let s = if on.is_some() && !applies { format!("{s}  · {}", tr(off_here)) } else { s.into() };
                 put(buf, vx, y, vw, &s, t.text.patch(base));
             }
@@ -417,18 +536,26 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     let x = put(buf, inner.x, by, 14, save, t.btn_primary) + 1;
     put(buf, x, by, 12, " esc Cancel ", t.text.patch(t.btn).add_modifier(Modifier::BOLD));
     let hint = match f.current() {
+        Field::Folder if f.projects.is_some() => "c copy · tab next field",
         Field::Folder => "↵ project folder · backspace own folder · tab next field",
+        Field::Projects => "←→ pick · ↵ add · d make default · x remove · tab next",
+        Field::SharedFolders => "type a name ↵ add · ←→ pick · ⌫ remove · tab next",
         Field::Connectors => "←→ move · space toggle · tab next",
         Field::ModelOptions => "←→ move · space change · tab next",
         Field::Skills => "←→ move · space toggle · i details · tab next",
         Field::Agent => "←→ change · ↵ install / sign in · tab next",
         Field::LoginProfile => "←→ change · ↵ add login profile · tab next",
         Field::Model => "←→ pick a model · or type its id",
-        Field::Fallbacks => "←→ pick · space add / model · a agent · c login profile · [ ] move · x remove",
+        Field::Fallbacks | Field::ThreadFallbacks => {
+            "←→ pick · space add / model · a agent · c login profile · [ ] move · x remove"
+        }
+        Field::ThreadAgent => "←→ agent · space model · c login profile · tab next",
         Field::Fast
         | Field::SelfFallbacks
+        | Field::Advisor
         | Field::MaxThreads
         | Field::ThreadWorktrees
+        | Field::WorktreeMode
         | Field::Color
         | Field::Shape
         | Field::Approvals
@@ -503,11 +630,7 @@ pub(super) fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm)
         put(buf, inner.x, y, 2, if on { "☑" } else { "☐" }, if on { t.bold } else { t.dim }.patch(base));
         put_line(buf, inner.x + 2, y, 2, &avatar(app, b));
         put(buf, inner.x + 5, y, inner.width / 2, &b.name, if sel { t.bold } else { t.text }.patch(base));
-        let folder = if b.managed_workspace {
-            "own folder".to_owned()
-        } else {
-            std::path::Path::new(&b.cwd).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default()
-        };
+        let folder = b.work_folder().map_or_else(|| "own folder".to_owned(), folder_name);
         rput(buf, inner.right(), y, &truncate(&folder, usize::from(inner.width / 3)), t.dim.patch(base));
     }
     let by = inner.bottom() - 1;

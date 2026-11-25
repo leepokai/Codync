@@ -22,6 +22,13 @@ class RosterSectionsTest {
         assertEquals(listOf(pinned, loose, work1, work2, personal), shownBots(roster, order = listOf("", "Work", "Personal")))
     }
 
+    @Test fun searchFindsBotsByNameInTheListsOrderFoldedSectionsIncluded() {
+        val bots = listOf(Bot("a", name = "Alpha", section = "Work"), Bot("b", name = "Beta"), Bot("g", name = "Gamma", section = "Work"))
+        assertEquals(listOf("g"), shownBots(bots, order = listOf("", "Work"), query = "ma").map(Bot::id))
+        assertEquals(listOf("a", "g", "b"), shownBots(bots, order = listOf("Work", ""), query = "A").map(Bot::id))
+        assertTrue(shownBots(bots, query = "zeta").isEmpty())
+    }
+
     @Test fun pinnedBotsComeFirstThenEachSectionByNameThenBotsWithoutOneUnderTheLabel() {
         assertEquals(listOf(
             RosterLine.Row(pinned),

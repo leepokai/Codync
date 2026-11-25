@@ -15,6 +15,12 @@ class WorkTest {
     private fun work(json: String) = bot(""","work":$json""").work
     private fun task(id: String, status: WorkStatus) = WorkTask(id, status = status)
 
+    @Test fun `a bot's folder name is its default project's, else its own folder's (null) or its project folder's`() {
+        assertEquals("app", bot(""","cwd":"/home/b","managedWorkspace":true,"projects":["/p/app","/p/web"]""").folderName)
+        assertNull(bot(""","cwd":"/home/b","managedWorkspace":true,"projects":[]""").folderName)
+        assertEquals("site", bot(""","cwd":"/p/site/"""").folderName)
+    }
+
     @Test fun `a bot's work decodes, and survives the mirror's copy`() {
         val bot = bot(""","maxThreads":4,"work":[
             {"id":"w1","title":"Fix login","status":"working","activity":"Reading","thread":"thread-1","wait":null,"cutIn":false,"createdAt":3,"startedAt":5,"endedAt":null,"result":"","brief":"x"},
@@ -77,8 +83,20 @@ class WorkTest {
         // More running than the ceiling (it was just lowered): none free, and the heading says what is true, `3 / 2`.
         assertEquals(0 to 2, workSections(work, 2).let { it.free to it.atOnce })
         // A host that sends no ceiling counts as three.
-        assertEquals(WorkSections(emptyList(), 3, emptyList(), emptyList()), workSections(emptyList(), null))
+        assertEquals(WorkSections(emptyList(), 0, 3, emptyList(), emptyList()), workSections(emptyList(), null))
         assertEquals(0 to 3, workSections(work, null).let { it.free to it.atOnce })
+    }
+
+    @Test fun `a thread waiting on the user gives its seat up, as the host says`() {
+        val work = work("""[{"id":"a","status":"working","seat":true},{"id":"b","status":"needsYou","seat":false},{"id":"c","status":"waiting","seat":false}]""")
+        val sections = workSections(work, 2)
+        assertEquals(Triple(2, 1, 1), Triple(sections.threads.size, sections.inUse, sections.free))
+        // A seat is free: nothing has to give way.
+        assertFalse(canCutIn(work, 2))
+        // An older host says nothing: every live task takes one.
+        val old = listOf(task("a", WorkStatus.Working), task("b", WorkStatus.NeedsYou), task("c", WorkStatus.Waiting))
+        assertEquals(2, workSections(old, 2).inUse)
+        assertTrue(canCutIn(old, 2))
     }
 
     @Test fun `only the tasks a thread has are live`() {
@@ -116,24 +134,42 @@ class WorkTest {
         assertEquals(listOf(WorkAction.Stop, WorkAction.Drop), WorkAction.entries.filter { it.destructive })
     }
 
-    @Test fun `all bots' work lists the roster's bots with a live or waiting task, in roster order, and counts what is worked on`() {
-        val roster = listOf(
-            "idle" to emptyList(),
-            "done" to listOf(task("a", WorkStatus.Done), task("b", WorkStatus.Stopped), task("c", WorkStatus.Failed)),
-            "busy" to listOf(task("d", WorkStatus.Working), task("e", WorkStatus.Working), task("f", WorkStatus.Waiting), task("g", WorkStatus.Done)),
-            "asks" to listOf(task("h", WorkStatus.NeedsYou)),
-            "queued" to listOf(task("i", WorkStatus.Waiting)),
-            "one" to listOf(task("j", WorkStatus.Working)),
-        )
-        val all = allWork(roster) { it.second }
-        assertEquals(listOf("busy", "asks", "queued", "one"), all.bots.map { it.first })
-        // Tasks that need the user or wait are not counted as working.
-        assertEquals(3, all.working)
-        // Nothing live or waiting: no button, and an open view closes.
-        assertEquals(AllWork(emptyList<Pair<String, List<WorkTask>>>(), 0), allWork(roster.take(2)) { it.second })
-        // The button shows without a count.
-        assertEquals(0, allWork(listOf(roster[3], roster[4])) { it.second }.working)
-        assertEquals(listOf(WorkStatus.Waiting, WorkStatus.Working, WorkStatus.NeedsYou), WorkStatus.entries.filter { it.open })
+    @Test fun `the threads list puts what needs you first, groups folders and routines, and keeps the rest newest first`() {
+        val home = bot(""","cwd":"/home/me/app"""").copy(work = listOf(
+            WorkTask("old", "Old", WorkStatus.Done, createdAt = 1),
+            WorkTask("asks", "Asks", WorkStatus.NeedsYou, createdAt = 2),
+            WorkTask("own", "Own folder", WorkStatus.Working, createdAt = 3, folder = "/home/me/app"),
+            WorkTask("docs", "Docs", WorkStatus.Done, createdAt = 4, folder = "/home/me/docs"),
+            WorkTask("run1", "Nightly", WorkStatus.Done, createdAt = 5, source = WorkSource(SourceKind.Routine, "r")),
+            WorkTask("run2", "Nightly", WorkStatus.Failed, createdAt = 6, source = WorkSource(SourceKind.Routine, "r")),
+            WorkTask("new", "New", WorkStatus.Waiting, createdAt = 7),
+        ))
+        val folders = threadSections(listOf(home), { it }, { it.id }, { "Mac" }, ThreadGrouping.Folder)
+        assertEquals(listOf("asks"), folders.needsYou.map { it.task.id })
+        assertEquals(listOf("routine:b:r" to listOf("run2", "run1"), "folder:/home/me/docs" to listOf("docs")),
+            folders.groups.map { group -> group.key to group.rows.map { it.task.id } })
+        assertEquals("docs", folders.groups[1].title)
+        assertEquals(listOf("new", "own", "old"), folders.recent.map { it.task.id })
+        // By status: working, then waiting, then the rest; no grouping lists everything under Recent.
+        val flat = threadSections(listOf(home), { it }, { it.id }, { "Mac" }, ThreadGrouping.None, byStatus = true)
+        assertTrue(flat.groups.isEmpty())
+        assertEquals(listOf("own", "new", "run2", "run1", "docs", "old"), flat.recent.map { it.task.id })
+        // By last active: one added earlier but ended later comes first (iOS's same case).
+        val moved = bot(""","cwd":"/c"""").copy(work = listOf(WorkTask("late", "late", WorkStatus.Done, createdAt = 5),
+            WorkTask("early", "early", WorkStatus.Done, createdAt = 1, endedAt = 9)))
+        assertEquals(listOf("early", "late"), threadSections(listOf(moved), { it }, { it.id }, { "Mac" }, ThreadGrouping.None, byActivity = true).recent.map { it.task.id })
+        // An empty folder names no place.
+        assertEquals(null, WorkTask("x", "x", WorkStatus.Done, folder = "").wherePath)
+    }
+
+    @Test fun `the threads search finds threads by title or bot name, newest first, and never a plain box by its name`() {
+        val fixer = bot().copy(name = "Fixer", work = listOf(WorkTask("old", "Login bug", WorkStatus.Done, thread = "t1", createdAt = 1),
+            WorkTask("new", "Docs", WorkStatus.Working, thread = "t2", createdAt = 3), WorkTask("queued", "Login page", WorkStatus.Waiting, createdAt = 4)))
+        val plain = bot(""","plain":true""").copy(name = "Fixer box", work = listOf(WorkTask("loose", "Notes", WorkStatus.Done, thread = "t3", createdAt = 2)))
+        val roster = listOf(fixer, plain)
+        assertEquals(listOf("new", "loose", "old"), threadMatches(roster, { it }, " ").map { it.task.id })
+        assertEquals(listOf("old"), threadMatches(roster, { it }, "login").map { it.task.id })
+        assertEquals(listOf("new", "old"), threadMatches(roster, { it }, "FIXER").map { it.task.id })
     }
 
     @Test fun `a task says where it came from, and a source this app doesn't know reads as the bot's own`() {
@@ -170,6 +206,63 @@ class WorkTest {
         assertTrue(canCutIn(listOf(task("a", WorkStatus.Working), waiting.copy(source = routine)), 1))
     }
 
+    @Test fun `a host with projects gets the whole list, default first, and the worktree mode, never a cwd`() {
+        val bot = bot(""","cwd":"/home/me/.codync/bots/b/workspace","managedWorkspace":true,"threadWorktrees":true,
+            "projects":["/p/app","/p/docs"],"projectGitRepos":[true,false],"worktreeMode":"sideBySide"""")
+        assertTrue(bot.isGitProject("/p/app"))
+        assertFalse(bot.isGitProject("/p/docs"))
+        assertFalse(bot.isGitProject("/p/new"))
+        val draft = BotDraft.from(bot)
+        assertEquals(WorktreeMode.SideBySide, draft.worktreeMode)
+        fun sent(edit: BotDraft) = edit.body().let { body -> assertFalse("cwd" in body); body.getValue("projects").toString() }
+        assertEquals("""["/p/app","/p/docs","/p/new"]""", sent(draft.withProject("/p/new")))
+        assertEquals("""["/p/app","/p/docs"]""", sent(draft.withProject("/p/docs")))
+        assertEquals("""["/p/docs"]""", sent(draft.withoutProject("/p/app")))
+        assertEquals("""["/p/docs","/p/app"]""", sent(draft.withDefaultProject("/p/docs")))
+        assertEquals("[]", sent(draft.withoutProject("/p/app").withoutProject("/p/docs")))
+        assertEquals("\"always\"", draft.copy(worktreeMode = WorktreeMode.Always).body().getValue("worktreeMode").toString())
+        assertEquals("\"off\"", draft.copy(worktreeMode = WorktreeMode.Off).body().getValue("worktreeMode").toString())
+        // A new bot on such a host sends the projects it was given, and no mode (the host's default).
+        val created = BotDraft(name = "New").withProject("/p/app").body()
+        assertEquals("""["/p/app"]""", created.getValue("projects").toString())
+        assertFalse("worktreeMode" in created || "cwd" in created)
+        // An older host has neither: its cwd goes as before, and a mode this app doesn't know is none.
+        val old = BotDraft.from(bot(""","cwd":"/p/app","threadWorktrees":true""")).body()
+        assertFalse("projects" in old || "worktreeMode" in old)
+        assertEquals("\"/p/app\"", old.getValue("cwd").toString())
+        assertNull(BotDraft.from(bot(""","projects":[],"worktreeMode":"later"""")).worktreeMode)
+    }
+
+    @Test fun `shared folders go as the whole map, only names the host takes`() {
+        val bot = bot(""","projects":["/p/app","/p/docs"],"projectGitRepos":[true,false],"worktreeMode":"sideBySide",
+            "sharedFolders":{"/p/app":["node_modules"]}""")
+        val draft = BotDraft.from(bot)
+        assertEquals(listOf("node_modules"), draft.sharedFolders("/p/app"))
+        fun sent(edit: BotDraft) = edit.body().getValue("sharedFolders").toString()
+        assertEquals("""{"/p/app":["node_modules",".cache/pip"]}""", sent(draft.withSharedFolder("/p/app", " .cache/pip/ ")))
+        assertEquals("""{"/p/app":["node_modules"],"/p/docs":["vendor"]}""", sent(draft.withSharedFolder("/p/docs", "vendor")))
+        for (refused in listOf("", "node_modules", "./node_modules", "/abs", "C:\\x", "../up", "a/../b")) assertEquals(draft, draft.withSharedFolder("/p/app", refused))
+        assertEquals("node_modules", sharedFolderName("./node_modules"))
+        assertEquals("{}", sent(draft.withoutSharedFolder("/p/app", "node_modules")))
+        assertEquals("{}", sent(draft.withoutProject("/p/app")))
+        // A host before shared folders has none: nothing goes.
+        assertFalse("sharedFolders" in BotDraft.from(bot(""","projects":[],"worktreeMode":"off"""")).body())
+    }
+
+    @Test fun `only the bot's own work in one of its seats gives way to a task that cuts in`() {
+        val waiting = task("w", WorkStatus.Waiting)
+        val own = task("a", WorkStatus.Working).copy(seat = true)
+        val user = task("u", WorkStatus.Working).copy(seat = false)
+        assertTrue(givesWay(own))
+        assertFalse("a thread the user started holds no seat", givesWay(user))
+        // A host that doesn't say goes by the task alone.
+        assertTrue(givesWay(task("o", WorkStatus.Working)))
+        // Every seat taken by the bot's work and the user's threads: nothing of the bot's own is there to give way.
+        assertEquals(listOf(own), listOf(own, user).filter(::givesWay))
+        assertTrue(canCutIn(listOf(own, user, waiting), 1))
+        assertFalse(canCutIn(listOf(user, user.copy(id = "u2"), waiting), 1))
+    }
+
     @Test fun `a worktree per agent is the bot's setting, shown where its folder is a git repository`() {
         val bot = bot(""","threadWorktrees":true,"gitRepo":true,"work":[
             {"id":"a","status":"working","worktree":{"branch":"codync/fix-login","path":"/w/a"}}, {"id":"b","status":"working"},
@@ -203,9 +296,10 @@ class WorkTest {
     }
 
     @Test fun `the host says which tasks take a message`() {
-        val tasks = work("""[{"id":"a","status":"working","thread":"t","talk":true,"folder":"/Users/kai/code/app"},
+        val tasks = work("""[{"id":"a","status":"working","thread":"t","talk":true,"talkFiles":true,"folder":"/Users/kai/code/app"},
             {"id":"b","status":"working","thread":"t2","talk":false,"source":{"kind":"routine","id":"r"}}, {"id":"c","status":"waiting","folder":null}]""")
         assertEquals(listOf(true, false, false), tasks.map { it.talk })
+        assertEquals(listOf(true, false, false), tasks.map { it.talkFiles })
         assertEquals(listOf("/Users/kai/code/app", null, null), tasks.map { it.folder })
     }
 
@@ -249,32 +343,6 @@ class WorkTest {
         assertEquals(listOf("t1", "t2"), sharing(own, chat, "thread-9").map { it.id })
     }
 
-    @Test fun `what a thread put in the chat is one line of its thread, saying how it stands`() {
-        fun line(kind: String, data: String) = sharedLine(Entry("c", 1, "b", 1, kind, data = Json.parseToJsonElement(data).jsonObject)) { it }
-        val options = """"options":[{"optionId":"ok","name":"Allow","kind":"allow_once"},{"optionId":"no","name":"Deny","kind":"reject_once"},{"optionId":"x","name":"Skip","kind":"other"}]"""
-        fun approval(status: String, selected: String = "") = line("permission", """{"status":"$status","title":"npm test",$options,"selected":"$selected"}""")
-        assertEquals(SharedLine("hand.raised", "Waiting for your approval: npm test"), approval("pending"))
-        assertEquals(SharedLine("checkmark", "Approved: npm test"), approval("answered", "ok"))
-        assertEquals(SharedLine("xmark", "Denied: npm test"), approval("answered", "no"))
-        assertEquals("Answered: Skip", approval("answered", "x")?.text)
-        assertEquals(SharedLine("clock", "Not answered: npm test"), approval("expired"))
-        fun choice(status: String, selected: String = "") = line("notice", """{"decision":true,"status":"$status","question":"Squash?","choices":["Yes","No"],"selected":"$selected"}""")
-        assertEquals("Asked: Squash?", choice("pending")?.text)
-        assertEquals("Answered: No", choice("answered", "No")?.text)
-        assertEquals("Not answered: Squash?", choice("expired")?.text)
-        fun signIn(status: String, kind: String = "agent") = line("notice", """{"text":"Needs you to sign in.","connectionRequest":{"kind":"$kind","status":"$status","title":"Kimi Code"}}""")
-        assertEquals(SharedLine("hand.raised", "Needs Kimi Code sign-in"), signIn("pending"))
-        assertEquals(SharedLine("checkmark", "Signed in"), signIn("ready"))
-        assertEquals(SharedLine("xmark", "Cancelled"), signIn("cancelled"))
-        assertNull("a connector's card is not a thread's", line("notice", """{"connectionRequest":{"kind":"oauth","status":"pending","title":"Linear"}}"""))
-        val file = """{"id":"f","name":"log.txt","size":3,"sha256":""}"""
-        assertEquals(SharedLine("doc", "Sent a file: log.txt"), line("agent", """{"final":true,"files":[$file]}"""))
-        assertEquals(SharedLine("waveform", "Sent a voice note"), line("agent", """{"final":true,"files":[$file],"voiceNote":true,"text":"Hi"}"""))
-        assertEquals(SharedLine("doc.richtext", "Made an artifact: Plan"), line("agent", """{"final":true,"artifact":{"id":"a","title":"Plan","updatedAt":0}}"""))
-        assertNull(line("agent", """{"text":"Just words","final":true}"""))
-        assertNull(line("notice", """{"text":"A notice"}"""))
-    }
-
     @Test fun `a bot's folder is a repository, isn't one, or the computer has no git`() {
         assertEquals(GitState.Repo, gitState(bot(""","threadWorktrees":true,"gitRepo":true,"gitInstalled":true""")))
         assertEquals(GitState.None, gitState(bot(""","threadWorktrees":true,"gitRepo":false,"gitInstalled":true""")))
@@ -299,5 +367,18 @@ class WorkTest {
         assertEquals(listOf(true, false, false, true), listOf(told, tool, mine, again).map { it.isToldToThread })
         assertEquals(ThreadTranscript(null, listOf(tool)), threadTranscript(listOf(tool)))
         assertEquals(ThreadTranscript(null, emptyList()), threadTranscript(emptyList()))
+    }
+
+    @Test fun `what the chat passed on is quoted in the thread, never queued over its composer`() {
+        fun entry(id: String, data: String) =
+            Entry(id, id.drop(1).toLong(), "thread-1", 1, "user", data = Json.parseToJsonElement(data).jsonObject)
+        val told = entry("e1", """{"text":"Fix login","from":"host"}""")
+        val mine = entry("e2", """{"text":"Also the docs","status":"queued"}""")
+        val passed = entry("e3", """{"text":"And the tests","from":"host","relay":true,"status":"queued"}""")
+        val thread = threadTranscript(listOf(told, mine, passed))
+        assertEquals(listOf(mine), thread.queue(working = true))
+        assertEquals(listOf(passed), thread.hidingQueue(working = true))
+        assertEquals(emptyList<Entry>(), thread.queue(working = false))
+        assertEquals(listOf(mine, passed), thread.hidingQueue(working = false))
     }
 }

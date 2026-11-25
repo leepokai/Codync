@@ -9,7 +9,7 @@ conversation and compaction. The design, including what is still to come, is in
 | | Where | Owner | Lifetime |
 |---|---|---|---|
 | Transcript | SQLite `entries` | Codync | One persistent chat per bot; replies quote the message they answer |
-| Model context | ACP session (`bots.session_id`) | The harness | Until *New session* (the bot's menu), a rollover (Fresh conversations), a failed resume, or an agent/command/folder change; each [fallback agent](agent-fallback.md) keeps its own, parked while another answers |
+| Model context | ACP session (`bots.session_id`) | The harness | Until *New session* (the bot's menu), a rollover (Fresh conversations), a failed resume, an agent/model/command/folder change, or a sign-in the agent can't carry over; each [fallback agent](agent-fallback.md) keeps its own, parked while another answers |
 | Long-term memory | Markdown files per layer (`MEMORY.md` and notes); versions and who wrote what in SQLite `memory_*` tables | Codync: the bots, through their tools or their own file tools, and dreaming | Forever, across sessions |
 
 Codync never replays the transcript into a session. Each turn sends only the new message(s); the harness keeps
@@ -25,15 +25,16 @@ its own context and compacts it itself.
   cache stays warm.
 - How the snapshot reaches the agent (`Instructions` in `agent/bot`):
   - **Claude** (`agentCapabilities._meta.claudeCode` present) receives it as a real system prompt:
-    `_meta.systemPrompt.append` on `session/new`, `session/load` and `session/fork`. It survives compaction.
+    `_meta.systemPrompt.append` on `session/new` and `session/load`. It survives compaction.
   - **An agent advertising ACP `sessionCapabilities.systemPrompt`** receives it as `systemPrompt`
-    (`append`) on `session/new`, `session/load` and `session/fork`, and keeps it across compaction.
+    (`append`) on `session/new` and `session/load`, and keeps it across compaction.
   - **Every other harness** receives it in the first message of each session (`<bot-profile>…</bot-profile>`; repeated with each message until one carrying it succeeds, the snapshot's `unprompted`, kept across a host restart),
     and once more, marked as replacing the earlier one, on the first message after a compaction.
-- A [thread](work.md)'s session is a fork of the bot's main one where the agent can
-  (`session/fork`): it is sent the main session's snapshot as it is, adopts it under its own session id
-  (`context.<bot>` is the bot's, a thread has none of its own) and counts as already prompted, so nothing is sent
-  twice. A thread that starts from a new session gets a fresh snapshot like any session.
+- A [thread](work.md) starts in a new session of its own, never a fork of the bot's main one, with a fresh
+  snapshot rendered for where its task came from (`render_thread`): a task the bot handed out is told the task
+  alone (no name, description or memory, so no memory-change notice or profile update either); a thread the user
+  started, a routine's run and another bot's request are told who the bot is, without the chat's own paragraphs. Its
+  snapshots are kept with its bot's (`context.<bot>` under `BotConfig::owner`).
 - **Compaction epoch:** Codync advertises `clientCapabilities.session.compaction`. Each completed
   `compaction_update` (deduplicated by `compactionId`) increments `context.epoch.<bot>`; for an agent that has
   never sent one, so does its `usage_update.used` falling below half of a previous value of at least 20k (a
@@ -53,7 +54,8 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
 
 - **Two layers, two kinds of file.** Each layer is a folder: "yours", shared by every bot that uses it, in
   `<data>/shared-memory/`, and one per bot in `<data>/bots/<id>/bot-memory/`. A bot in its own workspace uses
-  "yours" by default and one in a project folder doesn't; the user switches it per bot (`sharedMemory`).
+  "yours" by default and one in a project folder doesn't (a bot moved home from a project at host start keeps it off:
+  the move stamps `sharedMemory: false`); the user switches it per bot (`sharedMemory`).
   - `MEMORY.md`: the short version, one short fact per line (at most 150 tokens a line), the way a project keeps
     its `CLAUDE.md` short and its `docs/` detailed. Caps count tokens (one per CJK character, one per four others):
     400 for "yours", 1,200 per bot. It may be empty. Dreaming keeps it within its cap (below).
@@ -122,7 +124,7 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   layer take turns, so one run tidies it and the others find it tidied. It waits while the plan's usage is above 75%. It writes the files
   compare-and-swap; when one changed meanwhile, the rest waits for the next run. Every run is logged (the lines it
   added and took out, the notes it wrote).
-- **The harness's own memory** is off for every bot and for background jobs (`agent/own_memory.rs`): Claude Code
+- **The harness's own memory** is off for every bot and for background jobs (`agent/own_memory.rs`; how each harness's is switched, `codync_agent::own_memory`): Claude Code
   (`autoMemoryEnabled` and `autoDreamEnabled` false, `CLAUDE_CODE_DISABLE_AUTO_MEMORY`), Copilot (its memory tools
   excluded), CodeBuddy, WorkBuddy (the same switch as CodeBuddy), and Qwen Code (workspace settings, so only in a bot's own workspace: a project folder's
   files are the user's). Gemini CLI, Kilo Code, Kiro and Hermes Agent have no switch Codync can use. Project
@@ -206,14 +208,16 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
 - Messages sent while the agent works wait above the composer and are folded into one next turn, joined by blank
   lines. *Send now* (`steer`) hands one to the agent at once: an agent with `_session/steering` (Claude, Codex, omp)
   takes it into the running turn of the user's own chat, and the message joins that turn (its `turn`, its reply,
-  memory, a fallback's retry). The turn's end waits for the agent's answer, at most 15 seconds, so a late `injected`
-  still counts as joined and the bot stays working until then. Another agent's turn in the user's chat stops for it,
+  memory, a fallback's retry). An agent that then ends that turn `cancelled` on its own, before writing anything
+  after the message, has dropped it (Codex, on a refused card): it goes back to `queued`, first in line
+  (`requeue_unheard`, [Codex's row](../upstream-agents/codex-acp.md)). The turn's end waits for the agent's answer,
+  at most 15 seconds, so a late `injected` still counts as joined and the bot stays working until then. Another agent's turn in the user's chat stops for it,
   with no `Stopped.` line (drawn under the message it would read as the message's), and behind a routine, a room or another bot's request it goes first in line. *Remove* (`unqueue`) takes it back: it
   never goes out, its files are deleted and the chat hides it (`removed`).
 - Bot-to-bot requests and the replies to them occupy separate turns in the same queue (replies waiting together are one turn); user messages are only folded together up to the next request or reply. Neither feeds dreaming. See [bot collaboration](bot-collaboration.md).
 - A request turn (the recipient's) doesn't set the restart marker: its pending notices become interrupted errors instead of automatically replaying work. A reply turn is the sender's own chat turn and sets it, so it resumes like a user turn.
 - Stop sends `session/cancel`; an agent still running 15 seconds later is stopped (it resumes its session on
-  the next turn). `session/new`, `session/load`, `session/resume` and `session/fork` get three minutes before the agent is
+  the next turn). `session/new`, `session/load` and `session/resume` get three minutes before the agent is
   stopped. Connector or computer changes restart an agent that can resume sessions before its next turn; one
   that can't keeps its session, and its next new session gets them. An edit to a connector the bot has on restarts
   that one too, once its turn ends, told the conversation so far ([connector credentials](connector-credentials.md)).

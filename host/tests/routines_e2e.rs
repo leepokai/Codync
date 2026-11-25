@@ -79,13 +79,11 @@ impl Host {
     }
 
     async fn bot_fixture(&self, name: &str, fixture: &str) -> String {
-        let cwd = self.home.join(name);
-        std::fs::create_dir_all(&cwd).unwrap();
         let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(fixture);
         self.call(
             "createBot",
             json!({
-                "name": name, "backend": "custom", "cwd": cwd, "permission": "ask", "notify": false,
+                "name": name, "backend": "custom", "permission": "ask", "notify": false,
                 "command": common::python_agent(&agent),
             }),
         )
@@ -125,7 +123,7 @@ impl Host {
     }
 
     fn agent_events(&self, name: &str) -> Vec<Value> {
-        std::fs::read_to_string(self.home.join(name).join("events.jsonl"))
+        std::fs::read_to_string(common::folder(&self.home, name).join("events.jsonl"))
             .unwrap_or_default()
             .lines()
             .filter_map(|line| serde_json::from_str(line).ok())
@@ -212,8 +210,10 @@ async fn routines_execute_pause_deduplicate_and_reject_wrong_webhook_keys() {
     })
     .await
     .unwrap();
-    let servers: Value =
-        serde_json::from_str(&std::fs::read_to_string(host.home.join("routine-bot/servers.json")).unwrap()).unwrap();
+    let servers: Value = serde_json::from_str(
+        &std::fs::read_to_string(common::folder(&host.home, "routine-bot").join("servers.json")).unwrap(),
+    )
+    .unwrap();
     assert!(servers.as_array().unwrap().iter().any(|s| s["name"] == "routines" || s["name"] == "codync-routines"));
     host.call("setRoutineEnabled", json!({"botId":bot,"id":id,"enabled":false})).await;
     assert!(
@@ -280,7 +280,7 @@ async fn crash_resumes_the_same_session_and_publishes_one_result() {
     host.restart().await;
     let resumed = host.wait_event("resume", "resumed", "BLOCK[resume]").await;
     assert_eq!(started["session"], resumed["session"]);
-    std::fs::write(host.home.join("resume/release-resume"), "").unwrap();
+    std::fs::write(common::folder(&host.home, "resume").join("release-resume"), "").unwrap();
     host.wait_status(&bot, &id, "succeeded").await;
     // The run's reply is its result, in the chat once.
     tokio::time::timeout(Duration::from_secs(10), async {
@@ -322,7 +322,7 @@ async fn a_message_sent_during_a_run_gets_a_turn_of_its_own() {
     // Nothing of the run is in the chat yet but its notice.
     host.wait_event("turns", "started", "BLOCK[run]").await;
     host.send(&bot, "MEANWHILE").await;
-    std::fs::write(host.home.join("turns/release-run"), "").unwrap();
+    std::fs::write(common::folder(&host.home, "turns").join("release-run"), "").unwrap();
     let entries = tokio::time::timeout(Duration::from_secs(20), async {
         loop {
             let history = host.call("history", json!({"botId":bot})).await;
@@ -404,7 +404,7 @@ async fn busy_bot_keeps_work_pending_and_honors_pause_delete_and_edit_across_res
     .await;
     host.restart().await;
     host.wait_event("queue", "resumed", "BLOCK[user]").await;
-    std::fs::write(host.home.join("queue/release-user"), "").unwrap();
+    std::fs::write(common::folder(&host.home, "queue").join("release-user"), "").unwrap();
     host.wait_status(&bot, &kept, "succeeded").await;
     host.wait_event("queue", "finished", "NEW_INSTRUCTION").await;
     assert!(!host.agent_events("queue").iter().any(|e| {
@@ -420,7 +420,7 @@ async fn unavailable_resume_never_replays_work_in_a_fresh_session() {
     let id = host.save(&bot, "unloadable", "BLOCK[original]", json!([{"type":"webhook"}]), 30).await;
     host.call("runRoutine", json!({"botId":bot,"id":id})).await;
     host.wait_event("no-resume", "started", "BLOCK[original]").await;
-    std::fs::write(host.home.join("no-resume/no-load"), "").unwrap();
+    std::fs::write(common::folder(&host.home, "no-resume").join("no-load"), "").unwrap();
     host.restart().await;
     host.wait_status(&bot, &id, "interrupted").await;
     let next = host.save(&bot, "next", "AFTER_INTERRUPTION", json!([{"type":"webhook"}]), 30).await;

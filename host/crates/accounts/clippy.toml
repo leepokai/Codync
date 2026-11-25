@@ -1,4 +1,0 @@
-# Tests may unwrap: a panic there is the failure report.
-allow-unwrap-in-tests = true
-allow-expect-in-tests = true
-doc-valid-idents = ["OpenCode", "ChatGPT", ".."]

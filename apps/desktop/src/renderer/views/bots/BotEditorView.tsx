@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fastModeRefusal, fastModeShown } from '@shared/fast-mode'
-import { restLine, restOf, withBackend } from '@shared/fallbacks'
+import { restLine, restOf, withAdvisor, withBackend } from '@shared/fallbacks'
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { MAX_THREADS } from '@shared/work'
-import { AgentIcon } from '../../components/AgentIcon'
 import { CharacterAvatar } from '../../components/Avatar'
 import { CardSection, DropdownMenu, IconButton, Pill, Spinner, Stepper, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
@@ -13,11 +12,12 @@ import { Text } from '../../components/Text'
 import { controlReady } from '../../lib/screen-state'
 import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
-import { LoginProfileRow } from './LoginProfileRow'
-import { AgentModelPicker } from './AgentModelPicker'
+import { ModelPicker } from './ModelPicker'
+import { loginSeats } from './seats'
 import { ApprovalRow } from './ApprovalRow'
 import { CompactionRow } from './CompactionRow'
-import { agentChoice, AgentStepBanner, FallbacksRow } from './Fallbacks'
+import { AgentStepBanner, FallbacksRow } from './Fallbacks'
+import { ThreadsAgentRow } from './ThreadsAgentRow'
 import { errorText, isValid, lastPathComponent, normalized, useFollowSaved, usePlugins, type Plugins } from './drafts'
 import { FormSheet } from '../marketplace/pieces'
 import { SkillSheet, type SkillRef } from '../marketplace/SkillSheet'
@@ -25,6 +25,8 @@ import { AnchoredPanel, AutoTextArea, AvatarPicker, Field, SwitchRow } from './p
 import { NetworkSwitches } from './NetworkSwitches'
 import { FolderPicker } from './FolderPicker'
 import { GitStateLine } from './GitStateLine'
+import { HomeFolderRow, ProjectsRow, WorktreeModeRow } from './ProjectsRows'
+import { withProject } from './projects'
 import './bots.css'
 import { useTr } from '../../lib/use-language'
 import { CustomIconEditor } from './CustomIconEditor'
@@ -126,7 +128,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
   const avatarRef = useRef<HTMLButtonElement>(null)
   const set = <K extends keyof BotDraft>(key: K, value: BotDraft[K]) => onChange((d) => ({ ...d, [key]: value }))
   const setModel = useCallback((model: string | null, modelOptions: Record<string, string>) => onChange((d) => ({ ...d, model, modelOptions })), [onChange])
-  const models = useAgentModels(draft.backend)
+  const models = useAgentModels(draft.backend, draft.loginProfile)
   const saved = draft.id ? (store.bots.get(draft.id) ?? null) : null
 
   const backends = store.hello?.backends ?? []
@@ -140,20 +142,24 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
     </Field>
   )
   const ownRest = saved ? restOf(saved, draft, Date.now()) : null
+  const fastShown = (draft.backend !== 'custom' && models.catalog?.fastMode) || draft.fastMode || (saved?.backend === draft.backend && fastModeShown(saved))
+  const refusal = saved ? fastModeRefusal(saved) : null
+  // Every agent's logins, then a custom command.
+  const seats = [
+    ...loginSeats({ backends, on: draft, tr, pick: (b, loginProfile) => onChange((d) => withBackend(d, { backend: b.id, loginProfile })) }),
+    { key: 'custom', backend: 'custom', name: tr('Custom command'), on: draft.backend === 'custom', pick: () => onChange((d) => withBackend(d, { backend: 'custom' })) },
+  ]
   const agent = (
-    <AgentModelPicker key="agent" backend={draft.backend} models={models} selection={draft.model}
-      onChange={setModel} options={draft.modelOptions ?? {}}
-      agents={[...backends.map(agentChoice), { id: 'custom', label: 'Custom command', leading: <AgentIcon registry="custom" size={14} /> }]}
-      onAgentChange={(id) => onChange((d) => withBackend(d, id))} fast={draft.fastMode ?? false}
-      fastControl={((draft.backend !== 'custom' && models.catalog?.fastMode) || draft.fastMode || (saved?.backend === draft.backend && fastModeShown(saved))) ?
-        <SwitchRow title="Fast mode" detail={saved ? fastModeRefusal(saved) : null} on={draft.fastMode ?? false} onChange={(on) => set('fastMode', on)} /> : null}>
+    <ModelPicker key="agent" trigger="row" backend={draft.backend} models={models} seats={seats}
+      model={{ id: draft.model ?? null, options: draft.modelOptions ?? {} }} set={(m) => setModel(m.id, m.options)}
+      fast={fastShown ? { on: draft.fastMode ?? false, set: (on) => set('fastMode', on) } : null}>
       {ownRest && <Text size="caption" tone="secondary">{tr(restLine(ownRest, Date.now()))}</Text>}
       {backend && !backend.available && <Text size="caption" tone="attention">{backend.installHint}</Text>}
       {draft.backend === 'custom' && <input className="field-box bot-command" value={draft.command ?? ''} placeholder={tr('ACP command, e.g. my-agent --acp')} spellCheck={false} onChange={(e) => set('command', e.target.value || null)} />}
-    </AgentModelPicker>
+      {fastShown && refusal ? <Text size="caption" tone="attention">{refusal}</Text> : null}
+      <Text size="caption" tone="secondary">{tr('Changing the model starts a new agent session. Chat history is kept.')}</Text>
+    </ModelPicker>
   )
-  // Its own row under the picker, as on the phones. CardSection gives every child a row, so null when the host has none.
-  const loginProfile = backend?.loginProfiles ? <LoginProfileRow key="login" backend={backend} loginProfile={draft.loginProfile ?? null} onChange={(id) => set('loginProfile', id)} /> : null
   // While the bot runs on a fallback, the Agent card starts with it.
   const step = saved?.agentStep ? <AgentStepBanner key="step" bot={saved} /> : null
   // Only from a host that has them (its bots say).
@@ -167,21 +173,37 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
       onChange={(on) => set('selfFallbacks', on)}
     />,
   ] : null
+  // Advisor mode, from a host that has it: its threads' agent and fallbacks show once it's on, in its row (one setting,
+  // no lines inside it).
+  const advisor = saved && saved.threadFallbacks !== null ? (
+    <VStack key="advisor" gap={16}>
+      <SwitchRow
+        title="Advisor mode"
+        detail="The chat plans and hands work on; threads run on an agent of their own, with its own fallbacks."
+        on={!!draft.threadAgent}
+        onChange={(on) => onChange((d) => withAdvisor(d, on, backends))}
+      />
+      {draft.threadAgent ? <>
+        <ThreadsAgentRow agent={draft.threadAgent} bot={saved} onChange={onChange} />
+        <FallbacksRow threads draft={draft} bot={saved} onChange={onChange} />
+      </> : null}
+    </VStack>
+  ) : null
   // Only where Codync summarizes the chat (its bot says): CardSection gives every child a row.
   const compaction = saved && saved.compaction !== null ? <CompactionRow key="compaction" draft={draft} bot={saved} onChange={onChange} /> : null
 
   return (
     <div className="bot-form">
       <div className="bot-form-content">
-        <CardSection title="Instructions">{instructions}</CardSection>
-        <CardSection title="Agent">
+        <CardSection title="Instructions" fold="bot.instructions">{instructions}</CardSection>
+        <CardSection title="Agent" fold="bot.agent">
           {step}
           {agent}
-          {loginProfile}
           {fallbacks}
+          {advisor}
           {compaction}
         </CardSection>
-        <CardSection title="Profile">
+        <CardSection title="Profile" fold="bot.profile">
           <ValueRow label="Avatar">
             <button ref={avatarRef} className="avatar-button small" title={tr('Edit Bot avatar')} aria-label={tr('Edit Bot avatar')} onClick={() => setPickingAvatar((p) => !p)}>
               <CharacterAvatar shape={draft.avatarShape} color={draft.avatarColor} size={24} customIcon={draft.id ? store.icons[`bot:${draft.id}`] : undefined} />
@@ -200,35 +222,43 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
           {saved?.createdBy ? <CreatedBy bot={saved} creator={saved.createdBy} /> : null}
         </CardSection>
 
-        <CardSection title="Workspace">
+        <CardSection title="Workspace" fold="bot.workspace">
           <ValueRow label="Computer">
             <Text truncate>{store.hostName}</Text>
           </ValueRow>
-          <VStack gap={6}>
-            <ValueRow
-              label="Workspace"
-              detail={
-                draft.cwd
-                  ? 'This project is the default starting folder. The bot can work elsewhere when you ask.'
-                  : 'This bot has its own space for files. It can work in other folders when you ask.'
-              }
-            >
-              <DropdownMenu
-                title={draft.cwd || tr('A persistent workspace allocated for this bot')}
-                items={() => [
-                  { title: 'Own folder', selected: !draft.cwd, action: () => set('cwd', '') },
-                  { title: 'Choose project folder…', selected: !!draft.cwd, action: () => setPickingFolder(true) },
-                ]}
+          {/* A host whose bots have projects keeps each in its own folder, which a new bot gets once it's created. */}
+          {store.hasProjects ? [
+            saved ? <HomeFolderRow key="home" bot={saved} /> : null,
+            <ProjectsRow key="projects" draft={draft} bot={saved} sharesFolders={store.fillsWorktrees} onChange={onChange} onAdd={() => setPickingFolder(true)} />,
+            // Under the list, only where it matters: a project in a git repository.
+            saved?.projectGitRepos.some(Boolean) ? <WorktreeModeRow key="worktrees" draft={draft} bot={saved} onChange={onChange} /> : null,
+          ] : (
+            <VStack gap={6}>
+              <ValueRow
+                label="Workspace"
+                detail={
+                  draft.cwd
+                    ? 'This project is the default starting folder. The bot can work elsewhere when you ask.'
+                    : 'This bot has its own space for files. It can work in other folders when you ask.'
+                }
               >
-                <Pill outlined className="workspace-pill">
-                  <Text truncate className="workspace-pill-label">{draft.cwd ? lastPathComponent(draft.cwd) : tr('Own folder')}</Text>
-                  <Icon name="chevron.down" size={10} weight="semibold" color="var(--secondary)" />
-                </Pill>
-              </DropdownMenu>
-            </ValueRow>
-            {/* Of the saved folder, from a host that says (one with worktrees). */}
-            {saved && saved.threadWorktrees !== null ? <GitStateLine bot={saved} /> : null}
-          </VStack>
+                <DropdownMenu
+                  title={draft.cwd || tr('A persistent workspace allocated for this bot')}
+                  items={() => [
+                    { title: 'Own folder', selected: !draft.cwd, action: () => set('cwd', '') },
+                    { title: 'Choose project folder…', selected: !!draft.cwd, action: () => setPickingFolder(true) },
+                  ]}
+                >
+                  <Pill outlined className="workspace-pill">
+                    <Text truncate className="workspace-pill-label">{draft.cwd ? lastPathComponent(draft.cwd) : tr('Own folder')}</Text>
+                    <Icon name="chevron.down" size={10} weight="semibold" color="var(--secondary)" />
+                  </Pill>
+                </DropdownMenu>
+              </ValueRow>
+              {/* Of the saved folder, from a host that says (one with worktrees). */}
+              {saved && saved.threadWorktrees !== null ? <GitStateLine bot={saved} /> : null}
+            </VStack>
+          )}
           <ApprovalRow draft={draft} catalog={models.catalog} onChange={onChange} />
           {/* Only from a host that has the box (its bots say). */}
           {saved && saved.maxThreads !== null ? (
@@ -237,8 +267,8 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
             </ValueRow>
           ) : null}
           {/* Only where it matters (a project folder in a git repository: a bot's own folder keeps all its work in
-              one place), from a host that has it. */}
-          {saved?.gitRepo && !saved.managedWorkspace && saved.threadWorktrees !== null ? (
+              one place), from a host that has it and no projects. */}
+          {!store.hasProjects && saved?.gitRepo && !saved.managedWorkspace && saved.threadWorktrees !== null ? (
             <SwitchRow
               title="Worktree per thread"
               detail="Threads that work at once in this repository each get their own branch."
@@ -248,7 +278,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
           ) : null}
         </CardSection>
 
-        <CardSection title="Activity">
+        <CardSection title="Activity" fold="bot.activity">
           <SwitchRow title="Notifications" detail="Get notified when this bot finishes or needs you" on={draft.notify ?? true} onChange={(on) => set('notify', on)} />
           {store.screen && !inspector ? (
             <SwitchRow
@@ -303,9 +333,10 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
       </FormSheet>
       <Sheet open={pickingFolder} onClose={() => setPickingFolder(false)} width={460} height={520}>
         <FolderPicker
-          start={draft.cwd || store.hello?.home || null}
+          start={(store.hasProjects ? draft.projects?.at(-1) : draft.cwd) || store.hello?.home || null}
           onPick={(path) => {
-            set('cwd', path)
+            if (store.hasProjects) onChange((d) => withProject(d, path))
+            else set('cwd', path)
             setPickingFolder(false)
           }}
         />

@@ -116,6 +116,15 @@ fun AccountStore.createCloudComputer(provider: String, name: String, created: ()
     created()
 }
 
+/** First run: a cloud computer was made from the setup pages, so they wait for it until it's reached, which completes
+ * onboarding `via = cloud` (iOS `RootView.startedCloud`). */
+internal fun AccountStore.startedCloud() = mutableState.update { it.copy(startedCloud = true) }
+
+/** Back on that wait, whatever its stage: setup returns to its pages and stops waiting for [machine], which shows up by
+ * itself once it's ready (iOS `RootView.passedCloud`). */
+internal fun AccountStore.passCloud(machine: CloudMachine) =
+    mutableState.update { it.copy(startedCloud = false, passedCloud = it.passedCloud + machine.cloudComputerId) }
+
 /** Its new [name] (the cloud refuses an empty one); a computer this phone uses shows it before its host says so. */
 fun AccountStore.renameCloudComputer(id: String, name: String) = action(CloudMachineAction.Rename.key(id)) {
     val machine = tracked(AnalyticsEvent.CloudComputerRenamed(CloudRenameOutcome.Renamed), { AnalyticsEvent.CloudComputerRenamed(CloudRenameOutcome.Failed) }) {
@@ -199,12 +208,34 @@ internal val AccountContext.preparingCloud: Set<String>
 
 /**
  * Codync Cloud computers approve this phone by themselves: each one it can't use yet is asked once per app session,
- * through the same request and code exchange as a tap on "Ask for access" (iOS `askCloudComputers`).
+ * through the same request and code exchange as a tap on "Ask for access"; a request that failed or ended unapproved is
+ * asked again on the next refresh. So is one listed as asked ("pending") that this phone has no request for: the cloud
+ * kept a request whose answer the network lost, and a new one replaces it there (iOS `askCloudComputers`).
  */
 internal fun AccountStore.askCloudComputers(computers: List<CloudComputer>) {
+    val context = state.value
     for (computer in computers) {
-        if (computer.cloud == null || computer.access != "none" || store(computer.computerId) != null) continue
-        if (askedCloud.add(computer.computerId)) requestAccess(computer)
+        val id = computer.computerId
+        if (computer.cloud == null || store(id) != null) continue
+        val lost = computer.access == "pending" && id !in context.access && "access:$id" !in context.busy
+        if ((computer.access == "none" || lost) && askedCloud.add(id)) requestAccess(computer, quiet = true)
+    }
+}
+
+/** How often a first run's wait asks the account again about a cloud computer this phone can't use yet. */
+internal const val CLOUD_REACH_INTERVAL = 5_000L
+
+/**
+ * First run, waiting on cloud computer [computerId] now that it's in the account: asks the account again every [every]
+ * ms until this phone uses it, so a lookup or an access request lost to the network doesn't leave the wait standing. It
+ * ends with the waiting page, whose effect this is. An error on screen is read first: asking again would clear it (iOS
+ * `reachCloudComputer`).
+ */
+// ponytail: a fixed interval for as long as the page shows; back off if a wait ever lasts hours.
+internal suspend fun AccountStore.reachCloudComputer(computerId: String, every: Long = CLOUD_REACH_INTERVAL) {
+    while (store(computerId) == null) {
+        delay(every)
+        if (store(computerId) == null && state.value.error == null) refreshCloud()
     }
 }
 

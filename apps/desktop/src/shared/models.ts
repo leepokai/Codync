@@ -43,6 +43,10 @@ export interface Bot {
   fallbacks: Fallback[]
   /** The bot may set its own fallbacks; null from an older host (no fallbacks there). */
   selfFallbacks: boolean | null
+  /** Advisor mode: the agent its threads run on, null when they run on the bot's own. */
+  threadAgent: Fallback | null
+  /** In Advisor mode, the threads' fallbacks; null from an older host (no Advisor mode there). */
+  threadFallbacks: Fallback[] | null
   /** The fallback the bot is on right now; null on its own agent. */
   agentStep: AgentStep | null
   /** Agents of its chain (its own included) resting now; one whose `until` passed isn't. */
@@ -57,6 +61,8 @@ export interface Bot {
   /** The roster section the user put it in (`Work`, `Personal`); none when absent. */
   section?: string
   hidden: boolean
+  /** The computer's box for threads without a bot: an agent on its own. Never a bot to the user. */
+  plain: boolean
   notify?: boolean | null
   connectors: string[]
   skills: string[]
@@ -101,6 +107,16 @@ export interface Bot {
   threadWorktrees: boolean | null
   /** The bot's folder is in a git repository: where `threadWorktrees` matters. */
   gitRepo: boolean
+  /** The user's folders it sends work to, the first its default; empty from a host before projects (`hello.projects`),
+   * whose `cwd` is still the bot's one folder. */
+  projects: string[]
+  /** Whether each of `projects`, in the same order, is in a git repository: where `worktreeMode` matters. */
+  projectGitRepos: boolean[]
+  /** When its threads get a worktree; null from a host before projects (it has `threadWorktrees`). */
+  worktreeMode: WorktreeMode | null
+  /** Per project (its path), the folders of its main checkout linked into each new worktree of it (`node_modules`);
+   * null from a host before them (`hello.worktreeFill`). */
+  sharedFolders: Record<string, string[]> | null
   /** Git is on the bot's computer; a host that doesn't say counts as having it. */
   gitInstalled: boolean
   /** How it stands outside its chat (`outsideStatus`); null from a host before it. `status` is the chat's alone. */
@@ -142,6 +158,8 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     fastModeIssue: raw.fastModeIssue ?? null,
     fallbacks: raw.fallbacks ?? [],
     selfFallbacks: raw.selfFallbacks ?? null,
+    threadAgent: raw.threadAgent ?? null,
+    threadFallbacks: raw.threadFallbacks ?? null,
     agentStep: raw.agentStep ?? null,
     agentCommands: raw.agentCommands ?? [],
     resting: raw.resting ?? [],
@@ -152,6 +170,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     // A cleared section (null, or an empty name) reads as none.
     section: raw.section || undefined,
     hidden: raw.hidden ?? false,
+    plain: raw.plain === true,
     notify: raw.notify ?? null,
     connectors: raw.connectors ?? [],
     skills: raw.skills ?? [],
@@ -177,6 +196,10 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     maxThreads: normalizeMaxThreads(raw.maxThreads),
     threadWorktrees: raw.threadWorktrees ?? null,
     gitRepo: raw.gitRepo ?? false,
+    projects: raw.projects ?? [],
+    projectGitRepos: raw.projectGitRepos ?? [],
+    worktreeMode: raw.worktreeMode ?? null,
+    sharedFolders: raw.sharedFolders ?? null,
     gitInstalled: raw.gitInstalled ?? true,
     outside: normalizeOutside(raw.outside),
     unread: raw.unread ?? 0,
@@ -234,9 +257,25 @@ export const isWorking = (b: Bot) => b.status === 'working' || b.status === 'nee
 export const needsInput = (b: Bot) => b.status === 'needsInput'
 /** Working right now in this chat (its own, or a group it's in). */
 export const isWorkingIn = (b: Bot, chat: string) => isWorking(b) && (b.workingChat ?? b.id) === chat
-/** Where the bot works, as a list shows it: its own folder, or its project folder's name. */
-export const folderName = (b: Bot, tr: (text: string) => string) =>
-  b.managedWorkspace ? tr('Own folder') : (b.cwd.split('/').filter(Boolean).pop() ?? b.cwd)
+/** Where the bot works, as a list shows it: its default project's name, else its own folder, or (an older host) its
+ * project folder's name. */
+export const folderName = (b: Bot, tr: (text: string) => string) => {
+  const folder = b.projects[0] ?? (b.managedWorkspace ? null : b.cwd)
+  return folder === null ? tr('Own folder') : (folder.split(/[\\/]/).filter(Boolean).pop() ?? folder)
+}
+
+/** When a bot's threads get a git worktree of their own, in a project that is a git repository. */
+export type WorktreeMode = 'off' | 'sideBySide' | 'always'
+
+/** A subagent, as its launching call reports it: the totals once it finished in the foreground. */
+export interface Subagent {
+  kind?: string
+  model?: string
+  background?: boolean
+  tokens?: number
+  toolUses?: number
+  durationMs?: number
+}
 
 export interface FileDiff {
   path: string
@@ -370,6 +409,13 @@ export interface AgentSwitch {
   resetsAt: number | null
   /** What the new agent was told, unfolded under the line. */
   carried: string | null
+  /** The user made the switch (another agent or login profile): the next message carries the conversation. */
+  manual?: boolean
+  /** Where a switch the user made is: its next message hasn't gone yet, it carried the conversation, or nothing. */
+  state?: 'pending' | 'handedOff' | 'switched'
+  /** What the chat calls each side: the agent, with its login profile ("Claude Code (Work)"). */
+  fromName?: string
+  toName?: string
 }
 
 /** A choice card's (`request_decision`) lifecycle, as the host writes it in `status`. */
@@ -408,9 +454,15 @@ export interface EntryData {
   clientNonce?: string
   title?: string
   toolKind?: string
+  /** tool and permission: the agent's id for the call, so an approval finds the tool entry with what it returned. */
+  toolCallId?: string
   /** tool: whether it's the bot's own bookkeeping (composing its message, keeping its memory), left out of the
    * working steps; a host older than 2.25.0 leaves it out, and the steps then leave out the call too. */
   bookkeeping?: boolean
+  /** tool: the call that launched the subagent making this one (Claude Code only). */
+  parent?: string
+  /** tool: what a subagent's launch says about it (Claude Code only). */
+  subagent?: Subagent
   output?: string
   diffs?: FileDiff[]
   locations?: { path: string; line?: number }[]
@@ -424,6 +476,8 @@ export interface EntryData {
   choices?: string[]
   /** decision: which choice the bot suggests (`choices`' index). */
   recommended?: number | null
+  /** decision: `false` when only an option answers it (an agent's own question); missing: own words answer it too. */
+  ownWords?: boolean
   command?: string
   detail?: string
   cwd?: string
@@ -679,8 +733,33 @@ export interface Hello {
   analytics?: boolean
   /** A bot with a new message moves to the top of the roster (`setAutoOrder`). Absent from older hosts. */
   autoOrder?: boolean
+  /** Days after a thread last ended that the computer deletes it, 0 never (`setThreadKeepDays`); it lists older threads
+   * (`olderThreads`). Absent from older hosts. */
+  threadKeepDays?: number
+  /** The user can start a thread with a bot themselves (`startThread`). Absent from older hosts. */
+  startThread?: boolean
+  /** A thread may start without a bot, on an agent the user names (`startThread` without `botId`). */
+  threadsWithoutBot?: boolean
+  /** A thread may be started to build one workflow (`startThread` with `setup.workflow`). */
+  workflowThreads?: boolean
+  /** A thread may be started on a login of its agent (`startThread` with `setup.loginProfile`). */
+  threadLogins?: boolean
+  /** A thread may start with files (`startThread` with `attachments`; `upload` without `botId` for one without a bot). */
+  threadFiles?: boolean
+  /** A routine may name the folder its runs work in (`saveRoutine` with `folder`). Absent from older hosts. */
+  routineFolder?: boolean
   /** `resetCredentials` can be used on this computer (absent from older hosts, false on a Codync Cloud computer). */
   credentialsReset?: boolean
+  /** The host can store workflows. Missing means it cannot. */
+  workflows?: boolean
+  /** Bots have `projects` and `worktreeMode`, and `cwd` is always the bot's own folder. */
+  projects?: boolean
+  /** A new thread may name its place in a git project (`startThread` with `setup.place`). */
+  threadPlace?: boolean
+  /** Bots have `sharedFolders`, linked into each new worktree of their projects. */
+  worktreeFill?: boolean
+  /** A thread without a bot sent no `cwd` gets a folder of its own (an older host: the home folder). */
+  threadFolders?: boolean
 }
 
 export interface PairingInfo {
@@ -822,6 +901,9 @@ export interface BotDraft {
   fastMode?: boolean
   fallbacks?: Fallback[]
   selfFallbacks?: boolean
+  /** Left out for a host before Advisor mode; null turns it off. */
+  threadAgent?: Fallback | null
+  threadFallbacks?: Fallback[]
   pinned?: boolean
   /** A name puts the bot in that roster section, null takes it out; left out, the host keeps it. */
   section?: string | null
@@ -839,8 +921,14 @@ export interface BotDraft {
   compaction?: CompactionThreshold
   /** The most threads at once, 1 to 6; left out for a host before the box. */
   maxThreads?: number
-  /** Left out for a host before worktrees. */
+  /** Left out for a host before worktrees, and for one with `worktreeMode`. */
   threadWorktrees?: boolean
+  /** The whole list, the default first; left out for a host before projects. */
+  projects?: string[]
+  /** Left out for a host before projects. */
+  worktreeMode?: WorktreeMode
+  /** The whole map, per project; left out for a host before shared folders. */
+  sharedFolders?: Record<string, string[]>
 }
 
 export function draftOf(bot: Bot): BotDraft {
@@ -861,6 +949,7 @@ export function draftOf(bot: Bot): BotDraft {
     fastMode: bot.fastMode,
     fallbacks: bot.fallbacks,
     selfFallbacks: bot.selfFallbacks ?? undefined,
+    ...(bot.threadFallbacks === null ? {} : { threadAgent: bot.threadAgent, threadFallbacks: bot.threadFallbacks }),
     pinned: bot.pinned,
     hidden: bot.hidden,
     notify: bot.notify ?? null,
@@ -872,7 +961,10 @@ export function draftOf(bot: Bot): BotDraft {
     reachableByAssistants: bot.reachableByAssistants ?? undefined,
     compaction: bot.compaction ?? undefined,
     maxThreads: bot.maxThreads ?? undefined,
-    threadWorktrees: bot.threadWorktrees ?? undefined,
+    ...(bot.worktreeMode === null
+      ? { threadWorktrees: bot.threadWorktrees ?? undefined }
+      : { projects: bot.projects, worktreeMode: bot.worktreeMode }),
+    ...(bot.sharedFolders === null ? {} : { sharedFolders: bot.sharedFolders }),
   }
 }
 

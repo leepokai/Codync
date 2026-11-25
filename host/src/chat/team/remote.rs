@@ -92,7 +92,7 @@ impl Waiting {
                 None => Answer::Unknown,
                 Some((.., None)) => Answer::Ended(false),
                 // A retry counts as delivered only to the bot it went to.
-                Some((.., Some(usable))) if !usable.iter().any(|n| n == named || n == to) => {
+                Some((.., Some(usable))) if usable[0] != named && !usable.iter().any(|n| n == to) => {
                     Answer::WrongBot(usable[0].clone())
                 }
                 Some(_) => Answer::Ended(true),

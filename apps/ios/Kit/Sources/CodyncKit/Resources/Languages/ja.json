@@ -22,6 +22,8 @@
   "Ask one of your account's computers for access, or pair one with its code.": "アカウントのコンピューターの 1 つにアクセスを要求するか、コンピューターの 1 つをそのコードとペアリングします。",
   "Auto: Wi-Fi or Tailscale, then Cloudflare": "自動: Wi-Fi または Tailscale、次に Cloudflare",
   "Back": "戻る",
+  "Bot icon size": "ボットアイコンのサイズ",
+  "The Bots list's icons, with their agent mark, at a readable size.": "ボット一覧のアイコン（エージェントのマーク付き）を見やすい大きさにします。",
   "Bots": "ボット",
   "Can't reach": "接続できません",
   "Cancel": "キャンセル",

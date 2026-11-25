@@ -22,6 +22,8 @@
   "Ask one of your account's computers for access, or pair one with its code.": "Bitten Sie einen der Computer Ihres Kontos um Zugriff oder koppeln Sie einen mit dem zugehörigen Code.",
   "Auto: Wi-Fi or Tailscale, then Cloudflare": "Auto: Wi-Fi oder Tailscale, dann Cloudflare",
   "Back": "Zurück",
+  "Bot icon size": "Bot-Symbolgröße",
+  "The Bots list's icons, with their agent mark, at a readable size.": "Die Symbole der Bots-Liste, mit der Agenten-Marke, in lesbarer Größe.",
   "Bots": "Bots",
   "Can't reach": "Kann nicht erreicht werden",
   "Cancel": "Abbrechen",

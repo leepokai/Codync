@@ -70,13 +70,30 @@
   color: var(--attention, var(--danger, #c0392b));
 }
 
-/* The bot's current agent -> model path: a tab-like indent under the name, in the muted small
-   text (it is pure data, so it reads through the row's own truncation). */
+/* The bot's current agent, login and model path: a tab-like indent under the name, in the muted
+   small text (it is pure data, so it reads through the row's own truncation). */
 .model-manager-model-path {
   padding-left: 12px;
 }
 
-/* The provider filter under the search field: the roster filter's own idiom (ComputerFilterHeader),
+/* The row under the search field: the search's own switch on the left, the provider filter on the
+   right, so the two narrow the same list in one band. */
+.model-manager-filters {
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+/* The search's switch says only its own name, so it takes the width of its label rather than
+   pushing the provider filter across: a layout need of this band, not a restyling of the shared
+   switch (its track and label keep the one component's own styling). */
+.model-manager-model-search {
+  width: auto;
+  flex: 0 0 auto;
+  gap: 8px;
+  color: var(--secondary);
+}
+
+/* The provider filter beside it: the roster filter's own idiom (ComputerFilterHeader),
    marked while a provider is chosen. */
 .model-manager-provider {
   align-self: flex-start;

@@ -2512,5 +2512,7 @@
   "Threads work in the project itself": "thread 直接在專案裡工作",
   "A thread gets its own worktree when another thread works in the same repository": "同一個儲存庫裡已有其他 thread 在工作時，thread 會有自己的 worktree",
   "Every thread works in a worktree of its own; your checkout is never touched": "每個 thread 都在自己的 worktree 裡工作，你的 checkout 永遠不會被動到",
-  "Its chat, routines and files live here.": "它的聊天、例行任務和檔案都在這裡。"
+  "Its chat, routines and files live here.": "它的聊天、例行任務和檔案都在這裡。",
+  "Search bots or models": "搜尋 Bot 或模型",
+  "Search models too": "同時搜尋模型"
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import { isGroup } from '@shared/models'
 import { AgentIcon, agentTint } from '../../components/AgentIcon'
 import { AvatarWithStatus } from '../../components/Avatar'
-import { Button, DropdownMenu, IconButton, SearchField } from '../../components/Controls'
+import { Button, DropdownMenu, IconButton, SearchField, Switch } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import type { MenuItem } from '../../components/Menu'
 import { Sheet } from '../../components/Overlay'
@@ -18,7 +18,7 @@ import { ModelPicker } from './ModelPicker'
 import { useAgentModels, type AgentModels } from './agent-models'
 import { errorText } from './drafts'
 import { loginSeats } from './seats'
-import { allKeys, applyTargets, clampSheetSize, defaultSheetSize, pausePatch, providerOptions, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
+import { allKeys, agentNameOf, applyTargets, clampSheetSize, defaultSheetSize, loginNameOf, modelPathWords, pausePatch, providerOptions, resizeFrom, rowModelPath, SHEET_MIN, stepSize, planRows, toggleKey, type ApplyPlan, type CatalogCheck } from './model-manager-logic'
 import '../search-palette.css'
 import './model-manager.css'
 
@@ -162,6 +162,12 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   const [pick, setPick] = useState<Selection>({ backend: initialBackend, model: null, modelOptions: {} })
   const [query, setQuery] = useState('')
   const searchField = useRef<HTMLInputElement>(null)
+  // Whether the search also reads each bot's model path. On by default: a bot list the user
+  // searches for "deepseek" is looking for the bots that run it, and an off-by-default toggle
+  // would hide exactly what this sheet exists to show. The rule for new features is that they
+  // are off until asked for; the exceptions are controls that would be useless switched off,
+  // and this one narrows a search rather than changing what the app does behind the user's back.
+  const [modelSearch, setModelSearch] = useState(true)
   // The agent filter, composed with the search over the ONE shared matcher: `''` is every provider.
   const [provider, setProvider] = useState('')
   const [checked, setChecked] = useState<Set<string>>(() => new Set())
@@ -187,7 +193,17 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
   useEffect(() => {
     if (provider && !providerIds.split('\0').includes(provider)) setProvider('')
   }, [provider, providerIds])
-  const shown = matchWords(items.map((item) => ({ item, words: botWords(item) })), query)
+  // The words a row is found by: what `botWords` gives every list, plus — while the model switch is
+  // on — the bot's agent, login and model path, so "deepseek" or "opendesign" finds the bots that
+  // run it. One shared word list, extended rather than forked: the palette's own bots still match
+  // on their name, description and last message alone.
+  const searchWords = (item: RosterItem): string[] => {
+    const words = botWords(item)
+    if (!modelSearch) return words
+    const backend = item.bot.backend
+    return [...words, ...modelPathWords(item.bot, agentNameOf(backends, backend), loginNameOf(backends, backend, item.bot.loginProfile))]
+  }
+  const shown = matchWords(items.map((item) => ({ item, words: searchWords(item) })), query)
     .map((w) => w.item)
     .filter((item) => !chosenProvider || item.bot.backend === chosenProvider.id)
   const shownKeys = allKeys(shown)
@@ -360,27 +376,32 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
         <Text size="caption" tone="secondary">{tr('Changing the model starts a new agent session. Chat history is kept.')}</Text>
       </ModelPicker>
       {/* The shared search field — the same one FindBar and the pickers use — so its clear ✕
-          comes with it and the box is one implementation everywhere (the sync rule). */}
-      <SearchField value={query} onChange={setQuery} prompt="Search bots" inputRef={searchField} />
-      {providers.length > 1 ? (
-        <DropdownMenu
-          items={(): MenuItem[] => [
-            { title: 'All providers', icon: 'square.grid.3x3', selected: !chosenProvider, action: () => setProvider('') },
-            ...providers.map((p) => ({
-              title: p.name,
-              verbatim: true,
-              leading: <AgentIcon registry={store.agentRegistry(p.id)} size={14} color={agentTint(store.agentRegistry(p.id))} />,
-              selected: p.id === chosenProvider?.id,
-              action: () => setProvider(p.id),
-            })),
-          ]}
-          title={chosenProvider?.name ?? tr('All providers')}
-          className={`model-manager-provider${chosenProvider ? ' on' : ''}`}
-        >
-          <Icon name="line.3.horizontal.decrease" size={13} color={chosenProvider ? 'var(--accent)' : 'var(--secondary)'} />
-          <Text size="caption" tone={chosenProvider ? 'text' : 'secondary'}>{chosenProvider?.name ?? tr('All providers')}</Text>
-        </DropdownMenu>
-      ) : null}
+          comes with it and the box is one implementation everywhere (the sync rule). Beside the
+          agent filter under it, the switch that decides whether the search reads the models too. */}
+      <SearchField value={query} onChange={setQuery} prompt={modelSearch ? 'Search bots or models' : 'Search bots'} inputRef={searchField} />
+      <HStack gap={8} className="model-manager-filters">
+        <Switch on={modelSearch} onChange={setModelSearch} className="model-manager-model-search">Search models too</Switch>
+        <Spacer />
+        {providers.length > 1 ? (
+          <DropdownMenu
+            items={(): MenuItem[] => [
+              { title: 'All providers', icon: 'square.grid.3x3', selected: !chosenProvider, action: () => setProvider('') },
+              ...providers.map((p) => ({
+                title: p.name,
+                verbatim: true,
+                leading: <AgentIcon registry={store.agentRegistry(p.id)} size={14} color={agentTint(store.agentRegistry(p.id))} />,
+                selected: p.id === chosenProvider?.id,
+                action: () => setProvider(p.id),
+              })),
+            ]}
+            title={chosenProvider?.name ?? tr('All providers')}
+            className={`model-manager-provider${chosenProvider ? ' on' : ''}`}
+          >
+            <Icon name="line.3.horizontal.decrease" size={13} color={chosenProvider ? 'var(--accent)' : 'var(--secondary)'} />
+            <Text size="caption" tone={chosenProvider ? 'text' : 'secondary'}>{chosenProvider?.name ?? tr('All providers')}</Text>
+          </DropdownMenu>
+        ) : null}
+      </HStack>
       <HStack gap={8} className="model-manager-tools">
         <Button onClick={() => markAll(true)} disabled={applying || everyChecked || shownKeys.length === 0}>{tr('Select all')}</Button>
         <Button onClick={() => markAll(false)} disabled={applying || checked.size === 0}>{tr('Unselect all')}</Button>
@@ -399,9 +420,10 @@ function ManagerBody({ items }: { items: RosterItem[] }) {
           const on = checked.has(key)
           const outcome = outcomes[key]
           const line = subtitle(item, oneComputer)
-          // The bot's current agent -> model path, under the name in the app's muted small text.
-          const agentName = backends.find((b) => b.id === item.bot.backend)?.name ?? null
-          const modelPath = rowModelPath(item.bot, agentName)
+          // The bot's current agent, login and model path, under the name in the app's muted small text.
+          const agentName = agentNameOf(backends, item.bot.backend)
+          const loginName = loginNameOf(backends, item.bot.backend, item.bot.loginProfile)
+          const modelPath = rowModelPath(item.bot, agentName, loginName)
           return (
             <button key={key} type="button" role="checkbox" aria-checked={on} className="palette-row model-manager-row" disabled={applying} onClick={() => toggle(key, !on)}>
               <span className={`model-manager-check ${on ? 'on' : ''}`} aria-hidden="true">{on ? <Icon name="checkmark" size={11} /> : null}</span>

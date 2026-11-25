@@ -2512,5 +2512,7 @@
   "Threads work in the project itself": "Threads arbeiten direkt im Projekt",
   "A thread gets its own worktree when another thread works in the same repository": "Ein Thread bekommt einen eigenen Worktree, wenn ein anderer Thread im selben Repository arbeitet",
   "Every thread works in a worktree of its own; your checkout is never touched": "Jeder Thread arbeitet in einem eigenen Worktree; dein Checkout bleibt unberührt",
-  "Its chat, routines and files live here.": "Hier liegen sein Chat, seine Routinen und Dateien."
+  "Its chat, routines and files live here.": "Hier liegen sein Chat, seine Routinen und Dateien.",
+  "Search bots or models": "Bots oder Modelle suchen",
+  "Search models too": "Auch Modelle durchsuchen"
 }

@@ -25,14 +25,27 @@ checked bot, which every computer allows.
 
 ## Choosing the bots
 
-The list is every bot on every computer the account reaches — the sidebar's computer filter, hidden
+The list is every bot on every computer the account reaches - the sidebar's computer filter, hidden
 computers and bots hidden from the roster don't limit it; a bot's computer is named under it when the
 account has more than one. Groups are not listed: they carry members, not a model of their own.
+Under each bot's name is what it runs, in the app's muted small text: the agent as the model picker
+names it (its raw id when hello doesn't name it), the login profile when the bot picks one, then the
+model id exactly as the computer stores it — `OpenCode · opendesign/deepseek-v4.1-flash-eco`, or
+`OpenCode · Work · opendesign/deepseek-v4.1-flash-eco` on a bot that picks a login profile. The
+model id is the agent's own `provider/model`, so the provider is already inside it; the model's
+display name (what the picker calls it) belongs to that agent's catalog, which the host only
+answers by starting the agent, so the row does not guess one. A custom-command bot, or one whose
+model isn't readable, shows no line rather than a wrong one.
 The search field filters by name, description and last message, through the same word list and
 rule the window's search uses (`botWords` over `matchWords`, extracted from the search palette's
-own bot rows); `Select all` checks what the filter is showing, and `Unselect all` clears the whole
-selection, hidden bots included. A bot that is paused says `Paused` under its name, so a fleet's
-state reads at a glance.
+own bot rows). Beside it, the `Search models too` switch (on to begin with) adds each bot's agent,
+login profile and model path to the words a row is matched by - the whole path, each part of it,
+and the model id read as words, so `deepseek`, `opendesign` or `deepseek v4.1 flash` finds the
+bots that run it. Off, the field searches names, descriptions and last messages alone, exactly as
+the window's search does; the shared word list is extended, never forked, so the palette's bot
+rows keep their own words. `Select all` checks what the filter is showing, and `Unselect all`
+clears the whole selection, hidden bots included. A bot that is paused says `Paused` under its
+name, so a fleet's state reads at a glance.
 
 ## Apply
 

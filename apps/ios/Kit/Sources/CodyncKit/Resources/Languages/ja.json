@@ -2512,5 +2512,7 @@
   "Threads work in the project itself": "thread はプロジェクト自体で作業します",
   "A thread gets its own worktree when another thread works in the same repository": "同じリポジトリで別の thread が作業中なら、thread は専用の worktree を使います",
   "Every thread works in a worktree of its own; your checkout is never touched": "すべての thread が専用の worktree で作業し、あなたのチェックアウトには触れません",
-  "Its chat, routines and files live here.": "チャット、ルーティン、ファイルはここにあります。"
+  "Its chat, routines and files live here.": "チャット、ルーティン、ファイルはここにあります。",
+  "Search bots or models": "ボットまたはモデルを検索",
+  "Search models too": "モデルも検索する"
 }

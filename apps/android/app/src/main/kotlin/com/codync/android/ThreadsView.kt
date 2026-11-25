@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
+import com.codync.android.core.ComputerSelection
 import com.codync.android.core.LinkState
 import com.codync.android.core.ThreadGroup
 import com.codync.android.core.ThreadGroupKind
@@ -113,8 +114,8 @@ private data object ThreadsPage
     // The search field is open, and what it finds threads by.
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    // The bot a new thread is being written to.
-    var starting by remember { mutableStateOf<WorkingBot?>(null) }
+    // The New thread sheet is open.
+    var starting by remember { mutableStateOf(false) }
     fun track(option: LayoutOption, on: Boolean) = Analytics.capture(AnalyticsEvent.ListLayoutChanged(LayoutList.Threads, option, on))
     fun group(by: ThreadGrouping, option: LayoutOption) = layoutOption(groupTitle(by), grouping == by) { on ->
         track(option, on)
@@ -128,6 +129,8 @@ private data object ThreadsPage
     )
     val sections = threadSections(roster, { it.bot }, { "${it.state.computer.id}/${it.bot.id}" }, { it.state.hostName }, grouping, byStatus, byActivity)
     val bots = threadBots(roster)
+    val shown = ComputerSelection(filter.states.map { it.computer.id }, filter.hidden).shown.mapNotNull { id -> filter.states.firstOrNull { it.computer.id == id } }
+    val plain = plainComputer(shown)
     val line: @Composable (ThreadRow<WorkingBot>, String) -> Unit = { row, label -> ThreadLine(row, label, accounts, { question = it }, openLoose) }
     Column(Modifier.fillMaxSize().background(Palette.background).statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(top = 6.dp).padding(horizontal = 16.dp).height(44.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -141,7 +144,7 @@ private data object ThreadsPage
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ComputerFilterHeader(filter.states, filter.hidden, filter.setHidden, filter.reconnect, filter.manage, options)
                 HeaderButton("magnifyingglass", "Search") { searching = true }
-                if (bots.isNotEmpty()) NewThreadButton(bots) { starting = it }
+                if (bots.isNotEmpty() || plain != null) HeaderButton("plus", "New thread") { starting = true }
             }
         }
         // An empty search keeps the list, as on the iPhone.
@@ -174,7 +177,7 @@ private data object ThreadsPage
         }
     }
     WorkQuestionDialogs(question) { question = null }
-    NewThreadSheet(starting, accounts) { starting = null }
+    NewThreadSheet(starting, bots, plain, accounts, { starting = false }, openLoose)
 }
 
 /** Search's threads, flat and newest first, as the list draws its rows. */

@@ -117,13 +117,13 @@ internal enum class AppTab { Bots, Threads, Workflows, Settings }
                 }
             }
         }
-        Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Threads)) { ThreadsView(threads, filter, accounts, barSpace, loose) { loose = it } }
+        Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Threads)) { ThreadsView(app, account, threads, filter, accounts, barSpace, loose, active = tab == AppTab.Threads) { loose = it } }
         Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Workflows)) {
             val shown = states.firstOrNull { it.workflow != null }
                 ?: states.firstOrNull { it.computer.id == app.currentComputerId }
                 ?: states.firstOrNull()
             val store = shown?.let { accounts.store(it.computer.id) }
-            if (shown != null && store != null) WorkflowsView(shown, store, states, barSpace) { accounts.focusWorkflows(it) }
+            if (shown != null && store != null) WorkflowsView(app, account, shown, store, states, barSpace) { accounts.focusWorkflows(it) }
             else EmptyState("workflow", "No computer yet", Modifier.fillMaxSize().statusBarsPadding())
         }
         Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Settings)) { SettingsView(app, states, accounts, barSpace, status) }

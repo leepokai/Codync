@@ -126,7 +126,7 @@ async fn a_follow_up_cut_off_by_a_restart_is_resumed_as_a_follow_up() {
     host.restart().await;
     // Told it is still its follow-up, so a look that found nothing passes without a word or an alert.
     host.wait_event("cutoff", "resume_prompt", "still the follow-up you set for yourself").await;
-    std::fs::write(host.home.join("cutoff/release-look"), "").unwrap();
+    std::fs::write(common::folder(&host.home, "cutoff").join("release-look"), "").unwrap();
     host.wait_event("cutoff", "finished", "BLOCK[look] the build").await;
     // What it set after the restart continues its chain (3, then 4): a restart doesn't reset the limit on a watch.
     let next = host.call("routines", json!({"botId":bot})).await["followUps"].clone();

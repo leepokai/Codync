@@ -561,6 +561,71 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         #expect(!sections(task("a")).canCutIn(maxThreads: 1))
     }
 
+    @Test func onlyATaskHoldingASeatGivesWayAndAUsersThreadNever() throws {
+        let work = try bot(#","work":[{"id":"own","status":"working","seat":true},{"id":"user","status":"working","seat":false},{"id":"asking","status":"needsYou","seat":false},{"id":"w","status":"waiting","wait":{"kind":"next"}}]"#).work
+        let all = WorkSections(work)
+        #expect(all.givingWay.map(\.id) == ["own"])
+        #expect(all.canCutIn(maxThreads: 1))
+        // Only the user's thread is busy: nothing may give way, so Cut in isn't offered.
+        let usersOnly = WorkSections(work.filter { $0.id != "own" })
+        #expect(usersOnly.givingWay.isEmpty && !usersOnly.canCutIn(maxThreads: 1))
+        // An older host says nothing: every live task of the bot's own may give way.
+        #expect(sections(task("a"), task("b", .needsYou)).givingWay.map(\.id) == ["b", "a"])
+    }
+
+    @Test func aBotsProjectsAndWorktreeModeAreSavedWhole() throws {
+        func sent(_ draft: BotDraft) throws -> [String: Any] {
+            try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(BotUpdate(draft: draft))) as? [String: Any])
+        }
+        // An older host: neither is read nor sent.
+        let old = try bot(#","cwd":"/p/app","gitRepo":true"#)
+        #expect(old.projects == nil && old.worktreeMode == nil && old.folderName == "app")
+        let unsent = try sent(BotDraft(old))
+        #expect(unsent["projects"] == nil && unsent["worktreeMode"] == nil)
+
+        let saved = try bot(#","cwd":"/h/bots/b1/workspace","managedWorkspace":true,"projects":["/p/a","/p/b"],"projectGitRepos":[true,false],"worktreeMode":"always","threadWorktrees":true"#)
+        #expect(saved.projects == ["/p/a", "/p/b"] && saved.projectGitRepos == [true, false] && saved.worktreeMode == .always)
+        #expect(saved.folderName == "a")
+        #expect(saved.isGitProject("/p/a") && !saved.isGitProject("/p/b") && !saved.isGitProject("/p/c"))
+        #expect(try bot(#","worktreeMode":"sometimes""#).worktreeMode == nil)
+        var draft = BotDraft(saved)
+        #expect(draft.cwd.isEmpty)
+        // Add (once), make default, remove: the whole list goes, the default first.
+        draft.addProject("/p/c")
+        draft.addProject("/p/a")
+        #expect(draft.projects == ["/p/a", "/p/b", "/p/c"])
+        draft.makeDefaultProject("/p/c")
+        #expect(draft.projects == ["/p/c", "/p/a", "/p/b"])
+        draft.removeProject("/p/a")
+        draft.worktreeMode = .off
+        let body = try sent(draft)
+        #expect(body["projects"] as? [String] == ["/p/c", "/p/b"])
+        #expect(body["worktreeMode"] as? String == "off")
+        // Removing the default makes the next one it; removing the last sends an empty list.
+        draft.removeProject("/p/c")
+        draft.removeProject("/p/b")
+        #expect(try sent(draft)["projects"] as? [String] == [])
+        // A new bot on a host with projects: its first folder is the default.
+        var fresh = BotDraft(name: "New")
+        fresh.addProject("/p/x")
+        #expect(fresh.projects == ["/p/x"])
+        // A change made elsewhere is kept unless the form changed the same field.
+        let base = BotDraft(saved)
+        let elsewhere = BotDraft(try bot(#","projects":["/p/b"],"worktreeMode":"off""#))
+        #expect(base.rebased(from: base, onto: elsewhere).projects == ["/p/b"])
+        #expect(base.rebased(from: base, onto: elsewhere).worktreeMode == .off)
+        var edited = base
+        edited.makeDefaultProject("/p/b")
+        #expect(edited.rebased(from: base, onto: elsewhere).projects == ["/p/b", "/p/a"])
+    }
+
+    @Test func eachWorktreeModeIsTranslated() {
+        for mode in WorktreeMode.allCases {
+            #expect(L10n.tr(mode.line, preference: .zhHant) != mode.line)
+            #expect(L10n.tr(mode.title, preference: .zhHant) != mode.title)
+        }
+    }
+
     @Test func theTranscriptReportsItsScreen() throws {
         #expect(AnalyticsEvent.Screen.thread.rawValue == "thread")
     }

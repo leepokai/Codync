@@ -175,12 +175,36 @@ fn webhook_key() -> String {
     format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple())
 }
 
+/// The stored routines.
+fn stored(store: &Store) -> Result<State> {
+    let Some(raw) = store.kv_read(STATE_KEY)? else { return Ok(State::default()) };
+    serde_json::from_str(&raw).context("reading routines")
+}
+
+/// The stored routines of `bots`, deleted ones too (`hub::projects::migrate`'s backup).
+pub fn of_bots(store: &Store, bots: &[&str]) -> Result<Vec<Routine>> {
+    Ok(stored(store)?.routines.into_iter().filter(|r| bots.contains(&r.bot_id.as_str())).collect())
+}
+
+/// Before `Routines::restore` reads them (`hub::projects::migrate`): `bot`'s routines that name no folder are stamped
+/// with `folder` in the stored state.
+pub fn stamp_folder(store: &Store, bot: &str, folder: &str) -> Result<()> {
+    let mut state = stored(store)?;
+    let unstamped = |r: &&mut Routine| r.bot_id == bot && !r.deleted && r.folder.is_none();
+    let mut stamped = false;
+    for routine in state.routines.iter_mut().filter(unstamped) {
+        routine.folder = Some(folder.to_owned());
+        stamped = true;
+    }
+    if stamped {
+        store.kv_set(STATE_KEY, &serde_json::to_string(&state)?)?;
+    }
+    Ok(())
+}
+
 impl Routines {
     pub fn restore(&self, store: &Store) -> Result<()> {
-        let mut state = match store.kv_read(STATE_KEY)? {
-            Some(raw) => serde_json::from_str::<State>(&raw).context("reading routines")?,
-            None => State::default(),
-        };
+        let mut state = stored(store)?;
         let mut active = self.active.locked();
         active.clear();
         for run in &mut state.runs {

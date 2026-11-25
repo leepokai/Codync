@@ -205,6 +205,11 @@ pub enum Field {
     ThreadAgent,
     /// In Advisor mode, the threads' fallbacks.
     ThreadFallbacks,
+    /// The folders its threads work in, the first its default; only on a host with projects (`hello.projects`).
+    Projects,
+    /// When a thread gets a worktree; only on a host with projects, for a bot with a project in a git repository.
+    WorktreeMode,
+    /// Its project folder or its own (an older host); on a host with projects, its home, read only.
     Folder,
     /// The most threads it runs at once; only on a host that sends `maxThreads`.
     MaxThreads,
@@ -223,7 +228,7 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 26] = [
+pub const FIELDS: [Field; 28] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,
@@ -237,6 +242,8 @@ pub const FIELDS: [Field; 26] = [
     Field::ThreadAgent,
     Field::ThreadFallbacks,
     Field::Compaction,
+    Field::Projects,
+    Field::WorktreeMode,
     Field::Folder,
     Field::MaxThreads,
     Field::ThreadWorktrees,
@@ -281,8 +288,12 @@ pub struct Form {
     pub cwd: String,
     /// The most threads it runs at once; `None`: the host has no event box.
     pub max_threads: Option<u8>,
-    /// A worktree per thread; `None`: the host has no worktrees, or the bot's folder is in no git repository.
+    /// A worktree per thread; `None`: the host has no worktrees, or the bot's folder is in no git repository, or the
+    /// host has projects (`worktree_mode` then).
     pub thread_worktrees: Option<bool>,
+    /// Its projects, the first its default; `None`: the host has no projects.
+    pub projects: Option<Vec<String>>,
+    pub worktree_mode: crate::store::WorktreeMode,
     /// Approvals: Codync approves what still asks, and the agent mode (`codync_agent::modes`).
     pub auto: bool,
     pub mode: Option<String>,

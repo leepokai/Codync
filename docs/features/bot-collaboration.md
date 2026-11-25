@@ -1,10 +1,10 @@
 # Bot collaboration
 
-Create two or more bots normally, giving each a clear name, description, project folder and agent. Then message one:
+Create two or more bots normally, giving each a clear name, description, projects and agent. Then message one:
 
 > Ask Reviewer to inspect the changes in /path/to/project. Have it report bugs without editing files, then summarize its findings for me.
 
-Every bot receives the built-in `team` MCP server. `list_bots` returns the other visible bots' IDs, kinds, descriptions, agents, folders and status. `message_bot(botId, message)` queues a self-contained request and returns at once, so the sender never waits: it ends its turn (or keeps working) and the recipient's final reply comes back to it later as a new turn in its own chat, where it answers you. The same tools work across ACP backends that support MCP servers.
+Every bot receives the built-in `team` MCP server. `list_bots` returns the other visible bots' IDs, kinds, descriptions, agents, folders (`cwd`: the default project, else the bot's own folder; and `projects`) and status. `message_bot(botId, message)` queues a self-contained request and returns at once, so the sender never waits: it ends its turn (or keeps working) and the recipient's final reply comes back to it later as a new turn in its own chat, where it answers you. The same tools work across ACP backends that support MCP servers.
 
 The host records each exchange as one notice in both chats. Every client shows it as a compact row (centered in the apps, one ` · ` line in the terminal UI), "Messaged [avatar] Owen" in the sender's chat and "Message from [avatar] Egan" in the recipient's, with no request text. In a chat a run of consecutive exchanges with the same peer, in either direction, is one row, "3 messages with [avatar] Owen"; anything else the chat shows (a message, another notice, a card, an exchange with another peer) ends the run, trace entries do not, and the run is marked failed if any exchange failed. Only a failure is marked (danger color and a warning mark). Tapping the row opens a read-only "Egan ⇄ Owen" conversation sheet with the pair's whole history: author-labelled grey bubbles for each request and reply, time separators, "Waiting for Owen…" or the failure detail under a pending or failed exchange. It is laid out like the Full conversation sheet, with the pair as its title and an X to close. Tool details also remain in the trace. There is no additional team setup screen; a lead bot can set up the team itself (see Team management).
 

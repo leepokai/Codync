@@ -196,6 +196,7 @@ the ACL from package 2: the assistant is a sender like any other.
 Built as `codync-host mcp network --name <agent>`: the cloud assistant's three tools, backed by the host
 (`agentCall`), each agent its own replies; no registration as a network agent, so its answers wait for
 `read_replies` instead of knocking into the session. [Feature](../features/codync-network.md#bots-across-computers).
+Next, a mailbox per agent session: [agent sessions research](agent-sessions.md).
 
 Before:
 

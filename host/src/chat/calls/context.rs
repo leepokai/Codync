@@ -61,7 +61,7 @@ pub async fn instructions(
 ) -> String {
     let tenths = if provider == Some(Provider::OpenAi) { OPENAI_TENTHS } else { 10 };
     let cap = |n: usize| n * tenths / 10;
-    let project = super::project::now(&cfg.cwd).await;
+    let project = super::project::now(crate::agent::workspace::work_folder(cfg)).await;
     let (h, c, l) = (hub.clone(), cfg.clone(), language.map(str::to_owned));
     let sections = tokio::task::spawn_blocking(move || background(&h, &c, l.as_deref())).await.unwrap_or_default();
     let mut out = vec![rules(hub, cfg, google_search)];
@@ -174,8 +174,9 @@ fn bot(hub: &Hub, cfg: &BotConfig) -> String {
     }
     let model = cfg.model.as_deref().map(|m| format!(", model {m}")).unwrap_or_default();
     lines.push(format!("Runs on: {}{model}", crate::agent::fallback::name(&cfg.backend)));
-    let project = Path::new(&cfg.cwd).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    lines.push(format!("Folder: {} (project {project})", cfg.cwd));
+    let folder = crate::agent::workspace::work_folder(cfg);
+    let project = Path::new(folder).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    lines.push(format!("Folder: {folder} (project {project})"));
     // What the bot does before it acts: the agent's mode, then what Codync does with what still asks.
     let mode = match cfg.mode.as_deref() {
         None => "the agent's default mode".to_owned(),
@@ -352,6 +353,7 @@ pub(crate) mod tests {
             workflow: None,
             section: None,
             notify: None,
+            projects: vec![],
             connectors: vec!["github".into()],
             skills: vec![],
             computer: false,
@@ -365,7 +367,7 @@ pub(crate) mod tests {
             auto_name: false,
             thread_of: None,
             max_threads: 3,
-            thread_worktrees: true,
+            worktree_mode: crate::store::WorktreeMode::SideBySide,
             lead: false,
             created_at: 0,
         }
